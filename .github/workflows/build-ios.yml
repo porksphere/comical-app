@@ -1,0 +1,81 @@
+name: Build iOS (unsigned IPA for SideStore)
+
+# Produces an UNSIGNED .ipa on a GitHub-hosted macOS runner. No signing certs,
+# provisioning profiles, or paid Apple Developer account are involved — SideStore
+# re-signs the app on-device with the user's free Apple ID (7-day refresh).
+#
+# Note: macOS runners consume Actions minutes ~10x faster than Linux. Adjust the
+# triggers below if cost is a concern.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - claude/react-native-expo-plan-0hmh23
+    paths:
+      - 'apps/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/build-ios.yml'
+
+jobs:
+  build:
+    # macOS 26 provides Xcode 26 / the iOS 26 SDK, required to compile the
+    # Liquid Glass (expo-glass-effect) native code.
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate native iOS project (CNG)
+        run: npx expo prebuild --platform ios --no-install
+        working-directory: apps/mobile
+
+      - name: Install CocoaPods
+        run: pod install
+        working-directory: apps/mobile/ios
+
+      - name: Build unsigned archive
+        working-directory: apps/mobile/ios
+        run: |
+          set -euo pipefail
+          WORKSPACE=$(ls -d *.xcworkspace | head -1)
+          SCHEME=$(basename "$WORKSPACE" .xcworkspace)
+          echo "Building workspace=$WORKSPACE scheme=$SCHEME"
+          xcodebuild \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath "$RUNNER_TEMP/comical.xcarchive" \
+            archive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM=""
+
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          APP=$(ls -d "$RUNNER_TEMP/comical.xcarchive/Products/Applications/"*.app | head -1)
+          mkdir -p "$RUNNER_TEMP/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/Payload/"
+          (cd "$RUNNER_TEMP" && zip -qry comical-unsigned.ipa Payload)
+
+      - name: Upload unsigned IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: comical-ios-unsigned-ipa
+          path: ${{ runner.temp }}/comical-unsigned.ipa
+          if-no-files-found: error

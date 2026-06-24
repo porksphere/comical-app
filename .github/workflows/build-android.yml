@@ -1,0 +1,57 @@
+name: Build Android (APK)
+
+# Builds an installable release APK on a GitHub-hosted Ubuntu runner.
+# The Expo Android template signs the release build with the auto-generated
+# debug keystore, so the artifact installs directly on any device. Swap in a
+# real upload key before publishing to the Play Store.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - claude/react-native-expo-plan-0hmh23
+    paths:
+      - 'apps/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/build-android.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          # Required once @porksphere/core is consumed from GitHub Packages
+          # instead of the in-repo workspace stub. Harmless until then.
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate native Android project (CNG)
+        run: npx expo prebuild --platform android --no-install
+        working-directory: apps/mobile
+
+      - name: Build release APK
+        run: ./gradlew assembleRelease --no-daemon
+        working-directory: apps/mobile/android
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: comical-android-apk
+          path: apps/mobile/android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error

@@ -1,0 +1,15 @@
+{
+  "name": "@porksphere/core",
+  "version": "0.0.0-stub",
+  "description": "Business-logic core (LOCAL STUB). Replaced by the published @porksphere/core from GitHub Packages once the real core repo ships its first release.",
+  "private": false,
+  "main": "src/index.ts",
+  "react-native": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.3"
+  }
+}

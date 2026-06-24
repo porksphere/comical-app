@@ -1,0 +1,20 @@
+{
+  "name": "comical",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Comical — cross-platform (iOS + Android) Expo app and workspace.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "start": "npm run -w apps/mobile start",
+    "android": "npm run -w apps/mobile android",
+    "ios": "npm run -w apps/mobile ios",
+    "web": "npm run -w apps/mobile web",
+    "typecheck": "npm run -w apps/mobile typecheck && npm run -w packages/core typecheck"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

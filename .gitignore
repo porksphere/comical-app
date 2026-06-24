@@ -60,3 +60,20 @@ fastlane/report.xml
 fastlane/Preview.html
 fastlane/screenshots/**/*.png
 fastlane/test_output
+
+# ---------------------------------------------------------------------------
+# Node / Expo monorepo
+# ---------------------------------------------------------------------------
+node_modules/
+.expo/
+dist/
+web-build/
+*.tsbuildinfo
+npm-debug.*
+
+# Generated native projects (Continuous Native Generation via `expo prebuild`)
+/apps/*/ios/
+/apps/*/android/
+
+# Local env
+.env*.local
