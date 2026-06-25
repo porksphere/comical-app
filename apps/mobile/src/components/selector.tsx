@@ -12,7 +12,7 @@ type SelectorProps = {
   options: string[];
   onChange: (value: string) => void;
   /** Visual size of the trigger text. */
-  size?: 'title' | 'subtitle';
+  size?: 'title' | 'subtitle' | 'small';
 };
 
 /** Tappable label that opens a single-select bottom-sheet menu (via the overlay system). */
@@ -26,7 +26,9 @@ export function Selector({ title, value, options, onChange, size = 'title' }: Se
           <SelectMenu title={title} options={options} selected={value} onSelect={onChange} />
         ))
       }>
-      <ThemedText type={size}>{value}</ThemedText>
+      <ThemedText type={size} numberOfLines={1}>
+        {value}
+      </ThemedText>
       <ThemedText themeColor="textSecondary" style={size === 'title' ? styles.caretLg : styles.caretSm}>
         ▾
       </ThemedText>
@@ -73,7 +75,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.one,
-    alignSelf: 'flex-start',
+    flexShrink: 1,
   },
   caretLg: {
     fontSize: 20,
