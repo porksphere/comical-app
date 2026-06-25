@@ -93,7 +93,7 @@ function Header({ bridge, onBridgeChange, page, onPageChange }: HeaderProps) {
     <View style={styles.header}>
       <View style={styles.selectors}>
         <Selector title="Bridge" value={bridge} options={BRIDGES} onChange={onBridgeChange} size="title" />
-        <Selector title="Page" value={page} options={PAGES} onChange={onPageChange} size="subtitle" />
+        <Selector title="Page" value={page} options={PAGES} onChange={onPageChange} size="small" />
       </View>
       <ThemedView type="backgroundElement" style={styles.search}>
         <ThemedText themeColor="textSecondary">Search…</ThemedText>
@@ -133,7 +133,10 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.three,
   },
   selectors: {
-    gap: Spacing.one,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: Spacing.three,
   },
   search: {
     paddingVertical: Spacing.three,
