@@ -92,8 +92,8 @@ function Header({ bridge, onBridgeChange, page, onPageChange }: HeaderProps) {
   return (
     <View style={styles.header}>
       <View style={styles.selectors}>
-        <Selector title="Bridge" value={bridge} options={BRIDGES} onChange={onBridgeChange} size="title" />
-        <Selector title="Page" value={page} options={PAGES} onChange={onPageChange} size="small" />
+        <Selector title="Bridge" value={bridge} options={BRIDGES} onChange={onBridgeChange} size="subtitle" />
+        <Selector title="Page" value={page} options={PAGES} onChange={onPageChange} size="subtitle" />
       </View>
       <ThemedView type="backgroundElement" style={styles.search}>
         <ThemedText themeColor="textSecondary">Search…</ThemedText>
@@ -134,7 +134,7 @@ const styles = StyleSheet.create({
   },
   selectors: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     justifyContent: 'space-between',
     gap: Spacing.three,
   },
