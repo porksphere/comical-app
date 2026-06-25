@@ -15,7 +15,7 @@ on:
       - 'apps/**'
       - 'packages/**'
       - 'package.json'
-      - 'package-lock.json'
+      - 'bun.lock'
       - '.github/workflows/build-android.yml'
 
 concurrency:

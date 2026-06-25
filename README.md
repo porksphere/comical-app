@@ -71,6 +71,19 @@ and via manual dispatch:
 - **iOS** (`macos-26`): `expo prebuild` → `pod install` → `xcodebuild archive` with code
   signing disabled → packaged into an **unsigned `.ipa`** artifact.
 
+### Web (same codebase, react-native-web)
+
+The Expo app also targets web via react-native-web (`build:web` = `expo export --platform web`,
+static output to `dist/`). `deploy-web.yml` builds it and publishes to **GitHub Pages** on each
+push, giving a public URL you can open on a phone — no computer in the loop:
+
+> **https://porksphere.github.io/comical-ios/**
+
+The web bundle uses a top nav bar (`app-tabs.web.tsx`) instead of the native Liquid Glass tab
+bar — native tab bars/glass are iOS/Android only; the screens are shared, the nav chrome adapts.
+`experiments.baseUrl` in `app.json` sets the `/comical-ios` Pages subpath. One-time setup:
+**Settings → Pages → Source: GitHub Actions** (the workflow also attempts to enable it).
+
 ### iOS distribution via SideStore
 
 There is **no paid Apple Developer account** in this setup. CI emits an *unsigned* `.ipa`;

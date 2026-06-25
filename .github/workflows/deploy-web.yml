@@ -1,0 +1,76 @@
+name: Deploy Web (GitHub Pages)
+
+# Builds the Expo app for web (react-native-web) and publishes the static export
+# to GitHub Pages, giving a public URL you can open on a phone — no computer in
+# the loop. Served at https://porksphere.github.io/comical-ios/ (baseUrl is set
+# in app.json under experiments.baseUrl).
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - claude/react-native-expo-plan-0hmh23
+    paths:
+      - 'apps/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'bun.lock'
+      - '.github/workflows/deploy-web.yml'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent Pages deployment.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Export web bundle
+        run: bunx expo export --platform web
+        working-directory: apps/mobile
+
+      - name: Disable Jekyll (serve _expo/ asset folder as-is)
+        run: touch apps/mobile/dist/.nojekyll
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/mobile/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
