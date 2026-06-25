@@ -1,12 +1,17 @@
 import { Image } from 'expo-image';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { FlatList, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FilterBar } from '@/components/filters/filter-demo';
+import { Selector } from '@/components/selector';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Spacing } from '@/constants/theme';
+
+// Placeholder data sources. Bridges are intentionally mixed-case.
+const BRIDGES = ['MangaDex', 'comick', 'Batoto', 'WeebCentral', 'asura'];
+const PAGES = ['home', 'popular', 'favorites'];
 
 const TITLES = [
   'The Silent Sea',
@@ -33,6 +38,8 @@ const BOOKS: Book[] = Array.from({ length: 30 }, (_, i) => ({
 export default function BrowseScreen() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const [bridge, setBridge] = useState(BRIDGES[0]);
+  const [page, setPage] = useState(PAGES[0]);
   const numColumns = width < 768 ? 3 : Math.min(6, Math.max(3, Math.floor(width / 200)));
 
   // Pad to a full last row so flex:1 cards don't stretch on a partial row.
@@ -54,7 +61,14 @@ export default function BrowseScreen() {
         data={data}
         keyExtractor={(item) => String(item.id)}
         numColumns={numColumns}
-        ListHeaderComponent={<Header />}
+        ListHeaderComponent={
+          <Header
+            bridge={bridge}
+            onBridgeChange={setBridge}
+            page={page}
+            onPageChange={setPage}
+          />
+        }
         columnWrapperStyle={[styles.row, { gap: Spacing.three }]}
         contentContainerStyle={[
           styles.content,
@@ -67,10 +81,20 @@ export default function BrowseScreen() {
   );
 }
 
-function Header() {
+type HeaderProps = {
+  bridge: string;
+  onBridgeChange: (v: string) => void;
+  page: string;
+  onPageChange: (v: string) => void;
+};
+
+function Header({ bridge, onBridgeChange, page, onPageChange }: HeaderProps) {
   return (
     <View style={styles.header}>
-      <ThemedText type="title">Browse</ThemedText>
+      <View style={styles.selectors}>
+        <Selector title="Bridge" value={bridge} options={BRIDGES} onChange={onBridgeChange} size="title" />
+        <Selector title="Page" value={page} options={PAGES} onChange={onPageChange} size="subtitle" />
+      </View>
       <ThemedView type="backgroundElement" style={styles.search}>
         <ThemedText themeColor="textSecondary">Search…</ThemedText>
       </ThemedView>
@@ -107,6 +131,9 @@ const styles = StyleSheet.create({
   header: {
     gap: Spacing.four,
     paddingBottom: Spacing.three,
+  },
+  selectors: {
+    gap: Spacing.one,
   },
   search: {
     paddingVertical: Spacing.three,
