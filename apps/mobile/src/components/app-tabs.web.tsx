@@ -18,6 +18,10 @@ import { MaxContentWidth, Spacing } from '@/constants/theme';
 // Web nav (Metro resolves this `.web` file for the web bundle, so native
 // NativeTabs are never imported here). Responsive: an app-like black icon
 // bottom bar on phones, a top nav bar on wider/desktop viewports.
+//
+// Note: the background/styling lives on `TabList` itself (which merges the
+// `style` prop) rather than on an `asChild` wrapper — `asChild` drops the
+// child View's background through its slot merge.
 const TABS: { name: string; href: string; label: string; Icon: LucideIcon }[] = [
   { name: 'browse', href: '/', label: 'Browse', Icon: LayoutGrid },
   { name: 'library', href: '/library', label: 'Library', Icon: Library },
@@ -46,25 +50,23 @@ export default function AppTabs() {
   return (
     <Tabs style={styles.tabs}>
       {!isMobile && (
-        <TabList asChild>
-          <View style={styles.topBarContainer}>
-            <ThemedView type="backgroundElement" style={styles.topBarInner}>
-              <ThemedText type="smallBold" style={styles.brand}>
-                Comical
-              </ThemedText>
-              {triggers}
-            </ThemedView>
-          </View>
-        </TabList>
+        <View style={styles.topBarContainer}>
+          <ThemedView type="backgroundElement" style={styles.topBarInner}>
+            <ThemedText type="smallBold" style={styles.brand}>
+              Comical
+            </ThemedText>
+            <TabList asChild>
+              <View style={styles.topTriggers}>{triggers}</View>
+            </TabList>
+          </ThemedView>
+        </View>
       )}
 
       <TabSlot style={styles.slot} />
 
       {isMobile && (
-        <TabList asChild>
-          <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, Spacing.two) }]}>
-            {triggers}
-          </View>
+        <TabList style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, Spacing.two) }]}>
+          {triggers}
         </TabList>
       )}
     </Tabs>
@@ -129,6 +131,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.five,
     borderRadius: Spacing.five,
   },
+  topTriggers: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
   brand: {
     marginRight: 'auto',
   },
@@ -145,7 +152,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     backgroundColor: '#000000',
-    paddingTop: Spacing.two,
+    paddingTop: Spacing.three,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: 'rgba(255,255,255,0.12)',
   },
