@@ -1,5 +1,13 @@
 import { Tabs, TabList, TabTrigger, TabSlot, TabTriggerSlotProps } from 'expo-router/ui';
-import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import {
+  Activity,
+  History,
+  LayoutGrid,
+  Library,
+  Settings,
+  type LucideIcon,
+} from 'lucide-react';
+import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from './themed-text';
@@ -8,17 +16,19 @@ import { ThemedView } from './themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 
 // Web nav (Metro resolves this `.web` file for the web bundle, so native
-// NativeTabs are never imported here). Responsive: a bottom tab bar on phones,
-// a top nav bar on wider/desktop viewports.
-const TABS: { name: string; href: string; label: string }[] = [
-  { name: 'browse', href: '/', label: 'Browse' },
-  { name: 'library', href: '/library', label: 'Library' },
-  { name: 'history', href: '/history', label: 'History' },
-  { name: 'activity', href: '/activity', label: 'Activity' },
-  { name: 'settings', href: '/settings', label: 'Settings' },
+// NativeTabs are never imported here). Responsive: an app-like black icon
+// bottom bar on phones, a top nav bar on wider/desktop viewports.
+const TABS: { name: string; href: string; label: string; Icon: LucideIcon }[] = [
+  { name: 'browse', href: '/', label: 'Browse', Icon: LayoutGrid },
+  { name: 'library', href: '/library', label: 'Library', Icon: Library },
+  { name: 'history', href: '/history', label: 'History', Icon: History },
+  { name: 'activity', href: '/activity', label: 'Activity', Icon: Activity },
+  { name: 'settings', href: '/settings', label: 'Settings', Icon: Settings },
 ];
 
 const MOBILE_BREAKPOINT = 768;
+const ACTIVE = '#ffffff';
+const INACTIVE = '#8E8E93';
 
 export default function AppTabs() {
   const { width } = useWindowDimensions();
@@ -27,7 +37,9 @@ export default function AppTabs() {
 
   const triggers = TABS.map((tab) => (
     <TabTrigger key={tab.name} name={tab.name} href={tab.href as never} asChild>
-      <TabButton mobile={isMobile}>{tab.label}</TabButton>
+      <TabButton mobile={isMobile} Icon={tab.Icon}>
+        {tab.label}
+      </TabButton>
     </TabTrigger>
   ));
 
@@ -50,11 +62,9 @@ export default function AppTabs() {
 
       {isMobile && (
         <TabList asChild>
-          <ThemedView
-            type="backgroundElement"
-            style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, Spacing.two) }]}>
+          <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, Spacing.two) }]}>
             {triggers}
-          </ThemedView>
+          </View>
         </TabList>
       )}
     </Tabs>
@@ -65,14 +75,17 @@ function TabButton({
   children,
   isFocused,
   mobile,
+  Icon,
   ...props
-}: TabTriggerSlotProps & { mobile?: boolean }) {
+}: TabTriggerSlotProps & { mobile?: boolean; Icon: LucideIcon }) {
   if (mobile) {
+    const color = isFocused ? ACTIVE : INACTIVE;
     return (
       <Pressable {...props} style={styles.bottomButton}>
-        <ThemedText type="small" themeColor={isFocused ? 'text' : 'textSecondary'}>
+        <Icon size={24} color={color} strokeWidth={2} />
+        <Text style={[styles.bottomLabel, { color }]} numberOfLines={1}>
           {children}
-        </ThemedText>
+        </Text>
       </Pressable>
     );
   }
@@ -127,18 +140,24 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.7,
   },
-  // --- Mobile bottom bar ---
+  // --- Mobile black icon bottom bar ---
   bottomBar: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    backgroundColor: '#000000',
     paddingTop: Spacing.two,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(128,128,128,0.25)',
+    borderTopColor: 'rgba(255,255,255,0.12)',
   },
   bottomButton: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: Spacing.half,
     paddingVertical: Spacing.one,
+  },
+  bottomLabel: {
+    fontSize: 11,
+    fontWeight: '500',
   },
 });
