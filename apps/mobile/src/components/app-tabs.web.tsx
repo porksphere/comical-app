@@ -1,21 +1,15 @@
-import {
-  Tabs,
-  TabList,
-  TabTrigger,
-  TabSlot,
-  TabTriggerSlotProps,
-  TabListProps,
-} from 'expo-router/ui';
-import { Pressable, View, StyleSheet } from 'react-native';
+import { Tabs, TabList, TabTrigger, TabSlot, TabTriggerSlotProps } from 'expo-router/ui';
+import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
 
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 
-// Web nav (Metro resolves this `.web` file for the web bundle, so the native
-// NativeTabs are never imported here). Rendered as a top nav bar — a desktop
-// optimization — mirroring the five native tabs.
+// Web nav (Metro resolves this `.web` file for the web bundle, so native
+// NativeTabs are never imported here). Responsive: a bottom tab bar on phones,
+// a top nav bar on wider/desktop viewports.
 const TABS: { name: string; href: string; label: string }[] = [
   { name: 'browse', href: '/', label: 'Browse' },
   { name: 'library', href: '/library', label: 'Library' },
@@ -24,29 +18,69 @@ const TABS: { name: string; href: string; label: string }[] = [
   { name: 'settings', href: '/settings', label: 'Settings' },
 ];
 
+const MOBILE_BREAKPOINT = 768;
+
 export default function AppTabs() {
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const isMobile = width < MOBILE_BREAKPOINT;
+
+  const triggers = TABS.map((tab) => (
+    <TabTrigger key={tab.name} name={tab.name} href={tab.href as never} asChild>
+      <TabButton mobile={isMobile}>{tab.label}</TabButton>
+    </TabTrigger>
+  ));
+
   return (
-    <Tabs>
-      <TabSlot style={{ height: '100%' }} />
-      <TabList asChild>
-        <CustomTabList>
-          {TABS.map((tab) => (
-            <TabTrigger key={tab.name} name={tab.name} href={tab.href as never} asChild>
-              <TabButton>{tab.label}</TabButton>
-            </TabTrigger>
-          ))}
-        </CustomTabList>
-      </TabList>
+    <Tabs style={styles.tabs}>
+      {!isMobile && (
+        <TabList asChild>
+          <View style={styles.topBarContainer}>
+            <ThemedView type="backgroundElement" style={styles.topBarInner}>
+              <ThemedText type="smallBold" style={styles.brand}>
+                Comical
+              </ThemedText>
+              {triggers}
+            </ThemedView>
+          </View>
+        </TabList>
+      )}
+
+      <TabSlot style={styles.slot} />
+
+      {isMobile && (
+        <TabList asChild>
+          <ThemedView
+            type="backgroundElement"
+            style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, Spacing.two) }]}>
+            {triggers}
+          </ThemedView>
+        </TabList>
+      )}
     </Tabs>
   );
 }
 
-export function TabButton({ children, isFocused, ...props }: TabTriggerSlotProps) {
+function TabButton({
+  children,
+  isFocused,
+  mobile,
+  ...props
+}: TabTriggerSlotProps & { mobile?: boolean }) {
+  if (mobile) {
+    return (
+      <Pressable {...props} style={styles.bottomButton}>
+        <ThemedText type="small" themeColor={isFocused ? 'text' : 'textSecondary'}>
+          {children}
+        </ThemedText>
+      </Pressable>
+    );
+  }
   return (
     <Pressable {...props} style={({ pressed }) => pressed && styles.pressed}>
       <ThemedView
         type={isFocused ? 'backgroundSelected' : 'backgroundElement'}
-        style={styles.tabButtonView}>
+        style={styles.topButton}>
         <ThemedText type="small" themeColor={isFocused ? 'text' : 'textSecondary'}>
           {children}
         </ThemedText>
@@ -55,48 +89,56 @@ export function TabButton({ children, isFocused, ...props }: TabTriggerSlotProps
   );
 }
 
-export function CustomTabList(props: TabListProps) {
-  return (
-    <View {...props} style={styles.tabListContainer}>
-      <ThemedView type="backgroundElement" style={styles.innerContainer}>
-        <ThemedText type="smallBold" style={styles.brandText}>
-          Comical
-        </ThemedText>
-
-        {props.children}
-      </ThemedView>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
-  tabListContainer: {
+  tabs: {
+    flex: 1,
+  },
+  slot: {
+    flex: 1,
+  },
+  // --- Desktop top bar (floating pill) ---
+  topBarContainer: {
     position: 'absolute',
+    top: 0,
     width: '100%',
     padding: Spacing.three,
-    justifyContent: 'center',
-    alignItems: 'center',
     flexDirection: 'row',
+    justifyContent: 'center',
+    zIndex: 1,
   },
-  innerContainer: {
+  topBarInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    flexGrow: 1,
+    maxWidth: MaxContentWidth,
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.five,
     borderRadius: Spacing.five,
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexGrow: 1,
-    gap: Spacing.two,
-    maxWidth: MaxContentWidth,
   },
-  brandText: {
+  brand: {
     marginRight: 'auto',
+  },
+  topButton: {
+    paddingVertical: Spacing.one,
+    paddingHorizontal: Spacing.three,
+    borderRadius: Spacing.three,
   },
   pressed: {
     opacity: 0.7,
   },
-  tabButtonView: {
+  // --- Mobile bottom bar ---
+  bottomBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: Spacing.two,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(128,128,128,0.25)',
+  },
+  bottomButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: Spacing.one,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.three,
   },
 });
