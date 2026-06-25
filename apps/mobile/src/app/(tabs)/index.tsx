@@ -135,7 +135,6 @@ const styles = StyleSheet.create({
   selectors: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     gap: Spacing.three,
   },
   search: {
