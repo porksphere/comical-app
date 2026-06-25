@@ -5,6 +5,7 @@ import { useOverlay } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 
 import { FilterButton } from './filter-button';
 import { initialValue, type FilterDef, type FilterValue } from './filter-types';
@@ -37,17 +38,28 @@ const FILTER_DEFS: FilterDef[] = [
 export function FilterBar() {
   const { open } = useOverlay();
   return (
-    <View style={styles.bar}>
-      <View style={styles.chips}>
-        <Chip label="Type" value="All" onPress={() => open(() => <OptionMenu title="Type" options={TYPES} />)} />
-        <Chip label="Status" value="Any" onPress={() => open(() => <OptionMenu title="Status" options={STATUSES} />)} />
-        <Chip label="Sort" value="Relevance" onPress={() => open(() => <OptionMenu title="Sort by" options={SORTS} />)} />
-      </View>
+    <View style={styles.chips}>
+      <Chip label="Type" value="All" onPress={() => open(() => <OptionMenu title="Type" options={TYPES} />)} />
+      <Chip label="Status" value="Any" onPress={() => open(() => <OptionMenu title="Status" options={STATUSES} />)} />
+      <Chip label="Sort" value="Relevance" onPress={() => open(() => <OptionMenu title="Sort by" options={SORTS} />)} />
+      {/* "More filters" as an icon + count of the additional filters it reveals. */}
       <Pressable onPress={() => open(() => <MoreFiltersTray />)}>
-        <ThemedView type="backgroundSelected" style={styles.moreButton}>
-          <ThemedText type="smallBold">More filters</ThemedText>
+        <ThemedView type="backgroundSelected" style={styles.iconChip}>
+          <FunnelIcon />
+          <ThemedText type="smallBold">{FILTER_DEFS.length}</ThemedText>
         </ThemedView>
       </Pressable>
+    </View>
+  );
+}
+
+function FunnelIcon() {
+  const theme = useTheme();
+  return (
+    <View style={styles.funnel}>
+      <View style={[styles.funnelBar, { width: 14, backgroundColor: theme.text }]} />
+      <View style={[styles.funnelBar, { width: 9, backgroundColor: theme.text }]} />
+      <View style={[styles.funnelBar, { width: 4, backgroundColor: theme.text }]} />
     </View>
   );
 }
@@ -112,9 +124,11 @@ function Chip({ label, value, onPress }: { label: string; value: string; onPress
     <Pressable onPress={onPress}>
       <ThemedView type="backgroundElement" style={styles.chip}>
         <ThemedText type="small">{label}</ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
-          {value}
-        </ThemedText>
+        <ThemedView type="backgroundSelected" style={styles.valuePill}>
+          <ThemedText type="small" themeColor="textSecondary">
+            {value}
+          </ThemedText>
+        </ThemedView>
       </ThemedView>
     </Pressable>
   );
@@ -150,13 +164,10 @@ function PrimaryButton({ title, onPress }: { title: string; onPress: () => void 
 }
 
 const styles = StyleSheet.create({
-  bar: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-  },
   chips: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    alignItems: 'center',
     gap: Spacing.two,
   },
   chip: {
@@ -164,14 +175,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.one,
     paddingVertical: Spacing.one,
+    paddingLeft: Spacing.three,
+    paddingRight: Spacing.one,
+    borderRadius: Spacing.five,
+  },
+  valuePill: {
+    paddingHorizontal: Spacing.two,
+    paddingVertical: 1,
+    borderRadius: Spacing.four,
+  },
+  iconChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.three,
     borderRadius: Spacing.five,
   },
-  moreButton: {
-    alignSelf: 'flex-start',
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.four,
-    borderRadius: Spacing.five,
+  funnel: {
+    alignItems: 'center',
+    gap: 3,
+  },
+  funnelBar: {
+    height: 2,
+    borderRadius: 1,
   },
   content: {
     gap: Spacing.two,

@@ -224,7 +224,7 @@ function TagSearchEditor({
       <ThemedText type="small" themeColor="textSecondary">
         Tap to include, tap again to exclude.
       </ThemedText>
-      <OptionList>
+      <OptionList fixed>
         {filtered.map((opt) => (
           <TriRow key={opt} label={opt} state={tri[opt]} onPress={() => press(opt)} />
         ))}
@@ -264,10 +264,15 @@ function TriRow({
   );
 }
 
-/** Caps long option lists with an internal scroll so the sheet stays usable. */
-function OptionList({ children }: { children: React.ReactNode }) {
+/** Caps long option lists with an internal scroll so the sheet stays usable.
+ * `fixed` keeps a constant height (so the sheet doesn't resize while searching). */
+function OptionList({ children, fixed }: { children: React.ReactNode; fixed?: boolean }) {
   return (
-    <ScrollView style={styles.list} contentContainerStyle={styles.listContent} keyboardShouldPersistTaps="handled">
+    <ScrollView
+      style={fixed ? styles.listFixed : styles.list}
+      contentContainerStyle={styles.listContent}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}>
       {children}
     </ScrollView>
   );
@@ -308,6 +313,9 @@ const styles = StyleSheet.create({
   },
   list: {
     maxHeight: 360,
+  },
+  listFixed: {
+    height: 360,
   },
   listContent: {
     gap: Spacing.two,

@@ -56,23 +56,24 @@ export default function BrowseScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      {/* Fixed header: bridge/page selectors stay pinned while the grid scrolls. */}
+      <View style={[styles.topBar, { paddingTop: insets.top + Spacing.three }]}>
+        <View style={styles.selectors}>
+          <Selector title="Bridge" value={bridge} options={BRIDGES} onChange={setBridge} size="subtitle" />
+          <Selector title="Page" value={page} options={PAGES} onChange={setPage} size="subtitle" />
+        </View>
+      </View>
+
       <FlatList
         key={numColumns}
         data={data}
         keyExtractor={(item) => String(item.id)}
         numColumns={numColumns}
-        ListHeaderComponent={
-          <Header
-            bridge={bridge}
-            onBridgeChange={setBridge}
-            page={page}
-            onPageChange={setPage}
-          />
-        }
+        ListHeaderComponent={<ListHeader />}
         columnWrapperStyle={[styles.row, { gap: Spacing.three }]}
         contentContainerStyle={[
           styles.content,
-          { paddingTop: insets.top + Spacing.three, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
+          { paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
         ]}
         renderItem={({ item }) => <BookCard book={item} />}
         showsVerticalScrollIndicator={false}
@@ -81,20 +82,9 @@ export default function BrowseScreen() {
   );
 }
 
-type HeaderProps = {
-  bridge: string;
-  onBridgeChange: (v: string) => void;
-  page: string;
-  onPageChange: (v: string) => void;
-};
-
-function Header({ bridge, onBridgeChange, page, onPageChange }: HeaderProps) {
+function ListHeader() {
   return (
-    <View style={styles.header}>
-      <View style={styles.selectors}>
-        <Selector title="Bridge" value={bridge} options={BRIDGES} onChange={onBridgeChange} size="subtitle" />
-        <Selector title="Page" value={page} options={PAGES} onChange={onPageChange} size="subtitle" />
-      </View>
+    <View style={styles.listHeader}>
       <ThemedView type="backgroundElement" style={styles.search}>
         <ThemedText themeColor="textSecondary">Search…</ThemedText>
       </ThemedView>
@@ -124,18 +114,23 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  content: {
+  topBar: {
     paddingHorizontal: Spacing.four,
-    gap: Spacing.three,
-  },
-  header: {
-    gap: Spacing.four,
     paddingBottom: Spacing.three,
   },
   selectors: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.three,
+  },
+  content: {
+    paddingHorizontal: Spacing.four,
+    paddingTop: Spacing.two,
+    gap: Spacing.three,
+  },
+  listHeader: {
+    gap: Spacing.four,
+    paddingBottom: Spacing.three,
   },
   search: {
     paddingVertical: Spacing.three,
