@@ -6,14 +6,32 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 
-// Placeholder filter UI demonstrating the stacked overlay component. Nothing is
-// wired to real data — it's just to feel the interaction (handle swipe-dismiss,
-// "More filters" tray, and one nested overlay that pushes the tray back).
+import { FilterButton } from './filter-button';
+import { initialValue, type FilterDef, type FilterValue } from './filter-types';
+
+// Placeholder filter UI. The chips (Type/Status/Sort) are single-select demos;
+// "More filters" opens a tray of the reusable, typed filter controls.
 
 const TYPES = ['All', 'Series', 'Movie', 'OVA', 'Special'];
 const STATUSES = ['Any', 'Airing', 'Finished', 'Upcoming'];
 const SORTS = ['Relevance', 'Newest', 'Top rated', 'Most popular'];
-const GENRES = ['Action', 'Comedy', 'Drama', 'Fantasy', 'Romance', 'Sci-Fi', 'Slice of Life'];
+
+const TAGS = [
+  'Action', 'Adventure', 'Comedy', 'Drama', 'Ecchi', 'Fantasy', 'Harem', 'Historical',
+  'Horror', 'Isekai', 'Josei', 'Magic', 'Martial Arts', 'Mecha', 'Music', 'Mystery',
+  'Psychological', 'Romance', 'School Life', 'Sci-Fi', 'Seinen', 'Shoujo', 'Shounen',
+  'Slice of Life', 'Sports', 'Supernatural', 'Thriller', 'Tragedy',
+];
+
+const FILTER_DEFS: FilterDef[] = [
+  { id: 'title', label: 'Title', type: 'string', placeholder: 'Title contains…' },
+  { id: 'year', label: 'Year', type: 'number', min: 1970, max: 2026, step: 1, default: 2015 },
+  { id: 'format', label: 'Format', type: 'multi', options: ['Manga', 'Manhwa', 'Manhua', 'Webtoon', 'One-shot'] },
+  { id: 'status', label: 'Status', type: 'includeExclude', options: ['Ongoing', 'Completed', 'Hiatus', 'Cancelled'] },
+  // Multi-select that starts fully selected.
+  { id: 'rating', label: 'Content rating', type: 'multi', options: ['Safe', 'Suggestive', 'Erotica'], selectAllByDefault: true },
+  { id: 'tags', label: 'Tags', type: 'tags', options: TAGS },
+];
 
 /** Row shown on the Browse screen: chips + a "More filters" button. */
 export function FilterBar() {
@@ -55,32 +73,23 @@ function OptionMenu({ title, options }: { title: string; options: string[] }) {
   );
 }
 
-/** First-level tray with a nested overlay ("Genres"). */
+/** Tray of the reusable, typed filter controls. Each row opens its editor (depth 2). */
 function MoreFiltersTray() {
-  const { open, closeTop } = useOverlay();
-  return (
-    <SheetContent title="More filters">
-      <NavRow label="Type" value="All" onPress={() => open(() => <OptionMenu title="Type" options={TYPES} />)} />
-      <NavRow label="Status" value="Any" onPress={() => open(() => <OptionMenu title="Status" options={STATUSES} />)} />
-      {/* Nested overlay (depth 2): pushes this tray back with the zoom effect. */}
-      <NavRow label="Genres" value="Any" onPress={() => open(() => <GenresTray />)} />
-      <PrimaryButton title="Show results" onPress={closeTop} />
-    </SheetContent>
-  );
-}
-
-/** Second-level (nested) overlay. */
-function GenresTray() {
   const { closeTop } = useOverlay();
-  const [picked, setPicked] = useState<string[]>([]);
-  const toggle = (g: string) =>
-    setPicked((prev) => (prev.includes(g) ? prev.filter((x) => x !== g) : [...prev, g]));
+  const [values, setValues] = useState<Record<string, FilterValue>>(() =>
+    Object.fromEntries(FILTER_DEFS.map((d) => [d.id, initialValue(d)])),
+  );
   return (
-    <SheetContent title="Genres">
-      {GENRES.map((g) => (
-        <SelectRow key={g} label={g} selected={picked.includes(g)} onPress={() => toggle(g)} />
+    <SheetContent title="Filters">
+      {FILTER_DEFS.map((def) => (
+        <FilterButton
+          key={def.id}
+          def={def}
+          value={values[def.id]}
+          onChange={(v) => setValues((prev) => ({ ...prev, [def.id]: v }))}
+        />
       ))}
-      <PrimaryButton title="Done" onPress={closeTop} />
+      <PrimaryButton title="Show results" onPress={closeTop} />
     </SheetContent>
   );
 }
@@ -106,20 +115,6 @@ function Chip({ label, value, onPress }: { label: string; value: string; onPress
         <ThemedText type="small" themeColor="textSecondary">
           {value}
         </ThemedText>
-      </ThemedView>
-    </Pressable>
-  );
-}
-
-function NavRow({ label, value, onPress }: { label: string; value: string; onPress: () => void }) {
-  return (
-    <Pressable onPress={onPress}>
-      <ThemedView type="backgroundElement" style={styles.row}>
-        <ThemedText>{label}</ThemedText>
-        <View style={styles.rowRight}>
-          <ThemedText themeColor="textSecondary">{value}</ThemedText>
-          <ThemedText themeColor="textSecondary">{'›'}</ThemedText>
-        </View>
       </ThemedView>
     </Pressable>
   );
@@ -191,11 +186,6 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.three,
     paddingHorizontal: Spacing.three,
     borderRadius: Spacing.three,
-  },
-  rowRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
   },
   dot: {
     width: 18,
