@@ -77,12 +77,13 @@ The Expo app also targets web via react-native-web (`build:web` = `expo export -
 static output to `dist/`). `deploy-web.yml` builds it and publishes to **GitHub Pages** on each
 push, giving a public URL you can open on a phone — no computer in the loop:
 
-> **https://porksphere.github.io/comical-ios/**
+> **https://porksphere.github.io/comical-app/**
 
 The web bundle uses a top nav bar (`app-tabs.web.tsx`) instead of the native Liquid Glass tab
 bar — native tab bars/glass are iOS/Android only; the screens are shared, the nav chrome adapts.
-`experiments.baseUrl` in `app.json` sets the `/comical-ios` Pages subpath. One-time setup:
-**Settings → Pages → Source: GitHub Actions** (the workflow also attempts to enable it).
+`experiments.baseUrl` in `app.json` sets the `/comical-app` Pages subpath. One-time setup:
+**Settings → Pages → Source: Deploy from a branch → `gh-pages` / `root`** (the workflow
+publishes the static export to the `gh-pages` branch via `peaceiris/actions-gh-pages`).
 
 ### iOS distribution via SideStore
 
@@ -101,9 +102,9 @@ Two ways to install on-device:
 
 - **Add as a source (recommended — gets update notifications):** in SideStore/AltStore →
   **Sources → +**, add
-  `https://github.com/porksphere/comical-ios/releases/download/ios-latest/apps.json`
+  `https://github.com/porksphere/comical-app/releases/download/ios-latest/apps.json`
 - **Install the IPA directly:** open
-  `https://github.com/porksphere/comical-ios/releases/download/ios-latest/comical-unsigned.ipa`
+  `https://github.com/porksphere/comical-app/releases/download/ios-latest/comical-unsigned.ipa`
 
 Constraint: avoid entitlements a free Apple ID can't grant (push, certain App Groups) for
 now. A future TestFlight/App Store path can be added as an extra `eas.json` profile + signed
