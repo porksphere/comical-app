@@ -88,7 +88,23 @@ bar — native tab bars/glass are iOS/Android only; the screens are shared, the 
 
 There is **no paid Apple Developer account** in this setup. CI emits an *unsigned* `.ipa`;
 **SideStore** re-signs it on-device with your free Apple ID (7-day refresh, handled by
-SideStore). Download the `comical-ios-unsigned-ipa` artifact and sideload it. Constraint:
-avoid entitlements a free Apple ID can't grant (push, certain App Groups) for now. A future
-TestFlight/App Store path can be added as an extra `eas.json` profile + signed CI job
-without reworking the pipeline.
+SideStore).
+
+The iOS build publishes to a rolling **`ios-latest` GitHub Release**, which gives a stable,
+public, **direct-download** URL — the only thing SideStore/AltStore can actually fetch. (Do
+**not** point a sideloader at the `comical-ios-unsigned-ipa` *Actions artifact*: artifact
+downloads require a logged-in GitHub session, so an unauthenticated fetch returns an HTML
+login page, which the sideloader reports as `Encountered unknown tag html on line 1` /
+`isn't in the correct format`. Artifacts are also double-zipped.)
+
+Two ways to install on-device:
+
+- **Add as a source (recommended — gets update notifications):** in SideStore/AltStore →
+  **Sources → +**, add
+  `https://github.com/porksphere/comical-ios/releases/download/ios-latest/apps.json`
+- **Install the IPA directly:** open
+  `https://github.com/porksphere/comical-ios/releases/download/ios-latest/comical-unsigned.ipa`
+
+Constraint: avoid entitlements a free Apple ID can't grant (push, certain App Groups) for
+now. A future TestFlight/App Store path can be added as an extra `eas.json` profile + signed
+CI job without reworking the pipeline.
