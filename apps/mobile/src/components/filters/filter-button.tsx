@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { useOverlay } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
@@ -9,60 +9,25 @@ import { FilterEditor } from './filter-editors';
 import { emptyText, summarize, type FilterDef, type FilterValue } from './filter-types';
 import { OverflowChips } from './overflow-chips';
 
-const CHIP_HEIGHT = 36;
-
 /**
- * A filter control. In the default (sheet) layout it's a full-width row: label +
- * a summary of the current value as chips (included = blue, excluded = red) +
- * a chevron. In `compact` layout it's a self-sizing pill for the filter bar.
- * Either way, tapping opens the matching editor in an overlay.
- *
- * `onMeasure` reports the rendered width (used by the bar's measuring pass to
- * decide how many compact chips fit on one line).
+ * A filter row: shows the filter's label and a summary of the current value as
+ * chips (included = blue, excluded = red), collapsing overflow into "+X". Tapping
+ * opens the matching editor in an overlay. The same row is used both inline on the
+ * filter bar and stacked in the overflow sheet, so they read identically.
  */
 export function FilterButton({
   def,
   value,
   onChange,
-  compact,
-  onMeasure,
 }: {
   def: FilterDef;
   value: FilterValue;
   onChange: (v: FilterValue) => void;
-  compact?: boolean;
-  onMeasure?: (w: number) => void;
 }) {
   const { open } = useOverlay();
   const chips = summarize(def, value);
-  const openEditor = () => open(() => <FilterEditor def={def} value={value} onChange={onChange} />);
-
-  if (compact) {
-    // Condense the value to a single line: "First +N" (or "Any"/"None").
-    const summary =
-      chips.length === 0
-        ? emptyText(def)
-        : chips.length === 1
-          ? chips[0].label
-          : `${chips[0].label} +${chips.length - 1}`;
-    return (
-      <Pressable
-        onPress={openEditor}
-        onLayout={onMeasure ? (e: LayoutChangeEvent) => onMeasure(e.nativeEvent.layout.width) : undefined}>
-        <ThemedView type="backgroundElement" style={styles.chip}>
-          <ThemedText type="small">{def.label}</ThemedText>
-          <ThemedView type="backgroundSelected" style={styles.chipValue}>
-            <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
-              {summary}
-            </ThemedText>
-          </ThemedView>
-        </ThemedView>
-      </Pressable>
-    );
-  }
-
   return (
-    <Pressable onPress={openEditor}>
+    <Pressable onPress={() => open(() => <FilterEditor def={def} value={value} onChange={onChange} />)}>
       <ThemedView type="backgroundElement" style={styles.row}>
         <ThemedText style={styles.label}>{def.label}</ThemedText>
         <View style={styles.summary}>
@@ -89,20 +54,5 @@ const styles = StyleSheet.create({
   summary: {
     flex: 1,
     minWidth: 0,
-  },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.one,
-    height: CHIP_HEIGHT,
-    paddingLeft: Spacing.three,
-    paddingRight: Spacing.one,
-    borderRadius: Spacing.five,
-  },
-  chipValue: {
-    maxWidth: 140,
-    paddingHorizontal: Spacing.two,
-    paddingVertical: 1,
-    borderRadius: Spacing.four,
   },
 });

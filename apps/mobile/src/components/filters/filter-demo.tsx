@@ -1,15 +1,16 @@
 import { useState, type ReactNode } from 'react';
-import { LayoutChangeEvent, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { useOverlay } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 
 import { FilterButton } from './filter-button';
 import { initialValue, type FilterDef, type FilterValue } from './filter-types';
 
-// Placeholder filter UI. "Sort" is a single-select demo with its own button; the
+// Placeholder filter UI. "Sort" is a single-select demo behind its own icon; the
 // rest are the reusable, typed filter controls declared in FILTER_DEFS.
 
 const SORTS = ['Relevance', 'Newest', 'Top rated', 'Most popular'];
@@ -31,15 +32,31 @@ const FILTER_DEFS: FilterDef[] = [
   { id: 'tags', label: 'Tags', type: 'tags', options: TAGS },
 ];
 
-// Layout constants for the measured, single-line filter bar.
+// Layout rules for the single-line filter bar.
 const GAP = Spacing.two;
-const OVERFLOW_RESERVE = 48; // room kept for the "+X" overflow chip
+const CONTROL = 36; // square side of the icon buttons
+const FILTER_MIN_WIDTH = 200; // a full-size filter row stays at least this wide
+const SORT_RESERVE = CONTROL; // sort icon, always shown
+const OVERFLOW_RESERVE = 64; // funnel icon + "+X" count
+
+/** How many full-size filters fit on one line given the measured bar width. */
+function fitCount(containerW: number, total: number): number {
+  if (containerW <= 0) return total;
+  const base = containerW - SORT_RESERVE - GAP;
+  // If every filter fits with no overflow control, show them all.
+  const colsAll = Math.floor((base + GAP) / (FILTER_MIN_WIDTH + GAP));
+  if (colsAll >= total) return total;
+  // Otherwise leave room for the "+X" overflow control and refit.
+  const avail = base - OVERFLOW_RESERVE - GAP;
+  const cols = Math.floor((avail + GAP) / (FILTER_MIN_WIDTH + GAP));
+  return Math.min(total, Math.max(1, cols));
+}
 
 /**
- * Row shown on the Browse screen: a "Sort" button plus the filter chips. Only as
- * many filter chips as fit on one line are shown inline; the rest collapse into a
- * "+X" chip that opens them in a sheet (rendered with the same FilterButton). The
- * fit is measured, so a wide-enough screen shows every filter with no overflow.
+ * Row shown on the Browse screen: a Sort icon plus the filter rows. The filters
+ * use the same full display as the overflow sheet, sized so each stays readable;
+ * only as many as fit on one line are shown and the rest collapse into a "+X"
+ * funnel chip. A wide-enough screen shows every filter with no overflow at all.
  */
 export function FilterBar() {
   const { open } = useOverlay();
@@ -49,91 +66,67 @@ export function FilterBar() {
   );
   const setValue = (id: string, v: FilterValue) => setValues((prev) => ({ ...prev, [id]: v }));
 
-  // Measured container + chip widths drive how many chips fit on one line.
   const [containerW, setContainerW] = useState(0);
-  const [widths, setWidths] = useState<Record<string, number>>({});
-  const [sortW, setSortW] = useState(0);
-
-  const measured = sortW > 0 && FILTER_DEFS.every((d) => widths[d.id] != null);
-
-  let visible = FILTER_DEFS.length;
-  if (measured && containerW > 0) {
-    // The Sort button is always shown first, so reserve its width up front.
-    const avail = containerW - sortW - GAP;
-    let used = 0;
-    visible = 0;
-    for (let i = 0; i < FILTER_DEFS.length; i++) {
-      const candidate = used + (i > 0 ? GAP : 0) + widths[FILTER_DEFS[i].id];
-      const isLast = i === FILTER_DEFS.length - 1;
-      // Keep room for the "+X" chip unless this is the last filter (no overflow).
-      const reserve = isLast ? 0 : GAP + OVERFLOW_RESERVE;
-      if (candidate + reserve <= avail) {
-        used = candidate;
-        visible = i + 1;
-      } else {
-        break;
-      }
-    }
-  }
-
+  const visible = fitCount(containerW, FILTER_DEFS.length);
   const shown = FILTER_DEFS.slice(0, visible);
   const hidden = FILTER_DEFS.slice(visible);
 
   return (
-    <View style={styles.bar} onLayout={(e) => setContainerW(e.nativeEvent.layout.width)}>
-      {/* Hidden measuring pass: keeps the Sort + filter chip widths up to date. */}
-      <View style={styles.measure} pointerEvents="none">
-        <Chip label="Sort" value={sort} onMeasure={setSortW} />
-        {FILTER_DEFS.map((def) => (
-          <FilterButton
-            key={def.id}
-            compact
-            def={def}
-            value={values[def.id]}
-            onChange={(v) => setValue(def.id, v)}
-            onMeasure={(w) => setWidths((prev) => ({ ...prev, [def.id]: w }))}
-          />
-        ))}
-      </View>
-
-      <View style={styles.chipRow}>
-        <Chip
-          label="Sort"
-          value={sort}
-          onPress={() => open(() => <OptionMenu title="Sort by" options={SORTS} selected={sort} onSelect={setSort} />)}
+    <View
+      style={styles.bar}
+      onLayout={(e) => setContainerW(e.nativeEvent.layout.width)}>
+      {shown.map((def) => (
+        <View key={def.id} style={styles.filterSlot}>
+          <FilterButton def={def} value={values[def.id]} onChange={(v) => setValue(def.id, v)} />
+        </View>
+      ))}
+      {hidden.length > 0 && (
+        <OverflowChip
+          count={hidden.length}
+          onPress={() => open(() => <FiltersSheet defs={hidden} initial={values} onChange={setValue} />)}
         />
-        {shown.map((def) => (
-          <FilterButton
-            key={def.id}
-            compact
-            def={def}
-            value={values[def.id]}
-            onChange={(v) => setValue(def.id, v)}
-          />
-        ))}
-        {hidden.length > 0 && (
-          <OverflowChip
-            count={hidden.length}
-            onPress={() => open(() => <FiltersSheet defs={hidden} initial={values} onChange={setValue} />)}
-          />
-        )}
-      </View>
+      )}
+      <IconButton
+        label="Sort"
+        onPress={() => open(() => <OptionMenu title="Sort by" options={SORTS} selected={sort} onSelect={setSort} />)}>
+        <SortIcon />
+      </IconButton>
     </View>
   );
 }
 
-/** Collapsed "+X" chip standing in for the filters that didn't fit on the line. */
+/** Square icon button (used for Sort). */
+function IconButton({
+  children,
+  label,
+  onPress,
+}: {
+  children: ReactNode;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label}>
+      <ThemedView type="backgroundElement" style={styles.iconButton}>
+        {children}
+      </ThemedView>
+    </Pressable>
+  );
+}
+
+/** Collapsed funnel chip standing in for the filters that didn't fit on the line. */
 function OverflowChip({ count, onPress }: { count: number; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress}>
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${count} more filters`}>
       <ThemedView type="backgroundSelected" style={styles.overflowChip}>
+        <FunnelIcon />
         <ThemedText type="smallBold">{`+${count}`}</ThemedText>
       </ThemedView>
     </Pressable>
   );
 }
 
-/** Sheet of the filters that overflowed the bar; each renders as a FilterButton row. */
+/** Sheet of the filters that overflowed the bar; rendered with the same FilterButton. */
 function FiltersSheet({
   defs,
   initial,
@@ -193,6 +186,31 @@ function OptionMenu({
   );
 }
 
+// --- icons ---
+
+/** Three tapering bars — the filter/funnel glyph on the overflow chip. */
+function FunnelIcon() {
+  const theme = useTheme();
+  return (
+    <View style={styles.funnel}>
+      <View style={[styles.funnelBar, { width: 14, backgroundColor: theme.text }]} />
+      <View style={[styles.funnelBar, { width: 9, backgroundColor: theme.text }]} />
+      <View style={[styles.funnelBar, { width: 4, backgroundColor: theme.text }]} />
+    </View>
+  );
+}
+
+/** Stacked up/down triangles — the sort glyph. */
+function SortIcon() {
+  const theme = useTheme();
+  return (
+    <View style={styles.sortIcon}>
+      <View style={[styles.triUp, { borderBottomColor: theme.text }]} />
+      <View style={[styles.triDown, { borderTopColor: theme.text }]} />
+    </View>
+  );
+}
+
 // --- shared building blocks ---
 
 function SheetContent({ title, children }: { title: string; children: ReactNode }) {
@@ -203,35 +221,6 @@ function SheetContent({ title, children }: { title: string; children: ReactNode 
       </ThemedText>
       {children}
     </View>
-  );
-}
-
-/** Compact label + value pill. Used for the standalone "Sort" button. */
-function Chip({
-  label,
-  value,
-  onPress,
-  onMeasure,
-}: {
-  label: string;
-  value: string;
-  onPress?: () => void;
-  onMeasure?: (w: number) => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={!onPress}
-      onLayout={onMeasure ? (e: LayoutChangeEvent) => onMeasure(e.nativeEvent.layout.width) : undefined}>
-      <ThemedView type="backgroundElement" style={styles.chip}>
-        <ThemedText type="small">{label}</ThemedText>
-        <ThemedView type="backgroundSelected" style={styles.valuePill}>
-          <ThemedText type="small" themeColor="textSecondary">
-            {value}
-          </ThemedText>
-        </ThemedView>
-      </ThemedView>
-    </Pressable>
   );
 }
 
@@ -264,43 +253,61 @@ function PrimaryButton({ title, onPress }: { title: string; onPress: () => void 
   );
 }
 
-const CHIP_HEIGHT = 36;
-
 const styles = StyleSheet.create({
   bar: {
-    alignSelf: 'stretch',
-    overflow: 'hidden',
-  },
-  measure: {
-    position: 'absolute',
-    opacity: 0,
-    flexDirection: 'row',
-    gap: GAP,
-  },
-  chipRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: GAP,
+    overflow: 'hidden',
   },
-  overflowChip: {
+  filterSlot: {
+    flex: 1,
+    minWidth: 0,
+  },
+  iconButton: {
+    width: CONTROL,
+    height: CONTROL,
+    alignItems: 'center',
     justifyContent: 'center',
-    height: CHIP_HEIGHT,
-    paddingHorizontal: Spacing.three,
     borderRadius: Spacing.five,
   },
-  chip: {
+  overflowChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.one,
-    height: CHIP_HEIGHT,
-    paddingLeft: Spacing.three,
-    paddingRight: Spacing.one,
+    height: CONTROL,
+    paddingHorizontal: Spacing.three,
     borderRadius: Spacing.five,
   },
-  valuePill: {
-    paddingHorizontal: Spacing.two,
-    paddingVertical: 1,
-    borderRadius: Spacing.four,
+  funnel: {
+    alignItems: 'center',
+    gap: 3,
+  },
+  funnelBar: {
+    height: 2,
+    borderRadius: 1,
+  },
+  sortIcon: {
+    alignItems: 'center',
+    gap: 3,
+  },
+  triUp: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 4,
+    borderRightWidth: 4,
+    borderBottomWidth: 6,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+  },
+  triDown: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 4,
+    borderRightWidth: 4,
+    borderTopWidth: 6,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
   },
   content: {
     gap: Spacing.two,
