@@ -1,9 +1,11 @@
-name: Build Android (APK)
+name: Build Android (rolling APK)
 
-# Builds an installable release APK on a GitHub-hosted Ubuntu runner.
-# The Expo Android template signs the release build with the auto-generated
-# debug keystore, so the artifact installs directly on any device. Swap in a
-# real upload key before publishing to the Play Store.
+# Rolling Android channel. On every push to main it rebuilds the release APK and
+# refreshes the "android-latest" Release, which hosts the APK at a stable,
+# public, unauthenticated direct-download URL (parity with the iOS channel — so
+# you can install on a device without a logged-in GitHub session). Versioned,
+# archival releases with BOTH the APK and the iOS IPA are produced separately by
+# release.yml on a v* tag.
 
 on:
   workflow_dispatch:
@@ -16,50 +18,48 @@ on:
       - 'package.json'
       - 'bun.lock'
       - '.github/workflows/build-android.yml'
+      - '.github/workflows/build-android-reusable.yml'
 
 concurrency:
   group: android-${{ github.ref }}
   cancel-in-progress: true
 
+# Needed to publish the APK to a GitHub Release (public direct-download URL).
+permissions:
+  contents: write
+
 jobs:
   build:
+    uses: ./.github/workflows/build-android-reusable.yml
+
+  publish:
+    needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      # Bun is the package manager; Node is still required because Metro and the
-      # Gradle "bundle React Native code" phase shell out to `node`.
-      - uses: oven-sh/setup-bun@v2
+      - name: Download APK
+        uses: actions/download-artifact@v4
         with:
-          bun-version: latest
+          name: ${{ needs.build.outputs.artifact }}
+          path: ${{ runner.temp }}/apk
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
+      - name: Publish APK to the android-latest Release
         env:
-          # Required once @porksphere/core is consumed from GitHub Packages
-          # instead of the in-repo workspace stub. Harmless until then.
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          APK="$RUNNER_TEMP/apk/comical-android.apk"
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/android-latest"
 
-      - name: Generate native Android project (CNG)
-        run: bunx expo prebuild --platform android --no-install
-        working-directory: apps/mobile
+          # Recreate the rolling tag/release so the URL above stays stable.
+          gh release delete android-latest --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          gh release create android-latest \
+            "$APK" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Comical Android (latest APK)" \
+            --notes "Installable release APK (debug-keystore signed).
 
-      - name: Build release APK
-        run: ./gradlew assembleRelease --no-daemon
-        working-directory: apps/mobile/android
+          **Install directly:**
+          \`${BASE}/comical-android.apk\`
 
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: comical-android-apk
-          path: apps/mobile/android/app/build/outputs/apk/release/*.apk
-          if-no-files-found: error
+          On-device: enable \"Install unknown apps\" for your browser, open the link, install."
