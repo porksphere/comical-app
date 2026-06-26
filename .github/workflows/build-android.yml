@@ -10,7 +10,6 @@ on:
   push:
     branches:
       - main
-      - claude/react-native-expo-plan-0hmh23
     paths:
       - 'apps/**'
       - 'packages/**'
