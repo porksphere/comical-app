@@ -12,7 +12,8 @@ import { OverflowChips } from './overflow-chips';
 /**
  * A filter row: shows the filter's label and a summary of the current value as
  * chips (included = blue, excluded = red), collapsing overflow into "+X". Tapping
- * opens the matching editor in an overlay.
+ * opens the matching editor in an overlay. The same row is used both inline on the
+ * filter bar and stacked in the overflow sheet, so they read identically.
  */
 export function FilterButton({
   def,
