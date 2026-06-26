@@ -8,17 +8,17 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, useWindowDimensions } from 'react-native';
+import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ThemedText } from './themed-text';
-import { ThemedView } from './themed-view';
-
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 
 // Web nav (Metro resolves this `.web` file for the web bundle, so native
 // NativeTabs are never imported here). Responsive: an app-like black icon
-// bottom bar on phones, a top nav bar on wider/desktop viewports.
+// bottom bar on phones; on wider/desktop viewports a compact icon-only row
+// pinned to the top-right, sitting on the same line as the Browse screen's
+// bridge/page selector bar (so there's no separate nav bar).
 const TABS: { name: string; href: string; label: string; Icon: LucideIcon }[] = [
   { name: 'browse', href: '/', label: 'Browse', Icon: LayoutGrid },
   { name: 'library', href: '/library', label: 'Library', Icon: Library },
@@ -57,25 +57,27 @@ export default function AppTabs() {
 
   return (
     <Tabs style={styles.tabs}>
-      {/* Desktop top bar. The `TabList` (with the triggers as its direct
-          children) must be a direct child of `Tabs` — expo-router discovers the
-          tab screens by walking `Tabs`' children through Fragments and TabLists
-          only, never through arbitrary Views. Wrapping the TabList in layout
-          Views hides the triggers and makes the navigator render zero screens
-          (white screen). So the pill itself is the TabList (via `asChild`), and
-          the brand sits alongside the triggers as a non-trigger child. */}
+      <TabSlot style={styles.slot} />
+
+      {/* Desktop: icon-only nav pinned to the top-right, aligned with the
+          Browse selector bar row (top = its paddingTop, height = the subtitle
+          line-height so the icons centre against the selectors).
+
+          The `TabList` (with the triggers as its direct children) must be a
+          direct child of `Tabs` — expo-router discovers the tab screens by
+          walking `Tabs`' children through Fragments and TabLists only, never
+          through arbitrary Views, so wrapping it in layout Views would hide the
+          triggers and leave the navigator with zero screens. Hence `asChild`
+          with the positioned row as the single wrapper. */}
       {!isMobile && (
         <TabList asChild>
-          <ThemedView type="backgroundElement" style={styles.topBar}>
-            <ThemedText type="smallBold" style={styles.brand}>
-              Comical
-            </ThemedText>
+          {/* `<TabList asChild>` forwards via a Slot that rejects array styles
+              on its child, so flatten the positioned style into one object. */}
+          <View style={StyleSheet.flatten([styles.topNav, { top: insets.top + Spacing.three }])}>
             {triggers}
-          </ThemedView>
+          </View>
         </TabList>
       )}
-
-      <TabSlot style={styles.slot} />
 
       {isMobile && (
         <TabList style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, Spacing.two) }]}>
@@ -93,6 +95,8 @@ function TabButton({
   Icon,
   ...props
 }: TabTriggerSlotProps & { mobile?: boolean; Icon: LucideIcon }) {
+  const theme = useTheme();
+
   if (mobile) {
     const color = isFocused ? ACTIVE : INACTIVE;
     return (
@@ -104,15 +108,16 @@ function TabButton({
       </Pressable>
     );
   }
+
+  // Desktop: icon only (no label), tinted with the theme so it reads on the
+  // page background rather than a bar of its own.
+  const color = isFocused ? theme.text : theme.textSecondary;
   return (
-    <Pressable {...props} style={({ pressed }) => pressed && styles.pressed}>
-      <ThemedView
-        type={isFocused ? 'backgroundSelected' : 'backgroundElement'}
-        style={styles.topButton}>
-        <ThemedText type="small" themeColor={isFocused ? 'text' : 'textSecondary'}>
-          {children}
-        </ThemedText>
-      </ThemedView>
+    <Pressable
+      {...props}
+      accessibilityLabel={typeof children === 'string' ? children : undefined}
+      style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
+      <Icon size={22} color={color} strokeWidth={2.25} />
     </Pressable>
   );
 }
@@ -124,30 +129,21 @@ const styles = StyleSheet.create({
   slot: {
     flex: 1,
   },
-  // --- Desktop top bar (centered pill) ---
-  topBar: {
+  // --- Desktop top-right icon nav ---
+  topNav: {
+    position: 'absolute',
+    right: Spacing.four,
+    height: 44, // matches the selector bar's subtitle line-height
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-start',
-    gap: Spacing.two,
-    alignSelf: 'center',
-    width: '100%',
-    maxWidth: MaxContentWidth,
-    marginTop: Spacing.three,
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.five,
-    borderRadius: Spacing.five,
+    gap: Spacing.three,
+    zIndex: 10,
   },
-  brand: {
-    marginRight: 'auto',
-  },
-  topButton: {
-    paddingVertical: Spacing.one,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.three,
+  iconButton: {
+    padding: Spacing.one,
   },
   pressed: {
-    opacity: 0.7,
+    opacity: 0.6,
   },
   // --- Mobile black icon bottom bar ---
   bottomBar: {
