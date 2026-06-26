@@ -41,7 +41,7 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true,
-      "baseUrl": "/comical-ios"
+      "baseUrl": "/comical-app"
     }
   }
 }
