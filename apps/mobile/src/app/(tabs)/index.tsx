@@ -1,126 +1,180 @@
-import { Image } from 'expo-image';
-import { Link } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { FlatList, Pressable, ScrollView, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FilterBar } from '@/components/filters/filter-demo';
+import { ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
+import { Rail } from '@/components/rail';
 import { Selector } from '@/components/selector';
+import { SeriesCard } from '@/components/series-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Spacing } from '@/constants/theme';
+import { mockGrid, mockHomeSections, type RailSection, type SeriesEntry } from '@/data/mock';
+import { useTheme } from '@/hooks/use-theme';
 
-// Placeholder data sources. Bridges are intentionally mixed-case.
 const BRIDGES = ['MangaDex', 'comick', 'Batoto', 'WeebCentral', 'asura'];
 const PAGES = ['home', 'popular', 'favorites'];
 
-const TITLES = [
-  'The Silent Sea',
-  'Crimson Harbor',
-  'Paper Moons',
-  'A Study in Ash',
-  'Northern Lights',
-  'The Glass Garden',
-  'Echoes of Tomorrow',
-  'Saltwater Hymns',
-  'The Last Cartographer',
-  'Velvet Machine',
-  'Whisper of Pines',
-  'Iron & Ink',
-];
-
-type Book = { id: number; title: string; spacer?: boolean };
-
-const BOOKS: Book[] = Array.from({ length: 30 }, (_, i) => ({
-  id: i + 1,
-  title: TITLES[i % TITLES.length],
-}));
+type GridItem = SeriesEntry & { spacer?: boolean };
 
 export default function BrowseScreen() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
   const [bridge, setBridge] = useState(BRIDGES[0]);
   const [page, setPage] = useState(PAGES[0]);
 
-  // Static web export prerenders this route on the server, where there's no
-  // viewport (`width` is 0 → 3 columns). Computing the real column count on the
-  // first client render would disagree with that prerendered HTML and trigger a
-  // hydration mismatch on desktop. Hold the server's column count until after
-  // mount, then switch to the viewport-derived value as a normal re-render.
+  // Committed search query (set on submit) and the active "See all" rail, if any.
+  const [query, setQuery] = useState('');
+  const [seeAll, setSeeAll] = useState<RailSection | null>(null);
+
+  // Home shows the rails; anything else (a search, a non-home page, or a rail's
+  // "See all") drops to the flat results grid — mirrors the reference's
+  // browse-view ⇄ results-pane toggle.
+  const inResults = !!query || page !== 'home' || !!seeAll;
+
+  const sections = useMemo(() => mockHomeSections(), []);
+  const results = useMemo<SeriesEntry[]>(() => {
+    if (seeAll) return seeAll.items;
+    return mockGrid(query || page);
+  }, [seeAll, query, page]);
+  const resultsLabel = seeAll ? seeAll.title : query ? `Results for “${query}”` : page;
+
+  const backToHome = () => {
+    setQuery('');
+    setSeeAll(null);
+    setPage('home');
+  };
+
+  // See plan: hold the server's column count until mount to avoid a hydration
+  // mismatch on the static web export (no viewport → width 0 → 3 columns).
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => setHydrated(true), []);
   const numColumns =
     !hydrated || width < 768 ? 3 : Math.min(6, Math.max(3, Math.floor(width / 200)));
 
-  // Pad to a full last row so flex:1 cards don't stretch on a partial row.
-  const data = useMemo(() => {
-    const remainder = BOOKS.length % numColumns;
-    if (remainder === 0) return BOOKS;
-    const spacers: Book[] = Array.from({ length: numColumns - remainder }, (_, i) => ({
-      id: -1 - i,
+  const gridData = useMemo<GridItem[]>(() => {
+    const remainder = results.length % numColumns;
+    if (remainder === 0) return results;
+    const spacers: GridItem[] = Array.from({ length: numColumns - remainder }, (_, i) => ({
+      id: `spacer-${i}`,
       title: '',
+      cover: '',
       spacer: true,
     }));
-    return [...BOOKS, ...spacers];
-  }, [numColumns]);
+    return [...results, ...spacers];
+  }, [results, numColumns]);
+
+  const controls = (
+    <View style={styles.controls}>
+      <View style={styles.selectors}>
+        <Selector title="Bridge" value={bridge} options={BRIDGES} onChange={setBridge} size="subtitle" />
+        <Selector title="Page" value={page} options={PAGES} onChange={setPage} size="subtitle" />
+      </View>
+      <SearchField
+        value={query}
+        onSubmit={(q) => {
+          setSeeAll(null);
+          setQuery(q.trim());
+        }}
+        onClear={() => setQuery('')}
+      />
+      <FilterBar />
+      {inResults && (
+        <View style={styles.resultsHead}>
+          <Pressable onPress={backToHome} hitSlop={8}>
+            <ThemedText type="smallBold" style={{ color: theme.accent }}>
+              ← Home
+            </ThemedText>
+          </Pressable>
+          <ThemedText type="small" themeColor="textSecondary" numberOfLines={1} style={styles.resultsLabel}>
+            {resultsLabel}
+          </ThemedText>
+        </View>
+      )}
+    </View>
+  );
 
   return (
     <ThemedView style={styles.container}>
-      {/* Fixed header: bridge/page selectors stay pinned while the grid scrolls. */}
-      <View style={[styles.topBar, { paddingTop: insets.top + Spacing.three }]}>
-        <View style={styles.selectors}>
-          <Selector title="Bridge" value={bridge} options={BRIDGES} onChange={setBridge} size="subtitle" />
-          <Selector title="Page" value={page} options={PAGES} onChange={setPage} size="subtitle" />
-        </View>
-      </View>
-
-      <FlatList
-        key={numColumns}
-        data={data}
-        keyExtractor={(item) => String(item.id)}
-        numColumns={numColumns}
-        ListHeaderComponent={<ListHeader />}
-        columnWrapperStyle={[styles.row, { gap: Spacing.three }]}
-        contentContainerStyle={[
-          styles.content,
-          { paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
-        ]}
-        renderItem={({ item }) => <BookCard book={item} bridge={bridge} />}
-        showsVerticalScrollIndicator={false}
-      />
+      <View style={{ paddingTop: insets.top + Spacing.three }} />
+      {inResults ? (
+        <FlatList
+          key={numColumns}
+          data={gridData}
+          keyExtractor={(item) => String(item.id)}
+          numColumns={numColumns}
+          ListHeaderComponent={controls}
+          columnWrapperStyle={[styles.row, { gap: Spacing.three }]}
+          contentContainerStyle={[
+            styles.gridContent,
+            { paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
+          ]}
+          renderItem={({ item }) =>
+            item.spacer ? <View style={styles.cell} /> : (
+              <View style={styles.cell}>
+                <SeriesCard entry={item} />
+              </View>
+            )
+          }
+          showsVerticalScrollIndicator={false}
+        />
+      ) : (
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: BottomTabInset + insets.bottom + Spacing.five }}
+          showsVerticalScrollIndicator={false}>
+          {controls}
+          <View style={styles.rails}>
+            {sections.map((s) => (
+              <Rail key={s.id} section={s} onSeeAll={setSeeAll} />
+            ))}
+          </View>
+        </ScrollView>
+      )}
     </ThemedView>
   );
 }
 
-function ListHeader() {
+function SearchField({
+  value,
+  onSubmit,
+  onClear,
+}: {
+  value: string;
+  onSubmit: (q: string) => void;
+  onClear: () => void;
+}) {
+  const theme = useTheme();
+  const [text, setText] = useState(value);
+  // Keep the field in sync when the committed query is cleared elsewhere (Home).
+  useEffect(() => setText(value), [value]);
   return (
-    <View style={styles.listHeader}>
-      <ThemedView type="backgroundElement" style={styles.search}>
-        <ThemedText themeColor="textSecondary">Search…</ThemedText>
-      </ThemedView>
-      <FilterBar />
-    </View>
-  );
-}
-
-function BookCard({ book, bridge }: { book: Book; bridge: string }) {
-  if (book.spacer) return <View style={styles.card} />;
-  return (
-    <Link
-      href={{ pathname: '/series', params: { id: book.id, title: book.title, bridge } }}
-      asChild>
-      <Pressable style={styles.card}>
-        <Image
-          source={{ uri: `https://picsum.photos/seed/comical-${book.id}/300/450` }}
-          style={styles.cover}
-          contentFit="cover"
-          transition={200}
-        />
-        <ThemedText type="small" numberOfLines={2} style={styles.title}>
-          {book.title}
-        </ThemedText>
-      </Pressable>
-    </Link>
+    <ThemedView type="backgroundElement" style={styles.search}>
+      <SearchIcon color={theme.textSecondary} size={16} />
+      <TextInput
+        value={text}
+        onChangeText={setText}
+        onSubmitEditing={() => onSubmit(text)}
+        placeholder="Search… (press Enter)"
+        placeholderTextColor={theme.textSecondary}
+        returnKeyType="search"
+        autoCapitalize="none"
+        autoCorrect={false}
+        style={[styles.searchInput, { color: theme.text }]}
+      />
+      {text.length > 0 && (
+        <Pressable
+          onPress={() => {
+            setText('');
+            onClear();
+          }}
+          hitSlop={8}
+          accessibilityLabel="Clear search">
+          <ClearIcon color={theme.textSecondary} size={14} />
+        </Pressable>
+      )}
+    </ThemedView>
   );
 }
 
@@ -128,8 +182,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  topBar: {
+  controls: {
     paddingHorizontal: Spacing.four,
+    gap: Spacing.four,
     paddingBottom: Spacing.three,
   },
   selectors: {
@@ -137,34 +192,38 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.three,
   },
-  content: {
-    paddingHorizontal: Spacing.four,
+  search: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    borderRadius: Spacing.two,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    padding: 0,
+  },
+  resultsHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+  },
+  resultsLabel: {
+    flexShrink: 1,
+  },
+  rails: {
+    gap: Spacing.five,
+  },
+  gridContent: {
     paddingTop: Spacing.two,
     gap: Spacing.three,
   },
-  listHeader: {
-    gap: Spacing.four,
-    paddingBottom: Spacing.three,
-  },
-  search: {
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.three,
-  },
   row: {
-    // gap supplied inline so columns are evenly spaced
+    paddingHorizontal: Spacing.four,
   },
-  card: {
+  cell: {
     flex: 1,
-    gap: Spacing.two,
-  },
-  cover: {
-    width: '100%',
-    aspectRatio: 2 / 3,
-    borderRadius: 12,
-    backgroundColor: 'rgba(128,128,128,0.15)',
-  },
-  title: {
-    lineHeight: 18,
   },
 });

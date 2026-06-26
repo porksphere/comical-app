@@ -1,52 +1,49 @@
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useMemo } from 'react';
+import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ChipRow, TagGroupRow } from '@/components/chip';
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
+import { Rail } from '@/components/rail';
+import { SeriesCard } from '@/components/series-card';
+import { ActionButton, NewBadge } from '@/components/series/action-button';
+import { ChaptersSection } from '@/components/series/chapters-section';
+import { StatsRow } from '@/components/series/stats-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { mockSeries } from '@/data/mock';
 import { useTheme } from '@/hooks/use-theme';
 
 const BAR_HEIGHT = 44;
-const HAIRLINE = 'rgba(128,128,128,0.25)';
-const ACCENT = '#3478F6';
-
-// Placeholder metadata. A real series would carry this from the bridge; the
-// mock fills in representative values so the layout matches the reference.
-const META = [
-  { label: 'STATUS', value: 'Ongoing' },
-  { label: 'TYPE', value: 'Manhwa' },
-  { label: 'AUTHOR', value: 'Chi-U Kim, kiraz' },
-  { label: 'ARTIST', value: 'Themis' },
-];
-
-const DESCRIPTION =
-  'After Sirone was abandoned in a stable, he was found by a family of hunters and ' +
-  'raised in a loving home. Despite the hardships of the peasant life, he learned how ' +
-  'to read from a young age and became obsessed with books, especially ones on the ' +
-  'history of magic. One day, he has an unlikely encounter with a mage and learns how ' +
-  'to enter the "spirit zone", the first step to learning how to use magic. Although ' +
-  'they say only nobles can be mages, will Sirone be able to defy the odds?';
 
 export default function SeriesScreen() {
   const router = useRouter();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const { id, title, bridge } = useLocalSearchParams<{
     id?: string;
     title?: string;
     bridge?: string;
   }>();
 
-  const cover = `https://picsum.photos/seed/comical-${id ?? title ?? 'series'}/300/450`;
+  const series = useMemo(
+    () => mockSeries(id ?? '', title, bridge ?? 'Library'),
+    [id, title, bridge],
+  );
+  const coverWidth = width >= 750 ? 200 : 140;
 
   return (
     <ThemedView style={styles.container}>
-      {/* Static top bar: pinned above the scrolling content. Back button on the
-          left, the originating bridge's name centred. */}
-      <View style={[styles.topBar, { paddingTop: insets.top, height: insets.top + BAR_HEIGHT }]}>
+      {/* Static top bar: back button + originating bridge name. */}
+      <View
+        style={[
+          styles.topBar,
+          { paddingTop: insets.top, height: insets.top + BAR_HEIGHT, borderBottomColor: theme.hairline },
+        ]}>
         <Pressable
           onPress={() => router.back()}
           hitSlop={12}
@@ -56,73 +53,76 @@ export default function SeriesScreen() {
           <ChevronLeftIcon color={theme.text} />
         </Pressable>
         <ThemedText type="smallBold" numberOfLines={1} style={styles.bridgeName}>
-          {bridge ?? 'Library'}
+          {series.bridge}
         </ThemedText>
       </View>
 
       <ScrollView
-        contentContainerStyle={[
-          styles.content,
-          { paddingBottom: insets.bottom + Spacing.five },
-        ]}
+        contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + Spacing.five }]}
         showsVerticalScrollIndicator={false}>
-        <View style={styles.inner}>
-          <ThemedText type="subtitle" style={styles.title}>
-            {title ?? 'Untitled Series'}
-          </ThemedText>
+        <View style={styles.column}>
+          <View style={styles.inner}>
+            <ThemedText type="subtitle" style={styles.title}>
+              {series.title}
+            </ThemedText>
 
-          <View style={styles.hero}>
-            <View style={styles.coverWrap}>
-              <Image source={{ uri: cover }} style={styles.cover} contentFit="cover" transition={200} />
-              <View style={styles.badge}>
-                <ThemedText type="smallBold" style={styles.badgeText}>
-                  176
-                </ThemedText>
+            {/* Hero: cover (with chapter-count badge) + the actions column. */}
+            <View style={styles.hero}>
+              <View style={[styles.coverWrap, { width: coverWidth }]}>
+                <Image source={{ uri: series.cover }} style={styles.cover} contentFit="cover" transition={200} />
+                {series.chapterCount != null && (
+                  <View style={styles.coverBadge}>
+                    <ThemedText style={styles.coverBadgeText}>{series.chapterCount}</ThemedText>
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.actions}>
+                <ActionButton label={series.readLabel ?? '▶  Read'} variant="primary" />
+                <ActionButton label="＋  Library" />
+                {series.hasSources && <ActionButton label="Sources" caret />}
+                {series.hasTrackers && <ActionButton label="Trackers" caret />}
+                <ActionButton label="☆  Favorite" />
+                {series.newCount != null && <NewBadge count={series.newCount} />}
               </View>
             </View>
 
-            <View style={styles.actions}>
-              <Pressable style={[styles.action, styles.primaryAction]}>
-                <ThemedText type="smallBold" numberOfLines={1} style={styles.primaryLabel}>
-                  ▶  Chapter 1 — Gam…
-                </ThemedText>
-              </Pressable>
-              <ActionButton label="+  Library" />
-              <ActionButton label="☆  Favorite" />
-            </View>
+            {/* Per-bridge dynamic sections: each renders only when present. */}
+            {series.genres?.length ? <ChipRow labels={series.genres} accent /> : null}
+            {series.tagGroups?.map((g) => <TagGroupRow key={g.label} group={g} />)}
+            {series.stats?.length ? <StatsRow stats={series.stats} /> : null}
+
+            {series.meta?.length ? (
+              <View style={[styles.metaGrid, { borderColor: theme.hairline }]}>
+                {series.meta.map((m) => (
+                  <View key={m.label} style={styles.metaCell}>
+                    <ThemedText type="small" themeColor="textSecondary" style={styles.metaLabel}>
+                      {m.label}
+                    </ThemedText>
+                    <ThemedText type="small">{m.value}</ThemedText>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
+            {series.description ? (
+              <ThemedText themeColor="textSecondary" style={styles.description}>
+                {series.description}
+              </ThemedText>
+            ) : null}
+
+            <ChaptersSection chapters={series.chapters} pageThumbs={series.pageThumbs} />
           </View>
 
-          <ThemedView type="backgroundElement" style={styles.metaRow}>
-            {META.map((m) => (
-              <View key={m.label} style={styles.metaCell}>
-                <ThemedText type="small" themeColor="textSecondary" style={styles.metaLabel}>
-                  {m.label}
-                </ThemedText>
-                <ThemedText type="small" numberOfLines={2}>
-                  {m.value}
-                </ThemedText>
-              </View>
-            ))}
-          </ThemedView>
-
-          <ThemedText themeColor="textSecondary" style={styles.description}>
-            {DESCRIPTION}
-          </ThemedText>
+          {/* Related rail (per-bridge): full-bleed, outside the padded inner. */}
+          {series.related?.length ? (
+            <View style={styles.related}>
+              <Rail section={{ id: 'related', title: 'Related', kind: 'regular', items: series.related }} />
+            </View>
+          ) : null}
         </View>
       </ScrollView>
     </ThemedView>
-  );
-}
-
-function ActionButton({ label }: { label: string }) {
-  return (
-    <Pressable style={styles.action}>
-      <ThemedView type="backgroundElement" style={styles.actionFill}>
-        <ThemedText type="smallBold" numberOfLines={1}>
-          {label}
-        </ThemedText>
-      </ThemedView>
-    </Pressable>
   );
 }
 
@@ -137,7 +137,6 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.two,
     paddingHorizontal: Spacing.four,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: HAIRLINE,
   },
   backButton: {
     position: 'absolute',
@@ -149,14 +148,17 @@ const styles = StyleSheet.create({
   bridgeName: {
     maxWidth: '70%',
   },
-  content: {
-    paddingHorizontal: Spacing.four,
+  scroll: {
     paddingTop: Spacing.four,
+    alignItems: 'center',
   },
-  inner: {
+  column: {
     width: '100%',
     maxWidth: MaxContentWidth,
-    alignSelf: 'center',
+    gap: Spacing.four,
+  },
+  inner: {
+    paddingHorizontal: Spacing.four,
     gap: Spacing.four,
   },
   title: {
@@ -167,7 +169,7 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
   },
   coverWrap: {
-    width: 130,
+    position: 'relative',
   },
   cover: {
     width: '100%',
@@ -175,7 +177,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: 'rgba(128,128,128,0.15)',
   },
-  badge: {
+  coverBadge: {
     position: 'absolute',
     top: Spacing.two,
     right: Spacing.two,
@@ -184,43 +186,26 @@ const styles = StyleSheet.create({
     borderRadius: Spacing.two,
     backgroundColor: 'rgba(0,0,0,0.7)',
   },
-  badgeText: {
+  coverBadgeText: {
     color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
   },
   actions: {
     flex: 1,
     gap: Spacing.two,
   },
-  action: {
-    borderRadius: Spacing.two,
-    overflow: 'hidden',
-  },
-  primaryAction: {
-    backgroundColor: ACCENT,
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.three,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primaryLabel: {
-    color: '#ffffff',
-  },
-  actionFill: {
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.three,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  metaRow: {
+  metaGrid: {
     flexDirection: 'row',
-    borderRadius: Spacing.three,
+    flexWrap: 'wrap',
+    gap: Spacing.three,
     paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.three,
-    gap: Spacing.two,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   metaCell: {
-    flex: 1,
     gap: Spacing.half,
+    minWidth: 120,
   },
   metaLabel: {
     fontSize: 11,
@@ -228,5 +213,8 @@ const styles = StyleSheet.create({
   },
   description: {
     lineHeight: 22,
+  },
+  related: {
+    gap: Spacing.two,
   },
 });
