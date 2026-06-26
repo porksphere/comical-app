@@ -1,0 +1,1 @@
+- [ ] Overlay system has slowed down after adding more filter UI
