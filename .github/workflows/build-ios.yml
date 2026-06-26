@@ -63,6 +63,12 @@ jobs:
           SIZE=$(stat -c%s "$IPA")
           DATE=$(date -u +%Y-%m-%d)
 
+          # Append the (monotonically increasing) run number to the base app
+          # version so every push to main yields a strictly higher manifest
+          # version (e.g. 0.0.1.42 -> 0.0.1.43). AltStore compares this against
+          # the version it last installed, so each main build shows as an update.
+          FULL_VERSION="${VERSION}.${GITHUB_RUN_NUMBER}"
+
           # Icon for the source listing, served as a Release asset.
           cp apps/mobile/assets/images/icon.png "$RUNNER_TEMP/icon.png"
 
@@ -77,7 +83,7 @@ jobs:
                 "name": "Comical",
                 "bundleIdentifier": "com.porksphere.comical",
                 "developerName": "porksphere",
-                "version": "${VERSION}",
+                "version": "${FULL_VERSION}",
                 "versionDate": "${DATE}",
                 "downloadURL": "${BASE}/comical-unsigned.ipa",
                 "size": ${SIZE},
