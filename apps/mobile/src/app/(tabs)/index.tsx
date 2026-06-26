@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { FlatList, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -40,7 +40,16 @@ export default function BrowseScreen() {
   const insets = useSafeAreaInsets();
   const [bridge, setBridge] = useState(BRIDGES[0]);
   const [page, setPage] = useState(PAGES[0]);
-  const numColumns = width < 768 ? 3 : Math.min(6, Math.max(3, Math.floor(width / 200)));
+
+  // Static web export prerenders this route on the server, where there's no
+  // viewport (`width` is 0 → 3 columns). Computing the real column count on the
+  // first client render would disagree with that prerendered HTML and trigger a
+  // hydration mismatch on desktop. Hold the server's column count until after
+  // mount, then switch to the viewport-derived value as a normal re-render.
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => setHydrated(true), []);
+  const numColumns =
+    !hydrated || width < 768 ? 3 : Math.min(6, Math.max(3, Math.floor(width / 200)));
 
   // Pad to a full last row so flex:1 cards don't stretch on a partial row.
   const data = useMemo(() => {
