@@ -1,0 +1,88 @@
+name: Build iOS IPA (reusable)
+
+# Reusable: produces an UNSIGNED .ipa and uploads it as a run artifact, plus the
+# app version as an output. Called by both build-ios.yml (rolling, on push to
+# main) and release.yml (versioned, on a v* tag) so the rolling and release IPAs
+# are built from identical steps and never drift. No signing certs / Apple
+# Developer account — SideStore/AltStore re-signs on-device with a free Apple ID.
+
+on:
+  workflow_call:
+    outputs:
+      version:
+        description: expo.version read from apps/mobile/app.json
+        value: ${{ jobs.build.outputs.version }}
+      artifact:
+        description: Name of the uploaded unsigned IPA artifact
+        value: comical-ios-unsigned-ipa
+
+jobs:
+  build:
+    # macOS 26 provides Xcode 26 / the iOS 26 SDK, required to compile the
+    # Liquid Glass (expo-glass-effect) native code.
+    runs-on: macos-26
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Bun is the package manager; Node is still required because Metro and the
+      # Xcode "Bundle React Native code" phase shell out to `node`.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+
+      - name: Generate native iOS project (CNG)
+        run: bunx expo prebuild --platform ios --no-install
+        working-directory: apps/mobile
+
+      - name: Install CocoaPods
+        run: pod install
+        working-directory: apps/mobile/ios
+
+      - name: Build unsigned archive
+        working-directory: apps/mobile/ios
+        run: |
+          set -euo pipefail
+          WORKSPACE=$(ls -d *.xcworkspace | head -1)
+          SCHEME=$(basename "$WORKSPACE" .xcworkspace)
+          echo "Building workspace=$WORKSPACE scheme=$SCHEME"
+          xcodebuild \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath "$RUNNER_TEMP/comical.xcarchive" \
+            archive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM=""
+
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          APP=$(ls -d "$RUNNER_TEMP/comical.xcarchive/Products/Applications/"*.app | head -1)
+          mkdir -p "$RUNNER_TEMP/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/Payload/"
+          (cd "$RUNNER_TEMP" && zip -qry comical-unsigned.ipa Payload)
+
+      - name: Read app version
+        id: meta
+        run: echo "version=$(node -p "require('./apps/mobile/app.json').expo.version")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload unsigned IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: comical-ios-unsigned-ipa
+          path: ${{ runner.temp }}/comical-unsigned.ipa
+          if-no-files-found: error
