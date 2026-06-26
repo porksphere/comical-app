@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { useOverlay } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
@@ -37,11 +37,29 @@ const FILTER_DEFS: FilterDef[] = [
 /** Row shown on the Browse screen: chips + a "More filters" button. */
 export function FilterBar() {
   const { open } = useOverlay();
+  const [type, setType] = useState(TYPES[0]);
+  const [status, setStatus] = useState(STATUSES[0]);
+  const [sort, setSort] = useState(SORTS[0]);
   return (
-    <View style={styles.chips}>
-      <Chip label="Type" value="All" onPress={() => open(() => <OptionMenu title="Type" options={TYPES} />)} />
-      <Chip label="Status" value="Any" onPress={() => open(() => <OptionMenu title="Status" options={STATUSES} />)} />
-      <Chip label="Sort" value="Relevance" onPress={() => open(() => <OptionMenu title="Sort by" options={SORTS} />)} />
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.chips}>
+      <Chip
+        label="Type"
+        value={type}
+        onPress={() => open(() => <OptionMenu title="Type" options={TYPES} selected={type} onSelect={setType} />)}
+      />
+      <Chip
+        label="Status"
+        value={status}
+        onPress={() => open(() => <OptionMenu title="Status" options={STATUSES} selected={status} onSelect={setStatus} />)}
+      />
+      <Chip
+        label="Sort"
+        value={sort}
+        onPress={() => open(() => <OptionMenu title="Sort by" options={SORTS} selected={sort} onSelect={setSort} />)}
+      />
       {/* "More filters" as an icon + count of the additional filters it reveals. */}
       <Pressable onPress={() => open(() => <MoreFiltersTray />)}>
         <ThemedView type="backgroundSelected" style={styles.iconChip}>
@@ -49,7 +67,7 @@ export function FilterBar() {
           <ThemedText type="smallBold">{FILTER_DEFS.length}</ThemedText>
         </ThemedView>
       </Pressable>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -64,10 +82,19 @@ function FunnelIcon() {
   );
 }
 
-/** A simple single-select popup menu (overlay). */
-function OptionMenu({ title, options }: { title: string; options: string[] }) {
+/** A single-select popup menu (overlay) that reports the chosen value back. */
+function OptionMenu({
+  title,
+  options,
+  selected,
+  onSelect,
+}: {
+  title: string;
+  options: string[];
+  selected: string;
+  onSelect: (value: string) => void;
+}) {
   const { closeTop } = useOverlay();
-  const [selected, setSelected] = useState(options[0]);
   return (
     <SheetContent title={title}>
       {options.map((opt) => (
@@ -76,7 +103,7 @@ function OptionMenu({ title, options }: { title: string; options: string[] }) {
           label={opt}
           selected={selected === opt}
           onPress={() => {
-            setSelected(opt);
+            onSelect(opt);
             closeTop();
           }}
         />
@@ -163,18 +190,20 @@ function PrimaryButton({ title, onPress }: { title: string; onPress: () => void 
   );
 }
 
+const CHIP_HEIGHT = 36;
+
 const styles = StyleSheet.create({
   chips: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     alignItems: 'center',
     gap: Spacing.two,
+    paddingRight: Spacing.four,
   },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.one,
-    paddingVertical: Spacing.one,
+    height: CHIP_HEIGHT,
     paddingLeft: Spacing.three,
     paddingRight: Spacing.one,
     borderRadius: Spacing.five,
@@ -188,7 +217,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
-    paddingVertical: Spacing.two,
+    height: CHIP_HEIGHT,
     paddingHorizontal: Spacing.three,
     borderRadius: Spacing.five,
   },
