@@ -1,0 +1,52 @@
+name: Cleanup Web Preview (on branch delete)
+
+# When a branch is deleted, remove its published preview folder from gh-pages so
+# stale branch previews don't pile up. Paired with deploy-web.yml.
+
+on:
+  delete:
+
+permissions:
+  contents: write
+
+concurrency:
+  # Share the deploy serialization group so we never push to gh-pages while a
+  # deploy is mid-flight.
+  group: deploy-web-pages
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    # Only react to branch deletions (not tags), and never to main.
+    if: github.event.ref_type == 'branch' && github.event.ref != 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Remove deleted branch's preview folder
+        run: |
+          set -e
+          # gh-pages may not exist yet (nothing deployed); tolerate that.
+          if ! git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+            echo "No gh-pages branch; nothing to clean up."
+            exit 0
+          fi
+          git switch gh-pages
+          BRANCH="${GITHUB_EVENT_REF}"
+          SLUG="$(printf '%s' "$BRANCH" | sed 's#[^A-Za-z0-9._-]#-#g')"
+          TARGET="branches/${SLUG}"
+          if [ -d "$TARGET" ]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email 'github-actions[bot]@users.noreply.github.com'
+            git rm -r --quiet "$TARGET"
+            git commit -m "Remove web preview for deleted branch ${BRANCH}"
+            git push origin gh-pages
+            echo "Removed ${TARGET} from gh-pages."
+          else
+            echo "No preview folder ${TARGET}; nothing to remove."
+          fi
+        env:
+          GITHUB_EVENT_REF: ${{ github.event.ref }}
