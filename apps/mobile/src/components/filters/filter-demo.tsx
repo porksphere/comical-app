@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { LayoutChangeEvent, Pressable, StyleSheet, View } from 'react-native';
 
 import { useOverlay } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
@@ -34,40 +34,162 @@ const FILTER_DEFS: FilterDef[] = [
   { id: 'tags', label: 'Tags', type: 'tags', options: TAGS },
 ];
 
-/** Row shown on the Browse screen: chips + a "More filters" button. */
+// Layout constants for the measured, single-line filter bar.
+const GAP = Spacing.two;
+const OVERFLOW_RESERVE = 48; // room kept for the "+X" overflow chip
+
+type PrimaryFilter = {
+  key: string;
+  label: string;
+  value: string;
+  options: string[];
+  onSelect: (value: string) => void;
+  menuTitle: string;
+};
+
+/**
+ * Row shown on the Browse screen: the primary filter chips plus a "More filters"
+ * button. Only as many chips as fit on one line are shown inline; the rest
+ * collapse into a "+X" overflow chip that opens them in a menu. The fit is
+ * measured, so a wide-enough screen shows every chip with no overflow at all.
+ */
 export function FilterBar() {
   const { open } = useOverlay();
   const [type, setType] = useState(TYPES[0]);
   const [status, setStatus] = useState(STATUSES[0]);
   const [sort, setSort] = useState(SORTS[0]);
+
+  const filters: PrimaryFilter[] = [
+    { key: 'type', label: 'Type', value: type, options: TYPES, onSelect: setType, menuTitle: 'Type' },
+    { key: 'status', label: 'Status', value: status, options: STATUSES, onSelect: setStatus, menuTitle: 'Status' },
+    { key: 'sort', label: 'Sort', value: sort, options: SORTS, onSelect: setSort, menuTitle: 'Sort by' },
+  ];
+
+  const openMenu = (f: PrimaryFilter) =>
+    open(() => (
+      <OptionMenu title={f.menuTitle} options={f.options} selected={f.value} onSelect={f.onSelect} />
+    ));
+
+  // Measured container + chip widths drive how many chips fit on one line.
+  const [containerW, setContainerW] = useState(0);
+  const [widths, setWidths] = useState<Record<string, number>>({});
+  const [funnelW, setFunnelW] = useState(0);
+
+  const measured = funnelW > 0 && filters.every((f) => widths[f.key] != null);
+
+  let visible = filters.length;
+  if (measured && containerW > 0) {
+    // The funnel button is always shown, so reserve its width up front.
+    const avail = containerW - funnelW - GAP;
+    let used = 0;
+    visible = 0;
+    for (let i = 0; i < filters.length; i++) {
+      const candidate = used + (i > 0 ? GAP : 0) + widths[filters[i].key];
+      const isLast = i === filters.length - 1;
+      // Keep room for the "+X" chip unless this is the last filter (no overflow).
+      const reserve = isLast ? 0 : GAP + OVERFLOW_RESERVE;
+      if (candidate + reserve <= avail) {
+        used = candidate;
+        visible = i + 1;
+      } else {
+        break;
+      }
+    }
+  }
+
+  const shown = filters.slice(0, visible);
+  const hidden = filters.slice(visible);
+
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.chips}>
-      <Chip
-        label="Type"
-        value={type}
-        onPress={() => open(() => <OptionMenu title="Type" options={TYPES} selected={type} onSelect={setType} />)}
-      />
-      <Chip
-        label="Status"
-        value={status}
-        onPress={() => open(() => <OptionMenu title="Status" options={STATUSES} selected={status} onSelect={setStatus} />)}
-      />
-      <Chip
-        label="Sort"
-        value={sort}
-        onPress={() => open(() => <OptionMenu title="Sort by" options={SORTS} selected={sort} onSelect={setSort} />)}
-      />
-      {/* "More filters" as an icon + count of the additional filters it reveals. */}
-      <Pressable onPress={() => open(() => <MoreFiltersTray />)}>
-        <ThemedView type="backgroundSelected" style={styles.iconChip}>
-          <FunnelIcon />
-          <ThemedText type="smallBold">{FILTER_DEFS.length}</ThemedText>
-        </ThemedView>
-      </Pressable>
-    </ScrollView>
+    <View style={styles.bar} onLayout={(e) => setContainerW(e.nativeEvent.layout.width)}>
+      {/* Hidden measuring pass: keeps chip + funnel widths up to date. */}
+      <View style={styles.measure} pointerEvents="none">
+        {filters.map((f) => (
+          <Chip
+            key={f.key}
+            label={f.label}
+            value={f.value}
+            onMeasure={(w) => setWidths((prev) => ({ ...prev, [f.key]: w }))}
+          />
+        ))}
+        <FunnelButton count={FILTER_DEFS.length} onMeasure={setFunnelW} />
+      </View>
+
+      <View style={styles.chipRow}>
+        {shown.map((f) => (
+          <Chip key={f.key} label={f.label} value={f.value} onPress={() => openMenu(f)} />
+        ))}
+        {hidden.length > 0 && (
+          <OverflowChip
+            count={hidden.length}
+            onPress={() => open(() => <OverflowMenu filters={hidden} />)}
+          />
+        )}
+        {/* "More filters" as an icon + count of the additional filters it reveals. */}
+        <FunnelButton count={FILTER_DEFS.length} onPress={() => open(() => <MoreFiltersTray />)} />
+      </View>
+    </View>
+  );
+}
+
+/** The "More filters" funnel button; also used in the measuring pass. */
+function FunnelButton({
+  count,
+  onPress,
+  onMeasure,
+}: {
+  count: number;
+  onPress?: () => void;
+  onMeasure?: (w: number) => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress}
+      onLayout={onMeasure ? (e: LayoutChangeEvent) => onMeasure(e.nativeEvent.layout.width) : undefined}>
+      <ThemedView type="backgroundSelected" style={styles.iconChip}>
+        <FunnelIcon />
+        <ThemedText type="smallBold">{count}</ThemedText>
+      </ThemedView>
+    </Pressable>
+  );
+}
+
+/** Collapsed "+X" chip standing in for the filters that didn't fit on the line. */
+function OverflowChip({ count, onPress }: { count: number; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress}>
+      <ThemedView type="backgroundElement" style={styles.overflowChip}>
+        <ThemedText type="smallBold">{`+${count}`}</ThemedText>
+      </ThemedView>
+    </Pressable>
+  );
+}
+
+/** Sheet listing the overflowed filters; each row opens its own option menu. */
+function OverflowMenu({ filters }: { filters: PrimaryFilter[] }) {
+  const { open } = useOverlay();
+  return (
+    <SheetContent title="More filters">
+      {filters.map((f) => (
+        <Pressable
+          key={f.key}
+          onPress={() =>
+            open(() => (
+              <OptionMenu title={f.menuTitle} options={f.options} selected={f.value} onSelect={f.onSelect} />
+            ))
+          }>
+          <ThemedView type="backgroundElement" style={styles.row}>
+            <ThemedText>{f.label}</ThemedText>
+            <ThemedView type="backgroundSelected" style={styles.valuePill}>
+              <ThemedText type="small" themeColor="textSecondary">
+                {f.value}
+              </ThemedText>
+            </ThemedView>
+          </ThemedView>
+        </Pressable>
+      ))}
+    </SheetContent>
   );
 }
 
@@ -146,9 +268,22 @@ function SheetContent({ title, children }: { title: string; children: ReactNode 
   );
 }
 
-function Chip({ label, value, onPress }: { label: string; value: string; onPress: () => void }) {
+function Chip({
+  label,
+  value,
+  onPress,
+  onMeasure,
+}: {
+  label: string;
+  value: string;
+  onPress?: () => void;
+  onMeasure?: (w: number) => void;
+}) {
   return (
-    <Pressable onPress={onPress}>
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress}
+      onLayout={onMeasure ? (e: LayoutChangeEvent) => onMeasure(e.nativeEvent.layout.width) : undefined}>
       <ThemedView type="backgroundElement" style={styles.chip}>
         <ThemedText type="small">{label}</ThemedText>
         <ThemedView type="backgroundSelected" style={styles.valuePill}>
@@ -193,11 +328,26 @@ function PrimaryButton({ title, onPress }: { title: string; onPress: () => void 
 const CHIP_HEIGHT = 36;
 
 const styles = StyleSheet.create({
-  chips: {
+  bar: {
+    alignSelf: 'stretch',
+    overflow: 'hidden',
+  },
+  measure: {
+    position: 'absolute',
+    opacity: 0,
+    flexDirection: 'row',
+    gap: GAP,
+  },
+  chipRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.two,
-    paddingRight: Spacing.four,
+    gap: GAP,
+  },
+  overflowChip: {
+    justifyContent: 'center',
+    height: CHIP_HEIGHT,
+    paddingHorizontal: Spacing.three,
+    borderRadius: Spacing.five,
   },
   chip: {
     flexDirection: 'row',
