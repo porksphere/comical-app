@@ -152,9 +152,9 @@ const styles = StyleSheet.create({
   // --- Mobile black icon bottom bar ---
   bottomBar: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     backgroundColor: '#000000',
-    paddingTop: Spacing.three,
+    paddingTop: Spacing.two,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: 'rgba(255,255,255,0.12)',
   },
