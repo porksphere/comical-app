@@ -64,8 +64,6 @@ jobs:
           echo "base_url=${BASE_URL}" >> "$GITHUB_OUTPUT"
           echo "dest_dir=${DEST_DIR}" >> "$GITHUB_OUTPUT"
           echo "preview_url=${PREVIEW_URL}" >> "$GITHUB_OUTPUT"
-          echo "### Web preview" >> "$GITHUB_STEP_SUMMARY"
-          echo "Branch \`${BRANCH}\` -> ${PREVIEW_URL}" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -99,3 +97,21 @@ jobs:
           user_name: 'github-actions[bot]'
           user_email: 'github-actions[bot]@users.noreply.github.com'
           commit_message: "Deploy web preview for ${{ github.ref_name }} (${{ github.sha }})"
+
+      - name: Publish preview URL to job summary
+        if: success()
+        env:
+          PREVIEW_URL: ${{ steps.meta.outputs.preview_url }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          {
+            echo "## 🌐 Web preview deployed"
+            echo ""
+            echo "| Branch | Preview URL |"
+            echo "| --- | --- |"
+            echo "| \`${BRANCH}\` | **[${PREVIEW_URL}](${PREVIEW_URL})** |"
+            echo ""
+            echo "> Pages can take ~1 min to update after this run finishes."
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Also annotate the run so the URL shows in the log without scrolling.
+          echo "::notice title=Web preview::${BRANCH} -> ${PREVIEW_URL}"
