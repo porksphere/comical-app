@@ -4,8 +4,8 @@ name: Deploy Web (GitHub Pages)
 # to GitHub Pages. Every branch gets its own live preview that updates on each
 # push, so you can open any branch on a phone — no computer in the loop.
 #
-#   main          -> https://porksphere.github.io/comical-ios/
-#   other branches-> https://porksphere.github.io/comical-ios/branches/<branch>/
+#   main          -> https://porksphere.github.io/comical-app/
+#   other branches-> https://porksphere.github.io/comical-app/branches/<branch>/
 #
 # How it works: each build is published into a subfolder of the `gh-pages`
 # branch (root for main, branches/<slug> for everything else). `keep_files: true`
@@ -53,13 +53,13 @@ jobs:
           # Slugify branch name for use as a URL path segment (e.g. claude/foo -> claude-foo).
           SLUG="$(printf '%s' "$BRANCH" | sed 's#[^A-Za-z0-9._-]#-#g')"
           if [ "$BRANCH" = "main" ]; then
-            BASE_URL="/comical-ios"
+            BASE_URL="/comical-app"
             DEST_DIR=""
-            PREVIEW_URL="https://porksphere.github.io/comical-ios/"
+            PREVIEW_URL="https://porksphere.github.io/comical-app/"
           else
-            BASE_URL="/comical-ios/branches/${SLUG}"
+            BASE_URL="/comical-app/branches/${SLUG}"
             DEST_DIR="branches/${SLUG}"
-            PREVIEW_URL="https://porksphere.github.io/comical-ios/branches/${SLUG}/"
+            PREVIEW_URL="https://porksphere.github.io/comical-app/branches/${SLUG}/"
           fi
           echo "base_url=${BASE_URL}" >> "$GITHUB_OUTPUT"
           echo "dest_dir=${DEST_DIR}" >> "$GITHUB_OUTPUT"
