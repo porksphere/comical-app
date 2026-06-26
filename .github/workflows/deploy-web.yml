@@ -78,13 +78,26 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set web base URL for this build
+        working-directory: apps/mobile
+        env:
+          BASE_URL: ${{ steps.meta.outputs.base_url }}
+        run: |
+          # expo export (SDK 56) resolves the web base path from
+          # experiments.baseUrl in the app config ONLY — the EXPO_BASE_URL env var
+          # is not honored. So write the per-branch base path into app.json before
+          # exporting: main -> /comical-app, branches -> /comical-app/branches/<slug>.
+          # Without this, every branch's HTML references /comical-app/_expo/... (the
+          # root/main bundle) instead of its own subfolder, so CSS/JS 404 and the
+          # preview renders unstyled with no interactivity.
+          tmp="$(mktemp)"
+          jq --arg base "$BASE_URL" '.expo.experiments.baseUrl = $base' app.json > "$tmp"
+          mv "$tmp" app.json
+          echo "experiments.baseUrl = $(jq -r '.expo.experiments.baseUrl' app.json)"
+
       - name: Export web bundle
         run: bunx expo export --platform web
         working-directory: apps/mobile
-        env:
-          # Overrides experiments.baseUrl in app.json so assets resolve under the
-          # branch's subpath.
-          EXPO_BASE_URL: ${{ steps.meta.outputs.base_url }}
 
       - name: Publish to gh-pages
         uses: peaceiris/actions-gh-pages@v4
