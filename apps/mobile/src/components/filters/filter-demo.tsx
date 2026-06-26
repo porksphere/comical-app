@@ -5,16 +5,13 @@ import { useOverlay } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
 
 import { FilterButton } from './filter-button';
 import { initialValue, type FilterDef, type FilterValue } from './filter-types';
 
-// Placeholder filter UI. The chips (Type/Status/Sort) are single-select demos;
-// "More filters" opens a tray of the reusable, typed filter controls.
+// Placeholder filter UI. "Sort" is a single-select demo with its own button; the
+// rest are the reusable, typed filter controls declared in FILTER_DEFS.
 
-const TYPES = ['All', 'Series', 'Movie', 'OVA', 'Special'];
-const STATUSES = ['Any', 'Airing', 'Finished', 'Upcoming'];
 const SORTS = ['Relevance', 'Newest', 'Top rated', 'Most popular'];
 
 const TAGS = [
@@ -38,54 +35,36 @@ const FILTER_DEFS: FilterDef[] = [
 const GAP = Spacing.two;
 const OVERFLOW_RESERVE = 48; // room kept for the "+X" overflow chip
 
-type PrimaryFilter = {
-  key: string;
-  label: string;
-  value: string;
-  options: string[];
-  onSelect: (value: string) => void;
-  menuTitle: string;
-};
-
 /**
- * Row shown on the Browse screen: the primary filter chips plus a "More filters"
- * button. Only as many chips as fit on one line are shown inline; the rest
- * collapse into a "+X" overflow chip that opens them in a menu. The fit is
- * measured, so a wide-enough screen shows every chip with no overflow at all.
+ * Row shown on the Browse screen: a "Sort" button plus the filter chips. Only as
+ * many filter chips as fit on one line are shown inline; the rest collapse into a
+ * "+X" chip that opens them in a sheet (rendered with the same FilterButton). The
+ * fit is measured, so a wide-enough screen shows every filter with no overflow.
  */
 export function FilterBar() {
   const { open } = useOverlay();
-  const [type, setType] = useState(TYPES[0]);
-  const [status, setStatus] = useState(STATUSES[0]);
   const [sort, setSort] = useState(SORTS[0]);
-
-  const filters: PrimaryFilter[] = [
-    { key: 'type', label: 'Type', value: type, options: TYPES, onSelect: setType, menuTitle: 'Type' },
-    { key: 'status', label: 'Status', value: status, options: STATUSES, onSelect: setStatus, menuTitle: 'Status' },
-    { key: 'sort', label: 'Sort', value: sort, options: SORTS, onSelect: setSort, menuTitle: 'Sort by' },
-  ];
-
-  const openMenu = (f: PrimaryFilter) =>
-    open(() => (
-      <OptionMenu title={f.menuTitle} options={f.options} selected={f.value} onSelect={f.onSelect} />
-    ));
+  const [values, setValues] = useState<Record<string, FilterValue>>(() =>
+    Object.fromEntries(FILTER_DEFS.map((d) => [d.id, initialValue(d)])),
+  );
+  const setValue = (id: string, v: FilterValue) => setValues((prev) => ({ ...prev, [id]: v }));
 
   // Measured container + chip widths drive how many chips fit on one line.
   const [containerW, setContainerW] = useState(0);
   const [widths, setWidths] = useState<Record<string, number>>({});
-  const [funnelW, setFunnelW] = useState(0);
+  const [sortW, setSortW] = useState(0);
 
-  const measured = funnelW > 0 && filters.every((f) => widths[f.key] != null);
+  const measured = sortW > 0 && FILTER_DEFS.every((d) => widths[d.id] != null);
 
-  let visible = filters.length;
+  let visible = FILTER_DEFS.length;
   if (measured && containerW > 0) {
-    // The funnel button is always shown, so reserve its width up front.
-    const avail = containerW - funnelW - GAP;
+    // The Sort button is always shown first, so reserve its width up front.
+    const avail = containerW - sortW - GAP;
     let used = 0;
     visible = 0;
-    for (let i = 0; i < filters.length; i++) {
-      const candidate = used + (i > 0 ? GAP : 0) + widths[filters[i].key];
-      const isLast = i === filters.length - 1;
+    for (let i = 0; i < FILTER_DEFS.length; i++) {
+      const candidate = used + (i > 0 ? GAP : 0) + widths[FILTER_DEFS[i].id];
+      const isLast = i === FILTER_DEFS.length - 1;
       // Keep room for the "+X" chip unless this is the last filter (no overflow).
       const reserve = isLast ? 0 : GAP + OVERFLOW_RESERVE;
       if (candidate + reserve <= avail) {
@@ -97,61 +76,49 @@ export function FilterBar() {
     }
   }
 
-  const shown = filters.slice(0, visible);
-  const hidden = filters.slice(visible);
+  const shown = FILTER_DEFS.slice(0, visible);
+  const hidden = FILTER_DEFS.slice(visible);
 
   return (
     <View style={styles.bar} onLayout={(e) => setContainerW(e.nativeEvent.layout.width)}>
-      {/* Hidden measuring pass: keeps chip + funnel widths up to date. */}
+      {/* Hidden measuring pass: keeps the Sort + filter chip widths up to date. */}
       <View style={styles.measure} pointerEvents="none">
-        {filters.map((f) => (
-          <Chip
-            key={f.key}
-            label={f.label}
-            value={f.value}
-            onMeasure={(w) => setWidths((prev) => ({ ...prev, [f.key]: w }))}
+        <Chip label="Sort" value={sort} onMeasure={setSortW} />
+        {FILTER_DEFS.map((def) => (
+          <FilterButton
+            key={def.id}
+            compact
+            def={def}
+            value={values[def.id]}
+            onChange={(v) => setValue(def.id, v)}
+            onMeasure={(w) => setWidths((prev) => ({ ...prev, [def.id]: w }))}
           />
         ))}
-        <FunnelButton count={FILTER_DEFS.length} onMeasure={setFunnelW} />
       </View>
 
       <View style={styles.chipRow}>
-        {shown.map((f) => (
-          <Chip key={f.key} label={f.label} value={f.value} onPress={() => openMenu(f)} />
+        <Chip
+          label="Sort"
+          value={sort}
+          onPress={() => open(() => <OptionMenu title="Sort by" options={SORTS} selected={sort} onSelect={setSort} />)}
+        />
+        {shown.map((def) => (
+          <FilterButton
+            key={def.id}
+            compact
+            def={def}
+            value={values[def.id]}
+            onChange={(v) => setValue(def.id, v)}
+          />
         ))}
         {hidden.length > 0 && (
           <OverflowChip
             count={hidden.length}
-            onPress={() => open(() => <OverflowMenu filters={hidden} />)}
+            onPress={() => open(() => <FiltersSheet defs={hidden} initial={values} onChange={setValue} />)}
           />
         )}
-        {/* "More filters" as an icon + count of the additional filters it reveals. */}
-        <FunnelButton count={FILTER_DEFS.length} onPress={() => open(() => <MoreFiltersTray />)} />
       </View>
     </View>
-  );
-}
-
-/** The "More filters" funnel button; also used in the measuring pass. */
-function FunnelButton({
-  count,
-  onPress,
-  onMeasure,
-}: {
-  count: number;
-  onPress?: () => void;
-  onMeasure?: (w: number) => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={!onPress}
-      onLayout={onMeasure ? (e: LayoutChangeEvent) => onMeasure(e.nativeEvent.layout.width) : undefined}>
-      <ThemedView type="backgroundSelected" style={styles.iconChip}>
-        <FunnelIcon />
-        <ThemedText type="smallBold">{count}</ThemedText>
-      </ThemedView>
-    </Pressable>
   );
 }
 
@@ -159,48 +126,40 @@ function FunnelButton({
 function OverflowChip({ count, onPress }: { count: number; onPress: () => void }) {
   return (
     <Pressable onPress={onPress}>
-      <ThemedView type="backgroundElement" style={styles.overflowChip}>
+      <ThemedView type="backgroundSelected" style={styles.overflowChip}>
         <ThemedText type="smallBold">{`+${count}`}</ThemedText>
       </ThemedView>
     </Pressable>
   );
 }
 
-/** Sheet listing the overflowed filters; each row opens its own option menu. */
-function OverflowMenu({ filters }: { filters: PrimaryFilter[] }) {
-  const { open } = useOverlay();
+/** Sheet of the filters that overflowed the bar; each renders as a FilterButton row. */
+function FiltersSheet({
+  defs,
+  initial,
+  onChange,
+}: {
+  defs: FilterDef[];
+  initial: Record<string, FilterValue>;
+  onChange: (id: string, v: FilterValue) => void;
+}) {
+  const { closeTop } = useOverlay();
+  const [values, setValues] = useState(initial);
   return (
-    <SheetContent title="More filters">
-      {filters.map((f) => (
-        <Pressable
-          key={f.key}
-          onPress={() =>
-            open(() => (
-              <OptionMenu title={f.menuTitle} options={f.options} selected={f.value} onSelect={f.onSelect} />
-            ))
-          }>
-          <ThemedView type="backgroundElement" style={styles.row}>
-            <ThemedText>{f.label}</ThemedText>
-            <ThemedView type="backgroundSelected" style={styles.valuePill}>
-              <ThemedText type="small" themeColor="textSecondary">
-                {f.value}
-              </ThemedText>
-            </ThemedView>
-          </ThemedView>
-        </Pressable>
+    <SheetContent title="Filters">
+      {defs.map((def) => (
+        <FilterButton
+          key={def.id}
+          def={def}
+          value={values[def.id]}
+          onChange={(v) => {
+            setValues((prev) => ({ ...prev, [def.id]: v }));
+            onChange(def.id, v);
+          }}
+        />
       ))}
+      <PrimaryButton title="Show results" onPress={closeTop} />
     </SheetContent>
-  );
-}
-
-function FunnelIcon() {
-  const theme = useTheme();
-  return (
-    <View style={styles.funnel}>
-      <View style={[styles.funnelBar, { width: 14, backgroundColor: theme.text }]} />
-      <View style={[styles.funnelBar, { width: 9, backgroundColor: theme.text }]} />
-      <View style={[styles.funnelBar, { width: 4, backgroundColor: theme.text }]} />
-    </View>
   );
 }
 
@@ -234,27 +193,6 @@ function OptionMenu({
   );
 }
 
-/** Tray of the reusable, typed filter controls. Each row opens its editor (depth 2). */
-function MoreFiltersTray() {
-  const { closeTop } = useOverlay();
-  const [values, setValues] = useState<Record<string, FilterValue>>(() =>
-    Object.fromEntries(FILTER_DEFS.map((d) => [d.id, initialValue(d)])),
-  );
-  return (
-    <SheetContent title="Filters">
-      {FILTER_DEFS.map((def) => (
-        <FilterButton
-          key={def.id}
-          def={def}
-          value={values[def.id]}
-          onChange={(v) => setValues((prev) => ({ ...prev, [def.id]: v }))}
-        />
-      ))}
-      <PrimaryButton title="Show results" onPress={closeTop} />
-    </SheetContent>
-  );
-}
-
 // --- shared building blocks ---
 
 function SheetContent({ title, children }: { title: string; children: ReactNode }) {
@@ -268,6 +206,7 @@ function SheetContent({ title, children }: { title: string; children: ReactNode 
   );
 }
 
+/** Compact label + value pill. Used for the standalone "Sort" button. */
 function Chip({
   label,
   value,
@@ -362,22 +301,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.two,
     paddingVertical: 1,
     borderRadius: Spacing.four,
-  },
-  iconChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    height: CHIP_HEIGHT,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.five,
-  },
-  funnel: {
-    alignItems: 'center',
-    gap: 3,
-  },
-  funnelBar: {
-    height: 2,
-    borderRadius: 1,
   },
   content: {
     gap: Spacing.two,
