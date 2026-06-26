@@ -23,6 +23,11 @@ concurrency:
   group: ios-${{ github.ref }}
   cancel-in-progress: true
 
+# Needed to publish the IPA to a GitHub Release (a public, unauthenticated,
+# raw direct-download URL that SideStore/AltStore can actually fetch).
+permissions:
+  contents: write
+
 jobs:
   build:
     # macOS 26 provides Xcode 26 / the iOS 26 SDK, required to compile the
@@ -81,9 +86,71 @@ jobs:
           cp -R "$APP" "$RUNNER_TEMP/Payload/"
           (cd "$RUNNER_TEMP" && zip -qry comical-unsigned.ipa Payload)
 
+      # Keep the artifact too (handy for debugging / authenticated downloads),
+      # but it is NOT the install path — Actions artifacts require a logged-in
+      # GitHub session, so an unauthenticated fetch (e.g. from SideStore) gets
+      # an HTML login page instead of the IPA. The Release below is the real
+      # distribution channel.
       - name: Upload unsigned IPA artifact
         uses: actions/upload-artifact@v4
         with:
           name: comical-ios-unsigned-ipa
           path: ${{ runner.temp }}/comical-unsigned.ipa
           if-no-files-found: error
+
+      # Publish the raw .ipa to a rolling "ios-latest" Release plus a
+      # SideStore/AltStore source manifest. A Release asset has a stable,
+      # public, unauthenticated, direct-download URL — so SideStore/AltStore
+      # downloads a real IPA (not GitHub's HTML login page) and install works.
+      - name: Publish IPA + SideStore source to a GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          IPA="$RUNNER_TEMP/comical-unsigned.ipa"
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/ios-latest"
+          SIZE=$(stat -f%z "$IPA")
+          VERSION=$(node -p "require('./apps/mobile/app.json').expo.version")
+          DATE=$(date -u +%Y-%m-%d)
+
+          # Icon for the source listing, served as a Release asset.
+          cp apps/mobile/assets/images/icon.png "$RUNNER_TEMP/icon.png"
+
+          # SideStore/AltStore source manifest. Add this URL as a source:
+          #   $BASE/apps.json
+          cat > "$RUNNER_TEMP/apps.json" <<EOF
+          {
+            "name": "Comical",
+            "identifier": "com.porksphere.comical.source",
+            "apps": [
+              {
+                "name": "Comical",
+                "bundleIdentifier": "com.porksphere.comical",
+                "developerName": "porksphere",
+                "version": "${VERSION}",
+                "versionDate": "${DATE}",
+                "downloadURL": "${BASE}/comical-unsigned.ipa",
+                "size": ${SIZE},
+                "localizedDescription": "Comical — cross-platform comic reader. Unsigned build; re-signed on-device by SideStore/AltStore with your free Apple ID.",
+                "iconURL": "${BASE}/icon.png",
+                "tintColor": "208AEF"
+              }
+            ]
+          }
+          EOF
+
+          # Recreate the rolling tag/release so the URLs above stay stable.
+          gh release delete ios-latest --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          gh release create ios-latest \
+            "$IPA" \
+            "$RUNNER_TEMP/apps.json" \
+            "$RUNNER_TEMP/icon.png" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Comical iOS (latest unsigned IPA)" \
+            --notes "Unsigned IPA for SideStore/AltStore (re-signed on-device with your free Apple ID).
+
+          **Install via source (recommended):** add this URL in SideStore/AltStore → Sources → +
+          \`${BASE}/apps.json\`
+
+          **Or install the IPA directly:**
+          \`${BASE}/comical-unsigned.ipa\`"
