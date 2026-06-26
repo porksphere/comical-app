@@ -7,7 +7,8 @@ import {
   Settings,
   type LucideIcon,
 } from 'lucide-react';
-import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Pressable, StyleSheet, Text, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from './themed-text';
@@ -18,10 +19,6 @@ import { MaxContentWidth, Spacing } from '@/constants/theme';
 // Web nav (Metro resolves this `.web` file for the web bundle, so native
 // NativeTabs are never imported here). Responsive: an app-like black icon
 // bottom bar on phones, a top nav bar on wider/desktop viewports.
-//
-// Note: the background/styling lives on `TabList` itself (which merges the
-// `style` prop) rather than on an `asChild` wrapper — `asChild` drops the
-// child View's background through its slot merge.
 const TABS: { name: string; href: string; label: string; Icon: LucideIcon }[] = [
   { name: 'browse', href: '/', label: 'Browse', Icon: LayoutGrid },
   { name: 'library', href: '/library', label: 'Library', Icon: Library },
@@ -37,7 +34,18 @@ const INACTIVE = '#8E8E93';
 export default function AppTabs() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const isMobile = width < MOBILE_BREAKPOINT;
+
+  // Static web export (`web.output: "static"`) prerenders every route on the
+  // server, where there's no viewport so `width` is 0 — i.e. the server always
+  // emits the mobile layout. A desktop client, however, sees its real width on
+  // the very first render and would emit the desktop layout, producing a
+  // hydration mismatch that crashes the `Tabs` navigator and leaves a white
+  // screen. Gate the responsive switch behind a post-mount flag so the first
+  // client render matches the server (mobile), then flip to the real layout as
+  // an ordinary re-render once hydration is done.
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => setHydrated(true), []);
+  const isMobile = !hydrated || width < MOBILE_BREAKPOINT;
 
   const triggers = TABS.map((tab) => (
     <TabTrigger key={tab.name} name={tab.name} href={tab.href as never} asChild>
@@ -49,17 +57,22 @@ export default function AppTabs() {
 
   return (
     <Tabs style={styles.tabs}>
+      {/* Desktop top bar. The `TabList` (with the triggers as its direct
+          children) must be a direct child of `Tabs` — expo-router discovers the
+          tab screens by walking `Tabs`' children through Fragments and TabLists
+          only, never through arbitrary Views. Wrapping the TabList in layout
+          Views hides the triggers and makes the navigator render zero screens
+          (white screen). So the pill itself is the TabList (via `asChild`), and
+          the brand sits alongside the triggers as a non-trigger child. */}
       {!isMobile && (
-        <View style={styles.topBarContainer}>
-          <ThemedView type="backgroundElement" style={styles.topBarInner}>
+        <TabList asChild>
+          <ThemedView type="backgroundElement" style={styles.topBar}>
             <ThemedText type="smallBold" style={styles.brand}>
               Comical
             </ThemedText>
-            <TabList asChild>
-              <View style={styles.topTriggers}>{triggers}</View>
-            </TabList>
+            {triggers}
           </ThemedView>
-        </View>
+        </TabList>
       )}
 
       <TabSlot style={styles.slot} />
@@ -111,30 +124,19 @@ const styles = StyleSheet.create({
   slot: {
     flex: 1,
   },
-  // --- Desktop top bar (floating pill) ---
-  topBarContainer: {
-    position: 'absolute',
-    top: 0,
-    width: '100%',
-    padding: Spacing.three,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    zIndex: 1,
-  },
-  topBarInner: {
+  // --- Desktop top bar (centered pill) ---
+  topBar: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'flex-start',
     gap: Spacing.two,
-    flexGrow: 1,
+    alignSelf: 'center',
+    width: '100%',
     maxWidth: MaxContentWidth,
+    marginTop: Spacing.three,
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.five,
     borderRadius: Spacing.five,
-  },
-  topTriggers: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
   },
   brand: {
     marginRight: 'auto',
