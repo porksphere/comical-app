@@ -8,6 +8,7 @@ import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 import { FilterButton } from './filter-button';
+import { FiltersIcon, SortIcon } from './filter-icons';
 import { initialValue, type FilterDef, type FilterValue } from './filter-types';
 
 // Placeholder filter UI. "Sort" is a single-select demo behind its own icon; the
@@ -60,6 +61,7 @@ function fitCount(containerW: number, total: number): number {
  */
 export function FilterBar() {
   const { open } = useOverlay();
+  const theme = useTheme();
   const [sort, setSort] = useState(SORTS[0]);
   const [values, setValues] = useState<Record<string, FilterValue>>(() =>
     Object.fromEntries(FILTER_DEFS.map((d) => [d.id, initialValue(d)])),
@@ -89,7 +91,7 @@ export function FilterBar() {
       <IconButton
         label="Sort"
         onPress={() => open(() => <OptionMenu title="Sort by" options={SORTS} selected={sort} onSelect={setSort} />)}>
-        <SortIcon />
+        <SortIcon color={theme.text} />
       </IconButton>
     </View>
   );
@@ -116,10 +118,11 @@ function IconButton({
 
 /** Collapsed funnel chip standing in for the filters that didn't fit on the line. */
 function OverflowChip({ count, onPress }: { count: number; onPress: () => void }) {
+  const theme = useTheme();
   return (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${count} more filters`}>
       <ThemedView type="backgroundSelected" style={styles.overflowChip}>
-        <FunnelIcon />
+        <FiltersIcon color={theme.text} />
         <ThemedText type="smallBold">{`+${count}`}</ThemedText>
       </ThemedView>
     </Pressable>
@@ -183,31 +186,6 @@ function OptionMenu({
         />
       ))}
     </SheetContent>
-  );
-}
-
-// --- icons ---
-
-/** Three tapering bars — the filter/funnel glyph on the overflow chip. */
-function FunnelIcon() {
-  const theme = useTheme();
-  return (
-    <View style={styles.funnel}>
-      <View style={[styles.funnelBar, { width: 14, backgroundColor: theme.text }]} />
-      <View style={[styles.funnelBar, { width: 9, backgroundColor: theme.text }]} />
-      <View style={[styles.funnelBar, { width: 4, backgroundColor: theme.text }]} />
-    </View>
-  );
-}
-
-/** Stacked up/down triangles — the sort glyph. */
-function SortIcon() {
-  const theme = useTheme();
-  return (
-    <View style={styles.sortIcon}>
-      <View style={[styles.triUp, { borderBottomColor: theme.text }]} />
-      <View style={[styles.triDown, { borderTopColor: theme.text }]} />
-    </View>
   );
 }
 
@@ -278,36 +256,6 @@ const styles = StyleSheet.create({
     height: CONTROL,
     paddingHorizontal: Spacing.three,
     borderRadius: Spacing.five,
-  },
-  funnel: {
-    alignItems: 'center',
-    gap: 3,
-  },
-  funnelBar: {
-    height: 2,
-    borderRadius: 1,
-  },
-  sortIcon: {
-    alignItems: 'center',
-    gap: 3,
-  },
-  triUp: {
-    width: 0,
-    height: 0,
-    borderLeftWidth: 4,
-    borderRightWidth: 4,
-    borderBottomWidth: 6,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-  },
-  triDown: {
-    width: 0,
-    height: 0,
-    borderLeftWidth: 4,
-    borderRightWidth: 4,
-    borderTopWidth: 6,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
   },
   content: {
     gap: Spacing.two,
