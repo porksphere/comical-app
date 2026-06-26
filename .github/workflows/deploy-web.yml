@@ -1,16 +1,28 @@
 name: Deploy Web (GitHub Pages)
 
 # Builds the Expo app for web (react-native-web) and publishes the static export
-# to GitHub Pages, giving a public URL you can open on a phone — no computer in
-# the loop. Served at https://porksphere.github.io/comical-ios/ (baseUrl is set
-# in app.json under experiments.baseUrl).
+# to GitHub Pages. Every branch gets its own live preview that updates on each
+# push, so you can open any branch on a phone — no computer in the loop.
+#
+#   main          -> https://porksphere.github.io/comical-ios/
+#   other branches-> https://porksphere.github.io/comical-ios/branches/<branch>/
+#
+# How it works: each build is published into a subfolder of the `gh-pages`
+# branch (root for main, branches/<slug> for everything else). `keep_files: true`
+# means a deploy only touches its own folder, so branches don't clobber each
+# other. When a branch is deleted, cleanup-web-branch.yml removes its folder.
+#
+# ONE-TIME SETUP: in repo Settings -> Pages, set "Build and deployment" Source
+# to "Deploy from a branch" and pick the `gh-pages` branch / root. (This replaces
+# the old GitHub Actions artifact source.)
 
 on:
   workflow_dispatch:
   push:
+    # Run on every branch. Path filters keep it to changes that affect the web
+    # bundle, but any commit touching the app re-publishes that branch's preview.
     branches:
-      - main
-      - claude/react-native-expo-plan-0hmh23
+      - '**'
     paths:
       - 'apps/**'
       - 'packages/**'
@@ -19,20 +31,41 @@ on:
       - '.github/workflows/deploy-web.yml'
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
-# Allow only one concurrent Pages deployment.
+# Serialize deploys: every job pushes to the same gh-pages branch, so running
+# them one at a time avoids git push races. We do NOT cancel in-progress runs —
+# each branch's deploy must complete (cancelling could drop a branch's update).
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: deploy-web-pages
+  cancel-in-progress: false
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Resolve branch slug, base URL and destination
+        id: meta
+        run: |
+          BRANCH="${GITHUB_REF_NAME}"
+          # Slugify branch name for use as a URL path segment (e.g. claude/foo -> claude-foo).
+          SLUG="$(printf '%s' "$BRANCH" | sed 's#[^A-Za-z0-9._-]#-#g')"
+          if [ "$BRANCH" = "main" ]; then
+            BASE_URL="/comical-ios"
+            DEST_DIR=""
+            PREVIEW_URL="https://porksphere.github.io/comical-ios/"
+          else
+            BASE_URL="/comical-ios/branches/${SLUG}"
+            DEST_DIR="branches/${SLUG}"
+            PREVIEW_URL="https://porksphere.github.io/comical-ios/branches/${SLUG}/"
+          fi
+          echo "base_url=${BASE_URL}" >> "$GITHUB_OUTPUT"
+          echo "dest_dir=${DEST_DIR}" >> "$GITHUB_OUTPUT"
+          echo "preview_url=${PREVIEW_URL}" >> "$GITHUB_OUTPUT"
+          echo "### Web preview" >> "$GITHUB_STEP_SUMMARY"
+          echo "Branch \`${BRANCH}\` -> ${PREVIEW_URL}" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -50,27 +83,19 @@ jobs:
       - name: Export web bundle
         run: bunx expo export --platform web
         working-directory: apps/mobile
+        env:
+          # Overrides experiments.baseUrl in app.json so assets resolve under the
+          # branch's subpath.
+          EXPO_BASE_URL: ${{ steps.meta.outputs.base_url }}
 
-      - name: Disable Jekyll (serve _expo/ asset folder as-is)
-        run: touch apps/mobile/dist/.nojekyll
-
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
+      - name: Publish to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          enablement: true
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: apps/mobile/dist
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: apps/mobile/dist
+          destination_dir: ${{ steps.meta.outputs.dest_dir }}
+          # Only touch this branch's own folder; leave other branches' previews intact.
+          keep_files: true
+          user_name: 'github-actions[bot]'
+          user_email: 'github-actions[bot]@users.noreply.github.com'
+          commit_message: "Deploy web preview for ${{ github.ref_name }} (${{ github.sha }})"
