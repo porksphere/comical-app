@@ -1,11 +1,14 @@
-name: Build iOS (unsigned IPA for SideStore)
+name: Build iOS (rolling, SideStore/AltStore)
 
-# Produces an UNSIGNED .ipa on a GitHub-hosted macOS runner. No signing certs,
-# provisioning profiles, or paid Apple Developer account are involved — SideStore
-# re-signs the app on-device with the user's free Apple ID (7-day refresh).
+# Rolling iOS channel. On every push to main it rebuilds the unsigned IPA and
+# refreshes the "ios-latest" Release, which hosts the IPA plus the
+# SideStore/AltStore source manifest (apps.json). That source URL is stable, so
+# AltStore keeps auto-updating as main moves. Versioned, archival releases with
+# BOTH the IPA and the Android APK are produced separately by release.yml on a
+# v* tag — this rolling channel is what AltStore subscribes to.
 #
-# Note: macOS runners consume Actions minutes ~10x faster than Linux. Adjust the
-# triggers below if cost is a concern.
+# macOS runners consume Actions minutes ~10x faster than Linux, so only the
+# build runs on macOS; publishing runs on ubuntu.
 
 on:
   workflow_dispatch:
@@ -18,6 +21,7 @@ on:
       - 'package.json'
       - 'bun.lock'
       - '.github/workflows/build-ios.yml'
+      - '.github/workflows/build-ios-reusable.yml'
 
 concurrency:
   group: ios-${{ github.ref }}
@@ -30,87 +34,33 @@ permissions:
 
 jobs:
   build:
-    # macOS 26 provides Xcode 26 / the iOS 26 SDK, required to compile the
-    # Liquid Glass (expo-glass-effect) native code.
-    runs-on: macos-26
+    uses: ./.github/workflows/build-ios-reusable.yml
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # Bun is the package manager; Node is still required because Metro and the
-      # Xcode "Bundle React Native code" phase shell out to `node`.
-      - uses: oven-sh/setup-bun@v2
+      - name: Download unsigned IPA
+        uses: actions/download-artifact@v4
         with:
-          bun-version: latest
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Generate native iOS project (CNG)
-        run: bunx expo prebuild --platform ios --no-install
-        working-directory: apps/mobile
-
-      - name: Install CocoaPods
-        run: pod install
-        working-directory: apps/mobile/ios
-
-      - name: Build unsigned archive
-        working-directory: apps/mobile/ios
-        run: |
-          set -euo pipefail
-          WORKSPACE=$(ls -d *.xcworkspace | head -1)
-          SCHEME=$(basename "$WORKSPACE" .xcworkspace)
-          echo "Building workspace=$WORKSPACE scheme=$SCHEME"
-          xcodebuild \
-            -workspace "$WORKSPACE" \
-            -scheme "$SCHEME" \
-            -configuration Release \
-            -sdk iphoneos \
-            -archivePath "$RUNNER_TEMP/comical.xcarchive" \
-            archive \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            DEVELOPMENT_TEAM=""
-
-      - name: Package unsigned IPA
-        run: |
-          set -euo pipefail
-          APP=$(ls -d "$RUNNER_TEMP/comical.xcarchive/Products/Applications/"*.app | head -1)
-          mkdir -p "$RUNNER_TEMP/Payload"
-          cp -R "$APP" "$RUNNER_TEMP/Payload/"
-          (cd "$RUNNER_TEMP" && zip -qry comical-unsigned.ipa Payload)
-
-      # Keep the artifact too (handy for debugging / authenticated downloads),
-      # but it is NOT the install path — Actions artifacts require a logged-in
-      # GitHub session, so an unauthenticated fetch (e.g. from SideStore) gets
-      # an HTML login page instead of the IPA. The Release below is the real
-      # distribution channel.
-      - name: Upload unsigned IPA artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: comical-ios-unsigned-ipa
-          path: ${{ runner.temp }}/comical-unsigned.ipa
-          if-no-files-found: error
+          name: ${{ needs.build.outputs.artifact }}
+          path: ${{ runner.temp }}/ipa
 
       # Publish the raw .ipa to a rolling "ios-latest" Release plus a
       # SideStore/AltStore source manifest. A Release asset has a stable,
       # public, unauthenticated, direct-download URL — so SideStore/AltStore
       # downloads a real IPA (not GitHub's HTML login page) and install works.
-      - name: Publish IPA + SideStore source to a GitHub Release
+      - name: Publish IPA + SideStore source to the ios-latest Release
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
           set -euo pipefail
-          IPA="$RUNNER_TEMP/comical-unsigned.ipa"
+          IPA="$RUNNER_TEMP/ipa/comical-unsigned.ipa"
           BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/ios-latest"
-          SIZE=$(stat -f%z "$IPA")
-          VERSION=$(node -p "require('./apps/mobile/app.json').expo.version")
+          SIZE=$(stat -c%s "$IPA")
           DATE=$(date -u +%Y-%m-%d)
 
           # Icon for the source listing, served as a Release asset.

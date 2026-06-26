@@ -1,0 +1,84 @@
+name: Release (iOS IPA + Android APK)
+
+# Cut a versioned, archival release containing BOTH platform binaries.
+#
+#   git tag v1.2.0 && git push origin v1.2.0
+#
+# builds the unsigned iOS IPA and the Android APK from the same reusable steps as
+# the rolling channels, then attaches both to an immutable vX.Y.Z GitHub Release.
+#
+# AltStore note: this does NOT change the AltStore source. AltStore subscribes to
+# the rolling ios-latest channel (maintained by build-ios.yml), whose apps.json
+# lives at a stable URL. These versioned IPAs are permanent, direct-downloadable
+# assets for manual install / archival; AltStore keeps working untouched.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  ios:
+    uses: ./.github/workflows/build-ios-reusable.yml
+
+  android:
+    uses: ./.github/workflows/build-android-reusable.yml
+
+  release:
+    needs: [ios, android]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Guard — must run from a v* tag
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
+            echo "::error::release.yml must be run from a v* tag (got ref_type=${GITHUB_REF_TYPE}, ref=${GITHUB_REF_NAME}). Tag a commit and push the tag, or in the Run workflow dialog pick a tag under 'Use workflow from'."
+            exit 1
+          fi
+
+      - name: Download iOS IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.ios.outputs.artifact }}
+          path: ${{ runner.temp }}/ipa
+
+      - name: Download Android APK
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.android.outputs.artifact }}
+          path: ${{ runner.temp }}/apk
+
+      - name: Create versioned release with both binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          IPA="$RUNNER_TEMP/ipa/comical-unsigned.ipa"
+          APK="$RUNNER_TEMP/apk/comical-android.apk"
+          DL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
+          IOS_LATEST="https://github.com/${GITHUB_REPOSITORY}/releases/download/ios-latest/apps.json"
+
+          gh release create "$TAG" \
+            "$IPA" \
+            "$APK" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Comical ${TAG}" \
+            --notes "Versioned build with both platform binaries.
+
+          **iOS (unsigned IPA, re-signed on-device by SideStore/AltStore):**
+          \`${DL}/comical-unsigned.ipa\`
+
+          **Android (APK):**
+          \`${DL}/comical-android.apk\`
+
+          **AltStore users:** keep your existing source — it tracks the rolling channel and updates automatically:
+          \`${IOS_LATEST}\`"
