@@ -1,6 +1,7 @@
 import { Image } from 'expo-image';
+import { Link } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { FlatList, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FilterBar } from '@/components/filters/filter-demo';
@@ -84,7 +85,7 @@ export default function BrowseScreen() {
           styles.content,
           { paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
         ]}
-        renderItem={({ item }) => <BookCard book={item} />}
+        renderItem={({ item }) => <BookCard book={item} bridge={bridge} />}
         showsVerticalScrollIndicator={false}
       />
     </ThemedView>
@@ -102,20 +103,24 @@ function ListHeader() {
   );
 }
 
-function BookCard({ book }: { book: Book }) {
+function BookCard({ book, bridge }: { book: Book; bridge: string }) {
   if (book.spacer) return <View style={styles.card} />;
   return (
-    <View style={styles.card}>
-      <Image
-        source={{ uri: `https://picsum.photos/seed/comical-${book.id}/300/450` }}
-        style={styles.cover}
-        contentFit="cover"
-        transition={200}
-      />
-      <ThemedText type="small" numberOfLines={2} style={styles.title}>
-        {book.title}
-      </ThemedText>
-    </View>
+    <Link
+      href={{ pathname: '/series', params: { id: book.id, title: book.title, bridge } }}
+      asChild>
+      <Pressable style={styles.card}>
+        <Image
+          source={{ uri: `https://picsum.photos/seed/comical-${book.id}/300/450` }}
+          style={styles.cover}
+          contentFit="cover"
+          transition={200}
+        />
+        <ThemedText type="small" numberOfLines={2} style={styles.title}>
+          {book.title}
+        </ThemedText>
+      </Pressable>
+    </Link>
   );
 }
 

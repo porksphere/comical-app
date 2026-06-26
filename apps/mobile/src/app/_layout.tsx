@@ -19,6 +19,9 @@ export default function RootLayout() {
           <Stack>
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen name="detail" options={{ title: 'Detail', headerLargeTitle: true }} />
+            {/* Series page renders its own static top bar (bridge name + back
+                button), so the native stack header is hidden here. */}
+            <Stack.Screen name="series" options={{ headerShown: false }} />
           </Stack>
         </OverlayProvider>
       </ThemeProvider>
