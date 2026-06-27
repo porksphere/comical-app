@@ -220,7 +220,8 @@ export const TITLE_BLOCK_HEIGHT = MAX_TITLE_LINES * TITLE_LINE_HEIGHT;
 
 const styles = StyleSheet.create({
   card: {
-    gap: Spacing.one,
+    // A touch more breathing room between the thumbnail and its title.
+    gap: Spacing.two,
   },
   cardActive: {
     zIndex: 10,
@@ -265,16 +266,16 @@ const styles = StyleSheet.create({
   },
   titlePopover: {
     position: 'absolute',
-    // Match the card thumbnail exactly: full card width, no horizontal padding,
-    // so the text column lines up with the clamped title and wraps identically
-    // (no word reflow). Vertical padding matches the card's spacing unit.
+    // Expand slightly past the card: insets equal the horizontal padding, so the
+    // text column lines up with the clamped title and wraps identically (no word
+    // reflow), while the box reads as a popover lifting off the card.
     top: -Spacing.one,
-    left: 0,
-    right: 0,
+    left: -Spacing.two,
+    right: -Spacing.two,
     zIndex: 1000,
-    paddingHorizontal: 0,
+    paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.one,
-    borderRadius: 6,
+    borderRadius: 8,
     // Soft lift so it reads as floating over the cards below it.
     shadowColor: '#000',
     shadowOpacity: 0.25,
