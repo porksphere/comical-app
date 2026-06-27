@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
+import { FlatList, type NativeScrollEvent, type NativeSyntheticEvent, Pressable, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FilterBar } from '@/components/filters/filter-demo';
@@ -7,6 +7,7 @@ import { ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
 import { Rail, SectionHead } from '@/components/rail';
 import { Selector } from '@/components/selector';
 import { SeriesCard } from '@/components/series-card';
+import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Spacing, TopBarHeight } from '@/constants/theme';
@@ -30,6 +31,9 @@ export default function BrowseScreen() {
   const [bridge, setBridge] = useState(BRIDGES[0]);
   const [pages, setPages] = useState<string[]>(PAGES);
   const [page, setPage] = useState(PAGES[0]);
+  // Whether the grid is scrolled off the top — drives the top bar's divider, so
+  // the bridge/page selectors read as "anchoring" into the bar once you scroll.
+  const [scrolled, setScrolled] = useState(false);
 
   const bridgeOptions = bridges.length ? bridges.map((b) => b.name) : BRIDGES;
 
@@ -144,11 +148,17 @@ export default function BrowseScreen() {
   }, [baseGrid, numColumns]);
 
   // Pinned bar: the bridge/page selectors stay at the top while content scrolls.
+  // At the very top there's no divider and a little breathing room above the
+  // selectors; once scrolled, the divider appears so they read as anchored.
   const topBar = (
     <View
       style={[
         styles.topBar,
-        { paddingTop: insets.top, minHeight: insets.top + TopBarHeight, borderBottomColor: theme.hairline },
+        {
+          paddingTop: insets.top + Spacing.three,
+          minHeight: insets.top + TopBarHeight,
+          borderBottomColor: scrolled ? theme.hairline : 'transparent',
+        },
       ]}>
       <Selector title="Bridge" value={bridge} options={bridgeOptions} onChange={setBridge} size="subtitle" />
       <Selector title="Page" value={page} options={pages} onChange={setPage} size="subtitle" />
@@ -224,15 +234,12 @@ export default function BrowseScreen() {
           )
         }
         ListFooterComponent={
-          !inResults && loadingMore ? (
-            <View style={styles.loadingMore}>
-              <ActivityIndicator color={theme.textSecondary} />
-              <ThemedText type="small" themeColor="textSecondary">
-                Loading more…
-              </ThemedText>
-            </View>
-          ) : null
+          !inResults && loadingMore ? <GridSkeleton numColumns={numColumns} rows={2} /> : null
         }
+        onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) =>
+          setScrolled(e.nativeEvent.contentOffset.y > 0)
+        }
+        scrollEventThrottle={16}
         onEndReachedThreshold={0.6}
         onEndReached={inResults ? undefined : loadMore}
         showsVerticalScrollIndicator={false}
@@ -280,6 +287,26 @@ function SearchField({
         </Pressable>
       )}
     </ThemedView>
+  );
+}
+
+/** Skeleton rows shown while the next infinite-scroll page loads — mirrors the
+ *  grid card (cover + two title lines) so it reads as "more cards incoming". */
+function GridSkeleton({ numColumns, rows }: { numColumns: number; rows: number }) {
+  return (
+    <View style={styles.skelFooter}>
+      {Array.from({ length: rows }).map((_, r) => (
+        <View key={r} style={[styles.row, styles.skelRow]}>
+          {Array.from({ length: numColumns }).map((_, c) => (
+            <View key={c} style={[styles.cell, styles.skelCell]}>
+              <Skeleton style={styles.skelCover} />
+              <Skeleton style={styles.skelLine} />
+              <Skeleton style={[styles.skelLine, styles.skelLineShort]} />
+            </View>
+          ))}
+        </View>
+      ))}
+    </View>
   );
 }
 
@@ -339,11 +366,28 @@ const styles = StyleSheet.create({
   cell: {
     flex: 1,
   },
-  loadingMore: {
+  skelFooter: {
+    gap: Spacing.three,
+    paddingTop: Spacing.three,
+  },
+  skelRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.two,
-    paddingTop: Spacing.four,
+    gap: Spacing.three,
+  },
+  skelCell: {
+    flex: 1,
+    gap: Spacing.one,
+  },
+  skelCover: {
+    width: '100%',
+    aspectRatio: 2 / 3,
+    borderRadius: 10,
+  },
+  skelLine: {
+    height: 12,
+    borderRadius: 4,
+  },
+  skelLineShort: {
+    width: '60%',
   },
 });

@@ -265,15 +265,16 @@ const styles = StyleSheet.create({
   },
   titlePopover: {
     position: 'absolute',
+    // Match the card thumbnail exactly: full card width, no horizontal padding,
+    // so the text column lines up with the clamped title and wraps identically
+    // (no word reflow). Vertical padding matches the card's spacing unit.
     top: -Spacing.one,
-    // Insets equal the horizontal padding, so the text column lines up with the
-    // clamped title and wraps identically (no word reflow when it appears).
-    left: -Spacing.two,
-    right: -Spacing.two,
+    left: 0,
+    right: 0,
     zIndex: 1000,
-    paddingHorizontal: Spacing.two,
+    paddingHorizontal: 0,
     paddingVertical: Spacing.one,
-    borderRadius: 8,
+    borderRadius: 6,
     // Soft lift so it reads as floating over the cards below it.
     shadowColor: '#000',
     shadowOpacity: 0.25,

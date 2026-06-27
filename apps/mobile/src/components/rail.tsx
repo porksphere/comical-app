@@ -107,10 +107,10 @@ export function Rail({
         <TitlePeek
           title={section.items[peekIndex].title}
           style={{
-            left: peekLeft - Spacing.two,
+            left: peekLeft,
             right: 'auto',
             top: titleTop - Spacing.one,
-            width: cardWidth + Spacing.two * 2,
+            width: cardWidth,
           }}
         />
       )}
