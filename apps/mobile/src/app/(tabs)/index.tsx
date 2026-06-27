@@ -113,6 +113,9 @@ export default function BrowseScreen() {
   useEffect(() => setHydrated(true), []);
   const numColumns =
     !hydrated || width < 768 ? 3 : Math.min(6, Math.max(3, Math.floor(width / 200)));
+  // Single hydration-safe viewport width for the rails: a deterministic mobile
+  // fallback during prerender/first paint, the real width once mounted.
+  const railViewport = hydrated ? width : 390;
 
   // Home shows the infinite "Browse all" grid under the rails; results mode
   // shows the (finite) search / "See all" / page grid.
@@ -177,7 +180,7 @@ export default function BrowseScreen() {
         <>
           <View style={styles.rails}>
             {sections.map((s) => (
-              <Rail key={s.id} section={s} onSeeAll={setSeeAll} />
+              <Rail key={s.id} section={s} viewportWidth={railViewport} onSeeAll={setSeeAll} />
             ))}
           </View>
           <View style={styles.browseAllHead}>

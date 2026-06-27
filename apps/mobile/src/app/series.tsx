@@ -117,7 +117,10 @@ export default function SeriesScreen() {
           {/* Related rail (per-bridge): full-bleed, outside the padded inner. */}
           {series.related?.length ? (
             <View style={styles.related}>
-              <Rail section={{ id: 'related', title: 'Related', kind: 'regular', items: series.related }} />
+              <Rail
+                section={{ id: 'related', title: 'Related', kind: 'regular', items: series.related }}
+                viewportWidth={width}
+              />
             </View>
           ) : null}
         </View>

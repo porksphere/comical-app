@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { Link } from 'expo-router';
-import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { CardBadge, UnreadBadge } from '@/components/card-badge';
 import { Skeleton } from '@/components/skeleton';
@@ -14,7 +14,7 @@ import type { SeriesEntry } from '@/data/mock';
 // fixed rail widths; `grid` fills its parent slot (the grid controls columns).
 // Mirrors `.card` in the reference: a chrome-less cover (2:3, radius 10) that
 // shows a highlight ring only on hover (web) or while held (touch), overlaid
-// badges, a clamped title that reveals in full while active, and a subtitle.
+// badges, and a clamped title that reveals in full while active.
 
 export type CardSize = 'grid' | 'rail' | 'ranked' | 'hero';
 
@@ -24,9 +24,63 @@ const WIDTHS: Record<Exclude<CardSize, 'grid'>, number> = {
   hero: 240,
 };
 
+const MAX_TITLE_LINES = 2;
+const TITLE_LINE_HEIGHT = 18;
+
 // Large enough to cover any screen: the press stays "active" wherever the finger
 // goes, so the highlight only ends on release.
 const HOLD_RETENTION = { top: 1000, bottom: 1000, left: 1000, right: 1000 };
+
+/**
+ * Held-highlight state. A press/touch "holds" the card active; on the web the
+ * hold is only released by an actual pointer/touch *release* anywhere on the
+ * page — moving the finger or scrolling does NOT end it (a scroll isn't a
+ * finger-up). Mouse hover holds it too. Native falls back to press in/out with a
+ * large press-retention offset so sliding off the card keeps it active.
+ */
+function useHeld() {
+  const [held, setHeld] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const cleanup = useRef<(() => void) | null>(null);
+
+  const start = useCallback(() => {
+    setHeld(true);
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      cleanup.current?.();
+      const release = () => {
+        setHeld(false);
+        window.removeEventListener('pointerup', release);
+        window.removeEventListener('touchend', release);
+        window.removeEventListener('mouseup', release);
+        cleanup.current = null;
+      };
+      // Only true finger/mouse releases end the hold — deliberately NOT
+      // pointercancel/touchcancel, so a scroll keeps the card highlighted.
+      window.addEventListener('pointerup', release);
+      window.addEventListener('touchend', release);
+      window.addEventListener('mouseup', release);
+      cleanup.current = release;
+    }
+  }, []);
+
+  const end = useCallback(() => {
+    // On the web the global release listener owns teardown; on native, press-out
+    // is the release.
+    if (Platform.OS !== 'web') setHeld(false);
+  }, []);
+
+  useEffect(() => () => cleanup.current?.(), []);
+
+  return {
+    active: held || hovered,
+    handlers: {
+      onPressIn: start,
+      onPressOut: end,
+      onHoverIn: () => setHovered(true),
+      onHoverOut: () => setHovered(false),
+    },
+  };
+}
 
 export function SeriesCard({
   entry,
@@ -43,14 +97,9 @@ export function SeriesCard({
 }) {
   const theme = useTheme();
   const [loaded, setLoaded] = useState(false);
-  const [hovered, setHovered] = useState(false);
-  const [pressed, setPressed] = useState(false);
   const [truncated, setTruncated] = useState(false);
+  const { active, handlers } = useHeld();
   const fixedWidth = size === 'grid' ? undefined : (width ?? WIDTHS[size]);
-  const maxLines = size === 'grid' ? 3 : 2;
-  // Highlight (ring + full-title reveal) while hovered on web or held on touch —
-  // the cross-platform stand-in for the reference's :hover / .touch-active.
-  const active = hovered || pressed;
 
   return (
     <Link
@@ -59,16 +108,15 @@ export function SeriesCard({
       {/* Flatten to a single style object: as the `asChild` of <Link>, the
           Pressable is cloned by expo-router's <Slot>, which rejects array styles. */}
       <Pressable
-        style={StyleSheet.flatten([styles.card, fixedWidth != null && { width: fixedWidth }])}
-        // Keep the held highlight (ring + title peek) alive while the finger is
-        // down even after it slides off the card — a huge retention offset means
-        // only releasing (onPressOut) clears it, while a real scroll still steals
-        // the responder and cancels normally.
+        style={StyleSheet.flatten([
+          styles.card,
+          fixedWidth != null && { width: fixedWidth },
+          // Lift the active card so its full-title popover draws over neighbours.
+          active && styles.cardActive,
+        ])}
+        // Native: sliding off the card keeps it held; release clears it.
         pressRetentionOffset={HOLD_RETENTION}
-        onHoverIn={() => setHovered(true)}
-        onHoverOut={() => setHovered(false)}
-        onPressIn={() => setPressed(true)}
-        onPressOut={() => setPressed(false)}>
+        {...handlers}>
         {/* Shell carries the cover's size so the highlight ring can sit OUTSIDE
             the (overflow-clipped) cover without insetting it. */}
         <View style={styles.coverShell}>
@@ -89,20 +137,23 @@ export function SeriesCard({
               </View>
             )}
           </View>
-          {/* Highlight ring sits just outside the cover edges — only visible
-              while active. */}
+          {/* Highlight ring hugs the cover edge (flush, just outside) — only
+              visible while active. */}
           {active && <View pointerEvents="none" style={styles.ring} />}
         </View>
 
         <View style={styles.titleWrap}>
+          <ThemedText type="small" numberOfLines={MAX_TITLE_LINES} style={styles.title}>
+            {entry.title}
+          </ThemedText>
+          {/* Off-screen full-height copy measured via onLayout (which, unlike
+              onTextLayout, fires on react-native-web) to detect clamping. */}
           <ThemedText
             type="small"
-            numberOfLines={maxLines}
-            onTextLayout={(e) => {
-              const text = e.nativeEvent.lines.map((l) => l.text).join('');
-              setTruncated(text.length > 0 && text.length < entry.title.length);
-            }}
-            style={styles.title}>
+            style={[styles.title, styles.measure]}
+            onLayout={(e) =>
+              setTruncated(e.nativeEvent.layout.height > MAX_TITLE_LINES * TITLE_LINE_HEIGHT + 1)
+            }>
             {entry.title}
           </ThemedText>
           {/* Reveal the full title in a popover while active and clamped, so a long
@@ -110,19 +161,16 @@ export function SeriesCard({
           {active && truncated && (
             <View
               pointerEvents="none"
-              style={[styles.titlePopover, { backgroundColor: theme.backgroundElement }]}>
+              style={[
+                styles.titlePopover,
+                { backgroundColor: theme.backgroundElement, borderColor: theme.hairline },
+              ]}>
               <ThemedText type="small" style={styles.title}>
                 {entry.title}
               </ThemedText>
             </View>
           )}
         </View>
-
-        {entry.sub ? (
-          <ThemedText type="small" themeColor="textSecondary" numberOfLines={1} style={styles.sub}>
-            {entry.sub}
-          </ThemedText>
-        ) : null}
       </Pressable>
     </Link>
   );
@@ -131,6 +179,9 @@ export function SeriesCard({
 const styles = StyleSheet.create({
   card: {
     gap: Spacing.one,
+  },
+  cardActive: {
+    zIndex: 10,
   },
   coverShell: {
     width: '100%',
@@ -145,10 +196,12 @@ const styles = StyleSheet.create({
   },
   ring: {
     position: 'absolute',
-    top: -3,
-    left: -3,
-    right: -3,
-    bottom: -3,
+    // Offset == border width, so the ring's inner edge is flush with the cover
+    // (no gap) while the stroke itself sits just outside it.
+    top: -2,
+    left: -2,
+    right: -2,
+    bottom: -2,
     borderRadius: 12,
     borderWidth: 2,
     borderColor: '#60a5fa',
@@ -158,7 +211,15 @@ const styles = StyleSheet.create({
   },
   title: {
     fontWeight: '600',
-    lineHeight: 18,
+    lineHeight: TITLE_LINE_HEIGHT,
+  },
+  measure: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    opacity: 0,
+    zIndex: -1,
   },
   titlePopover: {
     position: 'absolute',
@@ -166,13 +227,10 @@ const styles = StyleSheet.create({
     left: -Spacing.one,
     right: -Spacing.one,
     zIndex: 10,
-    paddingHorizontal: Spacing.one,
-    paddingVertical: Spacing.half,
-    borderRadius: 6,
-  },
-  sub: {
-    fontSize: 12,
-    lineHeight: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.one,
+    borderRadius: 8,
   },
   rank: {
     position: 'absolute',

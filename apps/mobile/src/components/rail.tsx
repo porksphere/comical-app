@@ -1,4 +1,4 @@
-import { FlatList, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 
 import { SeriesCard, type CardSize } from '@/components/series-card';
 import { ThemedText } from '@/components/themed-text';
@@ -24,33 +24,39 @@ const STRIP_PAD = Spacing.four;
 const STRIP_GAP = Spacing.three;
 
 /**
- * Responsive card width per rail kind. On mobile, a regular carousel shows
- * exactly 3 full cards plus a ⅓ peek of the 4th: with left pad P and gap G,
- *   P + 3·c + 3·G + c/3 = width  ⇒  c = 0.3·(width − P − 3·G).
- * Featured (hero) cards land "about the size" of carousel cards (a touch
- * larger); ranked sits between. On wide layouts we use comfortable fixed sizes.
+ * Responsive card width per rail kind, given the current viewport width (passed
+ * in from the screen so there's a single, hydration-safe dimensions source). On
+ * mobile we size so that N full cards plus a ⅓ peek of the next fit the
+ * viewport: with left pad P and gap G,
+ *   P + N·c + N·G + c/3 = viewport  ⇒  c = (viewport − P − N·G) / (N + ⅓).
+ * Regular carousels show 3 full + ⅓; featured (hero) cards are larger, showing
+ * 2 full + ⅓. On wide layouts we use comfortable fixed sizes.
  */
-function useCardWidth(kind: RailSection['kind']): number {
-  const { width } = useWindowDimensions();
-  const mobile = width < 768;
-  if (!mobile) {
-    return kind === 'hero' ? 180 : kind === 'ranked' ? 160 : 150;
+function peekWidth(viewport: number, fullCards: number): number {
+  return Math.round((viewport - STRIP_PAD - fullCards * STRIP_GAP) / (fullCards + 1 / 3));
+}
+
+function cardWidthFor(kind: RailSection['kind'], viewport: number): number {
+  if (viewport >= 768) {
+    return kind === 'hero' ? 210 : kind === 'ranked' ? 160 : 150;
   }
-  const base = Math.round(0.3 * (width - STRIP_PAD - 3 * STRIP_GAP));
-  if (kind === 'hero') return Math.round(base * 1.18);
-  if (kind === 'ranked') return Math.round(base * 1.05);
-  return base;
+  if (kind === 'hero') return peekWidth(viewport, 2);
+  if (kind === 'ranked') return Math.round(peekWidth(viewport, 3) * 1.05);
+  return peekWidth(viewport, 3);
 }
 
 export function Rail({
   section,
+  viewportWidth,
   onSeeAll,
 }: {
   section: RailSection;
+  /** Current viewport width, threaded from the screen. */
+  viewportWidth: number;
   onSeeAll?: (section: RailSection) => void;
 }) {
   const size = CARD_SIZE[section.kind];
-  const cardWidth = useCardWidth(section.kind);
+  const cardWidth = cardWidthFor(section.kind, viewportWidth);
   const ranked = section.kind === 'ranked';
   return (
     <View style={styles.section}>
@@ -106,5 +112,8 @@ const styles = StyleSheet.create({
   strip: {
     gap: STRIP_GAP,
     paddingHorizontal: STRIP_PAD,
+    // Vertical breathing room so the highlight ring (which sits just outside the
+    // card) isn't clipped at the top/bottom of the horizontal strip.
+    paddingVertical: Spacing.one,
   },
 });
