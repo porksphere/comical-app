@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { Link } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { CardBadge, UnreadBadge } from '@/components/card-badge';
 import { Skeleton } from '@/components/skeleton';
@@ -87,6 +87,8 @@ export function SeriesCard({
   size = 'grid',
   rank,
   width,
+  index = 0,
+  onPeekChange,
 }: {
   entry: SeriesEntry;
   size?: CardSize;
@@ -94,12 +96,29 @@ export function SeriesCard({
   /** Explicit card width (rails compute a responsive one); falls back to the
    *  per-size default. `grid` cards ignore this and fill their column. */
   width?: number;
+  /** Card position in its rail — used by the rail to place the lifted popover. */
+  index?: number;
+  /** When provided (rail mode), the card reports its peek state up instead of
+   *  drawing its own popover, so the rail can render it OUTSIDE the clipping
+   *  horizontal scroller. The grid omits this and draws the popover in-card. */
+  onPeekChange?: (show: boolean, index: number) => void;
 }) {
-  const theme = useTheme();
   const [loaded, setLoaded] = useState(false);
   const [truncated, setTruncated] = useState(false);
   const { active, handlers } = useHeld();
   const fixedWidth = size === 'grid' ? undefined : (width ?? WIDTHS[size]);
+
+  // Full-title peek. In a rail, hand the show/hide up to the rail (it owns the
+  // un-clipped popover); in the grid, render it in-card (the vertical list
+  // doesn't clip downward overflow).
+  const showPeek = active && truncated;
+  const onPeekRef = useRef(onPeekChange);
+  onPeekRef.current = onPeekChange;
+  useEffect(() => {
+    onPeekRef.current?.(showPeek, index);
+  }, [showPeek, index]);
+  // Stop reporting if the card unmounts while peeking (rail recycle/scroll).
+  useEffect(() => () => onPeekRef.current?.(false, index), [index]);
 
   return (
     <Link
@@ -156,25 +175,32 @@ export function SeriesCard({
             }>
             {entry.title}
           </ThemedText>
-          {/* Reveal the full title in a popover while active and clamped, so a long
-              title doesn't reflow the row (mirrors `.clampable::after`). */}
-          {active && truncated && (
-            <View
-              pointerEvents="none"
-              style={[
-                styles.titlePopover,
-                { backgroundColor: theme.backgroundElement, borderColor: theme.hairline },
-              ]}>
-              <ThemedText type="small" style={styles.title}>
-                {entry.title}
-              </ThemedText>
-            </View>
-          )}
+          {/* Grid-only in-card popover (rails render it at the rail level). */}
+          {!onPeekChange && showPeek && <TitlePeek title={entry.title} />}
         </View>
       </Pressable>
     </Link>
   );
 }
+
+/**
+ * The full-title popover. Used in-card by the grid and lifted out of the
+ * scroller by the rail (which passes a positioning `style`). Its content box
+ * matches the clamped title width so the first lines wrap identically.
+ */
+export function TitlePeek({ title, style }: { title: string; style?: StyleProp<ViewStyle> }) {
+  const theme = useTheme();
+  return (
+    <View pointerEvents="none" style={[styles.titlePopover, { backgroundColor: theme.backgroundElement }, style]}>
+      <ThemedText type="small" style={styles.title}>
+        {title}
+      </ThemedText>
+    </View>
+  );
+}
+
+/** Clamped-title line height × max lines — the rail uses these to place the peek. */
+export const TITLE_BLOCK_HEIGHT = MAX_TITLE_LINES * TITLE_LINE_HEIGHT;
 
 const styles = StyleSheet.create({
   card: {
@@ -224,13 +250,20 @@ const styles = StyleSheet.create({
   titlePopover: {
     position: 'absolute',
     top: -Spacing.one,
-    left: -Spacing.one,
-    right: -Spacing.one,
-    zIndex: 10,
-    borderWidth: StyleSheet.hairlineWidth,
+    // Insets equal the horizontal padding, so the text column lines up with the
+    // clamped title and wraps identically (no word reflow when it appears).
+    left: -Spacing.two,
+    right: -Spacing.two,
+    zIndex: 1000,
     paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.one,
     borderRadius: 8,
+    // Soft lift so it reads as floating over the cards below it.
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
   },
   rank: {
     position: 'absolute',

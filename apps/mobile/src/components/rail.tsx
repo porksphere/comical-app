@@ -1,10 +1,17 @@
-import { FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { FlatList, type NativeScrollEvent, type NativeSyntheticEvent, Pressable, StyleSheet, View } from 'react-native';
 
-import { SeriesCard, type CardSize } from '@/components/series-card';
+import { SeriesCard, TitlePeek, type CardSize } from '@/components/series-card';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import type { RailSection, SeriesEntry } from '@/data/mock';
+
+// Card cover aspect is 2:3, so a card of width W has a cover of height W·3/2;
+// the title sits a card-gap below it. Used to place the lifted peek popover.
+const COVER_RATIO = 3 / 2;
+const STRIP_PAD_V = Spacing.one;
+const CARD_GAP = Spacing.one;
 
 // A horizontal rail: section header (title + "See all") above a snap-scrolling
 // strip of cards. Mirrors the reference's `.carousel` (with hero / ranked size
@@ -58,8 +65,23 @@ export function Rail({
   const size = CARD_SIZE[section.kind];
   const cardWidth = cardWidthFor(section.kind, viewportWidth);
   const ranked = section.kind === 'ranked';
+
+  // The full-title peek lives here (not in the card) so it can float ABOVE the
+  // horizontal scroller, which would otherwise clip the card's own popover. We
+  // position it from pure geometry — index, gap, scroll offset — no DOM
+  // measurement, so it's deterministic and follows the strip as it scrolls.
+  const [peekIndex, setPeekIndex] = useState<number | null>(null);
+  const [scrollX, setScrollX] = useState(0);
+  const [stripTop, setStripTop] = useState(0);
+  const onPeekChange = useCallback((show: boolean, index: number) => {
+    setPeekIndex((prev) => (show ? index : prev === index ? null : prev));
+  }, []);
+
+  const peekLeft = peekIndex == null ? 0 : STRIP_PAD + peekIndex * (cardWidth + STRIP_GAP) - scrollX;
+  const titleTop = stripTop + STRIP_PAD_V + cardWidth * COVER_RATIO + CARD_GAP;
+
   return (
-    <View style={styles.section}>
+    <View style={[styles.section, peekIndex != null && styles.sectionPeeking]}>
       <SectionHead title={section.title} onSeeAll={onSeeAll ? () => onSeeAll(section) : undefined} />
       <FlatList
         horizontal
@@ -67,10 +89,31 @@ export function Rail({
         keyExtractor={(it) => it.id}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.strip}
+        onLayout={(e) => setStripTop(e.nativeEvent.layout.y)}
+        onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) => setScrollX(e.nativeEvent.contentOffset.x)}
+        scrollEventThrottle={16}
         renderItem={({ item, index }: { item: SeriesEntry; index: number }) => (
-          <SeriesCard entry={item} size={size} width={cardWidth} rank={ranked ? index + 1 : undefined} />
+          <SeriesCard
+            entry={item}
+            size={size}
+            width={cardWidth}
+            rank={ranked ? index + 1 : undefined}
+            index={index}
+            onPeekChange={onPeekChange}
+          />
         )}
       />
+      {peekIndex != null && (
+        <TitlePeek
+          title={section.items[peekIndex].title}
+          style={{
+            left: peekLeft - Spacing.two,
+            right: 'auto',
+            top: titleTop - Spacing.one,
+            width: cardWidth + Spacing.two * 2,
+          }}
+        />
+      )}
     </View>
   );
 }
@@ -96,6 +139,12 @@ export function SectionHead({ title, onSeeAll }: { title: string; onSeeAll?: () 
 const styles = StyleSheet.create({
   section: {
     gap: Spacing.two,
+    position: 'relative',
+  },
+  // While peeking, lift the whole section so its popover draws over the rail
+  // below it.
+  sectionPeeking: {
+    zIndex: 1000,
   },
   head: {
     flexDirection: 'row',
