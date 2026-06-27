@@ -11,7 +11,8 @@ import type { RailSection, SeriesEntry } from '@/data/mock';
 // the title sits a card-gap below it. Used to place the lifted peek popover.
 const COVER_RATIO = 3 / 2;
 const STRIP_PAD_V = Spacing.one;
-const CARD_GAP = Spacing.one;
+// Must match the SeriesCard's cover→title gap so the lifted peek lands on the title.
+const CARD_GAP = Spacing.two;
 
 // A horizontal rail: section header (title + "See all") above a snap-scrolling
 // strip of cards. Mirrors the reference's `.carousel` (with hero / ranked size
@@ -107,10 +108,10 @@ export function Rail({
         <TitlePeek
           title={section.items[peekIndex].title}
           style={{
-            left: peekLeft,
+            left: peekLeft - Spacing.two,
             right: 'auto',
             top: titleTop - Spacing.one,
-            width: cardWidth,
+            width: cardWidth + Spacing.two * 2,
           }}
         />
       )}
