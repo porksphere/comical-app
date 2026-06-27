@@ -108,6 +108,22 @@ function hash(s: string): number {
   return Math.abs(h);
 }
 
+/**
+ * Simulated network latency for a cover, in ms. Deterministic per id so a card
+ * always behaves the same. Most covers are instant; ~40% load "slowly" (so the
+ * skeleton is visible) — a stand-in for real bridge image latency.
+ */
+export function coverDelayMs(id: string): number {
+  const h = hash(`cover:${id}`);
+  if (h % 5 < 2) return 500 + (h % 2000); // ~0.5s–2.5s on ~40% of covers
+  return 0;
+}
+
+/** Simulated latency (ms) for opening a series detail. */
+export const SERIES_OPEN_DELAY_MS = 900;
+/** Simulated latency (ms) for loading the next infinite-scroll grid page. */
+export const PAGE_LOAD_DELAY_MS = 900;
+
 function entry(seed: string, i: number, opts: { badges?: boolean; unread?: boolean; sub?: boolean } = {}): SeriesEntry {
   const h = hash(seed);
   const e: SeriesEntry = {

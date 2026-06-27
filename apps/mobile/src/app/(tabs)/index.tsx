@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FilterBar } from '@/components/filters/filter-demo';
@@ -11,7 +11,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Spacing, TopBarHeight } from '@/constants/theme';
 import { getBridges, getBridgeLists, isAbort, pageOptions, type Bridge } from '@/data/api';
-import { mockGrid, mockHomeSections, type RailSection, type SeriesEntry } from '@/data/mock';
+import { mockGrid, mockHomeSections, PAGE_LOAD_DELAY_MS, type RailSection, type SeriesEntry } from '@/data/mock';
 import { useTheme } from '@/hooks/use-theme';
 
 // Fallback selector contents used until the API responds (or if it's
@@ -93,6 +93,7 @@ export default function BrowseScreen() {
   // brief — a stand-in for paginated bridge results.
   const homeBase = useMemo(() => mockGrid('home', 24), []);
   const [homePages, setHomePages] = useState(1);
+  const [loadingMore, setLoadingMore] = useState(false);
   const homeGrid = useMemo<SeriesEntry[]>(
     () =>
       Array.from({ length: homePages }).flatMap((_, p) =>
@@ -100,6 +101,16 @@ export default function BrowseScreen() {
       ),
     [homeBase, homePages],
   );
+
+  // Load the next page after a simulated delay so the loading footer is visible.
+  const loadMore = () => {
+    if (loadingMore) return;
+    setLoadingMore(true);
+    setTimeout(() => {
+      setHomePages((p) => p + 1);
+      setLoadingMore(false);
+    }, PAGE_LOAD_DELAY_MS);
+  };
 
   const backToHome = () => {
     setQuery('');
@@ -212,8 +223,18 @@ export default function BrowseScreen() {
             </View>
           )
         }
+        ListFooterComponent={
+          !inResults && loadingMore ? (
+            <View style={styles.loadingMore}>
+              <ActivityIndicator color={theme.textSecondary} />
+              <ThemedText type="small" themeColor="textSecondary">
+                Loading more…
+              </ThemedText>
+            </View>
+          ) : null
+        }
         onEndReachedThreshold={0.6}
-        onEndReached={inResults ? undefined : () => setHomePages((p) => p + 1)}
+        onEndReached={inResults ? undefined : loadMore}
         showsVerticalScrollIndicator={false}
       />
     </ThemedView>
@@ -317,5 +338,12 @@ const styles = StyleSheet.create({
   },
   cell: {
     flex: 1,
+  },
+  loadingMore: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.two,
+    paddingTop: Spacing.four,
   },
 });
