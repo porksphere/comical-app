@@ -1,126 +1,312 @@
-import { Image } from 'expo-image';
-import { Link } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { FlatList, type NativeScrollEvent, type NativeSyntheticEvent, Pressable, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FilterBar } from '@/components/filters/filter-demo';
+import { ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
+import { Rail, SectionHead } from '@/components/rail';
 import { Selector } from '@/components/selector';
+import { SeriesCard } from '@/components/series-card';
+import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, Spacing } from '@/constants/theme';
+import { BottomTabInset, Spacing, TopBarHeight } from '@/constants/theme';
+import { getBridges, getBridgeLists, isAbort, pageOptions, type Bridge } from '@/data/api';
+import { mockGrid, mockHomeSections, PAGE_LOAD_DELAY_MS, type RailSection, type SeriesEntry } from '@/data/mock';
+import { useTheme } from '@/hooks/use-theme';
 
-// Placeholder data sources. Bridges are intentionally mixed-case.
+// Fallback selector contents used until the API responds (or if it's
+// unreachable, e.g. SSO/CORS on the web preview) so the screen always renders.
 const BRIDGES = ['MangaDex', 'comick', 'Batoto', 'WeebCentral', 'asura'];
 const PAGES = ['home', 'popular', 'favorites'];
 
-const TITLES = [
-  'The Silent Sea',
-  'Crimson Harbor',
-  'Paper Moons',
-  'A Study in Ash',
-  'Northern Lights',
-  'The Glass Garden',
-  'Echoes of Tomorrow',
-  'Saltwater Hymns',
-  'The Last Cartographer',
-  'Velvet Machine',
-  'Whisper of Pines',
-  'Iron & Ink',
-];
-
-type Book = { id: number; title: string; spacer?: boolean };
-
-const BOOKS: Book[] = Array.from({ length: 30 }, (_, i) => ({
-  id: i + 1,
-  title: TITLES[i % TITLES.length],
-}));
+type GridItem = SeriesEntry & { spacer?: boolean };
 
 export default function BrowseScreen() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
+  // Bridges fetched from the backend; falls back to BRIDGES until/unless loaded.
+  const [bridges, setBridges] = useState<Bridge[]>([]);
   const [bridge, setBridge] = useState(BRIDGES[0]);
+  const [pages, setPages] = useState<string[]>(PAGES);
   const [page, setPage] = useState(PAGES[0]);
+  // Whether the grid is scrolled off the top — drives the top bar's divider, so
+  // the bridge/page selectors read as "anchoring" into the bar once you scroll.
+  const [scrolled, setScrolled] = useState(false);
 
-  // Static web export prerenders this route on the server, where there's no
-  // viewport (`width` is 0 → 3 columns). Computing the real column count on the
-  // first client render would disagree with that prerendered HTML and trigger a
-  // hydration mismatch on desktop. Hold the server's column count until after
-  // mount, then switch to the viewport-derived value as a normal re-render.
+  const bridgeOptions = bridges.length ? bridges.map((b) => b.name) : BRIDGES;
+
+  // Load the bridge list once; keep the fallback on any failure.
+  useEffect(() => {
+    const ctrl = new AbortController();
+    getBridges(ctrl.signal)
+      .then((bs) => {
+        if (bs.length) {
+          setBridges(bs);
+          setBridge(bs[0].name);
+        }
+      })
+      .catch((e) => {
+        if (!isAbort(e)) console.warn('getBridges failed; using fallback:', e.message);
+      });
+    return () => ctrl.abort();
+  }, []);
+
+  // Populate the page selector from the selected bridge's lists.
+  useEffect(() => {
+    const b = bridges.find((x) => x.name === bridge);
+    if (!b) {
+      setPages(PAGES);
+      return;
+    }
+    const ctrl = new AbortController();
+    getBridgeLists(b.id, ctrl.signal)
+      .then((lists) => {
+        const opts = pageOptions(lists, b.capabilities);
+        setPages(opts);
+        setPage(opts[0]);
+      })
+      .catch((e) => {
+        if (!isAbort(e)) {
+          console.warn('getBridgeLists failed; using fallback:', e.message);
+          setPages(PAGES);
+        }
+      });
+    return () => ctrl.abort();
+  }, [bridge, bridges]);
+
+  // Committed search query (set on submit) and the active "See all" rail, if any.
+  const [query, setQuery] = useState('');
+  const [seeAll, setSeeAll] = useState<RailSection | null>(null);
+
+  // Home shows the rails; anything else (a search, a non-home page, or a rail's
+  // "See all") drops to the flat results grid — mirrors the reference's
+  // browse-view ⇄ results-pane toggle.
+  const inResults = !!query || page !== 'home' || !!seeAll;
+
+  const sections = useMemo(() => mockHomeSections(), []);
+  const results = useMemo<SeriesEntry[]>(() => {
+    if (seeAll) return seeAll.items;
+    return mockGrid(query || page);
+  }, [seeAll, query, page]);
+  const resultsLabel = seeAll ? seeAll.title : query ? `Results for “${query}”` : page;
+
+  // Infinite "Browse all" grid shown under the home rails. We reuse one page of
+  // mock data and repeat it on each load (only the ids are re-keyed), per the
+  // brief — a stand-in for paginated bridge results.
+  const homeBase = useMemo(() => mockGrid('home', 24), []);
+  const [homePages, setHomePages] = useState(1);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const homeGrid = useMemo<SeriesEntry[]>(
+    () =>
+      Array.from({ length: homePages }).flatMap((_, p) =>
+        homeBase.map((e) => ({ ...e, id: `${e.id}-p${p}` })),
+      ),
+    [homeBase, homePages],
+  );
+
+  // Load the next page after a simulated delay so the loading footer is visible.
+  const loadMore = () => {
+    if (loadingMore) return;
+    setLoadingMore(true);
+    setTimeout(() => {
+      setHomePages((p) => p + 1);
+      setLoadingMore(false);
+    }, PAGE_LOAD_DELAY_MS);
+  };
+
+  const backToHome = () => {
+    setQuery('');
+    setSeeAll(null);
+    setPage('home');
+  };
+
+  // See plan: hold the server's column count until mount to avoid a hydration
+  // mismatch on the static web export (no viewport → width 0 → 3 columns).
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => setHydrated(true), []);
   const numColumns =
     !hydrated || width < 768 ? 3 : Math.min(6, Math.max(3, Math.floor(width / 200)));
+  // Single hydration-safe viewport width for the rails: a deterministic mobile
+  // fallback during prerender/first paint, the real width once mounted.
+  const railViewport = hydrated ? width : 390;
 
-  // Pad to a full last row so flex:1 cards don't stretch on a partial row.
-  const data = useMemo(() => {
-    const remainder = BOOKS.length % numColumns;
-    if (remainder === 0) return BOOKS;
-    const spacers: Book[] = Array.from({ length: numColumns - remainder }, (_, i) => ({
-      id: -1 - i,
+  // Home shows the infinite "Browse all" grid under the rails; results mode
+  // shows the (finite) search / "See all" / page grid.
+  const baseGrid = inResults ? results : homeGrid;
+  const gridData = useMemo<GridItem[]>(() => {
+    const remainder = baseGrid.length % numColumns;
+    if (remainder === 0) return baseGrid;
+    const spacers: GridItem[] = Array.from({ length: numColumns - remainder }, (_, i) => ({
+      id: `spacer-${i}`,
       title: '',
+      cover: '',
       spacer: true,
     }));
-    return [...BOOKS, ...spacers];
-  }, [numColumns]);
+    return [...baseGrid, ...spacers];
+  }, [baseGrid, numColumns]);
+
+  // Pinned bar: the bridge/page selectors stay at the top while content scrolls.
+  // At the very top there's no divider and a little breathing room above the
+  // selectors; once scrolled, the divider appears so they read as anchored.
+  const topBar = (
+    <View
+      style={[
+        styles.topBar,
+        {
+          paddingTop: insets.top + Spacing.three,
+          minHeight: insets.top + TopBarHeight,
+          borderBottomColor: scrolled ? theme.hairline : 'transparent',
+        },
+      ]}>
+      <Selector title="Bridge" value={bridge} options={bridgeOptions} onChange={setBridge} size="subtitle" />
+      <Selector title="Page" value={page} options={pages} onChange={setPage} size="subtitle" />
+    </View>
+  );
+
+  const controls = (
+    <View style={styles.controls}>
+      <SearchField
+        value={query}
+        onSubmit={(q) => {
+          setSeeAll(null);
+          setQuery(q.trim());
+        }}
+        onClear={() => setQuery('')}
+      />
+      <FilterBar />
+      {inResults && (
+        <View style={styles.resultsHead}>
+          <Pressable onPress={backToHome} hitSlop={8}>
+            <ThemedText type="smallBold" style={{ color: theme.accent }}>
+              ← Home
+            </ThemedText>
+          </Pressable>
+          <ThemedText type="small" themeColor="textSecondary" numberOfLines={1} style={styles.resultsLabel}>
+            {resultsLabel}
+          </ThemedText>
+        </View>
+      )}
+    </View>
+  );
+
+  // The list header holds the controls, and — on home — the rails followed by
+  // the "Browse all" section heading. The grid (results or infinite home) then
+  // renders beneath it, so everything scrolls as one surface.
+  const listHeader = (
+    <View>
+      {controls}
+      {!inResults && (
+        <>
+          <View style={styles.rails}>
+            {sections.map((s) => (
+              <Rail key={s.id} section={s} viewportWidth={railViewport} onSeeAll={setSeeAll} />
+            ))}
+          </View>
+          <View style={styles.browseAllHead}>
+            <SectionHead title="Browse all" />
+          </View>
+        </>
+      )}
+    </View>
+  );
 
   return (
     <ThemedView style={styles.container}>
-      {/* Fixed header: bridge/page selectors stay pinned while the grid scrolls. */}
-      <View style={[styles.topBar, { paddingTop: insets.top + Spacing.three }]}>
-        <View style={styles.selectors}>
-          <Selector title="Bridge" value={bridge} options={BRIDGES} onChange={setBridge} size="subtitle" />
-          <Selector title="Page" value={page} options={PAGES} onChange={setPage} size="subtitle" />
-        </View>
-      </View>
-
+      {topBar}
       <FlatList
         key={numColumns}
-        data={data}
+        data={gridData}
         keyExtractor={(item) => String(item.id)}
         numColumns={numColumns}
-        ListHeaderComponent={<ListHeader />}
+        ListHeaderComponent={listHeader}
         columnWrapperStyle={[styles.row, { gap: Spacing.three }]}
         contentContainerStyle={[
-          styles.content,
+          styles.gridContent,
           { paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
         ]}
-        renderItem={({ item }) => <BookCard book={item} bridge={bridge} />}
+        renderItem={({ item }) =>
+          item.spacer ? <View style={styles.cell} /> : (
+            <View style={styles.cell}>
+              <SeriesCard entry={item} />
+            </View>
+          )
+        }
+        ListFooterComponent={
+          !inResults && loadingMore ? <GridSkeleton numColumns={numColumns} rows={2} /> : null
+        }
+        onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) =>
+          setScrolled(e.nativeEvent.contentOffset.y > 0)
+        }
+        scrollEventThrottle={16}
+        onEndReachedThreshold={0.6}
+        onEndReached={inResults ? undefined : loadMore}
         showsVerticalScrollIndicator={false}
       />
     </ThemedView>
   );
 }
 
-function ListHeader() {
+function SearchField({
+  value,
+  onSubmit,
+  onClear,
+}: {
+  value: string;
+  onSubmit: (q: string) => void;
+  onClear: () => void;
+}) {
+  const theme = useTheme();
+  const [text, setText] = useState(value);
+  // Keep the field in sync when the committed query is cleared elsewhere (Home).
+  useEffect(() => setText(value), [value]);
   return (
-    <View style={styles.listHeader}>
-      <ThemedView type="backgroundElement" style={styles.search}>
-        <ThemedText themeColor="textSecondary">Search…</ThemedText>
-      </ThemedView>
-      <FilterBar />
-    </View>
+    <ThemedView type="backgroundElement" style={styles.search}>
+      <SearchIcon color={theme.textSecondary} size={16} />
+      <TextInput
+        value={text}
+        onChangeText={setText}
+        onSubmitEditing={() => onSubmit(text)}
+        placeholder="Search…"
+        placeholderTextColor={theme.textSecondary}
+        returnKeyType="search"
+        autoCapitalize="none"
+        autoCorrect={false}
+        style={[styles.searchInput, { color: theme.text }]}
+      />
+      {text.length > 0 && (
+        <Pressable
+          onPress={() => {
+            setText('');
+            onClear();
+          }}
+          hitSlop={8}
+          accessibilityLabel="Clear search">
+          <ClearIcon color={theme.textSecondary} size={14} />
+        </Pressable>
+      )}
+    </ThemedView>
   );
 }
 
-function BookCard({ book, bridge }: { book: Book; bridge: string }) {
-  if (book.spacer) return <View style={styles.card} />;
+/** Skeleton rows shown while the next infinite-scroll page loads — mirrors the
+ *  grid card (cover + two title lines) so it reads as "more cards incoming". */
+function GridSkeleton({ numColumns, rows }: { numColumns: number; rows: number }) {
   return (
-    <Link
-      href={{ pathname: '/series', params: { id: book.id, title: book.title, bridge } }}
-      asChild>
-      <Pressable style={styles.card}>
-        <Image
-          source={{ uri: `https://picsum.photos/seed/comical-${book.id}/300/450` }}
-          style={styles.cover}
-          contentFit="cover"
-          transition={200}
-        />
-        <ThemedText type="small" numberOfLines={2} style={styles.title}>
-          {book.title}
-        </ThemedText>
-      </Pressable>
-    </Link>
+    <View style={styles.skelFooter}>
+      {Array.from({ length: rows }).map((_, r) => (
+        <View key={r} style={[styles.row, styles.skelRow]}>
+          {Array.from({ length: numColumns }).map((_, c) => (
+            <View key={c} style={[styles.cell, styles.skelCell]}>
+              <Skeleton style={styles.skelCover} />
+              <Skeleton style={styles.skelLine} />
+              <Skeleton style={[styles.skelLine, styles.skelLineShort]} />
+            </View>
+          ))}
+        </View>
+      ))}
+    </View>
   );
 }
 
@@ -129,42 +315,79 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   topBar: {
-    paddingHorizontal: Spacing.four,
-    paddingBottom: Spacing.three,
-  },
-  selectors: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.three,
-  },
-  content: {
     paddingHorizontal: Spacing.four,
-    paddingTop: Spacing.two,
-    gap: Spacing.three,
+    paddingBottom: Spacing.two,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  listHeader: {
+  controls: {
+    paddingHorizontal: Spacing.four,
     gap: Spacing.four,
+    paddingTop: Spacing.three,
     paddingBottom: Spacing.three,
   },
   search: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
     paddingVertical: Spacing.three,
     paddingHorizontal: Spacing.three,
     borderRadius: Spacing.three,
   },
-  row: {
-    // gap supplied inline so columns are evenly spaced
-  },
-  card: {
+  searchInput: {
     flex: 1,
-    gap: Spacing.two,
+    fontSize: 16,
+    padding: 0,
   },
-  cover: {
+  resultsHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+  },
+  resultsLabel: {
+    flexShrink: 1,
+  },
+  rails: {
+    gap: Spacing.five,
+  },
+  browseAllHead: {
+    paddingTop: Spacing.five,
+    paddingBottom: Spacing.two,
+  },
+  gridContent: {
+    paddingTop: Spacing.two,
+    gap: Spacing.three,
+  },
+  row: {
+    paddingHorizontal: Spacing.four,
+  },
+  cell: {
+    flex: 1,
+  },
+  skelFooter: {
+    gap: Spacing.three,
+    paddingTop: Spacing.three,
+  },
+  skelRow: {
+    flexDirection: 'row',
+    gap: Spacing.three,
+  },
+  skelCell: {
+    flex: 1,
+    gap: Spacing.one,
+  },
+  skelCover: {
     width: '100%',
     aspectRatio: 2 / 3,
-    borderRadius: 12,
-    backgroundColor: 'rgba(128,128,128,0.15)',
+    borderRadius: 10,
   },
-  title: {
-    lineHeight: 18,
+  skelLine: {
+    height: 12,
+    borderRadius: 4,
+  },
+  skelLineShort: {
+    width: '60%',
   },
 });

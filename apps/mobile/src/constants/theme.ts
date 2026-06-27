@@ -14,6 +14,19 @@ export const Colors = {
     backgroundElement: '#F0F0F3',
     backgroundSelected: '#E0E1E6',
     textSecondary: '#60646C',
+    // Shared accent + chrome tokens (mirrored in `dark`). Used by cards, badges,
+    // chips and the series action buttons so colors aren't re-hardcoded per file.
+    accent: '#3478F6',
+    accentOn: '#ffffff',
+    badgeInfo: '#2563eb',
+    badgeWarn: '#ca8a04',
+    badgeSuccess: '#16a34a',
+    badgeNew: '#f59e0b',
+    badgeNewOn: '#111111',
+    hairline: 'rgba(0,0,0,0.12)',
+    chipBg: '#E8EEFB',
+    chipBorder: '#B9CEF5',
+    chipText: '#2257C7',
   },
   dark: {
     text: '#ffffff',
@@ -21,6 +34,17 @@ export const Colors = {
     backgroundElement: '#212225',
     backgroundSelected: '#2E3135',
     textSecondary: '#B0B4BA',
+    accent: '#3478F6',
+    accentOn: '#ffffff',
+    badgeInfo: '#2563eb',
+    badgeWarn: '#ca8a04',
+    badgeSuccess: '#16a34a',
+    badgeNew: '#f59e0b',
+    badgeNewOn: '#111111',
+    hairline: 'rgba(128,128,128,0.25)',
+    chipBg: '#1c2a3a',
+    chipBorder: '#2c4060',
+    chipText: '#8ab4f8',
   },
 } as const;
 
@@ -63,3 +87,7 @@ export const Spacing = {
 
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
 export const MaxContentWidth = 800;
+/** Content height (below the safe-area top inset) of the sticky top bars — the
+ *  browse bridge/page bar and the series detail bar — so they read as one bar
+ *  across views. Mirrors the reference's shared `--topbar-height`. */
+export const TopBarHeight = 48;
