@@ -9,7 +9,7 @@ import { Selector } from '@/components/selector';
 import { SeriesCard } from '@/components/series-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, Spacing } from '@/constants/theme';
+import { BottomTabInset, Spacing, TopBarHeight } from '@/constants/theme';
 import { mockGrid, mockHomeSections, type RailSection, type SeriesEntry } from '@/data/mock';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -66,12 +66,20 @@ export default function BrowseScreen() {
     return [...results, ...spacers];
   }, [results, numColumns]);
 
+  // Pinned bar: the bridge/page selectors stay at the top while content scrolls.
+  const topBar = (
+    <View
+      style={[
+        styles.topBar,
+        { paddingTop: insets.top, minHeight: insets.top + TopBarHeight, borderBottomColor: theme.hairline },
+      ]}>
+      <Selector title="Bridge" value={bridge} options={BRIDGES} onChange={setBridge} size="subtitle" />
+      <Selector title="Page" value={page} options={PAGES} onChange={setPage} size="subtitle" />
+    </View>
+  );
+
   const controls = (
     <View style={styles.controls}>
-      <View style={styles.selectors}>
-        <Selector title="Bridge" value={bridge} options={BRIDGES} onChange={setBridge} size="subtitle" />
-        <Selector title="Page" value={page} options={PAGES} onChange={setPage} size="subtitle" />
-      </View>
       <SearchField
         value={query}
         onSubmit={(q) => {
@@ -98,7 +106,7 @@ export default function BrowseScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <View style={{ paddingTop: insets.top + Spacing.three }} />
+      {topBar}
       {inResults ? (
         <FlatList
           key={numColumns}
@@ -156,7 +164,7 @@ function SearchField({
         value={text}
         onChangeText={setText}
         onSubmitEditing={() => onSubmit(text)}
-        placeholder="Search… (press Enter)"
+        placeholder="Search…"
         placeholderTextColor={theme.textSecondary}
         returnKeyType="search"
         autoCapitalize="none"
@@ -182,23 +190,27 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  controls: {
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
-    paddingBottom: Spacing.three,
-  },
-  selectors: {
+  topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.three,
+    paddingHorizontal: Spacing.four,
+    paddingBottom: Spacing.two,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  controls: {
+    paddingHorizontal: Spacing.four,
+    gap: Spacing.four,
+    paddingTop: Spacing.three,
+    paddingBottom: Spacing.three,
   },
   search: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
-    paddingVertical: Spacing.two,
+    paddingVertical: Spacing.three,
     paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.two,
+    borderRadius: Spacing.three,
   },
   searchInput: {
     flex: 1,

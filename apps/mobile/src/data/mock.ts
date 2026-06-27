@@ -31,7 +31,6 @@ export type SeriesEntry = {
   unread?: number;
 };
 
-export type Stat = { id: string; label: string; value: string };
 export type TagGroup = { label: string; tags: string[] };
 export type MetaCell = { label: string; value: string };
 
@@ -52,7 +51,6 @@ export type SeriesDetail = SeriesEntry & {
   readLabel?: string;
   genres?: string[];
   tagGroups?: TagGroup[];
-  stats?: Stat[];
   meta?: MetaCell[];
   description?: string;
   /** Chaptered series. Mutually exclusive with `pageThumbs` (direct series). */
@@ -142,11 +140,6 @@ const TAG_GROUPS: TagGroup[] = [
   { label: 'Themes', tags: ['Magic', 'Coming of Age', 'Nobility'] },
   { label: 'Demographic', tags: ['Shounen'] },
 ];
-const STATS: Stat[] = [
-  { id: 'rating', label: 'Rating', value: '★ 4.7' },
-  { id: 'follows', label: 'Follows', value: '◆ 128k' },
-  { id: 'views', label: 'Views', value: '▣ 3.1M' },
-];
 const META: MetaCell[] = [
   { label: 'STATUS', value: 'Ongoing' },
   { label: 'TYPE', value: 'Manhwa' },
@@ -214,7 +207,6 @@ export function mockSeries(id: string, title?: string, bridge = 'Library'): Seri
   if (!bare) {
     base.genres = GENRES;
     base.tagGroups = TAG_GROUPS;
-    base.stats = STATS;
     base.hasSources = h % 2 === 0;
     base.hasTrackers = true;
     base.newCount = h % 5 === 0 ? 3 : undefined;

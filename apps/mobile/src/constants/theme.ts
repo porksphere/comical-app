@@ -87,3 +87,7 @@ export const Spacing = {
 
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
 export const MaxContentWidth = 800;
+/** Content height (below the safe-area top inset) of the sticky top bars — the
+ *  browse bridge/page bar and the series detail bar — so they read as one bar
+ *  across views. Mirrors the reference's shared `--topbar-height`. */
+export const TopBarHeight = 48;

@@ -10,14 +10,11 @@ import { Rail } from '@/components/rail';
 import { SeriesCard } from '@/components/series-card';
 import { ActionButton, NewBadge } from '@/components/series/action-button';
 import { ChaptersSection } from '@/components/series/chapters-section';
-import { StatsRow } from '@/components/series/stats-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { MaxContentWidth, Spacing, TopBarHeight } from '@/constants/theme';
 import { mockSeries } from '@/data/mock';
 import { useTheme } from '@/hooks/use-theme';
-
-const BAR_HEIGHT = 44;
 
 export default function SeriesScreen() {
   const router = useRouter();
@@ -42,7 +39,7 @@ export default function SeriesScreen() {
       <View
         style={[
           styles.topBar,
-          { paddingTop: insets.top, height: insets.top + BAR_HEIGHT, borderBottomColor: theme.hairline },
+          { paddingTop: insets.top, height: insets.top + TopBarHeight, borderBottomColor: theme.hairline },
         ]}>
         <Pressable
           onPress={() => router.back()}
@@ -90,7 +87,6 @@ export default function SeriesScreen() {
             {/* Per-bridge dynamic sections: each renders only when present. */}
             {series.genres?.length ? <ChipRow labels={series.genres} accent /> : null}
             {series.tagGroups?.map((g) => <TagGroupRow key={g.label} group={g} />)}
-            {series.stats?.length ? <StatsRow stats={series.stats} /> : null}
 
             {series.meta?.length ? (
               <View style={[styles.metaGrid, { borderColor: theme.hairline }]}>
@@ -142,7 +138,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: Spacing.three,
     bottom: Spacing.one,
-    height: BAR_HEIGHT - Spacing.two,
+    height: TopBarHeight - Spacing.two,
     justifyContent: 'center',
   },
   bridgeName: {
