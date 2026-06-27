@@ -26,7 +26,7 @@ export function Selector({ title, value, options, onChange, size = 'title' }: Se
           <SelectMenu title={title} options={options} selected={value} onSelect={onChange} />
         ))
       }>
-      <ThemedText type={size} numberOfLines={1}>
+      <ThemedText type={size} numberOfLines={1} style={size === 'subtitle' ? styles.subtitleCompact : undefined}>
         {value}
       </ThemedText>
       <ThemedText themeColor="textSecondary" style={size === 'title' ? styles.caretLg : styles.caretSm}>
@@ -76,6 +76,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.one,
     flexShrink: 1,
+  },
+  // The bridge/page bar uses `subtitle` (32) — render it a notch smaller.
+  subtitleCompact: {
+    fontSize: 24,
+    lineHeight: 32,
   },
   caretLg: {
     fontSize: 20,
