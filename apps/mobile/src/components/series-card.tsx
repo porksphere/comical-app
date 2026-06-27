@@ -1,14 +1,14 @@
 import { Image } from 'expo-image';
 import { Link } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { CardBadge, UnreadBadge } from '@/components/card-badge';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
+import { coverDelayMs, type SeriesEntry } from '@/data/mock';
 import { useTheme } from '@/hooks/use-theme';
-import type { SeriesEntry } from '@/data/mock';
 
 // Shared cover card used by both the browse grid and the rails. `size` picks the
 // fixed rail widths; `grid` fills its parent slot (the grid controls columns).
@@ -108,6 +108,20 @@ export function SeriesCard({
   const { active, handlers } = useHeld();
   const fixedWidth = size === 'grid' ? undefined : (width ?? WIDTHS[size]);
 
+  // Hold some covers behind a simulated network delay: we don't even mount the
+  // <Image> until the delay elapses, so the skeleton stays visible (a stand-in
+  // for real bridge image latency). Most covers are instant.
+  const delay = useMemo(() => coverDelayMs(entry.id), [entry.id]);
+  const [delayPassed, setDelayPassed] = useState(delay === 0);
+  useEffect(() => {
+    if (delay === 0) return;
+    setDelayPassed(false);
+    setLoaded(false);
+    const t = setTimeout(() => setDelayPassed(true), delay);
+    return () => clearTimeout(t);
+  }, [delay, entry.id]);
+  const coverReady = delayPassed && loaded;
+
   // Full-title peek. In a rail, hand the show/hide up to the rail (it owns the
   // un-clipped popover); in the grid, render it in-card (the vertical list
   // doesn't clip downward overflow).
@@ -140,14 +154,16 @@ export function SeriesCard({
             the (overflow-clipped) cover without insetting it. */}
         <View style={styles.coverShell}>
           <View style={styles.cover}>
-            <Image
-              source={{ uri: entry.cover }}
-              style={StyleSheet.absoluteFill}
-              contentFit="cover"
-              transition={200}
-              onLoad={() => setLoaded(true)}
-            />
-            {!loaded && <Skeleton style={StyleSheet.absoluteFill} />}
+            {delayPassed && (
+              <Image
+                source={{ uri: entry.cover }}
+                style={StyleSheet.absoluteFill}
+                contentFit="cover"
+                transition={200}
+                onLoad={() => setLoaded(true)}
+              />
+            )}
+            {!coverReady && <Skeleton style={StyleSheet.absoluteFill} />}
             {entry.badges?.map((b, i) => <CardBadge key={i} badge={b} />)}
             {entry.unread != null && <UnreadBadge count={entry.unread} />}
             {rank != null && (

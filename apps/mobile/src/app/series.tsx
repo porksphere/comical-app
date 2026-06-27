@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -10,10 +10,11 @@ import { Rail } from '@/components/rail';
 import { SeriesCard } from '@/components/series-card';
 import { ActionButton, NewBadge } from '@/components/series/action-button';
 import { ChaptersSection } from '@/components/series/chapters-section';
+import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing, TopBarHeight } from '@/constants/theme';
-import { mockSeries } from '@/data/mock';
+import { mockSeries, SERIES_OPEN_DELAY_MS } from '@/data/mock';
 import { useTheme } from '@/hooks/use-theme';
 
 export default function SeriesScreen() {
@@ -36,6 +37,15 @@ export default function SeriesScreen() {
   // so it doesn't get absurd on very wide layouts).
   const contentWidth = Math.min(width, MaxContentWidth) - Spacing.four * 2;
   const actionsWidth = Math.round(Math.min(Math.max(contentWidth * 0.3, 116), 150));
+
+  // Simulated fetch latency so the loading skeleton is visible when opening a
+  // series. Resets if you navigate to a different one.
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    setLoading(true);
+    const t = setTimeout(() => setLoading(false), SERIES_OPEN_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [id, title, bridge]);
 
   return (
     <ThemedView style={styles.container}>
@@ -62,6 +72,10 @@ export default function SeriesScreen() {
         contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + Spacing.five }]}
         showsVerticalScrollIndicator={false}>
         <View style={styles.column}>
+          {loading ? (
+            <SeriesSkeleton actionsWidth={actionsWidth} />
+          ) : (
+          <>
           <View style={styles.inner}>
             <ThemedText type="subtitle" style={styles.title}>
               {series.title}
@@ -123,9 +137,49 @@ export default function SeriesScreen() {
               />
             </View>
           ) : null}
+          </>
+          )}
         </View>
       </ScrollView>
     </ThemedView>
+  );
+}
+
+/** Loading placeholder that mirrors the series layout (title, hero, chips, meta,
+ *  description) while the simulated fetch is in flight. */
+function SeriesSkeleton({ actionsWidth }: { actionsWidth: number }) {
+  return (
+    <View style={styles.inner}>
+      <View style={styles.skelTitle}>
+        <Skeleton style={[styles.skelLine, { width: '85%', height: 26 }]} />
+        <Skeleton style={[styles.skelLine, { width: '55%', height: 26 }]} />
+      </View>
+
+      <View style={styles.hero}>
+        <View style={styles.coverWrap}>
+          <Skeleton style={styles.cover} />
+        </View>
+        <View style={[styles.actions, { width: actionsWidth }]}>
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} style={styles.skelButton} />
+          ))}
+        </View>
+      </View>
+
+      <View style={styles.skelChips}>
+        {[60, 48, 80, 52, 70].map((w, i) => (
+          <Skeleton key={i} style={[styles.skelChip, { width: w }]} />
+        ))}
+      </View>
+
+      <Skeleton style={styles.skelMeta} />
+
+      <View style={styles.skelTitle}>
+        {(['100%', '96%', '100%', '60%'] as const).map((w, i) => (
+          <Skeleton key={i} style={[styles.skelLine, { width: w, height: 13 }]} />
+        ))}
+      </View>
+    </View>
   );
 }
 
@@ -221,5 +275,28 @@ const styles = StyleSheet.create({
   },
   related: {
     gap: Spacing.two,
+  },
+  skelTitle: {
+    gap: Spacing.two,
+  },
+  skelLine: {
+    borderRadius: 6,
+  },
+  skelButton: {
+    height: 34,
+    borderRadius: Spacing.two,
+  },
+  skelChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.one,
+  },
+  skelChip: {
+    height: 22,
+    borderRadius: 999,
+  },
+  skelMeta: {
+    height: 72,
+    borderRadius: Spacing.three,
   },
 });
