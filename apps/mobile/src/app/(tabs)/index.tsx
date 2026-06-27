@@ -10,9 +10,12 @@ import { SeriesCard } from '@/components/series-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Spacing, TopBarHeight } from '@/constants/theme';
+import { getBridges, getBridgeLists, isAbort, pageOptions, type Bridge } from '@/data/api';
 import { mockGrid, mockHomeSections, type RailSection, type SeriesEntry } from '@/data/mock';
 import { useTheme } from '@/hooks/use-theme';
 
+// Fallback selector contents used until the API responds (or if it's
+// unreachable, e.g. SSO/CORS on the web preview) so the screen always renders.
 const BRIDGES = ['MangaDex', 'comick', 'Batoto', 'WeebCentral', 'asura'];
 const PAGES = ['home', 'popular', 'favorites'];
 
@@ -22,8 +25,52 @@ export default function BrowseScreen() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
+  // Bridges fetched from the backend; falls back to BRIDGES until/unless loaded.
+  const [bridges, setBridges] = useState<Bridge[]>([]);
   const [bridge, setBridge] = useState(BRIDGES[0]);
+  const [pages, setPages] = useState<string[]>(PAGES);
   const [page, setPage] = useState(PAGES[0]);
+
+  const bridgeOptions = bridges.length ? bridges.map((b) => b.name) : BRIDGES;
+
+  // Load the bridge list once; keep the fallback on any failure.
+  useEffect(() => {
+    const ctrl = new AbortController();
+    getBridges(ctrl.signal)
+      .then((bs) => {
+        if (bs.length) {
+          setBridges(bs);
+          setBridge(bs[0].name);
+        }
+      })
+      .catch((e) => {
+        if (!isAbort(e)) console.warn('getBridges failed; using fallback:', e.message);
+      });
+    return () => ctrl.abort();
+  }, []);
+
+  // Populate the page selector from the selected bridge's lists.
+  useEffect(() => {
+    const b = bridges.find((x) => x.name === bridge);
+    if (!b) {
+      setPages(PAGES);
+      return;
+    }
+    const ctrl = new AbortController();
+    getBridgeLists(b.id, ctrl.signal)
+      .then((lists) => {
+        const opts = pageOptions(lists, b.capabilities);
+        setPages(opts);
+        setPage(opts[0]);
+      })
+      .catch((e) => {
+        if (!isAbort(e)) {
+          console.warn('getBridgeLists failed; using fallback:', e.message);
+          setPages(PAGES);
+        }
+      });
+    return () => ctrl.abort();
+  }, [bridge, bridges]);
 
   // Committed search query (set on submit) and the active "See all" rail, if any.
   const [query, setQuery] = useState('');
@@ -73,8 +120,8 @@ export default function BrowseScreen() {
         styles.topBar,
         { paddingTop: insets.top, minHeight: insets.top + TopBarHeight, borderBottomColor: theme.hairline },
       ]}>
-      <Selector title="Bridge" value={bridge} options={BRIDGES} onChange={setBridge} size="subtitle" />
-      <Selector title="Page" value={page} options={PAGES} onChange={setPage} size="subtitle" />
+      <Selector title="Bridge" value={bridge} options={bridgeOptions} onChange={setBridge} size="subtitle" />
+      <Selector title="Page" value={page} options={pages} onChange={setPage} size="subtitle" />
     </View>
   );
 
