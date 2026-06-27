@@ -24,21 +24,29 @@ const WIDTHS: Record<Exclude<CardSize, 'grid'>, number> = {
   hero: 240,
 };
 
+// Large enough to cover any screen: the press stays "active" wherever the finger
+// goes, so the highlight only ends on release.
+const HOLD_RETENTION = { top: 1000, bottom: 1000, left: 1000, right: 1000 };
+
 export function SeriesCard({
   entry,
   size = 'grid',
   rank,
+  width,
 }: {
   entry: SeriesEntry;
   size?: CardSize;
   rank?: number;
+  /** Explicit card width (rails compute a responsive one); falls back to the
+   *  per-size default. `grid` cards ignore this and fill their column. */
+  width?: number;
 }) {
   const theme = useTheme();
   const [loaded, setLoaded] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [truncated, setTruncated] = useState(false);
-  const fixedWidth = size === 'grid' ? undefined : WIDTHS[size];
+  const fixedWidth = size === 'grid' ? undefined : (width ?? WIDTHS[size]);
   const maxLines = size === 'grid' ? 3 : 2;
   // Highlight (ring + full-title reveal) while hovered on web or held on touch —
   // the cross-platform stand-in for the reference's :hover / .touch-active.
@@ -52,28 +60,37 @@ export function SeriesCard({
           Pressable is cloned by expo-router's <Slot>, which rejects array styles. */}
       <Pressable
         style={StyleSheet.flatten([styles.card, fixedWidth != null && { width: fixedWidth }])}
+        // Keep the held highlight (ring + title peek) alive while the finger is
+        // down even after it slides off the card — a huge retention offset means
+        // only releasing (onPressOut) clears it, while a real scroll still steals
+        // the responder and cancels normally.
+        pressRetentionOffset={HOLD_RETENTION}
         onHoverIn={() => setHovered(true)}
         onHoverOut={() => setHovered(false)}
         onPressIn={() => setPressed(true)}
         onPressOut={() => setPressed(false)}>
-        <View style={styles.cover}>
-          <Image
-            source={{ uri: entry.cover }}
-            style={StyleSheet.absoluteFill}
-            contentFit="cover"
-            transition={200}
-            onLoad={() => setLoaded(true)}
-          />
-          {!loaded && <Skeleton style={StyleSheet.absoluteFill} />}
-          {entry.badges?.map((b, i) => <CardBadge key={i} badge={b} />)}
-          {entry.unread != null && <UnreadBadge count={entry.unread} />}
-          {rank != null && (
-            <View style={styles.rank}>
-              <ThemedText style={styles.rankText}>{rank}</ThemedText>
-            </View>
-          )}
-          {/* Highlight ring drawn on top so it never insets the cover (no layout
-              shift) — only visible while active. */}
+        {/* Shell carries the cover's size so the highlight ring can sit OUTSIDE
+            the (overflow-clipped) cover without insetting it. */}
+        <View style={styles.coverShell}>
+          <View style={styles.cover}>
+            <Image
+              source={{ uri: entry.cover }}
+              style={StyleSheet.absoluteFill}
+              contentFit="cover"
+              transition={200}
+              onLoad={() => setLoaded(true)}
+            />
+            {!loaded && <Skeleton style={StyleSheet.absoluteFill} />}
+            {entry.badges?.map((b, i) => <CardBadge key={i} badge={b} />)}
+            {entry.unread != null && <UnreadBadge count={entry.unread} />}
+            {rank != null && (
+              <View style={styles.rank}>
+                <ThemedText style={styles.rankText}>{rank}</ThemedText>
+              </View>
+            )}
+          </View>
+          {/* Highlight ring sits just outside the cover edges — only visible
+              while active. */}
           {active && <View pointerEvents="none" style={styles.ring} />}
         </View>
 
@@ -115,20 +132,24 @@ const styles = StyleSheet.create({
   card: {
     gap: Spacing.one,
   },
-  cover: {
+  coverShell: {
     width: '100%',
     aspectRatio: 2 / 3,
+    position: 'relative',
+  },
+  cover: {
+    flex: 1,
     borderRadius: 10,
     overflow: 'hidden',
     backgroundColor: 'rgba(128,128,128,0.15)',
   },
   ring: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderRadius: 10,
+    top: -3,
+    left: -3,
+    right: -3,
+    bottom: -3,
+    borderRadius: 12,
     borderWidth: 2,
     borderColor: '#60a5fa',
   },

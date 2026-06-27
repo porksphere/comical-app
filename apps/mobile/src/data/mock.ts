@@ -74,11 +74,20 @@ export type RailSection = {
   items: SeriesEntry[];
 };
 
+/**
+ * An intentionally very long title — used to exercise the card's clamp +
+ * full-title peek (the title truncates with "…" and reveals on hover/hold).
+ * Length is in the spirit of real bridge titles (e.g. light-novel adaptations).
+ */
+export const LONG_TITLE =
+  'I Got a Cheat Skill in Another World and Became Unrivaled in the Real World, Too: The Saga of the Reincarnated Cartographer';
+
 const TITLES = [
   'The Silent Sea', 'Crimson Harbor', 'Paper Moons', 'A Study in Ash',
   'Northern Lights', 'The Glass Garden', 'Echoes of Tomorrow', 'Saltwater Hymns',
   'The Last Cartographer', 'Velvet Machine', 'Whisper of Pines', 'Iron & Ink',
   'Spirit Zone', 'Ashen Crown', 'Moonlit Vagrant', 'The Ninth Tower',
+  LONG_TITLE,
 ];
 
 const SUBS = [
@@ -121,8 +130,13 @@ function items(prefix: string, n: number, opts?: { badges?: boolean; unread?: bo
 
 /** Home page: a vertical stack of rails (hero / ranked / regular). */
 export function mockHomeSections(): RailSection[] {
+  const featured = items('hero', 6, { sub: true });
+  // Force the lead featured card to carry the very long title (and a stable id
+  // whose detail page also gets the "ton of tags" treatment) so the clamp/peek
+  // and tag-wrapping can be checked from a known card.
+  featured[0] = { ...featured[0], id: 'featured-long', title: LONG_TITLE };
   return [
-    { id: 'featured', title: 'Featured', kind: 'hero', items: items('hero', 6, { sub: true }) },
+    { id: 'featured', title: 'Featured', kind: 'hero', items: featured },
     { id: 'trending', title: 'Trending now', kind: 'ranked', items: items('rank', 10, { sub: true }) },
     { id: 'updates', title: 'Latest updates', kind: 'regular', items: items('upd', 14, { badges: true, unread: true, sub: true }) },
     { id: 'popular', title: 'Popular this season', kind: 'regular', items: items('pop', 14, { badges: true }) },
@@ -139,6 +153,15 @@ const GENRES = ['Fantasy', 'Action', 'Adventure', 'Drama'];
 const TAG_GROUPS: TagGroup[] = [
   { label: 'Themes', tags: ['Magic', 'Coming of Age', 'Nobility'] },
   { label: 'Demographic', tags: ['Shounen'] },
+];
+/** A deliberately large tag list, attached to one series, to test chip wrapping. */
+const MANY_TAGS = [
+  'Action', 'Adventure', 'Comedy', 'Drama', 'Fantasy', 'Harem', 'Isekai',
+  'Magic', 'Martial Arts', 'Romance', 'School Life', 'Sci-Fi', 'Slice of Life',
+  'Supernatural', 'Tragedy', 'Mystery', 'Horror', 'Psychological', 'Mecha',
+  'Historical', 'Sports', 'Music', 'Seinen', 'Shounen', 'Demons',
+  'Reincarnation', 'Time Travel', 'Game', 'Virtual Reality', 'Survival',
+  'Revenge', 'Anti-Hero', 'Cultivation', 'Demon Lord', 'Dungeon', 'Monsters',
 ];
 const META: MetaCell[] = [
   { label: 'STATUS', value: 'Ongoing' },
@@ -206,7 +229,10 @@ export function mockSeries(id: string, title?: string, bridge = 'Library'): Seri
 
   if (!bare) {
     base.genres = GENRES;
-    base.tagGroups = TAG_GROUPS;
+    // The long-title series doubles as the "ton of tags" case.
+    base.tagGroups = seed.includes('long')
+      ? [...TAG_GROUPS, { label: 'Tags', tags: MANY_TAGS }]
+      : TAG_GROUPS;
     base.hasSources = h % 2 === 0;
     base.hasTrackers = true;
     base.newCount = h % 5 === 0 ? 3 : undefined;

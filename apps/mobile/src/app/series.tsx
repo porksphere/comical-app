@@ -31,7 +31,11 @@ export default function SeriesScreen() {
     () => mockSeries(id ?? '', title, bridge ?? 'Library'),
     [id, title, bridge],
   );
-  const coverWidth = width >= 750 ? 200 : 140;
+  // Give the cover the lion's share of the hero and keep the action column
+  // narrow: actions take a small fixed slice, the cover fills the rest (capped
+  // so it doesn't get absurd on very wide layouts).
+  const contentWidth = Math.min(width, MaxContentWidth) - Spacing.four * 2;
+  const actionsWidth = Math.round(Math.min(Math.max(contentWidth * 0.3, 116), 150));
 
   return (
     <ThemedView style={styles.container}>
@@ -65,7 +69,7 @@ export default function SeriesScreen() {
 
             {/* Hero: cover (with chapter-count badge) + the actions column. */}
             <View style={styles.hero}>
-              <View style={[styles.coverWrap, { width: coverWidth }]}>
+              <View style={styles.coverWrap}>
                 <Image source={{ uri: series.cover }} style={styles.cover} contentFit="cover" transition={200} />
                 {series.chapterCount != null && (
                   <View style={styles.coverBadge}>
@@ -74,7 +78,7 @@ export default function SeriesScreen() {
                 )}
               </View>
 
-              <View style={styles.actions}>
+              <View style={[styles.actions, { width: actionsWidth }]}>
                 <ActionButton label={series.readLabel ?? '▶  Read'} variant="primary" />
                 <ActionButton label="＋  Library" />
                 {series.hasSources && <ActionButton label="Sources" caret />}
@@ -162,9 +166,12 @@ const styles = StyleSheet.create({
   },
   hero: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
     gap: Spacing.three,
   },
   coverWrap: {
+    flex: 1,
+    maxWidth: 300,
     position: 'relative',
   },
   cover: {
@@ -188,7 +195,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   actions: {
-    flex: 1,
     gap: Spacing.two,
   },
   metaGrid: {

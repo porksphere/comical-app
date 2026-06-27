@@ -64,7 +64,7 @@ const styles = StyleSheet.create({
     opacity: 0.8,
   },
   fill: {
-    paddingVertical: Spacing.three,
+    paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.three,
     alignItems: 'center',
     justifyContent: 'center',

@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FlatList, Pressable, ScrollView, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FilterBar } from '@/components/filters/filter-demo';
 import { ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
-import { Rail } from '@/components/rail';
+import { Rail, SectionHead } from '@/components/rail';
 import { Selector } from '@/components/selector';
 import { SeriesCard } from '@/components/series-card';
 import { ThemedText } from '@/components/themed-text';
@@ -88,6 +88,19 @@ export default function BrowseScreen() {
   }, [seeAll, query, page]);
   const resultsLabel = seeAll ? seeAll.title : query ? `Results for “${query}”` : page;
 
+  // Infinite "Browse all" grid shown under the home rails. We reuse one page of
+  // mock data and repeat it on each load (only the ids are re-keyed), per the
+  // brief — a stand-in for paginated bridge results.
+  const homeBase = useMemo(() => mockGrid('home', 24), []);
+  const [homePages, setHomePages] = useState(1);
+  const homeGrid = useMemo<SeriesEntry[]>(
+    () =>
+      Array.from({ length: homePages }).flatMap((_, p) =>
+        homeBase.map((e) => ({ ...e, id: `${e.id}-p${p}` })),
+      ),
+    [homeBase, homePages],
+  );
+
   const backToHome = () => {
     setQuery('');
     setSeeAll(null);
@@ -101,17 +114,20 @@ export default function BrowseScreen() {
   const numColumns =
     !hydrated || width < 768 ? 3 : Math.min(6, Math.max(3, Math.floor(width / 200)));
 
+  // Home shows the infinite "Browse all" grid under the rails; results mode
+  // shows the (finite) search / "See all" / page grid.
+  const baseGrid = inResults ? results : homeGrid;
   const gridData = useMemo<GridItem[]>(() => {
-    const remainder = results.length % numColumns;
-    if (remainder === 0) return results;
+    const remainder = baseGrid.length % numColumns;
+    if (remainder === 0) return baseGrid;
     const spacers: GridItem[] = Array.from({ length: numColumns - remainder }, (_, i) => ({
       id: `spacer-${i}`,
       title: '',
       cover: '',
       spacer: true,
     }));
-    return [...results, ...spacers];
-  }, [results, numColumns]);
+    return [...baseGrid, ...spacers];
+  }, [baseGrid, numColumns]);
 
   // Pinned bar: the bridge/page selectors stay at the top while content scrolls.
   const topBar = (
@@ -151,42 +167,52 @@ export default function BrowseScreen() {
     </View>
   );
 
-  return (
-    <ThemedView style={styles.container}>
-      {topBar}
-      {inResults ? (
-        <FlatList
-          key={numColumns}
-          data={gridData}
-          keyExtractor={(item) => String(item.id)}
-          numColumns={numColumns}
-          ListHeaderComponent={controls}
-          columnWrapperStyle={[styles.row, { gap: Spacing.three }]}
-          contentContainerStyle={[
-            styles.gridContent,
-            { paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
-          ]}
-          renderItem={({ item }) =>
-            item.spacer ? <View style={styles.cell} /> : (
-              <View style={styles.cell}>
-                <SeriesCard entry={item} />
-              </View>
-            )
-          }
-          showsVerticalScrollIndicator={false}
-        />
-      ) : (
-        <ScrollView
-          contentContainerStyle={{ paddingBottom: BottomTabInset + insets.bottom + Spacing.five }}
-          showsVerticalScrollIndicator={false}>
-          {controls}
+  // The list header holds the controls, and — on home — the rails followed by
+  // the "Browse all" section heading. The grid (results or infinite home) then
+  // renders beneath it, so everything scrolls as one surface.
+  const listHeader = (
+    <View>
+      {controls}
+      {!inResults && (
+        <>
           <View style={styles.rails}>
             {sections.map((s) => (
               <Rail key={s.id} section={s} onSeeAll={setSeeAll} />
             ))}
           </View>
-        </ScrollView>
+          <View style={styles.browseAllHead}>
+            <SectionHead title="Browse all" />
+          </View>
+        </>
       )}
+    </View>
+  );
+
+  return (
+    <ThemedView style={styles.container}>
+      {topBar}
+      <FlatList
+        key={numColumns}
+        data={gridData}
+        keyExtractor={(item) => String(item.id)}
+        numColumns={numColumns}
+        ListHeaderComponent={listHeader}
+        columnWrapperStyle={[styles.row, { gap: Spacing.three }]}
+        contentContainerStyle={[
+          styles.gridContent,
+          { paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
+        ]}
+        renderItem={({ item }) =>
+          item.spacer ? <View style={styles.cell} /> : (
+            <View style={styles.cell}>
+              <SeriesCard entry={item} />
+            </View>
+          )
+        }
+        onEndReachedThreshold={0.6}
+        onEndReached={inResults ? undefined : () => setHomePages((p) => p + 1)}
+        showsVerticalScrollIndicator={false}
+      />
     </ThemedView>
   );
 }
@@ -274,6 +300,10 @@ const styles = StyleSheet.create({
   },
   rails: {
     gap: Spacing.five,
+  },
+  browseAllHead: {
+    paddingTop: Spacing.five,
+    paddingBottom: Spacing.two,
   },
   gridContent: {
     paddingTop: Spacing.two,
