@@ -8,7 +8,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Spacing } from '@/constants/theme';
@@ -100,11 +100,11 @@ function TabButton({
   if (mobile) {
     const color = isFocused ? ACTIVE : INACTIVE;
     return (
-      <Pressable {...props} style={styles.bottomButton}>
-        <Icon size={24} color={color} strokeWidth={2} />
-        <Text style={[styles.bottomLabel, { color }]} numberOfLines={1}>
-          {children}
-        </Text>
+      <Pressable
+        {...props}
+        accessibilityLabel={typeof children === 'string' ? children : undefined}
+        style={styles.bottomButton}>
+        <Icon size={22} color={color} strokeWidth={2} />
       </Pressable>
     );
   }
@@ -158,11 +158,6 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.half,
-    paddingVertical: Spacing.one,
-  },
-  bottomLabel: {
-    fontSize: 11,
-    fontWeight: '500',
+    paddingVertical: Spacing.two,
   },
 });
