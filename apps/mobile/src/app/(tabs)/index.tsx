@@ -223,7 +223,7 @@ export default function BrowseScreen() {
         keyExtractor={(item) => String(item.id)}
         numColumns={numColumns}
         ListHeaderComponent={listHeader}
-        columnWrapperStyle={[styles.row, { gap: Spacing.three }]}
+        columnWrapperStyle={[styles.row, { gap: Spacing.two }]}
         contentContainerStyle={[
           styles.gridContent,
           { paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
@@ -359,7 +359,9 @@ const styles = StyleSheet.create({
   },
   gridContent: {
     paddingTop: Spacing.two,
-    gap: Spacing.three,
+    // Tighter inter-card gap (half the prior Spacing.three) so the cards grow a
+    // little to fill the reclaimed space; the column wrapper uses the same gap.
+    gap: Spacing.two,
   },
   row: {
     paddingHorizontal: Spacing.four,
@@ -368,12 +370,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   skelFooter: {
-    gap: Spacing.three,
+    gap: Spacing.two,
     paddingTop: Spacing.three,
   },
   skelRow: {
     flexDirection: 'row',
-    gap: Spacing.three,
+    gap: Spacing.two,
   },
   skelCell: {
     flex: 1,
