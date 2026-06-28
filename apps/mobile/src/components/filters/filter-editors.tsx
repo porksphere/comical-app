@@ -19,6 +19,9 @@ import {
 
 const INCLUDE = '#3478F6';
 const EXCLUDE = '#E5484D';
+// Tinted backgrounds for the selected-tag chips (matches the include/exclude hues).
+const INCLUDE_BG = 'rgba(52,120,246,0.13)';
+const EXCLUDE_BG = 'rgba(229,72,77,0.13)';
 
 type EditorProps = { def: FilterDef; value: FilterValue; onChange: (v: FilterValue) => void };
 
@@ -206,6 +209,16 @@ function TagSearchEditor({
     () => def.options.filter((o) => o.toLowerCase().includes(query.trim().toLowerCase())),
     [def.options, query],
   );
+  // Selected tags (include first, then exclude) — shown as chips in place of the
+  // title once anything is selected.
+  const selected = useMemo(() => {
+    const inc = Object.keys(tri).filter((k) => tri[k] === 'include');
+    const exc = Object.keys(tri).filter((k) => tri[k] === 'exclude');
+    return [
+      ...inc.map((tag) => ({ tag, tone: 'include' as TriValue })),
+      ...exc.map((tag) => ({ tag, tone: 'exclude' as TriValue })),
+    ];
+  }, [tri]);
   const press = (opt: string) => {
     const next: TriState = { ...tri };
     const cycled = cycleTri(next[opt]);
@@ -214,9 +227,23 @@ function TagSearchEditor({
     setTri(next);
     onChange(next);
   };
+  const remove = (opt: string) => {
+    const next: TriState = { ...tri };
+    delete next[opt];
+    setTri(next);
+    onChange(next);
+  };
   return (
     <View style={styles.body}>
-      <Title>{def.label}</Title>
+      {selected.length > 0 ? (
+        <View style={styles.tagChips}>
+          {selected.map(({ tag, tone }) => (
+            <TagChip key={tag} label={tag} tone={tone} onRemove={() => remove(tag)} />
+          ))}
+        </View>
+      ) : (
+        <Title>{def.label}</Title>
+      )}
       <TextInput
         value={query}
         onChangeText={setQuery}
@@ -267,6 +294,30 @@ function TriRow({
   );
 }
 
+/** A selected-tag pill (include = blue, exclude = red) with a × to deselect. */
+function TagChip({
+  label,
+  tone,
+  onRemove,
+}: {
+  label: string;
+  tone: TriValue;
+  onRemove: () => void;
+}) {
+  const color = tone === 'include' ? INCLUDE : EXCLUDE;
+  const background = tone === 'include' ? INCLUDE_BG : EXCLUDE_BG;
+  return (
+    <View style={[styles.tagChip, { borderColor: color, backgroundColor: background }]}>
+      <Text style={[styles.tagChipText, { color }]} numberOfLines={1}>
+        {label}
+      </Text>
+      <Pressable onPress={onRemove} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Remove ${label}`}>
+        <Text style={[styles.tagChipRemove, { color }]}>×</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 const AnimatedScrollView = Animated.createAnimatedComponent(GHScrollView);
 
 /** Caps long option lists with an internal scroll so the sheet stays usable.
@@ -303,6 +354,34 @@ const styles = StyleSheet.create({
   },
   title: {
     marginBottom: Spacing.one,
+  },
+  // Selected-tag chips shown in place of the title; same bottom spacing so the
+  // header height stays steady as tags are added/removed.
+  tagChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: Spacing.one,
+    marginBottom: Spacing.one,
+  },
+  tagChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingLeft: 12,
+    paddingRight: 8,
+    paddingVertical: 4,
+  },
+  tagChipText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  tagChipRemove: {
+    fontSize: 17,
+    lineHeight: 18,
+    fontWeight: '600',
   },
   input: {
     borderWidth: 1,
