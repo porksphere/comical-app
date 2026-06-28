@@ -1,5 +1,10 @@
 import { useCallback, useState } from 'react';
-import { FlatList, type NativeScrollEvent, type NativeSyntheticEvent, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import Animated, {
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+} from 'react-native-reanimated';
 
 import { SeriesCard, TitlePeek, type CardSize } from '@/components/series-card';
 import { ThemedText } from '@/components/themed-text';
@@ -72,26 +77,42 @@ export function Rail({
   // position it from pure geometry — index, gap, scroll offset — no DOM
   // measurement, so it's deterministic and follows the strip as it scrolls.
   const [peekIndex, setPeekIndex] = useState<number | null>(null);
-  const [scrollX, setScrollX] = useState(0);
   const [stripTop, setStripTop] = useState(0);
   const onPeekChange = useCallback((show: boolean, index: number) => {
     setPeekIndex((prev) => (show ? index : prev === index ? null : prev));
   }, []);
 
-  const peekLeft = peekIndex == null ? 0 : STRIP_PAD + peekIndex * (cardWidth + STRIP_GAP) - scrollX;
+  // Track the strip's horizontal offset on the UI thread. The peek's left edge
+  // used to be derived from a `scrollX` React state set in onScroll, so every
+  // frame went JS-state → re-render → reposition and the popover visibly lagged
+  // a few frames behind the natively-scrolling cards. Driving it from a shared
+  // value + transform keeps it glued to its card without any JS round-trip.
+  const scrollX = useSharedValue(0);
+  const scrollHandler = useAnimatedScrollHandler((e) => {
+    scrollX.value = e.contentOffset.x;
+  });
+
+  // Static (scroll-independent) base position of the peeked card; only changes
+  // when a different card is peeked, not per scroll frame.
+  const peekBase = peekIndex == null ? 0 : STRIP_PAD + peekIndex * (cardWidth + STRIP_GAP);
   const titleTop = stripTop + STRIP_PAD_V + cardWidth * COVER_RATIO + CARD_GAP;
+
+  // The only per-frame update: slide the peek with the strip on the UI thread.
+  const peekStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: -scrollX.value }],
+  }));
 
   return (
     <View style={[styles.section, peekIndex != null && styles.sectionPeeking]}>
       <SectionHead title={section.title} onSeeAll={onSeeAll ? () => onSeeAll(section) : undefined} />
-      <FlatList
+      <Animated.FlatList
         horizontal
         data={section.items}
-        keyExtractor={(it) => it.id}
+        keyExtractor={(it: SeriesEntry) => it.id}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.strip}
         onLayout={(e) => setStripTop(e.nativeEvent.layout.y)}
-        onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) => setScrollX(e.nativeEvent.contentOffset.x)}
+        onScroll={scrollHandler}
         scrollEventThrottle={16}
         renderItem={({ item, index }: { item: SeriesEntry; index: number }) => (
           <SeriesCard
@@ -107,12 +128,15 @@ export function Rail({
       {peekIndex != null && (
         <TitlePeek
           title={section.items[peekIndex].title}
-          style={{
-            left: peekLeft - Spacing.two,
-            right: 'auto',
-            top: titleTop - Spacing.one,
-            width: cardWidth + Spacing.two * 2,
-          }}
+          style={[
+            {
+              left: peekBase - Spacing.two,
+              right: 'auto',
+              top: titleTop - Spacing.one,
+              width: cardWidth + Spacing.two * 2,
+            },
+            peekStyle,
+          ]}
         />
       )}
     </View>

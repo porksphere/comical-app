@@ -2,6 +2,7 @@ import { Image } from 'expo-image';
 import { Link } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import Animated, { type AnimatedStyle } from 'react-native-reanimated';
 
 import { CardBadge, UnreadBadge } from '@/components/card-badge';
 import { Skeleton } from '@/components/skeleton';
@@ -204,14 +205,26 @@ export function SeriesCard({
  * scroller by the rail (which passes a positioning `style`). Its content box
  * matches the clamped title width so the first lines wrap identically.
  */
-export function TitlePeek({ title, style }: { title: string; style?: StyleProp<ViewStyle> }) {
+export function TitlePeek({
+  title,
+  style,
+}: {
+  title: string;
+  // Accepts plain styles (grid, in-card) or a reanimated style (rail, the
+  // UI-thread scroll transform).
+  style?: StyleProp<AnimatedStyle<ViewStyle>>;
+}) {
   const theme = useTheme();
+  // Animated.View so the rail can hand it a UI-thread transform that tracks the
+  // strip's scroll (the grid passes a plain style and it renders unchanged).
   return (
-    <View pointerEvents="none" style={[styles.titlePopover, { backgroundColor: theme.backgroundElement }, style]}>
+    <Animated.View
+      pointerEvents="none"
+      style={[styles.titlePopover, { backgroundColor: theme.backgroundElement }, style]}>
       <ThemedText type="small" style={styles.title}>
         {title}
       </ThemedText>
-    </View>
+    </Animated.View>
   );
 }
 
