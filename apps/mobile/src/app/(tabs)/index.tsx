@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FlatList, type NativeScrollEvent, type NativeSyntheticEvent, Pressable, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
+import { Pressable, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
+import Animated, {
+  interpolateColor,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FilterBar } from '@/components/filters/filter-demo';
@@ -20,6 +26,11 @@ import { useTheme } from '@/hooks/use-theme';
 const BRIDGES = ['MangaDex', 'comick', 'Batoto', 'WeebCentral', 'asura'];
 const PAGES = ['home', 'popular', 'favorites'];
 
+// Breathing room above the bridge/page selectors at rest. It collapses into the
+// compact fixed bar as the page scrolls (mirrors the reference's ~2rem of space
+// above #app-header before it sticks).
+const HEADER_EXTRA = Spacing.five;
+
 type GridItem = SeriesEntry & { spacer?: boolean };
 
 export default function BrowseScreen() {
@@ -31,9 +42,6 @@ export default function BrowseScreen() {
   const [bridge, setBridge] = useState(BRIDGES[0]);
   const [pages, setPages] = useState<string[]>(PAGES);
   const [page, setPage] = useState(PAGES[0]);
-  // Whether the grid is scrolled off the top — drives the top bar's divider, so
-  // the bridge/page selectors read as "anchoring" into the bar once you scroll.
-  const [scrolled, setScrolled] = useState(false);
 
   const bridgeOptions = bridges.length ? bridges.map((b) => b.name) : BRIDGES;
 
@@ -80,12 +88,13 @@ export default function BrowseScreen() {
   const [query, setQuery] = useState('');
   const [seeAll, setSeeAll] = useState<RailSection | null>(null);
 
-  // Home shows the rails; anything else (a search, a non-home page, or a rail's
-  // "See all") drops to the flat results grid — mirrors the reference's
-  // browse-view ⇄ results-pane toggle.
-  const inResults = !!query || page !== 'home' || !!seeAll;
+  // Only a search or a rail's "See all" drops to the flat results grid (with a
+  // back-to-home affordance). Every top-level page — home included — is its own
+  // full page of rails + grid, switched via the Page selector, so changing page
+  // never shows a back button.
+  const inResults = !!query || !!seeAll;
 
-  const sections = useMemo(() => mockHomeSections(), []);
+  const sections = useMemo(() => mockHomeSections(page), [page]);
   const results = useMemo<SeriesEntry[]>(() => {
     if (seeAll) return seeAll.items;
     return mockGrid(query || page);
@@ -95,8 +104,11 @@ export default function BrowseScreen() {
   // Infinite "Browse all" grid shown under the home rails. We reuse one page of
   // mock data and repeat it on each load (only the ids are re-keyed), per the
   // brief — a stand-in for paginated bridge results.
-  const homeBase = useMemo(() => mockGrid('home', 24), []);
+  const homeBase = useMemo(() => mockGrid(page, 24), [page]);
   const [homePages, setHomePages] = useState(1);
+  // Each page is its own surface: restart the infinite "Browse all" depth when
+  // the page changes so a new page doesn't inherit the previous one's depth.
+  useEffect(() => setHomePages(1), [page]);
   const [loadingMore, setLoadingMore] = useState(false);
   const homeGrid = useMemo<SeriesEntry[]>(
     () =>
@@ -120,6 +132,19 @@ export default function BrowseScreen() {
     setQuery('');
     setSeeAll(null);
     setPage('home');
+  };
+
+  // Switching bridge or page is top-level navigation, so it drops any active
+  // search / "See all" drill-down and lands on that page's full rails+grid.
+  const selectBridge = (b: string) => {
+    setQuery('');
+    setSeeAll(null);
+    setBridge(b);
+  };
+  const selectPage = (p: string) => {
+    setQuery('');
+    setSeeAll(null);
+    setPage(p);
   };
 
   // See plan: hold the server's column count until mount to avoid a hydration
@@ -147,24 +172,42 @@ export default function BrowseScreen() {
     return [...baseGrid, ...spacers];
   }, [baseGrid, numColumns]);
 
-  // Pinned bar: the bridge/page selectors stay at the top while content scrolls.
-  // Reserve the safe-area inset, then centre the selectors in a fixed-height
-  // band (matching the series header) so the space above and below the text is
-  // even. At the top there's no divider; once scrolled it appears so they read
-  // as anchored.
+  // Collapsing top bar. At rest the bridge/page selectors sit below a band of
+  // breathing room (HEADER_EXTRA); as the page scrolls that band collapses into
+  // the compact fixed bar — selectors centred in a TopBarHeight band below the
+  // safe-area inset — and a divider fades in. Driven on the UI thread so it
+  // tracks the scroll without per-frame re-renders.
+  const headerMin = insets.top + TopBarHeight;
+  const headerMax = headerMin + HEADER_EXTRA;
+  const scrollY = useSharedValue(0);
+  const scrollHandler = useAnimatedScrollHandler((e) => {
+    scrollY.value = e.contentOffset.y;
+  });
+  const headerHeightStyle = useAnimatedStyle(() => ({
+    height: Math.max(headerMin, headerMax - scrollY.value),
+  }));
+  const hairline = theme.hairline;
+  const headerDividerStyle = useAnimatedStyle(() => ({
+    borderBottomColor: interpolateColor(scrollY.value, [0, HEADER_EXTRA], ['rgba(0,0,0,0)', hairline]),
+  }));
+
   const topBar = (
-    <View
+    <Animated.View
+      pointerEvents="box-none"
       style={[
         styles.topBar,
-        {
-          paddingTop: insets.top,
-          height: insets.top + TopBarHeight,
-          borderBottomColor: scrolled ? theme.hairline : 'transparent',
-        },
+        // Static fallback height (expanded) for the first paint / web export
+        // before reanimated applies the animated height, which then overrides it.
+        { height: headerMax },
+        headerHeightStyle,
+        headerDividerStyle,
+        { paddingTop: insets.top, backgroundColor: theme.background },
       ]}>
-      <Selector title="Bridge" value={bridge} options={bridgeOptions} onChange={setBridge} size="subtitle" />
-      <Selector title="Page" value={page} options={pages} onChange={setPage} size="subtitle" />
-    </View>
+      <View pointerEvents="box-none" style={styles.selectorRow}>
+        <Selector title="Bridge" value={bridge} options={bridgeOptions} onChange={selectBridge} size="subtitle" />
+        <Selector title="Page" value={page} options={pages} onChange={selectPage} size="subtitle" />
+      </View>
+    </Animated.View>
   );
 
   const controls = (
@@ -216,19 +259,20 @@ export default function BrowseScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      {topBar}
-      <FlatList
+      {/* The list fills the screen (behind the header overlay); its top padding
+          clears the expanded header so the first content sits just below it. */}
+      <Animated.FlatList
         key={numColumns}
         data={gridData}
-        keyExtractor={(item) => String(item.id)}
+        keyExtractor={(item: GridItem) => String(item.id)}
         numColumns={numColumns}
         ListHeaderComponent={listHeader}
         columnWrapperStyle={[styles.row, { gap: Spacing.three }]}
         contentContainerStyle={[
           styles.gridContent,
-          { paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
+          { paddingTop: headerMax, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
         ]}
-        renderItem={({ item }) =>
+        renderItem={({ item }: { item: GridItem }) =>
           item.spacer ? <View style={styles.cell} /> : (
             <View style={styles.cell}>
               <SeriesCard entry={item} />
@@ -238,14 +282,13 @@ export default function BrowseScreen() {
         ListFooterComponent={
           !inResults && loadingMore ? <GridSkeleton numColumns={numColumns} rows={2} /> : null
         }
-        onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) =>
-          setScrolled(e.nativeEvent.contentOffset.y > 0)
-        }
+        onScroll={scrollHandler}
         scrollEventThrottle={16}
         onEndReachedThreshold={0.6}
         onEndReached={inResults ? undefined : loadMore}
         showsVerticalScrollIndicator={false}
       />
+      {topBar}
     </ThemedView>
   );
 }
@@ -316,12 +359,24 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  // Absolute overlay so the list scrolls underneath; `justifyContent: flex-end`
+  // keeps the selector row pinned to the bottom of the band, with the collapsing
+  // breathing room above it.
   topBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    justifyContent: 'flex-end',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  selectorRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.three,
     paddingHorizontal: Spacing.four,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    height: TopBarHeight,
   },
   controls: {
     paddingHorizontal: Spacing.four,
@@ -358,7 +413,6 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.two,
   },
   gridContent: {
-    paddingTop: Spacing.two,
     gap: Spacing.three,
   },
   row: {

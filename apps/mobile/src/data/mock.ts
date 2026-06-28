@@ -144,19 +144,26 @@ function items(prefix: string, n: number, opts?: { badges?: boolean; unread?: bo
   return Array.from({ length: n }, (_, i) => entry(`${prefix}-${i}`, i, opts));
 }
 
-/** Home page: a vertical stack of rails (hero / ranked / regular). */
-export function mockHomeSections(): RailSection[] {
-  const featured = items('hero', 6, { sub: true });
-  // Force the lead featured card to carry the very long title (and a stable id
-  // whose detail page also gets the "ton of tags" treatment) so the clamp/peek
-  // and tag-wrapping can be checked from a known card.
-  featured[0] = { ...featured[0], id: 'featured-long', title: LONG_TITLE };
+/**
+ * A page's stack of rails (hero / ranked / regular). Every top-level page
+ * (home, popular, favorites, …) is its own full page, so the seed is salted
+ * with the page name to give each one distinct cards while sharing the layout.
+ */
+export function mockHomeSections(page = 'home'): RailSection[] {
+  const p = page === 'home' ? '' : `${page}-`;
+  const featured = items(`${p}hero`, 6, { sub: true });
+  // On home, force the lead featured card to carry the very long title (and a
+  // stable id whose detail page also gets the "ton of tags" treatment) so the
+  // clamp/peek and tag-wrapping can be checked from a known card.
+  if (page === 'home') {
+    featured[0] = { ...featured[0], id: 'featured-long', title: LONG_TITLE };
+  }
   return [
-    { id: 'featured', title: 'Featured', kind: 'hero', items: featured },
-    { id: 'trending', title: 'Trending now', kind: 'ranked', items: items('rank', 10, { sub: true }) },
-    { id: 'updates', title: 'Latest updates', kind: 'regular', items: items('upd', 14, { badges: true, unread: true, sub: true }) },
-    { id: 'popular', title: 'Popular this season', kind: 'regular', items: items('pop', 14, { badges: true }) },
-    { id: 'newish', title: 'Newly added', kind: 'regular', items: items('new', 14, { badges: true }) },
+    { id: `${p}featured`, title: 'Featured', kind: 'hero', items: featured },
+    { id: `${p}trending`, title: 'Trending now', kind: 'ranked', items: items(`${p}rank`, 10, { sub: true }) },
+    { id: `${p}updates`, title: 'Latest updates', kind: 'regular', items: items(`${p}upd`, 14, { badges: true, unread: true, sub: true }) },
+    { id: `${p}popular`, title: 'Popular this season', kind: 'regular', items: items(`${p}pop`, 14, { badges: true }) },
+    { id: `${p}newish`, title: 'Newly added', kind: 'regular', items: items(`${p}new`, 14, { badges: true }) },
   ];
 }
 
