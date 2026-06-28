@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { coverDelayMs, type SeriesEntry } from '@/data/mock';
+import { useIsCompact } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 
 // Shared cover card used by both the browse grid and the rails. `size` picks the
@@ -26,7 +27,10 @@ const WIDTHS: Record<Exclude<CardSize, 'grid'>, number> = {
 };
 
 const MAX_TITLE_LINES = 2;
-const TITLE_LINE_HEIGHT = 18;
+// Card title metrics mirror the reference's `.card-title`: 0.85rem desktop /
+// 0.8rem mobile (1rem = 16px), line-height 1.3 (rounded to whole px).
+const TITLE_FONT_SIZE = { regular: 13.6, compact: 12.8 };
+const TITLE_LINE_HEIGHT = { regular: 18, compact: 17 };
 
 // Large enough to cover any screen: the press stays "active" wherever the finger
 // goes, so the highlight only ends on release.
@@ -109,6 +113,12 @@ export function SeriesCard({
   const { active, handlers } = useHeld();
   const fixedWidth = size === 'grid' ? undefined : (width ?? WIDTHS[size]);
 
+  // Responsive title size matching the reference's mobile/desktop type scale.
+  const compact = useIsCompact();
+  const titleFontSize = compact ? TITLE_FONT_SIZE.compact : TITLE_FONT_SIZE.regular;
+  const titleLineHeight = compact ? TITLE_LINE_HEIGHT.compact : TITLE_LINE_HEIGHT.regular;
+  const titleSize = { fontSize: titleFontSize, lineHeight: titleLineHeight };
+
   // Hold some covers behind a simulated network delay: we don't even mount the
   // <Image> until the delay elapses, so the skeleton stays visible (a stand-in
   // for real bridge image latency). Most covers are instant.
@@ -179,16 +189,16 @@ export function SeriesCard({
         </View>
 
         <View style={styles.titleWrap}>
-          <ThemedText type="small" numberOfLines={MAX_TITLE_LINES} style={styles.title}>
+          <ThemedText type="small" numberOfLines={MAX_TITLE_LINES} style={[styles.title, titleSize]}>
             {entry.title}
           </ThemedText>
           {/* Off-screen full-height copy measured via onLayout (which, unlike
               onTextLayout, fires on react-native-web) to detect clamping. */}
           <ThemedText
             type="small"
-            style={[styles.title, styles.measure]}
+            style={[styles.title, titleSize, styles.measure]}
             onLayout={(e) =>
-              setTruncated(e.nativeEvent.layout.height > MAX_TITLE_LINES * TITLE_LINE_HEIGHT + 1)
+              setTruncated(e.nativeEvent.layout.height > MAX_TITLE_LINES * titleLineHeight + 1)
             }>
             {entry.title}
           </ThemedText>
@@ -215,21 +225,24 @@ export function TitlePeek({
   style?: StyleProp<AnimatedStyle<ViewStyle>>;
 }) {
   const theme = useTheme();
+  // Match the card title's responsive size so the popover wraps identically.
+  const compact = useIsCompact();
+  const titleSize = {
+    fontSize: compact ? TITLE_FONT_SIZE.compact : TITLE_FONT_SIZE.regular,
+    lineHeight: compact ? TITLE_LINE_HEIGHT.compact : TITLE_LINE_HEIGHT.regular,
+  };
   // Animated.View so the rail can hand it a UI-thread transform that tracks the
   // strip's scroll (the grid passes a plain style and it renders unchanged).
   return (
     <Animated.View
       pointerEvents="none"
       style={[styles.titlePopover, { backgroundColor: theme.backgroundElement }, style]}>
-      <ThemedText type="small" style={styles.title}>
+      <ThemedText type="small" style={[styles.title, titleSize]}>
         {title}
       </ThemedText>
     </Animated.View>
   );
 }
-
-/** Clamped-title line height × max lines — the rail uses these to place the peek. */
-export const TITLE_BLOCK_HEIGHT = MAX_TITLE_LINES * TITLE_LINE_HEIGHT;
 
 const styles = StyleSheet.create({
   card: {
@@ -267,7 +280,6 @@ const styles = StyleSheet.create({
   },
   title: {
     fontWeight: '600',
-    lineHeight: TITLE_LINE_HEIGHT,
   },
   measure: {
     position: 'absolute',

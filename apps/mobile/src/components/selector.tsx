@@ -4,6 +4,7 @@ import { useOverlay } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { useIsCompact } from '@/hooks/use-responsive';
 
 type SelectorProps = {
   /** Menu heading, e.g. "Bridge" or "Page". */
@@ -18,6 +19,7 @@ type SelectorProps = {
 /** Tappable label that opens a single-select bottom-sheet menu (via the overlay system). */
 export function Selector({ title, value, options, onChange, size = 'title' }: SelectorProps) {
   const { open } = useOverlay();
+  const compact = useIsCompact();
   return (
     <Pressable
       style={styles.trigger}
@@ -26,7 +28,10 @@ export function Selector({ title, value, options, onChange, size = 'title' }: Se
           <SelectMenu title={title} options={options} selected={value} onSelect={onChange} />
         ))
       }>
-      <ThemedText type={size} numberOfLines={1} style={size === 'subtitle' ? styles.subtitleCompact : undefined}>
+      <ThemedText
+        type={size}
+        numberOfLines={1}
+        style={size === 'subtitle' ? (compact ? styles.subtitleCompact : styles.subtitleWide) : undefined}>
         {value}
       </ThemedText>
       <ThemedText themeColor="textSecondary" style={size === 'title' ? styles.caretLg : styles.caretSm}>
@@ -77,10 +82,16 @@ const styles = StyleSheet.create({
     gap: Spacing.one,
     flexShrink: 1,
   },
-  // The bridge/page bar uses `subtitle` (32) — render it a notch smaller.
+  // Bridge/page selectors mirror the reference's header title (`#app-title` h1,
+  // which the page selector inherits): 1.4rem mobile / 1.75rem desktop
+  // (1rem = 16px).
   subtitleCompact: {
-    fontSize: 24,
-    lineHeight: 32,
+    fontSize: 22.4,
+    lineHeight: 28,
+  },
+  subtitleWide: {
+    fontSize: 28,
+    lineHeight: 34,
   },
   caretLg: {
     fontSize: 20,
