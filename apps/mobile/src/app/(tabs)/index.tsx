@@ -183,8 +183,12 @@ export default function BrowseScreen() {
   const scrollHandler = useAnimatedScrollHandler((e) => {
     scrollY.value = e.contentOffset.y;
   });
-  const headerHeightStyle = useAnimatedStyle(() => ({
-    height: Math.max(headerMin, headerMax - scrollY.value),
+  // Collapse the breathing room by sliding the bar up (a compositor transform)
+  // rather than animating its height, which would force a layout reflow every
+  // frame and judder — especially on web. The bar keeps its full (expanded)
+  // height; translating it up by HEADER_EXTRA leaves the compact bar pinned.
+  const headerCollapseStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: -Math.min(Math.max(scrollY.value, 0), HEADER_EXTRA) }],
   }));
   const hairline = theme.hairline;
   const headerDividerStyle = useAnimatedStyle(() => ({
@@ -196,12 +200,9 @@ export default function BrowseScreen() {
       pointerEvents="box-none"
       style={[
         styles.topBar,
-        // Static fallback height (expanded) for the first paint / web export
-        // before reanimated applies the animated height, which then overrides it.
-        { height: headerMax },
-        headerHeightStyle,
+        { height: headerMax, paddingTop: insets.top, backgroundColor: theme.background },
+        headerCollapseStyle,
         headerDividerStyle,
-        { paddingTop: insets.top, backgroundColor: theme.background },
       ]}>
       <View pointerEvents="box-none" style={styles.selectorRow}>
         <Selector title="Bridge" value={bridge} options={bridgeOptions} onChange={selectBridge} size="subtitle" />
