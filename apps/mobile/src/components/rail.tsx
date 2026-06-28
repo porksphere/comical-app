@@ -113,7 +113,12 @@ export function Rail({
         contentContainerStyle={styles.strip}
         onLayout={(e) => setStripTop(e.nativeEvent.layout.y)}
         onScroll={scrollHandler}
-        scrollEventThrottle={16}
+        // Fire every scroll frame (not throttled to ~16ms): the lifted peek is
+        // repositioned from these events, and on web react-native-web honors
+        // this throttle, so a smaller value keeps the popover as tight to the
+        // strip as this out-of-scroller design allows. The handler is a UI-thread
+        // worklet, so the higher frequency is cheap.
+        scrollEventThrottle={1}
         renderItem={({ item, index }: { item: SeriesEntry; index: number }) => (
           <SeriesCard
             entry={item}
