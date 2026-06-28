@@ -22,15 +22,16 @@ export default function SeriesScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { id, title, bridge } = useLocalSearchParams<{
+  const { id, title, bridge, direct } = useLocalSearchParams<{
     id?: string;
     title?: string;
     bridge?: string;
+    direct?: string;
   }>();
 
   const series = useMemo(
-    () => mockSeries(id ?? '', title, bridge ?? 'Library'),
-    [id, title, bridge],
+    () => mockSeries(id ?? '', title, bridge ?? 'Library', { direct: direct === '1' }),
+    [id, title, bridge, direct],
   );
   // Give the cover the lion's share of the hero and keep the action column
   // narrow: actions take a small fixed slice, the cover fills the rest (capped
@@ -134,6 +135,8 @@ export default function SeriesScreen() {
               <Rail
                 section={{ id: 'related', title: 'Related', kind: 'regular', items: series.related }}
                 viewportWidth={width}
+                bridge={series.bridge}
+                direct={direct === '1'}
               />
             </View>
           ) : null}

@@ -62,11 +62,17 @@ export function Rail({
   section,
   viewportWidth,
   onSeeAll,
+  bridge,
+  direct,
 }: {
   section: RailSection;
   /** Current viewport width, threaded from the screen. */
   viewportWidth: number;
   onSeeAll?: (section: RailSection) => void;
+  /** Originating bridge name + whether it serves direct series — passed to each
+   *  card so the series detail opens with the right header / page-grid view. */
+  bridge?: string;
+  direct?: boolean;
 }) {
   const size = CARD_SIZE[section.kind];
   const cardWidth = cardWidthFor(section.kind, viewportWidth);
@@ -127,6 +133,8 @@ export function Rail({
             rank={ranked ? index + 1 : undefined}
             index={index}
             onPeekChange={onPeekChange}
+            bridge={bridge}
+            direct={direct}
           />
         )}
       />

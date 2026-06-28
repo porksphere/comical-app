@@ -26,6 +26,12 @@ import { useTheme } from '@/hooks/use-theme';
 const BRIDGES = ['MangaDex', 'comick', 'Batoto', 'WeebCentral', 'asura'];
 const PAGES = ['home', 'popular', 'favorites'];
 
+// Bridges that serve "direct" series (a single work of page images — thumbnails
+// + read, no chapter list). Real bridges report this via capabilities; this set
+// designates one in the offline mock fallback so the view is reachable in the
+// web preview where the API is unreachable.
+const DIRECT_BRIDGES = new Set(['asura']);
+
 // Breathing room above the bridge/page selectors at rest. It collapses into the
 // compact fixed bar as the page scrolls (mirrors the reference's ~2rem of space
 // above #app-header before it sticks).
@@ -44,6 +50,12 @@ export default function BrowseScreen() {
   const [page, setPage] = useState(PAGES[0]);
 
   const bridgeOptions = bridges.length ? bridges.map((b) => b.name) : BRIDGES;
+  // Direct = the selected bridge serves page-thumbnail series instead of
+  // chapters. Prefer the live bridge's capabilities; fall back to the mock set.
+  const currentBridge = bridges.find((b) => b.name === bridge);
+  const directBridge = currentBridge
+    ? currentBridge.capabilities.includes('direct')
+    : DIRECT_BRIDGES.has(bridge);
 
   // Load the bridge list once; keep the fallback on any failure.
   useEffect(() => {
@@ -247,7 +259,14 @@ export default function BrowseScreen() {
         <>
           <View style={styles.rails}>
             {sections.map((s) => (
-              <Rail key={s.id} section={s} viewportWidth={railViewport} onSeeAll={setSeeAll} />
+              <Rail
+                key={s.id}
+                section={s}
+                viewportWidth={railViewport}
+                onSeeAll={setSeeAll}
+                bridge={bridge}
+                direct={directBridge}
+              />
             ))}
           </View>
           <View style={styles.browseAllHead}>
@@ -276,7 +295,7 @@ export default function BrowseScreen() {
         renderItem={({ item }: { item: GridItem }) =>
           item.spacer ? <View style={styles.cell} /> : (
             <View style={styles.cell}>
-              <SeriesCard entry={item} />
+              <SeriesCard entry={item} bridge={bridge} direct={directBridge} />
             </View>
           )
         }

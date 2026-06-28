@@ -224,9 +224,16 @@ function mockChapters(seed: string, count: number): Chapter[] {
  *  - id containing "direct" → direct series (page thumbnails, no chapters)
  *  - id containing "bare"   → minimal bridge (no genres/tags/stats/related)
  */
-export function mockSeries(id: string, title?: string, bridge = 'Library'): SeriesDetail {
+export function mockSeries(
+  id: string,
+  title?: string,
+  bridge = 'Library',
+  opts: { direct?: boolean } = {},
+): SeriesDetail {
   const seed = id || title || 'series';
-  const direct = seed.includes('direct');
+  // Direct series carry page thumbnails and no chapter list. Driven by the
+  // bridge (opts.direct, from its capabilities) or a "direct" seed for testing.
+  const direct = opts.direct || seed.includes('direct');
   const bare = seed.includes('bare');
   const h = hash(seed);
   const chapterCount = 40 + (h % 160);

@@ -94,6 +94,8 @@ export function SeriesCard({
   width,
   index = 0,
   onPeekChange,
+  bridge,
+  direct,
 }: {
   entry: SeriesEntry;
   size?: CardSize;
@@ -107,6 +109,11 @@ export function SeriesCard({
    *  drawing its own popover, so the rail can render it OUTSIDE the clipping
    *  horizontal scroller. The grid omits this and draws the popover in-card. */
   onPeekChange?: (show: boolean, index: number) => void;
+  /** Originating bridge name, carried to the series detail's header. */
+  bridge?: string;
+  /** Whether the bridge serves "direct" series (page thumbnails, no chapters);
+   *  carried to the detail so it renders the page grid instead of a chapter list. */
+  direct?: boolean;
 }) {
   const [loaded, setLoaded] = useState(false);
   const [truncated, setTruncated] = useState(false);
@@ -147,7 +154,15 @@ export function SeriesCard({
 
   return (
     <Link
-      href={{ pathname: '/series', params: { id: entry.id, title: entry.title } }}
+      href={{
+        pathname: '/series',
+        params: {
+          id: entry.id,
+          title: entry.title,
+          ...(bridge ? { bridge } : {}),
+          ...(direct ? { direct: '1' } : {}),
+        },
+      }}
       asChild>
       {/* Flatten to a single style object: as the `asChild` of <Link>, the
           Pressable is cloned by expo-router's <Slot>, which rejects array styles. */}
