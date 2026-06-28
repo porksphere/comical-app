@@ -1,6 +1,9 @@
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
+import Animated, { useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
 
+import { useSheetScroll } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
@@ -264,17 +267,33 @@ function TriRow({
   );
 }
 
+const AnimatedScrollView = Animated.createAnimatedComponent(GHScrollView);
+
 /** Caps long option lists with an internal scroll so the sheet stays usable.
- * `fixed` keeps a constant height (so the sheet doesn't resize while searching). */
+ * `fixed` keeps a constant height (so the sheet doesn't resize while searching).
+ *
+ * Reports its scroll offset to the enclosing overlay sheet (and registers its
+ * ref) so a downward drag at the top of the list chains into dismissing the
+ * sheet. A gesture-handler ScrollView lets that drag run simultaneously with
+ * this list's own scroll. */
 function OptionList({ children, fixed }: { children: React.ReactNode; fixed?: boolean }) {
+  const sheet = useSheetScroll();
+  const localOffset = useSharedValue(0);
+  const offset = sheet?.scrollOffset ?? localOffset;
+  const onScroll = useAnimatedScrollHandler((e) => {
+    offset.value = e.contentOffset.y;
+  });
   return (
-    <ScrollView
+    <AnimatedScrollView
+      ref={sheet?.scrollRef as never}
+      onScroll={onScroll}
+      scrollEventThrottle={16}
       style={fixed ? styles.listFixed : styles.list}
       contentContainerStyle={styles.listContent}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}>
       {children}
-    </ScrollView>
+    </AnimatedScrollView>
   );
 }
 

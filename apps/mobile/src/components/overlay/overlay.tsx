@@ -6,7 +6,9 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentType,
   type ReactNode,
+  type RefObject,
 } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -18,6 +20,7 @@ import Animated, {
   useSharedValue,
   withSpring,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -40,6 +43,22 @@ export function useOverlay(): OverlayApi {
   const ctx = useContext(OverlayContext);
   if (!ctx) throw new Error('useOverlay must be used within an OverlayProvider');
   return ctx;
+}
+
+// Lets a scrollable inside a sheet hand its scroll to the sheet's drag-to-
+// dismiss: it reports its vertical offset (so the sheet only takes over a
+// downward drag once the list is at the top) and registers its ref so the
+// sheet's pan can run simultaneously with the list's own scroll.
+type SheetScroll = {
+  scrollRef: RefObject<ComponentType | null>;
+  scrollOffset: SharedValue<number>;
+};
+
+const SheetScrollContext = createContext<SheetScroll | null>(null);
+
+/** Available to content rendered inside an overlay sheet; null elsewhere. */
+export function useSheetScroll(): SheetScroll | null {
+  return useContext(SheetScrollContext);
 }
 
 type Item = { id: number; render: () => ReactNode };
@@ -136,6 +155,16 @@ function OverlaySheet({
   const depthSV = useSharedValue(depthFromTop);
   const isTop = depthFromTop === 0;
 
+  // Scroll coordination for drag-to-dismiss from the content (see SheetScroll).
+  const scrollRef = useRef<ComponentType | null>(null);
+  const scrollOffset = useSharedValue(0);
+  // True once a content drag has "engaged" the sheet (list at top, pulling
+  // down); the baseline is the drag distance at that moment, so the sheet
+  // doesn't jump by however far the list was scrolled first.
+  const dragging = useSharedValue(false);
+  const dragBaseline = useSharedValue(0);
+  const sheetScroll = useMemo<SheetScroll>(() => ({ scrollRef, scrollOffset }), [scrollOffset]);
+
   const close = useCallback(() => {
     translateY.value = withTiming(height, { duration: 240 }, (finished) => {
       if (finished) runOnJS(onClosed)();
@@ -153,19 +182,60 @@ function OverlaySheet({
     depthSV.value = withSpring(depthFromTop, SPRING);
   }, [depthFromTop, depthSV]);
 
-  const pan = Gesture.Pan()
+  const dismissOrSnapBack = (translation: number, velocity: number) => {
+    'worklet';
+    if (translation > 120 || velocity > 900) {
+      translateY.value = withTiming(height, { duration: 220 }, (finished) => {
+        if (finished) runOnJS(onClosed)();
+      });
+    } else {
+      translateY.value = withSpring(0, SPRING);
+    }
+  };
+
+  // Drag the handle down to dismiss (always available — the handle sits above
+  // any scrollable content).
+  const handlePan = Gesture.Pan()
     .enabled(isTop)
     .onUpdate((e) => {
       translateY.value = Math.max(0, e.translationY);
     })
     .onEnd((e) => {
-      if (e.translationY > 120 || e.velocityY > 900) {
-        translateY.value = withTiming(height, { duration: 220 }, (finished) => {
-          if (finished) runOnJS(onClosed)();
-        });
-      } else {
-        translateY.value = withSpring(0, SPRING);
+      dismissOrSnapBack(e.translationY, e.velocityY);
+    });
+
+  // Drag the sheet down from its content too, but only once the inner list is
+  // at the top: while the list can still scroll up the gesture runs
+  // simultaneously and leaves the sheet put; at the top a continued downward
+  // drag chains into dismissal.
+  const contentPan = Gesture.Pan()
+    .enabled(isTop)
+    .activeOffsetY(12)
+    .simultaneousWithExternalGesture(scrollRef)
+    .onBegin(() => {
+      dragging.value = false;
+    })
+    .onUpdate((e) => {
+      if (!dragging.value) {
+        if (scrollOffset.value <= 0 && e.translationY > 0) {
+          dragging.value = true;
+          dragBaseline.value = e.translationY;
+        } else {
+          return;
+        }
       }
+      // Reversed back into scrollable content — hand control back to the list.
+      if (scrollOffset.value > 0) {
+        dragging.value = false;
+        translateY.value = 0;
+        return;
+      }
+      translateY.value = Math.max(0, e.translationY - dragBaseline.value);
+    })
+    .onEnd((e) => {
+      const moved = dragging.value;
+      dragging.value = false;
+      if (moved) dismissOrSnapBack(translateY.value, e.velocityY);
     });
 
   const sheetStyle = useAnimatedStyle(() => {
@@ -180,20 +250,24 @@ function OverlaySheet({
 
   return (
     <Animated.View style={[styles.sheetWrap, sheetStyle]} pointerEvents="box-none">
-      <ThemedView style={[styles.sheet, { paddingBottom: insets.bottom + Spacing.four }]}>
-        <GestureDetector gesture={pan}>
-          <View style={styles.handleArea}>
-            <View style={styles.handle} />
-          </View>
-        </GestureDetector>
+      <SheetScrollContext.Provider value={sheetScroll}>
+        <ThemedView style={[styles.sheet, { paddingBottom: insets.bottom + Spacing.four }]}>
+          <GestureDetector gesture={handlePan}>
+            <View style={styles.handleArea}>
+              <View style={styles.handle} />
+            </View>
+          </GestureDetector>
 
-        <View style={styles.sheetBody}>{children}</View>
+          <GestureDetector gesture={contentPan}>
+            <View style={styles.sheetBody}>{children}</View>
+          </GestureDetector>
 
-        <Animated.View
-          pointerEvents="none"
-          style={[StyleSheet.absoluteFill, styles.dim, dimStyle]}
-        />
-      </ThemedView>
+          <Animated.View
+            pointerEvents="none"
+            style={[StyleSheet.absoluteFill, styles.dim, dimStyle]}
+          />
+        </ThemedView>
+      </SheetScrollContext.Provider>
     </Animated.View>
   );
 }
