@@ -277,11 +277,14 @@ function TriRow({
   state: TriValue | undefined;
   onPress: () => void;
 }) {
+  const theme = useTheme();
   const color = state === 'include' ? INCLUDE : state === 'exclude' ? EXCLUDE : undefined;
   return (
     <Pressable onPress={onPress}>
       <ThemedView type="backgroundElement" style={styles.row}>
-        <Text style={[styles.triLabel, color ? { color } : { color: undefined }]}>{label}</Text>
+        {/* Unselected reads as normal (theme) text like the other selectors; the
+            include/exclude colour is the differentiator once chosen. */}
+        <Text style={[styles.triLabel, { color: color ?? theme.text }]}>{label}</Text>
         <View
           style={[
             styles.indicator,
