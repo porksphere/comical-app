@@ -148,15 +148,17 @@ export default function BrowseScreen() {
   }, [baseGrid, numColumns]);
 
   // Pinned bar: the bridge/page selectors stay at the top while content scrolls.
-  // At the very top there's no divider and a little breathing room above the
-  // selectors; once scrolled, the divider appears so they read as anchored.
+  // Reserve the safe-area inset, then centre the selectors in a fixed-height
+  // band (matching the series header) so the space above and below the text is
+  // even. At the top there's no divider; once scrolled it appears so they read
+  // as anchored.
   const topBar = (
     <View
       style={[
         styles.topBar,
         {
-          paddingTop: insets.top + Spacing.three,
-          minHeight: insets.top + TopBarHeight,
+          paddingTop: insets.top,
+          height: insets.top + TopBarHeight,
           borderBottomColor: scrolled ? theme.hairline : 'transparent',
         },
       ]}>
@@ -319,7 +321,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.three,
     paddingHorizontal: Spacing.four,
-    paddingBottom: Spacing.two,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   controls: {
