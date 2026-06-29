@@ -1,6 +1,9 @@
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
+import Animated, { useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
 
+import { useSheetScroll } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
@@ -16,6 +19,11 @@ import {
 
 const INCLUDE = '#3478F6';
 const EXCLUDE = '#E5484D';
+// Selected-tag chip colours matched to the reference's `.ms-sel-chip`: a blue
+// include / red exclude built from the same base hues (#2563eb / #dc2626) with
+// the lighter text the source uses on the tinted fill.
+const INCLUDE_CHIP = { text: '#60a5fa', border: 'rgba(37,99,235,0.5)', bg: 'rgba(37,99,235,0.13)' };
+const EXCLUDE_CHIP = { text: '#f87171', border: 'rgba(220,38,38,0.5)', bg: 'rgba(220,38,38,0.13)' };
 
 type EditorProps = { def: FilterDef; value: FilterValue; onChange: (v: FilterValue) => void };
 
@@ -203,6 +211,16 @@ function TagSearchEditor({
     () => def.options.filter((o) => o.toLowerCase().includes(query.trim().toLowerCase())),
     [def.options, query],
   );
+  // Selected tags (include first, then exclude) — shown as chips in place of the
+  // title once anything is selected.
+  const selected = useMemo(() => {
+    const inc = Object.keys(tri).filter((k) => tri[k] === 'include');
+    const exc = Object.keys(tri).filter((k) => tri[k] === 'exclude');
+    return [
+      ...inc.map((tag) => ({ tag, tone: 'include' as TriValue })),
+      ...exc.map((tag) => ({ tag, tone: 'exclude' as TriValue })),
+    ];
+  }, [tri]);
   const press = (opt: string) => {
     const next: TriState = { ...tri };
     const cycled = cycleTri(next[opt]);
@@ -211,9 +229,23 @@ function TagSearchEditor({
     setTri(next);
     onChange(next);
   };
+  const remove = (opt: string) => {
+    const next: TriState = { ...tri };
+    delete next[opt];
+    setTri(next);
+    onChange(next);
+  };
   return (
     <View style={styles.body}>
-      <Title>{def.label}</Title>
+      {selected.length > 0 ? (
+        <View style={styles.tagChips}>
+          {selected.map(({ tag, tone }) => (
+            <TagChip key={tag} label={tag} tone={tone} onRemove={() => remove(tag)} />
+          ))}
+        </View>
+      ) : (
+        <Title>{def.label}</Title>
+      )}
       <TextInput
         value={query}
         onChangeText={setQuery}
@@ -247,11 +279,14 @@ function TriRow({
   state: TriValue | undefined;
   onPress: () => void;
 }) {
+  const theme = useTheme();
   const color = state === 'include' ? INCLUDE : state === 'exclude' ? EXCLUDE : undefined;
   return (
     <Pressable onPress={onPress}>
       <ThemedView type="backgroundElement" style={styles.row}>
-        <Text style={[styles.triLabel, color ? { color } : { color: undefined }]}>{label}</Text>
+        {/* Unselected reads as normal (theme) text like the other selectors; the
+            include/exclude colour is the differentiator once chosen. */}
+        <Text style={[styles.triLabel, { color: color ?? theme.text }]}>{label}</Text>
         <View
           style={[
             styles.indicator,
@@ -264,17 +299,56 @@ function TriRow({
   );
 }
 
-/** Caps long option lists with an internal scroll so the sheet stays usable.
- * `fixed` keeps a constant height (so the sheet doesn't resize while searching). */
-function OptionList({ children, fixed }: { children: React.ReactNode; fixed?: boolean }) {
+/** A selected-tag pill (include = blue, exclude = red) with a × to deselect. */
+function TagChip({
+  label,
+  tone,
+  onRemove,
+}: {
+  label: string;
+  tone: TriValue;
+  onRemove: () => void;
+}) {
+  const c = tone === 'include' ? INCLUDE_CHIP : EXCLUDE_CHIP;
   return (
-    <ScrollView
+    <View style={[styles.tagChip, { borderColor: c.border, backgroundColor: c.bg }]}>
+      <Text style={[styles.tagChipText, { color: c.text }]} numberOfLines={1}>
+        {label}
+      </Text>
+      <Pressable onPress={onRemove} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Remove ${label}`}>
+        <Text style={[styles.tagChipRemove, { color: c.text }]}>×</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+const AnimatedScrollView = Animated.createAnimatedComponent(GHScrollView);
+
+/** Caps long option lists with an internal scroll so the sheet stays usable.
+ * `fixed` keeps a constant height (so the sheet doesn't resize while searching).
+ *
+ * Reports its scroll offset to the enclosing overlay sheet (and registers its
+ * ref) so a downward drag at the top of the list chains into dismissing the
+ * sheet. A gesture-handler ScrollView lets that drag run simultaneously with
+ * this list's own scroll. */
+function OptionList({ children, fixed }: { children: React.ReactNode; fixed?: boolean }) {
+  const sheet = useSheetScroll();
+  const localOffset = useSharedValue(0);
+  const offset = sheet?.scrollOffset ?? localOffset;
+  const onScroll = useAnimatedScrollHandler((e) => {
+    offset.value = e.contentOffset.y;
+  });
+  return (
+    <AnimatedScrollView
+      ref={sheet?.scrollRef as never}
+      onScroll={onScroll}
+      scrollEventThrottle={16}
       style={fixed ? styles.listFixed : styles.list}
       contentContainerStyle={styles.listContent}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}>
       {children}
-    </ScrollView>
+    </AnimatedScrollView>
   );
 }
 
@@ -284,6 +358,34 @@ const styles = StyleSheet.create({
   },
   title: {
     marginBottom: Spacing.one,
+  },
+  // Selected-tag chips shown in place of the title; same bottom spacing so the
+  // header height stays steady as tags are added/removed.
+  tagChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: Spacing.one,
+    marginBottom: Spacing.one,
+  },
+  tagChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingLeft: 12,
+    paddingRight: 8,
+    paddingVertical: 4,
+  },
+  tagChipText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  tagChipRemove: {
+    fontSize: 17,
+    lineHeight: 18,
+    fontWeight: '600',
   },
   input: {
     borderWidth: 1,
