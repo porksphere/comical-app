@@ -102,6 +102,9 @@ export default function ReaderScreen() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [router, prev, next, settings.direction]);
+  // Note: the browser's own pinch/gesture zoom is suppressed globally by the
+  // inline script in app/+html.tsx (it runs before React mounts), so the only
+  // zoom on web is the reader's gesture-driven one.
 
   return (
     <View style={styles.root}>
