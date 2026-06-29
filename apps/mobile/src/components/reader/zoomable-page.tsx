@@ -1,19 +1,23 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Platform, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { ReaderPage } from '@/components/reader/reader-page';
 
-// A single paged-reader page with pinch-to-zoom and pan-while-zoomed.
+// A single paged-reader page.
 //
-// Navigation stays on plain Pressable tap zones (left/right turn, centre toggles
-// chrome) exactly like the non-zoom reader: taps fire immediately and a
-// one-finger horizontal drag falls through to the FlatList so swiping still
-// turns pages. The gesture detector only handles pinch (two-finger, so it never
-// captures a one-finger swipe) and, once zoomed, a one-finger pan to move the
-// image. While zoomed the parent locks the pager and the tap zones go inert.
+// Navigation is plain Pressable tap zones (left/right turn, centre toggles
+// chrome) so taps fire immediately and a one-finger drag falls through to the
+// FlatList for swiping.
+//
+// Zoom is platform-split. On native we add a GestureDetector for pinch-to-zoom
+// and pan-while-zoomed; react-native-gesture-handler coexists with the FlatList
+// there. On web the same gesture handler captures pointer events and breaks the
+// pager's native scroll, so we skip it and let the browser's own pinch-zoom do
+// the zooming instead — the page view stays swipeable and tappable.
 
+const IS_WEB = Platform.OS === 'web';
 const MAX_SCALE = 4;
 // Below this we treat the page as "not zoomed" (and snap back to a clean 1×).
 const ZOOM_EPSILON = 1.01;
@@ -36,7 +40,42 @@ type Props = {
   onZoomChange: (zoomed: boolean) => void;
 };
 
-export function ZoomablePage({
+function TapZones({
+  zoomed,
+  onLeft,
+  onRight,
+  onToggleChrome,
+}: {
+  zoomed: boolean;
+  onLeft: () => void;
+  onRight: () => void;
+  onToggleChrome: () => void;
+}) {
+  return (
+    <View style={[StyleSheet.absoluteFill, styles.zones]} pointerEvents={zoomed ? 'none' : 'auto'}>
+      <Pressable style={styles.side} onPress={onLeft} />
+      <Pressable style={styles.center} onPress={onToggleChrome} />
+      <Pressable style={styles.side} onPress={onRight} />
+    </View>
+  );
+}
+
+export function ZoomablePage(props: Props) {
+  // Web: no custom gesture layer (it would break FlatList swiping); the browser
+  // handles pinch-zoom. Just the image plus tap zones, like the plain reader.
+  if (IS_WEB) {
+    const { uri, page, width, height, onLeft, onRight, onToggleChrome } = props;
+    return (
+      <View style={[styles.page, { width, height }]}>
+        <ReaderPage uri={uri} page={page} fit="contain" width={width} height={height} />
+        <TapZones zoomed={false} onLeft={onLeft} onRight={onRight} onToggleChrome={onToggleChrome} />
+      </View>
+    );
+  }
+  return <NativeZoomablePage {...props} />;
+}
+
+function NativeZoomablePage({
   uri,
   page,
   width,
@@ -97,9 +136,6 @@ export function ZoomablePage({
       const cx = width / 2;
       const cy = height / 2;
       const nextScale = clamp(baseScale.value * e.scale, 1, MAX_SCALE);
-      // Content point (relative to centre, in unscaled px) that sat under the
-      // fingers when the pinch started; keep it under the current finger
-      // position so the zoom anchors and a two-finger drag also pans.
       const anchorX = (focalStartX.value - cx - baseTx.value) / baseScale.value;
       const anchorY = (focalStartY.value - cy - baseTy.value) / baseScale.value;
       const limitX = ((nextScale - 1) * width) / 2;
@@ -147,26 +183,13 @@ export function ZoomablePage({
     transform: [{ translateX: tx.value }, { translateY: ty.value }, { scale: scale.value }],
   }));
 
-  // While zoomed, hand all touches to the gesture handler so the pan isn't
-  // interrupted by the browser; at 1× allow horizontal panning so the pager can
-  // still be swiped on web.
-  const webTouchAction: ViewStyle | null =
-    Platform.OS === 'web'
-      ? ({ touchAction: zoomed ? 'none' : 'pan-x pan-y' } as unknown as ViewStyle)
-      : null;
-
   return (
     <GestureDetector gesture={gesture}>
-      <View style={[styles.page, { width, height }, webTouchAction]}>
+      <View style={[styles.page, { width, height }]}>
         <Animated.View style={[{ width, height }, animatedStyle]}>
           <ReaderPage uri={uri} page={page} fit="contain" width={width} height={height} />
         </Animated.View>
-        {/* Tap zones for navigation, inert while zoomed (pan owns the touches). */}
-        <View style={[StyleSheet.absoluteFill, styles.zones]} pointerEvents={zoomed ? 'none' : 'auto'}>
-          <Pressable style={styles.side} onPress={onLeft} />
-          <Pressable style={styles.center} onPress={onToggleChrome} />
-          <Pressable style={styles.side} onPress={onRight} />
-        </View>
+        <TapZones zoomed={zoomed} onLeft={onLeft} onRight={onRight} onToggleChrome={onToggleChrome} />
       </View>
     </GestureDetector>
   );
