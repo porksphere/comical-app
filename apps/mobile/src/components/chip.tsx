@@ -69,7 +69,6 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     alignItems: 'center',
     gap: Spacing.one,
-    marginBottom: Spacing.one,
   },
   groupLabel: {
     fontSize: 11,

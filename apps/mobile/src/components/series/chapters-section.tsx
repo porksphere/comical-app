@@ -2,7 +2,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
@@ -23,20 +23,35 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'read', label: 'Read' },
   { id: 'unread', label: 'Unread' },
 ];
-const OVERVIEW_LIMIT = 8;
+// Overview collapses long lists to a configurable number of chapters from the
+// start and the end, with an expand button between them for the hidden middle.
+const OVERVIEW_HEAD_COUNT = 5;
+const OVERVIEW_TAIL_COUNT = 5;
 
 export function ChaptersSection({
   chapters,
   pageThumbs,
   seed,
   title,
+  only,
 }: {
   chapters?: Chapter[];
   pageThumbs?: string[];
   /** Series identity, used to build reader navigation params. */
   seed: string;
   title: string;
+  /** Render just one sub-part. On large screens the series detail puts the
+   *  chapter list in the right column (`'chapters'`) but the page-thumbnail grid
+   *  full-width below the columns (`'pages'`), mirroring the reference where
+   *  `#page-thumbs` sits outside `.detail-head`. Omitted = whichever applies. */
+  only?: 'chapters' | 'pages';
 }) {
+  if (only === 'chapters') {
+    return chapters?.length ? <ChapterList chapters={chapters} seed={seed} title={title} /> : null;
+  }
+  if (only === 'pages') {
+    return pageThumbs?.length ? <PageThumbGrid thumbs={pageThumbs} seed={seed} title={title} /> : null;
+  }
   if (pageThumbs?.length) return <PageThumbGrid thumbs={pageThumbs} seed={seed} title={title} />;
   if (chapters?.length) return <ChapterList chapters={chapters} seed={seed} title={title} />;
   return null;
@@ -47,16 +62,52 @@ function ChapterList({ chapters, seed, title }: { chapters: Chapter[]; seed: str
   const router = useRouter();
   const [tab, setTab] = useState<Tab>('overview');
   const [asc, setAsc] = useState(false);
+  // Overview-only: reveal the collapsed middle portion inline.
+  const [middleExpanded, setMiddleExpanded] = useState(false);
 
-  const rows = useMemo(() => {
+  const sorted = useMemo(() => {
     let list = chapters;
     if (tab === 'read') list = chapters.filter((c) => c.read);
     else if (tab === 'unread') list = chapters.filter((c) => !c.read);
-    const sorted = [...list].sort((a, b) => (asc ? a.date - b.date : b.date - a.date));
-    return tab === 'overview' ? sorted.slice(0, OVERVIEW_LIMIT) : sorted;
+    return [...list].sort((a, b) => (asc ? a.date - b.date : b.date - a.date));
   }, [chapters, tab, asc]);
 
-  const overflow = tab === 'overview' && chapters.length > OVERVIEW_LIMIT;
+  // Overview shows the first HEAD + last TAIL chapters, with the middle behind an
+  // expand button. Only collapse when it hides ≥2 chapters (a button that hides a
+  // single row isn't worth the space). Other tabs show their full filtered list.
+  const collapsible =
+    tab === 'overview' &&
+    !middleExpanded &&
+    sorted.length > OVERVIEW_HEAD_COUNT + OVERVIEW_TAIL_COUNT + 1;
+  const hiddenCount = collapsible ? sorted.length - OVERVIEW_HEAD_COUNT - OVERVIEW_TAIL_COUNT : 0;
+  const head = collapsible ? sorted.slice(0, OVERVIEW_HEAD_COUNT) : sorted;
+  const tail = collapsible ? sorted.slice(sorted.length - OVERVIEW_TAIL_COUNT) : [];
+
+  // Resolve row colors once from this (already-hydrated) parent and pass them
+  // down, so rows that re-mount on a sort/tab change paint the correct colors
+  // immediately instead of flashing the light theme for a frame (a freshly
+  // mounted component that called useTheme() itself would return 'light' until
+  // its own hydration effect ran — see use-color-scheme.web).
+  const rowColors: RowColors = {
+    bg: theme.backgroundElement,
+    border: theme.hairline,
+    text: theme.text,
+    textSecondary: theme.textSecondary,
+  };
+
+  const row = (c: Chapter) => (
+    <ChapterRow
+      key={c.id}
+      chapter={c}
+      colors={rowColors}
+      onPress={() =>
+        router.push({
+          pathname: '/reader',
+          params: { seed, title, chapterId: c.id, chapterName: c.name, start: '0' },
+        })
+      }
+    />
+  );
 
   return (
     <View style={styles.section}>
@@ -69,7 +120,10 @@ function ChapterList({ chapters, seed, title }: { chapters: Chapter[]; seed: str
             {TABS.map((t) => (
               <Pressable
                 key={t.id}
-                onPress={() => setTab(t.id)}
+                onPress={() => {
+                  setTab(t.id);
+                  setMiddleExpanded(false);
+                }}
                 style={[styles.tab, tab === t.id && { backgroundColor: theme.accent }]}>
                 <ThemedText
                   type="small"
@@ -93,53 +147,53 @@ function ChapterList({ chapters, seed, title }: { chapters: Chapter[]; seed: str
       </View>
 
       <View style={styles.list}>
-        {rows.map((c) => (
-          <ChapterRow
-            key={c.id}
-            chapter={c}
-            onPress={() =>
-              router.push({
-                pathname: '/reader',
-                params: { seed, title, chapterId: c.id, chapterName: c.name, start: '0' },
-              })
-            }
-          />
-        ))}
-        {rows.length === 0 && (
+        {head.map(row)}
+
+        {collapsible && (
+          <Pressable onPress={() => setMiddleExpanded(true)} style={styles.expandMiddle}>
+            <ThemedText type="small" style={[styles.expandMiddleText, { color: theme.accent }]}>
+              Show {hiddenCount} more chapters
+            </ThemedText>
+          </Pressable>
+        )}
+
+        {tail.map(row)}
+
+        {sorted.length === 0 && (
           <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
             No chapters here.
           </ThemedText>
         )}
       </View>
-
-      {overflow && (
-        <Pressable onPress={() => setTab('all')}>
-          <ThemedView type="backgroundElement" style={styles.showAll}>
-            <ThemedText type="small" style={{ color: theme.accent }}>
-              Show all {chapters.length} chapters
-            </ThemedText>
-          </ThemedView>
-        </Pressable>
-      )}
     </View>
   );
 }
 
-function ChapterRow({ chapter, onPress }: { chapter: Chapter; onPress?: () => void }) {
-  const theme = useTheme();
+type RowColors = { bg: string; border: string; text: string; textSecondary: string };
+
+function ChapterRow({
+  chapter,
+  onPress,
+  colors,
+}: {
+  chapter: Chapter;
+  onPress?: () => void;
+  colors: RowColors;
+}) {
+  // Plain View/Text with colors from the parent (not useTheme here) so a
+  // re-mounted row never flashes the light theme — see rowColors in ChapterList.
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [pressed && styles.rowPressed]}>
-      <ThemedView type="backgroundElement" style={[styles.row, { borderColor: theme.hairline }]}>
-        <ThemedText
-          type="small"
+      <View style={[styles.row, { backgroundColor: colors.bg, borderColor: colors.border }]}>
+        <Text
           numberOfLines={1}
-          style={[styles.rowName, chapter.read && { color: theme.textSecondary }]}>
+          style={[styles.rowName, { color: chapter.read ? colors.textSecondary : colors.text }]}>
           {chapter.name}
-        </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary" style={styles.rowTime}>
+        </Text>
+        <Text style={[styles.rowTime, { color: colors.textSecondary }]}>
           {relativeTime(chapter.date)}
-        </ThemedText>
-      </ThemedView>
+        </Text>
+      </View>
     </Pressable>
   );
 }
@@ -284,15 +338,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
-    flexWrap: 'wrap',
   },
   tabs: {
+    // Fill the row so the tab buttons span the full width and push the sort
+    // button hard against the right edge.
+    flex: 1,
     flexDirection: 'row',
     borderRadius: 10,
     padding: 3,
     gap: 2,
   },
   tab: {
+    // Each tab takes an equal slice of the group's width, label centred.
+    flex: 1,
+    alignItems: 'center',
     paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.one,
     borderRadius: 8,
@@ -300,6 +359,7 @@ const styles = StyleSheet.create({
   tabLabel: {
     // Reference .ch-tab: 0.82rem (~13px).
     fontSize: 13,
+    textAlign: 'center',
   },
   sortBtn: {
     width: 36,
@@ -326,18 +386,26 @@ const styles = StyleSheet.create({
   },
   rowName: {
     flex: 1,
+    fontSize: 14,
+    lineHeight: 20,
     fontWeight: '600',
   },
   rowTime: {
     fontSize: 12,
+    lineHeight: 20,
+    fontWeight: '500',
   },
   empty: {
     paddingVertical: Spacing.three,
   },
-  showAll: {
+  // Overview's middle expand affordance — plain centred accent text (no chrome).
+  expandMiddle: {
     alignItems: 'center',
-    paddingVertical: Spacing.three,
-    borderRadius: 8,
+    justifyContent: 'center',
+    paddingVertical: Spacing.two,
+  },
+  expandMiddleText: {
+    fontWeight: '600',
   },
   thumbGridWrap: {
     position: 'relative',
