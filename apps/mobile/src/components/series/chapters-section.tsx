@@ -142,7 +142,7 @@ function PageThumbGrid({ thumbs }: { thumbs: string[] }) {
   const collapsedCount = cols * COLLAPSED_ROWS;
   const collapsed = !expanded && thumbs.length > collapsedCount;
   const shown = collapsed ? thumbs.slice(0, collapsedCount) : thumbs;
-  const fadeHeight = tileW > 0 ? Math.round(tileW * (3 / 2) * 1.25) : 140;
+  const fadeHeight = tileW > 0 ? Math.round(tileW * (3 / 2) * 1.5) : 160;
 
   return (
     <View style={styles.section}>
@@ -183,14 +183,13 @@ function PageThumbGrid({ thumbs }: { thumbs: string[] }) {
   );
 }
 
-/** A vertical transparent→`color` fade: clear at the top so the grid shows
- *  through, reaching solid `color` ~⅔ down so the button sits on a clean
- *  background. Mirrors the reference's `.page-thumbs-more` gradient. */
+/** A gentle vertical transparent→`color` fade over the last rows; only the very
+ *  bottom reaches solid (where it meets the page background), so the button
+ *  floats over the still-visible, fading thumbnails rather than a solid block. */
 function GradientFade({ color }: { color: string }) {
   return (
     <LinearGradient
-      colors={['transparent', color, color]}
-      locations={[0, 0.65, 1]}
+      colors={['transparent', color]}
       style={StyleSheet.absoluteFill}
       pointerEvents="none"
     />
@@ -275,9 +274,10 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    justifyContent: 'flex-end',
+    // Centre the button over the fading thumbnails rather than pinning it to a
+    // solid base at the bottom.
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingBottom: Spacing.three,
   },
   showMore: {
     paddingVertical: Spacing.two,
