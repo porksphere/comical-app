@@ -221,7 +221,10 @@ const styles = StyleSheet.create({
     gap: Spacing.four,
   },
   title: {
-    lineHeight: 40,
+    // Reference series title is the h2 default (~24px bold), not the 32px subtitle.
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: '700',
   },
   hero: {
     flexDirection: 'row',
@@ -273,7 +276,9 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   description: {
-    lineHeight: 22,
+    // Reference #detail-description: 0.88rem / line-height 1.5.
+    fontSize: 14,
+    lineHeight: 21,
   },
   related: {
     gap: Spacing.two,

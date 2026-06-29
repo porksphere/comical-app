@@ -65,7 +65,10 @@ function ChapterList({ chapters }: { chapters: Chapter[] }) {
                 style={[styles.tab, tab === t.id && { backgroundColor: theme.accent }]}>
                 <ThemedText
                   type="small"
-                  style={tab === t.id ? { color: theme.accentOn } : { color: theme.textSecondary }}>
+                  style={[
+                    styles.tabLabel,
+                    tab === t.id ? { color: theme.accentOn } : { color: theme.textSecondary },
+                  ]}>
                   {t.label}
                 </ThemedText>
               </Pressable>
@@ -205,8 +208,9 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
   },
   headTitle: {
-    fontSize: 22,
-    lineHeight: 28,
+    // Reference .chapters-head h3: 1.15rem (~18px).
+    fontSize: 18,
+    lineHeight: 24,
   },
   controls: {
     flexDirection: 'row',
@@ -224,6 +228,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.one,
     borderRadius: 8,
+  },
+  tabLabel: {
+    // Reference .ch-tab: 0.82rem (~13px).
+    fontSize: 13,
   },
   sortBtn: {
     width: 36,
