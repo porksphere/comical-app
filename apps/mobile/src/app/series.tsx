@@ -192,17 +192,16 @@ const styles = StyleSheet.create({
   },
   topBar: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     justifyContent: 'center',
-    paddingBottom: Spacing.two,
     paddingHorizontal: Spacing.four,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   backButton: {
     position: 'absolute',
     left: Spacing.three,
-    bottom: Spacing.one,
-    height: TopBarHeight - Spacing.two,
+    bottom: 0,
+    height: TopBarHeight,
     justifyContent: 'center',
   },
   bridgeName: {
