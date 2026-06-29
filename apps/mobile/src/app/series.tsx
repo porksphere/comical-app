@@ -117,8 +117,12 @@ export default function SeriesScreen() {
   // or stacked below the hero row (small).
   const contentEl = (
     <>
-      {series.genres?.length ? <ChipRow labels={series.genres} /> : null}
-      {series.tagGroups?.map((g) => <TagGroupRow key={g.label} group={g} />)}
+      {series.genres?.length || series.tagGroups?.length ? (
+        <View style={styles.tagsBlock}>
+          {series.genres?.length ? <ChipRow labels={series.genres} /> : null}
+          {series.tagGroups?.map((g) => <TagGroupRow key={g.label} group={g} />)}
+        </View>
+      ) : null}
 
       {series.meta?.length ? (
         <View style={[styles.metaGrid, { borderColor: theme.hairline }]}>
@@ -409,6 +413,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   actions: {
+    gap: Spacing.two,
+  },
+  // Genres + tag-group rows packed tightly together (the outer column's larger
+  // gap then separates the whole block from the meta grid below).
+  tagsBlock: {
     gap: Spacing.two,
   },
   metaGrid: {
