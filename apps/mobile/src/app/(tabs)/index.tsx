@@ -442,8 +442,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   skelFooter: {
+    // No top padding: the list's content gap already separates the footer from
+    // the last row, so matching it here keeps the loaded rows from popping up
+    // when they replace the skeleton.
     gap: Spacing.three,
-    paddingTop: Spacing.three,
   },
   skelRow: {
     flexDirection: 'row',
