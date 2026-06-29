@@ -23,7 +23,10 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'read', label: 'Read' },
   { id: 'unread', label: 'Unread' },
 ];
-const OVERVIEW_LIMIT = 8;
+// Overview collapses long lists to a configurable number of chapters from the
+// start and the end, with an expand button between them for the hidden middle.
+const OVERVIEW_HEAD_COUNT = 5;
+const OVERVIEW_TAIL_COUNT = 5;
 
 export function ChaptersSection({
   chapters,
@@ -59,16 +62,39 @@ function ChapterList({ chapters, seed, title }: { chapters: Chapter[]; seed: str
   const router = useRouter();
   const [tab, setTab] = useState<Tab>('overview');
   const [asc, setAsc] = useState(false);
+  // Overview-only: reveal the collapsed middle portion inline.
+  const [middleExpanded, setMiddleExpanded] = useState(false);
 
-  const rows = useMemo(() => {
+  const sorted = useMemo(() => {
     let list = chapters;
     if (tab === 'read') list = chapters.filter((c) => c.read);
     else if (tab === 'unread') list = chapters.filter((c) => !c.read);
-    const sorted = [...list].sort((a, b) => (asc ? a.date - b.date : b.date - a.date));
-    return tab === 'overview' ? sorted.slice(0, OVERVIEW_LIMIT) : sorted;
+    return [...list].sort((a, b) => (asc ? a.date - b.date : b.date - a.date));
   }, [chapters, tab, asc]);
 
-  const overflow = tab === 'overview' && chapters.length > OVERVIEW_LIMIT;
+  // Overview shows the first HEAD + last TAIL chapters, with the middle behind an
+  // expand button. Only collapse when it hides ≥2 chapters (a button that hides a
+  // single row isn't worth the space). Other tabs show their full filtered list.
+  const collapsible =
+    tab === 'overview' &&
+    !middleExpanded &&
+    sorted.length > OVERVIEW_HEAD_COUNT + OVERVIEW_TAIL_COUNT + 1;
+  const hiddenCount = collapsible ? sorted.length - OVERVIEW_HEAD_COUNT - OVERVIEW_TAIL_COUNT : 0;
+  const head = collapsible ? sorted.slice(0, OVERVIEW_HEAD_COUNT) : sorted;
+  const tail = collapsible ? sorted.slice(sorted.length - OVERVIEW_TAIL_COUNT) : [];
+
+  const row = (c: Chapter) => (
+    <ChapterRow
+      key={c.id}
+      chapter={c}
+      onPress={() =>
+        router.push({
+          pathname: '/reader',
+          params: { seed, title, chapterId: c.id, chapterName: c.name, start: '0' },
+        })
+      }
+    />
+  );
 
   return (
     <View style={styles.section}>
@@ -81,7 +107,10 @@ function ChapterList({ chapters, seed, title }: { chapters: Chapter[]; seed: str
             {TABS.map((t) => (
               <Pressable
                 key={t.id}
-                onPress={() => setTab(t.id)}
+                onPress={() => {
+                  setTab(t.id);
+                  setMiddleExpanded(false);
+                }}
                 style={[styles.tab, tab === t.id && { backgroundColor: theme.accent }]}>
                 <ThemedText
                   type="small"
@@ -105,34 +134,28 @@ function ChapterList({ chapters, seed, title }: { chapters: Chapter[]; seed: str
       </View>
 
       <View style={styles.list}>
-        {rows.map((c) => (
-          <ChapterRow
-            key={c.id}
-            chapter={c}
-            onPress={() =>
-              router.push({
-                pathname: '/reader',
-                params: { seed, title, chapterId: c.id, chapterName: c.name, start: '0' },
-              })
-            }
-          />
-        ))}
-        {rows.length === 0 && (
+        {head.map(row)}
+
+        {collapsible && (
+          <Pressable onPress={() => setMiddleExpanded(true)}>
+            <ThemedView
+              type="backgroundElement"
+              style={[styles.expandMiddle, { borderColor: theme.hairline }]}>
+              <ThemedText type="small" style={[styles.expandMiddleText, { color: theme.accent }]}>
+                ⌄  Show {hiddenCount} more chapters
+              </ThemedText>
+            </ThemedView>
+          </Pressable>
+        )}
+
+        {tail.map(row)}
+
+        {sorted.length === 0 && (
           <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
             No chapters here.
           </ThemedText>
         )}
       </View>
-
-      {overflow && (
-        <Pressable onPress={() => setTab('all')}>
-          <ThemedView type="backgroundElement" style={styles.showAll}>
-            <ThemedText type="small" style={{ color: theme.accent }}>
-              Show all {chapters.length} chapters
-            </ThemedText>
-          </ThemedView>
-        </Pressable>
-      )}
     </View>
   );
 }
@@ -296,15 +319,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
-    flexWrap: 'wrap',
   },
   tabs: {
+    // Fill the row so the tab buttons span the full width and push the sort
+    // button hard against the right edge.
+    flex: 1,
     flexDirection: 'row',
     borderRadius: 10,
     padding: 3,
     gap: 2,
   },
   tab: {
+    // Each tab takes an equal slice of the group's width, label centred.
+    flex: 1,
+    alignItems: 'center',
     paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.one,
     borderRadius: 8,
@@ -312,6 +340,7 @@ const styles = StyleSheet.create({
   tabLabel: {
     // Reference .ch-tab: 0.82rem (~13px).
     fontSize: 13,
+    textAlign: 'center',
   },
   sortBtn: {
     width: 36,
@@ -346,10 +375,19 @@ const styles = StyleSheet.create({
   empty: {
     paddingVertical: Spacing.three,
   },
-  showAll: {
+  // Overview's middle expand button — reads as a collapsed gap between the head
+  // and tail rows: full-width, bordered, centred.
+  expandMiddle: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: Spacing.three,
+    justifyContent: 'center',
+    gap: Spacing.one,
+    paddingVertical: Spacing.two,
     borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  expandMiddleText: {
+    fontWeight: '600',
   },
   thumbGridWrap: {
     position: 'relative',
