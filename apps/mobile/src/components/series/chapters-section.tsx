@@ -142,7 +142,7 @@ function PageThumbGrid({ thumbs }: { thumbs: string[] }) {
   const collapsedCount = cols * COLLAPSED_ROWS;
   const collapsed = !expanded && thumbs.length > collapsedCount;
   const shown = collapsed ? thumbs.slice(0, collapsedCount) : thumbs;
-  const fadeHeight = tileW > 0 ? Math.round(tileW * (3 / 2) * 1.5) : 160;
+  const fadeHeight = tileW > 0 ? Math.round(tileW * (3 / 2) * 0.6) : 120;
 
   return (
     <View style={styles.section}>
@@ -274,10 +274,10 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    // Centre the button over the fading thumbnails rather than pinning it to a
-    // solid base at the bottom.
-    justifyContent: 'center',
+    // Button sits at the bottom of the cards, within the short fade.
+    justifyContent: 'flex-end',
     alignItems: 'center',
+    paddingBottom: Spacing.three,
   },
   showMore: {
     paddingVertical: Spacing.two,
