@@ -1,4 +1,5 @@
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 
@@ -182,20 +183,17 @@ function PageThumbGrid({ thumbs }: { thumbs: string[] }) {
   );
 }
 
-/** A vertical transparent→`color` fade approximated with stacked opacity bands
- *  (no gradient dependency); eased so most of the grid stays clear and the fade
- *  deepens toward the bottom where the button sits. Uses many thin bands so the
- *  opacity steps are imperceptible (few bands read as hard tiers). */
-function GradientFade({ color, bands = 60 }: { color: string; bands?: number }) {
+/** A vertical transparent→`color` fade: clear at the top so the grid shows
+ *  through, reaching solid `color` ~⅔ down so the button sits on a clean
+ *  background. Mirrors the reference's `.page-thumbs-more` gradient. */
+function GradientFade({ color }: { color: string }) {
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      {Array.from({ length: bands }).map((_, i) => (
-        <View
-          key={i}
-          style={{ flex: 1, backgroundColor: color, opacity: ((i + 1) / bands) ** 1.6 }}
-        />
-      ))}
-    </View>
+    <LinearGradient
+      colors={['transparent', color, color]}
+      locations={[0, 0.65, 1]}
+      style={StyleSheet.absoluteFill}
+      pointerEvents="none"
+    />
   );
 }
 
