@@ -9,6 +9,7 @@ import Animated, {
 import { SeriesCard, TitlePeek, type CardSize } from '@/components/series-card';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
+import { useIsCompact } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import type { RailSection, SeriesEntry } from '@/data/mock';
 
@@ -158,9 +159,14 @@ export function Rail({
 
 export function SectionHead({ title, onSeeAll }: { title: string; onSeeAll?: () => void }) {
   const theme = useTheme();
+  // Match the reference's `.section-head h3`: 1.2rem mobile / 1.5rem desktop.
+  const compact = useIsCompact();
   return (
     <View style={styles.head}>
-      <ThemedText type="subtitle" style={styles.headTitle} numberOfLines={1}>
+      <ThemedText
+        type="subtitle"
+        style={[styles.headTitle, compact ? styles.headTitleCompact : styles.headTitleWide]}
+        numberOfLines={1}>
         {title}
       </ThemedText>
       {onSeeAll && (
@@ -192,9 +198,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.four,
   },
   headTitle: {
-    fontSize: 22,
-    lineHeight: 28,
     flexShrink: 1,
+  },
+  headTitleCompact: {
+    fontSize: 19.2,
+    lineHeight: 25,
+  },
+  headTitleWide: {
+    fontSize: 24,
+    lineHeight: 30,
   },
   strip: {
     gap: STRIP_GAP,
