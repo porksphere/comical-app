@@ -1,23 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { ReaderPage } from '@/components/reader/reader-page';
 
-// A single paged-reader page.
+// A single paged-reader page (NATIVE only — web has its own gesture pager in
+// paged-reader.web.tsx and never renders this).
 //
 // Navigation is plain Pressable tap zones (left/right turn, centre toggles
 // chrome) so taps fire immediately and a one-finger drag falls through to the
-// FlatList for swiping.
-//
-// Zoom is platform-split. On native we add a GestureDetector for pinch-to-zoom
-// and pan-while-zoomed; react-native-gesture-handler coexists with the FlatList
-// there. On web the same gesture handler captures pointer events and breaks the
-// pager's native scroll, so we skip it and let the browser's own pinch-zoom do
-// the zooming instead — the page view stays swipeable and tappable.
+// FlatList for swiping. A GestureDetector adds pinch-to-zoom and pan-while-
+// zoomed; react-native-gesture-handler coexists with the FlatList on native.
 
-const IS_WEB = Platform.OS === 'web';
 const MAX_SCALE = 4;
 // Below this we treat the page as "not zoomed" (and snap back to a clean 1×).
 const ZOOM_EPSILON = 1.01;
@@ -60,22 +55,7 @@ function TapZones({
   );
 }
 
-export function ZoomablePage(props: Props) {
-  // Web: no custom gesture layer (it would break FlatList swiping); the browser
-  // handles pinch-zoom. Just the image plus tap zones, like the plain reader.
-  if (IS_WEB) {
-    const { uri, page, width, height, onLeft, onRight, onToggleChrome } = props;
-    return (
-      <View style={[styles.page, { width, height }]}>
-        <ReaderPage uri={uri} page={page} fit="contain" width={width} height={height} />
-        <TapZones zoomed={false} onLeft={onLeft} onRight={onRight} onToggleChrome={onToggleChrome} />
-      </View>
-    );
-  }
-  return <NativeZoomablePage {...props} />;
-}
-
-function NativeZoomablePage({
+export function ZoomablePage({
   uri,
   page,
   width,
