@@ -184,8 +184,9 @@ function PageThumbGrid({ thumbs }: { thumbs: string[] }) {
 
 /** A vertical transparent→`color` fade approximated with stacked opacity bands
  *  (no gradient dependency); eased so most of the grid stays clear and the fade
- *  deepens toward the bottom where the button sits. */
-function GradientFade({ color, bands = 14 }: { color: string; bands?: number }) {
+ *  deepens toward the bottom where the button sits. Uses many thin bands so the
+ *  opacity steps are imperceptible (few bands read as hard tiers). */
+function GradientFade({ color, bands = 60 }: { color: string; bands?: number }) {
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
       {Array.from({ length: bands }).map((_, i) => (
