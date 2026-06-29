@@ -261,15 +261,17 @@ const styles = StyleSheet.create({
   },
   metaGrid: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.three,
+    // Keep all cells (Status / Type / Author / Artist) on a single row, each an
+    // equal column; long values wrap within their own cell.
+    alignItems: 'flex-start',
+    gap: Spacing.two,
     paddingVertical: Spacing.three,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   metaCell: {
+    flex: 1,
     gap: Spacing.half,
-    minWidth: 120,
   },
   metaLabel: {
     fontSize: 11,
