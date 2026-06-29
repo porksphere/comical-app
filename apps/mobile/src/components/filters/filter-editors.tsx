@@ -19,9 +19,11 @@ import {
 
 const INCLUDE = '#3478F6';
 const EXCLUDE = '#E5484D';
-// Tinted backgrounds for the selected-tag chips (matches the include/exclude hues).
-const INCLUDE_BG = 'rgba(52,120,246,0.13)';
-const EXCLUDE_BG = 'rgba(229,72,77,0.13)';
+// Selected-tag chip colours matched to the reference's `.ms-sel-chip`: a blue
+// include / red exclude built from the same base hues (#2563eb / #dc2626) with
+// the lighter text the source uses on the tinted fill.
+const INCLUDE_CHIP = { text: '#60a5fa', border: 'rgba(37,99,235,0.5)', bg: 'rgba(37,99,235,0.13)' };
+const EXCLUDE_CHIP = { text: '#f87171', border: 'rgba(220,38,38,0.5)', bg: 'rgba(220,38,38,0.13)' };
 
 type EditorProps = { def: FilterDef; value: FilterValue; onChange: (v: FilterValue) => void };
 
@@ -307,15 +309,14 @@ function TagChip({
   tone: TriValue;
   onRemove: () => void;
 }) {
-  const color = tone === 'include' ? INCLUDE : EXCLUDE;
-  const background = tone === 'include' ? INCLUDE_BG : EXCLUDE_BG;
+  const c = tone === 'include' ? INCLUDE_CHIP : EXCLUDE_CHIP;
   return (
-    <View style={[styles.tagChip, { borderColor: color, backgroundColor: background }]}>
-      <Text style={[styles.tagChipText, { color }]} numberOfLines={1}>
+    <View style={[styles.tagChip, { borderColor: c.border, backgroundColor: c.bg }]}>
+      <Text style={[styles.tagChipText, { color: c.text }]} numberOfLines={1}>
         {label}
       </Text>
       <Pressable onPress={onRemove} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Remove ${label}`}>
-        <Text style={[styles.tagChipRemove, { color }]}>×</Text>
+        <Text style={[styles.tagChipRemove, { color: c.text }]}>×</Text>
       </Pressable>
     </View>
   );
