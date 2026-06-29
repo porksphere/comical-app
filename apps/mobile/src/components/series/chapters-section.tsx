@@ -123,30 +123,77 @@ function ChapterRow({ chapter }: { chapter: Chapter }) {
   );
 }
 
+// Rows shown before a long page set collapses behind "Show all".
+const COLLAPSED_ROWS = 4;
+
 function PageThumbGrid({ thumbs }: { thumbs: string[] }) {
+  const theme = useTheme();
   const { width: screenW } = useWindowDimensions();
   const [containerW, setContainerW] = useState(0);
+  const [expanded, setExpanded] = useState(false);
   const cols = screenW >= 900 ? 5 : screenW >= 600 ? 3 : 2;
   const gap = Spacing.two;
   const tileW = containerW > 0 ? (containerW - gap * (cols - 1)) / cols : 0;
+
+  // Past a few rows, collapse: a gradient fades the last visible rows out under
+  // a centered "Show all" button so it reads as "there's more". Mirrors the
+  // reference's `.page-thumbs-more`.
+  const collapsedCount = cols * COLLAPSED_ROWS;
+  const collapsed = !expanded && thumbs.length > collapsedCount;
+  const shown = collapsed ? thumbs.slice(0, collapsedCount) : thumbs;
+  const fadeHeight = tileW > 0 ? Math.round(tileW * (3 / 2) * 1.25) : 140;
+
   return (
     <View style={styles.section}>
       <ThemedText type="subtitle" style={styles.headTitle}>
         Pages
       </ThemedText>
       <View
-        style={[styles.thumbGrid, { gap }]}
+        style={styles.thumbGridWrap}
         onLayout={(e) => setContainerW(e.nativeEvent.layout.width)}>
-        {tileW > 0 &&
-          thumbs.map((uri, i) => (
-            <View key={uri} style={[styles.thumb, { width: tileW }]}>
-              <Image source={{ uri }} style={styles.thumbImg} contentFit="cover" transition={200} />
-              <View style={styles.pageNum}>
-                <ThemedText style={styles.pageNumText}>{i + 1}</ThemedText>
+        <View style={[styles.thumbGrid, { gap }]}>
+          {tileW > 0 &&
+            shown.map((uri, i) => (
+              <View key={uri} style={[styles.thumb, { width: tileW }]}>
+                <Image source={{ uri }} style={styles.thumbImg} contentFit="cover" transition={200} />
+                <View style={styles.pageNum}>
+                  <ThemedText style={styles.pageNumText}>{i + 1}</ThemedText>
+                </View>
               </View>
-            </View>
-          ))}
+            ))}
+        </View>
+
+        {collapsed && (
+          <View style={[styles.moreOverlay, { height: fadeHeight }]} pointerEvents="box-none">
+            <GradientFade color={theme.background} />
+            <Pressable onPress={() => setExpanded(true)} hitSlop={8}>
+              <ThemedView
+                type="backgroundElement"
+                style={[styles.showMore, { borderColor: theme.hairline }]}>
+                <ThemedText type="small" style={{ color: theme.accent }}>
+                  Show all {thumbs.length} pages
+                </ThemedText>
+              </ThemedView>
+            </Pressable>
+          </View>
+        )}
       </View>
+    </View>
+  );
+}
+
+/** A vertical transparent→`color` fade approximated with stacked opacity bands
+ *  (no gradient dependency); eased so most of the grid stays clear and the fade
+ *  deepens toward the bottom where the button sits. */
+function GradientFade({ color, bands = 14 }: { color: string; bands?: number }) {
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      {Array.from({ length: bands }).map((_, i) => (
+        <View
+          key={i}
+          style={{ flex: 1, backgroundColor: color, opacity: ((i + 1) / bands) ** 1.6 }}
+        />
+      ))}
     </View>
   );
 }
@@ -217,9 +264,28 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.three,
     borderRadius: 8,
   },
+  thumbGridWrap: {
+    position: 'relative',
+  },
   thumbGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+  },
+  moreOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingBottom: Spacing.three,
+  },
+  showMore: {
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.four,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
   },
   thumb: {
     aspectRatio: 2 / 3,
