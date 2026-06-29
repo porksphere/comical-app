@@ -189,7 +189,8 @@ function PageThumbGrid({ thumbs }: { thumbs: string[] }) {
 function GradientFade({ color }: { color: string }) {
   return (
     <LinearGradient
-      colors={['transparent', color]}
+      colors={['transparent', color, color]}
+      locations={[0, 0.8, 1]}
       style={StyleSheet.absoluteFill}
       pointerEvents="none"
     />
