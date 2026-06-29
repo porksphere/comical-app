@@ -30,13 +30,25 @@ export function ChaptersSection({
   pageThumbs,
   seed,
   title,
+  only,
 }: {
   chapters?: Chapter[];
   pageThumbs?: string[];
   /** Series identity, used to build reader navigation params. */
   seed: string;
   title: string;
+  /** Render just one sub-part. On large screens the series detail puts the
+   *  chapter list in the right column (`'chapters'`) but the page-thumbnail grid
+   *  full-width below the columns (`'pages'`), mirroring the reference where
+   *  `#page-thumbs` sits outside `.detail-head`. Omitted = whichever applies. */
+  only?: 'chapters' | 'pages';
 }) {
+  if (only === 'chapters') {
+    return chapters?.length ? <ChapterList chapters={chapters} seed={seed} title={title} /> : null;
+  }
+  if (only === 'pages') {
+    return pageThumbs?.length ? <PageThumbGrid thumbs={pageThumbs} seed={seed} title={title} /> : null;
+  }
   if (pageThumbs?.length) return <PageThumbGrid thumbs={pageThumbs} seed={seed} title={title} />;
   if (chapters?.length) return <ChapterList chapters={chapters} seed={seed} title={title} />;
   return null;

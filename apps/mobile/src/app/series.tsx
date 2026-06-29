@@ -1,7 +1,15 @@
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import {
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+  type ViewStyle,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChipRow, TagGroupRow } from '@/components/chip';
@@ -38,6 +46,11 @@ export default function SeriesScreen() {
   );
 
   const isLarge = width >= LARGE_SCREEN_BREAKPOINT;
+  // Sticky cover column is a web-only, large-screen affordance: as the page
+  // scrolls, the left column pins to the top until the chapters end (mirrors the
+  // reference's `position: sticky` cover col). Native has no sticky, and on a
+  // small screen there's no second column to pin alongside.
+  const sticky = isLarge && Platform.OS === 'web';
 
   // Give the cover the lion's share of the hero and keep the action column
   // narrow: actions take a small fixed slice, the cover fills the rest (capped
@@ -126,13 +139,30 @@ export default function SeriesScreen() {
         </ThemedText>
       ) : null}
 
+      {/* Chapters live with the metadata (right column on large screens). The
+          page-thumbnail grid for direct series is rendered separately, full-width
+          below the columns (see `pagesEl`). */}
       <ChaptersSection
         chapters={series.chapters}
         pageThumbs={series.pageThumbs}
         seed={series.id}
         title={series.title}
+        only="chapters"
       />
     </>
+  );
+
+  // Page-thumbnail grid (direct series only): full-width below the two-column
+  // row, like the reference's `#page-thumbs` outside `.detail-head`. Rendering it
+  // here also lets the sticky cover column release at the top of this grid.
+  const pagesEl = (
+    <ChaptersSection
+      chapters={series.chapters}
+      pageThumbs={series.pageThumbs}
+      seed={series.id}
+      title={series.title}
+      only="pages"
+    />
   );
 
   return (
@@ -172,7 +202,7 @@ export default function SeriesScreen() {
             {isLarge ? (
               /* Large screen: two-column layout — cover+actions left, content right. */
               <View style={styles.twoCol}>
-                <View style={styles.leftCol}>
+                <View style={[styles.leftCol, sticky && styles.leftColSticky]}>
                   {coverEl}
                   {actionsEl}
                 </View>
@@ -190,6 +220,9 @@ export default function SeriesScreen() {
                 {contentEl}
               </>
             )}
+
+            {/* Page-thumbnails (direct series): full-width below the columns. */}
+            {pagesEl}
           </View>
 
           {/* Related rail (per-bridge): full-bleed, outside the padded inner. */}
@@ -335,6 +368,16 @@ const styles = StyleSheet.create({
     width: LARGE_COVER_WIDTH,
     gap: Spacing.three,
   },
+  // Web-only: pin the cover+actions column as the page scrolls. `position:
+  // 'sticky'` isn't in RN's ViewStyle union but react-native-web passes it
+  // straight to the DOM, so the cast is safe. The sticky region is bounded by
+  // the `twoCol` row's height (driven by the taller right column), so it releases
+  // once the chapters end — at the top of the page-thumbs / related rail.
+  leftColSticky: {
+    position: 'sticky',
+    top: Spacing.four,
+    alignSelf: 'flex-start',
+  } as unknown as ViewStyle,
   rightCol: {
     flex: 1,
     gap: Spacing.four,
