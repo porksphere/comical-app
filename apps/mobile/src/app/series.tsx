@@ -104,7 +104,7 @@ export default function SeriesScreen() {
             </View>
 
             {/* Per-bridge dynamic sections: each renders only when present. */}
-            {series.genres?.length ? <ChipRow labels={series.genres} accent /> : null}
+            {series.genres?.length ? <ChipRow labels={series.genres} /> : null}
             {series.tagGroups?.map((g) => <TagGroupRow key={g.label} group={g} />)}
 
             {series.meta?.length ? (
