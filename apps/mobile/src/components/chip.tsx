@@ -10,15 +10,15 @@ import type { TagGroup } from '@/data/mock';
 
 export function Chip({ label, accent }: { label: string; accent?: boolean }) {
   const theme = useTheme();
-  // Matches the reference: every chip shares a neutral fill; tags (`accent`)
-  // carry a blue border + blue text, while plain chips (genres) get a subtle
-  // border and muted text — rather than a blue-tinted fill.
+  // Matches the reference: every chip shares the neutral `chipBg` fill; tags
+  // (`accent`) carry a blue border + blue text, while plain chips (genres) get a
+  // subtle border and muted text — rather than a blue-tinted fill.
   return (
     <View
       style={[
         styles.chip,
         {
-          backgroundColor: theme.backgroundElement,
+          backgroundColor: theme.chipBg,
           borderColor: accent ? theme.chipBorder : theme.hairline,
         },
       ]}>

@@ -24,7 +24,9 @@ export const Colors = {
     badgeNew: '#f59e0b',
     badgeNewOn: '#111111',
     hairline: 'rgba(0,0,0,0.12)',
-    chipBg: '#E8EEFB',
+    // Neutral chip fill (shared by genre + tag chips, like the reference); a
+    // dedicated token so chip fill can diverge from generic surfaces later.
+    chipBg: '#F0F0F3',
     chipBorder: '#B9CEF5',
     chipText: '#2257C7',
   },
@@ -42,7 +44,7 @@ export const Colors = {
     badgeNew: '#f59e0b',
     badgeNewOn: '#111111',
     hairline: 'rgba(128,128,128,0.25)',
-    chipBg: '#1c2a3a',
+    chipBg: '#212225',
     chipBorder: '#2c4060',
     chipText: '#8ab4f8',
   },
