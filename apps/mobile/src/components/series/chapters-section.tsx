@@ -137,14 +137,10 @@ function ChapterList({ chapters, seed, title }: { chapters: Chapter[]; seed: str
         {head.map(row)}
 
         {collapsible && (
-          <Pressable onPress={() => setMiddleExpanded(true)}>
-            <ThemedView
-              type="backgroundElement"
-              style={[styles.expandMiddle, { borderColor: theme.hairline }]}>
-              <ThemedText type="small" style={[styles.expandMiddleText, { color: theme.accent }]}>
-                ⌄  Show {hiddenCount} more chapters
-              </ThemedText>
-            </ThemedView>
+          <Pressable onPress={() => setMiddleExpanded(true)} style={styles.expandMiddle}>
+            <ThemedText type="small" style={[styles.expandMiddleText, { color: theme.accent }]}>
+              Show {hiddenCount} more chapters
+            </ThemedText>
           </Pressable>
         )}
 
@@ -375,16 +371,11 @@ const styles = StyleSheet.create({
   empty: {
     paddingVertical: Spacing.three,
   },
-  // Overview's middle expand button — reads as a collapsed gap between the head
-  // and tail rows: full-width, bordered, centred.
+  // Overview's middle expand affordance — plain centred accent text (no chrome).
   expandMiddle: {
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.one,
     paddingVertical: Spacing.two,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
   },
   expandMiddleText: {
     fontWeight: '600',
