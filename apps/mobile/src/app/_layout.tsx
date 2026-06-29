@@ -22,6 +22,8 @@ export default function RootLayout() {
             {/* Series page renders its own static top bar (bridge name + back
                 button), so the native stack header is hidden here. */}
             <Stack.Screen name="series" options={{ headerShown: false }} />
+            {/* Full-screen page reader; its own dark chrome, fade in/out. */}
+            <Stack.Screen name="reader" options={{ headerShown: false, animation: 'fade' }} />
           </Stack>
         </OverlayProvider>
       </ThemeProvider>

@@ -119,6 +119,28 @@ export function coverDelayMs(id: string): number {
   return 0;
 }
 
+/** Reader-resolution page image (taller than the 300×450 cover thumb). */
+export const readerPage = (seed: string | number) =>
+  `https://picsum.photos/seed/comical-${seed}/1080/1620`;
+
+/**
+ * Flat page list for a DIRECT series. Uses the same `${seed}-p${i}` seeds as
+ * `mockSeries`' `pageThumbs`, so a page-thumbnail tap opens a matching image and
+ * each page carries the same deterministic `coverDelayMs` latency as its thumb.
+ */
+export function readerPagesForDirect(seed: string, count = 60): string[] {
+  return Array.from({ length: count }, (_, i) => readerPage(`${seed}-p${i}`));
+}
+
+/**
+ * Per-chapter page list for a CHAPTERED series. Chapters carry no images in the
+ * mock, so synthesize a deterministic page count + URLs from the chapter id.
+ */
+export function readerPagesForChapter(chapterId: string): string[] {
+  const count = 8 + (hash(chapterId) % 25); // ~8–32 pages
+  return Array.from({ length: count }, (_, i) => readerPage(`${chapterId}-p${i}`));
+}
+
 /** Simulated latency (ms) for opening a series detail. */
 export const SERIES_OPEN_DELAY_MS = 900;
 /** Simulated latency (ms) for loading the next infinite-scroll grid page. */

@@ -1,5 +1,6 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 
@@ -27,17 +28,23 @@ const OVERVIEW_LIMIT = 8;
 export function ChaptersSection({
   chapters,
   pageThumbs,
+  seed,
+  title,
 }: {
   chapters?: Chapter[];
   pageThumbs?: string[];
+  /** Series identity, used to build reader navigation params. */
+  seed: string;
+  title: string;
 }) {
-  if (pageThumbs?.length) return <PageThumbGrid thumbs={pageThumbs} />;
-  if (chapters?.length) return <ChapterList chapters={chapters} />;
+  if (pageThumbs?.length) return <PageThumbGrid thumbs={pageThumbs} seed={seed} title={title} />;
+  if (chapters?.length) return <ChapterList chapters={chapters} seed={seed} title={title} />;
   return null;
 }
 
-function ChapterList({ chapters }: { chapters: Chapter[] }) {
+function ChapterList({ chapters, seed, title }: { chapters: Chapter[]; seed: string; title: string }) {
   const theme = useTheme();
+  const router = useRouter();
   const [tab, setTab] = useState<Tab>('overview');
   const [asc, setAsc] = useState(false);
 
@@ -87,7 +94,16 @@ function ChapterList({ chapters }: { chapters: Chapter[] }) {
 
       <View style={styles.list}>
         {rows.map((c) => (
-          <ChapterRow key={c.id} chapter={c} />
+          <ChapterRow
+            key={c.id}
+            chapter={c}
+            onPress={() =>
+              router.push({
+                pathname: '/reader',
+                params: { seed, title, chapterId: c.id, chapterName: c.name, start: '0' },
+              })
+            }
+          />
         ))}
         {rows.length === 0 && (
           <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
@@ -109,10 +125,10 @@ function ChapterList({ chapters }: { chapters: Chapter[] }) {
   );
 }
 
-function ChapterRow({ chapter }: { chapter: Chapter }) {
+function ChapterRow({ chapter, onPress }: { chapter: Chapter; onPress?: () => void }) {
   const theme = useTheme();
   return (
-    <Pressable style={({ pressed }) => [pressed && styles.rowPressed]}>
+    <Pressable onPress={onPress} style={({ pressed }) => [pressed && styles.rowPressed]}>
       <ThemedView type="backgroundElement" style={[styles.row, { borderColor: theme.hairline }]}>
         <ThemedText
           type="small"
@@ -131,8 +147,9 @@ function ChapterRow({ chapter }: { chapter: Chapter }) {
 // Rows shown before a long page set collapses behind "Show all".
 const COLLAPSED_ROWS = 4;
 
-function PageThumbGrid({ thumbs }: { thumbs: string[] }) {
+function PageThumbGrid({ thumbs, seed, title }: { thumbs: string[]; seed: string; title: string }) {
   const theme = useTheme();
+  const router = useRouter();
   const { width: screenW } = useWindowDimensions();
   const [containerW, setContainerW] = useState(0);
   const [expanded, setExpanded] = useState(false);
@@ -158,7 +175,20 @@ function PageThumbGrid({ thumbs }: { thumbs: string[] }) {
         onLayout={(e) => setContainerW(e.nativeEvent.layout.width)}>
         <View style={[styles.thumbGrid, { gap }]}>
           {tileW > 0 &&
-            shown.map((uri, i) => <PageThumb key={uri} uri={uri} page={i + 1} width={tileW} />)}
+            shown.map((uri, i) => (
+              <PageThumb
+                key={uri}
+                uri={uri}
+                page={i + 1}
+                width={tileW}
+                onPress={() =>
+                  router.push({
+                    pathname: '/reader',
+                    params: { seed, title, direct: '1', start: String(i) },
+                  })
+                }
+              />
+            ))}
         </View>
 
         {collapsed && (
@@ -183,7 +213,17 @@ function PageThumbGrid({ thumbs }: { thumbs: string[] }) {
 /** A single page tile: holds the image behind a simulated network delay and
  *  shows a shimmer skeleton until it's both elapsed and loaded — same treatment
  *  as the cover images, so a long page set visibly streams in. */
-function PageThumb({ uri, page, width }: { uri: string; page: number; width: number }) {
+function PageThumb({
+  uri,
+  page,
+  width,
+  onPress,
+}: {
+  uri: string;
+  page: number;
+  width: number;
+  onPress?: () => void;
+}) {
   const [loaded, setLoaded] = useState(false);
   const delay = useMemo(() => coverDelayMs(uri), [uri]);
   const [delayPassed, setDelayPassed] = useState(delay === 0);
@@ -196,7 +236,7 @@ function PageThumb({ uri, page, width }: { uri: string; page: number; width: num
   }, [delay, uri]);
   const ready = delayPassed && loaded;
   return (
-    <View style={[styles.thumb, { width }]}>
+    <Pressable style={[styles.thumb, { width }]} onPress={onPress}>
       {delayPassed && (
         <Image
           source={{ uri }}
@@ -210,7 +250,7 @@ function PageThumb({ uri, page, width }: { uri: string; page: number; width: num
       <View style={styles.pageNum}>
         <ThemedText style={styles.pageNumText}>{page}</ThemedText>
       </View>
-    </View>
+    </Pressable>
   );
 }
 

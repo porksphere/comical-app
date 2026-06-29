@@ -94,7 +94,26 @@ export default function SeriesScreen() {
               </View>
 
               <View style={[styles.actions, { width: actionsWidth }]}>
-                <ActionButton label={series.readLabel ?? '▶  Read'} variant="primary" />
+                <ActionButton
+                  label={series.readLabel ?? '▶  Read'}
+                  variant="primary"
+                  onPress={() => {
+                    const params: Record<string, string> = {
+                      seed: series.id,
+                      title: series.title,
+                      start: '0',
+                    };
+                    if (direct === '1') params.direct = '1';
+                    else if (series.chapters?.length) {
+                      // readLabel points at the first-to-read chapter (last in the
+                      // newest-first list).
+                      const first = series.chapters[series.chapters.length - 1];
+                      params.chapterId = first.id;
+                      params.chapterName = first.name;
+                    }
+                    router.push({ pathname: '/reader', params });
+                  }}
+                />
                 <ActionButton label="＋  Library" />
                 {series.hasSources && <ActionButton label="Sources" caret />}
                 {series.hasTrackers && <ActionButton label="Trackers" caret />}
@@ -126,7 +145,12 @@ export default function SeriesScreen() {
               </ThemedText>
             ) : null}
 
-            <ChaptersSection chapters={series.chapters} pageThumbs={series.pageThumbs} />
+            <ChaptersSection
+              chapters={series.chapters}
+              pageThumbs={series.pageThumbs}
+              seed={series.id}
+              title={series.title}
+            />
           </View>
 
           {/* Related rail (per-bridge): full-bleed, outside the padded inner. */}
