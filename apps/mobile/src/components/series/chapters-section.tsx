@@ -1,13 +1,14 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 
+import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { relativeTime, type Chapter } from '@/data/mock';
+import { coverDelayMs, relativeTime, type Chapter } from '@/data/mock';
 
 // The series chapters block: tab filter (Overview / All / Read / Unread) + sort
 // toggle (oldest/newest) over the chapter rows, with a "Show all" teaser on the
@@ -157,14 +158,7 @@ function PageThumbGrid({ thumbs }: { thumbs: string[] }) {
         onLayout={(e) => setContainerW(e.nativeEvent.layout.width)}>
         <View style={[styles.thumbGrid, { gap }]}>
           {tileW > 0 &&
-            shown.map((uri, i) => (
-              <View key={uri} style={[styles.thumb, { width: tileW }]}>
-                <Image source={{ uri }} style={styles.thumbImg} contentFit="cover" transition={200} />
-                <View style={styles.pageNum}>
-                  <ThemedText style={styles.pageNumText}>{i + 1}</ThemedText>
-                </View>
-              </View>
-            ))}
+            shown.map((uri, i) => <PageThumb key={uri} uri={uri} page={i + 1} width={tileW} />)}
         </View>
 
         {collapsed && (
@@ -181,6 +175,40 @@ function PageThumbGrid({ thumbs }: { thumbs: string[] }) {
             </Pressable>
           </View>
         )}
+      </View>
+    </View>
+  );
+}
+
+/** A single page tile: holds the image behind a simulated network delay and
+ *  shows a shimmer skeleton until it's both elapsed and loaded — same treatment
+ *  as the cover images, so a long page set visibly streams in. */
+function PageThumb({ uri, page, width }: { uri: string; page: number; width: number }) {
+  const [loaded, setLoaded] = useState(false);
+  const delay = useMemo(() => coverDelayMs(uri), [uri]);
+  const [delayPassed, setDelayPassed] = useState(delay === 0);
+  useEffect(() => {
+    if (delay === 0) return;
+    setDelayPassed(false);
+    setLoaded(false);
+    const t = setTimeout(() => setDelayPassed(true), delay);
+    return () => clearTimeout(t);
+  }, [delay, uri]);
+  const ready = delayPassed && loaded;
+  return (
+    <View style={[styles.thumb, { width }]}>
+      {delayPassed && (
+        <Image
+          source={{ uri }}
+          style={styles.thumbImg}
+          contentFit="cover"
+          transition={200}
+          onLoad={() => setLoaded(true)}
+        />
+      )}
+      {!ready && <Skeleton style={StyleSheet.absoluteFill} />}
+      <View style={styles.pageNum}>
+        <ThemedText style={styles.pageNumText}>{page}</ThemedText>
       </View>
     </View>
   );

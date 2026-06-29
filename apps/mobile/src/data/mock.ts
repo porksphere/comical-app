@@ -249,7 +249,9 @@ export function mockSeries(
   };
 
   if (direct) {
-    base.pageThumbs = Array.from({ length: 24 }, (_, i) => cover(`${seed}-p${i}`));
+    // Many pages so the "Show all" affordance and the per-tile load skeletons
+    // are both exercised.
+    base.pageThumbs = Array.from({ length: 60 }, (_, i) => cover(`${seed}-p${i}`));
     base.readLabel = '▶  Read';
   } else {
     const chapters = mockChapters(seed, chapterCount);
