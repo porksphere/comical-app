@@ -49,6 +49,12 @@ jobs:
         run: pod install
         working-directory: apps/mobile/ios
 
+      - name: Compute full version (base + run number)
+        id: ver
+        run: |
+          BASE=$(node -p "require('./apps/mobile/app.json').expo.version")
+          echo "full=${BASE}.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+
       - name: Build unsigned archive
         working-directory: apps/mobile/ios
         run: |
@@ -66,7 +72,8 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            DEVELOPMENT_TEAM=""
+            DEVELOPMENT_TEAM="" \
+            MARKETING_VERSION="${{ steps.ver.outputs.full }}"
 
       - name: Package unsigned IPA
         run: |
@@ -78,7 +85,7 @@ jobs:
 
       - name: Read app version
         id: meta
-        run: echo "version=$(node -p "require('./apps/mobile/app.json').expo.version")" >> "$GITHUB_OUTPUT"
+        run: echo "version=${{ steps.ver.outputs.full }}" >> "$GITHUB_OUTPUT"
 
       - name: Upload unsigned IPA artifact
         uses: actions/upload-artifact@v4

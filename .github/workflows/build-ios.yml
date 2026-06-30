@@ -63,11 +63,11 @@ jobs:
           SIZE=$(stat -c%s "$IPA")
           DATE=$(date -u +%Y-%m-%d)
 
-          # Append the (monotonically increasing) run number to the base app
-          # version so every push to main yields a strictly higher manifest
-          # version (e.g. 0.0.1.42 -> 0.0.1.43). AltStore compares this against
-          # the version it last installed, so each main build shows as an update.
-          FULL_VERSION="${VERSION}.${GITHUB_RUN_NUMBER}"
+          # The reusable build already stamped MARKETING_VERSION as base.run_number
+          # (e.g. 0.0.1.42) so both the IPA's CFBundleShortVersionString and this
+          # manifest carry the same string — AltStore's version check passes and
+          # every push to main yields a strictly higher version than the last.
+          FULL_VERSION="${VERSION}"
 
           # Icon for the source listing, served as a Release asset.
           cp apps/mobile/assets/images/icon.png "$RUNNER_TEMP/icon.png"
