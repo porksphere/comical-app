@@ -27,6 +27,17 @@ import { useTheme } from '@/hooks/use-theme';
 const BRIDGES = ['MangaDex', 'comick', 'Batoto', 'WeebCentral', 'asura'];
 const PAGES = ['home', 'popular', 'favorites'];
 
+// Placeholder thumbnails for the offline mock fallback bridges. Seeded so each
+// bridge gets a consistent image; replaced by the real thumbnail once the API
+// returns one.
+const BRIDGE_THUMBNAILS: Record<string, string> = {
+  MangaDex: 'https://picsum.photos/seed/bridge-mangadex/100/100',
+  comick: 'https://picsum.photos/seed/bridge-comick/100/100',
+  Batoto: 'https://picsum.photos/seed/bridge-batoto/100/100',
+  WeebCentral: 'https://picsum.photos/seed/bridge-weebcentral/100/100',
+  asura: 'https://picsum.photos/seed/bridge-asura/100/100',
+};
+
 // Bridges that serve "direct" series (a single work of page images — thumbnails
 // + read, no chapter list). Real bridges report this via capabilities; this set
 // designates one in the offline mock fallback so the view is reachable in the
@@ -54,9 +65,10 @@ export default function BrowseScreen() {
   // Direct = the selected bridge serves page-thumbnail series instead of
   // chapters. Prefer the live bridge's capabilities; fall back to the mock set.
   const currentBridge = bridges.find((b) => b.name === bridge);
-  const currentBridgeThumbnail = currentBridge?.thumbnail;
+  const currentBridgeThumbnail = currentBridge?.thumbnail ?? BRIDGE_THUMBNAILS[bridge];
   const bridgeThumbnails = useMemo(() => {
-    const map: Record<string, string> = {};
+    if (!bridges.length) return BRIDGE_THUMBNAILS;
+    const map: Record<string, string> = { ...BRIDGE_THUMBNAILS };
     for (const b of bridges) if (b.thumbnail) map[b.name] = b.thumbnail;
     return map;
   }, [bridges]);
