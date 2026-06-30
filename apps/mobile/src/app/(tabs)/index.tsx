@@ -374,7 +374,9 @@ export default function BrowseScreen() {
         scrollEventThrottle={16}
         onEndReachedThreshold={0.6}
         onEndReached={inResults ? undefined : loadMore}
-        showsVerticalScrollIndicator={false}
+        // Show the browser's native scrollbar on web (the list scrolls in its own
+        // overflow container); keep it hidden on native, where it's not idiomatic.
+        showsVerticalScrollIndicator={Platform.OS === 'web'}
       />
       {topBar}
     </ThemedView>
