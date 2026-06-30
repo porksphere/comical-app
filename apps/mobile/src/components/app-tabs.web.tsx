@@ -73,7 +73,7 @@ export default function AppTabs() {
         <TabList asChild>
           {/* `<TabList asChild>` forwards via a Slot that rejects array styles
               on its child, so flatten the positioned style into one object. */}
-          <View style={StyleSheet.flatten([styles.topNav, { top: insets.top + Spacing.five }])}>
+          <View style={StyleSheet.flatten([styles.topNav, { top: insets.top }])}>
             {triggers}
           </View>
         </TabList>
