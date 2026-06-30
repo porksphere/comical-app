@@ -158,7 +158,7 @@ function FiltersSheet({
   const { closeTop } = useOverlay();
   const [values, setValues] = useState(initial);
   return (
-    <SheetContent title="Filters">
+    <SheetContent title="Filters" headerAction={<ConfirmButton onPress={closeTop} />}>
       {defs.map((def) => (
         <FilterButton
           key={def.id}
@@ -170,7 +170,6 @@ function FiltersSheet({
           }}
         />
       ))}
-      <ConfirmButton onPress={closeTop} />
     </SheetContent>
   );
 }
@@ -207,12 +206,21 @@ function OptionMenu({
 
 // --- shared building blocks ---
 
-function SheetContent({ title, children }: { title: string; children: ReactNode }) {
+function SheetContent({
+  title,
+  headerAction,
+  children,
+}: {
+  title: string;
+  headerAction?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <View style={styles.content}>
-      <ThemedText type="subtitle" style={styles.sheetTitle}>
-        {title}
-      </ThemedText>
+      <View style={styles.sheetHeader}>
+        <ThemedText type="subtitle">{title}</ThemedText>
+        {headerAction}
+      </View>
       {children}
     </View>
   );
@@ -237,17 +245,14 @@ function SelectRow({
   );
 }
 
-/** Circular accent checkmark that confirms the filter selection ("show results"). */
+/** Circular accent checkmark that confirms the filter selection ("show results").
+ *  Sits top-right in the sheet header, mirroring an iOS "Done" affordance. */
 function ConfirmButton({ onPress }: { onPress: () => void }) {
   const theme = useTheme();
   return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel="Show results"
-      style={styles.confirmWrap}>
+    <Pressable onPress={onPress} hitSlop={8} accessibilityRole="button" accessibilityLabel="Show results">
       <View style={[styles.confirm, { backgroundColor: theme.accent }]}>
-        <CheckIcon color={theme.accentOn} />
+        <CheckIcon color={theme.accentOn} size={20} />
       </View>
     </Pressable>
   );
@@ -288,7 +293,10 @@ const styles = StyleSheet.create({
   content: {
     gap: Spacing.two,
   },
-  sheetTitle: {
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: Spacing.one,
   },
   row: {
@@ -310,14 +318,10 @@ const styles = StyleSheet.create({
     borderColor: '#3478F6',
     backgroundColor: '#3478F6',
   },
-  confirmWrap: {
-    alignSelf: 'flex-end',
-    marginTop: Spacing.two,
-  },
   confirm: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
