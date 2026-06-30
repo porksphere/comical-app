@@ -9,7 +9,13 @@ import { useTheme } from '@/hooks/use-theme';
 
 import { FilterButton } from './filter-button';
 import { FiltersIcon, SortIcon } from './filter-icons';
-import { initialValue, type FilterDef, type FilterValue } from './filter-types';
+import {
+  CONTROL_HEIGHT,
+  CONTROL_RADIUS,
+  initialValue,
+  type FilterDef,
+  type FilterValue,
+} from './filter-types';
 
 // Placeholder filter UI. "Sort" is a single-select demo behind its own icon; the
 // rest are the reusable, typed filter controls declared in FILTER_DEFS.
@@ -35,9 +41,8 @@ const FILTER_DEFS: FilterDef[] = [
 
 // Layout rules for the single-line filter bar.
 const GAP = Spacing.two;
-const CONTROL = 36; // square side of the icon buttons
 const FILTER_MIN_WIDTH = 200; // a full-size filter row stays at least this wide
-const SORT_RESERVE = CONTROL; // sort icon, always shown
+const SORT_RESERVE = 128; // sort pill: icon + current sort label, always shown
 const OVERFLOW_RESERVE = 64; // funnel icon + "+X" count
 
 /** How many full-size filters fit on one line given the measured bar width. */
@@ -61,7 +66,6 @@ function fitCount(containerW: number, total: number): number {
  */
 export function FilterBar() {
   const { open } = useOverlay();
-  const theme = useTheme();
   const [sort, setSort] = useState(SORTS[0]);
   const [values, setValues] = useState<Record<string, FilterValue>>(() =>
     Object.fromEntries(FILTER_DEFS.map((d) => [d.id, initialValue(d)])),
@@ -88,29 +92,23 @@ export function FilterBar() {
           onPress={() => open(() => <FiltersSheet defs={hidden} initial={values} onChange={setValue} />)}
         />
       )}
-      <IconButton
-        label="Sort"
-        onPress={() => open(() => <OptionMenu title="Sort by" options={SORTS} selected={sort} onSelect={setSort} />)}>
-        <SortIcon color={theme.text} />
-      </IconButton>
+      <SortButton
+        label={sort}
+        onPress={() => open(() => <OptionMenu title="Sort by" options={SORTS} selected={sort} onSelect={setSort} />)}
+      />
     </View>
   );
 }
 
-/** Square icon button (used for Sort). */
-function IconButton({
-  children,
-  label,
-  onPress,
-}: {
-  children: ReactNode;
-  label: string;
-  onPress: () => void;
-}) {
+/** Labeled Sort pill — shares the filter rows' height/radius/background and
+ *  surfaces the current sort value so it reads as a filter sibling. */
+function SortButton({ label, onPress }: { label: string; onPress: () => void }) {
+  const theme = useTheme();
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label}>
-      <ThemedView type="backgroundElement" style={styles.iconButton}>
-        {children}
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel="Sort">
+      <ThemedView type="backgroundElement" style={styles.sortButton}>
+        <SortIcon color={theme.text} />
+        <ThemedText type="smallBold">{label}</ThemedText>
       </ThemedView>
     </Pressable>
   );
@@ -121,7 +119,7 @@ function OverflowChip({ count, onPress }: { count: number; onPress: () => void }
   const theme = useTheme();
   return (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${count} more filters`}>
-      <ThemedView type="backgroundSelected" style={styles.overflowChip}>
+      <ThemedView type="backgroundElement" style={styles.overflowChip}>
         <FiltersIcon color={theme.text} />
         <ThemedText type="smallBold">{`+${count}`}</ThemedText>
       </ThemedView>
@@ -242,20 +240,21 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
-  iconButton: {
-    width: CONTROL,
-    height: CONTROL,
+  sortButton: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: Spacing.five,
+    gap: Spacing.two,
+    height: CONTROL_HEIGHT,
+    paddingHorizontal: Spacing.three,
+    borderRadius: CONTROL_RADIUS,
   },
   overflowChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.one,
-    height: CONTROL,
+    height: CONTROL_HEIGHT,
     paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.five,
+    borderRadius: CONTROL_RADIUS,
   },
   content: {
     gap: Spacing.two,
