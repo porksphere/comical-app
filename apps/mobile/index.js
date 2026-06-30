@@ -18,14 +18,20 @@ if (typeof global !== 'undefined' && global.ErrorUtils) {
   global.ErrorUtils.setGlobalHandler((error, isFatal) => {
     console.error('[launch-diagnostic]', isFatal ? 'FATAL' : 'soft', error);
     if (isFatal) {
-      try {
-        Alert.alert(
-          'Fatal JS error (caught for diagnostics)',
-          `${error?.message ?? String(error)}\n\n${error?.stack ?? ''}`,
-        );
-      } catch {
-        // Native bridge not ready yet — nothing more we can do here.
-      }
+      const message = `${error?.message ?? String(error)}\n\n${error?.stack ?? ''}`;
+      // Showing a UIAlertController this early in the launch sequence makes RN
+      // create a brand-new UIWindow tied to the app's scene to host it — and
+      // doing that immediately races iOS's scene-connection lifecycle (this
+      // crashed inside UIKit's own window/scene machinery on the previous
+      // diagnostic build, masking the original error entirely). Give the scene
+      // a few seconds to settle before showing it.
+      setTimeout(() => {
+        try {
+          Alert.alert('Fatal JS error (caught for diagnostics)', message);
+        } catch {
+          // Still not safe to show — nothing more we can do here.
+        }
+      }, 3000);
     }
   });
 }
