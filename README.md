@@ -55,10 +55,32 @@ native build phases (Gradle/Xcode "bundle React Native code") shell out to `node
 
 ```bash
 bun install            # install all workspaces
-bun start              # expo start (apps/mobile)
+bun run dev            # local web dev in a browser (hot reload) → http://localhost:8081
+bun start              # expo start (apps/mobile) — dev menu for iOS/Android/web
 bun run ios            # or: bun run android
 bun run typecheck      # tsc across app + core
 ```
+
+### Local web dev (`bun run dev`)
+
+The fastest loop while iterating on shared screens: run the app in a desktop browser
+via react-native-web, no simulator or device needed — the analogue of `comical-web`'s
+local dev in the sibling workspace.
+
+```bash
+bun run dev            # → http://localhost:8081  (opens automatically, hot reload on)
+```
+
+`dev.ts` (this repo's root) frees the Metro/web port first, then runs `expo start --web`.
+The port-free step matters on Windows: Metro re-parents a worker that keeps holding the
+socket, so a stale server from a prior run otherwise makes `expo start` drop into an
+interactive "use another port?" prompt. Ctrl-C tears everything down and sweeps the port.
+Override the port with `PORT=8090 bun run dev`. First time only: `bun install`.
+
+> Web uses a top nav bar instead of the native Liquid Glass tab bar (see the `.web.tsx`
+> splits below); the screens are shared, the nav chrome adapts. `experiments.baseUrl`
+> (`/comical-app`, for GitHub Pages) does not apply to the local dev server — it serves
+> at the root.
 
 ## Build (GitHub-hosted runners, local builds — no Expo cloud)
 
