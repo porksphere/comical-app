@@ -39,6 +39,9 @@ const INACTIVE = '#8E8E93';
 const HIDE_AFTER = 72;
 const SHOW_AFTER = 40;
 const TOP_GUARD = 8;
+// Faded (not gone): a faint ghost that still reads as "the nav is here, scroll up
+// to bring it back" while letting content show through.
+const FADED_OPACITY = 0.2;
 
 // react-native-web maps these onto the underlying div so the opacity change
 // eases; they aren't part of RN's ViewStyle, hence the cast.
@@ -182,9 +185,11 @@ export default function AppTabs() {
           style={[
             styles.bottomBar,
             FADE_TRANSITION,
-            // Fade out (but keep it laid out + touchable, so tapping where it sits
-            // brings it back) while scrolling down.
-            { paddingBottom: Math.max(insets.bottom, Spacing.two), opacity: hidden ? 0 : 1 },
+            // Fade to a faint ghost (still touchable, so tapping where it sits
+            // brings it back) while scrolling down. The bar is an absolute overlay
+            // (see styles.bottomBar), so screen content scrolls behind it and stays
+            // visible through the ghost rather than being clipped by a dead strip.
+            { paddingBottom: Math.max(insets.bottom, Spacing.two), opacity: hidden ? FADED_OPACITY : 1 },
           ]}>
           {triggers}
         </TabList>
@@ -256,7 +261,16 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   // --- Mobile black icon bottom bar ---
+  // Absolute overlay pinned to the bottom: content scrolls behind it (screens
+  // reserve BottomTabInset so their last items clear it), so when it fades on
+  // scroll the content stays visible through the ghost instead of being hidden
+  // behind a reserved strip.
   bottomBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#000000',
