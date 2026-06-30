@@ -17,7 +17,7 @@
 export const API_BASE =
   process.env.EXPO_PUBLIC_COMICAL_SERVER ?? 'https://comical.pork.casa/api';
 
-export type Bridge = { id: string; name: string; nsfw: boolean; capabilities: string[] };
+export type Bridge = { id: string; name: string; nsfw: boolean; capabilities: string[]; thumbnail?: string };
 export type BridgeList = { id: string; name: string; page: boolean };
 
 /** True for an aborted-request error, so callers can ignore unmount cancels. */
@@ -42,6 +42,7 @@ export async function getBridges(signal?: AbortSignal): Promise<Bridge[]> {
     name: b.info.name,
     nsfw: b.info.nsfw ?? false,
     capabilities: b.info.capabilities ?? [],
+    thumbnail: b.info.thumbnail,
   }));
 }
 

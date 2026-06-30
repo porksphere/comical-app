@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
 import Animated, {
@@ -16,7 +17,7 @@ import { SeriesCard } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, Spacing, TopBarHeight } from '@/constants/theme';
+import { BottomTabInset, DesktopTopBarHeight, Spacing, TopBarHeight } from '@/constants/theme';
 import { getBridges, getBridgeLists, isAbort, pageOptions, type Bridge } from '@/data/api';
 import { mockGrid, mockHomeSections, PAGE_LOAD_DELAY_MS, type RailSection, type SeriesEntry } from '@/data/mock';
 import { useTheme } from '@/hooks/use-theme';
@@ -25,6 +26,17 @@ import { useTheme } from '@/hooks/use-theme';
 // unreachable, e.g. SSO/CORS on the web preview) so the screen always renders.
 const BRIDGES = ['MangaDex', 'comick', 'Batoto', 'WeebCentral', 'asura'];
 const PAGES = ['home', 'popular', 'favorites'];
+
+// Placeholder thumbnails for the offline mock fallback bridges. Seeded so each
+// bridge gets a consistent image; replaced by the real thumbnail once the API
+// returns one.
+const BRIDGE_THUMBNAILS: Record<string, string> = {
+  MangaDex: 'https://picsum.photos/seed/bridge-mangadex/100/100',
+  comick: 'https://picsum.photos/seed/bridge-comick/100/100',
+  Batoto: 'https://picsum.photos/seed/bridge-batoto/100/100',
+  WeebCentral: 'https://picsum.photos/seed/bridge-weebcentral/100/100',
+  asura: 'https://picsum.photos/seed/bridge-asura/100/100',
+};
 
 // Bridges that serve "direct" series (a single work of page images — thumbnails
 // + read, no chapter list). Real bridges report this via capabilities; this set
@@ -53,6 +65,13 @@ export default function BrowseScreen() {
   // Direct = the selected bridge serves page-thumbnail series instead of
   // chapters. Prefer the live bridge's capabilities; fall back to the mock set.
   const currentBridge = bridges.find((b) => b.name === bridge);
+  const currentBridgeThumbnail = currentBridge?.thumbnail ?? BRIDGE_THUMBNAILS[bridge];
+  const bridgeThumbnails = useMemo(() => {
+    if (!bridges.length) return BRIDGE_THUMBNAILS;
+    const map: Record<string, string> = { ...BRIDGE_THUMBNAILS };
+    for (const b of bridges) if (b.thumbnail) map[b.name] = b.thumbnail;
+    return map;
+  }, [bridges]);
   const directBridge = currentBridge
     ? currentBridge.capabilities.includes('direct')
     : DIRECT_BRIDGES.has(bridge);
@@ -163,6 +182,9 @@ export default function BrowseScreen() {
   // mismatch on the static web export (no viewport → width 0 → 3 columns).
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => setHydrated(true), []);
+  const isDesktop = hydrated && width >= 768;
+  const barHeight = isDesktop ? DesktopTopBarHeight : TopBarHeight;
+  const thumbSize = isDesktop ? 44 : 36;
   const numColumns =
     !hydrated || width < 768 ? 3 : Math.min(6, Math.max(3, Math.floor(width / 200)));
   // Single hydration-safe viewport width for the rails: a deterministic mobile
@@ -189,7 +211,7 @@ export default function BrowseScreen() {
   // the compact fixed bar — selectors centred in a TopBarHeight band below the
   // safe-area inset — and a divider fades in. Driven on the UI thread so it
   // tracks the scroll without per-frame re-renders.
-  const headerMin = insets.top + TopBarHeight;
+  const headerMin = insets.top + barHeight;
   const headerMax = headerMin + HEADER_EXTRA;
   const scrollY = useSharedValue(0);
   const scrollHandler = useAnimatedScrollHandler((e) => {
@@ -216,8 +238,11 @@ export default function BrowseScreen() {
         headerCollapseStyle,
         headerDividerStyle,
       ]}>
-      <View pointerEvents="box-none" style={styles.selectorRow}>
-        <Selector title="Bridge" value={bridge} options={bridgeOptions} onChange={selectBridge} size="subtitle" />
+      <View pointerEvents="box-none" style={[styles.selectorRow, { height: barHeight }]}>
+        {currentBridgeThumbnail ? (
+          <Image source={{ uri: currentBridgeThumbnail }} style={[styles.bridgeThumb, { width: thumbSize, height: thumbSize }]} />
+        ) : null}
+        <Selector title="Bridge" value={bridge} options={bridgeOptions} onChange={selectBridge} size="subtitle" thumbnails={bridgeThumbnails} />
         <Selector title="Page" value={page} options={pages} onChange={selectPage} size="subtitle" />
       </View>
     </Animated.View>
@@ -397,6 +422,10 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
     paddingHorizontal: Spacing.four,
     height: TopBarHeight,
+  },
+  bridgeThumb: {
+    borderRadius: 8,
+    alignSelf: 'center',
   },
   controls: {
     paddingHorizontal: Spacing.four,
