@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { useAnchoredOverlay, useOverlay } from '@/components/overlay/overlay';
+import { OverlayHeading, useAnchoredOverlay, useOverlay } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
@@ -65,9 +65,7 @@ function SelectMenu({
   const { closeTop } = useOverlay();
   return (
     <View style={styles.menu}>
-      <ThemedText type="subtitle" style={styles.menuTitle}>
-        {title}
-      </ThemedText>
+      <OverlayHeading>{title}</OverlayHeading>
       {options.map((opt) => (
         <Pressable
           key={opt}
@@ -117,9 +115,6 @@ const styles = StyleSheet.create({
   },
   menu: {
     gap: Spacing.two,
-  },
-  menuTitle: {
-    marginBottom: Spacing.one,
   },
   row: {
     flexDirection: 'row',

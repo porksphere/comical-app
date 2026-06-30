@@ -24,6 +24,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useIsLargeScreen } from '@/hooks/use-responsive';
@@ -91,6 +92,31 @@ const SheetScrollContext = createContext<SheetScroll | null>(null);
 /** Available to content rendered inside an overlay sheet; null elsewhere. */
 export function useSheetScroll(): SheetScroll | null {
   return useContext(SheetScrollContext);
+}
+
+// How the current overlay content is being presented: the mobile bottom sheet or
+// the desktop anchored popover. Lets shared interior bits (e.g. the heading)
+// adapt without each call site knowing which container wraps it.
+type OverlayPresentation = 'sheet' | 'popover';
+const OverlayPresentationContext = createContext<OverlayPresentation>('sheet');
+
+/** Whether overlay content is shown as the mobile sheet or the desktop popover. */
+export function useOverlayPresentation(): OverlayPresentation {
+  return useContext(OverlayPresentationContext);
+}
+
+/**
+ * The heading for overlay content — the single place overlay titles live, shared
+ * by every editor / menu / sheet. Rendered on the mobile sheet; hidden in the
+ * desktop popover, which is anchored to the trigger that already names it.
+ */
+export function OverlayHeading({ children }: { children: string }) {
+  if (useOverlayPresentation() === 'popover') return null;
+  return (
+    <ThemedText type="subtitle" style={styles.heading}>
+      {children}
+    </ThemedText>
+  );
 }
 
 type Item = { id: number; render: () => ReactNode; anchor?: AnchorRect | null };
@@ -302,6 +328,7 @@ function OverlaySheet({
 
   return (
     <Animated.View style={[styles.sheetWrap, sheetStyle]} pointerEvents="box-none">
+      <OverlayPresentationContext.Provider value="sheet">
       <SheetScrollContext.Provider value={sheetScroll}>
         <ThemedView style={[styles.sheet, { paddingBottom: insets.bottom + Spacing.four }]}>
           <GestureDetector gesture={handlePan}>
@@ -320,6 +347,7 @@ function OverlaySheet({
           />
         </ThemedView>
       </SheetScrollContext.Provider>
+      </OverlayPresentationContext.Provider>
     </Animated.View>
   );
 }
@@ -395,13 +423,12 @@ function OverlayPopover({
       pointerEvents="box-none"
       style={[styles.popoverWrap, { left, top, width }, animStyle]}>
       <ThemedView
-        type="backgroundElement"
         style={[styles.popover, { maxHeight }]}
         onLayout={(e) => {
           const { width: w, height: hh } = e.nativeEvent.layout;
           setCard((prev) => (prev && prev.height === hh && prev.width === w ? prev : { width: w, height: hh }));
         }}>
-        {children}
+        <OverlayPresentationContext.Provider value="popover">{children}</OverlayPresentationContext.Provider>
       </ThemedView>
     </Animated.View>
   );
@@ -459,13 +486,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.four,
     paddingVertical: Spacing.four,
     overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(128,128,128,0.35)',
-    // Float the card above the page (no full-screen dim on desktop).
+    // The card shares the sheet's background, so on the (also dark) page a light
+    // edge — not the shadow — is what separates it; the shadow only lifts it on
+    // lighter surroundings.
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
     shadowColor: '#000000',
     shadowOpacity: 0.35,
     shadowRadius: 24,
     shadowOffset: { width: 0, height: 12 },
     elevation: 12,
+  },
+  heading: {
+    marginBottom: Spacing.one,
   },
 });

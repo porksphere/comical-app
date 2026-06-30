@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { useAnchoredOverlay, useOverlay } from '@/components/overlay/overlay';
+import { useAnchoredOverlay, useOverlay, useOverlayPresentation } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
@@ -221,12 +221,17 @@ function SheetContent({
   headerAction?: ReactNode;
   children: ReactNode;
 }) {
+  // The popover is anchored to the trigger that already names it, so the heading
+  // (and the redundant confirm check — outside-click dismisses) is sheet-only.
+  const showHeader = useOverlayPresentation() === 'sheet';
   return (
     <View style={styles.content}>
-      <View style={styles.sheetHeader}>
-        <ThemedText type="subtitle">{title}</ThemedText>
-        {headerAction}
-      </View>
+      {showHeader && (
+        <View style={styles.sheetHeader}>
+          <ThemedText type="subtitle">{title}</ThemedText>
+          {headerAction}
+        </View>
+      )}
       {children}
     </View>
   );
