@@ -8,7 +8,7 @@ import {
 
 import { ZoomablePage } from '@/components/reader/zoomable-page';
 
-export type PagedReaderHandle = { goToPage: (logical: number) => void };
+export type PagedReaderHandle = { goToPage: (logical: number, animated?: boolean) => void };
 
 type Props = {
   pages: string[];
@@ -53,9 +53,9 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   useImperativeHandle(
     ref,
     () => ({
-      goToPage(logical: number) {
+      goToPage(logical: number, animated = true) {
         const clamped = Math.max(0, Math.min(n - 1, logical));
-        listRef.current?.scrollToIndex({ index: toPhysical(clamped), animated: true });
+        listRef.current?.scrollToIndex({ index: toPhysical(clamped), animated });
       },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps

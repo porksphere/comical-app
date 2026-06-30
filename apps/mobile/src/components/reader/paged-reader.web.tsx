@@ -10,8 +10,9 @@ import {
 } from 'react';
 
 import { ReaderPage } from '@/components/reader/reader-page';
+import { clamp, distance, MAX_SCALE, midpoint, type Point, ZOOM_EPSILON } from '@/components/reader/reader-zoom';
 
-export type PagedReaderHandle = { goToPage: (logical: number) => void };
+export type PagedReaderHandle = { goToPage: (logical: number, animated?: boolean) => void };
 
 type Props = {
   pages: string[];
@@ -54,9 +55,6 @@ type Props = {
  * the reported page number goes back through `toLogical`.
  */
 
-const MAX_SCALE = 4;
-// Below this we treat the page as "not zoomed" and snap back to a clean 1×.
-const ZOOM_EPSILON = 1.01;
 // Fraction of the width a swipe must cover (or the fling velocity it must beat)
 // to commit a page turn instead of springing back.
 const SWIPE_DISTANCE_RATIO = 0.2;
@@ -67,18 +65,11 @@ const TAP_MAX_MS = 250;
 const SETTLE_MS = 260;
 const ZOOM_SNAP_MS = 200;
 const SETTLE_EASING = 'cubic-bezier(0.22, 0.61, 0.36, 1)';
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
-}
-
-type Point = { x: number; y: number };
-function distance(a: Point, b: Point) {
-  return Math.hypot(a.x - b.x, a.y - b.y);
-}
-function midpoint(a: Point, b: Point): Point {
-  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-}
+// How many pages on each side of the current one keep a mounted image. Pages
+// outside this window render as empty (fixed-size) cells, so the flex track keeps
+// its full width and the translateX math stays exact, but only ~(2R+1) images
+// are ever in memory. Rendering all N at once OOM-crashes the tab on iOS Chrome.
+const RENDER_RADIUS = 2;
 
 type Mode = 'idle' | 'swipe' | 'pan' | 'pinch';
 
@@ -187,8 +178,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   useImperativeHandle(
     ref,
     () => ({
-      goToPage(logical: number) {
-        settleTo(toPhysical(clampIndex(logical)), true);
+      goToPage(logical: number, animated = true) {
+        settleTo(toPhysical(clampIndex(logical)), animated);
       },
     }),
     [settleTo, toPhysical, clampIndex],
@@ -255,7 +246,12 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
 
   const onPointerDown = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
-      e.currentTarget.setPointerCapture(e.pointerId);
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        // A stray capture failure (e.g. pointer already gone) must not throw out
+        // of the handler and break the gesture.
+      }
       const p = posOf(e);
       gesture.pointers.set(e.pointerId, p);
 
@@ -417,13 +413,20 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       onContextMenu={(e) => e.preventDefault()}
     >
       <div ref={trackRef} style={trackStyle(n, width, height)}>
-        {data.map((uri, i) => (
-          <div key={`${uri}:${i}`} style={cellStyle(width, height)}>
-            <div ref={i === index ? zoomRef : undefined} style={zoomWrapperStyle(width, height)}>
-              <ReaderPage uri={uri} page={toLogical(i) + 1} fit="contain" width={width} height={height} />
+        {data.map((uri, i) => {
+          // Only pages within the window mount an image (lazy fetch + bounded
+          // memory); the rest are empty placeholders that still hold the slot.
+          const near = Math.abs(i - index) <= RENDER_RADIUS;
+          return (
+            <div key={`${uri}:${i}`} style={cellStyle(width, height)}>
+              <div ref={i === index ? zoomRef : undefined} style={zoomWrapperStyle(width, height)}>
+                {near ? (
+                  <ReaderPage uri={uri} page={toLogical(i) + 1} fit="contain" width={width} height={height} />
+                ) : null}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

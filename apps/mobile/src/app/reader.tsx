@@ -78,16 +78,20 @@ export default function ReaderScreen() {
   }, [scheduleHide]);
 
   const goTo = useCallback(
-    (index: number) => {
+    (index: number, animated = true) => {
       const clamped = Math.max(0, Math.min(pages.length - 1, index));
       setCurrent(clamped);
-      if (settings.mode === 'paged') pagedRef.current?.goToPage(clamped);
+      if (settings.mode === 'paged') pagedRef.current?.goToPage(clamped, animated);
       else webtoonRef.current?.goToPage(clamped);
     },
     [pages.length, settings.mode, setCurrent],
   );
   const prev = useCallback(() => goTo(currentRef.current - 1), [goTo]);
   const next = useCallback(() => goTo(currentRef.current + 1), [goTo]);
+  // Tapping a page turns it instantly (no slide), on every platform; keyboard
+  // arrows and progress-pill jumps keep the animated transition.
+  const turnPrev = useCallback(() => goTo(currentRef.current - 1, false), [goTo]);
+  const turnNext = useCallback(() => goTo(currentRef.current + 1, false), [goTo]);
 
   // Web keyboard nav: arrows page (respecting direction), Esc closes.
   useEffect(() => {
@@ -115,8 +119,8 @@ export default function ReaderScreen() {
           rtl={settings.direction === 'rtl'}
           initialPage={currentPage}
           onPageChange={setCurrent}
-          onPrev={prev}
-          onNext={next}
+          onPrev={turnPrev}
+          onNext={turnNext}
           onToggleChrome={toggleChrome}
         />
       ) : (
