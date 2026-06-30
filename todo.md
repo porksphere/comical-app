@@ -5,6 +5,7 @@
 - [ ] Desktop web version of overlay system, looks a bit odd on desktop to deal with a swipedown
 - [ ] When refreshing page on narrow web viewports, the filters briefly display all small and cramped then correctly collapse into overflow
 - [ ] Flashlist investigation
+- [ ] Line highlight on search field does not appear on mobile after closing keybkard and immediately reselecting
 
 ## Reader (page viewer)
 - [ ] Image retry-with-backoff on page load failure (currently just shows a placeholder)
