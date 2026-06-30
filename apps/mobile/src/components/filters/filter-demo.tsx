@@ -66,7 +66,7 @@ function fitCount(containerW: number, total: number, sortReserve: number): numbe
  * only as many as fit on one line are shown and the rest collapse into a "+X"
  * funnel chip. A wide-enough screen shows every filter with no overflow at all.
  */
-export function FilterBar() {
+export function FilterBar({ searchActive }: { searchActive: boolean }) {
   const { open } = useOverlay();
   const wide = useIsLargeScreen();
   const [sort, setSort] = useState(SORTS[0]);
@@ -76,9 +76,9 @@ export function FilterBar() {
   const setValue = (id: string, v: FilterValue) => setValues((prev) => ({ ...prev, [id]: v }));
 
   const [containerW, setContainerW] = useState(0);
-  // On narrow viewports the Sort control collapses to an icon-only square, so it
-  // reserves less room on the line.
-  const sortReserve = wide ? SORT_RESERVE_LABELLED : SORT_RESERVE_ICON;
+  // Sort only shows once results are on screen; until then it reserves no room.
+  // On narrow viewports it collapses to an icon-only square, reserving less.
+  const sortReserve = searchActive ? (wide ? SORT_RESERVE_LABELLED : SORT_RESERVE_ICON) : 0;
   const visible = fitCount(containerW, FILTER_DEFS.length, sortReserve);
   const shown = FILTER_DEFS.slice(0, visible);
   const hidden = FILTER_DEFS.slice(visible);
@@ -98,11 +98,13 @@ export function FilterBar() {
           onPress={() => open(() => <FiltersSheet defs={hidden} initial={values} onChange={setValue} />)}
         />
       )}
-      <SortButton
-        label={sort}
-        showLabel={wide}
-        onPress={() => open(() => <OptionMenu title="Sort by" options={SORTS} selected={sort} onSelect={setSort} />)}
-      />
+      {searchActive && (
+        <SortButton
+          label={sort}
+          showLabel={wide}
+          onPress={() => open(() => <OptionMenu title="Sort by" options={SORTS} selected={sort} onSelect={setSort} />)}
+        />
+      )}
     </View>
   );
 }

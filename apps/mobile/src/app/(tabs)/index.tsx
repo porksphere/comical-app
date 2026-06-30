@@ -258,7 +258,7 @@ export default function BrowseScreen() {
         }}
         onClear={() => setQuery('')}
       />
-      <FilterBar />
+      <FilterBar searchActive={inResults} />
       {inResults && (
         <View style={styles.resultsHead}>
           <Pressable onPress={backToHome} hitSlop={8}>
