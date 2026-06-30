@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, TextInput, useWindowDimensions, View, type TextStyle } from 'react-native';
 import Animated, {
   interpolateColor,
   useAnimatedScrollHandler,
@@ -12,14 +12,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FilterBar } from '@/components/filters/filter-demo';
 import { ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
 import { Rail, SectionHead } from '@/components/rail';
-import { Selector } from '@/components/selector';
+import { BridgeThumbSize, Selector } from '@/components/selector';
 import { SeriesCard } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, DesktopTopBarHeight, Spacing, TopBarHeight } from '@/constants/theme';
+import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { getBridges, getBridgeLists, isAbort, pageOptions, type Bridge } from '@/data/api';
 import { mockGrid, mockHomeSections, PAGE_LOAD_DELAY_MS, type RailSection, type SeriesEntry } from '@/data/mock';
+import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 
 // Fallback selector contents used until the API responds (or if it's
@@ -44,12 +45,17 @@ const BRIDGE_THUMBNAILS: Record<string, string> = {
 // web preview where the API is unreachable.
 const DIRECT_BRIDGES = new Set(['asura']);
 
-// Breathing room above the bridge/page selectors at rest. It collapses into the
-// compact fixed bar as the page scrolls (mirrors the reference's ~2rem of space
-// above #app-header before it sticks).
-const HEADER_EXTRA = Spacing.five;
+// Scroll distance over which the top bar's bottom divider fades in. The bar is
+// static (no collapse), so the only scroll-driven cue is this divider: absent at
+// the very top, present once content scrolls under it (mirrors the reference's
+// `.stuck` divider).
+const DIVIDER_SCROLL = Spacing.three;
 
 type GridItem = SeriesEntry & { spacer?: boolean };
+
+// Suppress react-native-web's default focus outline on the search <input> so the
+// container border can carry the focus highlight instead. No-op on native.
+const NO_OUTLINE = Platform.select({ web: { outlineStyle: 'none' } }) as TextStyle | undefined;
 
 export default function BrowseScreen() {
   const { width } = useWindowDimensions();
@@ -182,9 +188,10 @@ export default function BrowseScreen() {
   // mismatch on the static web export (no viewport → width 0 → 3 columns).
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => setHydrated(true), []);
-  const isDesktop = hydrated && width >= 768;
-  const barHeight = isDesktop ? DesktopTopBarHeight : TopBarHeight;
-  const thumbSize = isDesktop ? 44 : 36;
+  // Shared with the series-detail bar so both stay the same height.
+  const barHeight = useTopBarHeight();
+  // Match the bridge dropdown's thumbnail size so the bar reads at the same scale.
+  const thumbSize = BridgeThumbSize;
   const numColumns =
     !hydrated || width < 768 ? 3 : Math.min(6, Math.max(3, Math.floor(width / 200)));
   // Single hydration-safe viewport width for the rails: a deterministic mobile
@@ -206,27 +213,19 @@ export default function BrowseScreen() {
     return [...baseGrid, ...spacers];
   }, [baseGrid, numColumns]);
 
-  // Collapsing top bar. At rest the bridge/page selectors sit below a band of
-  // breathing room (HEADER_EXTRA); as the page scrolls that band collapses into
-  // the compact fixed bar — selectors centred in a TopBarHeight band below the
-  // safe-area inset — and a divider fades in. Driven on the UI thread so it
+  // Static top bar: the bridge/page selectors sit in a fixed band (barHeight
+  // below the safe-area inset) and stay put as the page scrolls. The only
+  // scroll-driven cue is the bottom divider, which is absent at the very top and
+  // fades in once content scrolls under the bar — driven on the UI thread so it
   // tracks the scroll without per-frame re-renders.
-  const headerMin = insets.top + barHeight;
-  const headerMax = headerMin + HEADER_EXTRA;
+  const headerHeight = insets.top + barHeight;
   const scrollY = useSharedValue(0);
   const scrollHandler = useAnimatedScrollHandler((e) => {
     scrollY.value = e.contentOffset.y;
   });
-  // Collapse the breathing room by sliding the bar up (a compositor transform)
-  // rather than animating its height, which would force a layout reflow every
-  // frame and judder — especially on web. The bar keeps its full (expanded)
-  // height; translating it up by HEADER_EXTRA leaves the compact bar pinned.
-  const headerCollapseStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: -Math.min(Math.max(scrollY.value, 0), HEADER_EXTRA) }],
-  }));
   const hairline = theme.hairline;
   const headerDividerStyle = useAnimatedStyle(() => ({
-    borderBottomColor: interpolateColor(scrollY.value, [0, HEADER_EXTRA], ['rgba(0,0,0,0)', hairline]),
+    borderBottomColor: interpolateColor(scrollY.value, [0, DIVIDER_SCROLL], ['rgba(0,0,0,0)', hairline]),
   }));
 
   const topBar = (
@@ -234,10 +233,11 @@ export default function BrowseScreen() {
       pointerEvents="box-none"
       style={[
         styles.topBar,
-        { height: headerMax, paddingTop: insets.top, backgroundColor: theme.background },
-        headerCollapseStyle,
+        { height: headerHeight, paddingTop: insets.top, backgroundColor: theme.background },
         headerDividerStyle,
       ]}>
+      {/* Inner row capped to the content width so the selectors line up with the
+          grid below, while the bar background stays full-bleed. */}
       <View pointerEvents="box-none" style={[styles.selectorRow, { height: barHeight }]}>
         {currentBridgeThumbnail ? (
           <Image source={{ uri: currentBridgeThumbnail }} style={[styles.bridgeThumb, { width: thumbSize, height: thumbSize }]} />
@@ -315,7 +315,7 @@ export default function BrowseScreen() {
         columnWrapperStyle={[styles.row, { gap: Spacing.three }]}
         contentContainerStyle={[
           styles.gridContent,
-          { paddingTop: headerMax, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
+          { paddingTop: headerHeight, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
         ]}
         renderItem={({ item }: { item: GridItem }) =>
           item.spacer ? <View style={styles.cell} /> : (
@@ -349,21 +349,49 @@ function SearchField({
 }) {
   const theme = useTheme();
   const [text, setText] = useState(value);
+  const [focused, setFocused] = useState(false);
   // Keep the field in sync when the committed query is cleared elsewhere (Home).
   useEffect(() => setText(value), [value]);
+
+  // On mobile web the soft keyboard can be dismissed without the input firing a
+  // blur (e.g. Android's "hide keyboard" button keeps DOM focus), which would
+  // leave the focus highlight stuck on. While focused, watch the visual viewport
+  // and drop the highlight when it grows back — i.e. the keyboard closes.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !focused) return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+    let prevHeight = vv.height;
+    const onResize = () => {
+      // A meaningful growth means the keyboard (which had shrunk the viewport)
+      // was dismissed; clear the highlight to match.
+      if (vv.height > prevHeight + 120) setFocused(false);
+      prevHeight = vv.height;
+    };
+    vv.addEventListener('resize', onResize);
+    return () => vv.removeEventListener('resize', onResize);
+  }, [focused]);
+
   return (
-    <ThemedView type="backgroundElement" style={styles.search}>
+    // Highlight the whole field border on focus (vs. the browser's inset outline
+    // on the input itself, which is suppressed below). No border at rest so the
+    // line only appears while the field is active.
+    <ThemedView
+      type="backgroundElement"
+      style={[styles.search, { borderColor: focused ? theme.accent : 'transparent' }]}>
       <SearchIcon color={theme.textSecondary} size={16} />
       <TextInput
         value={text}
         onChangeText={setText}
         onSubmitEditing={() => onSubmit(text)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         placeholder="Search…"
         placeholderTextColor={theme.textSecondary}
         returnKeyType="search"
         autoCapitalize="none"
         autoCorrect={false}
-        style={[styles.searchInput, { color: theme.text }]}
+        style={[styles.searchInput, NO_OUTLINE, { color: theme.text }]}
       />
       {text.length > 0 && (
         <Pressable
@@ -421,7 +449,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.three,
     paddingHorizontal: Spacing.four,
-    height: TopBarHeight,
+    // Cap + centre so the selectors align with the constrained grid; height is
+    // set inline from the shared bar height.
+    width: '100%',
+    maxWidth: MaxTopLevelWidth,
+    alignSelf: 'center',
   },
   bridgeThumb: {
     borderRadius: 8,
@@ -440,6 +472,9 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.three,
     paddingHorizontal: Spacing.three,
     borderRadius: Spacing.three,
+    // Reserve the border box always (transparent at rest, accent on focus) so the
+    // focus highlight appears without shifting layout.
+    borderWidth: 1,
   },
   searchInput: {
     flex: 1,
@@ -463,6 +498,11 @@ const styles = StyleSheet.create({
   },
   gridContent: {
     gap: Spacing.three,
+    // Constrain the whole scrolling surface (controls, rails, grid) to the
+    // top-level content width, centred on wider viewports.
+    width: '100%',
+    maxWidth: MaxTopLevelWidth,
+    alignSelf: 'center',
   },
   row: {
     paddingHorizontal: Spacing.four,

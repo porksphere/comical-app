@@ -88,7 +88,13 @@ export const Spacing = {
 } as const;
 
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
+/** Max width of the series-detail reading column (cover + metadata). */
 export const MaxContentWidth = 800;
+/** Max width of the top-level views (browse grid, library, settings, …),
+ *  centred on wider viewports. Mirrors the reference's `body { max-width:
+ *  1200px; margin: … auto }` so the whole app reads at one width. Tweak here to
+ *  resize every top-level view at once. */
+export const MaxTopLevelWidth = 1200;
 /** Content height (below the safe-area top inset) of the sticky top bars — the
  *  browse bridge/page bar and the series detail bar — so they read as one bar
  *  across views. Mirrors the reference's shared `--topbar-height`. */

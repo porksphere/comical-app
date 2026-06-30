@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { MaxTopLevelWidth, Spacing } from '@/constants/theme';
 
 type PlaceholderScreenProps = {
   title: string;
@@ -37,5 +37,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: Spacing.two,
     padding: Spacing.four,
+    // Constrain to the shared top-level content width, centred — matches the
+    // browse view so every top-level screen reads at one width.
+    width: '100%',
+    maxWidth: MaxTopLevelWidth,
+    alignSelf: 'center',
   },
 });
