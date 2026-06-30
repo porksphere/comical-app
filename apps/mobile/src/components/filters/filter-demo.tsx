@@ -5,6 +5,7 @@ import { useOverlay } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 
 import { FilterButton } from './filter-button';
@@ -42,13 +43,14 @@ const FILTER_DEFS: FilterDef[] = [
 // Layout rules for the single-line filter bar.
 const GAP = Spacing.two;
 const FILTER_MIN_WIDTH = 200; // a full-size filter row stays at least this wide
-const SORT_RESERVE = 128; // sort pill: icon + current sort label, always shown
+const SORT_RESERVE_LABELLED = 128; // sort pill with icon + current sort label
+const SORT_RESERVE_ICON = CONTROL_HEIGHT; // sort collapsed to an icon-only square
 const OVERFLOW_RESERVE = 64; // funnel icon + "+X" count
 
 /** How many full-size filters fit on one line given the measured bar width. */
-function fitCount(containerW: number, total: number): number {
+function fitCount(containerW: number, total: number, sortReserve: number): number {
   if (containerW <= 0) return total;
-  const base = containerW - SORT_RESERVE - GAP;
+  const base = containerW - sortReserve - GAP;
   // If every filter fits with no overflow control, show them all.
   const colsAll = Math.floor((base + GAP) / (FILTER_MIN_WIDTH + GAP));
   if (colsAll >= total) return total;
@@ -66,6 +68,7 @@ function fitCount(containerW: number, total: number): number {
  */
 export function FilterBar() {
   const { open } = useOverlay();
+  const wide = useIsLargeScreen();
   const [sort, setSort] = useState(SORTS[0]);
   const [values, setValues] = useState<Record<string, FilterValue>>(() =>
     Object.fromEntries(FILTER_DEFS.map((d) => [d.id, initialValue(d)])),
@@ -73,7 +76,10 @@ export function FilterBar() {
   const setValue = (id: string, v: FilterValue) => setValues((prev) => ({ ...prev, [id]: v }));
 
   const [containerW, setContainerW] = useState(0);
-  const visible = fitCount(containerW, FILTER_DEFS.length);
+  // On narrow viewports the Sort control collapses to an icon-only square, so it
+  // reserves less room on the line.
+  const sortReserve = wide ? SORT_RESERVE_LABELLED : SORT_RESERVE_ICON;
+  const visible = fitCount(containerW, FILTER_DEFS.length, sortReserve);
   const shown = FILTER_DEFS.slice(0, visible);
   const hidden = FILTER_DEFS.slice(visible);
 
@@ -94,21 +100,31 @@ export function FilterBar() {
       )}
       <SortButton
         label={sort}
+        showLabel={wide}
         onPress={() => open(() => <OptionMenu title="Sort by" options={SORTS} selected={sort} onSelect={setSort} />)}
       />
     </View>
   );
 }
 
-/** Labeled Sort pill — shares the filter rows' height/radius/background and
- *  surfaces the current sort value so it reads as a filter sibling. */
-function SortButton({ label, onPress }: { label: string; onPress: () => void }) {
+/** Sort control — shares the filter rows' height/radius/background. Shows the
+ *  current sort value as a labeled pill when there's room; on narrow viewports it
+ *  collapses to an icon-only square so it stops crowding the bar. */
+function SortButton({
+  label,
+  showLabel,
+  onPress,
+}: {
+  label: string;
+  showLabel: boolean;
+  onPress: () => void;
+}) {
   const theme = useTheme();
   return (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel="Sort">
-      <ThemedView type="backgroundElement" style={styles.sortButton}>
+      <ThemedView type="backgroundElement" style={[styles.sortButton, !showLabel && styles.sortButtonIcon]}>
         <SortIcon color={theme.text} />
-        <ThemedText type="smallBold">{label}</ThemedText>
+        {showLabel && <ThemedText type="smallBold">{label}</ThemedText>}
       </ThemedView>
     </Pressable>
   );
@@ -247,6 +263,11 @@ const styles = StyleSheet.create({
     height: CONTROL_HEIGHT,
     paddingHorizontal: Spacing.three,
     borderRadius: CONTROL_RADIUS,
+  },
+  sortButtonIcon: {
+    width: CONTROL_HEIGHT,
+    paddingHorizontal: 0,
+    justifyContent: 'center',
   },
   overflowChip: {
     flexDirection: 'row',
