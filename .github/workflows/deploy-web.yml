@@ -111,20 +111,28 @@ jobs:
           user_email: 'github-actions[bot]@users.noreply.github.com'
           commit_message: "Deploy web preview for ${{ github.ref_name }} (${{ github.sha }})"
 
-      - name: Publish preview URL to job summary
+      - name: Publish all preview URLs to job summary
         if: success()
         env:
           PREVIEW_URL: ${{ steps.meta.outputs.preview_url }}
           BRANCH: ${{ github.ref_name }}
         run: |
+          # Fetch gh-pages so we can discover every deployed branch folder.
+          git fetch origin gh-pages --depth=1 2>/dev/null || true
+          BRANCHES=$(git ls-tree --name-only origin/gh-pages:branches/ 2>/dev/null || true)
           {
-            echo "## 🌐 Web preview deployed"
+            echo "## 🌐 Web Previews"
             echo ""
-            echo "| Branch | Preview URL |"
+            echo "| Branch | URL |"
             echo "| --- | --- |"
-            echo "| \`${BRANCH}\` | **[${PREVIEW_URL}](${PREVIEW_URL})** |"
+            echo "| \`main\` | [https://porksphere.github.io/comical-app/](https://porksphere.github.io/comical-app/) |"
+            while IFS= read -r slug; do
+              [ -z "$slug" ] && continue
+              url="https://porksphere.github.io/comical-app/branches/${slug}/"
+              echo "| \`${slug}\` | [${url}](${url}) |"
+            done <<< "$BRANCHES"
             echo ""
+            echo "> Just deployed: \`${BRANCH}\` → **[${PREVIEW_URL}](${PREVIEW_URL})**"
             echo "> Pages can take ~1 min to update after this run finishes."
           } >> "$GITHUB_STEP_SUMMARY"
-          # Also annotate the run so the URL shows in the log without scrolling.
           echo "::notice title=Web preview::${BRANCH} -> ${PREVIEW_URL}"
