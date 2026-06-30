@@ -11,7 +11,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { DesktopTopBarHeight, Spacing } from '@/constants/theme';
+import { DesktopTopBarHeight, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 // Web nav (Metro resolves this `.web` file for the web bundle, so native
@@ -47,6 +47,11 @@ export default function AppTabs() {
   useEffect(() => setHydrated(true), []);
   const isMobile = !hydrated || width < MOBILE_BREAKPOINT;
 
+  // Pin the desktop nav to the right edge of the constrained content (the same
+  // MaxTopLevelWidth the views centre within), not the raw screen edge, so it
+  // lines up with the Browse selector bar on wide viewports.
+  const navRight = Math.max(0, (width - MaxTopLevelWidth) / 2) + Spacing.four;
+
   const triggers = TABS.map((tab) => (
     <TabTrigger key={tab.name} name={tab.name} href={tab.href as never} asChild>
       <TabButton mobile={isMobile} Icon={tab.Icon}>
@@ -73,7 +78,7 @@ export default function AppTabs() {
         <TabList asChild>
           {/* `<TabList asChild>` forwards via a Slot that rejects array styles
               on its child, so flatten the positioned style into one object. */}
-          <View style={StyleSheet.flatten([styles.topNav, { top: insets.top }])}>
+          <View style={StyleSheet.flatten([styles.topNav, { top: insets.top, right: navRight }])}>
             {triggers}
           </View>
         </TabList>
@@ -132,7 +137,7 @@ const styles = StyleSheet.create({
   // --- Desktop top-right icon nav ---
   topNav: {
     position: 'absolute',
-    right: Spacing.four,
+    // right is set inline so it tracks the constrained content edge.
     height: DesktopTopBarHeight,
     flexDirection: 'row',
     alignItems: 'center',

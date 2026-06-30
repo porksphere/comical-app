@@ -17,9 +17,10 @@ import { SeriesCard } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, DesktopTopBarHeight, Spacing, TopBarHeight } from '@/constants/theme';
+import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { getBridges, getBridgeLists, isAbort, pageOptions, type Bridge } from '@/data/api';
 import { mockGrid, mockHomeSections, PAGE_LOAD_DELAY_MS, type RailSection, type SeriesEntry } from '@/data/mock';
+import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 
 // Fallback selector contents used until the API responds (or if it's
@@ -44,10 +45,11 @@ const BRIDGE_THUMBNAILS: Record<string, string> = {
 // web preview where the API is unreachable.
 const DIRECT_BRIDGES = new Set(['asura']);
 
-// Breathing room above the bridge/page selectors at rest. It collapses into the
-// compact fixed bar as the page scrolls (mirrors the reference's ~2rem of space
-// above #app-header before it sticks).
-const HEADER_EXTRA = Spacing.five;
+// Scroll distance over which the top bar's bottom divider fades in. The bar is
+// static (no collapse), so the only scroll-driven cue is this divider: absent at
+// the very top, present once content scrolls under it (mirrors the reference's
+// `.stuck` divider).
+const DIVIDER_SCROLL = Spacing.three;
 
 type GridItem = SeriesEntry & { spacer?: boolean };
 
@@ -183,7 +185,8 @@ export default function BrowseScreen() {
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => setHydrated(true), []);
   const isDesktop = hydrated && width >= 768;
-  const barHeight = isDesktop ? DesktopTopBarHeight : TopBarHeight;
+  // Shared with the series-detail bar so both stay the same height.
+  const barHeight = useTopBarHeight();
   const thumbSize = isDesktop ? 44 : 36;
   const numColumns =
     !hydrated || width < 768 ? 3 : Math.min(6, Math.max(3, Math.floor(width / 200)));
@@ -206,27 +209,19 @@ export default function BrowseScreen() {
     return [...baseGrid, ...spacers];
   }, [baseGrid, numColumns]);
 
-  // Collapsing top bar. At rest the bridge/page selectors sit below a band of
-  // breathing room (HEADER_EXTRA); as the page scrolls that band collapses into
-  // the compact fixed bar — selectors centred in a TopBarHeight band below the
-  // safe-area inset — and a divider fades in. Driven on the UI thread so it
+  // Static top bar: the bridge/page selectors sit in a fixed band (barHeight
+  // below the safe-area inset) and stay put as the page scrolls. The only
+  // scroll-driven cue is the bottom divider, which is absent at the very top and
+  // fades in once content scrolls under the bar — driven on the UI thread so it
   // tracks the scroll without per-frame re-renders.
-  const headerMin = insets.top + barHeight;
-  const headerMax = headerMin + HEADER_EXTRA;
+  const headerHeight = insets.top + barHeight;
   const scrollY = useSharedValue(0);
   const scrollHandler = useAnimatedScrollHandler((e) => {
     scrollY.value = e.contentOffset.y;
   });
-  // Collapse the breathing room by sliding the bar up (a compositor transform)
-  // rather than animating its height, which would force a layout reflow every
-  // frame and judder — especially on web. The bar keeps its full (expanded)
-  // height; translating it up by HEADER_EXTRA leaves the compact bar pinned.
-  const headerCollapseStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: -Math.min(Math.max(scrollY.value, 0), HEADER_EXTRA) }],
-  }));
   const hairline = theme.hairline;
   const headerDividerStyle = useAnimatedStyle(() => ({
-    borderBottomColor: interpolateColor(scrollY.value, [0, HEADER_EXTRA], ['rgba(0,0,0,0)', hairline]),
+    borderBottomColor: interpolateColor(scrollY.value, [0, DIVIDER_SCROLL], ['rgba(0,0,0,0)', hairline]),
   }));
 
   const topBar = (
@@ -234,10 +229,11 @@ export default function BrowseScreen() {
       pointerEvents="box-none"
       style={[
         styles.topBar,
-        { height: headerMax, paddingTop: insets.top, backgroundColor: theme.background },
-        headerCollapseStyle,
+        { height: headerHeight, paddingTop: insets.top, backgroundColor: theme.background },
         headerDividerStyle,
       ]}>
+      {/* Inner row capped to the content width so the selectors line up with the
+          grid below, while the bar background stays full-bleed. */}
       <View pointerEvents="box-none" style={[styles.selectorRow, { height: barHeight }]}>
         {currentBridgeThumbnail ? (
           <Image source={{ uri: currentBridgeThumbnail }} style={[styles.bridgeThumb, { width: thumbSize, height: thumbSize }]} />
@@ -315,7 +311,7 @@ export default function BrowseScreen() {
         columnWrapperStyle={[styles.row, { gap: Spacing.three }]}
         contentContainerStyle={[
           styles.gridContent,
-          { paddingTop: headerMax, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
+          { paddingTop: headerHeight, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
         ]}
         renderItem={({ item }: { item: GridItem }) =>
           item.spacer ? <View style={styles.cell} /> : (
@@ -421,7 +417,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.three,
     paddingHorizontal: Spacing.four,
-    height: TopBarHeight,
+    // Cap + centre so the selectors align with the constrained grid; height is
+    // set inline from the shared bar height.
+    width: '100%',
+    maxWidth: MaxTopLevelWidth,
+    alignSelf: 'center',
   },
   bridgeThumb: {
     borderRadius: 8,
@@ -463,6 +463,11 @@ const styles = StyleSheet.create({
   },
   gridContent: {
     gap: Spacing.three,
+    // Constrain the whole scrolling surface (controls, rails, grid) to the
+    // top-level content width, centred on wider viewports.
+    width: '100%',
+    maxWidth: MaxTopLevelWidth,
+    alignSelf: 'center',
   },
   row: {
     paddingHorizontal: Spacing.four,

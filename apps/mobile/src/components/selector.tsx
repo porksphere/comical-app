@@ -92,15 +92,17 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   // Bridge/page selectors mirror the reference's header title (`#app-title` h1,
-  // which the page selector inherits): 1.4rem mobile / 1.75rem desktop
-  // (1rem = 16px).
+  // which the page selector inherits via `font-weight: inherit`): 1.4rem mobile
+  // / 1.75rem desktop (1rem = 16px), bold like the h1.
   subtitleCompact: {
     fontSize: 22.4,
     lineHeight: 28,
+    fontWeight: '700',
   },
   subtitleWide: {
     fontSize: 28,
     lineHeight: 34,
+    fontWeight: '700',
   },
   caretLg: {
     fontSize: 20,

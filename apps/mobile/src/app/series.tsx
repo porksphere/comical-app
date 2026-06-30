@@ -21,9 +21,9 @@ import { ChaptersSection } from '@/components/series/chapters-section';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { MaxContentWidth, Spacing, TopBarHeight } from '@/constants/theme';
+import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { mockSeries, SERIES_OPEN_DELAY_MS } from '@/data/mock';
-import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
+import { LARGE_SCREEN_BREAKPOINT, useTopBarHeight } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 
 const LARGE_COVER_WIDTH = 200;
@@ -46,6 +46,8 @@ export default function SeriesScreen() {
   );
 
   const isLarge = width >= LARGE_SCREEN_BREAKPOINT;
+  // Shared with the browse bar so both top bars are the same height.
+  const barHeight = useTopBarHeight();
   // Sticky cover column is a web-only, large-screen affordance: as the page
   // scrolls, the left column pins to the top until the chapters end (mirrors the
   // reference's `position: sticky` cover col). Native has no sticky, and on a
@@ -175,12 +177,12 @@ export default function SeriesScreen() {
       <View
         style={[
           styles.topBar,
-          { paddingTop: insets.top, height: insets.top + TopBarHeight, borderBottomColor: theme.hairline },
+          { paddingTop: insets.top, height: insets.top + barHeight, borderBottomColor: theme.hairline },
         ]}>
         <Pressable
           onPress={() => router.back()}
           hitSlop={12}
-          style={styles.backButton}
+          style={[styles.backButton, { height: barHeight }]}
           accessibilityRole="button"
           accessibilityLabel="Go back">
           <ChevronLeftIcon color={theme.text} />
@@ -320,7 +322,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: Spacing.three,
     bottom: 0,
-    height: TopBarHeight,
+    // height is set inline from the shared bar height.
     justifyContent: 'center',
   },
   bridgeName: {
