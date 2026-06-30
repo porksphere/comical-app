@@ -36,7 +36,8 @@
             "imageWidth": 76
           }
         }
-      ]
+      ],
+      "./plugins/with-fatal-handler"
     ],
     "experiments": {
       "typedRoutes": true,
