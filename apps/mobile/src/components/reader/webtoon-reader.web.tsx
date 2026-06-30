@@ -91,11 +91,13 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
 
   const ticking = useRef(false);
   const onScroll = useCallback(() => {
-    if (ticking.current) return;
+    // Ignore the scrollTop/scrollLeft writes a pinch makes to anchor its focal
+    // point — otherwise the reported page thrashes while zooming.
+    if (pinch.current.active || ticking.current) return;
     ticking.current = true;
     requestAnimationFrame(() => {
       ticking.current = false;
-      updateCurrent();
+      if (!pinch.current.active) updateCurrent();
     });
   }, [updateCurrent]);
 
