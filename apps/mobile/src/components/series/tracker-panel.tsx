@@ -178,14 +178,13 @@ function TrackerRow({
 }
 
 function RowButton({ label, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) {
-  const theme = useTheme();
   return (
-    <Pressable onPress={onPress} disabled={disabled} hitSlop={6}>
-      <View style={[styles.rowBtn, { borderColor: theme.hairline, opacity: disabled ? 0.5 : 1 }]}>
+    <Pressable onPress={onPress} disabled={disabled} hitSlop={6} style={disabled && styles.rowBtnDisabled}>
+      <ThemedView type="backgroundSelected" style={styles.rowBtn}>
         <ThemedText type="small" style={styles.rowBtnText}>
           {label}
         </ThemedText>
-      </View>
+      </ThemedView>
     </Pressable>
   );
 }
@@ -220,27 +219,24 @@ function LinkTrackerForm({
 
   return (
     <View style={styles.linkForm}>
-      <View style={styles.serviceRow}>
+      <ThemedView type="backgroundElement" style={styles.serviceTabs}>
         {available.map((s) => (
           <Pressable
             key={s.id}
             onPress={() => {
               setTrackerId(s.id);
               setResults(null);
-            }}>
-            <View
-              style={[
-                styles.serviceChip,
-                { borderColor: s.id === trackerId ? theme.accent : theme.hairline },
-                s.id === trackerId && { backgroundColor: theme.accent },
-              ]}>
-              <ThemedText type="small" style={s.id === trackerId ? { color: theme.accentOn } : undefined}>
-                {s.name}
-              </ThemedText>
-            </View>
+            }}
+            style={[styles.serviceTab, s.id === trackerId && { backgroundColor: theme.accent }]}>
+            <ThemedText
+              type="small"
+              numberOfLines={1}
+              style={s.id === trackerId ? { color: theme.accentOn } : { color: theme.textSecondary }}>
+              {s.name}
+            </ThemedText>
           </Pressable>
         ))}
-      </View>
+      </ThemedView>
 
       <ThemedView
         type="backgroundElement"
@@ -284,15 +280,17 @@ function LinkTrackerForm({
           ) : (
             results.map((r) => (
               <Pressable key={r.externalId} onPress={() => onLink(trackerId, r)}>
-                <View style={styles.resultRow}>
+                <ThemedView type="backgroundElement" style={styles.resultRow}>
                   <Image source={{ uri: r.thumbnail }} style={styles.resultThumb} />
-                  <ThemedText type="small" numberOfLines={1} style={styles.resultTitle}>
-                    {r.title}
-                  </ThemedText>
-                  <ThemedText type="small" themeColor="textSecondary">
-                    ({r.externalId})
-                  </ThemedText>
-                </View>
+                  <View style={styles.resultText}>
+                    <ThemedText type="small" numberOfLines={1} style={styles.rowName}>
+                      {r.title}
+                    </ThemedText>
+                    <ThemedText type="small" themeColor="textSecondary">
+                      {r.externalId}
+                    </ThemedText>
+                  </View>
+                </ThemedView>
               </Pressable>
             ))
           )}
@@ -345,11 +343,13 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.one,
     paddingHorizontal: Spacing.two,
     borderRadius: 6,
-    borderWidth: StyleSheet.hairlineWidth,
+  },
+  rowBtnDisabled: {
+    opacity: 0.5,
   },
   rowBtnText: {
-    fontSize: 12,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
   },
   linkToggle: {
     paddingVertical: Spacing.two,
@@ -360,16 +360,21 @@ const styles = StyleSheet.create({
   linkForm: {
     gap: Spacing.two,
   },
-  serviceRow: {
+  // Tracker-service picker: a segmented control, same shape as the chapters
+  // overview/all/read/unread tabs (a filled bar, equal-width pressable
+  // segments, the active one filled with the accent colour).
+  serviceTabs: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.one,
+    borderRadius: 10,
+    padding: 3,
+    gap: 2,
   },
-  serviceChip: {
-    paddingVertical: Spacing.one,
+  serviceTab: {
+    flex: 1,
+    alignItems: 'center',
     paddingHorizontal: Spacing.two,
-    borderRadius: 999,
-    borderWidth: 1,
+    paddingVertical: Spacing.one,
+    borderRadius: 8,
   },
   search: {
     flexDirection: 'row',
@@ -386,7 +391,7 @@ const styles = StyleSheet.create({
     padding: 0,
   },
   results: {
-    gap: 2,
+    gap: Spacing.one,
   },
   resultsEmpty: {
     paddingVertical: Spacing.two,
@@ -395,7 +400,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
-    paddingVertical: Spacing.one,
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    borderRadius: 8,
   },
   resultThumb: {
     width: 28,
@@ -403,8 +410,9 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: 'rgba(128,128,128,0.15)',
   },
-  resultTitle: {
+  resultText: {
     flex: 1,
     minWidth: 0,
+    gap: 2,
   },
 });
