@@ -65,7 +65,15 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
 
   // Live zoom, kept in a ref so pinch frames don't re-render.
   const zoom = useRef(1);
-  const pinch = useRef({ active: false, startDist: 0, z0: 1, cpX: 0, cpY: 0 });
+  const pinch = useRef({
+    active: false,
+    startDist: 0,
+    z0: 1,
+    cpX: 0,
+    cpY: 0,
+    // Latest finger positions, applied once per frame (see onMove).
+    latest: { a: { x: 0, y: 0 }, b: { x: 0, y: 0 } },
+  });
 
   const onPageChangeRef = useRef(onPageChange);
   onPageChangeRef.current = onPageChange;
@@ -108,6 +116,10 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
     const margin = Math.round((root.clientHeight || window.innerHeight) * PRELOAD_VIEWPORTS);
     const io = new IntersectionObserver(
       (entries) => {
+        // Don't touch the mounted set mid-pinch: scaling moves every slot's box,
+        // which re-fires this observer, and mounting/unmounting images while
+        // zooming is what made the screen flash black and stutter.
+        if (pinch.current.active) return;
         setLoaded((prev) => {
           const next = new Set(prev);
           let changed = false;
@@ -150,22 +162,35 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
         // The content-space point currently under the focal (stays put as we zoom).
         cpX: (el.scrollLeft + f.x) / z0,
         cpY: (el.scrollTop + f.y) / z0,
+        latest: { a, b },
       };
       el.style.overflowX = 'auto'; // allow horizontal scroll while we anchor the focal
     };
 
-    const onMove = (e: TouchEvent) => {
-      if (!pinch.current.active || e.touches.length < 2) return;
-      e.preventDefault();
-      const rect = el.getBoundingClientRect();
-      const a = rel(e.touches[0], rect);
-      const b = rel(e.touches[1], rect);
+    // Apply the latest pinch frame. `zoom` triggers a layout, so coalesce many
+    // touchmoves into a single write per animation frame.
+    let rafPending = false;
+    const applyFrame = () => {
+      rafPending = false;
+      if (!pinch.current.active) return;
+      const { a, b } = pinch.current.latest;
       const f = midpoint(a, b);
       const z = clamp(pinch.current.z0 * (distance(a, b) / pinch.current.startDist), 1, MAX_SCALE);
       zoom.current = z;
       applyZoom(z);
       el.scrollLeft = clamp(pinch.current.cpX * z - f.x, 0, Math.max(0, el.scrollWidth - el.clientWidth));
       el.scrollTop = clamp(pinch.current.cpY * z - f.y, 0, Math.max(0, el.scrollHeight - el.clientHeight));
+    };
+
+    const onMove = (e: TouchEvent) => {
+      if (!pinch.current.active || e.touches.length < 2) return;
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      pinch.current.latest = { a: rel(e.touches[0], rect), b: rel(e.touches[1], rect) };
+      if (!rafPending) {
+        rafPending = true;
+        requestAnimationFrame(applyFrame);
+      }
     };
 
     const onEnd = (e: TouchEvent) => {
