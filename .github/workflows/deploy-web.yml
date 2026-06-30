@@ -1,26 +1,25 @@
 name: Deploy Web (GitHub Pages)
 
-# Builds the Expo app for web (react-native-web) and publishes the static export
-# to GitHub Pages. Every branch gets its own live preview that updates on each
-# push, so you can open any branch on a phone — no computer in the loop.
+# Builds the Expo app for web and publishes the static export to GitHub Pages.
+# Every branch gets its own live preview; pushes to main deploy the root.
 #
 #   main          -> https://porksphere.github.io/comical-app/
 #   other branches-> https://porksphere.github.io/comical-app/branches/<branch>/
 #
-# How it works: each build is published into a subfolder of the `gh-pages`
-# branch (root for main, branches/<slug> for everything else). `keep_files: true`
-# means a deploy only touches its own folder, so branches don't clobber each
-# other. When a branch is deleted, cleanup-web-branch.yml removes its folder.
+# The gh-pages branch is a persistent content store: each branch's static
+# output lives in its own subfolder (root for main, branches/<slug> for others).
+# On every push the new build is merged in; on every branch deletion the
+# subfolder is removed. The full site is then assembled from the store and
+# published via actions/deploy-pages — no separate "pages build and deployment"
+# workflow fires.
 #
-# ONE-TIME SETUP: in repo Settings -> Pages, set "Build and deployment" Source
-# to "Deploy from a branch" and pick the `gh-pages` branch / root. (This replaces
-# the old GitHub Actions artifact source.)
+# ONE-TIME SETUP: in repo Settings → Pages, set Source to "GitHub Actions"
+# (not "Deploy from a branch"). This hands control of the CDN publish to our
+# explicit deploy-pages call below, eliminating the automatic trigger.
 
 on:
   workflow_dispatch:
   push:
-    # Run on every branch. Path filters keep it to changes that affect the web
-    # bundle, but any commit touching the app re-publishes that branch's preview.
     branches:
       - '**'
     paths:
@@ -29,19 +28,32 @@ on:
       - 'package.json'
       - 'bun.lock'
       - '.github/workflows/deploy-web.yml'
+  delete:
 
 permissions:
-  contents: write
+  contents: write   # push updates to the gh-pages content store
+  pages: write      # deploy to GitHub Pages
+  id-token: write   # OIDC auth for actions/deploy-pages
 
-# Serialize deploys: every job pushes to the same gh-pages branch, so running
-# them one at a time avoids git push races. We do NOT cancel in-progress runs —
-# each branch's deploy must complete (cancelling could drop a branch's update).
+# Serialize all web deploy activity: every run reads from and writes to the
+# same gh-pages branch, so concurrent runs must queue to avoid push races.
+# Never cancel in-progress runs — each branch's update must land.
 concurrency:
   group: deploy-web-pages
   cancel-in-progress: false
 
 jobs:
   build-and-deploy:
+    # For delete events, only react to branch deletions (not tags) of non-main branches.
+    if: >-
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'delete' &&
+       github.event.ref_type == 'branch' &&
+       github.event.ref != 'main')
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -49,8 +61,12 @@ jobs:
       - name: Resolve branch slug, base URL and destination
         id: meta
         run: |
-          BRANCH="${GITHUB_REF_NAME}"
-          # Slugify branch name for use as a URL path segment (e.g. claude/foo -> claude-foo).
+          # For delete events the branch is gone; read its name from the event payload.
+          if [ "${{ github.event_name }}" = "delete" ]; then
+            BRANCH="${{ github.event.ref }}"
+          else
+            BRANCH="${GITHUB_REF_NAME}"
+          fi
           SLUG="$(printf '%s' "$BRANCH" | sed 's#[^A-Za-z0-9._-]#-#g')"
           if [ "$BRANCH" = "main" ]; then
             BASE_URL="/comical-app"
@@ -61,78 +77,129 @@ jobs:
             DEST_DIR="branches/${SLUG}"
             PREVIEW_URL="https://porksphere.github.io/comical-app/branches/${SLUG}/"
           fi
+          echo "slug=${SLUG}" >> "$GITHUB_OUTPUT"
           echo "base_url=${BASE_URL}" >> "$GITHUB_OUTPUT"
           echo "dest_dir=${DEST_DIR}" >> "$GITHUB_OUTPUT"
           echo "preview_url=${PREVIEW_URL}" >> "$GITHUB_OUTPUT"
 
+      # ── Build (push / workflow_dispatch only) ────────────────────────────────
+
       - uses: oven-sh/setup-bun@v2
+        if: github.event_name != 'delete'
         with:
           bun-version: latest
 
       - uses: actions/setup-node@v4
+        if: github.event_name != 'delete'
         with:
           node-version: 20
 
       - name: Install dependencies
+        if: github.event_name != 'delete'
         run: bun install --frozen-lockfile
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set web base URL for this build
+        if: github.event_name != 'delete'
         working-directory: apps/mobile
         env:
           BASE_URL: ${{ steps.meta.outputs.base_url }}
         run: |
-          # expo export (SDK 56) resolves the web base path from
-          # experiments.baseUrl in the app config ONLY — the EXPO_BASE_URL env var
-          # is not honored. So write the per-branch base path into app.json before
-          # exporting: main -> /comical-app, branches -> /comical-app/branches/<slug>.
-          # Without this, every branch's HTML references /comical-app/_expo/... (the
-          # root/main bundle) instead of its own subfolder, so CSS/JS 404 and the
-          # preview renders unstyled with no interactivity.
+          # expo export (SDK 56) reads the web base path from experiments.baseUrl
+          # in app.json — EXPO_BASE_URL is not honoured. Patch it before export so
+          # each branch's HTML references its own subfolder, not the root bundle.
           tmp="$(mktemp)"
           jq --arg base "$BASE_URL" '.expo.experiments.baseUrl = $base' app.json > "$tmp"
           mv "$tmp" app.json
           echo "experiments.baseUrl = $(jq -r '.expo.experiments.baseUrl' app.json)"
 
       - name: Export web bundle
+        if: github.event_name != 'delete'
         run: bunx expo export --platform web
         working-directory: apps/mobile
 
-      - name: Publish to gh-pages
+      # ── Update gh-pages content store ────────────────────────────────────────
+
+      - name: Add/update branch build in gh-pages content store
+        if: github.event_name != 'delete'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: apps/mobile/dist
           destination_dir: ${{ steps.meta.outputs.dest_dir }}
-          # Only touch this branch's own folder; leave other branches' previews intact.
           keep_files: true
           user_name: 'github-actions[bot]'
           user_email: 'github-actions[bot]@users.noreply.github.com'
           commit_message: "Deploy web preview for ${{ github.ref_name }} (${{ github.sha }})"
 
+      - name: Remove deleted branch from gh-pages content store
+        if: github.event_name == 'delete'
+        env:
+          SLUG: ${{ steps.meta.outputs.slug }}
+          BRANCH: ${{ github.event.ref }}
+        run: |
+          if ! git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+            echo "No gh-pages branch; nothing to remove."
+            exit 0
+          fi
+          git fetch origin gh-pages
+          git checkout -b _ghpages origin/gh-pages
+          TARGET="branches/${SLUG}"
+          if [ ! -d "$TARGET" ]; then
+            echo "No preview folder ${TARGET}; nothing to remove."
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git rm -r --quiet "$TARGET"
+          git commit -m "Remove web preview for deleted branch ${BRANCH}"
+          git push origin HEAD:gh-pages
+
+      # ── Assemble full site and deploy ─────────────────────────────────────────
+
+      - name: Assemble full site from gh-pages content store
+        id: assemble
+        run: |
+          mkdir -p _site
+          git fetch origin gh-pages --depth=1 2>/dev/null || true
+          if git archive origin/gh-pages 2>/dev/null | tar -x -C _site; then
+            echo "has_content=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_content=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload Pages artifact
+        if: steps.assemble.outputs.has_content == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        if: steps.assemble.outputs.has_content == 'true'
+        uses: actions/deploy-pages@v4
+
+      # ── Summary ───────────────────────────────────────────────────────────────
+
       - name: Publish all preview URLs to job summary
-        if: success()
+        if: github.event_name != 'delete' && steps.assemble.outputs.has_content == 'true'
         env:
           PREVIEW_URL: ${{ steps.meta.outputs.preview_url }}
           BRANCH: ${{ github.ref_name }}
         run: |
-          # Fetch gh-pages so we can discover every deployed branch folder.
-          git fetch origin gh-pages --depth=1 2>/dev/null || true
-          BRANCHES=$(git ls-tree --name-only origin/gh-pages:branches/ 2>/dev/null || true)
           {
             echo "## 🌐 Web Previews"
             echo ""
             echo "| Branch | URL |"
             echo "| --- | --- |"
             echo "| \`main\` | [https://porksphere.github.io/comical-app/](https://porksphere.github.io/comical-app/) |"
-            while IFS= read -r slug; do
-              [ -z "$slug" ] && continue
+            for slug in $(ls _site/branches/ 2>/dev/null); do
               url="https://porksphere.github.io/comical-app/branches/${slug}/"
               echo "| \`${slug}\` | [${url}](${url}) |"
-            done <<< "$BRANCHES"
+            done
             echo ""
             echo "> Just deployed: \`${BRANCH}\` → **[${PREVIEW_URL}](${PREVIEW_URL})**"
-            echo "> Pages can take ~1 min to update after this run finishes."
+            echo "> Pages takes ~1 min to update after this run finishes."
           } >> "$GITHUB_STEP_SUMMARY"
           echo "::notice title=Web preview::${BRANCH} -> ${PREVIEW_URL}"
