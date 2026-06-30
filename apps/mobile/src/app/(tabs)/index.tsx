@@ -17,7 +17,7 @@ import { SeriesCard } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, Spacing, TopBarHeight } from '@/constants/theme';
+import { BottomTabInset, DesktopTopBarHeight, Spacing, TopBarHeight } from '@/constants/theme';
 import { getBridges, getBridgeLists, isAbort, pageOptions, type Bridge } from '@/data/api';
 import { mockGrid, mockHomeSections, PAGE_LOAD_DELAY_MS, type RailSection, type SeriesEntry } from '@/data/mock';
 import { useTheme } from '@/hooks/use-theme';
@@ -182,6 +182,9 @@ export default function BrowseScreen() {
   // mismatch on the static web export (no viewport → width 0 → 3 columns).
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => setHydrated(true), []);
+  const isDesktop = hydrated && width >= 768;
+  const barHeight = isDesktop ? DesktopTopBarHeight : TopBarHeight;
+  const thumbSize = isDesktop ? 44 : 36;
   const numColumns =
     !hydrated || width < 768 ? 3 : Math.min(6, Math.max(3, Math.floor(width / 200)));
   // Single hydration-safe viewport width for the rails: a deterministic mobile
@@ -208,7 +211,7 @@ export default function BrowseScreen() {
   // the compact fixed bar — selectors centred in a TopBarHeight band below the
   // safe-area inset — and a divider fades in. Driven on the UI thread so it
   // tracks the scroll without per-frame re-renders.
-  const headerMin = insets.top + TopBarHeight;
+  const headerMin = insets.top + barHeight;
   const headerMax = headerMin + HEADER_EXTRA;
   const scrollY = useSharedValue(0);
   const scrollHandler = useAnimatedScrollHandler((e) => {
@@ -235,9 +238,9 @@ export default function BrowseScreen() {
         headerCollapseStyle,
         headerDividerStyle,
       ]}>
-      <View pointerEvents="box-none" style={styles.selectorRow}>
+      <View pointerEvents="box-none" style={[styles.selectorRow, { height: barHeight }]}>
         {currentBridgeThumbnail ? (
-          <Image source={{ uri: currentBridgeThumbnail }} style={styles.bridgeThumb} />
+          <Image source={{ uri: currentBridgeThumbnail }} style={[styles.bridgeThumb, { width: thumbSize, height: thumbSize }]} />
         ) : null}
         <Selector title="Bridge" value={bridge} options={bridgeOptions} onChange={selectBridge} size="subtitle" thumbnails={bridgeThumbnails} />
         <Selector title="Page" value={page} options={pages} onChange={selectPage} size="subtitle" />
@@ -421,9 +424,8 @@ const styles = StyleSheet.create({
     height: TopBarHeight,
   },
   bridgeThumb: {
-    width: 36,
-    height: 36,
     borderRadius: 8,
+    alignSelf: 'center',
   },
   controls: {
     paddingHorizontal: Spacing.four,

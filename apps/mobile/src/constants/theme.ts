@@ -93,3 +93,5 @@ export const MaxContentWidth = 800;
  *  browse bridge/page bar and the series detail bar — so they read as one bar
  *  across views. Mirrors the reference's shared `--topbar-height`. */
 export const TopBarHeight = 48;
+/** Taller top-bar height used on desktop (≥768px) only. */
+export const DesktopTopBarHeight = 64;

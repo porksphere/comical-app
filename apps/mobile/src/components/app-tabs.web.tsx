@@ -11,7 +11,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Spacing } from '@/constants/theme';
+import { DesktopTopBarHeight, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 // Web nav (Metro resolves this `.web` file for the web bundle, so native
@@ -73,7 +73,7 @@ export default function AppTabs() {
         <TabList asChild>
           {/* `<TabList asChild>` forwards via a Slot that rejects array styles
               on its child, so flatten the positioned style into one object. */}
-          <View style={StyleSheet.flatten([styles.topNav, { top: insets.top + Spacing.three }])}>
+          <View style={StyleSheet.flatten([styles.topNav, { top: insets.top + Spacing.five }])}>
             {triggers}
           </View>
         </TabList>
@@ -133,7 +133,7 @@ const styles = StyleSheet.create({
   topNav: {
     position: 'absolute',
     right: Spacing.four,
-    height: 44, // matches the selector bar's subtitle line-height
+    height: DesktopTopBarHeight,
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.three,
