@@ -9,8 +9,6 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const AnimatedImage = Animated.createAnimatedComponent(Image);
-
 import { FilterBar } from '@/components/filters/filter-demo';
 import { ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
 import { Rail, SectionHead } from '@/components/rail';
@@ -280,7 +278,14 @@ export default function BrowseScreen() {
           the band (content stays vertically centred) for symmetric breathing room. */}
       <Animated.View pointerEvents="box-none" style={[styles.selectorRow, selectorRowStyle]}>
         {currentBridgeThumbnail ? (
-          <AnimatedImage source={{ uri: currentBridgeThumbnail }} style={[styles.bridgeThumb, thumbStyle]} />
+          // Animate the wrapping View (a plain host component) rather than the
+          // expo-image `Image` itself — `Image` is a composite class component, and
+          // wrapping it directly with `Animated.createAnimatedComponent` is fragile
+          // on native (crashed on launch; fine on web, where expo-image swaps to a
+          // ref-forwarding `<img>` container, masking the issue in dev).
+          <Animated.View style={[styles.bridgeThumb, thumbStyle]}>
+            <Image source={{ uri: currentBridgeThumbnail }} style={StyleSheet.absoluteFill} />
+          </Animated.View>
         ) : null}
         <Selector title="Bridge" value={bridge} options={bridgeOptions} onChange={selectBridge} size="subtitle" thumbnails={bridgeThumbnails} />
         <Selector title="Page" value={page} options={pages} onChange={selectPage} size="subtitle" />
@@ -500,6 +505,7 @@ const styles = StyleSheet.create({
   },
   bridgeThumb: {
     borderRadius: 8,
+    overflow: 'hidden',
     alignSelf: 'center',
   },
   controls: {
