@@ -7,6 +7,10 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useIsCompact } from '@/hooks/use-responsive';
 
+/** Size of the bridge thumbnail shown in the dropdown rows — also reused by the
+ *  browse top bar so the two read at the same size. */
+export const BridgeThumbSize = 28;
+
 type SelectorProps = {
   /** Menu heading, e.g. "Bridge" or "Page". */
   title: string;
@@ -136,8 +140,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#3478F6',
   },
   optionThumb: {
-    width: 28,
-    height: 28,
+    width: BridgeThumbSize,
+    height: BridgeThumbSize,
     borderRadius: 6,
   },
 });

@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, TextInput, useWindowDimensions, View, type TextStyle } from 'react-native';
 import Animated, {
   interpolateColor,
   useAnimatedScrollHandler,
@@ -12,7 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FilterBar } from '@/components/filters/filter-demo';
 import { ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
 import { Rail, SectionHead } from '@/components/rail';
-import { Selector } from '@/components/selector';
+import { BridgeThumbSize, Selector } from '@/components/selector';
 import { SeriesCard } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
@@ -52,6 +52,10 @@ const DIRECT_BRIDGES = new Set(['asura']);
 const DIVIDER_SCROLL = Spacing.three;
 
 type GridItem = SeriesEntry & { spacer?: boolean };
+
+// Suppress react-native-web's default focus outline on the search <input> so the
+// container border can carry the focus highlight instead. No-op on native.
+const NO_OUTLINE = Platform.select({ web: { outlineStyle: 'none' } }) as TextStyle | undefined;
 
 export default function BrowseScreen() {
   const { width } = useWindowDimensions();
@@ -184,10 +188,10 @@ export default function BrowseScreen() {
   // mismatch on the static web export (no viewport → width 0 → 3 columns).
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => setHydrated(true), []);
-  const isDesktop = hydrated && width >= 768;
   // Shared with the series-detail bar so both stay the same height.
   const barHeight = useTopBarHeight();
-  const thumbSize = isDesktop ? 44 : 36;
+  // Match the bridge dropdown's thumbnail size so the bar reads at the same scale.
+  const thumbSize = BridgeThumbSize;
   const numColumns =
     !hydrated || width < 768 ? 3 : Math.min(6, Math.max(3, Math.floor(width / 200)));
   // Single hydration-safe viewport width for the rails: a deterministic mobile
@@ -345,21 +349,28 @@ function SearchField({
 }) {
   const theme = useTheme();
   const [text, setText] = useState(value);
+  const [focused, setFocused] = useState(false);
   // Keep the field in sync when the committed query is cleared elsewhere (Home).
   useEffect(() => setText(value), [value]);
   return (
-    <ThemedView type="backgroundElement" style={styles.search}>
+    // Highlight the whole field border on focus (vs. the browser's inset outline
+    // on the input itself, which is suppressed below).
+    <ThemedView
+      type="backgroundElement"
+      style={[styles.search, { borderColor: focused ? theme.accent : theme.hairline }]}>
       <SearchIcon color={theme.textSecondary} size={16} />
       <TextInput
         value={text}
         onChangeText={setText}
         onSubmitEditing={() => onSubmit(text)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         placeholder="Search…"
         placeholderTextColor={theme.textSecondary}
         returnKeyType="search"
         autoCapitalize="none"
         autoCorrect={false}
-        style={[styles.searchInput, { color: theme.text }]}
+        style={[styles.searchInput, NO_OUTLINE, { color: theme.text }]}
       />
       {text.length > 0 && (
         <Pressable
@@ -440,6 +451,8 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.three,
     paddingHorizontal: Spacing.three,
     borderRadius: Spacing.three,
+    // Border (subtle at rest, accent on focus) carries the focus highlight.
+    borderWidth: 1,
   },
   searchInput: {
     flex: 1,
