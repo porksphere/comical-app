@@ -1,5 +1,7 @@
 - [ ] Overlay system has slowed down after adding more filter UI
 - [ ] Add "page" favoriting mechanism
+- [ ] More hover highlights on desktop web, feels bery unresponsive right now
+- [ ] Thumbnail top bar very cramped on mobile
 
 ## Reader (page viewer)
 - [ ] Image retry-with-backoff on page load failure (currently just shows a placeholder)
