@@ -2,7 +2,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
@@ -83,23 +83,10 @@ function ChapterList({ chapters, seed, title }: { chapters: Chapter[]; seed: str
   const head = collapsible ? sorted.slice(0, OVERVIEW_HEAD_COUNT) : sorted;
   const tail = collapsible ? sorted.slice(sorted.length - OVERVIEW_TAIL_COUNT) : [];
 
-  // Resolve row colors once from this (already-hydrated) parent and pass them
-  // down, so rows that re-mount on a sort/tab change paint the correct colors
-  // immediately instead of flashing the light theme for a frame (a freshly
-  // mounted component that called useTheme() itself would return 'light' until
-  // its own hydration effect ran — see use-color-scheme.web).
-  const rowColors: RowColors = {
-    bg: theme.backgroundElement,
-    border: theme.hairline,
-    text: theme.text,
-    textSecondary: theme.textSecondary,
-  };
-
   const row = (c: Chapter) => (
     <ChapterRow
       key={c.id}
       chapter={c}
-      colors={rowColors}
       onPress={() =>
         router.push({
           pathname: '/reader',
@@ -169,31 +156,21 @@ function ChapterList({ chapters, seed, title }: { chapters: Chapter[]; seed: str
   );
 }
 
-type RowColors = { bg: string; border: string; text: string; textSecondary: string };
-
-function ChapterRow({
-  chapter,
-  onPress,
-  colors,
-}: {
-  chapter: Chapter;
-  onPress?: () => void;
-  colors: RowColors;
-}) {
-  // Plain View/Text with colors from the parent (not useTheme here) so a
-  // re-mounted row never flashes the light theme — see rowColors in ChapterList.
+function ChapterRow({ chapter, onPress }: { chapter: Chapter; onPress?: () => void }) {
+  const theme = useTheme();
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [pressed && styles.rowPressed]}>
-      <View style={[styles.row, { backgroundColor: colors.bg, borderColor: colors.border }]}>
-        <Text
+      <ThemedView type="backgroundElement" style={[styles.row, { borderColor: theme.hairline }]}>
+        <ThemedText
+          type="small"
           numberOfLines={1}
-          style={[styles.rowName, { color: chapter.read ? colors.textSecondary : colors.text }]}>
+          style={[styles.rowName, chapter.read && { color: theme.textSecondary }]}>
           {chapter.name}
-        </Text>
-        <Text style={[styles.rowTime, { color: colors.textSecondary }]}>
+        </ThemedText>
+        <ThemedText type="small" themeColor="textSecondary" style={styles.rowTime}>
           {relativeTime(chapter.date)}
-        </Text>
-      </View>
+        </ThemedText>
+      </ThemedView>
     </Pressable>
   );
 }
@@ -386,14 +363,10 @@ const styles = StyleSheet.create({
   },
   rowName: {
     flex: 1,
-    fontSize: 14,
-    lineHeight: 20,
     fontWeight: '600',
   },
   rowTime: {
     fontSize: 12,
-    lineHeight: 20,
-    fontWeight: '500',
   },
   empty: {
     paddingVertical: Spacing.three,
