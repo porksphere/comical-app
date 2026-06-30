@@ -98,15 +98,19 @@ function TrackerMenu({ initialLinks }: { seriesId: string; initialLinks: Tracker
           </View>
         )}
 
-        <Pressable onPress={() => setLinking((v) => !v)}>
-          <ThemedView type="backgroundElement" style={[styles.linkToggle, { borderColor: theme.hairline }]}>
-            <ThemedText type="small" style={{ color: theme.accent }}>
-              {linking ? 'Cancel' : '+ Link tracker'}
-            </ThemedText>
-          </ThemedView>
-        </Pressable>
+        {linking && (
+          <LinkTrackerForm excludeIds={links.map((l) => l.trackerId)} onLink={link} />
+        )}
 
-        {linking && <LinkTrackerForm excludeIds={links.map((l) => l.trackerId)} onLink={link} />}
+        {!linking && links.length < TRACKER_SERVICES.length && (
+          <Pressable onPress={() => setLinking(true)}>
+            <ThemedView type="backgroundElement" style={styles.linkToggle}>
+              <ThemedText type="small" style={{ color: theme.accent }}>
+                + Link tracker
+              </ThemedText>
+            </ThemedView>
+          </Pressable>
+        )}
       </TrackerScroll>
     </View>
   );
@@ -206,14 +210,6 @@ function LinkTrackerForm({
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<TrackerSearchResult[] | null>(null);
   const [focused, setFocused] = useState(false);
-
-  if (!available.length) {
-    return (
-      <ThemedText type="small" themeColor="textSecondary">
-        All available trackers are already linked.
-      </ThemedText>
-    );
-  }
 
   const search = () => setResults(mockTrackerSearch(trackerId, query));
 
@@ -354,7 +350,6 @@ const styles = StyleSheet.create({
   linkToggle: {
     paddingVertical: Spacing.two,
     borderRadius: 7,
-    borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
   },
   linkForm: {
