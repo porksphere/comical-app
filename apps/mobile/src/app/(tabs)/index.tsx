@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
 import Animated, {
@@ -53,6 +54,12 @@ export default function BrowseScreen() {
   // Direct = the selected bridge serves page-thumbnail series instead of
   // chapters. Prefer the live bridge's capabilities; fall back to the mock set.
   const currentBridge = bridges.find((b) => b.name === bridge);
+  const currentBridgeThumbnail = currentBridge?.thumbnail;
+  const bridgeThumbnails = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const b of bridges) if (b.thumbnail) map[b.name] = b.thumbnail;
+    return map;
+  }, [bridges]);
   const directBridge = currentBridge
     ? currentBridge.capabilities.includes('direct')
     : DIRECT_BRIDGES.has(bridge);
@@ -217,7 +224,10 @@ export default function BrowseScreen() {
         headerDividerStyle,
       ]}>
       <View pointerEvents="box-none" style={styles.selectorRow}>
-        <Selector title="Bridge" value={bridge} options={bridgeOptions} onChange={selectBridge} size="subtitle" />
+        {currentBridgeThumbnail ? (
+          <Image source={{ uri: currentBridgeThumbnail }} style={styles.bridgeThumb} />
+        ) : null}
+        <Selector title="Bridge" value={bridge} options={bridgeOptions} onChange={selectBridge} size="subtitle" thumbnails={bridgeThumbnails} />
         <Selector title="Page" value={page} options={pages} onChange={selectPage} size="subtitle" />
       </View>
     </Animated.View>
@@ -397,6 +407,11 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
     paddingHorizontal: Spacing.four,
     height: TopBarHeight,
+  },
+  bridgeThumb: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
   },
   controls: {
     paddingHorizontal: Spacing.four,
