@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { useOverlay } from '@/components/overlay/overlay';
+import { useAnchoredOverlay } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
@@ -31,10 +31,10 @@ export function FilterButton({
   value: FilterValue;
   onChange: (v: FilterValue) => void;
 }) {
-  const { open } = useOverlay();
+  const { ref, openAt } = useAnchoredOverlay();
   const chips = summarize(def, value);
   return (
-    <Pressable onPress={() => open(() => <FilterEditor def={def} value={value} onChange={onChange} />)}>
+    <Pressable ref={ref} onPress={() => openAt(() => <FilterEditor def={def} value={value} onChange={onChange} />)}>
       <ThemedView type="backgroundElement" style={styles.row}>
         <ThemedText style={styles.label}>{def.label}</ThemedText>
         <View style={styles.summary}>

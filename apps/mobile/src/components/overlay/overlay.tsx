@@ -26,14 +26,21 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { useIsLargeScreen } from '@/hooks/use-responsive';
 
-// A small stacked-overlay system: each overlay is a bottom sheet with a drag
-// handle (swipe down to dismiss). Opening a new overlay pushes the one below it
-// back (scale + lift + dim); dismissing the top one zooms the previous back in.
-// Works on iOS, Android and web (reanimated + gesture-handler).
+// A small stacked-overlay system. On phones (and mobile web / iOS) each overlay
+// is a bottom sheet with a drag handle (swipe down to dismiss); opening a new
+// one pushes the one below it back (scale + lift + dim). On wide desktop
+// viewports (≥768px) the same content is instead presented as an anchored
+// popover that drops in next to the trigger that opened it. Works on iOS,
+// Android and web (reanimated + gesture-handler).
+
+/** On-screen rectangle of the trigger that opened an overlay, in window
+ *  coordinates (from `measureInWindow`). Used to position the desktop popover. */
+export type AnchorRect = { x: number; y: number; width: number; height: number };
 
 type OverlayApi = {
-  open: (render: () => ReactNode) => void;
+  open: (render: () => ReactNode, anchor?: AnchorRect | null) => void;
   closeTop: () => void;
 };
 
@@ -43,6 +50,31 @@ export function useOverlay(): OverlayApi {
   const ctx = useContext(OverlayContext);
   if (!ctx) throw new Error('useOverlay must be used within an OverlayProvider');
   return ctx;
+}
+
+/**
+ * Opens an overlay anchored to its trigger: attach the returned `ref` to the
+ * trigger (a `Pressable`/`View`) and call `openAt(render)` on press. It measures
+ * the trigger's on-screen rect and hands it to `open`, so the desktop popover
+ * can position itself next to the trigger. On phones the rect is ignored and the
+ * bottom sheet is shown as before. Falls back to a plain `open` if the ref isn't
+ * measurable yet.
+ */
+export function useAnchoredOverlay() {
+  const { open } = useOverlay();
+  const ref = useRef<View>(null);
+  const openAt = useCallback(
+    (render: () => ReactNode) => {
+      const node = ref.current;
+      if (node && typeof node.measureInWindow === 'function') {
+        node.measureInWindow((x, y, width, height) => open(render, { x, y, width, height }));
+      } else {
+        open(render);
+      }
+    },
+    [open],
+  );
+  return { ref, openAt };
 }
 
 // Lets a scrollable inside a sheet hand its scroll to the sheet's drag-to-
@@ -61,7 +93,7 @@ export function useSheetScroll(): SheetScroll | null {
   return useContext(SheetScrollContext);
 }
 
-type Item = { id: number; render: () => ReactNode };
+type Item = { id: number; render: () => ReactNode; anchor?: AnchorRect | null };
 
 const SPRING = { damping: 22, stiffness: 240, mass: 0.7 } as const;
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -76,8 +108,8 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
     itemsRef.current = items;
   }, [items]);
 
-  const open = useCallback((render: () => ReactNode) => {
-    setItems((prev) => [...prev, { id: idRef.current++, render }]);
+  const open = useCallback((render: () => ReactNode, anchor?: AnchorRect | null) => {
+    setItems((prev) => [...prev, { id: idRef.current++, render, anchor }]);
   }, []);
 
   const remove = useCallback((id: number) => {
@@ -96,18 +128,27 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
 
   const api = useMemo(() => ({ open, closeTop }), [open, closeTop]);
 
+  // Desktop shows anchored popovers; the mobile sheet's scale-the-app-back and
+  // heavy dim are skipped there (the backdrop stays as a transparent
+  // click-catcher so an outside click still closes the top popover).
+  const isLargeScreen = useIsLargeScreen();
+
   const depth = items.length;
   const appProgress = useSharedValue(0);
   useEffect(() => {
     appProgress.value = withSpring(depth > 0 ? 1 : 0, SPRING);
   }, [depth, appProgress]);
 
-  const appStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: interpolate(appProgress.value, [0, 1], [1, 0.93]) }],
-    borderRadius: interpolate(appProgress.value, [0, 1], [0, 28]),
-  }));
+  const appStyle = useAnimatedStyle(() =>
+    isLargeScreen
+      ? { transform: [{ scale: 1 }], borderRadius: 0 }
+      : {
+          transform: [{ scale: interpolate(appProgress.value, [0, 1], [1, 0.93]) }],
+          borderRadius: interpolate(appProgress.value, [0, 1], [0, 28]),
+        },
+  );
   const backdropStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(appProgress.value, [0, 1], [0, 0.5]),
+    opacity: isLargeScreen ? 0 : interpolate(appProgress.value, [0, 1], [0, 0.5]),
   }));
 
   return (
@@ -121,16 +162,27 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
           onPress={closeTop}
         />
 
-        {items.map((it, i) => (
-          <OverlaySheet
-            key={it.id}
-            id={it.id}
-            depthFromTop={items.length - 1 - i}
-            onClosed={() => remove(it.id)}
-            register={register}>
-            {it.render()}
-          </OverlaySheet>
-        ))}
+        {items.map((it, i) =>
+          isLargeScreen && it.anchor ? (
+            <OverlayPopover
+              key={it.id}
+              id={it.id}
+              anchor={it.anchor}
+              onClosed={() => remove(it.id)}
+              register={register}>
+              {it.render()}
+            </OverlayPopover>
+          ) : (
+            <OverlaySheet
+              key={it.id}
+              id={it.id}
+              depthFromTop={items.length - 1 - i}
+              onClosed={() => remove(it.id)}
+              register={register}>
+              {it.render()}
+            </OverlaySheet>
+          ),
+        )}
       </View>
     </OverlayContext.Provider>
   );
@@ -272,6 +324,89 @@ function OverlaySheet({
   );
 }
 
+// Desktop presentation: a card anchored next to its trigger. Drops in below the
+// anchor by default, flips above when it would overflow the bottom, clamps
+// horizontally to stay on-screen, and fades + scales in. No drag handle or pan
+// gestures (those are sheet-only); the shared backdrop handles outside-click
+// dismissal. Long content scrolls inside via the content's own list.
+const POPOVER_WIDTH = 320;
+const POPOVER_GAP = Spacing.one; // distance from the anchor edge
+const POPOVER_PAD = Spacing.three; // keep-off-the-viewport-edges padding
+
+function OverlayPopover({
+  id,
+  anchor,
+  onClosed,
+  register,
+  children,
+}: {
+  id: number;
+  anchor: AnchorRect;
+  onClosed: () => void;
+  register: (id: number, fn: () => void) => void;
+  children: ReactNode;
+}) {
+  const { width: vw, height: vh } = useWindowDimensions();
+  const [card, setCard] = useState<{ width: number; height: number } | null>(null);
+  const progress = useSharedValue(0);
+  const entered = useRef(false);
+
+  const close = useCallback(() => {
+    progress.value = withTiming(0, { duration: 120 }, (finished) => {
+      if (finished) runOnJS(onClosed)();
+    });
+  }, [onClosed, progress]);
+
+  useEffect(() => {
+    register(id, close);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Fade in only once measured, so the entrance plays at the final (possibly
+  // flipped) position with no visible jump.
+  useEffect(() => {
+    if (card && !entered.current) {
+      entered.current = true;
+      progress.value = withTiming(1, { duration: 140 });
+    }
+  }, [card, progress]);
+
+  const width = Math.min(POPOVER_WIDTH, vw - POPOVER_PAD * 2);
+  const left = Math.min(Math.max(POPOVER_PAD, anchor.x), vw - width - POPOVER_PAD);
+  const spaceBelow = vh - (anchor.y + anchor.height) - POPOVER_GAP - POPOVER_PAD;
+  const spaceAbove = anchor.y - POPOVER_GAP - POPOVER_PAD;
+  const h = card?.height ?? 0;
+  const below = h <= spaceBelow || spaceBelow >= spaceAbove;
+  const maxHeight = Math.max(160, below ? spaceBelow : spaceAbove);
+  const top = below
+    ? anchor.y + anchor.height + POPOVER_GAP
+    : Math.max(POPOVER_PAD, anchor.y - POPOVER_GAP - Math.min(h, maxHeight));
+
+  const animStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [
+      { translateY: interpolate(progress.value, [0, 1], [below ? -6 : 6, 0]) },
+      { scale: interpolate(progress.value, [0, 1], [0.96, 1]) },
+    ],
+  }));
+
+  return (
+    <Animated.View
+      pointerEvents="box-none"
+      style={[styles.popoverWrap, { left, top, width }, animStyle]}>
+      <ThemedView
+        type="backgroundElement"
+        style={[styles.popover, { maxHeight }]}
+        onLayout={(e) => {
+          const { width: w, height: hh } = e.nativeEvent.layout;
+          setCard((prev) => (prev && prev.height === hh && prev.width === w ? prev : { width: w, height: hh }));
+        }}>
+        {children}
+      </ThemedView>
+    </Animated.View>
+  );
+}
+
 const styles = StyleSheet.create({
   root: {
     flex: 1,
@@ -315,5 +450,22 @@ const styles = StyleSheet.create({
   },
   dim: {
     backgroundColor: '#000000',
+  },
+  popoverWrap: {
+    position: 'absolute',
+  },
+  popover: {
+    borderRadius: 16,
+    paddingHorizontal: Spacing.four,
+    paddingVertical: Spacing.four,
+    overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(128,128,128,0.35)',
+    // Float the card above the page (no full-screen dim on desktop).
+    shadowColor: '#000000',
+    shadowOpacity: 0.35,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 12,
   },
 });
