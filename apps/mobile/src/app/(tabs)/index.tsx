@@ -352,12 +352,33 @@ function SearchField({
   const [focused, setFocused] = useState(false);
   // Keep the field in sync when the committed query is cleared elsewhere (Home).
   useEffect(() => setText(value), [value]);
+
+  // On mobile web the soft keyboard can be dismissed without the input firing a
+  // blur (e.g. Android's "hide keyboard" button keeps DOM focus), which would
+  // leave the focus highlight stuck on. While focused, watch the visual viewport
+  // and drop the highlight when it grows back — i.e. the keyboard closes.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !focused) return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+    let prevHeight = vv.height;
+    const onResize = () => {
+      // A meaningful growth means the keyboard (which had shrunk the viewport)
+      // was dismissed; clear the highlight to match.
+      if (vv.height > prevHeight + 120) setFocused(false);
+      prevHeight = vv.height;
+    };
+    vv.addEventListener('resize', onResize);
+    return () => vv.removeEventListener('resize', onResize);
+  }, [focused]);
+
   return (
     // Highlight the whole field border on focus (vs. the browser's inset outline
-    // on the input itself, which is suppressed below).
+    // on the input itself, which is suppressed below). No border at rest so the
+    // line only appears while the field is active.
     <ThemedView
       type="backgroundElement"
-      style={[styles.search, { borderColor: focused ? theme.accent : theme.hairline }]}>
+      style={[styles.search, { borderColor: focused ? theme.accent : 'transparent' }]}>
       <SearchIcon color={theme.textSecondary} size={16} />
       <TextInput
         value={text}
@@ -451,7 +472,8 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.three,
     paddingHorizontal: Spacing.three,
     borderRadius: Spacing.three,
-    // Border (subtle at rest, accent on focus) carries the focus highlight.
+    // Reserve the border box always (transparent at rest, accent on focus) so the
+    // focus highlight appears without shifting layout.
     borderWidth: 1,
   },
   searchInput: {
