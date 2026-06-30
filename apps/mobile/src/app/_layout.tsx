@@ -1,15 +1,17 @@
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
-import { useColorScheme } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { OverlayProvider } from '@/components/overlay/overlay';
+import { useActiveColorScheme } from '@/hooks/use-theme';
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
+  // Resolved (forced dark for now) scheme so the navigation theme matches the
+  // app content and renders identically on the static export's server + client.
+  const scheme = useActiveColorScheme();
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <ThemeProvider value={scheme === 'dark' ? DarkTheme : DefaultTheme}>
         <AnimatedSplashOverlay />
         {/* OverlayProvider hosts the stacked bottom-sheet overlays app-wide. */}
         <OverlayProvider>
