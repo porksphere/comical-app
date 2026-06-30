@@ -9,7 +9,7 @@ import { useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 
 import { FilterButton } from './filter-button';
-import { FiltersIcon, SortIcon } from './filter-icons';
+import { CheckIcon, FiltersIcon, SortIcon } from './filter-icons';
 import {
   CONTROL_HEIGHT,
   CONTROL_RADIUS,
@@ -170,7 +170,7 @@ function FiltersSheet({
           }}
         />
       ))}
-      <PrimaryButton title="Show results" onPress={closeTop} />
+      <ConfirmButton onPress={closeTop} />
     </SheetContent>
   );
 }
@@ -237,12 +237,18 @@ function SelectRow({
   );
 }
 
-function PrimaryButton({ title, onPress }: { title: string; onPress: () => void }) {
+/** Circular accent checkmark that confirms the filter selection ("show results"). */
+function ConfirmButton({ onPress }: { onPress: () => void }) {
+  const theme = useTheme();
   return (
-    <Pressable onPress={onPress} style={styles.primaryWrap}>
-      <ThemedView type="backgroundSelected" style={styles.primary}>
-        <ThemedText type="smallBold">{title}</ThemedText>
-      </ThemedView>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel="Show results"
+      style={styles.confirmWrap}>
+      <View style={[styles.confirm, { backgroundColor: theme.accent }]}>
+        <CheckIcon color={theme.accentOn} />
+      </View>
     </Pressable>
   );
 }
@@ -304,12 +310,15 @@ const styles = StyleSheet.create({
     borderColor: '#3478F6',
     backgroundColor: '#3478F6',
   },
-  primaryWrap: {
+  confirmWrap: {
+    alignSelf: 'flex-end',
     marginTop: Spacing.two,
   },
-  primary: {
+  confirm: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: 'center',
-    paddingVertical: Spacing.three,
-    borderRadius: Spacing.three,
+    justifyContent: 'center',
   },
 });

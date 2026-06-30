@@ -23,6 +23,27 @@ export function FiltersIcon({ color }: IconProps) {
   );
 }
 
+/** Checkmark — the "show results" confirm glyph. A box with right + bottom
+ *  borders rotated 45° reads as a tick. */
+export function CheckIcon({ color, size = 22 }: IconProps) {
+  const stroke = Math.max(2, Math.round(size * 0.11));
+  return (
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      <View
+        style={{
+          width: size * 0.32,
+          height: size * 0.6,
+          marginTop: -size * 0.08,
+          borderRightWidth: stroke,
+          borderBottomWidth: stroke,
+          borderColor: color,
+          transform: [{ rotate: '45deg' }],
+        }}
+      />
+    </View>
+  );
+}
+
 /** Stacked up/down triangles — the sort glyph. */
 export function SortIcon({ color }: IconProps) {
   return (
