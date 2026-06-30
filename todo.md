@@ -15,6 +15,68 @@
 - [ ] Overlay does not stay open when in settings / typing page 
 - [ ] Page pill wiuld look better on the bottom of the page like the old version
 
+## Add real crash reporting (Sentry) — no way to see iOS crashes today
+
+Worked on branch `claude/ios-crash-launch-drvv37`. Spent a full evening chasing an
+iOS launch crash blind: the only signal available was `.ips` files manually pulled
+off the device (Settings → Privacy → Analytics Data), which never carry the actual
+JS error/stack — only that React Native's default fatal handler aborted the
+process. Three JS-level interception attempts (`global.ErrorUtils.setGlobalHandler`,
+plain / deferred-alert / re-installed-after-require) all failed identically — that
+particular crash never reached `ErrorUtils` at all. Only a hand-rolled native
+`RCTSetFatalHandler` hook (injected into `AppDelegate.swift` via an Expo config
+plugin) finally surfaced it: a `react`/`react-native-renderer` version mismatch
+(see the entry below — now fixed and guarded against). That diagnostic plugin was
+real but the *wrong* shape for production (its first attempt — showing the alert
+immediately — itself crashed by racing iOS's scene-connection lifecycle creating a
+fresh `UIWindow`; even fixed, it's a one-off hand-rolled tool, not a permanent
+capability) and has been removed. The actual fix: **`@sentry/react-native`**.
+
+- **Why Sentry specifically, not another hand-rolled hook:** it hooks both JS
+  errors *and* native crashes (NSException/signal handlers) at the same low level
+  the diagnostic plugin reached for, but solved correctly — no UIWindow/scene
+  timing landmines, because it persists the crash report to disk and uploads on
+  the *next* launch rather than trying to act mid-crash. Free tier is fine for a
+  side-loaded hobby app; no Apple Developer account needed, just network egress at
+  crash-report-upload time.
+- **Setup, specific to this repo's pipeline:**
+  - [ ] `bunx @sentry/wizard@latest -i reactNative` (or manual: add
+        `@sentry/react-native` to `apps/mobile/package.json`, add the
+        `@sentry/react-native/expo` config plugin to `app.json`'s `plugins`).
+  - [ ] This repo does **not** use EAS Build (`build-ios-reusable.yml` /
+        `build-android-reusable.yml` run raw `expo prebuild` + `xcodebuild archive`
+        / `gradlew assembleRelease` directly in GitHub Actions) — Sentry's usual
+        "automatic sourcemap upload via EAS hooks" doesn't apply here. Add an
+        explicit `sentry-cli` (or `@sentry/react-native`'s Metro export) step to
+        both reusable workflows, after the JS bundle is produced, before/alongside
+        packaging — needs a `SENTRY_AUTH_TOKEN` repo secret.
+  - [ ] Wire `Sentry.init({ dsn: ... })` at the top of `src/app/_layout.tsx` (or a
+        dedicated `instrument.ts` required first, per Sentry's RN docs).
+  - [ ] Keep the existing root `<ErrorBoundary>` (`src/components/error-boundary.tsx`,
+        wraps everything in `_layout.tsx`) — Sentry doesn't replace it. The boundary
+        still gives a friendlier in-app recovery screen for render-phase errors;
+        Sentry is for *capturing* the error (with stack/breadcrumbs) regardless of
+        where it's thrown, including the event-handler/effect/native-crash cases
+        the boundary structurally can't catch.
+  - [ ] Verify end-to-end: a deliberate `throw` in a button handler should show up
+        in the Sentry dashboard, symbolicated, within the unsigned/sideloaded build
+        — this is the part most likely to silently not work (sourcemap upload
+        path) and worth confirming before relying on it.
+
+## react/react-native-renderer version guard (shipped)
+
+`apps/mobile/scripts/verify-react-versions.js` runs as a `postinstall` hook (so
+every `bun install`, local or CI, checks it automatically — no separate CI step
+needed). It compares the installed `react` version against the version string
+baked into react-native's *bundled* `react-native-renderer` (not a resolvable npm
+dependency — it ships inside `react-native`'s own published files, hard-locked to
+whichever React version that release was built against). A normal peer-dependency
+range (react-native@0.85.3 declares `"react": "^19.2.3"`) is too loose to catch
+this — `19.2.7` legitimately satisfies that range while still being a fatal,
+exact-version mismatch at runtime. This is exactly the class of bug the Sentry
+work above would also have caught (eventually, after the first crash report came
+in) — the guard script catches it before a single build is even attempted.
+
 ## Web document-level scroll (so iOS collapses its browser toolbar)
 Full design + risk register + verification plan: **`apps/mobile/docs/web-document-scroll-plan.md`**.
 Worked on branch `claude/mobile-topbar-scroll-animation-m7xqot` (the mobile top-bar
