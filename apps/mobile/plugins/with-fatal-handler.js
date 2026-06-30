@@ -16,12 +16,15 @@ const { withAppDelegate } = require('expo/config-plugins');
 const MARKER = 'RCTSetFatalHandler';
 
 const INJECTION = `
-    RCTSetFatalHandler { error in
-      guard let error = error else { return }
-      let stack = (error.userInfo[RCTJSRawStackTraceKey] as? String)
-        ?? (error.userInfo[RCTJSStackTraceKey] as? String)
+    RCTSetFatalHandler { maybeError in
+      // The block's NSError* param bridges into Swift as the \`Error\` protocol,
+      // which has no .userInfo — recover the concrete NSError to read it.
+      guard let error = maybeError else { return }
+      let nsError = error as NSError
+      let stack = (nsError.userInfo[RCTJSRawStackTraceKey] as? String)
+        ?? (nsError.userInfo[RCTJSStackTraceKey] as? String)
         ?? ""
-      let message = "\\(error.localizedDescription)\\n\\n\\(stack)"
+      let message = "\\(nsError.localizedDescription)\\n\\n\\(stack)"
       DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
         guard let root = UIApplication.shared.windows.first?.rootViewController else { return }
         let alert = UIAlertController(title: "Fatal JS error (diagnostic)", message: message, preferredStyle: .alert)
