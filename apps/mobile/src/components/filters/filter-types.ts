@@ -2,6 +2,14 @@
 // filters can be declared once and rendered anywhere (e.g. a search page, a
 // per-source config, etc.).
 
+import { Spacing } from '@/constants/theme';
+
+// Shared layout knobs so every control on the filter bar — filters, the Sort
+// pill, and the overflow chip — reads as one family (same height + corner
+// radius). Tune here to resize the whole row at once.
+export const CONTROL_HEIGHT = 44;
+export const CONTROL_RADIUS = Spacing.three;
+
 export type TriValue = 'include' | 'exclude';
 export type TriState = Record<string, TriValue>;
 

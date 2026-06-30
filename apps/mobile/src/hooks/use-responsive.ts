@@ -29,6 +29,20 @@ export function useIsCompact(): boolean {
 }
 
 /**
+ * True when the viewport is at the large-screen (desktop) width (≥768px).
+ *
+ * Hydration-safe like `useIsCompact`: holds the not-large assumption until mount
+ * so the static web export's first client render (which has no viewport) matches
+ * the server render, then switches to the real viewport width.
+ */
+export function useIsLargeScreen(): boolean {
+  const { width } = useWindowDimensions();
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => setHydrated(true), []);
+  return hydrated ? width >= LARGE_SCREEN_BREAKPOINT : false;
+}
+
+/**
  * Content height of the sticky top bars — taller on desktop (≥768px), compact
  * otherwise. Shared by the browse bridge/page bar and the series-detail bar so
  * the two stay the same height and resize together (just change the

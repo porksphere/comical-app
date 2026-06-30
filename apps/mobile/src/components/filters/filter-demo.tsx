@@ -5,11 +5,18 @@ import { useOverlay } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 
 import { FilterButton } from './filter-button';
-import { FiltersIcon, SortIcon } from './filter-icons';
-import { initialValue, type FilterDef, type FilterValue } from './filter-types';
+import { CheckIcon, FiltersIcon, SortIcon } from './filter-icons';
+import {
+  CONTROL_HEIGHT,
+  CONTROL_RADIUS,
+  initialValue,
+  type FilterDef,
+  type FilterValue,
+} from './filter-types';
 
 // Placeholder filter UI. "Sort" is a single-select demo behind its own icon; the
 // rest are the reusable, typed filter controls declared in FILTER_DEFS.
@@ -35,15 +42,15 @@ const FILTER_DEFS: FilterDef[] = [
 
 // Layout rules for the single-line filter bar.
 const GAP = Spacing.two;
-const CONTROL = 36; // square side of the icon buttons
 const FILTER_MIN_WIDTH = 200; // a full-size filter row stays at least this wide
-const SORT_RESERVE = CONTROL; // sort icon, always shown
+const SORT_RESERVE_LABELLED = 128; // sort pill with icon + current sort label
+const SORT_RESERVE_ICON = CONTROL_HEIGHT; // sort collapsed to an icon-only square
 const OVERFLOW_RESERVE = 64; // funnel icon + "+X" count
 
 /** How many full-size filters fit on one line given the measured bar width. */
-function fitCount(containerW: number, total: number): number {
+function fitCount(containerW: number, total: number, sortReserve: number): number {
   if (containerW <= 0) return total;
-  const base = containerW - SORT_RESERVE - GAP;
+  const base = containerW - sortReserve - GAP;
   // If every filter fits with no overflow control, show them all.
   const colsAll = Math.floor((base + GAP) / (FILTER_MIN_WIDTH + GAP));
   if (colsAll >= total) return total;
@@ -59,9 +66,9 @@ function fitCount(containerW: number, total: number): number {
  * only as many as fit on one line are shown and the rest collapse into a "+X"
  * funnel chip. A wide-enough screen shows every filter with no overflow at all.
  */
-export function FilterBar() {
+export function FilterBar({ searchActive }: { searchActive: boolean }) {
   const { open } = useOverlay();
-  const theme = useTheme();
+  const wide = useIsLargeScreen();
   const [sort, setSort] = useState(SORTS[0]);
   const [values, setValues] = useState<Record<string, FilterValue>>(() =>
     Object.fromEntries(FILTER_DEFS.map((d) => [d.id, initialValue(d)])),
@@ -69,7 +76,10 @@ export function FilterBar() {
   const setValue = (id: string, v: FilterValue) => setValues((prev) => ({ ...prev, [id]: v }));
 
   const [containerW, setContainerW] = useState(0);
-  const visible = fitCount(containerW, FILTER_DEFS.length);
+  // Sort only shows once results are on screen; until then it reserves no room.
+  // On narrow viewports it collapses to an icon-only square, reserving less.
+  const sortReserve = searchActive ? (wide ? SORT_RESERVE_LABELLED : SORT_RESERVE_ICON) : 0;
+  const visible = fitCount(containerW, FILTER_DEFS.length, sortReserve);
   const shown = FILTER_DEFS.slice(0, visible);
   const hidden = FILTER_DEFS.slice(visible);
 
@@ -88,29 +98,35 @@ export function FilterBar() {
           onPress={() => open(() => <FiltersSheet defs={hidden} initial={values} onChange={setValue} />)}
         />
       )}
-      <IconButton
-        label="Sort"
-        onPress={() => open(() => <OptionMenu title="Sort by" options={SORTS} selected={sort} onSelect={setSort} />)}>
-        <SortIcon color={theme.text} />
-      </IconButton>
+      {searchActive && (
+        <SortButton
+          label={sort}
+          showLabel={wide}
+          onPress={() => open(() => <OptionMenu title="Sort by" options={SORTS} selected={sort} onSelect={setSort} />)}
+        />
+      )}
     </View>
   );
 }
 
-/** Square icon button (used for Sort). */
-function IconButton({
-  children,
+/** Sort control — shares the filter rows' height/radius/background. Shows the
+ *  current sort value as a labeled pill when there's room; on narrow viewports it
+ *  collapses to an icon-only square so it stops crowding the bar. */
+function SortButton({
   label,
+  showLabel,
   onPress,
 }: {
-  children: ReactNode;
   label: string;
+  showLabel: boolean;
   onPress: () => void;
 }) {
+  const theme = useTheme();
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label}>
-      <ThemedView type="backgroundElement" style={styles.iconButton}>
-        {children}
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel="Sort">
+      <ThemedView type="backgroundElement" style={[styles.sortButton, !showLabel && styles.sortButtonIcon]}>
+        <SortIcon color={theme.text} />
+        {showLabel && <ThemedText type="smallBold">{label}</ThemedText>}
       </ThemedView>
     </Pressable>
   );
@@ -121,7 +137,7 @@ function OverflowChip({ count, onPress }: { count: number; onPress: () => void }
   const theme = useTheme();
   return (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${count} more filters`}>
-      <ThemedView type="backgroundSelected" style={styles.overflowChip}>
+      <ThemedView type="backgroundElement" style={styles.overflowChip}>
         <FiltersIcon color={theme.text} />
         <ThemedText type="smallBold">{`+${count}`}</ThemedText>
       </ThemedView>
@@ -142,7 +158,7 @@ function FiltersSheet({
   const { closeTop } = useOverlay();
   const [values, setValues] = useState(initial);
   return (
-    <SheetContent title="Filters">
+    <SheetContent title="Filters" headerAction={<ConfirmButton onPress={closeTop} />}>
       {defs.map((def) => (
         <FilterButton
           key={def.id}
@@ -154,7 +170,6 @@ function FiltersSheet({
           }}
         />
       ))}
-      <PrimaryButton title="Show results" onPress={closeTop} />
     </SheetContent>
   );
 }
@@ -191,12 +206,21 @@ function OptionMenu({
 
 // --- shared building blocks ---
 
-function SheetContent({ title, children }: { title: string; children: ReactNode }) {
+function SheetContent({
+  title,
+  headerAction,
+  children,
+}: {
+  title: string;
+  headerAction?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <View style={styles.content}>
-      <ThemedText type="subtitle" style={styles.sheetTitle}>
-        {title}
-      </ThemedText>
+      <View style={styles.sheetHeader}>
+        <ThemedText type="subtitle">{title}</ThemedText>
+        {headerAction}
+      </View>
       {children}
     </View>
   );
@@ -221,12 +245,15 @@ function SelectRow({
   );
 }
 
-function PrimaryButton({ title, onPress }: { title: string; onPress: () => void }) {
+/** Circular accent checkmark that confirms the filter selection ("show results").
+ *  Sits top-right in the sheet header, mirroring an iOS "Done" affordance. */
+function ConfirmButton({ onPress }: { onPress: () => void }) {
+  const theme = useTheme();
   return (
-    <Pressable onPress={onPress} style={styles.primaryWrap}>
-      <ThemedView type="backgroundSelected" style={styles.primary}>
-        <ThemedText type="smallBold">{title}</ThemedText>
-      </ThemedView>
+    <Pressable onPress={onPress} hitSlop={8} accessibilityRole="button" accessibilityLabel="Show results">
+      <View style={[styles.confirm, { backgroundColor: theme.accent }]}>
+        <CheckIcon color={theme.accentOn} size={20} />
+      </View>
     </Pressable>
   );
 }
@@ -242,25 +269,34 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
-  iconButton: {
-    width: CONTROL,
-    height: CONTROL,
+  sortButton: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: Spacing.two,
+    height: CONTROL_HEIGHT,
+    paddingHorizontal: Spacing.three,
+    borderRadius: CONTROL_RADIUS,
+  },
+  sortButtonIcon: {
+    width: CONTROL_HEIGHT,
+    paddingHorizontal: 0,
     justifyContent: 'center',
-    borderRadius: Spacing.five,
   },
   overflowChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.one,
-    height: CONTROL,
+    height: CONTROL_HEIGHT,
     paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.five,
+    borderRadius: CONTROL_RADIUS,
   },
   content: {
     gap: Spacing.two,
   },
-  sheetTitle: {
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: Spacing.one,
   },
   row: {
@@ -282,12 +318,11 @@ const styles = StyleSheet.create({
     borderColor: '#3478F6',
     backgroundColor: '#3478F6',
   },
-  primaryWrap: {
-    marginTop: Spacing.two,
-  },
-  primary: {
+  confirm: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
-    paddingVertical: Spacing.three,
-    borderRadius: Spacing.three,
+    justifyContent: 'center',
   },
 });

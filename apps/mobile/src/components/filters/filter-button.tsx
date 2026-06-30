@@ -6,7 +6,14 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 
 import { FilterEditor } from './filter-editors';
-import { emptyText, summarize, type FilterDef, type FilterValue } from './filter-types';
+import {
+  CONTROL_HEIGHT,
+  CONTROL_RADIUS,
+  emptyText,
+  summarize,
+  type FilterDef,
+  type FilterValue,
+} from './filter-types';
 import { OverflowChips } from './overflow-chips';
 
 /**
@@ -44,9 +51,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
-    paddingVertical: Spacing.three,
+    height: CONTROL_HEIGHT,
     paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.three,
+    borderRadius: CONTROL_RADIUS,
   },
   label: {
     flexShrink: 0,

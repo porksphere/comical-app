@@ -6,13 +6,40 @@ import { StyleSheet, View } from 'react-native';
 
 export type IconProps = { color: string; size?: number };
 
-/** Funnel — the "filters" glyph on the overflow chip. */
+/** Sliders — the "filters" glyph on the overflow chip. Three horizontal tracks,
+ *  each with a knob at a different position. */
 export function FiltersIcon({ color }: IconProps) {
+  // Knob horizontal position per track (fraction of the track width).
+  const knobs = [0.7, 0.35, 0.8];
   return (
-    <View style={styles.funnel}>
-      <View style={[styles.funnelBar, { width: 14, backgroundColor: color }]} />
-      <View style={[styles.funnelBar, { width: 9, backgroundColor: color }]} />
-      <View style={[styles.funnelBar, { width: 4, backgroundColor: color }]} />
+    <View style={styles.sliders}>
+      {knobs.map((pos, i) => (
+        <View key={i} style={styles.sliderRow}>
+          <View style={[styles.sliderTrack, { backgroundColor: color }]} />
+          <View style={[styles.sliderKnob, { backgroundColor: color, left: `${pos * 100}%` }]} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/** Checkmark — the "show results" confirm glyph. A box with right + bottom
+ *  borders rotated 45° reads as a tick. */
+export function CheckIcon({ color, size = 22 }: IconProps) {
+  const stroke = Math.max(2, Math.round(size * 0.11));
+  return (
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      <View
+        style={{
+          width: size * 0.32,
+          height: size * 0.6,
+          marginTop: -size * 0.08,
+          borderRightWidth: stroke,
+          borderBottomWidth: stroke,
+          borderColor: color,
+          transform: [{ rotate: '45deg' }],
+        }}
+      />
     </View>
   );
 }
@@ -28,12 +55,24 @@ export function SortIcon({ color }: IconProps) {
 }
 
 const styles = StyleSheet.create({
-  funnel: {
-    alignItems: 'center',
+  sliders: {
+    width: 16,
     gap: 3,
   },
-  funnelBar: {
+  sliderRow: {
+    height: 7,
+    justifyContent: 'center',
+  },
+  sliderTrack: {
     height: 2,
+    width: '100%',
+    borderRadius: 1,
+  },
+  sliderKnob: {
+    position: 'absolute',
+    width: 3,
+    height: 7,
+    marginLeft: -1.5,
     borderRadius: 1,
   },
   sort: {
