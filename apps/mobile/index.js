@@ -9,12 +9,16 @@ import { Alert } from 'react-native';
 // tail of an effect, or unhandled promise rejections, any of which could be
 // the actual source here.
 //
-// Installing this handler as the very first thing executed (ahead of
-// expo-router and all app code, so it's in place no matter how early the
-// throw happens) intercepts every uncaught JS exception and shows it in a
-// native alert instead of silently dying, so the message can finally be read
-// off the device. Remove once the real bug is found and fixed.
-if (typeof global !== 'undefined' && global.ErrorUtils) {
+// Installs a handler that shows the error in a native alert instead of
+// silently dying, so the message can finally be read off the device. Called
+// both before AND after requiring expo-router/entry: the first build of this
+// diagnostic (set up only before the require) still crashed with the exact
+// same signature as no diagnostic at all, meaning something inside
+// expo-router's own init re-installs its own handler afterward, overwriting
+// ours — so we re-install after requiring too, to win that race regardless of
+// what Expo's init code does. Remove once the real bug is found and fixed.
+function installDiagnosticHandler() {
+  if (typeof global === 'undefined' || !global.ErrorUtils) return;
   global.ErrorUtils.setGlobalHandler((error, isFatal) => {
     console.error('[launch-diagnostic]', isFatal ? 'FATAL' : 'soft', error);
     if (isFatal) {
@@ -22,7 +26,7 @@ if (typeof global !== 'undefined' && global.ErrorUtils) {
       // Showing a UIAlertController this early in the launch sequence makes RN
       // create a brand-new UIWindow tied to the app's scene to host it — and
       // doing that immediately races iOS's scene-connection lifecycle (this
-      // crashed inside UIKit's own window/scene machinery on the previous
+      // crashed inside UIKit's own window/scene machinery on an earlier
       // diagnostic build, masking the original error entirely). Give the scene
       // a few seconds to settle before showing it.
       setTimeout(() => {
@@ -36,4 +40,6 @@ if (typeof global !== 'undefined' && global.ErrorUtils) {
   });
 }
 
+installDiagnosticHandler();
 require('expo-router/entry');
+installDiagnosticHandler();
