@@ -155,7 +155,6 @@ function TrackerRow({
   onSync: () => void;
   onUnlink: () => void;
 }) {
-  const theme = useTheme();
   const service = TRACKER_SERVICES.find((s) => s.id === link.trackerId);
   const bits = [
     link.externalId,
@@ -164,7 +163,7 @@ function TrackerRow({
   ].filter(Boolean) as string[];
 
   return (
-    <ThemedView type="backgroundElement" style={[styles.row, { borderColor: theme.hairline }]}>
+    <ThemedView type="backgroundElement" style={styles.row}>
       <View style={styles.rowText}>
         <ThemedText type="small" numberOfLines={1} style={styles.rowName}>
           {service?.name ?? link.trackerId}
@@ -321,7 +320,6 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.three,
     borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
   },
   rowText: {
     flex: 1,
