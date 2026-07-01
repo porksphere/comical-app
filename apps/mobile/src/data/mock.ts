@@ -325,8 +325,8 @@ export function relativeTime(ts: number): string {
 // Only reachable via the dev-only mock toggle or the GH Pages demo build — see
 // `source.ts`.
 
-const MOCK_BRIDGE_NAMES = ['MangaDex', 'comick', 'Batoto', 'WeebCentral', 'asura'];
-const MOCK_DIRECT_BRIDGES = new Set(['asura']);
+const MOCK_BRIDGE_NAMES = ['Panelfox', 'Inkwell', 'Driftpage', 'Nightshelf', 'Coldspine'];
+const MOCK_DIRECT_BRIDGES = new Set(['Coldspine']);
 const slugify = (name: string) => name.toLowerCase();
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
