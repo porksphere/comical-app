@@ -335,7 +335,9 @@ export async function mockGetBridges(): Promise<Bridge[]> {
     id: slugify(name),
     name,
     nsfw: false,
-    capabilities: MOCK_DIRECT_BRIDGES.has(name) ? ['lists', 'search', 'direct'] : ['lists', 'search'],
+    capabilities: MOCK_DIRECT_BRIDGES.has(name)
+      ? ['lists', 'search', 'direct', 'filters', 'sort']
+      : ['lists', 'search', 'filters', 'sort'],
     thumbnail: `https://picsum.photos/seed/bridge-${slugify(name)}/100/100`,
   }));
 }
