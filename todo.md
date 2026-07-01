@@ -79,22 +79,25 @@ capability) and has been removed. The actual fix: **`@sentry/react-native`**.
         where it's thrown, including the event-handler/effect/native-crash cases
         the boundary structurally can't catch. Added `Sentry.captureException`
         to its `componentDidCatch`.
-  - [ ] **Blocked on credentials, not yet done:** everything above uses
-        placeholder values (`TODO-SENTRY-DSN` in `src/lib/sentry.ts`,
-        `TODO-SENTRY-ORG`/`TODO-SENTRY-PROJECT` in `app.json`) because there's
-        no real Sentry account/project yet. Once one exists: swap in the real
-        DSN/org/project slugs, add the `SENTRY_AUTH_TOKEN` repo secret
+  - [x] Real Sentry project created (org `comical`, project `comical-app`,
+        platform React Native) — `app.json`'s `organization`/`project` and
+        `src/lib/sentry.ts`'s default DSN now use the real values instead of
+        `TODO-SENTRY-*` placeholders.
+  - [ ] **Still blocked, not yet done:** the `SENTRY_AUTH_TOKEN` repo secret
         (Settings → Secrets and variables → Actions, using a Sentry
-        Organization Auth Token), and only then do the actual end-to-end
-        verify — a deliberate `throw` in a button handler should show up in
-        the Sentry dashboard, symbolicated, within the unsigned/sideloaded
-        build. This is the part most likely to silently not work (sourcemap
-        upload path) and worth confirming before relying on it. Also worth a
-        one-time check that Sentry's *native* crash capture (not just the JS
-        handler) actually catches something like the original
-        react/react-native-renderer mismatch, since that's the whole reason
-        this work exists — `Sentry.nativeCrash()` is a lower-effort synthetic
-        test if reproducing the original bug is too invasive.
+        Organization Auth Token — not a per-project token) hasn't been added
+        yet, so the sourcemap/dSYM upload the build-phase script + Gradle
+        plugin do during `expo prebuild`'d builds still no-ops. Once it's
+        added, do the actual end-to-end verify — a deliberate `throw` in a
+        button handler should show up in the Sentry dashboard, symbolicated,
+        within the unsigned/sideloaded build. This is the part most likely to
+        silently not work (sourcemap upload path) and worth confirming before
+        relying on it. Also worth a one-time check that Sentry's *native*
+        crash capture (not just the JS handler) actually catches something
+        like the original react/react-native-renderer mismatch, since that's
+        the whole reason this work exists — `Sentry.nativeCrash()` is a
+        lower-effort synthetic test if reproducing the original bug is too
+        invasive.
 
 ## react/react-native-renderer version guard (shipped)
 
