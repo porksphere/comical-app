@@ -8,8 +8,15 @@
  * Metro re-parents a worker that keeps holding the socket, and on Windows a
  * lingering listener makes `expo start` drop into an interactive "use another
  * port?" prompt), then starts the Expo web dev server with hot reload and opens
- * it in the browser at http://localhost:<PORT>. Ctrl-C — or killing this
+ * it in the browser at http://<lan-ip>:<PORT>. Ctrl-C — or killing this
  * process — tears everything down cleanly via a final port sweep.
+ *
+ * Also presets EXPO_PUBLIC_COMICAL_SERVER to the sibling comical-web dev
+ * server (see comical-web/CLAUDE.md — `bun run dev` there serves on :3100),
+ * addressed by LAN IP rather than localhost so a phone on the same network can
+ * reach both the Expo web page and the API it calls. Override either half
+ * with COMICAL_SERVER_PORT or by setting EXPO_PUBLIC_COMICAL_SERVER yourself
+ * before running this script.
  *
  * Mirrors the workspace-root dev.ts (the comical-web orchestrator): same
  * cross-platform port handling, no bash/awk/netstat shell glue. The app is its
@@ -19,12 +26,43 @@
  * Override the port with PORT=8090 bun run dev.
  */
 import { spawn, spawnSync } from "bun";
+import { createSocket } from "node:dgram";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const isWindows = process.platform === "win32";
 const PORT = Number(process.env.PORT ?? 8081);
+
+/** The IP this machine would use to reach the internet, so phones on the LAN
+ *  can reach it too — `localhost` only resolves on the machine itself.
+ *  Connecting a UDP socket sends no packets, just asks the OS to pick the
+ *  outbound interface for that route; this is more reliable than taking the
+ *  first non-internal interface, since virtual adapters (VirtualBox, Hyper-V,
+ *  WSL) often enumerate before the real Wi-Fi/Ethernet one and aren't
+ *  reachable from other devices. */
+function lanIp(): Promise<string> {
+  return new Promise((resolve) => {
+    const socket = createSocket("udp4");
+    socket.on("error", () => {
+      socket.close();
+      resolve("localhost");
+    });
+    socket.connect(80, "8.8.8.8", () => {
+      const { address } = socket.address();
+      socket.close();
+      resolve(address);
+    });
+  });
+}
+
+const HOST = await lanIp();
+const COMICAL_SERVER_PORT = Number(process.env.COMICAL_SERVER_PORT ?? 3100);
+if (!process.env.EXPO_PUBLIC_COMICAL_SERVER) {
+  process.env.EXPO_PUBLIC_COMICAL_SERVER = `http://${HOST}:${COMICAL_SERVER_PORT}/api`;
+}
+console.log(`==> API backend: ${process.env.EXPO_PUBLIC_COMICAL_SERVER}`);
+console.log(`    (start it with: cd ../comical-web && bun run dev)`);
 
 /** PIDs LISTENING on an exact local port. Metro spawns a child that also holds
  *  the socket and old runs can leave several — so we collect every one. */
@@ -75,6 +113,7 @@ const expo = spawn({
 });
 
 console.log("\nExpo web dev server running. Ctrl-C stops it.");
+console.log(`  http://${HOST}:${PORT}  (phone-reachable)`);
 console.log(`  http://localhost:${PORT}\n`);
 
 let shuttingDown = false;

@@ -77,6 +77,14 @@ socket, so a stale server from a prior run otherwise makes `expo start` drop int
 interactive "use another port?" prompt. Ctrl-C tears everything down and sweeps the port.
 Override the port with `PORT=8090 bun run dev`. First time only: `bun install`.
 
+It also presets `EXPO_PUBLIC_COMICAL_SERVER` to the sibling `comical-web` dev server
+(`http://<your-lan-ip>:3100/api`, detected automatically) so the app talks to a real local
+backend without any manual export — start that server first with `cd ../comical-web && bun
+run dev`. The LAN IP (not `localhost`) is used deliberately so a phone on the same network
+can load the printed `http://<lan-ip>:8081` URL and reach the API too. Override the backend
+port with `COMICAL_SERVER_PORT=...`, or set `EXPO_PUBLIC_COMICAL_SERVER` yourself to point
+elsewhere (e.g. the deployed prod API).
+
 > Web uses a top nav bar instead of the native Liquid Glass tab bar (see the `.web.tsx`
 > splits below); the screens are shared, the nav chrome adapts. `experiments.baseUrl`
 > (`/comical-app`, for GitHub Pages) does not apply to the local dev server — it serves
