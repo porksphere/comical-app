@@ -44,15 +44,15 @@ async function fetchJson<T>(path: string, signal?: AbortSignal): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-/** GET /bridges → the installed bridges (id, display name, nsfw, capabilities). */
+/** GET /bridges → the installed bridges (id, display name, nsfw, capabilities, icon). */
 export async function getBridges(signal?: AbortSignal): Promise<Bridge[]> {
-  const raw = await fetchJson<{ info: Bridge }[]>('/bridges', signal);
+  const raw = await fetchJson<{ info: Bridge & { iconUrl?: string } }[]>('/bridges', signal);
   return raw.map((b) => ({
     id: b.info.id,
     name: b.info.name,
     nsfw: b.info.nsfw ?? false,
     capabilities: b.info.capabilities ?? [],
-    thumbnail: b.info.thumbnail,
+    thumbnail: b.info.iconUrl,
   }));
 }
 
