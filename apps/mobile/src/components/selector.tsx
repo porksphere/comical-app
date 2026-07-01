@@ -1,7 +1,15 @@
 import { Image } from 'expo-image';
+import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { OverlayHeading, useAnchoredOverlay, useOverlay } from '@/components/overlay/overlay';
+import {
+  MeasuredHeader,
+  OptionList,
+  OverlayHeading,
+  useAnchoredOverlay,
+  useListMaxHeight,
+  useOverlay,
+} from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
@@ -63,25 +71,31 @@ function SelectMenu({
   thumbnails?: Record<string, string>;
 }) {
   const { closeTop } = useOverlay();
+  const [headerHeight, setHeaderHeight] = useState(0);
+  const maxHeight = useListMaxHeight(headerHeight);
   return (
     <View style={styles.menu}>
-      <OverlayHeading>{title}</OverlayHeading>
-      {options.map((opt) => (
-        <Pressable
-          key={opt}
-          onPress={() => {
-            onSelect(opt);
-            closeTop();
-          }}>
-          <ThemedView type="backgroundElement" style={styles.row}>
-            {thumbnails?.[opt] ? (
-              <Image source={{ uri: thumbnails[opt] }} style={styles.optionThumb} />
-            ) : null}
-            <ThemedText>{opt}</ThemedText>
-            <View style={[styles.dot, opt === selected && styles.dotOn]} />
-          </ThemedView>
-        </Pressable>
-      ))}
+      <MeasuredHeader onHeight={setHeaderHeight}>
+        <OverlayHeading>{title}</OverlayHeading>
+      </MeasuredHeader>
+      <OptionList maxHeight={maxHeight}>
+        {options.map((opt) => (
+          <Pressable
+            key={opt}
+            onPress={() => {
+              onSelect(opt);
+              closeTop();
+            }}>
+            <ThemedView type="backgroundElement" style={styles.row}>
+              {thumbnails?.[opt] ? (
+                <Image source={{ uri: thumbnails[opt] }} style={styles.optionThumb} />
+              ) : null}
+              <ThemedText>{opt}</ThemedText>
+              <View style={[styles.dot, opt === selected && styles.dotOn]} />
+            </ThemedView>
+          </Pressable>
+        ))}
+      </OptionList>
     </View>
   );
 }
@@ -113,8 +127,9 @@ const styles = StyleSheet.create({
   caretSm: {
     fontSize: 13,
   },
+  // Matches `useListMaxHeight`'s `HEADER_TO_LIST_GAP` reservation (see overlay.tsx).
   menu: {
-    gap: Spacing.two,
+    gap: Spacing.three,
   },
   row: {
     flexDirection: 'row',

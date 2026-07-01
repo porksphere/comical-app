@@ -11,11 +11,12 @@ import {
   type RefObject,
 } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import Animated, {
   Extrapolation,
   interpolate,
   runOnJS,
+  useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
@@ -119,6 +120,121 @@ export function OverlayHeading({ children }: { children: string }) {
     </ThemedText>
   );
 }
+
+const AnimatedScrollView = Animated.createAnimatedComponent(GHScrollView);
+
+// The sheet itself (`OverlaySheet` below) has no max-height/scroll of its
+// own — only a list rendered via `OptionList` scrolls internally — so an
+// under-budgeted cap could make the sheet's total height (handle + header +
+// list + safe-area padding) exceed a short viewport, clipping the list
+// against the screen edge instead of scrolling into view. Rather than guess
+// that budget per caller (title-only vs title+helper vs chips+input+helper
+// all reserve different amounts), each caller measures its own header via
+// `MeasuredHeader` and `useListMaxHeight` computes exactly what's left.
+// A `row`'s rendered height (paddingVertical × 2 + ~24px text line) plus its
+// list's own inter-row gap is ~64px. A cap that isn't a whole multiple of
+// that slices the last visible row mid-height instead of showing it in full
+// — e.g. a 6-option list (6 × 64 - 4 = 380px of content) against a 360px cap
+// left an option showing at ~40 of its 56px, looking cut in half rather than
+// like an intentional scroll-affordance peek. 7 whole rows covers ordinary
+// lists (a handful of genres/tags/bridges); longer ones still scroll —
+// they're well past any reasonable cap.
+const ROW_UNIT_HEIGHT = 64;
+const LIST_MAX_HEIGHT = ROW_UNIT_HEIGHT * 7 - Spacing.two;
+const LIST_MIN_HEIGHT = 160;
+// Matches this file's own handleArea (paddingTop + handle height + paddingBottom).
+const HANDLE_AREA_HEIGHT = Spacing.two + 5 + Spacing.three;
+// The gap between a `MeasuredHeader` and the `OptionList` below it (set on
+// each caller's own wrapping `View`), plus rounding slack.
+const HEADER_TO_LIST_GAP = Spacing.three;
+const SAFETY_MARGIN = Spacing.two;
+// Trailing space *inside* the scrollable list's own content, after the last
+// row — part of `listContent` below, not a separately-painted view and not
+// outer margin on the sheet (that either paints a bar-shaped block in the
+// panel's own fill or, worse, exposes the dimmed backdrop as a stripe below
+// the sheet — both tried and rejected). This just gives the content itself a
+// bit more height, so the last row isn't flush against the sheet's own
+// bottom edge (or, for a short list, against the screen).
+const LIST_TRAILING_SPACE = Spacing.four;
+
+/** How tall an `OptionList` in the current sheet can be, given the height its
+ *  own `MeasuredHeader` (title, helper text, search input, …) measured at. */
+export function useListMaxHeight(headerHeight: number): number {
+  const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
+  // `insets.bottom` matches the sheet's own `paddingBottom` (the real
+  // home-indicator clearance); LIST_TRAILING_SPACE matches this list's own
+  // contentContainerStyle paddingBottom below.
+  const reserved =
+    insets.top + HANDLE_AREA_HEIGHT + headerHeight + HEADER_TO_LIST_GAP + insets.bottom + LIST_TRAILING_SPACE + SAFETY_MARGIN;
+  return Math.max(LIST_MIN_HEIGHT, Math.min(LIST_MAX_HEIGHT, windowHeight - reserved));
+}
+
+/** Wraps a sheet's non-list content (title, helper text, search input, …)
+ *  and reports its rendered height so `useListMaxHeight` can size the list to
+ *  whatever's actually left, instead of guessing a fixed budget per caller. */
+export function MeasuredHeader({ children, onHeight }: { children: ReactNode; onHeight: (h: number) => void }) {
+  return (
+    <View style={listStyles.header} onLayout={(e) => onHeight(e.nativeEvent.layout.height)}>
+      {children}
+    </View>
+  );
+}
+
+/** Caps long option lists with an internal scroll so the sheet stays usable.
+ * `fixed` keeps a constant height (so the sheet doesn't resize while searching).
+ *
+ * Reports its scroll offset to the enclosing overlay sheet (and registers its
+ * ref) so a downward drag at the top of the list chains into dismissing the
+ * sheet. A gesture-handler ScrollView lets that drag run simultaneously with
+ * this list's own scroll.
+ *
+ * Below the last row, both the gaps between rows and the sheet's own
+ * trailing safe-area padding read as the sheet's own panel color — the same
+ * color, so no spacer/bleed view is needed here. An earlier version painted
+ * a separate block in this gap to patch a suspected seam; because that block
+ * was `pointerEvents: 'none'`, pixel probes done via `elementFromPoint` never
+ * saw it (that API skips non-interactive elements), so it shipped even
+ * though it was clearly visible on screen. Screenshots (not DOM color
+ * probing) are what caught it. */
+export function OptionList({
+  children,
+  fixed,
+  maxHeight,
+}: {
+  children: ReactNode;
+  fixed?: boolean;
+  maxHeight: number;
+}) {
+  const sheet = useSheetScroll();
+  const localOffset = useSharedValue(0);
+  const offset = sheet?.scrollOffset ?? localOffset;
+  const onScroll = useAnimatedScrollHandler((e) => {
+    offset.value = e.contentOffset.y;
+  });
+  return (
+    <AnimatedScrollView
+      ref={sheet?.scrollRef as never}
+      onScroll={onScroll}
+      scrollEventThrottle={16}
+      style={fixed ? { height: maxHeight } : { maxHeight }}
+      contentContainerStyle={listStyles.listContent}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}>
+      {children}
+    </AnimatedScrollView>
+  );
+}
+
+const listStyles = StyleSheet.create({
+  header: {
+    gap: Spacing.three,
+  },
+  listContent: {
+    gap: Spacing.two,
+    paddingBottom: LIST_TRAILING_SPACE,
+  },
+});
 
 type Item = { id: number; render: () => ReactNode; anchor?: AnchorRect | null };
 
@@ -345,8 +461,8 @@ function OverlaySheet({
             Just `insets.bottom`, no extra: the sheet itself adds no cushion
             beyond the real home-indicator clearance — breathing room below the
             *content* (so a short list doesn't sit flush) belongs to the
-            scrollable list's own trailing padding (`listContent` in
-            filter-editors.tsx) / the overflow-filters sheet's own content
+            scrollable list's own trailing padding (`OptionList`'s
+            `listContent` above) / the overflow-filters sheet's own content
             padding, not this outer container. Putting it out here as an
             offset (a prior attempt) exposed the dimmed backdrop behind the
             sheet as a large flat stripe — worse than what it replaced. */}

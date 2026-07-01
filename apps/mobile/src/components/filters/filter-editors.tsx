@@ -1,10 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Switch, Text, TextInput, useWindowDimensions, View } from 'react-native';
-import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
-import Animated, { useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
-import { OverlayHeading, useSheetScroll } from '@/components/overlay/overlay';
+import { MeasuredHeader, OptionList, OverlayHeading, useListMaxHeight } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
@@ -389,119 +386,8 @@ function TagChip({
   );
 }
 
-const AnimatedScrollView = Animated.createAnimatedComponent(GHScrollView);
-
-// The overlay sheet (overlay.tsx) has no max-height/scroll of its own — only
-// this list scrolls internally — so an under-budgeted cap could make the
-// sheet's total height (handle + header + list + safe-area padding) exceed a
-// short viewport, clipping the list against the screen edge instead of
-// scrolling into view. Rather than guess that budget per editor (title-only vs
-// title+helper vs chips+input+helper all reserve different amounts), each
-// editor measures its own header via `MeasuredHeader` and `useListMaxHeight`
-// computes exactly what's left.
-// A `row`'s rendered height (paddingVertical: Spacing.three × 2 + ~24px text
-// line) plus the `listContent` gap after it is ~64px. A cap that isn't a whole
-// multiple of that slices the last visible row mid-height instead of showing
-// it in full — e.g. a 6-option list (6 × 64 - 4 = 380px of content) against
-// the old 360px cap left "Gothic" showing at ~40 of its 56px, looking cut in
-// half rather than like an intentional scroll-affordance peek. 7 whole rows
-// covers ordinary filter lists (a handful of genres/tags); longer ones (e.g.
-// Example's 15 genres) still scroll — they're well past any reasonable cap.
-const ROW_UNIT_HEIGHT = 64;
-const LIST_MAX_HEIGHT = ROW_UNIT_HEIGHT * 7 - Spacing.two;
-const LIST_MIN_HEIGHT = 160;
-// Matches overlay.tsx's handleArea (paddingTop + handle height + paddingBottom).
-const HANDLE_AREA_HEIGHT = Spacing.two + 5 + Spacing.three;
-// `body`'s gap between the header wrapper and the list, plus rounding slack.
-const HEADER_TO_LIST_GAP = Spacing.three;
-const SAFETY_MARGIN = Spacing.two;
-// Trailing space *inside* the scrollable list's own content, after the last
-// row — part of `listContent` below, not a separately-painted view and not
-// outer margin on the sheet (that either paints a bar-shaped block in the
-// panel's own fill or, worse, exposes the dimmed backdrop as a stripe below
-// the sheet — both tried and rejected). This just gives the content itself a
-// bit more height, the same way the reference's `#filter-overlay-list` has
-// flat padding on all sides, so the last row isn't flush against the sheet's
-// own bottom edge (or, for a short list, against the screen).
-const LIST_TRAILING_SPACE = Spacing.four;
-
-/** How tall an `OptionList` in the current sheet can be, given the height its
- *  own editor's header (title, helper text, search input, …) measured at. */
-function useListMaxHeight(headerHeight: number): number {
-  const insets = useSafeAreaInsets();
-  const { height: windowHeight } = useWindowDimensions();
-  // `insets.bottom` matches overlay.tsx's `sheet` paddingBottom (the real
-  // home-indicator clearance); LIST_TRAILING_SPACE matches this list's own
-  // contentContainerStyle paddingBottom below.
-  const reserved =
-    insets.top + HANDLE_AREA_HEIGHT + headerHeight + HEADER_TO_LIST_GAP + insets.bottom + LIST_TRAILING_SPACE + SAFETY_MARGIN;
-  return Math.max(LIST_MIN_HEIGHT, Math.min(LIST_MAX_HEIGHT, windowHeight - reserved));
-}
-
-/** Wraps an editor's non-list content (title, helper text, search input, …)
- *  and reports its rendered height so `useListMaxHeight` can size the list to
- *  whatever's actually left, instead of guessing a fixed budget per editor. */
-function MeasuredHeader({ children, onHeight }: { children: React.ReactNode; onHeight: (h: number) => void }) {
-  return (
-    <View style={styles.header} onLayout={(e) => onHeight(e.nativeEvent.layout.height)}>
-      {children}
-    </View>
-  );
-}
-
-/** Caps long option lists with an internal scroll so the sheet stays usable.
- * `fixed` keeps a constant height (so the sheet doesn't resize while searching).
- *
- * Reports its scroll offset to the enclosing overlay sheet (and registers its
- * ref) so a downward drag at the top of the list chains into dismissing the
- * sheet. A gesture-handler ScrollView lets that drag run simultaneously with
- * this list's own scroll. */
-function OptionList({
-  children,
-  fixed,
-  maxHeight,
-}: {
-  children: React.ReactNode;
-  fixed?: boolean;
-  maxHeight: number;
-}) {
-  const sheet = useSheetScroll();
-  const localOffset = useSharedValue(0);
-  const offset = sheet?.scrollOffset ?? localOffset;
-  const onScroll = useAnimatedScrollHandler((e) => {
-    offset.value = e.contentOffset.y;
-  });
-  // Below the last row, both the gaps between rows and the sheet's own
-  // trailing safe-area padding read as `backgroundPanel` (set on the sheet in
-  // overlay.tsx) — the same color, so no spacer/bleed is needed here. An
-  // earlier version painted a `backgroundElement`-colored block in this gap to
-  // patch a suspected seam; because that block was `pointerEvents: 'none'`,
-  // pixel probes done via `elementFromPoint` never saw it (that API skips
-  // non-interactive elements), so it shipped even though it was clearly
-  // visible on screen: a flat, square-cornered grey bar sitting under the
-  // rounded pill rows. Screenshots (not DOM color probing) are what caught it.
-  return (
-    <AnimatedScrollView
-      ref={sheet?.scrollRef as never}
-      onScroll={onScroll}
-      scrollEventThrottle={16}
-      style={fixed ? { height: maxHeight } : { maxHeight }}
-      contentContainerStyle={styles.listContent}
-      keyboardShouldPersistTaps="handled"
-      showsVerticalScrollIndicator={false}>
-      {children}
-    </AnimatedScrollView>
-  );
-}
-
 const styles = StyleSheet.create({
   body: {
-    gap: Spacing.three,
-  },
-  // Wraps an editor's non-list content for `MeasuredHeader`; this gap replaces
-  // `body`'s (which used to separate title/helper/input directly) now that
-  // they're nested one level deeper for measurement.
-  header: {
     gap: Spacing.three,
   },
   toggleRow: {
@@ -562,10 +448,6 @@ const styles = StyleSheet.create({
   },
   stepBtnDisabled: {
     opacity: 0.4,
-  },
-  listContent: {
-    gap: Spacing.two,
-    paddingBottom: LIST_TRAILING_SPACE,
   },
   row: {
     flexDirection: 'row',
