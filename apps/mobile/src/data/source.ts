@@ -154,6 +154,17 @@ const realDataSource: DataSource = {
 
   async getSeriesDetail(bridgeId, seriesId, opts = {}, signal) {
     const info = await api.getSeriesDetail(bridgeId, seriesId, signal);
+    // Bridges with capability "related-series" (e.g. nhentai) omit `relatedSeriesGroups` from the
+    // main response and provide it via a separate endpoint instead — see contract's SeriesInfo docs.
+    // Falling back to a fetch whenever the field is absent covers that case without needing the
+    // bridge's capability list threaded down here; it's cheap for bridges that don't support it too,
+    // since the server short-circuits with `[]` before any upstream fetch.
+    const relatedGroups = info.relatedSeriesGroups
+      ? info.relatedSeriesGroups.map((g) => ({ label: g.label, items: g.series.map(toSeriesEntry) }))
+      : await api.getRelatedSeries(bridgeId, seriesId, signal).then(
+          (groups) => groups.map((g) => ({ label: g.label, items: g.series.map(toSeriesEntry) })),
+          () => undefined,
+        );
     const base: SeriesDetail = {
       id: info.id,
       title: info.title,
@@ -163,7 +174,7 @@ const realDataSource: DataSource = {
       genres: info.genres,
       tagGroups: info.tagGroups,
       meta: buildMeta(info),
-      relatedGroups: info.relatedSeriesGroups?.map((g) => ({ label: g.label, items: g.series.map(toSeriesEntry) })),
+      relatedGroups,
     };
     if (opts.direct) {
       const pages = await api.getSeriesPages(bridgeId, seriesId, signal);

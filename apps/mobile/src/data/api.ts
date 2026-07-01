@@ -240,6 +240,14 @@ export function getSeriesDetail(bridgeId: string, seriesId: string, signal?: Abo
   return fetchJson(`/bridges/${encodeURIComponent(bridgeId)}/series/${encodeURIComponent(seriesId)}`, signal);
 }
 
+/** GET /bridges/{id}/series/{seriesId}/related → related-series rails for bridges (e.g. nhentai) that
+ * advertise capability "related-series" and so omit `relatedSeriesGroups` from the main detail
+ * response, providing it via this separate endpoint instead. Always safe to call: the server returns
+ * `[]` immediately for bridges that don't implement it, with no upstream fetch. */
+export function getRelatedSeries(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<ApiRelatedGroup[]> {
+  return fetchJson(`/bridges/${encodeURIComponent(bridgeId)}/series/${encodeURIComponent(seriesId)}/related`, signal);
+}
+
 /** GET /bridges/{id}/series/{seriesId}/chapters → the series' chapter list. */
 export function getChapters(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<ApiChapter[]> {
   return fetchJson(`/bridges/${encodeURIComponent(bridgeId)}/series/${encodeURIComponent(seriesId)}/chapters`, signal);
