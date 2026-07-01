@@ -12,11 +12,12 @@
  * process — tears everything down cleanly via a final port sweep.
  *
  * Also presets EXPO_PUBLIC_COMICAL_SERVER to the sibling comical-web dev
- * server (see comical-web/CLAUDE.md — `bun run dev` there serves on :3100),
- * addressed by LAN IP rather than localhost so a phone on the same network can
- * reach both the Expo web page and the API it calls. Override either half
- * with COMICAL_SERVER_PORT or by setting EXPO_PUBLIC_COMICAL_SERVER yourself
- * before running this script.
+ * server (see comical-web/CLAUDE.md — `bun run dev` there serves on :3100,
+ * routes at the root with no /api prefix — that only exists behind the prod
+ * reverse proxy), addressed by LAN IP rather than localhost so a phone on the
+ * same network can reach both the Expo web page and the API it calls.
+ * Override either half with COMICAL_SERVER_PORT or by setting
+ * EXPO_PUBLIC_COMICAL_SERVER yourself before running this script.
  *
  * Mirrors the workspace-root dev.ts (the comical-web orchestrator): same
  * cross-platform port handling, no bash/awk/netstat shell glue. The app is its
@@ -59,7 +60,10 @@ function lanIp(): Promise<string> {
 const HOST = await lanIp();
 const COMICAL_SERVER_PORT = Number(process.env.COMICAL_SERVER_PORT ?? 3100);
 if (!process.env.EXPO_PUBLIC_COMICAL_SERVER) {
-  process.env.EXPO_PUBLIC_COMICAL_SERVER = `http://${HOST}:${COMICAL_SERVER_PORT}/api`;
+  // No /api prefix here: that only exists in prod, where SWAG strips it before
+  // proxying to host-server (see comical-web/CLAUDE.md). Direct dev requests
+  // hit host-server's routes at the root, e.g. GET /bridges, not /api/bridges.
+  process.env.EXPO_PUBLIC_COMICAL_SERVER = `http://${HOST}:${COMICAL_SERVER_PORT}`;
 }
 console.log(`==> API backend: ${process.env.EXPO_PUBLIC_COMICAL_SERVER}`);
 console.log(`    (start it with: cd ../comical-web && bun run dev)`);
