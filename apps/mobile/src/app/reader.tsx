@@ -1,3 +1,5 @@
+import { type QueryClient, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -10,8 +12,9 @@ import { SettingsControl } from '@/components/reader/settings-panel';
 import { RetryBlock } from '@/components/retry-block';
 import { ThemedText } from '@/components/themed-text';
 import { WebtoonReader, type WebtoonReaderHandle } from '@/components/reader/webtoon-reader';
-import { isAbort } from '@/data/api';
-import { useDataSource } from '@/data/source';
+import { chapterPagesQuery, directPagesQuery, queryKeys } from '@/data/queries';
+import { useDataSource, useMockActive } from '@/data/source';
+import type { SeriesDetail } from '@/data/types';
 import { useReaderSettings } from '@/hooks/use-reader-settings';
 
 // Full-screen page reader. Resolves a page-URL list from route params and
@@ -20,6 +23,11 @@ import { useReaderSettings } from '@/hooks/use-reader-settings';
 // Always dark — the reader is its own black surface, not a ThemedView.
 
 const CHROME_HIDE_MS = 3000;
+// How many upcoming page images to warm ahead of the reader's position, and how
+// close to the end before the next chapter's pages are prefetched — restores
+// comical-web's `prefetchAhead` / `prefetchNextChapter` reading smoothness.
+const PREFETCH_AHEAD = 4;
+const NEXT_CHAPTER_TRIGGER = 3;
 
 export default function ReaderScreen() {
   const ds = useDataSource();
@@ -34,25 +42,22 @@ export default function ReaderScreen() {
     start?: string;
   }>();
 
-  const [pages, setPages] = useState<string[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [reload, setReload] = useState(0);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    setPages(null);
-    setError(null);
-    const load = chapterId
-      ? ds.getChapterPages(bridgeId ?? '', seed ?? '', chapterId, ctrl.signal)
-      : ds.getDirectPages(bridgeId ?? '', seed ?? '', ctrl.signal);
-    load
-      .then(setPages)
-      .catch((e) => {
-        if (!isAbort(e)) setError(e.message || 'Failed to load pages');
-      });
-    return () => ctrl.abort();
-  }, [ds, bridgeId, seed, chapterId, reload]);
-  const retry = useCallback(() => setReload((n) => n + 1), []);
+  // Cached page fetch: reopening a chapter (or coming back to it) repaints from
+  // the query cache instead of refetching, and next-chapter prefetch below can
+  // pre-populate this same cache so the following chapter opens instantly.
+  const mock = useMockActive();
+  const queryClient = useQueryClient();
+  const {
+    data: pages = null,
+    error: queryError,
+    refetch,
+  } = useQuery(
+    chapterId
+      ? chapterPagesQuery(ds, mock, bridgeId ?? '', seed ?? '', chapterId)
+      : directPagesQuery(ds, mock, bridgeId ?? '', seed ?? ''),
+  );
+  const error = queryError ? (queryError as Error).message || 'Failed to load pages' : null;
+  const retry = refetch;
 
   const startIndex = useMemo(
     () => Math.max(0, Math.min((pages?.length ?? 1) - 1, Number(start ?? 0) || 0)),
@@ -79,6 +84,21 @@ export default function ReaderScreen() {
     currentRef.current = startIndex;
     setCurrentPage(startIndex);
   }, [pages, startIndex]);
+
+  // Warm-ahead: prefetch the next few page images into expo-image's cache as the
+  // reader advances, and — for chaptered series, once near the end — prefetch the
+  // next chapter's page list into the query cache so opening it is instant.
+  useEffect(() => {
+    if (!pages || pages.length === 0) return;
+    const ahead = pages.slice(currentPage + 1, currentPage + 1 + PREFETCH_AHEAD);
+    if (ahead.length) void Image.prefetch(ahead);
+
+    if (!chapterId || currentPage < pages.length - NEXT_CHAPTER_TRIGGER) return;
+    const nextId = nextChapterId(queryClient, mock, bridgeId ?? '', seed ?? '', chapterId);
+    if (nextId) {
+      void queryClient.prefetchQuery(chapterPagesQuery(ds, mock, bridgeId ?? '', seed ?? '', nextId));
+    }
+  }, [pages, currentPage, chapterId, ds, mock, queryClient, bridgeId, seed]);
 
   const pagedRef = useRef<PagedReaderHandle>(null);
   const webtoonRef = useRef<WebtoonReaderHandle>(null);
@@ -196,6 +216,28 @@ export default function ReaderScreen() {
       <SettingsControl visible={chromeVisible} />
     </View>
   );
+}
+
+/**
+ * The chapter to read after `chapterId`, resolved from the cached series detail
+ * if it's warm (i.e. the reader was opened from the series screen). Series detail
+ * lists chapters newest-first — the Read button starts at the last element — so
+ * the next chapter in reading order sits one index earlier. Returns null when the
+ * detail isn't cached or the current chapter is already the newest.
+ */
+function nextChapterId(
+  qc: QueryClient,
+  mock: boolean,
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+): string | null {
+  const detail = qc.getQueryData<SeriesDetail>(queryKeys.seriesDetail(mock, bridgeId, seriesId, false));
+  const chapters = detail?.chapters;
+  if (!chapters?.length) return null;
+  const i = chapters.findIndex((c) => c.id === chapterId);
+  if (i <= 0) return null;
+  return chapters[i - 1].id;
 }
 
 const styles = StyleSheet.create({

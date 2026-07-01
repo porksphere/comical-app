@@ -224,6 +224,7 @@ export function SeriesCard({
                 source={{ uri: entry.cover }}
                 style={StyleSheet.absoluteFill}
                 contentFit="cover"
+                cachePolicy="memory-disk"
                 transition={200}
                 onLoad={() => setLoaded(true)}
               />

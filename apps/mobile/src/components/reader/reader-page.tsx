@@ -65,6 +65,7 @@ export function ReaderPage({
           source={{ uri }}
           style={StyleSheet.absoluteFill}
           contentFit={fit === 'contain' ? 'contain' : 'cover'}
+          cachePolicy="memory-disk"
           transition={150}
           onLoad={(e: LoadEvent) => {
             setLoaded(true);

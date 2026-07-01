@@ -1,6 +1,6 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
 import {
   Platform,
   Pressable,
@@ -23,8 +23,8 @@ import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
-import { isAbort } from '@/data/api';
-import { useDataSource } from '@/data/source';
+import { isFavoriteQuery, queryKeys, seriesDetailQuery } from '@/data/queries';
+import { useDataSource, useMockActive } from '@/data/source';
 import type { SeriesDetail } from '@/data/types';
 import { LARGE_SCREEN_BREAKPOINT, useTopBarHeight } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
@@ -49,28 +49,23 @@ export default function SeriesScreen() {
   // resolution) — undo that here.
   const bridge = bridgeParam ? decodeURIComponent(bridgeParam) : undefined;
 
-  const [series, setSeries] = useState<SeriesDetail | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [reload, setReload] = useState(0);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    setSeries(null);
-    setError(null);
-    ds.getSeriesDetail(
-      bridgeId ?? '',
-      id ?? '',
-      { direct: direct === '1', bridgeName: bridge ?? 'Library', title },
-      ctrl.signal,
-    )
-      .then(setSeries)
-      .catch((e) => {
-        if (!isAbort(e)) setError(e.message || 'Failed to load series');
-      });
-    return () => ctrl.abort();
-  }, [ds, id, bridgeId, bridge, title, direct, reload]);
-
-  const retry = useCallback(() => setReload((n) => n + 1), []);
+  // Cached series fetch: revisiting a series (or reopening it from the reader)
+  // now repaints instantly from the query cache instead of refetching, and the
+  // result survives an app restart via the persisted cache (see query-client.ts).
+  const mock = useMockActive();
+  const {
+    data: series = null,
+    error: queryError,
+    refetch,
+  } = useQuery(
+    seriesDetailQuery(ds, mock, bridgeId ?? '', id ?? '', {
+      direct: direct === '1',
+      bridgeName: bridge ?? 'Library',
+      title,
+    }),
+  );
+  const error = queryError ? (queryError as Error).message || 'Failed to load series' : null;
+  const retry = refetch;
 
   const isLarge = width >= LARGE_SCREEN_BREAKPOINT;
   // Shared with the browse bar so both top bars are the same height.
@@ -155,27 +150,46 @@ function SeriesBody({
   const ds = useDataSource();
   const router = useRouter();
   const theme = useTheme();
+  const mock = useMockActive();
+  const queryClient = useQueryClient();
 
-  // Favorite toggle: best-effort — a bridge without the "favorites" capability
-  // (or one requiring auth the user hasn't configured, e.g. a session token
-  // setting) 400s/401s here; the star just stays unfilled rather than surfacing
-  // a full error state for what's a peripheral action, not the page's content.
-  const [favorited, setFavorited] = useState<boolean | null>(null);
-  useEffect(() => {
-    if (!bridgeId) return;
-    const ctrl = new AbortController();
-    ds.isFavorite(bridgeId, series.id, ctrl.signal)
-      .then(setFavorited)
-      .catch(() => setFavorited(false));
-    return () => ctrl.abort();
-  }, [ds, bridgeId, series.id]);
+  // Favorite state: cached per series so the star is warm on revisit. Best-effort
+  // — a bridge without the "favorites" capability (or one requiring auth the user
+  // hasn't configured) 400s/401s here; the star just stays unfilled rather than
+  // surfacing a full error state for what's a peripheral action, not content.
+  const favKey = queryKeys.isFavorite(mock, bridgeId ?? '', series.id);
+  const { data: favData, isError: favIsError } = useQuery({
+    ...isFavoriteQuery(ds, mock, bridgeId ?? '', series.id),
+    // A favorites check that errors (unsupported/unauthed) should read as "not
+    // favorited", not spin a retry loop — keep it quiet like the previous
+    // best-effort catch (the star just stays unfilled).
+    retry: false,
+  });
+  // `null` only while still loading (toggle disabled); an errored check reads as
+  // `false` so the button stays usable, matching the prior best-effort behavior.
+  const favorited = favData ?? (favIsError ? false : null);
+  // Optimistic toggle: flip the cached value immediately, invalidate the
+  // favorites list so it reflects the change, and roll back on failure — mirrors
+  // comical-web's optimistic favorite + `favoritesCache.delete` invalidation.
+  const favMutation = useMutation({
+    mutationFn: (next: boolean) =>
+      next ? ds.addFavorite(bridgeId!, series.id) : ds.removeFavorite(bridgeId!, series.id),
+    onMutate: async (next: boolean) => {
+      await queryClient.cancelQueries({ queryKey: favKey });
+      const prev = queryClient.getQueryData<boolean>(favKey);
+      queryClient.setQueryData(favKey, next);
+      return { prev };
+    },
+    onError: (_e, _next, ctx) => {
+      if (ctx) queryClient.setQueryData(favKey, ctx.prev ?? false);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['favorites', mock, bridgeId] });
+    },
+  });
   const toggleFavorite = () => {
     if (!bridgeId || favorited === null) return;
-    const next = !favorited;
-    setFavorited(next);
-    (next ? ds.addFavorite(bridgeId, series.id) : ds.removeFavorite(bridgeId, series.id)).catch(() =>
-      setFavorited(!next),
-    );
+    favMutation.mutate(!favorited);
   };
 
   // Cover image + optional chapter-count badge — shared between layouts.
@@ -185,6 +199,7 @@ function SeriesBody({
         source={{ uri: series.cover }}
         style={isLarge ? styles.coverLarge : styles.cover}
         contentFit="cover"
+        cachePolicy="memory-disk"
         transition={200}
       />
       {series.chapterCount != null && (
