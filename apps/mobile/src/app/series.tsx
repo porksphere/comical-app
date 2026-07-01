@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChipRow, TagGroupRow } from '@/components/chip';
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
-import { Rail } from '@/components/rail';
+import { Rail, RailSkeleton } from '@/components/rail';
 import { RetryBlock } from '@/components/retry-block';
 import { ActionButton, NewBadge } from '@/components/series/action-button';
 import { ChaptersSection } from '@/components/series/chapters-section';
@@ -23,7 +23,7 @@ import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
-import { isFavoriteQuery, queryKeys, seriesDetailQuery } from '@/data/queries';
+import { isFavoriteQuery, queryKeys, relatedGroupsQuery, seriesDetailQuery } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import type { SeriesDetail } from '@/data/types';
 import { LARGE_SCREEN_BREAKPOINT, useTopBarHeight } from '@/hooks/use-responsive';
@@ -168,6 +168,16 @@ function SeriesBody({
   // `null` only while still loading (toggle disabled); an errored check reads as
   // `false` so the button stays usable, matching the prior best-effort behavior.
   const favorited = favData ?? (favIsError ? false : null);
+
+  // Related-series rails: the main query leaves `relatedGroups` unset and flags
+  // `relatedGroupsDeferred` when the bridge only serves them via a separate,
+  // slower endpoint (see source.ts) — fetch that lazily here so the rest of the
+  // page never waits on it, and show a rail skeleton in its place meanwhile.
+  const needsRelatedFetch = !!series.relatedGroupsDeferred && !series.relatedGroups;
+  const { data: fetchedRelated, isLoading: relatedLoading } = useQuery(
+    relatedGroupsQuery(ds, mock, bridgeId ?? '', series.id, needsRelatedFetch),
+  );
+  const relatedGroups = series.relatedGroups ?? fetchedRelated;
   // Optimistic toggle: flip the cached value immediately, invalidate the
   // favorites list so it reflects the change, and roll back on failure — mirrors
   // comical-web's optimistic favorite + `favoritesCache.delete` invalidation.
@@ -331,9 +341,9 @@ function SeriesBody({
 
       {/* Related rails (per-bridge): full-bleed, outside the padded inner. A
           bridge may surface any number of labeled groups (sequels, similar, …). */}
-      {series.relatedGroups?.length ? (
+      {relatedGroups?.length ? (
         <View style={styles.related}>
-          {series.relatedGroups.map(
+          {relatedGroups.map(
             (group, i) =>
               group.items.length > 0 && (
                 <Rail
@@ -346,6 +356,10 @@ function SeriesBody({
                 />
               ),
           )}
+        </View>
+      ) : needsRelatedFetch && relatedLoading ? (
+        <View style={styles.related}>
+          <RailSkeleton viewportWidth={width} />
         </View>
       ) : null}
     </>

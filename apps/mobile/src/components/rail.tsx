@@ -7,6 +7,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { SeriesCard, TitlePeek, type CardSize } from '@/components/series-card';
+import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { useIsCompact, useIsLargeScreen } from '@/hooks/use-responsive';
@@ -230,6 +231,34 @@ export function Rail({
   );
 }
 
+/** Generic "a rail is loading" placeholder — shown wherever a rail's data
+ *  hasn't resolved yet (e.g. a related-series rail lazily fetched after the
+ *  rest of the series page, or the home rails during a bridge/page switch).
+ *  Mirrors the real `Rail`'s shape (heading + a row of 2:3 cards) without
+ *  knowing the eventual title/item count, same way `SeriesSkeleton` mirrors
+ *  series content it hasn't fetched yet. */
+export function RailSkeleton({ viewportWidth }: { viewportWidth: number }) {
+  const wide = useIsLargeScreen();
+  const stripGap = stripGapFor(viewportWidth);
+  const cardWidth = wide ? gridCardWidth(viewportWidth, stripGap) : cardWidthFor('regular', viewportWidth);
+  const count = wide ? GRID_COLUMNS : 4;
+  return (
+    <View style={styles.section}>
+      <View style={styles.head}>
+        <Skeleton style={styles.skelHeadTitle} />
+      </View>
+      <View style={[styles.strip, styles.skelStrip, { gap: stripGap }]}>
+        {Array.from({ length: count }).map((_, i) => (
+          <View key={i} style={{ width: cardWidth }}>
+            <Skeleton style={{ width: cardWidth, height: cardWidth * COVER_RATIO, borderRadius: 8 }} />
+            <Skeleton style={styles.skelCardLine} />
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 export function SectionHead({ title, onSeeAll }: { title: string; onSeeAll?: () => void }) {
   const theme = useTheme();
   // Match the reference's `.section-head h3`: 1.2rem mobile / 1.5rem desktop.
@@ -295,5 +324,19 @@ const styles = StyleSheet.create({
   },
   gridRow: {
     flexDirection: 'row',
+  },
+  skelHeadTitle: {
+    width: 140,
+    height: 20,
+    borderRadius: 4,
+  },
+  skelStrip: {
+    flexDirection: 'row',
+  },
+  skelCardLine: {
+    marginTop: Spacing.one,
+    height: 12,
+    width: '80%',
+    borderRadius: 4,
   },
 });
