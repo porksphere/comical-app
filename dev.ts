@@ -111,6 +111,10 @@ console.log(`==> Starting Expo web dev server on :${PORT}...`);
 const expo = spawn({
   cmd: ["bunx", "expo", "start", "--web", "--port", String(PORT)],
   cwd: mobileDir,
+  // Bun.spawn's default env doesn't reflect mutations made to process.env at
+  // runtime (like the EXPO_PUBLIC_COMICAL_SERVER assignment above) — it must
+  // be passed explicitly or the child silently falls back to its own defaults.
+  env: { ...process.env },
   stdout: "inherit",
   stderr: "inherit",
   stdin: "inherit",
