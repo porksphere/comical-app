@@ -17,6 +17,9 @@ import type {
   SeriesDetail,
   SeriesEntry,
   TagGroup,
+  TrackerLink,
+  TrackerSearchResult,
+  TrackerService,
 } from './types';
 import type { ApiFilter, ApiSortOption } from './api';
 
@@ -32,6 +35,9 @@ export type {
   SeriesDetail,
   SeriesEntry,
   TagGroup,
+  TrackerLink,
+  TrackerSearchResult,
+  TrackerService,
 } from './types';
 
 /**
@@ -42,7 +48,7 @@ export type {
 export const LONG_TITLE =
   'I Got a Cheat Skill in Another World and Became Unrivaled in the Real World, Too: The Saga of the Reincarnated Cartographer';
 
-const TITLES = [
+export const TITLES = [
   'The Silent Sea', 'Crimson Harbor', 'Paper Moons', 'A Study in Ash',
   'Northern Lights', 'The Glass Garden', 'Echoes of Tomorrow', 'Saltwater Hymns',
   'The Last Cartographer', 'Velvet Machine', 'Whisper of Pines', 'Iron & Ink',
@@ -105,6 +111,17 @@ export function readerPagesForChapter(chapterId: string): string[] {
 export const SERIES_OPEN_DELAY_MS = 900;
 /** Simulated latency (ms) for loading the next infinite-scroll grid page. */
 export const PAGE_LOAD_DELAY_MS = 900;
+/** Simulated latency (ms) for a tracker link / unlink / sync action. */
+export const TRACKER_ACTION_DELAY_MS = 500;
+
+/** Available tracker services a series can be linked to. Mirrors the
+ *  reference's `/trackers` registry (each bridge-agnostic, configured once in
+ *  Settings and reused across every series). */
+export const TRACKER_SERVICES: TrackerService[] = [
+  { id: 'anilist', name: 'AniList' },
+  { id: 'mal', name: 'MyAnimeList' },
+  { id: 'kitsu', name: 'Kitsu' },
+];
 
 function entry(seed: string, i: number, opts: { badges?: boolean; unread?: boolean; sub?: boolean } = {}): SeriesEntry {
   const h = hash(seed);
@@ -199,6 +216,33 @@ function mockChapters(seed: string, count: number): Chapter[] {
   });
 }
 
+/** Deterministic 0–2 tracker links for a series, seeded off its id so a given
+ *  series always opens with the same linked trackers / progress / sync time. */
+function mockTrackerLinks(seed: string, chapterCount: number): TrackerLink[] {
+  const h = hash(`trackers:${seed}`);
+  const count = h % 3;
+  return TRACKER_SERVICES.slice(0, count).map((s, i) => ({
+    trackerId: s.id,
+    externalId: String(10000 + ((h + i * 97) % 90000)),
+    externalTitle: TITLES[(h + i) % TITLES.length],
+    chaptersRead: chapterCount > 0 ? (h + i * 13) % chapterCount : 0,
+    lastSyncAt: Date.now() - ((h + i * 53) % 14) * DAY,
+  }));
+}
+
+/** Mock catalog search for the "+ Link tracker" form: substring-matches the
+ *  shared title pool, standing in for a tracker's real search API. */
+export function mockTrackerSearch(trackerId: string, query: string): TrackerSearchResult[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  return TITLES.filter((t) => t.toLowerCase().includes(q))
+    .slice(0, 6)
+    .map((title) => {
+      const h = hash(`${trackerId}:${title}`);
+      return { externalId: String(10000 + (h % 90000)), title, thumbnail: cover(`tracker-${h}`) };
+    });
+}
+
 /**
  * Build a series detail. `id` seeds deterministic content; a couple of seeds
  * exercise the per-bridge-dynamic branches so the UI can be checked with and
@@ -249,6 +293,7 @@ export function mockSeries(
       : TAG_GROUPS;
     base.hasSources = h % 2 === 0;
     base.hasTrackers = true;
+    base.trackers = mockTrackerLinks(seed, chapterCount);
     base.newCount = h % 5 === 0 ? 3 : undefined;
     // Two groups, so multi-group related rendering is exercisable in mock mode too.
     base.relatedGroups = [

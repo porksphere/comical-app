@@ -18,6 +18,7 @@ import { Rail } from '@/components/rail';
 import { RetryBlock } from '@/components/retry-block';
 import { ActionButton, NewBadge } from '@/components/series/action-button';
 import { ChaptersSection } from '@/components/series/chapters-section';
+import { TrackerButton } from '@/components/series/tracker-panel';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -218,7 +219,7 @@ function SeriesBody({
       />
       <ActionButton label="＋  Library" />
       {series.hasSources && <ActionButton label="Sources" caret />}
-      {series.hasTrackers && <ActionButton label="Trackers" caret />}
+      {series.hasTrackers && <TrackerButton seriesId={series.id} initialLinks={series.trackers ?? []} />}
       <ActionButton label={favorited ? '★  Favorited' : '☆  Favorite'} onPress={toggleFavorite} />
       {series.newCount != null && <NewBadge count={series.newCount} />}
     </View>

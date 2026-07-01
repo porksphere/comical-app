@@ -100,7 +100,12 @@ export const Spacing = {
   six: 64,
 } as const;
 
-export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
+// Bottom padding a scrolling screen reserves so its last content clears the tab
+// bar. On native this is the OS tab bar; on web the mobile bottom nav is an
+// absolute overlay (so content scrolls behind it, and stays visible when the bar
+// fades on scroll — see app-tabs.web.tsx), so web reserves roughly the bar's
+// height here. Screens add `insets.bottom` on top of this.
+export const BottomTabInset = Platform.select({ ios: 50, android: 80, web: 48 }) ?? 0;
 /** Max width of the series-detail reading column (cover + metadata). */
 export const MaxContentWidth = 800;
 /** Max width of the top-level views (browse grid, library, settings, …),

@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { useOverlay } from '@/components/overlay/overlay';
+import { useAnchoredOverlay, useOverlay, useOverlayPresentation } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
@@ -63,7 +63,6 @@ export function FilterBar({
   onSortChange: (sort: SortState) => void;
   searchActive: boolean;
 }) {
-  const { open } = useOverlay();
   const wide = useIsLargeScreen();
 
   const [containerW, setContainerW] = useState(0);
@@ -89,26 +88,24 @@ export function FilterBar({
       {hidden.length > 0 && (
         <OverflowChip
           count={hidden.length}
-          onPress={() => open(() => <FiltersSheet defs={hidden} initial={values} onChange={onValueChange} />)}
+          render={() => <FiltersSheet defs={hidden} initial={values} onChange={onValueChange} />}
         />
       )}
       {searchActive && hasSort && (
         <SortButton
           label={currentSortLabel}
           showLabel={wide}
-          onPress={() =>
-            open(() => (
-              <OptionMenu
-                title="Sort by"
-                options={sortOptions.map((o) => o.label)}
-                selected={currentSortLabel}
-                onSelect={(label) => {
-                  const opt = sortOptions.find((o) => o.label === label);
-                  if (opt) onSortChange({ key: opt.key, ascending: true });
-                }}
-              />
-            ))
-          }
+          render={() => (
+            <OptionMenu
+              title="Sort by"
+              options={sortOptions.map((o) => o.label)}
+              selected={currentSortLabel}
+              onSelect={(label) => {
+                const opt = sortOptions.find((o) => o.label === label);
+                if (opt) onSortChange({ key: opt.key, ascending: true });
+              }}
+            />
+          )}
         />
       )}
     </View>
@@ -117,19 +114,21 @@ export function FilterBar({
 
 /** Sort control — shares the filter rows' height/radius/background. Shows the
  *  current sort value as a labeled pill when there's room; on narrow viewports it
- *  collapses to an icon-only square so it stops crowding the bar. */
+ *  collapses to an icon-only square so it stops crowding the bar. Opens its menu
+ *  anchored to itself (desktop popover / mobile sheet). */
 function SortButton({
   label,
   showLabel,
-  onPress,
+  render,
 }: {
   label: string;
   showLabel: boolean;
-  onPress: () => void;
+  render: () => ReactNode;
 }) {
   const theme = useTheme();
+  const { ref, openAt } = useAnchoredOverlay();
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel="Sort">
+    <Pressable ref={ref} onPress={() => openAt(render)} accessibilityRole="button" accessibilityLabel="Sort">
       <ThemedView type="backgroundElement" style={[styles.sortButton, !showLabel && styles.sortButtonIcon]}>
         <SortIcon color={theme.text} />
         {showLabel && <ThemedText type="smallBold">{label}</ThemedText>}
@@ -139,10 +138,15 @@ function SortButton({
 }
 
 /** Collapsed funnel chip standing in for the filters that didn't fit on the line. */
-function OverflowChip({ count, onPress }: { count: number; onPress: () => void }) {
+function OverflowChip({ count, render }: { count: number; render: () => ReactNode }) {
   const theme = useTheme();
+  const { ref, openAt } = useAnchoredOverlay();
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${count} more filters`}>
+    <Pressable
+      ref={ref}
+      onPress={() => openAt(render)}
+      accessibilityRole="button"
+      accessibilityLabel={`${count} more filters`}>
       <ThemedView type="backgroundElement" style={styles.overflowChip}>
         <FiltersIcon color={theme.text} />
         <ThemedText type="smallBold">{`+${count}`}</ThemedText>
@@ -221,12 +225,17 @@ function SheetContent({
   headerAction?: ReactNode;
   children: ReactNode;
 }) {
+  // The popover is anchored to the trigger that already names it, so the heading
+  // (and the redundant confirm check — outside-click dismisses) is sheet-only.
+  const showHeader = useOverlayPresentation() === 'sheet';
   return (
     <View style={styles.content}>
-      <View style={styles.sheetHeader}>
-        <ThemedText type="subtitle">{title}</ThemedText>
-        {headerAction}
-      </View>
+      {showHeader && (
+        <View style={styles.sheetHeader}>
+          <ThemedText type="subtitle">{title}</ThemedText>
+          {headerAction}
+        </View>
+      )}
       {children}
     </View>
   );

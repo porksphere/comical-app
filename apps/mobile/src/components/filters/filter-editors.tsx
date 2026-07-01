@@ -4,7 +4,7 @@ import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import Animated, { useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useSheetScroll } from '@/components/overlay/overlay';
+import { OverlayHeading, useSheetScroll } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
@@ -59,17 +59,9 @@ function ToggleEditor({
 }) {
   return (
     <View style={[styles.body, styles.toggleRow]}>
-      <Title>{def.label}</Title>
+      <OverlayHeading>{def.label}</OverlayHeading>
       <Switch value={!!value} onValueChange={onChange} />
     </View>
-  );
-}
-
-function Title({ children }: { children: string }) {
-  return (
-    <ThemedText type="subtitle" style={styles.title}>
-      {children}
-    </ThemedText>
   );
 }
 
@@ -86,7 +78,7 @@ function StringEditor({
   const [text, setText] = useState(value ?? '');
   return (
     <View style={styles.body}>
-      <Title>{def.label}</Title>
+      <OverlayHeading>{def.label}</OverlayHeading>
       <TextInput
         value={text}
         onChangeText={(t) => {
@@ -119,7 +111,7 @@ function NumberEditor({
   };
   return (
     <View style={styles.body}>
-      <Title>{def.label}</Title>
+      <OverlayHeading>{def.label}</OverlayHeading>
       <View style={styles.stepper}>
         <StepperButton label="−" disabled={n <= def.min} onPress={() => set(n - step)} />
         <ThemedText type="title" style={styles.stepperValue}>
@@ -177,7 +169,7 @@ function MultiEditor({
   return (
     <View style={styles.body}>
       <MeasuredHeader onHeight={setHeaderHeight}>
-        <Title>{def.label}</Title>
+        <OverlayHeading>{def.label}</OverlayHeading>
       </MeasuredHeader>
       <OptionList maxHeight={maxHeight}>
         {def.options.map((opt) => (
@@ -218,7 +210,7 @@ function TriEditor({
   return (
     <View style={styles.body}>
       <MeasuredHeader onHeight={setHeaderHeight}>
-        <Title>{def.label}</Title>
+        <OverlayHeading>{def.label}</OverlayHeading>
         <ThemedText type="small" themeColor="textSecondary">
           Tap to include, tap again to exclude.
         </ThemedText>
@@ -318,7 +310,7 @@ function TagSearchEditor({
             ))}
           </View>
         ) : (
-          <Title>{def.label}</Title>
+          <OverlayHeading>{def.label}</OverlayHeading>
         )}
         <TextInput
           value={query}
@@ -516,9 +508,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-  },
-  title: {
-    marginBottom: Spacing.one,
   },
   // Selected-tag chips shown in place of the title; same bottom spacing so the
   // header height stays steady as tags are added/removed.

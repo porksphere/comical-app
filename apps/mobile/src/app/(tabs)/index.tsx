@@ -23,13 +23,12 @@ import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { isAbort, pageOptions } from '@/data/api';
 import { useDataSource, type QueryOpts } from '@/data/source';
 import type { Bridge, BridgeList, HomeGridSection, RailSection, SeriesEntry } from '@/data/types';
-import { useTopBarHeight } from '@/hooks/use-responsive';
+import { useIsCompact, useTopBarHeight } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 
-// Scroll distance over which the top bar's bottom divider fades in. The bar is
-// static (no collapse), so the only scroll-driven cue is this divider: absent at
-// the very top, present once content scrolls under it (mirrors the reference's
-// `.stuck` divider).
+// Scroll distance over which the top bar's bottom divider fades in: absent at the
+// very top (once collapsed, on narrow viewports), present once content scrolls
+// under it (mirrors the reference's `.stuck` divider).
 const DIVIDER_SCROLL = Spacing.three;
 // The reference's mobile grid uses a tighter inter-card gap than its row gap
 // (`.grid { gap: 1rem 0.6rem }`, i.e. ~9.6px columns vs 16px rows) — Spacing.two
@@ -40,6 +39,16 @@ const GRID_COLUMN_GAP = Spacing.two;
  *  spamming the bridge's backend on every tap, mirroring the reference's
  *  `doSearchIfChanged` snapshot-diff-on-close contract (app.ts:4765). */
 const FILTER_DEBOUNCE_MS = 500;
+
+// Narrow-mobile only: at the very top the bar gets this much extra height (split
+// above/below the centred selector row as breathing room) and the bridge
+// thumbnail grows by THUMB_GROWTH. Both ease back to the resting dimensions over
+// the first EXPAND_EXTRA px of scroll, so once scrolled the bar matches every
+// other viewport. The expansion is purely cosmetic — `EXPAND_EXTRA` is also the
+// scroll distance the collapse spans, which keeps the content edge pinned to the
+// bar's bottom throughout (see the paddingTop note on the list).
+const EXPAND_EXTRA = Spacing.four;
+const THUMB_GROWTH = 12;
 
 type GridItem = SeriesEntry & { spacer?: boolean };
 /** A drilled-into rail: its list id (for pagination) + display title. */
@@ -324,6 +333,9 @@ export default function BrowseScreen() {
   const barHeight = useTopBarHeight();
   // Match the bridge dropdown's thumbnail size so the bar reads at the same scale.
   const thumbSize = BridgeThumbSize;
+  // Only narrow (mobile) viewports get the scroll-driven expand/collapse; on wider
+  // screens the bar is static and these expansions are zeroed out below.
+  const compact = useIsCompact();
   const numColumns =
     !hydrated || width < 768 ? 3 : Math.min(6, Math.max(3, Math.floor(width / 200)));
   // Single hydration-safe viewport width for the rails: a deterministic mobile
@@ -342,34 +354,67 @@ export default function BrowseScreen() {
     return [...gridItems, ...spacers];
   }, [gridItems, numColumns]);
 
-  // Static top bar: the bridge/page selectors sit in a fixed band (barHeight
-  // below the safe-area inset) and stay put as the page scrolls. The only
-  // scroll-driven cue is the bottom divider, which is absent at the very top and
-  // fades in once content scrolls under the bar — driven on the UI thread so it
-  // tracks the scroll without per-frame re-renders.
+  // Top bar: the bridge/page selectors sit in a band (barHeight below the
+  // safe-area inset) overlaid on the scrolling list. On narrow viewports the band
+  // is taller at the very top and eases down to barHeight over the first
+  // EXPAND_EXTRA px of scroll; on wider viewports `expand` is 0 so it stays
+  // static. The collapse and the bottom divider are driven on the UI thread so
+  // the bar tracks the scroll without per-frame re-renders.
+  const expand = compact ? EXPAND_EXTRA : 0;
+  const thumbGrowth = compact ? THUMB_GROWTH : 0;
+  // Resting (collapsed) header height; the list pads to headerHeight + expand so
+  // the first row clears the bar at its tallest.
   const headerHeight = insets.top + barHeight;
   const scrollY = useSharedValue(0);
   const scrollHandler = useAnimatedScrollHandler((e) => {
     scrollY.value = e.contentOffset.y;
   });
   const hairline = theme.hairline;
-  const headerDividerStyle = useAnimatedStyle(() => ({
-    borderBottomColor: interpolateColor(scrollY.value, [0, DIVIDER_SCROLL], ['rgba(0,0,0,0)', hairline]),
+  // 0 at the top → 1 once the bar has fully collapsed (and stays 1 thereafter).
+  // When `expand` is 0 (wide viewports) it is always 1, i.e. fully collapsed.
+  const collapseProgress = (y: number) => {
+    'worklet';
+    return expand > 0 ? Math.min(Math.max(y / expand, 0), 1) : 1;
+  };
+  const headerStyle = useAnimatedStyle(() => ({
+    height: headerHeight + (1 - collapseProgress(scrollY.value)) * expand,
+    // The divider belongs to the resting bar, so it only begins to appear once the
+    // expansion has collapsed away.
+    borderBottomColor: interpolateColor(
+      scrollY.value,
+      [expand, expand + DIVIDER_SCROLL],
+      ['rgba(0,0,0,0)', hairline],
+    ),
   }));
+  const selectorRowStyle = useAnimatedStyle(() => ({
+    height: barHeight + (1 - collapseProgress(scrollY.value)) * expand,
+  }));
+  const thumbStyle = useAnimatedStyle(() => {
+    const size = thumbSize + (1 - collapseProgress(scrollY.value)) * thumbGrowth;
+    return { width: size, height: size };
+  });
 
   const topBar = (
     <Animated.View
       pointerEvents="box-none"
       style={[
         styles.topBar,
-        { height: headerHeight, paddingTop: insets.top, backgroundColor: theme.background },
-        headerDividerStyle,
+        { paddingTop: insets.top, backgroundColor: theme.background },
+        headerStyle,
       ]}>
       {/* Inner row capped to the content width so the selectors line up with the
-          grid below, while the bar background stays full-bleed. */}
-      <View pointerEvents="box-none" style={[styles.selectorRow, { height: barHeight }]}>
+          grid below, while the bar background stays full-bleed. The row grows with
+          the band (content stays vertically centred) for symmetric breathing room. */}
+      <Animated.View pointerEvents="box-none" style={[styles.selectorRow, selectorRowStyle]}>
         {currentBridge?.thumbnail ? (
-          <Image source={{ uri: currentBridge.thumbnail }} style={[styles.bridgeThumb, { width: thumbSize, height: thumbSize }]} />
+          // Animate the wrapping View (a plain host component) rather than the
+          // expo-image `Image` itself — `Image` is a composite class component, and
+          // wrapping it directly with `Animated.createAnimatedComponent` is fragile
+          // on native (crashed on launch; fine on web, where expo-image swaps to a
+          // ref-forwarding `<img>` container, masking the issue in dev).
+          <Animated.View style={[styles.bridgeThumb, thumbStyle]}>
+            <Image source={{ uri: currentBridge.thumbnail }} style={StyleSheet.absoluteFill} />
+          </Animated.View>
         ) : null}
         <Selector
           title="Bridge"
@@ -380,7 +425,7 @@ export default function BrowseScreen() {
           thumbnails={bridgeThumbnails}
         />
         <Selector title="Page" value={page} options={pages} onChange={selectPage} size="subtitle" />
-      </View>
+      </Animated.View>
     </Animated.View>
   );
 
@@ -488,7 +533,10 @@ export default function BrowseScreen() {
         columnWrapperStyle={[styles.row, { gap: GRID_COLUMN_GAP }]}
         contentContainerStyle={[
           styles.gridContent,
-          { paddingTop: headerHeight, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
+          // Pad to the bar's tallest (expanded) height so the first row clears it at
+          // the top; as the bar collapses by `expand`, content scrolls up by the same
+          // amount, keeping the first row pinned just under the bar's bottom edge.
+          { paddingTop: headerHeight + expand, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
         ]}
         renderItem={({ item }: { item: GridItem }) =>
           item.spacer ? <View style={styles.cell} /> : (
@@ -507,8 +555,10 @@ export default function BrowseScreen() {
         onScroll={scrollHandler}
         scrollEventThrottle={16}
         onEndReachedThreshold={0.6}
-        onEndReached={loadMore}
-        showsVerticalScrollIndicator={false}
+        onEndReached={inResults ? undefined : loadMore}
+        // Show the browser's native scrollbar on web (the list scrolls in its own
+        // overflow container); keep it hidden on native, where it's not idiomatic.
+        showsVerticalScrollIndicator={Platform.OS === 'web'}
       />
       {topBar}
     </ThemedView>
@@ -719,6 +769,7 @@ const styles = StyleSheet.create({
   },
   bridgeThumb: {
     borderRadius: 8,
+    overflow: 'hidden',
     alignSelf: 'center',
   },
   controls: {

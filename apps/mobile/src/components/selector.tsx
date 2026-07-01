@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { useOverlay } from '@/components/overlay/overlay';
+import { OverlayHeading, useAnchoredOverlay, useOverlay } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
@@ -25,13 +25,14 @@ type SelectorProps = {
 
 /** Tappable label that opens a single-select bottom-sheet menu (via the overlay system). */
 export function Selector({ title, value, options, onChange, thumbnails, size = 'title' }: SelectorProps) {
-  const { open } = useOverlay();
+  const { ref, openAt } = useAnchoredOverlay();
   const compact = useIsCompact();
   return (
     <Pressable
+      ref={ref}
       style={styles.trigger}
       onPress={() =>
-        open(() => (
+        openAt(() => (
           <SelectMenu title={title} options={options} selected={value} onSelect={onChange} thumbnails={thumbnails} />
         ))
       }>
@@ -64,9 +65,7 @@ function SelectMenu({
   const { closeTop } = useOverlay();
   return (
     <View style={styles.menu}>
-      <ThemedText type="subtitle" style={styles.menuTitle}>
-        {title}
-      </ThemedText>
+      <OverlayHeading>{title}</OverlayHeading>
       {options.map((opt) => (
         <Pressable
           key={opt}
@@ -116,9 +115,6 @@ const styles = StyleSheet.create({
   },
   menu: {
     gap: Spacing.two,
-  },
-  menuTitle: {
-    marginBottom: Spacing.one,
   },
   row: {
     flexDirection: 'row',

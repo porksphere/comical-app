@@ -45,6 +45,22 @@ export type Chapter = {
   read?: boolean;
 };
 
+/** A trackable progress service (AniList, MyAnimeList, …) a series can be linked to. */
+export type TrackerService = { id: string; name: string };
+
+/** A series-to-tracker link, mirroring the reference's tracker-link rows
+ *  (name + external id + read progress + last sync time). */
+export type TrackerLink = {
+  trackerId: string;
+  externalId: string;
+  externalTitle: string;
+  chaptersRead?: number;
+  lastSyncAt?: number;
+};
+
+/** One row from a tracker's catalog search, used by the "+ Link tracker" form. */
+export type TrackerSearchResult = { externalId: string; title: string; thumbnail: string };
+
 /** Full series detail. Optional fields are per-bridge dynamic. */
 export type SeriesDetail = SeriesEntry & {
   bridge: string;
@@ -62,6 +78,8 @@ export type SeriesDetail = SeriesEntry & {
   /** Whether the bridge exposes external sources / trackers actions. */
   hasSources?: boolean;
   hasTrackers?: boolean;
+  /** Trackers currently linked to this series (empty array = none linked yet). */
+  trackers?: TrackerLink[];
   /** "N new" badge in the actions column. */
   newCount?: number;
   /** Related-series rails, each independently labeled (sequels, similar, …) — a

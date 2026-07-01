@@ -55,6 +55,19 @@ jobs:
           BASE=$(node -p "require('./apps/mobile/app.json').expo.version")
           echo "full=${BASE}.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
 
+      # `expo prebuild` bakes a literal CFBundleShortVersionString into the
+      # generated Info.plist, so passing MARKETING_VERSION to xcodebuild has no
+      # effect (the literal plist value wins). Patch the plist directly so the
+      # IPA's version matches the apps.json manifest below — AltStore rejects
+      # the install otherwise.
+      - name: Stamp full version into generated Info.plist
+        working-directory: apps/mobile/ios
+        run: |
+          set -euo pipefail
+          PLIST=$(find . -maxdepth 2 -name Info.plist -not -path '*/Pods/*' | head -1)
+          echo "Patching $PLIST -> CFBundleShortVersionString=${{ steps.ver.outputs.full }}"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${{ steps.ver.outputs.full }}" "$PLIST"
+
       - name: Build unsigned archive
         working-directory: apps/mobile/ios
         run: |
@@ -72,8 +85,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            DEVELOPMENT_TEAM="" \
-            MARKETING_VERSION="${{ steps.ver.outputs.full }}"
+            DEVELOPMENT_TEAM=""
 
       - name: Package unsigned IPA
         run: |
