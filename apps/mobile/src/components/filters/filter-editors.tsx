@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import Animated, { useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
 
-import { useSheetScroll } from '@/components/overlay/overlay';
+import { OverlayHeading, useSheetScroll } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
@@ -43,14 +43,6 @@ export function FilterEditor({ def, value, onChange }: EditorProps) {
   }
 }
 
-function Title({ children }: { children: string }) {
-  return (
-    <ThemedText type="subtitle" style={styles.title}>
-      {children}
-    </ThemedText>
-  );
-}
-
 function StringEditor({
   def,
   value,
@@ -64,7 +56,7 @@ function StringEditor({
   const [text, setText] = useState(value ?? '');
   return (
     <View style={styles.body}>
-      <Title>{def.label}</Title>
+      <OverlayHeading>{def.label}</OverlayHeading>
       <TextInput
         value={text}
         onChangeText={(t) => {
@@ -97,7 +89,7 @@ function NumberEditor({
   };
   return (
     <View style={styles.body}>
-      <Title>{def.label}</Title>
+      <OverlayHeading>{def.label}</OverlayHeading>
       <View style={styles.stepper}>
         <StepperButton label="−" disabled={n <= def.min} onPress={() => set(n - step)} />
         <ThemedText type="title" style={styles.stepperValue}>
@@ -145,7 +137,7 @@ function MultiEditor({
   };
   return (
     <View style={styles.body}>
-      <Title>{def.label}</Title>
+      <OverlayHeading>{def.label}</OverlayHeading>
       <OptionList>
         {def.options.map((opt) => (
           <Pressable key={opt} onPress={() => toggle(opt)}>
@@ -182,7 +174,7 @@ function TriEditor({
   };
   return (
     <View style={styles.body}>
-      <Title>{def.label}</Title>
+      <OverlayHeading>{def.label}</OverlayHeading>
       <ThemedText type="small" themeColor="textSecondary">
         Tap to include, tap again to exclude.
       </ThemedText>
@@ -244,7 +236,7 @@ function TagSearchEditor({
           ))}
         </View>
       ) : (
-        <Title>{def.label}</Title>
+        <OverlayHeading>{def.label}</OverlayHeading>
       )}
       <TextInput
         value={query}
@@ -355,9 +347,6 @@ function OptionList({ children, fixed }: { children: React.ReactNode; fixed?: bo
 const styles = StyleSheet.create({
   body: {
     gap: Spacing.three,
-  },
-  title: {
-    marginBottom: Spacing.one,
   },
   // Selected-tag chips shown in place of the title; same bottom spacing so the
   // header height stays steady as tags are added/removed.
