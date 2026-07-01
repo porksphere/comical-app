@@ -284,7 +284,8 @@ const scrollerStyle: React.CSSProperties = {
   overflowX: 'hidden',
   touchAction: 'pan-y',
   WebkitOverflowScrolling: 'touch',
-  backgroundColor: '#000',
+  // Reference: `#reader-view { background: #0f0f0f }` — not pure black.
+  backgroundColor: '#0f0f0f',
 };
 const contentStyle: React.CSSProperties = { width: '100%' };
 const loadedSlotStyle: React.CSSProperties = { width: '100%' };

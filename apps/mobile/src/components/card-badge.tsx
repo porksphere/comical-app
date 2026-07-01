@@ -17,11 +17,13 @@ const POS: Record<BadgePosition, object> = {
 };
 
 export function CardBadge({ badge }: { badge: CardBadgeData }) {
-  const theme = useTheme();
+  // Mirrors the reference's `.card-badge.tone-*` colors, which are all
+  // slightly transparent (`rgba(...)`, not solid) — same hex as `theme.badge*`,
+  // with the reference's exact alpha per tone.
   const tones: Record<BadgeTone, string> = {
-    info: theme.badgeInfo,
-    warn: theme.badgeWarn,
-    success: theme.badgeSuccess,
+    info: 'rgba(37,99,235,0.88)',
+    warn: 'rgba(202,138,4,0.92)',
+    success: 'rgba(22,163,74,0.9)',
     neutral: 'rgba(0,0,0,0.68)',
   };
   return (
@@ -56,6 +58,14 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 5,
     maxWidth: '85%',
+    // Mirrors `.card-badge`'s `box-shadow: 0 1px 3px rgba(0,0,0,0.4)` — the
+    // language/NEW/HOT tags lift slightly off the cover; the cover itself and
+    // the unread pill (`.badge-unread`, no shadow in the reference) don't.
+    shadowColor: '#000',
+    shadowOpacity: 0.4,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
   },
   badgeText: {
     color: '#ffffff',

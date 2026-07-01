@@ -116,6 +116,12 @@ jobs:
 
       - name: Export web bundle
         if: github.event_name != 'delete'
+        # Static hosting has no backend to reach, so this preview build renders
+        # mock data instead of hitting the (unreachable) live API — see
+        # apps/mobile/src/data/source.ts and components/demo-banner.tsx, which
+        # labels the preview accordingly. Real production builds never set this.
+        env:
+          EXPO_PUBLIC_COMICAL_DEMO_MODE: '1'
         run: bunx expo export --platform web
         working-directory: apps/mobile
 

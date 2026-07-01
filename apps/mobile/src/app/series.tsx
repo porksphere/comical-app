@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Platform,
   Pressable,
@@ -15,35 +15,61 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChipRow, TagGroupRow } from '@/components/chip';
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
 import { Rail } from '@/components/rail';
-import { SeriesCard } from '@/components/series-card';
+import { RetryBlock } from '@/components/retry-block';
 import { ActionButton, NewBadge } from '@/components/series/action-button';
 import { ChaptersSection } from '@/components/series/chapters-section';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
-import { mockSeries, SERIES_OPEN_DELAY_MS } from '@/data/mock';
+import { isAbort } from '@/data/api';
+import { useDataSource } from '@/data/source';
+import type { SeriesDetail } from '@/data/types';
 import { LARGE_SCREEN_BREAKPOINT, useTopBarHeight } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 
 const LARGE_COVER_WIDTH = 200;
 
 export default function SeriesScreen() {
+  const ds = useDataSource();
   const router = useRouter();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { id, title, bridge, direct } = useLocalSearchParams<{
+  const { id, title, bridge: bridgeParam, bridgeId, direct } = useLocalSearchParams<{
     id?: string;
     title?: string;
     bridge?: string;
+    bridgeId?: string;
     direct?: string;
   }>();
+  // series-card.tsx percent-encodes the bridge name before putting it in a
+  // route param (parens in real bridge names break expo-router's web href
+  // resolution) — undo that here.
+  const bridge = bridgeParam ? decodeURIComponent(bridgeParam) : undefined;
 
-  const series = useMemo(
-    () => mockSeries(id ?? '', title, bridge ?? 'Library', { direct: direct === '1' }),
-    [id, title, bridge, direct],
-  );
+  const [series, setSeries] = useState<SeriesDetail | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    setSeries(null);
+    setError(null);
+    ds.getSeriesDetail(
+      bridgeId ?? '',
+      id ?? '',
+      { direct: direct === '1', bridgeName: bridge ?? 'Library', title },
+      ctrl.signal,
+    )
+      .then(setSeries)
+      .catch((e) => {
+        if (!isAbort(e)) setError(e.message || 'Failed to load series');
+      });
+    return () => ctrl.abort();
+  }, [ds, id, bridgeId, bridge, title, direct, reload]);
+
+  const retry = useCallback(() => setReload((n) => n + 1), []);
 
   const isLarge = width >= LARGE_SCREEN_BREAKPOINT;
   // Shared with the browse bar so both top bars are the same height.
@@ -60,14 +86,96 @@ export default function SeriesScreen() {
   const contentWidth = Math.min(width, MaxContentWidth) - Spacing.four * 2;
   const actionsWidth = Math.round(Math.min(Math.max(contentWidth * 0.3, 116), 150));
 
-  // Simulated fetch latency so the loading skeleton is visible when opening a
-  // series. Resets if you navigate to a different one.
-  const [loading, setLoading] = useState(true);
+  return (
+    <ThemedView style={styles.container}>
+      {/* Static top bar: back button + originating bridge name. */}
+      <View
+        style={[
+          styles.topBar,
+          { paddingTop: insets.top, height: insets.top + barHeight, borderBottomColor: theme.hairline },
+        ]}>
+        <Pressable
+          onPress={() => router.back()}
+          hitSlop={12}
+          style={[styles.backButton, { height: barHeight }]}
+          accessibilityRole="button"
+          accessibilityLabel="Go back">
+          <ChevronLeftIcon color={theme.text} />
+        </Pressable>
+        <ThemedText type="smallBold" numberOfLines={1} style={styles.bridgeName}>
+          {series?.bridge ?? bridge ?? ''}
+        </ThemedText>
+      </View>
+
+      <ScrollView
+        contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + Spacing.five }]}
+        showsVerticalScrollIndicator={false}>
+        <View style={styles.column}>
+          {error ? (
+            <RetryBlock message={error} onRetry={retry} />
+          ) : !series ? (
+            <SeriesSkeleton actionsWidth={actionsWidth} isLarge={isLarge} />
+          ) : (
+            <SeriesBody
+              series={series}
+              bridgeId={bridgeId}
+              isLarge={isLarge}
+              sticky={sticky}
+              actionsWidth={actionsWidth}
+              direct={direct === '1'}
+              width={width}
+            />
+          )}
+        </View>
+      </ScrollView>
+    </ThemedView>
+  );
+}
+
+/** Two-column (large) / stacked (small) series detail — only rendered once the
+ *  real (or mock) fetch has resolved, so it never has to handle a null series. */
+function SeriesBody({
+  series,
+  bridgeId,
+  isLarge,
+  sticky,
+  actionsWidth,
+  direct,
+  width,
+}: {
+  series: SeriesDetail;
+  bridgeId?: string;
+  isLarge: boolean;
+  sticky: boolean;
+  actionsWidth: number;
+  direct: boolean;
+  width: number;
+}) {
+  const ds = useDataSource();
+  const router = useRouter();
+  const theme = useTheme();
+
+  // Favorite toggle: best-effort — a bridge without the "favorites" capability
+  // (or one requiring auth the user hasn't configured, e.g. a session token
+  // setting) 400s/401s here; the star just stays unfilled rather than surfacing
+  // a full error state for what's a peripheral action, not the page's content.
+  const [favorited, setFavorited] = useState<boolean | null>(null);
   useEffect(() => {
-    setLoading(true);
-    const t = setTimeout(() => setLoading(false), SERIES_OPEN_DELAY_MS);
-    return () => clearTimeout(t);
-  }, [id, title, bridge]);
+    if (!bridgeId) return;
+    const ctrl = new AbortController();
+    ds.isFavorite(bridgeId, series.id, ctrl.signal)
+      .then(setFavorited)
+      .catch(() => setFavorited(false));
+    return () => ctrl.abort();
+  }, [ds, bridgeId, series.id]);
+  const toggleFavorite = () => {
+    if (!bridgeId || favorited === null) return;
+    const next = !favorited;
+    setFavorited(next);
+    (next ? ds.addFavorite(bridgeId, series.id) : ds.removeFavorite(bridgeId, series.id)).catch(() =>
+      setFavorited(!next),
+    );
+  };
 
   // Cover image + optional chapter-count badge — shared between layouts.
   const coverEl = (
@@ -98,7 +206,8 @@ export default function SeriesScreen() {
             title: series.title,
             start: '0',
           };
-          if (direct === '1') params.direct = '1';
+          if (bridgeId) params.bridgeId = bridgeId;
+          if (direct) params.direct = '1';
           else if (series.chapters?.length) {
             const first = series.chapters[series.chapters.length - 1];
             params.chapterId = first.id;
@@ -110,7 +219,7 @@ export default function SeriesScreen() {
       <ActionButton label="＋  Library" />
       {series.hasSources && <ActionButton label="Sources" caret />}
       {series.hasTrackers && <ActionButton label="Trackers" caret />}
-      <ActionButton label="☆  Favorite" />
+      <ActionButton label={favorited ? '★  Favorited' : '☆  Favorite'} onPress={toggleFavorite} />
       {series.newCount != null && <NewBadge count={series.newCount} />}
     </View>
   );
@@ -153,6 +262,7 @@ export default function SeriesScreen() {
         pageThumbs={series.pageThumbs}
         seed={series.id}
         title={series.title}
+        bridgeId={bridgeId}
         only="chapters"
       />
     </>
@@ -167,86 +277,62 @@ export default function SeriesScreen() {
       pageThumbs={series.pageThumbs}
       seed={series.id}
       title={series.title}
+      bridgeId={bridgeId}
       only="pages"
     />
   );
 
   return (
-    <ThemedView style={styles.container}>
-      {/* Static top bar: back button + originating bridge name. */}
-      <View
-        style={[
-          styles.topBar,
-          { paddingTop: insets.top, height: insets.top + barHeight, borderBottomColor: theme.hairline },
-        ]}>
-        <Pressable
-          onPress={() => router.back()}
-          hitSlop={12}
-          style={[styles.backButton, { height: barHeight }]}
-          accessibilityRole="button"
-          accessibilityLabel="Go back">
-          <ChevronLeftIcon color={theme.text} />
-        </Pressable>
-        <ThemedText type="smallBold" numberOfLines={1} style={styles.bridgeName}>
-          {series.bridge}
+    <>
+      <View style={styles.inner}>
+        <ThemedText type="subtitle" style={styles.title}>
+          {series.title}
         </ThemedText>
+
+        {isLarge ? (
+          /* Large screen: two-column layout — cover+actions left, content right. */
+          <View style={styles.twoCol}>
+            <View style={[styles.leftCol, sticky && styles.leftColSticky]}>
+              {coverEl}
+              {actionsEl}
+            </View>
+            <View style={styles.rightCol}>{contentEl}</View>
+          </View>
+        ) : (
+          /* Small screen: hero row then content stacked below. */
+          <>
+            <View style={styles.hero}>
+              {coverEl}
+              {actionsEl}
+            </View>
+            {contentEl}
+          </>
+        )}
+
+        {/* Page-thumbnails (direct series): full-width below the columns. */}
+        {pagesEl}
       </View>
 
-      <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + Spacing.five }]}
-        showsVerticalScrollIndicator={false}>
-        <View style={styles.column}>
-          {loading ? (
-            <SeriesSkeleton actionsWidth={actionsWidth} isLarge={isLarge} />
-          ) : (
-          <>
-          <View style={styles.inner}>
-            <ThemedText type="subtitle" style={styles.title}>
-              {series.title}
-            </ThemedText>
-
-            {isLarge ? (
-              /* Large screen: two-column layout — cover+actions left, content right. */
-              <View style={styles.twoCol}>
-                <View style={[styles.leftCol, sticky && styles.leftColSticky]}>
-                  {coverEl}
-                  {actionsEl}
-                </View>
-                <View style={styles.rightCol}>
-                  {contentEl}
-                </View>
-              </View>
-            ) : (
-              /* Small screen: hero row then content stacked below. */
-              <>
-                <View style={styles.hero}>
-                  {coverEl}
-                  {actionsEl}
-                </View>
-                {contentEl}
-              </>
-            )}
-
-            {/* Page-thumbnails (direct series): full-width below the columns. */}
-            {pagesEl}
-          </View>
-
-          {/* Related rail (per-bridge): full-bleed, outside the padded inner. */}
-          {series.related?.length ? (
-            <View style={styles.related}>
-              <Rail
-                section={{ id: 'related', title: 'Related', kind: 'regular', items: series.related }}
-                viewportWidth={width}
-                bridge={series.bridge}
-                direct={direct === '1'}
-              />
-            </View>
-          ) : null}
-          </>
+      {/* Related rails (per-bridge): full-bleed, outside the padded inner. A
+          bridge may surface any number of labeled groups (sequels, similar, …). */}
+      {series.relatedGroups?.length ? (
+        <View style={styles.related}>
+          {series.relatedGroups.map(
+            (group, i) =>
+              group.items.length > 0 && (
+                <Rail
+                  key={`${group.label}-${i}`}
+                  section={{ id: `related-${i}`, title: group.label, kind: 'regular', items: group.items }}
+                  viewportWidth={width}
+                  bridge={series.bridge}
+                  bridgeId={bridgeId}
+                  direct={direct}
+                />
+              ),
           )}
         </View>
-      </ScrollView>
-    </ThemedView>
+      ) : null}
+    </>
   );
 }
 
@@ -408,6 +494,12 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.half,
     borderRadius: Spacing.two,
     backgroundColor: 'rgba(0,0,0,0.7)',
+    // Mirrors `.cover-badge`'s `box-shadow: 0 1px 4px rgba(0,0,0,0.5)`.
+    shadowColor: '#000',
+    shadowOpacity: 0.5,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
   },
   coverBadgeText: {
     color: '#ffffff',
@@ -446,7 +538,7 @@ const styles = StyleSheet.create({
     lineHeight: 21,
   },
   related: {
-    gap: Spacing.two,
+    gap: Spacing.five,
   },
   skelTitle: {
     gap: Spacing.two,

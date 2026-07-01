@@ -7,8 +7,11 @@ import { PagedReader, type PagedReaderHandle } from '@/components/reader/paged-r
 import { ProgressPill } from '@/components/reader/progress-pill';
 import { ReaderToolbar } from '@/components/reader/reader-toolbar';
 import { SettingsControl } from '@/components/reader/settings-panel';
+import { RetryBlock } from '@/components/retry-block';
+import { ThemedText } from '@/components/themed-text';
 import { WebtoonReader, type WebtoonReaderHandle } from '@/components/reader/webtoon-reader';
-import { readerPagesForChapter, readerPagesForDirect } from '@/data/mock';
+import { isAbort } from '@/data/api';
+import { useDataSource } from '@/data/source';
 import { useReaderSettings } from '@/hooks/use-reader-settings';
 
 // Full-screen page reader. Resolves a page-URL list from route params and
@@ -19,22 +22,42 @@ import { useReaderSettings } from '@/hooks/use-reader-settings';
 const CHROME_HIDE_MS = 3000;
 
 export default function ReaderScreen() {
+  const ds = useDataSource();
   const router = useRouter();
   const { width, height } = useWindowDimensions();
-  const { seed, title, chapterId, chapterName, start } = useLocalSearchParams<{
+  const { seed, title, bridgeId, chapterId, chapterName, start } = useLocalSearchParams<{
     seed?: string;
     title?: string;
-    direct?: string;
+    bridgeId?: string;
     chapterId?: string;
     chapterName?: string;
     start?: string;
   }>();
 
-  const pages = useMemo(
-    () => (chapterId ? readerPagesForChapter(chapterId) : readerPagesForDirect(seed ?? 'series')),
-    [chapterId, seed],
+  const [pages, setPages] = useState<string[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    setPages(null);
+    setError(null);
+    const load = chapterId
+      ? ds.getChapterPages(bridgeId ?? '', seed ?? '', chapterId, ctrl.signal)
+      : ds.getDirectPages(bridgeId ?? '', seed ?? '', ctrl.signal);
+    load
+      .then(setPages)
+      .catch((e) => {
+        if (!isAbort(e)) setError(e.message || 'Failed to load pages');
+      });
+    return () => ctrl.abort();
+  }, [ds, bridgeId, seed, chapterId, reload]);
+  const retry = useCallback(() => setReload((n) => n + 1), []);
+
+  const startIndex = useMemo(
+    () => Math.max(0, Math.min((pages?.length ?? 1) - 1, Number(start ?? 0) || 0)),
+    [pages, start],
   );
-  const startIndex = Math.max(0, Math.min(pages.length - 1, Number(start ?? 0) || 0));
 
   const [settings] = useReaderSettings();
   const [currentPage, setCurrentPage] = useState(startIndex);
@@ -47,6 +70,15 @@ export default function ReaderScreen() {
     currentRef.current = i;
     setCurrentPage(i);
   }, []);
+
+  // Pages resolve asynchronously (real fetch or mock delay); once they land,
+  // jump to the requested start index — `currentPage`'s initial state was
+  // computed before `pages` existed, so it can't reflect it yet.
+  useEffect(() => {
+    if (!pages) return;
+    currentRef.current = startIndex;
+    setCurrentPage(startIndex);
+  }, [pages, startIndex]);
 
   const pagedRef = useRef<PagedReaderHandle>(null);
   const webtoonRef = useRef<WebtoonReaderHandle>(null);
@@ -79,12 +111,12 @@ export default function ReaderScreen() {
 
   const goTo = useCallback(
     (index: number, animated = true) => {
-      const clamped = Math.max(0, Math.min(pages.length - 1, index));
+      const clamped = Math.max(0, Math.min((pages?.length ?? 1) - 1, index));
       setCurrent(clamped);
       if (settings.mode === 'paged') pagedRef.current?.goToPage(clamped, animated);
       else webtoonRef.current?.goToPage(clamped);
     },
-    [pages.length, settings.mode, setCurrent],
+    [pages, settings.mode, setCurrent],
   );
   const prev = useCallback(() => goTo(currentRef.current - 1), [goTo]);
   const next = useCallback(() => goTo(currentRef.current + 1), [goTo]);
@@ -110,45 +142,57 @@ export default function ReaderScreen() {
   return (
     <View style={styles.root}>
       <StatusBar style="light" hidden={!chromeVisible} />
-      {settings.mode === 'paged' ? (
-        <PagedReader
-          ref={pagedRef}
-          pages={pages}
-          width={width}
-          height={height}
-          rtl={settings.direction === 'rtl'}
-          initialPage={currentPage}
-          onPageChange={setCurrent}
-          onPrev={turnPrev}
-          onNext={turnNext}
-          onToggleChrome={toggleChrome}
-        />
+      {error ? (
+        <View style={styles.centerFill}>
+          <RetryBlock message={error} onRetry={retry} />
+        </View>
+      ) : !pages ? (
+        <View style={styles.centerFill}>
+          <ThemedText style={styles.loadingText}>Loading…</ThemedText>
+        </View>
       ) : (
-        <WebtoonReader
-          ref={webtoonRef}
-          pages={pages}
-          width={width}
-          initialPage={currentPage}
-          onPageChange={setCurrent}
-          onToggleChrome={toggleChrome}
-        />
-      )}
+        <>
+          {settings.mode === 'paged' ? (
+            <PagedReader
+              ref={pagedRef}
+              pages={pages}
+              width={width}
+              height={height}
+              rtl={settings.direction === 'rtl'}
+              initialPage={currentPage}
+              onPageChange={setCurrent}
+              onPrev={turnPrev}
+              onNext={turnNext}
+              onToggleChrome={toggleChrome}
+            />
+          ) : (
+            <WebtoonReader
+              ref={webtoonRef}
+              pages={pages}
+              width={width}
+              initialPage={currentPage}
+              onPageChange={setCurrent}
+              onToggleChrome={toggleChrome}
+            />
+          )}
 
-      <ReaderToolbar
-        title={chapterName ?? title ?? 'Reader'}
-        subtitle={`Page ${currentPage + 1} of ${pages.length}`}
-        visible={chromeVisible}
-        onBack={() => router.back()}
-      />
-      <ProgressPill
-        current={currentPage}
-        total={pages.length}
-        visible={chromeVisible}
-        onJump={(i) => {
-          goTo(i);
-          showChrome();
-        }}
-      />
+          <ReaderToolbar
+            title={chapterName ?? title ?? 'Reader'}
+            subtitle={`Page ${currentPage + 1} of ${pages.length}`}
+            visible={chromeVisible}
+            onBack={() => router.back()}
+          />
+          <ProgressPill
+            current={currentPage}
+            total={pages.length}
+            visible={chromeVisible}
+            onJump={(i) => {
+              goTo(i);
+              showChrome();
+            }}
+          />
+        </>
+      )}
       <SettingsControl visible={chromeVisible} />
     </View>
   );
@@ -157,6 +201,15 @@ export default function ReaderScreen() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#000',
+    // Reference: `#reader-view { background: #0f0f0f }` — not pure black.
+    backgroundColor: '#0f0f0f',
+  },
+  centerFill: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    color: '#fff',
   },
 });

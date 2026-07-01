@@ -2,6 +2,7 @@ import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
+import { DemoBanner } from '@/components/demo-banner';
 import { OverlayProvider } from '@/components/overlay/overlay';
 import { useActiveColorScheme } from '@/hooks/use-theme';
 
@@ -27,6 +28,7 @@ export default function RootLayout() {
             {/* Full-screen page reader; its own dark chrome, fade in/out. */}
             <Stack.Screen name="reader" options={{ headerShown: false, animation: 'fade' }} />
           </Stack>
+          <DemoBanner />
         </OverlayProvider>
       </ThemeProvider>
     </GestureHandlerRootView>

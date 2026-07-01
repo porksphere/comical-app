@@ -151,13 +151,16 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   // --- Mobile black icon bottom bar ---
+  // Reference: `.bottom-nav { background: #111113; border-top: 1px solid
+  // #242427; }` — its own shade, distinct from both the page background
+  // (#0f0f0f) and general element surfaces.
   bottomBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#000000',
+    backgroundColor: '#111113',
     paddingTop: Spacing.two,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255,255,255,0.12)',
+    borderTopColor: '#242427',
   },
   bottomButton: {
     flex: 1,
