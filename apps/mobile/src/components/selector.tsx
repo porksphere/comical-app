@@ -1,7 +1,7 @@
-import { Image } from 'expo-image';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { BridgeThumb } from '@/components/bridge-thumb';
 import {
   MeasuredHeader,
   OptionList,
@@ -94,7 +94,13 @@ function SelectMenu({
                   reflows the remaining two to fill the gap, pushing untitled rows'
                   labels flush left while thumbnailed rows' labels sit shifted right. */}
               {thumbnails && (
-                <OptionThumb key={thumbnails[opt] ?? opt} uri={thumbnails[opt]} label={opt} />
+                <BridgeThumb
+                  key={thumbnails[opt] ?? opt}
+                  uri={thumbnails[opt]}
+                  label={opt}
+                  size={BridgeThumbSize}
+                  style={styles.optionThumb}
+                />
               )}
               <ThemedText style={styles.optionLabel} numberOfLines={1}>
                 {opt}
@@ -106,22 +112,6 @@ function SelectMenu({
       </OptionList>
     </View>
   );
-}
-
-/** A row's thumbnail slot: the image if `uri` is set and loads, otherwise a
- *  fallback of the option's first letter — covering both "this bridge has no
- *  thumbnail" and "it has one but the URL failed to load" the same way. */
-function OptionThumb({ uri, label }: { uri?: string; label: string }) {
-  const [failed, setFailed] = useState(false);
-  if (!uri || failed) {
-    const letter = label.trim().charAt(0).toUpperCase() || '?';
-    return (
-      <ThemedView type="backgroundSelected" style={styles.optionThumbFallback}>
-        <ThemedText style={styles.optionThumbFallbackText}>{letter}</ThemedText>
-      </ThemedView>
-    );
-  }
-  return <Image source={{ uri }} style={styles.optionThumb} onError={() => setFailed(true)} />;
 }
 
 const styles = StyleSheet.create({
@@ -181,19 +171,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#3478F6',
   },
   optionThumb: {
-    width: BridgeThumbSize,
-    height: BridgeThumbSize,
     borderRadius: 6,
-  },
-  optionThumbFallback: {
-    width: BridgeThumbSize,
-    height: BridgeThumbSize,
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  optionThumbFallbackText: {
-    fontSize: 13,
-    fontWeight: '700',
   },
 });

@@ -1,4 +1,3 @@
-import { Image } from 'expo-image';
 import { useEffect, useMemo, useState } from 'react';
 import { Platform, Pressable, StyleSheet, TextInput, useWindowDimensions, View, type TextStyle } from 'react-native';
 import Animated, {
@@ -9,6 +8,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BridgeThumb } from '@/components/bridge-thumb';
 import { FilterBar, type SortOption, type SortState } from '@/components/filters/filter-demo';
 import { filterDefFromApi, filterValueToApi, initialValue, type FilterDef, type FilterValue } from '@/components/filters/filter-types';
 import { ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
@@ -406,14 +406,17 @@ export default function BrowseScreen() {
           grid below, while the bar background stays full-bleed. The row grows with
           the band (content stays vertically centred) for symmetric breathing room. */}
       <Animated.View pointerEvents="box-none" style={[styles.selectorRow, selectorRowStyle]}>
-        {currentBridge?.thumbnail ? (
+        {currentBridge ? (
           // Animate the wrapping View (a plain host component) rather than the
-          // expo-image `Image` itself — `Image` is a composite class component, and
-          // wrapping it directly with `Animated.createAnimatedComponent` is fragile
-          // on native (crashed on launch; fine on web, where expo-image swaps to a
-          // ref-forwarding `<img>` container, masking the issue in dev).
+          // thumbnail itself — expo-image's `Image` is a composite class
+          // component, and wrapping it directly with `Animated.createAnimatedComponent`
+          // is fragile on native (crashed on launch; fine on web, where
+          // expo-image swaps to a ref-forwarding `<img>` container, masking
+          // the issue in dev). Gated on `currentBridge` (not `.thumbnail`) so
+          // a thumbnail-less bridge still gets its letter-fallback slot here,
+          // same as in the dropdown — just not while bridges are still loading.
           <Animated.View style={[styles.bridgeThumb, thumbStyle]}>
-            <Image source={{ uri: currentBridge.thumbnail }} style={StyleSheet.absoluteFill} />
+            <BridgeThumb uri={currentBridge.thumbnail} label={currentBridge.name} size={thumbSize} fill />
           </Animated.View>
         ) : null}
         <Selector
