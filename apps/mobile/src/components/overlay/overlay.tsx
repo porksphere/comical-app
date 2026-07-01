@@ -28,6 +28,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useIsLargeScreen } from '@/hooks/use-responsive';
+import { useTheme } from '@/hooks/use-theme';
 
 // A small stacked-overlay system. On phones (and mobile web / iOS) each overlay
 // is a bottom sheet with a drag handle (swipe down to dismiss); opening a new
@@ -177,9 +178,15 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
     opacity: isLargeScreen ? 0 : interpolate(appProgress.value, [0, 1], [0, 0.5]),
   }));
 
+  // The app scales down + rounds its corners while any overlay is open (below),
+  // exposing this root color in the margin around it — was hardcoded black
+  // regardless of theme, showing as a stray dark bar (most visible behind a
+  // bottom sheet) instead of matching the actual page background.
+  const theme = useTheme();
+
   return (
     <OverlayContext.Provider value={api}>
-      <View style={styles.root}>
+      <View style={[styles.root, { backgroundColor: theme.background }]}>
         <Animated.View style={[styles.appWrap, appStyle]}>{children}</Animated.View>
 
         <AnimatedPressable
@@ -330,7 +337,20 @@ function OverlaySheet({
     <Animated.View style={[styles.sheetWrap, sheetStyle]} pointerEvents="box-none">
       <OverlayPresentationContext.Provider value="sheet">
       <SheetScrollContext.Provider value={sheetScroll}>
-        <ThemedView style={[styles.sheet, { paddingBottom: insets.bottom + Spacing.four }]}>
+        {/* `backgroundPanel` (not the default `background`) so the sheet's own
+            surface — including the safe-area padding below the last row — reads
+            as one consistent panel color instead of showing a seam where the
+            base page background peeks through; distinct from `backgroundElement`
+            (used by the rows on it) so those still stand out against the panel.
+            Just `insets.bottom`, no extra: the sheet itself adds no cushion
+            beyond the real home-indicator clearance — breathing room below the
+            *content* (so a short list doesn't sit flush) belongs to the
+            scrollable list's own trailing padding (`listContent` in
+            filter-editors.tsx) / the overflow-filters sheet's own content
+            padding, not this outer container. Putting it out here as an
+            offset (a prior attempt) exposed the dimmed backdrop behind the
+            sheet as a large flat stripe — worse than what it replaced. */}
+        <ThemedView type="backgroundPanel" style={[styles.sheet, { paddingBottom: insets.bottom }]}>
           <GestureDetector gesture={handlePan}>
             <View style={styles.handleArea}>
               <View style={styles.handle} />
@@ -436,8 +456,9 @@ function OverlayPopover({
 
 const styles = StyleSheet.create({
   root: {
+    // backgroundColor set inline from the theme (see OverlayProvider) — this
+    // is only the layout half of the style.
     flex: 1,
-    backgroundColor: '#000000',
   },
   appWrap: {
     flex: 1,

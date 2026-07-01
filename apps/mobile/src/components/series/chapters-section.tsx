@@ -9,7 +9,8 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { coverDelayMs, relativeTime, type Chapter } from '@/data/mock';
+import { coverDelayMs, relativeTime } from '@/data/mock';
+import type { Chapter } from '@/data/types';
 
 // The series chapters block: tab filter (Overview / All / Read / Unread) + sort
 // toggle (oldest/newest) over the chapter rows, with a "Show all" teaser on the
@@ -33,6 +34,7 @@ export function ChaptersSection({
   pageThumbs,
   seed,
   title,
+  bridgeId,
   only,
 }: {
   chapters?: Chapter[];
@@ -40,6 +42,8 @@ export function ChaptersSection({
   /** Series identity, used to build reader navigation params. */
   seed: string;
   title: string;
+  /** Originating bridge's stable id, carried to the reader for real API calls. */
+  bridgeId?: string;
   /** Render just one sub-part. On large screens the series detail puts the
    *  chapter list in the right column (`'chapters'`) but the page-thumbnail grid
    *  full-width below the columns (`'pages'`), mirroring the reference where
@@ -47,17 +51,31 @@ export function ChaptersSection({
   only?: 'chapters' | 'pages';
 }) {
   if (only === 'chapters') {
-    return chapters?.length ? <ChapterList chapters={chapters} seed={seed} title={title} /> : null;
+    return chapters?.length ? (
+      <ChapterList chapters={chapters} seed={seed} title={title} bridgeId={bridgeId} />
+    ) : null;
   }
   if (only === 'pages') {
-    return pageThumbs?.length ? <PageThumbGrid thumbs={pageThumbs} seed={seed} title={title} /> : null;
+    return pageThumbs?.length ? (
+      <PageThumbGrid thumbs={pageThumbs} seed={seed} title={title} bridgeId={bridgeId} />
+    ) : null;
   }
-  if (pageThumbs?.length) return <PageThumbGrid thumbs={pageThumbs} seed={seed} title={title} />;
-  if (chapters?.length) return <ChapterList chapters={chapters} seed={seed} title={title} />;
+  if (pageThumbs?.length) return <PageThumbGrid thumbs={pageThumbs} seed={seed} title={title} bridgeId={bridgeId} />;
+  if (chapters?.length) return <ChapterList chapters={chapters} seed={seed} title={title} bridgeId={bridgeId} />;
   return null;
 }
 
-function ChapterList({ chapters, seed, title }: { chapters: Chapter[]; seed: string; title: string }) {
+function ChapterList({
+  chapters,
+  seed,
+  title,
+  bridgeId,
+}: {
+  chapters: Chapter[];
+  seed: string;
+  title: string;
+  bridgeId?: string;
+}) {
   const theme = useTheme();
   const router = useRouter();
   const [tab, setTab] = useState<Tab>('overview');
@@ -90,7 +108,14 @@ function ChapterList({ chapters, seed, title }: { chapters: Chapter[]; seed: str
       onPress={() =>
         router.push({
           pathname: '/reader',
-          params: { seed, title, chapterId: c.id, chapterName: c.name, start: '0' },
+          params: {
+            seed,
+            title,
+            chapterId: c.id,
+            chapterName: c.name,
+            start: '0',
+            ...(bridgeId ? { bridgeId } : {}),
+          },
         })
       }
     />
@@ -178,7 +203,17 @@ function ChapterRow({ chapter, onPress }: { chapter: Chapter; onPress?: () => vo
 // Rows shown before a long page set collapses behind "Show all".
 const COLLAPSED_ROWS = 4;
 
-function PageThumbGrid({ thumbs, seed, title }: { thumbs: string[]; seed: string; title: string }) {
+function PageThumbGrid({
+  thumbs,
+  seed,
+  title,
+  bridgeId,
+}: {
+  thumbs: string[];
+  seed: string;
+  title: string;
+  bridgeId?: string;
+}) {
   const theme = useTheme();
   const router = useRouter();
   const { width: screenW } = useWindowDimensions();
@@ -215,7 +250,7 @@ function PageThumbGrid({ thumbs, seed, title }: { thumbs: string[]; seed: string
                 onPress={() =>
                   router.push({
                     pathname: '/reader',
-                    params: { seed, title, direct: '1', start: String(i) },
+                    params: { seed, title, direct: '1', start: String(i), ...(bridgeId ? { bridgeId } : {}) },
                   })
                 }
               />

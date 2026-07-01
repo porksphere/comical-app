@@ -1,96 +1,44 @@
 /**
- * Mock data for the Browse and Series screens.
- *
- * These types intentionally mirror the eventual `@porksphere/core` bridge
- * contract: a `SeriesEntry` with mostly OPTIONAL sections, since not every
- * bridge supplies every section (genres, tag groups, stats, related rail,
- * page thumbnails, …). The UI renders each section only when its field is
- * present/non-empty — so wiring real bridge data later means replacing the
- * generators below, not the components that read them.
+ * Mock data for the Browse and Series screens — a dev-only / GH-Pages-demo-only
+ * stand-in for the real bridge API (see `source.ts` for where this is switched
+ * in). Types live in `types.ts` and are shared with the real API adapter in
+ * `api.ts`, so wiring real bridge data means replacing the generators below,
+ * not the components that read them.
  */
 
-export type BadgePosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
-export type BadgeTone = 'info' | 'warn' | 'success' | 'neutral';
+import type {
+  Bridge,
+  BridgeList,
+  Chapter,
+  GridPage,
+  HomeGridSection,
+  MetaCell,
+  RailSection,
+  SeriesDetail,
+  SeriesEntry,
+  TagGroup,
+  TrackerLink,
+  TrackerSearchResult,
+  TrackerService,
+} from './types';
+import type { ApiFilter, ApiSortOption } from './api';
 
-export type CardBadge = {
-  text: string;
-  position?: BadgePosition;
-  tone?: BadgeTone;
-};
-
-/** A series as it appears on a card (grid or rail). */
-export type SeriesEntry = {
-  id: string;
-  title: string;
-  /** Secondary line under the title (e.g. latest chapter, author). */
-  sub?: string;
-  cover: string;
-  /** Bridge-defined overlay badges. */
-  badges?: CardBadge[];
-  /** Unread-count pill (top-right). */
-  unread?: number;
-};
-
-export type TagGroup = { label: string; tags: string[] };
-export type MetaCell = { label: string; value: string };
-
-export type Chapter = {
-  id: string;
-  /** Display name, e.g. "Chapter 176 — The Spirit Zone". */
-  name: string;
-  /** Epoch ms the chapter was published. */
-  date: number;
-  read?: boolean;
-};
-
-/** A trackable progress service (AniList, MyAnimeList, …) a series can be linked to. */
-export type TrackerService = { id: string; name: string };
-
-/** A series-to-tracker link, mirroring the reference's tracker-link rows
- *  (name + external id + read progress + last sync time). */
-export type TrackerLink = {
-  trackerId: string;
-  externalId: string;
-  externalTitle: string;
-  chaptersRead?: number;
-  lastSyncAt?: number;
-};
-
-/** One row from a tracker's catalog search, used by the "+ Link tracker" form. */
-export type TrackerSearchResult = { externalId: string; title: string; thumbnail: string };
-
-/** Full series detail. Optional fields are per-bridge dynamic. */
-export type SeriesDetail = SeriesEntry & {
-  bridge: string;
-  chapterCount?: number;
-  /** Primary read affordance label (e.g. "▶ Chapter 1 — …"). */
-  readLabel?: string;
-  genres?: string[];
-  tagGroups?: TagGroup[];
-  meta?: MetaCell[];
-  description?: string;
-  /** Chaptered series. Mutually exclusive with `pageThumbs` (direct series). */
-  chapters?: Chapter[];
-  /** Direct series: page-preview thumbnails instead of a chapter list. */
-  pageThumbs?: string[];
-  /** Whether the bridge exposes external sources / trackers actions. */
-  hasSources?: boolean;
-  hasTrackers?: boolean;
-  /** Trackers currently linked to this series (empty array = none linked yet). */
-  trackers?: TrackerLink[];
-  /** "N new" badge in the actions column. */
-  newCount?: number;
-  /** Related rail — absent for many bridges. */
-  related?: SeriesEntry[];
-};
-
-export type RailKind = 'hero' | 'ranked' | 'regular';
-export type RailSection = {
-  id: string;
-  title: string;
-  kind: RailKind;
-  items: SeriesEntry[];
-};
+export type {
+  BadgePosition,
+  BadgeTone,
+  CardBadge,
+  Chapter,
+  GridPage,
+  MetaCell,
+  RailKind,
+  RailSection,
+  SeriesDetail,
+  SeriesEntry,
+  TagGroup,
+  TrackerLink,
+  TrackerSearchResult,
+  TrackerService,
+} from './types';
 
 /**
  * An intentionally very long title — used to exercise the card's clamp +
@@ -347,7 +295,11 @@ export function mockSeries(
     base.hasTrackers = true;
     base.trackers = mockTrackerLinks(seed, chapterCount);
     base.newCount = h % 5 === 0 ? 3 : undefined;
-    base.related = items(`${seed}-rel`, 12, { sub: true });
+    // Two groups, so multi-group related rendering is exercisable in mock mode too.
+    base.relatedGroups = [
+      { label: 'Related', items: items(`${seed}-rel`, 12, { sub: true }) },
+      { label: 'Similar', items: items(`${seed}-sim`, 8, { sub: true }) },
+    ];
   }
 
   return base;
@@ -365,4 +317,120 @@ export function relativeTime(ts: number): string {
   const wk = Math.floor(day / 7);
   if (wk < 5) return `${wk}w ago`;
   return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+// ─── DataSource-shaped wrappers ──────────────────────────────────────────────
+// The functions below give the mock generators above the same async shape as
+// the real API (`api.ts`), so `source.ts` can switch between them uniformly.
+// Only reachable via the dev-only mock toggle or the GH Pages demo build — see
+// `source.ts`.
+
+const MOCK_BRIDGE_NAMES = ['MangaDex', 'comick', 'Batoto', 'WeebCentral', 'asura'];
+const MOCK_DIRECT_BRIDGES = new Set(['asura']);
+const slugify = (name: string) => name.toLowerCase();
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export async function mockGetBridges(): Promise<Bridge[]> {
+  return MOCK_BRIDGE_NAMES.map((name) => ({
+    id: slugify(name),
+    name,
+    nsfw: false,
+    capabilities: MOCK_DIRECT_BRIDGES.has(name) ? ['lists', 'search', 'direct'] : ['lists', 'search'],
+    thumbnail: `https://picsum.photos/seed/bridge-${slugify(name)}/100/100`,
+  }));
+}
+
+export async function mockGetBridgeLists(_bridgeId: string): Promise<BridgeList[]> {
+  return [
+    { id: 'home', name: 'Home', page: false },
+    { id: 'popular', name: 'Popular', page: true },
+    { id: 'favorites', name: 'Favorites', page: true },
+  ];
+}
+
+export async function mockGetHomeSections(
+  _bridgeId: string,
+): Promise<{ sections: RailSection[]; gridSections: HomeGridSection[] }> {
+  // Two grid sections so the non-terminal "Load more" / terminal infinite-scroll
+  // split (see types.ts's HomeGridSection doc) is exercisable in mock mode too.
+  return {
+    sections: mockHomeSections('home'),
+    gridSections: [
+      { id: 'staff-picks', title: 'Staff Picks', items: mockGrid('staff-picks', 12), hasNextPage: true },
+      { id: 'home', title: 'Browse all', items: mockGrid('home', 24), hasNextPage: true },
+    ],
+  };
+}
+
+/** Infinite mock grid: always reports another page so infinite-scroll stays exercisable. */
+export async function mockGetGridPage(_bridgeId: string, listId: string, page: number): Promise<GridPage> {
+  if (page > 1) await delay(PAGE_LOAD_DELAY_MS);
+  return { items: mockGrid(`${listId}-p${page}`, 24), hasNextPage: true };
+}
+
+/** Finite mock search results (3 pages), so the "end of results" case is reachable too. */
+export async function mockSearch(_bridgeId: string, query: string, page: number): Promise<GridPage> {
+  if (page > 1) await delay(PAGE_LOAD_DELAY_MS);
+  return { items: mockGrid(`${query || 'search'}-p${page}`, 24), hasNextPage: page < 3 };
+}
+
+export async function mockGetSeriesDetail(
+  _bridgeId: string,
+  seriesId: string,
+  opts: { direct?: boolean; bridgeName?: string; title?: string } = {},
+): Promise<SeriesDetail> {
+  await delay(SERIES_OPEN_DELAY_MS);
+  return mockSeries(seriesId, opts.title, opts.bridgeName ?? 'Library', { direct: opts.direct });
+}
+
+export async function mockGetChapterPages(_bridgeId: string, _seriesId: string, chapterId: string): Promise<string[]> {
+  return readerPagesForChapter(chapterId);
+}
+
+export async function mockGetDirectPages(_bridgeId: string, seriesId: string): Promise<string[]> {
+  return readerPagesForDirect(seriesId);
+}
+
+// ─── Filters, sort, tags, favorites ──────────────────────────────────────────
+
+export async function mockGetFilters(): Promise<ApiFilter[]> {
+  return [
+    { type: 'multiselect', key: 'genre', label: 'Genres', options: GENRES.map((g) => ({ value: g, label: g })) },
+    { type: 'toggle', key: 'ongoing', label: 'Ongoing only' },
+    { type: 'tag-multiselect', key: 'tags', label: 'Tags', excludable: true },
+  ];
+}
+
+export async function mockGetSortOptions(): Promise<ApiSortOption[]> {
+  return [
+    { key: 'relevance', label: 'Relevance' },
+    { key: 'newest', label: 'Newest' },
+    { key: 'title', label: 'Title' },
+  ];
+}
+
+export async function mockGetTags(query: string): Promise<{ value: string; label: string }[]> {
+  return MANY_TAGS.filter((t) => t.toLowerCase().includes(query.trim().toLowerCase())).map((t) => ({
+    value: t,
+    label: t,
+  }));
+}
+
+const mockFavorites = new Set<string>();
+
+export async function mockGetFavorites(page: number): Promise<GridPage> {
+  if (page > 1) return { items: [], hasNextPage: false };
+  return { items: [...mockFavorites].map((id) => entry(id, hash(id))), hasNextPage: false };
+}
+
+export async function mockIsFavorite(seriesId: string): Promise<boolean> {
+  return mockFavorites.has(seriesId);
+}
+
+export async function mockAddFavorite(seriesId: string): Promise<void> {
+  mockFavorites.add(seriesId);
+}
+
+export async function mockRemoveFavorite(seriesId: string): Promise<void> {
+  mockFavorites.delete(seriesId);
 }

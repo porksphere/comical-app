@@ -10,35 +10,10 @@ import { useTheme } from '@/hooks/use-theme';
 
 import { FilterButton } from './filter-button';
 import { CheckIcon, FiltersIcon, SortIcon } from './filter-icons';
-import {
-  CONTROL_HEIGHT,
-  CONTROL_RADIUS,
-  initialValue,
-  type FilterDef,
-  type FilterValue,
-} from './filter-types';
+import { CONTROL_HEIGHT, CONTROL_RADIUS, type FilterDef, type FilterValue } from './filter-types';
 
-// Placeholder filter UI. "Sort" is a single-select demo behind its own icon; the
-// rest are the reusable, typed filter controls declared in FILTER_DEFS.
-
-const SORTS = ['Relevance', 'Newest', 'Top rated', 'Most popular'];
-
-const TAGS = [
-  'Action', 'Adventure', 'Comedy', 'Drama', 'Ecchi', 'Fantasy', 'Harem', 'Historical',
-  'Horror', 'Isekai', 'Josei', 'Magic', 'Martial Arts', 'Mecha', 'Music', 'Mystery',
-  'Psychological', 'Romance', 'School Life', 'Sci-Fi', 'Seinen', 'Shoujo', 'Shounen',
-  'Slice of Life', 'Sports', 'Supernatural', 'Thriller', 'Tragedy',
-];
-
-const FILTER_DEFS: FilterDef[] = [
-  { id: 'title', label: 'Title', type: 'string', placeholder: 'Title contains…' },
-  { id: 'year', label: 'Year', type: 'number', min: 1970, max: 2026, step: 1, default: 2015 },
-  { id: 'format', label: 'Format', type: 'multi', options: ['Manga', 'Manhwa', 'Manhua', 'Webtoon', 'One-shot'] },
-  { id: 'status', label: 'Status', type: 'includeExclude', options: ['Ongoing', 'Completed', 'Hiatus', 'Cancelled'] },
-  // Multi-select that starts fully selected.
-  { id: 'rating', label: 'Content rating', type: 'multi', options: ['Safe', 'Suggestive', 'Erotica'], selectAllByDefault: true },
-  { id: 'tags', label: 'Tags', type: 'tags', options: TAGS },
-];
+export type SortOption = { key: string; label: string };
+export type SortState = { key: string; ascending: boolean } | null;
 
 // Layout rules for the single-line filter bar.
 const GAP = Spacing.two;
@@ -65,22 +40,41 @@ function fitCount(containerW: number, total: number, sortReserve: number): numbe
  * use the same full display as the overflow sheet, sized so each stays readable;
  * only as many as fit on one line are shown and the rest collapse into a "+X"
  * funnel chip. A wide-enough screen shows every filter with no overflow at all.
+ *
+ * Fully controlled: `defs`/`sortOptions` come from the bridge (`getFilters`/
+ * `getSortOptions`), `values`/`sort` are owned by the caller so they can feed
+ * the actual list/search fetch — this component only renders and reports
+ * interaction, it never fetches or decides what to show for an empty bridge.
  */
-export function FilterBar({ searchActive }: { searchActive: boolean }) {
+export function FilterBar({
+  defs,
+  values,
+  onValueChange,
+  sortOptions,
+  sort,
+  onSortChange,
+  searchActive,
+}: {
+  defs: FilterDef[];
+  values: Record<string, FilterValue>;
+  onValueChange: (id: string, v: FilterValue) => void;
+  sortOptions: SortOption[];
+  sort: SortState;
+  onSortChange: (sort: SortState) => void;
+  searchActive: boolean;
+}) {
   const wide = useIsLargeScreen();
-  const [sort, setSort] = useState(SORTS[0]);
-  const [values, setValues] = useState<Record<string, FilterValue>>(() =>
-    Object.fromEntries(FILTER_DEFS.map((d) => [d.id, initialValue(d)])),
-  );
-  const setValue = (id: string, v: FilterValue) => setValues((prev) => ({ ...prev, [id]: v }));
 
   const [containerW, setContainerW] = useState(0);
   // Sort only shows once results are on screen; until then it reserves no room.
   // On narrow viewports it collapses to an icon-only square, reserving less.
-  const sortReserve = searchActive ? (wide ? SORT_RESERVE_LABELLED : SORT_RESERVE_ICON) : 0;
-  const visible = fitCount(containerW, FILTER_DEFS.length, sortReserve);
-  const shown = FILTER_DEFS.slice(0, visible);
-  const hidden = FILTER_DEFS.slice(visible);
+  const hasSort = sortOptions.length > 0;
+  const sortReserve = searchActive && hasSort ? (wide ? SORT_RESERVE_LABELLED : SORT_RESERVE_ICON) : 0;
+  const visible = fitCount(containerW, defs.length, sortReserve);
+  const shown = defs.slice(0, visible);
+  const hidden = defs.slice(visible);
+
+  const currentSortLabel = sortOptions.find((o) => o.key === sort?.key)?.label ?? sortOptions[0]?.label ?? '';
 
   return (
     <View
@@ -88,20 +82,30 @@ export function FilterBar({ searchActive }: { searchActive: boolean }) {
       onLayout={(e) => setContainerW(e.nativeEvent.layout.width)}>
       {shown.map((def) => (
         <View key={def.id} style={styles.filterSlot}>
-          <FilterButton def={def} value={values[def.id]} onChange={(v) => setValue(def.id, v)} />
+          <FilterButton def={def} value={values[def.id]} onChange={(v) => onValueChange(def.id, v)} />
         </View>
       ))}
       {hidden.length > 0 && (
         <OverflowChip
           count={hidden.length}
-          render={() => <FiltersSheet defs={hidden} initial={values} onChange={setValue} />}
+          render={() => <FiltersSheet defs={hidden} initial={values} onChange={onValueChange} />}
         />
       )}
-      {searchActive && (
+      {searchActive && hasSort && (
         <SortButton
-          label={sort}
+          label={currentSortLabel}
           showLabel={wide}
-          render={() => <OptionMenu title="Sort by" options={SORTS} selected={sort} onSelect={setSort} />}
+          render={() => (
+            <OptionMenu
+              title="Sort by"
+              options={sortOptions.map((o) => o.label)}
+              selected={currentSortLabel}
+              onSelect={(label) => {
+                const opt = sortOptions.find((o) => o.label === label);
+                if (opt) onSortChange({ key: opt.key, ascending: true });
+              }}
+            />
+          )}
         />
       )}
     </View>
@@ -303,6 +307,11 @@ const styles = StyleSheet.create({
   },
   content: {
     gap: Spacing.two,
+    // Trailing space below the last row, inside the content itself (not a
+    // separate painted view or outer sheet margin — see overlay.tsx and
+    // filter-editors.tsx's LIST_TRAILING_SPACE for why), so a short sheet
+    // (e.g. one overflowed filter) isn't flush against the sheet's own edge.
+    paddingBottom: Spacing.four,
   },
   sheetHeader: {
     flexDirection: 'row',

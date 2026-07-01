@@ -441,7 +441,8 @@ function surfaceStyle(width: number, height: number): React.CSSProperties {
     touchAction: 'none',
     userSelect: 'none',
     WebkitUserSelect: 'none',
-    backgroundColor: '#000',
+    // Reference: `#reader-view { background: #0f0f0f }` — not pure black.
+    backgroundColor: '#0f0f0f',
   };
 }
 function trackStyle(n: number, width: number, height: number): React.CSSProperties {

@@ -8,7 +8,8 @@ import { CardBadge, UnreadBadge } from '@/components/card-badge';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
-import { coverDelayMs, type SeriesEntry } from '@/data/mock';
+import { coverDelayMs } from '@/data/mock';
+import type { SeriesEntry } from '@/data/types';
 import { useIsCompact } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -26,11 +27,17 @@ const WIDTHS: Record<Exclude<CardSize, 'grid'>, number> = {
   hero: 240,
 };
 
-const MAX_TITLE_LINES = 2;
+// Reference: `.clampable > span { -webkit-line-clamp: 3; }` — clamps to 3
+// lines before the full-title peek popover takes over, not 2.
+const MAX_TITLE_LINES = 3;
 // Card title metrics mirror the reference's `.card-title`: 0.85rem desktop /
 // 0.8rem mobile (1rem = 16px), line-height 1.3 (rounded to whole px).
 const TITLE_FONT_SIZE = { regular: 13.6, compact: 12.8 };
 const TITLE_LINE_HEIGHT = { regular: 18, compact: 17 };
+// Subtitle (author / latest chapter) mirrors `.card-sub`: 0.75rem desktop /
+// 0.72rem mobile, line-height ~1.3, color #888 (here: the theme's muted text).
+const SUB_FONT_SIZE = { regular: 12, compact: 11.5 };
+const SUB_LINE_HEIGHT = { regular: 16, compact: 15 };
 
 // Large enough to cover any screen: the press stays "active" wherever the finger
 // goes, so the highlight only ends on release.
@@ -95,6 +102,7 @@ export function SeriesCard({
   index = 0,
   onPeekChange,
   bridge,
+  bridgeId,
   direct,
 }: {
   entry: SeriesEntry;
@@ -111,6 +119,9 @@ export function SeriesCard({
   onPeekChange?: (show: boolean, index: number) => void;
   /** Originating bridge name, carried to the series detail's header. */
   bridge?: string;
+  /** Originating bridge's stable id, carried so the series detail can call the
+   *  real API. Absent in mock mode, where there's no real id to fetch with. */
+  bridgeId?: string;
   /** Whether the bridge serves "direct" series (page thumbnails, no chapters);
    *  carried to the detail so it renders the page grid instead of a chapter list. */
   direct?: boolean;
@@ -152,6 +163,24 @@ export function SeriesCard({
   // Stop reporting if the card unmounts while peeking (rail recycle/scroll).
   useEffect(() => () => onPeekRef.current?.(false, index), [index]);
 
+  // Matched the user's persistent tag/genre exclusions: a redacted, non-tappable
+  // placeholder that keeps the slot (grid counts/columns stay stable) but never
+  // even requests the real cover/title — mirrors the reference's `makeCard`
+  // (app.ts:2649), which renders excluded entries without touching their image.
+  if (entry.excluded) {
+    return (
+      <View style={StyleSheet.flatten([styles.card, fixedWidth != null && { width: fixedWidth }])}>
+        <View style={styles.coverShell}>
+          <View style={[styles.cover, styles.hiddenCover]}>
+            <ThemedText type="small" themeColor="textSecondary">
+              Hidden
+            </ThemedText>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <Link
       href={{
@@ -159,7 +188,17 @@ export function SeriesCard({
         params: {
           id: entry.id,
           title: entry.title,
-          ...(bridge ? { bridge } : {}),
+          // Percent-encoded: expo-router's web href resolution breaks when a
+          // route param value contains literal parentheses (real bridge
+          // display names commonly do, e.g. "Illustration Gallery (Demo)").
+          // `encodeURIComponent` alone doesn't touch '(' ')' — they're in its
+          // unreserved set — so escape them explicitly. Decoded back in
+          // series.tsx with a single `decodeURIComponent` (which does handle
+          // %28/%29 like any other percent-escape).
+          ...(bridge
+            ? { bridge: encodeURIComponent(bridge).replace(/\(/g, '%28').replace(/\)/g, '%29') }
+            : {}),
+          ...(bridgeId ? { bridgeId } : {}),
           ...(direct ? { direct: '1' } : {}),
         },
       }}
@@ -220,6 +259,19 @@ export function SeriesCard({
           {/* Grid-only in-card popover (rails render it at the rail level). */}
           {!onPeekChange && showPeek && <TitlePeek title={entry.title} />}
         </View>
+        {/* Secondary line (author, latest chapter, …) — bridge-supplied, absent for many. */}
+        {entry.sub ? (
+          <ThemedText
+            type="small"
+            themeColor="textSecondary"
+            numberOfLines={1}
+            style={[
+              styles.sub,
+              { fontSize: compact ? SUB_FONT_SIZE.compact : SUB_FONT_SIZE.regular, lineHeight: compact ? SUB_LINE_HEIGHT.compact : SUB_LINE_HEIGHT.regular },
+            ]}>
+            {entry.sub}
+          </ThemedText>
+        ) : null}
       </Pressable>
     </Link>
   );
@@ -278,6 +330,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: 'rgba(128,128,128,0.15)',
   },
+  hiddenCover: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   ring: {
     position: 'absolute',
     // Offset == border width, so the ring's inner edge is flush with the cover
@@ -295,6 +351,12 @@ const styles = StyleSheet.create({
   },
   title: {
     fontWeight: '600',
+  },
+  sub: {
+    // `card`'s outer `gap` (Spacing.two, 8px) already separates title from sub;
+    // pull it in to the reference's tighter title→sub gap (`.card-sub`'s
+    // margin-top: 0.2rem ≈ 3px), vs. the ~6px reference gives cover→title.
+    marginTop: -5,
   },
   measure: {
     position: 'absolute',

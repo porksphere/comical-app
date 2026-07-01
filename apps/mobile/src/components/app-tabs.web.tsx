@@ -261,6 +261,9 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   // --- Mobile black icon bottom bar ---
+  // Reference: `.bottom-nav { background: #111113; border-top: 1px solid
+  // #242427; }` — its own shade, distinct from both the page background
+  // (#0f0f0f) and general element surfaces.
   // Absolute overlay pinned to the bottom: content scrolls behind it (screens
   // reserve BottomTabInset so their last items clear it), so when it fades on
   // scroll the content stays visible through the ghost instead of being hidden
@@ -273,10 +276,10 @@ const styles = StyleSheet.create({
     zIndex: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#000000',
+    backgroundColor: '#111113',
     paddingTop: Spacing.two,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255,255,255,0.12)',
+    borderTopColor: '#242427',
   },
   bottomButton: {
     flex: 1,

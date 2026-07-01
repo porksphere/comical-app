@@ -11,6 +11,10 @@ export const Colors = {
   light: {
     text: '#000000',
     background: '#ffffff',
+    // Modal/overlay-sheet surface — between `background` and `backgroundElement`
+    // so rows/buttons drawn on it (which use `backgroundElement`) still stand
+    // out, matching the dark theme's tiering (see its comment).
+    backgroundPanel: '#F7F7F9',
     backgroundElement: '#F0F0F3',
     backgroundSelected: '#E0E1E6',
     textSecondary: '#60646C',
@@ -32,7 +36,16 @@ export const Colors = {
   },
   dark: {
     text: '#ffffff',
-    background: '#000000',
+    // Reference: `body { background: #0f0f0f }` — a slightly-off-black, not
+    // pure #000, which is why the app read starker/higher-contrast than web.
+    background: '#0f0f0f',
+    // Modal/overlay-sheet surface. Reference uses a 3-tier scheme here —
+    // `#filter-overlay-panel { background: #161618 }` vs. `button.ms-trigger
+    // { background: #1c1c1e }` for the rows/buttons drawn on it — closer
+    // together than `background`→`backgroundElement`'s jump, which is why
+    // reusing either of those for the sheet either mismatched the page (this
+    // token) or swallowed the rows' contrast (`backgroundElement`, below).
+    backgroundPanel: '#17181b',
     backgroundElement: '#212225',
     backgroundSelected: '#2E3135',
     textSecondary: '#B0B4BA',

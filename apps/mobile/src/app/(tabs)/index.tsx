@@ -9,46 +9,36 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { FilterBar } from '@/components/filters/filter-demo';
+import { FilterBar, type SortOption, type SortState } from '@/components/filters/filter-demo';
+import { filterDefFromApi, filterValueToApi, initialValue, type FilterDef, type FilterValue } from '@/components/filters/filter-types';
 import { ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
 import { Rail, SectionHead } from '@/components/rail';
+import { RetryBlock } from '@/components/retry-block';
 import { BridgeThumbSize, Selector } from '@/components/selector';
 import { SeriesCard } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
-import { getBridges, getBridgeLists, isAbort, pageOptions, type Bridge } from '@/data/api';
-import { mockGrid, mockHomeSections, PAGE_LOAD_DELAY_MS, type RailSection, type SeriesEntry } from '@/data/mock';
+import { isAbort, pageOptions } from '@/data/api';
+import { useDataSource, type QueryOpts } from '@/data/source';
+import type { Bridge, BridgeList, HomeGridSection, RailSection, SeriesEntry } from '@/data/types';
 import { useIsCompact, useTopBarHeight } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
-
-// Fallback selector contents used until the API responds (or if it's
-// unreachable, e.g. SSO/CORS on the web preview) so the screen always renders.
-const BRIDGES = ['MangaDex', 'comick', 'Batoto', 'WeebCentral', 'asura'];
-const PAGES = ['home', 'popular', 'favorites'];
-
-// Placeholder thumbnails for the offline mock fallback bridges. Seeded so each
-// bridge gets a consistent image; replaced by the real thumbnail once the API
-// returns one.
-const BRIDGE_THUMBNAILS: Record<string, string> = {
-  MangaDex: 'https://picsum.photos/seed/bridge-mangadex/100/100',
-  comick: 'https://picsum.photos/seed/bridge-comick/100/100',
-  Batoto: 'https://picsum.photos/seed/bridge-batoto/100/100',
-  WeebCentral: 'https://picsum.photos/seed/bridge-weebcentral/100/100',
-  asura: 'https://picsum.photos/seed/bridge-asura/100/100',
-};
-
-// Bridges that serve "direct" series (a single work of page images — thumbnails
-// + read, no chapter list). Real bridges report this via capabilities; this set
-// designates one in the offline mock fallback so the view is reachable in the
-// web preview where the API is unreachable.
-const DIRECT_BRIDGES = new Set(['asura']);
 
 // Scroll distance over which the top bar's bottom divider fades in: absent at the
 // very top (once collapsed, on narrow viewports), present once content scrolls
 // under it (mirrors the reference's `.stuck` divider).
 const DIVIDER_SCROLL = Spacing.three;
+// The reference's mobile grid uses a tighter inter-card gap than its row gap
+// (`.grid { gap: 1rem 0.6rem }`, i.e. ~9.6px columns vs 16px rows) — Spacing.two
+// (8px) is the closest token to that column gap. Shared so the main grid and
+// HomeGridBlock's non-terminal sections can't drift apart from each other.
+const GRID_COLUMN_GAP = Spacing.two;
+/** Debounce before a filter/sort change actually triggers a re-fetch — avoids
+ *  spamming the bridge's backend on every tap, mirroring the reference's
+ *  `doSearchIfChanged` snapshot-diff-on-close contract (app.ts:4765). */
+const FILTER_DEBOUNCE_MS = 500;
 
 // Narrow-mobile only: at the very top the bar gets this much extra height (split
 // above/below the centred selector row as breathing room) and the bridge
@@ -61,117 +51,259 @@ const EXPAND_EXTRA = Spacing.four;
 const THUMB_GROWTH = 12;
 
 type GridItem = SeriesEntry & { spacer?: boolean };
+/** A drilled-into rail: its list id (for pagination) + display title. */
+type SeeAll = { listId: string; title: string } | null;
 
 // Suppress react-native-web's default focus outline on the search <input> so the
 // container border can carry the focus highlight instead. No-op on native.
 const NO_OUTLINE = Platform.select({ web: { outlineStyle: 'none' } }) as TextStyle | undefined;
 
 export default function BrowseScreen() {
+  const ds = useDataSource();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
-  // Bridges fetched from the backend; falls back to BRIDGES until/unless loaded.
-  const [bridges, setBridges] = useState<Bridge[]>([]);
-  const [bridge, setBridge] = useState(BRIDGES[0]);
-  const [pages, setPages] = useState<string[]>(PAGES);
-  const [page, setPage] = useState(PAGES[0]);
 
-  const bridgeOptions = bridges.length ? bridges.map((b) => b.name) : BRIDGES;
-  // Direct = the selected bridge serves page-thumbnail series instead of
-  // chapters. Prefer the live bridge's capabilities; fall back to the mock set.
+  // ── Bridges ────────────────────────────────────────────────────────────
+  const [bridges, setBridges] = useState<Bridge[]>([]);
+  const [bridgesError, setBridgesError] = useState<string | null>(null);
+  const [bridgesReload, setBridgesReload] = useState(0);
+  const [bridge, setBridge] = useState<string | null>(null);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    setBridgesError(null);
+    ds.getBridges(ctrl.signal)
+      .then((bs) => {
+        setBridges(bs);
+        setBridge((prev) => (prev && bs.some((b) => b.name === prev) ? prev : (bs[0]?.name ?? null)));
+      })
+      .catch((e) => {
+        if (!isAbort(e)) setBridgesError(e.message || 'Failed to load bridges');
+      });
+    return () => ctrl.abort();
+  }, [ds, bridgesReload]);
+
   const currentBridge = bridges.find((b) => b.name === bridge);
-  const currentBridgeThumbnail = currentBridge?.thumbnail ?? BRIDGE_THUMBNAILS[bridge];
+  const bridgeId = currentBridge?.id;
   const bridgeThumbnails = useMemo(() => {
-    if (!bridges.length) return BRIDGE_THUMBNAILS;
-    const map: Record<string, string> = { ...BRIDGE_THUMBNAILS };
+    const map: Record<string, string> = {};
     for (const b of bridges) if (b.thumbnail) map[b.name] = b.thumbnail;
     return map;
   }, [bridges]);
-  const directBridge = currentBridge
-    ? currentBridge.capabilities.includes('direct')
-    : DIRECT_BRIDGES.has(bridge);
+  const directBridge = currentBridge?.capabilities.includes('direct') ?? false;
 
-  // Load the bridge list once; keep the fallback on any failure.
+  // ── Lists (drives the Page selector) ──────────────────────────────────────
+  const [lists, setLists] = useState<BridgeList[]>([]);
+  const [page, setPage] = useState('home');
+
   useEffect(() => {
+    if (!bridgeId) return;
     const ctrl = new AbortController();
-    getBridges(ctrl.signal)
-      .then((bs) => {
-        if (bs.length) {
-          setBridges(bs);
-          setBridge(bs[0].name);
-        }
+    ds.getBridgeLists(bridgeId, ctrl.signal)
+      .then((ls) => {
+        setLists(ls);
+        setPage('home');
       })
       .catch((e) => {
-        if (!isAbort(e)) console.warn('getBridges failed; using fallback:', e.message);
+        if (!isAbort(e)) setLists([]);
       });
     return () => ctrl.abort();
-  }, []);
+  }, [bridgeId, ds]);
 
-  // Populate the page selector from the selected bridge's lists.
+  const pages = useMemo(
+    () => (currentBridge ? pageOptions(lists, currentBridge.capabilities) : ['home']),
+    [lists, currentBridge],
+  );
+  // The list backing a non-home page selection (a `page: true` list, e.g. "Popular").
+  const selectedList = useMemo(
+    () => lists.find((l) => l.page && l.name.toLowerCase() === page),
+    [lists, page],
+  );
+  const isFavoritesPage = page === 'favorites';
+
+  // ── Filters + sort (fetched once per bridge; capability-gated) ────────────
+  const [filterDefs, setFilterDefs] = useState<FilterDef[]>([]);
+  const [sortOptions, setSortOptions] = useState<SortOption[]>([]);
+  const [filterValues, setFilterValues] = useState<Record<string, FilterValue>>({});
+  const [sortValue, setSortValue] = useState<SortState>(null);
+
   useEffect(() => {
-    const b = bridges.find((x) => x.name === bridge);
-    if (!b) {
-      setPages(PAGES);
+    if (!bridgeId || !currentBridge) {
+      setFilterDefs([]);
+      setSortOptions([]);
+      setFilterValues({});
+      setSortValue(null);
       return;
     }
     const ctrl = new AbortController();
-    getBridgeLists(b.id, ctrl.signal)
-      .then((lists) => {
-        const opts = pageOptions(lists, b.capabilities);
-        setPages(opts);
-        setPage(opts[0]);
+    const hasTags = (query: string) => ds.getTags(bridgeId, query, ctrl.signal);
+    if (currentBridge.capabilities.includes('filters')) {
+      ds.getFilters(bridgeId, ctrl.signal)
+        .then((apiDefs) => {
+          const defs = apiDefs.map((f) => {
+            const def = filterDefFromApi(f);
+            // Live tag search for a bridge-backed tag-multiselect (no static option list).
+            return def.type === 'tags' && !def.options ? { ...def, search: hasTags } : def;
+          });
+          setFilterDefs(defs);
+          setFilterValues(Object.fromEntries(defs.map((d) => [d.id, initialValue(d)])));
+        })
+        .catch(() => setFilterDefs([]));
+    } else {
+      setFilterDefs([]);
+      setFilterValues({});
+    }
+    if (currentBridge.capabilities.includes('sort')) {
+      ds.getSortOptions(bridgeId, ctrl.signal)
+        .then((opts) => {
+          setSortOptions(opts);
+          setSortValue(null);
+        })
+        .catch(() => setSortOptions([]));
+    } else {
+      setSortOptions([]);
+      setSortValue(null);
+    }
+    return () => ctrl.abort();
+  }, [bridgeId, currentBridge, ds]);
+
+  // Debounced "committed" snapshot — the actual fetch effect depends on this,
+  // not on `filterValues`/`sortValue` directly, so rapid taps don't each fire a
+  // request. Reference contract: `doSearchIfChanged`, app.ts:4765.
+  const [committedFilters, setCommittedFilters] = useState<QueryOpts['filters']>(undefined);
+  const [committedSort, setCommittedSort] = useState<QueryOpts['sort']>(undefined);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const next = filterDefs
+        .map((d) => filterValueToApi(d, filterValues[d.id]))
+        .filter((v): v is { key: string; value: unknown } => v !== null);
+      setCommittedFilters(next.length ? (next as QueryOpts['filters']) : undefined);
+      setCommittedSort(sortValue ? { key: sortValue.key, ascending: sortValue.ascending } : undefined);
+    }, FILTER_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [filterDefs, filterValues, sortValue]);
+  const hasActiveQuery = !!committedFilters || !!committedSort;
+
+  // ── Home rails + grid sections (only fetched while `page === 'home'`) ─────
+  const [sections, setSections] = useState<RailSection[]>([]);
+  const [gridSections, setGridSections] = useState<HomeGridSection[]>([]);
+  const [homeError, setHomeError] = useState<string | null>(null);
+  const [homeReload, setHomeReload] = useState(0);
+
+  useEffect(() => {
+    if (!bridgeId || page !== 'home') return;
+    const ctrl = new AbortController();
+    setHomeError(null);
+    ds.getHomeSections(bridgeId, ctrl.signal)
+      .then((res) => {
+        setSections(res.sections);
+        setGridSections(res.gridSections);
       })
       .catch((e) => {
-        if (!isAbort(e)) {
-          console.warn('getBridgeLists failed; using fallback:', e.message);
-          setPages(PAGES);
-        }
+        if (!isAbort(e)) setHomeError(e.message || 'Failed to load home');
       });
     return () => ctrl.abort();
-  }, [bridge, bridges]);
+  }, [bridgeId, page, ds, homeReload]);
+  // Only the LAST grid section infinite-scrolls; earlier ones get "Load more" —
+  // see HomeGridSection's doc in types.ts.
+  const terminalGridSection = gridSections.at(-1) ?? null;
+  const nonTerminalGridSections = gridSections.length > 1 ? gridSections.slice(0, -1) : [];
 
   // Committed search query (set on submit) and the active "See all" rail, if any.
   const [query, setQuery] = useState('');
-  const [seeAll, setSeeAll] = useState<RailSection | null>(null);
+  const [seeAll, setSeeAll] = useState<SeeAll>(null);
 
-  // Only a search or a rail's "See all" drops to the flat results grid (with a
-  // back-to-home affordance). Every top-level page — home included — is its own
-  // full page of rails + grid, switched via the Page selector, so changing page
-  // never shows a back button.
-  const inResults = !!query || !!seeAll;
-
-  const sections = useMemo(() => mockHomeSections(page), [page]);
-  const results = useMemo<SeriesEntry[]>(() => {
-    if (seeAll) return seeAll.items;
-    return mockGrid(query || page);
-  }, [seeAll, query, page]);
+  // A search, a rail's "See all", or a live filter/sort choice all drop to the
+  // flat results grid (with a back-to-home affordance) — matches the reference's
+  // `doSearch`: any of query/filters/sort/list-scope leaves the home surface.
+  const inResults = !!query || !!seeAll || hasActiveQuery;
   const resultsLabel = seeAll ? seeAll.title : query ? `Results for “${query}”` : page;
 
-  // Infinite "Browse all" grid shown under the home rails. We reuse one page of
-  // mock data and repeat it on each load (only the ids are re-keyed), per the
-  // brief — a stand-in for paginated bridge results.
-  const homeBase = useMemo(() => mockGrid(page, 24), [page]);
-  const [homePages, setHomePages] = useState(1);
-  // Each page is its own surface: restart the infinite "Browse all" depth when
-  // the page changes so a new page doesn't inherit the previous one's depth.
-  useEffect(() => setHomePages(1), [page]);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const homeGrid = useMemo<SeriesEntry[]>(
-    () =>
-      Array.from({ length: homePages }).flatMap((_, p) =>
-        homeBase.map((e) => ({ ...e, id: `${e.id}-p${p}` })),
-      ),
-    [homeBase, homePages],
-  );
+  // ── Grid (unified: a flagged page, favorites, search, or "See all") ───────
+  // Home's own grid sections (terminal + non-terminal) are fetched separately
+  // above; this is everything else, sharing one fetch/pagination pipeline.
+  // "See all" keeps its existing simple behavior (browse that list's items,
+  // page-only, no filters/sort/scoped-search) — those apply to the page-flagged
+  // list / global search case below instead.
+  const activeListId = seeAll ? seeAll.listId : page !== 'home' ? (selectedList?.id ?? null) : null;
+  // Scoped-list search: route through the list endpoint's `q` param when the
+  // active list is `searchable`, instead of always calling `/search` — mirrors
+  // `runSearch`'s branch at app.ts:4857.
+  const scopedSearch = !seeAll && page !== 'home' && !!selectedList?.searchable && !!activeListId;
+  const showResultsGrid = inResults;
+  // Home's terminal grid section (the last one in `gridSections`) shares the
+  // SAME scrollable FlatList + infinite scroll as results mode, not the
+  // "Load more" blocks non-terminal sections get — so it feeds `gridItems` too.
+  const isHomeTerminal = !inResults && page === 'home' && !!terminalGridSection;
 
-  // Load the next page after a simulated delay so the loading footer is visible.
+  const [gridItems, setGridItems] = useState<SeriesEntry[]>([]);
+  const [gridPageNum, setGridPageNum] = useState(1);
+  const [gridHasMore, setGridHasMore] = useState(false);
+  const [gridLoading, setGridLoading] = useState(false);
+  const [gridError, setGridError] = useState<string | null>(null);
+  const [gridReload, setGridReload] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  const fetchGrid = (pageNum: number) => {
+    if (!bridgeId) return Promise.reject(new Error('no bridge'));
+    if (isHomeTerminal) return ds.getGridPage(bridgeId, terminalGridSection!.id, pageNum);
+    if (isFavoritesPage) return ds.getFavorites(bridgeId, pageNum);
+    if (seeAll) return ds.getGridPage(bridgeId, seeAll.listId, pageNum);
+    const opts: QueryOpts = { filters: committedFilters, sort: committedSort };
+    // A page-flagged list browsed with no query (optionally filtered/sorted), or
+    // scoped-search on that same list when it's `searchable` and a query is set.
+    if (activeListId && (scopedSearch || !query)) {
+      return ds.getGridPage(bridgeId, activeListId, pageNum, scopedSearch && query ? { ...opts, query } : opts);
+    }
+    // Global search: an unscoped query, or filters/sort with no specific list (home).
+    return ds.search(bridgeId, query, pageNum, opts);
+  };
+
+  useEffect(() => {
+    // `getHomeSections` already fetched the terminal section's first page —
+    // just adopt it, no extra request needed.
+    if (isHomeTerminal) {
+      setGridItems(terminalGridSection!.items);
+      setGridHasMore(terminalGridSection!.hasNextPage);
+      setGridPageNum(1);
+      setGridError(null);
+      return;
+    }
+    if (!bridgeId || !showResultsGrid) {
+      setGridItems([]);
+      setGridHasMore(false);
+      return;
+    }
+    const ctrl = new AbortController();
+    setGridLoading(true);
+    setGridError(null);
+    setGridPageNum(1);
+    fetchGrid(1)
+      .then((res) => {
+        setGridItems(res.items);
+        setGridHasMore(res.hasNextPage);
+      })
+      .catch((e) => {
+        if (!isAbort(e)) setGridError(e.message || 'Failed to load results');
+      })
+      .finally(() => setGridLoading(false));
+    return () => ctrl.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bridgeId, isHomeTerminal, terminalGridSection, showResultsGrid, isFavoritesPage, activeListId, query, seeAll, scopedSearch, committedFilters, committedSort, ds, gridReload]);
+
   const loadMore = () => {
-    if (loadingMore) return;
+    if (loadingMore || !gridHasMore || !bridgeId || (!isHomeTerminal && !showResultsGrid)) return;
     setLoadingMore(true);
-    setTimeout(() => {
-      setHomePages((p) => p + 1);
-      setLoadingMore(false);
-    }, PAGE_LOAD_DELAY_MS);
+    const nextPage = gridPageNum + 1;
+    fetchGrid(nextPage)
+      .then((res) => {
+        setGridItems((prev) => [...prev, ...res.items]);
+        setGridHasMore(res.hasNextPage);
+        setGridPageNum(nextPage);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingMore(false));
   };
 
   const backToHome = () => {
@@ -210,20 +342,17 @@ export default function BrowseScreen() {
   // fallback during prerender/first paint, the real width once mounted.
   const railViewport = hydrated ? width : 390;
 
-  // Home shows the infinite "Browse all" grid under the rails; results mode
-  // shows the (finite) search / "See all" / page grid.
-  const baseGrid = inResults ? results : homeGrid;
   const gridData = useMemo<GridItem[]>(() => {
-    const remainder = baseGrid.length % numColumns;
-    if (remainder === 0) return baseGrid;
+    const remainder = gridItems.length % numColumns;
+    if (remainder === 0) return gridItems;
     const spacers: GridItem[] = Array.from({ length: numColumns - remainder }, (_, i) => ({
       id: `spacer-${i}`,
       title: '',
       cover: '',
       spacer: true,
     }));
-    return [...baseGrid, ...spacers];
-  }, [baseGrid, numColumns]);
+    return [...gridItems, ...spacers];
+  }, [gridItems, numColumns]);
 
   // Top bar: the bridge/page selectors sit in a band (barHeight below the
   // safe-area inset) overlaid on the scrolling list. On narrow viewports the band
@@ -277,17 +406,24 @@ export default function BrowseScreen() {
           grid below, while the bar background stays full-bleed. The row grows with
           the band (content stays vertically centred) for symmetric breathing room. */}
       <Animated.View pointerEvents="box-none" style={[styles.selectorRow, selectorRowStyle]}>
-        {currentBridgeThumbnail ? (
+        {currentBridge?.thumbnail ? (
           // Animate the wrapping View (a plain host component) rather than the
           // expo-image `Image` itself — `Image` is a composite class component, and
           // wrapping it directly with `Animated.createAnimatedComponent` is fragile
           // on native (crashed on launch; fine on web, where expo-image swaps to a
           // ref-forwarding `<img>` container, masking the issue in dev).
           <Animated.View style={[styles.bridgeThumb, thumbStyle]}>
-            <Image source={{ uri: currentBridgeThumbnail }} style={StyleSheet.absoluteFill} />
+            <Image source={{ uri: currentBridge.thumbnail }} style={StyleSheet.absoluteFill} />
           </Animated.View>
         ) : null}
-        <Selector title="Bridge" value={bridge} options={bridgeOptions} onChange={selectBridge} size="subtitle" thumbnails={bridgeThumbnails} />
+        <Selector
+          title="Bridge"
+          value={bridge ?? ''}
+          options={bridges.map((b) => b.name)}
+          onChange={selectBridge}
+          size="subtitle"
+          thumbnails={bridgeThumbnails}
+        />
         <Selector title="Page" value={page} options={pages} onChange={selectPage} size="subtitle" />
       </Animated.View>
     </Animated.View>
@@ -303,7 +439,15 @@ export default function BrowseScreen() {
         }}
         onClear={() => setQuery('')}
       />
-      <FilterBar searchActive={inResults} />
+      <FilterBar
+        defs={filterDefs}
+        values={filterValues}
+        onValueChange={(id, v) => setFilterValues((prev) => ({ ...prev, [id]: v }))}
+        sortOptions={sortOptions}
+        sort={sortValue}
+        onSortChange={setSortValue}
+        searchActive={inResults}
+      />
       {inResults && (
         <View style={styles.resultsHead}>
           <Pressable onPress={backToHome} hitSlop={8}>
@@ -319,33 +463,62 @@ export default function BrowseScreen() {
     </View>
   );
 
-  // The list header holds the controls, and — on home — the rails followed by
-  // the "Browse all" section heading. The grid (results or infinite home) then
-  // renders beneath it, so everything scrolls as one surface.
+  // The list header holds the controls, and — on home — the rails, any
+  // non-terminal grid sections (their own "Load more"), and the terminal
+  // section's heading. The main grid (results, favorites, or home's terminal
+  // section) then renders beneath it, so everything scrolls as one surface.
   const listHeader = (
     <View>
       {controls}
-      {!inResults && (
+      {!inResults && page === 'home' && (
         <>
-          <View style={styles.rails}>
-            {sections.map((s) => (
-              <Rail
-                key={s.id}
-                section={s}
-                viewportWidth={railViewport}
-                onSeeAll={setSeeAll}
-                bridge={bridge}
-                direct={directBridge}
-              />
-            ))}
-          </View>
-          <View style={styles.browseAllHead}>
-            <SectionHead title="Browse all" />
-          </View>
+          {homeError ? (
+            <RetryBlock message={homeError} onRetry={() => setHomeReload((n) => n + 1)} />
+          ) : (
+            <>
+              <View style={styles.rails}>
+                {sections.map((s) => (
+                  <Rail
+                    key={s.id}
+                    section={s}
+                    viewportWidth={railViewport}
+                    onSeeAll={(sec) => setSeeAll({ listId: sec.id, title: sec.title })}
+                    bridge={bridge ?? undefined}
+                    bridgeId={bridgeId}
+                    direct={directBridge}
+                  />
+                ))}
+              </View>
+              {nonTerminalGridSections.map((gs) => (
+                <HomeGridBlock
+                  key={gs.id}
+                  bridgeId={bridgeId}
+                  section={gs}
+                  bridge={bridge ?? undefined}
+                  direct={directBridge}
+                  numColumns={numColumns}
+                />
+              ))}
+            </>
+          )}
+          {terminalGridSection && (
+            <View style={styles.browseAllHead}>
+              <SectionHead title={terminalGridSection.title} />
+            </View>
+          )}
         </>
       )}
+      {gridError && <RetryBlock message={gridError} onRetry={() => setGridReload((n) => n + 1)} />}
     </View>
   );
+
+  if (bridgesError && bridges.length === 0) {
+    return (
+      <ThemedView style={[styles.container, styles.centerFill]}>
+        <RetryBlock message={bridgesError} onRetry={() => setBridgesReload((n) => n + 1)} />
+      </ThemedView>
+    );
+  }
 
   return (
     <ThemedView style={styles.container}>
@@ -357,7 +530,7 @@ export default function BrowseScreen() {
         keyExtractor={(item: GridItem) => String(item.id)}
         numColumns={numColumns}
         ListHeaderComponent={listHeader}
-        columnWrapperStyle={[styles.row, { gap: Spacing.three }]}
+        columnWrapperStyle={[styles.row, { gap: GRID_COLUMN_GAP }]}
         contentContainerStyle={[
           styles.gridContent,
           // Pad to the bar's tallest (expanded) height so the first row clears it at
@@ -368,12 +541,16 @@ export default function BrowseScreen() {
         renderItem={({ item }: { item: GridItem }) =>
           item.spacer ? <View style={styles.cell} /> : (
             <View style={styles.cell}>
-              <SeriesCard entry={item} bridge={bridge} direct={directBridge} />
+              <SeriesCard entry={item} bridge={bridge ?? undefined} bridgeId={bridgeId} direct={directBridge} />
             </View>
           )
         }
         ListFooterComponent={
-          !inResults && loadingMore ? <GridSkeleton numColumns={numColumns} rows={2} /> : null
+          gridLoading && gridItems.length === 0 ? (
+            <GridSkeleton numColumns={numColumns} rows={2} />
+          ) : loadingMore ? (
+            <GridSkeleton numColumns={numColumns} rows={2} />
+          ) : null
         }
         onScroll={scrollHandler}
         scrollEventThrottle={16}
@@ -385,6 +562,87 @@ export default function BrowseScreen() {
       />
       {topBar}
     </ThemedView>
+  );
+}
+
+/**
+ * A non-terminal home grid section: its own heading, grid, and "Load more"
+ * button — independent pagination from the main FlatList's infinite scroll,
+ * matching the reference's `attachLoadMore` for every grid list but the last.
+ */
+function HomeGridBlock({
+  bridgeId,
+  section,
+  bridge,
+  direct,
+  numColumns,
+}: {
+  bridgeId?: string;
+  section: HomeGridSection;
+  bridge?: string;
+  direct: boolean;
+  /** Same column count as the main grid, so cards read at one consistent size. */
+  numColumns: number;
+}) {
+  const ds = useDataSource();
+  const [items, setItems] = useState(section.items);
+  const [hasNextPage, setHasNextPage] = useState(section.hasNextPage);
+  const [pageNum, setPageNum] = useState(1);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setItems(section.items);
+    setHasNextPage(section.hasNextPage);
+    setPageNum(1);
+  }, [section]);
+
+  const loadMore = () => {
+    if (loading || !hasNextPage || !bridgeId) return;
+    setLoading(true);
+    const nextPage = pageNum + 1;
+    ds.getGridPage(bridgeId, section.id, nextPage)
+      .then((res) => {
+        setItems((prev) => [...prev, ...res.items]);
+        setHasNextPage(res.hasNextPage);
+        setPageNum(nextPage);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+
+  // Chunk into fixed-column rows, matching the main FlatList grid's own
+  // `numColumns` + `flex: 1` cell layout exactly (same `row`/`cell` styles) so
+  // cards read at the same size everywhere, not a separately-sized wrap grid.
+  const rows: SeriesEntry[][] = [];
+  for (let i = 0; i < items.length; i += numColumns) rows.push(items.slice(i, i + numColumns));
+
+  return (
+    <View style={styles.homeGridBlock}>
+      <SectionHead title={section.title} />
+      <View style={styles.homeGridRows}>
+        {rows.map((row, r) => (
+          <View key={r} style={[styles.row, styles.gridRow]}>
+            {row.map((item) => (
+              <View key={item.id} style={styles.cell}>
+                <SeriesCard entry={item} bridge={bridge} bridgeId={bridgeId} direct={direct} />
+              </View>
+            ))}
+            {/* Pad the last row with invisible spacers so short rows don't stretch. */}
+            {row.length < numColumns &&
+              Array.from({ length: numColumns - row.length }).map((_, i) => (
+                <View key={`spacer-${i}`} style={styles.cell} />
+              ))}
+          </View>
+        ))}
+      </View>
+      {hasNextPage && (
+        <Pressable onPress={loadMore} disabled={loading} style={styles.loadMoreButton}>
+          <ThemedView type="backgroundElement" style={styles.loadMoreInner}>
+            <ThemedText type="smallBold">{loading ? 'Loading…' : 'Load more'}</ThemedText>
+          </ThemedView>
+        </Pressable>
+      )}
+    </View>
   );
 }
 
@@ -482,6 +740,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  centerFill: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   // Absolute overlay so the list scrolls underneath; `justifyContent: flex-end`
   // keeps the selector row pinned to the bottom of the band, with the collapsing
   // breathing room above it.
@@ -546,6 +808,27 @@ const styles = StyleSheet.create({
   browseAllHead: {
     paddingTop: Spacing.five,
     paddingBottom: Spacing.two,
+  },
+  homeGridBlock: {
+    paddingTop: Spacing.five,
+    gap: Spacing.three,
+  },
+  homeGridRows: {
+    gap: Spacing.three,
+  },
+  // Same shape as the main FlatList's `columnWrapperStyle` (`row` + this gap),
+  // so a non-terminal home grid's rows lay out identically to the main grid.
+  gridRow: {
+    flexDirection: 'row',
+    gap: GRID_COLUMN_GAP,
+  },
+  loadMoreButton: {
+    alignSelf: 'center',
+  },
+  loadMoreInner: {
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.four,
+    borderRadius: 999,
   },
   gridContent: {
     gap: Spacing.three,
