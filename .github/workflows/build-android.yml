@@ -31,6 +31,7 @@ permissions:
 jobs:
   build:
     uses: ./.github/workflows/build-android-reusable.yml
+    secrets: inherit
 
   publish:
     needs: build

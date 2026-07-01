@@ -36,6 +36,14 @@
             "imageWidth": 76
           }
         }
+      ],
+      [
+        "@sentry/react-native/expo",
+        {
+          "url": "https://sentry.io/",
+          "organization": "TODO-SENTRY-ORG",
+          "project": "TODO-SENTRY-PROJECT"
+        }
       ]
     ],
     "experiments": {

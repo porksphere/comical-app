@@ -8,6 +8,12 @@ name: Build Android APK (reusable)
 
 on:
   workflow_call:
+    secrets:
+      SENTRY_AUTH_TOKEN:
+        # Optional: without it, the Sentry Gradle plugin below no-ops (skips
+        # sourcemap/debug-symbol upload) rather than failing the build. Not
+        # yet configured as a repo secret — see todo.md's Sentry section.
+        required: false
     outputs:
       version:
         description: expo.version read from apps/mobile/app.json
@@ -21,6 +27,12 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.meta.outputs.version }}
+    # Read by the Sentry Gradle plugin (injected into build.gradle by the Sentry
+    # Expo config plugin during `expo prebuild` below) so it can upload
+    # sourcemaps/debug symbols during assembleRelease. A missing/empty token
+    # makes that step no-op rather than fail.
+    env:
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
