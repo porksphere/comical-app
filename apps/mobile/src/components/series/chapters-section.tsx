@@ -9,7 +9,9 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { isAbort } from '@/data/api';
 import { coverDelayMs, relativeTime } from '@/data/mock';
+import { useDataSource } from '@/data/source';
 import type { Chapter } from '@/data/types';
 
 // The series chapters block: tab filter (Overview / All / Read / Unread) + sort
@@ -38,7 +40,7 @@ export function ChaptersSection({
   only,
 }: {
   chapters?: Chapter[];
-  pageThumbs?: string[];
+  pageThumbs?: (string | null)[];
   /** Series identity, used to build reader navigation params. */
   seed: string;
   title: string;
@@ -209,7 +211,7 @@ function PageThumbGrid({
   title,
   bridgeId,
 }: {
-  thumbs: string[];
+  thumbs: (string | null)[];
   seed: string;
   title: string;
   bridgeId?: string;
@@ -243,8 +245,11 @@ function PageThumbGrid({
           {tileW > 0 &&
             shown.map((uri, i) => (
               <PageThumb
-                key={uri}
+                key={i}
                 uri={uri}
+                index={i}
+                seed={seed}
+                bridgeId={bridgeId}
                 page={i + 1}
                 width={tileW}
                 onPress={() =>
@@ -278,20 +283,48 @@ function PageThumbGrid({
 
 /** A single page tile: holds the image behind a simulated network delay and
  *  shows a shimmer skeleton until it's both elapsed and loaded — same treatment
- *  as the cover images, so a long page set visibly streams in. */
+ *  as the cover images, so a long page set visibly streams in. A `null` uri
+ *  (the bridge didn't supply this page's thumbnail inline) is fetched lazily
+ *  on mount, mirroring comical-web's `loadLazyThumbs` — the tile never falls
+ *  back to the full-size page image, it just stays a skeleton if that fails. */
 function PageThumb({
   uri,
+  index,
+  seed,
+  bridgeId,
   page,
   width,
   onPress,
 }: {
-  uri: string;
+  uri: string | null;
+  index: number;
+  seed: string;
+  bridgeId?: string;
   page: number;
   width: number;
   onPress?: () => void;
 }) {
+  const ds = useDataSource();
+  const [resolvedUri, setResolvedUri] = useState(uri);
   const [loaded, setLoaded] = useState(false);
-  const delay = useMemo(() => coverDelayMs(uri), [uri]);
+
+  useEffect(() => {
+    if (resolvedUri || !bridgeId) return;
+    const ctrl = new AbortController();
+    ds.getPageThumb(bridgeId, seed, index, ctrl.signal)
+      .then((fetched) => {
+        if (fetched) setResolvedUri(fetched);
+      })
+      .catch((e) => {
+        if (!isAbort(e)) {
+          /* non-fatal: tile stays a skeleton */
+        }
+      });
+    return () => ctrl.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bridgeId, seed, index]);
+
+  const delay = useMemo(() => coverDelayMs(resolvedUri ?? ''), [resolvedUri]);
   const [delayPassed, setDelayPassed] = useState(delay === 0);
   useEffect(() => {
     if (delay === 0) return;
@@ -299,15 +332,16 @@ function PageThumb({
     setLoaded(false);
     const t = setTimeout(() => setDelayPassed(true), delay);
     return () => clearTimeout(t);
-  }, [delay, uri]);
+  }, [delay, resolvedUri]);
   const ready = delayPassed && loaded;
   return (
     <Pressable style={[styles.thumb, { width }]} onPress={onPress}>
-      {delayPassed && (
+      {delayPassed && resolvedUri && (
         <Image
-          source={{ uri }}
+          source={{ uri: resolvedUri }}
           style={styles.thumbImg}
           contentFit="cover"
+          cachePolicy="memory-disk"
           transition={200}
           onLoad={() => setLoaded(true)}
         />

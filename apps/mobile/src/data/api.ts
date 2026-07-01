@@ -107,7 +107,13 @@ export type ApiChapter = {
   pageCount?: number;
   publishedAt?: number;
 };
-export type ApiPage = { index: number; imageUrl: string };
+/** A cheaper page-preview variant, mirroring `@comical/contract`'s `pageThumbnailSchema`.
+ * `sprite` (a tile inside a shared sheet, e.g. e-hentai) has no RN crop renderer yet —
+ * `source.ts` collapses it to unavailable rather than falling back to the full page image. */
+export type ApiPageThumbnail =
+  | { kind: 'image'; url: string }
+  | { kind: 'sprite'; sheetUrl: string; x: number; y: number; w: number; h: number; sheetWidth: number; sheetHeight?: number };
+export type ApiPage = { index: number; imageUrl: string; thumbnail?: ApiPageThumbnail };
 
 // ─── Filters, sort, tags (@comical/contract shapes) ──────────────────────────
 
@@ -255,4 +261,19 @@ export function getChapterPages(
 /** GET /bridges/{id}/series/{seriesId}/pages → readable pages for a direct (chapterless) series. */
 export function getSeriesPages(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<ApiPage[]> {
   return fetchJson(`/bridges/${encodeURIComponent(bridgeId)}/series/${encodeURIComponent(seriesId)}/pages`, signal);
+}
+
+/** GET /bridges/{id}/series/{seriesId}/page-thumb/{pageIndex} → lazy per-page thumbnail, for a
+ * page a list/pages response didn't already carry `thumbnail` inline for. 404s ("not supported")
+ * throw like any other error — callers should treat that as "no thumbnail available". */
+export function getPageThumb(
+  bridgeId: string,
+  seriesId: string,
+  pageIndex: number,
+  signal?: AbortSignal,
+): Promise<ApiPageThumbnail> {
+  return fetchJson(
+    `/bridges/${encodeURIComponent(bridgeId)}/series/${encodeURIComponent(seriesId)}/page-thumb/${pageIndex}`,
+    signal,
+  );
 }

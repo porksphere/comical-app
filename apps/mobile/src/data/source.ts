@@ -67,6 +67,10 @@ export interface DataSource {
   ): Promise<SeriesDetail>;
   getChapterPages(bridgeId: string, seriesId: string, chapterId: string, signal?: AbortSignal): Promise<string[]>;
   getDirectPages(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<string[]>;
+  /** Lazy per-page thumbnail for a `SeriesDetail.pageThumbs` entry that came back `null`. Resolves
+   *  to `null` (rather than throwing) for "not supported" and for `sprite`-kind thumbnails, which
+   *  have no RN crop renderer yet — either way the caller's placeholder just stays. */
+  getPageThumb(bridgeId: string, seriesId: string, pageIndex: number, signal?: AbortSignal): Promise<string | null>;
 }
 
 // ─── Real data source: adapts api.ts's server-shaped responses to the UI types ──
@@ -163,7 +167,15 @@ const realDataSource: DataSource = {
     };
     if (opts.direct) {
       const pages = await api.getSeriesPages(bridgeId, seriesId, signal);
-      base.pageThumbs = pages.map((p) => p.imageUrl);
+      // Mirrors comical-web: only show the preview grid when the bridge actually supplies cheap
+      // thumbnails somewhere in the list — never bulk-load full-resolution page images as a
+      // stand-in. Sorted by index so array position lines up with the reader's page index (the
+      // grid's "start" param depends on this), with `null` gaps `PageThumbGrid` fetches lazily.
+      if (pages.some((p) => p.thumbnail)) {
+        base.pageThumbs = [...pages]
+          .sort((a, b) => a.index - b.index)
+          .map((p) => (p.thumbnail?.kind === 'image' ? p.thumbnail.url : null));
+      }
       base.readLabel = '▶  Read';
       base.chapterCount = info.pageCount ?? pages.length;
     } else {
@@ -183,6 +195,15 @@ const realDataSource: DataSource = {
   async getDirectPages(bridgeId, seriesId, signal) {
     const pages = await api.getSeriesPages(bridgeId, seriesId, signal);
     return [...pages].sort((a, b) => a.index - b.index).map((p) => p.imageUrl);
+  },
+
+  async getPageThumb(bridgeId, seriesId, pageIndex, signal) {
+    try {
+      const t = await api.getPageThumb(bridgeId, seriesId, pageIndex, signal);
+      return t.kind === 'image' ? t.url : null;
+    } catch {
+      return null;
+    }
   },
 };
 
@@ -204,6 +225,9 @@ const mockDataSource: DataSource = {
   getSeriesDetail: (bridgeId, seriesId, opts) => mock.mockGetSeriesDetail(bridgeId, seriesId, opts),
   getChapterPages: (bridgeId, seriesId, chapterId) => mock.mockGetChapterPages(bridgeId, seriesId, chapterId),
   getDirectPages: (bridgeId, seriesId) => mock.mockGetDirectPages(bridgeId, seriesId),
+  // Mock series always populate every pageThumbs entry inline (see mockGetSeriesDetail), so this
+  // is never actually called — implemented only to satisfy the DataSource contract.
+  getPageThumb: () => Promise.resolve(null),
 };
 
 // ─── Dev-only mock toggle + demo-build flag ──────────────────────────────────
