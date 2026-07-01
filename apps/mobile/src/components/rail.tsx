@@ -8,8 +8,8 @@ import Animated, {
 
 import { SeriesCard, TitlePeek, type CardSize } from '@/components/series-card';
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
-import { useIsCompact } from '@/hooks/use-responsive';
+import { MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { useIsCompact, useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import type { RailSection, SeriesEntry } from '@/data/types';
 
@@ -20,16 +20,22 @@ const STRIP_PAD_V = Spacing.one;
 // Must match the SeriesCard's cover→title gap so the lifted peek lands on the title.
 const CARD_GAP = Spacing.two;
 
-// A horizontal rail: section header (title + "See all") above a snap-scrolling
-// strip of cards. Mirrors the reference's `.carousel` (with hero / ranked size
-// variants). We keep horizontal scroll on all widths (see plan: cross-platform
-// liberty #3) rather than wrapping into a capped grid on desktop.
+// A rail: section header (title + "See all") above its cards. Mobile/narrow
+// desktop keeps a snap-scrolling horizontal strip (mirrors the reference's
+// `.carousel`); wide desktop instead wraps the first two rows into a static
+// 6-column grid (no horizontal scroll) — "See all" reaches the rest.
 
 const CARD_SIZE: Record<RailSection['kind'], CardSize> = {
   hero: 'hero',
   ranked: 'ranked',
   regular: 'rail',
 };
+
+// Desktop grid layout: two rows of six columns, capped — matches the main
+// browse grid's max column count at wide viewports.
+const GRID_COLUMNS = 6;
+const GRID_ROWS = 2;
+const GRID_ITEMS = GRID_COLUMNS * GRID_ROWS;
 
 // Strip left/right inset — matches the reference's body padding (1.5rem = 24px
 // = Spacing.four) on every width, so a rail's first card lines up with the
@@ -70,6 +76,14 @@ function cardWidthFor(kind: RailSection['kind'], viewport: number): number {
   return peekWidth(viewport, 3, gap);
 }
 
+/** Card width for the wide-desktop 6-column grid: fills the (capped) content
+ *  width evenly across `GRID_COLUMNS`, same width for every rail kind so a row
+ *  of six cards lines up regardless of the section's card size. */
+function gridCardWidth(viewport: number, gap: number): number {
+  const containerWidth = Math.min(viewport, MaxTopLevelWidth) - STRIP_PAD * 2;
+  return Math.floor((containerWidth - (GRID_COLUMNS - 1) * gap) / GRID_COLUMNS);
+}
+
 export function Rail({
   section,
   viewportWidth,
@@ -90,16 +104,18 @@ export function Rail({
   direct?: boolean;
 }) {
   const size = CARD_SIZE[section.kind];
-  const cardWidth = cardWidthFor(section.kind, viewportWidth);
+  const wide = useIsLargeScreen();
   const stripGap = stripGapFor(viewportWidth);
+  const cardWidth = wide ? gridCardWidth(viewportWidth, stripGap) : cardWidthFor(section.kind, viewportWidth);
   const ranked = section.kind === 'ranked';
 
   // The full-title peek lives here (not in the card) so it can float ABOVE the
-  // horizontal scroller, which would otherwise clip the card's own popover. We
-  // position it from pure geometry — index, gap, scroll offset — no DOM
-  // measurement, so it's deterministic and follows the strip as it scrolls.
+  // horizontal scroller / grid, which would otherwise clip the card's own
+  // popover. We position it from pure geometry — index, gap, scroll offset (or
+  // measured row top, on the wide grid) — no DOM measurement of the card itself.
   const [peekIndex, setPeekIndex] = useState<number | null>(null);
   const [stripTop, setStripTop] = useState(0);
+  const [rowTops, setRowTops] = useState<number[]>([]);
   const onPeekChange = useCallback((show: boolean, index: number) => {
     setPeekIndex((prev) => (show ? index : prev === index ? null : prev));
   }, []);
@@ -115,46 +131,87 @@ export function Rail({
   });
 
   // Static (scroll-independent) base position of the peeked card; only changes
-  // when a different card is peeked, not per scroll frame.
-  const peekBase = peekIndex == null ? 0 : STRIP_PAD + peekIndex * (cardWidth + stripGap);
-  const titleTop = stripTop + STRIP_PAD_V + cardWidth * COVER_RATIO + CARD_GAP;
+  // when a different card is peeked, not per scroll frame. On the wide grid the
+  // peeked card sits in one of GRID_ROWS rows instead of a single scrolling row.
+  const peekCol = peekIndex == null ? 0 : wide ? peekIndex % GRID_COLUMNS : peekIndex;
+  const peekRow = peekIndex == null ? 0 : wide ? Math.floor(peekIndex / GRID_COLUMNS) : 0;
+  const peekBase = peekIndex == null ? 0 : STRIP_PAD + peekCol * (cardWidth + stripGap);
+  const rowTop = wide ? (rowTops[peekRow] ?? 0) : stripTop;
+  const titleTop = rowTop + STRIP_PAD_V + cardWidth * COVER_RATIO + CARD_GAP;
 
   // The only per-frame update: slide the peek with the strip on the UI thread.
+  // The wide grid doesn't scroll, so its peek stays put.
   const peekStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: -scrollX.value }],
+    transform: [{ translateX: wide ? 0 : -scrollX.value }],
   }));
+
+  const gridItems = section.items.slice(0, GRID_ITEMS);
+  const gridRows: SeriesEntry[][] = [];
+  for (let i = 0; i < gridItems.length; i += GRID_COLUMNS) gridRows.push(gridItems.slice(i, i + GRID_COLUMNS));
 
   return (
     <View style={[styles.section, peekIndex != null && styles.sectionPeeking]}>
       <SectionHead title={section.title} onSeeAll={onSeeAll ? () => onSeeAll(section) : undefined} />
-      <Animated.FlatList
-        horizontal
-        data={section.items}
-        keyExtractor={(it: SeriesEntry) => it.id}
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={[styles.strip, { gap: stripGap }]}
-        onLayout={(e) => setStripTop(e.nativeEvent.layout.y)}
-        onScroll={scrollHandler}
-        // Fire every scroll frame (not throttled to ~16ms): the lifted peek is
-        // repositioned from these events, and on web react-native-web honors
-        // this throttle, so a smaller value keeps the popover as tight to the
-        // strip as this out-of-scroller design allows. The handler is a UI-thread
-        // worklet, so the higher frequency is cheap.
-        scrollEventThrottle={1}
-        renderItem={({ item, index }: { item: SeriesEntry; index: number }) => (
-          <SeriesCard
-            entry={item}
-            size={size}
-            width={cardWidth}
-            rank={ranked ? index + 1 : undefined}
-            index={index}
-            onPeekChange={onPeekChange}
-            bridge={bridge}
-            bridgeId={bridgeId}
-            direct={direct}
-          />
-        )}
-      />
+      {wide ? (
+        <View style={[styles.grid, { paddingHorizontal: STRIP_PAD, gap: stripGap }]}>
+          {gridRows.map((row, r) => (
+            <View
+              key={r}
+              style={[styles.gridRow, { gap: stripGap }]}
+              onLayout={(e) => {
+                const y = e.nativeEvent.layout.y;
+                setRowTops((prev) => (prev[r] === y ? prev : [...prev.slice(0, r), y, ...prev.slice(r + 1)]));
+              }}>
+              {row.map((item, c) => {
+                const index = r * GRID_COLUMNS + c;
+                return (
+                  <SeriesCard
+                    key={item.id}
+                    entry={item}
+                    size={size}
+                    width={cardWidth}
+                    rank={ranked ? index + 1 : undefined}
+                    index={index}
+                    onPeekChange={onPeekChange}
+                    bridge={bridge}
+                    bridgeId={bridgeId}
+                    direct={direct}
+                  />
+                );
+              })}
+            </View>
+          ))}
+        </View>
+      ) : (
+        <Animated.FlatList
+          horizontal
+          data={section.items}
+          keyExtractor={(it: SeriesEntry) => it.id}
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={[styles.strip, { gap: stripGap }]}
+          onLayout={(e) => setStripTop(e.nativeEvent.layout.y)}
+          onScroll={scrollHandler}
+          // Fire every scroll frame (not throttled to ~16ms): the lifted peek is
+          // repositioned from these events, and on web react-native-web honors
+          // this throttle, so a smaller value keeps the popover as tight to the
+          // strip as this out-of-scroller design allows. The handler is a UI-thread
+          // worklet, so the higher frequency is cheap.
+          scrollEventThrottle={1}
+          renderItem={({ item, index }: { item: SeriesEntry; index: number }) => (
+            <SeriesCard
+              entry={item}
+              size={size}
+              width={cardWidth}
+              rank={ranked ? index + 1 : undefined}
+              index={index}
+              onPeekChange={onPeekChange}
+              bridge={bridge}
+              bridgeId={bridgeId}
+              direct={direct}
+            />
+          )}
+        />
+      )}
       {peekIndex != null && (
         <TitlePeek
           title={section.items[peekIndex].title}
@@ -230,5 +287,13 @@ const styles = StyleSheet.create({
     // Vertical breathing room so the highlight ring (which sits just outside the
     // card) isn't clipped at the top/bottom of the horizontal strip.
     paddingVertical: Spacing.one,
+  },
+  // Wide-desktop static grid — paddingHorizontal/gap set inline (STRIP_PAD /
+  // stripGapFor), row gap matches the column gap for an even grid.
+  grid: {
+    paddingVertical: Spacing.one,
+  },
+  gridRow: {
+    flexDirection: 'row',
   },
 });
