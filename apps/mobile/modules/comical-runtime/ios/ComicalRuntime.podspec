@@ -11,15 +11,10 @@ Pod::Spec.new do |s|
 
   s.dependency 'ExpoModulesCore'
 
-  # Compile the shared iOS host (ComicalHostIOS: ComicalBridgeContext etc.) and bundle its generated
-  # `harness.js` resource straight from the `comical` git submodule (at the comical-app repo root),
-  # into this pod's module — so `ComicalBridgeContext` is available without a separate framework.
-  # CocoaPods requires source_files/resources to be RELATIVE to this podspec's dir
-  # (apps/mobile/modules/comical-runtime/ios); the `..` chain escapes to the repo root then into the
-  # submodule. See SETUP.md (+ `bun run build:native` to generate harness.js before xcodebuild).
-  host_ios = '../../../../../external/comical/packages/host-ios/Sources/ComicalHostIOS'
-
-  s.source_files = 'ComicalRuntimeModule.swift', "#{host_ios}/**/*.swift"
-  s.resources    = ["#{host_ios}/Resources/harness.js"]
+  # The shared iOS host (ComicalHostIOS: ComicalBridgeContext etc.) + generated harness.js are copied
+  # into ./generated/ from the comical submodule by the `with-comical-ios-sources` config plugin
+  # during prebuild (CocoaPods can't include source_files outside the pod dir). See that plugin.
+  s.source_files = 'ComicalRuntimeModule.swift', 'generated/**/*.swift'
+  s.resources    = ['generated/Resources/harness.js']
   s.swift_version = '5.9'
 end
