@@ -1,0 +1,10 @@
+# Use a hoisted node_modules layout (flat) rather than Bun's isolated `.bun` store.
+#
+# The isolated layout nests native modules at
+#   node_modules/.bun/<pkg>@<version>+<hash>/node_modules/<pkg>/…
+# which pushes the C++ (.cxx) object-file paths of react-native-worklets/-screens past the ~250-char
+# limit that CMake/clang/ninja enforce on Windows (independent of the OS LongPathsEnabled setting),
+# causing `ninja: error: manifest 'build.ninja' still dirty after 100 tries`. A hoisted layout
+# (node_modules/<pkg>/…) keeps those paths short. Harmless on Linux/CI.
+[install]
+linker = "hoisted"
