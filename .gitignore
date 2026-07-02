@@ -75,5 +75,9 @@ npm-debug.*
 /apps/*/ios/
 /apps/*/android/
 
+# Local Expo modules' native build output (the module sources are tracked, the build dirs aren't)
+/apps/*/modules/*/android/build/
+/apps/*/modules/*/android/.cxx/
+
 # Local env
 .env*.local
