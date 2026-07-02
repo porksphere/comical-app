@@ -10,11 +10,29 @@
       "@/assets/*": [
         "./assets/*"
       ],
+      "@comical/host-rn": [
+        "../../external/comical/packages/host-rn/src/index.ts"
+      ],
+      "@comical/host-server/router": [
+        "../../external/comical/packages/host-server/src/router.ts"
+      ],
+      "@comical/host-server/bridge-provider": [
+        "../../external/comical/packages/host-server/src/bridge-provider.ts"
+      ],
+      "@comical/core/loader": [
+        "../../external/comical/packages/core/src/loader.ts"
+      ],
       "@comical/contract": [
         "../../external/comical/packages/contract/src/index.ts"
       ],
       "@comical/registry": [
         "../../external/comical/packages/registry/src/schema.ts"
+      ],
+      "@comical/registry/schema": [
+        "../../external/comical/packages/registry/src/schema.ts"
+      ],
+      "@comical/registry/fetcher": [
+        "../../external/comical/packages/registry/src/fetcher.ts"
       ]
     }
   },

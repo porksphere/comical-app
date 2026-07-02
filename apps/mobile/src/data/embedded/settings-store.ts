@@ -4,7 +4,7 @@
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { SettingValue } from '@comical/contract';
-import type { SettingsStore } from './types';
+import type { SettingsStore } from '@comical/host-rn';
 
 const keyFor = (id: string): string => `comical:embedded:settings:${id}`;
 
