@@ -1,0 +1,21 @@
+{
+  "name": "comical",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Comical — cross-platform (iOS + Android) Expo app and workspace.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "bun run dev.ts",
+    "start": "bun run --filter mobile start",
+    "android": "bun run --filter mobile android",
+    "ios": "bun run --filter mobile ios",
+    "web": "bun run --filter mobile web",
+    "typecheck": "bun run --filter '*' typecheck"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,118 @@
+name: Build iOS IPA (reusable)
+
+# Reusable: produces an UNSIGNED .ipa and uploads it as a run artifact, plus the
+# app version as an output. Called by both build-ios.yml (rolling, on push to
+# main) and release.yml (versioned, on a v* tag) so the rolling and release IPAs
+# are built from identical steps and never drift. No signing certs / Apple
+# Developer account — SideStore/AltStore re-signs on-device with a free Apple ID.
+
+on:
+  workflow_call:
+    secrets:
+      SENTRY_AUTH_TOKEN:
+        # Optional: without it, the Sentry build-phase script below no-ops
+        # (skips sourcemap/dSYM upload) rather than failing the build. Not yet
+        # configured as a repo secret — see todo.md's Sentry section.
+        required: false
+    outputs:
+      version:
+        description: expo.version read from apps/mobile/app.json
+        value: ${{ jobs.build.outputs.version }}
+      artifact:
+        description: Name of the uploaded unsigned IPA artifact
+        value: comical-ios-unsigned-ipa
+
+jobs:
+  build:
+    # macOS 26 provides Xcode 26 / the iOS 26 SDK, required to compile the
+    # Liquid Glass (expo-glass-effect) native code.
+    runs-on: macos-26
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    # Read by the Sentry Expo config plugin's Xcode build-phase script (injected
+    # during `expo prebuild` below) so it can upload sourcemaps/dSYMs during the
+    # archive step. A missing/empty token makes that step no-op rather than fail.
+    env:
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Bun is the package manager; Node is still required because Metro and the
+      # Xcode "Bundle React Native code" phase shell out to `node`.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+
+      - name: Generate native iOS project (CNG)
+        run: bunx expo prebuild --platform ios --no-install
+        working-directory: apps/mobile
+
+      - name: Install CocoaPods
+        run: pod install
+        working-directory: apps/mobile/ios
+
+      - name: Compute full version (base + run number)
+        id: ver
+        run: |
+          BASE=$(node -p "require('./apps/mobile/app.json').expo.version")
+          echo "full=${BASE}.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+
+      # `expo prebuild` bakes a literal CFBundleShortVersionString into the
+      # generated Info.plist, so passing MARKETING_VERSION to xcodebuild has no
+      # effect (the literal plist value wins). Patch the plist directly so the
+      # IPA's version matches the apps.json manifest below — AltStore rejects
+      # the install otherwise.
+      - name: Stamp full version into generated Info.plist
+        working-directory: apps/mobile/ios
+        run: |
+          set -euo pipefail
+          PLIST=$(find . -maxdepth 2 -name Info.plist -not -path '*/Pods/*' | head -1)
+          echo "Patching $PLIST -> CFBundleShortVersionString=${{ steps.ver.outputs.full }}"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${{ steps.ver.outputs.full }}" "$PLIST"
+
+      - name: Build unsigned archive
+        working-directory: apps/mobile/ios
+        run: |
+          set -euo pipefail
+          WORKSPACE=$(ls -d *.xcworkspace | head -1)
+          SCHEME=$(basename "$WORKSPACE" .xcworkspace)
+          echo "Building workspace=$WORKSPACE scheme=$SCHEME"
+          xcodebuild \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath "$RUNNER_TEMP/comical.xcarchive" \
+            archive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM=""
+
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          APP=$(ls -d "$RUNNER_TEMP/comical.xcarchive/Products/Applications/"*.app | head -1)
+          mkdir -p "$RUNNER_TEMP/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/Payload/"
+          (cd "$RUNNER_TEMP" && zip -qry comical-unsigned.ipa Payload)
+
+      - name: Read app version
+        id: meta
+        run: echo "version=${{ steps.ver.outputs.full }}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload unsigned IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: comical-ios-unsigned-ipa
+          path: ${{ runner.temp }}/comical-unsigned.ipa
+          if-no-files-found: error

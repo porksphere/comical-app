@@ -1,0 +1,66 @@
+name: Build Android (rolling APK)
+
+# Rolling Android channel. On every push to main it rebuilds the release APK and
+# refreshes the "android-latest" Release, which hosts the APK at a stable,
+# public, unauthenticated direct-download URL (parity with the iOS channel — so
+# you can install on a device without a logged-in GitHub session). Versioned,
+# archival releases with BOTH the APK and the iOS IPA are produced separately by
+# release.yml on a v* tag.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'bun.lock'
+      - '.github/workflows/build-android.yml'
+      - '.github/workflows/build-android-reusable.yml'
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+# Needed to publish the APK to a GitHub Release (public direct-download URL).
+permissions:
+  contents: write
+
+jobs:
+  build:
+    uses: ./.github/workflows/build-android-reusable.yml
+    secrets: inherit
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download APK
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: ${{ runner.temp }}/apk
+
+      - name: Publish APK to the android-latest Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          APK="$RUNNER_TEMP/apk/comical-android.apk"
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/android-latest"
+
+          # Recreate the rolling tag/release so the URL above stays stable.
+          gh release delete android-latest --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          gh release create android-latest \
+            "$APK" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Comical Android (latest APK)" \
+            --notes "Installable release APK (debug-keystore signed).
+
+          **Install directly:**
+          \`${BASE}/comical-android.apk\`
+
+          On-device: enable \"Install unknown apps\" for your browser, open the link, install."
