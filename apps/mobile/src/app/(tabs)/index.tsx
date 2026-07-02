@@ -86,13 +86,11 @@ export default function BrowseScreen() {
     () => (hideNsfw ? bridges.filter((b) => !b.nsfw) : bridges),
     [bridges, hideNsfw],
   );
-  // Keeps the selection valid across both the initial load and a Hide NSFW toggle
-  // that hides the currently-selected bridge.
-  useEffect(() => {
-    setBridge((prev) => (prev && visibleBridges.some((b) => b.name === prev) ? prev : (visibleBridges[0]?.name ?? null)));
-  }, [visibleBridges]);
-
-  const currentBridge = visibleBridges.find((b) => b.name === bridge);
+  // Falls back to the first visible bridge whenever the sticky `bridge` selection
+  // isn't among the currently-visible ones (initial load, or hidden by Hide
+  // NSFW) — derived at render instead of synced via an effect, so toggling Hide
+  // NSFW back off restores the original selection with no extra state.
+  const currentBridge = visibleBridges.find((b) => b.name === bridge) ?? visibleBridges[0];
   const bridgeId = currentBridge?.id;
   const bridgeThumbnails = useMemo(() => {
     const map: Record<string, string> = {};
@@ -441,7 +439,7 @@ export default function BrowseScreen() {
         ) : null}
         <Selector
           title="Bridge"
-          value={bridge ?? ''}
+          value={currentBridge?.name ?? ''}
           options={visibleBridges.map((b) => b.name)}
           onChange={selectBridge}
           size="subtitle"
@@ -511,7 +509,7 @@ export default function BrowseScreen() {
                     section={s}
                     viewportWidth={railViewport}
                     onSeeAll={(sec) => setSeeAll({ listId: sec.id, title: sec.title })}
-                    bridge={bridge ?? undefined}
+                    bridge={currentBridge?.name ?? undefined}
                     bridgeId={bridgeId}
                     direct={directBridge}
                   />
@@ -522,7 +520,7 @@ export default function BrowseScreen() {
                   key={gs.id}
                   bridgeId={bridgeId}
                   section={gs}
-                  bridge={bridge ?? undefined}
+                  bridge={currentBridge?.name ?? undefined}
                   direct={directBridge}
                   numColumns={numColumns}
                 />
@@ -569,7 +567,7 @@ export default function BrowseScreen() {
         renderItem={({ item }: { item: GridItem }) =>
           item.spacer ? <View style={styles.cell} /> : (
             <View style={styles.cell}>
-              <SeriesCard entry={item} bridge={bridge ?? undefined} bridgeId={bridgeId} direct={directBridge} />
+              <SeriesCard entry={item} bridge={currentBridge?.name ?? undefined} bridgeId={bridgeId} direct={directBridge} />
             </View>
           )
         }

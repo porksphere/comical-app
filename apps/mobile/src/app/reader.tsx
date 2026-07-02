@@ -23,10 +23,10 @@ import { useReaderSettings } from '@/hooks/use-reader-settings';
 // Always dark — the reader is its own black surface, not a ThemedView.
 
 const CHROME_HIDE_MS = 3000;
-// How many upcoming page images to warm ahead of the reader's position, and how
-// close to the end before the next chapter's pages are prefetched — restores
-// comical-web's `prefetchAhead` / `prefetchNextChapter` reading smoothness.
-const PREFETCH_AHEAD = 4;
+// How close to the end of a chapter before the next chapter's pages are
+// prefetched — restores comical-web's `prefetchNextChapter` reading smoothness.
+// (How many page *images* to warm ahead is the user-configurable
+// `settings.prefetchAhead`, comical-web's `prefetchAhead`.)
 const NEXT_CHAPTER_TRIGGER = 3;
 
 export default function ReaderScreen() {
@@ -90,7 +90,7 @@ export default function ReaderScreen() {
   // next chapter's page list into the query cache so opening it is instant.
   useEffect(() => {
     if (!pages || pages.length === 0) return;
-    const ahead = pages.slice(currentPage + 1, currentPage + 1 + PREFETCH_AHEAD);
+    const ahead = pages.slice(currentPage + 1, currentPage + 1 + settings.prefetchAhead);
     if (ahead.length) void Image.prefetch(ahead);
 
     if (!chapterId || currentPage < pages.length - NEXT_CHAPTER_TRIGGER) return;
@@ -98,7 +98,7 @@ export default function ReaderScreen() {
     if (nextId) {
       void queryClient.prefetchQuery(chapterPagesQuery(ds, mock, bridgeId ?? '', seed ?? '', nextId));
     }
-  }, [pages, currentPage, chapterId, ds, mock, queryClient, bridgeId, seed]);
+  }, [pages, currentPage, chapterId, ds, mock, queryClient, bridgeId, seed, settings.prefetchAhead]);
 
   const pagedRef = useRef<PagedReaderHandle>(null);
   const webtoonRef = useRef<WebtoonReaderHandle>(null);
@@ -213,7 +213,7 @@ export default function ReaderScreen() {
           />
         </>
       )}
-      <SettingsControl visible={chromeVisible} />
+      <SettingsControl visible={chromeVisible} bridgeId={bridgeId} seriesId={seed} />
     </View>
   );
 }
