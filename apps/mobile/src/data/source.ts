@@ -67,6 +67,13 @@ export interface DataSource {
   ): Promise<SeriesDetail>;
   getChapterPages(bridgeId: string, seriesId: string, chapterId: string, signal?: AbortSignal): Promise<string[]>;
   getDirectPages(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<string[]>;
+  /** Lazy fallback for a series' related-series rails when `getSeriesDetail` came back with
+   *  `relatedGroupsDeferred: true` — see that field's doc in types.ts. */
+  getRelatedGroups(
+    bridgeId: string,
+    seriesId: string,
+    signal?: AbortSignal,
+  ): Promise<{ label: string; items: SeriesEntry[] }[]>;
   /** Lazy per-page thumbnail for a `SeriesDetail.pageThumbs` entry that came back `null`. Resolves
    *  to `null` (rather than throwing) for "not supported" and for `sprite`-kind thumbnails, which
    *  have no RN crop renderer yet — either way the caller's placeholder just stays. */
@@ -156,15 +163,14 @@ const realDataSource: DataSource = {
     const info = await api.getSeriesDetail(bridgeId, seriesId, signal);
     // Bridges with capability "related-series" (e.g. nhentai) omit `relatedSeriesGroups` from the
     // main response and provide it via a separate endpoint instead — see contract's SeriesInfo docs.
-    // Falling back to a fetch whenever the field is absent covers that case without needing the
-    // bridge's capability list threaded down here; it's cheap for bridges that don't support it too,
-    // since the server short-circuits with `[]` before any upstream fetch.
-    const relatedGroups = info.relatedSeriesGroups
-      ? info.relatedSeriesGroups.map((g) => ({ label: g.label, items: g.series.map(toSeriesEntry) }))
-      : await api.getRelatedSeries(bridgeId, seriesId, signal).then(
-          (groups) => groups.map((g) => ({ label: g.label, items: g.series.map(toSeriesEntry) })),
-          () => undefined,
-        );
+    // Leave `relatedGroups` unset and flag `relatedGroupsDeferred` rather than fetching it inline
+    // here: that fetch can be slow, and awaiting it would hold up the rest of the series page (and
+    // its skeleton) just for a rail at the bottom. The series screen fetches it separately via
+    // `getRelatedGroups` once this query resolves, showing a rail skeleton in the meantime.
+    const relatedGroups = info.relatedSeriesGroups?.map((g) => ({
+      label: g.label,
+      items: g.series.map(toSeriesEntry),
+    }));
     const base: SeriesDetail = {
       id: info.id,
       title: info.title,
@@ -175,6 +181,7 @@ const realDataSource: DataSource = {
       tagGroups: info.tagGroups,
       meta: buildMeta(info),
       relatedGroups,
+      relatedGroupsDeferred: !info.relatedSeriesGroups,
     };
     if (opts.direct) {
       const pages = await api.getSeriesPages(bridgeId, seriesId, signal);
@@ -216,6 +223,11 @@ const realDataSource: DataSource = {
       return null;
     }
   },
+
+  async getRelatedGroups(bridgeId, seriesId, signal) {
+    const groups = await api.getRelatedSeries(bridgeId, seriesId, signal);
+    return groups.map((g) => ({ label: g.label, items: g.series.map(toSeriesEntry) }));
+  },
 };
 
 // ─── Mock data source: thin wrapper over mock.ts's generators ───────────────
@@ -239,6 +251,9 @@ const mockDataSource: DataSource = {
   // Mock series always populate every pageThumbs entry inline (see mockGetSeriesDetail), so this
   // is never actually called — implemented only to satisfy the DataSource contract.
   getPageThumb: () => Promise.resolve(null),
+  // Mock series always populate `relatedGroups` inline (never set `relatedGroupsDeferred`), so
+  // this is never actually called — implemented only to satisfy the DataSource contract.
+  getRelatedGroups: () => Promise.resolve([]),
 };
 
 // ─── Dev-only mock toggle + demo-build flag ──────────────────────────────────

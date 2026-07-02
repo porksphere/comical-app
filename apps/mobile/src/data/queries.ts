@@ -13,7 +13,7 @@
 import type { UseQueryOptions } from '@tanstack/react-query';
 
 import type { DataSource } from './source';
-import type { SeriesDetail } from './types';
+import type { SeriesDetail, SeriesEntry } from './types';
 
 /** Per-series fetch options that affect the *shape* of the result (and thus the key). */
 export type SeriesDetailOpts = { direct?: boolean; bridgeName?: string; title?: string };
@@ -27,6 +27,8 @@ export const queryKeys = {
     ['directPages', mock, bridgeId, seriesId] as const,
   isFavorite: (mock: boolean, bridgeId: string, seriesId: string) =>
     ['isFavorite', mock, bridgeId, seriesId] as const,
+  relatedGroups: (mock: boolean, bridgeId: string, seriesId: string) =>
+    ['relatedGroups', mock, bridgeId, seriesId] as const,
 };
 
 // The builders return a widened `UseQueryOptions` (queryKey typed as the general
@@ -90,5 +92,22 @@ export function isFavoriteQuery(
     queryKey: queryKeys.isFavorite(mock, bridgeId, seriesId),
     queryFn: ({ signal }) => ds.isFavorite(bridgeId, seriesId, signal),
     enabled: !!bridgeId && !!seriesId,
+  };
+}
+
+/** `useQuery` options for a series' related-rail groups, fetched separately from the main detail
+ *  when it came back with `relatedGroupsDeferred: true` — pass that flag (ANDed with anything else
+ *  the caller needs) as `enabled` so this only fires once it's actually needed. */
+export function relatedGroupsQuery(
+  ds: DataSource,
+  mock: boolean,
+  bridgeId: string,
+  seriesId: string,
+  enabled: boolean,
+): UseQueryOptions<{ label: string; items: SeriesEntry[] }[], Error> {
+  return {
+    queryKey: queryKeys.relatedGroups(mock, bridgeId, seriesId),
+    queryFn: ({ signal }) => ds.getRelatedGroups(bridgeId, seriesId, signal),
+    enabled: enabled && !!bridgeId && !!seriesId,
   };
 }

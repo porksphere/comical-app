@@ -6,13 +6,11 @@
 - [ ] When refreshing page on narrow web viewports, the filters briefly display all small and cramped then correctly collapse into overflow
 - [ ] Flashlist investigation
 - [ ] Line highlight on search field does not appear on mobile after closing keybkard and immediately reselecting
-- [ ] Show skeleton when changing bridges / selecting different sub-pages
 - [ ] Chapter sorting in the series details view is weird, example -> sakamoto days is weird
 - [ ] There are some expo WARNS, fix em
       Web  WARN  "shadow*" style props are deprecated. Use "boxShadow".
       Web  WARN  props.pointerEvents is deprecated. Use style.pointerEvents
 - [x] The mock data should all be non-existant website names, we don't want to associate with any scraping (mock bridge names replaced; scrubbing git history was assessed and declined — would've required force-pushing ~86% of main's commits)
-- [ ] Related rails should show a loading skeleton
 
 ## Reader (page viewer)
 - [ ] Image retry-with-backoff on page load failure (currently just shows a placeholder)

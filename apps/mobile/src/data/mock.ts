@@ -353,6 +353,9 @@ export async function mockGetBridgeLists(_bridgeId: string): Promise<BridgeList[
 export async function mockGetHomeSections(
   _bridgeId: string,
 ): Promise<{ sections: RailSection[]; gridSections: HomeGridSection[] }> {
+  // Simulate bridge-switch latency so the Browse screen's loading skeleton
+  // (shown while this is in flight) is actually observable in mock/demo mode.
+  await delay(PAGE_LOAD_DELAY_MS);
   // Two grid sections so the non-terminal "Load more" / terminal infinite-scroll
   // split (see types.ts's HomeGridSection doc) is exercisable in mock mode too.
   return {
@@ -364,15 +367,16 @@ export async function mockGetHomeSections(
   };
 }
 
-/** Infinite mock grid: always reports another page so infinite-scroll stays exercisable. */
+/** Infinite mock grid: always reports another page so infinite-scroll stays exercisable. Also
+ *  delays the first page so sub-page switches (and "See all") show their loading skeleton. */
 export async function mockGetGridPage(_bridgeId: string, listId: string, page: number): Promise<GridPage> {
-  if (page > 1) await delay(PAGE_LOAD_DELAY_MS);
+  await delay(PAGE_LOAD_DELAY_MS);
   return { items: mockGrid(`${listId}-p${page}`, 24), hasNextPage: true };
 }
 
 /** Finite mock search results (3 pages), so the "end of results" case is reachable too. */
 export async function mockSearch(_bridgeId: string, query: string, page: number): Promise<GridPage> {
-  if (page > 1) await delay(PAGE_LOAD_DELAY_MS);
+  await delay(PAGE_LOAD_DELAY_MS);
   return { items: mockGrid(`${query || 'search'}-p${page}`, 24), hasNextPage: page < 3 };
 }
 

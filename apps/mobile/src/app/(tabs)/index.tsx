@@ -12,7 +12,7 @@ import { BridgeThumb } from '@/components/bridge-thumb';
 import { FilterBar, type SortOption, type SortState } from '@/components/filters/filter-demo';
 import { filterDefFromApi, filterValueToApi, initialValue, type FilterDef, type FilterValue } from '@/components/filters/filter-types';
 import { ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
-import { Rail, SectionHead } from '@/components/rail';
+import { Rail, RailSkeleton, SectionHead } from '@/components/rail';
 import { RetryBlock } from '@/components/retry-block';
 import { BridgeThumbSize, Selector } from '@/components/selector';
 import { SeriesCard } from '@/components/series-card';
@@ -190,11 +190,17 @@ export default function BrowseScreen() {
   const [gridSections, setGridSections] = useState<HomeGridSection[]>([]);
   const [homeError, setHomeError] = useState<string | null>(null);
   const [homeReload, setHomeReload] = useState(0);
+  const [homeLoading, setHomeLoading] = useState(false);
 
   useEffect(() => {
     if (!bridgeId || page !== 'home') return;
     const ctrl = new AbortController();
     setHomeError(null);
+    // Clear the previous bridge/visit's rails before fetching, so a switch shows
+    // a loading skeleton instead of a stale flash of the old selection's content.
+    setHomeLoading(true);
+    setSections([]);
+    setGridSections([]);
     ds.getHomeSections(bridgeId, ctrl.signal)
       .then((res) => {
         setSections(res.sections);
@@ -202,7 +208,8 @@ export default function BrowseScreen() {
       })
       .catch((e) => {
         if (!isAbort(e)) setHomeError(e.message || 'Failed to load home');
-      });
+      })
+      .finally(() => setHomeLoading(false));
     return () => ctrl.abort();
   }, [bridgeId, page, ds, homeReload]);
   // Only the LAST grid section infinite-scrolls; earlier ones get "Load more" —
@@ -214,10 +221,11 @@ export default function BrowseScreen() {
   const [query, setQuery] = useState('');
   const [seeAll, setSeeAll] = useState<SeeAll>(null);
 
-  // A search, a rail's "See all", or a live filter/sort choice all drop to the
-  // flat results grid (with a back-to-home affordance) — matches the reference's
+  // A search, a rail's "See all", a live filter/sort choice, or picking a
+  // page-flagged sub-list (e.g. "Popular"/"Favorites") all drop to the flat
+  // results grid (with a back-to-home affordance) — matches the reference's
   // `doSearch`: any of query/filters/sort/list-scope leaves the home surface.
-  const inResults = !!query || !!seeAll || hasActiveQuery;
+  const inResults = !!query || !!seeAll || hasActiveQuery || page !== 'home';
   const resultsLabel = seeAll ? seeAll.title : query ? `Results for “${query}”` : page;
 
   // ── Grid (unified: a flagged page, favorites, search, or "See all") ───────
@@ -279,6 +287,10 @@ export default function BrowseScreen() {
     setGridLoading(true);
     setGridError(null);
     setGridPageNum(1);
+    // Clear the previous list's items before fetching — otherwise they stay on
+    // screen (with no skeleton, since `gridItems.length` is non-zero) until the
+    // new page swaps in, instead of showing a loading skeleton on the switch.
+    setGridItems([]);
     fetchGrid(1)
       .then((res) => {
         setGridItems(res.items);
@@ -477,6 +489,11 @@ export default function BrowseScreen() {
         <>
           {homeError ? (
             <RetryBlock message={homeError} onRetry={() => setHomeReload((n) => n + 1)} />
+          ) : homeLoading ? (
+            <View style={styles.rails}>
+              <RailSkeleton viewportWidth={railViewport} />
+              <RailSkeleton viewportWidth={railViewport} />
+            </View>
           ) : (
             <>
               <View style={styles.rails}>

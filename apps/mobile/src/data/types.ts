@@ -89,6 +89,11 @@ export type SeriesDetail = SeriesEntry & {
   /** Related-series rails, each independently labeled (sequels, similar, …) — a
    *  bridge may surface any number of these; absent for many bridges. */
   relatedGroups?: { label: string; items: SeriesEntry[] }[];
+  /** True when the bridge omitted `relatedGroups` from this response and a
+   *  separate `getRelatedGroups` fetch is needed to find out whether it has
+   *  any (e.g. nhentai's capability "related-series") — lets the series
+   *  screen show a rail skeleton instead of treating "absent" as "none". */
+  relatedGroupsDeferred?: boolean;
 };
 
 export type RailKind = 'hero' | 'ranked' | 'regular';
