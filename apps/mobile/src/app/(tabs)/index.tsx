@@ -221,10 +221,11 @@ export default function BrowseScreen() {
   const [query, setQuery] = useState('');
   const [seeAll, setSeeAll] = useState<SeeAll>(null);
 
-  // A search, a rail's "See all", or a live filter/sort choice all drop to the
-  // flat results grid (with a back-to-home affordance) — matches the reference's
+  // A search, a rail's "See all", a live filter/sort choice, or picking a
+  // page-flagged sub-list (e.g. "Popular"/"Favorites") all drop to the flat
+  // results grid (with a back-to-home affordance) — matches the reference's
   // `doSearch`: any of query/filters/sort/list-scope leaves the home surface.
-  const inResults = !!query || !!seeAll || hasActiveQuery;
+  const inResults = !!query || !!seeAll || hasActiveQuery || page !== 'home';
   const resultsLabel = seeAll ? seeAll.title : query ? `Results for “${query}”` : page;
 
   // ── Grid (unified: a flagged page, favorites, search, or "See all") ───────
