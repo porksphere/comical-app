@@ -1,0 +1,3 @@
+[submodule "external/comical"]
+	path = external/comical
+	url = git@github.com:porksphere/comical.git
