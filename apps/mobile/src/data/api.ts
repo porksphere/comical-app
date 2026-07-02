@@ -35,13 +35,36 @@ export const API_BASE =
 
 export type { Bridge, BridgeList };
 
+/**
+ * The transport every helper in this module goes through. `path` is a server-relative path like
+ * `/bridges/x/search?q=…`; the transport returns a `Response` exactly as `fetch` would.
+ *
+ * The default `remoteTransport` is a bare `fetch` against `API_BASE` — behavior-identical to how
+ * this file worked before. On iOS/Android an *embedded* transport (see `./embedded`) can be
+ * installed with `setTransport()` to resolve the same paths against an on-device bridge runtime
+ * (the reused `@comical/host-server` router driving proxy bridges in a native JS engine) instead
+ * of hitting an external URI. Everything above this module — `source.ts`, react-query, screens —
+ * is unchanged regardless of which transport is active, so remote↔embedded is a one-call swap.
+ */
+export type Transport = (path: string, init?: RequestInit) => Promise<Response>;
+
+/** The default transport: plain HTTP against `API_BASE`. */
+export const remoteTransport: Transport = (path, init) => fetch(`${API_BASE}${path}`, init);
+
+let transport: Transport = remoteTransport;
+
+/** Swap the active transport. Passing `null` restores the remote HTTP transport. */
+export function setTransport(next: Transport | null): void {
+  transport = next ?? remoteTransport;
+}
+
 /** True for an aborted-request error, so callers can ignore unmount cancels. */
 export function isAbort(e: unknown): boolean {
   return e instanceof Error && e.name === 'AbortError';
 }
 
 async function fetchJson<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, { signal });
+  const res = await transport(path, { signal });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(body.error ?? `${res.status} ${res.statusText}`);
@@ -53,7 +76,7 @@ async function fetchJson<T>(path: string, signal?: AbortSignal): Promise<T> {
  *  only mounted when an optional server capability (trackers, registries) is enabled. Hono's
  *  default not-found response is plain text, not JSON, for routes that were never registered. */
 async function fetchJsonOptional<T>(path: string, signal?: AbortSignal): Promise<T | null> {
-  const res = await fetch(`${API_BASE}${path}`, { signal });
+  const res = await transport(path, { signal });
   if (res.status === 404) return null;
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -221,7 +244,7 @@ export async function isFavorite(bridgeId: string, seriesId: string, signal?: Ab
 }
 
 async function fetchOk(path: string, method: 'PUT' | 'DELETE', signal?: AbortSignal): Promise<void> {
-  const res = await fetch(`${API_BASE}${path}`, { method, signal });
+  const res = await transport(path, { method, signal });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(body.error ?? `${res.status} ${res.statusText}`);
@@ -405,7 +428,7 @@ export interface InstallResult {
 }
 
 async function fetchPut<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await transport(path, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -419,7 +442,7 @@ async function fetchPut<T>(path: string, body: unknown, signal?: AbortSignal): P
 }
 
 async function fetchPost<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await transport(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
