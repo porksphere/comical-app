@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["ComicalRuntimeModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.comicalruntime.ComicalRuntimeModule"]
+  }
+}
