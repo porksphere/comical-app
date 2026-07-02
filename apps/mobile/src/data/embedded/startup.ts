@@ -16,7 +16,7 @@ import { applyEmbeddedMode, configureEmbeddedRuntime, getResolvedModeSync } from
 /** Registry the on-device runtime downloads bridge bundles from. Override with the env var. */
 const REGISTRY_INDEX_URL =
   process.env.EXPO_PUBLIC_COMICAL_REGISTRY ??
-  'https://raw.githubusercontent.com/bridges-repo/main/index.json';
+  'https://raw.githubusercontent.com/bridges-repo/master/index.json';
 
 let started = false;
 
