@@ -26,8 +26,12 @@ resolves to `null` and the app stays on the remote transport (so JS-only lanes a
 git submodule update --init --recursive          # ensure external/comical is present
 (cd external/comical && bun install && bun run build:native)   # generate comical_harness.js
 cd apps/mobile && bun install
-bun run android                                  # expo prebuild + gradle + install on the emulator
+bun run run:android                              # expo run:android = prebuild + gradle + install
 ```
+⚠️ Use `run:android` (`expo run:android`), NOT `android` (`expo start --android`). The latter only
+starts Metro against Expo Go, which can't contain a custom native module — so `ComicalRuntime` is
+absent, the "Run bridges on this device" setting is hidden, and the app stays on the (possibly
+unreachable) remote server. `run:android` compiles a dev build that includes the module.
 Then in the app: Settings → "Run bridges on this device" → browse/search/read with no server; toggle
 off to confirm remote still works. (iOS needs macOS/Xcode; CI covers it.)
 
