@@ -14,9 +14,10 @@ Pod::Spec.new do |s|
   # Compile the shared iOS host (ComicalHostIOS: ComicalBridgeContext etc.) and bundle its generated
   # `harness.js` resource straight from the `comical` git submodule (at the comical-app repo root),
   # into this pod's module — so `ComicalBridgeContext` is available without a separate framework.
-  # Path is relative to this podspec (apps/mobile/modules/comical-runtime/ios). See SETUP.md
-  # (paths + `bun run build:native` to generate harness.js before xcodebuild).
-  host_ios = File.join(__dir__, '..', '..', '..', '..', '..', 'external', 'comical', 'packages', 'host-ios', 'Sources', 'ComicalHostIOS')
+  # CocoaPods requires source_files/resources to be RELATIVE to this podspec's dir
+  # (apps/mobile/modules/comical-runtime/ios); the `..` chain escapes to the repo root then into the
+  # submodule. See SETUP.md (+ `bun run build:native` to generate harness.js before xcodebuild).
+  host_ios = '../../../../../external/comical/packages/host-ios/Sources/ComicalHostIOS'
 
   s.source_files = 'ComicalRuntimeModule.swift', "#{host_ios}/**/*.swift"
   s.resources    = ["#{host_ios}/Resources/harness.js"]
