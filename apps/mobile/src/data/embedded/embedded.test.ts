@@ -88,12 +88,25 @@ function makeFakeNative(): NativeBridgeRuntime {
   };
 }
 
-const installed: InstalledBridge[] = [{ info: BRIDGE_INFO as never, settings: [], source: 'registry' }];
+// A configurable bridge: advertises "settings" + a required baseUrl, so it starts unconfigured.
+const CONFIGURABLE_INFO = { ...BRIDGE_INFO, id: 'cfg', capabilities: ['search', 'settings'] };
+const CONFIGURABLE_BUNDLE = `module.exports = { default: (host) => ({
+  info: ${JSON.stringify(CONFIGURABLE_INFO)},
+  getSettings: () => [{ type: "string", key: "baseUrl", label: "Base URL", required: true }],
+  getSeriesDetails: async (id) => ({ id, title: id }),
+  getSearchResults: async (q, page) => ({ items: [], page, hasNextPage: false }),
+}) };`;
+
+const installed: InstalledBridge[] = [
+  { info: BRIDGE_INFO as never, source: 'registry' },
+  { info: CONFIGURABLE_INFO as never, source: 'registry' },
+];
 const bundles: BundleSource = {
   installed: async () => installed,
   resolveBundle: async (id) => {
-    if (id !== 'demo') throw new Error(`bridge not found: ${id}`);
-    return DEMO_BUNDLE;
+    if (id === 'demo') return DEMO_BUNDLE;
+    if (id === 'cfg') return CONFIGURABLE_BUNDLE;
+    throw new Error(`bridge not found: ${id}`);
   },
 };
 function memorySettings(): SettingsStore {
@@ -140,11 +153,35 @@ describe('embedded transport (real router + core, node:vm engine stand-in)', () 
     expect((await transport('/bridges/nope/lists')).status).toBe(404);
   });
 
+  test('descriptors flow: a required-baseUrl bridge is unconfigured until set', async () => {
+    const settings = memorySettings();
+    const provider = new EmbeddedBridgeProvider({ native: makeFakeNative(), bundles, settings });
+    const transport = createEmbeddedTransport(provider, createRouter as unknown as CreateRouter);
+
+    // GET /bridges reflects configured status derived from loaded getSettings descriptors.
+    const summaries = (await (await transport('/bridges')).json()) as {
+      info: { id: string };
+      configured: boolean;
+      missingRequired: string[];
+    }[];
+    const cfg = summaries.find((s) => s.info.id === 'cfg');
+    expect(cfg?.configured).toBe(false);
+    expect(cfg?.missingRequired).toEqual(['baseUrl']);
+
+    // A content call is refused (400) while required settings are missing.
+    expect((await transport('/bridges/cfg/search?q=x')).status).toBe(400);
+
+    // Set baseUrl → provider invalidates + reloads → now configured, content flows.
+    await settings.set('cfg', { baseUrl: 'https://api.example' });
+    provider.invalidate('cfg');
+    expect((await transport('/bridges/cfg/search?q=x')).status).toBe(200);
+  });
+
   test('wired into api.ts: public getBridges/searchBridge resolve on-device (no server)', async () => {
     setTransport(createEmbeddedTransport(makeProvider(), createRouter as unknown as CreateRouter));
     // These public api.ts functions now go through the embedded transport — no server involved.
     const list = await getBridges();
-    expect(list.map((b) => b.id)).toEqual(['demo']);
+    expect(list.map((b) => b.id).sort()).toEqual(['cfg', 'demo']);
     const results = await searchBridge('demo', 'onepiece', 1);
     expect(results.items[0]?.title).toBe('Result for onepiece');
   });

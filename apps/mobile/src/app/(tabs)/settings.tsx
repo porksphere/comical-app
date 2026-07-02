@@ -9,6 +9,8 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { API_BASE, isAbort, type BridgeSummary, type SavedRegistry, type TrackerSummary } from '@/data/api';
+import { applyEmbeddedMode, isEmbeddedRuntimeAvailable, useEmbeddedEnabled } from '@/data/embedded';
+import { queryClient } from '@/data/query-client';
 import { useDataSource, useHideNsfw, useMockDataToggle } from '@/data/source';
 
 export default function SettingsScreen() {
@@ -33,6 +35,17 @@ export default function SettingsScreen() {
 
 function GeneralSection() {
   const [hideNsfw, setHideNsfw] = useHideNsfw();
+  const [onDevice, setOnDevice] = useEmbeddedEnabled();
+  // The on-device runtime is only offered where a native bridge engine exists (iOS/Android with the
+  // native module built) — never on web, which always uses a remote server.
+  const embeddedAvailable = isEmbeddedRuntimeAvailable();
+
+  const toggleOnDevice = (enabled: boolean) => {
+    setOnDevice(enabled);
+    applyEmbeddedMode(enabled); // swap api.ts's transport (embedded ⇄ remote)
+    queryClient.clear(); // embedded and remote caches must not mix (mirrors PERSIST_BUSTER)
+  };
+
   return (
     <SettingsSection title="General">
       <SettingsRow
@@ -40,6 +53,13 @@ function GeneralSection() {
         description="Hides NSFW-flagged bridges from the Browse tab."
         right={<Switch value={hideNsfw} onValueChange={setHideNsfw} />}
       />
+      {embeddedAvailable && (
+        <SettingsRow
+          label="Run bridges on this device"
+          description="Fetch and read entirely on-device, with no external server. Turn off to use a remote Comical server."
+          right={<Switch value={onDevice} onValueChange={toggleOnDevice} />}
+        />
+      )}
     </SettingsSection>
   );
 }
