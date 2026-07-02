@@ -50,7 +50,10 @@ export interface EmbeddedRouter {
 }
 
 /** The `@comical/host-server` `createRouter` signature (subset the embedded runtime uses). */
-export type CreateRouter = (manager: BridgeProvider, opts?: { origin?: string }) => EmbeddedRouter;
+export type CreateRouter = (
+  manager: BridgeProvider,
+  opts?: { origin?: string; cors?: boolean },
+) => EmbeddedRouter;
 
 /**
  * The native module surface (an Expo module wrapping `ComicalBridgeContext` — JSC on iOS, QuickJS
