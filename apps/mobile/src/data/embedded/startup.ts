@@ -25,16 +25,21 @@ import { setTransport } from '../api';
 import { getResolvedModeSync } from './preference';
 import { asyncStorageSettings } from './settings-store';
 
-/** Registry the on-device runtime downloads bridge bundles from. Override with the env var. */
-const REGISTRY_INDEX_URL =
-  process.env.EXPO_PUBLIC_COMICAL_REGISTRY ??
-  'https://raw.githubusercontent.com/bridges-repo/master/index.json';
+/**
+ * Registry the on-device runtime downloads bridge bundles from. Intentionally NOT hardcoded — it
+ * comes only from `EXPO_PUBLIC_COMICAL_REGISTRY` (set it in a gitignored `.env.local` for local dev,
+ * or via a private build-time env). With no registry configured, the app has no on-device bridges
+ * and stays on the remote transport.
+ */
+const REGISTRY_INDEX_URL = process.env.EXPO_PUBLIC_COMICAL_REGISTRY;
 
 let started = false;
 
 export function startEmbeddedRuntime(): void {
   if (started) return;
   started = true;
+  // No registry configured (see `.env.local`) → nothing to run on-device; stay on the remote transport.
+  if (!REGISTRY_INDEX_URL) return;
   // Register the on-device engine (null on web / before the native module is built → stays remote).
   setNativeBridgeRuntime(comicalRuntime);
   // Bridge bundle verification (@comical/registry verify.ts) needs WebCrypto, absent in Hermes.
