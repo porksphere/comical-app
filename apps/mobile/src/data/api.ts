@@ -49,6 +49,19 @@ async function fetchJson<T>(path: string, signal?: AbortSignal): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/** Like `fetchJson`, but resolves `null` on a 404 instead of throwing — for endpoints that are
+ *  only mounted when an optional server capability (trackers, registries) is enabled. Hono's
+ *  default not-found response is plain text, not JSON, for routes that were never registered. */
+async function fetchJsonOptional<T>(path: string, signal?: AbortSignal): Promise<T | null> {
+  const res = await fetch(`${API_BASE}${path}`, { signal });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+  }
+  return res.json() as Promise<T>;
+}
+
 /** GET /bridges → the installed bridges (id, display name, nsfw, capabilities, icon). */
 export async function getBridges(signal?: AbortSignal): Promise<Bridge[]> {
   const raw = await fetchJson<{ info: Bridge & { iconUrl?: string } }[]>('/bridges', signal);
@@ -59,6 +72,23 @@ export async function getBridges(signal?: AbortSignal): Promise<Bridge[]> {
     capabilities: b.info.capabilities ?? [],
     thumbnail: b.info.iconUrl,
   }));
+}
+
+/** One entry of the raw `GET /bridges` response — unlike `getBridges()` above (which discards
+ *  everything but the browse-card fields), this keeps `configured`/`missingRequired`/`source`/
+ *  `availableVersion` for the Settings screen's bridge rows (status badges, Uninstall visibility
+ *  for `source === "registry"`), without an extra per-bridge fetch. */
+export interface BridgeSummary {
+  info: Bridge & { iconUrl?: string };
+  configured: boolean;
+  missingRequired: string[];
+  source: 'local' | 'registry';
+  availableVersion?: string;
+}
+
+/** GET /bridges → the raw per-bridge summaries (see `BridgeSummary`), for the Settings screen. */
+export function getBridgeSummaries(signal?: AbortSignal): Promise<BridgeSummary[]> {
+  return fetchJson('/bridges', signal);
 }
 
 /** GET /bridges/{id}/lists → the bridge's browse lists (home rails + pages). */
@@ -257,4 +287,306 @@ export function getPageThumb(
     `/bridges/${encodeURIComponent(bridgeId)}/series/${encodeURIComponent(seriesId)}/page-thumb/${pageIndex}`,
     signal,
   );
+}
+
+// ─── Settings + registries ────────────────────────────────────────────────────
+//
+// `SettingDescriptor`/`SettingOption`/`SettingValue` come from `@comical/contract` (see header).
+// `RegistryBridgeEntry`/`RegistryTrackerEntry`/`SavedRegistry` come from `@comical/registry`, via
+// a *second* type-only tsconfig mapping pointed at that package's `schema.ts` specifically (not
+// its `index.ts`) — `index.ts` re-exports `manager.ts`/`manifest.ts`, which do real Node file I/O
+// (`node:fs/promises`, `node:path`) to download/cache bridge bundles. There's no `@types/node`
+// anywhere reachable from this app's TS program (confirmed empirically: pointing the mapping at
+// `index.ts` breaks `tsc --noEmit` with "Cannot find name 'node:fs/promises'"), so `schema.ts`
+// (pure zod-inferred data shapes, only depends on `zod`) is the only safe target. `AvailableBridge`/
+// `AvailableTracker`/`InstallResult` — the three shapes `RegistryManager`'s browse/install/update
+// methods return — live in `manager.ts` itself, not `schema.ts`, so they're hand-defined below
+// instead of imported; they're tiny (3-4 fields) and just wrap the imported entry types.
+
+import type { BridgeInfo as ApiBridgeInfo, SettingDescriptor, SettingOption, SettingValue } from '@comical/contract';
+import type { RegistryBridgeEntry, RegistryTrackerEntry, SavedRegistry } from '@comical/registry';
+
+export type {
+  ApiBridgeInfo,
+  SettingDescriptor,
+  SettingOption,
+  SettingValue,
+  RegistryBridgeEntry,
+  RegistryTrackerEntry,
+  SavedRegistry,
+};
+
+/** GET /bridges/{id} response — settings form data for one bridge. `info` is the bridge's full
+ *  self-description (capabilities, version, contract version, languages, rate limit — everything
+ *  `GET /bridges` trims down to the browse-card fields in `Bridge`), not the app's local `Bridge`
+ *  UI type. */
+export interface BridgeSettingsInfo {
+  info: ApiBridgeInfo;
+  settings: SettingDescriptor[];
+  values: Record<string, SettingValue>;
+  /** Keys of secret fields that already have a stored value (never the value itself). */
+  secretsSet: string[];
+  missingRequired: string[];
+  configured: boolean;
+  /** Reserved, host-managed tag exclusions (capability "exclude-tags") — ids the bridge's lists/
+   *  search hide series carrying. Separate from `settings`/`values` since it bypasses the
+   *  descriptor-driven form (see `PUT /bridges/{id}/excluded-tags`). */
+  excludedTags: string[];
+  /** Id → display label for `excludedTags`, folded in by the host from its tag-name cache. */
+  excludedTagLabels: Record<string, string>;
+}
+
+/** GET/PUT /bridges/{id}/genre-exclusions response (capability "exclude-genres") — account-wide
+ *  state owned by the bridge's own backend, distinct from the host-stored `excludedTags`. */
+export interface GenreExclusions {
+  available: { id: string; label: string }[];
+  excluded: string[];
+}
+
+/** GET/PUT /library/bridges/{id}/prefs response. */
+export interface BridgePrefs {
+  bridgeId: string;
+  trackersDisabled: boolean;
+  historyDisabled: boolean;
+}
+
+/** The bare per-tracker identity, nested under `info` in both list and detail responses. */
+export interface TrackerInfo {
+  id: string;
+  name: string;
+  capabilities: string[];
+}
+
+/** GET /trackers → one entry per mounted tracker (mirrors `BridgeSummary`'s shape). */
+export interface TrackerSummary {
+  info: TrackerInfo;
+  configured: boolean;
+  missingRequired: string[];
+}
+
+/** GET /trackers/{id}/settings response. */
+export interface TrackerSettingsInfo {
+  info: TrackerInfo;
+  settings: SettingDescriptor[];
+  values: Record<string, SettingValue>;
+  secretsSet: string[];
+}
+
+/** Mirrors `RegistryManager.checkUpdates()`/`checkTrackerUpdates()`'s element shape. */
+export interface RegistryUpdateInfo {
+  id: string;
+  installedVersion: string;
+  availableVersion: string;
+}
+
+/** Mirrors `RegistryManager.browse()`'s element shape (`AvailableBridge`, defined in `manager.ts`,
+ *  which this app can't type-import — see header). */
+export interface AvailableBridge {
+  entry: RegistryBridgeEntry;
+  registryUrl: string;
+  installedVersion: string | null;
+  updateAvailable: boolean;
+}
+
+/** Mirrors `RegistryManager.browseTrackers()`'s element shape (`AvailableTracker`). */
+export interface AvailableTracker {
+  entry: RegistryTrackerEntry;
+  registryUrl: string;
+  installedVersion: string | null;
+  updateAvailable: boolean;
+}
+
+/** Mirrors `RegistryManager.install()`/`update()`/`installTracker()`/`updateTracker()`'s
+ *  return shape (`InstallResult`). */
+export interface InstallResult {
+  id: string;
+  version: string;
+  bundlePath: string;
+}
+
+async function fetchPut<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok) {
+    const responseBody = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(responseBody.error ?? `${res.status} ${res.statusText}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+async function fetchPost<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok) {
+    const responseBody = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(responseBody.error ?? `${res.status} ${res.statusText}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+/** GET /bridges/{id} → settings form data for one bridge. */
+export function getBridgeSettings(bridgeId: string, signal?: AbortSignal): Promise<BridgeSettingsInfo> {
+  return fetchJson(`/bridges/${encodeURIComponent(bridgeId)}`, signal);
+}
+
+/** PUT /bridges/{id}/settings → persist a settings patch. Omit a secret key to keep its
+ *  existing stored value (the server merges the patch onto current settings). */
+export function putBridgeSettings(
+  bridgeId: string,
+  values: Record<string, SettingValue>,
+  signal?: AbortSignal,
+): Promise<{ settings: Record<string, SettingValue> }> {
+  return fetchPut(`/bridges/${encodeURIComponent(bridgeId)}/settings`, values, signal);
+}
+
+/** PUT /bridges/{id}/excluded-tags → replace the bridge's persistent tag exclusions (capability
+ *  "exclude-tags"). `labels` seeds the host's id→label cache with names the client already knows
+ *  so a later reload folds them back in without a `getTags` round-trip. */
+export function putExcludedTags(
+  bridgeId: string,
+  tags: string[],
+  labels: Record<string, string>,
+  signal?: AbortSignal,
+): Promise<{ excludedTags: string[]; excludedTagLabels: Record<string, string> }> {
+  return fetchPut(`/bridges/${encodeURIComponent(bridgeId)}/excluded-tags`, { tags, labels }, signal);
+}
+
+/** GET /bridges/{id}/genre-exclusions → account-wide genre exclusions (capability "exclude-genres"). */
+export function getGenreExclusions(bridgeId: string, signal?: AbortSignal): Promise<GenreExclusions> {
+  return fetchJson(`/bridges/${encodeURIComponent(bridgeId)}/genre-exclusions`, signal);
+}
+
+/** PUT /bridges/{id}/genre-exclusions → replace the bridge's account-wide genre exclusions. */
+export function putGenreExclusions(
+  bridgeId: string,
+  genres: string[],
+  signal?: AbortSignal,
+): Promise<GenreExclusions> {
+  return fetchPut(`/bridges/${encodeURIComponent(bridgeId)}/genre-exclusions`, { genres }, signal);
+}
+
+/** GET /library/bridges/{id}/prefs → per-bridge library prefs (tracker sync / history opt-out),
+ *  or `null` when this server has no library store mounted. */
+export function getBridgePrefs(bridgeId: string, signal?: AbortSignal): Promise<BridgePrefs | null> {
+  return fetchJsonOptional(`/library/bridges/${encodeURIComponent(bridgeId)}/prefs`, signal);
+}
+
+/** PUT /library/bridges/{id}/prefs → update per-bridge library prefs. */
+export function putBridgePrefs(
+  bridgeId: string,
+  update: { trackersDisabled?: boolean; historyDisabled?: boolean },
+  signal?: AbortSignal,
+): Promise<void> {
+  return fetchPut(`/library/bridges/${encodeURIComponent(bridgeId)}/prefs`, update, signal);
+}
+
+/** POST /bridges/{id}/update → update a registry-installed bridge to its latest version. */
+export function updateBridge(bridgeId: string, signal?: AbortSignal): Promise<InstallResult> {
+  return fetchPost(`/bridges/${encodeURIComponent(bridgeId)}/update`, {}, signal);
+}
+
+/** DELETE /bridges/{id} → uninstall a registry-installed bridge. */
+export function uninstallBridge(bridgeId: string, signal?: AbortSignal): Promise<void> {
+  return fetchOk(`/bridges/${encodeURIComponent(bridgeId)}`, 'DELETE', signal);
+}
+
+// ─── Trackers (optional server capability — a 404 means no TrackerManager is mounted) ────────
+
+/** GET /trackers → the mounted trackers, or `null` when no `TrackerManager` is mounted on this server. */
+export function getTrackers(signal?: AbortSignal): Promise<TrackerSummary[] | null> {
+  return fetchJsonOptional('/trackers', signal);
+}
+
+/** GET /trackers/{id}/settings → settings form data for one tracker. */
+export function getTrackerSettings(trackerId: string, signal?: AbortSignal): Promise<TrackerSettingsInfo> {
+  return fetchJson(`/trackers/${encodeURIComponent(trackerId)}/settings`, signal);
+}
+
+/** PUT /trackers/{id}/settings → persist a settings patch (same omit-to-keep-secret semantics
+ *  as `putBridgeSettings`). */
+export function putTrackerSettings(
+  trackerId: string,
+  values: Record<string, SettingValue>,
+  signal?: AbortSignal,
+): Promise<{ settings: Record<string, SettingValue> }> {
+  return fetchPut(`/trackers/${encodeURIComponent(trackerId)}/settings`, values, signal);
+}
+
+/** POST /trackers/{id}/update → update a registry-installed tracker to its latest version. */
+export function updateTracker(trackerId: string, signal?: AbortSignal): Promise<InstallResult> {
+  return fetchPost(`/trackers/${encodeURIComponent(trackerId)}/update`, {}, signal);
+}
+
+/** DELETE /trackers/{id} → uninstall a registry-installed tracker. */
+export function uninstallTracker(trackerId: string, signal?: AbortSignal): Promise<void> {
+  return fetchOk(`/trackers/${encodeURIComponent(trackerId)}`, 'DELETE', signal);
+}
+
+// ─── Registries (optional server capability — mounted only when M4 registry support is on) ───
+
+/** GET /registries → registries the user has added, or `null` when registry support isn't mounted. */
+export function getRegistries(signal?: AbortSignal): Promise<SavedRegistry[] | null> {
+  return fetchJsonOptional('/registries', signal);
+}
+
+/** POST /registries → add a registry by URL. */
+export function addRegistry(
+  url: string,
+  requireSignature?: boolean,
+  signal?: AbortSignal,
+): Promise<SavedRegistry> {
+  const body: { url: string; requireSignature?: boolean } = { url };
+  if (requireSignature !== undefined) body.requireSignature = requireSignature;
+  return fetchPost('/registries', body, signal);
+}
+
+/** DELETE /registries/{encodedUrl} → remove a registry (orphans its installed bridges/trackers). */
+export function removeRegistry(url: string, signal?: AbortSignal): Promise<void> {
+  return fetchOk(`/registries/${encodeURIComponent(url)}`, 'DELETE', signal);
+}
+
+/** GET /registries/{encodedUrl}/bridges → bridges available in one registry. */
+export function browseRegistryBridges(url: string, signal?: AbortSignal): Promise<AvailableBridge[]> {
+  return fetchJson(`/registries/${encodeURIComponent(url)}/bridges`, signal);
+}
+
+/** GET /registries/{encodedUrl}/trackers → trackers available in one registry. */
+export function browseRegistryTrackers(url: string, signal?: AbortSignal): Promise<AvailableTracker[]> {
+  return fetchJson(`/registries/${encodeURIComponent(url)}/trackers`, signal);
+}
+
+/** POST /registries/{encodedUrl}/bridges/{id}/install → install a bridge from a registry. */
+export function installRegistryBridge(
+  registryUrl: string,
+  bridgeId: string,
+  signal?: AbortSignal,
+): Promise<InstallResult> {
+  return fetchPost(`/registries/${encodeURIComponent(registryUrl)}/bridges/${encodeURIComponent(bridgeId)}/install`, {}, signal);
+}
+
+/** POST /registries/{encodedUrl}/trackers/{id}/install → install a tracker from a registry. */
+export function installRegistryTracker(
+  registryUrl: string,
+  trackerId: string,
+  signal?: AbortSignal,
+): Promise<InstallResult> {
+  return fetchPost(`/registries/${encodeURIComponent(registryUrl)}/trackers/${encodeURIComponent(trackerId)}/install`, {}, signal);
+}
+
+/** GET /registry/updates → update info for all installed registry bridges (manual policy — never auto-installed). */
+export function checkRegistryUpdates(signal?: AbortSignal): Promise<RegistryUpdateInfo[]> {
+  return fetchJson('/registry/updates', signal);
+}
+
+/** GET /registry/tracker-updates → update info for all installed registry trackers. */
+export function checkRegistryTrackerUpdates(signal?: AbortSignal): Promise<RegistryUpdateInfo[]> {
+  return fetchJson('/registry/tracker-updates', signal);
 }

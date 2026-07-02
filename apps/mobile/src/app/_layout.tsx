@@ -56,6 +56,12 @@ function RootLayout() {
                 <Stack.Screen name="series" options={{ headerShown: false }} />
                 {/* Full-screen page reader; its own dark chrome, fade in/out. */}
                 <Stack.Screen name="reader" options={{ headerShown: false, animation: 'fade' }} />
+                {/* These render their own <TopBar> (matching series.tsx), so the native
+                    stack header is hidden here too. */}
+                <Stack.Screen name="bridge-settings" options={{ headerShown: false }} />
+                <Stack.Screen name="tracker-settings" options={{ headerShown: false }} />
+                <Stack.Screen name="registries" options={{ headerShown: false }} />
+                <Stack.Screen name="registry-browse" options={{ headerShown: false }} />
               </Stack>
               <DemoBanner />
             </OverlayProvider>

@@ -21,7 +21,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { isAbort, pageOptions } from '@/data/api';
-import { useDataSource, type QueryOpts } from '@/data/source';
+import { useDataSource, useHideNsfw, type QueryOpts } from '@/data/source';
 import type { Bridge, BridgeList, HomeGridSection, RailSection, SeriesEntry } from '@/data/types';
 import { useIsCompact, useTopBarHeight } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
@@ -65,6 +65,7 @@ export default function BrowseScreen() {
   const theme = useTheme();
 
   // ── Bridges ────────────────────────────────────────────────────────────
+  const [hideNsfw] = useHideNsfw();
   const [bridges, setBridges] = useState<Bridge[]>([]);
   const [bridgesError, setBridgesError] = useState<string | null>(null);
   const [bridgesReload, setBridgesReload] = useState(0);
@@ -74,23 +75,28 @@ export default function BrowseScreen() {
     const ctrl = new AbortController();
     setBridgesError(null);
     ds.getBridges(ctrl.signal)
-      .then((bs) => {
-        setBridges(bs);
-        setBridge((prev) => (prev && bs.some((b) => b.name === prev) ? prev : (bs[0]?.name ?? null)));
-      })
+      .then(setBridges)
       .catch((e) => {
         if (!isAbort(e)) setBridgesError(e.message || 'Failed to load bridges');
       });
     return () => ctrl.abort();
   }, [ds, bridgesReload]);
 
-  const currentBridge = bridges.find((b) => b.name === bridge);
+  const visibleBridges = useMemo(
+    () => (hideNsfw ? bridges.filter((b) => !b.nsfw) : bridges),
+    [bridges, hideNsfw],
+  );
+  // Falls back to the first visible bridge whenever the sticky `bridge` selection
+  // isn't among the currently-visible ones (initial load, or hidden by Hide
+  // NSFW) — derived at render instead of synced via an effect, so toggling Hide
+  // NSFW back off restores the original selection with no extra state.
+  const currentBridge = visibleBridges.find((b) => b.name === bridge) ?? visibleBridges[0];
   const bridgeId = currentBridge?.id;
   const bridgeThumbnails = useMemo(() => {
     const map: Record<string, string> = {};
-    for (const b of bridges) if (b.thumbnail) map[b.name] = b.thumbnail;
+    for (const b of visibleBridges) if (b.thumbnail) map[b.name] = b.thumbnail;
     return map;
-  }, [bridges]);
+  }, [visibleBridges]);
   const directBridge = currentBridge?.capabilities.includes('direct') ?? false;
 
   // ── Lists (drives the Page selector) ──────────────────────────────────────
@@ -433,8 +439,8 @@ export default function BrowseScreen() {
         ) : null}
         <Selector
           title="Bridge"
-          value={bridge ?? ''}
-          options={bridges.map((b) => b.name)}
+          value={currentBridge?.name ?? ''}
+          options={visibleBridges.map((b) => b.name)}
           onChange={selectBridge}
           size="subtitle"
           thumbnails={bridgeThumbnails}
@@ -503,7 +509,7 @@ export default function BrowseScreen() {
                     section={s}
                     viewportWidth={railViewport}
                     onSeeAll={(sec) => setSeeAll({ listId: sec.id, title: sec.title })}
-                    bridge={bridge ?? undefined}
+                    bridge={currentBridge?.name ?? undefined}
                     bridgeId={bridgeId}
                     direct={directBridge}
                   />
@@ -514,7 +520,7 @@ export default function BrowseScreen() {
                   key={gs.id}
                   bridgeId={bridgeId}
                   section={gs}
-                  bridge={bridge ?? undefined}
+                  bridge={currentBridge?.name ?? undefined}
                   direct={directBridge}
                   numColumns={numColumns}
                 />
@@ -561,7 +567,7 @@ export default function BrowseScreen() {
         renderItem={({ item }: { item: GridItem }) =>
           item.spacer ? <View style={styles.cell} /> : (
             <View style={styles.cell}>
-              <SeriesCard entry={item} bridge={bridge ?? undefined} bridgeId={bridgeId} direct={directBridge} />
+              <SeriesCard entry={item} bridge={currentBridge?.name ?? undefined} bridgeId={bridgeId} direct={directBridge} />
             </View>
           )
         }
