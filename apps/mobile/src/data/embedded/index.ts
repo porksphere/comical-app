@@ -12,7 +12,7 @@
  * Metro build resolves.
  */
 import { setTransport } from '../api';
-import { getNativeBridgeRuntime, isEmbeddedRuntimeAvailable } from './native-runtime';
+import { getNativeBridgeRuntime } from './native-runtime';
 import { EmbeddedBridgeProvider } from './provider';
 import { asyncStorageSettings } from './settings-store';
 import { createEmbeddedTransport } from './transport';
@@ -55,6 +55,20 @@ export function uninstallEmbeddedTransport(): void {
   setTransport(null);
 }
 
-export { isEmbeddedRuntimeAvailable };
+export { isEmbeddedRuntimeAvailable, setNativeBridgeRuntime } from './native-runtime';
 export { EmbeddedBridgeProvider } from './provider';
+export { configureEmbeddedRuntime, applyEmbeddedMode } from './bootstrap';
+export type { EmbeddedBootstrapConfig } from './bootstrap';
+export {
+  RegistryBundleSource,
+  MemoryBundleCache,
+  type RegistryFetcher,
+  type BundleCache,
+} from './registry-bundle-source';
+export {
+  useEmbeddedEnabled,
+  setEmbeddedEnabled,
+  getResolvedModeSync,
+  type DataSourceMode,
+} from './preference';
 export type { BundleSource, NativeBridgeRuntime, InstalledBridge, SettingsStore } from './types';

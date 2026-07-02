@@ -11,6 +11,7 @@
 import type { BridgeInfo } from '@comical/contract';
 
 const CAPABILITY_METHODS: Record<string, string[]> = {
+  settings: ['getSettings'],
   lists: ['getLists', 'getListItems'],
   search: ['getSearchResults'],
   filters: ['getFilters', 'getTags'],

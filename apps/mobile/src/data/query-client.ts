@@ -20,6 +20,7 @@ import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persi
 import { QueryClient } from '@tanstack/react-query';
 
 import { API_BASE } from './api';
+import { getResolvedModeSync } from './embedded/preference';
 
 // Content (series detail, chapters, lists, pages) is effectively immutable for
 // a browsing session, so keep it fresh for a few minutes (no refetch on
@@ -51,8 +52,9 @@ export const persister = createAsyncStoragePersister({
 export const PERSIST_MAX_AGE_MS = GC_TIME_MS;
 
 /**
- * Bumping this drops the whole persisted cache. Keyed off the backend URL so
- * switching servers (or the demo build's absent backend) can't restore another
- * origin's stale data.
+ * Bumping this drops the whole persisted cache. Keyed off the active transport so switching data
+ * sources can't restore another origin's stale data: the on-device embedded runtime and each remote
+ * backend URL get disjoint persisted caches. (Resolved at module load from the startup preference;
+ * a mid-session swap also clears the cache — see settings.tsx — so the two never mix.)
  */
-export const PERSIST_BUSTER = `v1:${API_BASE}`;
+export const PERSIST_BUSTER = `v2:${getResolvedModeSync() === 'embedded' ? 'embedded' : API_BASE}`;

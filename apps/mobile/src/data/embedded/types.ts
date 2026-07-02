@@ -72,18 +72,23 @@ export interface InitResult {
 }
 
 /**
- * Supplies a bridge's bundle code + install metadata. The content-only v1 implementation downloads
- * + verifies + caches bundles from a registry (mirrors `@comical/registry`); see task #2 notes.
+ * An installed bridge's cheap metadata — the `info` a registry index already carries (capabilities,
+ * nsfw, icon), so the browse list needs no bundle load. Settings descriptors are NOT here: they
+ * require loading the bridge, so the provider fetches them lazily via `getSettings` (mirroring how
+ * the server's BridgeManager loads a bridge to build its summary).
  */
 export interface InstalledBridge {
   info: BridgeInfo;
-  settings: SettingDescriptor[];
   source: 'local' | 'registry';
   availableVersion?: string;
 }
 
+/**
+ * Supplies installed bridges + their bundle code. The content-only v1 implementation downloads +
+ * verifies + caches bundles from a registry (`RegistryBundleSource`, reusing `@comical/registry`).
+ */
 export interface BundleSource {
-  /** Ids of all installed bridges (for `list()`), cheap — no bundle load required. */
+  /** All installed bridges with their index metadata — cheap, no bundle load required. */
   installed(): Promise<InstalledBridge[]>;
   /** The bundle source code for a bridge id; throws with "not found" for an unknown id. */
   resolveBundle(id: string): Promise<string>;
