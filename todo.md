@@ -98,9 +98,15 @@ capability) and has been removed. The actual fix: **`@sentry/react-native`**.
         `Projects: comical-app` / `Release: com.porksphere.comical@0.0.1+1`,
         with a Debug ID matching the one Metro embedded in the bundle — the
         sourcemap pipeline is confirmed live, not just "didn't crash the
-        build." (The same fix should be verified for iOS too — untested
-        so far, only Android was run to avoid burning the pricier macOS
-        runner minutes before the Android path was known-good.)
+        build." Since this is a public repo, Actions minutes are free
+        regardless of runner OS, so also ran `build-ios.yml` (run #54, no
+        code changes needed — same `@sentry/cli` fix covers both platforms)
+        and confirmed both halves of the iOS path: sourcemap upload
+        (`Uploaded files to Sentry` / `Organization: comical` /
+        `Projects: comical-app`) *and* dSYM upload (`Found 22 debug
+        information files` → `Prepared debug information files for upload`
+        → `File upload complete`). Both platforms' CI pipelines are now
+        confirmed working end-to-end, not just "builds successfully."
   - [ ] **Still to do:** the actual on-device verification — a deliberate
         `throw` in a button handler should show up in the Sentry dashboard,
         symbolicated (real file/line, not a minified offset), within the
