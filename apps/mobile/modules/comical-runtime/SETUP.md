@@ -48,8 +48,10 @@ over). `hono`/`zod` come in transitively.
 Where the app boots (e.g. `src/app/_layout.tsx`), inject the built packages into the embedded
 runtime and apply the persisted preference:
 ```ts
-import { createRouter } from '@comical/host-server';
-import { fetchIndex, downloadBundle } from '@comical/registry';
+// Import the Node-free subpaths ONLY — the package barrels pull node:fs / Bun.serve and won't bundle
+// under Metro/Hermes. (host-server "./router", registry "./fetcher" were added for exactly this.)
+import { createRouter } from '@comical/host-server/router';
+import { fetchIndex, downloadBundle } from '@comical/registry/fetcher';
 import { configureEmbeddedRuntime, applyEmbeddedMode, getResolvedModeSync } from '@/data/embedded';
 
 configureEmbeddedRuntime({
