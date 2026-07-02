@@ -1,83 +1,44 @@
-# comical-runtime — setup & wiring
+# comical-runtime — setup & status
 
 The local Expo module that runs Comical bridges on-device (JSC/QuickJS), wrapping the shared
-`ComicalBridgeContext` from the `comical` repo. **The module source is committed, but the build
-wiring below is not yet applied** — it depends on the `comical` repo being published (its history
-must first be rewritten from `@tcolb` → `@porksphere`) and added here as a git submodule. Until then
-the app resolves `requireOptionalNativeModule('ComicalRuntime')` to `null` and stays on the remote
-transport, so nothing here breaks the current build.
+`ComicalBridgeContext` from the `comical` repo. **The wiring is now in place** — the `comical`
+submodule is at `external/comical`, Metro resolves `@comical/*` from it, `_layout.tsx` calls
+`startEmbeddedRuntime()`, and CI checks out submodules + generates the harness. Until the native
+module is actually compiled into a dev/CI build, `requireOptionalNativeModule('ComicalRuntime')`
+resolves to `null` and the app stays on the remote transport (so JS-only lanes are unaffected).
 
-## Prerequisites
-1. Publish `comical` to a git remote (e.g. `github.com/porksphere/comical`), authored entirely as
-   `porksphere`. It must include the `host-server` Node-free router + `BridgeProvider` changes and
-   the `host-android`/`host-ios` `callJson`/`describeJson` additions.
+## What's wired (done)
+- **Submodule**: `external/comical` (pinned) — `git submodule update --init --recursive` after clone.
+- **Metro** (`metro.config.js`): `@comical/*` → submodule packages via `extraNodeModules` +
+  `unstable_enablePackageExports`; submodule `node_modules` (hono/zod) on `nodeModulesPaths`.
+- **tsc** types: `@comical/contract`/`@comical/registry` paths → submodule; `@comical/host-server/router`
+  + `@comical/registry/fetcher` via ambient decls in `apps/mobile/types/comical-embedded.d.ts`.
+- **Startup**: `src/data/embedded/startup.ts` (native) injects `createRouter` + the registry fetcher
+  into `configureEmbeddedRuntime` and applies the persisted preference; `startup.web.ts` is a no-op.
+  Registry index defaults to `bridges-repo` (override `EXPO_PUBLIC_COMICAL_REGISTRY`).
+- **CI**: `build-android/ios` reusable workflows check out `submodules: recursive` and run
+  `bun install && bun run build:native` in `external/comical` (the harness bundles are gitignored).
+- **Native wrappers**: `android/` (Kotlin, compiles host-android + `comical_harness.js` via
+  sourceSets) and `ios/` (podspec compiling ComicalHostIOS + `harness.js`).
 
-## 1. Add the submodule (at the comical-app repo root)
+## To build & verify (Android, local emulator — the fast loop)
 ```sh
-git submodule add <comical-remote-url> external/comical
-git -c protocol.file.allow=always submodule update --init --recursive
+git submodule update --init --recursive          # ensure external/comical is present
+(cd external/comical && bun install && bun run build:native)   # generate comical_harness.js
+cd apps/mobile && bun install
+bun run android                                  # expo prebuild + gradle + install on the emulator
 ```
-The gradle `sourceSets` (android/build.gradle) and the podspec (ios/ComicalRuntime.podspec) reference
-`external/comical/packages/host-android` and `.../host-ios` by relative path — adjust those paths if
-you place the submodule elsewhere.
+Then in the app: Settings → "Run bridges on this device" → browse/search/read with no server; toggle
+off to confirm remote still works. (iOS needs macOS/Xcode; CI covers it.)
 
-## 2. Generate the native harness bundles (gitignored in comical)
-`ComicalBridgeContext` loads `comical_harness.js` (Android) / `harness.js` (iOS), which are generated
-from `@comical/host-native`:
-```sh
-cd external/comical && bun install && bun run build:native
-```
-Do this in CI before `expo prebuild`/gradle/xcodebuild (add a step to the build workflows).
-
-## 3. Make the JS comical packages real dependencies (for the embedded transport)
-The embedded transport reuses `@comical/host-server`'s `createRouter` and `@comical/registry`'s
-fetcher. Add them (and `@comical/core`/`@comical/contract`/`@comical/library`) as `file:` deps so
-Metro bundles them from the submodule, then `bun install`:
-```jsonc
-// apps/mobile/package.json (dependencies)
-"@comical/host-server": "file:../../external/comical/packages/host-server",
-"@comical/registry":    "file:../../external/comical/packages/registry",
-"@comical/core":        "file:../../external/comical/packages/core",
-"@comical/library":     "file:../../external/comical/packages/library",
-"@comical/contract":    "file:../../external/comical/packages/contract"
-```
-Then drop the type-only `@comical/*` `paths` from `apps/mobile/tsconfig.json` (real resolution takes
-over). `hono`/`zod` come in transitively.
-
-## 4. Wire the runtime at app startup (native entry only)
-Where the app boots (e.g. `src/app/_layout.tsx`), inject the built packages into the embedded
-runtime and apply the persisted preference:
-```ts
-// Import the Node-free subpaths ONLY — the package barrels pull node:fs / Bun.serve and won't bundle
-// under Metro/Hermes. (host-server "./router", registry "./fetcher" were added for exactly this.)
-import { createRouter } from '@comical/host-server/router';
-import { fetchIndex, downloadBundle } from '@comical/registry/fetcher';
-import { configureEmbeddedRuntime, applyEmbeddedMode, getResolvedModeSync } from '@/data/embedded';
-
-configureEmbeddedRuntime({
-  createRouter,
-  fetcher: { fetchIndex, downloadBundle },
-  indexUrl: '<registry index.json URL>',
-});
-applyEmbeddedMode(getResolvedModeSync() === 'embedded');
-```
-(Web builds skip this — `requireOptionalNativeModule` is null there, so `applyEmbeddedMode` no-ops.)
-
-## 5. CI: check out submodules
-Add to each native build workflow's `actions/checkout@v4` step:
-```yaml
-with:
-  submodules: recursive
-```
-and the `bun run build:native` step from §2. ⚠️ Until §1–§3 are done, the `build-android` /
-`build-ios` lanes will fail on `apps/**` pushes (the module references a missing submodule) — don't
-push to `main` until wired, or gate the module behind a prebuild flag.
-
-## Follow-ups
-- `describeJson()` returns `{ info, methods }` so the proxy exposes exactly the implemented methods;
-  the JS falls back to capability-derived methods if `methods` is absent.
-- An `expo-file-system`-backed `BundleCache` (currently `MemoryBundleCache`) for persistent bundle
-  caching.
-- On-device `crypto.subtle` polyfill (e.g. `react-native-quick-crypto`) so `@comical/registry`'s
-  `verify.ts` SHA-256/Ed25519 runs during bundle download.
-- iOS `ComicalBridgeContext` doesn't yet thread `networkJson` through its init (Android does).
+## Known device follow-ups (needed for the registry path to work end-to-end)
+- **`crypto.subtle` polyfill** — `@comical/registry`'s `verify.ts` uses WebCrypto (SHA-256 + Ed25519)
+  to verify downloaded bundles; Hermes has no `crypto.subtle`. Add e.g. `react-native-quick-crypto`
+  (and install its global shim before `startEmbeddedRuntime()`), or bundle bridges as assets instead.
+- **`expo-file-system` `BundleCache`** — currently `MemoryBundleCache` (bundles re-download each
+  launch). Add a persistent adapter (implements `BundleCache`, pass via `configureEmbeddedRuntime`).
+- **Gradle/podspec relative paths** to `external/comical` are best-effort — adjust if a build can't
+  find the host sources/harness.
+- **iOS `networkJson`** isn't threaded through `ComicalBridgeContext.init` yet (Android is).
+- `describeJson()` returns `{ info, methods }`, so the proxy exposes exactly the implemented methods
+  (the JS falls back to capability-derived methods if `methods` is absent).
