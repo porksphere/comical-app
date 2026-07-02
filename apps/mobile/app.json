@@ -44,6 +44,14 @@
           "organization": "comical",
           "project": "comical-app"
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26
+          }
+        }
       ]
     ],
     "experiments": {
