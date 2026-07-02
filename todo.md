@@ -117,6 +117,49 @@ capability) and has been removed. The actual fix: **`@sentry/react-native`**.
         `Sentry.nativeCrash()` is a lower-effort synthetic test if
         reproducing the original bug is too invasive.
 
+## Publish `@comical/*` packages instead of tsconfig-paths/local-stub hacks
+
+Shipped in PR #32 (`import-comical-contract-types`): `apps/mobile/src/data/api.ts`'s
+hand-rolled `Api*` types (duplicating `@comical/contract`'s zod-inferred shapes) are
+now `import type`/`export type` re-exports of the real types, resolved via a
+`tsconfig.json` `paths` entry pointing straight at the sibling `comical` repo's
+source (`../../../comical/packages/contract/src/index.ts`) — no new dependency, no
+Metro config change. Being type-only, the import is fully erased by Babel before
+Metro bundles anything, so this has zero runtime/CI impact today: confirmed
+`expo export --platform web` builds clean and the served bundle has zero
+`require("@comical/contract")` references.
+
+- **The catch, confirmed by testing:** this only works because nothing in CI
+  currently runs `tsc`/`bun run typecheck` — verified by temporarily pointing the
+  `tsconfig.json` path at a nonexistent directory (simulating "no sibling `comical`
+  checkout," which is CI's actual state) and re-running `bun run typecheck`: it
+  fails with `TS2307: Cannot find module '@comical/contract'`. So a local `comical`
+  checkout next to `comical-app` is required for type-checking/editor support, but
+  is silently unnecessary for building/shipping — an easy footgun if a typecheck
+  CI step is ever added without also fixing this.
+- **Future fix — once `comical` (starting with `@comical/contract`) is published:**
+  drop the `tsconfig.json` paths entry entirely and add it as a real
+  `package.json` dependency resolved through GitHub Packages, exactly like the
+  already-documented `@porksphere/core` cut-over plan (`README.md`'s "The
+  business-logic core" section — `.npmrc` maps a scope to `npm.pkg.github.com`,
+  `NODE_AUTH_TOKEN` with `read:packages` auth's CI, `bun install --frozen-lockfile`
+  resolves it like any other package). No `watchFolders`/`nodeModulesPaths` Metro
+  hacks needed for a genuinely published package — those exist only for
+  `@porksphere/core`'s current *local stub* dev-linking, not real npm resolution.
+  This removes the "must have a sibling checkout" caveat above and makes it safe to
+  add a `typecheck` CI step.
+- **`@comical/library`/`@comical/runtime` are a different, bigger lift:** unlike
+  `@comical/contract` (type-only usage today, could stay a `devDependency`), these
+  are real runtime code Metro must actually bundle for the on-device API→library
+  connectivity the app will eventually need — per `apps/mobile/AGENTS.md`, blocked
+  until a Hermes/QuickJS-compatible `BundleEvaluator` exists
+  (`comical/packages/core/src/evaluator.ts`, Node-`vm`/browser-`new Function()`
+  evaluators only today). Once that lands, they'd need the full
+  `@porksphere/core`-style treatment (real `dependency`, Metro resolves through
+  `node_modules` same as above) rather than any tsconfig-paths trick — but if the
+  publish pipeline is already built for `@comical/contract`, extending it to these
+  is close to free.
+
 ## react/react-native-renderer version guard (shipped)
 
 `apps/mobile/scripts/verify-react-versions.js` runs as a `postinstall` hook (so
