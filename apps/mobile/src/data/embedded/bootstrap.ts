@@ -12,7 +12,7 @@
  * call before `configureEmbeddedRuntime` or when the native runtime is absent (web) — it simply
  * ensures the remote transport stays active and returns false.
  */
-import { installEmbeddedTransport, uninstallEmbeddedTransport } from './index';
+import { installEmbeddedTransport, uninstallEmbeddedTransport } from './install';
 import { isEmbeddedRuntimeAvailable } from './native-runtime';
 import { RegistryBundleSource } from './registry-bundle-source';
 import type { BundleCache, RegistryFetcher } from './registry-bundle-source';
