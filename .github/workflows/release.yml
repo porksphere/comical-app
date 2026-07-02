@@ -28,9 +28,11 @@ permissions:
 jobs:
   ios:
     uses: ./.github/workflows/build-ios-reusable.yml
+    secrets: inherit
 
   android:
     uses: ./.github/workflows/build-android-reusable.yml
+    secrets: inherit
 
   release:
     needs: [ios, android]

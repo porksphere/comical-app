@@ -1,3 +1,24 @@
+import * as Sentry from '@sentry/react-native';
+import { Platform } from 'react-native';
+
+import { SENTRY_DSN } from '@/lib/sentry';
+
+// Runs before any other module below, so JS errors/native crashes are caught
+// from the earliest possible point in app startup. Disabled on web: the
+// deploy-web.yml GitHub Pages preview is a public, unauthenticated URL with
+// no native crash surface, so there's no reason to spend free-tier quota on
+// anonymous visitors there.
+Sentry.init({
+  dsn: SENTRY_DSN,
+  enabled: Platform.OS !== 'web',
+  environment: __DEV__ ? 'development' : 'production',
+  tracesSampleRate: 0, // crash/error capture only, no perf/APM quota usage
+});
+
+/* eslint-disable import/first -- these must stay below Sentry.init above:
+   Metro/Babel execute top-level statements in source order (unlike native
+   ESM hoisting), so this ordering is what actually keeps Sentry.init the
+   first thing to run. */
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -8,8 +29,9 @@ import { ErrorBoundary } from '@/components/error-boundary';
 import { OverlayProvider } from '@/components/overlay/overlay';
 import { persister, PERSIST_BUSTER, PERSIST_MAX_AGE_MS, queryClient } from '@/data/query-client';
 import { useActiveColorScheme } from '@/hooks/use-theme';
+/* eslint-enable import/first */
 
-export default function RootLayout() {
+function RootLayout() {
   // Resolved (forced dark for now) scheme so the navigation theme matches the
   // app content and renders identically on the static export's server + client.
   const scheme = useActiveColorScheme();
@@ -43,3 +65,5 @@ export default function RootLayout() {
     </ErrorBoundary>
   );
 }
+
+export default Sentry.wrap(RootLayout);

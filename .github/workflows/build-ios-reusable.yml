@@ -8,6 +8,12 @@ name: Build iOS IPA (reusable)
 
 on:
   workflow_call:
+    secrets:
+      SENTRY_AUTH_TOKEN:
+        # Optional: without it, the Sentry build-phase script below no-ops
+        # (skips sourcemap/dSYM upload) rather than failing the build. Not yet
+        # configured as a repo secret — see todo.md's Sentry section.
+        required: false
     outputs:
       version:
         description: expo.version read from apps/mobile/app.json
@@ -23,6 +29,11 @@ jobs:
     runs-on: macos-26
     outputs:
       version: ${{ steps.meta.outputs.version }}
+    # Read by the Sentry Expo config plugin's Xcode build-phase script (injected
+    # during `expo prebuild` below) so it can upload sourcemaps/dSYMs during the
+    # archive step. A missing/empty token makes that step no-op rather than fail.
+    env:
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 

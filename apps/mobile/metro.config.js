@@ -5,13 +5,16 @@
 // version (apps/mobile/node_modules), or a locally `npm link`-ed checkout of the
 // real core repo (it will be symlinked into node_modules and its source is under
 // the monorepo root, both of which are covered here).
-const { getDefaultConfig } = require('expo/metro-config');
+const { getSentryExpoConfig } = require('@sentry/react-native/metro');
 const path = require('path');
 
 const projectRoot = __dirname;
 const monorepoRoot = path.resolve(projectRoot, '../..');
 
-const config = getDefaultConfig(projectRoot);
+// getSentryExpoConfig wraps expo/metro-config's getDefaultConfig and also
+// injects a Debug ID into the bundle, which the uploaded sourcemap needs to
+// correlate against at symbolication time.
+const config = getSentryExpoConfig(projectRoot);
 
 config.watchFolders = [monorepoRoot];
 config.resolver.nodeModulesPaths = [

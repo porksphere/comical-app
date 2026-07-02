@@ -36,6 +36,14 @@
             "imageWidth": 76
           }
         }
+      ],
+      [
+        "@sentry/react-native/expo",
+        {
+          "url": "https://sentry.io/",
+          "organization": "comical",
+          "project": "comical-app"
+        }
       ]
     ],
     "experiments": {

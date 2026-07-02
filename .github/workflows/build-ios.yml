@@ -35,6 +35,7 @@ permissions:
 jobs:
   build:
     uses: ./.github/workflows/build-ios-reusable.yml
+    secrets: inherit
 
   publish:
     needs: build
