@@ -1,0 +1,48 @@
+apply plugin: 'com.android.library'
+apply plugin: 'org.jetbrains.kotlin.android'
+
+group = 'expo.modules.comicalruntime'
+version = '0.1.0'
+
+// Expo Modules gradle plugin (provides the Module DSL + autolinking hooks).
+def expoModulesCorePlugin = new File(project(":expo-modules-core").projectDir.absolutePath, "ExpoModulesCorePlugin.gradle")
+apply from: expoModulesCorePlugin
+applyKotlinExpoModulesCorePlugin()
+useCoreDependencies()
+useExpoPublishing()
+
+android {
+  namespace "expo.modules.comicalruntime"
+  compileSdk 36 // required by quickjs-kt-android 1.x (matches comical/packages/host-android)
+
+  defaultConfig {
+    minSdk 26 // QuickJS-kt needs a recent NDK runtime
+  }
+
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_17
+    targetCompatibility JavaVersion.VERSION_17
+  }
+  kotlinOptions { jvmTarget = "17" }
+
+  sourceSets {
+    main {
+      // Compile the shared Android host (dev.comical.host.ComicalBridgeContext) and its generated
+      // `comical_harness.js` asset straight from the `comical` git submodule — no cross-repo Gradle
+      // project include. rootDir is the app's android/ dir (apps/mobile/android); the submodule
+      // lives at the comical-app repo root. See SETUP.md (paths + `bun run build:native` to generate
+      // the harness before assembleRelease).
+      java.srcDirs += ["$rootDir/../../../external/comical/packages/host-android/src/main/kotlin"]
+      assets.srcDirs += ["$rootDir/../../../external/comical/packages/host-android/src/main/assets"]
+    }
+  }
+}
+
+dependencies {
+  // Same runtime deps host-android declares (its build.gradle.kts isn't used here — we compile its
+  // sources directly, so its dependencies must be repeated). Keep in sync with
+  // comical/packages/host-android/build.gradle.kts.
+  implementation "io.github.dokar3:quickjs-kt-android:1.0.5"
+  implementation "com.squareup.okhttp3:okhttp:4.12.0"
+  implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1"
+}
