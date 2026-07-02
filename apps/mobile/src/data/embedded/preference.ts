@@ -10,7 +10,7 @@
  */
 import { useSyncExternalStore } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { isEmbeddedRuntimeAvailable } from './native-runtime';
+import { isEmbeddedRuntimeAvailable } from '@comical/host-rn';
 
 export type DataSourceMode = 'embedded' | 'remote';
 

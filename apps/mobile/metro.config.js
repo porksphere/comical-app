@@ -37,6 +37,8 @@ config.resolver.unstable_enablePackageExports = true;
 // transport imports only the Node-free entry points; web never imports them (startup.web.ts no-op).
 config.resolver.extraNodeModules = {
   ...config.resolver.extraNodeModules,
+  // The reusable RN embedding layer — the app's single runtime entry into the on-device runtime.
+  '@comical/host-rn': path.resolve(comicalRoot, 'packages/host-rn'),
   '@comical/host-server': path.resolve(comicalRoot, 'packages/host-server'),
   '@comical/registry': path.resolve(comicalRoot, 'packages/registry'),
   '@comical/core': path.resolve(comicalRoot, 'packages/core'),
