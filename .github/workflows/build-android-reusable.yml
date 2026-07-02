@@ -35,6 +35,9 @@ jobs:
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The on-device runtime (@comical/*, native hosts) lives in the `comical` submodule.
+          submodules: recursive
 
       # Bun is the package manager; Node is still required because Metro and the
       # Gradle "bundle React Native code" phase shell out to `node`.
@@ -55,6 +58,13 @@ jobs:
         run: bun install --frozen-lockfile
         env:
           NODE_AUTH_TOKEN: ${{ github.token }}
+
+      # Install the submodule's deps (hono/zod that @comical/* import at runtime) and generate the
+      # gitignored `comical_harness.js` the Android ComicalBridgeContext bundles from assets
+      # (compiled in via modules/comical-runtime/android/build.gradle sourceSets).
+      - name: Build on-device runtime bundles (comical submodule)
+        run: bun install && bun run build:native
+        working-directory: external/comical
 
       - name: Generate native Android project (CNG)
         run: bunx expo prebuild --platform android --no-install

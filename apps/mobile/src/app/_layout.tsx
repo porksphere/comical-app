@@ -27,9 +27,14 @@ import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { DemoBanner } from '@/components/demo-banner';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { OverlayProvider } from '@/components/overlay/overlay';
+import { startEmbeddedRuntime } from '@/data/embedded/startup';
 import { persister, PERSIST_BUSTER, PERSIST_MAX_AGE_MS, queryClient } from '@/data/query-client';
 import { useActiveColorScheme } from '@/hooks/use-theme';
 /* eslint-enable import/first */
+
+// Install the on-device transport per the persisted preference before any screen queries fire
+// (native only; a no-op on web and until the native module is linked — the app stays remote).
+startEmbeddedRuntime();
 
 function RootLayout() {
   // Resolved (forced dark for now) scheme so the navigation theme matches the
