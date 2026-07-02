@@ -78,6 +78,34 @@ export interface DataSource {
    *  to `null` (rather than throwing) for "not supported" and for `sprite`-kind thumbnails, which
    *  have no RN crop renderer yet — either way the caller's placeholder just stays. */
   getPageThumb(bridgeId: string, seriesId: string, pageIndex: number, signal?: AbortSignal): Promise<string | null>;
+
+  // ─── Settings + registries (Settings screen only) ──────────────────────────
+
+  /** Per-bridge summaries with settings status, for the Settings screen's Bridges section. */
+  getBridgeSummaries(signal?: AbortSignal): Promise<api.BridgeSummary[]>;
+  getBridgeSettings(bridgeId: string, signal?: AbortSignal): Promise<api.BridgeSettingsInfo>;
+  putBridgeSettings(bridgeId: string, values: Record<string, api.SettingValue>, signal?: AbortSignal): Promise<void>;
+  /** Update a registry-installed bridge to its latest version. */
+  updateBridge(bridgeId: string, signal?: AbortSignal): Promise<void>;
+  /** Uninstall a registry-installed bridge. */
+  uninstallBridge(bridgeId: string, signal?: AbortSignal): Promise<void>;
+
+  /** The mounted trackers, or `null` when this server has no `TrackerManager` (an expected,
+   *  non-error state — the Settings screen renders "not available" rather than an error banner). */
+  getTrackers(signal?: AbortSignal): Promise<api.TrackerInfo[] | null>;
+  getTrackerSettings(trackerId: string, signal?: AbortSignal): Promise<api.TrackerSettingsInfo>;
+  putTrackerSettings(trackerId: string, values: Record<string, api.SettingValue>, signal?: AbortSignal): Promise<void>;
+  updateTracker(trackerId: string, signal?: AbortSignal): Promise<void>;
+  uninstallTracker(trackerId: string, signal?: AbortSignal): Promise<void>;
+
+  /** Registries the user has added, or `null` when this server has no registry support mounted. */
+  getRegistries(signal?: AbortSignal): Promise<api.SavedRegistry[] | null>;
+  addRegistry(url: string, requireSignature?: boolean, signal?: AbortSignal): Promise<void>;
+  removeRegistry(url: string, signal?: AbortSignal): Promise<void>;
+  browseRegistryBridges(url: string, signal?: AbortSignal): Promise<api.AvailableBridge[]>;
+  browseRegistryTrackers(url: string, signal?: AbortSignal): Promise<api.AvailableTracker[]>;
+  installRegistryBridge(registryUrl: string, bridgeId: string, signal?: AbortSignal): Promise<void>;
+  installRegistryTracker(registryUrl: string, trackerId: string, signal?: AbortSignal): Promise<void>;
 }
 
 // ─── Real data source: adapts api.ts's server-shaped responses to the UI types ──
@@ -228,6 +256,46 @@ const realDataSource: DataSource = {
     const groups = await api.getRelatedSeries(bridgeId, seriesId, signal);
     return groups.map((g) => ({ label: g.label, items: g.series.map(toSeriesEntry) }));
   },
+
+  getBridgeSummaries: (signal) => api.getBridgeSummaries(signal),
+  getBridgeSettings: (bridgeId, signal) => api.getBridgeSettings(bridgeId, signal),
+  async putBridgeSettings(bridgeId, values, signal) {
+    await api.putBridgeSettings(bridgeId, values, signal);
+  },
+  async updateBridge(bridgeId, signal) {
+    await api.updateBridge(bridgeId, signal);
+  },
+  async uninstallBridge(bridgeId, signal) {
+    await api.uninstallBridge(bridgeId, signal);
+  },
+
+  getTrackers: (signal) => api.getTrackers(signal),
+  getTrackerSettings: (trackerId, signal) => api.getTrackerSettings(trackerId, signal),
+  async putTrackerSettings(trackerId, values, signal) {
+    await api.putTrackerSettings(trackerId, values, signal);
+  },
+  async updateTracker(trackerId, signal) {
+    await api.updateTracker(trackerId, signal);
+  },
+  async uninstallTracker(trackerId, signal) {
+    await api.uninstallTracker(trackerId, signal);
+  },
+
+  getRegistries: (signal) => api.getRegistries(signal),
+  async addRegistry(url, requireSignature, signal) {
+    await api.addRegistry(url, requireSignature, signal);
+  },
+  async removeRegistry(url, signal) {
+    await api.removeRegistry(url, signal);
+  },
+  browseRegistryBridges: (url, signal) => api.browseRegistryBridges(url, signal),
+  browseRegistryTrackers: (url, signal) => api.browseRegistryTrackers(url, signal),
+  async installRegistryBridge(registryUrl, bridgeId, signal) {
+    await api.installRegistryBridge(registryUrl, bridgeId, signal);
+  },
+  async installRegistryTracker(registryUrl, trackerId, signal) {
+    await api.installRegistryTracker(registryUrl, trackerId, signal);
+  },
 };
 
 // ─── Mock data source: thin wrapper over mock.ts's generators ───────────────
@@ -254,6 +322,26 @@ const mockDataSource: DataSource = {
   // Mock series always populate `relatedGroups` inline (never set `relatedGroupsDeferred`), so
   // this is never actually called — implemented only to satisfy the DataSource contract.
   getRelatedGroups: () => Promise.resolve([]),
+
+  getBridgeSummaries: () => mock.mockGetBridgeSummaries(),
+  getBridgeSettings: (bridgeId) => mock.mockGetBridgeSettings(bridgeId),
+  putBridgeSettings: (bridgeId, values) => mock.mockPutBridgeSettings(bridgeId, values),
+  updateBridge: (bridgeId) => mock.mockUpdateBridge(bridgeId),
+  uninstallBridge: (bridgeId) => mock.mockUninstallBridge(bridgeId),
+
+  getTrackers: () => mock.mockGetTrackers(),
+  getTrackerSettings: (trackerId) => mock.mockGetTrackerSettings(trackerId),
+  putTrackerSettings: (trackerId, values) => mock.mockPutTrackerSettings(trackerId, values),
+  updateTracker: (trackerId) => mock.mockUpdateTracker(trackerId),
+  uninstallTracker: (trackerId) => mock.mockUninstallTracker(trackerId),
+
+  getRegistries: () => mock.mockGetRegistries(),
+  addRegistry: (url, requireSignature) => mock.mockAddRegistry(url, requireSignature),
+  removeRegistry: (url) => mock.mockRemoveRegistry(url),
+  browseRegistryBridges: (url) => mock.mockBrowseRegistryBridges(url),
+  browseRegistryTrackers: (url) => mock.mockBrowseRegistryTrackers(url),
+  installRegistryBridge: (registryUrl, bridgeId) => mock.mockInstallRegistryBridge(registryUrl, bridgeId),
+  installRegistryTracker: (registryUrl, trackerId) => mock.mockInstallRegistryTracker(registryUrl, trackerId),
 };
 
 // ─── Dev-only mock toggle + demo-build flag ──────────────────────────────────
@@ -311,4 +399,43 @@ export function useMockActive(): boolean {
 /** The data source screens should call: real API by default, mock only when explicitly enabled. */
 export function useDataSource(): DataSource {
   return useMockActive() ? mockDataSource : realDataSource;
+}
+
+// ─── Hide NSFW toggle (persisted, not dev-gated) ─────────────────────────────
+
+const HIDE_NSFW_KEY = 'comical:hideNsfw';
+
+let hideNsfwOn = false;
+const hideNsfwListeners = new Set<() => void>();
+function notifyHideNsfwChange(): void {
+  for (const l of hideNsfwListeners) l();
+}
+function subscribeHideNsfw(listener: () => void): () => void {
+  hideNsfwListeners.add(listener);
+  return () => hideNsfwListeners.delete(listener);
+}
+function getHideNsfwSnapshot(): boolean {
+  return hideNsfwOn;
+}
+function getHideNsfwServerSnapshot(): boolean {
+  return false;
+}
+
+AsyncStorage.getItem(HIDE_NSFW_KEY)
+  .then((stored) => {
+    hideNsfwOn = stored === '1';
+    notifyHideNsfwChange();
+  })
+  .catch(() => {});
+
+function setHideNsfw(enabled: boolean): void {
+  hideNsfwOn = enabled;
+  notifyHideNsfwChange();
+  AsyncStorage.setItem(HIDE_NSFW_KEY, enabled ? '1' : '0').catch(() => {});
+}
+
+/** [hideNsfw, setHideNsfw] — persisted app-wide, drives NSFW bridge filtering. */
+export function useHideNsfw(): [boolean, (enabled: boolean) => void] {
+  const enabled = useSyncExternalStore(subscribeHideNsfw, getHideNsfwSnapshot, getHideNsfwServerSnapshot);
+  return [enabled, setHideNsfw];
 }

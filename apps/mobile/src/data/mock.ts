@@ -21,7 +21,18 @@ import type {
   TrackerSearchResult,
   TrackerService,
 } from './types';
-import type { ApiFilter, ApiSortOption } from './api';
+import type {
+  ApiFilter,
+  ApiSortOption,
+  BridgeSummary,
+  BridgeSettingsInfo,
+  TrackerInfo,
+  TrackerSettingsInfo,
+  SavedRegistry,
+  AvailableBridge,
+  AvailableTracker,
+  SettingValue,
+} from './api';
 
 export type {
   BadgePosition,
@@ -440,3 +451,60 @@ export async function mockAddFavorite(seriesId: string): Promise<void> {
 export async function mockRemoveFavorite(seriesId: string): Promise<void> {
   mockFavorites.delete(seriesId);
 }
+
+// ─── Settings + registries ────────────────────────────────────────────────────
+// Minimal, non-throwing stand-ins — Settings isn't a screen mock-data users will heavily
+// exercise, so no fake registry catalog or bridge settings forms, just empty/no-op shapes.
+
+export async function mockGetBridgeSummaries(): Promise<BridgeSummary[]> {
+  const bridges = await mockGetBridges();
+  return bridges.map((b) => ({ info: b, configured: true, missingRequired: [], source: 'local' }));
+}
+
+export async function mockGetBridgeSettings(bridgeId: string): Promise<BridgeSettingsInfo> {
+  const bridges = await mockGetBridges();
+  const info = bridges.find((b) => b.id === bridgeId) ?? bridges[0]!;
+  return { info, settings: [], values: {}, secretsSet: [], missingRequired: [], configured: true };
+}
+
+export async function mockPutBridgeSettings(_bridgeId: string, _values: Record<string, SettingValue>): Promise<void> {}
+export async function mockUpdateBridge(_bridgeId: string): Promise<void> {}
+export async function mockUninstallBridge(_bridgeId: string): Promise<void> {}
+
+export async function mockGetTrackers(): Promise<TrackerInfo[]> {
+  return [];
+}
+
+export async function mockGetTrackerSettings(trackerId: string): Promise<TrackerSettingsInfo> {
+  return { info: { id: trackerId, name: trackerId, capabilities: [] }, settings: [], values: {}, secretsSet: [] };
+}
+
+export async function mockPutTrackerSettings(_trackerId: string, _values: Record<string, SettingValue>): Promise<void> {}
+export async function mockUpdateTracker(_trackerId: string): Promise<void> {}
+export async function mockUninstallTracker(_trackerId: string): Promise<void> {}
+
+const mockRegistries: SavedRegistry[] = [];
+
+export async function mockGetRegistries(): Promise<SavedRegistry[]> {
+  return mockRegistries;
+}
+
+export async function mockAddRegistry(url: string, requireSignature?: boolean): Promise<void> {
+  mockRegistries.push({ url, name: url, requireSignature: requireSignature ?? false });
+}
+
+export async function mockRemoveRegistry(url: string): Promise<void> {
+  const i = mockRegistries.findIndex((r) => r.url === url);
+  if (i !== -1) mockRegistries.splice(i, 1);
+}
+
+export async function mockBrowseRegistryBridges(_url: string): Promise<AvailableBridge[]> {
+  return [];
+}
+
+export async function mockBrowseRegistryTrackers(_url: string): Promise<AvailableTracker[]> {
+  return [];
+}
+
+export async function mockInstallRegistryBridge(_registryUrl: string, _bridgeId: string): Promise<void> {}
+export async function mockInstallRegistryTracker(_registryUrl: string, _trackerId: string): Promise<void> {}

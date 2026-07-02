@@ -5,14 +5,36 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { API_BASE } from '@/data/api';
-import { useMockDataToggle } from '@/data/source';
+import { useHideNsfw, useMockDataToggle } from '@/data/source';
 import { useTheme } from '@/hooks/use-theme';
 
 export default function SettingsScreen() {
   return (
     <PlaceholderScreen title="Settings">
+      <GeneralSection />
       {__DEV__ && <DeveloperSection />}
     </PlaceholderScreen>
+  );
+}
+
+/** Formalized into `SettingsSection`/`SettingsRow` once the full screen shell lands. */
+function GeneralSection() {
+  const theme = useTheme();
+  const [hideNsfw, setHideNsfw] = useHideNsfw();
+  return (
+    <ThemedView type="backgroundElement" style={[styles.section, { borderColor: theme.hairline }]}>
+      <ThemedText type="smallBold">General</ThemedText>
+
+      <View style={styles.row}>
+        <View style={styles.rowText}>
+          <ThemedText type="small">Hide NSFW content</ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">
+            Hides NSFW-flagged bridges from the Browse tab.
+          </ThemedText>
+        </View>
+        <Switch value={hideNsfw} onValueChange={setHideNsfw} />
+      </View>
+    </ThemedView>
   );
 }
 

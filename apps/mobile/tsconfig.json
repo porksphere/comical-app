@@ -12,6 +12,9 @@
       ],
       "@comical/contract": [
         "../../../comical/packages/contract/src/index.ts"
+      ],
+      "@comical/registry": [
+        "../../../comical/packages/registry/src/schema.ts"
       ]
     }
   },
