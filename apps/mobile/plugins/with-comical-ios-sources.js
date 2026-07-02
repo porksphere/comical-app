@@ -37,8 +37,12 @@ module.exports = function withComicalIosSources(config) {
       fs.rmSync(dest, { recursive: true, force: true });
       fs.mkdirSync(path.join(dest, 'Resources'), { recursive: true });
 
+      // ComicalServer.swift is the optional on-device HTTP server (for WebView hybrid apps); this
+      // module drives ComicalBridgeContext directly and doesn't use it, so skip it (it also has an
+      // unrelated Encodable compile issue). Copy the rest of the host sources.
+      const skip = new Set(['ComicalServer.swift']);
       for (const file of fs.readdirSync(src)) {
-        if (file.endsWith('.swift')) {
+        if (file.endsWith('.swift') && !skip.has(file)) {
           fs.copyFileSync(path.join(src, file), path.join(dest, file));
         }
       }
