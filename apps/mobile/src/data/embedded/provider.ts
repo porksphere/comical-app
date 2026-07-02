@@ -3,8 +3,11 @@
  *
  * `get(id)` lazily loads a bridge bundle into the native engine (`initBridge`) — resolving its code
  * from the `BundleSource`, its user settings from the `SettingsStore` — then returns a `ProxyBridge`
- * whose methods marshal back to that native context. Loaded proxies + init results are cached; a
- * settings change or uninstall drops the cache (and the native context) via `invalidate`/`refresh`.
+ * whose methods marshal back to that native context. On load it also captures the bridge's setting
+ * descriptors (via `getSettings`, when the bridge advertises them), so `missingRequired`/`list`
+ * report `configured` faithfully — mirroring how the server's BridgeManager loads a bridge to build
+ * its summary. Loaded proxies + descriptors are cached; a settings change or uninstall drops the
+ * cache (and the native context) via `invalidate`/`refresh`.
  *
  * `missingRequired` mirrors `@comical/core`'s `resolveSettings` (a required descriptor with neither a
  * stored value nor a default is missing) so the router's "not configured" gate behaves identically.
@@ -46,31 +49,61 @@ export interface EmbeddedProviderDeps {
   networkJson?: string;
 }
 
+interface LoadedEntry {
+  bridge: ProxyBridge;
+  descriptors: SettingDescriptor[];
+}
+
 export class EmbeddedBridgeProvider implements BridgeProvider {
-  private readonly loaded = new Map<string, ProxyBridge>();
+  private readonly loaded = new Map<string, LoadedEntry>();
   private readonly installedCache = new Map<string, InstalledBridge>();
 
   constructor(private readonly deps: EmbeddedProviderDeps) {}
 
   private async installedFor(id: string): Promise<InstalledBridge> {
-    const cached = this.installedCache.get(id);
-    if (cached) return cached;
-    const all = await this.deps.bundles.installed();
-    for (const b of all) this.installedCache.set(b.info.id, b);
+    if (this.installedCache.size === 0) {
+      for (const b of await this.deps.bundles.installed()) this.installedCache.set(b.info.id, b);
+    }
     const found = this.installedCache.get(id);
     if (!found) throw new Error(`bridge not found: ${id}`);
     return found;
   }
 
+  /** Load the bundle into the native engine, capturing its info, methods, and setting descriptors. */
+  private async load(id: string): Promise<LoadedEntry> {
+    const existing = this.loaded.get(id);
+    if (existing) return existing;
+
+    await this.installedFor(id); // throws "not found" for an unknown id before touching native
+    const [code, stored] = await Promise.all([
+      this.deps.bundles.resolveBundle(id),
+      this.deps.settings.get(id),
+    ]);
+    const init = JSON.parse(
+      await this.deps.native.initBridge(id, code, JSON.stringify(stored), this.deps.networkJson),
+    ) as InitResult;
+    const methods = init.methods ?? methodsForBridge(init.info);
+
+    let descriptors: SettingDescriptor[] = [];
+    if (methods.includes('getSettings')) {
+      descriptors = JSON.parse(await this.deps.native.callBridge(id, 'getSettings', '[]')) as SettingDescriptor[];
+    }
+    const bridge = buildProxyBridge(id, init.info, descriptors, methods, this.deps.native);
+    const entry: LoadedEntry = { bridge, descriptors };
+    this.loaded.set(id, entry);
+    return entry;
+  }
+
   async list(): Promise<BridgeSummary[]> {
-    const all = await this.deps.bundles.installed();
+    const installed = await this.deps.bundles.installed();
+    for (const b of installed) this.installedCache.set(b.info.id, b);
     return Promise.all(
-      all.map(async (b): Promise<BridgeSummary> => {
-        this.installedCache.set(b.info.id, b);
-        const missingRequired = missingRequiredFor(b.settings, await this.deps.settings.get(b.info.id));
+      installed.map(async (b): Promise<BridgeSummary> => {
+        const { descriptors } = await this.load(b.info.id);
+        const missingRequired = missingRequiredFor(descriptors, await this.deps.settings.get(b.info.id));
         return {
           info: b.info,
-          settings: b.settings,
+          settings: descriptors,
           configured: missingRequired.length === 0,
           missingRequired,
           source: b.source,
@@ -81,25 +114,12 @@ export class EmbeddedBridgeProvider implements BridgeProvider {
   }
 
   async get(id: string): Promise<ProxyBridge> {
-    const cached = this.loaded.get(id);
-    if (cached) return cached;
-
-    const installed = await this.installedFor(id); // throws "not found" for unknown ids
-    const [code, stored] = await Promise.all([
-      this.deps.bundles.resolveBundle(id),
-      this.deps.settings.get(id),
-    ]);
-    const rawInit = await this.deps.native.initBridge(id, code, JSON.stringify(stored), this.deps.networkJson);
-    const init = JSON.parse(rawInit) as InitResult;
-    const methods = init.methods ?? methodsForBridge(init.info);
-    const bridge = buildProxyBridge(id, init.info, installed.settings, methods, this.deps.native);
-    this.loaded.set(id, bridge);
-    return bridge;
+    return (await this.load(id)).bridge;
   }
 
   async missingRequired(id: string): Promise<string[]> {
-    const installed = await this.installedFor(id);
-    return missingRequiredFor(installed.settings, await this.deps.settings.get(id));
+    const { descriptors } = await this.load(id);
+    return missingRequiredFor(descriptors, await this.deps.settings.get(id));
   }
 
   storedSettings(id: string): Promise<Record<string, SettingValue>> {
@@ -112,7 +132,7 @@ export class EmbeddedBridgeProvider implements BridgeProvider {
   ): Promise<Record<string, SettingValue>> {
     const merged = { ...(await this.deps.settings.get(id)), ...values };
     await this.deps.settings.set(id, merged);
-    this.invalidate(id); // next get() reloads the native context with the new settings
+    this.invalidate(id); // next load() reloads the native context with the new settings
     return merged;
   }
 
