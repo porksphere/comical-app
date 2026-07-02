@@ -11,10 +11,10 @@
         "./assets/*"
       ],
       "@comical/contract": [
-        "../../../comical/packages/contract/src/index.ts"
+        "../../external/comical/packages/contract/src/index.ts"
       ],
       "@comical/registry": [
-        "../../../comical/packages/registry/src/schema.ts"
+        "../../external/comical/packages/registry/src/schema.ts"
       ]
     }
   },

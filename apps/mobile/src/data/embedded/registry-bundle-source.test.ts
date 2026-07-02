@@ -1,13 +1,13 @@
 /**
- * RegistryBundleSource against the REAL `@comical/registry` fetcher + verify (sibling source),
+ * RegistryBundleSource against the REAL `@comical/registry` fetcher + verify (submodule source),
  * with a mocked global `fetch` serving an index + bundle. This exercises real SHA-256 verification
  * under Bun's WebCrypto — the same `verify.ts` that runs on-device (behind a crypto.subtle polyfill).
  *
- * Excluded from the app's tsc (imports node-typed sibling source); `bun test` runs it.
+ * Excluded from the app's tsc (imports node-typed submodule source); `bun test` runs it.
  */
 import { afterEach, describe, expect, test } from 'bun:test';
-import { downloadBundle, fetchIndex } from '../../../../../../comical/packages/registry/src/fetcher.ts';
-import { sha256Hex } from '../../../../../../comical/packages/registry/src/verify.ts';
+import { downloadBundle, fetchIndex } from '../../../../../external/comical/packages/registry/src/fetcher.ts';
+import { sha256Hex } from '../../../../../external/comical/packages/registry/src/verify.ts';
 import { MemoryBundleCache, RegistryBundleSource, type RegistryFetcher } from './registry-bundle-source';
 
 const INDEX_URL = 'https://registry.example/index.json';

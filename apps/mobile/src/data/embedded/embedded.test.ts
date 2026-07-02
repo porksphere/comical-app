@@ -1,20 +1,20 @@
 /**
  * End-to-end proof of the embedded transport, run under Bun.
  *
- * It wires the REAL `@comical/host-server` `createRouter` (imported from the sibling `comical` repo)
+ * It wires the REAL `@comical/host-server` `createRouter` (imported from the comical submodule)
  * to the `EmbeddedBridgeProvider`, backed by a fake `NativeBridgeRuntime` that runs a real bridge
  * bundle through `@comical/core`'s `loadBridge` + `NodeVmEvaluator` — the same node:vm stand-in for
  * the on-device JSC/QuickJS engine that host-native's own tests use. So this exercises the exact
  * production path (path → router.fetch → proxy provider → native engine → bridge method → JSON),
  * differing only in the JS engine that runs the bundle.
  *
- * Excluded from the app's `tsc` (it imports node-typed sibling source); `bun test` runs it.
+ * Excluded from the app's `tsc` (it imports node-typed submodule source); `bun test` runs it.
  */
 import { afterEach, describe, expect, test } from 'bun:test';
-// Sibling comical repo (runtime imports — resolved by bun, never bundled into the app):
-import { loadBridge, type LoadedBridge } from '../../../../../../comical/packages/core/src/loader.ts';
-import { NodeVmEvaluator } from '../../../../../../comical/packages/core/src/sandbox.ts';
-import { createRouter } from '../../../../../../comical/packages/host-server/src/router.ts';
+// comical submodule (runtime imports — resolved by bun, never bundled into the app):
+import { loadBridge, type LoadedBridge } from '../../../../../external/comical/packages/core/src/loader.ts';
+import { NodeVmEvaluator } from '../../../../../external/comical/packages/core/src/sandbox.ts';
+import { createRouter } from '../../../../../external/comical/packages/host-server/src/router.ts';
 import { getBridges, searchBridge, setTransport } from '../api';
 import { EmbeddedBridgeProvider } from './provider';
 import { createEmbeddedTransport } from './transport';
