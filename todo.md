@@ -10,7 +10,7 @@
 - [ ] There are some expo WARNS, fix em
       Web  WARN  "shadow*" style props are deprecated. Use "boxShadow".
       Web  WARN  props.pointerEvents is deprecated. Use style.pointerEvents
-- [ ] The mock data should all be non-existant website names, we don't want to associate with any scraping (ensure github has all history of those names removed)
+- [x] The mock data should all be non-existant website names, we don't want to associate with any scraping (mock bridge names replaced; scrubbing git history was assessed and declined — would've required force-pushing ~86% of main's commits)
 
 ## Reader (page viewer)
 - [ ] Image retry-with-backoff on page load failure (currently just shows a placeholder)
