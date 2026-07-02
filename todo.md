@@ -11,6 +11,7 @@
       Web  WARN  "shadow*" style props are deprecated. Use "boxShadow".
       Web  WARN  props.pointerEvents is deprecated. Use style.pointerEvents
 - [ ] Clicking on a "popular" shows the back arrow to go home, "popular" should be a top level page, nothing selected in the page selector should result in showing more for a certain category/rail
+- [ ] Infinite paging loading skeleton doesn't add skeleton entries to incomplete rows, it should ideally finish an incomplete row then add an additional row
 - [x] The mock data should all be non-existant website names, we don't want to associate with any scraping (mock bridge names replaced; scrubbing git history was assessed and declined — would've required force-pushing ~86% of main's commits)
 
 ## Reader (page viewer)
