@@ -8,6 +8,7 @@ import { RetryBlock } from '@/components/retry-block';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { TopBar } from '@/components/top-bar';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import type { AvailableBridge, AvailableTracker } from '@/data/api';
 import { useDataSource } from '@/data/source';
@@ -41,12 +42,12 @@ export default function RegistryBrowseScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      <TopBar title="Browse registry" />
       <ScrollView
         contentContainerStyle={[
           styles.content,
-          { paddingTop: insets.top + Spacing.four, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
+          { paddingTop: Spacing.four, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
         ]}>
-        <ThemedText type="title">Browse registry</ThemedText>
         <ThemedText type="small" themeColor="textSecondary">
           {url}
         </ThemedText>

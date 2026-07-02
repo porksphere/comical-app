@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SettingFieldEditor } from '@/components/settings/setting-field';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { TopBar } from '@/components/top-bar';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import type { SettingValue } from '@/data/api';
 import { useDataSource } from '@/data/source';
@@ -62,10 +63,11 @@ export default function TrackerSettingsScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      <TopBar title={data?.info.name ?? 'Tracker settings'} />
       <ScrollView
         contentContainerStyle={[
           styles.content,
-          { paddingTop: insets.top + Spacing.four, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
+          { paddingTop: Spacing.four, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
         ]}>
         {isLoading ? (
           <ActivityIndicator />
@@ -82,7 +84,6 @@ export default function TrackerSettingsScreen() {
           </View>
         ) : data ? (
           <>
-            <ThemedText type="title">{data.info.name}</ThemedText>
             {data.settings.length === 0 ? (
               <ThemedText type="small" themeColor="textSecondary">
                 This tracker has no configurable settings.

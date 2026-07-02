@@ -1,19 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import {
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  useWindowDimensions,
-  View,
-  type ViewStyle,
-} from 'react-native';
+import { Platform, ScrollView, StyleSheet, useWindowDimensions, View, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChipRow, TagGroupRow } from '@/components/chip';
-import { ChevronLeftIcon } from '@/components/icons/chevron-left';
 import { Rail, RailSkeleton } from '@/components/rail';
 import { RetryBlock } from '@/components/retry-block';
 import { ActionButton, NewBadge } from '@/components/series/action-button';
@@ -22,11 +13,12 @@ import { TrackerButton } from '@/components/series/tracker-panel';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { isFavoriteQuery, queryKeys, relatedGroupsQuery, seriesDetailQuery } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import type { SeriesDetail } from '@/data/types';
-import { LARGE_SCREEN_BREAKPOINT, useTopBarHeight } from '@/hooks/use-responsive';
+import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 
 const LARGE_COVER_WIDTH = 200;
@@ -68,8 +60,6 @@ export default function SeriesScreen() {
   const retry = refetch;
 
   const isLarge = width >= LARGE_SCREEN_BREAKPOINT;
-  // Shared with the browse bar so both top bars are the same height.
-  const barHeight = useTopBarHeight();
   // Sticky cover column is a web-only, large-screen affordance: as the page
   // scrolls, the left column pins to the top until the chapters end (mirrors the
   // reference's `position: sticky` cover col). Native has no sticky, and on a
@@ -84,24 +74,7 @@ export default function SeriesScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      {/* Static top bar: back button + originating bridge name. */}
-      <View
-        style={[
-          styles.topBar,
-          { paddingTop: insets.top, height: insets.top + barHeight, borderBottomColor: theme.hairline },
-        ]}>
-        <Pressable
-          onPress={() => router.back()}
-          hitSlop={12}
-          style={[styles.backButton, { height: barHeight }]}
-          accessibilityRole="button"
-          accessibilityLabel="Go back">
-          <ChevronLeftIcon color={theme.text} />
-        </Pressable>
-        <ThemedText type="smallBold" numberOfLines={1} style={styles.bridgeName}>
-          {series?.bridge ?? bridge ?? ''}
-        </ThemedText>
-      </View>
+      <TopBar title={series?.bridge ?? bridge ?? ''} />
 
       <ScrollView
         contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + Spacing.five }]}
@@ -426,23 +399,6 @@ function SeriesSkeleton({ actionsWidth, isLarge }: { actionsWidth: number; isLar
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: Spacing.four,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  backButton: {
-    position: 'absolute',
-    left: Spacing.three,
-    bottom: 0,
-    // height is set inline from the shared bar height.
-    justifyContent: 'center',
-  },
-  bridgeName: {
-    maxWidth: '70%',
   },
   scroll: {
     paddingTop: Spacing.four,
