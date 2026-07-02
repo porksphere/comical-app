@@ -92,7 +92,7 @@ export interface DataSource {
 
   /** The mounted trackers, or `null` when this server has no `TrackerManager` (an expected,
    *  non-error state — the Settings screen renders "not available" rather than an error banner). */
-  getTrackers(signal?: AbortSignal): Promise<api.TrackerInfo[] | null>;
+  getTrackers(signal?: AbortSignal): Promise<api.TrackerSummary[] | null>;
   getTrackerSettings(trackerId: string, signal?: AbortSignal): Promise<api.TrackerSettingsInfo>;
   putTrackerSettings(trackerId: string, values: Record<string, api.SettingValue>, signal?: AbortSignal): Promise<void>;
   updateTracker(trackerId: string, signal?: AbortSignal): Promise<void>;

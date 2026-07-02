@@ -26,7 +26,7 @@ import type {
   ApiSortOption,
   BridgeSummary,
   BridgeSettingsInfo,
-  TrackerInfo,
+  TrackerSummary,
   TrackerSettingsInfo,
   SavedRegistry,
   AvailableBridge,
@@ -471,7 +471,7 @@ export async function mockPutBridgeSettings(_bridgeId: string, _values: Record<s
 export async function mockUpdateBridge(_bridgeId: string): Promise<void> {}
 export async function mockUninstallBridge(_bridgeId: string): Promise<void> {}
 
-export async function mockGetTrackers(): Promise<TrackerInfo[]> {
+export async function mockGetTrackers(): Promise<TrackerSummary[]> {
   return [];
 }
 

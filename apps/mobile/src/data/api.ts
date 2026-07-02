@@ -319,11 +319,18 @@ export interface BridgeSettingsInfo {
   configured: boolean;
 }
 
-/** GET /trackers → one entry per mounted tracker. */
+/** The bare per-tracker identity, nested under `info` in both list and detail responses. */
 export interface TrackerInfo {
   id: string;
   name: string;
   capabilities: string[];
+}
+
+/** GET /trackers → one entry per mounted tracker (mirrors `BridgeSummary`'s shape). */
+export interface TrackerSummary {
+  info: TrackerInfo;
+  configured: boolean;
+  missingRequired: string[];
 }
 
 /** GET /trackers/{id}/settings response. */
@@ -422,7 +429,7 @@ export function uninstallBridge(bridgeId: string, signal?: AbortSignal): Promise
 // ─── Trackers (optional server capability — a 404 means no TrackerManager is mounted) ────────
 
 /** GET /trackers → the mounted trackers, or `null` when no `TrackerManager` is mounted on this server. */
-export function getTrackers(signal?: AbortSignal): Promise<TrackerInfo[] | null> {
+export function getTrackers(signal?: AbortSignal): Promise<TrackerSummary[] | null> {
   return fetchJsonOptional('/trackers', signal);
 }
 

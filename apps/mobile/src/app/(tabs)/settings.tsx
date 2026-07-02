@@ -8,7 +8,7 @@ import { SettingsRow, SettingsSection } from '@/components/settings/settings-row
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
-import { API_BASE, isAbort, type BridgeSummary, type SavedRegistry, type TrackerInfo } from '@/data/api';
+import { API_BASE, isAbort, type BridgeSummary, type SavedRegistry, type TrackerSummary } from '@/data/api';
 import { useDataSource, useHideNsfw, useMockDataToggle } from '@/data/source';
 
 export default function SettingsScreen() {
@@ -93,7 +93,7 @@ function BridgesSection() {
 function TrackersSection() {
   const ds = useDataSource();
   const router = useRouter();
-  const [trackers, setTrackers] = useState<TrackerInfo[] | null | undefined>(undefined);
+  const [trackers, setTrackers] = useState<TrackerSummary[] | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
 
@@ -127,9 +127,10 @@ function TrackersSection() {
       ) : (
         trackers.map((t) => (
           <SettingsRow
-            key={t.id}
-            label={t.name}
-            onPress={() => router.push({ pathname: '/tracker-settings', params: { trackerId: t.id } })}
+            key={t.info.id}
+            label={t.info.name}
+            description={t.configured ? undefined : 'Needs setup'}
+            onPress={() => router.push({ pathname: '/tracker-settings', params: { trackerId: t.info.id } })}
           />
         ))
       )}
