@@ -10,6 +10,7 @@
  */
 import { createRouter } from '@comical/host-server/router';
 import { downloadBundle, fetchIndex } from '@comical/registry/fetcher';
+import { installWebCryptoShim } from './crypto-shim';
 import { applyEmbeddedMode, configureEmbeddedRuntime, getResolvedModeSync } from './index';
 
 /** Registry the on-device runtime downloads bridge bundles from. Override with the env var. */
@@ -22,6 +23,8 @@ let started = false;
 export function startEmbeddedRuntime(): void {
   if (started) return;
   started = true;
+  // Bridge bundle verification (@comical/registry verify.ts) needs WebCrypto, absent in Hermes.
+  installWebCryptoShim();
   configureEmbeddedRuntime({
     createRouter,
     fetcher: { fetchIndex, downloadBundle },
