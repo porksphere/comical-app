@@ -17,13 +17,18 @@
  * server's bearer-token support (`COMICAL_TOKEN` / `Authorization` header),
  * not cookies.
  *
- * This module returns shapes close to the server's contract
- * (`@comical/contract`'s `SeriesEntry`/`SeriesInfo`/`Chapter`/`Page`, hand-rolled
- * here since the contract package isn't published for this app to depend on
- * yet). `source.ts` adapts these into the UI-facing types in `types.ts` — this
- * file has no knowledge of mock data or the UI shapes.
+ * This module returns shapes close to the server's contract. The `Api*` types
+ * below are type-only re-exports of `@comical/contract` (imported straight
+ * from the sibling `comical` repo via a `tsconfig.json` `paths` mapping — see
+ * that file). Being type-only, they're erased entirely at build time: no
+ * runtime dependency on the `comical` repo, no Metro config, no extra
+ * package — the same tsconfig-paths trick `comical-web` already uses for
+ * `@comical/host-server`. A local `comical` checkout next to this repo is
+ * only needed for type-checking/editor support; its absence doesn't affect
+ * runtime or CI. `source.ts` adapts these into the UI-facing types in
+ * `types.ts` — this file has no knowledge of mock data or the UI shapes.
  */
-import type { Bridge, BridgeList, CardBadge } from './types';
+import type { Bridge, BridgeList } from './types';
 
 export const API_BASE =
   process.env.EXPO_PUBLIC_COMICAL_SERVER ?? 'https://comical.pork.casa/api';
@@ -72,73 +77,41 @@ export function pageOptions(lists: BridgeList[], capabilities: string[]): string
   return opts;
 }
 
-// ─── Content endpoints (@comical/contract shapes) ────────────────────────────
+// ─── @comical/contract shapes (type-only, erased at build — see header) ─────
 
-export type PagedResults<T> = { items: T[]; page: number; hasNextPage: boolean };
+import type {
+  SeriesEntry as ApiSeriesEntry,
+  TagGroup as ApiTagGroup,
+  RelatedSeriesGroup as ApiRelatedGroup,
+  SeriesInfo as ApiSeriesInfo,
+  Chapter as ApiChapter,
+  PageThumbnail as ApiPageThumbnail,
+  Page as ApiPage,
+  FilterIncludeExclude as ApiFilterIncludeExclude,
+  FilterValue as ApiFilterValue,
+  Filter as ApiFilter,
+  SortOption as ApiSortOption,
+  SortSelection as ApiSortSelection,
+  Tag as ApiTag,
+  PagedResults,
+} from '@comical/contract';
 
-export type ApiSeriesEntry = {
-  id: string;
-  title: string;
-  thumbnailUrl?: string;
-  subtitle?: string;
-  badges?: CardBadge[];
-  excluded?: boolean;
+export type {
+  ApiSeriesEntry,
+  ApiTagGroup,
+  ApiRelatedGroup,
+  ApiSeriesInfo,
+  ApiChapter,
+  ApiPageThumbnail,
+  ApiPage,
+  ApiFilterIncludeExclude,
+  ApiFilterValue,
+  ApiFilter,
+  ApiSortOption,
+  ApiSortSelection,
+  ApiTag,
+  PagedResults,
 };
-export type ApiTagGroup = { label: string; tags: string[] };
-export type ApiRelatedGroup = { label: string; series: ApiSeriesEntry[] };
-export type ApiSeriesInfo = {
-  id: string;
-  title: string;
-  thumbnailUrl?: string;
-  author?: string;
-  artist?: string;
-  description?: string;
-  type?: string;
-  genres?: string[];
-  tagGroups?: ApiTagGroup[];
-  relatedSeriesGroups?: ApiRelatedGroup[];
-  status?: string;
-  pageCount?: number;
-};
-export type ApiChapter = {
-  id: string;
-  name: string;
-  number?: number;
-  pageCount?: number;
-  publishedAt?: number;
-};
-/** A cheaper page-preview variant, mirroring `@comical/contract`'s `pageThumbnailSchema`.
- * `sprite` (a tile inside a shared sheet, e.g. e-hentai) has no RN crop renderer yet —
- * `source.ts` collapses it to unavailable rather than falling back to the full page image. */
-export type ApiPageThumbnail =
-  | { kind: 'image'; url: string }
-  | { kind: 'sprite'; sheetUrl: string; x: number; y: number; w: number; h: number; sheetWidth: number; sheetHeight?: number };
-export type ApiPage = { index: number; imageUrl: string; thumbnail?: ApiPageThumbnail };
-
-// ─── Filters, sort, tags (@comical/contract shapes) ──────────────────────────
-
-export type ApiFilterIncludeExclude = { include: string[]; exclude: string[] };
-export type ApiFilterValue = {
-  key: string;
-  value: string | string[] | number | boolean | ApiFilterIncludeExclude;
-};
-export type ApiFilter =
-  | { type: 'text'; key: string; label: string }
-  | { type: 'toggle'; key: string; label: string }
-  | { type: 'number'; key: string; label: string; min?: number; max?: number }
-  | { type: 'select'; key: string; label: string; options: { value: string; label: string }[] }
-  | {
-      type: 'multiselect';
-      key: string;
-      label: string;
-      options: { value: string; label: string }[];
-      excludable?: boolean;
-      defaultAll?: boolean;
-    }
-  | { type: 'tag-multiselect'; key: string; label: string; excludable?: boolean };
-export type ApiSortOption = { key: string; label: string; directionless?: boolean };
-export type ApiSortSelection = { key: string; ascending: boolean };
-export type ApiTag = { id: string; label: string };
 
 /**
  * Query options a bridge accepts on a list/search fetch — filters + sort, plus
