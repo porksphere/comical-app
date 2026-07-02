@@ -11,11 +11,13 @@ resolves to `null` and the app stays on the remote transport (so JS-only lanes a
 - **Submodule**: `external/comical` (pinned) — `git submodule update --init --recursive` after clone.
 - **Metro** (`metro.config.js`): `@comical/*` → submodule packages via `extraNodeModules` +
   `unstable_enablePackageExports`; submodule `node_modules` (hono/zod) on `nodeModulesPaths`.
-- **tsc** types: `@comical/contract`/`@comical/registry` paths → submodule; `@comical/host-server/router`
-  + `@comical/registry/fetcher` via ambient decls in `apps/mobile/types/comical-embedded.d.ts`.
+- **tsc** types: `@comical/host-rn` + the Node-free `@comical/*` subpaths (`host-server/router`,
+  `host-server/bridge-provider`, `core/loader`, `registry/{schema,fetcher}`) resolve to submodule
+  source via `tsconfig.json` `paths` — no ambient decls (the app compiles the real types).
 - **Startup**: `src/data/embedded/startup.ts` (native) injects `createRouter` + the registry fetcher
-  into `configureEmbeddedRuntime` and applies the persisted preference; `startup.web.ts` is a no-op.
-  Registry index defaults to `bridges-repo` (override `EXPO_PUBLIC_COMICAL_REGISTRY`).
+  into `@comical/host-rn`'s `configureEmbeddedRuntime` and applies the persisted preference;
+  `startup.web.ts` is a no-op. The registry index URL is **not** hardcoded — set
+  `EXPO_PUBLIC_COMICAL_REGISTRY` in a gitignored `.env.local` (with no registry, the app stays remote).
 - **CI**: `build-android/ios` reusable workflows check out `submodules: recursive` and run
   `bun install && bun run build:native` in `external/comical` (the harness bundles are gitignored).
 - **Native wrappers**: `android/` (Kotlin, compiles host-android + `comical_harness.js` via
