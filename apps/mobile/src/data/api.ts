@@ -303,20 +303,51 @@ export function getPageThumb(
 // methods return — live in `manager.ts` itself, not `schema.ts`, so they're hand-defined below
 // instead of imported; they're tiny (3-4 fields) and just wrap the imported entry types.
 
-import type { SettingDescriptor, SettingOption, SettingValue } from '@comical/contract';
+import type { BridgeInfo as ApiBridgeInfo, SettingDescriptor, SettingOption, SettingValue } from '@comical/contract';
 import type { RegistryBridgeEntry, RegistryTrackerEntry, SavedRegistry } from '@comical/registry';
 
-export type { SettingDescriptor, SettingOption, SettingValue, RegistryBridgeEntry, RegistryTrackerEntry, SavedRegistry };
+export type {
+  ApiBridgeInfo,
+  SettingDescriptor,
+  SettingOption,
+  SettingValue,
+  RegistryBridgeEntry,
+  RegistryTrackerEntry,
+  SavedRegistry,
+};
 
-/** GET /bridges/{id} response — settings form data for one bridge. */
+/** GET /bridges/{id} response — settings form data for one bridge. `info` is the bridge's full
+ *  self-description (capabilities, version, contract version, languages, rate limit — everything
+ *  `GET /bridges` trims down to the browse-card fields in `Bridge`), not the app's local `Bridge`
+ *  UI type. */
 export interface BridgeSettingsInfo {
-  info: Bridge;
+  info: ApiBridgeInfo;
   settings: SettingDescriptor[];
   values: Record<string, SettingValue>;
   /** Keys of secret fields that already have a stored value (never the value itself). */
   secretsSet: string[];
   missingRequired: string[];
   configured: boolean;
+  /** Reserved, host-managed tag exclusions (capability "exclude-tags") — ids the bridge's lists/
+   *  search hide series carrying. Separate from `settings`/`values` since it bypasses the
+   *  descriptor-driven form (see `PUT /bridges/{id}/excluded-tags`). */
+  excludedTags: string[];
+  /** Id → display label for `excludedTags`, folded in by the host from its tag-name cache. */
+  excludedTagLabels: Record<string, string>;
+}
+
+/** GET/PUT /bridges/{id}/genre-exclusions response (capability "exclude-genres") — account-wide
+ *  state owned by the bridge's own backend, distinct from the host-stored `excludedTags`. */
+export interface GenreExclusions {
+  available: { id: string; label: string }[];
+  excluded: string[];
+}
+
+/** GET/PUT /library/bridges/{id}/prefs response. */
+export interface BridgePrefs {
+  bridgeId: string;
+  trackersDisabled: boolean;
+  historyDisabled: boolean;
 }
 
 /** The bare per-tracker identity, nested under `info` in both list and detail responses. */
@@ -414,6 +445,47 @@ export function putBridgeSettings(
   signal?: AbortSignal,
 ): Promise<{ settings: Record<string, SettingValue> }> {
   return fetchPut(`/bridges/${encodeURIComponent(bridgeId)}/settings`, values, signal);
+}
+
+/** PUT /bridges/{id}/excluded-tags → replace the bridge's persistent tag exclusions (capability
+ *  "exclude-tags"). `labels` seeds the host's id→label cache with names the client already knows
+ *  so a later reload folds them back in without a `getTags` round-trip. */
+export function putExcludedTags(
+  bridgeId: string,
+  tags: string[],
+  labels: Record<string, string>,
+  signal?: AbortSignal,
+): Promise<{ excludedTags: string[]; excludedTagLabels: Record<string, string> }> {
+  return fetchPut(`/bridges/${encodeURIComponent(bridgeId)}/excluded-tags`, { tags, labels }, signal);
+}
+
+/** GET /bridges/{id}/genre-exclusions → account-wide genre exclusions (capability "exclude-genres"). */
+export function getGenreExclusions(bridgeId: string, signal?: AbortSignal): Promise<GenreExclusions> {
+  return fetchJson(`/bridges/${encodeURIComponent(bridgeId)}/genre-exclusions`, signal);
+}
+
+/** PUT /bridges/{id}/genre-exclusions → replace the bridge's account-wide genre exclusions. */
+export function putGenreExclusions(
+  bridgeId: string,
+  genres: string[],
+  signal?: AbortSignal,
+): Promise<GenreExclusions> {
+  return fetchPut(`/bridges/${encodeURIComponent(bridgeId)}/genre-exclusions`, { genres }, signal);
+}
+
+/** GET /library/bridges/{id}/prefs → per-bridge library prefs (tracker sync / history opt-out),
+ *  or `null` when this server has no library store mounted. */
+export function getBridgePrefs(bridgeId: string, signal?: AbortSignal): Promise<BridgePrefs | null> {
+  return fetchJsonOptional(`/library/bridges/${encodeURIComponent(bridgeId)}/prefs`, signal);
+}
+
+/** PUT /library/bridges/{id}/prefs → update per-bridge library prefs. */
+export function putBridgePrefs(
+  bridgeId: string,
+  update: { trackersDisabled?: boolean; historyDisabled?: boolean },
+  signal?: AbortSignal,
+): Promise<void> {
+  return fetchPut(`/library/bridges/${encodeURIComponent(bridgeId)}/prefs`, update, signal);
 }
 
 /** POST /bridges/{id}/update → update a registry-installed bridge to its latest version. */

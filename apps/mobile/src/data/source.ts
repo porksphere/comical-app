@@ -90,6 +90,20 @@ export interface DataSource {
   /** Uninstall a registry-installed bridge. */
   uninstallBridge(bridgeId: string, signal?: AbortSignal): Promise<void>;
 
+  /** Replace a bridge's persistent tag exclusions (capability "exclude-tags"). */
+  putExcludedTags(bridgeId: string, tags: { id: string; label: string }[], signal?: AbortSignal): Promise<void>;
+  /** Account-wide genre exclusions for a bridge (capability "exclude-genres"). */
+  getGenreExclusions(bridgeId: string, signal?: AbortSignal): Promise<api.GenreExclusions>;
+  putGenreExclusions(bridgeId: string, genres: string[], signal?: AbortSignal): Promise<void>;
+  /** Per-bridge library prefs (tracker sync / reading-history opt-out), or `null` when this
+   *  server has no library store mounted. */
+  getBridgePrefs(bridgeId: string, signal?: AbortSignal): Promise<api.BridgePrefs | null>;
+  putBridgePrefs(
+    bridgeId: string,
+    update: { trackersDisabled?: boolean; historyDisabled?: boolean },
+    signal?: AbortSignal,
+  ): Promise<void>;
+
   /** The mounted trackers, or `null` when this server has no `TrackerManager` (an expected,
    *  non-error state — the Settings screen renders "not available" rather than an error banner). */
   getTrackers(signal?: AbortSignal): Promise<api.TrackerSummary[] | null>;
@@ -268,6 +282,19 @@ const realDataSource: DataSource = {
   async uninstallBridge(bridgeId, signal) {
     await api.uninstallBridge(bridgeId, signal);
   },
+  async putExcludedTags(bridgeId, tags, signal) {
+    const labels: Record<string, string> = {};
+    for (const t of tags) if (t.label && t.label !== t.id) labels[t.id] = t.label;
+    await api.putExcludedTags(bridgeId, tags.map((t) => t.id), labels, signal);
+  },
+  getGenreExclusions: (bridgeId, signal) => api.getGenreExclusions(bridgeId, signal),
+  async putGenreExclusions(bridgeId, genres, signal) {
+    await api.putGenreExclusions(bridgeId, genres, signal);
+  },
+  getBridgePrefs: (bridgeId, signal) => api.getBridgePrefs(bridgeId, signal),
+  async putBridgePrefs(bridgeId, update, signal) {
+    await api.putBridgePrefs(bridgeId, update, signal);
+  },
 
   getTrackers: (signal) => api.getTrackers(signal),
   getTrackerSettings: (trackerId, signal) => api.getTrackerSettings(trackerId, signal),
@@ -328,6 +355,11 @@ const mockDataSource: DataSource = {
   putBridgeSettings: (bridgeId, values) => mock.mockPutBridgeSettings(bridgeId, values),
   updateBridge: (bridgeId) => mock.mockUpdateBridge(bridgeId),
   uninstallBridge: (bridgeId) => mock.mockUninstallBridge(bridgeId),
+  putExcludedTags: (bridgeId, tags) => mock.mockPutExcludedTags(bridgeId, tags),
+  getGenreExclusions: (bridgeId) => mock.mockGetGenreExclusions(bridgeId),
+  putGenreExclusions: (bridgeId, genres) => mock.mockPutGenreExclusions(bridgeId, genres),
+  getBridgePrefs: (bridgeId) => mock.mockGetBridgePrefs(bridgeId),
+  putBridgePrefs: (bridgeId, update) => mock.mockPutBridgePrefs(bridgeId, update),
 
   getTrackers: () => mock.mockGetTrackers(),
   getTrackerSettings: (trackerId) => mock.mockGetTrackerSettings(trackerId),

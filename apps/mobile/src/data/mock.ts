@@ -22,10 +22,13 @@ import type {
   TrackerService,
 } from './types';
 import type {
+  ApiBridgeInfo,
   ApiFilter,
   ApiSortOption,
+  BridgePrefs,
   BridgeSummary,
   BridgeSettingsInfo,
+  GenreExclusions,
   TrackerSummary,
   TrackerSettingsInfo,
   SavedRegistry,
@@ -463,13 +466,44 @@ export async function mockGetBridgeSummaries(): Promise<BridgeSummary[]> {
 
 export async function mockGetBridgeSettings(bridgeId: string): Promise<BridgeSettingsInfo> {
   const bridges = await mockGetBridges();
-  const info = bridges.find((b) => b.id === bridgeId) ?? bridges[0]!;
-  return { info, settings: [], values: {}, secretsSet: [], missingRequired: [], configured: true };
+  const b = bridges.find((b) => b.id === bridgeId) ?? bridges[0]!;
+  const info: ApiBridgeInfo = {
+    id: b.id,
+    name: b.name,
+    version: '1.0.0',
+    contractVersion: '1',
+    languages: ['en'],
+    nsfw: b.nsfw,
+    capabilities: b.capabilities as ApiBridgeInfo['capabilities'],
+    iconUrl: b.thumbnail,
+  };
+  return {
+    info,
+    settings: [],
+    values: {},
+    secretsSet: [],
+    missingRequired: [],
+    configured: true,
+    excludedTags: [],
+    excludedTagLabels: {},
+  };
 }
 
 export async function mockPutBridgeSettings(_bridgeId: string, _values: Record<string, SettingValue>): Promise<void> {}
 export async function mockUpdateBridge(_bridgeId: string): Promise<void> {}
 export async function mockUninstallBridge(_bridgeId: string): Promise<void> {}
+export async function mockPutExcludedTags(_bridgeId: string, _tags: { id: string; label: string }[]): Promise<void> {}
+export async function mockGetGenreExclusions(_bridgeId: string): Promise<GenreExclusions> {
+  return { available: [], excluded: [] };
+}
+export async function mockPutGenreExclusions(_bridgeId: string, _genres: string[]): Promise<void> {}
+export async function mockGetBridgePrefs(bridgeId: string): Promise<BridgePrefs> {
+  return { bridgeId, trackersDisabled: false, historyDisabled: false };
+}
+export async function mockPutBridgePrefs(
+  _bridgeId: string,
+  _update: { trackersDisabled?: boolean; historyDisabled?: boolean },
+): Promise<void> {}
 
 export async function mockGetTrackers(): Promise<TrackerSummary[]> {
   return [];
