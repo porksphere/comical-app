@@ -78,6 +78,8 @@ npm-debug.*
 # Local Expo modules' native build output (the module sources are tracked, the build dirs aren't)
 /apps/*/modules/*/android/build/
 /apps/*/modules/*/android/.cxx/
+# iOS host sources copied from the comical submodule at prebuild (see with-comical-ios-sources.js)
+/apps/*/modules/*/ios/generated/
 
 # Local env
 .env*.local
