@@ -4,14 +4,19 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v56.0.0/ before 
 
 # Icons
 
-On web, always use [lucide](https://lucide.dev) icons via `lucide-react` (a
-web-only dependency). Don't hand-roll glyphs for the web build.
+Always use [lucide](https://lucide.dev) icons, everywhere. Web imports from
+`lucide-react`; native (iOS/Android) imports the same icons from
+`lucide-react-native` (backed by `react-native-svg`). Don't hand-roll glyphs —
+one `*.tsx` file per icon group works on every platform, no `.web.tsx` split
+needed. See `src/components/icons/ui-icons.tsx` for the pattern.
 
-`lucide-react-native` is not installed, so native has no lucide. Use the
-`.web.tsx` platform split: put the lucide version in `*.web.tsx` and a React
-Native fallback (or platform-appropriate icon) in the matching `*.tsx`, keeping
-their exports in sync. See `src/components/filters/filter-icons.{web.,}tsx` for
-the pattern.
+**Exception: the native bottom tab bar** (`src/components/app-tabs.tsx`) uses
+Expo Router's `NativeTabs`, a wrapper over the actual OS tab bar
+(`UITabBarController` on iOS, Material 3 `NavigationBar` on Android). It only
+accepts platform-native icon references — SF Symbol names (`sf`) on iOS,
+Material Symbol names (`md`) on Android — not custom components, so lucide
+can't be used there. Keep `sf`/`md` for that one component; the web nav
+(`app-tabs.web.tsx`, a custom-rendered bar) already uses lucide.
 
 # Data: real API, REST-over-HTTP on every platform (for now)
 
