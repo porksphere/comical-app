@@ -29,6 +29,7 @@ import comicalRuntime from '../../../modules/comical-runtime';
 import { setTransport } from '../api';
 import { bumpDataEpoch } from '../data-epoch';
 import { queryClient } from '../query-client';
+import { fileSystemBundleCache } from './bundle-cache';
 import { getResolvedModeSync } from './preference';
 import { installedStore, savedRegistryStore } from './stores';
 import { asyncStorageSettings } from './settings-store';
@@ -42,6 +43,8 @@ function bootstrapConfig(): EmbeddedBootstrapConfig {
     registries: savedRegistryStore,
     setTransport,
     settings: asyncStorageSettings,
+    // Persist verified bundles to disk so cold starts don't re-download + re-verify every bridge.
+    cache: fileSystemBundleCache,
     // An install/update/uninstall (or add/remove registry) changes what the runtime serves — refetch
     // the useDataSource-backed screens (Browse etc.) and any react-query-backed data.
     onRegistryChange: () => {
