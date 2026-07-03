@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useReducer, useRef, useState } from 'react';
 
 import { ReaderPage } from '@/components/reader/reader-page';
 import { clamp, distance, MAX_SCALE, midpoint, type Point, ZOOM_EPSILON } from '@/components/reader/reader-zoom';
@@ -36,7 +36,8 @@ type Props = {
  */
 
 // Comics are taller than wide; matches ReaderPage's DEFAULT_ASPECT (2/3 w:h),
-// so an unloaded slot reserves ≈ 1.5 × width of height.
+// so an unloaded slot reserves ≈ 1.5 × width of height as a starting guess —
+// refined at runtime by `aspectRef` below as real pages load.
 const ESTIMATED_ASPECT = 3 / 2;
 // Keep images mounted within this many viewport-heights of the visible area.
 const PRELOAD_VIEWPORTS = 1.5;
@@ -62,6 +63,37 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
 
   // Which slots currently mount a real image (lazy; viewport-driven).
   const [loaded, setLoaded] = useState<Set<number>>(() => seedWindow(initialPage, n));
+
+  // Running estimate (height/width) for slots that haven't loaded a real image
+  // yet, refined from every slot that does. `bump` forces a re-render when it
+  // changes enough to matter, so still-unloaded slots pick up the new guess.
+  const aspectRef = useRef(ESTIMATED_ASPECT);
+  const [, bump] = useReducer((c: number) => c + 1, 0);
+  const onSlotLoadDims = useCallback((w: number, h: number) => {
+    if (w <= 0) return;
+    const prev = aspectRef.current;
+    const next = prev * 0.8 + (h / w) * 0.2;
+    aspectRef.current = next;
+    if (Math.abs(next - prev) / prev > 0.03) bump();
+  }, []);
+
+  // True once the user has touched/wheeled the scroller — after that, the
+  // entry-page correction passes below back off instead of fighting a scroll
+  // the user is already mid-way through.
+  const userScrolledRef = useRef(false);
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const mark = () => {
+      userScrolledRef.current = true;
+    };
+    el.addEventListener('wheel', mark, { passive: true });
+    el.addEventListener('touchstart', mark, { passive: true });
+    return () => {
+      el.removeEventListener('wheel', mark);
+      el.removeEventListener('touchstart', mark);
+    };
+  }, []);
 
   // Live zoom, kept in a ref so pinch frames don't re-render.
   const zoom = useRef(1);
@@ -225,13 +257,26 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
     };
   }, []);
 
-  // Jump to the entry page once mounted (best-effort; heights settle as images load).
+  // Jump to the entry page once mounted, then correct twice more shortly after:
+  // the first jump only has the generic estimate to go on for most slots (real
+  // heights are unknown until each image loads), so as the seeded window around
+  // the target loads and refines `aspectRef`, re-running scrollIntoView tightens
+  // the landing spot instead of leaving it wherever the initial guess put it.
+  // Skipped once the user starts scrolling on their own.
   useEffect(() => {
     if (initialPage <= 0) return;
-    const id = requestAnimationFrame(() => {
-      slotsRef.current[Math.min(n - 1, initialPage)]?.scrollIntoView({ block: 'start' });
-    });
-    return () => cancelAnimationFrame(id);
+    const target = Math.min(n - 1, initialPage);
+    const jump = () => {
+      if (!userScrolledRef.current) slotsRef.current[target]?.scrollIntoView({ block: 'start' });
+    };
+    const id = requestAnimationFrame(jump);
+    const t1 = setTimeout(jump, 250);
+    const t2 = setTimeout(jump, 800);
+    return () => {
+      cancelAnimationFrame(id);
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -263,9 +308,11 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
               ref={(el) => {
                 slotsRef.current[i] = el;
               }}
-              style={isLoaded ? loadedSlotStyle : { width: '100%', height: width * ESTIMATED_ASPECT }}
+              style={isLoaded ? loadedSlotStyle : { width: '100%', height: width * aspectRef.current }}
             >
-              {isLoaded ? <ReaderPage uri={uri} page={i + 1} fit="width" width={width} /> : null}
+              {isLoaded ? (
+                <ReaderPage uri={uri} page={i + 1} fit="width" width={width} onLoadDims={onSlotLoadDims} />
+              ) : null}
             </div>
           );
         })}
