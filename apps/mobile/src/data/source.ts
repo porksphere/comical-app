@@ -13,8 +13,9 @@
  * is the only reachable path, and a failed fetch is a real error — no silent
  * fallback to fake content.
  */
-import { useSyncExternalStore } from 'react';
+import { useMemo, useSyncExternalStore } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useDataEpoch } from './data-epoch';
 
 import * as api from './api';
 import * as mock from './mock';
@@ -430,7 +431,11 @@ export function useMockActive(): boolean {
 
 /** The data source screens should call: real API by default, mock only when explicitly enabled. */
 export function useDataSource(): DataSource {
-  return useMockActive() ? mockDataSource : realDataSource;
+  const mock = useMockActive();
+  const epoch = useDataEpoch();
+  // Return a fresh reference whenever the epoch bumps (transport/registry change) so screens keying
+  // effects on `ds` refetch. The spread keeps the same method implementations, just a new identity.
+  return useMemo(() => (mock ? mockDataSource : { ...realDataSource }), [mock, epoch]);
 }
 
 // ─── Hide NSFW toggle (persisted, not dev-gated) ─────────────────────────────
