@@ -3,13 +3,15 @@
  * remote). This is the single integration point: it hands `@comical/host-rn` the pieces the app owns
  * — the built `@comical/host-server` `createRouter` and `@comical/registry` fetcher (from their
  * Node-free subpaths), the resolved native module, `api.ts`'s `setTransport`, and the AsyncStorage
- * `SettingsStore` — then installs the embedded transport if the persisted preference says on-device
- * (and the native engine is present). Safe to call when the native module isn't linked: it resolves
- * to remote.
+ * `SettingsStore`.
  *
- * Called once from `_layout.tsx` at app launch. This and its imports are the only place the app
- * depends on the comical submodule at runtime; Metro bundles these subpaths on native only (see
- * metro.config.js). The `@comical/host-rn` package is Node-free, so importing it here is safe.
+ * Bridge registries are NOT hardcoded: they come from the persisted user list (`registry-config.ts`),
+ * managed in Settings. Published builds ship with none — the runtime then simply has no bridges
+ * (empty browse), never the remote transport, so there are no failed-request errors. Because the
+ * persisted list hydrates from AsyncStorage *after* this runs, the runtime subscribes to it and
+ * reconfigures (and refetches) when it hydrates or the user adds/removes a registry.
+ *
+ * Called once from `_layout.tsx` at app launch.
  */
 import {
   applyEmbeddedMode,
@@ -17,40 +19,61 @@ import {
   installWebCryptoShim,
   setNativeBridgeRuntime,
   type CreateRouter,
+  type EmbeddedBootstrapConfig,
 } from '@comical/host-rn';
 import { createRouter } from '@comical/host-server/router';
 import { downloadBundle, fetchIndex } from '@comical/registry/fetcher';
 import comicalRuntime from '../../../modules/comical-runtime';
 import { setTransport } from '../api';
+import { bumpDataEpoch } from '../data-epoch';
+import { queryClient } from '../query-client';
 import { getResolvedModeSync } from './preference';
+import { addRegistryUrl, getRegistryUrlsSync, removeRegistryUrl, subscribeRegistryUrls } from './registry-config';
 import { asyncStorageSettings } from './settings-store';
 
-/**
- * Registry the on-device runtime downloads bridge bundles from. Intentionally NOT hardcoded — it
- * comes only from `EXPO_PUBLIC_COMICAL_REGISTRY` (set it in a gitignored `.env.local` for local dev,
- * or via a private build-time env). With no registry configured, the app has no on-device bridges
- * and stays on the remote transport.
- */
-const REGISTRY_INDEX_URL = process.env.EXPO_PUBLIC_COMICAL_REGISTRY;
+/** The fixed pieces host-rn needs, parameterized by the (user-managed) registry list. */
+function bootstrapConfig(indexUrls: string[]): EmbeddedBootstrapConfig {
+  return {
+    createRouter: createRouter as unknown as CreateRouter,
+    fetcher: { fetchIndex, downloadBundle },
+    indexUrls,
+    setTransport,
+    settings: asyncStorageSettings,
+  };
+}
+
+/** (Re)build the embedded runtime against the current registry list. */
+function reconfigure(refetch: boolean): void {
+  applyEmbeddedMode(false); // tear down the previous provider + its native bridge contexts
+  configureEmbeddedRuntime(bootstrapConfig(getRegistryUrlsSync()));
+  applyEmbeddedMode(getResolvedModeSync() === 'embedded');
+  if (refetch) {
+    bumpDataEpoch(); // refetch useDataSource-backed screens (Browse etc.) against the new registry set
+    queryClient.invalidateQueries(); // and any react-query-backed data (library/history)
+  }
+}
 
 let started = false;
 
 export function startEmbeddedRuntime(): void {
   if (started) return;
   started = true;
-  // No registry configured (see `.env.local`) → nothing to run on-device; stay on the remote transport.
-  if (!REGISTRY_INDEX_URL) return;
   // Register the on-device engine (null on web / before the native module is built → stays remote).
   setNativeBridgeRuntime(comicalRuntime);
   // Bridge bundle verification (@comical/registry verify.ts) needs WebCrypto, absent in Hermes.
   installWebCryptoShim();
-  configureEmbeddedRuntime({
-    createRouter: createRouter as unknown as CreateRouter,
-    fetcher: { fetchIndex, downloadBundle },
-    indexUrl: REGISTRY_INDEX_URL,
-    setTransport,
-    settings: asyncStorageSettings,
-  });
-  // Apply the persisted preference (no-ops to remote when the native engine is unavailable).
-  applyEmbeddedMode(getResolvedModeSync() === 'embedded');
+  // Initial configure with whatever's known synchronously (env seed or empty) — no stale cache yet.
+  reconfigure(false);
+  // Reconfigure + refetch when the persisted list hydrates, and on every add/remove.
+  subscribeRegistryUrls(() => reconfigure(true));
+}
+
+/** Add a bridge registry (persisted; the subscription reconfigures + refetches). */
+export function addEmbeddedRegistry(url: string): void {
+  addRegistryUrl(url);
+}
+
+/** Remove a bridge registry (persisted; the subscription reconfigures + refetches). */
+export function removeEmbeddedRegistry(url: string): void {
+  removeRegistryUrl(url);
 }

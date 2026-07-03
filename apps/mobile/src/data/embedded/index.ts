@@ -17,3 +17,6 @@ export {
   getResolvedModeSync,
   type DataSourceMode,
 } from './preference';
+export { useRegistryUrls, getRegistryUrlsSync } from './registry-config';
+// Platform-split (native reconfigures the runtime; web is a no-op).
+export { addEmbeddedRegistry, removeEmbeddedRegistry } from './startup';
