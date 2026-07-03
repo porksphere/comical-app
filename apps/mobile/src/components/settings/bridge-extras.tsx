@@ -22,19 +22,25 @@ import { useTheme } from '@/hooks/use-theme';
  *  declares about itself (version, contract version, languages, content rating, rate limit),
  *  matching comical-web's `buildBridgeMetadata` in `comical-web/client/app.ts`. */
 export function BridgeMetaInfo({ info }: { info: ApiBridgeInfo }) {
+  // On-device, `info` is the bridge's raw self-reported metadata (never re-validated by the contract
+  // schema the remote server enforces), so these arrays can be absent — guard like every other
+  // consumer does (host-rn's `capabilities.ts`, host-server's `router.ts`), or the settings screen
+  // crashes with "undefined is not a function" on the first `.join`/`.length`.
+  const capabilities = info.capabilities ?? [];
+  const languages = info.languages ?? [];
   return (
     <SettingsSection title="About this bridge">
-      {info.capabilities.length > 0 && (
+      {capabilities.length > 0 && (
         <View style={styles.metaBlock}>
           <ThemedText type="small" themeColor="textSecondary">
             Capabilities
           </ThemedText>
-          <ChipRow labels={info.capabilities} />
+          <ChipRow labels={capabilities} />
         </View>
       )}
       <SettingsRow label="Version" right={<ThemedText type="small">{info.version}</ThemedText>} />
       <SettingsRow label="Contract" right={<ThemedText type="small">{info.contractVersion}</ThemedText>} />
-      <SettingsRow label="Languages" right={<ThemedText type="small">{info.languages.join(', ')}</ThemedText>} />
+      <SettingsRow label="Languages" right={<ThemedText type="small">{languages.join(', ')}</ThemedText>} />
       <SettingsRow label="Content" right={<ThemedText type="small">{info.nsfw ? 'NSFW' : 'SFW'}</ThemedText>} />
       {info.rateLimit && (info.rateLimit.maxConcurrent !== undefined || info.rateLimit.minIntervalMs !== undefined) && (
         <SettingsRow

@@ -33,6 +33,9 @@
       ],
       "@comical/registry/fetcher": [
         "../../external/comical/packages/registry/src/fetcher.ts"
+      ],
+      "@comical/registry/url": [
+        "../../external/comical/packages/registry/src/url.ts"
       ]
     }
   },
