@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { RetryBlock } from '@/components/retry-block';
@@ -9,9 +9,18 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { API_BASE, isAbort, type BridgeSummary, type SavedRegistry, type TrackerSummary } from '@/data/api';
-import { applyEmbeddedMode, isEmbeddedRuntimeAvailable, useEmbeddedEnabled } from '@/data/embedded';
+import {
+  addEmbeddedRegistry,
+  applyEmbeddedMode,
+  isEmbeddedRuntimeAvailable,
+  removeEmbeddedRegistry,
+  useEmbeddedEnabled,
+  useRegistryUrls,
+} from '@/data/embedded';
+import { bumpDataEpoch } from '@/data/data-epoch';
 import { queryClient } from '@/data/query-client';
 import { useDataSource, useHideNsfw, useMockDataToggle } from '@/data/source';
+import { useTheme } from '@/hooks/use-theme';
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
@@ -44,6 +53,7 @@ function GeneralSection() {
     setOnDevice(enabled);
     applyEmbeddedMode(enabled); // swap api.ts's transport (embedded ⇄ remote)
     queryClient.clear(); // embedded and remote caches must not mix (mirrors PERSIST_BUSTER)
+    bumpDataEpoch(); // refetch useDataSource-backed screens against the swapped transport
   };
 
   return (
@@ -60,7 +70,68 @@ function GeneralSection() {
           right={<Switch value={onDevice} onValueChange={toggleOnDevice} />}
         />
       )}
+      {embeddedAvailable && onDevice && <RegistriesManager />}
     </SettingsSection>
+  );
+}
+
+/**
+ * On-device only: manage the bridge registries the runtime downloads bundles from. Add/remove URLs;
+ * the runtime reconfigures and refetches on change (see `startup.ts`). Bridges from all registries
+ * are merged.
+ */
+function RegistriesManager() {
+  const theme = useTheme();
+  const urls = useRegistryUrls();
+  const [input, setInput] = useState('');
+
+  const add = () => {
+    const u = input.trim();
+    if (!u) return;
+    addEmbeddedRegistry(u); // persist + reconfigure + refetch (via subscription)
+    setInput('');
+  };
+
+  return (
+    <View style={styles.registryRow}>
+      <ThemedText type="small">Bridge registries</ThemedText>
+      <ThemedText type="small" themeColor="textSecondary">
+        Registries the on-device runtime downloads bridges from. Add one to get started.
+      </ThemedText>
+      {urls.length === 0 ? (
+        <ThemedText type="small" themeColor="textSecondary">
+          None added.
+        </ThemedText>
+      ) : (
+        urls.map((u) => (
+          <View key={u} style={styles.registryItem}>
+            <ThemedText type="small" style={styles.registryItemUrl} numberOfLines={1} ellipsizeMode="middle">
+              {u}
+            </ThemedText>
+            <Pressable onPress={() => removeEmbeddedRegistry(u)} hitSlop={8} accessibilityLabel={`Remove ${u}`}>
+              <ThemedText themeColor="textSecondary">✕</ThemedText>
+            </Pressable>
+          </View>
+        ))
+      )}
+      <View style={styles.registryAddRow}>
+        <TextInput
+          value={input}
+          onChangeText={setInput}
+          onSubmitEditing={add}
+          placeholder="https://…/index.json"
+          placeholderTextColor={theme.textSecondary}
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="url"
+          returnKeyType="done"
+          style={[styles.registryInput, { flex: 1, color: theme.text, borderColor: theme.hairline }]}
+        />
+        <Pressable onPress={add} style={[styles.registryAddBtn, { borderColor: theme.hairline }]}>
+          <ThemedText type="small">Add</ThemedText>
+        </Pressable>
+      </View>
+    </View>
   );
 }
 
@@ -237,5 +308,37 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: MaxTopLevelWidth,
     alignSelf: 'center',
+  },
+  registryRow: {
+    gap: Spacing.one,
+    paddingVertical: Spacing.two,
+  },
+  registryItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    paddingVertical: Spacing.one,
+  },
+  registryItemUrl: {
+    flex: 1,
+  },
+  registryAddRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    marginTop: Spacing.one,
+  },
+  registryInput: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    fontSize: 14,
+  },
+  registryAddBtn: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
   },
 });
