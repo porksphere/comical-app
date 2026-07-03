@@ -107,6 +107,9 @@ export interface BridgeSummary {
   missingRequired: string[];
   source: 'local' | 'registry';
   availableVersion?: string;
+  /** Installed but no longer offered by its registry (dropped from the index) — kept working from
+   *  its pinned bundle. The Settings screen surfaces a "no longer offered" badge. */
+  discontinued?: boolean;
 }
 
 /** GET /bridges → the raw per-bridge summaries (see `BridgeSummary`), for the Settings screen. */
