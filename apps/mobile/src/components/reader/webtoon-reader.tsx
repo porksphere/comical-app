@@ -1,5 +1,5 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
-import { FlatList, Pressable, StyleSheet, View, type ViewToken } from 'react-native';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from 'react';
+import { FlatList, Pressable, StyleSheet, View, type LayoutChangeEvent, type ViewToken } from 'react-native';
 
 import { ReaderPage } from '@/components/reader/reader-page';
 
@@ -13,10 +13,24 @@ type Props = {
   onToggleChrome: () => void;
 };
 
+// Height/width ratio assumed for a page before it has rendered (matches
+// ReaderPage's own DEFAULT_ASPECT). Refined at runtime — see `aspectRef` below.
+const ESTIMATED_ASPECT = 3 / 2;
+
+function recomputeOffsets(heights: (number | null)[], fallback: number): number[] {
+  const offsets = new Array(heights.length + 1);
+  offsets[0] = 0;
+  for (let i = 0; i < heights.length; i++) offsets[i + 1] = offsets[i] + (heights[i] ?? fallback);
+  return offsets;
+}
+
 /**
  * Vertical continuous (webtoon) reader: a vertical FlatList of full-width pages.
  * Current page comes from viewability. Page heights aren't known until each
- * image loads, so `scrollToIndex` is best-effort with an offset-estimate retry.
+ * image loads, so `getItemLayout` fills in unmeasured rows with a running
+ * estimate (refined from real rows as they render) and `scrollToIndex` is
+ * re-run once after mount so a deep jump — e.g. from a page-thumbnail tap —
+ * can correct itself once nearby rows have reported their real height.
  * A per-item tap overlay toggles chrome (descendant of the scroller, so a
  * vertical drag still scrolls).
  */
@@ -26,6 +40,41 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
 ) {
   const listRef = useRef<FlatList<string>>(null);
   const n = pages.length;
+
+  const aspectRef = useRef(ESTIMATED_ASPECT);
+  const heightsRef = useRef<(number | null)[]>([]);
+  const offsetsRef = useRef<number[]>([]);
+  const layoutKeyRef = useRef('');
+  const layoutKey = `${n}:${width}`;
+  if (layoutKeyRef.current !== layoutKey) {
+    layoutKeyRef.current = layoutKey;
+    heightsRef.current = new Array(n).fill(null);
+    offsetsRef.current = recomputeOffsets(heightsRef.current, width * aspectRef.current);
+  }
+
+  const onRowLayout = useCallback(
+    (index: number, h: number) => {
+      if (h <= 0 || heightsRef.current[index] === h) return;
+      // Fold this row's real height into the running estimate so the many
+      // still-unmeasured rows (most of a long chapter) get a better guess. Runs
+      // on every change (not just the first), since the first layout usually
+      // fires before the image has loaded and only reflects the same default
+      // aspect the estimate already assumes.
+      if (width > 0) aspectRef.current = aspectRef.current * 0.8 + (h / width) * 0.2;
+      heightsRef.current[index] = h;
+      offsetsRef.current = recomputeOffsets(heightsRef.current, width * aspectRef.current);
+    },
+    [width],
+  );
+
+  const getItemLayout = useCallback(
+    (_: ArrayLike<string> | null | undefined, index: number) => ({
+      length: heightsRef.current[index] ?? width * aspectRef.current,
+      offset: offsetsRef.current[index] ?? 0,
+      index,
+    }),
+    [width],
+  );
 
   useImperativeHandle(
     ref,
@@ -37,14 +86,23 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
     [n],
   );
 
-  // Jump to the entry page once mounted (no getItemLayout here since heights are
-  // dynamic, so this is best-effort with the scroll-to-index failure fallback).
+  // Jump to the entry page once mounted, then re-jump shortly after: the first
+  // attempt only has whatever heights were known at mount (mostly estimates for
+  // a page deep into the list), and by the second pass the rows FlatList had to
+  // render to land there have reported their real height, tightening the guess.
   useEffect(() => {
     if (initialPage <= 0) return;
-    const t = setTimeout(() => {
-      listRef.current?.scrollToIndex({ index: Math.min(n - 1, initialPage), animated: false });
+    const target = Math.min(n - 1, initialPage);
+    const t1 = setTimeout(() => {
+      listRef.current?.scrollToIndex({ index: target, animated: false });
     }, 0);
-    return () => clearTimeout(t);
+    const t2 = setTimeout(() => {
+      listRef.current?.scrollToIndex({ index: target, animated: false });
+    }, 200);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -66,14 +124,16 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
       showsVerticalScrollIndicator={false}
       onViewableItemsChanged={onViewable}
       viewabilityConfig={viewabilityConfig}
+      getItemLayout={getItemLayout}
       onScrollToIndexFailed={(info) => {
-        listRef.current?.scrollToOffset({ offset: info.averageItemLength * info.index, animated: false });
+        const offset = offsetsRef.current[info.index] ?? info.averageItemLength * info.index;
+        listRef.current?.scrollToOffset({ offset, animated: false });
         setTimeout(() => {
           listRef.current?.scrollToIndex({ index: info.index, animated: false });
         }, 60);
       }}
       renderItem={({ item, index }) => (
-        <View>
+        <View onLayout={(e: LayoutChangeEvent) => onRowLayout(index, e.nativeEvent.layout.height)}>
           <ReaderPage uri={item} page={index + 1} fit="width" width={width} />
           <Pressable style={StyleSheet.absoluteFill} onPress={onToggleChrome} />
         </View>
