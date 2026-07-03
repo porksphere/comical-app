@@ -24,12 +24,17 @@ export function ReaderPage({
   fit,
   width,
   height,
+  onLoadDims,
 }: {
   uri: string;
   page: number;
   fit: 'contain' | 'width';
   width: number;
   height?: number;
+  /** Fires with the image's real pixel dimensions once it loads — lets a caller
+   *  (webtoon mode's scroll-to-index estimate) refine its height guess for
+   *  still-unloaded pages instead of relying solely on `DEFAULT_ASPECT`. */
+  onLoadDims?: (width: number, height: number) => void;
 }) {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -71,7 +76,10 @@ export function ReaderPage({
             setLoaded(true);
             const w = e.source?.width;
             const h = e.source?.height;
-            if (w && h) setAspect(w / h);
+            if (w && h) {
+              setAspect(w / h);
+              onLoadDims?.(w, h);
+            }
           }}
           onError={() => setFailed(true)}
         />
