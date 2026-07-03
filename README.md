@@ -2,8 +2,9 @@
 
 Cross-platform (iOS + Android) mobile app built with **React Native + Expo (SDK 56)**,
 using **native navigation** — a real `UITabBarController` (Liquid Glass on iOS 26) and a
-native stack — plus a Liquid Glass surface demo. This repo is the app shell + build
-system; the business-logic core lives in a separate repo (see below).
+native stack — plus a Liquid Glass surface demo. On iOS/Android it runs the Comical bridge
+runtime **on-device** (no server required); on web, and as a selectable fallback, it talks to
+a remote `@comical/host-server`. See [On-device runtime](#on-device-runtime-comicalhost-rn).
 
 ## Layout
 
@@ -11,16 +12,15 @@ system; the business-logic core lives in a separate repo (see below).
 comical/
 ├── apps/
 │   └── mobile/                 # Expo app (expo-router, New Architecture)
-│       ├── src/app/
-│       │   ├── _layout.tsx     # root native Stack
-│       │   ├── (tabs)/         # native 5-tab group: Browse/Library/History/Activity/Settings
-│       │   └── detail.tsx      # pushed native-stack screen + GlassView demo
+│       ├── src/app/            # screens (Browse/Library/History/Activity/Settings + detail/reader)
+│       ├── src/data/           # data layer: api.ts (transport seam), source.ts, embedded/ (on-device wiring)
+│       ├── modules/comical-runtime/  # local Expo native module wrapping comical's ComicalBridgeContext
 │       ├── app.json            # Expo config (bundleId: com.porksphere.comical)
 │       └── eas.json            # build profiles (optional `eas build --local` path)
+├── external/comical/           # git SUBMODULE — the Comical runtime (@comical/*), source of on-device bridges
 ├── packages/
-│   └── core/                   # LOCAL STUB of @porksphere/core (temporary)
-├── .npmrc                      # @porksphere scope -> GitHub Packages
-└── .github/workflows/          # Android + iOS build pipelines
+│   └── core/                   # vestigial @porksphere/core demo stub (see On-device runtime)
+└── .github/workflows/          # Android + iOS + web build pipelines
 ```
 
 ## Why React Native + Expo
@@ -32,21 +32,34 @@ fully achievable: `expo-router`'s `NativeTabs` renders the real iOS tab controll
 Glass on iOS 26), native-stack gives native headers/large titles, and `expo-glass-effect`
 covers bespoke glass surfaces (auto-fallback to opaque views on Android / iOS < 26).
 
-## The business-logic core (`@porksphere/core`)
+## On-device runtime (`@comical/host-rn`)
 
-The real core is a **separate repository** published to **GitHub Packages**. Until its
-first release, a local workspace stub at `packages/core` resolves the dependency so the
-import path, Metro resolution, and CI auth are exercised end-to-end.
+On iOS/Android the app runs Comical **bridges on-device** — no external server. Every request
+goes through a swappable transport in `src/data/api.ts`:
 
-- **CI / reproducible builds:** `bun install --frozen-lockfile` resolves `@porksphere/core`
-  (from the stub today, from GitHub Packages once published). `.npmrc` — which Bun also reads —
-  maps the `@porksphere` scope to `npm.pkg.github.com`; set `NODE_AUTH_TOKEN` to a token with
-  `read:packages`.
-- **Editing core + app together:** clone the core repo and `bun link` it; `metro.config.js`
-  already watches the monorepo root and extra `nodeModulesPaths`, so Metro picks up the
-  linked source and hot-reloads core edits.
-- **Cut-over:** when the published core exists, delete `packages/core`, drop it from the
-  root `workspaces`, and pin the version in `apps/mobile/package.json`.
+- **Embedded (native default):** drives the reused `@comical/host-server` router **in-process**
+  (`router.fetch(...)`, no socket) against proxy bridges executed in a native JS engine —
+  JavaScriptCore on iOS, QuickJS on Android. The reusable machinery lives in **`@comical/host-rn`**
+  (the proxy `BridgeProvider`, the in-process transport, a registry-download `BundleSource`, and a
+  Hermes WebCrypto shim); this app is a thin consumer — `src/data/embedded/` is just the wiring
+  (`startup.ts`, `preference.ts`, `settings-store.ts`) plus the native module.
+- **Remote:** a plain `fetch` against `EXPO_PUBLIC_COMICAL_SERVER`. Used on web, and selectable on
+  native via the Settings toggle **"Run bridges on this device."**
+
+The `@comical/*` packages come from the **`comical` git submodule** at `external/comical` —
+`metro.config.js` (`extraNodeModules` + `unstable_enablePackageExports`) and `tsconfig.json`
+(`paths`) map its Node-free subpaths to source, and `modules/comical-runtime` (a local Expo native
+module) wraps comical's `ComicalBridgeContext`. Bridge bundles are downloaded, verified (SHA-256,
+plus Ed25519 when signed), and cached from **user-managed registries** — add/remove registry
+`index.json` URLs in **Settings → Bridge registries**. Nothing is hardcoded: published builds ship
+with no registry (for local dev, seed one via a gitignored `.env.local`'s `EXPO_PUBLIC_COMICAL_REGISTRY`).
+
+> `packages/core` (`@porksphere/core`) is a **vestigial demo stub** (`greet`) left from an earlier
+> design where a separate core would ship via GitHub Packages. The real runtime is the `@comical/*`
+> embedding above; the stub is only still imported by `detail.tsx`'s Liquid Glass demo.
+
+First-time setup: `git submodule update --init`, `bun install`, and `bun install` inside
+`external/comical` (its transitive deps — hono/zod/@noble — are what Metro bundles on native).
 
 ## Develop
 
