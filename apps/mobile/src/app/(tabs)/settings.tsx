@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { RetryBlock } from '@/components/retry-block';
@@ -9,18 +9,10 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { API_BASE, isAbort, type BridgeSummary, type SavedRegistry, type TrackerSummary } from '@/data/api';
-import {
-  addEmbeddedRegistry,
-  applyEmbeddedMode,
-  isEmbeddedRuntimeAvailable,
-  removeEmbeddedRegistry,
-  useEmbeddedEnabled,
-  useRegistryUrls,
-} from '@/data/embedded';
+import { applyEmbeddedMode, isEmbeddedRuntimeAvailable, useEmbeddedEnabled } from '@/data/embedded';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { queryClient } from '@/data/query-client';
 import { useDataSource, useHideNsfw, useMockDataToggle } from '@/data/source';
-import { useTheme } from '@/hooks/use-theme';
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
@@ -70,69 +62,17 @@ function GeneralSection() {
           right={<Switch value={onDevice} onValueChange={toggleOnDevice} />}
         />
       )}
-      {embeddedAvailable && onDevice && <RegistriesManager />}
     </SettingsSection>
   );
 }
 
-/**
- * On-device only: manage the bridge registries the runtime downloads bundles from. Add/remove URLs;
- * the runtime reconfigures and refetches on change (see `startup.ts`). Bridges from all registries
- * are merged.
- */
-function RegistriesManager() {
-  const theme = useTheme();
-  const urls = useRegistryUrls();
-  const [input, setInput] = useState('');
-
-  const add = () => {
-    const u = input.trim();
-    if (!u) return;
-    addEmbeddedRegistry(u); // persist + reconfigure + refetch (via subscription)
-    setInput('');
-  };
-
-  return (
-    <View style={styles.registryRow}>
-      <ThemedText type="small">Bridge registries</ThemedText>
-      <ThemedText type="small" themeColor="textSecondary">
-        Registries the on-device runtime downloads bridges from. Add one to get started.
-      </ThemedText>
-      {urls.length === 0 ? (
-        <ThemedText type="small" themeColor="textSecondary">
-          None added.
-        </ThemedText>
-      ) : (
-        urls.map((u) => (
-          <View key={u} style={styles.registryItem}>
-            <ThemedText type="small" style={styles.registryItemUrl} numberOfLines={1} ellipsizeMode="middle">
-              {u}
-            </ThemedText>
-            <Pressable onPress={() => removeEmbeddedRegistry(u)} hitSlop={8} accessibilityLabel={`Remove ${u}`}>
-              <ThemedText themeColor="textSecondary">✕</ThemedText>
-            </Pressable>
-          </View>
-        ))
-      )}
-      <View style={styles.registryAddRow}>
-        <TextInput
-          value={input}
-          onChangeText={setInput}
-          onSubmitEditing={add}
-          placeholder="https://…/index.json"
-          placeholderTextColor={theme.textSecondary}
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="url"
-          returnKeyType="done"
-          style={[styles.registryInput, { flex: 1, color: theme.text, borderColor: theme.hairline }]}
-        />
-        <Pressable onPress={add} style={[styles.registryAddBtn, { borderColor: theme.hairline }]}>
-          <ThemedText type="small">Add</ThemedText>
-        </Pressable>
-      </View>
-    </View>
-  );
+/** One-line status for a bridge row: discontinuation and available updates take precedence over the
+ *  "needs setup" hint, so the user sees the most actionable state at a glance. */
+function bridgeStatus(b: BridgeSummary): string | undefined {
+  if (b.discontinued) return 'No longer offered by its registry';
+  if (b.availableVersion) return `Update available — v${b.availableVersion}`;
+  if (!b.configured) return 'Needs setup';
+  return undefined;
 }
 
 function BridgesSection() {
@@ -170,7 +110,7 @@ function BridgesSection() {
           <SettingsRow
             key={b.info.id}
             label={b.info.name}
-            description={b.configured ? undefined : 'Needs setup'}
+            description={bridgeStatus(b)}
             onPress={() =>
               router.push({ pathname: '/bridge-settings', params: { bridgeId: b.info.id, source: b.source } })
             }
@@ -308,37 +248,5 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: MaxTopLevelWidth,
     alignSelf: 'center',
-  },
-  registryRow: {
-    gap: Spacing.one,
-    paddingVertical: Spacing.two,
-  },
-  registryItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    paddingVertical: Spacing.one,
-  },
-  registryItemUrl: {
-    flex: 1,
-  },
-  registryAddRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    marginTop: Spacing.one,
-  },
-  registryInput: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: Spacing.two,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    fontSize: 14,
-  },
-  registryAddBtn: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: Spacing.two,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
   },
 });

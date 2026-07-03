@@ -141,14 +141,14 @@ export default function BridgeSettingsScreen() {
               </Pressable>
             )}
 
-            {data.info.capabilities.includes('exclude-tags') && (
+            {data.info.capabilities?.includes('exclude-tags') && (
               <TagExclusionsControl
                 bridgeId={bridgeId!}
                 initialTags={data.excludedTags}
                 initialLabels={data.excludedTagLabels}
               />
             )}
-            {data.info.capabilities.includes('exclude-genres') && <GenreExclusionsControl bridgeId={bridgeId!} />}
+            {data.info.capabilities?.includes('exclude-genres') && <GenreExclusionsControl bridgeId={bridgeId!} />}
             <BridgePrefsToggles bridgeId={bridgeId!} />
 
             {source === 'registry' && (
