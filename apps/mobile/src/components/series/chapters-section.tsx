@@ -263,7 +263,7 @@ function PageThumbGrid({
         </View>
 
         {collapsed && (
-          <View style={[styles.moreOverlay, { height: fadeHeight }]} pointerEvents="box-none">
+          <View style={[styles.moreOverlay, { height: fadeHeight, pointerEvents: 'box-none' }]}>
             <GradientFade color={theme.background} />
             <Pressable onPress={() => setExpanded(true)} hitSlop={8}>
               <ThemedView
@@ -362,8 +362,7 @@ function GradientFade({ color }: { color: string }) {
     <LinearGradient
       colors={['transparent', color, color]}
       locations={[0, 0.8, 1]}
-      style={StyleSheet.absoluteFill}
-      pointerEvents="none"
+      style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}
     />
   );
 }

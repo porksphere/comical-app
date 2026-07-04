@@ -236,7 +236,13 @@ const listStyles = StyleSheet.create({
   },
 });
 
-type Item = { id: number; render: () => ReactNode; anchor?: AnchorRect | null };
+// `node` (not `render`) so each overlay's content is only ever built once, at
+// `open()` time — otherwise `items.map` below would call every currently-open
+// overlay's `render()` afresh on every `OverlayProvider` re-render (e.g.
+// whenever a second overlay opens on top), needlessly re-rendering overlays
+// that aren't even changing. Keeping the same `ReactNode` reference across
+// renders lets React bail out of re-rendering that subtree entirely.
+type Item = { id: number; node: ReactNode; anchor?: AnchorRect | null };
 
 const SPRING = { damping: 22, stiffness: 240, mass: 0.7 } as const;
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -252,7 +258,7 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
   }, [items]);
 
   const open = useCallback((render: () => ReactNode, anchor?: AnchorRect | null) => {
-    setItems((prev) => [...prev, { id: idRef.current++, render, anchor }]);
+    setItems((prev) => [...prev, { id: idRef.current++, node: render(), anchor }]);
   }, []);
 
   const remove = useCallback((id: number) => {
@@ -306,8 +312,12 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
         <Animated.View style={[styles.appWrap, appStyle]}>{children}</Animated.View>
 
         <AnimatedPressable
-          style={[StyleSheet.absoluteFill, styles.backdrop, backdropStyle]}
-          pointerEvents={depth > 0 ? 'auto' : 'none'}
+          style={[
+            StyleSheet.absoluteFill,
+            styles.backdrop,
+            backdropStyle,
+            { pointerEvents: depth > 0 ? 'auto' : 'none' },
+          ]}
           onPress={closeTop}
         />
 
@@ -319,7 +329,7 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
               anchor={it.anchor}
               onClosed={() => remove(it.id)}
               register={register}>
-              {it.render()}
+              {it.node}
             </OverlayPopover>
           ) : (
             <OverlaySheet
@@ -328,7 +338,7 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
               depthFromTop={items.length - 1 - i}
               onClosed={() => remove(it.id)}
               register={register}>
-              {it.render()}
+              {it.node}
             </OverlaySheet>
           ),
         )}
@@ -450,7 +460,7 @@ function OverlaySheet({
   }));
 
   return (
-    <Animated.View style={[styles.sheetWrap, sheetStyle]} pointerEvents="box-none">
+    <Animated.View style={[styles.sheetWrap, sheetStyle, { pointerEvents: 'box-none' }]}>
       <OverlayPresentationContext.Provider value="sheet">
       <SheetScrollContext.Provider value={sheetScroll}>
         {/* `backgroundPanel` (not the default `background`) so the sheet's own
@@ -478,8 +488,7 @@ function OverlaySheet({
           </GestureDetector>
 
           <Animated.View
-            pointerEvents="none"
-            style={[StyleSheet.absoluteFill, styles.dim, dimStyle]}
+            style={[StyleSheet.absoluteFill, styles.dim, dimStyle, { pointerEvents: 'none' }]}
           />
         </ThemedView>
       </SheetScrollContext.Provider>
@@ -556,8 +565,7 @@ function OverlayPopover({
 
   return (
     <Animated.View
-      pointerEvents="box-none"
-      style={[styles.popoverWrap, { left, top, width }, animStyle]}>
+      style={[styles.popoverWrap, { left, top, width, pointerEvents: 'box-none' }, animStyle]}>
       <ThemedView
         style={[styles.popover, { maxHeight }]}
         onLayout={(e) => {
@@ -628,10 +636,7 @@ const styles = StyleSheet.create({
     // lighter surroundings.
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.14)',
-    shadowColor: '#000000',
-    shadowOpacity: 0.35,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 12 },
+    boxShadow: '0px 12px 24px rgba(0, 0, 0, 0.35)',
     elevation: 12,
   },
   heading: {
