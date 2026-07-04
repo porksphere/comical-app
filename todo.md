@@ -16,12 +16,39 @@
 - [x] The mock data should all be non-existant website names, we don't want to associate with any scraping (mock bridge names replaced; scrubbing git history was assessed and declined — would've required force-pushing ~86% of main's commits)
 
 ## Reader (page viewer)
-- [ ] Image retry-with-backoff on page load failure (currently just shows a placeholder)
-- [ ] Prefetch N pages ahead for smoother paging
-- [ ] "Next chapter" sentinel / auto-advance at the end of a chaptered read
-- [ ] Persist read progress ("continue reading") across sessions
-- [ ] Overlay does not stay open when in settings / typing page 
-- [ ] Settings look ugly on ios in general, they should peobably take up most of the screen 
+- [x] Image retry-with-backoff on page load failure (currently just shows a placeholder) —
+      `reader-page.tsx` retries automatically (1s/2s/4s) then falls back to a tappable
+      Retry chip. Required a companion fix in both native (`zoomable-page.tsx`,
+      `webtoon-reader.tsx`) and web (`paged-reader.web.tsx`, `webtoon-reader.web.tsx`)
+      so the turn-page/toggle-chrome tap zones don't swallow the Retry tap on a
+      failed page — web's Paged reader in particular runs its own pointer-capture
+      gesture system that would otherwise never let the nested Retry button see a
+      pointerup at all.
+- [x] Prefetch N pages ahead for smoother paging — within-chapter prefetch already
+      existed; `reader.tsx`'s warm-ahead effect now also prefetches the next
+      chapter's first few page *images* (not just its page-URL list) once it's
+      warmed into the query cache.
+- [x] "Next chapter" sentinel / auto-advance at the end of a chaptered read — fully
+      automatic (no confirmation UI) in both Paged and Webtoon modes, on native and
+      web. Falls back to a real `seriesDetail` fetch when the next chapter isn't
+      already cached (e.g. opened via History's Resume, bypassing the series
+      screen) so it doesn't silently fail to advance. Also fixed a related
+      pre-existing bug where the web Paged/Webtoon readers could visually strand on
+      page 1 when deep-linked to a non-zero start page, since their internal
+      position only seeded from `initialPage` once at mount.
+- [x] Persist read progress ("continue reading") across sessions — chapter-progress
+      recording already worked; the series screen's own "Read" button now resumes
+      from the last-read chapter/page (via the same reading-history lookup the
+      History tab's Resume action already used) instead of always restarting.
+- [x] Overlay does not stay open when in settings / typing page — settings moved to
+      the shared overlay system (see below), which has its own lifecycle fully
+      decoupled from the chrome auto-hide timer; the page-number input now
+      explicitly suspends/resumes that timer while editing.
+- [x] Settings look ugly on ios in general, they should peobably take up most of the
+      screen — reader settings now open via the app's existing overlay system
+      (`components/overlay/overlay.tsx`), the same one Browse's filter UI uses: a
+      near-full-width bottom sheet with a drag handle on mobile, and an anchored
+      popover (matching the filter buttons) on wide desktop web instead of a sheet.
 
 ## Add real crash reporting (Sentry) — no way to see iOS crashes today
 
