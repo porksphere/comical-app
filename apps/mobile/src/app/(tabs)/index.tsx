@@ -136,6 +136,11 @@ export default function BrowseScreen() {
   // wait until this matches its bridge before applying, or it'd land on the wrong
   // (soon-to-be-reset) defs.
   const [filterDefsBridgeId, setFilterDefsBridgeId] = useState<string | null>(null);
+  // Stable reference so `FilterBar`'s per-filter `React.memo` isn't defeated by
+  // a freshly-allocated closure on every render (see `FilterButton`).
+  const setFilterValue = useCallback((id: string, v: FilterValue) => {
+    setFilterValues((prev) => ({ ...prev, [id]: v }));
+  }, []);
 
   useEffect(() => {
     if (!bridgeId || !currentBridge) {
@@ -483,16 +488,15 @@ export default function BrowseScreen() {
 
   const topBar = (
     <Animated.View
-      pointerEvents="box-none"
       style={[
         styles.topBar,
-        { paddingTop: insets.top, backgroundColor: theme.background },
+        { paddingTop: insets.top, backgroundColor: theme.background, pointerEvents: 'box-none' },
         headerStyle,
       ]}>
       {/* Inner row capped to the content width so the selectors line up with the
           grid below, while the bar background stays full-bleed. The row grows with
           the band (content stays vertically centred) for symmetric breathing room. */}
-      <Animated.View pointerEvents="box-none" style={[styles.selectorRow, selectorRowStyle]}>
+      <Animated.View style={[styles.selectorRow, selectorRowStyle, { pointerEvents: 'box-none' }]}>
         {currentBridge ? (
           // Animate the wrapping View (a plain host component) rather than the
           // thumbnail itself — expo-image's `Image` is a composite class
@@ -532,7 +536,7 @@ export default function BrowseScreen() {
       <FilterBar
         defs={filterDefs}
         values={filterValues}
-        onValueChange={(id, v) => setFilterValues((prev) => ({ ...prev, [id]: v }))}
+        onValueChange={setFilterValue}
         sortOptions={sortOptions}
         sort={sortValue}
         onSortChange={setSortValue}

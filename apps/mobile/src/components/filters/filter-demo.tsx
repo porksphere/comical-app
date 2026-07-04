@@ -1,10 +1,11 @@
-import { useState, type ReactNode } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { useAnchoredOverlay, useOverlay, useOverlayPresentation } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { useHover } from '@/hooks/use-hover';
 import { useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -66,6 +67,13 @@ export function FilterBar({
   const wide = useIsLargeScreen();
 
   const [containerW, setContainerW] = useState(0);
+  // Bar width comes from the parent's flex layout, not from what's rendered
+  // inside it — so on the very first render, before `onLayout` reports the
+  // real width, `fitCount` would otherwise fall back to showing every filter
+  // uncollapsed. Keep that first frame invisible (not unrendered — the row
+  // still occupies its real height) so the fit is only ever seen already
+  // correct, never mid-collapse.
+  const measured = containerW > 0;
   // Sort only shows once results are on screen; until then it reserves no room.
   // On narrow viewports it collapses to an icon-only square, reserving less.
   const hasSort = sortOptions.length > 0;
@@ -78,11 +86,11 @@ export function FilterBar({
 
   return (
     <View
-      style={styles.bar}
+      style={[styles.bar, !measured && styles.barUnmeasured]}
       onLayout={(e) => setContainerW(e.nativeEvent.layout.width)}>
       {shown.map((def) => (
         <View key={def.id} style={styles.filterSlot}>
-          <FilterButton def={def} value={values[def.id]} onChange={(v) => onValueChange(def.id, v)} />
+          <FilterButton def={def} value={values[def.id]} onChange={onValueChange} />
         </View>
       ))}
       {hidden.length > 0 && (
@@ -127,9 +135,21 @@ function SortButton({
 }) {
   const theme = useTheme();
   const { ref, openAt } = useAnchoredOverlay();
+  const { hovered, handlers } = useHover();
   return (
-    <Pressable ref={ref} onPress={() => openAt(render)} accessibilityRole="button" accessibilityLabel="Sort">
-      <ThemedView type="backgroundElement" style={[styles.sortButton, !showLabel && styles.sortButtonIcon]}>
+    <Pressable
+      ref={ref}
+      {...handlers}
+      onPress={() => openAt(render)}
+      accessibilityRole="button"
+      accessibilityLabel="Sort">
+      <ThemedView
+        type="backgroundElement"
+        style={[
+          styles.sortButton,
+          !showLabel && styles.sortButtonIcon,
+          hovered && { backgroundColor: theme.backgroundSelected },
+        ]}>
         <SortIcon color={theme.text} />
         {showLabel && <ThemedText type="smallBold">{label}</ThemedText>}
       </ThemedView>
@@ -141,13 +161,17 @@ function SortButton({
 function OverflowChip({ count, render }: { count: number; render: () => ReactNode }) {
   const theme = useTheme();
   const { ref, openAt } = useAnchoredOverlay();
+  const { hovered, handlers } = useHover();
   return (
     <Pressable
       ref={ref}
+      {...handlers}
       onPress={() => openAt(render)}
       accessibilityRole="button"
       accessibilityLabel={`${count} more filters`}>
-      <ThemedView type="backgroundElement" style={styles.overflowChip}>
+      <ThemedView
+        type="backgroundElement"
+        style={[styles.overflowChip, hovered && { backgroundColor: theme.backgroundSelected }]}>
         <FiltersIcon color={theme.text} />
         <ThemedText type="smallBold">{`+${count}`}</ThemedText>
       </ThemedView>
@@ -167,18 +191,17 @@ function FiltersSheet({
 }) {
   const { closeTop } = useOverlay();
   const [values, setValues] = useState(initial);
+  const handleChange = useCallback(
+    (id: string, v: FilterValue) => {
+      setValues((prev) => ({ ...prev, [id]: v }));
+      onChange(id, v);
+    },
+    [onChange],
+  );
   return (
     <SheetContent title="Filters" headerAction={<ConfirmButton onPress={closeTop} />}>
       {defs.map((def) => (
-        <FilterButton
-          key={def.id}
-          def={def}
-          value={values[def.id]}
-          onChange={(v) => {
-            setValues((prev) => ({ ...prev, [def.id]: v }));
-            onChange(def.id, v);
-          }}
-        />
+        <FilterButton key={def.id} def={def} value={values[def.id]} onChange={handleChange} />
       ))}
     </SheetContent>
   );
@@ -279,6 +302,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: GAP,
     overflow: 'hidden',
+  },
+  barUnmeasured: {
+    opacity: 0,
   },
   filterSlot: {
     flex: 1,
