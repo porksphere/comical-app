@@ -163,10 +163,14 @@ export default function LibraryScreen() {
 
       {/* Static title band overlaid on top (matches Browse's top-bar height/inset). */}
       <View
-        pointerEvents="box-none"
         style={[
           styles.topBar,
-          { paddingTop: insets.top, backgroundColor: theme.background, borderBottomColor: theme.hairline },
+          {
+            paddingTop: insets.top,
+            backgroundColor: theme.background,
+            borderBottomColor: theme.hairline,
+            pointerEvents: 'box-none',
+          },
         ]}>
         <View style={[styles.titleRow, { height: barHeight }]}>
           <ThemedText numberOfLines={1} style={styles.title}>
