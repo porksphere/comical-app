@@ -7,6 +7,7 @@ import {
 } from 'react-native';
 
 import { ZoomablePage } from '@/components/reader/zoomable-page';
+import type { PageFit } from '@/hooks/use-reader-settings';
 
 export type PagedReaderHandle = { goToPage: (logical: number, animated?: boolean) => void };
 
@@ -15,6 +16,7 @@ type Props = {
   width: number;
   height: number;
   rtl: boolean;
+  pageFit: PageFit;
   initialPage: number;
   onPageChange: (logical: number) => void;
   onPrev: () => void;
@@ -36,7 +38,7 @@ type Props = {
  * image instead of turning the page.
  */
 export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedReader(
-  { pages, width, height, rtl, initialPage, onPageChange, onPrev, onNext, onToggleChrome },
+  { pages, width, height, rtl, pageFit, initialPage, onPageChange, onPrev, onNext, onToggleChrome },
   ref,
 ) {
   const listRef = useRef<FlatList<string>>(null);
@@ -100,6 +102,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
           page={toLogical(index) + 1}
           width={width}
           height={height}
+          pageFit={pageFit}
           active={index === activeIndex}
           onLeft={leftAction}
           onRight={rightAction}
