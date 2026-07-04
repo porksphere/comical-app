@@ -13,7 +13,9 @@ import {
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { useHover } from '@/hooks/use-hover';
 import { useIsCompact } from '@/hooks/use-responsive';
+import { useTheme } from '@/hooks/use-theme';
 
 /** Size of the bridge thumbnail shown in the dropdown rows — also reused by the
  *  browse top bar so the two read at the same size. */
@@ -35,10 +37,13 @@ type SelectorProps = {
 export function Selector({ title, value, options, onChange, thumbnails, size = 'title' }: SelectorProps) {
   const { ref, openAt } = useAnchoredOverlay();
   const compact = useIsCompact();
+  const theme = useTheme();
+  const { hovered, handlers } = useHover();
   return (
     <Pressable
       ref={ref}
-      style={styles.trigger}
+      {...handlers}
+      style={[styles.trigger, hovered && { backgroundColor: theme.backgroundSelected }]}
       onPress={() =>
         openAt(() => (
           <SelectMenu title={title} options={options} selected={value} onSelect={onChange} thumbnails={thumbnails} />
@@ -47,7 +52,10 @@ export function Selector({ title, value, options, onChange, thumbnails, size = '
       <ThemedText
         type={size}
         numberOfLines={1}
-        style={size === 'subtitle' ? (compact ? styles.subtitleCompact : styles.subtitleWide) : undefined}>
+        style={[
+          styles.triggerLabel,
+          size === 'subtitle' ? (compact ? styles.subtitleCompact : styles.subtitleWide) : null,
+        ]}>
         {value}
       </ThemedText>
       <ThemedText themeColor="textSecondary" style={size === 'title' ? styles.caretLg : styles.caretSm}>
@@ -121,6 +129,22 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     gap: Spacing.one,
     flexShrink: 1,
+    // Without this, flexbox's default `minWidth: auto` floors the shrink at
+    // the trigger's untruncated content width, so the `numberOfLines={1}`
+    // label never actually gets a chance to truncate against its sibling —
+    // it just crowds the row instead (see `FilterButton.summary`, which
+    // already sets this for the same reason).
+    minWidth: 0,
+    paddingHorizontal: Spacing.one,
+    paddingVertical: Spacing.half,
+    borderRadius: Spacing.two,
+  },
+  // React Native's `flexShrink` defaults to 0 (unlike web CSS's 1), so without
+  // this the label won't actually shrink when the trigger does — it'll just
+  // overflow instead of truncating via `numberOfLines`.
+  triggerLabel: {
+    flexShrink: 1,
+    minWidth: 0,
   },
   // Bridge/page selectors mirror the reference's header title (`#app-title` h1,
   // which the page selector inherits via `font-weight: inherit`): 1.4rem mobile
