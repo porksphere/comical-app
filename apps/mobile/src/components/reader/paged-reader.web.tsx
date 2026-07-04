@@ -74,7 +74,7 @@ const RENDER_RADIUS = 2;
 type Mode = 'idle' | 'swipe' | 'pan' | 'pinch';
 
 export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedReader(
-  { pages, width, height, rtl, initialPage, onPageChange, onToggleChrome },
+  { pages, width, height, rtl, initialPage, onPageChange, onNext, onToggleChrome },
   ref,
 ) {
   const n = pages.length;
@@ -85,6 +85,16 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
 
   const [index, setIndex] = useState(() => toPhysical(clampIndex(initialPage)));
   const [zoomed, setZoomed] = useState(false);
+  // Whether the CURRENT page is showing its failed/Retry state. When true, the
+  // pointer handlers below back off entirely (no capture, no swipe/tap
+  // handling) so a tap reaches the page's own Retry button via the browser's
+  // normal click dispatch — `setPointerCapture` below would otherwise redirect
+  // every subsequent pointer event to this surface, and the nested Retry
+  // Pressable would never see a matching pointerup to fire its own onPress.
+  const [currentFailed, setCurrentFailed] = useState(false);
+  const currentFailedRef = useRef(false);
+  currentFailedRef.current = currentFailed;
+  useEffect(() => setCurrentFailed(false), [index]);
 
   // DOM handles for imperative transform writes (gesture frames bypass React).
   const surfaceRef = useRef<HTMLDivElement>(null);
@@ -185,6 +195,24 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     [settleTo, toPhysical, clampIndex],
   );
 
+  // `initialPage` only seeds `index`'s initial state (read once, at mount) —
+  // but reader.tsx's own `currentPage` briefly starts at 0 before its
+  // pages-loaded effect corrects it to the real requested start index (see
+  // reader.tsx's `startIndex` effect), and this component mounts in that same
+  // window (gated behind `!pages`). Re-sync whenever `initialPage` changes and
+  // no longer matches our own index — a mismatch only really happens from that
+  // external correction (or an imperative `goToPage`, which already keeps
+  // `indexRef` current itself), since ordinary in-component navigation updates
+  // `indexRef.current` before reporting back up via `onPageChange`, so this is
+  // a no-op once the two are in sync and won't fight normal page turns.
+  useEffect(() => {
+    const target = toPhysical(clampIndex(initialPage));
+    if (target === indexRef.current) return;
+    indexRef.current = target;
+    setIndex(target);
+    writeTrack(0, false);
+  }, [initialPage, toPhysical, clampIndex, writeTrack]);
+
   // Position the track on mount and whenever the viewport (width) changes.
   useEffect(() => {
     writeTrack(0, false);
@@ -246,6 +274,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
 
   const onPointerDown = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
+      if (currentFailedRef.current) return;
       try {
         e.currentTarget.setPointerCapture(e.pointerId);
       } catch {
@@ -351,10 +380,17 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     (x: number) => {
       if (zoomedRef.current) return; // no tap zones while zoomed (mirrors native)
       if (x < width * 0.4) settleTo(indexRef.current - 1, false);
-      else if (x > width * 0.6) settleTo(indexRef.current + 1, false);
-      else onToggleChrome();
+      else if (x > width * 0.6) {
+        // Already at the last physical page (= the last page in reading order —
+        // `data` is pre-reversed for RTL, so "physical +1" is direction-agnostic
+        // "next"; see the file-level comment): nothing left to settle to
+        // internally, so hand off to the reader for auto-advance instead of a
+        // silent no-op clamp (mirrors native's tap-zone → onNext wiring).
+        if (indexRef.current >= n - 1) onNext?.();
+        else settleTo(indexRef.current + 1, false);
+      } else onToggleChrome();
     },
-    [onToggleChrome, settleTo, width],
+    [onToggleChrome, onNext, settleTo, width, n],
   );
 
   const finalizeSwipe = useCallback(() => {
@@ -369,11 +405,16 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     if (passed) {
       // Drag/fling left (dx < 0) advances one physical page; right goes back.
       const dir = gesture.dx !== 0 ? -Math.sign(gesture.dx) : -Math.sign(gesture.velocity);
+      if (dir > 0 && indexRef.current >= n - 1) {
+        writeTrack(0, false);
+        onNext?.();
+        return;
+      }
       settleTo(indexRef.current + dir, true);
     } else {
       settleTo(indexRef.current, true); // spring back
     }
-  }, [gesture, handleTap, settleTo, width, writeTrack]);
+  }, [gesture, handleTap, settleTo, width, writeTrack, onNext, n]);
 
   const endPointer = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -421,7 +462,14 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
             <div key={`${uri}:${i}`} style={cellStyle(width, height)}>
               <div ref={i === index ? zoomRef : undefined} style={zoomWrapperStyle(width, height)}>
                 {near ? (
-                  <ReaderPage uri={uri} page={toLogical(i) + 1} fit="contain" width={width} height={height} />
+                  <ReaderPage
+                    uri={uri}
+                    page={toLogical(i) + 1}
+                    fit="contain"
+                    width={width}
+                    height={height}
+                    onFailedChange={i === index ? setCurrentFailed : undefined}
+                  />
                 ) : null}
               </div>
             </div>
