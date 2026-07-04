@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
-import { Platform, Pressable, StyleSheet, TextInput, useWindowDimensions, View, type TextStyle } from 'react-native';
+import { Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, {
   interpolateColor,
   useAnimatedScrollHandler,
@@ -12,9 +12,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BridgeThumb } from '@/components/bridge-thumb';
 import { FilterBar, type SortOption, type SortState } from '@/components/filters/filter-demo';
 import { filterDefFromApi, filterValueToApi, initialValue, type FilterDef, type FilterValue, type TriState } from '@/components/filters/filter-types';
-import { ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
 import { Rail, RailSkeleton, SectionHead } from '@/components/rail';
 import { RetryBlock } from '@/components/retry-block';
+import { SearchField } from '@/components/search-field';
 import { BridgeThumbSize, Selector } from '@/components/selector';
 import { SeriesCard } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
@@ -55,10 +55,6 @@ const THUMB_GROWTH = 12;
 type GridItem = SeriesEntry & { spacer?: boolean };
 /** A drilled-into rail: its list id (for pagination) + display title. */
 type SeeAll = { listId: string; title: string } | null;
-
-// Suppress react-native-web's default focus outline on the search <input> so the
-// container border can carry the focus highlight instead. No-op on native.
-const NO_OUTLINE = Platform.select({ web: { outlineStyle: 'none' } }) as TextStyle | undefined;
 
 export default function BrowseScreen() {
   const ds = useDataSource();
@@ -745,76 +741,6 @@ function HomeGridBlock({
   );
 }
 
-function SearchField({
-  value,
-  onSubmit,
-  onClear,
-}: {
-  value: string;
-  onSubmit: (q: string) => void;
-  onClear: () => void;
-}) {
-  const theme = useTheme();
-  const [text, setText] = useState(value);
-  const [focused, setFocused] = useState(false);
-  // Keep the field in sync when the committed query is cleared elsewhere (Home).
-  useEffect(() => setText(value), [value]);
-
-  // On mobile web the soft keyboard can be dismissed without the input firing a
-  // blur (e.g. Android's "hide keyboard" button keeps DOM focus), which would
-  // leave the focus highlight stuck on. While focused, watch the visual viewport
-  // and drop the highlight when it grows back — i.e. the keyboard closes.
-  useEffect(() => {
-    if (Platform.OS !== 'web' || !focused) return;
-    const vv = window.visualViewport;
-    if (!vv) return;
-    let prevHeight = vv.height;
-    const onResize = () => {
-      // A meaningful growth means the keyboard (which had shrunk the viewport)
-      // was dismissed; clear the highlight to match.
-      if (vv.height > prevHeight + 120) setFocused(false);
-      prevHeight = vv.height;
-    };
-    vv.addEventListener('resize', onResize);
-    return () => vv.removeEventListener('resize', onResize);
-  }, [focused]);
-
-  return (
-    // Highlight the whole field border on focus (vs. the browser's inset outline
-    // on the input itself, which is suppressed below). No border at rest so the
-    // line only appears while the field is active.
-    <ThemedView
-      type="backgroundElement"
-      style={[styles.search, { borderColor: focused ? theme.accent : 'transparent' }]}>
-      <SearchIcon color={theme.textSecondary} size={16} />
-      <TextInput
-        value={text}
-        onChangeText={setText}
-        onSubmitEditing={() => onSubmit(text)}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        placeholder="Search…"
-        placeholderTextColor={theme.textSecondary}
-        returnKeyType="search"
-        autoCapitalize="none"
-        autoCorrect={false}
-        style={[styles.searchInput, NO_OUTLINE, { color: theme.text }]}
-      />
-      {text.length > 0 && (
-        <Pressable
-          onPress={() => {
-            setText('');
-            onClear();
-          }}
-          hitSlop={8}
-          accessibilityLabel="Clear search">
-          <ClearIcon color={theme.textSecondary} size={14} />
-        </Pressable>
-      )}
-    </ThemedView>
-  );
-}
-
 /** Skeleton rows shown while the next infinite-scroll page loads — mirrors the
  *  grid card (cover + two title lines) so it reads as "more cards incoming". */
 function GridSkeleton({ numColumns, rows }: { numColumns: number; rows: number }) {
@@ -876,22 +802,6 @@ const styles = StyleSheet.create({
     gap: Spacing.four,
     paddingTop: Spacing.three,
     paddingBottom: Spacing.three,
-  },
-  search: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.three,
-    // Reserve the border box always (transparent at rest, accent on focus) so the
-    // focus highlight appears without shifting layout.
-    borderWidth: 1,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-    padding: 0,
   },
   resultsHead: {
     flexDirection: 'row',

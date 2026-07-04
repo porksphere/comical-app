@@ -455,6 +455,199 @@ export async function mockRemoveFavorite(seriesId: string): Promise<void> {
   mockFavorites.delete(seriesId);
 }
 
+// ─── Local library / history / activity (in-memory, dev/demo only) ────────────
+// A tiny mutable in-memory library so the demo build's Library/History/Activity tabs render real
+// content and add/remove/read actions actually stick within a session. Keyed by `bridgeId:seriesId`.
+
+type MockLibEntry = { bridgeId: string; seriesId: string; title: string; thumbnailUrl: string; author?: string; unread: number };
+type MockHist = { bridgeId: string; seriesId: string; title: string; thumbnailUrl: string; chapterId?: string; chapterName?: string; lastPage?: number; pageCount?: number; lastReadAt: number };
+type MockActivity = { bridgeId: string; seriesId: string; chapterId: string; title: string; thumbnailUrl: string; chapterName?: string; number?: number; detectedAt: number; read: boolean };
+
+const libKey = (bridgeId: string, seriesId: string) => `${bridgeId}:${seriesId}`;
+const MOCK_LIB_BRIDGES = MOCK_BRIDGE_NAMES.map(slugify);
+
+function seedLibrary(): Map<string, MockLibEntry> {
+  const m = new Map<string, MockLibEntry>();
+  // Eight entries spread across the mock bridges, each a distinct title/cover, some with unread.
+  for (let i = 0; i < 8; i++) {
+    const bridgeId = MOCK_LIB_BRIDGES[i % MOCK_LIB_BRIDGES.length]!;
+    const seriesId = `lib-${i}`;
+    const h = hash(seriesId);
+    m.set(libKey(bridgeId, seriesId), {
+      bridgeId,
+      seriesId,
+      title: TITLES[i % TITLES.length]!,
+      thumbnailUrl: cover(seriesId),
+      unread: h % 3 === 0 ? 1 + (h % 12) : 0,
+    });
+  }
+  return m;
+}
+
+const mockLibrary = seedLibrary();
+
+const mockHistory = new Map<string, MockHist>(
+  [0, 3, 5].map((i) => {
+    const bridgeId = MOCK_LIB_BRIDGES[i % MOCK_LIB_BRIDGES.length]!;
+    const seriesId = `lib-${i}`;
+    const pageCount = 18 + (hash(seriesId) % 20);
+    return [
+      libKey(bridgeId, seriesId),
+      {
+        bridgeId,
+        seriesId,
+        title: TITLES[i % TITLES.length]!,
+        thumbnailUrl: cover(seriesId),
+        chapterId: `${seriesId}-ch-3`,
+        chapterName: `Chapter ${3 + (i % 5)}`,
+        lastPage: 4 + (i % 6),
+        pageCount,
+        lastReadAt: Date.now() - (i + 1) * 3600_000,
+      },
+    ] as const;
+  }),
+);
+
+let mockActivity: MockActivity[] = [1, 2, 4, 6].map((i) => {
+  const bridgeId = MOCK_LIB_BRIDGES[i % MOCK_LIB_BRIDGES.length]!;
+  const seriesId = `lib-${i}`;
+  return {
+    bridgeId,
+    seriesId,
+    chapterId: `${seriesId}-ch-new-${i}`,
+    title: TITLES[i % TITLES.length]!,
+    thumbnailUrl: cover(seriesId),
+    chapterName: `Chapter ${20 + i}`,
+    number: 20 + i,
+    detectedAt: Date.now() - i * 5400_000,
+    read: false,
+  };
+});
+
+export async function mockGetLibrary(opts: { q?: string; sort?: string } = {}): Promise<MockLibEntry[]> {
+  let items = [...mockLibrary.values()];
+  const q = opts.q?.trim().toLowerCase();
+  if (q) items = items.filter((e) => e.title.toLowerCase().includes(q));
+  const dir = 1;
+  switch (opts.sort) {
+    case 'title': items.sort((a, b) => a.title.localeCompare(b.title) * dir); break;
+    case 'unread': items.sort((a, b) => (b.unread - a.unread) * dir); break;
+    // 'added'/'lastRead'/default: keep insertion order (seed order stands in for "recently added").
+    default: break;
+  }
+  return items;
+}
+
+export async function mockIsInLibrary(bridgeId: string, seriesId: string): Promise<boolean> {
+  return mockLibrary.has(libKey(bridgeId, seriesId));
+}
+
+export async function mockAddToLibrary(
+  bridgeId: string,
+  seriesId: string,
+  snap: { title?: string; thumbnailUrl?: string; author?: string },
+): Promise<void> {
+  const key = libKey(bridgeId, seriesId);
+  if (mockLibrary.has(key)) return;
+  mockLibrary.set(key, {
+    bridgeId,
+    seriesId,
+    title: snap.title ?? mockSeries(seriesId).title,
+    thumbnailUrl: snap.thumbnailUrl ?? cover(seriesId),
+    ...(snap.author !== undefined && { author: snap.author }),
+    unread: 0,
+  });
+}
+
+export async function mockRemoveFromLibrary(bridgeId: string, seriesId: string): Promise<void> {
+  mockLibrary.delete(libKey(bridgeId, seriesId));
+}
+
+/** Upsert a history row (used by both a library progress write and a non-library read log). */
+function upsertMockHistory(h: MockHist): void {
+  mockHistory.set(libKey(h.bridgeId, h.seriesId), h);
+}
+
+export async function mockRecordChapterProgress(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+  update: { lastPage?: number; pageCount?: number; chapterName?: string },
+): Promise<void> {
+  const lib = mockLibrary.get(libKey(bridgeId, seriesId));
+  upsertMockHistory({
+    bridgeId,
+    seriesId,
+    title: lib?.title ?? mockSeries(seriesId).title,
+    thumbnailUrl: lib?.thumbnailUrl ?? cover(seriesId),
+    chapterId,
+    ...(update.chapterName !== undefined && { chapterName: update.chapterName }),
+    ...(update.lastPage !== undefined && { lastPage: update.lastPage }),
+    ...(update.pageCount !== undefined && { pageCount: update.pageCount }),
+    lastReadAt: Date.now(),
+  });
+}
+
+export async function mockRecordReadingHistory(entry: {
+  bridgeId: string;
+  seriesId: string;
+  title: string;
+  thumbnailUrl?: string;
+  chapterId?: string;
+  chapterName?: string;
+  lastPage?: number;
+  pageCount?: number;
+}): Promise<void> {
+  upsertMockHistory({
+    bridgeId: entry.bridgeId,
+    seriesId: entry.seriesId,
+    title: entry.title,
+    thumbnailUrl: entry.thumbnailUrl ?? cover(entry.seriesId),
+    ...(entry.chapterId !== undefined && { chapterId: entry.chapterId }),
+    ...(entry.chapterName !== undefined && { chapterName: entry.chapterName }),
+    ...(entry.lastPage !== undefined && { lastPage: entry.lastPage }),
+    ...(entry.pageCount !== undefined && { pageCount: entry.pageCount }),
+    lastReadAt: Date.now(),
+  });
+}
+
+export async function mockGetHistory(): Promise<MockHist[]> {
+  return [...mockHistory.values()].sort((a, b) => b.lastReadAt - a.lastReadAt);
+}
+
+export async function mockRemoveHistoryEntry(bridgeId: string, seriesId: string): Promise<void> {
+  mockHistory.delete(libKey(bridgeId, seriesId));
+}
+
+export async function mockGetActivity(): Promise<MockActivity[]> {
+  return [...mockActivity].sort((a, b) => b.detectedAt - a.detectedAt);
+}
+
+export async function mockGetActivityCount(): Promise<number> {
+  return mockActivity.filter((a) => !a.read).length;
+}
+
+export async function mockCheckForUpdates(): Promise<void> {
+  // Synthesize one fresh "new chapter" so the button visibly does something in the demo.
+  const i = mockActivity.length;
+  const bridgeId = MOCK_LIB_BRIDGES[i % MOCK_LIB_BRIDGES.length]!;
+  const seriesId = `lib-${i % 8}`;
+  mockActivity = [
+    {
+      bridgeId,
+      seriesId,
+      chapterId: `${seriesId}-ch-fresh-${i}`,
+      title: TITLES[i % TITLES.length]!,
+      thumbnailUrl: cover(seriesId),
+      chapterName: `Chapter ${30 + i}`,
+      number: 30 + i,
+      detectedAt: Date.now(),
+      read: false,
+    },
+    ...mockActivity,
+  ];
+}
+
 // ─── Settings + registries ────────────────────────────────────────────────────
 // Minimal, non-throwing stand-ins — Settings isn't a screen mock-data users will heavily
 // exercise, so no fake registry catalog or bridge settings forms, just empty/no-op shapes.

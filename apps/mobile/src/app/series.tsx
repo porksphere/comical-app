@@ -16,7 +16,7 @@ import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { setBrowseIntent } from '@/data/browse-intent';
-import { isFavoriteQuery, queryKeys, relatedGroupsQuery, seriesDetailQuery } from '@/data/queries';
+import { inLibraryQuery, isFavoriteQuery, queryKeys, relatedGroupsQuery, seriesDetailQuery } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import type { SeriesDetail, TagGroup } from '@/data/types';
 import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
@@ -176,6 +176,46 @@ function SeriesBody({
     favMutation.mutate(!favorited);
   };
 
+  // Library membership: cached per series so the button is warm on revisit. A
+  // server/runtime with no library store 404s here → reads as "not in library"
+  // (isInLibrary maps 404 → false), so the button stays a best-effort no-op
+  // rather than surfacing an error, mirroring the favorite toggle above.
+  const libKey = queryKeys.inLibrary(mock, bridgeId ?? '', series.id);
+  const { data: inLibraryData } = useQuery({ ...inLibraryQuery(ds, mock, bridgeId ?? '', series.id), retry: false });
+  const inLibrary = inLibraryData ?? null; // null while loading (toggle disabled)
+
+  // Author snapshot for the library entry, pulled from the meta grid if present,
+  // so the library/history render it without re-hitting the bridge.
+  const author = series.meta?.find((m) => m.label === 'AUTHOR')?.value;
+  const libMutation = useMutation({
+    mutationFn: (next: boolean) =>
+      next
+        ? ds.addToLibrary(bridgeId!, series.id, {
+            title: series.title,
+            ...(series.cover ? { thumbnailUrl: series.cover } : {}),
+            ...(author ? { author } : {}),
+          })
+        : ds.removeFromLibrary(bridgeId!, series.id),
+    onMutate: async (next: boolean) => {
+      await queryClient.cancelQueries({ queryKey: libKey });
+      const prev = queryClient.getQueryData<boolean>(libKey);
+      queryClient.setQueryData(libKey, next);
+      return { prev };
+    },
+    onError: (_e, _next, ctx) => {
+      if (ctx) queryClient.setQueryData(libKey, ctx.prev ?? false);
+    },
+    onSettled: () => {
+      // The Library tab keys its grid on ['library', mock, …] — refresh it so an
+      // add/remove here shows up when the user switches back to that tab.
+      queryClient.invalidateQueries({ queryKey: ['library', mock] });
+    },
+  });
+  const toggleLibrary = () => {
+    if (!bridgeId || inLibrary === null) return;
+    libMutation.mutate(!inLibrary);
+  };
+
   // Cover image + optional chapter-count badge — shared between layouts.
   const coverEl = (
     <View style={isLarge ? styles.coverWrapLarge : styles.coverWrap}>
@@ -216,7 +256,7 @@ function SeriesBody({
           router.push({ pathname: '/reader', params });
         }}
       />
-      <ActionButton label="＋  Library" />
+      <ActionButton label={inLibrary ? '✓  In Library' : '＋  Library'} onPress={toggleLibrary} />
       {series.hasSources && <ActionButton label="Sources" caret />}
       {series.hasTrackers && <TrackerButton seriesId={series.id} initialLinks={series.trackers ?? []} />}
       <ActionButton label={favorited ? '★  Favorited' : '☆  Favorite'} onPress={toggleFavorite} />

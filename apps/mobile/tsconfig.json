@@ -25,6 +25,9 @@
       "@comical/contract": [
         "../../external/comical/packages/contract/src/index.ts"
       ],
+      "@comical/library": [
+        "../../external/comical/packages/library/src/index.ts"
+      ],
       "@comical/registry": [
         "../../external/comical/packages/registry/src/schema.ts"
       ],
