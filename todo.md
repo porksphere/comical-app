@@ -32,7 +32,14 @@
       event. Now it calls `.blur()` on the input instead, forcing a real DOM blur so
       state updates via the normal `onBlur` handler and a later tap fires a genuine
       `onFocus`.)
-- [ ] Chapter sorting in the series details view is weird, example -> sakamoto days is weird
+- [x] Chapter sorting in the series details view is weird, example -> sakamoto days is
+      weird (sorted purely by `date`/publish timestamp, never by parsed chapter number
+      — mock data's `date` happens to stay perfectly monotonic with chapter number,
+      masking the bug there, but any real bridge with same-day batch uploads, backfills,
+      or bonus chapters uploaded out of order will show a `date` order that disagrees
+      with the true sequence. Now parses the chapter number out of the display name
+      — "Chapter 176 — ..." → 176 — as the primary sort key, falling back to `date`
+      only when a number can't be parsed from one side, e.g. a oneshot/extra.)
 - [x] There are some expo WARNS, fix em
       Web  WARN  "shadow*" style props are deprecated. Use "boxShadow". (converted
       every `shadowColor`/`shadowOpacity`/`shadowRadius`/`shadowOffset` block to a
@@ -40,8 +47,24 @@
       Web  WARN  props.pointerEvents is deprecated. Use style.pointerEvents (moved
       every `pointerEvents="..."` JSX prop into its `style` array instead — ~20 call
       sites across overlay, filters, tabs, and reader components)
-- [ ] Clicking on a "popular" shows the back arrow to go home, "popular" should be a top level page, nothing selected in the page selector should result in showing more for a certain category/rail
-- [ ] Infinite paging loading skeleton doesn't add skeleton entries to incomplete rows, it should ideally finish an incomplete row then add an additional row
+- [x] Clicking on a "popular" shows the back arrow to go home, "popular" should be a
+      top level page, nothing selected in the page selector should result in showing
+      more for a certain category/rail (the "← Home" banner was gated on the same
+      `inResults` flag used for grid-vs-rails layout, so picking any page-flagged list
+      from the Page selector — not just search/filter/"See all" — showed it, even
+      though the Page selector itself already shows which page is active and is how
+      you get back to Home. Split it into a separate `showBackBanner` that drops the
+      plain page-selection case, keeping the banner only for actual drill-downs
+      layered on top — search, "See all", or a live filter/sort — same as it would
+      from Home; a rail's "See all" ("nothing selected in the page selector", i.e.
+      still on `page === 'home'`) is unaffected and keeps showing "more" for that rail.)
+- [x] Infinite paging loading skeleton doesn't add skeleton entries to incomplete rows,
+      it should ideally finish an incomplete row then add an additional row (the
+      loaded grid already padded a short last row with invisible spacer cells so it
+      wouldn't stretch, but that padding stayed blank even while a next-page fetch was
+      in flight — the fresh skeleton rows below it always started a new row rather
+      than finishing the one already on screen. Those spacer cells now render as
+      skeleton cards instead of blank views while `loadingMore` is true.)
 - [ ] Support landscape image cards
 - [x] The mock data should all be non-existant website names, we don't want to associate with any scraping (mock bridge names replaced; scrubbing git history was assessed and declined — would've required force-pushing ~86% of main's commits)
 
