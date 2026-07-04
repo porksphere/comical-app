@@ -1,20 +1,22 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { ComponentType } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { SettingsIcon } from '@/components/icons/reader-icons';
+import { MoveLeftIcon, MoveRightIcon, MoveVerticalIcon, SettingsIcon } from '@/components/icons/reader-icons';
+import type { IconProps } from '@/components/icons/ui-icons';
 import { OverlayHeading, useAnchoredOverlay } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
-import { isFavoriteQuery, queryKeys } from '@/data/queries';
+import { inLibraryQuery, isFavoriteQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import {
   useReaderSettings,
   type PageFit,
   type PrefetchAhead,
   type ReaderDirection,
-  type ReaderMode,
+  type ReaderSettings,
 } from '@/hooks/use-reader-settings';
 
 /** Gear button (bottom-right) that opens reader settings in the app's shared
@@ -24,12 +26,21 @@ export function SettingsControl({
   visible,
   bridgeId,
   seriesId,
+  title,
+  thumbnailUrl,
+  author,
 }: {
   visible: boolean;
-  /** When both are set, a "This series" Favorite row is shown — omitted on bridges/pages
-   *  where the reader was opened without a resolvable series (shouldn't normally happen). */
+  /** When both are set, "This series" Library/Favorite rows are shown — omitted on
+   *  bridges/pages where the reader was opened without a resolvable series (shouldn't
+   *  normally happen). */
   bridgeId?: string;
   seriesId?: string;
+  /** Snapshot for a new library entry (title/cover/author) — only used if the
+   *  toggle is actually switched on; omitted fields are simply left off the entry. */
+  title?: string;
+  thumbnailUrl?: string;
+  author?: string;
 }) {
   const insets = useSafeAreaInsets();
   const { ref, openAt } = useAnchoredOverlay();
@@ -44,7 +55,17 @@ export function SettingsControl({
       ]}>
       <Pressable
         ref={ref}
-        onPress={() => openAt(() => <SettingsContent bridgeId={bridgeId} seriesId={seriesId} />)}
+        onPress={() =>
+          openAt(() => (
+            <SettingsContent
+              bridgeId={bridgeId}
+              seriesId={seriesId}
+              title={title}
+              thumbnailUrl={thumbnailUrl}
+              author={author}
+            />
+          ))
+        }
         style={styles.gear}
         accessibilityRole="button"
         accessibilityLabel="Reader settings">
@@ -59,41 +80,37 @@ export function SettingsControl({
  *  (`FORCED_COLOR_SCHEME` in `use-theme.ts`), which is why the overlay's
  *  themed panel already matches the reader's own always-dark surface with no
  *  override needed here — revisit if that force is ever lifted. */
-function SettingsContent({ bridgeId, seriesId }: { bridgeId?: string; seriesId?: string }) {
+function SettingsContent({
+  bridgeId,
+  seriesId,
+  title,
+  thumbnailUrl,
+  author,
+}: {
+  bridgeId?: string;
+  seriesId?: string;
+  title?: string;
+  thumbnailUrl?: string;
+  author?: string;
+}) {
   const [settings, set] = useReaderSettings();
   return (
     <View style={styles.content}>
       <OverlayHeading>Reader settings</OverlayHeading>
+      <DirectionRow settings={settings} set={set} />
       <Segment
-        label="Mode"
-        value={settings.mode}
+        label="Page fit"
+        value={settings.pageFit}
         options={[
-          ['paged', 'Paged'],
-          ['webtoon', 'Webtoon'],
+          ['fit-page', 'Fit page'],
+          ['fit-width', 'Fit width'],
         ]}
-        onChange={(v) => set({ mode: v as ReaderMode })}
+        onChange={(v) => set({ pageFit: v as PageFit })}
       />
-      {settings.mode === 'paged' && (
-        <>
-          <Segment
-            label="Direction"
-            value={settings.direction}
-            options={[
-              ['ltr', 'L → R'],
-              ['rtl', 'R → L'],
-            ]}
-            onChange={(v) => set({ direction: v as ReaderDirection })}
-          />
-          <Segment
-            label="Page fit"
-            value={settings.pageFit}
-            options={[
-              ['fit-page', 'Fit page'],
-              ['fit-width', 'Fit width'],
-            ]}
-            onChange={(v) => set({ pageFit: v as PageFit })}
-          />
-        </>
+      {settings.mode === 'webtoon' && (
+        <ThemedText style={styles.hint}>
+          {settings.pageFit === 'fit-page' ? 'One page at a time, like Paged' : 'Continuous scroll'}
+        </ThemedText>
       )}
       <Segment
         label="Preload ahead"
@@ -101,7 +118,115 @@ function SettingsContent({ bridgeId, seriesId }: { bridgeId?: string; seriesId?:
         options={[1, 2, 3, 4, 6, 8].map((n) => [String(n), String(n)] as [string, string])}
         onChange={(v) => set({ prefetchAhead: Number(v) as PrefetchAhead })}
       />
-      {bridgeId && seriesId && <FavoriteRow bridgeId={bridgeId} seriesId={seriesId} />}
+      {bridgeId && seriesId && (
+        <>
+          <LibraryRow bridgeId={bridgeId} seriesId={seriesId} title={title} thumbnailUrl={thumbnailUrl} author={author} />
+          <FavoriteRow bridgeId={bridgeId} seriesId={seriesId} />
+        </>
+      )}
+    </View>
+  );
+}
+
+const DIRECTION_OPTIONS: { value: 'ltr' | 'vertical' | 'rtl'; label: string; Icon: ComponentType<IconProps> }[] = [
+  { value: 'ltr', label: 'L → R', Icon: MoveRightIcon },
+  { value: 'vertical', label: 'Vertical', Icon: MoveVerticalIcon },
+  { value: 'rtl', label: 'R → L', Icon: MoveLeftIcon },
+];
+
+/** Merges "Mode" (Paged/Webtoon) and "Direction" (L→R/R→L) into one 3-way row —
+ *  reading direction is really one choice, not two independent settings. Picking
+ *  "Vertical" only touches `mode`; `direction` is left as whatever it was, so
+ *  switching back to L→R/R→L restores it (harmless — unread while webtoon). */
+function DirectionRow({
+  settings,
+  set,
+}: {
+  settings: ReaderSettings;
+  set: (patch: Partial<ReaderSettings>) => void;
+}) {
+  const value = settings.mode === 'webtoon' ? 'vertical' : settings.direction;
+  const onChange = (v: 'ltr' | 'vertical' | 'rtl') =>
+    v === 'vertical' ? set({ mode: 'webtoon' }) : set({ mode: 'paged', direction: v as ReaderDirection });
+  return (
+    <View style={styles.seg}>
+      <ThemedText style={styles.segLabel}>Reading direction</ThemedText>
+      <View style={styles.segRow}>
+        {DIRECTION_OPTIONS.map(({ value: v, label, Icon }) => {
+          const on = value === v;
+          return (
+            <Pressable key={v} onPress={() => onChange(v)} style={[styles.opt, styles.optIcon, on && styles.optOn]}>
+              <Icon color={on ? '#fff' : 'rgba(255,255,255,0.8)'} size={18} />
+              <ThemedText style={[styles.optText, on && styles.optTextOn]}>{label}</ThemedText>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+/** "This series" → Library toggle, mirroring the series screen's own toggle and
+ *  cache (same query key), so adding/removing from either place stays in sync.
+ *  The snapshot (title/cover/author) is best-effort — whatever the reader screen
+ *  already has cached — since this panel doesn't otherwise fetch series details. */
+function LibraryRow({
+  bridgeId,
+  seriesId,
+  title,
+  thumbnailUrl,
+  author,
+}: {
+  bridgeId: string;
+  seriesId: string;
+  title?: string;
+  thumbnailUrl?: string;
+  author?: string;
+}) {
+  const ds = useDataSource();
+  const mock = useMockActive();
+  const queryClient = useQueryClient();
+  const libKey = queryKeys.inLibrary(mock, bridgeId, seriesId);
+  const { data: libData, isError: libIsError } = useQuery({
+    ...inLibraryQuery(ds, mock, bridgeId, seriesId),
+    retry: false,
+  });
+  const inLibrary = libData ?? (libIsError ? false : null);
+
+  const libMutation = useMutation({
+    mutationFn: (next: boolean) =>
+      next
+        ? ds.addToLibrary(bridgeId, seriesId, {
+            ...(title ? { title } : {}),
+            ...(thumbnailUrl ? { thumbnailUrl } : {}),
+            ...(author ? { author } : {}),
+          })
+        : ds.removeFromLibrary(bridgeId, seriesId),
+    onMutate: async (next: boolean) => {
+      await queryClient.cancelQueries({ queryKey: libKey });
+      const prev = queryClient.getQueryData<boolean>(libKey);
+      queryClient.setQueryData(libKey, next);
+      return { prev };
+    },
+    onError: (_e, _next, ctx) => {
+      if (ctx) queryClient.setQueryData(libKey, ctx.prev ?? false);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['library', mock] });
+    },
+  });
+
+  return (
+    <View style={styles.seg}>
+      <ThemedText style={styles.segLabel}>This series</ThemedText>
+      <Pressable
+        onPress={() => inLibrary !== null && libMutation.mutate(!inLibrary)}
+        style={[styles.opt, inLibrary && styles.optOn]}
+        disabled={inLibrary === null}>
+        <ThemedText style={[styles.optText, inLibrary && styles.optTextOn]}>
+          {inLibrary ? '✓  In Library' : '＋  Library'}
+        </ThemedText>
+      </Pressable>
     </View>
   );
 }
@@ -216,6 +341,9 @@ const styles = StyleSheet.create({
     borderRadius: Spacing.two,
     backgroundColor: 'rgba(255,255,255,0.08)',
   },
+  optIcon: {
+    gap: 4,
+  },
   optOn: {
     backgroundColor: '#3478F6',
   },
@@ -226,5 +354,9 @@ const styles = StyleSheet.create({
   optTextOn: {
     color: '#fff',
     fontWeight: '600',
+  },
+  hint: {
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 11,
   },
 });
