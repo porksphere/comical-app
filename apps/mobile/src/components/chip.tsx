@@ -1,4 +1,4 @@
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
@@ -42,7 +42,16 @@ export function ChipRow({ labels, accent }: { labels: string[]; accent?: boolean
   );
 }
 
-export function TagGroupRow({ group }: { group: TagGroup }) {
+export function TagGroupRow({
+  group,
+  onTagPress,
+}: {
+  group: TagGroup;
+  /** Called with a tapped tag's index. Only tags the bridge made actionable — a
+   *  `tagIds`/`tagQueries` entry at that index — render as pressable; the rest
+   *  (e.g. nhentai's Characters/Parodies groups) stay static. */
+  onTagPress?: (index: number) => void;
+}) {
   const theme = useTheme();
   if (!group.tags.length) return null;
   return (
@@ -50,9 +59,20 @@ export function TagGroupRow({ group }: { group: TagGroup }) {
       <ThemedText style={[styles.groupLabel, { color: theme.textSecondary }]}>
         {group.label.toUpperCase()}
       </ThemedText>
-      {group.tags.map((t) => (
-        <Chip key={t} label={t} accent />
-      ))}
+      {group.tags.map((t, i) => {
+        const actionable = !!onTagPress && !!(group.tagQueries?.[i] || group.tagIds?.[i]);
+        return actionable ? (
+          <Pressable
+            key={t}
+            onPress={() => onTagPress!(i)}
+            accessibilityRole="button"
+            accessibilityLabel={`Search ${t}`}>
+            <Chip label={t} accent />
+          </Pressable>
+        ) : (
+          <Chip key={t} label={t} accent />
+        );
+      })}
     </View>
   );
 }

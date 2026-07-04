@@ -221,7 +221,15 @@ const realDataSource: DataSource = {
       bridge: opts.bridgeName ?? '',
       description: info.description,
       genres: info.genres,
-      tagGroups: info.tagGroups,
+      // Carry the per-tag `tagIds`/`tagQueries` through (dropping the UI-unused
+      // `kind`) so a tapped tag chip can drive a filter/search — see chip.tsx +
+      // browse-intent.ts. Both are index-parallel to `tags`.
+      tagGroups: info.tagGroups?.map((g) => ({
+        label: g.label,
+        tags: g.tags,
+        tagIds: g.tagIds,
+        tagQueries: g.tagQueries,
+      })),
       meta: buildMeta(info),
       relatedGroups,
       relatedGroupsDeferred: !info.relatedSeriesGroups,
