@@ -1,12 +1,13 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useOverlay } from '@/components/overlay/overlay';
 import { RetryBlock } from '@/components/retry-block';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
+import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
@@ -54,7 +55,7 @@ export default function RegistriesScreen() {
             <ThemedText type="smallBold">Cancel</ThemedText>
           </Pressable>
           <Pressable onPress={doRemove} disabled={removing} style={styles.confirmBtn}>
-            <ThemedText type="smallBold" style={{ color: '#E5484D' }}>
+            <ThemedText type="smallBold" style={{ color: theme.danger }}>
               {removing ? 'Removing…' : 'Remove'}
             </ThemedText>
           </Pressable>
@@ -98,16 +99,18 @@ export default function RegistriesScreen() {
         />
         <View style={styles.switchRow}>
           <ThemedText type="small">Require signature</ThemedText>
-          <Switch value={requireSignature} onValueChange={setRequireSignature} />
+          <ThemedSwitch value={requireSignature} onValueChange={setRequireSignature} />
         </View>
         {addError && (
-          <ThemedText type="small" style={{ color: '#E5484D' }}>
+          <ThemedText type="small" style={{ color: theme.danger }}>
             {addError}
           </ThemedText>
         )}
         <Pressable onPress={doAdd} disabled={adding || !url.trim()}>
-          <ThemedView type="backgroundSelected" style={[styles.saveBtn, (adding || !url.trim()) && styles.saveBtnDisabled]}>
-            <ThemedText type="smallBold">{adding ? 'Adding…' : 'Add'}</ThemedText>
+          <ThemedView style={[styles.saveBtn, { backgroundColor: theme.accent }, (adding || !url.trim()) && styles.saveBtnDisabled]}>
+            <ThemedText type="smallBold" style={{ color: theme.accentOn }}>
+              {adding ? 'Adding…' : 'Add'}
+            </ThemedText>
           </ThemedView>
         </Pressable>
       </View>
@@ -145,7 +148,7 @@ export default function RegistriesScreen() {
                   onPress={() => router.push({ pathname: '/registry-browse', params: { url: r.url } })}
                   right={
                     <Pressable onPress={() => removeRegistry(r.url)} hitSlop={8}>
-                      <ThemedText type="small" style={{ color: '#E5484D' }}>
+                      <ThemedText type="small" style={{ color: theme.danger }}>
                         Remove
                       </ThemedText>
                     </Pressable>
@@ -157,8 +160,10 @@ export default function RegistriesScreen() {
         )}
         {registries !== null && (
           <Pressable onPress={() => open(() => <AddRegistryForm />)}>
-            <ThemedView type="backgroundSelected" style={styles.saveBtn}>
-              <ThemedText type="smallBold">Add registry</ThemedText>
+            <ThemedView style={[styles.saveBtn, { backgroundColor: theme.accent }]}>
+              <ThemedText type="smallBold" style={{ color: theme.accentOn }}>
+                Add registry
+              </ThemedText>
             </ThemedView>
           </Pressable>
         )}

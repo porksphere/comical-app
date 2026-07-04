@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import {
   MeasuredHeader,
@@ -10,12 +10,15 @@ import {
   useListMaxHeight,
 } from '@/components/overlay/overlay';
 import { ChipRow } from '@/components/chip';
+import { ChevronRightIcon } from '@/components/icons/ui-icons';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
+import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import type { ApiBridgeInfo } from '@/data/api';
 import { useDataSource } from '@/data/source';
+import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
 
 /** Capabilities + self-reported facts from `GET /bridges/{id}`'s `info` — everything the bridge
@@ -165,8 +168,10 @@ export function TagExclusionsControl({
       )}
       {dirty && (
         <Pressable onPress={save} disabled={saving}>
-          <ThemedView type="backgroundSelected" style={[styles.saveBtn, saving && styles.saveBtnDisabled]}>
-            <ThemedText type="smallBold">{saving ? 'Saving…' : 'Save excluded tags'}</ThemedText>
+          <ThemedView style={[styles.saveBtn, { backgroundColor: theme.accent }, saving && styles.saveBtnDisabled]}>
+            <ThemedText type="smallBold" style={{ color: theme.accentOn }}>
+              {saving ? 'Saving…' : 'Save excluded tags'}
+            </ThemedText>
           </ThemedView>
         </Pressable>
       )}
@@ -179,8 +184,10 @@ export function TagExclusionsControl({
  *  from `GET /bridges/{id}`, since genre exclusions live in the bridge's own backend account. */
 export function GenreExclusionsControl({ bridgeId }: { bridgeId: string }) {
   const ds = useDataSource();
+  const theme = useTheme();
   const queryClient = useQueryClient();
   const { ref, openAt } = useAnchoredOverlay();
+  const { hovered, onHoverIn, onHoverOut } = useHovered();
   const { data, error, isLoading, refetch } = useQuery({
     queryKey: ['genreExclusions', bridgeId],
     queryFn: ({ signal }) => ds.getGenreExclusions(bridgeId, signal),
@@ -227,6 +234,9 @@ export function GenreExclusionsControl({ bridgeId }: { bridgeId: string }) {
       <Pressable
         ref={ref}
         disabled={saving}
+        onHoverIn={onHoverIn}
+        onHoverOut={onHoverOut}
+        style={styles.pressableCursor}
         onPress={() =>
           openAt(() => (
             <GenrePicker
@@ -236,11 +246,14 @@ export function GenreExclusionsControl({ bridgeId }: { bridgeId: string }) {
             />
           ))
         }>
-        <ThemedView type="backgroundElement" style={styles.enumRow}>
+        {/* Always `backgroundSelected` — this row sits inside the `backgroundElement`
+         *  `SettingsSection` card above, so resting on the same tier would make it
+         *  invisible until touched (see the identical comment in setting-field.tsx). */}
+        <ThemedView type="backgroundSelected" style={[styles.enumRow, hovered && { borderColor: theme.accent }]}>
           <ThemedText numberOfLines={1} style={styles.enumSummary}>
             {saving ? 'Saving…' : summary}
           </ThemedText>
-          <ThemedText themeColor="textSecondary">{'›'}</ThemedText>
+          <ChevronRightIcon color={theme.textSecondary} size={16} />
         </ThemedView>
       </Pressable>
     </SettingsSection>
@@ -272,17 +285,23 @@ function GenrePicker({
       <OptionList maxHeight={maxHeight}>
         {available.map((opt) => {
           const on = selected.includes(opt.id);
-          return (
-            <Pressable key={opt.id} onPress={() => toggle(opt.id)}>
-              <ThemedView type="backgroundElement" style={styles.row}>
-                <ThemedText>{opt.label}</ThemedText>
-                <View style={[styles.check, on && styles.checkOn]} />
-              </ThemedView>
-            </Pressable>
-          );
+          return <GenreOption key={opt.id} label={opt.label} on={on} onPress={() => toggle(opt.id)} />;
         })}
       </OptionList>
     </View>
+  );
+}
+
+function GenreOption({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
+  const theme = useTheme();
+  const { hovered, onHoverIn, onHoverOut } = useHovered();
+  return (
+    <Pressable onPress={onPress} onHoverIn={onHoverIn} onHoverOut={onHoverOut} style={styles.pressableCursor}>
+      <ThemedView type={hovered ? 'backgroundSelected' : 'backgroundElement'} style={styles.row}>
+        <ThemedText>{label}</ThemedText>
+        <View style={[styles.check, on && { borderColor: theme.accent, backgroundColor: theme.accent }]} />
+      </ThemedView>
+    </Pressable>
   );
 }
 
@@ -308,11 +327,11 @@ export function BridgePrefsToggles({ bridgeId }: { bridgeId: string }) {
     <SettingsSection title="Library">
       <SettingsRow
         label="Disable tracker sync for this bridge"
-        right={<Switch value={data.trackersDisabled} onValueChange={(v) => set({ trackersDisabled: v })} />}
+        right={<ThemedSwitch value={data.trackersDisabled} onValueChange={(v) => set({ trackersDisabled: v })} />}
       />
       <SettingsRow
         label="Don't track reading history for this bridge"
-        right={<Switch value={data.historyDisabled} onValueChange={(v) => set({ historyDisabled: v })} />}
+        right={<ThemedSwitch value={data.historyDisabled} onValueChange={(v) => set({ historyDisabled: v })} />}
       />
     </SettingsSection>
   );
@@ -367,6 +386,10 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.three,
     paddingHorizontal: Spacing.three,
     borderRadius: Spacing.three,
+    // Reserves the hover border's space up front so it doesn't shift layout by a
+    // pixel when it appears — only the color changes.
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
   enumSummary: {
     flex: 1,
@@ -389,8 +412,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'rgba(128,128,128,0.5)',
   },
-  checkOn: {
-    borderColor: '#3478F6',
-    backgroundColor: '#3478F6',
+  pressableCursor: {
+    cursor: 'pointer',
   },
 });
