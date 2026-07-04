@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
-import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
+import { useEffect, useState } from 'react';
+import { Keyboard, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -26,7 +26,56 @@ export function ProgressPill({
   const insets = useSafeAreaInsets();
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState('');
-  const style = useAnimatedStyle(() => ({ opacity: withTiming(visible ? 1 : 0, { duration: 200 }) }));
+  const keyboardHeight = useSharedValue(0);
+
+  // Native: raise the pill above the on-screen keyboard while editing. iOS fires
+  // keyboardWill*  with a duration/easing synced to the keyboard's own animation;
+  // Android only reliably fires keyboardDid* (abrupt, no duration), so its rise
+  // just uses a synthetic ease instead — expected platform difference, not a bug.
+  useEffect(() => {
+    if (Platform.OS === 'web' || !editing) return;
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const subShow = Keyboard.addListener(showEvent, (e) => {
+      keyboardHeight.value = withTiming(Math.max(0, e.endCoordinates.height - insets.bottom), {
+        duration: e.duration || 220,
+      });
+    });
+    const subHide = Keyboard.addListener(hideEvent, (e) => {
+      keyboardHeight.value = withTiming(0, { duration: e.duration || 220 });
+    });
+    return () => {
+      subShow.remove();
+      subHide.remove();
+    };
+  }, [editing, insets.bottom, keyboardHeight]);
+
+  // Web: adapts the visualViewport-resize signal search-field.tsx already uses
+  // (there, to force a blur on keyboard-close) — here, into a raise-above-keyboard
+  // offset instead. `scroll` also fires on some mobile browsers when the keyboard
+  // shifts the viewport's offsetTop rather than resizing it.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !editing) return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const baseline = window.innerHeight;
+    const onResize = () => {
+      keyboardHeight.value = withTiming(Math.max(0, baseline - vv.height - vv.offsetTop), { duration: 150 });
+    };
+    onResize();
+    vv.addEventListener('resize', onResize);
+    vv.addEventListener('scroll', onResize);
+    return () => {
+      vv.removeEventListener('resize', onResize);
+      vv.removeEventListener('scroll', onResize);
+      keyboardHeight.value = withTiming(0, { duration: 150 });
+    };
+  }, [editing, keyboardHeight]);
+
+  const style = useAnimatedStyle(() => ({
+    opacity: withTiming(visible ? 1 : 0, { duration: 200 }),
+    transform: [{ translateY: -keyboardHeight.value }],
+  }));
 
   const startEditing = () => {
     setText(String(current + 1));

@@ -1,13 +1,27 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, View, type LayoutChangeEvent, type ViewToken } from 'react-native';
+import {
+  FlatList,
+  Pressable,
+  StyleSheet,
+  View,
+  type LayoutChangeEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  type ViewToken,
+} from 'react-native';
 
 import { ReaderPage } from '@/components/reader/reader-page';
+import type { PageFit } from '@/hooks/use-reader-settings';
 
 export type WebtoonReaderHandle = { goToPage: (index: number) => void };
 
 type Props = {
   pages: string[];
   width: number;
+  /** Viewport height — only used by the `'fit-page'` paginated variant, to
+   *  size each row to exactly one screen. */
+  height: number;
+  pageFit: PageFit;
   initialPage: number;
   onPageChange: (index: number) => void;
   onToggleChrome: () => void;
@@ -29,6 +43,17 @@ function recomputeOffsets(heights: (number | null)[], fallback: number): number[
 }
 
 /**
+ * Vertical webtoon reader — dispatches to one of two genuinely different
+ * reading models depending on `pageFit`. They don't share machinery: the
+ * continuous strip's `aspectRef`/`heightsRef` estimation exists specifically
+ * for *unknown, variable* row heights, which doesn't apply to the paginated
+ * variant (every row is exactly one viewport height).
+ */
+export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function WebtoonReader(props, ref) {
+  return props.pageFit === 'fit-page' ? <WebtoonPaged {...props} ref={ref} /> : <WebtoonContinuous {...props} ref={ref} />;
+});
+
+/**
  * Vertical continuous (webtoon) reader: a vertical FlatList of full-width pages.
  * Current page comes from viewability. Page heights aren't known until each
  * image loads, so `getItemLayout` fills in unmeasured rows with a running
@@ -38,7 +63,7 @@ function recomputeOffsets(heights: (number | null)[], fallback: number): number[
  * A per-item tap overlay toggles chrome (descendant of the scroller, so a
  * vertical drag still scrolls).
  */
-export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function WebtoonReader(
+const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function WebtoonContinuous(
   { pages, width, initialPage, onPageChange, onToggleChrome, onEndReached },
   ref,
 ) {
@@ -171,6 +196,92 @@ function WebtoonRow({
   return (
     <View onLayout={(e: LayoutChangeEvent) => onRowLayout(index, e.nativeEvent.layout.height)}>
       <ReaderPage uri={uri} page={index + 1} fit="width" width={width} onFailedChange={setFailed} />
+      {!failed && <Pressable style={StyleSheet.absoluteFill} onPress={onToggleChrome} />}
+    </View>
+  );
+}
+
+/**
+ * Vertical PAGINATED webtoon reader ('fit-page'): one full page at a time,
+ * each row exactly one viewport height, snapping like pages — a genuinely
+ * different reading model from the continuous strip above, not a tweak of it.
+ * Every row's layout is exact (no estimation needed), so unlike the continuous
+ * variant this needs no `onScrollToIndexFailed` retry dance, and page
+ * tracking is via `onMomentumScrollEnd` (matching the *native Paged* reader's
+ * own technique — more precise than viewability for a hard-snapping list).
+ * No pinch/zoom here: the spec only asks for one-page-at-a-time snapping.
+ */
+const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPaged(
+  { pages, width, height, initialPage, onPageChange, onToggleChrome, onEndReached },
+  ref,
+) {
+  const listRef = useRef<FlatList<string>>(null);
+  const n = pages.length;
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      goToPage(index: number) {
+        listRef.current?.scrollToIndex({ index: Math.max(0, Math.min(n - 1, index)), animated: true });
+      },
+    }),
+    [n],
+  );
+
+  const getItemLayout = useCallback(
+    (_: ArrayLike<string> | null | undefined, index: number) => ({ length: height, offset: height * index, index }),
+    [height],
+  );
+
+  const onPageChangeRef = useRef(onPageChange);
+  onPageChangeRef.current = onPageChange;
+  const onMomentumScrollEnd = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const idx = Math.round(e.nativeEvent.contentOffset.y / height);
+      onPageChangeRef.current(Math.max(0, Math.min(n - 1, idx)));
+    },
+    [height, n],
+  );
+
+  return (
+    <FlatList
+      ref={listRef}
+      data={pages}
+      keyExtractor={(uri, i) => `${uri}:${i}`}
+      pagingEnabled
+      showsVerticalScrollIndicator={false}
+      initialScrollIndex={Math.max(0, Math.min(n - 1, initialPage))}
+      getItemLayout={getItemLayout}
+      onMomentumScrollEnd={onMomentumScrollEnd}
+      onScrollToIndexFailed={() => {}}
+      onEndReachedThreshold={0.05}
+      onEndReached={onEndReached}
+      renderItem={({ item, index }) => (
+        <WebtoonPagedRow uri={item} index={index} width={width} height={height} onToggleChrome={onToggleChrome} />
+      )}
+    />
+  );
+});
+
+/** One paginated-webtoon row: fixed to exactly one viewport, whole page
+ *  visible (letterboxed), same failed-state tap-suspension as `WebtoonRow`. */
+function WebtoonPagedRow({
+  uri,
+  index,
+  width,
+  height,
+  onToggleChrome,
+}: {
+  uri: string;
+  index: number;
+  width: number;
+  height: number;
+  onToggleChrome: () => void;
+}) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <View style={{ width, height }}>
+      <ReaderPage uri={uri} page={index + 1} fit="contain" width={width} height={height} onFailedChange={setFailed} />
       {!failed && <Pressable style={StyleSheet.absoluteFill} onPress={onToggleChrome} />}
     </View>
   );
