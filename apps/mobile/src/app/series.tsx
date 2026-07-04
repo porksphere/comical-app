@@ -234,9 +234,9 @@ function SeriesBody({
     const query = group.tagQueries?.[index];
     const tagId = group.tagIds?.[index];
     if (query) {
-      setBrowseIntent({ bridgeName: series.bridge, bridgeId, kind: 'query', query });
+      setBrowseIntent({ bridgeName: series.bridge, kind: 'query', query });
     } else if (tagId) {
-      setBrowseIntent({ bridgeName: series.bridge, bridgeId, kind: 'tag', filterKey: 'tag', tagId, label: group.tags[index] });
+      setBrowseIntent({ bridgeName: series.bridge, kind: 'tag', filterKey: 'tag', tagId, label: group.tags[index] });
     } else {
       return;
     }
