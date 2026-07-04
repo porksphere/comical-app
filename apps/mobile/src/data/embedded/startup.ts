@@ -30,6 +30,7 @@ import { setTransport } from '../api';
 import { bumpDataEpoch } from '../data-epoch';
 import { queryClient } from '../query-client';
 import { fileSystemBundleCache } from './bundle-cache';
+import { AsyncStorageLibraryStore } from './library-store';
 import { getResolvedModeSync } from './preference';
 import { installedStore, savedRegistryStore } from './stores';
 import { asyncStorageSettings } from './settings-store';
@@ -43,6 +44,10 @@ function bootstrapConfig(): EmbeddedBootstrapConfig {
     registries: savedRegistryStore,
     setTransport,
     settings: asyncStorageSettings,
+    // On-device library persistence — mounts the router's `/library*` endpoints in embedded mode so
+    // Library/History/Activity (and add-to-library + read progress) work with no server. See
+    // `library-store.ts`; the same endpoints the remote `comical-web` server already exposes.
+    libraryStore: new AsyncStorageLibraryStore(),
     // Persist verified bundles to disk so cold starts don't re-download + re-verify every bridge.
     cache: fileSystemBundleCache,
     // An install/update/uninstall (or add/remove registry) changes what the runtime serves — refetch
