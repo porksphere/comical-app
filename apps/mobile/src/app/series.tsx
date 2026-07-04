@@ -574,10 +574,7 @@ const styles = StyleSheet.create({
     borderRadius: Spacing.two,
     backgroundColor: 'rgba(0,0,0,0.7)',
     // Mirrors `.cover-badge`'s `box-shadow: 0 1px 4px rgba(0,0,0,0.5)`.
-    shadowColor: '#000',
-    shadowOpacity: 0.5,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 1 },
+    boxShadow: '0px 1px 4px rgba(0, 0, 0, 0.5)',
     elevation: 2,
   },
   coverBadgeText: {

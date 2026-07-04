@@ -28,11 +28,10 @@ export function CardBadge({ badge }: { badge: CardBadgeData }) {
   };
   return (
     <View
-      pointerEvents="none"
       style={[
         styles.badge,
         POS[badge.position ?? 'top-left'],
-        { backgroundColor: tones[badge.tone ?? 'neutral'] },
+        { backgroundColor: tones[badge.tone ?? 'neutral'], pointerEvents: 'none' },
       ]}>
       <ThemedText style={styles.badgeText} numberOfLines={1}>
         {badge.text}
@@ -44,7 +43,7 @@ export function CardBadge({ badge }: { badge: CardBadgeData }) {
 export function UnreadBadge({ count }: { count: number }) {
   const theme = useTheme();
   return (
-    <View pointerEvents="none" style={[styles.unread, { backgroundColor: theme.badgeInfo }]}>
+    <View style={[styles.unread, { backgroundColor: theme.badgeInfo, pointerEvents: 'none' }]}>
       <ThemedText style={styles.unreadText}>{count}</ThemedText>
     </View>
   );
@@ -61,10 +60,7 @@ const styles = StyleSheet.create({
     // Mirrors `.card-badge`'s `box-shadow: 0 1px 3px rgba(0,0,0,0.4)` — the
     // language/NEW/HOT tags lift slightly off the cover; the cover itself and
     // the unread pill (`.badge-unread`, no shadow in the reference) don't.
-    shadowColor: '#000',
-    shadowOpacity: 0.4,
-    shadowRadius: 3,
-    shadowOffset: { width: 0, height: 1 },
+    boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.4)',
     elevation: 2,
   },
   badgeText: {
