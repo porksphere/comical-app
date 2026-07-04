@@ -46,8 +46,11 @@ export function ProgressPill({
 
   return (
     <Animated.View
-      style={[styles.wrap, { bottom: insets.bottom + Spacing.two }, style]}
-      pointerEvents={visible ? 'box-none' : 'none'}>
+      style={[
+        styles.wrap,
+        { bottom: insets.bottom + Spacing.two, pointerEvents: visible ? 'box-none' : 'none' },
+        style,
+      ]}>
       {editing ? (
         <View style={styles.pill}>
           <TextInput

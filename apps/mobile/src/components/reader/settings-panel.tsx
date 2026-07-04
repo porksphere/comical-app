@@ -37,8 +37,11 @@ export function SettingsControl({
 
   return (
     <Animated.View
-      style={[styles.wrap, { bottom: insets.bottom + Spacing.two }, style]}
-      pointerEvents={visible ? 'box-none' : 'none'}>
+      style={[
+        styles.wrap,
+        { bottom: insets.bottom + Spacing.two, pointerEvents: visible ? 'box-none' : 'none' },
+        style,
+      ]}>
       <Pressable
         ref={ref}
         onPress={() => openAt(() => <SettingsContent bridgeId={bridgeId} seriesId={seriesId} />)}
