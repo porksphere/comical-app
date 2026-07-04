@@ -286,6 +286,7 @@ export default function ReaderScreen() {
               width={width}
               height={height}
               rtl={settings.direction === 'rtl'}
+              pageFit={settings.pageFit}
               initialPage={currentPage}
               onPageChange={setCurrent}
               onPrev={turnPrev}
@@ -297,6 +298,8 @@ export default function ReaderScreen() {
               ref={webtoonRef}
               pages={pages}
               width={width}
+              height={height}
+              pageFit={settings.pageFit}
               initialPage={currentPage}
               onPageChange={setCurrent}
               onToggleChrome={toggleChrome}
@@ -330,7 +333,14 @@ export default function ReaderScreen() {
           />
         </>
       )}
-      <SettingsControl visible={chromeVisible} bridgeId={bridgeId} seriesId={seed} />
+      <SettingsControl
+        visible={chromeVisible}
+        bridgeId={bridgeId}
+        seriesId={seed}
+        title={cachedDetail?.title ?? title ?? seed}
+        thumbnailUrl={cachedDetail?.cover}
+        author={cachedDetail?.meta?.find((m) => m.label === 'AUTHOR')?.value}
+      />
     </View>
   );
 }
