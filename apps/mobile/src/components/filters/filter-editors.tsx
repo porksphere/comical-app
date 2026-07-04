@@ -300,7 +300,7 @@ function TagSearchEditor({
             {selected.map(({ value, tone }) => (
               <TagChip
                 key={value}
-                label={labelFor(def.options ?? knownOptions, value)}
+                label={labelFor(def.options ?? knownOptions, value, def.labelHints)}
                 tone={tone}
                 onRemove={() => remove(value)}
               />

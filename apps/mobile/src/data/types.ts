@@ -33,7 +33,20 @@ export type SeriesEntry = {
   excluded?: boolean;
 };
 
-export type TagGroup = { label: string; tags: string[] };
+export type TagGroup = {
+  label: string;
+  tags: string[];
+  /** Bridge-internal tag ids parallel to `tags` (same index). Present when the
+   *  bridge's tags are a filterable id set — tapping a chip selects the bridge's
+   *  tag-multiselect filter by that id. */
+  tagIds?: string[];
+  /** Ready-to-run free-text search string per tag, parallel to `tags` (same
+   *  index). Present for backends whose tags aren't a filterable id set but whose
+   *  search box accepts tag syntax (e.g. e-hentai) — tapping runs that search
+   *  instead of selecting a filter. Mutually exclusive with `tagIds` per group in
+   *  practice. */
+  tagQueries?: string[];
+};
 export type MetaCell = { label: string; value: string };
 
 export type Chapter = {
