@@ -25,7 +25,11 @@ public final class ComicalRuntimeModule: Module {
       // init — parity TODO; Android already forwards it.
       _ = networkJson
       let settings = (try? JSONSerialization.jsonObject(with: Data(settingsJson.utf8))) as? [String: Any] ?? [:]
-      let ctx = try ComicalBridgeContext(bridgeBundle: code, settings: settings)
+      // Give each bridge its own storage dir. Without an explicit dataDir, ComicalBridgeContext
+      // defaults to a single shared `temporaryDirectory/comical`, so every bridge's `storage`
+      // capability (cookies, per-bridge KV) would collide in one storage.json — and temporary is
+      // purgeable. Namespace persistently by bridge id instead.
+      let ctx = try ComicalBridgeContext(bridgeBundle: code, settings: settings, dataDir: ComicalRuntimeModule.bridgeDataDir(for: id))
       self.bridges[id] = ctx
       return ctx.describeJson()
     }
@@ -40,5 +44,28 @@ public final class ComicalRuntimeModule: Module {
     Function("disposeBridge") { (id: String) in
       self.bridges[id] = nil
     }
+  }
+
+  /// A persistent, per-bridge data directory: `<Application Support>/comical/bridges/<id>`. Falls back
+  /// to the temp dir only if Application Support is somehow unavailable. The id is sanitised to a safe
+  /// single path component so a hostile registry id can't traverse out of the bridges folder.
+  private static func bridgeDataDir(for id: String) -> URL {
+    let base = (try? FileManager.default.url(
+      for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
+    )) ?? FileManager.default.temporaryDirectory
+    return base
+      .appendingPathComponent("comical", isDirectory: true)
+      .appendingPathComponent("bridges", isDirectory: true)
+      .appendingPathComponent(safePathComponent(id), isDirectory: true)
+  }
+
+  /// Map a bridge id to a safe filesystem path component: keep ASCII alphanumerics plus `-_.`, replace
+  /// anything else with `_`, and never let it be empty or resolve to `.`/`..` (directory traversal).
+  private static func safePathComponent(_ id: String) -> String {
+    let allowed = Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.")
+    let mapped = String(id.map { allowed.contains($0) ? $0 : "_" })
+    if mapped.isEmpty { return "_" }
+    if mapped == "." || mapped == ".." { return "_" + mapped }
+    return mapped
   }
 }
