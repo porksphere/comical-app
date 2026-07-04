@@ -21,7 +21,7 @@
 - [ ] "Next chapter" sentinel / auto-advance at the end of a chaptered read
 - [ ] Persist read progress ("continue reading") across sessions
 - [ ] Overlay does not stay open when in settings / typing page 
-- [ ] Page pill wiuld look better on the bottom of the page like the old version
+- [ ] Settings look ugly on ios in general, they should peobably take up most of the screen 
 
 ## Add real crash reporting (Sentry) — no way to see iOS crashes today
 
