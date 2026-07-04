@@ -20,10 +20,13 @@ import { useDataEpoch } from './data-epoch';
 import * as api from './api';
 import * as mock from './mock';
 import type {
+  ActivityEntry,
   Bridge,
   BridgeList,
   GridPage,
+  HistoryEntry,
   HomeGridSection,
+  LibraryItem,
   MetaCell,
   RailKind,
   RailSection,
@@ -60,6 +63,47 @@ export interface DataSource {
   isFavorite(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<boolean>;
   addFavorite(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void>;
   removeFavorite(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void>;
+
+  // ─── Local library / history / activity ─────────────────────────────────────
+  // The host's own cross-bridge collection (distinct from a bridge's `favorites`). `getLibrary`
+  // resolves to `null` when no library store is mounted, so screens render a "needs a library"
+  // state instead of an error — the on-device embedded runtime and older servers may lack one.
+
+  /** The library grid, or `null` when this server/runtime has no library store. */
+  getLibrary(opts: { q?: string; sort?: api.LibrarySort }, signal?: AbortSignal): Promise<LibraryItem[] | null>;
+  isInLibrary(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<boolean>;
+  addToLibrary(bridgeId: string, seriesId: string, snap: api.LibrarySnapshot, signal?: AbortSignal): Promise<void>;
+  removeFromLibrary(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void>;
+  /** Record read progress for a *library* series (updates its resume cache). */
+  recordChapterProgress(
+    bridgeId: string,
+    seriesId: string,
+    chapterId: string,
+    update: { lastPage?: number; pageCount?: number; chapterName?: string },
+    signal?: AbortSignal,
+  ): Promise<void>;
+  /** Record a *non-library* read into the reading log (library reads persist via progress instead). */
+  recordReadingHistory(
+    entry: {
+      bridgeId: string;
+      seriesId: string;
+      title: string;
+      thumbnailUrl?: string;
+      chapterId?: string;
+      chapterName?: string;
+      lastPage?: number;
+      pageCount?: number;
+    },
+    signal?: AbortSignal,
+  ): Promise<void>;
+
+  getHistory(signal?: AbortSignal): Promise<HistoryEntry[]>;
+  removeHistoryEntry(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void>;
+
+  getActivity(signal?: AbortSignal): Promise<ActivityEntry[]>;
+  getActivityCount(signal?: AbortSignal): Promise<number>;
+  /** Scan the library for new chapters (the "Check for updates" action). */
+  checkForUpdates(signal?: AbortSignal): Promise<void>;
   getSeriesDetail(
     bridgeId: string,
     seriesId: string,
@@ -133,6 +177,45 @@ function toGridPage(p: api.PagedResults<api.ApiSeriesEntry>): GridPage {
   return { items: p.items.map(toSeriesEntry), hasNextPage: p.hasNextPage };
 }
 
+function toLibraryItem(e: api.ApiLibraryEntry): LibraryItem {
+  return {
+    bridgeId: e.bridgeId,
+    seriesId: e.seriesId,
+    title: e.title,
+    ...(e.thumbnailUrl !== undefined && { thumbnailUrl: e.thumbnailUrl }),
+    ...(e.author !== undefined && { author: e.author }),
+    unread: e.unreadCount,
+  };
+}
+
+function toHistoryEntry(h: api.ApiHistoryItem): HistoryEntry {
+  return {
+    bridgeId: h.bridgeId,
+    seriesId: h.seriesId,
+    title: h.title,
+    ...(h.thumbnailUrl !== undefined && { thumbnailUrl: h.thumbnailUrl }),
+    ...(h.lastReadChapterId !== undefined && { chapterId: h.lastReadChapterId }),
+    ...(h.lastReadChapterName !== undefined && { chapterName: h.lastReadChapterName }),
+    ...(h.lastPage !== undefined && { lastPage: h.lastPage }),
+    ...(h.pageCount !== undefined && { pageCount: h.pageCount }),
+    lastReadAt: h.lastReadAt,
+  };
+}
+
+function toActivityEntry(a: api.ApiActivityItem): ActivityEntry {
+  return {
+    bridgeId: a.bridgeId,
+    seriesId: a.seriesId,
+    chapterId: a.chapterId,
+    title: a.title,
+    ...(a.thumbnailUrl !== undefined && { thumbnailUrl: a.thumbnailUrl }),
+    ...(a.chapterName !== undefined && { chapterName: a.chapterName }),
+    ...(a.number !== undefined && { number: a.number }),
+    detectedAt: a.detectedAt,
+    read: a.read,
+  };
+}
+
 const railKindFor = (layout: BridgeList['layout']): RailKind =>
   layout === 'hero' ? 'hero' : layout === 'ranked' ? 'ranked' : 'regular';
 const isRailLayout = (layout: BridgeList['layout']) =>
@@ -201,6 +284,39 @@ const realDataSource: DataSource = {
   isFavorite: (bridgeId, seriesId, signal) => api.isFavorite(bridgeId, seriesId, signal),
   addFavorite: (bridgeId, seriesId, signal) => api.addFavorite(bridgeId, seriesId, signal),
   removeFavorite: (bridgeId, seriesId, signal) => api.removeFavorite(bridgeId, seriesId, signal),
+
+  async getLibrary(opts, signal) {
+    const entries = await api.getLibrary(opts, signal);
+    return entries === null ? null : entries.map(toLibraryItem);
+  },
+  isInLibrary: (bridgeId, seriesId, signal) => api.isInLibrary(bridgeId, seriesId, signal),
+  async addToLibrary(bridgeId, seriesId, snap, signal) {
+    await api.addLibraryEntry(bridgeId, seriesId, snap, signal);
+  },
+  async removeFromLibrary(bridgeId, seriesId, signal) {
+    await api.removeLibraryEntry(bridgeId, seriesId, signal);
+  },
+  async recordChapterProgress(bridgeId, seriesId, chapterId, update, signal) {
+    await api.putChapterProgress(bridgeId, seriesId, chapterId, update, signal);
+  },
+  async recordReadingHistory(entry, signal) {
+    await api.recordReadingHistory(entry, signal);
+  },
+  async getHistory(signal) {
+    return (await api.getHistory(undefined, signal)).map(toHistoryEntry);
+  },
+  async removeHistoryEntry(bridgeId, seriesId, signal) {
+    await api.deleteHistoryEntry(bridgeId, seriesId, signal);
+  },
+  async getActivity(signal) {
+    return (await api.getActivity(signal)).map(toActivityEntry);
+  },
+  async getActivityCount(signal) {
+    return (await api.getActivityCount(signal)).unread;
+  },
+  async checkForUpdates(signal) {
+    await api.runBackgroundSync(signal);
+  },
 
   async getSeriesDetail(bridgeId, seriesId, opts = {}, signal) {
     const info = await api.getSeriesDetail(bridgeId, seriesId, signal);
@@ -349,6 +465,19 @@ const mockDataSource: DataSource = {
   isFavorite: (bridgeId, seriesId) => mock.mockIsFavorite(seriesId),
   addFavorite: (bridgeId, seriesId) => mock.mockAddFavorite(seriesId),
   removeFavorite: (bridgeId, seriesId) => mock.mockRemoveFavorite(seriesId),
+
+  getLibrary: (opts) => mock.mockGetLibrary(opts),
+  isInLibrary: (bridgeId, seriesId) => mock.mockIsInLibrary(bridgeId, seriesId),
+  addToLibrary: (bridgeId, seriesId, snap) => mock.mockAddToLibrary(bridgeId, seriesId, snap),
+  removeFromLibrary: (bridgeId, seriesId) => mock.mockRemoveFromLibrary(bridgeId, seriesId),
+  recordChapterProgress: (bridgeId, seriesId, chapterId, update) =>
+    mock.mockRecordChapterProgress(bridgeId, seriesId, chapterId, update),
+  recordReadingHistory: (entry) => mock.mockRecordReadingHistory(entry),
+  getHistory: () => mock.mockGetHistory(),
+  removeHistoryEntry: (bridgeId, seriesId) => mock.mockRemoveHistoryEntry(bridgeId, seriesId),
+  getActivity: () => mock.mockGetActivity(),
+  getActivityCount: () => mock.mockGetActivityCount(),
+  checkForUpdates: () => mock.mockCheckForUpdates(),
   getSeriesDetail: (bridgeId, seriesId, opts) => mock.mockGetSeriesDetail(bridgeId, seriesId, opts),
   getChapterPages: (bridgeId, seriesId, chapterId) => mock.mockGetChapterPages(bridgeId, seriesId, chapterId),
   getDirectPages: (bridgeId, seriesId) => mock.mockGetDirectPages(bridgeId, seriesId),

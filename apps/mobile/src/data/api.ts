@@ -331,6 +331,15 @@ export function getPageThumb(
 
 import type { BridgeInfo as ApiBridgeInfo, SettingDescriptor, SettingOption, SettingValue } from '@comical/contract';
 import type { RegistryBridgeEntry, RegistryTrackerEntry, SavedRegistry } from '@comical/registry';
+// The local-library model — the user's own collection + reading progress, spanning every bridge.
+// Type-only re-exports of `@comical/library` (mapped in tsconfig.json to the sibling package's
+// source, erased at build time like the `@comical/contract`/`@comical/registry` types above). These
+// are the exact shapes the `/library*` REST routes serialize, so no per-field adapter is needed.
+import type {
+  ActivityItemView as ApiActivityItem,
+  HistoryItem as ApiHistoryItem,
+  LibraryEntryView as ApiLibraryEntry,
+} from '@comical/library';
 
 export type {
   ApiBridgeInfo,
@@ -340,6 +349,9 @@ export type {
   RegistryBridgeEntry,
   RegistryTrackerEntry,
   SavedRegistry,
+  ApiActivityItem,
+  ApiHistoryItem,
+  ApiLibraryEntry,
 };
 
 /** GET /bridges/{id} response — settings form data for one bridge. `info` is the bridge's full
@@ -512,6 +524,121 @@ export function putBridgePrefs(
   signal?: AbortSignal,
 ): Promise<void> {
   return fetchPut(`/library/bridges/${encodeURIComponent(bridgeId)}/prefs`, update, signal);
+}
+
+// ─── Local library / history / activity (optional — a `null`/404 means no library store) ────────
+//
+// Unlike bridge `favorites` (a per-bridge backend feature), this is the host's own cross-bridge
+// library: entries keyed by `(bridgeId, seriesId)`, reading progress, a resume-able history, and an
+// "activity" feed of newly-detected chapters. Mounted only when the server (or the on-device
+// embedded runtime) has a library store — `getLibrary` returns `null` in that absence so screens can
+// show a "needs a library" state instead of an error, mirroring `getBridgePrefs`/`getTrackers`.
+
+/** How to sort the library grid — maps 1:1 to the `/library?sort=` query param. */
+export type LibrarySort = 'added' | 'title' | 'lastRead' | 'unread';
+
+/** GET /library → the user's library entries (with derived `unreadCount`), or `null` when no library
+ *  store is mounted. `q` scopes to a title search; `sort` orders the grid. */
+export function getLibrary(
+  opts: { q?: string; sort?: LibrarySort } = {},
+  signal?: AbortSignal,
+): Promise<ApiLibraryEntry[] | null> {
+  const qs = new URLSearchParams();
+  if (opts.q) qs.set('q', opts.q);
+  if (opts.sort) qs.set('sort', opts.sort);
+  const query = qs.toString();
+  return fetchJsonOptional(`/library${query ? `?${query}` : ''}`, signal);
+}
+
+/** GET /library/entries/{b}/{s} → whether a series is in the library (404 = not in library). */
+export async function isInLibrary(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<boolean> {
+  const res = await transport(
+    `/library/entries/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}`,
+    { signal },
+  );
+  if (res.status === 404) return false;
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+  }
+  return true;
+}
+
+/** Display snapshot persisted with a new library entry so it renders offline / after bridge removal. */
+export type LibrarySnapshot = { title?: string; thumbnailUrl?: string; author?: string };
+
+/** POST /library/entries → add a series to the library (runtime fills missing snapshot from the bridge). */
+export function addLibraryEntry(
+  bridgeId: string,
+  seriesId: string,
+  snap: LibrarySnapshot = {},
+  signal?: AbortSignal,
+): Promise<unknown> {
+  return fetchPost('/library/entries', { bridgeId, seriesId, ...snap }, signal);
+}
+
+/** DELETE /library/entries/{b}/{s} → remove a series from the library. */
+export function removeLibraryEntry(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void> {
+  return fetchOk(`/library/entries/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}`, 'DELETE', signal);
+}
+
+/** PUT /library/entries/{b}/{s}/progress/{chapterId} → record read progress for a library series
+ *  (also updates its last-read resume cache). No-op-safe: the caller fires-and-forgets. */
+export function putChapterProgress(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+  update: { lastPage?: number; pageCount?: number; chapterName?: string },
+  signal?: AbortSignal,
+): Promise<unknown> {
+  return fetchPut(
+    `/library/entries/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/progress/${encodeURIComponent(chapterId)}`,
+    update,
+    signal,
+  );
+}
+
+/** GET /library/history → recently-read series, newest first (empty when no store). */
+export function getHistory(limit?: number, signal?: AbortSignal): Promise<ApiHistoryItem[]> {
+  const qs = limit ? `?limit=${limit}` : '';
+  return fetchJson(`/library/history${qs}`, signal);
+}
+
+/** DELETE /library/history/{b}/{s} → drop a series from reading history. */
+export function deleteHistoryEntry(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void> {
+  return fetchOk(`/library/history/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}`, 'DELETE', signal);
+}
+
+/** POST /reading-history → record a non-library read into the reading log (with resume page). */
+export function recordReadingHistory(
+  entry: {
+    bridgeId: string;
+    seriesId: string;
+    title: string;
+    thumbnailUrl?: string;
+    chapterId?: string;
+    chapterName?: string;
+    lastPage?: number;
+    pageCount?: number;
+  },
+  signal?: AbortSignal,
+): Promise<unknown> {
+  return fetchPost('/reading-history', { ...entry, lastReadAt: Date.now() }, signal);
+}
+
+/** GET /library/activity → the new-chapters feed (each item carries a derived `read`). */
+export function getActivity(signal?: AbortSignal): Promise<ApiActivityItem[]> {
+  return fetchJson('/library/activity', signal);
+}
+
+/** GET /library/activity/count → unread new-chapter count (for a tab badge). */
+export function getActivityCount(signal?: AbortSignal): Promise<{ unread: number }> {
+  return fetchJson('/library/activity/count', signal);
+}
+
+/** POST /library/sync → scan the library for new chapters (the "Check for updates" action). */
+export function runBackgroundSync(signal?: AbortSignal): Promise<unknown> {
+  return fetchPost('/library/sync', {}, signal);
 }
 
 /** POST /bridges/{id}/update → update a registry-installed bridge to its latest version. */
