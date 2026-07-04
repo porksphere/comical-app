@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, TextInput, type TextStyle } from 'react-native';
 
 import { ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
@@ -29,22 +29,26 @@ export function SearchField({
   placeholder?: string;
 }) {
   const theme = useTheme();
+  const inputRef = useRef<TextInput>(null);
   const [text, setText] = useState(value);
   const [focused, setFocused] = useState(false);
   // Keep the field in sync when the committed query is cleared elsewhere.
   useEffect(() => setText(value), [value]);
 
   // On mobile web the soft keyboard can be dismissed without the input firing a
-  // blur (e.g. Android's "hide keyboard" button keeps DOM focus), which would
-  // leave the focus highlight stuck on. While focused, watch the visual viewport
-  // and drop the highlight when it grows back — i.e. the keyboard closes.
+  // blur (e.g. Android's "hide keyboard" button keeps DOM focus). Previously this
+  // just set `focused` to false directly, which desynced app state from the real
+  // DOM focus (the <input> never actually lost it) — so reselecting the same
+  // field never fired a fresh `focus` event, and the highlight never came back.
+  // Calling `.blur()` instead forces a real DOM blur, so the state update comes
+  // from the normal `onBlur` handler and a later tap fires a genuine `onFocus`.
   useEffect(() => {
     if (Platform.OS !== 'web' || !focused) return;
     const vv = window.visualViewport;
     if (!vv) return;
     let prevHeight = vv.height;
     const onResize = () => {
-      if (vv.height > prevHeight + 120) setFocused(false);
+      if (vv.height > prevHeight + 120) inputRef.current?.blur();
       prevHeight = vv.height;
     };
     vv.addEventListener('resize', onResize);
@@ -57,6 +61,7 @@ export function SearchField({
       style={[styles.search, { borderColor: focused ? theme.accent : 'transparent' }]}>
       <SearchIcon color={theme.textSecondary} size={16} />
       <TextInput
+        ref={inputRef}
         value={text}
         onChangeText={setText}
         onSubmitEditing={() => onSubmit(text)}

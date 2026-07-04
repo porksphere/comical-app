@@ -1,15 +1,45 @@
-- [ ] Overlay system has slowed down after adding more filter UI
+- [x] Overlay system has slowed down after adding more filter UI (`FilterButton` was
+      unmemoized and re-created its `onChange` closure per render, so any one filter
+      change re-rendered every sibling; `OverlayProvider` called every open overlay's
+      `render()` afresh on each of its own re-renders too. Fixed: `FilterButton` is
+      `React.memo`'d and takes `onChange: (id, v) => void` directly instead of a
+      per-item closure, wired to a `useCallback`-stabilized setter in Browse; overlay
+      items now store the rendered `ReactNode` once at `open()` time instead of a
+      `render` function re-invoked every render.)
 - [ ] Add "page" favoriting mechanism
-- [ ] More hover highlights on desktop web, feels bery unresponsive right now
-- [ ] Thumbnail top bar very cramped on mobile
+- [x] More hover highlights on desktop web, feels bery unresponsive right now (new
+      shared `useHover` hook, `apps/mobile/src/hooks/use-hover.ts`, wired into
+      `FilterButton`, the sort/overflow chips, `Selector`'s bridge/page trigger, and
+      the desktop top-right tab icons — all tint with `theme.backgroundSelected` on
+      hover now.)
+- [x] Thumbnail top bar very cramped on mobile (`Selector`'s trigger set `flexShrink:
+      1` but not `minWidth: 0` — and RN's default `flexShrink` is 0, unlike web CSS's
+      1 — so the truncating label never actually got to shrink against its sibling;
+      it just crowded the row. Added `minWidth: 0` to the trigger and `flexShrink: 1`
+      + `minWidth: 0` to the label itself.)
 - [ ] Desktop web version of overlay system, looks a bit odd on desktop to deal with a swipedown
-- [ ] When refreshing page on narrow web viewports, the filters briefly display all small and cramped then correctly collapse into overflow
+- [x] When refreshing page on narrow web viewports, the filters briefly display all
+      small and cramped then correctly collapse into overflow (the bar's width comes
+      from its parent's flex layout, not from its own children, so on the very first
+      render — before `onLayout` reports the real width — `fitCount` fell back to
+      showing every filter uncollapsed. Now that first frame renders at `opacity: 0`
+      instead, so the fit is only ever seen already correct.)
 - [ ] Flashlist investigation
-- [ ] Line highlight on search field does not appear on mobile after closing keybkard and immediately reselecting
+- [x] Line highlight on search field does not appear on mobile after closing keybkard
+      and immediately reselecting (the Android-web keyboard-close workaround just set
+      `focused` to `false` directly, desyncing app state from the real DOM focus — the
+      `<input>` never actually lost it — so retapping never fired a fresh `focus`
+      event. Now it calls `.blur()` on the input instead, forcing a real DOM blur so
+      state updates via the normal `onBlur` handler and a later tap fires a genuine
+      `onFocus`.)
 - [ ] Chapter sorting in the series details view is weird, example -> sakamoto days is weird
-- [ ] There are some expo WARNS, fix em
-      Web  WARN  "shadow*" style props are deprecated. Use "boxShadow".
-      Web  WARN  props.pointerEvents is deprecated. Use style.pointerEvents
+- [x] There are some expo WARNS, fix em
+      Web  WARN  "shadow*" style props are deprecated. Use "boxShadow". (converted
+      every `shadowColor`/`shadowOpacity`/`shadowRadius`/`shadowOffset` block to a
+      `boxShadow` string, across overlay.tsx, series-card.tsx, card-badge.tsx, series.tsx)
+      Web  WARN  props.pointerEvents is deprecated. Use style.pointerEvents (moved
+      every `pointerEvents="..."` JSX prop into its `style` array instead — ~20 call
+      sites across overlay, filters, tabs, and reader components)
 - [ ] Clicking on a "popular" shows the back arrow to go home, "popular" should be a top level page, nothing selected in the page selector should result in showing more for a certain category/rail
 - [ ] Infinite paging loading skeleton doesn't add skeleton entries to incomplete rows, it should ideally finish an incomplete row then add an additional row
 - [ ] Support landscape image cards

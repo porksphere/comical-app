@@ -12,6 +12,7 @@ import { Pressable, StyleSheet, useWindowDimensions, View, type ViewStyle } from
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { DesktopTopBarHeight, MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
 
 // Web nav (Metro resolves this `.web` file for the web bundle, so native
@@ -207,6 +208,7 @@ function TabButton({
   ...props
 }: TabTriggerSlotProps & { mobile?: boolean; Icon: LucideIcon; onInteract?: () => void }) {
   const theme = useTheme();
+  const { hovered, handlers } = useHover();
 
   if (mobile) {
     const color = isFocused ? ACTIVE : INACTIVE;
@@ -230,8 +232,13 @@ function TabButton({
   return (
     <Pressable
       {...props}
+      {...handlers}
       accessibilityLabel={typeof children === 'string' ? children : undefined}
-      style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
+      style={({ pressed }) => [
+        styles.iconButton,
+        hovered && { backgroundColor: theme.backgroundSelected },
+        pressed && styles.pressed,
+      ]}>
       <Icon size={22} color={color} strokeWidth={2.25} />
     </Pressable>
   );
@@ -256,6 +263,7 @@ const styles = StyleSheet.create({
   },
   iconButton: {
     padding: Spacing.one,
+    borderRadius: Spacing.two,
   },
   pressed: {
     opacity: 0.6,
