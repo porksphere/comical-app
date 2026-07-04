@@ -240,7 +240,7 @@ export function SeriesCard({
           </View>
           {/* Highlight ring hugs the cover edge (flush, just outside) — only
               visible while active. */}
-          {active && <View pointerEvents="none" style={styles.ring} />}
+          {active && <View style={[styles.ring, { pointerEvents: 'none' }]} />}
         </View>
 
         <View style={styles.titleWrap}>
@@ -303,8 +303,7 @@ export function TitlePeek({
   // strip's scroll (the grid passes a plain style and it renders unchanged).
   return (
     <Animated.View
-      pointerEvents="none"
-      style={[styles.titlePopover, { backgroundColor: theme.backgroundElement }, style]}>
+      style={[styles.titlePopover, { backgroundColor: theme.backgroundElement }, style, { pointerEvents: 'none' }]}>
       <ThemedText type="small" style={[styles.title, titleSize]}>
         {title}
       </ThemedText>
@@ -380,10 +379,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.one,
     borderRadius: 8,
     // Soft lift so it reads as floating over the cards below it.
-    shadowColor: '#000',
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
+    boxShadow: '0px 4px 8px rgba(0, 0, 0, 0.25)',
     elevation: 6,
   },
   rank: {
