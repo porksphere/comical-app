@@ -37,17 +37,21 @@ type Props = {
 
 function TapZones({
   zoomed,
+  suspended,
   onLeft,
   onRight,
   onToggleChrome,
 }: {
   zoomed: boolean;
+  /** True while the page is showing its failed/Retry state — suspends these
+   *  zones so a tap reaches the Retry chip instead of turning the page. */
+  suspended: boolean;
   onLeft: () => void;
   onRight: () => void;
   onToggleChrome: () => void;
 }) {
   return (
-    <View style={[StyleSheet.absoluteFill, styles.zones, { pointerEvents: zoomed ? 'none' : 'auto' }]}>
+    <View style={[StyleSheet.absoluteFill, styles.zones, { pointerEvents: zoomed || suspended ? 'none' : 'auto' }]}>
       <Pressable style={styles.side} onPress={onLeft} />
       <Pressable style={styles.center} onPress={onToggleChrome} />
       <Pressable style={styles.side} onPress={onRight} />
@@ -80,6 +84,7 @@ export function ZoomablePage({
   const baseTy = useSharedValue(0);
 
   const [zoomed, setZoomed] = useState(false);
+  const [pageFailed, setPageFailed] = useState(false);
 
   const reportZoom = useCallback(
     (next: boolean) => {
@@ -167,9 +172,22 @@ export function ZoomablePage({
     <GestureDetector gesture={gesture}>
       <View style={[styles.page, { width, height }]}>
         <Animated.View style={[{ width, height }, animatedStyle]}>
-          <ReaderPage uri={uri} page={page} fit="contain" width={width} height={height} />
+          <ReaderPage
+            uri={uri}
+            page={page}
+            fit="contain"
+            width={width}
+            height={height}
+            onFailedChange={setPageFailed}
+          />
         </Animated.View>
-        <TapZones zoomed={zoomed} onLeft={onLeft} onRight={onRight} onToggleChrome={onToggleChrome} />
+        <TapZones
+          zoomed={zoomed}
+          suspended={pageFailed}
+          onLeft={onLeft}
+          onRight={onRight}
+          onToggleChrome={onToggleChrome}
+        />
       </View>
     </GestureDetector>
   );

@@ -12,20 +12,35 @@ export function ProgressPill({
   total,
   visible,
   onJump,
+  onEditingChange,
 }: {
   current: number;
   total: number;
   visible: boolean;
   onJump: (index: number) => void;
+  /** Fires at each editing-state transition — lets a caller (the reader's
+   *  chrome auto-hide timer) suspend itself while the page-jump input is open,
+   *  so typing a page number doesn't get faded/disabled out from under the user. */
+  onEditingChange?: (editing: boolean) => void;
 }) {
   const insets = useSafeAreaInsets();
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState('');
   const style = useAnimatedStyle(() => ({ opacity: withTiming(visible ? 1 : 0, { duration: 200 }) }));
 
+  const startEditing = () => {
+    setText(String(current + 1));
+    setEditing(true);
+    onEditingChange?.(true);
+  };
+  const stopEditing = () => {
+    setEditing(false);
+    onEditingChange?.(false);
+  };
+
   const submit = () => {
     const n = parseInt(text, 10);
-    setEditing(false);
+    stopEditing();
     if (Number.isFinite(n)) onJump(Math.max(0, Math.min(total - 1, n - 1)));
   };
 
@@ -44,7 +59,7 @@ export function ProgressPill({
             value={text}
             onChangeText={setText}
             onSubmitEditing={submit}
-            onBlur={() => setEditing(false)}
+            onBlur={stopEditing}
             placeholder={String(current + 1)}
             placeholderTextColor="rgba(255,255,255,0.5)"
             style={styles.input}
@@ -55,12 +70,7 @@ export function ProgressPill({
           </Pressable>
         </View>
       ) : (
-        <Pressable
-          style={styles.pill}
-          onPress={() => {
-            setText(String(current + 1));
-            setEditing(true);
-          }}>
+        <Pressable style={styles.pill} onPress={startEditing}>
           <ThemedText style={styles.text}>
             {current + 1} / {total}
           </ThemedText>
