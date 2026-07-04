@@ -47,7 +47,7 @@ function TapZones({
   onToggleChrome: () => void;
 }) {
   return (
-    <View style={[StyleSheet.absoluteFill, styles.zones]} pointerEvents={zoomed ? 'none' : 'auto'}>
+    <View style={[StyleSheet.absoluteFill, styles.zones, { pointerEvents: zoomed ? 'none' : 'auto' }]}>
       <Pressable style={styles.side} onPress={onLeft} />
       <Pressable style={styles.center} onPress={onToggleChrome} />
       <Pressable style={styles.side} onPress={onRight} />
