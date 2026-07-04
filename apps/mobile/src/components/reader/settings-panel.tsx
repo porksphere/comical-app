@@ -1,10 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SettingsIcon } from '@/components/icons/reader-icons';
+import { OverlayHeading, useAnchoredOverlay } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { isFavoriteQuery, queryKeys } from '@/data/queries';
@@ -17,7 +17,9 @@ import {
   type ReaderMode,
 } from '@/hooks/use-reader-settings';
 
-/** Gear button (bottom-right) that toggles a small reader-settings card. */
+/** Gear button (bottom-right) that opens reader settings in the app's shared
+ *  overlay system — a near-full-width bottom sheet on mobile/narrow web, an
+ *  anchored popover (matching Browse's filter buttons) on wide desktop web. */
 export function SettingsControl({
   visible,
   bridgeId,
@@ -30,64 +32,74 @@ export function SettingsControl({
   seriesId?: string;
 }) {
   const insets = useSafeAreaInsets();
-  const [open, setOpen] = useState(false);
-  const [settings, set] = useReaderSettings();
+  const { ref, openAt } = useAnchoredOverlay();
   const style = useAnimatedStyle(() => ({ opacity: withTiming(visible ? 1 : 0, { duration: 200 }) }));
 
   return (
     <Animated.View
       style={[styles.wrap, { bottom: insets.bottom + Spacing.two }, style]}
       pointerEvents={visible ? 'box-none' : 'none'}>
-      {open && (
-        <View style={styles.panel}>
-          <Segment
-            label="Mode"
-            value={settings.mode}
-            options={[
-              ['paged', 'Paged'],
-              ['webtoon', 'Webtoon'],
-            ]}
-            onChange={(v) => set({ mode: v as ReaderMode })}
-          />
-          {settings.mode === 'paged' && (
-            <>
-              <Segment
-                label="Direction"
-                value={settings.direction}
-                options={[
-                  ['ltr', 'L → R'],
-                  ['rtl', 'R → L'],
-                ]}
-                onChange={(v) => set({ direction: v as ReaderDirection })}
-              />
-              <Segment
-                label="Page fit"
-                value={settings.pageFit}
-                options={[
-                  ['fit-page', 'Fit page'],
-                  ['fit-width', 'Fit width'],
-                ]}
-                onChange={(v) => set({ pageFit: v as PageFit })}
-              />
-            </>
-          )}
-          <Segment
-            label="Preload ahead"
-            value={String(settings.prefetchAhead)}
-            options={[1, 2, 3, 4, 6, 8].map((n) => [String(n), String(n)] as [string, string])}
-            onChange={(v) => set({ prefetchAhead: Number(v) as PrefetchAhead })}
-          />
-          {bridgeId && seriesId && <FavoriteRow bridgeId={bridgeId} seriesId={seriesId} />}
-        </View>
-      )}
       <Pressable
-        onPress={() => setOpen((o) => !o)}
+        ref={ref}
+        onPress={() => openAt(() => <SettingsContent bridgeId={bridgeId} seriesId={seriesId} />)}
         style={styles.gear}
         accessibilityRole="button"
         accessibilityLabel="Reader settings">
         <SettingsIcon color="#fff" size={20} />
       </Pressable>
     </Animated.View>
+  );
+}
+
+/** Reader settings content, rendered inside the overlay (sheet or popover).
+ *  Note: the app currently forces a dark color scheme everywhere
+ *  (`FORCED_COLOR_SCHEME` in `use-theme.ts`), which is why the overlay's
+ *  themed panel already matches the reader's own always-dark surface with no
+ *  override needed here — revisit if that force is ever lifted. */
+function SettingsContent({ bridgeId, seriesId }: { bridgeId?: string; seriesId?: string }) {
+  const [settings, set] = useReaderSettings();
+  return (
+    <View style={styles.content}>
+      <OverlayHeading>Reader settings</OverlayHeading>
+      <Segment
+        label="Mode"
+        value={settings.mode}
+        options={[
+          ['paged', 'Paged'],
+          ['webtoon', 'Webtoon'],
+        ]}
+        onChange={(v) => set({ mode: v as ReaderMode })}
+      />
+      {settings.mode === 'paged' && (
+        <>
+          <Segment
+            label="Direction"
+            value={settings.direction}
+            options={[
+              ['ltr', 'L → R'],
+              ['rtl', 'R → L'],
+            ]}
+            onChange={(v) => set({ direction: v as ReaderDirection })}
+          />
+          <Segment
+            label="Page fit"
+            value={settings.pageFit}
+            options={[
+              ['fit-page', 'Fit page'],
+              ['fit-width', 'Fit width'],
+            ]}
+            onChange={(v) => set({ pageFit: v as PageFit })}
+          />
+        </>
+      )}
+      <Segment
+        label="Preload ahead"
+        value={String(settings.prefetchAhead)}
+        options={[1, 2, 3, 4, 6, 8].map((n) => [String(n), String(n)] as [string, string])}
+        onChange={(v) => set({ prefetchAhead: Number(v) as PrefetchAhead })}
+      />
+      {bridgeId && seriesId && <FavoriteRow bridgeId={bridgeId} seriesId={seriesId} />}
+    </View>
   );
 }
 
@@ -180,14 +192,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'rgba(0,0,0,0.55)',
   },
-  panel: {
+  content: {
     gap: Spacing.three,
-    padding: Spacing.three,
-    borderRadius: Spacing.three,
-    backgroundColor: 'rgba(20,20,22,0.96)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.12)',
-    minWidth: 180,
   },
   seg: {
     gap: Spacing.one,
