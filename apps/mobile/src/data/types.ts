@@ -124,13 +124,17 @@ export type LibraryItem = {
   unread: number;
 };
 
+/** Sentinel `chapterId` recorded for a direct (chapterless) series — its
+ *  "chapter" is just the series itself, so there's no real chapter id to store. */
+export const DIRECT_CHAPTER_ID = '__direct__';
+
 /** One row in the reading-history list (a recently-read series, newest first). */
 export type HistoryEntry = {
   bridgeId: string;
   seriesId: string;
   title: string;
   thumbnailUrl?: string;
-  /** Last-read chapter (the resume target). `"__direct__"` for a chapterless series. */
+  /** Last-read chapter (the resume target). `DIRECT_CHAPTER_ID` for a chapterless series. */
   chapterId?: string;
   chapterName?: string;
   /** Resume page (0-based) within `chapterId`, and that chapter's page count, for "page X / N". */
