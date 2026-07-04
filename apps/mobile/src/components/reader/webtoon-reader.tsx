@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, View, type LayoutChangeEvent, type ViewToken } from 'react-native';
 
 import { ReaderPage } from '@/components/reader/reader-page';
@@ -11,6 +11,10 @@ type Props = {
   initialPage: number;
   onPageChange: (index: number) => void;
   onToggleChrome: () => void;
+  /** Fires as the list nears its end. The caller still checks whether the
+   *  current page is actually the last one before acting on it — a short
+   *  chapter can otherwise fire this before it's been scrolled through. */
+  onEndReached?: () => void;
 };
 
 // Height/width ratio assumed for a page before it has rendered (matches
@@ -35,7 +39,7 @@ function recomputeOffsets(heights: (number | null)[], fallback: number): number[
  * vertical drag still scrolls).
  */
 export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function WebtoonReader(
-  { pages, width, initialPage, onPageChange, onToggleChrome },
+  { pages, width, initialPage, onPageChange, onToggleChrome, onEndReached },
   ref,
 ) {
   const listRef = useRef<FlatList<string>>(null);
@@ -125,6 +129,8 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
       onViewableItemsChanged={onViewable}
       viewabilityConfig={viewabilityConfig}
       getItemLayout={getItemLayout}
+      onEndReachedThreshold={0.05}
+      onEndReached={onEndReached}
       onScrollToIndexFailed={(info) => {
         const offset = offsetsRef.current[info.index] ?? info.averageItemLength * info.index;
         listRef.current?.scrollToOffset({ offset, animated: false });
@@ -133,11 +139,39 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
         }, 60);
       }}
       renderItem={({ item, index }) => (
-        <View onLayout={(e: LayoutChangeEvent) => onRowLayout(index, e.nativeEvent.layout.height)}>
-          <ReaderPage uri={item} page={index + 1} fit="width" width={width} />
-          <Pressable style={StyleSheet.absoluteFill} onPress={onToggleChrome} />
-        </View>
+        <WebtoonRow
+          uri={item}
+          index={index}
+          width={width}
+          onRowLayout={onRowLayout}
+          onToggleChrome={onToggleChrome}
+        />
       )}
     />
   );
 });
+
+/** One webtoon row. Tracks its own failed state so a failed page's overlay
+ *  (which would otherwise swallow every tap, including the Retry chip) is
+ *  suspended while that page is showing its Retry state. */
+function WebtoonRow({
+  uri,
+  index,
+  width,
+  onRowLayout,
+  onToggleChrome,
+}: {
+  uri: string;
+  index: number;
+  width: number;
+  onRowLayout: (index: number, height: number) => void;
+  onToggleChrome: () => void;
+}) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <View onLayout={(e: LayoutChangeEvent) => onRowLayout(index, e.nativeEvent.layout.height)}>
+      <ReaderPage uri={uri} page={index + 1} fit="width" width={width} onFailedChange={setFailed} />
+      {!failed && <Pressable style={StyleSheet.absoluteFill} onPress={onToggleChrome} />}
+    </View>
+  );
+}

@@ -263,7 +263,18 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
   // the target loads and refines `aspectRef`, re-running scrollIntoView tightens
   // the landing spot instead of leaving it wherever the initial guess put it.
   // Skipped once the user starts scrolling on their own.
+  //
+  // Reacts to `initialPage` changing (not just mount): reader.tsx's own
+  // `currentPage` briefly starts at 0 before its pages-loaded effect corrects
+  // it to the real requested start index, and this component can mount in
+  // that window (gated behind `!pages`) — so the very first `initialPage` it
+  // sees may already be stale. `lastTargetRef` de-dupes so this only re-runs
+  // for an actual change (that one correction, or an imperative `goToPage`'s
+  // own prop echo), not on every ordinary scroll-driven update.
+  const lastTargetRef = useRef<number | null>(null);
   useEffect(() => {
+    if (initialPage === lastTargetRef.current) return;
+    lastTargetRef.current = initialPage;
     if (initialPage <= 0) return;
     const target = Math.min(n - 1, initialPage);
     const jump = () => {
@@ -277,8 +288,7 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
       clearTimeout(t1);
       clearTimeout(t2);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [initialPage, n]);
 
   useImperativeHandle(
     ref,
