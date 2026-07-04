@@ -1,5 +1,257 @@
-import { PlaceholderScreen } from '@/components/placeholder-screen';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
+import { ActivityIndicator, FlatList, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { HistoryRow } from '@/components/history-row';
+import { RetryBlock } from '@/components/retry-block';
+import { ThemedText } from '@/components/themed-text';
+import { ThemedView } from '@/components/themed-view';
+import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { activityQuery, queryKeys } from '@/data/queries';
+import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
+import type { ActivityEntry } from '@/data/types';
+import { useBridgeMap } from '@/hooks/use-bridges';
+import { useTopBarHeight } from '@/hooks/use-responsive';
+import { useTheme } from '@/hooks/use-theme';
+import { relTime } from '@/lib/rel-time';
 
 export default function ActivityScreen() {
-  return <PlaceholderScreen title="Activity" />;
+  const ds = useDataSource();
+  const mock = useMockActive();
+  const theme = useTheme();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const queryClient = useQueryClient();
+  const [hideNsfw] = useHideNsfw();
+  const { byId, nameOf, directOf } = useBridgeMap();
+
+  const { data: items = undefined, error, isLoading, refetch } = useQuery(activityQuery(ds, mock));
+
+  const [focusedOnce, setFocusedOnce] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (focusedOnce) void refetch();
+      else setFocusedOnce(true);
+    }, [focusedOnce, refetch]),
+  );
+
+  // "Check for updates": scan the library for new chapters, then refresh the feed
+  // (and its unread count, used by a future tab badge).
+  const syncMutation = useMutation({
+    mutationFn: () => ds.checkForUpdates(),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.activity(mock) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.activityCount(mock) });
+    },
+  });
+
+  const visible = items && hideNsfw ? items.filter((a) => !byId.get(a.bridgeId)?.nsfw) : items;
+
+  const barHeight = useTopBarHeight();
+  const headerHeight = insets.top + barHeight;
+
+  const openDetail = (a: ActivityEntry) =>
+    router.push({
+      pathname: '/series',
+      params: {
+        id: a.seriesId,
+        title: a.title,
+        bridge: nameOf(a.bridgeId),
+        bridgeId: a.bridgeId,
+        ...(directOf(a.bridgeId) ? { direct: '1' } : {}),
+      },
+    });
+
+  const read = (a: ActivityEntry) =>
+    router.push({
+      pathname: '/reader',
+      params: {
+        seed: a.seriesId,
+        title: a.title,
+        bridgeId: a.bridgeId,
+        chapterId: a.chapterId,
+        chapterName: a.chapterName ?? '',
+        start: '0',
+      },
+    });
+
+  const syncButton = (
+    <Pressable
+      onPress={() => syncMutation.mutate()}
+      disabled={syncMutation.isPending}
+      accessibilityRole="button"
+      style={({ pressed }) => [styles.syncBtn, pressed && styles.pressed]}>
+      <ThemedView type="backgroundElement" style={styles.syncFill}>
+        {syncMutation.isPending ? (
+          <ActivityIndicator size="small" color={theme.textSecondary} />
+        ) : (
+          <ThemedText type="small" style={styles.syncLabel}>
+            Check for updates
+          </ThemedText>
+        )}
+      </ThemedView>
+    </Pressable>
+  );
+
+  const listHeader = (
+    <View style={styles.controls}>
+      <View style={styles.controlsRow}>
+        <ThemedText type="small" themeColor="textSecondary">
+          New chapters across your library
+        </ThemedText>
+        {syncButton}
+      </View>
+    </View>
+  );
+
+  const body = () => {
+    if (error) return <RetryBlock message={(error as Error).message || 'Failed to load activity'} onRetry={refetch} />;
+    if (isLoading || items === undefined) return <ThemedText themeColor="textSecondary">Loading…</ThemedText>;
+    if (!visible || visible.length === 0) {
+      return (
+        <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
+          No new chapters yet. Tap “Check for updates” to scan your library.
+        </ThemedText>
+      );
+    }
+    return null;
+  };
+
+  const emptyBody = body();
+
+  return (
+    <ThemedView style={styles.container}>
+      {emptyBody ? (
+        <View style={[styles.centeredColumn, { paddingTop: headerHeight }]}>
+          {listHeader}
+          <View style={styles.centerFill}>{emptyBody}</View>
+        </View>
+      ) : (
+        <FlatList
+          data={visible}
+          keyExtractor={(a) => `${a.bridgeId}:${a.seriesId}:${a.chapterId}`}
+          ListHeaderComponent={listHeader}
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingTop: headerHeight, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
+          ]}
+          ItemSeparatorComponent={() => <View style={[styles.sep, { backgroundColor: theme.hairline }]} />}
+          renderItem={({ item }) => (
+            <HistoryRow
+              thumbnailUrl={item.thumbnailUrl}
+              title={item.title}
+              sub={activitySub(item)}
+              dimmed={item.read}
+              onOpen={() => openDetail(item)}
+              actions={[{ label: item.read ? 'Read again' : 'Read', onPress: () => read(item) }]}
+            />
+          )}
+          showsVerticalScrollIndicator={Platform.OS === 'web'}
+        />
+      )}
+
+      <View
+        pointerEvents="box-none"
+        style={[
+          styles.topBar,
+          { paddingTop: insets.top, backgroundColor: theme.background, borderBottomColor: theme.hairline },
+        ]}>
+        <View style={[styles.titleRow, { height: barHeight }]}>
+          <ThemedText numberOfLines={1} style={styles.title}>
+            Activity
+          </ThemedText>
+        </View>
+      </View>
+    </ThemedView>
+  );
 }
+
+/** Row secondary line: `chapter · when` (falls back to "Chapter N" / "New chapter"). */
+function activitySub(a: ActivityEntry): string {
+  const chapter = a.chapterName ?? (a.number !== undefined ? `Chapter ${a.number}` : 'New chapter');
+  return `${chapter}  ·  ${relTime(a.detectedAt)}`;
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  centeredColumn: {
+    flex: 1,
+    width: '100%',
+    maxWidth: MaxTopLevelWidth,
+    alignSelf: 'center',
+  },
+  centerFill: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.four,
+  },
+  emptyText: {
+    textAlign: 'center',
+    maxWidth: 340,
+  },
+  listContent: {
+    width: '100%',
+    maxWidth: MaxTopLevelWidth,
+    alignSelf: 'center',
+    paddingHorizontal: Spacing.four,
+  },
+  controls: {
+    paddingTop: Spacing.three,
+    paddingBottom: Spacing.three,
+  },
+  controlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.three,
+  },
+  syncBtn: {
+    borderRadius: 999,
+    overflow: 'hidden',
+    flexShrink: 0,
+  },
+  pressed: {
+    opacity: 0.7,
+  },
+  syncFill: {
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.four,
+    borderRadius: 999,
+    minWidth: 132,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  syncLabel: {
+    fontWeight: '600',
+  },
+  sep: {
+    height: StyleSheet.hairlineWidth,
+  },
+  topBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    justifyContent: 'flex-end',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.four,
+    width: '100%',
+    maxWidth: MaxTopLevelWidth,
+    alignSelf: 'center',
+  },
+  title: {
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: '700',
+  },
+});

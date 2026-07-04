@@ -12,8 +12,9 @@
  */
 import type { UseQueryOptions } from '@tanstack/react-query';
 
+import type { LibrarySort } from './api';
 import type { DataSource } from './source';
-import type { SeriesDetail, SeriesEntry } from './types';
+import type { ActivityEntry, HistoryEntry, LibraryItem, SeriesDetail, SeriesEntry } from './types';
 
 /** Per-series fetch options that affect the *shape* of the result (and thus the key). */
 export type SeriesDetailOpts = { direct?: boolean; bridgeName?: string; title?: string };
@@ -29,6 +30,12 @@ export const queryKeys = {
     ['isFavorite', mock, bridgeId, seriesId] as const,
   relatedGroups: (mock: boolean, bridgeId: string, seriesId: string) =>
     ['relatedGroups', mock, bridgeId, seriesId] as const,
+  library: (mock: boolean, q: string, sort: LibrarySort) => ['library', mock, q, sort] as const,
+  inLibrary: (mock: boolean, bridgeId: string, seriesId: string) =>
+    ['inLibrary', mock, bridgeId, seriesId] as const,
+  history: (mock: boolean) => ['history', mock] as const,
+  activity: (mock: boolean) => ['activity', mock] as const,
+  activityCount: (mock: boolean) => ['activityCount', mock] as const,
 };
 
 // The builders return a widened `UseQueryOptions` (queryKey typed as the general
@@ -92,6 +99,49 @@ export function isFavoriteQuery(
     queryKey: queryKeys.isFavorite(mock, bridgeId, seriesId),
     queryFn: ({ signal }) => ds.isFavorite(bridgeId, seriesId, signal),
     enabled: !!bridgeId && !!seriesId,
+  };
+}
+
+/** `useQuery` options for the library grid (`null` result = no library store mounted). */
+export function libraryQuery(
+  ds: DataSource,
+  mock: boolean,
+  q: string,
+  sort: LibrarySort,
+): UseQueryOptions<LibraryItem[] | null, Error> {
+  return {
+    queryKey: queryKeys.library(mock, q, sort),
+    queryFn: ({ signal }) => ds.getLibrary({ ...(q ? { q } : {}), sort }, signal),
+  };
+}
+
+/** `useQuery` options for whether a series is currently in the library. */
+export function inLibraryQuery(
+  ds: DataSource,
+  mock: boolean,
+  bridgeId: string,
+  seriesId: string,
+): UseQueryOptions<boolean, Error> {
+  return {
+    queryKey: queryKeys.inLibrary(mock, bridgeId, seriesId),
+    queryFn: ({ signal }) => ds.isInLibrary(bridgeId, seriesId, signal),
+    enabled: !!bridgeId && !!seriesId,
+  };
+}
+
+/** `useQuery` options for the reading-history list. */
+export function historyQuery(ds: DataSource, mock: boolean): UseQueryOptions<HistoryEntry[], Error> {
+  return {
+    queryKey: queryKeys.history(mock),
+    queryFn: ({ signal }) => ds.getHistory(signal),
+  };
+}
+
+/** `useQuery` options for the activity feed (newly-detected chapters). */
+export function activityQuery(ds: DataSource, mock: boolean): UseQueryOptions<ActivityEntry[], Error> {
+  return {
+    queryKey: queryKeys.activity(mock),
+    queryFn: ({ signal }) => ds.getActivity(signal),
   };
 }
 
