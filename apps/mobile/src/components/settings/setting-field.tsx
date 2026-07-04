@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
+import { ChevronRightIcon } from '@/components/icons/ui-icons';
 import {
   MeasuredHeader,
   OptionList,
@@ -9,10 +10,12 @@ import {
   useListMaxHeight,
   useOverlay,
 } from '@/components/overlay/overlay';
+import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import type { SettingDescriptor, SettingValue } from '@/data/api';
+import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
 
 type FieldProps<D extends SettingDescriptor> = {
@@ -84,11 +87,14 @@ function StringField({
   onChange: (v: string) => void;
 }) {
   const theme = useTheme();
+  const [focused, setFocused] = useState(false);
   return (
     <FieldWrap label={descriptor.label} description={descriptor.description} required={descriptor.required}>
       <TextInput
         value={value ?? ''}
         onChangeText={onChange}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         placeholder={
           descriptor.secret && secretSet
             ? '(secret already set — leave blank to keep)'
@@ -98,7 +104,7 @@ function StringField({
         secureTextEntry={!!descriptor.secret}
         autoCapitalize="none"
         autoCorrect={false}
-        style={[styles.input, { color: theme.text, borderColor: theme.backgroundSelected }]}
+        style={[styles.input, { color: theme.text, borderColor: focused ? theme.accent : theme.backgroundSelected }]}
       />
     </FieldWrap>
   );
@@ -154,6 +160,7 @@ function PlainNumberField({
   onChange: (v: SettingValue) => void;
 }) {
   const theme = useTheme();
+  const [focused, setFocused] = useState(false);
   return (
     <FieldWrap label={descriptor.label} description={descriptor.description} required={descriptor.required}>
       <TextInput
@@ -161,10 +168,12 @@ function PlainNumberField({
         // coerces a numeric string, so no local NaN-handling is needed here.
         value={value === undefined ? '' : String(value)}
         onChangeText={onChange}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         keyboardType="numeric"
         placeholder={descriptor.default !== undefined ? String(descriptor.default) : undefined}
         placeholderTextColor={theme.textSecondary}
-        style={[styles.input, { color: theme.text, borderColor: theme.backgroundSelected }]}
+        style={[styles.input, { color: theme.text, borderColor: focused ? theme.accent : theme.backgroundSelected }]}
       />
     </FieldWrap>
   );
@@ -172,7 +181,10 @@ function PlainNumberField({
 
 function StepperButton({ label, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) {
   return (
-    <Pressable onPress={onPress} disabled={disabled} style={disabled ? styles.stepBtnDisabled : undefined}>
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={[styles.pressableCursor, disabled && styles.stepBtnDisabled]}>
       <ThemedView type="backgroundSelected" style={styles.stepBtn}>
         <ThemedText type="title">{label}</ThemedText>
       </ThemedView>
@@ -199,7 +211,7 @@ function BooleanField({
           </ThemedText>
         )}
       </View>
-      <Switch value={value ?? descriptor.default ?? false} onValueChange={onChange} />
+      <ThemedSwitch value={value ?? descriptor.default ?? false} onValueChange={onChange} />
     </View>
   );
 }
@@ -213,7 +225,9 @@ function EnumField({
   value: SettingValue | undefined;
   onChange: (v: SettingValue) => void;
 }) {
+  const theme = useTheme();
   const { ref, openAt } = useAnchoredOverlay();
+  const { hovered, onHoverIn, onHoverOut } = useHovered();
   const selected = descriptor.multiple ? (Array.isArray(value) ? value : []) : typeof value === 'string' ? value : undefined;
   const summary = descriptor.multiple
     ? (selected as string[]).length === 0
@@ -225,12 +239,21 @@ function EnumField({
     : (descriptor.options.find((o) => o.value === selected)?.label ?? 'Select…');
   return (
     <FieldWrap label={descriptor.label} description={descriptor.description} required={descriptor.required}>
-      <Pressable ref={ref} onPress={() => openAt(() => <EnumPicker descriptor={descriptor} value={value} onChange={onChange} />)}>
-        <ThemedView type="backgroundElement" style={styles.enumRow}>
+      <Pressable
+        ref={ref}
+        onPress={() => openAt(() => <EnumPicker descriptor={descriptor} value={value} onChange={onChange} />)}
+        onHoverIn={onHoverIn}
+        onHoverOut={onHoverOut}
+        style={styles.pressableCursor}>
+        {/* Always `backgroundSelected` (not conditionally on hover) since this field always sits
+         *  inside a `backgroundElement` `SettingsSection` card — resting on the same tier as the
+         *  card would make the control invisible until touched. Hover instead gets an accent
+         *  border, the one contrast step still available above `backgroundSelected`. */}
+        <ThemedView type="backgroundSelected" style={[styles.enumRow, hovered && { borderColor: theme.accent }]}>
           <ThemedText numberOfLines={1} style={styles.enumSummary}>
             {summary}
           </ThemedText>
-          <ThemedText themeColor="textSecondary">{'›'}</ThemedText>
+          <ChevronRightIcon color={theme.textSecondary} size={16} />
         </ThemedView>
       </Pressable>
     </FieldWrap>
@@ -268,17 +291,23 @@ function EnumPicker({
       <OptionList maxHeight={maxHeight}>
         {descriptor.options.map((opt) => {
           const on = multi ? (selected as string[]).includes(opt.value) : selected === opt.value;
-          return (
-            <Pressable key={opt.value} onPress={() => toggle(opt.value)}>
-              <ThemedView type="backgroundElement" style={styles.row}>
-                <ThemedText>{opt.label}</ThemedText>
-                <View style={[styles.check, on && styles.checkOn]} />
-              </ThemedView>
-            </Pressable>
-          );
+          return <EnumOption key={opt.value} label={opt.label} on={on} onPress={() => toggle(opt.value)} />;
         })}
       </OptionList>
     </View>
+  );
+}
+
+function EnumOption({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
+  const theme = useTheme();
+  const { hovered, onHoverIn, onHoverOut } = useHovered();
+  return (
+    <Pressable onPress={onPress} onHoverIn={onHoverIn} onHoverOut={onHoverOut} style={styles.pressableCursor}>
+      <ThemedView type={hovered ? 'backgroundSelected' : 'backgroundElement'} style={styles.row}>
+        <ThemedText>{label}</ThemedText>
+        <View style={[styles.check, on && { borderColor: theme.accent, backgroundColor: theme.accent }]} />
+      </ThemedView>
+    </Pressable>
   );
 }
 
@@ -341,6 +370,10 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.three,
     paddingHorizontal: Spacing.three,
     borderRadius: Spacing.three,
+    // Reserves the hover border's space up front so the accent outline doesn't
+    // shift layout by a pixel when it appears — only the color changes.
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
   enumSummary: {
     flex: 1,
@@ -363,8 +396,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'rgba(128,128,128,0.5)',
   },
-  checkOn: {
-    borderColor: '#3478F6',
-    backgroundColor: '#3478F6',
+  pressableCursor: {
+    cursor: 'pointer',
   },
 });
