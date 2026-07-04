@@ -17,7 +17,7 @@
       1 — so the truncating label never actually got to shrink against its sibling;
       it just crowded the row. Added `minWidth: 0` to the trigger and `flexShrink: 1`
       + `minWidth: 0` to the label itself.)
-- [ ] Desktop web version of overlay system, looks a bit odd on desktop to deal with a swipedown
+- [x] Desktop web version of overlay system, looks a bit odd on desktop to deal with a swipedown
 - [x] When refreshing page on narrow web viewports, the filters briefly display all
       small and cramped then correctly collapse into overflow (the bar's width comes
       from its parent's flex layout, not from its own children, so on the very first
