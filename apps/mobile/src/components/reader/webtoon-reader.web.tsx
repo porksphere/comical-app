@@ -2,12 +2,17 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useReducer, us
 
 import { ReaderPage } from '@/components/reader/reader-page';
 import { clamp, distance, MAX_SCALE, midpoint, type Point, ZOOM_EPSILON } from '@/components/reader/reader-zoom';
+import type { PageFit } from '@/hooks/use-reader-settings';
 
 export type WebtoonReaderHandle = { goToPage: (index: number) => void };
 
 type Props = {
   pages: string[];
   width: number;
+  /** Viewport height — only used by the `'fit-page'` paginated variant, to
+   *  size each row to exactly one screen. */
+  height: number;
+  pageFit: PageFit;
   initialPage: number;
   onPageChange: (index: number) => void;
   onToggleChrome: () => void;
@@ -33,6 +38,14 @@ type Props = {
  * Pages load lazily by viewport proximity (IntersectionObserver) so only a few
  * full-res images are ever in memory — every slot still renders (with an
  * estimated height) to keep scroll offsets and `goToPage` stable.
+ *
+ * `pageFit === 'fit-page'` switches to a paginated mode instead: each slot is
+ * fixed to exactly one viewport height (`scroll-snap-align: start` + the
+ * scroller's `scroll-snap-type: y mandatory`), so native scroll snaps one
+ * page at a time — the browser's own scroll-snap does the "paging," no custom
+ * JS needed. The custom pinch is skipped in this mode (its CSS-`zoom`-based
+ * scaling would fight fixed-size snap slots); IntersectionObserver lazy
+ * loading, `goToPage`, and the entry-page correction below are unaffected.
  */
 
 // Comics are taller than wide; matches ReaderPage's DEFAULT_ASPECT (2/3 w:h),
@@ -53,7 +66,7 @@ function rel(touch: Touch, rect: DOMRect): Point {
 }
 
 export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function WebtoonReader(
-  { pages, width, initialPage, onPageChange, onToggleChrome },
+  { pages, width, height, pageFit, initialPage, onPageChange, onToggleChrome },
   ref,
 ) {
   const n = pages.length;
@@ -176,9 +189,11 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
 
   // Custom 2-finger pinch via non-passive listeners (React's onTouch* are passive
   // and can't preventDefault). One finger is left to the browser's native scroll.
+  // Skipped entirely in fit-page mode — its CSS-`zoom`-based scaling would
+  // fight the fixed-size scroll-snap slots that mode relies on.
   useEffect(() => {
     const el = scrollerRef.current;
-    if (!el) return;
+    if (!el || pageFit === 'fit-page') return;
 
     const onStart = (e: TouchEvent) => {
       if (e.touches.length < 2) return;
@@ -255,7 +270,7 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
       el.removeEventListener('touchend', onEnd);
       el.removeEventListener('touchcancel', onEnd);
     };
-  }, []);
+  }, [pageFit]);
 
   // Jump to the entry page once mounted, then correct twice more shortly after:
   // the first jump only has the generic estimate to go on for most slots (real
@@ -306,11 +321,18 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
     [n],
   );
 
+  const paged = pageFit === 'fit-page';
+
   return (
-    <div ref={scrollerRef} onScroll={onScroll} onClick={onToggleChrome} style={scrollerStyle}>
+    <div ref={scrollerRef} onScroll={onScroll} onClick={onToggleChrome} style={scrollerStyle(paged)}>
       <div ref={contentRef} style={contentStyle}>
         {pages.map((uri, i) => {
           const isLoaded = loaded.has(i);
+          const slotStyle = paged
+            ? pagedSlotStyle(height)
+            : isLoaded
+              ? loadedSlotStyle
+              : { width: '100%', height: width * aspectRef.current };
           return (
             <div
               key={`${uri}:${i}`}
@@ -318,10 +340,17 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
               ref={(el) => {
                 slotsRef.current[i] = el;
               }}
-              style={isLoaded ? loadedSlotStyle : { width: '100%', height: width * aspectRef.current }}
+              style={slotStyle}
             >
               {isLoaded ? (
-                <ReaderPage uri={uri} page={i + 1} fit="width" width={width} onLoadDims={onSlotLoadDims} />
+                <ReaderPage
+                  uri={uri}
+                  page={i + 1}
+                  fit={paged ? 'contain' : 'width'}
+                  width={width}
+                  height={paged ? height : undefined}
+                  onLoadDims={paged ? undefined : onSlotLoadDims}
+                />
               ) : null}
             </div>
           );
@@ -331,18 +360,24 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
   );
 });
 
-const scrollerStyle: React.CSSProperties = {
-  position: 'absolute',
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
-  overflowY: 'auto',
-  overflowX: 'hidden',
-  touchAction: 'pan-y',
-  WebkitOverflowScrolling: 'touch',
-  // Reference: `#reader-view { background: #0f0f0f }` — not pure black.
-  backgroundColor: '#0f0f0f',
-};
+function scrollerStyle(paged: boolean): React.CSSProperties {
+  return {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    overflowY: 'auto',
+    overflowX: 'hidden',
+    touchAction: 'pan-y',
+    WebkitOverflowScrolling: 'touch',
+    scrollSnapType: paged ? 'y mandatory' : undefined,
+    // Reference: `#reader-view { background: #0f0f0f }` — not pure black.
+    backgroundColor: '#0f0f0f',
+  };
+}
+function pagedSlotStyle(height: number): React.CSSProperties {
+  return { width: '100%', height, scrollSnapAlign: 'start' };
+}
 const contentStyle: React.CSSProperties = { width: '100%' };
 const loadedSlotStyle: React.CSSProperties = { width: '100%' };

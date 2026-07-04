@@ -4,6 +4,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { ReaderPage } from '@/components/reader/reader-page';
+import type { PageFit } from '@/hooks/use-reader-settings';
 
 // A single paged-reader page (NATIVE only — web has its own gesture pager in
 // paged-reader.web.tsx and never renders this).
@@ -12,6 +13,12 @@ import { ReaderPage } from '@/components/reader/reader-page';
 // chrome) so taps fire immediately and a one-finger drag falls through to the
 // FlatList for swiping. A GestureDetector adds pinch-to-zoom and pan-while-
 // zoomed; react-native-gesture-handler coexists with the FlatList on native.
+//
+// `pageFit === 'fit-width'` fills the width edge to edge; if that makes the
+// page taller than the viewport, a one-finger vertical drag scrolls that
+// content instead (mutually exclusive with pinch-zoom — see `contentPan`
+// below). `pageFit === 'fit-page'` is today's behavior: the whole page
+// visible, letterboxed, still pinch-zoomable.
 
 const MAX_SCALE = 4;
 // Below this we treat the page as "not zoomed" (and snap back to a clean 1×).
@@ -27,6 +34,7 @@ type Props = {
   page: number;
   width: number;
   height: number;
+  pageFit: PageFit;
   /** Whether this is the page currently in view; losing focus resets the zoom. */
   active: boolean;
   onLeft: () => void;
@@ -64,6 +72,7 @@ export function ZoomablePage({
   page,
   width,
   height,
+  pageFit,
   active,
   onLeft,
   onRight,
@@ -85,6 +94,25 @@ export function ZoomablePage({
 
   const [zoomed, setZoomed] = useState(false);
   const [pageFailed, setPageFailed] = useState(false);
+
+  // fit-width content that's taller than the viewport: a one-finger vertical
+  // drag scrolls it (see `contentPan` below). `contentHeight` is only known
+  // once the real image dims load — see `onLoadDims`.
+  const contentHeight = useSharedValue(height);
+  const contentTy = useSharedValue(0);
+  const savedContentTy = useSharedValue(0);
+  const [overflowsVertically, setOverflowsVertically] = useState(false);
+  const [contentPanning, setContentPanning] = useState(false);
+
+  const onLoadDims = useCallback(
+    (w: number, h: number) => {
+      if (w <= 0) return;
+      const ch = width * (h / w);
+      contentHeight.value = ch;
+      setOverflowsVertically(ch > height + 1);
+    },
+    [width, height, contentHeight],
+  );
 
   const reportZoom = useCallback(
     (next: boolean) => {
@@ -109,7 +137,23 @@ export function ZoomablePage({
     if (!active && zoomed) reset();
   }, [active, zoomed, reset]);
 
+  // Same for content-pan: a page left behind always comes back scrolled to the top.
+  useEffect(() => {
+    if (!active) {
+      contentTy.value = 0;
+      savedContentTy.value = 0;
+    }
+  }, [active, contentTy, savedContentTy]);
+
+  // Disabled while a fit-width page overflows vertically — compounding pinch's
+  // scale/anchor math with an independent content-pan offset is a correctness
+  // trap, not just extra code, so the two are made mutually exclusive instead:
+  // `zoomed` can only become true from this gesture's own `onEnd`, and it's
+  // disabled exactly when `contentPan` below would be enabled.
+  const pinchEnabled = !(pageFit === 'fit-width' && overflowsVertically);
+
   const pinch = Gesture.Pinch()
+    .enabled(pinchEnabled)
     .onStart((e) => {
       focalStartX.value = e.focalX;
       focalStartY.value = e.focalY;
@@ -162,28 +206,56 @@ export function ZoomablePage({
       savedTy.value = ty.value;
     });
 
-  const gesture = Gesture.Simultaneous(pinch, pan);
+  // One-finger vertical scroll of an overflowing fit-width page. A deadzone
+  // (`activeOffsetY`) plus `failOffsetX` disambiguate it from the FlatList's
+  // own horizontal swipe: a mostly-vertical drag wins here, a mostly-horizontal
+  // one bails out and lets the page-turn swipe handle it as always. Because a
+  // true tap never moves 10px, ordinary taps still reach `TapZones` untouched.
+  const contentPan = Gesture.Pan()
+    .enabled(pageFit === 'fit-width' && overflowsVertically && !zoomed)
+    .activeOffsetY([-10, 10])
+    .failOffsetX([-15, 15])
+    .onStart(() => {
+      savedContentTy.value = contentTy.value;
+      runOnJS(setContentPanning)(true);
+    })
+    .onUpdate((e) => {
+      const maxOffset = Math.max(0, contentHeight.value - height);
+      contentTy.value = clamp(savedContentTy.value + e.translationY, -maxOffset, 0);
+    })
+    .onEnd(() => {
+      savedContentTy.value = contentTy.value;
+      runOnJS(setContentPanning)(false);
+    });
+
+  const gesture = Gesture.Simultaneous(pinch, pan, contentPan);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: tx.value }, { translateY: ty.value }, { scale: scale.value }],
+  }));
+  const contentPanStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: contentTy.value }],
   }));
 
   return (
     <GestureDetector gesture={gesture}>
       <View style={[styles.page, { width, height }]}>
         <Animated.View style={[{ width, height }, animatedStyle]}>
-          <ReaderPage
-            uri={uri}
-            page={page}
-            fit="contain"
-            width={width}
-            height={height}
-            onFailedChange={setPageFailed}
-          />
+          <Animated.View style={[{ width }, contentPanStyle]}>
+            <ReaderPage
+              uri={uri}
+              page={page}
+              fit={pageFit === 'fit-width' ? 'width' : 'contain'}
+              width={width}
+              height={height}
+              onLoadDims={onLoadDims}
+              onFailedChange={setPageFailed}
+            />
+          </Animated.View>
         </Animated.View>
         <TapZones
           zoomed={zoomed}
-          suspended={pageFailed}
+          suspended={pageFailed || contentPanning}
           onLeft={onLeft}
           onRight={onRight}
           onToggleChrome={onToggleChrome}
