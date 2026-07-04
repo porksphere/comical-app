@@ -43,6 +43,9 @@ config.resolver.extraNodeModules = {
   '@comical/registry': path.resolve(comicalRoot, 'packages/registry'),
   '@comical/core': path.resolve(comicalRoot, 'packages/core'),
   '@comical/library': path.resolve(comicalRoot, 'packages/library'),
+  // Bundled on native by host-rn's embedded library wiring (Library + ComicalRuntime over the
+  // on-device store); Node-free. Never imported on web (startup.web.ts is a no-op).
+  '@comical/runtime': path.resolve(comicalRoot, 'packages/runtime'),
   '@comical/contract': path.resolve(comicalRoot, 'packages/contract'),
 };
 
