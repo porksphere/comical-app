@@ -11,15 +11,11 @@ import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { historyQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
-import type { HistoryEntry } from '@/data/types';
+import { DIRECT_CHAPTER_ID, type HistoryEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { relTime } from '@/lib/rel-time';
-
-// A direct (chapterless) series records its "chapter" as this sentinel — its
-// chapter name is just the series title, so history doesn't repeat it.
-const DIRECT_CHAPTER = '__direct__';
 
 export default function HistoryScreen() {
   const ds = useDataSource();
@@ -76,7 +72,7 @@ export default function HistoryScreen() {
     });
 
   const resume = (h: HistoryEntry) => {
-    const isDirect = h.chapterId === DIRECT_CHAPTER || !h.chapterId;
+    const isDirect = h.chapterId === DIRECT_CHAPTER_ID || !h.chapterId;
     router.push({
       pathname: '/reader',
       params: {
@@ -157,7 +153,7 @@ export default function HistoryScreen() {
 
 /** Build the row's secondary line: `chapter · page X / N · when`, omitting absent parts. */
 function historySub(h: HistoryEntry): string {
-  const isDirect = h.chapterId === DIRECT_CHAPTER;
+  const isDirect = h.chapterId === DIRECT_CHAPTER_ID;
   const chapter = !isDirect && h.chapterName ? h.chapterName : '';
   const page =
     h.lastPage !== undefined ? (h.pageCount ? `page ${h.lastPage + 1} / ${h.pageCount}` : `page ${h.lastPage + 1}`) : '';
