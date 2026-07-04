@@ -15,7 +15,7 @@ export function DemoBanner() {
   const insets = useSafeAreaInsets();
   if (!IS_DEMO_MODE) return null;
   return (
-    <View pointerEvents="none" style={[styles.banner, { paddingTop: insets.top + Spacing.one }]}>
+    <View style={[styles.banner, { paddingTop: insets.top + Spacing.one, pointerEvents: 'none' }]}>
       <ThemedText style={styles.text}>Demo preview — sample data, not the live app</ThemedText>
     </View>
   );
