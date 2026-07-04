@@ -16,9 +16,16 @@ import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { setBrowseIntent } from '@/data/browse-intent';
-import { inLibraryQuery, isFavoriteQuery, queryKeys, relatedGroupsQuery, seriesDetailQuery } from '@/data/queries';
+import {
+  historyQuery,
+  inLibraryQuery,
+  isFavoriteQuery,
+  queryKeys,
+  relatedGroupsQuery,
+  seriesDetailQuery,
+} from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
-import type { SeriesDetail, TagGroup } from '@/data/types';
+import { DIRECT_CHAPTER_ID, type SeriesDetail, type TagGroup } from '@/data/types';
 import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -216,6 +223,13 @@ function SeriesBody({
     libMutation.mutate(!inLibrary);
   };
 
+  // Resume point: if this series has a reading-history entry, the primary Read
+  // button should continue from there instead of always restarting at the
+  // oldest chapter — same lookup/param shape as the History tab's own Resume
+  // action (`app/(tabs)/history.tsx`'s `resume()`).
+  const { data: history } = useQuery(historyQuery(ds, mock));
+  const resumeEntry = history?.find((h) => h.bridgeId === bridgeId && h.seriesId === series.id);
+
   // Cover image + optional chapter-count badge — shared between layouts.
   const coverEl = (
     <View style={isLarge ? styles.coverWrapLarge : styles.coverWrap}>
@@ -241,6 +255,23 @@ function SeriesBody({
         label={series.readLabel ?? '▶  Read'}
         variant="primary"
         onPress={() => {
+          if (resumeEntry) {
+            const isDirect = resumeEntry.chapterId === DIRECT_CHAPTER_ID || !resumeEntry.chapterId;
+            const params: Record<string, string> = {
+              seed: series.id,
+              title: series.title,
+              start: String(resumeEntry.lastPage ?? 0),
+            };
+            if (bridgeId) params.bridgeId = bridgeId;
+            if (!isDirect) {
+              params.chapterId = resumeEntry.chapterId!;
+              params.chapterName = resumeEntry.chapterName ?? '';
+            } else if (direct) {
+              params.direct = '1';
+            }
+            router.push({ pathname: '/reader', params });
+            return;
+          }
           const params: Record<string, string> = {
             seed: series.id,
             title: series.title,
