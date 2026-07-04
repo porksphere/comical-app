@@ -22,11 +22,17 @@
       "@comical/core/loader": [
         "../../external/comical/packages/core/src/loader.ts"
       ],
+      "@comical/core/tracker-loader": [
+        "../../external/comical/packages/core/src/tracker-loader.ts"
+      ],
       "@comical/contract": [
         "../../external/comical/packages/contract/src/index.ts"
       ],
       "@comical/library": [
         "../../external/comical/packages/library/src/index.ts"
+      ],
+      "@comical/runtime": [
+        "../../external/comical/packages/runtime/src/index.ts"
       ],
       "@comical/registry": [
         "../../external/comical/packages/registry/src/schema.ts"
