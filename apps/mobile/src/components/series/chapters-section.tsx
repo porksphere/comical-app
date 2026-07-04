@@ -31,6 +31,30 @@ const TABS: { id: Tab; label: string }[] = [
 const OVERVIEW_HEAD_COUNT = 5;
 const OVERVIEW_TAIL_COUNT = 5;
 
+/** Pulls the chapter number out of a display name like "Chapter 176 — The Spirit
+ *  Zone" (preferring a number right after "chapter"/"ch.", so a stray number
+ *  elsewhere in a title doesn't win) — `null` for names with no parseable number
+ *  (a oneshot/extra), which falls back to sorting by `date` instead. */
+function chapterNumber(name: string): number | null {
+  const afterKeyword = name.match(/\bch(?:apter)?\.?\s*#?(\d+(?:\.\d+)?)/i);
+  if (afterKeyword) return parseFloat(afterKeyword[1]);
+  const anyNumber = name.match(/\d+(?:\.\d+)?/);
+  return anyNumber ? parseFloat(anyNumber[0]) : null;
+}
+
+/** Chapters should read in their real numeric sequence, not publish order — a
+ *  bridge's `date` isn't guaranteed monotonic with chapter number (same-day
+ *  batch drops, backfills/re-scans, bonus chapters uploaded out of order all
+ *  produce a `date` that disagrees with the actual chapter sequence). Falls
+ *  back to `date` only when a number can't be parsed from one side (a oneshot/
+ *  extra) or both sides parse to the same number. */
+function compareChapters(a: Chapter, b: Chapter, asc: boolean): number {
+  const numA = chapterNumber(a.name);
+  const numB = chapterNumber(b.name);
+  if (numA != null && numB != null && numA !== numB) return asc ? numA - numB : numB - numA;
+  return asc ? a.date - b.date : b.date - a.date;
+}
+
 export function ChaptersSection({
   chapters,
   pageThumbs,
@@ -89,7 +113,7 @@ function ChapterList({
     let list = chapters;
     if (tab === 'read') list = chapters.filter((c) => c.read);
     else if (tab === 'unread') list = chapters.filter((c) => !c.read);
-    return [...list].sort((a, b) => (asc ? a.date - b.date : b.date - a.date));
+    return [...list].sort((a, b) => compareChapters(a, b, asc));
   }, [chapters, tab, asc]);
 
   // Overview shows the first HEAD + last TAIL chapters, with the middle behind an
