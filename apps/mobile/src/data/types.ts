@@ -109,6 +109,52 @@ export type SeriesDetail = SeriesEntry & {
   relatedGroupsDeferred?: boolean;
 };
 
+// ─── Local library / history / activity ──────────────────────────────────────
+// The user's own cross-bridge collection + reading progress (see @comical/library). Each item
+// carries its own `bridgeId` (unlike browse cards, which inherit one bridge for the whole grid).
+
+/** One series in the library grid. Maps to a `SeriesCard` `entry` + its own bridge. */
+export type LibraryItem = {
+  bridgeId: string;
+  seriesId: string;
+  title: string;
+  thumbnailUrl?: string;
+  author?: string;
+  /** Logical unread chapters — drives the card's unread pill. */
+  unread: number;
+};
+
+/** One row in the reading-history list (a recently-read series, newest first). */
+export type HistoryEntry = {
+  bridgeId: string;
+  seriesId: string;
+  title: string;
+  thumbnailUrl?: string;
+  /** Last-read chapter (the resume target). `"__direct__"` for a chapterless series. */
+  chapterId?: string;
+  chapterName?: string;
+  /** Resume page (0-based) within `chapterId`, and that chapter's page count, for "page X / N". */
+  lastPage?: number;
+  pageCount?: number;
+  lastReadAt: number;
+};
+
+/** One row in the activity feed (a newly-detected chapter across the library). */
+export type ActivityEntry = {
+  bridgeId: string;
+  seriesId: string;
+  chapterId: string;
+  title: string;
+  thumbnailUrl?: string;
+  chapterName?: string;
+  /** Decimal chapter number, when the bridge supplies it (fallback label source). */
+  number?: number;
+  /** When `syncChapters` first observed this chapter (epoch ms) — the feed sorts on this. */
+  detectedAt: number;
+  /** Derived: true once the user has read this chapter (clears it from the unread badge). */
+  read: boolean;
+};
+
 export type RailKind = 'hero' | 'ranked' | 'regular';
 export type RailSection = {
   id: string;

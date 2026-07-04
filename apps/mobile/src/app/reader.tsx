@@ -12,7 +12,7 @@ import { SettingsControl } from '@/components/reader/settings-panel';
 import { RetryBlock } from '@/components/retry-block';
 import { ThemedText } from '@/components/themed-text';
 import { WebtoonReader, type WebtoonReaderHandle } from '@/components/reader/webtoon-reader';
-import { chapterPagesQuery, directPagesQuery, queryKeys } from '@/data/queries';
+import { chapterPagesQuery, directPagesQuery, inLibraryQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import type { SeriesDetail } from '@/data/types';
 import { useReaderSettings } from '@/hooks/use-reader-settings';
@@ -99,6 +99,63 @@ export default function ReaderScreen() {
       void queryClient.prefetchQuery(chapterPagesQuery(ds, mock, bridgeId ?? '', seed ?? '', nextId));
     }
   }, [pages, currentPage, chapterId, ds, mock, queryClient, bridgeId, seed, settings.prefetchAhead]);
+
+  // ── Reading history / progress recording ─────────────────────────────────
+  // Whether this series is in the library decides how a read is persisted (like
+  // comical-web): a library series records chapter *progress* (updating its resume
+  // cache), a non-library read goes into the reading log instead. `retry: false`
+  // keeps a no-library-store 404 quiet — it just reads as "not in library".
+  const { data: inLibrary } = useQuery({
+    ...inLibraryQuery(ds, mock, bridgeId ?? '', seed ?? ''),
+    retry: false,
+  });
+  // Title/thumbnail snapshot for a reading-log entry, taken from the cached series
+  // detail if the reader was opened from the series screen (either layout key).
+  const cachedDetail =
+    queryClient.getQueryData<SeriesDetail>(queryKeys.seriesDetail(mock, bridgeId ?? '', seed ?? '', false)) ??
+    queryClient.getQueryData<SeriesDetail>(queryKeys.seriesDetail(mock, bridgeId ?? '', seed ?? '', true));
+
+  // Kept in a ref (reassigned every render) so the debounce + unmount-flush
+  // effects below always record the latest page/membership without re-subscribing.
+  const recordRef = useRef<() => void>(() => {});
+  recordRef.current = () => {
+    if (!bridgeId || !seed || !pages || pages.length === 0 || inLibrary === undefined) return;
+    const lastPage = currentRef.current;
+    const pageCount = pages.length;
+    if (chapterId && inLibrary) {
+      void ds
+        .recordChapterProgress(bridgeId, seed, chapterId, {
+          lastPage,
+          pageCount,
+          ...(chapterName ? { chapterName } : {}),
+        })
+        .catch(() => {});
+      return;
+    }
+    // Non-library read (or a direct/chapterless series): reading log. A direct
+    // series has no real chapter — record the `__direct__` sentinel comical-web uses.
+    void ds
+      .recordReadingHistory({
+        bridgeId,
+        seriesId: seed,
+        title: cachedDetail?.title ?? title ?? seed,
+        ...(cachedDetail?.cover ? { thumbnailUrl: cachedDetail.cover } : {}),
+        chapterId: chapterId ?? '__direct__',
+        ...(chapterName ? { chapterName } : {}),
+        lastPage,
+        pageCount,
+      })
+      .catch(() => {});
+  };
+
+  // Debounced record on page settle (avoids a write per flipped page), plus a
+  // flush on unmount so the final resume position is always saved.
+  useEffect(() => {
+    if (!pages) return;
+    const t = setTimeout(() => recordRef.current(), 1500);
+    return () => clearTimeout(t);
+  }, [currentPage, pages, inLibrary]);
+  useEffect(() => () => recordRef.current(), []);
 
   const pagedRef = useRef<PagedReaderHandle>(null);
   const webtoonRef = useRef<WebtoonReaderHandle>(null);
