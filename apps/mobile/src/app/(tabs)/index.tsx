@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
 import { Platform, Pressable, StyleSheet, TextInput, useWindowDimensions, View, type TextStyle } from 'react-native';
 import Animated, {
   interpolateColor,
@@ -21,7 +22,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { isAbort, pageOptions } from '@/data/api';
-import { clearBrowseIntent, useBrowseIntent } from '@/data/browse-intent';
+import { takeBrowseIntent } from '@/data/browse-intent';
 import { useDataSource, useHideNsfw, type QueryOpts } from '@/data/source';
 import type { Bridge, BridgeList, HomeGridSection, RailSection, SeriesEntry } from '@/data/types';
 import { useIsCompact, useTopBarHeight } from '@/hooks/use-responsive';
@@ -244,41 +245,42 @@ export default function BrowseScreen() {
   // once this bridge's defs have loaded — stash it here and apply it in the
   // effect below (a `tagQueries` chip is handled inline as a plain query).
   const [pendingTag, setPendingTag] = useState<{
-    bridgeId: string;
     filterKey: string;
     tagId: string;
     label: string;
   } | null>(null);
-  const intent = useBrowseIntent();
-  useEffect(() => {
-    if (!intent) return;
-    // Adopt the intent: switch to the originating bridge, leave any "See all" /
-    // sub-page scope, and either set the query (tagQueries path) or stash the tag
-    // to apply once the target bridge's filter defs load (tagIds path). Mirrors
-    // comical-web's navigateToQuerySearch / navigateToFilteredSearch (app.ts).
-    setSeeAll(null);
-    setPage('home');
-    setBridge(intent.bridgeName);
-    if (intent.kind === 'query') {
-      setPendingTag(null);
-      setQuery(intent.query);
-    } else {
-      setQuery('');
-      setPendingTag({
-        bridgeId: intent.bridgeId,
-        filterKey: intent.filterKey,
-        tagId: intent.tagId,
-        label: intent.label,
-      });
-    }
-    clearBrowseIntent();
-  }, [intent]);
+  // Consume the Series screen's intent when Browse gains focus (i.e. after we've
+  // navigated to it), not on a background re-render while Series is still on top —
+  // so it lands on the instance that's actually shown. Switch to the originating
+  // bridge, leave any "See all" / sub-page scope, then either set the query
+  // (tagQueries path) or stash the tag to apply once this bridge's filter defs
+  // load (tagIds path). Mirrors comical-web's navigateToQuerySearch /
+  // navigateToFilteredSearch (app.ts).
+  useFocusEffect(
+    useCallback(() => {
+      const intent = takeBrowseIntent();
+      if (!intent) return;
+      setSeeAll(null);
+      setPage('home');
+      setBridge(intent.bridgeName);
+      if (intent.kind === 'query') {
+        setPendingTag(null);
+        setQuery(intent.query);
+      } else {
+        setQuery('');
+        setPendingTag({ filterKey: intent.filterKey, tagId: intent.tagId, label: intent.label });
+      }
+    }, []),
+  );
 
   useEffect(() => {
     if (!pendingTag) return;
-    // Wait until the filter defs for the intent's bridge have loaded (a bridge
-    // switch reloads them async and resets values) before selecting the tag.
-    if (filterDefsBridgeId !== pendingTag.bridgeId) return;
+    // Apply once the CURRENT bridge's filter defs have loaded. The focus effect
+    // switched us to the intent's bridge; `filterDefsBridgeId === bridgeId` means
+    // those filters are now loaded, so the tag filter def (if any) is the right
+    // bridge's. Comparing Browse's own two ids (not the series route param) avoids
+    // any mismatch between how the two screens name the bridge.
+    if (!bridgeId || filterDefsBridgeId !== bridgeId) return;
     const def = filterDefs.find((d) => d.id === pendingTag.filterKey && d.type === 'tags');
     if (!def) {
       // This bridge doesn't expose that tag filter — nothing to apply.
@@ -296,7 +298,7 @@ export default function BrowseScreen() {
     );
     setFilterValues((prev) => ({ ...prev, [def.id]: { [pendingTag.tagId]: 'include' } as TriState }));
     setPendingTag(null);
-  }, [pendingTag, filterDefs, filterDefsBridgeId]);
+  }, [pendingTag, filterDefs, filterDefsBridgeId, bridgeId]);
 
   // A search, a rail's "See all", a live filter/sort choice, or picking a
   // page-flagged sub-list (e.g. "Popular"/"Favorites") all drop to the flat
