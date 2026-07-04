@@ -82,7 +82,7 @@ export function OverflowChips({ items, empty }: { items: ChipItem[]; empty: stri
     <View style={styles.container} onLayout={(e) => setContainerW(e.nativeEvent.layout.width)}>
       {/* Hidden measuring pass */}
       {!measured && (
-        <View style={styles.measure} pointerEvents="none">
+        <View style={[styles.measure, { pointerEvents: 'none' }]}>
           {items.map((it) => (
             <Chip
               key={it.key}
