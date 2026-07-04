@@ -15,9 +15,10 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { setBrowseIntent } from '@/data/browse-intent';
 import { isFavoriteQuery, queryKeys, relatedGroupsQuery, seriesDetailQuery } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
-import type { SeriesDetail } from '@/data/types';
+import type { SeriesDetail, TagGroup } from '@/data/types';
 import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -223,6 +224,25 @@ function SeriesBody({
     </View>
   );
 
+  // Tapping a tag chip drops the Browse tab into a matching search, mirroring
+  // comical-web's tag chips (app.ts): a `tagQueries` entry runs a free-text
+  // search; a `tagIds` entry selects the bridge's tag-multiselect filter (keyed
+  // "tag" by convention — see nhentai). We hand the intent to Browse via the
+  // shared store and navigate to that tab. No-op without a real bridge id (mock).
+  const onTagPress = (group: TagGroup, index: number) => {
+    if (!bridgeId) return;
+    const query = group.tagQueries?.[index];
+    const tagId = group.tagIds?.[index];
+    if (query) {
+      setBrowseIntent({ bridgeName: series.bridge, bridgeId, kind: 'query', query });
+    } else if (tagId) {
+      setBrowseIntent({ bridgeName: series.bridge, bridgeId, kind: 'tag', filterKey: 'tag', tagId, label: group.tags[index] });
+    } else {
+      return;
+    }
+    router.navigate('/');
+  };
+
   // Metadata, description, and chapters — placed in the right column (large)
   // or stacked below the hero row (small).
   const contentEl = (
@@ -230,7 +250,9 @@ function SeriesBody({
       {series.genres?.length || series.tagGroups?.length ? (
         <View style={styles.tagsBlock}>
           {series.genres?.length ? <ChipRow labels={series.genres} /> : null}
-          {series.tagGroups?.map((g) => <TagGroupRow key={g.label} group={g} />)}
+          {series.tagGroups?.map((g) => (
+            <TagGroupRow key={g.label} group={g} onTagPress={(i) => onTagPress(g, i)} />
+          ))}
         </View>
       ) : null}
 
