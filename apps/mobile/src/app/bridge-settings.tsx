@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BridgeMetaInfo, BridgePrefsToggles, GenreExclusionsControl, TagExclusionsControl } from '@/components/settings/bridge-extras';
 import { SettingFieldEditor } from '@/components/settings/setting-field';
+import { SettingsSection } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
@@ -112,33 +113,35 @@ export default function BridgeSettingsScreen() {
                 This bridge has no configurable settings.
               </ThemedText>
             ) : (
-              data.settings.map((d) => (
-                <SettingFieldEditor
-                  key={d.key}
-                  descriptor={d}
-                  value={d.key in edits ? edits[d.key] : data.values[d.key]}
-                  secretSet={data.secretsSet.includes(d.key)}
-                  onChange={(v) => setField(d.key, v)}
-                />
-              ))
-            )}
+              <SettingsSection title="Configuration">
+                {data.settings.map((d) => (
+                  <SettingFieldEditor
+                    key={d.key}
+                    descriptor={d}
+                    value={d.key in edits ? edits[d.key] : data.values[d.key]}
+                    secretSet={data.secretsSet.includes(d.key)}
+                    onChange={(v) => setField(d.key, v)}
+                  />
+                ))}
 
-            {saveError && (
-              <ThemedText type="small" style={{ color: '#E5484D' }}>
-                {saveError}
-              </ThemedText>
-            )}
-            {saved && !saveError && (
-              <ThemedText type="small" themeColor="textSecondary">
-                Saved.
-              </ThemedText>
-            )}
-            {data.settings.length > 0 && (
-              <Pressable onPress={save} disabled={saving}>
-                <ThemedView type="backgroundSelected" style={[styles.saveBtn, saving && styles.saveBtnDisabled]}>
-                  <ThemedText type="smallBold">{saving ? 'Saving…' : 'Save'}</ThemedText>
-                </ThemedView>
-              </Pressable>
+                {saveError && (
+                  <ThemedText type="small" style={{ color: theme.danger }}>
+                    {saveError}
+                  </ThemedText>
+                )}
+                {saved && !saveError && (
+                  <ThemedText type="small" themeColor="textSecondary">
+                    Saved.
+                  </ThemedText>
+                )}
+                <Pressable onPress={save} disabled={saving}>
+                  <ThemedView style={[styles.saveBtn, { backgroundColor: theme.accent }, saving && styles.saveBtnDisabled]}>
+                    <ThemedText type="smallBold" style={{ color: theme.accentOn }}>
+                      {saving ? 'Saving…' : 'Save'}
+                    </ThemedText>
+                  </ThemedView>
+                </Pressable>
+              </SettingsSection>
             )}
 
             {data.info.capabilities?.includes('exclude-tags') && (
@@ -153,7 +156,7 @@ export default function BridgeSettingsScreen() {
 
             {source === 'registry' && (
               <Pressable onPress={uninstall} style={styles.uninstallRow}>
-                <ThemedText type="small" style={{ color: '#E5484D' }}>
+                <ThemedText type="small" style={{ color: theme.danger }}>
                   Uninstall this bridge
                 </ThemedText>
               </Pressable>
