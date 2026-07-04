@@ -27,15 +27,19 @@ export type FilterDef =
   | { id: string; label: string; type: 'multi'; options: Option[]; selectAllByDefault?: boolean; single?: boolean }
   | { id: string; label: string; type: 'includeExclude'; options: Option[] }
   /** Static tag list when `options` is given; otherwise `search` drives a live async lookup
-   *  (maps a contract `tag-multiselect` filter, whose tags come from `GET /bridges/:id/tags`). */
-  | { id: string; label: string; type: 'tags'; options?: Option[]; search?: (query: string) => Promise<Option[]> };
+   *  (maps a contract `tag-multiselect` filter, whose tags come from `GET /bridges/:id/tags`).
+   *  `labelHints` seeds id→label pairs for values selected out-of-band (a tapped tag chip on a
+   *  series) so they render with their name before any live search has returned them — it never
+   *  turns the filter into a static list (that's `options`'s job), it only aids label lookup. */
+  | { id: string; label: string; type: 'tags'; options?: Option[]; search?: (query: string) => Promise<Option[]>; labelHints?: Record<string, string> };
 
 export type FilterValue = string | number | boolean | string[] | TriState;
 
-/** Look up an option's display label by value; falls back to the value itself
- *  (e.g. for a `tags` search result whose value/label happen to be the same). */
-export function labelFor(options: Option[] | undefined, value: string): string {
-  return options?.find((o) => o.value === value)?.label ?? value;
+/** Look up an option's display label by value: the static `options` first, then
+ *  any `hints` map (id→label pairs known out-of-band, e.g. a tapped tag chip),
+ *  falling back to the value itself. */
+export function labelFor(options: Option[] | undefined, value: string, hints?: Record<string, string>): string {
+  return options?.find((o) => o.value === value)?.label ?? hints?.[value] ?? value;
 }
 
 /** The initial value for a filter (supports multi-select that starts fully selected). */
@@ -137,12 +141,15 @@ export function summarize(def: FilterDef, value: FilterValue): ChipItem[] {
     }
     case 'includeExclude':
     case 'tags': {
+      // A live-search `tags` filter has no static `options`; its `labelHints` cover
+      // values selected out-of-band (a tapped tag chip) so the chip shows the name.
+      const hints = def.type === 'tags' ? def.labelHints : undefined;
       const tri = (value as TriState) ?? {};
       const inc = Object.keys(tri).filter((k) => tri[k] === 'include');
       const exc = Object.keys(tri).filter((k) => tri[k] === 'exclude');
       return [
-        ...inc.map((v) => ({ key: `+${v}`, label: labelFor(def.options, v), tone: 'include' as ChipTone })),
-        ...exc.map((v) => ({ key: `-${v}`, label: labelFor(def.options, v), tone: 'exclude' as ChipTone })),
+        ...inc.map((v) => ({ key: `+${v}`, label: labelFor(def.options, v, hints), tone: 'include' as ChipTone })),
+        ...exc.map((v) => ({ key: `-${v}`, label: labelFor(def.options, v, hints), tone: 'exclude' as ChipTone })),
       ];
     }
   }

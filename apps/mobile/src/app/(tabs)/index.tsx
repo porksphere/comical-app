@@ -10,7 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BridgeThumb } from '@/components/bridge-thumb';
 import { FilterBar, type SortOption, type SortState } from '@/components/filters/filter-demo';
-import { filterDefFromApi, filterValueToApi, initialValue, type FilterDef, type FilterValue } from '@/components/filters/filter-types';
+import { filterDefFromApi, filterValueToApi, initialValue, type FilterDef, type FilterValue, type TriState } from '@/components/filters/filter-types';
 import { ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
 import { Rail, RailSkeleton, SectionHead } from '@/components/rail';
 import { RetryBlock } from '@/components/retry-block';
@@ -21,6 +21,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { isAbort, pageOptions } from '@/data/api';
+import { clearBrowseIntent, useBrowseIntent } from '@/data/browse-intent';
 import { useDataSource, useHideNsfw, type QueryOpts } from '@/data/source';
 import type { Bridge, BridgeList, HomeGridSection, RailSection, SeriesEntry } from '@/data/types';
 import { useIsCompact, useTopBarHeight } from '@/hooks/use-responsive';
@@ -133,6 +134,11 @@ export default function BrowseScreen() {
   const [sortOptions, setSortOptions] = useState<SortOption[]>([]);
   const [filterValues, setFilterValues] = useState<Record<string, FilterValue>>({});
   const [sortValue, setSortValue] = useState<SortState>(null);
+  // Which bridge the current `filterDefs` belong to — a bridge switch reloads them
+  // async and resets `filterValues`, so a pending tag selection (see below) must
+  // wait until this matches its bridge before applying, or it'd land on the wrong
+  // (soon-to-be-reset) defs.
+  const [filterDefsBridgeId, setFilterDefsBridgeId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!bridgeId || !currentBridge) {
@@ -140,6 +146,7 @@ export default function BrowseScreen() {
       setSortOptions([]);
       setFilterValues({});
       setSortValue(null);
+      setFilterDefsBridgeId(null);
       return;
     }
     const ctrl = new AbortController();
@@ -154,11 +161,16 @@ export default function BrowseScreen() {
           });
           setFilterDefs(defs);
           setFilterValues(Object.fromEntries(defs.map((d) => [d.id, initialValue(d)])));
+          setFilterDefsBridgeId(bridgeId);
         })
-        .catch(() => setFilterDefs([]));
+        .catch(() => {
+          setFilterDefs([]);
+          setFilterDefsBridgeId(bridgeId);
+        });
     } else {
       setFilterDefs([]);
       setFilterValues({});
+      setFilterDefsBridgeId(bridgeId);
     }
     if (currentBridge.capabilities.includes('sort')) {
       ds.getSortOptions(bridgeId, ctrl.signal)
@@ -226,6 +238,65 @@ export default function BrowseScreen() {
   // Committed search query (set on submit) and the active "See all" rail, if any.
   const [query, setQuery] = useState('');
   const [seeAll, setSeeAll] = useState<SeeAll>(null);
+
+  // ── Tag-chip search intent (from the Series screen) ───────────────────────
+  // A `tagIds` chip resolves to a tag-multiselect filter, which can only be set
+  // once this bridge's defs have loaded — stash it here and apply it in the
+  // effect below (a `tagQueries` chip is handled inline as a plain query).
+  const [pendingTag, setPendingTag] = useState<{
+    bridgeId: string;
+    filterKey: string;
+    tagId: string;
+    label: string;
+  } | null>(null);
+  const intent = useBrowseIntent();
+  useEffect(() => {
+    if (!intent) return;
+    // Adopt the intent: switch to the originating bridge, leave any "See all" /
+    // sub-page scope, and either set the query (tagQueries path) or stash the tag
+    // to apply once the target bridge's filter defs load (tagIds path). Mirrors
+    // comical-web's navigateToQuerySearch / navigateToFilteredSearch (app.ts).
+    setSeeAll(null);
+    setPage('home');
+    setBridge(intent.bridgeName);
+    if (intent.kind === 'query') {
+      setPendingTag(null);
+      setQuery(intent.query);
+    } else {
+      setQuery('');
+      setPendingTag({
+        bridgeId: intent.bridgeId,
+        filterKey: intent.filterKey,
+        tagId: intent.tagId,
+        label: intent.label,
+      });
+    }
+    clearBrowseIntent();
+  }, [intent]);
+
+  useEffect(() => {
+    if (!pendingTag) return;
+    // Wait until the filter defs for the intent's bridge have loaded (a bridge
+    // switch reloads them async and resets values) before selecting the tag.
+    if (filterDefsBridgeId !== pendingTag.bridgeId) return;
+    const def = filterDefs.find((d) => d.id === pendingTag.filterKey && d.type === 'tags');
+    if (!def) {
+      // This bridge doesn't expose that tag filter — nothing to apply.
+      setPendingTag(null);
+      return;
+    }
+    // Seed the id→label hint so the trigger/editor show the tag's name, not its
+    // raw id (a live-search filter has no static options to look it up in).
+    setFilterDefs((prev) =>
+      prev.map((d) =>
+        d.id === def.id && d.type === 'tags'
+          ? { ...d, labelHints: { ...(d.labelHints ?? {}), [pendingTag.tagId]: pendingTag.label } }
+          : d,
+      ),
+    );
+    setFilterValues((prev) => ({ ...prev, [def.id]: { [pendingTag.tagId]: 'include' } as TriState }));
+    setPendingTag(null);
+  }, [pendingTag, filterDefs, filterDefsBridgeId]);
 
   // A search, a rail's "See all", a live filter/sort choice, or picking a
   // page-flagged sub-list (e.g. "Popular"/"Favorites") all drop to the flat
