@@ -303,9 +303,17 @@ export default function BrowseScreen() {
 
   // A search, a rail's "See all", a live filter/sort choice, or picking a
   // page-flagged sub-list (e.g. "Popular"/"Favorites") all drop to the flat
-  // results grid (with a back-to-home affordance) — matches the reference's
-  // `doSearch`: any of query/filters/sort/list-scope leaves the home surface.
+  // results grid — matches the reference's `doSearch`: any of
+  // query/filters/sort/list-scope leaves the home surface.
   const inResults = !!query || !!seeAll || hasActiveQuery || page !== 'home';
+  // The "← Home" banner is for transient drill-downs (search / "See all" / a
+  // live filter or sort) — NOT for plain page-selector navigation. Selecting a
+  // page-flagged list like "Popular" is a top-level page in its own right (the
+  // Page selector itself already shows it's active and is how you switch back
+  // to Home), so it shouldn't get the same back-arrow treatment a drill-down
+  // does. A drill-down layered on top of a selected page (e.g. searching while
+  // on "Popular") still shows the banner, same as it would from Home.
+  const showBackBanner = !!query || !!seeAll || hasActiveQuery;
   const resultsLabel = seeAll ? seeAll.title : query ? `Results for “${query}”` : page;
 
   // ── Grid (unified: a flagged page, favorites, search, or "See all") ───────
@@ -542,7 +550,7 @@ export default function BrowseScreen() {
         onSortChange={setSortValue}
         searchActive={inResults}
       />
-      {inResults && (
+      {showBackBanner && (
         <View style={styles.resultsHead}>
           <Pressable onPress={backToHome} hitSlop={8}>
             <ThemedText type="smallBold" style={{ color: theme.accent }}>
@@ -638,7 +646,14 @@ export default function BrowseScreen() {
           { paddingTop: headerHeight + expand, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
         ]}
         renderItem={({ item }: { item: GridItem }) =>
-          item.spacer ? <View style={styles.cell} /> : (
+          item.spacer ? (
+            // While a next page is actually loading, fill the last row's
+            // remaining slots with skeleton cards (matching the footer's) instead
+            // of an invisible spacer — otherwise the row reads as "done" and the
+            // incoming skeleton rows below look like they jumped straight to a
+            // fresh row rather than finishing this one first.
+            loadingMore ? <SkeletonCard /> : <View style={styles.cell} />
+          ) : (
             <View style={styles.cell}>
               <SeriesCard entry={item} bridge={currentBridge?.name ?? undefined} bridgeId={bridgeId} direct={directBridge} />
             </View>
@@ -745,6 +760,17 @@ function HomeGridBlock({
   );
 }
 
+/** A single skeleton card (cover + two title lines) — one grid cell's worth. */
+function SkeletonCard() {
+  return (
+    <View style={[styles.cell, styles.skelCell]}>
+      <Skeleton style={styles.skelCover} />
+      <Skeleton style={styles.skelLine} />
+      <Skeleton style={[styles.skelLine, styles.skelLineShort]} />
+    </View>
+  );
+}
+
 /** Skeleton rows shown while the next infinite-scroll page loads — mirrors the
  *  grid card (cover + two title lines) so it reads as "more cards incoming". */
 function GridSkeleton({ numColumns, rows }: { numColumns: number; rows: number }) {
@@ -753,11 +779,7 @@ function GridSkeleton({ numColumns, rows }: { numColumns: number; rows: number }
       {Array.from({ length: rows }).map((_, r) => (
         <View key={r} style={[styles.row, styles.skelRow]}>
           {Array.from({ length: numColumns }).map((_, c) => (
-            <View key={c} style={[styles.cell, styles.skelCell]}>
-              <Skeleton style={styles.skelCover} />
-              <Skeleton style={styles.skelLine} />
-              <Skeleton style={[styles.skelLine, styles.skelLineShort]} />
-            </View>
+            <SkeletonCard key={c} />
           ))}
         </View>
       ))}
