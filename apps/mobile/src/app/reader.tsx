@@ -12,9 +12,9 @@ import { SettingsControl } from '@/components/reader/settings-panel';
 import { RetryBlock } from '@/components/retry-block';
 import { ThemedText } from '@/components/themed-text';
 import { WebtoonReader, type WebtoonReaderHandle } from '@/components/reader/webtoon-reader';
-import { chapterPagesQuery, directPagesQuery, inLibraryQuery, queryKeys } from '@/data/queries';
-import { useDataSource, useMockActive } from '@/data/source';
-import type { SeriesDetail } from '@/data/types';
+import { chapterPagesQuery, directPagesQuery, inLibraryQuery, queryKeys, seriesDetailQuery } from '@/data/queries';
+import { useDataSource, useMockActive, type DataSource } from '@/data/source';
+import { DIRECT_CHAPTER_ID, type SeriesDetail } from '@/data/types';
 import { useReaderSettings } from '@/hooks/use-reader-settings';
 
 // Full-screen page reader. Resolves a page-URL list from route params and
@@ -87,7 +87,9 @@ export default function ReaderScreen() {
 
   // Warm-ahead: prefetch the next few page images into expo-image's cache as the
   // reader advances, and — for chaptered series, once near the end — prefetch the
-  // next chapter's page list into the query cache so opening it is instant.
+  // next chapter's page list into the query cache (so opening it is instant) plus
+  // its first few page images (so they're not cold the moment the reader lands
+  // on them after auto-advancing).
   useEffect(() => {
     if (!pages || pages.length === 0) return;
     const ahead = pages.slice(currentPage + 1, currentPage + 1 + settings.prefetchAhead);
@@ -96,9 +98,44 @@ export default function ReaderScreen() {
     if (!chapterId || currentPage < pages.length - NEXT_CHAPTER_TRIGGER) return;
     const nextId = nextChapterId(queryClient, mock, bridgeId ?? '', seed ?? '', chapterId);
     if (nextId) {
-      void queryClient.prefetchQuery(chapterPagesQuery(ds, mock, bridgeId ?? '', seed ?? '', nextId));
+      void queryClient.prefetchQuery(chapterPagesQuery(ds, mock, bridgeId ?? '', seed ?? '', nextId)).then(() => {
+        const nextPages = queryClient.getQueryData<string[]>(
+          queryKeys.chapterPages(mock, bridgeId ?? '', seed ?? '', nextId),
+        );
+        if (nextPages?.length) void Image.prefetch(nextPages.slice(0, settings.prefetchAhead));
+      });
     }
   }, [pages, currentPage, chapterId, ds, mock, queryClient, bridgeId, seed, settings.prefetchAhead]);
+
+  // ── Auto-advance to the next chapter ──────────────────────────────────────
+  // Guards against a re-entrant double-advance (e.g. a rapid extra tap/scroll
+  // past the end before the new chapter's pages have landed). Cleared once a
+  // new `pages` list lands — either the auto-advance's own navigation, or any
+  // other chapter change — so a later chapter-end can advance again.
+  const advancingRef = useRef(false);
+  useEffect(() => {
+    advancingRef.current = false;
+  }, [pages]);
+
+  const tryAdvanceChapter = useCallback(async () => {
+    if (advancingRef.current || !chapterId) return;
+    advancingRef.current = true;
+    const nextId = await resolveNextChapterId(queryClient, ds, mock, bridgeId ?? '', seed ?? '', chapterId);
+    if (!nextId) {
+      advancingRef.current = false;
+      return;
+    }
+    const chapters = queryClient.getQueryData<SeriesDetail>(
+      queryKeys.seriesDetail(mock, bridgeId ?? '', seed ?? '', false),
+    )?.chapters;
+    const nextName = chapters?.find((c) => c.id === nextId)?.name;
+    const params: Record<string, string> = { seed: seed ?? '', title: title ?? '', start: '0', chapterId: nextId };
+    if (bridgeId) params.bridgeId = bridgeId;
+    if (nextName) params.chapterName = nextName;
+    // `replace`, not `push`: repeated auto-advances through a long series
+    // shouldn't pile up an ever-growing back-stack of finished chapters.
+    router.replace({ pathname: '/reader', params });
+  }, [chapterId, queryClient, ds, mock, bridgeId, seed, title, router]);
 
   // ── Reading history / progress recording ─────────────────────────────────
   // Whether this series is in the library decides how a read is persisted (like
@@ -140,7 +177,7 @@ export default function ReaderScreen() {
         seriesId: seed,
         title: cachedDetail?.title ?? title ?? seed,
         ...(cachedDetail?.cover ? { thumbnailUrl: cachedDetail.cover } : {}),
-        chapterId: chapterId ?? '__direct__',
+        chapterId: chapterId ?? DIRECT_CHAPTER_ID,
         ...(chapterName ? { chapterName } : {}),
         lastPage,
         pageCount,
@@ -195,12 +232,25 @@ export default function ReaderScreen() {
     },
     [pages, settings.mode, setCurrent],
   );
+  const atLastPage = useCallback(() => !!pages && currentRef.current >= pages.length - 1, [pages]);
   const prev = useCallback(() => goTo(currentRef.current - 1), [goTo]);
-  const next = useCallback(() => goTo(currentRef.current + 1), [goTo]);
+  const next = useCallback(() => {
+    if (atLastPage()) {
+      void tryAdvanceChapter();
+      return;
+    }
+    goTo(currentRef.current + 1);
+  }, [goTo, atLastPage, tryAdvanceChapter]);
   // Tapping a page turns it instantly (no slide), on every platform; keyboard
   // arrows and progress-pill jumps keep the animated transition.
   const turnPrev = useCallback(() => goTo(currentRef.current - 1, false), [goTo]);
-  const turnNext = useCallback(() => goTo(currentRef.current + 1, false), [goTo]);
+  const turnNext = useCallback(() => {
+    if (atLastPage()) {
+      void tryAdvanceChapter();
+      return;
+    }
+    goTo(currentRef.current + 1, false);
+  }, [goTo, atLastPage, tryAdvanceChapter]);
 
   // Web keyboard nav: arrows page (respecting direction), Esc closes.
   useEffect(() => {
@@ -250,6 +300,9 @@ export default function ReaderScreen() {
               initialPage={currentPage}
               onPageChange={setCurrent}
               onToggleChrome={toggleChrome}
+              onEndReached={() => {
+                if (atLastPage()) void tryAdvanceChapter();
+              }}
             />
           )}
 
@@ -266,6 +319,13 @@ export default function ReaderScreen() {
             onJump={(i) => {
               goTo(i);
               showChrome();
+            }}
+            onEditingChange={(editing) => {
+              if (editing) {
+                if (hideTimer.current) clearTimeout(hideTimer.current);
+              } else {
+                scheduleHide();
+              }
             }}
           />
         </>
@@ -295,6 +355,35 @@ function nextChapterId(
   const i = chapters.findIndex((c) => c.id === chapterId);
   if (i <= 0) return null;
   return chapters[i - 1].id;
+}
+
+/**
+ * Same as `nextChapterId`, but falls back to a real fetch when the series
+ * detail isn't cached (e.g. the reader was opened from History's Resume
+ * action or a deep link, bypassing the series screen entirely — exactly the
+ * common case auto-advance needs to keep working for). Used only by the
+ * auto-advance path; the cheaper prefetch effect above stays cache-only,
+ * since a missed prefetch is low severity and not worth an unconditional
+ * extra network round-trip every session.
+ */
+async function resolveNextChapterId(
+  qc: QueryClient,
+  ds: DataSource,
+  mock: boolean,
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+): Promise<string | null> {
+  const cached = nextChapterId(qc, mock, bridgeId, seriesId, chapterId);
+  if (cached) return cached;
+  try {
+    const detail = await qc.fetchQuery(seriesDetailQuery(ds, mock, bridgeId, seriesId, { direct: false }));
+    const chapters = detail.chapters;
+    const i = chapters?.findIndex((c) => c.id === chapterId) ?? -1;
+    return i > 0 ? chapters![i - 1].id : null;
+  } catch {
+    return null;
+  }
 }
 
 const styles = StyleSheet.create({
