@@ -1,18 +1,27 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { ScrollView, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import {
+  BridgesIcon,
+  DeveloperIcon,
+  GeneralSettingsIcon,
+  RegistriesIcon,
+  TrackersIcon,
+} from '@/components/icons/ui-icons';
 import { RetryBlock } from '@/components/retry-block';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
+import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import { API_BASE, isAbort, type BridgeSummary, type SavedRegistry, type TrackerSummary } from '@/data/api';
 import { applyEmbeddedMode, isEmbeddedRuntimeAvailable, useEmbeddedEnabled } from '@/data/embedded';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { queryClient } from '@/data/query-client';
 import { useDataSource, useHideNsfw, useMockDataToggle } from '@/data/source';
+import { useTheme } from '@/hooks/use-theme';
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
@@ -35,6 +44,7 @@ export default function SettingsScreen() {
 }
 
 function GeneralSection() {
+  const theme = useTheme();
   const [hideNsfw, setHideNsfw] = useHideNsfw();
   const [onDevice, setOnDevice] = useEmbeddedEnabled();
   // The on-device runtime is only offered where a native bridge engine exists (iOS/Android with the
@@ -49,17 +59,17 @@ function GeneralSection() {
   };
 
   return (
-    <SettingsSection title="General">
+    <SettingsSection title="General" icon={<GeneralSettingsIcon color={theme.textSecondary} size={14} />}>
       <SettingsRow
         label="Hide NSFW content"
         description="Hides NSFW-flagged bridges from the Browse tab."
-        right={<Switch value={hideNsfw} onValueChange={setHideNsfw} />}
+        right={<ThemedSwitch value={hideNsfw} onValueChange={setHideNsfw} />}
       />
       {embeddedAvailable && (
         <SettingsRow
           label="Run bridges on this device"
           description="Fetch and read entirely on-device, with no external server. Turn off to use a remote Comical server."
-          right={<Switch value={onDevice} onValueChange={toggleOnDevice} />}
+          right={<ThemedSwitch value={onDevice} onValueChange={toggleOnDevice} />}
         />
       )}
     </SettingsSection>
@@ -67,17 +77,20 @@ function GeneralSection() {
 }
 
 /** One-line status for a bridge row: discontinuation and available updates take precedence over the
- *  "needs setup" hint, so the user sees the most actionable state at a glance. */
-function bridgeStatus(b: BridgeSummary): string | undefined {
-  if (b.discontinued) return 'No longer offered by its registry';
-  if (b.availableVersion) return `Update available — v${b.availableVersion}`;
-  if (!b.configured) return 'Needs setup';
+ *  "needs setup" hint, so the user sees the most actionable state at a glance. `tone` picks the
+ *  status color (amber for something needing attention, blue for an informational update) so the
+ *  more urgent states are visually distinct instead of blending into the secondary-text color. */
+function bridgeStatus(b: BridgeSummary): { text: string; tone: 'warn' | 'info' } | undefined {
+  if (b.discontinued) return { text: 'No longer offered by its registry', tone: 'warn' };
+  if (b.availableVersion) return { text: `Update available — v${b.availableVersion}`, tone: 'info' };
+  if (!b.configured) return { text: 'Needs setup', tone: 'warn' };
   return undefined;
 }
 
 function BridgesSection() {
   const ds = useDataSource();
   const router = useRouter();
+  const theme = useTheme();
   const [bridges, setBridges] = useState<BridgeSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
@@ -94,7 +107,7 @@ function BridgesSection() {
   }, [ds, reload]);
 
   return (
-    <SettingsSection title="Bridges">
+    <SettingsSection title="Bridges" icon={<BridgesIcon color={theme.textSecondary} size={14} />}>
       {error ? (
         <RetryBlock message={error} onRetry={() => setReload((n) => n + 1)} />
       ) : !bridges ? (
@@ -106,16 +119,20 @@ function BridgesSection() {
           No bridges installed.
         </ThemedText>
       ) : (
-        bridges.map((b) => (
-          <SettingsRow
-            key={b.info.id}
-            label={b.info.name}
-            description={bridgeStatus(b)}
-            onPress={() =>
-              router.push({ pathname: '/bridge-settings', params: { bridgeId: b.info.id, source: b.source } })
-            }
-          />
-        ))
+        bridges.map((b) => {
+          const status = bridgeStatus(b);
+          return (
+            <SettingsRow
+              key={b.info.id}
+              label={b.info.name}
+              description={status?.text}
+              descriptionColor={status && (status.tone === 'warn' ? theme.badgeWarn : theme.badgeInfo)}
+              onPress={() =>
+                router.push({ pathname: '/bridge-settings', params: { bridgeId: b.info.id, source: b.source } })
+              }
+            />
+          );
+        })
       )}
     </SettingsSection>
   );
@@ -124,6 +141,7 @@ function BridgesSection() {
 function TrackersSection() {
   const ds = useDataSource();
   const router = useRouter();
+  const theme = useTheme();
   const [trackers, setTrackers] = useState<TrackerSummary[] | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
@@ -140,7 +158,7 @@ function TrackersSection() {
   }, [ds, reload]);
 
   return (
-    <SettingsSection title="Trackers">
+    <SettingsSection title="Trackers" icon={<TrackersIcon color={theme.textSecondary} size={14} />}>
       {error ? (
         <RetryBlock message={error} onRetry={() => setReload((n) => n + 1)} />
       ) : trackers === undefined ? (
@@ -161,6 +179,7 @@ function TrackersSection() {
             key={t.info.id}
             label={t.info.name}
             description={t.configured ? undefined : 'Needs setup'}
+            descriptionColor={t.configured ? undefined : theme.badgeWarn}
             onPress={() => router.push({ pathname: '/tracker-settings', params: { trackerId: t.info.id } })}
           />
         ))
@@ -172,6 +191,7 @@ function TrackersSection() {
 function RegistriesSection() {
   const ds = useDataSource();
   const router = useRouter();
+  const theme = useTheme();
   const [registries, setRegistries] = useState<SavedRegistry[] | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
@@ -188,7 +208,7 @@ function RegistriesSection() {
   }, [ds, reload]);
 
   return (
-    <SettingsSection title="Registries">
+    <SettingsSection title="Registries" icon={<RegistriesIcon color={theme.textSecondary} size={14} />}>
       {error ? (
         <RetryBlock message={error} onRetry={() => setReload((n) => n + 1)} />
       ) : registries === undefined ? (
@@ -220,20 +240,16 @@ function RegistriesSection() {
  *  running backend, and shows which server real requests target. Stripped from
  *  real production builds by the `__DEV__` check above. */
 function DeveloperSection() {
+  const theme = useTheme();
   const [mockEnabled, setMockEnabled] = useMockDataToggle();
   return (
-    <SettingsSection title="Developer">
+    <SettingsSection title="Developer" icon={<DeveloperIcon color={theme.textSecondary} size={14} />}>
       <SettingsRow
         label="Use mock data"
         description="Browse/Series/Reader render generated sample content instead of calling the API."
-        right={<Switch value={mockEnabled} onValueChange={setMockEnabled} />}
+        right={<ThemedSwitch value={mockEnabled} onValueChange={setMockEnabled} />}
       />
-      <View>
-        <ThemedText type="small">Server</ThemedText>
-        <ThemedText type="small" themeColor="textSecondary" selectable>
-          {API_BASE}
-        </ThemedText>
-      </View>
+      <SettingsRow label="Server" description={API_BASE} descriptionSelectable />
     </SettingsSection>
   );
 }
@@ -246,7 +262,7 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     paddingHorizontal: Spacing.four,
     width: '100%',
-    maxWidth: MaxTopLevelWidth,
+    maxWidth: MaxContentWidth,
     alignSelf: 'center',
   },
 });
