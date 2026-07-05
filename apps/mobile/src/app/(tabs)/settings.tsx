@@ -32,6 +32,7 @@ import { queryClient } from '@/data/query-client';
 import { useDataSource, useHideNsfw, useMockDataToggle, useNsfwMode, type NsfwMode } from '@/data/source';
 import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
+import { hapticImpactLight, hapticSelection } from '@/lib/haptics';
 
 const NSFW_MODE_OPTIONS: { value: NsfwMode; label: string; description: string }[] = [
   { value: 'off', label: 'Off', description: 'NSFW-flagged bridges stay hidden everywhere in the app.' },
@@ -112,9 +113,13 @@ function NsfwModeRow({ mode, onChange }: { mode: NsfwMode; onChange: (mode: Nsfw
   return (
     <Pressable
       ref={ref}
-      onPress={() => openAt(() => <NsfwModePicker mode={mode} onChange={onChange} />)}
+      onPress={() => {
+        hapticImpactLight();
+        openAt(() => <NsfwModePicker mode={mode} onChange={onChange} />);
+      }}
       onHoverIn={onHoverIn}
       onHoverOut={onHoverOut}
+      android_ripple={{ color: theme.backgroundSelected }}
       style={styles.pressableCursor}>
       <View style={[styles.row, hovered && { backgroundColor: theme.backgroundSelected }]}>
         <View style={styles.rowText}>
@@ -149,9 +154,11 @@ function NsfwModePicker({ mode, onChange }: { mode: NsfwMode; onChange: (mode: N
           <Pressable
             key={opt.value}
             onPress={() => {
+              hapticSelection();
               onChange(opt.value);
               closeTop();
             }}
+            android_ripple={{ color: theme.backgroundSelected }}
             style={styles.pressableCursor}>
             <ThemedView type="backgroundElement" style={styles.pickerRow}>
               <View style={styles.rowText}>
@@ -369,9 +376,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: Spacing.three,
-    minHeight: 44,
+    minHeight: 48,
     paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.two,
     borderRadius: Spacing.two,
   },
   rowText: {

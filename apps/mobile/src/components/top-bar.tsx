@@ -7,6 +7,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
+import { hapticImpactLight } from '@/lib/haptics';
 
 /**
  * Static top bar (back button + centered title) shared by every pushed detail
@@ -29,8 +30,12 @@ export function TopBar({ title, onBack }: { title: string; onBack?: () => void }
         { paddingTop: insets.top, height: insets.top + barHeight, borderBottomColor: theme.hairline },
       ]}>
       <Pressable
-        onPress={onBack ?? (() => router.back())}
+        onPress={() => {
+          hapticImpactLight();
+          (onBack ?? (() => router.back()))();
+        }}
         hitSlop={12}
+        android_ripple={{ color: theme.backgroundSelected, borderless: true }}
         style={[styles.backButton, { height: barHeight }]}
         accessibilityRole="button"
         accessibilityLabel="Go back">
