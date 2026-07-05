@@ -3,7 +3,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
@@ -122,6 +128,10 @@ function ChapterList({
     tabsWidth > 0 ? (tabsWidth - TAB_PAD * 2 - TAB_GAP * (TABS.length - 1)) / TABS.length : 0;
   const activeIndex = TABS.findIndex((t) => t.id === tab);
   const pillX = useSharedValue(0);
+  // A quick squash-then-spring-back pulse layered on top of the slide, so the
+  // pill reads as a soft, elastic blob catching up to the tap rather than a
+  // rigid box sliding on rails — closer to iOS's liquid segmented-control feel.
+  const pillScaleX = useSharedValue(1);
   const pillMeasured = useRef(false);
   useEffect(() => {
     if (segmentWidth <= 0) return;
@@ -132,11 +142,15 @@ function ChapterList({
       pillX.value = x;
       pillMeasured.current = true;
     } else {
-      pillX.value = withTiming(x, { duration: 200 });
+      pillX.value = withSpring(x, { damping: 16, stiffness: 220, mass: 0.7 });
+      pillScaleX.value = withSequence(
+        withTiming(1.12, { duration: 90 }),
+        withSpring(1, { damping: 10, stiffness: 200 }),
+      );
     }
-  }, [activeIndex, segmentWidth, pillX]);
+  }, [activeIndex, segmentWidth, pillX, pillScaleX]);
   const pillStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: pillX.value }],
+    transform: [{ translateX: pillX.value }, { scaleX: pillScaleX.value }],
     width: segmentWidth,
   }));
 
@@ -206,8 +220,6 @@ function ChapterList({
                 <ThemedText
                   type="small"
                   numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.8}
                   style={[
                     styles.tabLabel,
                     tab === t.id ? { color: theme.accentOn } : { color: theme.textSecondary },
@@ -511,13 +523,16 @@ const styles = StyleSheet.create({
     // Each tab takes an equal slice of the group's width, label centred.
     flex: 1,
     alignItems: 'center',
-    paddingHorizontal: Spacing.one,
+    paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.one,
     borderRadius: 8,
   },
   tabLabel: {
-    // Reference .ch-tab: 0.82rem (~13px).
-    fontSize: 13,
+    // A touch smaller than the reference's 0.82rem (~13px) — same size on
+    // every tab (no per-label auto-shrink, which read as inconsistently
+    // sized/padded across tabs) while still fitting "Overview" on one line
+    // alongside the restored padding above.
+    fontSize: 12,
     textAlign: 'center',
   },
   sortBtn: {
