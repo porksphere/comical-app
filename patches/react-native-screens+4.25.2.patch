@@ -148,10 +148,57 @@ index 2434c61..c3a5e2f 100644
 +
  @end
 diff --git a/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenViewController.mm b/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenViewController.mm
-index b273770..7b45127 100644
+index b273770..16db52c 100644
 --- a/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenViewController.mm
 +++ b/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenViewController.mm
-@@ -100,12 +100,41 @@
+@@ -4,6 +4,12 @@
+ #import "RNSTabBarController.h"
+ #import "UIScrollView+RNScreens.h"
+ 
++// Weak: the scroll view is already owned by the view hierarchy - this is only an identity
++// check so `rnscreens_refreshContentScrollViewIfNeeded` can tell whether it changed.
++@interface RNSTabsScreenViewController ()
++@property (nonatomic, weak) UIScrollView *rnscreens_lastPushedContentScrollView;
++@end
++
+ @implementation RNSTabsScreenViewController
+ 
+ - (nullable RNSTabBarController *)findTabBarController
+@@ -36,6 +42,33 @@
+ {
+   [super viewDidAppear:animated];
+   [self.tabScreenComponentView.reactEventEmitter emitOnDidAppear];
++  [self rnscreens_refreshContentScrollViewIfNeeded];
++}
++
++- (void)viewDidLayoutSubviews
++{
++  [super viewDidLayoutSubviews];
++  [self rnscreens_refreshContentScrollViewIfNeeded];
++}
++
++// `contentScrollViewForEdge:` below is a pull-based override point - UIKit decides on its own
++// when to (re-)query it, and we don't know that schedule. Push the resolution explicitly too,
++// via the imperative `setContentScrollView:forEdge:` API, every time layout settles or the
++// screen (re)appears - only actually calling it when the resolved scroll view identity changed,
++// so this stays a no-op once the reference is stable. Belt-and-suspenders alongside the override:
++// if minimizing/re-expanding relies on a scroll view UIKit was explicitly handed rather than one
++// it merely queried for, this keeps that handoff fresh regardless of when/how often UIKit itself
++// decides to re-resolve it.
++- (void)rnscreens_refreshContentScrollViewIfNeeded
++{
++  if (@available(iOS 26.0, *)) {
++    UIScrollView *scrollView = [RNSScrollViewFinder findScrollViewBreadthFirstFrom:self.view];
++    if (scrollView == self.rnscreens_lastPushedContentScrollView) {
++      return;
++    }
++    self.rnscreens_lastPushedContentScrollView = scrollView;
++    [self setContentScrollView:scrollView forEdge:NSDirectionalRectEdgeBottom];
++  }
+ }
+ 
+ - (void)viewWillDisappear:(BOOL)animated
+@@ -100,12 +133,41 @@
    } else if (self.tabScreenComponentView.shouldUseRepeatedTabSelectionScrollToTopSpecialEffect) {
      UIScrollView *scrollView =
          [RNSScrollViewFinder findScrollViewInFirstDescendantChainFrom:[self tabScreenComponentView]];
