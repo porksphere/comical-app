@@ -880,7 +880,7 @@ const styles = StyleSheet.create({
   },
   controls: {
     paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
+    gap: Spacing.two,
     paddingTop: Spacing.three,
     paddingBottom: Spacing.three,
   },
@@ -893,14 +893,14 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   rails: {
-    gap: Spacing.three,
+    gap: Spacing.two,
   },
   browseAllHead: {
-    paddingTop: Spacing.three,
+    paddingTop: Spacing.two,
     paddingBottom: Spacing.two,
   },
   homeGridBlock: {
-    paddingTop: Spacing.three,
+    paddingTop: Spacing.two,
     gap: Spacing.three,
   },
   homeGridRows: {
