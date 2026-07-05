@@ -67,6 +67,7 @@ function RootLayout() {
                 <Stack.Screen name="tracker-settings" options={{ headerShown: false }} />
                 <Stack.Screen name="registries" options={{ headerShown: false }} />
                 <Stack.Screen name="registry-browse" options={{ headerShown: false }} />
+                <Stack.Screen name="diagnostics" options={{ headerShown: false }} />
               </Stack>
               <DemoBanner />
             </OverlayProvider>
