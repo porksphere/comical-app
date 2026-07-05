@@ -4,6 +4,7 @@ import { Platform, Pressable, StyleSheet, TextInput, type TextStyle } from 'reac
 import { ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { CONTROL_HEIGHT } from '@/components/filters/filter-types';
 import { useTheme } from '@/hooks/use-theme';
 
 // Suppress react-native-web's default focus outline on the <input> so the
@@ -94,7 +95,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
-    paddingVertical: Spacing.three,
+    // Matches the filter bar's controls (`CONTROL_HEIGHT`) so the search field
+    // and the filter/sort pills below it read as the same height.
+    height: CONTROL_HEIGHT,
     paddingHorizontal: Spacing.three,
     borderRadius: Spacing.three,
     // Reserve the border box always (transparent at rest, accent on focus) so the
