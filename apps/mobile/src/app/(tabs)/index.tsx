@@ -119,7 +119,13 @@ export default function BrowseScreen() {
     ds.getBridgeLists(bridgeId, ctrl.signal)
       .then((ls) => {
         setLists(ls);
-        setPage('home');
+        // Home only ever renders `page: false` lists (the rest live in the page selector) — a
+        // bridge whose lists are *all* page-flagged has nothing to show there at all, which
+        // otherwise strands the user on a permanently blank Home. Default to its first page
+        // instead; a bridge with at least one home-eligible list still opens on Home as before.
+        const hasHomeList = ls.some((l) => !l.page);
+        const firstPage = ls.find((l) => l.page);
+        setPage(hasHomeList || !firstPage ? 'home' : firstPage.name.toLowerCase());
       })
       .catch((e) => {
         if (!isAbort(e)) setLists([]);
