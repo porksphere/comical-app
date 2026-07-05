@@ -501,7 +501,7 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 999,
+    borderRadius: 10,
     padding: TAB_PAD,
     gap: TAB_GAP,
   },
@@ -515,13 +515,13 @@ const styles = StyleSheet.create({
     top: PILL_INSET,
     bottom: PILL_INSET,
     left: 0,
-    borderRadius: 999,
+    borderRadius: 8,
   },
   tab: {
     alignItems: 'center',
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
-    borderRadius: 999,
+    borderRadius: 8,
   },
   tabLabel: {
     // Reference .ch-tab: 0.82rem (~13px). Every tab is sized to its own label
