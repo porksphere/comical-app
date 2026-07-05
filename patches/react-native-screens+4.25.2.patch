@@ -1,3 +1,67 @@
+diff --git a/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/gamma/helpers/ViewFinder.kt b/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/gamma/helpers/ViewFinder.kt
+index 75fd0ee..483d9f7 100644
+--- a/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/gamma/helpers/ViewFinder.kt
++++ b/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/gamma/helpers/ViewFinder.kt
+@@ -38,4 +38,41 @@ object ViewFinder {
+ 
+         return null
+     }
++
++    // Bounded so a pathological view tree can't turn this into an unbounded scan.
++    private const val MAX_VISITED_VIEWS = 2000
++
++    /**
++     * Searches for a ScrollView anywhere in `view`'s subtree using a bounded breadth-first
++     * search, instead of only the first-child chain. Unlike `findScrollViewInFirstDescendantChain`,
++     * this succeeds even when the scroll view isn't the first child at every level (e.g. a screen
++     * with a top-bar overlay sibling) - see
++     * https://github.com/software-mansion/react-native-screens/issues/4145.
++     *
++     * Horizontal RN scroll views are backed by `HorizontalScrollView`, a sibling class of
++     * `ScrollView` (not a subclass), so this naturally only matches vertical scrollers - no
++     * separate axis check is needed here, unlike the iOS BFS fallback.
++     */
++    fun findScrollViewBreadthFirst(view: View): ScrollView? {
++        val queue = ArrayDeque<View>()
++        queue.add(view)
++        var visited = 0
++
++        while (queue.isNotEmpty() && visited < MAX_VISITED_VIEWS) {
++            val current = queue.removeFirst()
++            visited++
++
++            if (current is ScrollView) {
++                return current
++            }
++
++            if (current is ViewGroup) {
++                for (i in 0 until current.childCount) {
++                    queue.add(current.getChildAt(i))
++                }
++            }
++        }
++
++        return null
++    }
+ }
+diff --git a/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/gamma/tabs/container/TabsContainer.kt b/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/gamma/tabs/container/TabsContainer.kt
+index 3916fdc..6af79ba 100644
+--- a/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/gamma/tabs/container/TabsContainer.kt
++++ b/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/gamma/tabs/container/TabsContainer.kt
+@@ -67,7 +67,12 @@ class TabsContainer internal constructor(
+                 }
+             }
+             if (selectedTabFragment.tabsScreen.shouldUseRepeatedTabSelectionScrollToTopSpecialEffect) {
+-                val scrollView = ViewFinder.findScrollViewInFirstDescendantChain(contentView)
++                // Same first-child-only limitation as the finder above - fall back to a bounded
++                // BFS so this still finds the scroll view on a screen with a top-bar overlay
++                // sibling (see ViewFinder.findScrollViewBreadthFirst).
++                val scrollView =
++                    ViewFinder.findScrollViewInFirstDescendantChain(contentView)
++                        ?: ViewFinder.findScrollViewBreadthFirst(contentView)
+                 if (scrollView != null && scrollView.scrollY > 0) {
+                     scrollView.smoothScrollTo(scrollView.scrollX, 0)
+                     return true
 diff --git a/node_modules/react-native-screens/ios/helpers/scroll-view/RNSScrollViewFinder.h b/node_modules/react-native-screens/ios/helpers/scroll-view/RNSScrollViewFinder.h
 index 04d40b3..13e5c4f 100644
 --- a/node_modules/react-native-screens/ios/helpers/scroll-view/RNSScrollViewFinder.h
@@ -84,10 +148,22 @@ index 2434c61..c3a5e2f 100644
 +
  @end
 diff --git a/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenViewController.mm b/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenViewController.mm
-index b273770..a3309d6 100644
+index b273770..7b45127 100644
 --- a/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenViewController.mm
 +++ b/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenViewController.mm
-@@ -106,6 +106,29 @@
+@@ -100,12 +100,41 @@
+   } else if (self.tabScreenComponentView.shouldUseRepeatedTabSelectionScrollToTopSpecialEffect) {
+     UIScrollView *scrollView =
+         [RNSScrollViewFinder findScrollViewInFirstDescendantChainFrom:[self tabScreenComponentView]];
++    if (scrollView == nil) {
++      // Same first-subview-only limitation as `contentScrollViewForEdge:` above - fall back to
++      // the bounded BFS so repeated-tab-selection scroll-to-top still works on a screen with a
++      // top-bar overlay sibling.
++      scrollView = [RNSScrollViewFinder findScrollViewBreadthFirstFrom:[self tabScreenComponentView]];
++    }
+     return [scrollView rnscreens_scrollToTop];
+   }
+ 
    return false;
  }
  

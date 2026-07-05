@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { FlatList, Platform, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -14,6 +14,7 @@ import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type HistoryEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useTopBarHeight } from '@/hooks/use-responsive';
+import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
 import { relTime } from '@/lib/rel-time';
 
@@ -26,6 +27,8 @@ export default function HistoryScreen() {
   const queryClient = useQueryClient();
   const hideNsfw = useHideNsfw();
   const { byId, nameOf, directOf } = useBridgeMap();
+  const listRef = useRef<FlatList>(null);
+  useScrollToTopOnReselect('history', listRef);
 
   const { data: items = undefined, error, isLoading, refetch } = useQuery(historyQuery(ds, mock));
 
@@ -108,6 +111,7 @@ export default function HistoryScreen() {
         </View>
       ) : (
         <FlatList
+          ref={listRef}
           data={visible}
           keyExtractor={(h) => `${h.bridgeId}:${h.seriesId}`}
           contentContainerStyle={[
