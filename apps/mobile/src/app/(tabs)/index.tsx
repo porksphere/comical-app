@@ -63,7 +63,7 @@ export default function BrowseScreen() {
   const theme = useTheme();
 
   // ── Bridges ────────────────────────────────────────────────────────────
-  const [hideNsfw] = useHideNsfw();
+  const hideNsfw = useHideNsfw();
   const [bridges, setBridges] = useState<Bridge[]>([]);
   const [bridgesError, setBridgesError] = useState<string | null>(null);
   const [bridgesReload, setBridgesReload] = useState(0);
