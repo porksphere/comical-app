@@ -361,9 +361,7 @@ function SeriesBody({
                 <ThemedText type="small" themeColor="textSecondary" style={styles.metaLabel}>
                   {m.label}
                 </ThemedText>
-                <ThemedText type="small" style={metaKey && { color: theme.accent }}>
-                  {m.value}
-                </ThemedText>
+                <ThemedText type="small">{m.value}</ThemedText>
               </>
             );
             return metaKey && bridgeId ? (
