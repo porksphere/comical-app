@@ -20,6 +20,7 @@ import type { ApiBridgeInfo } from '@/data/api';
 import { useDataSource } from '@/data/source';
 import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
+import { hapticImpactLight, hapticSelection } from '@/lib/haptics';
 
 /** Capabilities + self-reported facts from `GET /bridges/{id}`'s `info` — everything the bridge
  *  declares about itself (version, contract version, languages, content rating, rate limit),
@@ -236,16 +237,18 @@ export function GenreExclusionsControl({ bridgeId }: { bridgeId: string }) {
         disabled={saving}
         onHoverIn={onHoverIn}
         onHoverOut={onHoverOut}
+        android_ripple={{ color: theme.backgroundElement }}
         style={styles.pressableCursor}
-        onPress={() =>
+        onPress={() => {
+          hapticImpactLight();
           openAt(() => (
             <GenrePicker
               available={data.available}
               excluded={data.excluded}
               onToggle={toggle}
             />
-          ))
-        }>
+          ));
+        }}>
         {/* Always `backgroundSelected` — this row sits inside the `backgroundElement`
          *  `SettingsSection` card above, so resting on the same tier would make it
          *  invisible until touched (see the identical comment in setting-field.tsx). */}
@@ -296,7 +299,15 @@ function GenreOption({ label, on, onPress }: { label: string; on: boolean; onPre
   const theme = useTheme();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
   return (
-    <Pressable onPress={onPress} onHoverIn={onHoverIn} onHoverOut={onHoverOut} style={styles.pressableCursor}>
+    <Pressable
+      onPress={() => {
+        hapticSelection();
+        onPress();
+      }}
+      onHoverIn={onHoverIn}
+      onHoverOut={onHoverOut}
+      android_ripple={{ color: theme.backgroundSelected }}
+      style={styles.pressableCursor}>
       <ThemedView type={hovered ? 'backgroundSelected' : 'backgroundElement'} style={styles.row}>
         <ThemedText>{label}</ThemedText>
         <View style={[styles.check, on && { borderColor: theme.accent, backgroundColor: theme.accent }]} />
