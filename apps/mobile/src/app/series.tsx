@@ -308,7 +308,7 @@ function SeriesBody({
   // Tapping a tag chip drops the Browse tab into a matching search, mirroring
   // comical-web's tag chips (app.ts): a `tagQueries` entry runs a free-text
   // search; a `tagIds` entry selects the bridge's tag-multiselect filter (keyed
-  // "tag" by convention — see nhentai). We hand the intent to Browse via the
+  // "tag" by convention). We hand the intent to Browse via the
   // shared store and jump to that tab. No-op without a real bridge id (mock).
   //
   // `dismissTo` (not `navigate`/`push`) — Browse is already mounted underneath
