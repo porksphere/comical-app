@@ -4,10 +4,11 @@
  * fetch wrapper: `${BASE}${path}`, throw on non-2xx with the server's `error`
  * message, return parsed JSON.
  *
- * Base URL comes entirely from EXPO_PUBLIC_COMICAL_SERVER (inlined by Expo at build time) — no
- * default baked into source. A build that needs to reach a real deployment supplies it at build
- * time (see the repo's CI docs); one that doesn't set it stays request-less (mock/demo data only,
- * or the embedded on-device runtime, which never uses this constant).
+ * Base URL resolution order: a Settings-configured override (persisted, user-editable — see
+ * `useApiBase`/`setApiBaseOverride` below) beats `EXPO_PUBLIC_COMICAL_SERVER` (inlined by Expo at
+ * build time), which beats `DEFAULT_API_BASE` (`http://localhost:3100`, matching the sibling
+ * `comical-web` dev server's default port). The Settings row that edits this is hidden while the
+ * on-device embedded runtime is enabled, since this value is meaningless there.
  *
  * No credentialed cookies: unlike `comical-web` (reverse-proxied same-origin
  * with its backend in prod, so no CORS involved at all), this app is a
@@ -30,11 +31,67 @@
  * runtime or CI. `source.ts` adapts these into the UI-facing types in
  * `types.ts` — this file has no knowledge of mock data or the UI shapes.
  */
+import { useSyncExternalStore } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import { getResolvedModeSync } from './embedded/preference';
 import type { Bridge, BridgeList } from './types';
 import { logDiagnostic } from '@/lib/diagnostics';
 
-export const API_BASE = process.env.EXPO_PUBLIC_COMICAL_SERVER ?? '';
+const REMOTE_SERVER_KEY = 'comical:remoteServerUrl';
+
+/** Default remote server when nothing else is configured. */
+const DEFAULT_API_BASE = 'http://localhost:3100';
+
+/** The build-time/env-configured base, before any Settings override. */
+const BUILT_IN_API_BASE = process.env.EXPO_PUBLIC_COMICAL_SERVER || DEFAULT_API_BASE;
+
+// Undefined until AsyncStorage hydrates; null means "no override stored".
+let apiBaseOverride: string | null = null;
+const apiBaseListeners = new Set<() => void>();
+
+function notifyApiBaseChange(): void {
+  for (const l of apiBaseListeners) l();
+}
+
+function subscribeApiBase(listener: () => void): () => void {
+  apiBaseListeners.add(listener);
+  return () => apiBaseListeners.delete(listener);
+}
+
+/** The current effective remote base URL — a Settings override if one is set, else the built-in
+ *  (env var or `DEFAULT_API_BASE`). Read this instead of caching the value: it can change at
+ *  runtime via the Settings screen. */
+export function getApiBase(): string {
+  return apiBaseOverride ?? BUILT_IN_API_BASE;
+}
+
+AsyncStorage.getItem(REMOTE_SERVER_KEY)
+  .then((stored) => {
+    if (stored) {
+      apiBaseOverride = stored;
+      notifyApiBaseChange();
+    }
+  })
+  .catch(() => {});
+
+/** Set (or, with `null`, clear) the user's remote-server override from the Settings screen.
+ *  Persisted; trailing slashes are stripped so `${getApiBase()}${path}` never double-slashes.
+ *  Callers are responsible for clearing any cached data that assumed the old server (see
+ *  `settings.tsx`'s `queryClient.clear()` + `bumpDataEpoch()`). */
+export function setApiBaseOverride(url: string | null): void {
+  const trimmed = url?.trim().replace(/\/+$/, '') || null;
+  apiBaseOverride = trimmed;
+  notifyApiBaseChange();
+  if (trimmed) AsyncStorage.setItem(REMOTE_SERVER_KEY, trimmed).catch(() => {});
+  else AsyncStorage.removeItem(REMOTE_SERVER_KEY).catch(() => {});
+}
+
+/** `[effectiveUrl, setOverride]` for the Settings screen's remote-server row. */
+export function useApiBase(): [string, (url: string | null) => void] {
+  const base = useSyncExternalStore(subscribeApiBase, getApiBase, getApiBase);
+  return [base, setApiBaseOverride];
+}
 
 export type { Bridge, BridgeList };
 
@@ -65,8 +122,8 @@ async function responseToDataUri(res: Response): Promise<string> {
  * `<Image>` can actually load. The contract documents these as "absolute or server-relative".
  *
  * - Already absolute → passed through unchanged.
- * - Server-relative, remote transport → prefixed with `API_BASE`, a real network-reachable server
- *   for both the JSON and the follow-up image request.
+ * - Server-relative, remote transport → prefixed with `getApiBase()`, a real network-reachable
+ *   server for both the JSON and the follow-up image request.
  * - Server-relative, embedded transport → resolved through the *same in-process transport* that
  *   served the page/series data, not the shared remote server. This isn't just avoiding an extra
  *   hop: some of these routes redirect to (or proxy) a CDN URL that's scoped to whichever
@@ -80,7 +137,7 @@ async function responseToDataUri(res: Response): Promise<string> {
  */
 export async function resolveAssetSource(url: string): Promise<string> {
   if (!url.startsWith('/')) return url;
-  if (getResolvedModeSync() !== 'embedded') return `${API_BASE}${url}`;
+  if (getResolvedModeSync() !== 'embedded') return `${getApiBase()}${url}`;
   try {
     const res = await transport(url);
     const location = res.headers.get('Location');
@@ -97,8 +154,8 @@ export async function resolveAssetSource(url: string): Promise<string> {
  * The transport every helper in this module goes through. `path` is a server-relative path like
  * `/bridges/x/search?q=…`; the transport returns a `Response` exactly as `fetch` would.
  *
- * The default `remoteTransport` is a bare `fetch` against `API_BASE` — behavior-identical to how
- * this file worked before. On iOS/Android an *embedded* transport (see `./embedded`) can be
+ * The default `remoteTransport` is a bare `fetch` against `getApiBase()` — behavior-identical to
+ * how this file worked before. On iOS/Android an *embedded* transport (see `./embedded`) can be
  * installed with `setTransport()` to resolve the same paths against an on-device bridge runtime
  * (the reused `@comical/host-server` router driving proxy bridges in a native JS engine) instead
  * of hitting an external URI. Everything above this module — `source.ts`, react-query, screens —
@@ -106,8 +163,8 @@ export async function resolveAssetSource(url: string): Promise<string> {
  */
 export type Transport = (path: string, init?: RequestInit) => Promise<Response>;
 
-/** The default transport: plain HTTP against `API_BASE`. */
-export const remoteTransport: Transport = (path, init) => fetch(`${API_BASE}${path}`, init);
+/** The default transport: plain HTTP against `getApiBase()`. */
+export const remoteTransport: Transport = (path, init) => fetch(`${getApiBase()}${path}`, init);
 
 let transport: Transport = remoteTransport;
 
