@@ -19,7 +19,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
 import { QueryClient } from '@tanstack/react-query';
 
-import { API_BASE } from './api';
+import { getApiBase } from './api';
 import { getResolvedModeSync } from './embedded/preference';
 
 // Content (series detail, chapters, lists, pages) is effectively immutable for
@@ -57,4 +57,4 @@ export const PERSIST_MAX_AGE_MS = GC_TIME_MS;
  * backend URL get disjoint persisted caches. (Resolved at module load from the startup preference;
  * a mid-session swap also clears the cache — see settings.tsx — so the two never mix.)
  */
-export const PERSIST_BUSTER = `v2:${getResolvedModeSync() === 'embedded' ? 'embedded' : API_BASE}`;
+export const PERSIST_BUSTER = `v2:${getResolvedModeSync() === 'embedded' ? 'embedded' : getApiBase()}`;
