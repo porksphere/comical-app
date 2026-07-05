@@ -14,6 +14,7 @@ import { isAbort } from '@/data/api';
 import { coverDelayMs, relativeTime } from '@/data/mock';
 import { useDataSource } from '@/data/source';
 import type { Chapter, PageThumbSource, SpriteThumb } from '@/data/types';
+import { clampThumbAspect } from '@/lib/aspect-ratio';
 import { logDiagnostic } from '@/lib/diagnostics';
 
 // The series chapters block: tab filter (Overview / All / Read / Unread) + sort
@@ -389,6 +390,14 @@ function PageThumb({
   const ds = useDataSource();
   const [resolved, setResolved] = useState(thumb);
   const [loaded, setLoaded] = useState(false);
+  // Bridges' page thumbnails aren't always exactly 2:3 — an `image` tile
+  // reports its real aspect ratio once it loads, clamped to a bounded range
+  // around 2:3 so one oddly-shaped page can't blow out the grid (a plain
+  // Image crops safely to any box via `contentFit="cover"`). A `sprite` tile
+  // keeps its exact `{w,h}` crop ratio unclamped instead — `SpriteCrop` below
+  // positions it assuming the box matches that ratio exactly, so clamping it
+  // would bleed in neighbouring sheet pixels.
+  const [naturalAspect, setNaturalAspect] = useState<number | null>(null);
 
   useEffect(() => {
     if (resolved || !bridgeId) return;
@@ -424,7 +433,7 @@ function PageThumb({
     return () => clearTimeout(t);
   }, [delay, delayKey]);
   const ready = delayPassed && loaded;
-  const aspectRatio = resolved?.kind === 'sprite' ? resolved.w / resolved.h : 2 / 3;
+  const aspectRatio = resolved?.kind === 'sprite' ? resolved.w / resolved.h : clampThumbAspect(naturalAspect);
 
   return (
     <Pressable style={[styles.thumb, { width, aspectRatio }]} onPress={onPress}>
@@ -435,7 +444,12 @@ function PageThumb({
           contentFit="cover"
           cachePolicy="memory-disk"
           transition={200}
-          onLoad={() => setLoaded(true)}
+          onLoad={(e: { source?: { width?: number; height?: number } | null }) => {
+            setLoaded(true);
+            const w = e.source?.width;
+            const h = e.source?.height;
+            if (w && h) setNaturalAspect(w / h);
+          }}
           onError={(e: { error?: string }) =>
             logDiagnostic('page-thumb-image', e.error || 'load failed', {
               url: resolved.url,
@@ -618,6 +632,12 @@ const styles = StyleSheet.create({
   thumbGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    // Without this, flexbox's default cross-axis `stretch` forces every tile
+    // in a wrapped row to the row's tallest tile — since each tile's own chrome
+    // (rounded corners, clipping) lives directly on the flex item here (unlike
+    // the series card, where that chrome sits on an inner child), stretching
+    // visibly distorts the box itself instead of just padding empty space.
+    alignItems: 'flex-start',
   },
   moreOverlay: {
     position: 'absolute',
