@@ -34,10 +34,15 @@ const OVERVIEW_TAIL_COUNT = 5;
 // Track padding / gap between tab chips.
 const TAB_PAD = 3;
 const TAB_GAP = 4;
-// How much smaller the sliding highlight is than the tab it sits behind, on
-// every side — this is what makes it read as a floating inset bubble rather
-// than a block that fills its slot edge-to-edge.
-const PILL_INSET = 3;
+// Shared with the sort button so the whole controls row (tab strip + sort
+// toggle) reads as one consistent height.
+const CONTROLS_HEIGHT = 32;
+// How much smaller the sliding highlight is than the tab it sits behind —
+// horizontally and vertically separately, since the vertical inset wants to
+// read as more of a floating capsule than the horizontal one. This is what
+// makes it a bubble rather than a block filling its slot edge-to-edge.
+const PILL_INSET_X = 3;
+const PILL_INSET_Y = 6;
 
 /** Pulls the chapter number out of a display name like "Chapter 176 — The Spirit
  *  Zone" (preferring a number right after "chapter"/"ch.", so a stray number
@@ -130,8 +135,8 @@ function ChapterList({
   const pillMeasured = useRef(false);
   useEffect(() => {
     if (!activeBox) return;
-    const x = activeBox.x + PILL_INSET;
-    const width = activeBox.width - PILL_INSET * 2;
+    const x = activeBox.x + PILL_INSET_X;
+    const width = activeBox.width - PILL_INSET_X * 2;
     // Snap into place on first measurement (no slide-in from 0); morph width
     // and position together for every change after that — no spring/bounce,
     // just the bubble smoothly resizing and sliding to hug the new label.
@@ -498,29 +503,33 @@ const styles = StyleSheet.create({
   tabs: {
     // Content-sized (not `flex: 1` on each child) — a tab's width follows its
     // own label, so "All" and "Overview" don't get forced to the same width.
+    // Fixed height (matching the sort button) rather than letting padding
+    // drive it, so the whole controls row reads as one consistent height.
     flex: 1,
+    height: CONTROLS_HEIGHT,
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: 10,
     padding: TAB_PAD,
     gap: TAB_GAP,
   },
-  // Sliding highlight behind the active tab (see `pillStyle`) — inset by
-  // `PILL_INSET` from the active tab's own measured box on every side (see
-  // `onTabLayout`/`activeBox`), so it reads as a floating bubble rather than a
-  // block that fills its tab edge-to-edge. Height is static (every tab shares
-  // the same padding, so only x/width ever change) — inset vertically here.
+  // Sliding highlight behind the active tab (see `pillStyle`) — inset from the
+  // active tab's own measured box (see `onTabLayout`/`activeBox`) so it reads
+  // as a floating bubble rather than a block filling its tab edge-to-edge.
+  // Height is static (every tab shares the same height) — inset vertically
+  // here; x/width (horizontal inset baked in) animate in `pillStyle`.
   tabPill: {
     position: 'absolute',
-    top: PILL_INSET,
-    bottom: PILL_INSET,
+    top: PILL_INSET_Y,
+    bottom: PILL_INSET_Y,
     left: 0,
     borderRadius: 8,
   },
   tab: {
+    height: CONTROLS_HEIGHT - TAB_PAD * 2,
     alignItems: 'center',
+    justifyContent: 'center',
     paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
     borderRadius: 8,
   },
   tabLabel: {
@@ -531,7 +540,7 @@ const styles = StyleSheet.create({
   },
   sortBtn: {
     width: 36,
-    height: 32,
+    height: CONTROLS_HEIGHT,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
