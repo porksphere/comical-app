@@ -98,7 +98,7 @@ export default function ActivityScreen() {
   const listHeader = (
     <View style={styles.controls}>
       <View style={styles.controlsRow}>
-        <ThemedText type="small" themeColor="textSecondary">
+        <ThemedText type="small" themeColor="textSecondary" style={styles.controlsText}>
           New chapters across your library
         </ThemedText>
         {syncButton}
@@ -213,6 +213,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: Spacing.three,
+  },
+  // Without this, RN's default `flexShrink: 0` on Text keeps it at its full
+  // natural width, leaving no room for the (non-shrinking) sync button —
+  // which then overflows the row and gets clipped at the screen edge.
+  controlsText: {
+    flex: 1,
+    flexShrink: 1,
+    minWidth: 0,
   },
   syncBtn: {
     borderRadius: 999,
