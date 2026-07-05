@@ -32,8 +32,16 @@ export function ProgressPill({
   // keyboardWill*  with a duration/easing synced to the keyboard's own animation;
   // Android only reliably fires keyboardDid* (abrupt, no duration), so its rise
   // just uses a synthetic ease instead — expected platform difference, not a bug.
+  //
+  // Listener lifetime is NOT gated on `editing`: tapping "Go" (or blurring)
+  // flips `editing` to false immediately, but the real keyboard dismiss (and
+  // its keyboardWill/DidHide event) only arrives after its own animation
+  // finishes, shortly *after* that. Gating registration on `editing` tore the
+  // listener down before that event could arrive, so the pill never came back
+  // down. Keyboard state is independent of our own `editing` state — just keep
+  // listening for the component's whole lifetime instead.
   useEffect(() => {
-    if (Platform.OS === 'web' || !editing) return;
+    if (Platform.OS === 'web') return;
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
     const subShow = Keyboard.addListener(showEvent, (e) => {
@@ -48,7 +56,7 @@ export function ProgressPill({
       subShow.remove();
       subHide.remove();
     };
-  }, [editing, insets.bottom, keyboardHeight]);
+  }, [insets.bottom, keyboardHeight]);
 
   // Web: adapts the visualViewport-resize signal search-field.tsx already uses
   // (there, to force a blur on keyboard-close) — here, into a raise-above-keyboard
