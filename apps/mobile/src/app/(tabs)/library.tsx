@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { FlatList, Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -18,6 +18,7 @@ import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import type { Bridge, LibraryItem, SeriesEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useTopBarHeight } from '@/hooks/use-responsive';
+import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
 
 const GRID_COLUMN_GAP = Spacing.two;
@@ -41,6 +42,8 @@ export default function LibraryScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const hideNsfw = useHideNsfw();
+  const listRef = useRef<FlatList>(null);
+  useScrollToTopOnReselect('library', listRef);
 
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<LibrarySort>('added');
@@ -139,6 +142,7 @@ export default function LibraryScreen() {
   return (
     <ThemedView style={styles.container}>
       <FlatList
+        ref={listRef}
         key={numColumns}
         data={gridData}
         keyExtractor={(item) => String(item.id)}
