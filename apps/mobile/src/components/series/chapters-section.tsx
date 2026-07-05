@@ -1,8 +1,9 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
@@ -30,6 +31,10 @@ const TABS: { id: Tab; label: string }[] = [
 // start and the end, with an expand button between them for the hidden middle.
 const OVERVIEW_HEAD_COUNT = 5;
 const OVERVIEW_TAIL_COUNT = 5;
+// Must match `styles.tabs`'s `padding`/`gap` — used to compute the sliding
+// highlight's geometry from the strip's measured width.
+const TAB_PAD = 3;
+const TAB_GAP = 2;
 
 /** Pulls the chapter number out of a display name like "Chapter 176 — The Spirit
  *  Zone" (preferring a number right after "chapter"/"ch.", so a stray number
@@ -109,6 +114,32 @@ function ChapterList({
   // Overview-only: reveal the collapsed middle portion inline.
   const [middleExpanded, setMiddleExpanded] = useState(false);
 
+  // Sliding highlight behind the active tab — measured from the tab strip's own
+  // width (all `TABS` are equal `flex: 1` slices) rather than per-tab `onLayout`,
+  // so its position/width are exact even before any tab has individually laid out.
+  const [tabsWidth, setTabsWidth] = useState(0);
+  const segmentWidth =
+    tabsWidth > 0 ? (tabsWidth - TAB_PAD * 2 - TAB_GAP * (TABS.length - 1)) / TABS.length : 0;
+  const activeIndex = TABS.findIndex((t) => t.id === tab);
+  const pillX = useSharedValue(0);
+  const pillMeasured = useRef(false);
+  useEffect(() => {
+    if (segmentWidth <= 0) return;
+    const x = activeIndex * (segmentWidth + TAB_GAP);
+    // Snap into place on first measurement (no slide-in from 0); animate every
+    // change after that.
+    if (!pillMeasured.current) {
+      pillX.value = x;
+      pillMeasured.current = true;
+    } else {
+      pillX.value = withTiming(x, { duration: 200 });
+    }
+  }, [activeIndex, segmentWidth, pillX]);
+  const pillStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: pillX.value }],
+    width: segmentWidth,
+  }));
+
   const sorted = useMemo(() => {
     let list = chapters;
     if (tab === 'read') list = chapters.filter((c) => c.read);
@@ -154,7 +185,16 @@ function ChapterList({
           Chapters
         </ThemedText>
         <View style={styles.controls}>
-          <ThemedView type="backgroundElement" style={styles.tabs}>
+          <ThemedView
+            type="backgroundElement"
+            style={styles.tabs}
+            onLayout={(e) => setTabsWidth(e.nativeEvent.layout.width)}>
+            {segmentWidth > 0 && (
+              <Animated.View
+                pointerEvents="none"
+                style={[styles.tabPill, { backgroundColor: theme.accent }, pillStyle]}
+              />
+            )}
             {TABS.map((t) => (
               <Pressable
                 key={t.id}
@@ -162,9 +202,12 @@ function ChapterList({
                   setTab(t.id);
                   setMiddleExpanded(false);
                 }}
-                style={[styles.tab, tab === t.id && { backgroundColor: theme.accent }]}>
+                style={styles.tab}>
                 <ThemedText
                   type="small"
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.8}
                   style={[
                     styles.tabLabel,
                     tab === t.id ? { color: theme.accentOn } : { color: theme.textSecondary },
@@ -452,14 +495,23 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     borderRadius: 10,
-    padding: 3,
-    gap: 2,
+    padding: TAB_PAD,
+    gap: TAB_GAP,
+  },
+  // Sliding highlight behind the active tab (see `pillStyle`) — positioned
+  // relative to the strip's own padding edge, same origin as the tab Pressables.
+  tabPill: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    borderRadius: 8,
   },
   tab: {
     // Each tab takes an equal slice of the group's width, label centred.
     flex: 1,
     alignItems: 'center',
-    paddingHorizontal: Spacing.two,
+    paddingHorizontal: Spacing.one,
     paddingVertical: Spacing.one,
     borderRadius: 8,
   },
