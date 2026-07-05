@@ -376,9 +376,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: Spacing.three,
-    minHeight: 44,
+    minHeight: 48,
     paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.two,
     borderRadius: Spacing.two,
   },
   rowText: {

@@ -137,7 +137,6 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: StyleSheet.hairlineWidth,
-    marginLeft: Spacing.two,
   },
   row: {
     flexDirection: 'row',
@@ -146,7 +145,6 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
     minHeight: 48,
     paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.two,
     borderRadius: Spacing.two,
   },
   rowPressable: {
