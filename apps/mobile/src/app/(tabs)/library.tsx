@@ -40,7 +40,7 @@ export default function LibraryScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const [hideNsfw] = useHideNsfw();
+  const hideNsfw = useHideNsfw();
 
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<LibrarySort>('added');
