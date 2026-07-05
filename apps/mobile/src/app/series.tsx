@@ -659,7 +659,7 @@ const styles = StyleSheet.create({
     lineHeight: 21,
   },
   related: {
-    gap: Spacing.three,
+    gap: Spacing.two,
   },
   skelTitle: {
     gap: Spacing.two,
