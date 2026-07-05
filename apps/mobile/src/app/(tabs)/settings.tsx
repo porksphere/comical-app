@@ -7,6 +7,7 @@ import {
   BridgesIcon,
   ChevronRightIcon,
   DeveloperIcon,
+  DiagnosticsIcon,
   GeneralSettingsIcon,
   RegistriesIcon,
   TrackersIcon,
@@ -66,6 +67,7 @@ export default function SettingsScreen() {
         <BridgesSection />
         <TrackersSection />
         <RegistriesSection />
+        <DiagnosticsSection />
         {__DEV__ && <DeveloperSection />}
       </ScrollView>
     </ThemedView>
@@ -328,6 +330,24 @@ function RegistriesSection() {
           <SettingsRow label="Manage registries" onPress={() => router.push('/registries')} />
         </>
       )}
+    </SettingsSection>
+  );
+}
+
+/** A visible-in-every-build log of asset-load failures (page images, thumbnails) that would
+ *  otherwise fail silently with no way to inspect them off a device attached to Metro. Kept
+ *  outside `DeveloperSection` (which is `__DEV__`-only) since it's meant to be usable in a real
+ *  build too. */
+function DiagnosticsSection() {
+  const theme = useTheme();
+  const router = useRouter();
+  return (
+    <SettingsSection title="Diagnostics" icon={<DiagnosticsIcon color={theme.textSecondary} size={14} />}>
+      <SettingsRow
+        label="Failure log"
+        description="Page/thumbnail load failures, kept on-device only"
+        onPress={() => router.push('/diagnostics')}
+      />
     </SettingsSection>
   );
 }
