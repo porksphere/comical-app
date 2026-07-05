@@ -14,6 +14,7 @@ import { isAbort } from '@/data/api';
 import { coverDelayMs, relativeTime } from '@/data/mock';
 import { useDataSource } from '@/data/source';
 import type { Chapter, PageThumbSource, SpriteThumb } from '@/data/types';
+import { logDiagnostic } from '@/lib/diagnostics';
 
 // The series chapters block: tab filter (Overview / All / Read / Unread) + sort
 // toggle (oldest/newest) over the chapter rows, with a "Show all" teaser on the
@@ -386,8 +387,12 @@ function PageThumb({
         if (fetched) setResolved(fetched);
       })
       .catch((e) => {
+        // Non-fatal: the tile just stays a skeleton — but log it so a bridge that always fails
+        // this lookup is visible somewhere instead of just an unexplained blank grid.
         if (!isAbort(e)) {
-          /* non-fatal: tile stays a skeleton */
+          logDiagnostic('page-thumb-fetch', (e as Error).message || String(e), {
+            context: `bridge=${bridgeId} series=${seed} page=${index}`,
+          });
         }
       });
     return () => ctrl.abort();
@@ -420,10 +425,26 @@ function PageThumb({
           cachePolicy="memory-disk"
           transition={200}
           onLoad={() => setLoaded(true)}
+          onError={(e: { error?: string }) =>
+            logDiagnostic('page-thumb-image', e.error || 'load failed', {
+              url: resolved.url,
+              context: `bridge=${bridgeId ?? ''} series=${seed} page=${index}`,
+            })
+          }
         />
       )}
       {delayPassed && resolved?.kind === 'sprite' && (
-        <SpriteCrop thumb={resolved} width={width} onLoad={() => setLoaded(true)} />
+        <SpriteCrop
+          thumb={resolved}
+          width={width}
+          onLoad={() => setLoaded(true)}
+          onError={(msg) =>
+            logDiagnostic('page-thumb-sprite', msg, {
+              url: resolved.sheetUrl,
+              context: `bridge=${bridgeId ?? ''} series=${seed} page=${index}`,
+            })
+          }
+        />
       )}
       {!ready && <Skeleton style={StyleSheet.absoluteFill} />}
       <View style={styles.pageNum}>
@@ -439,7 +460,17 @@ function PageThumb({
  *  through the tile's `overflow: hidden` bounds (`styles.thumb`). Same idea as a CSS sprite: plain
  *  View/Image layout math, so it renders identically on web, iOS, and Android with no SVG or
  *  native region-decoding needed. */
-function SpriteCrop({ thumb, width, onLoad }: { thumb: SpriteThumb; width: number; onLoad?: () => void }) {
+function SpriteCrop({
+  thumb,
+  width,
+  onLoad,
+  onError,
+}: {
+  thumb: SpriteThumb;
+  width: number;
+  onLoad?: () => void;
+  onError?: (message: string) => void;
+}) {
   const scale = width / thumb.w;
   return (
     <Image
@@ -455,6 +486,7 @@ function SpriteCrop({ thumb, width, onLoad }: { thumb: SpriteThumb; width: numbe
       cachePolicy="memory-disk"
       transition={200}
       onLoad={onLoad}
+      onError={(e: { error?: string }) => onError?.(e.error || 'load failed')}
     />
   );
 }
