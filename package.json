@@ -13,7 +13,11 @@
     "android": "bun run --filter mobile android",
     "ios": "bun run --filter mobile ios",
     "web": "bun run --filter mobile web",
-    "typecheck": "bun run --filter '*' typecheck"
+    "typecheck": "bun run --filter '*' typecheck",
+    "postinstall": "patch-package"
+  },
+  "devDependencies": {
+    "patch-package": "^8.0.1"
   },
   "engines": {
     "node": ">=20"
