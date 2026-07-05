@@ -35,6 +35,14 @@ export const API_BASE =
 
 export type { Bridge, BridgeList };
 
+/** Resolves a bridge-supplied asset URL (a sprite sheet, a page image, …) that may be
+ *  server-relative — the contract documents these as "absolute or server-relative" — against
+ *  `API_BASE`. Absolute URLs (the common case: CDN links, `/img-proxy` targets) pass through
+ *  unchanged. */
+export function resolveAssetUrl(url: string): string {
+  return url.startsWith('/') ? `${API_BASE}${url}` : url;
+}
+
 /**
  * The transport every helper in this module goes through. `path` is a server-relative path like
  * `/bridges/x/search?q=…`; the transport returns a `Response` exactly as `fetch` would.
