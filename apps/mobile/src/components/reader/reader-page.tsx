@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { coverDelayMs } from '@/data/mock';
+import { logDiagnostic } from '@/lib/diagnostics';
 
 // One page image. Reuses the cover/thumbnail loading treatment: hold the image
 // behind a simulated network delay and shimmer a skeleton until it's both
@@ -76,7 +77,11 @@ export function ReaderPage({
     onFailedChange?.(failed);
   }, [failed, onFailedChange]);
 
-  const handleError = () => {
+  const handleError = (e: { error?: string }) => {
+    logDiagnostic('reader-page', e.error || 'load failed', {
+      url: uri,
+      context: `page=${page} attempt=${attempt + 1}/${RETRY_DELAYS_MS.length + 1}`,
+    });
     if (attempt < RETRY_DELAYS_MS.length) {
       setRetrying(true);
       retryTimerRef.current = setTimeout(() => {

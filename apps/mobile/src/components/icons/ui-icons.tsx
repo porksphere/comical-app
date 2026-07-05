@@ -1,5 +1,6 @@
 import {
   Blocks,
+  Bug,
   ChevronDown,
   ChevronRight,
   Compass,
@@ -28,3 +29,4 @@ export const BridgesIcon = ({ color, size = 16 }: IconProps) => <Blocks color={c
 export const TrackersIcon = ({ color, size = 16 }: IconProps) => <Compass color={color} size={size} />;
 export const RegistriesIcon = ({ color, size = 16 }: IconProps) => <Database color={color} size={size} />;
 export const DeveloperIcon = ({ color, size = 16 }: IconProps) => <Terminal color={color} size={size} />;
+export const DiagnosticsIcon = ({ color, size = 16 }: IconProps) => <Bug color={color} size={size} />;
