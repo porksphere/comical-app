@@ -8,12 +8,20 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, useWindowDimensions, View, type ViewStyle } from 'react-native';
+import {
+  Pressable,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+  type GestureResponderEvent,
+  type ViewStyle,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { DesktopTopBarHeight, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
+import { scrollToTopFor } from '@/lib/reselect-scroll';
 
 // Web nav (Metro resolves this `.web` file for the web bundle, so native
 // NativeTabs are never imported here). Responsive: an app-like black icon
@@ -151,7 +159,7 @@ export default function AppTabs() {
 
   const triggers = TABS.map((tab) => (
     <TabTrigger key={tab.name} name={tab.name} href={tab.href as never} asChild>
-      <TabButton mobile={isMobile} Icon={tab.Icon} onInteract={reveal}>
+      <TabButton mobile={isMobile} Icon={tab.Icon} onInteract={reveal} routeName={tab.name}>
         {tab.label}
       </TabButton>
     </TabTrigger>
@@ -205,16 +213,32 @@ function TabButton({
   mobile,
   Icon,
   onInteract,
+  routeName,
+  onPress,
   ...props
-}: TabTriggerSlotProps & { mobile?: boolean; Icon: LucideIcon; onInteract?: () => void }) {
+}: TabTriggerSlotProps & {
+  mobile?: boolean;
+  Icon: LucideIcon;
+  onInteract?: () => void;
+  routeName: string;
+}) {
   const theme = useTheme();
   const { hovered, handlers } = useHover();
+
+  // Already on this tab: navigation is a no-op, so re-tapping it scrolls its
+  // screen back to the top instead (matches the native tab bar's built-in
+  // repeated-tab-selection behavior — see useScrollToTopOnReselect).
+  const handlePress = (e: GestureResponderEvent) => {
+    if (isFocused) scrollToTopFor(routeName);
+    onPress?.(e);
+  };
 
   if (mobile) {
     const color = isFocused ? ACTIVE : INACTIVE;
     return (
       <Pressable
         {...props}
+        onPress={handlePress}
         // Touching/hovering the (possibly faded) bar reveals it before the press
         // resolves, so a tap is never "lost" to an invisible target.
         onPressIn={onInteract}
@@ -233,6 +257,7 @@ function TabButton({
     <Pressable
       {...props}
       {...handlers}
+      onPress={handlePress}
       accessibilityLabel={typeof children === 'string' ? children : undefined}
       style={({ pressed }) => [
         styles.iconButton,
