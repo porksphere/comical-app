@@ -17,6 +17,7 @@ import { Spacing } from '@/constants/theme';
 import type { SettingDescriptor, SettingValue } from '@/data/api';
 import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
+import { hapticImpactLight, hapticSelection } from '@/lib/haptics';
 
 type FieldProps<D extends SettingDescriptor> = {
   descriptor: D;
@@ -180,10 +181,15 @@ function PlainNumberField({
 }
 
 function StepperButton({ label, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) {
+  const theme = useTheme();
   return (
     <Pressable
-      onPress={onPress}
+      onPress={() => {
+        hapticSelection();
+        onPress();
+      }}
       disabled={disabled}
+      android_ripple={{ color: theme.backgroundElement, borderless: true }}
       style={[styles.pressableCursor, disabled && styles.stepBtnDisabled]}>
       <ThemedView type="backgroundSelected" style={styles.stepBtn}>
         <ThemedText type="title">{label}</ThemedText>
@@ -241,9 +247,13 @@ function EnumField({
     <FieldWrap label={descriptor.label} description={descriptor.description} required={descriptor.required}>
       <Pressable
         ref={ref}
-        onPress={() => openAt(() => <EnumPicker descriptor={descriptor} value={value} onChange={onChange} />)}
+        onPress={() => {
+          hapticImpactLight();
+          openAt(() => <EnumPicker descriptor={descriptor} value={value} onChange={onChange} />);
+        }}
         onHoverIn={onHoverIn}
         onHoverOut={onHoverOut}
+        android_ripple={{ color: theme.backgroundElement }}
         style={styles.pressableCursor}>
         {/* Always `backgroundSelected` (not conditionally on hover) since this field always sits
          *  inside a `backgroundElement` `SettingsSection` card — resting on the same tier as the
@@ -302,7 +312,15 @@ function EnumOption({ label, on, onPress }: { label: string; on: boolean; onPres
   const theme = useTheme();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
   return (
-    <Pressable onPress={onPress} onHoverIn={onHoverIn} onHoverOut={onHoverOut} style={styles.pressableCursor}>
+    <Pressable
+      onPress={() => {
+        hapticSelection();
+        onPress();
+      }}
+      onHoverIn={onHoverIn}
+      onHoverOut={onHoverOut}
+      android_ripple={{ color: theme.backgroundSelected }}
+      style={styles.pressableCursor}>
       <ThemedView type={hovered ? 'backgroundSelected' : 'backgroundElement'} style={styles.row}>
         <ThemedText>{label}</ThemedText>
         <View style={[styles.check, on && { borderColor: theme.accent, backgroundColor: theme.accent }]} />
