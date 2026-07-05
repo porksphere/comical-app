@@ -24,7 +24,7 @@ export default function ActivityScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
-  const [hideNsfw] = useHideNsfw();
+  const hideNsfw = useHideNsfw();
   const { byId, nameOf, directOf } = useBridgeMap();
 
   const { data: items = undefined, error, isLoading, refetch } = useQuery(activityQuery(ds, mock));
