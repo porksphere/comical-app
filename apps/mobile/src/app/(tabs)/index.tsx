@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { FlatList, Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, {
   interpolateColor,
@@ -68,6 +68,7 @@ const META_FILTER_ALIASES: Record<'author' | 'artist' | 'type', string[]> = {
 
 export default function BrowseScreen() {
   const ds = useDataSource();
+  const router = useRouter();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
@@ -78,6 +79,10 @@ export default function BrowseScreen() {
   const hideNsfw = useHideNsfw();
   const [bridges, setBridges] = useState<Bridge[]>([]);
   const [bridgesError, setBridgesError] = useState<string | null>(null);
+  // Distinguishes "still fetching" from "fetched, and there are none" — both
+  // start out as an empty `bridges` array, so without this the no-bridges
+  // placeholder would flash before the first load resolves.
+  const [bridgesLoaded, setBridgesLoaded] = useState(false);
   const [bridgesReload, setBridgesReload] = useState(0);
   const [bridge, setBridge] = useState<string | null>(null);
 
@@ -85,9 +90,15 @@ export default function BrowseScreen() {
     const ctrl = new AbortController();
     setBridgesError(null);
     ds.getBridges(ctrl.signal)
-      .then(setBridges)
+      .then((bs) => {
+        setBridges(bs);
+        setBridgesLoaded(true);
+      })
       .catch((e) => {
-        if (!isAbort(e)) setBridgesError(e.message || 'Failed to load bridges');
+        if (!isAbort(e)) {
+          setBridgesError(e.message || 'Failed to load bridges');
+          setBridgesLoaded(true);
+        }
       });
     return () => ctrl.abort();
   }, [ds, bridgesReload]);
@@ -691,6 +702,26 @@ export default function BrowseScreen() {
     );
   }
 
+  if (bridgesLoaded && bridges.length === 0) {
+    return (
+      <ThemedView style={[styles.container, styles.centerFill]}>
+        <View style={styles.noBridges}>
+          <ThemedText type="subtitle" style={styles.noBridgesTitle}>
+            Comical
+          </ThemedText>
+          <ThemedText type="small" themeColor="textSecondary" style={styles.noBridgesDetail}>
+            Add a registry to install bridges and start browsing series.
+          </ThemedText>
+          <Pressable onPress={() => router.push('/registries')} hitSlop={8}>
+            <ThemedText type="smallBold" style={{ color: theme.accent }}>
+              Manage registries
+            </ThemedText>
+          </Pressable>
+        </View>
+      </ThemedView>
+    );
+  }
+
   return (
     <ThemedView style={styles.container}>
       {/* The list fills the screen (behind the header overlay); its top padding
@@ -859,6 +890,18 @@ const styles = StyleSheet.create({
   centerFill: {
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  noBridges: {
+    alignItems: 'center',
+    gap: Spacing.two,
+    paddingHorizontal: Spacing.four,
+  },
+  noBridgesTitle: {
+    textAlign: 'center',
+  },
+  noBridgesDetail: {
+    textAlign: 'center',
+    maxWidth: 320,
   },
   // Absolute overlay so the list scrolls underneath; `justifyContent: flex-end`
   // keeps the selector row pinned to the bottom of the band, with the collapsing
