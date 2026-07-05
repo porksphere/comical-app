@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
@@ -26,7 +26,7 @@ import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
-import { API_BASE, isAbort, type BridgeSummary, type SavedRegistry, type TrackerSummary } from '@/data/api';
+import { isAbort, useApiBase, type BridgeSummary, type SavedRegistry, type TrackerSummary } from '@/data/api';
 import { applyEmbeddedMode, isEmbeddedRuntimeAvailable, useEmbeddedEnabled } from '@/data/embedded';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { queryClient } from '@/data/query-client';
@@ -83,15 +83,27 @@ function GeneralSection() {
   const theme = useTheme();
   const [nsfwMode, setNsfwMode] = useNsfwMode();
   const [onDevice, setOnDevice] = useEmbeddedEnabled();
+  const [apiBase, setApiBaseOverride] = useApiBase();
+  const { open } = useOverlay();
   // The on-device runtime is only offered where a native bridge engine exists (iOS/Android with the
   // native module built) — never on web, which always uses a remote server.
   const embeddedAvailable = isEmbeddedRuntimeAvailable();
+  // Whether the app is actually running embedded right now (not just the user's stored preference —
+  // see getResolvedModeSync in embedded/preference.ts). The remote-server row is meaningless while
+  // this is true, so it's hidden rather than just disabled.
+  const embeddedActive = onDevice && embeddedAvailable;
 
   const toggleOnDevice = (enabled: boolean) => {
     setOnDevice(enabled);
     applyEmbeddedMode(enabled); // swap api.ts's transport (embedded ⇄ remote)
     queryClient.clear(); // embedded and remote caches must not mix (mirrors PERSIST_BUSTER)
     bumpDataEpoch(); // refetch useDataSource-backed screens against the swapped transport
+  };
+
+  const saveApiBase = (url: string | null) => {
+    setApiBaseOverride(url);
+    queryClient.clear(); // a different server's cached data can't be trusted (mirrors PERSIST_BUSTER)
+    bumpDataEpoch(); // refetch useDataSource-backed screens against the new server
   };
 
   return (
@@ -104,7 +116,63 @@ function GeneralSection() {
           right={<ThemedSwitch value={onDevice} onValueChange={toggleOnDevice} />}
         />
       )}
+      {!embeddedActive && (
+        <SettingsRow
+          label="Remote server"
+          description={apiBase}
+          descriptionSelectable
+          onPress={() => open(() => <RemoteServerForm currentUrl={apiBase} onSave={saveApiBase} />)}
+        />
+      )}
     </SettingsSection>
+  );
+}
+
+/** Sheet/popover form for editing the remote-server override (see `RemoteServerForm`'s trigger row
+ *  in `GeneralSection`) — mirrors `AddRegistryForm`'s text-input-plus-save shape in `registries.tsx`. */
+function RemoteServerForm({ currentUrl, onSave }: { currentUrl: string; onSave: (url: string | null) => void }) {
+  const theme = useTheme();
+  const { closeTop } = useOverlay();
+  const [url, setUrl] = useState(currentUrl);
+
+  return (
+    <View style={styles.confirmBody}>
+      <OverlayHeading>Remote server</OverlayHeading>
+      <ThemedText type="small" themeColor="textSecondary">
+        The Comical server this app talks to when not running bridges on this device.
+      </ThemedText>
+      <TextInput
+        value={url}
+        onChangeText={setUrl}
+        placeholder="http://localhost:3100"
+        placeholderTextColor={theme.textSecondary}
+        autoCapitalize="none"
+        autoCorrect={false}
+        keyboardType="url"
+        style={[styles.input, { color: theme.text, borderColor: theme.backgroundSelected }]}
+      />
+      <View style={styles.confirmActions}>
+        <Pressable
+          onPress={() => {
+            onSave(null);
+            closeTop();
+          }}
+          style={styles.confirmBtn}>
+          <ThemedText type="smallBold">Reset to default</ThemedText>
+        </Pressable>
+        <Pressable
+          onPress={() => {
+            onSave(url);
+            closeTop();
+          }}
+          disabled={!url.trim()}
+          style={styles.confirmBtn}>
+          <ThemedText type="smallBold" style={{ color: theme.accent }}>
+            Save
+          </ThemedText>
+        </Pressable>
+      </View>
+    </View>
   );
 }
 
@@ -369,6 +437,7 @@ function DiagnosticsSection() {
 function DeveloperSection() {
   const theme = useTheme();
   const [mockEnabled, setMockEnabled] = useMockDataToggle();
+  const [apiBase] = useApiBase();
   return (
     <SettingsSection title="Developer" icon={<DeveloperIcon color={theme.textSecondary} size={14} />}>
       <SettingsRow
@@ -376,7 +445,7 @@ function DeveloperSection() {
         description="Browse/Series/Reader render generated sample content instead of calling the API."
         right={<ThemedSwitch value={mockEnabled} onValueChange={setMockEnabled} />}
       />
-      <SettingsRow label="Server" description={API_BASE} descriptionSelectable />
+      <SettingsRow label="Server" description={apiBase} descriptionSelectable />
     </SettingsSection>
   );
 }
@@ -415,6 +484,24 @@ const styles = StyleSheet.create({
   },
   pickerBody: {
     gap: Spacing.three,
+  },
+  confirmBody: {
+    gap: Spacing.three,
+  },
+  confirmActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: Spacing.five,
+  },
+  confirmBtn: {
+    paddingVertical: Spacing.two,
+  },
+  input: {
+    borderWidth: 1,
+    borderRadius: Spacing.three,
+    paddingVertical: Spacing.three,
+    paddingHorizontal: Spacing.three,
+    fontSize: 16,
   },
   pickerRow: {
     flexDirection: 'row',
