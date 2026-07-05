@@ -12,7 +12,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { isAbort } from '@/data/api';
 import { coverDelayMs, relativeTime } from '@/data/mock';
 import { useDataSource } from '@/data/source';
-import type { Chapter } from '@/data/types';
+import type { Chapter, PageThumbSource, SpriteThumb } from '@/data/types';
 
 // The series chapters block: tab filter (Overview / All / Read / Unread) + sort
 // toggle (oldest/newest) over the chapter rows, with a "Show all" teaser on the
@@ -64,7 +64,7 @@ export function ChaptersSection({
   only,
 }: {
   chapters?: Chapter[];
-  pageThumbs?: (string | null)[];
+  pageThumbs?: (PageThumbSource | null)[];
   /** Series identity, used to build reader navigation params. */
   seed: string;
   title: string;
@@ -235,7 +235,7 @@ function PageThumbGrid({
   title,
   bridgeId,
 }: {
-  thumbs: (string | null)[];
+  thumbs: (PageThumbSource | null)[];
   seed: string;
   title: string;
   bridgeId?: string;
@@ -267,10 +267,10 @@ function PageThumbGrid({
         onLayout={(e) => setContainerW(e.nativeEvent.layout.width)}>
         <View style={[styles.thumbGrid, { gap }]}>
           {tileW > 0 &&
-            shown.map((uri, i) => (
+            shown.map((thumb, i) => (
               <PageThumb
                 key={i}
-                uri={uri}
+                thumb={thumb}
                 index={i}
                 seed={seed}
                 bridgeId={bridgeId}
@@ -307,12 +307,15 @@ function PageThumbGrid({
 
 /** A single page tile: holds the image behind a simulated network delay and
  *  shows a shimmer skeleton until it's both elapsed and loaded — same treatment
- *  as the cover images, so a long page set visibly streams in. A `null` uri
+ *  as the cover images, so a long page set visibly streams in. A `null` thumb
  *  (the bridge didn't supply this page's thumbnail inline) is fetched lazily
  *  on mount, mirroring comical-web's `loadLazyThumbs` — the tile never falls
- *  back to the full-size page image, it just stays a skeleton if that fails. */
+ *  back to the full-size page image, it just stays a skeleton if that fails.
+ *  A `sprite` thumb renders via `SpriteCrop` instead of a plain `Image`; a
+ *  sprite tile also takes its own aspect ratio (`w`/`h`) rather than the
+ *  uniform 2:3 default, since sprite sheets often pack mixed page shapes. */
 function PageThumb({
-  uri,
+  thumb,
   index,
   seed,
   bridgeId,
@@ -320,7 +323,7 @@ function PageThumb({
   width,
   onPress,
 }: {
-  uri: string | null;
+  thumb: PageThumbSource | null;
   index: number;
   seed: string;
   bridgeId?: string;
@@ -329,15 +332,15 @@ function PageThumb({
   onPress?: () => void;
 }) {
   const ds = useDataSource();
-  const [resolvedUri, setResolvedUri] = useState(uri);
+  const [resolved, setResolved] = useState(thumb);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    if (resolvedUri || !bridgeId) return;
+    if (resolved || !bridgeId) return;
     const ctrl = new AbortController();
     ds.getPageThumb(bridgeId, seed, index, ctrl.signal)
       .then((fetched) => {
-        if (fetched) setResolvedUri(fetched);
+        if (fetched) setResolved(fetched);
       })
       .catch((e) => {
         if (!isAbort(e)) {
@@ -348,7 +351,11 @@ function PageThumb({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bridgeId, seed, index]);
 
-  const delay = useMemo(() => coverDelayMs(resolvedUri ?? ''), [resolvedUri]);
+  // A stable key for the simulated-latency hash: the sheet URL for a sprite tile (every tile cut
+  // from the same sheet shares one request, so they should "arrive" together) or the plain URL
+  // for a full image.
+  const delayKey = resolved ? (resolved.kind === 'sprite' ? resolved.sheetUrl : resolved.url) : '';
+  const delay = useMemo(() => coverDelayMs(delayKey), [delayKey]);
   const [delayPassed, setDelayPassed] = useState(delay === 0);
   useEffect(() => {
     if (delay === 0) return;
@@ -356,13 +363,15 @@ function PageThumb({
     setLoaded(false);
     const t = setTimeout(() => setDelayPassed(true), delay);
     return () => clearTimeout(t);
-  }, [delay, resolvedUri]);
+  }, [delay, delayKey]);
   const ready = delayPassed && loaded;
+  const aspectRatio = resolved?.kind === 'sprite' ? resolved.w / resolved.h : 2 / 3;
+
   return (
-    <Pressable style={[styles.thumb, { width }]} onPress={onPress}>
-      {delayPassed && resolvedUri && (
+    <Pressable style={[styles.thumb, { width, aspectRatio }]} onPress={onPress}>
+      {delayPassed && resolved?.kind === 'image' && (
         <Image
-          source={{ uri: resolvedUri }}
+          source={{ uri: resolved.url }}
           style={styles.thumbImg}
           contentFit="cover"
           cachePolicy="memory-disk"
@@ -370,11 +379,40 @@ function PageThumb({
           onLoad={() => setLoaded(true)}
         />
       )}
+      {delayPassed && resolved?.kind === 'sprite' && (
+        <SpriteCrop thumb={resolved} width={width} onLoad={() => setLoaded(true)} />
+      )}
       {!ready && <Skeleton style={StyleSheet.absoluteFill} />}
       <View style={styles.pageNum}>
         <ThemedText style={styles.pageNumText}>{page}</ThemedText>
       </View>
     </Pressable>
+  );
+}
+
+/** Crops a `sprite`-kind thumbnail's tile out of its shared sheet image. The sheet loads once —
+ *  `expo-image`'s cache keys on `sheetUrl`, so every tile cut from the same sheet reuses one
+ *  request — scaled so the tile matches `width`, then offset so only its `{x,y,w,h}` rect shows
+ *  through the tile's `overflow: hidden` bounds (`styles.thumb`). Same idea as a CSS sprite: plain
+ *  View/Image layout math, so it renders identically on web, iOS, and Android with no SVG or
+ *  native region-decoding needed. */
+function SpriteCrop({ thumb, width, onLoad }: { thumb: SpriteThumb; width: number; onLoad?: () => void }) {
+  const scale = width / thumb.w;
+  return (
+    <Image
+      source={{ uri: thumb.sheetUrl }}
+      style={{
+        position: 'absolute',
+        width: thumb.sheetWidth * scale,
+        height: thumb.sheetHeight * scale,
+        left: -thumb.x * scale,
+        top: -thumb.y * scale,
+      }}
+      contentFit="fill"
+      cachePolicy="memory-disk"
+      transition={200}
+      onLoad={onLoad}
+    />
   );
 }
 
