@@ -14,6 +14,11 @@ export default function AppTabs() {
       labelStyle={{ selected: { color: colors.text } }}
       // iOS 26+: collapse the floating Liquid Glass bar to a single button
       // while scrolling down, expanding again on scroll up. No-op elsewhere.
+      // Requires the patches/react-native-screens+*.patch fallback (bounded BFS
+      // for contentScrollView(for:)) - stock react-native-screens never finds a
+      // scroll view that isn't the literal first child at every level, which is
+      // every screen here (each has a top-bar overlay sibling). See
+      // https://github.com/software-mansion/react-native-screens/issues/4145.
       minimizeBehavior="onScrollDown">
       <NativeTabs.Trigger name="index">
         <NativeTabs.Trigger.Label>Browse</NativeTabs.Trigger.Label>
