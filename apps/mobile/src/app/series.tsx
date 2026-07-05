@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Platform, ScrollView, StyleSheet, useWindowDimensions, View, type ViewStyle } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions, View, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChipRow, TagGroupRow } from '@/components/chip';
@@ -30,6 +30,16 @@ import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 
 const LARGE_COVER_WIDTH = 200;
+
+/** Meta cells whose value should open a matching Browse search, keyed by the
+ *  cell's `label` (see `buildMeta` in `data/source.ts`) to the `BrowseIntent`
+ *  meta key it maps to. STATUS is left static — a lifecycle value like
+ *  "Ongoing" isn't a meaningful search term the way an author/artist/type is. */
+const SEARCHABLE_META_KEYS: Record<string, 'author' | 'artist' | 'type' | undefined> = {
+  AUTHOR: 'author',
+  ARTIST: 'artist',
+  TYPE: 'type',
+};
 
 export default function SeriesScreen() {
   const ds = useDataSource();
@@ -299,7 +309,13 @@ function SeriesBody({
   // comical-web's tag chips (app.ts): a `tagQueries` entry runs a free-text
   // search; a `tagIds` entry selects the bridge's tag-multiselect filter (keyed
   // "tag" by convention — see nhentai). We hand the intent to Browse via the
-  // shared store and navigate to that tab. No-op without a real bridge id (mock).
+  // shared store and jump to that tab. No-op without a real bridge id (mock).
+  //
+  // `dismissTo` (not `navigate`/`push`) — Browse is already mounted underneath
+  // this pushed screen, so this pops back down to that existing instance
+  // instead of stacking a fresh one on top (which is what `navigate` did: from
+  // a screen pushed outside the tab group, it can't tell the tab is already
+  // there and pushes a duplicate rather than returning to it).
   const onTagPress = (group: TagGroup, index: number) => {
     if (!bridgeId) return;
     const query = group.tagQueries?.[index];
@@ -311,7 +327,16 @@ function SeriesBody({
     } else {
       return;
     }
-    router.navigate('/');
+    router.dismissTo('/');
+  };
+
+  // Same idea for the Author/Artist/Type meta cells: Browse will try to route
+  // the value into the matching filter field, falling back to a free-text
+  // search if the bridge has no such filter.
+  const onMetaPress = (metaKey: 'author' | 'artist' | 'type', value: string) => {
+    if (!bridgeId) return;
+    setBrowseIntent({ bridgeName: series.bridge, kind: 'meta', metaKey, value });
+    router.dismissTo('/');
   };
 
   // Metadata, description, and chapters — placed in the right column (large)
@@ -329,14 +354,31 @@ function SeriesBody({
 
       {series.meta?.length ? (
         <View style={[styles.metaGrid, { borderColor: theme.hairline }]}>
-          {series.meta.map((m) => (
-            <View key={m.label} style={styles.metaCell}>
-              <ThemedText type="small" themeColor="textSecondary" style={styles.metaLabel}>
-                {m.label}
-              </ThemedText>
-              <ThemedText type="small">{m.value}</ThemedText>
-            </View>
-          ))}
+          {series.meta.map((m) => {
+            const metaKey = SEARCHABLE_META_KEYS[m.label];
+            const cellContent = (
+              <>
+                <ThemedText type="small" themeColor="textSecondary" style={styles.metaLabel}>
+                  {m.label}
+                </ThemedText>
+                <ThemedText type="small">{m.value}</ThemedText>
+              </>
+            );
+            return metaKey && bridgeId ? (
+              <Pressable
+                key={m.label}
+                onPress={() => onMetaPress(metaKey, m.value)}
+                accessibilityRole="button"
+                accessibilityLabel={`Search ${m.value}`}
+                style={({ pressed }) => [styles.metaCell, pressed && styles.metaCellPressed]}>
+                {cellContent}
+              </Pressable>
+            ) : (
+              <View key={m.label} style={styles.metaCell}>
+                {cellContent}
+              </View>
+            );
+          })}
         </View>
       ) : null}
 
@@ -604,6 +646,9 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: Spacing.half,
   },
+  metaCellPressed: {
+    opacity: 0.6,
+  },
   metaLabel: {
     fontSize: 11,
     letterSpacing: 0.5,
@@ -614,7 +659,7 @@ const styles = StyleSheet.create({
     lineHeight: 21,
   },
   related: {
-    gap: Spacing.five,
+    gap: Spacing.four,
   },
   skelTitle: {
     gap: Spacing.two,
