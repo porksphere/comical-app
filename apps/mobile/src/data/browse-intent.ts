@@ -9,15 +9,19 @@
  * actually shown after navigation, which survives a tab remount and any deferred
  * background render.
  *
- * Two shapes, mirroring comical-web's tag chips (app.ts `navigateToQuerySearch` /
+ * Three shapes, mirroring comical-web's tag chips (app.ts `navigateToQuerySearch` /
  * `navigateToFilteredSearch`): a `query` intent runs a free-text search — for
  * bridges whose tag groups carry `tagQueries` (e.g. e-hentai); a `tag` intent
  * selects the bridge's tag-multiselect filter by `filterKey` — for bridges whose
- * tag groups carry `tagIds` (e.g. atsumaru / nhentai `key: "tag"` filters).
+ * tag groups carry `tagIds` (e.g. atsumaru / nhentai `key: "tag"` filters); a
+ * `meta` intent comes from tapping the Author/Artist/Type meta cell — Browse
+ * tries to route it into the matching filter field (if the bridge has one) and
+ * otherwise falls back to a plain free-text search, same as `query`.
  */
 export type BrowseIntent = { bridgeName: string } & (
   | { kind: 'query'; query: string }
   | { kind: 'tag'; filterKey: string; tagId: string; label: string }
+  | { kind: 'meta'; metaKey: 'author' | 'artist' | 'type'; value: string }
 );
 
 let pending: BrowseIntent | null = null;

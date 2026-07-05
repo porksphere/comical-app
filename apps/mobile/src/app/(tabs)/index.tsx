@@ -56,6 +56,15 @@ type GridItem = SeriesEntry & { spacer?: boolean };
 /** A drilled-into rail: its list id (for pagination) + display title. */
 type SeeAll = { listId: string; title: string } | null;
 
+/** Candidate filter-field ids (lowercased) a bridge might use for each meta key
+ *  tapped on the Series screen — matched against `FilterDef.id` so e.g. an
+ *  Author tap lands on that bridge's own author filter when it has one. */
+const META_FILTER_ALIASES: Record<'author' | 'artist' | 'type', string[]> = {
+  author: ['author', 'authors'],
+  artist: ['artist', 'artists'],
+  type: ['type', 'format', 'category'],
+};
+
 export default function BrowseScreen() {
   const ds = useDataSource();
   const { width } = useWindowDimensions();
@@ -241,7 +250,7 @@ export default function BrowseScreen() {
   const [query, setQuery] = useState('');
   const [seeAll, setSeeAll] = useState<SeeAll>(null);
 
-  // ── Tag-chip search intent (from the Series screen) ───────────────────────
+  // ── Tag-chip / meta-cell search intent (from the Series screen) ───────────
   // A `tagIds` chip resolves to a tag-multiselect filter, which can only be set
   // once this bridge's defs have loaded — stash it here and apply it in the
   // effect below (a `tagQueries` chip is handled inline as a plain query).
@@ -250,12 +259,19 @@ export default function BrowseScreen() {
     tagId: string;
     label: string;
   } | null>(null);
+  // Same idea for a tapped Author/Artist/Type meta cell: resolved once this
+  // bridge's filter defs have loaded, against whichever field it maps to.
+  const [pendingMeta, setPendingMeta] = useState<{
+    metaKey: 'author' | 'artist' | 'type';
+    value: string;
+  } | null>(null);
   // Consume the Series screen's intent when Browse gains focus (i.e. after we've
   // navigated to it), not on a background re-render while Series is still on top —
   // so it lands on the instance that's actually shown. Switch to the originating
   // bridge, leave any "See all" / sub-page scope, then either set the query
-  // (tagQueries path) or stash the tag to apply once this bridge's filter defs
-  // load (tagIds path). Mirrors comical-web's navigateToQuerySearch /
+  // (tagQueries path), stash the tag to apply once this bridge's filter defs
+  // load (tagIds path), or stash the meta value to resolve against a filter
+  // field the same way (meta path). Mirrors comical-web's navigateToQuerySearch /
   // navigateToFilteredSearch (app.ts).
   useFocusEffect(
     useCallback(() => {
@@ -266,10 +282,16 @@ export default function BrowseScreen() {
       setBridge(intent.bridgeName);
       if (intent.kind === 'query') {
         setPendingTag(null);
+        setPendingMeta(null);
         setQuery(intent.query);
+      } else if (intent.kind === 'tag') {
+        setQuery('');
+        setPendingMeta(null);
+        setPendingTag({ filterKey: intent.filterKey, tagId: intent.tagId, label: intent.label });
       } else {
         setQuery('');
-        setPendingTag({ filterKey: intent.filterKey, tagId: intent.tagId, label: intent.label });
+        setPendingTag(null);
+        setPendingMeta({ metaKey: intent.metaKey, value: intent.value });
       }
     }, []),
   );
@@ -300,6 +322,39 @@ export default function BrowseScreen() {
     setFilterValues((prev) => ({ ...prev, [def.id]: { [pendingTag.tagId]: 'include' } as TriState }));
     setPendingTag(null);
   }, [pendingTag, filterDefs, filterDefsBridgeId, bridgeId]);
+
+  useEffect(() => {
+    if (!pendingMeta) return;
+    if (!bridgeId || filterDefsBridgeId !== bridgeId) return;
+    // Look for a filter field this bridge exposes for the tapped meta key (a
+    // handful of common key spellings) — if found, set the value there instead
+    // of just running a raw text search, so e.g. tapping an Author lands on
+    // that bridge's actual author filter rather than a fuzzy full-text match.
+    const aliases = META_FILTER_ALIASES[pendingMeta.metaKey];
+    const def = filterDefs.find((d) => aliases.includes(d.id.toLowerCase()));
+    if (def) {
+      if (def.type === 'string') {
+        setFilterValues((prev) => ({ ...prev, [def.id]: pendingMeta.value }));
+        setPendingMeta(null);
+        return;
+      }
+      if (def.type === 'multi' || def.type === 'includeExclude' || def.type === 'tags') {
+        const match = def.options?.find((o) => o.label.toLowerCase() === pendingMeta.value.toLowerCase());
+        if (match) {
+          setFilterValues((prev) => ({
+            ...prev,
+            [def.id]: def.type === 'multi' ? [match.value] : ({ [match.value]: 'include' } as TriState),
+          }));
+          setPendingMeta(null);
+          return;
+        }
+      }
+    }
+    // No matching filter field (or no matching option within it) — fall back to
+    // a plain free-text search, same as a `query` intent.
+    setQuery(pendingMeta.value);
+    setPendingMeta(null);
+  }, [pendingMeta, filterDefs, filterDefsBridgeId, bridgeId]);
 
   // A search, a rail's "See all", a live filter/sort choice, or picking a
   // page-flagged sub-list (e.g. "Popular"/"Favorites") all drop to the flat
@@ -838,14 +893,14 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   rails: {
-    gap: Spacing.five,
+    gap: Spacing.four,
   },
   browseAllHead: {
-    paddingTop: Spacing.five,
+    paddingTop: Spacing.four,
     paddingBottom: Spacing.two,
   },
   homeGridBlock: {
-    paddingTop: Spacing.five,
+    paddingTop: Spacing.four,
     gap: Spacing.three,
   },
   homeGridRows: {
