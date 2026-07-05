@@ -12,6 +12,7 @@ import { coverDelayMs } from '@/data/mock';
 import type { SeriesEntry } from '@/data/types';
 import { useIsCompact } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
+import { clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 
 // Shared cover card used by both the browse grid and the rails. `size` picks the
 // fixed rail widths; `grid` fills its parent slot (the grid controls columns).
@@ -131,6 +132,12 @@ export function SeriesCard({
   const { active, handlers } = useHeld();
   const fixedWidth = size === 'grid' ? undefined : (width ?? WIDTHS[size]);
 
+  // The card's configured width is a horizontal max; the cover's height flexes
+  // a bounded amount to fit the real cover once it loads, since not every
+  // bridge's covers are exactly 2:3. Starts at the default 2:3 shape so the
+  // skeleton doesn't jump when the real aspect ratio arrives.
+  const [coverAspect, setCoverAspect] = useState(DEFAULT_THUMB_ASPECT);
+
   // Responsive title size matching the reference's mobile/desktop type scale.
   const compact = useIsCompact();
   const titleFontSize = compact ? TITLE_FONT_SIZE.compact : TITLE_FONT_SIZE.regular;
@@ -217,7 +224,7 @@ export function SeriesCard({
         {...handlers}>
         {/* Shell carries the cover's size so the highlight ring can sit OUTSIDE
             the (overflow-clipped) cover without insetting it. */}
-        <View style={styles.coverShell}>
+        <View style={[styles.coverShell, { aspectRatio: coverAspect }]}>
           <View style={styles.cover}>
             {delayPassed && (
               <Image
@@ -226,7 +233,12 @@ export function SeriesCard({
                 contentFit="cover"
                 cachePolicy="memory-disk"
                 transition={200}
-                onLoad={() => setLoaded(true)}
+                onLoad={(e: { source?: { width?: number; height?: number } | null }) => {
+                  setLoaded(true);
+                  const w = e.source?.width;
+                  const h = e.source?.height;
+                  if (w && h) setCoverAspect(clampThumbAspect(w / h));
+                }}
               />
             )}
             {!coverReady && <Skeleton style={StyleSheet.absoluteFill} />}
