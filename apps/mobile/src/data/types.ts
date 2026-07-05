@@ -42,7 +42,7 @@ export type TagGroup = {
   tagIds?: string[];
   /** Ready-to-run free-text search string per tag, parallel to `tags` (same
    *  index). Present for backends whose tags aren't a filterable id set but whose
-   *  search box accepts tag syntax (e.g. example-source) — tapping runs that search
+   *  search box accepts tag syntax — tapping runs that search
    *  instead of selecting a filter. Mutually exclusive with `tagIds` per group in
    *  practice. */
   tagQueries?: string[];
@@ -76,8 +76,8 @@ export type TrackerSearchResult = { externalId: string; title: string; thumbnail
 
 /** A page-preview thumbnail source, mirroring the bridge contract's `PageThumbnail` union:
  *  - `image` — a ready-to-display URL, rendered with a normal image loader.
- *  - `sprite` — a tile inside a shared sprite sheet (some bridges, e.g. example-source's viewer, pack
- *    many thumbnails into one image to save requests). `sheetUrl` is shared across every tile cut
+ *  - `sprite` — a tile inside a shared sprite sheet (some bridges pack many thumbnails into one
+ *    image to save requests). `sheetUrl` is shared across every tile cut
  *    from the same sheet, so fetching it once and cropping `{x,y,w,h}` out of it client-side (no
  *    server-side recompression) is cheap even for a full page grid. `sheetWidth`/`sheetHeight` are
  *    the full sheet's pixel dimensions, needed to scale the crop correctly for a given tile width.
@@ -124,7 +124,7 @@ export type SeriesDetail = SeriesEntry & {
   relatedGroups?: { label: string; items: SeriesEntry[] }[];
   /** True when the bridge omitted `relatedGroups` from this response and a
    *  separate `getRelatedGroups` fetch is needed to find out whether it has
-   *  any (e.g. example-bridge's capability "related-series") — lets the series
+   *  any (a bridge with capability "related-series") — lets the series
    *  screen show a rail skeleton instead of treating "absent" as "none". */
   relatedGroupsDeferred?: boolean;
 };

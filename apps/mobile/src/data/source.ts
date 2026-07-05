@@ -353,7 +353,7 @@ const realDataSource: DataSource = {
 
   async getSeriesDetail(bridgeId, seriesId, opts = {}, signal) {
     const info = await api.getSeriesDetail(bridgeId, seriesId, signal);
-    // Bridges with capability "related-series" (e.g. example-bridge) omit `relatedSeriesGroups` from the
+    // Bridges with capability "related-series" omit `relatedSeriesGroups` from the
     // main response and provide it via a separate endpoint instead — see contract's SeriesInfo docs.
     // Leave `relatedGroups` unset and flag `relatedGroupsDeferred` rather than fetching it inline
     // here: that fetch can be slow, and awaiting it would hold up the rest of the series page (and

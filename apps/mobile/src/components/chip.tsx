@@ -10,7 +10,7 @@ import type { TagGroup } from '@/data/mock';
 // in the reference.
 
 /** Cap on chips shown before a row collapses behind a "Show all" chip — a bridge
- *  with a long genre or tag list (example-bridge-style) would otherwise flood the whole
+ *  with a long genre or tag list would otherwise flood the whole
  *  series page. Matches `ChaptersSection`'s own collapse pattern: expanding is a
  *  one-way, per-row reveal (no re-collapse) rather than a toggle. */
 const MAX_VISIBLE_CHIPS = 10;
@@ -64,7 +64,7 @@ export function TagGroupRow({
   group: TagGroup;
   /** Called with a tapped tag's index. Only tags the bridge made actionable — a
    *  `tagIds`/`tagQueries` entry at that index — render as pressable; the rest
-   *  (e.g. example-bridge's Characters/Parodies groups) stay static. */
+   *  (e.g. a Characters/Parodies group with no ids/queries) stay static. */
   onTagPress?: (index: number) => void;
 }) {
   const theme = useTheme();
