@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
-import { Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { FlatList, Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, {
   interpolateColor,
   useAnimatedScrollHandler,
@@ -26,6 +26,7 @@ import { takeBrowseIntent } from '@/data/browse-intent';
 import { useDataSource, useHideNsfw, type QueryOpts } from '@/data/source';
 import type { Bridge, BridgeList, HomeGridSection, RailSection, SeriesEntry } from '@/data/types';
 import { useIsCompact, useTopBarHeight } from '@/hooks/use-responsive';
+import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
 
 // Scroll distance over which the top bar's bottom divider fades in: absent at the
@@ -70,6 +71,8 @@ export default function BrowseScreen() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
+  const listRef = useRef<FlatList>(null);
+  useScrollToTopOnReselect('browse', listRef);
 
   // ── Bridges ────────────────────────────────────────────────────────────
   const hideNsfw = useHideNsfw();
@@ -687,6 +690,7 @@ export default function BrowseScreen() {
       {/* The list fills the screen (behind the header overlay); its top padding
           clears the expanded header so the first content sits just below it. */}
       <Animated.FlatList
+        ref={listRef}
         key={numColumns}
         data={gridData}
         keyExtractor={(item: GridItem) => String(item.id)}
