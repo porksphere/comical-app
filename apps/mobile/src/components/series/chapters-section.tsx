@@ -3,13 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSequence,
-  withSpring,
-  withTiming,
-} from 'react-native-reanimated';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
@@ -37,10 +31,13 @@ const TABS: { id: Tab; label: string }[] = [
 // start and the end, with an expand button between them for the hidden middle.
 const OVERVIEW_HEAD_COUNT = 5;
 const OVERVIEW_TAIL_COUNT = 5;
-// Must match `styles.tabs`'s `padding`/`gap` — used to compute the sliding
-// highlight's geometry from the strip's measured width.
+// Track padding / gap between tab chips.
 const TAB_PAD = 3;
-const TAB_GAP = 2;
+const TAB_GAP = 4;
+// How much smaller the sliding highlight is than the tab it sits behind, on
+// every side — this is what makes it read as a floating inset bubble rather
+// than a block that fills its slot edge-to-edge.
+const PILL_INSET = 3;
 
 /** Pulls the chapter number out of a display name like "Chapter 176 — The Spirit
  *  Zone" (preferring a number right after "chapter"/"ch.", so a stray number
@@ -120,38 +117,37 @@ function ChapterList({
   // Overview-only: reveal the collapsed middle portion inline.
   const [middleExpanded, setMiddleExpanded] = useState(false);
 
-  // Sliding highlight behind the active tab — measured from the tab strip's own
-  // width (all `TABS` are equal `flex: 1` slices) rather than per-tab `onLayout`,
-  // so its position/width are exact even before any tab has individually laid out.
-  const [tabsWidth, setTabsWidth] = useState(0);
-  const segmentWidth =
-    tabsWidth > 0 ? (tabsWidth - TAB_PAD * 2 - TAB_GAP * (TABS.length - 1)) / TABS.length : 0;
-  const activeIndex = TABS.findIndex((t) => t.id === tab);
+  // Sliding highlight behind the active tab — each tab is sized to its own
+  // label (not an equal slice of the strip), so the highlight has to be
+  // measured per-tab rather than computed from a shared segment width.
+  const [tabLayouts, setTabLayouts] = useState<Partial<Record<Tab, { x: number; width: number }>>>({});
+  const onTabLayout = (id: Tab, x: number, width: number) => {
+    setTabLayouts((prev) => (prev[id]?.x === x && prev[id]?.width === width ? prev : { ...prev, [id]: { x, width } }));
+  };
+  const activeBox = tabLayouts[tab];
   const pillX = useSharedValue(0);
-  // A quick squash-then-spring-back pulse layered on top of the slide, so the
-  // pill reads as a soft, elastic blob catching up to the tap rather than a
-  // rigid box sliding on rails — closer to iOS's liquid segmented-control feel.
-  const pillScaleX = useSharedValue(1);
+  const pillWidth = useSharedValue(0);
   const pillMeasured = useRef(false);
   useEffect(() => {
-    if (segmentWidth <= 0) return;
-    const x = activeIndex * (segmentWidth + TAB_GAP);
-    // Snap into place on first measurement (no slide-in from 0); animate every
-    // change after that.
+    if (!activeBox) return;
+    const x = activeBox.x + PILL_INSET;
+    const width = activeBox.width - PILL_INSET * 2;
+    // Snap into place on first measurement (no slide-in from 0); morph width
+    // and position together for every change after that — no spring/bounce,
+    // just the bubble smoothly resizing and sliding to hug the new label.
     if (!pillMeasured.current) {
       pillX.value = x;
+      pillWidth.value = width;
       pillMeasured.current = true;
     } else {
-      pillX.value = withSpring(x, { damping: 16, stiffness: 220, mass: 0.7 });
-      pillScaleX.value = withSequence(
-        withTiming(1.12, { duration: 90 }),
-        withSpring(1, { damping: 10, stiffness: 200 }),
-      );
+      const config = { duration: 220, easing: Easing.out(Easing.cubic) };
+      pillX.value = withTiming(x, config);
+      pillWidth.value = withTiming(width, config);
     }
-  }, [activeIndex, segmentWidth, pillX, pillScaleX]);
+  }, [activeBox, pillX, pillWidth]);
   const pillStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: pillX.value }, { scaleX: pillScaleX.value }],
-    width: segmentWidth,
+    transform: [{ translateX: pillX.value }],
+    width: pillWidth.value,
   }));
 
   const sorted = useMemo(() => {
@@ -199,11 +195,8 @@ function ChapterList({
           Chapters
         </ThemedText>
         <View style={styles.controls}>
-          <ThemedView
-            type="backgroundElement"
-            style={styles.tabs}
-            onLayout={(e) => setTabsWidth(e.nativeEvent.layout.width)}>
-            {segmentWidth > 0 && (
+          <ThemedView type="backgroundElement" style={styles.tabs}>
+            {activeBox && (
               <Animated.View
                 pointerEvents="none"
                 style={[styles.tabPill, { backgroundColor: theme.accent }, pillStyle]}
@@ -216,6 +209,7 @@ function ChapterList({
                   setTab(t.id);
                   setMiddleExpanded(false);
                 }}
+                onLayout={(e) => onTabLayout(t.id, e.nativeEvent.layout.x, e.nativeEvent.layout.width)}
                 style={styles.tab}>
                 <ThemedText
                   type="small"
@@ -502,37 +496,37 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
   },
   tabs: {
-    // Fill the row so the tab buttons span the full width and push the sort
-    // button hard against the right edge.
+    // Content-sized (not `flex: 1` on each child) — a tab's width follows its
+    // own label, so "All" and "Overview" don't get forced to the same width.
     flex: 1,
     flexDirection: 'row',
+    alignItems: 'center',
     borderRadius: 10,
     padding: TAB_PAD,
     gap: TAB_GAP,
   },
-  // Sliding highlight behind the active tab (see `pillStyle`) — positioned
-  // relative to the strip's own padding edge, same origin as the tab Pressables.
+  // Sliding highlight behind the active tab (see `pillStyle`) — inset by
+  // `PILL_INSET` from the active tab's own measured box on every side (see
+  // `onTabLayout`/`activeBox`), so it reads as a floating bubble rather than a
+  // block that fills its tab edge-to-edge. Height is static (every tab shares
+  // the same padding, so only x/width ever change) — inset vertically here.
   tabPill: {
     position: 'absolute',
-    top: 0,
-    bottom: 0,
+    top: PILL_INSET,
+    bottom: PILL_INSET,
     left: 0,
     borderRadius: 8,
   },
   tab: {
-    // Each tab takes an equal slice of the group's width, label centred.
-    flex: 1,
     alignItems: 'center',
-    paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.one,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
     borderRadius: 8,
   },
   tabLabel: {
-    // A touch smaller than the reference's 0.82rem (~13px) — same size on
-    // every tab (no per-label auto-shrink, which read as inconsistently
-    // sized/padded across tabs) while still fitting "Overview" on one line
-    // alongside the restored padding above.
-    fontSize: 12,
+    // Reference .ch-tab: 0.82rem (~13px). Every tab is sized to its own label
+    // now (not squeezed into an equal-width slice), so this can be full size.
+    fontSize: 13,
     textAlign: 'center',
   },
   sortBtn: {
