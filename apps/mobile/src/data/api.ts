@@ -4,8 +4,10 @@
  * fetch wrapper: `${BASE}${path}`, throw on non-2xx with the server's `error`
  * message, return parsed JSON.
  *
- * Base URL comes from EXPO_PUBLIC_COMICAL_SERVER (inlined by Expo at build
- * time) so it can be overridden per environment, defaulting to the live API.
+ * Base URL comes entirely from EXPO_PUBLIC_COMICAL_SERVER (inlined by Expo at build time) — no
+ * default baked into source. A build that needs to reach a real deployment supplies it at build
+ * time (see the repo's CI docs); one that doesn't set it stays request-less (mock/demo data only,
+ * or the embedded on-device runtime, which never uses this constant).
  *
  * No credentialed cookies: unlike `comical-web` (reverse-proxied same-origin
  * with its backend in prod, so no CORS involved at all), this app is a
@@ -32,8 +34,7 @@ import { getResolvedModeSync } from './embedded/preference';
 import type { Bridge, BridgeList } from './types';
 import { logDiagnostic } from '@/lib/diagnostics';
 
-export const API_BASE =
-  process.env.EXPO_PUBLIC_COMICAL_SERVER ?? 'https://example.invalid/api';
+export const API_BASE = process.env.EXPO_PUBLIC_COMICAL_SERVER ?? '';
 
 export type { Bridge, BridgeList };
 
