@@ -84,10 +84,10 @@ index 2434c61..c3a5e2f 100644
 +
  @end
 diff --git a/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenViewController.mm b/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenViewController.mm
-index b273770..4726392 100644
+index b273770..a3309d6 100644
 --- a/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenViewController.mm
 +++ b/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenViewController.mm
-@@ -106,6 +106,23 @@
+@@ -106,6 +106,29 @@
    return false;
  }
  
@@ -98,10 +98,16 @@ index b273770..4726392 100644
 +// override, `tabBarMinimizeBehavior` is silently inert on such screens - see
 +// https://github.com/software-mansion/react-native-screens/issues/4145. Fall back to a
 +// bounded breadth-first search so there's still something for the tab bar to track.
++//
++// Answer for every edge, not just .bottom: the minimize behavior's "user is scrolling back
++// up" tracking depends on resolving the SAME scroll view UIKit asks about for other edges
++// (e.g. .top) too. Restricting the fallback to .bottom left those queries returning nil,
++// so the bar would minimize on scroll down but only ever re-expand once content actually
++// reached its top edge - not on every upward scroll, as tabBarMinimizeBehavior promises.
 +- (nullable UIScrollView *)contentScrollViewForEdge:(NSDirectionalRectEdge)edge API_AVAILABLE(ios(26.0))
 +{
 +  UIScrollView *scrollView = [super contentScrollViewForEdge:edge];
-+  if (scrollView != nil || edge != NSDirectionalRectEdgeBottom) {
++  if (scrollView != nil) {
 +    return scrollView;
 +  }
 +
