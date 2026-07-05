@@ -28,6 +28,7 @@ import type {
   HomeGridSection,
   LibraryItem,
   MetaCell,
+  PageThumbSource,
   RailKind,
   RailSection,
   SeriesDetail,
@@ -120,9 +121,8 @@ export interface DataSource {
     signal?: AbortSignal,
   ): Promise<{ label: string; items: SeriesEntry[] }[]>;
   /** Lazy per-page thumbnail for a `SeriesDetail.pageThumbs` entry that came back `null`. Resolves
-   *  to `null` (rather than throwing) for "not supported" and for `sprite`-kind thumbnails, which
-   *  have no RN crop renderer yet — either way the caller's placeholder just stays. */
-  getPageThumb(bridgeId: string, seriesId: string, pageIndex: number, signal?: AbortSignal): Promise<string | null>;
+   *  to `null` (rather than throwing) for "not supported" — the caller's placeholder just stays. */
+  getPageThumb(bridgeId: string, seriesId: string, pageIndex: number, signal?: AbortSignal): Promise<PageThumbSource | null>;
 
   // ─── Settings + registries (Settings screen only) ──────────────────────────
 
@@ -230,6 +230,28 @@ function buildMeta(info: api.ApiSeriesInfo): MetaCell[] {
   if (info.author) meta.push({ label: 'AUTHOR', value: info.author });
   if (info.artist) meta.push({ label: 'ARTIST', value: info.artist });
   return meta;
+}
+
+/** Adapts a contract `ApiPageThumbnail` into the UI-facing `PageThumbSource` — same `image`/
+ *  `sprite` union, but resolves a sprite's `sheetUrl` in case a bridge returned it server-relative
+ *  (the contract documents asset URLs as "absolute or server-relative", same as `Page.imageUrl`).
+ *  Drops a sprite missing `sheetHeight` — the contract keeps it optional for forward
+ *  compatibility, but the crop renderer needs it to scale the tile, so treat that case like "no
+ *  thumbnail" rather than rendering a distorted crop. */
+function toPageThumbSource(t: api.ApiPageThumbnail | undefined): PageThumbSource | null {
+  if (!t) return null;
+  if (t.kind === 'image') return { kind: 'image', url: t.url };
+  if (t.sheetHeight == null) return null;
+  return {
+    kind: 'sprite',
+    sheetUrl: api.resolveAssetUrl(t.sheetUrl),
+    x: t.x,
+    y: t.y,
+    w: t.w,
+    h: t.h,
+    sheetWidth: t.sheetWidth,
+    sheetHeight: t.sheetHeight,
+  };
 }
 
 const realDataSource: DataSource = {
@@ -359,7 +381,7 @@ const realDataSource: DataSource = {
       if (pages.some((p) => p.thumbnail)) {
         base.pageThumbs = [...pages]
           .sort((a, b) => a.index - b.index)
-          .map((p) => (p.thumbnail?.kind === 'image' ? p.thumbnail.url : null));
+          .map((p) => toPageThumbSource(p.thumbnail));
       }
       base.readLabel = '▶  Read';
       base.chapterCount = info.pageCount ?? pages.length;
@@ -385,7 +407,7 @@ const realDataSource: DataSource = {
   async getPageThumb(bridgeId, seriesId, pageIndex, signal) {
     try {
       const t = await api.getPageThumb(bridgeId, seriesId, pageIndex, signal);
-      return t.kind === 'image' ? t.url : null;
+      return toPageThumbSource(t);
     } catch {
       return null;
     }

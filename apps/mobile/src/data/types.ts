@@ -74,6 +74,26 @@ export type TrackerLink = {
 /** One row from a tracker's catalog search, used by the "+ Link tracker" form. */
 export type TrackerSearchResult = { externalId: string; title: string; thumbnail: string };
 
+/** A page-preview thumbnail source, mirroring the bridge contract's `PageThumbnail` union:
+ *  - `image` — a ready-to-display URL, rendered with a normal image loader.
+ *  - `sprite` — a tile inside a shared sprite sheet (some bridges, e.g. example-source's viewer, pack
+ *    many thumbnails into one image to save requests). `sheetUrl` is shared across every tile cut
+ *    from the same sheet, so fetching it once and cropping `{x,y,w,h}` out of it client-side (no
+ *    server-side recompression) is cheap even for a full page grid. `sheetWidth`/`sheetHeight` are
+ *    the full sheet's pixel dimensions, needed to scale the crop correctly for a given tile width.
+ */
+export type SpriteThumb = {
+  kind: 'sprite';
+  sheetUrl: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  sheetWidth: number;
+  sheetHeight: number;
+};
+export type PageThumbSource = { kind: 'image'; url: string } | SpriteThumb;
+
 /** Full series detail. Optional fields are per-bridge dynamic. */
 export type SeriesDetail = SeriesEntry & {
   bridge: string;
@@ -91,7 +111,7 @@ export type SeriesDetail = SeriesEntry & {
    *  it) — `null` means the bridge didn't supply this one inline and `PageThumbGrid` should
    *  lazy-fetch it. Never a full-size page image: if the bridge has no thumbnail data at all, the
    *  grid doesn't render rather than bulk-loading full pages as a preview. */
-  pageThumbs?: (string | null)[];
+  pageThumbs?: (PageThumbSource | null)[];
   /** Whether the bridge exposes external sources / trackers actions. */
   hasSources?: boolean;
   hasTrackers?: boolean;

@@ -13,6 +13,7 @@ import type {
   GridPage,
   HomeGridSection,
   MetaCell,
+  PageThumbSource,
   RailSection,
   SeriesDetail,
   SeriesEntry,
@@ -257,6 +258,78 @@ export function mockTrackerSearch(trackerId: string, query: string): TrackerSear
     });
 }
 
+// ─── Sprite-thumbnail fixtures ────────────────────────────────────────────────
+// A direct series' `pageThumbs` mixes all three shapes a real bridge can hand back, so the page
+// grid exercises every renderer without a live sprite-capable bridge: pages 0–19 are cut from one
+// shared uniform-grid sheet, 20–39 from one shared variable-aspect strip, and 40+ are plain
+// per-page images. The two sheets are generated as inline numbered-cell SVGs (a data URI — no
+// network round trip), the same technique the `comical` repo's `test-sprites` bridge + host-server
+// route use to make sprite-crop rendering independently verifiable: 40 distinct numbered tiles
+// prove each one is cut from the right spot, and the 20–39 range should each keep its own shape.
+const SPRITE_UNIFORM_COLS = 5;
+const SPRITE_UNIFORM_ROWS = 4;
+const SPRITE_TILE_W = 150;
+const SPRITE_TILE_H = 225;
+const SPRITE_VAR_COUNT = 20;
+const SPRITE_VAR_SHEET_H = 225;
+const spriteVarTileW = (i: number) => 90 + (i % 5) * 30;
+const spriteVarTileH = (i: number) => SPRITE_VAR_SHEET_H - (i % 4) * 40;
+
+const svgDataUri = (svg: string) => `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+const spriteCell = (x: number, y: number, w: number, h: number, n: number) => {
+  const hue = (n * 47) % 360;
+  const fontSize = Math.round(Math.min(w, h) * 0.4);
+  return (
+    `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="hsl(${hue},70%,55%)"/>` +
+    `<text x="${x + w / 2}" y="${y + h / 2 + fontSize * 0.35}" font-size="${fontSize}" ` +
+    `text-anchor="middle" fill="white" font-family="sans-serif" font-weight="bold">${n}</text>`
+  );
+};
+
+function mockPageThumbs(seed: string, count: number): PageThumbSource[] {
+  const uniformSheetW = SPRITE_UNIFORM_COLS * SPRITE_TILE_W;
+  const uniformSheetH = SPRITE_UNIFORM_ROWS * SPRITE_TILE_H;
+  const uniformCount = SPRITE_UNIFORM_COLS * SPRITE_UNIFORM_ROWS;
+  const uniformCells = Array.from({ length: uniformCount }, (_, i) =>
+    spriteCell((i % SPRITE_UNIFORM_COLS) * SPRITE_TILE_W, Math.floor(i / SPRITE_UNIFORM_COLS) * SPRITE_TILE_H, SPRITE_TILE_W, SPRITE_TILE_H, i + 1),
+  ).join('');
+  const uniformSheet = svgDataUri(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${uniformSheetW}" height="${uniformSheetH}">${uniformCells}</svg>`,
+  );
+
+  let varX = 0;
+  const varTiles = Array.from({ length: SPRITE_VAR_COUNT }, (_, i) => {
+    const tile = { x: varX, w: spriteVarTileW(i), h: spriteVarTileH(i) };
+    varX += tile.w;
+    return tile;
+  });
+  const varCells = varTiles.map((t, i) => spriteCell(t.x, 0, t.w, t.h, uniformCount + i + 1)).join('');
+  const varSheet = svgDataUri(`<svg xmlns="http://www.w3.org/2000/svg" width="${varX}" height="${SPRITE_VAR_SHEET_H}">${varCells}</svg>`);
+
+  return Array.from({ length: count }, (_, i): PageThumbSource => {
+    if (i < uniformCount) {
+      const col = i % SPRITE_UNIFORM_COLS;
+      const row = Math.floor(i / SPRITE_UNIFORM_COLS);
+      return {
+        kind: 'sprite',
+        sheetUrl: uniformSheet,
+        x: col * SPRITE_TILE_W,
+        y: row * SPRITE_TILE_H,
+        w: SPRITE_TILE_W,
+        h: SPRITE_TILE_H,
+        sheetWidth: uniformSheetW,
+        sheetHeight: uniformSheetH,
+      };
+    }
+    const vi = i - uniformCount;
+    if (vi < SPRITE_VAR_COUNT) {
+      const t = varTiles[vi];
+      return { kind: 'sprite', sheetUrl: varSheet, x: t.x, y: 0, w: t.w, h: t.h, sheetWidth: varX, sheetHeight: SPRITE_VAR_SHEET_H };
+    }
+    return { kind: 'image', url: cover(`${seed}-p${i}`) };
+  });
+}
+
 /**
  * Build a series detail. `id` seeds deterministic content; a couple of seeds
  * exercise the per-bridge-dynamic branches so the UI can be checked with and
@@ -291,7 +364,7 @@ export function mockSeries(
   if (direct) {
     // Many pages so the "Show all" affordance and the per-tile load skeletons
     // are both exercised.
-    base.pageThumbs = Array.from({ length: 60 }, (_, i) => cover(`${seed}-p${i}`));
+    base.pageThumbs = mockPageThumbs(seed, 60);
     base.readLabel = '▶  Read';
   } else {
     const chapters = mockChapters(seed, chapterCount);
