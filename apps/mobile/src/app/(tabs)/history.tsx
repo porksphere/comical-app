@@ -24,7 +24,7 @@ export default function HistoryScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
-  const [hideNsfw] = useHideNsfw();
+  const hideNsfw = useHideNsfw();
   const { byId, nameOf, directOf } = useBridgeMap();
 
   const { data: items = undefined, error, isLoading, refetch } = useQuery(historyQuery(ds, mock));
