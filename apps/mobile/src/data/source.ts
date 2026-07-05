@@ -234,14 +234,14 @@ function buildMeta(info: api.ApiSeriesInfo): MetaCell[] {
 }
 
 /** Adapts a contract `ApiPageThumbnail` into the UI-facing `PageThumbSource` — same `image`/
- *  `sprite` union, but resolves a sprite's `sheetUrl` in case a bridge returned it server-relative
- *  (the contract documents asset URLs as "absolute or server-relative", same as `Page.imageUrl`).
+ *  `sprite` union, resolving either shape's asset URL in case a bridge returned it server-relative
+ *  (the contract documents these as "absolute or server-relative", same as `Page.imageUrl`).
  *  Drops a sprite missing `sheetHeight` — the contract keeps it optional for forward
  *  compatibility, but the crop renderer needs it to scale the tile, so treat that case like "no
  *  thumbnail" rather than rendering a distorted crop. */
 function toPageThumbSource(t: api.ApiPageThumbnail | undefined): PageThumbSource | null {
   if (!t) return null;
-  if (t.kind === 'image') return { kind: 'image', url: t.url };
+  if (t.kind === 'image') return { kind: 'image', url: api.resolveAssetUrl(t.url) };
   if (t.sheetHeight == null) return null;
   return {
     kind: 'sprite',
@@ -397,12 +397,12 @@ const realDataSource: DataSource = {
 
   async getChapterPages(bridgeId, seriesId, chapterId, signal) {
     const pages = await api.getChapterPages(bridgeId, seriesId, chapterId, signal);
-    return [...pages].sort((a, b) => a.index - b.index).map((p) => p.imageUrl);
+    return [...pages].sort((a, b) => a.index - b.index).map((p) => api.resolveAssetUrl(p.imageUrl));
   },
 
   async getDirectPages(bridgeId, seriesId, signal) {
     const pages = await api.getSeriesPages(bridgeId, seriesId, signal);
-    return [...pages].sort((a, b) => a.index - b.index).map((p) => p.imageUrl);
+    return [...pages].sort((a, b) => a.index - b.index).map((p) => api.resolveAssetUrl(p.imageUrl));
   },
 
   async getPageThumb(bridgeId, seriesId, pageIndex, signal) {
