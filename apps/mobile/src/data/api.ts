@@ -28,19 +28,68 @@
  * runtime or CI. `source.ts` adapts these into the UI-facing types in
  * `types.ts` — this file has no knowledge of mock data or the UI shapes.
  */
+import { getResolvedModeSync } from './embedded/preference';
 import type { Bridge, BridgeList } from './types';
+import { logDiagnostic } from '@/lib/diagnostics';
 
 export const API_BASE =
   process.env.EXPO_PUBLIC_COMICAL_SERVER ?? 'https://comical.pork.casa/api';
 
 export type { Bridge, BridgeList };
 
-/** Resolves a bridge-supplied asset URL (a sprite sheet, a page image, …) that may be
- *  server-relative — the contract documents these as "absolute or server-relative" — against
- *  `API_BASE`. Absolute URLs (the common case: CDN links, `/img-proxy` targets) pass through
- *  unchanged. */
-export function resolveAssetUrl(url: string): string {
-  return url.startsWith('/') ? `${API_BASE}${url}` : url;
+/** Manual base64 (no `btoa`/`Buffer` — neither is guaranteed present across Hermes/JSC/QuickJS). */
+function bytesToBase64(bytes: Uint8Array): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  let out = '';
+  for (let i = 0; i < bytes.length; i += 3) {
+    const b0 = bytes[i];
+    const b1 = bytes[i + 1];
+    const b2 = bytes[i + 2];
+    out += chars[b0 >> 2];
+    out += chars[((b0 & 0x03) << 4) | (b1 === undefined ? 0 : b1 >> 4)];
+    out += b1 === undefined ? '=' : chars[((b1 & 0x0f) << 2) | (b2 === undefined ? 0 : b2 >> 6)];
+    out += b2 === undefined ? '=' : chars[b2 & 0x3f];
+  }
+  return out;
+}
+
+async function responseToDataUri(res: Response): Promise<string> {
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  const contentType = res.headers.get('Content-Type') || 'application/octet-stream';
+  return `data:${contentType};base64,${bytesToBase64(bytes)}`;
+}
+
+/**
+ * Resolves a bridge-supplied asset URL (a sprite sheet, a page image, …) into something an
+ * `<Image>` can actually load. The contract documents these as "absolute or server-relative".
+ *
+ * - Already absolute → passed through unchanged.
+ * - Server-relative, remote transport → prefixed with `API_BASE`, a real network-reachable server
+ *   for both the JSON and the follow-up image request.
+ * - Server-relative, embedded transport → resolved through the *same in-process transport* that
+ *   served the page/series data, not the shared remote server. This isn't just avoiding an extra
+ *   hop: some of these routes redirect to (or proxy) a CDN URL that's scoped to whichever
+ *   client/session negotiated it. Routing it through the remote server instead means *that*
+ *   server's network identity ends up fetching a URL negotiated by *this device* — the CDN can
+ *   reject that or hand back an error page, which downloads fine but fails to decode as an image
+ *   (indistinguishable from a real network failure without inspecting the actual bytes). A
+ *   redirect response resolves to its `Location` header, still a real absolute URL this device can
+ *   fetch directly; anything else is read as bytes and handed back as a `data:` URI, since there's
+ *   no second URL to hand `<Image>` for a route that proxies bytes rather than redirecting.
+ */
+export async function resolveAssetSource(url: string): Promise<string> {
+  if (!url.startsWith('/')) return url;
+  if (getResolvedModeSync() !== 'embedded') return `${API_BASE}${url}`;
+  try {
+    const res = await transport(url);
+    const location = res.headers.get('Location');
+    if (location && res.status >= 300 && res.status < 400) return location;
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    return await responseToDataUri(res);
+  } catch (e) {
+    logDiagnostic('resolve-asset-embedded', (e as Error).message || String(e), { url });
+    throw e;
+  }
 }
 
 /**

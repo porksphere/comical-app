@@ -240,13 +240,13 @@ function buildMeta(info: api.ApiSeriesInfo): MetaCell[] {
  *  Drops a sprite missing `sheetHeight` — the contract keeps it optional for forward
  *  compatibility, but the crop renderer needs it to scale the tile, so treat that case like "no
  *  thumbnail" rather than rendering a distorted crop. */
-function toPageThumbSource(t: api.ApiPageThumbnail | undefined): PageThumbSource | null {
+async function toPageThumbSource(t: api.ApiPageThumbnail | undefined): Promise<PageThumbSource | null> {
   if (!t) return null;
-  if (t.kind === 'image') return { kind: 'image', url: api.resolveAssetUrl(t.url) };
+  if (t.kind === 'image') return { kind: 'image', url: await api.resolveAssetSource(t.url) };
   if (t.sheetHeight == null) return null;
   return {
     kind: 'sprite',
-    sheetUrl: api.resolveAssetUrl(t.sheetUrl),
+    sheetUrl: await api.resolveAssetSource(t.sheetUrl),
     x: t.x,
     y: t.y,
     w: t.w,
@@ -396,9 +396,9 @@ const realDataSource: DataSource = {
         });
       }
       if (withThumb > 0) {
-        base.pageThumbs = [...pages]
-          .sort((a, b) => a.index - b.index)
-          .map((p) => toPageThumbSource(p.thumbnail));
+        base.pageThumbs = await Promise.all(
+          [...pages].sort((a, b) => a.index - b.index).map((p) => toPageThumbSource(p.thumbnail)),
+        );
         const droppedToNull = base.pageThumbs.filter((t) => t === null).length;
         if (droppedToNull > 0) {
           logDiagnostic('page-thumb-dropped', `${droppedToNull}/${base.pageThumbs.length} thumbnail(s) dropped to null`, {
@@ -419,12 +419,16 @@ const realDataSource: DataSource = {
 
   async getChapterPages(bridgeId, seriesId, chapterId, signal) {
     const pages = await api.getChapterPages(bridgeId, seriesId, chapterId, signal);
-    return [...pages].sort((a, b) => a.index - b.index).map((p) => api.resolveAssetUrl(p.imageUrl));
+    return Promise.all(
+      [...pages].sort((a, b) => a.index - b.index).map((p) => api.resolveAssetSource(p.imageUrl)),
+    );
   },
 
   async getDirectPages(bridgeId, seriesId, signal) {
     const pages = await api.getSeriesPages(bridgeId, seriesId, signal);
-    return [...pages].sort((a, b) => a.index - b.index).map((p) => api.resolveAssetUrl(p.imageUrl));
+    return Promise.all(
+      [...pages].sort((a, b) => a.index - b.index).map((p) => api.resolveAssetSource(p.imageUrl)),
+    );
   },
 
   async getPageThumb(bridgeId, seriesId, pageIndex, signal) {
