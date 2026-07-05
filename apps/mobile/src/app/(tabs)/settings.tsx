@@ -1,15 +1,24 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   BridgesIcon,
+  ChevronRightIcon,
   DeveloperIcon,
   GeneralSettingsIcon,
   RegistriesIcon,
   TrackersIcon,
 } from '@/components/icons/ui-icons';
+import {
+  MeasuredHeader,
+  OptionList,
+  OverlayHeading,
+  useAnchoredOverlay,
+  useListMaxHeight,
+  useOverlay,
+} from '@/components/overlay/overlay';
 import { RetryBlock } from '@/components/retry-block';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedSwitch } from '@/components/themed-switch';
@@ -20,8 +29,28 @@ import { API_BASE, isAbort, type BridgeSummary, type SavedRegistry, type Tracker
 import { applyEmbeddedMode, isEmbeddedRuntimeAvailable, useEmbeddedEnabled } from '@/data/embedded';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { queryClient } from '@/data/query-client';
-import { useDataSource, useHideNsfw, useMockDataToggle } from '@/data/source';
+import { useDataSource, useHideNsfw, useMockDataToggle, useNsfwMode, type NsfwMode } from '@/data/source';
+import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
+
+const NSFW_MODE_OPTIONS: { value: NsfwMode; label: string; description: string }[] = [
+  { value: 'off', label: 'Off', description: 'NSFW-flagged bridges stay hidden everywhere in the app.' },
+  { value: 'on', label: 'On', description: 'NSFW-flagged bridges stay visible until you turn this off again.' },
+  {
+    value: 'until-background',
+    label: 'On until app is closed',
+    description: 'NSFW-flagged bridges are visible now, but hidden again as soon as you leave or minimize the app.',
+  },
+  {
+    value: 'until-restart',
+    label: 'On until app restarts',
+    description: 'NSFW-flagged bridges are visible now, and stay that way while switching apps — hidden again the next time Comical is relaunched.',
+  },
+];
+
+function nsfwModeSummary(mode: NsfwMode): string {
+  return NSFW_MODE_OPTIONS.find((o) => o.value === mode)?.label ?? 'Off';
+}
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
@@ -45,7 +74,7 @@ export default function SettingsScreen() {
 
 function GeneralSection() {
   const theme = useTheme();
-  const [hideNsfw, setHideNsfw] = useHideNsfw();
+  const [nsfwMode, setNsfwMode] = useNsfwMode();
   const [onDevice, setOnDevice] = useEmbeddedEnabled();
   // The on-device runtime is only offered where a native bridge engine exists (iOS/Android with the
   // native module built) — never on web, which always uses a remote server.
@@ -60,11 +89,7 @@ function GeneralSection() {
 
   return (
     <SettingsSection title="General" icon={<GeneralSettingsIcon color={theme.textSecondary} size={14} />}>
-      <SettingsRow
-        label="Hide NSFW content"
-        description="Hides NSFW-flagged bridges from the Browse tab."
-        right={<ThemedSwitch value={hideNsfw} onValueChange={setHideNsfw} />}
-      />
+      <NsfwModeRow mode={nsfwMode} onChange={setNsfwMode} />
       {embeddedAvailable && (
         <SettingsRow
           label="Run bridges on this device"
@@ -73,6 +98,74 @@ function GeneralSection() {
         />
       )}
     </SettingsSection>
+  );
+}
+
+/** Row + anchored picker for the 4-way NSFW mode (mirrors `EnumField`'s pattern in
+ *  `setting-field.tsx`), rather than a plain switch — "on" isn't a single durable
+ *  state here, it can also be a temporary override that expires on backgrounding
+ *  or on the next app restart (see `useNsfwMode` in `data/source.ts`). */
+function NsfwModeRow({ mode, onChange }: { mode: NsfwMode; onChange: (mode: NsfwMode) => void }) {
+  const theme = useTheme();
+  const { ref, openAt } = useAnchoredOverlay();
+  const { hovered, onHoverIn, onHoverOut } = useHovered();
+  return (
+    <Pressable
+      ref={ref}
+      onPress={() => openAt(() => <NsfwModePicker mode={mode} onChange={onChange} />)}
+      onHoverIn={onHoverIn}
+      onHoverOut={onHoverOut}
+      style={styles.pressableCursor}>
+      <View style={[styles.row, hovered && { backgroundColor: theme.backgroundSelected }]}>
+        <View style={styles.rowText}>
+          <ThemedText type="small">NSFW content</ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">
+            {NSFW_MODE_OPTIONS.find((o) => o.value === mode)?.description}
+          </ThemedText>
+        </View>
+        <View style={styles.rowValue}>
+          <ThemedText type="small" themeColor="textSecondary">
+            {nsfwModeSummary(mode)}
+          </ThemedText>
+          <ChevronRightIcon color={theme.textSecondary} size={18} />
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+function NsfwModePicker({ mode, onChange }: { mode: NsfwMode; onChange: (mode: NsfwMode) => void }) {
+  const { closeTop } = useOverlay();
+  const [headerHeight, setHeaderHeight] = useState(0);
+  const maxHeight = useListMaxHeight(headerHeight);
+  const theme = useTheme();
+  return (
+    <View style={styles.pickerBody}>
+      <MeasuredHeader onHeight={setHeaderHeight}>
+        <OverlayHeading>NSFW content</OverlayHeading>
+      </MeasuredHeader>
+      <OptionList maxHeight={maxHeight}>
+        {NSFW_MODE_OPTIONS.map((opt) => (
+          <Pressable
+            key={opt.value}
+            onPress={() => {
+              onChange(opt.value);
+              closeTop();
+            }}
+            style={styles.pressableCursor}>
+            <ThemedView type="backgroundElement" style={styles.pickerRow}>
+              <View style={styles.rowText}>
+                <ThemedText type="smallBold">{opt.label}</ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">
+                  {opt.description}
+                </ThemedText>
+              </View>
+              <View style={[styles.check, opt.value === mode && { borderColor: theme.accent, backgroundColor: theme.accent }]} />
+            </ThemedView>
+          </Pressable>
+        ))}
+      </OptionList>
+    </View>
   );
 }
 
@@ -91,6 +184,7 @@ function BridgesSection() {
   const ds = useDataSource();
   const router = useRouter();
   const theme = useTheme();
+  const hideNsfw = useHideNsfw();
   const [bridges, setBridges] = useState<BridgeSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
@@ -106,20 +200,22 @@ function BridgesSection() {
     return () => ctrl.abort();
   }, [ds, reload]);
 
+  const visible = bridges && hideNsfw ? bridges.filter((b) => !b.info.nsfw) : bridges;
+
   return (
     <SettingsSection title="Bridges" icon={<BridgesIcon color={theme.textSecondary} size={14} />}>
       {error ? (
         <RetryBlock message={error} onRetry={() => setReload((n) => n + 1)} />
-      ) : !bridges ? (
+      ) : !visible ? (
         <ThemedText type="small" themeColor="textSecondary">
           Loading…
         </ThemedText>
-      ) : bridges.length === 0 ? (
+      ) : visible.length === 0 ? (
         <ThemedText type="small" themeColor="textSecondary">
-          No bridges installed.
+          {bridges!.length === 0 ? 'No bridges installed.' : 'No bridges to show — NSFW-flagged bridges are hidden.'}
         </ThemedText>
       ) : (
-        bridges.map((b) => {
+        visible.map((b) => {
           const status = bridgeStatus(b);
           return (
             <SettingsRow
@@ -264,5 +360,46 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: MaxContentWidth,
     alignSelf: 'center',
+  },
+  pressableCursor: {
+    cursor: 'pointer',
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.three,
+    minHeight: 44,
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.two,
+    borderRadius: Spacing.two,
+  },
+  rowText: {
+    flex: 1,
+    gap: Spacing.half,
+  },
+  rowValue: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one,
+  },
+  pickerBody: {
+    gap: Spacing.three,
+  },
+  pickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.three,
+    paddingVertical: Spacing.three,
+    paddingHorizontal: Spacing.three,
+    borderRadius: Spacing.three,
+  },
+  check: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    borderColor: 'rgba(128,128,128,0.5)',
   },
 });
