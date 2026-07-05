@@ -18,6 +18,7 @@ import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useDataEpoch } from './data-epoch';
 
+import { logDiagnostic } from '@/lib/diagnostics';
 import * as api from './api';
 import * as mock from './mock';
 import type {
@@ -283,6 +284,15 @@ const realDataSource: DataSource = {
         gridSections.push({ id: r.list.id, title: r.list.name, items: r.items, hasNextPage: r.hasNextPage });
       }
     }
+    // Home renders nothing at all when this comes back empty, with no error — log the shape so
+    // that state (which list/item counts produced it) is inspectable instead of just "blank".
+    if (sections.length === 0 && gridSections.length === 0) {
+      logDiagnostic('home-sections-empty', `${lists.length} list(s), ${homeLists.length} non-page`, {
+        context:
+          `bridge=${bridgeId} ` +
+          resolved.map((r) => `${r.list.id}(page=${!!r.list.page},items=${r.items.length})`).join(' '),
+      });
+    }
     return { sections, gridSections };
   },
 
@@ -379,10 +389,22 @@ const realDataSource: DataSource = {
       // thumbnails somewhere in the list — never bulk-load full-resolution page images as a
       // stand-in. Sorted by index so array position lines up with the reader's page index (the
       // grid's "start" param depends on this), with `null` gaps `PageThumbGrid` fetches lazily.
-      if (pages.some((p) => p.thumbnail)) {
+      const withThumb = pages.filter((p) => p.thumbnail).length;
+      if (withThumb === 0) {
+        logDiagnostic('series-pages-no-thumbs', `${pages.length} page(s), 0 with an inline thumbnail`, {
+          context: `bridge=${bridgeId} series=${seriesId}`,
+        });
+      }
+      if (withThumb > 0) {
         base.pageThumbs = [...pages]
           .sort((a, b) => a.index - b.index)
           .map((p) => toPageThumbSource(p.thumbnail));
+        const droppedToNull = base.pageThumbs.filter((t) => t === null).length;
+        if (droppedToNull > 0) {
+          logDiagnostic('page-thumb-dropped', `${droppedToNull}/${base.pageThumbs.length} thumbnail(s) dropped to null`, {
+            context: `bridge=${bridgeId} series=${seriesId} (missing sheetHeight, or unrecognized kind)`,
+          });
+        }
       }
       base.readLabel = '▶  Read';
       base.chapterCount = info.pageCount ?? pages.length;
