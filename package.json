@@ -8,6 +8,7 @@
     "packages/*"
   ],
   "scripts": {
+    "setup": "bun run setup.ts",
     "dev": "bun run dev.ts",
     "start": "bun run --filter mobile start",
     "android": "bun run --filter mobile android",
