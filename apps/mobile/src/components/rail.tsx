@@ -1,6 +1,7 @@
 import { AnimatedLegendList } from '@legendapp/list/reanimated';
-import { useCallback, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import type { LegendListRef } from '@legendapp/list/react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
 import { SeriesCard, TitlePeek, type CardSize } from '@/components/series-card';
@@ -127,6 +128,72 @@ export function Rail({
   // `sharedValues` prop (below); the peek transform reads it directly — no worklet onScroll needed.
   const scrollX = useSharedValue(0);
 
+  // Desktop web only: a horizontal ScrollView (LegendList or FlatList alike) can't be dragged with a
+  // mouse — touch swipe and shift+wheel work, but click-and-drag does nothing. Add grab-and-pull
+  // drag-to-scroll on the strip's scroll node, and swallow the click that follows a real drag so a
+  // card doesn't navigate when you were only scrolling.
+  const listRef = useRef<LegendListRef>(null);
+  useEffect(() => {
+    if (Platform.OS !== 'web' || wide) return;
+    const node = listRef.current?.getNativeScrollRef?.() as unknown as HTMLElement | undefined;
+    if (!node?.addEventListener) return;
+    node.style.cursor = 'grab';
+    node.style.userSelect = 'none';
+    let down = false;
+    let dragged = false;
+    let startX = 0;
+    let startScroll = 0;
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.pointerType === 'touch' || e.button !== 0) return; // native touch scrolling is fine
+      down = true;
+      dragged = false;
+      startX = e.clientX;
+      startScroll = node.scrollLeft;
+    };
+    const onPointerMove = (e: PointerEvent) => {
+      if (!down) return;
+      const dx = e.clientX - startX;
+      if (!dragged && Math.abs(dx) > 4) {
+        dragged = true;
+        node.style.cursor = 'grabbing';
+      }
+      if (dragged) {
+        node.scrollLeft = startScroll - dx;
+        e.preventDefault();
+      }
+    };
+    const endDrag = () => {
+      down = false;
+      node.style.cursor = 'grab';
+    };
+    const onClickCapture = (e: MouseEvent) => {
+      if (dragged) {
+        e.preventDefault();
+        e.stopPropagation();
+        dragged = false;
+      }
+    };
+    // The cards contain <img>, so a mousedown-drag otherwise starts the browser's native image
+    // drag-and-drop, which kills the pointermove stream after one frame. Suppress it.
+    const onDragStart = (e: Event) => e.preventDefault();
+    node.addEventListener('pointerdown', onPointerDown);
+    node.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', endDrag);
+    window.addEventListener('pointercancel', endDrag);
+    node.addEventListener('dragstart', onDragStart);
+    node.addEventListener('click', onClickCapture, true);
+    return () => {
+      node.style.cursor = '';
+      node.style.userSelect = '';
+      node.removeEventListener('pointerdown', onPointerDown);
+      node.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', endDrag);
+      window.removeEventListener('pointercancel', endDrag);
+      node.removeEventListener('dragstart', onDragStart);
+      node.removeEventListener('click', onClickCapture, true);
+    };
+  }, [wide]);
+
   // Static (scroll-independent) base position of the peeked card; only changes
   // when a different card is peeked, not per scroll frame. On the wide grid the
   // peeked card sits in one of GRID_ROWS rows instead of a single scrolling row.
@@ -181,29 +248,38 @@ export function Rail({
         </View>
       ) : (
         <AnimatedLegendList
+          ref={listRef}
           horizontal
           data={section.items}
           keyExtractor={(it) => it.id}
           recycleItems={false}
-          estimatedItemSize={cardWidth + stripGap}
+          estimatedItemSize={cardWidth}
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={[styles.strip, { gap: stripGap }]}
+          // LegendList positions items virtually, so it ignores `gap` on contentContainerStyle —
+          // the inter-card gap comes from ItemSeparatorComponent instead. Padding must be explicit
+          // (paddingLeft/Right; the shorthand is dropped), and the vertical ring room lives on each
+          // item wrapper below rather than contentContainerStyle (which drops cross-axis padding on
+          // a horizontal list).
+          ItemSeparatorComponent={() => <View style={{ width: stripGap }} />}
+          contentContainerStyle={{ paddingLeft: STRIP_PAD, paddingRight: STRIP_PAD }}
           onLayout={(e) => setStripTop(e.nativeEvent.layout.y)}
           // Feeds scrollX on the UI thread; the lifted peek slides from it via transform (see
           // peekStyle), keeping the popover glued to its card with no JS round-trip.
           sharedValues={{ scrollOffset: scrollX }}
           renderItem={({ item, index }) => (
-            <SeriesCard
-              entry={item}
-              size={size}
-              width={cardWidth}
-              rank={ranked ? index + 1 : undefined}
-              index={index}
-              onPeekChange={onPeekChange}
-              bridge={bridge}
-              bridgeId={bridgeId}
-              direct={direct}
-            />
+            <View style={styles.stripItem}>
+              <SeriesCard
+                entry={item}
+                size={size}
+                width={cardWidth}
+                rank={ranked ? index + 1 : undefined}
+                index={index}
+                onPeekChange={onPeekChange}
+                bridge={bridge}
+                bridgeId={bridgeId}
+                direct={direct}
+              />
+            </View>
           )}
         />
       )}
@@ -310,6 +386,12 @@ const styles = StyleSheet.create({
     // Vertical breathing room so the highlight ring (which sits just outside the
     // card) isn't clipped at the top/bottom of the horizontal strip.
     paddingVertical: Spacing.one,
+  },
+  // Per-card wrapper for the LegendList strip: gives the highlight ring vertical room (LegendList
+  // drops cross-axis padding from contentContainerStyle on a horizontal list, so it can't live
+  // there). STRIP_PAD_V matches this inset so the peek popover still lands on the title.
+  stripItem: {
+    paddingVertical: STRIP_PAD_V,
   },
   // Wide-desktop static grid — paddingHorizontal/gap set inline (STRIP_PAD /
   // stripGapFor), row gap matches the column gap for an even grid.
