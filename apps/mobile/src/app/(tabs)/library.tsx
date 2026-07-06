@@ -70,6 +70,11 @@ export default function LibraryScreen() {
   const barHeight = useTopBarHeight();
   const headerHeight = insets.top + barHeight;
   const numColumns = width < 768 ? 3 : Math.min(6, Math.max(3, Math.floor(width / 200)));
+  // Center the grid inside a full-width scroller (so the scrollbar sits at the window edge, not the
+  // content edge) by padding the sides symmetrically instead of capping+centering the list itself.
+  // LegendList drops `paddingHorizontal` and ignores `alignSelf`/`marginHorizontal:auto` on its
+  // content container, but honors explicit paddingLeft/Right — so this is the reliable lever.
+  const sidePad = Math.max(0, (width - MaxTopLevelWidth) / 2) + Spacing.four;
 
   const cards = useMemo<GridItem[]>(() => {
     if (!items) return [];
@@ -159,18 +164,13 @@ export default function LibraryScreen() {
         // keep remount-on-reuse rather than recycling. Revisit once the item is recycle-safe.
         recycleItems={false}
         ListHeaderComponent={listHeader}
-        // LegendList's columnWrapperStyle only accepts gap keys (not padding like FlatList), so the
-        // row inset lives on contentContainerStyle instead — hence header pieces below carry no
-        // horizontal padding of their own (they'd double up).
         columnWrapperStyle={numColumns > 1 ? { gap: GRID_COLUMN_GAP } : undefined}
-        contentContainerStyle={[
-          styles.gridContent,
-          {
-            paddingTop: headerHeight,
-            paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
-            paddingHorizontal: Spacing.four,
-          },
-        ]}
+        contentContainerStyle={{
+          paddingTop: headerHeight,
+          paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
+          paddingLeft: sidePad,
+          paddingRight: sidePad,
+        }}
         renderItem={({ item }) =>
           item.spacer ? (
             <View style={styles.cell} />
@@ -277,12 +277,6 @@ const styles = StyleSheet.create({
   },
   list: {
     flex: 1,
-    width: '100%',
-    maxWidth: MaxTopLevelWidth,
-    alignSelf: 'center',
-  },
-  gridContent: {
-    gap: Spacing.three,
   },
   controls: {
     paddingTop: Spacing.three,
@@ -299,6 +293,9 @@ const styles = StyleSheet.create({
   },
   cell: {
     flex: 1,
+    // Row gap lives here: LegendList ignores contentContainerStyle `gap` vertically (items are
+    // absolutely positioned), so each cell reserves the inter-row space below its card itself.
+    paddingBottom: Spacing.three,
   },
   stateBlock: {
     paddingTop: Spacing.five,

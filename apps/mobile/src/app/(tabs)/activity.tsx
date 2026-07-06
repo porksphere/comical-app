@@ -2,7 +2,7 @@ import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HistoryRow } from '@/components/history-row';
@@ -26,6 +26,7 @@ export default function ActivityScreen() {
   const theme = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const queryClient = useQueryClient();
   const hideNsfw = useHideNsfw();
   const { byId, nameOf, directOf } = useBridgeMap();
@@ -57,6 +58,10 @@ export default function ActivityScreen() {
 
   const barHeight = useTopBarHeight();
   const headerHeight = insets.top + barHeight;
+  // Center the rows in a full-width scroller (scrollbar at the window edge) via symmetric side
+  // padding — LegendList drops paddingHorizontal / ignores alignSelf on its content container, so
+  // explicit paddingLeft/Right is the reliable lever. See library.tsx.
+  const sidePad = Math.max(0, (width - MaxTopLevelWidth) / 2) + Spacing.four;
 
   const openDetail = (a: ActivityEntry) =>
     router.push({
@@ -137,17 +142,18 @@ export default function ActivityScreen() {
       ) : (
         <LegendList
           ref={listRef}
-          // Cap + center + fill-height on the root (not contentContainerStyle) — LegendList's web
-          // scroll host is a block parent, so alignSelf/height there don't apply. See library.tsx.
+          // Full-width scroller so the scrollbar sits at the window edge; rows centered via sidePad.
           style={styles.list}
           data={visible}
           keyExtractor={(a) => `${a.bridgeId}:${a.seriesId}:${a.chapterId}`}
           recycleItems={false}
           ListHeaderComponent={listHeader}
-          contentContainerStyle={[
-            styles.listContent,
-            { paddingTop: headerHeight, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
-          ]}
+          contentContainerStyle={{
+            paddingTop: headerHeight,
+            paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
+            paddingLeft: sidePad,
+            paddingRight: sidePad,
+          }}
           ItemSeparatorComponent={() => <View style={[styles.sep, { backgroundColor: theme.hairline }]} />}
           renderItem={({ item }) => (
             <HistoryRow
@@ -212,12 +218,6 @@ const styles = StyleSheet.create({
   },
   list: {
     flex: 1,
-    width: '100%',
-    maxWidth: MaxTopLevelWidth,
-    alignSelf: 'center',
-  },
-  listContent: {
-    paddingHorizontal: Spacing.four,
   },
   controls: {
     paddingTop: Spacing.three,

@@ -529,6 +529,11 @@ export default function BrowseScreen() {
   const compact = useIsCompact();
   const numColumns =
     !hydrated || width < 768 ? 3 : Math.min(6, Math.max(3, Math.floor(width / 200)));
+  // Center content in a full-width scroller (scrollbar at the window edge) via symmetric side
+  // padding — LegendList drops paddingHorizontal / ignores alignSelf on its content container, so
+  // explicit paddingLeft/Right is the reliable lever. The header/footer bleed Spacing.four of this
+  // back out so their own self-padded children (controls, rails, section heads) stay aligned.
+  const sidePad = Math.max(0, (width - MaxTopLevelWidth) / 2) + Spacing.four;
   // Single hydration-safe viewport width for the rails: a deterministic mobile
   // fallback during prerender/first paint, the real width once mounted.
   const railViewport = hydrated ? width : 390;
@@ -755,8 +760,8 @@ export default function BrowseScreen() {
       <AnimatedLegendList
         ref={listRef}
         key={numColumns}
-        // Cap + center + fill-height on the root (LegendList's web scroll host is a non-flex block
-        // parent, so those don't work on contentContainerStyle). Scroll offset flows into scrollY.
+        // Full-width scroller so the scrollbar sits at the window edge; content centered via the
+        // symmetric sidePad below. Scroll offset flows into scrollY for the collapsing header.
         style={styles.list}
         sharedValues={{ scrollOffset: scrollY }}
         data={gridData}
@@ -764,20 +769,19 @@ export default function BrowseScreen() {
         numColumns={numColumns}
         recycleItems={false}
         ListHeaderComponent={listHeader}
-        // LegendList's columnWrapperStyle only takes gap keys, so the grid rows' horizontal inset
-        // moves to contentContainerStyle's paddingHorizontal; the header/footer bleed it back out.
+        // LegendList takes gap keys only in columnWrapperStyle (column gap); the outer inset +
+        // centering come from contentContainerStyle's paddingLeft/Right (= sidePad), and the
+        // header/footer bleed Spacing.four back out so their self-padded children line up.
         columnWrapperStyle={{ gap: GRID_COLUMN_GAP }}
-        contentContainerStyle={[
-          styles.gridContent,
-          // Pad to the bar's tallest (expanded) height so the first row clears it at
-          // the top; as the bar collapses by `expand`, content scrolls up by the same
-          // amount, keeping the first row pinned just under the bar's bottom edge.
-          {
-            paddingTop: headerHeight + expand,
-            paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
-            paddingHorizontal: Spacing.four,
-          },
-        ]}
+        contentContainerStyle={{
+          // Pad to the bar's tallest (expanded) height so the first row clears it at the top; as the
+          // bar collapses by `expand`, content scrolls up by the same amount, keeping the first row
+          // pinned just under the bar's bottom edge.
+          paddingTop: headerHeight + expand,
+          paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
+          paddingLeft: sidePad,
+          paddingRight: sidePad,
+        }}
         renderItem={({ item }) =>
           item.spacer ? (
             // While a next page is actually loading, fill the last row's
@@ -785,9 +789,9 @@ export default function BrowseScreen() {
             // of an invisible spacer — otherwise the row reads as "done" and the
             // incoming skeleton rows below look like they jumped straight to a
             // fresh row rather than finishing this one first.
-            loadingMore ? <SkeletonCard /> : <View style={styles.cell} />
+            loadingMore ? <SkeletonCard /> : <View style={styles.gridCell} />
           ) : (
-            <View style={styles.cell}>
+            <View style={styles.gridCell}>
               <SeriesCard entry={item} bridge={currentBridge?.name ?? undefined} bridgeId={bridgeId} direct={directBridge} />
             </View>
           )
@@ -1008,20 +1012,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.four,
     borderRadius: 999,
   },
-  // Constrain the whole scrolling surface (controls, rails, grid) to the top-level content width,
-  // centred on wider viewports, and fill height. On the list root (not contentContainerStyle) —
-  // LegendList's web scroll host is a non-flex block parent where those props don't apply.
+  // Full-width scroll host so the scrollbar sits at the window edge; the content is centred by the
+  // symmetric sidePad on contentContainerStyle instead (see the list's paddingLeft/Right).
   list: {
     flex: 1,
-    width: '100%',
-    maxWidth: MaxTopLevelWidth,
-    alignSelf: 'center',
   },
-  gridContent: {
-    gap: Spacing.three,
-  },
-  // Cancels the list's contentContainer horizontal padding for header/footer blocks, whose own
-  // children already self-pad by Spacing.four.
+  // Cancels Spacing.four of the list's contentContainer side padding for header/footer blocks, whose
+  // own children already self-pad by Spacing.four — so they line up with the grid cells.
   bleed: {
     marginHorizontal: -Spacing.four,
   },
@@ -1030,6 +1027,12 @@ const styles = StyleSheet.create({
   },
   cell: {
     flex: 1,
+  },
+  // Main-grid cell only (not the header's HomeGridBlock / skeleton rows, which space themselves):
+  // LegendList ignores contentContainerStyle `gap` vertically, so the inter-row gap lives here.
+  gridCell: {
+    flex: 1,
+    paddingBottom: Spacing.three,
   },
   skelFooter: {
     // No top padding: the list's content gap already separates the footer from
