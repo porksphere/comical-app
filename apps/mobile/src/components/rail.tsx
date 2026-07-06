@@ -1,10 +1,7 @@
+import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import Animated, {
-  useAnimatedScrollHandler,
-  useAnimatedStyle,
-  useSharedValue,
-} from 'react-native-reanimated';
+import { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
 import { SeriesCard, TitlePeek, type CardSize } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
@@ -126,10 +123,9 @@ export function Rail({
   // frame went JS-state → re-render → reposition and the popover visibly lagged
   // a few frames behind the natively-scrolling cards. Driving it from a shared
   // value + transform keeps it glued to its card without any JS round-trip.
+  // AnimatedLegendList writes the strip's horizontal offset into `scrollX` on the UI thread via its
+  // `sharedValues` prop (below); the peek transform reads it directly — no worklet onScroll needed.
   const scrollX = useSharedValue(0);
-  const scrollHandler = useAnimatedScrollHandler((e) => {
-    scrollX.value = e.contentOffset.x;
-  });
 
   // Static (scroll-independent) base position of the peeked card; only changes
   // when a different card is peeked, not per scroll frame. On the wide grid the
@@ -184,21 +180,19 @@ export function Rail({
           ))}
         </View>
       ) : (
-        <Animated.FlatList
+        <AnimatedLegendList
           horizontal
           data={section.items}
-          keyExtractor={(it: SeriesEntry) => it.id}
+          keyExtractor={(it) => it.id}
+          recycleItems={false}
+          estimatedItemSize={cardWidth + stripGap}
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={[styles.strip, { gap: stripGap }]}
           onLayout={(e) => setStripTop(e.nativeEvent.layout.y)}
-          onScroll={scrollHandler}
-          // Fire every scroll frame (not throttled to ~16ms): the lifted peek is
-          // repositioned from these events, and on web react-native-web honors
-          // this throttle, so a smaller value keeps the popover as tight to the
-          // strip as this out-of-scroller design allows. The handler is a UI-thread
-          // worklet, so the higher frequency is cheap.
-          scrollEventThrottle={1}
-          renderItem={({ item, index }: { item: SeriesEntry; index: number }) => (
+          // Feeds scrollX on the UI thread; the lifted peek slides from it via transform (see
+          // peekStyle), keeping the popover glued to its card with no JS round-trip.
+          sharedValues={{ scrollOffset: scrollX }}
+          renderItem={({ item, index }) => (
             <SeriesCard
               entry={item}
               size={size}
