@@ -2,11 +2,9 @@ import { Tabs, TabList, TabTrigger, TabSlot, TabTriggerSlotProps } from 'expo-ro
 import { Activity, History, LayoutGrid, Library, Settings, type LucideIcon } from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  LayoutAnimation,
   Platform,
   Pressable,
   StyleSheet,
-  UIManager,
   useWindowDimensions,
   View,
   type GestureResponderEvent,
@@ -18,13 +16,7 @@ import { DesktopTopBarHeight, MaxTopLevelWidth, Spacing } from '@/constants/them
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
-import { getTabBarHidden, subscribeTabBarHidden } from '@/lib/tab-bar-visibility';
-
-// Required on Android's old architecture for LayoutAnimation to take effect at all; a no-op where
-// it's already handled natively (Fabric / New Architecture), so unconditionally safe to call once.
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
+import { getTabBarProgress, subscribeTabBarProgress } from '@/lib/tab-bar-visibility';
 
 // A custom-rendered bar on every platform (no OS-native tab bar) — responsive: an app-like black
 // icon bottom bar on phones; on wider/desktop viewports a compact icon-only row pinned to the
@@ -141,27 +133,24 @@ function useAutoHideBottomBar(enabled: boolean) {
 const NATIVE_HIDE_OFFSET = 120;
 
 /**
- * Native only: slides the bottom bar fully off-screen on sustained downward
- * scroll and back in on upward scroll (X/Twitter-style), driven by the shared
- * `tab-bar-visibility` store that each tab screen reports into via
- * `useHideTabBarOnScroll`. Uses `LayoutAnimation` rather than Reanimated
- * because `expo-router/ui`'s `TabList` only exposes a plain `style` prop —
- * wrapping it to attach a worklet-driven animated style would either break
- * tab discovery (see `Tabs.js`'s Fragment/TabList-only recursion) or have its
- * style flattened away by the `asChild` Slot shim.
+ * Native only: tracks the bottom bar's hidden-ness continuously (0 shown → 1 fully
+ * off-screen) as the focused screen scrolls, driven by the shared `tab-bar-visibility`
+ * store that each tab screen reports into via `useHideTabBarOnScroll`. Plain state
+ * rather than Reanimated because `expo-router/ui`'s `TabList` only exposes a plain
+ * `style` prop — wrapping it to attach a worklet-driven animated style would either
+ * break tab discovery (see `Tabs.js`'s Fragment/TabList-only recursion) or have its
+ * style flattened away by the `asChild` Slot shim. Every scroll-reported frame moves
+ * the bar in lockstep with the finger (X/Twitter-style), not a two-state flip.
  */
-function useNativeTabBarSlide(enabled: boolean) {
-  const [hidden, setHidden] = useState(getTabBarHidden());
+function useNativeTabBarProgress(enabled: boolean) {
+  const [progress, setProgress] = useState(getTabBarProgress());
 
   useEffect(() => {
     if (!enabled || Platform.OS === 'web') return;
-    return subscribeTabBarHidden((next) => {
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setHidden(next);
-    });
+    return subscribeTabBarProgress(setProgress);
   }, [enabled]);
 
-  return enabled && Platform.OS !== 'web' && hidden;
+  return enabled && Platform.OS !== 'web' ? progress : 0;
 }
 
 export default function AppTabs() {
@@ -184,8 +173,8 @@ export default function AppTabs() {
   // Fade the mobile bottom bar away while scrolling down (web only - see hook);
   // bringing it back on upward scroll, at the top, or when a tab is touched (`reveal`).
   const { hidden, reveal } = useAutoHideBottomBar(isMobile);
-  // Native only: slide the whole bar off-screen on scroll down, back in on scroll up.
-  const nativeHidden = useNativeTabBarSlide(isMobile);
+  // Native only: slide the whole bar off-screen as the screen scrolls down, back in as it scrolls up.
+  const nativeProgress = useNativeTabBarProgress(isMobile);
 
   // Pin the desktop nav to the right edge of the constrained content (the same
   // MaxTopLevelWidth the views centre within), not the raw screen edge, so it
@@ -233,12 +222,12 @@ export default function AppTabs() {
               paddingBottom: Math.max(insets.bottom, Spacing.two),
               // Web: fade to a faint ghost (still touchable, so tapping where it
               // sits brings it back) while scrolling down. Native: slide the whole
-              // bar down out of view instead, animated by `LayoutAnimation` in
-              // `useNativeTabBarSlide` (X/Twitter-style). Either way the bar is an
-              // absolute overlay (see styles.bottomBar), so screen content scrolls
+              // bar down out of view instead, continuously tracking scroll position
+              // via `useNativeTabBarProgress` (X/Twitter-style). Either way the bar is
+              // an absolute overlay (see styles.bottomBar), so screen content scrolls
               // behind it and stays visible rather than being clipped by a dead strip.
               opacity: hidden ? FADED_OPACITY : 1,
-              bottom: nativeHidden ? -NATIVE_HIDE_OFFSET : 0,
+              bottom: -NATIVE_HIDE_OFFSET * nativeProgress,
             },
           ]}>
           {triggers}
