@@ -431,7 +431,11 @@ export function relativeTime(ts: number): string {
 const MOCK_BRIDGE_NAMES = ['Panelfox', 'Inkwell', 'Driftpage', 'Nightshelf', 'Coldspine'];
 const MOCK_DIRECT_BRIDGES = new Set(['Coldspine']);
 const slugify = (name: string) => name.toLowerCase();
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+// Mock-mode only, like coverDelayMs: resolve immediately in real mode so even a stray call to a mock
+// data function outside mock mode can't add fake latency to a real page load (infinite scroll, series
+// detail, etc.). In practice these run only via mockDataSource (mock mode), but this makes it airtight.
+const delay = (ms: number): Promise<void> =>
+  mockActive ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
 
 export async function mockGetBridges(): Promise<Bridge[]> {
   return MOCK_BRIDGE_NAMES.map((name) => ({
