@@ -115,6 +115,7 @@ export default function SeriesScreen() {
               actionsWidth={actionsWidth}
               direct={direct === '1'}
               width={width}
+              initialCover={cover}
             />
           )}
         </View>
@@ -133,6 +134,7 @@ function SeriesBody({
   actionsWidth,
   direct,
   width,
+  initialCover,
 }: {
   series: SeriesDetail;
   bridgeId?: string;
@@ -141,6 +143,10 @@ function SeriesBody({
   actionsWidth: number;
   direct: boolean;
   width: number;
+  /** Cover the loading skeleton already painted (forwarded from browse). When it
+   *  matches this body's cover, skip the fade-in so the swap doesn't re-flash the
+   *  already-visible image. */
+  initialCover?: string;
 }) {
   const ds = useDataSource();
   const router = useRouter();
@@ -252,7 +258,11 @@ function SeriesBody({
         style={isLarge ? styles.coverLarge : styles.cover}
         contentFit="cover"
         cachePolicy="memory-disk"
-        transition={200}
+        // The skeleton already painted this exact cover — fading it in again on the
+        // skeleton→body swap makes it flash. Skip the fade when it matches; keep the
+        // 200ms fade for a cold load (deep-link, or a bridge whose detail cover
+        // differs from the browse thumbnail).
+        transition={initialCover && initialCover === series.cover ? 0 : 200}
       />
       {series.chapterCount != null && (
         <View style={styles.coverBadge}>
