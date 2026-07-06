@@ -419,16 +419,19 @@ const realDataSource: DataSource = {
 
   async getChapterPages(bridgeId, seriesId, chapterId, signal) {
     const pages = await api.getChapterPages(bridgeId, seriesId, chapterId, signal);
-    return Promise.all(
-      [...pages].sort((a, b) => a.index - b.index).map((p) => api.resolveAssetSource(p.imageUrl)),
-    );
+    return [...pages].sort((a, b) => a.index - b.index).map((p) => p.imageUrl);
   },
 
   async getDirectPages(bridgeId, seriesId, signal) {
     const pages = await api.getSeriesPages(bridgeId, seriesId, signal);
-    return Promise.all(
-      [...pages].sort((a, b) => a.index - b.index).map((p) => api.resolveAssetSource(p.imageUrl)),
-    );
+    // Return the raw (possibly server-relative) page paths WITHOUT resolving them here. Some bridges
+    // make each `imageUrl` a lazy resolve-route that costs a rate-limited network round-trip; resolving
+    // all of them up front (Promise.all over the whole gallery) fires hundreds of parallel requests
+    // that overflow the bridge's queue and hit its per-call timeout (BridgeTimeoutError). ReaderPage
+    // resolves each lazily via resolveAssetSourceCached as it scrolls into the render window, so only
+    // visible pages pay that cost. Absolute URLs pass straight through, so bridges that already return
+    // direct CDN URLs behave exactly as before.
+    return [...pages].sort((a, b) => a.index - b.index).map((p) => p.imageUrl);
   },
 
   async getPageThumb(bridgeId, seriesId, pageIndex, signal) {

@@ -156,6 +156,33 @@ export async function resolveAssetSource(url: string): Promise<string> {
 }
 
 /**
+ * Per-path memoized `resolveAssetSource`. The reader resolves a page's asset lazily as it scrolls
+ * into the render window, and the warm-ahead prefetch resolves the same paths — dedupe so each path
+ * costs a single resolve, not several (a resolve can be a rate-limited network round-trip for bridges
+ * whose page URLs are lazy resolve-routes). A rejected resolve is evicted so a retry re-runs it;
+ * `invalidateAssetSource` lets a caller bust a stale entry (e.g. an expired time-scoped CDN URL)
+ * before retrying. Absolute URLs resolve synchronously inside `resolveAssetSource`, so caching them
+ * is just a cheap identity map.
+ */
+const assetResolveCache = new Map<string, Promise<string>>();
+export function resolveAssetSourceCached(url: string): Promise<string> {
+  const hit = assetResolveCache.get(url);
+  if (hit) return hit;
+  const p = resolveAssetSource(url).catch((e) => {
+    assetResolveCache.delete(url);
+    throw e;
+  });
+  assetResolveCache.set(url, p);
+  return p;
+}
+
+/** Drop a cached resolution so the next `resolveAssetSourceCached` re-runs it (retry after a stale/
+ *  expired resolved URL fails to load). */
+export function invalidateAssetSource(url: string): void {
+  assetResolveCache.delete(url);
+}
+
+/**
  * The transport every helper in this module goes through. `path` is a server-relative path like
  * `/bridges/x/search?q=…`; the transport returns a `Response` exactly as `fetch` would.
  *
