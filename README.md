@@ -61,8 +61,21 @@ with no registry (for local dev, seed one via a gitignored `.env.local`'s `EXPO_
 > design where a separate core would ship via GitHub Packages. The real runtime is the `@comical/*`
 > embedding above; the stub is only still imported by `detail.tsx`'s Liquid Glass demo.
 
-First-time setup: `git submodule update --init`, `bun install`, and `bun install` inside
-`external/comical` (its transitive deps — hono/zod/@noble — are what Metro bundles on native).
+**First-time setup — one command:**
+
+```bash
+bun run setup
+```
+
+`setup.ts` runs the full fresh-clone sequence, in order: checks out the `external/comical`
+submodule → `bun install` (app + workspaces) → `bun install --linker hoisted` inside
+`external/comical` (hoists its transitive deps — hono/zod/cheerio/@noble — to
+`external/comical/node_modules`, the only place `metro.config.js` searches; bun's default
+per-package layout leaves them unresolvable → "Unable to resolve module hono") → `bun run
+build:native` (generates the QuickJS harness `comical_harness.js`, an APK asset the on-device
+runtime loads; missing it fails every bridge with "FileNotFoundException: comical_harness.js").
+Re-running is safe. After a native build you can iterate with `bun run android` / `bun run dev`.
+See `apps/mobile/modules/comical-runtime/SETUP.md` for the full story.
 
 ## Develop
 
@@ -70,7 +83,8 @@ Bun is the package manager. Node is still used under the hood — Metro and the
 native build phases (Gradle/Xcode "bundle React Native code") shell out to `node`.
 
 ```bash
-bun install            # install all workspaces
+bun run setup          # first-time / fresh clone: submodule + deps + native harness (see above)
+bun install            # install all workspaces (subset of setup; web-only work)
 bun run dev            # local web dev in a browser (hot reload) → http://localhost:8081
 bun start              # expo start (apps/mobile) — dev menu for iOS/Android/web
 bun run ios            # or: bun run android

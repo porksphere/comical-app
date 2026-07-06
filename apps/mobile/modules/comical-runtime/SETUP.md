@@ -25,10 +25,18 @@ resolves to `null` and the app stays on the remote transport (so JS-only lanes a
 
 ## To build & verify (Android, local emulator — the fast loop)
 ```sh
-git submodule update --init --recursive          # ensure external/comical is present
-(cd external/comical && bun install && bun run build:native)   # generate comical_harness.js
+bun run setup                # from repo root: submodule + deps + build:native (see setup.ts)
+cd apps/mobile && bun run run:android   # expo run:android = prebuild + gradle + install
+```
+`bun run setup` (repo-root `setup.ts`) does, in order: `git submodule update --init --recursive`
+→ `bun install` → `bun install --linker hoisted` in `external/comical` (hoisted so Metro resolves
+hono/zod/cheerio — bun's default per-package layout hides them) → `bun run build:native` (generates
+`comical_harness.js`). The harness is an **APK asset baked in at build time**: if you regenerate it
+later, rebuild + reinstall the APK — a Metro reload won't pick it up. To do the steps by hand:
+```sh
+git submodule update --init --recursive
+(cd external/comical && bun install --linker hoisted && bun run build:native)
 cd apps/mobile && bun install
-bun run run:android                              # expo run:android = prebuild + gradle + install
 ```
 ⚠️ Use `run:android` (`expo run:android`), NOT `android` (`expo start --android`). The latter only
 starts Metro against Expo Go, which can't contain a custom native module — so `ComicalRuntime` is
