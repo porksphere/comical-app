@@ -44,19 +44,6 @@ public final class ComicalRuntimeModule: Module {
     Function("disposeBridge") { (id: String) in
       self.bridges[id] = nil
     }
-
-    // TEMPORARY, for the tabBarMinimizeBehavior investigation: reads the diagnostic log the
-    // patched react-native-screens (patches/react-native-screens+4.25.2.patch,
-    // RNSTabsScreenViewController.mm) writes to this same UserDefaults key. Surfaced in Settings >
-    // Diagnostics so it's inspectable with no debugger attached. Safe to delete both this and the
-    // patch's logging once the investigation is done.
-    Function("readTabBarDebugLog") { () -> [String] in
-      UserDefaults.standard.stringArray(forKey: "ComicalTabBarDebugLog") ?? []
-    }
-
-    Function("clearTabBarDebugLog") {
-      UserDefaults.standard.removeObject(forKey: "ComicalTabBarDebugLog")
-    }
   }
 
   /// A persistent, per-bridge data directory: `<Application Support>/comical/bridges/<id>`. Falls back
