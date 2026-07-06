@@ -8,7 +8,6 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { invalidateAssetSource, resolveAssetSourceCached } from '@/data/api';
 import { coverDelayMs } from '@/data/mock';
-import { useMockActive } from '@/data/source';
 import { logDiagnostic } from '@/lib/diagnostics';
 
 // One page image. Reuses the cover/thumbnail loading treatment: hold the image
@@ -56,10 +55,8 @@ export function ReaderPage({
   // never resolve). This is what keeps a big gallery from resolving every page up front. `null` until
   // resolved; while null the skeleton shows.
   const [resolvedUri, setResolvedUri] = useState<string | null>(null);
-  // Staggered skeletons are a MOCK affordance only — real reader pages have real load latency, so
-  // simulating more just slows them.
-  const mock = useMockActive();
-  const delay = useMemo(() => (mock ? coverDelayMs(uri) : 0), [mock, uri]);
+  // `coverDelayMs` self-gates on mock mode (0 in real mode), so real pages get no fake latency.
+  const delay = useMemo(() => coverDelayMs(uri), [uri]);
   const [delayPassed, setDelayPassed] = useState(delay === 0);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
