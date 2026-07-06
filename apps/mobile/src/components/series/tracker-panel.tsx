@@ -43,6 +43,12 @@ function TrackerMenu({ initialLinks }: { seriesId: string; initialLinks: Tracker
   const [busyId, setBusyId] = useState<string | null>(null);
   const [linking, setLinking] = useState(false);
 
+  // NOTE: this whole panel is a MOCK STUB — it is not wired to any real tracker backend. The services
+  // list (TRACKER_SERVICES), search (mockTrackerSearch), and the sync/link/unlink handlers below (which
+  // just mutate local state after a fake TRACKER_ACTION_DELAY_MS) are all fake, in every mode. So the
+  // simulated delay here is NOT a real-mode leak (there's no real behaviour to delay). Left as-is
+  // intentionally until trackers are actually implemented — do not "fix" the delay in isolation; the
+  // whole feature needs wiring to the real tracker endpoints (or hiding) as one piece of work.
   const sync = (trackerId: string) => {
     setBusyId(trackerId);
     setTimeout(() => {
