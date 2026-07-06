@@ -14,7 +14,7 @@ import type { UseQueryOptions } from '@tanstack/react-query';
 
 import type { LibrarySort } from './api';
 import type { DataSource } from './source';
-import type { ActivityEntry, HistoryEntry, LibraryItem, SeriesDetail, SeriesEntry } from './types';
+import type { ActivityEntry, HistoryEntry, LibraryItem, SeriesDetail, SeriesEntry, SeriesListResult } from './types';
 
 /** Per-series fetch options that affect the *shape* of the result (and thus the key). */
 export type SeriesDetailOpts = { direct?: boolean; bridgeName?: string; title?: string; cover?: string };
@@ -22,6 +22,8 @@ export type SeriesDetailOpts = { direct?: boolean; bridgeName?: string; title?: 
 export const queryKeys = {
   seriesDetail: (mock: boolean, bridgeId: string, seriesId: string, direct: boolean) =>
     ['seriesDetail', mock, bridgeId, seriesId, direct] as const,
+  seriesList: (mock: boolean, bridgeId: string, seriesId: string, direct: boolean) =>
+    ['seriesList', mock, bridgeId, seriesId, direct] as const,
   chapterPages: (mock: boolean, bridgeId: string, seriesId: string, chapterId: string) =>
     ['chapterPages', mock, bridgeId, seriesId, chapterId] as const,
   directPages: (mock: boolean, bridgeId: string, seriesId: string) =>
@@ -69,6 +71,24 @@ export function seriesDetailQuery(
     queryFn: ({ signal }) => ds.getSeriesDetail(bridgeId, seriesId, opts, signal),
     enabled: !!seriesId,
     placeholderData,
+  };
+}
+
+/** `useQuery` options for a series' deferred chapter list / page-thumbnail grid
+ *  (the ~200ms part `getSeriesDetail` no longer waits on). Pass `series.listDeferred`
+ *  (ANDed with a real id) as `enabled` so it only fires when actually deferred. */
+export function seriesListQuery(
+  ds: DataSource,
+  mock: boolean,
+  bridgeId: string,
+  seriesId: string,
+  direct: boolean,
+  enabled: boolean,
+): UseQueryOptions<SeriesListResult, Error> {
+  return {
+    queryKey: queryKeys.seriesList(mock, bridgeId, seriesId, direct),
+    queryFn: ({ signal }) => ds.getSeriesList(bridgeId, seriesId, direct, signal),
+    enabled: enabled && !!seriesId,
   };
 }
 

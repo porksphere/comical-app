@@ -23,6 +23,7 @@ import {
   queryKeys,
   relatedGroupsQuery,
   seriesDetailQuery,
+  seriesListQuery,
 } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type SeriesDetail, type TagGroup } from '@/data/types';
@@ -191,6 +192,24 @@ function SeriesBody({
     relatedGroupsQuery(ds, mock, bridgeId ?? '', series.id, needsRelatedFetch),
   );
   const relatedGroups = series.relatedGroups ?? fetchedRelated;
+
+  // Chapter list / page-thumbnail grid: `getSeriesDetail` returns only the fast
+  // info payload and flags `listDeferred`, leaving this ~200ms fetch to stream in
+  // separately so the hero/meta/description paint immediately (this is what made
+  // the page feel slower than comical-web, which for chaptered series blocks its
+  // whole body on the /chapters request). The chapter section shows a skeleton
+  // meanwhile, and the merged chapters/pageThumbs/count/label below prefer the
+  // deferred result but fall back to any inline values (e.g. mock data).
+  const listDeferred = !!series.listDeferred;
+  const { data: listData, isLoading: listFetching } = useQuery(
+    seriesListQuery(ds, mock, bridgeId ?? '', series.id, direct, listDeferred),
+  );
+  const listLoading = listDeferred && listFetching;
+  const chapters = series.chapters ?? listData?.chapters;
+  const pageThumbs = series.pageThumbs ?? listData?.pageThumbs;
+  const chapterCount = listData?.chapterCount ?? series.chapterCount;
+  const readLabel = listData?.readLabel ?? series.readLabel;
+
   // Optimistic toggle: flip the cached value immediately, invalidate the
   // favorites list so it reflects the change, and roll back on failure — mirrors
   // comical-web's optimistic favorite + `favoritesCache.delete` invalidation.
@@ -276,9 +295,9 @@ function SeriesBody({
         // differs from the browse thumbnail).
         transition={initialCover && initialCover === series.cover ? 0 : 200}
       />
-      {series.chapterCount != null && (
+      {chapterCount != null && (
         <View style={styles.coverBadge}>
-          <ThemedText style={styles.coverBadgeText}>{series.chapterCount}</ThemedText>
+          <ThemedText style={styles.coverBadgeText}>{chapterCount}</ThemedText>
         </View>
       )}
     </View>
@@ -314,8 +333,12 @@ function SeriesBody({
   const actionsEl = (
     <View style={[styles.actions, !isLarge && { width: actionsWidth }]}>
       <ActionButton
-        label={series.readLabel ?? '▶  Read'}
+        label={readLabel ?? '▶  Read'}
         variant="primary"
+        // A chaptered series needs its (deferred) chapter list to know which chapter
+        // to open — disable Read until it lands. Direct series read from page 0, and
+        // a resume entry carries its own chapter, so both stay enabled immediately.
+        disabled={!direct && !resumeEntry && listLoading}
         onPress={() => {
           if (resumeEntry) {
             const isDirect = resumeEntry.chapterId === DIRECT_CHAPTER_ID || !resumeEntry.chapterId;
@@ -341,8 +364,8 @@ function SeriesBody({
           };
           if (bridgeId) params.bridgeId = bridgeId;
           if (direct) params.direct = '1';
-          else if (series.chapters?.length) {
-            const first = series.chapters[series.chapters.length - 1];
+          else if (chapters?.length) {
+            const first = chapters[chapters.length - 1];
             params.chapterId = first.id;
             params.chapterName = first.name;
           }
@@ -444,8 +467,9 @@ function SeriesBody({
           page-thumbnail grid for direct series is rendered separately, full-width
           below the columns (see `pagesEl`). */}
       <ChaptersSection
-        chapters={series.chapters}
-        pageThumbs={series.pageThumbs}
+        chapters={chapters}
+        pageThumbs={pageThumbs}
+        loading={listLoading && !direct}
         seed={series.id}
         title={series.title}
         bridgeId={bridgeId}
@@ -459,8 +483,9 @@ function SeriesBody({
   // here also lets the sticky cover column release at the top of this grid.
   const pagesEl = (
     <ChaptersSection
-      chapters={series.chapters}
-      pageThumbs={series.pageThumbs}
+      chapters={chapters}
+      pageThumbs={pageThumbs}
+      loading={listLoading && direct}
       seed={series.id}
       title={series.title}
       bridgeId={bridgeId}

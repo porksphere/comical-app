@@ -35,6 +35,7 @@ import type {
   RailSection,
   SeriesDetail,
   SeriesEntry,
+  SeriesListResult,
 } from './types';
 
 /**
@@ -113,6 +114,10 @@ export interface DataSource {
     opts?: { direct?: boolean; bridgeName?: string; title?: string },
     signal?: AbortSignal,
   ): Promise<SeriesDetail>;
+  /** Deferred chapter list (chaptered) or page-thumbnail grid (direct) for a series whose
+   *  `getSeriesDetail` came back with `listDeferred: true` — the slow (~200ms) part, fetched
+   *  separately so it never blocks the body render. */
+  getSeriesList(bridgeId: string, seriesId: string, direct: boolean, signal?: AbortSignal): Promise<SeriesListResult>;
   getChapterPages(bridgeId: string, seriesId: string, chapterId: string, signal?: AbortSignal): Promise<string[]>;
   getDirectPages(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<string[]>;
   /** Lazy fallback for a series' related-series rails when `getSeriesDetail` came back with
@@ -352,16 +357,13 @@ const realDataSource: DataSource = {
   },
 
   async getSeriesDetail(bridgeId, seriesId, opts = {}, signal) {
-    // Fire the two core requests together (mirrors comical-web's `Promise.all` at
-    // app.ts:2772) so the page's load latency is the MAX of the two, not their sum.
-    // `opts.direct` already decides which second request to make, so we don't need
-    // `info` to resolve first — the chapters/pages fetch can start immediately.
-    const [info, second] = await Promise.all([
-      api.getSeriesDetail(bridgeId, seriesId, signal),
-      opts.direct
-        ? api.getSeriesPages(bridgeId, seriesId, signal)
-        : api.getChapters(bridgeId, seriesId, signal),
-    ]);
+    // Fetch ONLY the fast info payload (~2-9ms) and return immediately. The chapter
+    // list / page-thumbnail grid is the ~200ms bottleneck (see getSeriesList), so
+    // it is deferred: awaiting it here would hold the whole body — title, cover,
+    // description, meta — behind that slow request (which is exactly why the page
+    // felt slower than comical-web). The series screen renders this info at once and
+    // streams the list in via `getSeriesList`, flagged by `listDeferred`.
+    const info = await api.getSeriesDetail(bridgeId, seriesId, signal);
     // Bridges with capability "related-series" omit `relatedSeriesGroups` from the
     // main response and provide it via a separate endpoint instead — see contract's SeriesInfo docs.
     // Leave `relatedGroups` unset and flag `relatedGroupsDeferred` rather than fetching it inline
@@ -391,9 +393,22 @@ const realDataSource: DataSource = {
       meta: buildMeta(info),
       relatedGroups,
       relatedGroupsDeferred: !info.relatedSeriesGroups,
+      listDeferred: true,
     };
     if (opts.direct) {
-      const pages = second as Awaited<ReturnType<typeof api.getSeriesPages>>;
+      // Static/known-from-info parts render right away; the grid streams in later.
+      base.readLabel = '▶  Read';
+      base.chapterCount = info.pageCount;
+    }
+    // Chaptered: readLabel/chapterCount aren't known until the chapter list loads —
+    // getSeriesList fills them; the Read button waits on that (see series.tsx).
+    return base;
+  },
+
+  async getSeriesList(bridgeId, seriesId, direct, signal) {
+    if (direct) {
+      const pages = await api.getSeriesPages(bridgeId, seriesId, signal);
+      const result: SeriesListResult = { chapterCount: pages.length, readLabel: '▶  Read' };
       // Mirrors comical-web: only show the preview grid when the bridge actually supplies cheap
       // thumbnails somewhere in the list — never bulk-load full-resolution page images as a
       // stand-in. Sorted by index so array position lines up with the reader's page index (the
@@ -406,27 +421,26 @@ const realDataSource: DataSource = {
       }
       if (withThumb > 0) {
         const sorted = [...pages].sort((a, b) => a.index - b.index);
-        base.pageThumbs = sorted.map((p) => toPageThumbSource(p.thumbnail));
+        result.pageThumbs = sorted.map((p) => toPageThumbSource(p.thumbnail));
         // Only flag thumbnails that were PRESENT but unusable (a malformed sprite — missing
         // sheetHeight / unrecognized kind). A `null` for a page that simply had no inline thumbnail is
         // expected (many bridges only inline the first viewer page; the rest of the grid fetches them
         // lazily via getPageThumb) and must not be reported as dropped.
-        const malformed = base.pageThumbs.filter((t, i) => t === null && !!sorted[i].thumbnail).length;
+        const malformed = result.pageThumbs.filter((t, i) => t === null && !!sorted[i].thumbnail).length;
         if (malformed > 0) {
           logDiagnostic('page-thumb-dropped', `${malformed} inline thumbnail(s) present but unusable`, {
             context: `bridge=${bridgeId} series=${seriesId} (missing sheetHeight, or unrecognized kind)`,
           });
         }
       }
-      base.readLabel = '▶  Read';
-      base.chapterCount = info.pageCount ?? pages.length;
-    } else {
-      const chapters = second as Awaited<ReturnType<typeof api.getChapters>>;
-      base.chapters = chapters.map((c) => ({ id: c.id, name: c.name, date: c.publishedAt ?? 0, read: false }));
-      base.chapterCount = chapters.length;
-      base.readLabel = chapters.length ? `▶  ${chapters[0].name}` : undefined;
+      return result;
     }
-    return base;
+    const chapters = await api.getChapters(bridgeId, seriesId, signal);
+    return {
+      chapters: chapters.map((c) => ({ id: c.id, name: c.name, date: c.publishedAt ?? 0, read: false })),
+      chapterCount: chapters.length,
+      readLabel: chapters.length ? `▶  ${chapters[0].name}` : undefined,
+    };
   },
 
   async getChapterPages(bridgeId, seriesId, chapterId, signal) {
@@ -551,6 +565,9 @@ const mockDataSource: DataSource = {
   getActivityCount: () => mock.mockGetActivityCount(),
   checkForUpdates: () => mock.mockCheckForUpdates(),
   getSeriesDetail: (bridgeId, seriesId, opts) => mock.mockGetSeriesDetail(bridgeId, seriesId, opts),
+  // Mock series populate chapters/pageThumbs inline in mockGetSeriesDetail (and never set
+  // `listDeferred`), so the screen never calls this — implemented only to satisfy the contract.
+  getSeriesList: () => Promise.resolve({}),
   getChapterPages: (bridgeId, seriesId, chapterId) => mock.mockGetChapterPages(bridgeId, seriesId, chapterId),
   getDirectPages: (bridgeId, seriesId) => mock.mockGetDirectPages(bridgeId, seriesId),
   // Mock series always populate every pageThumbs entry inline (see mockGetSeriesDetail), so this
