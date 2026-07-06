@@ -47,17 +47,21 @@ export default function SeriesScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { id, title, bridge: bridgeParam, bridgeId, direct } = useLocalSearchParams<{
+  const { id, title, bridge: bridgeParam, bridgeId, direct, cover: coverParam } = useLocalSearchParams<{
     id?: string;
     title?: string;
     bridge?: string;
     bridgeId?: string;
     direct?: string;
+    cover?: string;
   }>();
   // series-card.tsx percent-encodes the bridge name before putting it in a
   // route param (parens in real bridge names break expo-router's web href
   // resolution) — undo that here.
   const bridge = bridgeParam ? decodeURIComponent(bridgeParam) : undefined;
+  // Cover forwarded from the browse card, escaped the same way — decode it so the
+  // loading skeleton can show the real (cache-warm) cover instead of a shimmer.
+  const cover = coverParam ? decodeURIComponent(coverParam) : undefined;
 
   // Cached series fetch: revisiting a series (or reopening it from the reader)
   // now repaints instantly from the query cache instead of refetching, and the
@@ -101,7 +105,7 @@ export default function SeriesScreen() {
           {error ? (
             <RetryBlock message={error} onRetry={retry} />
           ) : !series ? (
-            <SeriesSkeleton actionsWidth={actionsWidth} isLarge={isLarge} />
+            <SeriesSkeleton actionsWidth={actionsWidth} isLarge={isLarge} title={title} cover={cover} />
           ) : (
             <SeriesBody
               series={series}
@@ -474,16 +478,52 @@ function SeriesBody({
   );
 }
 
-/** Loading placeholder that mirrors the series layout while the simulated fetch
- *  is in flight. Matches both the small-screen and large-screen layouts. */
-function SeriesSkeleton({ actionsWidth, isLarge }: { actionsWidth: number; isLarge: boolean }) {
+/** Loading placeholder that mirrors the series layout while the detail fetch is
+ *  in flight. Matches both the small-screen and large-screen layouts. When the
+ *  browse card forwards the `title` and `cover` it already had, those paint for
+ *  real (the cover straight from expo-image's cache, warmed by the grid) while
+ *  the rest still shimmers — so the page feels immediate instead of blank, then
+ *  swaps seamlessly to `SeriesBody` (same cover URI + slot) once data resolves.
+ *  This is comical-app's equivalent of comical-web's SW-cached instant cover. */
+function SeriesSkeleton({
+  actionsWidth,
+  isLarge,
+  title,
+  cover,
+}: {
+  actionsWidth: number;
+  isLarge: boolean;
+  title?: string;
+  cover?: string;
+}) {
   const actionSkels = Array.from({ length: 5 }).map((_, i) => (
     <Skeleton key={i} style={styles.skelButton} />
   ));
 
   const coverSkel = (
     <View style={isLarge ? styles.coverWrapLarge : styles.coverWrap}>
-      <Skeleton style={isLarge ? styles.coverLarge : styles.cover} />
+      {cover ? (
+        <Image
+          source={{ uri: cover }}
+          style={isLarge ? styles.coverLarge : styles.cover}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          transition={200}
+        />
+      ) : (
+        <Skeleton style={isLarge ? styles.coverLarge : styles.cover} />
+      )}
+    </View>
+  );
+
+  const titleEl = title ? (
+    <ThemedText type="subtitle" style={styles.title}>
+      {title}
+    </ThemedText>
+  ) : (
+    <View style={styles.skelTitle}>
+      <Skeleton style={[styles.skelLine, { width: '85%', height: 26 }]} />
+      <Skeleton style={[styles.skelLine, { width: '55%', height: 26 }]} />
     </View>
   );
 
@@ -505,10 +545,7 @@ function SeriesSkeleton({ actionsWidth, isLarge }: { actionsWidth: number; isLar
 
   return (
     <View style={styles.inner}>
-      <View style={styles.skelTitle}>
-        <Skeleton style={[styles.skelLine, { width: '85%', height: 26 }]} />
-        <Skeleton style={[styles.skelLine, { width: '55%', height: 26 }]} />
-      </View>
+      {titleEl}
 
       {isLarge ? (
         <View style={styles.twoCol}>

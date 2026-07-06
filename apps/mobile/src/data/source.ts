@@ -352,7 +352,16 @@ const realDataSource: DataSource = {
   },
 
   async getSeriesDetail(bridgeId, seriesId, opts = {}, signal) {
-    const info = await api.getSeriesDetail(bridgeId, seriesId, signal);
+    // Fire the two core requests together (mirrors comical-web's `Promise.all` at
+    // app.ts:2772) so the page's load latency is the MAX of the two, not their sum.
+    // `opts.direct` already decides which second request to make, so we don't need
+    // `info` to resolve first — the chapters/pages fetch can start immediately.
+    const [info, second] = await Promise.all([
+      api.getSeriesDetail(bridgeId, seriesId, signal),
+      opts.direct
+        ? api.getSeriesPages(bridgeId, seriesId, signal)
+        : api.getChapters(bridgeId, seriesId, signal),
+    ]);
     // Bridges with capability "related-series" omit `relatedSeriesGroups` from the
     // main response and provide it via a separate endpoint instead — see contract's SeriesInfo docs.
     // Leave `relatedGroups` unset and flag `relatedGroupsDeferred` rather than fetching it inline
@@ -384,7 +393,7 @@ const realDataSource: DataSource = {
       relatedGroupsDeferred: !info.relatedSeriesGroups,
     };
     if (opts.direct) {
-      const pages = await api.getSeriesPages(bridgeId, seriesId, signal);
+      const pages = second as Awaited<ReturnType<typeof api.getSeriesPages>>;
       // Mirrors comical-web: only show the preview grid when the bridge actually supplies cheap
       // thumbnails somewhere in the list — never bulk-load full-resolution page images as a
       // stand-in. Sorted by index so array position lines up with the reader's page index (the
@@ -412,7 +421,7 @@ const realDataSource: DataSource = {
       base.readLabel = '▶  Read';
       base.chapterCount = info.pageCount ?? pages.length;
     } else {
-      const chapters = await api.getChapters(bridgeId, seriesId, signal);
+      const chapters = second as Awaited<ReturnType<typeof api.getChapters>>;
       base.chapters = chapters.map((c) => ({ id: c.id, name: c.name, date: c.publishedAt ?? 0, read: false }));
       base.chapterCount = chapters.length;
       base.readLabel = chapters.length ? `▶  ${chapters[0].name}` : undefined;
