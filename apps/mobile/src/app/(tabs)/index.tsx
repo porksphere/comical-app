@@ -130,11 +130,12 @@ export default function BrowseScreen() {
     ds.getBridgeLists(bridgeId, ctrl.signal)
       .then((ls) => {
         setLists(ls);
-        // Home only ever renders `page: false` lists (the rest live in the page selector) — a
-        // bridge whose lists are *all* page-flagged has nothing to show there at all, which
-        // otherwise strands the user on a permanently blank Home. Default to its first page
-        // instead; a bridge with at least one home-eligible list still opens on Home as before.
-        const hasHomeList = ls.some((l) => !l.page);
+        // The composed Home renders only `page: false` lists (the rest live in the page selector),
+        // UNLESS a `page: true` list with id "home" backs the Home tab directly (handled below). A
+        // bridge with neither has nothing to show on Home, so default to its first page instead of
+        // stranding the user on a blank Home; a bridge with a home-eligible (or home-backing) list
+        // still opens on Home as before.
+        const hasHomeList = ls.some((l) => !l.page || l.id === 'home');
         const firstPage = ls.find((l) => l.page);
         setPage(hasHomeList || !firstPage ? 'home' : firstPage.name.toLowerCase());
       })
@@ -148,10 +149,19 @@ export default function BrowseScreen() {
     () => (currentBridge ? pageOptions(lists, currentBridge.capabilities) : ['home']),
     [lists, currentBridge],
   );
-  // The list backing a non-home page selection (a `page: true` list, e.g. "Popular").
+  // A `page: true` list with id "home" IS the Home tab's content (the bridge's front page): it
+  // replaces the composed rails/grid Home entirely. Mirrors comical-web's selectHomeTab("home")
+  // special case (app.ts) — without it the Home tab falls through to getHomeSections, which excludes
+  // every `page` list, so a bridge whose only lists are page-flagged shows a permanently blank Home.
+  const homeList = useMemo(() => lists.find((l) => l.id === 'home' && l.page), [lists]);
+  // The built-in composed Home surface (rails + grid from non-`page` lists) — only when no page-list
+  // backs the Home tab. Every "is this Home?" decision below keys off this, not a bare page === 'home'.
+  const composedHome = page === 'home' && !homeList;
+  // The list backing the current page: a `page: true` list picked in the selector (e.g. "Popular"),
+  // or the home-backing list above when the Home tab is showing the bridge's front page.
   const selectedList = useMemo(
-    () => lists.find((l) => l.page && l.name.toLowerCase() === page),
-    [lists, page],
+    () => (page === 'home' ? homeList : lists.find((l) => l.page && l.name.toLowerCase() === page)),
+    [lists, page, homeList],
   );
   const isFavoritesPage = page === 'favorites';
 
@@ -242,7 +252,7 @@ export default function BrowseScreen() {
   const [homeLoading, setHomeLoading] = useState(false);
 
   useEffect(() => {
-    if (!bridgeId || page !== 'home') return;
+    if (!bridgeId || !composedHome) return;
     const ctrl = new AbortController();
     setHomeError(null);
     // Clear the previous bridge/visit's rails before fetching, so a switch shows
@@ -260,7 +270,7 @@ export default function BrowseScreen() {
       })
       .finally(() => setHomeLoading(false));
     return () => ctrl.abort();
-  }, [bridgeId, page, ds, homeReload]);
+  }, [bridgeId, composedHome, ds, homeReload]);
   // Only the LAST grid section infinite-scrolls; earlier ones get "Load more" —
   // see HomeGridSection's doc in types.ts.
   const terminalGridSection = gridSections.at(-1) ?? null;
@@ -380,7 +390,7 @@ export default function BrowseScreen() {
   // page-flagged sub-list (e.g. "Popular"/"Favorites") all drop to the flat
   // results grid — matches the reference's `doSearch`: any of
   // query/filters/sort/list-scope leaves the home surface.
-  const inResults = !!query || !!seeAll || hasActiveQuery || page !== 'home';
+  const inResults = !!query || !!seeAll || hasActiveQuery || !composedHome;
   // The "← Home" banner is for transient drill-downs (search / "See all" / a
   // live filter or sort) — NOT for plain page-selector navigation. Selecting a
   // page-flagged list like "Popular" is a top-level page in its own right (the
@@ -397,16 +407,16 @@ export default function BrowseScreen() {
   // "See all" keeps its existing simple behavior (browse that list's items,
   // page-only, no filters/sort/scoped-search) — those apply to the page-flagged
   // list / global search case below instead.
-  const activeListId = seeAll ? seeAll.listId : page !== 'home' ? (selectedList?.id ?? null) : null;
+  const activeListId = seeAll ? seeAll.listId : !composedHome ? (selectedList?.id ?? null) : null;
   // Scoped-list search: route through the list endpoint's `q` param when the
   // active list is `searchable`, instead of always calling `/search` — mirrors
   // `runSearch`'s branch at app.ts:4857.
-  const scopedSearch = !seeAll && page !== 'home' && !!selectedList?.searchable && !!activeListId;
+  const scopedSearch = !seeAll && !composedHome && !!selectedList?.searchable && !!activeListId;
   const showResultsGrid = inResults;
   // Home's terminal grid section (the last one in `gridSections`) shares the
   // SAME scrollable FlatList + infinite scroll as results mode, not the
   // "Load more" blocks non-terminal sections get — so it feeds `gridItems` too.
-  const isHomeTerminal = !inResults && page === 'home' && !!terminalGridSection;
+  const isHomeTerminal = !inResults && composedHome && !!terminalGridSection;
 
   const [gridItems, setGridItems] = useState<SeriesEntry[]>([]);
   const [gridPageNum, setGridPageNum] = useState(1);
@@ -647,7 +657,7 @@ export default function BrowseScreen() {
   const listHeader = (
     <View>
       {controls}
-      {!inResults && page === 'home' && (
+      {!inResults && composedHome && (
         <>
           {homeError ? (
             <RetryBlock message={homeError} onRetry={() => setHomeReload((n) => n + 1)} />
