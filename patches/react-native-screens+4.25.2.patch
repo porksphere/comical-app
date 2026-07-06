@@ -148,23 +148,45 @@ index 2434c61..c3a5e2f 100644
 +
  @end
 diff --git a/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenViewController.mm b/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenViewController.mm
-index b273770..16db52c 100644
+index b273770..1632e8e 100644
 --- a/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenViewController.mm
 +++ b/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenViewController.mm
-@@ -4,6 +4,12 @@
+@@ -4,6 +4,34 @@
  #import "RNSTabBarController.h"
  #import "UIScrollView+RNScreens.h"
  
++// TEMPORARY diagnostic log for the tabBarMinimizeBehavior investigation - visible on-device with
++// no debugger via Settings > Diagnostics (apps/mobile/modules/comical-runtime exposes
++// readTabBarDebugLog()/clearTabBarDebugLog() reading/clearing this same UserDefaults key). Safe to
++// delete this block and its call sites once the investigation is done.
++static NSString *const kRNScreensTabBarDebugLogKey = @"ComicalTabBarDebugLog";
++static const NSUInteger kRNScreensTabBarDebugLogMax = 200;
++
++static void RNScreensTabBarDebugLog(NSString *line)
++{
++  NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
++  NSArray<NSString *> *existing = [defaults arrayForKey:kRNScreensTabBarDebugLogKey];
++  NSMutableArray<NSString *> *log = existing != nil ? [existing mutableCopy] : [NSMutableArray array];
++  NSString *stamped = [NSString stringWithFormat:@"%.2f %@", [[NSProcessInfo processInfo] systemUptime], line];
++  [log addObject:stamped];
++  if (log.count > kRNScreensTabBarDebugLogMax) {
++    [log removeObjectsInRange:NSMakeRange(0, log.count - kRNScreensTabBarDebugLogMax)];
++  }
++  [defaults setObject:log forKey:kRNScreensTabBarDebugLogKey];
++}
++
 +// Weak: the scroll view is already owned by the view hierarchy - this is only an identity
 +// check so `rnscreens_refreshContentScrollViewIfNeeded` can tell whether it changed.
 +@interface RNSTabsScreenViewController ()
 +@property (nonatomic, weak) UIScrollView *rnscreens_lastPushedContentScrollView;
++// Throttles the (potentially very frequent) `contentScrollViewForEdge:` query log.
++@property (nonatomic, assign) NSTimeInterval rnscreens_lastQueryLogTime;
 +@end
 +
  @implementation RNSTabsScreenViewController
  
  - (nullable RNSTabBarController *)findTabBarController
-@@ -36,6 +42,33 @@
+@@ -36,6 +64,43 @@
  {
    [super viewDidAppear:animated];
    [self.tabScreenComponentView.reactEventEmitter emitOnDidAppear];
@@ -192,13 +214,23 @@ index b273770..16db52c 100644
 +    if (scrollView == self.rnscreens_lastPushedContentScrollView) {
 +      return;
 +    }
++    // Avoid struct-returning message sends to a possibly-nil `scrollView` (undefined behavior).
++    NSString *metricsDescription = scrollView != nil
++        ? [NSString stringWithFormat:@"offsetY=%.1f contentH=%.1f boundsH=%.1f", scrollView.contentOffset.y,
++                                      scrollView.contentSize.height, scrollView.bounds.size.height]
++        : @"n/a";
++    RNScreensTabBarDebugLog([NSString
++        stringWithFormat:@"PUSH tag=%ld scrollView=%@ %@",
++                          (long)self.tabScreenComponentView.tag,
++                          scrollView != nil ? NSStringFromClass(scrollView.class) : @"nil",
++                          metricsDescription]);
 +    self.rnscreens_lastPushedContentScrollView = scrollView;
 +    [self setContentScrollView:scrollView forEdge:NSDirectionalRectEdgeBottom];
 +  }
  }
  
  - (void)viewWillDisappear:(BOOL)animated
-@@ -100,12 +133,41 @@
+@@ -100,12 +165,55 @@
    } else if (self.tabScreenComponentView.shouldUseRepeatedTabSelectionScrollToTopSpecialEffect) {
      UIScrollView *scrollView =
          [RNSScrollViewFinder findScrollViewInFirstDescendantChainFrom:[self tabScreenComponentView]];
@@ -230,11 +262,25 @@ index b273770..16db52c 100644
 +- (nullable UIScrollView *)contentScrollViewForEdge:(NSDirectionalRectEdge)edge API_AVAILABLE(ios(26.0))
 +{
 +  UIScrollView *scrollView = [super contentScrollViewForEdge:edge];
-+  if (scrollView != nil) {
-+    return scrollView;
++  UIScrollView *bfsFallback = scrollView == nil ? [RNSScrollViewFinder findScrollViewBreadthFirstFrom:self.view] : nil;
++
++  // Throttled: UIKit may re-query this far more often than is useful to log.
++  NSTimeInterval now = [[NSProcessInfo processInfo] systemUptime];
++  if (now - self.rnscreens_lastQueryLogTime >= 0.2) {
++    self.rnscreens_lastQueryLogTime = now;
++    UIScrollView *result = scrollView != nil ? scrollView : bfsFallback;
++    // Avoid a struct-returning message send to a possibly-nil `result` (undefined behavior).
++    NSString *offsetDescription = result != nil ? [NSString stringWithFormat:@"%.1f", result.contentOffset.y] : @"n/a";
++    RNScreensTabBarDebugLog([NSString
++        stringWithFormat:@"QUERY tag=%ld edge=%lu super=%@ bfs=%@ offsetY=%@",
++                          (long)self.tabScreenComponentView.tag,
++                          (unsigned long)edge,
++                          scrollView != nil ? NSStringFromClass(scrollView.class) : @"nil",
++                          bfsFallback != nil ? NSStringFromClass(bfsFallback.class) : @"n/a",
++                          offsetDescription]);
 +  }
 +
-+  return [RNSScrollViewFinder findScrollViewBreadthFirstFrom:self.view];
++  return scrollView != nil ? scrollView : bfsFallback;
 +}
 +
  #if !TARGET_OS_TV
