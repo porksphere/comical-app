@@ -12,7 +12,7 @@ import { coverDelayMs } from '@/data/mock';
 import type { SeriesEntry } from '@/data/types';
 import { useIsCompact } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
-import { clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
+import { DEFAULT_THUMB_ASPECT, usePrefetchedImage } from '@/lib/aspect-ratio';
 
 // Shared cover card used by both the browse grid and the rails. `size` picks the
 // fixed rail widths; `grid` fills its parent slot (the grid controls columns).
@@ -132,12 +132,6 @@ export function SeriesCard({
   const { active, handlers } = useHeld();
   const fixedWidth = size === 'grid' ? undefined : (width ?? WIDTHS[size]);
 
-  // The card's configured width is a horizontal max; the cover's height flexes
-  // a bounded amount to fit the real cover once it loads, since not every
-  // bridge's covers are exactly 2:3. Starts at the default 2:3 shape so the
-  // skeleton doesn't jump when the real aspect ratio arrives.
-  const [coverAspect, setCoverAspect] = useState(DEFAULT_THUMB_ASPECT);
-
   // Responsive title size matching the reference's mobile/desktop type scale.
   const compact = useIsCompact();
   const titleFontSize = compact ? TITLE_FONT_SIZE.compact : TITLE_FONT_SIZE.regular;
@@ -162,7 +156,18 @@ export function SeriesCard({
     const t = setTimeout(() => setDelayPassed(true), delay);
     return () => clearTimeout(t);
   }, [delay, entry.id]);
-  const coverReady = delayPassed && loaded;
+
+  // The card's configured width is a horizontal max; the cover's height flexes
+  // a bounded amount to fit the real cover instead of hard-cropping to 2:3 —
+  // but the *shell* below always keeps the default 2:3 size (matching the
+  // skeleton), so a shorter/taller cover never reflows the row. The real
+  // aspect ratio is resolved off-screen before the cover is ever shown (see
+  // `usePrefetchedImage`), so the cover appears already the right shape
+  // instead of popping in at the default size and shrinking a moment later.
+  // The prefetched `ref` is then reused as the visible `<Image>`'s source, so
+  // this doesn't cost a second network request on top of the prefetch.
+  const cover = usePrefetchedImage(entry.cover, delayPassed);
+  const coverReady = delayPassed && cover.settled && loaded;
 
   // Full-title peek. In a rail, hand the show/hide up to the rail (it owns the
   // un-clipped popover); in the grid, render it in-card (the vertical list
@@ -228,37 +233,36 @@ export function SeriesCard({
         // Native: sliding off the card keeps it held; release clears it.
         pressRetentionOffset={HOLD_RETENTION}
         {...handlers}>
-        {/* Shell carries the cover's size so the highlight ring can sit OUTSIDE
-            the (overflow-clipped) cover without insetting it. */}
-        <View style={[styles.coverShell, { aspectRatio: coverAspect }]}>
-          <View style={styles.cover}>
-            {delayPassed && (
-              <Image
-                source={{ uri: entry.cover }}
-                style={StyleSheet.absoluteFill}
-                contentFit="cover"
-                cachePolicy="memory-disk"
-                transition={200}
-                onLoad={(e: { source?: { width?: number; height?: number } | null }) => {
-                  setLoaded(true);
-                  const w = e.source?.width;
-                  const h = e.source?.height;
-                  if (w && h) setCoverAspect(clampThumbAspect(w / h));
-                }}
-              />
-            )}
-            {!coverReady && <Skeleton style={StyleSheet.absoluteFill} />}
-            {entry.badges?.map((b, i) => <CardBadge key={i} badge={b} />)}
-            {entry.unread != null && <UnreadBadge count={entry.unread} />}
-            {rank != null && (
-              <View style={styles.rank}>
-                <ThemedText style={styles.rankText}>{rank}</ThemedText>
-              </View>
-            )}
+        {/* Shell is the constant "slot" — always the default 2:3 size (matching
+            the skeleton), regardless of the real cover's shape, so a card never
+            reflows its row. `coverBox` is the part that actually takes the
+            cover's (capped) aspect ratio, top-anchored within the shell. */}
+        <View style={styles.coverShell}>
+          <View style={[styles.coverBox, { aspectRatio: cover.settled ? cover.aspect : DEFAULT_THUMB_ASPECT }]}>
+            <View style={styles.cover}>
+              {cover.settled && (
+                <Image
+                  source={cover.ref ?? { uri: entry.cover }}
+                  style={StyleSheet.absoluteFill}
+                  contentFit="cover"
+                  cachePolicy="memory-disk"
+                  transition={200}
+                  onLoad={() => setLoaded(true)}
+                />
+              )}
+              {!coverReady && <Skeleton style={StyleSheet.absoluteFill} />}
+              {entry.badges?.map((b, i) => <CardBadge key={i} badge={b} />)}
+              {entry.unread != null && <UnreadBadge count={entry.unread} />}
+              {rank != null && (
+                <View style={styles.rank}>
+                  <ThemedText style={styles.rankText}>{rank}</ThemedText>
+                </View>
+              )}
+            </View>
+            {/* Highlight ring hugs the cover edge (flush, just outside) — only
+                visible while active. */}
+            {active && <View style={[styles.ring, { pointerEvents: 'none' }]} />}
           </View>
-          {/* Highlight ring hugs the cover edge (flush, just outside) — only
-              visible while active. */}
-          {active && <View style={[styles.ring, { pointerEvents: 'none' }]} />}
         </View>
 
         <View style={styles.titleWrap}>
@@ -338,8 +342,13 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   coverShell: {
+    // Constant slot — always the default 2:3 shape, the vertical max a cover
+    // can occupy. Never resizes, so a card's row never reflows.
     width: '100%',
-    aspectRatio: 2 / 3,
+    aspectRatio: DEFAULT_THUMB_ASPECT,
+  },
+  coverBox: {
+    width: '100%',
     position: 'relative',
   },
   cover: {
