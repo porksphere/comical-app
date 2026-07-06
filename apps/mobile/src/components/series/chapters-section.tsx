@@ -14,7 +14,8 @@ import { isAbort, resolveAssetSourceCached } from '@/data/api';
 import { coverDelayMs, relativeTime } from '@/data/mock';
 import { useDataSource } from '@/data/source';
 import type { Chapter, PageThumbSource, SpriteThumb } from '@/data/types';
-import { clampThumbAspect } from '@/lib/aspect-ratio';
+import { clampThumbAspect, DEFAULT_THUMB_ASPECT, usePrefetchedImage } from '@/lib/aspect-ratio';
+import { compareChapters } from '@/lib/chapter-order';
 import { logDiagnostic } from '@/lib/diagnostics';
 
 // The series chapters block: tab filter (Overview / All / Read / Unread) + sort
@@ -45,30 +46,6 @@ const CONTROLS_HEIGHT = 32;
 // makes it a bubble rather than a block filling its slot edge-to-edge.
 const PILL_INSET_X = 3;
 const PILL_INSET_Y = 6;
-
-/** Pulls the chapter number out of a display name like "Chapter 176 — The Spirit
- *  Zone" (preferring a number right after "chapter"/"ch.", so a stray number
- *  elsewhere in a title doesn't win) — `null` for names with no parseable number
- *  (a oneshot/extra), which falls back to sorting by `date` instead. */
-function chapterNumber(name: string): number | null {
-  const afterKeyword = name.match(/\bch(?:apter)?\.?\s*#?(\d+(?:\.\d+)?)/i);
-  if (afterKeyword) return parseFloat(afterKeyword[1]);
-  const anyNumber = name.match(/\d+(?:\.\d+)?/);
-  return anyNumber ? parseFloat(anyNumber[0]) : null;
-}
-
-/** Chapters should read in their real numeric sequence, not publish order — a
- *  bridge's `date` isn't guaranteed monotonic with chapter number (same-day
- *  batch drops, backfills/re-scans, bonus chapters uploaded out of order all
- *  produce a `date` that disagrees with the actual chapter sequence). Falls
- *  back to `date` only when a number can't be parsed from one side (a oneshot/
- *  extra) or both sides parse to the same number. */
-function compareChapters(a: Chapter, b: Chapter, asc: boolean): number {
-  const numA = chapterNumber(a.name);
-  const numB = chapterNumber(b.name);
-  if (numA != null && numB != null && numA !== numB) return asc ? numA - numB : numB - numA;
-  return asc ? a.date - b.date : b.date - a.date;
-}
 
 export function ChaptersSection({
   chapters,
@@ -443,14 +420,6 @@ function PageThumb({
   const ds = useDataSource();
   const [resolved, setResolved] = useState(thumb);
   const [loaded, setLoaded] = useState(false);
-  // Bridges' page thumbnails aren't always exactly 2:3 — an `image` tile
-  // reports its real aspect ratio once it loads, clamped to a bounded range
-  // around 2:3 so one oddly-shaped page can't blow out the grid (a plain
-  // Image crops safely to any box via `contentFit="cover"`). A `sprite` tile
-  // keeps its exact `{w,h}` crop ratio unclamped instead — `SpriteCrop` below
-  // positions it assuming the box matches that ratio exactly, so clamping it
-  // would bleed in neighbouring sheet pixels.
-  const [naturalAspect, setNaturalAspect] = useState<number | null>(null);
 
   useEffect(() => {
     if (resolved || !bridgeId) return;
@@ -494,42 +463,71 @@ function PageThumb({
     const t = setTimeout(() => setDelayPassed(true), delay);
     return () => clearTimeout(t);
   }, [delay, delayKey]);
-  const ready = delayPassed && loaded;
-  const aspectRatio = resolved?.kind === 'sprite' ? resolved.w / resolved.h : clampThumbAspect(naturalAspect);
+
+  // Bridges' page thumbnails aren't always exactly 2:3. A `sprite` tile's
+  // shape is already known synchronously from its `{w,h}` crop (just capped
+  // so it never renders taller than the default skeleton shape — since that
+  // only ever shrinks the crop within its own bounds, it can't bleed in
+  // neighbouring sheet pixels). A plain `image` tile's shape isn't known
+  // until it's fetched, so its aspect ratio is resolved off-screen first (see
+  // `usePrefetchedImage`) and the tile only mounts once that's settled, so it
+  // never pops in at the default size and shrinks a moment later — the
+  // prefetched `ref` is then reused as the visible image's source, so this
+  // doesn't cost a second network request. Either way, `thumbShell` below
+  // stays the constant default-shape slot regardless, so a shorter/taller
+  // tile never reflows its row.
+  const imageUrl = resolved?.kind === 'image' ? resolved.url : null;
+  // Resolve the (possibly server-relative / embedded-transport) image URL through the transport
+  // first — the same lazy resolution `SpriteCrop` does for its sheet — then prefetch *that* resolved
+  // URL's dimensions off-screen. Prefetching the raw URL would skip embedded-mode asset resolution
+  // and fail to load. Empty string for a sprite tile resolves synchronously to '' and is never used.
+  const resolvedImageUrl = useResolvedThumbUrl(imageUrl ?? '', (msg) =>
+    logDiagnostic('page-thumb-image', msg, {
+      url: imageUrl ?? '',
+      context: `bridge=${bridgeId ?? ''} series=${seed} page=${index}`,
+    }),
+  );
+  const image = usePrefetchedImage(imageUrl ? resolvedImageUrl : null, delayPassed);
+  const dimsReady = resolved?.kind === 'sprite' || image.settled;
+  const aspectRatio = resolved?.kind === 'sprite' ? clampThumbAspect(resolved.w / resolved.h) : image.aspect;
+  const ready = delayPassed && dimsReady && loaded;
 
   return (
-    <Pressable style={[styles.thumb, { width, aspectRatio }]} onPress={onPress}>
-      {delayPassed && resolved?.kind === 'image' && (
-        <ThumbImage
-          url={resolved.url}
-          onLoad={(dims) => {
-            setLoaded(true);
-            if (dims) setNaturalAspect(dims.w / dims.h);
-          }}
-          onError={(msg) =>
-            logDiagnostic('page-thumb-image', msg, {
-              url: resolved.url,
-              context: `bridge=${bridgeId ?? ''} series=${seed} page=${index}`,
-            })
-          }
-        />
-      )}
-      {delayPassed && resolved?.kind === 'sprite' && (
-        <SpriteCrop
-          thumb={resolved}
-          width={width}
-          onLoad={() => setLoaded(true)}
-          onError={(msg) =>
-            logDiagnostic('page-thumb-sprite', msg, {
-              url: resolved.sheetUrl,
-              context: `bridge=${bridgeId ?? ''} series=${seed} page=${index}`,
-            })
-          }
-        />
-      )}
-      {!ready && <Skeleton style={StyleSheet.absoluteFill} />}
-      <View style={styles.pageNum}>
-        <ThemedText style={styles.pageNumText}>{page}</ThemedText>
+    <Pressable style={[styles.thumbShell, { width }]} onPress={onPress}>
+      <View style={[styles.thumb, { aspectRatio }]}>
+        {delayPassed && dimsReady && resolved?.kind === 'image' && (
+          <Image
+            source={image.ref ?? { uri: resolvedImageUrl || resolved.url }}
+            style={styles.thumbImg}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            transition={200}
+            onLoad={() => setLoaded(true)}
+            onError={(e: { error?: string }) =>
+              logDiagnostic('page-thumb-image', e.error || 'load failed', {
+                url: resolved.url,
+                context: `bridge=${bridgeId ?? ''} series=${seed} page=${index}`,
+              })
+            }
+          />
+        )}
+        {delayPassed && resolved?.kind === 'sprite' && (
+          <SpriteCrop
+            thumb={resolved}
+            width={width}
+            onLoad={() => setLoaded(true)}
+            onError={(msg) =>
+              logDiagnostic('page-thumb-sprite', msg, {
+                url: resolved.sheetUrl,
+                context: `bridge=${bridgeId ?? ''} series=${seed} page=${index}`,
+              })
+            }
+          />
+        )}
+        {!ready && <Skeleton style={StyleSheet.absoluteFill} />}
+        <View style={styles.pageNum}>
+          <ThemedText style={styles.pageNumText}>{page}</ThemedText>
+        </View>
       </View>
     </Pressable>
   );
@@ -611,37 +609,6 @@ function useResolvedThumbUrl(url: string, onError?: (message: string) => void): 
     };
   }, [url]);
   return resolved;
-}
-
-/** An `image`-kind page thumbnail. Resolves its (possibly server-relative) URL lazily like the sprite
- *  tile, then renders it cover-cropped; reports the loaded pixel dims so the tile can refine its
- *  aspect ratio. Renders nothing until resolved (the parent tile's skeleton shows). */
-function ThumbImage({
-  url,
-  onLoad,
-  onError,
-}: {
-  url: string;
-  onLoad: (dims?: { w: number; h: number }) => void;
-  onError: (message: string) => void;
-}) {
-  const resolved = useResolvedThumbUrl(url, onError);
-  if (!resolved) return null;
-  return (
-    <Image
-      source={{ uri: resolved }}
-      style={styles.thumbImg}
-      contentFit="cover"
-      cachePolicy="memory-disk"
-      transition={200}
-      onLoad={(e: { source?: { width?: number; height?: number } | null }) => {
-        const w = e.source?.width;
-        const h = e.source?.height;
-        onLoad(w && h ? { w, h } : undefined);
-      }}
-      onError={(e: { error?: string }) => onError(e.error || 'load failed')}
-    />
-  );
 }
 
 /** A gentle vertical transparent→`color` fade over the last rows; only the very
@@ -784,8 +751,14 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
   },
+  thumbShell: {
+    // Constant slot — always the default 2:3 shape, the vertical max a tile
+    // can occupy. Never resizes, so a tile's row never reflows.
+    aspectRatio: DEFAULT_THUMB_ASPECT,
+  },
   thumb: {
-    aspectRatio: 2 / 3,
+    width: '100%',
+    position: 'relative',
     borderRadius: 8,
     overflow: 'hidden',
     backgroundColor: 'rgba(128,128,128,0.15)',
