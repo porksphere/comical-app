@@ -24,7 +24,8 @@
       render — before `onLayout` reports the real width — `fitCount` fell back to
       showing every filter uncollapsed. Now that first frame renders at `opacity: 0`
       instead, so the fit is only ever seen already correct.)
-- [ ] Flashlist investigation
+- [x] Flashlist investigation (used legend list instead)
+- [ ] Investigate if we can have varied height thumbnails without weird page shifting now that we use legend list
 - [x] Line highlight on search field does not appear on mobile after closing keybkard
       and immediately reselecting (the Android-web keyboard-close workaround just set
       `focused` to `false` directly, desyncing app state from the real DOM focus — the
