@@ -99,60 +99,88 @@ export default function RegistryBrowseScreen() {
 function BridgeRow({ bridge, url, onDone }: { bridge: AvailableBridge; url: string; onDone: () => Promise<void> }) {
   const ds = useDataSource();
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const install = async () => {
     setBusy(true);
+    setError(null);
     try {
       await ds.installRegistryBridge(url, bridge.entry.id);
       await onDone();
+    } catch (e) {
+      setError((e as Error).message || 'Failed to install bridge');
     } finally {
       setBusy(false);
     }
   };
   const update = async () => {
     setBusy(true);
+    setError(null);
     try {
       await ds.updateBridge(bridge.entry.id);
       await onDone();
+    } catch (e) {
+      setError((e as Error).message || 'Failed to update bridge');
     } finally {
       setBusy(false);
     }
   };
   return (
-    <SettingsRow
-      label={bridge.entry.name}
-      description={bridge.entry.description ?? `v${bridge.entry.version}`}
-      right={<InstallButton state={bridge} onInstall={install} onUpdate={update} busy={busy} />}
-    />
+    <View>
+      <SettingsRow
+        label={bridge.entry.name}
+        description={bridge.entry.description ?? `v${bridge.entry.version}`}
+        right={<InstallButton state={bridge} onInstall={install} onUpdate={update} busy={busy} />}
+      />
+      {error && (
+        <ThemedText type="small" themeColor="danger" style={styles.rowError}>
+          {error}
+        </ThemedText>
+      )}
+    </View>
   );
 }
 
 function TrackerRow({ tracker, url, onDone }: { tracker: AvailableTracker; url: string; onDone: () => Promise<void> }) {
   const ds = useDataSource();
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const install = async () => {
     setBusy(true);
+    setError(null);
     try {
       await ds.installRegistryTracker(url, tracker.entry.id);
       await onDone();
+    } catch (e) {
+      setError((e as Error).message || 'Failed to install tracker');
     } finally {
       setBusy(false);
     }
   };
   const update = async () => {
     setBusy(true);
+    setError(null);
     try {
       await ds.updateTracker(tracker.entry.id);
       await onDone();
+    } catch (e) {
+      setError((e as Error).message || 'Failed to update tracker');
     } finally {
       setBusy(false);
     }
   };
   return (
-    <SettingsRow
-      label={tracker.entry.name}
-      description={tracker.entry.description ?? `v${tracker.entry.version}`}
-      right={<InstallButton state={tracker} onInstall={install} onUpdate={update} busy={busy} />}
-    />
+    <View>
+      <SettingsRow
+        label={tracker.entry.name}
+        description={tracker.entry.description ?? `v${tracker.entry.version}`}
+        right={<InstallButton state={tracker} onInstall={install} onUpdate={update} busy={busy} />}
+      />
+      {error && (
+        <ThemedText type="small" themeColor="danger" style={styles.rowError}>
+          {error}
+        </ThemedText>
+      )}
+    </View>
   );
 }
 
@@ -207,5 +235,9 @@ const styles = StyleSheet.create({
   actionBtn: {
     paddingVertical: Spacing.one,
     paddingHorizontal: Spacing.three,
+  },
+  rowError: {
+    paddingHorizontal: Spacing.three,
+    paddingBottom: Spacing.two,
   },
 });
