@@ -441,7 +441,15 @@ const realDataSource: DataSource = {
     try {
       const t = await api.getPageThumb(bridgeId, seriesId, pageIndex, signal);
       return toPageThumbSource(t);
-    } catch {
+    } catch (e) {
+      // A lazy per-page thumbnail is best-effort — the tile just stays a skeleton. But don't swallow
+      // the reason silently: surface it (skipping aborts and the expected "bridge has no per-page
+      // thumbnails" 404) so a systematically-failing lookup — e.g. a fetch timeout or a proxy block on
+      // later viewer pages — is visible instead of an unexplained blank grid past the inline range.
+      const msg = (e as Error)?.message || String(e);
+      if (!api.isAbort(e) && !msg.includes('not supported')) {
+        logDiagnostic('page-thumb-fetch', msg, { context: `bridge=${bridgeId} series=${seriesId} page=${pageIndex}` });
+      }
       return null;
     }
   },
