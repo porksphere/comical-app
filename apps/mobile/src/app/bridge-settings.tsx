@@ -12,6 +12,7 @@ import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import type { SettingValue } from '@/data/api';
+import { bumpDataEpoch } from '@/data/data-epoch';
 import { useDataSource } from '@/data/source';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -71,6 +72,7 @@ export default function BridgeSettingsScreen() {
   const uninstall = async () => {
     if (!bridgeId) return;
     await ds.uninstallBridge(bridgeId);
+    bumpDataEpoch();
     router.back();
   };
 

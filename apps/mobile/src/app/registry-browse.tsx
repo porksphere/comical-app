@@ -11,6 +11,7 @@ import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import type { AvailableBridge, AvailableTracker } from '@/data/api';
+import { bumpDataEpoch } from '@/data/data-epoch';
 import { useDataSource } from '@/data/source';
 
 export default function RegistryBrowseScreen() {
@@ -31,6 +32,7 @@ export default function RegistryBrowseScreen() {
   });
 
   const invalidateBrowse = async () => {
+    bumpDataEpoch();
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['registryBridges', url] }),
       queryClient.invalidateQueries({ queryKey: ['registryTrackers', url] }),
