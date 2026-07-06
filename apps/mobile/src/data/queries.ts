@@ -17,7 +17,7 @@ import type { DataSource } from './source';
 import type { ActivityEntry, HistoryEntry, LibraryItem, SeriesDetail, SeriesEntry } from './types';
 
 /** Per-series fetch options that affect the *shape* of the result (and thus the key). */
-export type SeriesDetailOpts = { direct?: boolean; bridgeName?: string; title?: string };
+export type SeriesDetailOpts = { direct?: boolean; bridgeName?: string; title?: string; cover?: string };
 
 export const queryKeys = {
   seriesDetail: (mock: boolean, bridgeId: string, seriesId: string, direct: boolean) =>
@@ -52,10 +52,23 @@ export function seriesDetailQuery(
   opts: SeriesDetailOpts,
 ): UseQueryOptions<SeriesDetail, Error> {
   const direct = opts.direct ?? false;
+  // When the browse card forwarded the title + cover it already had, seed the
+  // query with a placeholder so the detail screen mounts ONE persistent body
+  // (real hero, rest still loading) instead of swapping a skeleton subtree for a
+  // body subtree — that swap remounts the cover <Image>, blanking it for a frame
+  // (a visible flash) even though it's the same cached URL. `isPlaceholderData`
+  // tells the screen the non-hero sections are still loading. Without a forwarded
+  // cover (deep-link) there's nothing to keep steady, so leave it unset and let
+  // the screen fall back to its full skeleton.
+  const placeholderData: SeriesDetail | undefined =
+    opts.title && opts.cover
+      ? { id: seriesId, title: opts.title, cover: opts.cover, bridge: opts.bridgeName ?? '', relatedGroupsDeferred: false }
+      : undefined;
   return {
     queryKey: queryKeys.seriesDetail(mock, bridgeId, seriesId, direct),
     queryFn: ({ signal }) => ds.getSeriesDetail(bridgeId, seriesId, opts, signal),
     enabled: !!seriesId,
+    placeholderData,
   };
 }
 
