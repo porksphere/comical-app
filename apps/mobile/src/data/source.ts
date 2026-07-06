@@ -586,7 +586,14 @@ export const IS_DEMO_MODE = process.env.EXPO_PUBLIC_COMICAL_DEMO_MODE === '1';
 
 let mockToggleOn = false;
 const listeners = new Set<() => void>();
+/** The one source of truth for "is mock mode active", mirrored into the mock module so its simulated
+ *  latency is a no-op in real mode no matter which screen calls it. Kept in sync at every point
+ *  `mockToggleOn` changes (below), plus once at module load for the demo build. */
+function syncMockActive(): void {
+  mock.setMockActive(IS_DEMO_MODE || (__DEV__ && mockToggleOn));
+}
 function notifyMockToggleChange(): void {
+  syncMockActive();
   for (const l of listeners) l();
 }
 function subscribeMockToggle(listener: () => void): () => void {
@@ -599,6 +606,10 @@ function getMockToggleSnapshot(): boolean {
 function getMockToggleServerSnapshot(): boolean {
   return false;
 }
+
+// Seed the mock module's flag at load (before the async toggle read below resolves), so the demo
+// build (IS_DEMO_MODE) is mock-active immediately and every real build is mock-inactive from the start.
+syncMockActive();
 
 if (__DEV__) {
   AsyncStorage.getItem(MOCK_TOGGLE_KEY)

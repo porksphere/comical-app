@@ -89,12 +89,28 @@ function hash(s: string): number {
   return Math.abs(h);
 }
 
+// Whether mock mode is active — mirrored from `data/source`'s mock toggle via `setMockActive` (called
+// wherever that toggle changes). Every bit of simulated latency in this module gates on it, so a
+// caller in a REAL screen can never inject fake delay even if it forgets to check mock mode itself.
+// Default false = real; production (real mode) leaves it false forever.
+let mockActive = false;
+
+/** Set by `data/source` whenever the mock toggle / demo flag changes. */
+export function setMockActive(active: boolean): void {
+  mockActive = active;
+}
+
 /**
  * Simulated network latency for a cover, in ms. Deterministic per id so a card
  * always behaves the same. Most covers are instant; ~40% load "slowly" (so the
  * skeleton is visible) — a stand-in for real bridge image latency.
+ *
+ * **Mock-mode only.** In real mode this always returns 0: real images carry real network latency, so
+ * simulating more just slows them (and, worse, a changing delay key could strand a tile on its
+ * skeleton). This is the single choke point — no caller needs to gate on mock mode itself.
  */
 export function coverDelayMs(id: string): number {
+  if (!mockActive) return 0;
   const h = hash(`cover:${id}`);
   if (h % 5 < 2) return 500 + (h % 2000); // ~0.5s–2.5s on ~40% of covers
   return 0;

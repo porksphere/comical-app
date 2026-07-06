@@ -147,10 +147,16 @@ export function SeriesCard({
   // Hold some covers behind a simulated network delay: we don't even mount the
   // <Image> until the delay elapses, so the skeleton stays visible (a stand-in
   // for real bridge image latency). Most covers are instant.
+  // `coverDelayMs` self-gates on mock mode (0 in real mode), so real covers get no fake latency.
   const delay = useMemo(() => coverDelayMs(entry.id), [entry.id]);
   const [delayPassed, setDelayPassed] = useState(delay === 0);
   useEffect(() => {
-    if (delay === 0) return;
+    // Assert delayPassed=true on no delay rather than early-returning, so a delay/key change can't
+    // strand it false after its pending timeout was cleared (matches PageThumb/ReaderPage).
+    if (delay === 0) {
+      setDelayPassed(true);
+      return;
+    }
     setDelayPassed(false);
     setLoaded(false);
     const t = setTimeout(() => setDelayPassed(true), delay);
