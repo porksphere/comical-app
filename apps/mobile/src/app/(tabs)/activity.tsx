@@ -1,7 +1,8 @@
+import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HistoryRow } from '@/components/history-row';
@@ -28,7 +29,7 @@ export default function ActivityScreen() {
   const queryClient = useQueryClient();
   const hideNsfw = useHideNsfw();
   const { byId, nameOf, directOf } = useBridgeMap();
-  const listRef = useRef<FlatList>(null);
+  const listRef = useRef<LegendListRef>(null);
   useScrollToTopOnReselect('activity', listRef);
   const { onScroll } = useHideTabBarOnScroll();
 
@@ -134,10 +135,14 @@ export default function ActivityScreen() {
           <View style={styles.centerFill}>{emptyBody}</View>
         </View>
       ) : (
-        <FlatList
+        <LegendList
           ref={listRef}
+          // Cap + center + fill-height on the root (not contentContainerStyle) — LegendList's web
+          // scroll host is a block parent, so alignSelf/height there don't apply. See library.tsx.
+          style={styles.list}
           data={visible}
           keyExtractor={(a) => `${a.bridgeId}:${a.seriesId}:${a.chapterId}`}
+          recycleItems={false}
           ListHeaderComponent={listHeader}
           contentContainerStyle={[
             styles.listContent,
@@ -156,7 +161,6 @@ export default function ActivityScreen() {
           )}
           showsVerticalScrollIndicator={Platform.OS === 'web'}
           onScroll={onScroll}
-          scrollEventThrottle={16}
         />
       )}
 
@@ -206,10 +210,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     maxWidth: 340,
   },
-  listContent: {
+  list: {
+    flex: 1,
     width: '100%',
     maxWidth: MaxTopLevelWidth,
     alignSelf: 'center',
+  },
+  listContent: {
     paddingHorizontal: Spacing.four,
   },
   controls: {
