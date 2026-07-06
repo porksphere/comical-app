@@ -32,6 +32,7 @@ import { applyEmbeddedMode, isEmbeddedRuntimeAvailable, useEmbeddedEnabled } fro
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { queryClient } from '@/data/query-client';
 import { useDataSource, useHideNsfw, useMockDataToggle, useNsfwMode, type NsfwMode } from '@/data/source';
+import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useHovered } from '@/hooks/use-hovered';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
@@ -60,10 +61,13 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTopOnReselect('settings', scrollRef);
+  const { onScroll } = useHideTabBarOnScroll();
   return (
     <ThemedView style={styles.container}>
       <ScrollView
         ref={scrollRef}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
         contentContainerStyle={[
           styles.content,
           { paddingTop: insets.top + Spacing.four, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
