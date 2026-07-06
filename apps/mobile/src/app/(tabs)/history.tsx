@@ -13,6 +13,7 @@ import { historyQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type HistoryEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
+import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
@@ -29,6 +30,7 @@ export default function HistoryScreen() {
   const { byId, nameOf, directOf } = useBridgeMap();
   const listRef = useRef<FlatList>(null);
   useScrollToTopOnReselect('history', listRef);
+  const { onScroll } = useHideTabBarOnScroll();
 
   const { data: items = undefined, error, isLoading, refetch } = useQuery(historyQuery(ds, mock));
 
@@ -132,6 +134,8 @@ export default function HistoryScreen() {
             />
           )}
           showsVerticalScrollIndicator={Platform.OS === 'web'}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
         />
       )}
 

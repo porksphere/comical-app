@@ -13,6 +13,7 @@ import { activityQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import type { ActivityEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
+import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
@@ -29,6 +30,7 @@ export default function ActivityScreen() {
   const { byId, nameOf, directOf } = useBridgeMap();
   const listRef = useRef<FlatList>(null);
   useScrollToTopOnReselect('activity', listRef);
+  const { onScroll } = useHideTabBarOnScroll();
 
   const { data: items = undefined, error, isLoading, refetch } = useQuery(activityQuery(ds, mock));
 
@@ -153,6 +155,8 @@ export default function ActivityScreen() {
             />
           )}
           showsVerticalScrollIndicator={Platform.OS === 'web'}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
         />
       )}
 
