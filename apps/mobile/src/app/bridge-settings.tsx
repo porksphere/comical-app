@@ -17,7 +17,11 @@ import { useDataSource } from '@/data/source';
 import { useTheme } from '@/hooks/use-theme';
 
 export default function BridgeSettingsScreen() {
-  const { bridgeId, source } = useLocalSearchParams<{ bridgeId?: string; source?: string }>();
+  const { bridgeId, source, availableVersion } = useLocalSearchParams<{
+    bridgeId?: string;
+    source?: string;
+    availableVersion?: string;
+  }>();
   const ds = useDataSource();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -76,6 +80,26 @@ export default function BridgeSettingsScreen() {
     router.back();
   };
 
+  const [updating, setUpdating] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [updated, setUpdated] = useState(false);
+
+  const performUpdate = async () => {
+    if (!bridgeId) return;
+    setUpdating(true);
+    setUpdateError(null);
+    try {
+      await ds.updateBridge(bridgeId);
+      bumpDataEpoch();
+      setUpdated(true);
+      await queryClient.invalidateQueries({ queryKey: ['bridgeSettings', bridgeId] });
+    } catch (e) {
+      setUpdateError((e as Error).message || 'Failed to update bridge');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
   return (
     <ThemedView style={styles.container}>
       <TopBar title={data?.info.name ?? 'Bridge settings'} />
@@ -99,6 +123,24 @@ export default function BridgeSettingsScreen() {
           </View>
         ) : data ? (
           <>
+            {availableVersion && !updated && (
+              <ThemedView type="backgroundElement" style={[styles.banner, styles.updateBanner, { borderColor: theme.hairline }]}>
+                <ThemedText type="small" style={styles.updateBannerText}>
+                  Update available — v{availableVersion}
+                </ThemedText>
+                <Pressable onPress={performUpdate} disabled={updating} hitSlop={8}>
+                  <ThemedText type="smallBold" style={{ color: theme.accent }}>
+                    {updating ? 'Updating…' : 'Update'}
+                  </ThemedText>
+                </Pressable>
+              </ThemedView>
+            )}
+            {updateError && (
+              <ThemedText type="small" style={{ color: theme.danger }}>
+                {updateError}
+              </ThemedText>
+            )}
+
             {!data.configured && (
               <ThemedView type="backgroundElement" style={[styles.banner, { borderColor: theme.hairline }]}>
                 <ThemedText type="small">
@@ -193,6 +235,15 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
     borderRadius: Spacing.three,
     borderWidth: StyleSheet.hairlineWidth,
+  },
+  updateBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.three,
+  },
+  updateBannerText: {
+    flex: 1,
   },
   saveBtn: {
     alignItems: 'center',
