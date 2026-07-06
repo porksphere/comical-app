@@ -147,6 +147,11 @@ export default function LibraryScreen() {
       <LegendList
         ref={listRef}
         key={numColumns}
+        // Cap + center on the scroll host itself, and flex it to fill height. LegendList's web
+        // content-container sits inside a plain (non-flex) block scroller, so `alignSelf:'center'`
+        // on contentContainerStyle is a no-op (left-pinned) and the host won't grow — unlike
+        // FlatList. Doing it here fixes both the off-center grid and the short scrollbar.
+        style={styles.list}
         data={gridData}
         keyExtractor={(item) => String(item.id)}
         numColumns={numColumns}
@@ -270,11 +275,14 @@ const styles = StyleSheet.create({
     lineHeight: 28,
     fontWeight: '700',
   },
-  gridContent: {
-    gap: Spacing.three,
+  list: {
+    flex: 1,
     width: '100%',
     maxWidth: MaxTopLevelWidth,
     alignSelf: 'center',
+  },
+  gridContent: {
+    gap: Spacing.three,
   },
   controls: {
     paddingTop: Spacing.three,
