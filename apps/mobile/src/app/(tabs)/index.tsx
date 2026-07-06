@@ -122,6 +122,11 @@ export default function BrowseScreen() {
 
   // ── Lists (drives the Page selector) ──────────────────────────────────────
   const [lists, setLists] = useState<BridgeList[]>([]);
+  // Which bridge `lists` were loaded for. Until this matches `bridgeId`, `lists` (and everything
+  // derived from it — `homeList`, `composedHome`) is stale/empty and must not drive a fetch: on first
+  // load `lists` is `[]`, which would momentarily look like "composed Home with no sections" and fire
+  // getHomeSections against a bridge whose lists are all page-flagged (a spurious home-sections-empty).
+  const [listsBridgeId, setListsBridgeId] = useState<string | null>(null);
   const [page, setPage] = useState('home');
 
   useEffect(() => {
@@ -130,6 +135,7 @@ export default function BrowseScreen() {
     ds.getBridgeLists(bridgeId, ctrl.signal)
       .then((ls) => {
         setLists(ls);
+        setListsBridgeId(bridgeId);
         // The composed Home renders only `page: false` lists (the rest live in the page selector),
         // UNLESS a `page: true` list with id "home" backs the Home tab directly (handled below). A
         // bridge with neither has nothing to show on Home, so default to its first page instead of
@@ -252,7 +258,9 @@ export default function BrowseScreen() {
   const [homeLoading, setHomeLoading] = useState(false);
 
   useEffect(() => {
-    if (!bridgeId || !composedHome) return;
+    // Wait until `lists` are actually this bridge's — otherwise stale/empty lists make `composedHome`
+    // briefly true and fire a spurious fetch (and home-sections-empty log) for a page-only bridge.
+    if (!bridgeId || listsBridgeId !== bridgeId || !composedHome) return;
     const ctrl = new AbortController();
     setHomeError(null);
     // Clear the previous bridge/visit's rails before fetching, so a switch shows
@@ -270,7 +278,7 @@ export default function BrowseScreen() {
       })
       .finally(() => setHomeLoading(false));
     return () => ctrl.abort();
-  }, [bridgeId, composedHome, ds, homeReload]);
+  }, [bridgeId, listsBridgeId, composedHome, ds, homeReload]);
   // Only the LAST grid section infinite-scrolls; earlier ones get "Load more" —
   // see HomeGridSection's doc in types.ts.
   const terminalGridSection = gridSections.at(-1) ?? null;
