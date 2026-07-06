@@ -10,7 +10,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { isAbort } from '@/data/api';
+import { isAbort, resolveAssetSourceCached } from '@/data/api';
 import { coverDelayMs, relativeTime } from '@/data/mock';
 import { useDataSource } from '@/data/source';
 import type { Chapter, PageThumbSource, SpriteThumb } from '@/data/types';
@@ -491,20 +491,14 @@ function PageThumb({
   return (
     <Pressable style={[styles.thumb, { width, aspectRatio }]} onPress={onPress}>
       {delayPassed && resolved?.kind === 'image' && (
-        <Image
-          source={{ uri: resolved.url }}
-          style={styles.thumbImg}
-          contentFit="cover"
-          cachePolicy="memory-disk"
-          transition={200}
-          onLoad={(e: { source?: { width?: number; height?: number } | null }) => {
+        <ThumbImage
+          url={resolved.url}
+          onLoad={(dims) => {
             setLoaded(true);
-            const w = e.source?.width;
-            const h = e.source?.height;
-            if (w && h) setNaturalAspect(w / h);
+            if (dims) setNaturalAspect(dims.w / dims.h);
           }}
-          onError={(e: { error?: string }) =>
-            logDiagnostic('page-thumb-image', e.error || 'load failed', {
+          onError={(msg) =>
+            logDiagnostic('page-thumb-image', msg, {
               url: resolved.url,
               context: `bridge=${bridgeId ?? ''} series=${seed} page=${index}`,
             })
@@ -559,10 +553,15 @@ function SpriteCrop({
   onLoad?: () => void;
   onError?: (message: string) => void;
 }) {
+  // Resolve the sprite sheet lazily — only once this tile mounts — and deduped, so a montage sheet
+  // shared by many tiles is fetched once, on demand, instead of once per tile up front. `null` until
+  // resolved; the parent tile shows its skeleton (no `onLoad` yet) in the meantime.
+  const sheet = useResolvedThumbUrl(thumb.sheetUrl, onError);
   const scale = width / thumb.w;
+  if (!sheet) return null;
   return (
     <Image
-      source={{ uri: thumb.sheetUrl }}
+      source={{ uri: sheet }}
       style={{
         position: 'absolute',
         width: thumb.sheetWidth * scale,
@@ -576,6 +575,62 @@ function SpriteCrop({
       transition={200}
       onLoad={onLoad}
       onError={(e: { error?: string }) => onError?.(e.error || 'load failed')}
+    />
+  );
+}
+
+/** Resolve a raw (possibly server-relative) thumbnail asset URL lazily — only after the tile has
+ *  mounted, so a long page grid resolves thumbnails on demand (and dedupes a shared sprite sheet)
+ *  rather than resolving every page up front. `null` until resolved; a resolve failure calls `onError`
+ *  so the tile falls back like any load failure. Absolute URLs resolve synchronously (cheap identity).*/
+function useResolvedThumbUrl(url: string, onError?: (message: string) => void): string | null {
+  const [resolved, setResolved] = useState<string | null>(null);
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
+  useEffect(() => {
+    let cancelled = false;
+    setResolved(null);
+    resolveAssetSourceCached(url)
+      .then((u) => {
+        if (!cancelled) setResolved(u);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) onErrorRef.current?.((e as Error)?.message || 'resolve failed');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+  return resolved;
+}
+
+/** An `image`-kind page thumbnail. Resolves its (possibly server-relative) URL lazily like the sprite
+ *  tile, then renders it cover-cropped; reports the loaded pixel dims so the tile can refine its
+ *  aspect ratio. Renders nothing until resolved (the parent tile's skeleton shows). */
+function ThumbImage({
+  url,
+  onLoad,
+  onError,
+}: {
+  url: string;
+  onLoad: (dims?: { w: number; h: number }) => void;
+  onError: (message: string) => void;
+}) {
+  const resolved = useResolvedThumbUrl(url, onError);
+  if (!resolved) return null;
+  return (
+    <Image
+      source={{ uri: resolved }}
+      style={styles.thumbImg}
+      contentFit="cover"
+      cachePolicy="memory-disk"
+      transition={200}
+      onLoad={(e: { source?: { width?: number; height?: number } | null }) => {
+        const w = e.source?.width;
+        const h = e.source?.height;
+        onLoad(w && h ? { w, h } : undefined);
+      }}
+      onError={(e: { error?: string }) => onError(e.error || 'load failed')}
     />
   );
 }

@@ -235,18 +235,18 @@ function buildMeta(info: api.ApiSeriesInfo): MetaCell[] {
 }
 
 /** Adapts a contract `ApiPageThumbnail` into the UI-facing `PageThumbSource` — same `image`/
- *  `sprite` union, resolving either shape's asset URL in case a bridge returned it server-relative
- *  (the contract documents these as "absolute or server-relative", same as `Page.imageUrl`).
- *  Drops a sprite missing `sheetHeight` — the contract keeps it optional for forward
- *  compatibility, but the crop renderer needs it to scale the tile, so treat that case like "no
- *  thumbnail" rather than rendering a distorted crop. */
-async function toPageThumbSource(t: api.ApiPageThumbnail | undefined): Promise<PageThumbSource | null> {
+ *  `sprite` union. The asset URL is passed through RAW (possibly server-relative): the tile resolves
+ *  it lazily as it scrolls into view (see `PageThumb`/`SpriteCrop`), so a long page grid doesn't
+ *  resolve every thumbnail — and re-fetch a shared sprite sheet once per tile — up front. Drops a
+ *  sprite missing `sheetHeight`: the crop renderer needs it to scale the tile, so treat that case
+ *  like "no thumbnail" rather than rendering a distorted crop. */
+function toPageThumbSource(t: api.ApiPageThumbnail | undefined): PageThumbSource | null {
   if (!t) return null;
-  if (t.kind === 'image') return { kind: 'image', url: await api.resolveAssetSource(t.url) };
+  if (t.kind === 'image') return { kind: 'image', url: t.url };
   if (t.sheetHeight == null) return null;
   return {
     kind: 'sprite',
-    sheetUrl: await api.resolveAssetSource(t.sheetUrl),
+    sheetUrl: t.sheetUrl,
     x: t.x,
     y: t.y,
     w: t.w,
@@ -396,12 +396,15 @@ const realDataSource: DataSource = {
         });
       }
       if (withThumb > 0) {
-        base.pageThumbs = await Promise.all(
-          [...pages].sort((a, b) => a.index - b.index).map((p) => toPageThumbSource(p.thumbnail)),
-        );
-        const droppedToNull = base.pageThumbs.filter((t) => t === null).length;
-        if (droppedToNull > 0) {
-          logDiagnostic('page-thumb-dropped', `${droppedToNull}/${base.pageThumbs.length} thumbnail(s) dropped to null`, {
+        const sorted = [...pages].sort((a, b) => a.index - b.index);
+        base.pageThumbs = sorted.map((p) => toPageThumbSource(p.thumbnail));
+        // Only flag thumbnails that were PRESENT but unusable (a malformed sprite — missing
+        // sheetHeight / unrecognized kind). A `null` for a page that simply had no inline thumbnail is
+        // expected (many bridges only inline the first viewer page; the rest of the grid fetches them
+        // lazily via getPageThumb) and must not be reported as dropped.
+        const malformed = base.pageThumbs.filter((t, i) => t === null && !!sorted[i].thumbnail).length;
+        if (malformed > 0) {
+          logDiagnostic('page-thumb-dropped', `${malformed} inline thumbnail(s) present but unusable`, {
             context: `bridge=${bridgeId} series=${seriesId} (missing sheetHeight, or unrecognized kind)`,
           });
         }
