@@ -1,5 +1,6 @@
+import { requireOptionalNativeModule } from 'expo';
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -15,6 +16,72 @@ function formatEntry(e: DiagnosticEntry): string {
   if (e.context) lines.push(`  ${e.context}`);
   if (e.url) lines.push(`  ${e.url}`);
   return lines.join('\n');
+}
+
+// TEMPORARY, for the tabBarMinimizeBehavior investigation: reads the diagnostic log the patched
+// react-native-screens (patches/react-native-screens+4.25.2.patch) writes on-device, with no
+// debugger attached. `readTabBarDebugLog`/`clearTabBarDebugLog` only exist on the iOS native
+// module — undefined (not a crash) anywhere else, which `TabBarDebugSection` checks for before
+// rendering. Safe to delete this, `TabBarDebugSection`, and the native patch's logging once the
+// investigation is done.
+const comicalRuntimeDebug = requireOptionalNativeModule<{
+  readTabBarDebugLog?: () => string[];
+  clearTabBarDebugLog?: () => void;
+}>('ComicalRuntime');
+
+function TabBarDebugSection({ theme }: { theme: ReturnType<typeof useTheme> }) {
+  const [lines, setLines] = useState<string[]>([]);
+
+  if (Platform.OS !== 'ios' || typeof comicalRuntimeDebug?.readTabBarDebugLog !== 'function') {
+    return null;
+  }
+
+  const refresh = () => setLines(comicalRuntimeDebug.readTabBarDebugLog!());
+  const clear = () => {
+    comicalRuntimeDebug.clearTabBarDebugLog?.();
+    setLines([]);
+  };
+  const share = () => {
+    if (lines.length === 0) return;
+    Share.share({ message: lines.join('\n') });
+  };
+
+  return (
+    <View style={styles.debugSection}>
+      <ThemedText type="smallBold">Tab bar debug log (temporary)</ThemedText>
+      <ThemedText type="small" themeColor="textSecondary">
+        Reproduce the scroll-collapse/expand issue, then Refresh and Share this.
+      </ThemedText>
+      <View style={styles.actions}>
+        <Pressable onPress={refresh} style={[styles.actionBtn, { borderColor: theme.hairline }]}>
+          <ThemedText type="smallBold">Refresh</ThemedText>
+        </Pressable>
+        <Pressable onPress={share} disabled={lines.length === 0} style={[styles.actionBtn, { borderColor: theme.hairline }]}>
+          <ThemedText type="smallBold" style={lines.length === 0 && { color: theme.textSecondary }}>
+            Share
+          </ThemedText>
+        </Pressable>
+        <Pressable onPress={clear} disabled={lines.length === 0} style={[styles.actionBtn, { borderColor: theme.hairline }]}>
+          <ThemedText type="smallBold" style={lines.length === 0 ? { color: theme.textSecondary } : { color: theme.danger }}>
+            Clear
+          </ThemedText>
+        </Pressable>
+      </View>
+      {lines.length === 0 ? (
+        <ThemedText type="small" themeColor="textSecondary">
+          No entries yet — tap Refresh after reproducing the issue.
+        </ThemedText>
+      ) : (
+        <ThemedView type="backgroundElement" style={[styles.entry, { borderColor: theme.hairline }]}>
+          {lines.map((line, i) => (
+            <ThemedText key={i} type="small" selectable>
+              {line}
+            </ThemedText>
+          ))}
+        </ThemedView>
+      )}
+    </View>
+  );
 }
 
 export default function DiagnosticsScreen() {
@@ -37,6 +104,8 @@ export default function DiagnosticsScreen() {
           styles.content,
           { paddingTop: Spacing.four, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
         ]}>
+        <TabBarDebugSection theme={theme} />
+
         <ThemedText type="small" themeColor="textSecondary">
           Asset load failures (page images, thumbnails) that would otherwise fail silently — newest
           first. Nothing here is sent anywhere automatically; use Share to send it yourself.
@@ -101,6 +170,9 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: MaxContentWidth,
     alignSelf: 'center',
+  },
+  debugSection: {
+    gap: Spacing.two,
   },
   actions: {
     flexDirection: 'row',
