@@ -284,6 +284,18 @@ function ChapterRow({ chapter, onPress }: { chapter: Chapter; onPress?: () => vo
 
 // Rows shown before a long page set collapses behind "Show all".
 const COLLAPSED_ROWS = 4;
+// Once expanded, further rows stream in this many at a time as the sentinel
+// nears the viewport, instead of mounting the whole (possibly 300+ tile) set.
+const BATCH_ROWS = 4;
+// How far below the viewport's bottom edge the sentinel can be and still
+// trigger the next batch — enough lead time that the next row is ready before
+// the user actually scrolls to it.
+const SENTINEL_MARGIN = 400;
+// How often to re-check the sentinel's on-screen position. RN has no native
+// IntersectionObserver, so this polls instead of subscribing to the ancestor
+// ScrollView's scroll events — the grid lives inside the series screen's own
+// ScrollView, and a vertical FlatList can't be nested inside one.
+const SENTINEL_POLL_MS = 250;
 
 function PageThumbGrid({
   thumbs,
@@ -298,9 +310,10 @@ function PageThumbGrid({
 }) {
   const theme = useTheme();
   const router = useRouter();
-  const { width: screenW } = useWindowDimensions();
+  const { width: screenW, height: screenH } = useWindowDimensions();
   const [containerW, setContainerW] = useState(0);
   const [expanded, setExpanded] = useState(false);
+  const [revealedCount, setRevealedCount] = useState(0);
   const cols = screenW >= 900 ? 5 : screenW >= 600 ? 3 : 2;
   const gap = Spacing.two;
   const tileW = containerW > 0 ? (containerW - gap * (cols - 1)) / cols : 0;
@@ -309,9 +322,41 @@ function PageThumbGrid({
   // a centered "Show all" button so it reads as "there's more". Mirrors the
   // reference's `.page-thumbs-more`.
   const collapsedCount = cols * COLLAPSED_ROWS;
+  const batchSize = cols * BATCH_ROWS;
   const collapsed = !expanded && thumbs.length > collapsedCount;
-  const shown = collapsed ? thumbs.slice(0, collapsedCount) : thumbs;
+  const visibleCount = expanded ? Math.min(collapsedCount + revealedCount, thumbs.length) : collapsedCount;
+  const shown = thumbs.slice(0, visibleCount);
+  const hasMore = expanded && visibleCount < thumbs.length;
   const fadeHeight = tileW > 0 ? Math.round(tileW * (3 / 2) * 0.6) : 120;
+
+  // Grow the revealed count in batches as the sentinel below the grid nears
+  // the viewport, so "Show all" on a 300-page series streams tiles (and their
+  // thumbnail fetches) in progressively rather than mounting all of them at
+  // once.
+  const sentinelRef = useRef<View>(null);
+  useEffect(() => {
+    if (!hasMore) return;
+    let cancelled = false;
+    let pending = false;
+    const check = () => {
+      if (cancelled || pending) return;
+      const node = sentinelRef.current;
+      if (!node) return;
+      pending = true;
+      node.measureInWindow((_x, y) => {
+        pending = false;
+        if (!cancelled && y < screenH + SENTINEL_MARGIN) {
+          setRevealedCount((c) => c + batchSize);
+        }
+      });
+    };
+    check();
+    const id = setInterval(check, SENTINEL_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [hasMore, screenH, batchSize]);
 
   return (
     <View style={styles.section}>
@@ -340,12 +385,20 @@ function PageThumbGrid({
                 }
               />
             ))}
+          {hasMore && tileW > 0 && (
+            <View ref={sentinelRef} style={{ width: tileW, height: 1, pointerEvents: 'none' }} />
+          )}
         </View>
 
         {collapsed && (
           <View style={[styles.moreOverlay, { height: fadeHeight, pointerEvents: 'box-none' }]}>
             <GradientFade color={theme.background} />
-            <Pressable onPress={() => setExpanded(true)} hitSlop={8}>
+            <Pressable
+              onPress={() => {
+                setExpanded(true);
+                setRevealedCount(batchSize);
+              }}
+              hitSlop={8}>
               <ThemedView
                 type="backgroundElement"
                 style={[styles.showMore, { borderColor: theme.hairline }]}>
