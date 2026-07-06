@@ -50,6 +50,7 @@ const PILL_INSET_Y = 6;
 export function ChaptersSection({
   chapters,
   pageThumbs,
+  loading,
   seed,
   title,
   bridgeId,
@@ -57,6 +58,9 @@ export function ChaptersSection({
 }: {
   chapters?: Chapter[];
   pageThumbs?: (PageThumbSource | null)[];
+  /** The deferred chapter list / page grid is still fetching (see series.tsx +
+   *  getSeriesList) — show a skeleton in this section's place. */
+  loading?: boolean;
   /** Series identity, used to build reader navigation params. */
   seed: string;
   title: string;
@@ -69,11 +73,13 @@ export function ChaptersSection({
   only?: 'chapters' | 'pages';
 }) {
   if (only === 'chapters') {
+    if (loading) return <ChapterListSkeleton />;
     return chapters?.length ? (
       <ChapterList chapters={chapters} seed={seed} title={title} bridgeId={bridgeId} />
     ) : null;
   }
   if (only === 'pages') {
+    if (loading) return <PageGridSkeleton />;
     return pageThumbs?.length ? (
       <PageThumbGrid thumbs={pageThumbs} seed={seed} title={title} bridgeId={bridgeId} />
     ) : null;
@@ -81,6 +87,47 @@ export function ChaptersSection({
   if (pageThumbs?.length) return <PageThumbGrid thumbs={pageThumbs} seed={seed} title={title} bridgeId={bridgeId} />;
   if (chapters?.length) return <ChapterList chapters={chapters} seed={seed} title={title} bridgeId={bridgeId} />;
   return null;
+}
+
+/** Chapter-list placeholder shown while the deferred chapter fetch is in flight
+ *  (getSeriesList). Header + a few skeleton rows, so the section holds its place
+ *  instead of popping in when the ~200ms /chapters request lands. */
+function ChapterListSkeleton() {
+  return (
+    <View style={styles.section}>
+      <View style={styles.head}>
+        <ThemedText type="subtitle" style={styles.headTitle}>
+          Chapters
+        </ThemedText>
+      </View>
+      <View style={styles.skelRows}>
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Skeleton key={i} style={styles.skelChapterRow} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+/** Page-grid placeholder shown while the deferred page fetch is in flight — one
+ *  row of tiles at the grid's column count, matching the thumbnail aspect. */
+function PageGridSkeleton() {
+  const { width } = useWindowDimensions();
+  const cols = width >= 900 ? 5 : width >= 600 ? 3 : 2;
+  return (
+    <View style={styles.section}>
+      <ThemedText type="subtitle" style={styles.headTitle}>
+        Pages
+      </ThemedText>
+      <View style={styles.skelTileRow}>
+        {Array.from({ length: cols }).map((_, i) => (
+          <View key={i} style={styles.skelTile}>
+            <Skeleton style={StyleSheet.absoluteFill} />
+          </View>
+        ))}
+      </View>
+    </View>
+  );
 }
 
 function ChapterList({
@@ -635,6 +682,23 @@ const styles = StyleSheet.create({
     // Reference .chapters-head h3: 1.15rem (~18px).
     fontSize: 18,
     lineHeight: 24,
+  },
+  skelRows: {
+    gap: Spacing.two,
+  },
+  skelChapterRow: {
+    height: 44,
+    borderRadius: Spacing.two,
+  },
+  skelTileRow: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+  },
+  skelTile: {
+    flex: 1,
+    aspectRatio: DEFAULT_THUMB_ASPECT,
+    borderRadius: Spacing.two,
+    overflow: 'hidden',
   },
   controls: {
     flexDirection: 'row',

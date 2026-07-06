@@ -127,6 +127,22 @@ export type SeriesDetail = SeriesEntry & {
    *  any (a bridge with capability "related-series") — lets the series
    *  screen show a rail skeleton instead of treating "absent" as "none". */
   relatedGroupsDeferred?: boolean;
+  /** True when `getSeriesDetail` returned only the fast info payload and left the
+   *  chapter list / page-thumbnail grid to a separate `getSeriesList` fetch. The
+   *  series screen paints the (info-based) hero/meta/description immediately and
+   *  streams the list into its section with a skeleton — the chapter/page LIST
+   *  request is the ~200ms bottleneck, so it must not block the body render. */
+  listDeferred?: boolean;
+};
+
+/** Result of the deferred `getSeriesList` fetch: the chapter list (chaptered) OR
+ *  the page-thumbnail grid (direct), plus the count/label those imply — merged
+ *  into the already-rendered `SeriesDetail` once it arrives. */
+export type SeriesListResult = {
+  chapters?: Chapter[];
+  pageThumbs?: (PageThumbSource | null)[];
+  chapterCount?: number;
+  readLabel?: string;
 };
 
 // ─── Local library / history / activity ──────────────────────────────────────

@@ -14,20 +14,25 @@ export function ActionButton({
   variant = 'default',
   caret,
   onPress,
+  disabled,
 }: {
   label: string;
   variant?: 'primary' | 'default';
   /** Show a trailing ▾ (Sources / Trackers menus). */
   caret?: boolean;
   onPress?: () => void;
+  /** Dim and ignore presses (e.g. Read while a chaptered series' list still loads). */
+  disabled?: boolean;
 }) {
   const theme = useTheme();
   const primary = variant === 'primary';
   return (
     <Pressable
-      onPress={onPress}
+      onPress={disabled ? undefined : onPress}
+      disabled={disabled}
       accessibilityRole="button"
-      style={({ pressed }) => [styles.btn, pressed && styles.pressed]}>
+      accessibilityState={{ disabled: !!disabled }}
+      style={({ pressed }) => [styles.btn, disabled && styles.disabled, pressed && styles.pressed]}>
       <ThemedView
         type={primary ? undefined : 'backgroundElement'}
         style={[styles.fill, primary && { backgroundColor: theme.accent }]}>
@@ -62,6 +67,9 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.8,
+  },
+  disabled: {
+    opacity: 0.5,
   },
   fill: {
     paddingVertical: Spacing.two,
