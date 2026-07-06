@@ -305,7 +305,14 @@ function BridgesSection() {
               description={status?.text}
               descriptionColor={status && (status.tone === 'warn' ? theme.badgeWarn : theme.badgeInfo)}
               onPress={() =>
-                router.push({ pathname: '/bridge-settings', params: { bridgeId: b.info.id, source: b.source } })
+                router.push({
+                  pathname: '/bridge-settings',
+                  params: {
+                    bridgeId: b.info.id,
+                    source: b.source,
+                    ...(b.availableVersion ? { availableVersion: b.availableVersion } : {}),
+                  },
+                })
               }
             />
           );
