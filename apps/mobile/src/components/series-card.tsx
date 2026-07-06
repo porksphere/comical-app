@@ -188,7 +188,7 @@ export function SeriesCard({
   if (entry.excluded) {
     return (
       <View style={StyleSheet.flatten([styles.card, fixedWidth != null && { width: fixedWidth }])}>
-        <View style={styles.coverShell}>
+        <View style={[styles.coverBox, { aspectRatio: DEFAULT_THUMB_ASPECT }]}>
           <View style={[styles.cover, styles.hiddenCover]}>
             <ThemedText type="small" themeColor="textSecondary">
               Hidden
@@ -233,36 +233,36 @@ export function SeriesCard({
         // Native: sliding off the card keeps it held; release clears it.
         pressRetentionOffset={HOLD_RETENTION}
         {...handlers}>
-        {/* Shell is the constant "slot" — always the default 2:3 size (matching
-            the skeleton), regardless of the real cover's shape, so a card never
-            reflows its row. `coverBox` is the part that actually takes the
-            cover's (capped) aspect ratio, top-anchored within the shell. */}
-        <View style={styles.coverShell}>
-          <View style={[styles.coverBox, { aspectRatio: cover.settled ? cover.aspect : DEFAULT_THUMB_ASPECT }]}>
-            <View style={styles.cover}>
-              {cover.settled && (
-                <Image
-                  source={cover.ref ?? { uri: entry.cover }}
-                  style={StyleSheet.absoluteFill}
-                  contentFit="cover"
-                  cachePolicy="memory-disk"
-                  transition={200}
-                  onLoad={() => setLoaded(true)}
-                />
-              )}
-              {!coverReady && <Skeleton style={StyleSheet.absoluteFill} />}
-              {entry.badges?.map((b, i) => <CardBadge key={i} badge={b} />)}
-              {entry.unread != null && <UnreadBadge count={entry.unread} />}
-              {rank != null && (
-                <View style={styles.rank}>
-                  <ThemedText style={styles.rankText}>{rank}</ThemedText>
-                </View>
-              )}
-            </View>
-            {/* Highlight ring hugs the cover edge (flush, just outside) — only
-                visible while active. */}
-            {active && <View style={[styles.ring, { pointerEvents: 'none' }]} />}
+        {/* `coverBox` takes the cover's real (capped) aspect ratio and drives the
+            card height directly — there's no fixed-height slot around it — so the
+            title below sits flush against the bottom of the actual cover instead
+            of at a fixed offset that leaves a gap under a shorter-than-2:3 cover.
+            Its dimensions are prefetched (see `usePrefetchedImage`) so the box is
+            already the right height the first frame the cover shows. */}
+        <View style={[styles.coverBox, { aspectRatio: cover.settled ? cover.aspect : DEFAULT_THUMB_ASPECT }]}>
+          <View style={styles.cover}>
+            {cover.settled && (
+              <Image
+                source={cover.ref ?? { uri: entry.cover }}
+                style={StyleSheet.absoluteFill}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+                transition={200}
+                onLoad={() => setLoaded(true)}
+              />
+            )}
+            {!coverReady && <Skeleton style={StyleSheet.absoluteFill} />}
+            {entry.badges?.map((b, i) => <CardBadge key={i} badge={b} />)}
+            {entry.unread != null && <UnreadBadge count={entry.unread} />}
+            {rank != null && (
+              <View style={styles.rank}>
+                <ThemedText style={styles.rankText}>{rank}</ThemedText>
+              </View>
+            )}
           </View>
+          {/* Highlight ring hugs the cover edge (flush, just outside) — only
+              visible while active. */}
+          {active && <View style={[styles.ring, { pointerEvents: 'none' }]} />}
         </View>
 
         <View style={styles.titleWrap}>
@@ -341,13 +341,11 @@ const styles = StyleSheet.create({
   cardActive: {
     zIndex: 10,
   },
-  coverShell: {
-    // Constant slot — always the default 2:3 shape, the vertical max a cover
-    // can occupy. Never resizes, so a card's row never reflows.
-    width: '100%',
-    aspectRatio: DEFAULT_THUMB_ASPECT,
-  },
   coverBox: {
+    // Drives the card's height at the cover's real (capped) aspect ratio, so the
+    // title sits flush under the actual cover rather than at a fixed offset. The
+    // excluded-placeholder path sets an explicit 2:3 aspectRatio to keep an empty
+    // slot the same shape.
     width: '100%',
     position: 'relative',
   },
