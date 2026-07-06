@@ -12,6 +12,7 @@ import { SettingsControl } from '@/components/reader/settings-panel';
 import { RetryBlock } from '@/components/retry-block';
 import { ThemedText } from '@/components/themed-text';
 import { WebtoonReader, type WebtoonReaderHandle } from '@/components/reader/webtoon-reader';
+import { resolveAssetSourceCached } from '@/data/api';
 import { chapterPagesQuery, directPagesQuery, inLibraryQuery, queryKeys, seriesDetailQuery } from '@/data/queries';
 import { useDataSource, useMockActive, type DataSource } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type SeriesDetail } from '@/data/types';
@@ -28,6 +29,18 @@ const CHROME_HIDE_MS = 3000;
 // (How many page *images* to warm ahead is the user-configurable
 // `settings.prefetchAhead`, comical-web's `prefetchAhead`.)
 const NEXT_CHAPTER_TRIGGER = 3;
+
+/** Warm expo-image's cache for a small window of upcoming pages. `pages` are now raw (unresolved)
+ *  paths, so resolve them first (deduped/cached, shared with ReaderPage's own lazy resolve) and only
+ *  prefetch the http(s) results — a `data:` URI is already inlined, nothing to fetch. Best-effort:
+ *  failures are the per-page ReaderPage's problem to surface, not the prefetch's. */
+function warmPrefetch(pages: string[]): void {
+  if (!pages.length) return;
+  void Promise.all(pages.map((p) => resolveAssetSourceCached(p).catch(() => null))).then((urls) => {
+    const http = urls.filter((u): u is string => !!u && !u.startsWith('data:'));
+    if (http.length) void Image.prefetch(http);
+  });
+}
 
 export default function ReaderScreen() {
   const ds = useDataSource();
@@ -93,7 +106,7 @@ export default function ReaderScreen() {
   useEffect(() => {
     if (!pages || pages.length === 0) return;
     const ahead = pages.slice(currentPage + 1, currentPage + 1 + settings.prefetchAhead);
-    if (ahead.length) void Image.prefetch(ahead);
+    warmPrefetch(ahead);
 
     if (!chapterId || currentPage < pages.length - NEXT_CHAPTER_TRIGGER) return;
     const nextId = nextChapterId(queryClient, mock, bridgeId ?? '', seed ?? '', chapterId);
@@ -102,7 +115,7 @@ export default function ReaderScreen() {
         const nextPages = queryClient.getQueryData<string[]>(
           queryKeys.chapterPages(mock, bridgeId ?? '', seed ?? '', nextId),
         );
-        if (nextPages?.length) void Image.prefetch(nextPages.slice(0, settings.prefetchAhead));
+        if (nextPages?.length) warmPrefetch(nextPages.slice(0, settings.prefetchAhead));
       });
     }
   }, [pages, currentPage, chapterId, ds, mock, queryClient, bridgeId, seed, settings.prefetchAhead]);
