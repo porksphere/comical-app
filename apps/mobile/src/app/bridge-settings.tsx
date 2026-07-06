@@ -73,11 +73,21 @@ export default function BridgeSettingsScreen() {
     }
   };
 
+  const [uninstalling, setUninstalling] = useState(false);
+  const [uninstallError, setUninstallError] = useState<string | null>(null);
+
   const uninstall = async () => {
     if (!bridgeId) return;
-    await ds.uninstallBridge(bridgeId);
-    bumpDataEpoch();
-    router.back();
+    setUninstalling(true);
+    setUninstallError(null);
+    try {
+      await ds.uninstallBridge(bridgeId);
+      bumpDataEpoch();
+      router.back();
+    } catch (e) {
+      setUninstallError((e as Error).message || 'Failed to uninstall bridge');
+      setUninstalling(false);
+    }
   };
 
   const [updating, setUpdating] = useState(false);
@@ -199,11 +209,22 @@ export default function BridgeSettingsScreen() {
             <BridgePrefsToggles bridgeId={bridgeId!} />
 
             {source === 'registry' && (
-              <Pressable onPress={uninstall} style={styles.uninstallRow}>
-                <ThemedText type="small" style={{ color: theme.danger }}>
-                  Uninstall this bridge
-                </ThemedText>
-              </Pressable>
+              <>
+                {uninstallError && (
+                  <ThemedText type="small" style={{ color: theme.danger }}>
+                    {uninstallError}
+                  </ThemedText>
+                )}
+                <Pressable onPress={uninstall} disabled={uninstalling} style={styles.uninstallRow}>
+                  {uninstalling ? (
+                    <ActivityIndicator size="small" />
+                  ) : (
+                    <ThemedText type="small" style={{ color: theme.danger }}>
+                      Uninstall this bridge
+                    </ThemedText>
+                  )}
+                </Pressable>
+              </>
             )}
           </>
         ) : null}
