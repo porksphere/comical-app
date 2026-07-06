@@ -229,6 +229,13 @@ export function SeriesCard({
           ...(bridge
             ? { bridge: encodeURIComponent(bridge).replace(/\(/g, '%28').replace(/\)/g, '%29') }
             : {}),
+          // Forward the cover the browse grid already has so the series screen can
+          // paint it instantly from expo-image's cache (see series.tsx skeleton),
+          // rather than shimmering until the full detail query resolves. Same paren
+          // escaping as `bridge` above — arbitrary cover URLs may contain '(' ')'.
+          ...(entry.cover
+            ? { cover: encodeURIComponent(entry.cover).replace(/\(/g, '%28').replace(/\)/g, '%29') }
+            : {}),
           ...(bridgeId ? { bridgeId } : {}),
           ...(direct ? { direct: '1' } : {}),
         },
