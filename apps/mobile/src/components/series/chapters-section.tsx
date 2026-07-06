@@ -537,7 +537,17 @@ function PageThumb({
  *  request — scaled so the tile matches `width`, then offset so only its `{x,y,w,h}` rect shows
  *  through the tile's `overflow: hidden` bounds (`styles.thumb`). Same idea as a CSS sprite: plain
  *  View/Image layout math, so it renders identically on web, iOS, and Android with no SVG or
- *  native region-decoding needed. */
+ *  native region-decoding needed.
+ *
+ *  `sheetWidth` is a real sheet-pixel dimension (the montage's x/width coordinates), but `sheetHeight`
+ *  is only the tiles' bottom extent (`max(y+h)`) — some montage sheets carry a few px of trailing
+ *  padding below the last tile, so the real image is a touch taller than `sheetHeight`. Forcing the
+ *  image into `sheetHeight*scale` with `contentFit="fill"` squashes that padding in and leaves a blank
+ *  (black) strip at each tile's bottom. Instead lock the horizontal scale to `sheetWidth` and let the
+ *  height follow the image's true aspect: `cover` scales to the more-constraining axis, and since
+ *  `sheetHeight ≤ naturalHeight` the width always wins — so both axes get the same `scale` (no squash),
+ *  the real trailing padding renders past the box and is clipped rather than compressed. `top left`
+ *  anchors the crop origin. This mirrors comical-web's `preserveAspectRatio="xMinYMin meet"` SVG. */
 function SpriteCrop({
   thumb,
   width,
@@ -560,7 +570,8 @@ function SpriteCrop({
         left: -thumb.x * scale,
         top: -thumb.y * scale,
       }}
-      contentFit="fill"
+      contentFit="cover"
+      contentPosition={{ top: 0, left: 0 }}
       cachePolicy="memory-disk"
       transition={200}
       onLoad={onLoad}
