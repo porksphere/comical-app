@@ -83,6 +83,10 @@ export default function BridgeSettingsScreen() {
     try {
       await ds.uninstallBridge(bridgeId);
       bumpDataEpoch();
+      // Broad invalidate — the Settings bridge list, Browse bridge selector, and
+      // Library/History/Activity's bridge map are all react-query-backed and need to drop this
+      // bridge immediately, not just this screen's own ['bridgeSettings', bridgeId] query.
+      await queryClient.invalidateQueries();
       router.back();
     } catch (e) {
       setUninstallError((e as Error).message || 'Failed to uninstall bridge');
@@ -102,7 +106,8 @@ export default function BridgeSettingsScreen() {
       await ds.updateBridge(bridgeId);
       bumpDataEpoch();
       setUpdated(true);
-      await queryClient.invalidateQueries({ queryKey: ['bridgeSettings', bridgeId] });
+      // Broad invalidate — same reasoning as uninstall() above.
+      await queryClient.invalidateQueries();
     } catch (e) {
       setUpdateError((e as Error).message || 'Failed to update bridge');
     } finally {
