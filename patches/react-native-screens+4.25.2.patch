@@ -148,10 +148,10 @@ index 2434c61..c3a5e2f 100644
 +
  @end
 diff --git a/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenViewController.mm b/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenViewController.mm
-index b273770..1632e8e 100644
+index b273770..3ec1f0d 100644
 --- a/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenViewController.mm
 +++ b/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenViewController.mm
-@@ -4,6 +4,34 @@
+@@ -4,6 +4,42 @@
  #import "RNSTabBarController.h"
  #import "UIScrollView+RNScreens.h"
  
@@ -175,18 +175,26 @@ index b273770..1632e8e 100644
 +  [defaults setObject:log forKey:kRNScreensTabBarDebugLogKey];
 +}
 +
++// Unique KVO context token (address-of-itself is the standard idiom).
++static void *const kRNScreensTabBarKVOContext = (void *)&kRNScreensTabBarKVOContext;
++
 +// Weak: the scroll view is already owned by the view hierarchy - this is only an identity
 +// check so `rnscreens_refreshContentScrollViewIfNeeded` can tell whether it changed.
 +@interface RNSTabsScreenViewController ()
 +@property (nonatomic, weak) UIScrollView *rnscreens_lastPushedContentScrollView;
 +// Throttles the (potentially very frequent) `contentScrollViewForEdge:` query log.
 +@property (nonatomic, assign) NSTimeInterval rnscreens_lastQueryLogTime;
++// The scroll view we're currently KVO-observing for `contentOffset`, so we can tell when it
++// changes (and remove the old observation) - separate from `rnscreens_lastPushedContentScrollView`
++// only in principle; in practice they track the same identity change.
++@property (nonatomic, weak) UIScrollView *rnscreens_kvoObservedScrollView;
++@property (nonatomic, assign) NSTimeInterval rnscreens_lastKvoLogTime;
 +@end
 +
  @implementation RNSTabsScreenViewController
  
  - (nullable RNSTabBarController *)findTabBarController
-@@ -36,6 +64,43 @@
+@@ -36,6 +72,90 @@
  {
    [super viewDidAppear:animated];
    [self.tabScreenComponentView.reactEventEmitter emitOnDidAppear];
@@ -226,11 +234,58 @@ index b273770..1632e8e 100644
 +                          metricsDescription]);
 +    self.rnscreens_lastPushedContentScrollView = scrollView;
 +    [self setContentScrollView:scrollView forEdge:NSDirectionalRectEdgeBottom];
++    [self rnscreens_observeContentOffsetOn:scrollView];
 +  }
++}
++
++// `contentScrollViewForEdge:`/`rnscreens_refreshContentScrollViewIfNeeded` above are only queried
++// or invoked sparsely (every few seconds, tied to layout passes - not to scroll frames), so neither
++// can show what the scroll view's offset is actually doing *during* a scroll gesture. KVO on
++// `contentOffset` fires on every change regardless, giving real visibility into whether the
++// resolved scroll view is live-tracking the user's finger at all.
++- (void)rnscreens_observeContentOffsetOn:(nullable UIScrollView *)scrollView
++{
++  if (self.rnscreens_kvoObservedScrollView != nil) {
++    [self.rnscreens_kvoObservedScrollView removeObserver:self
++                                               forKeyPath:@"contentOffset"
++                                                  context:kRNScreensTabBarKVOContext];
++  }
++  self.rnscreens_kvoObservedScrollView = scrollView;
++  if (scrollView != nil) {
++    [scrollView addObserver:self
++                  forKeyPath:@"contentOffset"
++                     options:NSKeyValueObservingOptionNew
++                     context:kRNScreensTabBarKVOContext];
++  }
++}
++
++- (void)observeValueForKeyPath:(nullable NSString *)keyPath
++                       ofObject:(nullable id)object
++                         change:(nullable NSDictionary<NSKeyValueChangeKey, id> *)change
++                        context:(nullable void *)context
++{
++  if (context != kRNScreensTabBarKVOContext) {
++    [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
++    return;
++  }
++  // Throttled: `contentOffset` can change every frame during a scroll/deceleration.
++  NSTimeInterval now = [[NSProcessInfo processInfo] systemUptime];
++  if (now - self.rnscreens_lastKvoLogTime < 0.15) {
++    return;
++  }
++  self.rnscreens_lastKvoLogTime = now;
++  CGPoint offset = [(NSValue *)change[NSKeyValueChangeNewKey] CGPointValue];
++  RNScreensTabBarDebugLog(
++      [NSString stringWithFormat:@"KVO tag=%ld offsetY=%.1f", (long)self.tabScreenComponentView.tag, offset.y]);
++}
++
++- (void)dealloc
++{
++  [self rnscreens_observeContentOffsetOn:nil];
  }
  
  - (void)viewWillDisappear:(BOOL)animated
-@@ -100,12 +165,55 @@
+@@ -100,12 +220,55 @@
    } else if (self.tabScreenComponentView.shouldUseRepeatedTabSelectionScrollToTopSpecialEffect) {
      UIScrollView *scrollView =
          [RNSScrollViewFinder findScrollViewInFirstDescendantChainFrom:[self tabScreenComponentView]];
