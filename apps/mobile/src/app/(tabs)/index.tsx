@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { FlatList, Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
@@ -77,31 +78,24 @@ export default function BrowseScreen() {
 
   // ── Bridges ────────────────────────────────────────────────────────────
   const hideNsfw = useHideNsfw();
-  const [bridges, setBridges] = useState<Bridge[]>([]);
-  const [bridgesError, setBridgesError] = useState<string | null>(null);
-  // Distinguishes "still fetching" from "fetched, and there are none" — both
-  // start out as an empty `bridges` array, so without this the no-bridges
-  // placeholder would flash before the first load resolves.
-  const [bridgesLoaded, setBridgesLoaded] = useState(false);
-  const [bridgesReload, setBridgesReload] = useState(0);
   const [bridge, setBridge] = useState<string | null>(null);
 
-  useEffect(() => {
-    const ctrl = new AbortController();
-    setBridgesError(null);
-    ds.getBridges(ctrl.signal)
-      .then((bs) => {
-        setBridges(bs);
-        setBridgesLoaded(true);
-      })
-      .catch((e) => {
-        if (!isAbort(e)) {
-          setBridgesError(e.message || 'Failed to load bridges');
-          setBridgesLoaded(true);
-        }
-      });
-    return () => ctrl.abort();
-  }, [ds, bridgesReload]);
+  // Fetched via react-query (invalidated explicitly by install/update/uninstall — see
+  // registry-browse.tsx and bridge-settings.tsx) rather than a plain effect keyed on `ds`, since
+  // this is the list that must reflect a bridge change immediately, on a screen that's very often
+  // sitting mounted-but-unfocused in the background while the user installs/uninstalls elsewhere.
+  const bridgesQuery = useQuery({
+    queryKey: ['bridges'],
+    queryFn: ({ signal }) => ds.getBridges(signal),
+  });
+  const bridges = useMemo(() => bridgesQuery.data ?? [], [bridgesQuery.data]);
+  const bridgesError = bridgesQuery.isError
+    ? (bridgesQuery.error as Error).message || 'Failed to load bridges'
+    : null;
+  // Distinguishes "still fetching" from "fetched, and there are none" — both start out as an empty
+  // `bridges` array, so without this the no-bridges placeholder would flash before the first load
+  // resolves.
+  const bridgesLoaded = bridgesQuery.isFetched;
 
   const visibleBridges = useMemo(
     () => (hideNsfw ? bridges.filter((b) => !b.nsfw) : bridges),
@@ -715,7 +709,7 @@ export default function BrowseScreen() {
   if (bridgesError && bridges.length === 0) {
     return (
       <ThemedView style={[styles.container, styles.centerFill]}>
-        <RetryBlock message={bridgesError} onRetry={() => setBridgesReload((n) => n + 1)} />
+        <RetryBlock message={bridgesError} onRetry={() => bridgesQuery.refetch()} />
       </ThemedView>
     );
   }

@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
@@ -266,27 +267,23 @@ function BridgesSection() {
   const router = useRouter();
   const theme = useTheme();
   const hideNsfw = useHideNsfw();
-  const [bridges, setBridges] = useState<BridgeSummary[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [reload, setReload] = useState(0);
 
-  useEffect(() => {
-    const ctrl = new AbortController();
-    setError(null);
-    ds.getBridgeSummaries(ctrl.signal)
-      .then(setBridges)
-      .catch((e) => {
-        if (!isAbort(e)) setError(e.message || 'Failed to load bridges');
-      });
-    return () => ctrl.abort();
-  }, [ds, reload]);
+  // react-query, explicitly invalidated by install/update/uninstall (registry-browse.tsx,
+  // bridge-settings.tsx) — not a plain effect keyed on `ds`, since this section is very often
+  // mounted-but-unfocused in the background while the user installs/uninstalls elsewhere.
+  const bridgesQuery = useQuery({
+    queryKey: ['bridgeSummaries'],
+    queryFn: ({ signal }) => ds.getBridgeSummaries(signal),
+  });
+  const bridges = bridgesQuery.data ?? null;
+  const error = bridgesQuery.isError ? (bridgesQuery.error as Error).message || 'Failed to load bridges' : null;
 
   const visible = bridges && hideNsfw ? bridges.filter((b) => !b.info.nsfw) : bridges;
 
   return (
     <SettingsSection title="Bridges" icon={<BridgesIcon color={theme.textSecondary} size={14} />}>
       {error ? (
-        <RetryBlock message={error} onRetry={() => setReload((n) => n + 1)} />
+        <RetryBlock message={error} onRetry={() => bridgesQuery.refetch()} />
       ) : !visible ? (
         <ThemedText type="small" themeColor="textSecondary">
           Loading…
