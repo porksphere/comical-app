@@ -70,12 +70,14 @@ export default function SeriesScreen() {
   const {
     data: series = null,
     error: queryError,
+    isPlaceholderData,
     refetch,
   } = useQuery(
     seriesDetailQuery(ds, mock, bridgeId ?? '', id ?? '', {
       direct: direct === '1',
       bridgeName: bridge ?? 'Library',
       title,
+      cover,
     }),
   );
   const error = queryError ? (queryError as Error).message || 'Failed to load series' : null;
@@ -105,8 +107,13 @@ export default function SeriesScreen() {
           {error ? (
             <RetryBlock message={error} onRetry={retry} />
           ) : !series ? (
+            // No forwarded cover (deep-link) — nothing to keep steady, so use the
+            // full skeleton until the fetch resolves.
             <SeriesSkeleton actionsWidth={actionsWidth} isLarge={isLarge} title={title} cover={cover} />
           ) : (
+            // `series` is either the placeholder (real hero, rest loading) or the
+            // resolved detail. SeriesBody stays mounted across that transition, so
+            // the cover never remounts/blanks.
             <SeriesBody
               series={series}
               bridgeId={bridgeId}
@@ -116,6 +123,7 @@ export default function SeriesScreen() {
               direct={direct === '1'}
               width={width}
               initialCover={cover}
+              loading={isPlaceholderData}
             />
           )}
         </View>
@@ -135,6 +143,7 @@ function SeriesBody({
   direct,
   width,
   initialCover,
+  loading,
 }: {
   series: SeriesDetail;
   bridgeId?: string;
@@ -143,10 +152,13 @@ function SeriesBody({
   actionsWidth: number;
   direct: boolean;
   width: number;
-  /** Cover the loading skeleton already painted (forwarded from browse). When it
-   *  matches this body's cover, skip the fade-in so the swap doesn't re-flash the
-   *  already-visible image. */
+  /** Cover forwarded from browse. When it matches this body's cover, skip the
+   *  fade-in so the first paint of the (cache-warm) hero is instant. */
   initialCover?: string;
+  /** True while showing placeholder data (real hero known, rest still fetching).
+   *  The hero renders for real; the actions + content render as skeletons until
+   *  the fetch resolves — all without remounting the persistent cover <Image>. */
+  loading?: boolean;
 }) {
   const ds = useDataSource();
   const router = useRouter();
@@ -270,6 +282,32 @@ function SeriesBody({
         </View>
       )}
     </View>
+  );
+
+  // Placeholder actions/content shown while `loading` (real hero already up).
+  // Kept in sync with SeriesSkeleton's pieces — same styles, same shapes — so the
+  // only thing that changes when data lands is the content, not the layout.
+  const actionsSkel = (
+    <View style={[styles.actions, !isLarge && { width: actionsWidth }]}>
+      {Array.from({ length: 5 }).map((_, i) => (
+        <Skeleton key={i} style={styles.skelButton} />
+      ))}
+    </View>
+  );
+  const contentSkel = (
+    <>
+      <View style={styles.skelChips}>
+        {[60, 48, 80, 52, 70].map((w, i) => (
+          <Skeleton key={i} style={[styles.skelChip, { width: w }]} />
+        ))}
+      </View>
+      <Skeleton style={styles.skelMeta} />
+      <View style={styles.skelTitle}>
+        {(['100%', '96%', '100%', '60%'] as const).map((w, i) => (
+          <Skeleton key={i} style={[styles.skelLine, { width: w, height: 13 }]} />
+        ))}
+      </View>
+    </>
   );
 
   // Action buttons — shared between layouts; width controlled by parent.
@@ -442,23 +480,24 @@ function SeriesBody({
           <View style={styles.twoCol}>
             <View style={[styles.leftCol, sticky && styles.leftColSticky]}>
               {coverEl}
-              {actionsEl}
+              {loading ? actionsSkel : actionsEl}
             </View>
-            <View style={styles.rightCol}>{contentEl}</View>
+            <View style={styles.rightCol}>{loading ? contentSkel : contentEl}</View>
           </View>
         ) : (
           /* Small screen: hero row then content stacked below. */
           <>
             <View style={styles.hero}>
               {coverEl}
-              {actionsEl}
+              {loading ? actionsSkel : actionsEl}
             </View>
-            {contentEl}
+            {loading ? contentSkel : contentEl}
           </>
         )}
 
-        {/* Page-thumbnails (direct series): full-width below the columns. */}
-        {pagesEl}
+        {/* Page-thumbnails (direct series): full-width below the columns. Empty
+            (renders nothing) while loading, since page thumbs aren't known yet. */}
+        {loading ? null : pagesEl}
       </View>
 
       {/* Related rails (per-bridge): full-bleed, outside the padded inner. A
