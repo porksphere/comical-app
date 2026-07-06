@@ -1,0 +1,54 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bubble" x1="286" y1="250" x2="762" y2="762" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.52" stop-color="#EAF6FF"/>
+      <stop offset="1" stop-color="#BFDBFE"/>
+    </linearGradient>
+
+    <linearGradient id="cSubtle" x1="372" y1="320" x2="592" y2="640" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#60A5FA"/>
+      <stop offset="1" stop-color="#DBEAFE"/>
+    </linearGradient>
+  </defs>
+
+  <path
+    d="
+      M322 274
+      H702
+      C760 274 806 320 806 378
+      V578
+      C806 636 760 682 702 682
+      H516
+      C496 682 479 690 464 704
+      L377 783
+      C349 808 306 788 306 750
+      V703
+      C306 691 297 682 285 682
+      C247 682 218 653 218 615
+      V378
+      C218 320 264 274 322 274
+      Z
+    "
+    fill="url(#bubble)"
+  />
+
+  <path
+    d="
+      M512 620
+      C430 620 372 558 372 476
+      C372 394 430 332 512 332
+      C572 332 619 359 648 402
+      L596 442
+      C576 416 550 401 514 401
+      C468 401 438 432 438 476
+      C438 520 468 551 514 551
+      C551 551 578 535 598 508
+      L650 548
+      C620 593 573 620 512 620
+      Z
+    "
+    fill="url(#cSubtle)"
+    opacity="0.84"
+  />
+</svg>
