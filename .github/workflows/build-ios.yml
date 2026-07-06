@@ -97,8 +97,16 @@ jobs:
 
           # SideStore/AltStore source manifest. Add this URL as a source:
           #   $BASE/apps.json
+          #
+          # Modern AltStore/SideStore read the per-app `versions[]` array (each
+          # entry carries its own notes + download); older clients read the
+          # legacy top-level `version`/`downloadURL`/`versionDescription`. We emit
+          # BOTH, mirroring the single current build, so either parser works. The
+          # array holds only the latest build — the rolling ios-latest Release
+          # keeps just one IPA, so older versions' downloadURLs would 404.
+          #
           # Assembled with jq so commit subjects (which may contain quotes, $,
-          # backticks, etc.) are safely JSON-escaped into versionDescription.
+          # backticks, etc.) are safely JSON-escaped into the notes fields.
           jq -n \
             --arg version "$FULL_VERSION" \
             --arg date "$DATE" \
@@ -113,14 +121,21 @@ jobs:
                 name: "Comical",
                 bundleIdentifier: "com.porksphere.comical",
                 developerName: "porksphere",
+                localizedDescription: "Comical — cross-platform comic reader. Unsigned build; re-signed on-device by SideStore/AltStore with your free Apple ID.",
+                iconURL: $icon,
+                tintColor: "208AEF",
+                versions: [{
+                  version: $version,
+                  date: $date,
+                  localizedDescription: $notes,
+                  downloadURL: $dl,
+                  size: $size
+                }],
                 version: $version,
                 versionDate: $date,
                 versionDescription: $notes,
                 downloadURL: $dl,
-                size: $size,
-                localizedDescription: "Comical — cross-platform comic reader. Unsigned build; re-signed on-device by SideStore/AltStore with your free Apple ID.",
-                iconURL: $icon,
-                tintColor: "208AEF"
+                size: $size
               }]
             }' > "$RUNNER_TEMP/apps.json"
 
