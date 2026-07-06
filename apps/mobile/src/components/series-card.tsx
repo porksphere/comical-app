@@ -169,6 +169,19 @@ export function SeriesCard({
   const cover = usePrefetchedImage(entry.cover, delayPassed);
   const coverReady = delayPassed && cover.settled && loaded;
 
+  // The cover top-aligns at its real (capped) aspect ratio and the title sits
+  // right under it. To keep every card the SAME height regardless of cover shape
+  // — so rows and rails never reflow as covers finish loading — pad the BOTTOM of
+  // the card (below the title/sub) with a spacer that fills exactly the height a
+  // wider-than-2:3 cover falls short of the 2:3 maximum. `fillFactor` is that
+  // deficit as a fraction of the card's width (0 for a full 2:3 cover); the
+  // spacer expresses it as an `aspectRatio` so it scales with the width without
+  // measuring it (works for both the flex grid and the fixed-width rails). The
+  // cover shrinks and this grows by the same amount, so the total never jumps
+  // when the prefetched aspect settles.
+  const coverAspect = cover.settled ? cover.aspect : DEFAULT_THUMB_ASPECT;
+  const fillFactor = 1 / DEFAULT_THUMB_ASPECT - 1 / coverAspect;
+
   // Full-title peek. In a rail, hand the show/hide up to the rail (it owns the
   // un-clipped popover); in the grid, render it in-card (the vertical list
   // doesn't clip downward overflow).
@@ -233,13 +246,13 @@ export function SeriesCard({
         // Native: sliding off the card keeps it held; release clears it.
         pressRetentionOffset={HOLD_RETENTION}
         {...handlers}>
-        {/* `coverBox` takes the cover's real (capped) aspect ratio and drives the
-            card height directly — there's no fixed-height slot around it — so the
-            title below sits flush against the bottom of the actual cover instead
-            of at a fixed offset that leaves a gap under a shorter-than-2:3 cover.
-            Its dimensions are prefetched (see `usePrefetchedImage`) so the box is
-            already the right height the first frame the cover shows. */}
-        <View style={[styles.coverBox, { aspectRatio: cover.settled ? cover.aspect : DEFAULT_THUMB_ASPECT }]}>
+        {/* The cover top-aligns at its real (capped) aspect ratio, and the title
+            below hugs its bottom edge. Row/rail height is held constant not by
+            boxing the cover into a fixed slot but by padding the card's bottom
+            (`coverFill`, after the title/sub) — see `fillFactor`. Dimensions are
+            prefetched (usePrefetchedImage) so the box is the right shape the first
+            frame the cover shows. */}
+        <View style={[styles.coverBox, { aspectRatio: coverAspect }]}>
           <View style={styles.cover}>
             {cover.settled && (
               <Image
@@ -295,6 +308,10 @@ export function SeriesCard({
             {entry.sub}
           </ThemedText>
         ) : null}
+        {/* Bottom filler — reserves the height a shorter-than-2:3 cover leaves
+            unused above, so the card total stays constant (see `fillFactor`).
+            Only rendered when the cover is actually shorter than 2:3. */}
+        {fillFactor > 0.001 && <View style={[styles.coverFill, { aspectRatio: 1 / fillFactor }]} />}
       </Pressable>
     </Link>
   );
@@ -342,12 +359,19 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   coverBox: {
-    // Drives the card's height at the cover's real (capped) aspect ratio, so the
-    // title sits flush under the actual cover rather than at a fixed offset. The
-    // excluded-placeholder path sets an explicit 2:3 aspectRatio to keep an empty
-    // slot the same shape.
+    // The cover itself, top-aligned at its real (capped) aspect ratio — shorter
+    // than the 2:3 max for a wider-than-2:3 cover; `coverFill` reserves the rest.
     width: '100%',
     position: 'relative',
+  },
+  coverFill: {
+    // Bottom filler that reserves a shorter cover's unused height so every card is
+    // the same total height. The negative margin cancels the card's `gap` before
+    // it, so it contributes exactly its own (aspect-derived) height and nothing
+    // more. `aspectRatio` is set per-card from `fillFactor`. Non-interactive.
+    width: '100%',
+    marginTop: -Spacing.two,
+    pointerEvents: 'none',
   },
   cover: {
     flex: 1,
