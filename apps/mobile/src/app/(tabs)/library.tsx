@@ -1,7 +1,8 @@
+import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { FlatList, Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { RetryBlock } from '@/components/retry-block';
@@ -43,7 +44,7 @@ export default function LibraryScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const hideNsfw = useHideNsfw();
-  const listRef = useRef<FlatList>(null);
+  const listRef = useRef<LegendListRef>(null);
   useScrollToTopOnReselect('library', listRef);
   const { onScroll } = useHideTabBarOnScroll();
 
@@ -143,17 +144,27 @@ export default function LibraryScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <FlatList
+      <LegendList
         ref={listRef}
         key={numColumns}
         data={gridData}
         keyExtractor={(item) => String(item.id)}
         numColumns={numColumns}
+        // Explicit: SeriesCard holds per-item state (coverAspect) that wouldn't reset on reuse, so
+        // keep remount-on-reuse rather than recycling. Revisit once the item is recycle-safe.
+        recycleItems={false}
         ListHeaderComponent={listHeader}
-        columnWrapperStyle={numColumns > 1 ? [styles.row, { gap: GRID_COLUMN_GAP }] : undefined}
+        // LegendList's columnWrapperStyle only accepts gap keys (not padding like FlatList), so the
+        // row inset lives on contentContainerStyle instead — hence header pieces below carry no
+        // horizontal padding of their own (they'd double up).
+        columnWrapperStyle={numColumns > 1 ? { gap: GRID_COLUMN_GAP } : undefined}
         contentContainerStyle={[
           styles.gridContent,
-          { paddingTop: headerHeight, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
+          {
+            paddingTop: headerHeight,
+            paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
+            paddingHorizontal: Spacing.four,
+          },
         ]}
         renderItem={({ item }) =>
           item.spacer ? (
@@ -166,7 +177,6 @@ export default function LibraryScreen() {
         }
         showsVerticalScrollIndicator={Platform.OS === 'web'}
         onScroll={onScroll}
-        scrollEventThrottle={16}
       />
 
       {/* Static title band overlaid on top (matches Browse's top-bar height/inset). */}
@@ -220,7 +230,7 @@ function GridSkeleton({ numColumns, rows }: { numColumns: number; rows: number }
   return (
     <View style={styles.skelWrap}>
       {Array.from({ length: rows }).map((_, r) => (
-        <View key={r} style={[styles.row, styles.skelRow]}>
+        <View key={r} style={styles.skelRow}>
           {Array.from({ length: numColumns }).map((_, c) => (
             <View key={c} style={[styles.cell, styles.skelCell]}>
               <Skeleton style={styles.skelCover} />
@@ -267,7 +277,6 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   controls: {
-    paddingHorizontal: Spacing.four,
     paddingTop: Spacing.three,
     paddingBottom: Spacing.three,
     gap: Spacing.three,
@@ -280,9 +289,6 @@ const styles = StyleSheet.create({
   searchWrap: {
     flex: 1,
   },
-  row: {
-    paddingHorizontal: Spacing.four,
-  },
   cell: {
     flex: 1,
   },
@@ -293,7 +299,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.two,
     paddingTop: Spacing.six,
-    paddingHorizontal: Spacing.four,
   },
   emptyTitle: {
     textAlign: 'center',
