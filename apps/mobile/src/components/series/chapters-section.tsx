@@ -12,7 +12,7 @@ import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { isAbort, resolveAssetSourceCached } from '@/data/api';
 import { coverDelayMs, relativeTime } from '@/data/mock';
-import { useDataSource } from '@/data/source';
+import { useDataSource, useMockActive } from '@/data/source';
 import type { Chapter, PageThumbSource, SpriteThumb } from '@/data/types';
 import { clampThumbAspect } from '@/lib/aspect-ratio';
 import { logDiagnostic } from '@/lib/diagnostics';
@@ -475,11 +475,22 @@ function PageThumb({
   // A stable key for the simulated-latency hash: the sheet URL for a sprite tile (every tile cut
   // from the same sheet shares one request, so they should "arrive" together) or the plain URL
   // for a full image.
+  const mock = useMockActive();
   const delayKey = resolved ? (resolved.kind === 'sprite' ? resolved.sheetUrl : resolved.url) : '';
-  const delay = useMemo(() => coverDelayMs(delayKey), [delayKey]);
+  // Staggered skeletons are a MOCK affordance only — real thumbnails have real network latency, so
+  // adding fake delay just slows them. (It also caused a hang: a lazy tile's key changes from '' to
+  // the resolved sheet, and the two hash to different delays.)
+  const delay = useMemo(() => (mock ? coverDelayMs(delayKey) : 0), [mock, delayKey]);
   const [delayPassed, setDelayPassed] = useState(delay === 0);
   useEffect(() => {
-    if (delay === 0) return;
+    // MUST assert delayPassed=true when there's no delay — not just early-return. A lazy tile's key
+    // goes from '' (which may hash to a >0 mock delay) to the resolved sheet (which may hash to 0);
+    // the deps-change cleanup clears the pending timeout, and a bare return would leave the stale
+    // `false`, hiding the tile forever (the "shimmers past page 20" bug).
+    if (delay === 0) {
+      setDelayPassed(true);
+      return;
+    }
     setDelayPassed(false);
     setLoaded(false);
     const t = setTimeout(() => setDelayPassed(true), delay);

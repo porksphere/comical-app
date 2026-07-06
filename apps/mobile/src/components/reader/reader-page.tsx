@@ -8,6 +8,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { invalidateAssetSource, resolveAssetSourceCached } from '@/data/api';
 import { coverDelayMs } from '@/data/mock';
+import { useMockActive } from '@/data/source';
 import { logDiagnostic } from '@/lib/diagnostics';
 
 // One page image. Reuses the cover/thumbnail loading treatment: hold the image
@@ -55,12 +56,20 @@ export function ReaderPage({
   // never resolve). This is what keeps a big gallery from resolving every page up front. `null` until
   // resolved; while null the skeleton shows.
   const [resolvedUri, setResolvedUri] = useState<string | null>(null);
-  const delay = useMemo(() => coverDelayMs(uri), [uri]);
+  // Staggered skeletons are a MOCK affordance only — real reader pages have real load latency, so
+  // simulating more just slows them.
+  const mock = useMockActive();
+  const delay = useMemo(() => (mock ? coverDelayMs(uri) : 0), [mock, uri]);
   const [delayPassed, setDelayPassed] = useState(delay === 0);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (delay === 0) return;
+    // Assert delayPassed=true on no delay (not a bare return) so a key/delay change can't strand it
+    // false after its pending timeout was cleared — mirrors the page-thumbnail fix.
+    if (delay === 0) {
+      setDelayPassed(true);
+      return;
+    }
     setDelayPassed(false);
     setLoaded(false);
     const t = setTimeout(() => setDelayPassed(true), delay);
