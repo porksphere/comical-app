@@ -42,6 +42,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history so the publish step can generate patch notes from the
+          # commit log (see "built-sha" marker below).
+          fetch-depth: 0
 
       - name: Download unsigned IPA
         uses: actions/download-artifact@v4
@@ -73,28 +77,52 @@ jobs:
           # Icon for the source listing, served as a Release asset.
           cp apps/mobile/assets/images/icon.png "$RUNNER_TEMP/icon.png"
 
+          # Patch notes (AltStore/SideStore "versionDescription") = commit history
+          # since the previously published build. The previous ios-latest release
+          # body carries a hidden "built-sha" marker with the commit it was built
+          # from; list commits from there to HEAD. On the first run — or if that
+          # commit isn't an ancestor of HEAD (e.g. after a rebase/force-push, or a
+          # re-run on the same SHA) — fall back to the most recent commits.
+          PREV_SHA=$(gh release view ios-latest --repo "$GITHUB_REPOSITORY" \
+            --json body -q .body 2>/dev/null \
+            | sed -n 's/.*built-sha: \([0-9a-f]\{40\}\).*/\1/p' | head -n1 || true)
+
+          if [ -n "${PREV_SHA:-}" ] && [ "$PREV_SHA" != "$GITHUB_SHA" ] \
+             && git merge-base --is-ancestor "$PREV_SHA" HEAD 2>/dev/null; then
+            CHANGELOG=$(git log "${PREV_SHA}..HEAD" --no-merges --pretty=format:'• %s')
+          else
+            CHANGELOG=$(git log -n 20 --no-merges --pretty=format:'• %s' HEAD)
+          fi
+          [ -n "$CHANGELOG" ] || CHANGELOG="• Routine build (${FULL_VERSION})"
+
           # SideStore/AltStore source manifest. Add this URL as a source:
           #   $BASE/apps.json
-          cat > "$RUNNER_TEMP/apps.json" <<EOF
-          {
-            "name": "Comical",
-            "identifier": "com.porksphere.comical.source",
-            "apps": [
-              {
-                "name": "Comical",
-                "bundleIdentifier": "com.porksphere.comical",
-                "developerName": "porksphere",
-                "version": "${FULL_VERSION}",
-                "versionDate": "${DATE}",
-                "downloadURL": "${BASE}/comical-unsigned.ipa",
-                "size": ${SIZE},
-                "localizedDescription": "Comical — cross-platform comic reader. Unsigned build; re-signed on-device by SideStore/AltStore with your free Apple ID.",
-                "iconURL": "${BASE}/icon.png",
-                "tintColor": "208AEF"
-              }
-            ]
-          }
-          EOF
+          # Assembled with jq so commit subjects (which may contain quotes, $,
+          # backticks, etc.) are safely JSON-escaped into versionDescription.
+          jq -n \
+            --arg version "$FULL_VERSION" \
+            --arg date "$DATE" \
+            --arg notes "$CHANGELOG" \
+            --arg dl "${BASE}/comical-unsigned.ipa" \
+            --argjson size "$SIZE" \
+            --arg icon "${BASE}/icon.png" \
+            '{
+              name: "Comical",
+              identifier: "com.porksphere.comical.source",
+              apps: [{
+                name: "Comical",
+                bundleIdentifier: "com.porksphere.comical",
+                developerName: "porksphere",
+                version: $version,
+                versionDate: $date,
+                versionDescription: $notes,
+                downloadURL: $dl,
+                size: $size,
+                localizedDescription: "Comical — cross-platform comic reader. Unsigned build; re-signed on-device by SideStore/AltStore with your free Apple ID.",
+                iconURL: $icon,
+                tintColor: "208AEF"
+              }]
+            }' > "$RUNNER_TEMP/apps.json"
 
           # Recreate the rolling tag/release so the URLs above stay stable.
           gh release delete ios-latest --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
@@ -110,4 +138,6 @@ jobs:
           \`${BASE}/apps.json\`
 
           **Or install the IPA directly:**
-          \`${BASE}/comical-unsigned.ipa\`"
+          \`${BASE}/comical-unsigned.ipa\`
+
+          <!-- built-sha: ${GITHUB_SHA} -->"
