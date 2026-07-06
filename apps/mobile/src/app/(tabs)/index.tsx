@@ -4,6 +4,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { FlatList, Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, {
   interpolateColor,
+  runOnJS,
   useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
@@ -26,6 +27,7 @@ import { isAbort, pageOptions } from '@/data/api';
 import { takeBrowseIntent } from '@/data/browse-intent';
 import { useDataSource, useHideNsfw, type QueryOpts } from '@/data/source';
 import type { Bridge, BridgeList, HomeGridSection, RailSection, SeriesEntry } from '@/data/types';
+import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useIsCompact, useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
@@ -553,8 +555,10 @@ export default function BrowseScreen() {
   // the first row clears the bar at its tallest.
   const headerHeight = insets.top + barHeight;
   const scrollY = useSharedValue(0);
+  const { reportOffset } = useHideTabBarOnScroll();
   const scrollHandler = useAnimatedScrollHandler((e) => {
     scrollY.value = e.contentOffset.y;
+    runOnJS(reportOffset)(e.contentOffset.y);
   });
   const hairline = theme.hairline;
   // 0 at the top → 1 once the bar has fully collapsed (and stays 1 thereafter).

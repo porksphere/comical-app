@@ -17,6 +17,7 @@ import { libraryQuery } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import type { Bridge, LibraryItem, SeriesEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
+import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
@@ -44,6 +45,7 @@ export default function LibraryScreen() {
   const hideNsfw = useHideNsfw();
   const listRef = useRef<FlatList>(null);
   useScrollToTopOnReselect('library', listRef);
+  const { onScroll } = useHideTabBarOnScroll();
 
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<LibrarySort>('added');
@@ -163,6 +165,8 @@ export default function LibraryScreen() {
           )
         }
         showsVerticalScrollIndicator={Platform.OS === 'web'}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
       />
 
       {/* Static title band overlaid on top (matches Browse's top-bar height/inset). */}
