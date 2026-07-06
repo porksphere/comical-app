@@ -142,7 +142,12 @@ export async function resolveAssetSource(url: string): Promise<string> {
     const res = await transport(url);
     const location = res.headers.get('Location');
     if (location && res.status >= 300 && res.status < 400) return location;
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    if (!res.ok) {
+      // Error routes answer with a JSON `{ error }` body; surface it so the diagnostic shows the
+      // bridge's real failure reason instead of a bare status (statusText is empty in-process).
+      const detail = await res.text().catch(() => '');
+      throw new Error(`${res.status} ${detail || res.statusText}`.trim());
+    }
     return await responseToDataUri(res);
   } catch (e) {
     logDiagnostic('resolve-asset-embedded', (e as Error).message || String(e), { url });
