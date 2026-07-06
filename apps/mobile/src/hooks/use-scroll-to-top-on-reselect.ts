@@ -1,10 +1,13 @@
+import type { LegendListRef } from '@legendapp/list/react-native';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, type RefObject } from 'react';
 import type { FlatList, ScrollView } from 'react-native';
 
 import { registerScrollToTop } from '@/lib/reselect-scroll';
 
-type Scrollable = FlatList<unknown> | ScrollView;
+// LegendList and FlatList both expose `scrollToOffset`; ScrollView uses `scrollTo`. The
+// `'scrollToOffset' in node` check below narrows between them at runtime.
+type Scrollable = FlatList<unknown> | LegendListRef | ScrollView;
 
 /**
  * While this screen is focused, registers it under `routeName` (matching `app-tabs.tsx`'s `TABS`
