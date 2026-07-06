@@ -1,10 +1,11 @@
 # comical
 
 Cross-platform (iOS + Android) mobile app built with **React Native + Expo (SDK 56)**,
-using **native navigation** — a real `UITabBarController` (Liquid Glass on iOS 26) and a
-native stack — plus a Liquid Glass surface demo. On iOS/Android it runs the Comical bridge
-runtime **on-device** (no server required); on web, and as a selectable fallback, it talks to
-a remote `@comical/host-server`. See [On-device runtime](#on-device-runtime-comicalhost-rn).
+using a native stack for navigation plus a custom-rendered bottom/top tab bar (same
+component on every platform) and a Liquid Glass surface demo. On iOS/Android it runs the
+Comical bridge runtime **on-device** (no server required); on web, and as a selectable
+fallback, it talks to a remote `@comical/host-server`. See
+[On-device runtime](#on-device-runtime-comicalhost-rn).
 
 ## Layout
 
@@ -27,10 +28,12 @@ comical/
 
 The business-logic core is **TypeScript**, so it runs directly in the RN JS runtime with
 no native bridge — the single biggest reason RN wins here over native (SwiftUI + Compose)
-or Flutter, which would force re-implementing or wrapping the core twice. Native UI is
-fully achievable: `expo-router`'s `NativeTabs` renders the real iOS tab controller (Liquid
-Glass on iOS 26), native-stack gives native headers/large titles, and `expo-glass-effect`
-covers bespoke glass surfaces (auto-fallback to opaque views on Android / iOS < 26).
+or Flutter, which would force re-implementing or wrapping the core twice. Native-stack gives
+native headers/large titles, and `expo-glass-effect` covers bespoke glass surfaces
+(auto-fallback to opaque views on Android / iOS < 26). The bottom tab bar itself
+(`src/components/app-tabs.tsx`) is a custom-rendered component rather than `expo-router`'s
+`NativeTabs` — that was tried (including iOS 26's `tabBarMinimizeBehavior`) and reverted; see
+git history / `apps/mobile/AGENTS.md` for why.
 
 ## On-device runtime (`@comical/host-rn`)
 
@@ -123,9 +126,10 @@ push, giving a public URL you can open on a phone — no computer in the loop:
 
 > **https://porksphere.github.io/comical-app/**
 
-The web bundle uses a top nav bar (`app-tabs.web.tsx`) instead of the native Liquid Glass tab
-bar — native tab bars/glass are iOS/Android only; the screens are shared, the nav chrome adapts.
-`experiments.baseUrl` in `app.json` sets the `/comical-app` Pages subpath. One-time setup:
+The web bundle uses the same `app-tabs.tsx` bar as native (responsive: bottom bar on narrow
+viewports, a top-right icon row on wide ones) — the screens are shared, only the nav chrome's
+layout adapts. `experiments.baseUrl` in `app.json` sets the `/comical-app` Pages subpath. One-time
+setup:
 **Settings → Pages → Source: Deploy from a branch → `gh-pages` / `root`** (the workflow
 publishes the static export to the `gh-pages` branch via `peaceiris/actions-gh-pages`).
 

@@ -4,19 +4,22 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v56.0.0/ before 
 
 # Icons
 
-Always use [lucide](https://lucide.dev) icons, everywhere. Web imports from
-`lucide-react`; native (iOS/Android) imports the same icons from
-`lucide-react-native` (backed by `react-native-svg`). Don't hand-roll glyphs —
-one `*.tsx` file per icon group works on every platform, no `.web.tsx` split
-needed. See `src/components/icons/ui-icons.tsx` for the pattern.
+Always use [lucide](https://lucide.dev) icons, everywhere. Import from
+`lucide-react-native` (backed by `react-native-svg`) even on web — it works
+cross-platform via react-native-web, so one `*.tsx` file per icon group covers
+every platform with no `.web.tsx` split needed. Don't hand-roll glyphs. See
+`src/components/icons/ui-icons.tsx` for the pattern.
 
-**Exception: the native bottom tab bar** (`src/components/app-tabs.tsx`) uses
-Expo Router's `NativeTabs`, a wrapper over the actual OS tab bar
-(`UITabBarController` on iOS, Material 3 `NavigationBar` on Android). It only
-accepts platform-native icon references — SF Symbol names (`sf`) on iOS,
-Material Symbol names (`md`) on Android — not custom components, so lucide
-can't be used there. Keep `sf`/`md` for that one component; the web nav
-(`app-tabs.web.tsx`, a custom-rendered bar) already uses lucide.
+# Bottom nav: a custom-rendered bar, not the OS-native one
+
+`src/components/app-tabs.tsx` is a single cross-platform component (`expo-router/ui`'s
+headless `Tabs`/`TabList`/`TabTrigger`, plain `Pressable`s) used on iOS, Android, and web
+alike — there's no `NativeTabs`/`unstable-native-tabs` wrapper over the real
+`UITabBarController`/Material 3 `NavigationBar` anymore. That was tried and reverted: iOS 26's
+`tabBarMinimizeBehavior` needed react-native-screens patches to even find the content scroll
+view, and even with that (plus pushing both edges imperatively, confirmed via on-device
+diagnostics) the tab bar still only re-expanded once scrolled all the way back to the top, never
+mid-scroll — a dead end inside UIKit's private implementation, not fixable from app code.
 
 # Data: real API, REST-over-HTTP on every platform (for now)
 
