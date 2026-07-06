@@ -300,7 +300,13 @@ export default function ReaderScreen() {
               height={height}
               rtl={settings.direction === 'rtl'}
               pageFit={settings.pageFit}
-              initialPage={currentPage}
+              // Seed from `startIndex` (correct the instant `pages` lands, which
+              // is the same render this mounts), NOT `currentPage` — that state
+              // still reads 0 on this render (its pages-loaded correction effect
+              // hasn't run yet), which left the native readers, which only seed
+              // at mount and never re-sync, stuck on page 1 while the pill showed
+              // the right number.
+              initialPage={startIndex}
               onPageChange={setCurrent}
               onPrev={turnPrev}
               onNext={turnNext}
@@ -313,7 +319,9 @@ export default function ReaderScreen() {
               width={width}
               height={height}
               pageFit={settings.pageFit}
-              initialPage={currentPage}
+              // See PagedReader above: seed from `startIndex`, not the lagging
+              // `currentPage` state, so the native readers land on the right page.
+              initialPage={startIndex}
               onPageChange={setCurrent}
               onToggleChrome={toggleChrome}
               onEndReached={() => {
