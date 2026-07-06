@@ -148,7 +148,7 @@ index 2434c61..c3a5e2f 100644
 +
  @end
 diff --git a/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenViewController.mm b/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenViewController.mm
-index b273770..3ec1f0d 100644
+index b273770..737121f 100644
 --- a/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenViewController.mm
 +++ b/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenViewController.mm
 @@ -4,6 +4,42 @@
@@ -194,7 +194,7 @@ index b273770..3ec1f0d 100644
  @implementation RNSTabsScreenViewController
  
  - (nullable RNSTabBarController *)findTabBarController
-@@ -36,6 +72,90 @@
+@@ -36,6 +72,99 @@
  {
    [super viewDidAppear:animated];
    [self.tabScreenComponentView.reactEventEmitter emitOnDidAppear];
@@ -215,6 +215,14 @@ index b273770..3ec1f0d 100644
 +// if minimizing/re-expanding relies on a scroll view UIKit was explicitly handed rather than one
 +// it merely queried for, this keeps that handoff fresh regardless of when/how often UIKit itself
 +// decides to re-resolve it.
++//
++// Push BOTH .bottom and .top: the debug log shows UIKit only ever *pulls* .top via the override
++// below (answered correctly each time via BFS), while only .bottom was ever pushed here - the tab
++// bar collapses fine (driven by whichever edge tracks moving away from the top) but only
++// re-expands once content is scrolled all the way back to the literal top, never mid-scroll. If
++// UIKit's internal tracking treats an imperatively-pushed edge differently from one it merely
++// pulled an answer for (once), giving it .top the same way we already give it .bottom removes
++// that asymmetry.
 +- (void)rnscreens_refreshContentScrollViewIfNeeded
 +{
 +  if (@available(iOS 26.0, *)) {
@@ -234,6 +242,7 @@ index b273770..3ec1f0d 100644
 +                          metricsDescription]);
 +    self.rnscreens_lastPushedContentScrollView = scrollView;
 +    [self setContentScrollView:scrollView forEdge:NSDirectionalRectEdgeBottom];
++    [self setContentScrollView:scrollView forEdge:NSDirectionalRectEdgeTop];
 +    [self rnscreens_observeContentOffsetOn:scrollView];
 +  }
 +}
@@ -285,7 +294,7 @@ index b273770..3ec1f0d 100644
  }
  
  - (void)viewWillDisappear:(BOOL)animated
-@@ -100,12 +220,55 @@
+@@ -100,12 +229,55 @@
    } else if (self.tabScreenComponentView.shouldUseRepeatedTabSelectionScrollToTopSpecialEffect) {
      UIScrollView *scrollView =
          [RNSScrollViewFinder findScrollViewInFirstDescendantChainFrom:[self tabScreenComponentView]];
