@@ -1,11 +1,13 @@
+import { AnimatedLegendList } from '@legendapp/list/reanimated';
+import type { LegendListRef } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { FlatList, Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, {
   interpolateColor,
   runOnJS,
-  useAnimatedScrollHandler,
+  useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
 } from 'react-native-reanimated';
@@ -75,7 +77,7 @@ export default function BrowseScreen() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
-  const listRef = useRef<FlatList>(null);
+  const listRef = useRef<LegendListRef>(null);
   useScrollToTopOnReselect('browse', listRef);
 
   // ── Bridges ────────────────────────────────────────────────────────────
@@ -554,12 +556,17 @@ export default function BrowseScreen() {
   // Resting (collapsed) header height; the list pads to headerHeight + expand so
   // the first row clears the bar at its tallest.
   const headerHeight = insets.top + barHeight;
+  // AnimatedLegendList feeds the live scroll offset into `scrollY` on the UI thread via its
+  // `sharedValues` prop (below) — the collapse animations read it directly. A reaction bridges the
+  // same value back to JS for the tab-bar-hide, replacing the old useAnimatedScrollHandler+runOnJS
+  // (LegendList doesn't take a worklet onScroll the way Animated.FlatList did).
   const scrollY = useSharedValue(0);
   const { reportOffset } = useHideTabBarOnScroll();
-  const scrollHandler = useAnimatedScrollHandler((e) => {
-    scrollY.value = e.contentOffset.y;
-    runOnJS(reportOffset)(e.contentOffset.y);
-  });
+  useAnimatedReaction(
+    () => scrollY.value,
+    (y) => runOnJS(reportOffset)(y),
+    [reportOffset],
+  );
   const hairline = theme.hairline;
   // 0 at the top → 1 once the bar has fully collapsed (and stays 1 thereafter).
   // When `expand` is 0 (wide viewports) it is always 1, i.e. fully collapsed.
@@ -661,7 +668,10 @@ export default function BrowseScreen() {
   // section's heading. The main grid (results, favorites, or home's terminal
   // section) then renders beneath it, so everything scrolls as one surface.
   const listHeader = (
-    <View>
+    // Bleed out the list's new contentContainer horizontal padding: every header child
+    // (controls, rails, section heads) already self-pads by Spacing.four, so this keeps them at a
+    // single inset instead of doubling. See the contentContainerStyle note on the list.
+    <View style={styles.bleed}>
       {controls}
       {!inResults && composedHome && (
         <>
@@ -742,22 +752,33 @@ export default function BrowseScreen() {
     <ThemedView style={styles.container}>
       {/* The list fills the screen (behind the header overlay); its top padding
           clears the expanded header so the first content sits just below it. */}
-      <Animated.FlatList
+      <AnimatedLegendList
         ref={listRef}
         key={numColumns}
+        // Cap + center + fill-height on the root (LegendList's web scroll host is a non-flex block
+        // parent, so those don't work on contentContainerStyle). Scroll offset flows into scrollY.
+        style={styles.list}
+        sharedValues={{ scrollOffset: scrollY }}
         data={gridData}
-        keyExtractor={(item: GridItem) => String(item.id)}
+        keyExtractor={(item) => String(item.id)}
         numColumns={numColumns}
+        recycleItems={false}
         ListHeaderComponent={listHeader}
-        columnWrapperStyle={[styles.row, { gap: GRID_COLUMN_GAP }]}
+        // LegendList's columnWrapperStyle only takes gap keys, so the grid rows' horizontal inset
+        // moves to contentContainerStyle's paddingHorizontal; the header/footer bleed it back out.
+        columnWrapperStyle={{ gap: GRID_COLUMN_GAP }}
         contentContainerStyle={[
           styles.gridContent,
           // Pad to the bar's tallest (expanded) height so the first row clears it at
           // the top; as the bar collapses by `expand`, content scrolls up by the same
           // amount, keeping the first row pinned just under the bar's bottom edge.
-          { paddingTop: headerHeight + expand, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
+          {
+            paddingTop: headerHeight + expand,
+            paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
+            paddingHorizontal: Spacing.four,
+          },
         ]}
-        renderItem={({ item }: { item: GridItem }) =>
+        renderItem={({ item }) =>
           item.spacer ? (
             // While a next page is actually loading, fill the last row's
             // remaining slots with skeleton cards (matching the footer's) instead
@@ -778,8 +799,6 @@ export default function BrowseScreen() {
             <GridSkeleton numColumns={numColumns} rows={2} />
           ) : null
         }
-        onScroll={scrollHandler}
-        scrollEventThrottle={16}
         onEndReachedThreshold={0.6}
         onEndReached={inResults ? undefined : loadMore}
         // Show the browser's native scrollbar on web (the list scrolls in its own
@@ -989,13 +1008,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.four,
     borderRadius: 999,
   },
-  gridContent: {
-    gap: Spacing.three,
-    // Constrain the whole scrolling surface (controls, rails, grid) to the
-    // top-level content width, centred on wider viewports.
+  // Constrain the whole scrolling surface (controls, rails, grid) to the top-level content width,
+  // centred on wider viewports, and fill height. On the list root (not contentContainerStyle) —
+  // LegendList's web scroll host is a non-flex block parent where those props don't apply.
+  list: {
+    flex: 1,
     width: '100%',
     maxWidth: MaxTopLevelWidth,
     alignSelf: 'center',
+  },
+  gridContent: {
+    gap: Spacing.three,
+  },
+  // Cancels the list's contentContainer horizontal padding for header/footer blocks, whose own
+  // children already self-pad by Spacing.four.
+  bleed: {
+    marginHorizontal: -Spacing.four,
   },
   row: {
     paddingHorizontal: Spacing.four,
@@ -1008,6 +1036,9 @@ const styles = StyleSheet.create({
     // the last row, so matching it here keeps the loaded rows from popping up
     // when they replace the skeleton.
     gap: Spacing.three,
+    // Bleed the list's contentContainer horizontal padding back out — the skeleton rows
+    // self-pad via `styles.row`, same as the header children (see the bleed note above).
+    marginHorizontal: -Spacing.four,
   },
   skelRow: {
     flexDirection: 'row',
