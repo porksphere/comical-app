@@ -33,10 +33,10 @@ export default function RegistryBrowseScreen() {
 
   const invalidateBrowse = async () => {
     bumpDataEpoch();
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['registryBridges', url] }),
-      queryClient.invalidateQueries({ queryKey: ['registryTrackers', url] }),
-    ]);
+    // Broad invalidate (not just this screen's own queries) — installing/updating a bridge or
+    // tracker here also changes the Settings bridge list, the Browse bridge selector, and
+    // Library/History/Activity's bridge map, all of which are react-query-backed too.
+    await queryClient.invalidateQueries();
   };
 
   const loading = bridgesQuery.isLoading || trackersQuery.isLoading;
