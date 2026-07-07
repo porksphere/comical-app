@@ -107,44 +107,49 @@
       row height/radius/label styling preserved throughout.
 - [ ] Mock data isn't really well mocked right now, it should instead be an artificially injected bridge that serves data exactly the same way (with delays internal to it)
 - [x] Add a bool filter to a fake bridge so the toggle-filter control can actually be tested.
-      The `direct-example` demo bridge (`comical/bridges/direct-example`, "Illustration
-      Gallery (Demo)") had no `getFilters()` at all. Added `capabilities: [..., "filters"]`
-      and `getFilters()` returning a single `{ type: "toggle", key: "ongoing", label:
-      "Ongoing only" }`; `getListItems` now reads a new `data-status` attribute the fixture
-      backend (`@comical/testkit`'s `DirectFixtureBackend`) stamps on each catalog card and
-      filters to `status === "ongoing"` when the toggle is on. Added one `"ongoing"`-status
-      fixture entry ("Serialized Oddities") since all six original catalog entries were
-      `"completed"`, which would've made the toggle filter everything away with nothing left
-      to show. Mirrored identically into `comical-app/external/comical` (the submodule the
-      app actually bundles/typechecks from — see its own `CLAUDE.md`/AGENTS notes) and
-      rebuilt its bridge dist so the running app picks it up. Tests added in both copies
-      (`bridges/direct-example/test/filters.test.ts`); full `bun test` suite still green in
-      both the sibling `comical` checkout and the submodule.
+      First added to the `direct-example` demo bridge ("Illustration Gallery (Demo)"), but it
+      still wasn't reachable through the running app after a rebuild+restart, so per feedback
+      the same toggle was added to `example-bridge` ("Example (Demo Library)") instead —
+      `getFilters()` now also returns `{ type: "toggle", key: "ongoing", label: "Ongoing
+      only" }`, and `getListItems`/`getSearchResults` narrow to `data-status="ongoing"` cards
+      when it's on (`fixture-backend.ts`'s `seriesCard()` now stamps that attribute, matching
+      `direct-fixture-backend.ts`). Mirrored identically into `comical-app/external/comical`
+      (the submodule the app actually bundles/typechecks from). Tests added in both copies
+      (`bridges/example-bridge/test/conformance.test.ts`); confirmed live via
+      `curl localhost:3100/bridges/example/filters` after a dev-server restart. `direct-example`
+      keeps its own toggle too, just isn't the one used for day-to-day testing.
 - [x] Date/int filter selectors should allow clicking the value to type it in via keyboard,
-      not just +/- stepper taps. There's no separate date filter type in `FilterDef`
-      (`filter-types.ts` only has `number`), so this applies to `NumberFilterRow`
-      (filter-button.tsx): tapping the current value now swaps it for an inline `TextInput`
-      (numeric keyboard, autofocus, select-on-focus) that commits (clamped to
-      `min`/`max`) on submit or blur, falling back to the prior value if what's typed isn't a
-      finite number.
-- [x] When the filter bar is squashed, text should shrink instead of hiding the +/- stepper
-      buttons (e.g. "Minimum chapters" was pushing the stepper out of its slot entirely).
+      not just +/- stepper taps. Superseded by dropping the stepper entirely (see below) —
+      `NumberFilterRow` is now just a label + an always-mounted `TextInput`, no separate
+      edit mode to swap into.
+- [x] Click-to-type on number filters was hiding/resizing the whole row instead of just
+      enabling typing in place (regression from the first pass above, which conditionally
+      swapped a `Pressable`+`Text` for a differently-styled `TextInput`). Fixed by dropping
+      the +/- stepper UI entirely, per feedback: `NumberFilterRow` (filter-button.tsx) now
+      renders a single always-mounted `TextInput` (same pattern as `SearchField`) — tapping
+      the value just focuses it in place, numeric keyboard, select-on-focus, clamped to
+      `min`/`max` on blur/submit. No popup, no stepper buttons, no layout shift.
+- [x] When the filter bar is squashed, text should shrink instead of hiding filter controls
+      (e.g. "Minimum chapters" was pushing the old +/- stepper out of its slot entirely).
       Root cause: `FilterButton`'s shared `label` style was `flexShrink: 0`, so a long label
       never gave up width, and the row (inside `FilterBar`'s `filterSlot`, `flex: 1`) simply
       overflowed its slot — silently clipped by the bar's own `overflow: 'hidden'`, hiding
       whatever came after the label. `label` is now `flexShrink: 1, minWidth: 0` with
       `numberOfLines={1}` (+ `adjustsFontSizeToFit`/`minimumFontScale` as a native-only
       progressive enhancement — react-native-web doesn't implement font auto-shrinking, so
-      truncation is the cross-platform guarantee that actually keeps the stepper visible);
-      `stepper` got an explicit `flexShrink: 0` so it's never what gives way.
+      truncation is the cross-platform guarantee that keeps the value visible). The stepper
+      itself is gone now (see above), which frees up most of the row's width anyway.
 - [x] String filter's inline text field wasn't aligned with its label and had a distracting
       default focus ring instead of a real highlight. Reused the exact pattern from the
-      app's `SearchField` (the reference the feedback pointed at): the row now reserves a
-      `borderWidth: 1` always (`transparent` at rest) and turns `theme.accent` while
-      focused/editing, plus a `Platform.select({web: {outlineStyle: 'none'}})` reset so the
-      browser's native `<input>` focus ring no longer shows through. Applied to both
-      `StringFilterRow` and `NumberFilterRow`'s new inline edit mode (see above), so number
-      and string filters share the same focus treatment as the search field.
+      app's `SearchField`: the row reserves a `borderWidth: 1` always (`transparent` at rest)
+      and turns `theme.accent` while focused, plus a `Platform.select({web: {outlineStyle:
+      'none'}})` reset so the browser's native `<input>` focus ring no longer shows through.
+      Re-reported as still misaligned after that first pass — actual root cause was missing
+      `lineHeight`/incomplete `padding` reset on the `TextInput` versus `ThemedText`'s default
+      metrics (`fontSize: 16, lineHeight: 24`); both `StringFilterRow` and `NumberFilterRow`'s
+      inputs now set `padding: 0` (both axes) and `lineHeight: 24` explicitly. Placeholder
+      color also made more subtle (`${theme.textSecondary}99`, translucent) instead of full
+      `textSecondary`, so it reads as a hint rather than real content.
 - [x] Filters that have more content than the overlay / popup allows, have weird bars on the top and bottom that cutoff the internal content when scrolling. We should just use the bounds of the overlay/popup. But ensure when scrolled to the top, the inner content isn't flush to the top, there should be a bit of space to keep it looking nice at the top.
       First attempt threaded the popover's measured content bound down through a new
       `OverlayContentBoundsContext` so `useListMaxHeight`'s manual pixel-budget arithmetic
@@ -162,6 +167,11 @@
       plumbing line were deleted (`overlay.tsx` + 6 consumers). Also kept the small
       `paddingTop` on the list's content so a scrolled-to-top list isn't flush against its own
       top edge.
+- [x] Fixing the cutoff above revealed a full 1px border around the whole desktop popover
+      card (`styles.popover`, previously clipped at the bottom by the cutoff bug so it went
+      unnoticed) — reported as reading like an unwanted boxed-in outline, particularly along
+      the bottom. Changed to `borderLeftWidth`/`borderRightWidth` only (dropped top/bottom),
+      same color.
 
 ## Publish `@comical/*` packages instead of tsconfig-paths/local-stub hacks
 
