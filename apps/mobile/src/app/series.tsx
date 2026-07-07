@@ -15,7 +15,7 @@ import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
-import { MaxContentWidth, MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { setBrowseIntent } from '@/data/browse-intent';
 import {
   historyQuery,
@@ -103,13 +103,11 @@ export default function SeriesScreen() {
   // small screen there's no second column to pin alongside.
   const sticky = isLarge && Platform.OS === 'web';
 
-  // Give the cover the lion's share of the hero and keep the action column
-  // narrow: actions take a small fixed slice, the cover fills the rest (capped
-  // so it doesn't get absurd on very wide layouts). Only used on small screens.
-  // The floor/ratio are sized so the action buttons (e.g. "▶ Chapter 1") aren't
-  // cramped against the right edge on a phone.
-  const contentWidth = Math.min(width, MaxContentWidth) - Spacing.four * 2;
-  const actionsWidth = Math.round(Math.min(Math.max(contentWidth * 0.34, 132), 160));
+  // Small-screen hero: the action column takes roughly 40% of the screen so the
+  // buttons (e.g. "▶ Chapter 1") read comfortably, and the cover fills the rest.
+  // Capped so it doesn't get absurd just below the large-screen breakpoint (768).
+  // Only used on small screens.
+  const actionsWidth = Math.round(Math.min(width * 0.4, 220));
 
   // Error / deep-link skeleton stay in a plain ScrollView; a resolved SeriesBody
   // owns its own scroll container (a ScrollView for chaptered series, a
@@ -315,9 +313,61 @@ function SeriesBody({
   const { data: history } = useQuery(historyQuery(ds, mock));
   const resumeEntry = history?.find((h) => h.bridgeId === bridgeId && h.seriesId === series.id);
 
-  // Cover image + optional chapter-count badge — shared between layouts.
+  // A chaptered series needs its (deferred) chapter list to know which chapter to
+  // open — disable Read until it lands. Direct series read from page 0, and a
+  // resume entry carries its own chapter, so both stay enabled immediately.
+  const readDisabled = !direct && !resumeEntry && listLoading;
+  // Start reading: resume from history if present, else the first chapter in
+  // reading order (or page 0 for a direct series). Shared by the primary Read
+  // button and tapping the cover.
+  const startReading = () => {
+    if (readDisabled) return;
+    if (resumeEntry) {
+      const isDirect = resumeEntry.chapterId === DIRECT_CHAPTER_ID || !resumeEntry.chapterId;
+      const params: Record<string, string> = {
+        seed: series.id,
+        title: series.title,
+        start: String(resumeEntry.lastPage ?? 0),
+      };
+      if (bridgeId) params.bridgeId = bridgeId;
+      if (!isDirect) {
+        params.chapterId = resumeEntry.chapterId!;
+        params.chapterName = resumeEntry.chapterName ?? '';
+      } else if (direct) {
+        params.direct = '1';
+      }
+      router.push({ pathname: '/reader', params });
+      return;
+    }
+    const params: Record<string, string> = {
+      seed: series.id,
+      title: series.title,
+      start: '0',
+    };
+    if (bridgeId) params.bridgeId = bridgeId;
+    if (direct) params.direct = '1';
+    else if (chapters?.length) {
+      // Start at the first chapter in reading order (by number), preferring the
+      // user's scanlation group — not the raw array's last element.
+      const first = firstChapterInReadingOrder(chapters, preferredGroup);
+      if (first) {
+        params.chapterId = first.id;
+        params.chapterName = first.name;
+      }
+    }
+    router.push({ pathname: '/reader', params });
+  };
+
+  // Cover image + optional chapter-count badge — shared between layouts. Tapping
+  // it starts reading, same as the primary Read button (disabled in lockstep so a
+  // chaptered series can't jump into the reader before its chapter list lands).
   const coverEl = (
-    <View style={isLarge ? styles.coverWrapLarge : styles.coverWrap}>
+    <Pressable
+      style={isLarge ? styles.coverWrapLarge : styles.coverWrap}
+      onPress={startReading}
+      disabled={readDisabled}
+      accessibilityRole="button"
+      accessibilityLabel={readLabel ?? 'Read'}>
       <Image
         source={{ uri: series.cover }}
         style={isLarge ? styles.coverLarge : styles.cover}
@@ -334,7 +384,7 @@ function SeriesBody({
           <ThemedText style={styles.coverBadgeText}>{chapterCount}</ThemedText>
         </View>
       )}
-    </View>
+    </Pressable>
   );
 
   // Placeholder actions/content shown while `loading` (real hero already up).
@@ -369,46 +419,8 @@ function SeriesBody({
       <ActionButton
         label={readLabel ?? '▶  Read'}
         variant="primary"
-        // A chaptered series needs its (deferred) chapter list to know which chapter
-        // to open — disable Read until it lands. Direct series read from page 0, and
-        // a resume entry carries its own chapter, so both stay enabled immediately.
-        disabled={!direct && !resumeEntry && listLoading}
-        onPress={() => {
-          if (resumeEntry) {
-            const isDirect = resumeEntry.chapterId === DIRECT_CHAPTER_ID || !resumeEntry.chapterId;
-            const params: Record<string, string> = {
-              seed: series.id,
-              title: series.title,
-              start: String(resumeEntry.lastPage ?? 0),
-            };
-            if (bridgeId) params.bridgeId = bridgeId;
-            if (!isDirect) {
-              params.chapterId = resumeEntry.chapterId!;
-              params.chapterName = resumeEntry.chapterName ?? '';
-            } else if (direct) {
-              params.direct = '1';
-            }
-            router.push({ pathname: '/reader', params });
-            return;
-          }
-          const params: Record<string, string> = {
-            seed: series.id,
-            title: series.title,
-            start: '0',
-          };
-          if (bridgeId) params.bridgeId = bridgeId;
-          if (direct) params.direct = '1';
-          else if (chapters?.length) {
-            // Start at the first chapter in reading order (by number), preferring the
-            // user's scanlation group — not the raw array's last element.
-            const first = firstChapterInReadingOrder(chapters, preferredGroup);
-            if (first) {
-              params.chapterId = first.id;
-              params.chapterName = first.name;
-            }
-          }
-          router.push({ pathname: '/reader', params });
-        }}
+        disabled={readDisabled}
+        onPress={startReading}
       />
       <ActionButton label={inLibrary ? '✓  In Library' : '＋  Library'} onPress={toggleLibrary} />
       {series.hasSources && <ActionButton label="Sources" caret />}
