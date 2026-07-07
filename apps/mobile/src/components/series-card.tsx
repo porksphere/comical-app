@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { Link } from 'expo-router';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { type AnimatedStyle } from 'react-native-reanimated';
 
@@ -95,14 +95,7 @@ function useHeld() {
   };
 }
 
-// Memoized: the Browse grid and rails keep many non-recycled card instances
-// mounted (recycleItems={false}), so without this any unrelated parent re-render
-// (filter/sort debounce, paging, a bridge/page switch) reconciles every live
-// card. That reconciliation walk competes on the single JS thread with a card
-// tap's own navigation commit — a major contributor to the pre-transition stall.
-// Props are referentially stable (primitive strings/booleans + a memoized
-// `entry`), so the default shallow comparison holds.
-export const SeriesCard = memo(function SeriesCard({
+export function SeriesCard({
   entry,
   size = 'grid',
   rank,
@@ -329,7 +322,7 @@ export const SeriesCard = memo(function SeriesCard({
       </Pressable>
     </Link>
   );
-});
+}
 
 /**
  * The full-title popover. Used in-card by the grid and lifted out of the
