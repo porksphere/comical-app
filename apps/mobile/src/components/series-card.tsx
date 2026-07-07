@@ -302,6 +302,12 @@ export function SeriesCard({
                 contentFit="cover"
                 cachePolicy="memory-disk"
                 transition={200}
+                // Recycled lists reuse this <Image> instance for a different
+                // entry; without a recyclingKey expo-image keeps painting the
+                // PREVIOUS cover until the new one decodes (the "old thumbnail
+                // flash"). Resetting on entry id means the skeleton below (shown
+                // while !loaded) covers the gap instead.
+                recyclingKey={entry.id}
                 onLoad={(e) => {
                   const src = e.source;
                   if (src?.width && src?.height) setCoverAspect(clampThumbAspect(src.width / src.height));
