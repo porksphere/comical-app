@@ -44,37 +44,36 @@ Both are published as container images. This `docker-compose.yml` brings up the 
 
 ```yaml
 services:
-  host:
+  comical-host:
     image: ghcr.io/porksphere/comical-host:latest
-    ports: ["3100:3100"]
+    container_name: comical-host
     environment:
-      COMICAL_ORIGIN: "*"
-      # COMICAL_TOKEN: "change-me"   # optional bearer auth
-    volumes: ["comical-data:/data"]
+      - COMICAL_ORIGIN=*
+      # - COMICAL_TOKEN=change-me   # optional bearer auth
+    volumes:
+      - ./comical-host:/data
+    ports:
+      - 3100:3100
     restart: unless-stopped
-  web:
-    image: ghcr.io/porksphere/comical-app-web:latest
-    ports: ["8080:80"]
-    environment:
-      # The URL the BROWSER uses to reach `host` — set to the backend's public URL for a real deploy.
-      COMICAL_SERVER: "http://localhost:3100"
-    depends_on: ["host"]
-    restart: unless-stopped
-volumes:
-  comical-data:
-```
 
-```sh
-docker compose up -d
-# open http://localhost:8080
+  comical-app-web:
+    image: ghcr.io/porksphere/comical-app-web:latest
+    container_name: comical-app-web
+    environment:
+      - COMICAL_SERVER=http://localhost:3100
+    ports:
+      - 8080:80
+    depends_on:
+      - comical-host
+    restart: unless-stopped
 ```
 
 - **`COMICAL_SERVER`** is injected into the web app at container start (`window.__COMICAL_SERVER__`),
   so one image re-points at any backend without rebuilding. It's the URL the **browser** uses — not
   the compose service name — so beyond a local trial set it to the backend's public URL and front
   both services with a reverse proxy + TLS. Users can also override it in the app's **Settings**.
-- **`host`** ships only first-party sample bridges; add real sources (a registry, then bridges) at
-  runtime via Settings. Its `/data` volume persists your library, settings, and installed bridges.
+- **`comical-host`** bundles no bridges; add sources (a registry, then bridges) at runtime via
+  Settings. Its mounted `/data` dir persists your library, settings, and installed bridges.
 - Image tags: `latest` + `sha-<commit>` follow the default branch; `X.Y.Z` / `X.Y` are cut from
   `v*` git tags.
 
