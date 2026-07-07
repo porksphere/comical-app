@@ -937,11 +937,18 @@ export default function BrowseScreen() {
         // overflow container); keep it hidden on native, where it's not idiomatic.
         showsVerticalScrollIndicator={Platform.OS === 'web'}
         // Pull-to-refresh: native only (a pull gesture isn't idiomatic on web,
-        // and react-native-web's RefreshControl is a no-op). Push the spinner
-        // down past the absolute top-bar overlay so it isn't hidden beneath it.
+        // and react-native-web's RefreshControl is a no-op). We deliberately do
+        // NOT pass progressViewOffset to clear the absolute top-bar overlay:
+        // LegendList already folds the contentContainer's paddingTop
+        // (headerHeight + expand) into the RefreshControl's progressViewOffset
+        // internally, which is exactly the content's visual top (just below the
+        // overlay). Adding headerHeight again double-counts it, shoving the
+        // spinner ~a full header-height too low — off-screen (no visible
+        // animation) and, on iOS, past the natural pull distance so the control
+        // reads as already-engaged: it reserves a tall "pulled-down" region and
+        // trips mid-pull instead of firing on release.
         onRefresh={Platform.OS === 'web' ? undefined : onRefresh}
         refreshing={Platform.OS === 'web' ? false : refreshing}
-        progressViewOffset={headerHeight}
       />
       {topBar}
     </ThemedView>
