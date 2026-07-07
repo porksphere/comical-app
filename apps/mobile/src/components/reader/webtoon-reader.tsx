@@ -3,6 +3,7 @@ import {
   FlatList,
   Pressable,
   StyleSheet,
+  Text,
   View,
   type LayoutChangeEvent,
   type NativeScrollEvent,
@@ -29,11 +30,22 @@ type Props = {
    *  current page is actually the last one before acting on it — a short
    *  chapter can otherwise fire this before it's been scrolled through. */
   onEndReached?: () => void;
+  /** Display name of the next chapter in reading order, if any. When set, the
+   *  continuous reader shows a tappable "Next: … →" sentinel at the end. */
+  nextChapterName?: string;
+  /** Advance to the next chapter — fired by tapping the sentinel or by scrolling
+   *  to the very end of the continuous list. Reliable in continuous mode where
+   *  viewability-based page tracking makes `onEndReached`+last-page fragile. */
+  onAdvance?: () => void;
 };
 
 // Height/width ratio assumed for a page before it has rendered (matches
 // ReaderPage's own DEFAULT_ASPECT). Refined at runtime — see `aspectRef` below.
 const ESTIMATED_ASPECT = 3 / 2;
+
+// How close (px) to the bottom of the continuous list the scroll must get before
+// the next chapter auto-loads — roughly where the end-of-chapter sentinel enters view.
+const ADVANCE_TRIGGER_PX = 120;
 
 function recomputeOffsets(heights: (number | null)[], fallback: number): number[] {
   const offsets = new Array(heights.length + 1);
@@ -64,11 +76,33 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
  * vertical drag still scrolls).
  */
 const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function WebtoonContinuous(
-  { pages, width, initialPage, onPageChange, onToggleChrome, onEndReached },
+  { pages, width, initialPage, onPageChange, onToggleChrome, nextChapterName, onAdvance },
   ref,
 ) {
   const listRef = useRef<FlatList<string>>(null);
   const n = pages.length;
+
+  // Auto-advance when the reader scrolls to the very end (where the sentinel sits).
+  // Gated on the content actually being scrollable, so a short chapter that fits on
+  // screen doesn't auto-skip on mount — its sentinel stays tap-only. `firedRef`
+  // makes it a once-per-chapter trigger; it resets when `pages` (the chapter) change.
+  const firedRef = useRef(false);
+  useEffect(() => {
+    firedRef.current = false;
+  }, [pages]);
+  const onScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (!onAdvance || firedRef.current) return;
+      const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+      const scrollable = contentSize.height > layoutMeasurement.height + ADVANCE_TRIGGER_PX;
+      const atBottom = contentOffset.y + layoutMeasurement.height >= contentSize.height - ADVANCE_TRIGGER_PX;
+      if (scrollable && atBottom) {
+        firedRef.current = true;
+        onAdvance();
+      }
+    },
+    [onAdvance],
+  );
 
   const aspectRef = useRef(ESTIMATED_ASPECT);
   const heightsRef = useRef<(number | null)[]>([]);
@@ -154,8 +188,8 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
       onViewableItemsChanged={onViewable}
       viewabilityConfig={viewabilityConfig}
       getItemLayout={getItemLayout}
-      onEndReachedThreshold={0.05}
-      onEndReached={onEndReached}
+      onScroll={onScroll}
+      scrollEventThrottle={16}
       onScrollToIndexFailed={(info) => {
         const offset = offsetsRef.current[info.index] ?? info.averageItemLength * info.index;
         listRef.current?.scrollToOffset({ offset, animated: false });
@@ -163,6 +197,9 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
           listRef.current?.scrollToIndex({ index: info.index, animated: false });
         }, 60);
       }}
+      ListFooterComponent={
+        nextChapterName ? <ChapterSentinel name={nextChapterName} onPress={onAdvance} /> : null
+      }
       renderItem={({ item, index }) => (
         <WebtoonRow
           uri={item}
@@ -286,3 +323,33 @@ function WebtoonPagedRow({
     </View>
   );
 }
+
+/** End-of-chapter row appended below the last page of the continuous webtoon list
+ *  (mirrors comical-web's scroll-mode "Next: … →" sentinel). Tappable, and also the
+ *  visual cue for the scroll-to-end auto-advance — scrolling it into view loads the
+ *  next chapter. */
+function ChapterSentinel({ name, onPress }: { name: string; onPress?: () => void }) {
+  return (
+    <Pressable style={styles.sentinel} onPress={onPress}>
+      <Text style={styles.sentinelText} numberOfLines={2}>
+        Next: {name} →
+      </Text>
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  sentinel: {
+    minHeight: 96,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 32,
+    paddingHorizontal: 24,
+  },
+  sentinelText: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 15,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+});
