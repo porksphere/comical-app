@@ -1,5 +1,6 @@
 import { LegendList } from '@legendapp/list/react-native';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
@@ -294,6 +295,9 @@ function ChapterRow({ chapter, onPress }: { chapter: Chapter; onPress?: () => vo
 // Rows of tiles shown before a long page set collapses behind "Show all".
 const COLLAPSED_ROWS = 4;
 
+/** Sentinel for a trailing spacer cell that pads a short last row (see `data`). */
+const SPACER = Symbol('page-spacer');
+
 /**
  * The direct-series page-thumbnail grid — and the series screen's own scroll
  * container: a virtualized, recycling `LegendList`, so an expanded 1000-page set
@@ -343,13 +347,23 @@ export function PageThumbList({
   const sidePad = Math.max(0, (screenW - MaxContentWidth) / 2) + Spacing.four;
   const contentWidth = Math.min(screenW, MaxContentWidth) - Spacing.four * 2;
   const tileW = (contentWidth - gap * (cols - 1)) / cols;
+  // The collapsed fade height mirrors the reference's `.page-thumbs-more`: ~0.6 of
+  // a tile's height, so the last row reads as fading out under the button.
+  const fadeHeight = Math.round(tileW * (3 / 2) * 0.6);
 
   const collapsedCount = cols * COLLAPSED_ROWS;
   const collapsed = !expanded && thumbs.length > collapsedCount;
   // Collapsed shows the first few rows (so the rails stay reachable); expanded
-  // shows all, virtualized. Empty while the list is still loading (the header
-  // shows the page skeleton instead).
-  const data = loading ? [] : collapsed ? thumbs.slice(0, collapsedCount) : thumbs;
+  // shows all, virtualized. Pad the last (short) row with spacers so its tiles
+  // keep their column width instead of the flex cell stretching them — same
+  // pattern as the browse grid. Empty while loading (the header shows the page
+  // skeleton instead).
+  const base = loading ? [] : collapsed ? thumbs.slice(0, collapsedCount) : thumbs;
+  const data = useMemo<(PageThumbSource | null | symbol)[]>(() => {
+    const remainder = base.length % cols;
+    if (base.length === 0 || remainder === 0) return base;
+    return [...base, ...Array.from({ length: cols - remainder }, () => SPACER)];
+  }, [base, cols]);
 
   return (
     <LegendList
@@ -372,7 +386,9 @@ export function PageThumbList({
           {loading ? (
             <PageGridSkeleton />
           ) : (
-            <ThemedText type="subtitle" style={styles.headTitle}>
+            // marginBottom reinstates the title→grid gap the old `section` gap gave
+            // (the list's items start immediately after this header otherwise).
+            <ThemedText type="subtitle" style={[styles.headTitle, styles.pagesHeading]}>
               Pages
             </ThemedText>
           )}
@@ -381,36 +397,46 @@ export function PageThumbList({
       ListFooterComponent={
         <View style={styles.pageFooter}>
           {collapsed && (
-            <Pressable onPress={() => setExpanded(true)} hitSlop={8} style={styles.showAll}>
-              <ThemedView type="backgroundElement" style={[styles.showMore, { borderColor: theme.hairline }]}>
-                <ThemedText type="small" style={{ color: theme.accent }}>
-                  Show all {thumbs.length} pages
-                </ThemedText>
-              </ThemedView>
-            </Pressable>
+            // Overlaps the last visible row (negative top margin) with a gradient
+            // that fades it out under the centered "Show all" button — the old
+            // `.page-thumbs-more` overlay, reproduced in the list footer.
+            <View style={[styles.moreOverlay, { height: fadeHeight, marginTop: -fadeHeight, pointerEvents: 'box-none' }]}>
+              <GradientFade color={theme.background} />
+              <Pressable onPress={() => setExpanded(true)} hitSlop={8}>
+                <ThemedView type="backgroundElement" style={[styles.showMore, { borderColor: theme.hairline }]}>
+                  <ThemedText type="small" style={{ color: theme.accent }}>
+                    Show all {thumbs.length} pages
+                  </ThemedText>
+                </ThemedView>
+              </Pressable>
+            </View>
           )}
           {/* Rails are full-bleed to the capped column — cancel the Spacing.four inset. */}
           {footer ? <View style={styles.pageFooterRails}>{footer}</View> : null}
         </View>
       }
-      renderItem={({ item, index }) => (
-        <View style={styles.pageCell}>
-          <PageThumb
-            thumb={item}
-            index={index}
-            seed={seed}
-            bridgeId={bridgeId}
-            page={index + 1}
-            width={tileW}
-            onPress={() =>
-              router.push({
-                pathname: '/reader',
-                params: { seed, title, direct: '1', start: String(index), ...(bridgeId ? { bridgeId } : {}) },
-              })
-            }
-          />
-        </View>
-      )}
+      renderItem={({ item, index }) =>
+        item === SPACER ? (
+          <View style={styles.pageCell} />
+        ) : (
+          <View style={styles.pageCell}>
+            <PageThumb
+              thumb={item as PageThumbSource | null}
+              index={index}
+              seed={seed}
+              bridgeId={bridgeId}
+              page={index + 1}
+              width={tileW}
+              onPress={() =>
+                router.push({
+                  pathname: '/reader',
+                  params: { seed, title, direct: '1', start: String(index), ...(bridgeId ? { bridgeId } : {}) },
+                })
+              }
+            />
+          </View>
+        )
+      }
     />
   );
 }
@@ -531,7 +557,11 @@ function PageThumb({
   const ready = delayPassed && loaded;
 
   return (
-    <Pressable style={[styles.thumbShell, { width }]} onPress={onPress}>
+    // Fill the grid cell rather than sizing to an explicit `width`: the cell
+    // (flex:1, gap-aware) is the source of truth, so the tile can't end up a
+    // hair wider than its column and get its right corners clipped. `width` is
+    // still the pixel width for SpriteCrop's crop math (≈ the cell width).
+    <Pressable style={styles.thumbShell} onPress={onPress}>
       <View style={[styles.thumb, { aspectRatio }]}>
         {delayPassed && resolved?.kind === 'image' && resolvedImageUrl && (
           <Image
@@ -656,6 +686,20 @@ function useResolvedThumbUrl(url: string, onError?: (message: string) => void): 
   return resolved;
 }
 
+/** A gentle vertical transparent→`color` fade over the last collapsed row; only
+ *  the very bottom reaches solid (where it meets the page background), so the
+ *  "Show all" button floats over the still-visible, fading thumbnails rather than
+ *  a solid block. Mirrors the reference's `.page-thumbs-more`. */
+function GradientFade({ color }: { color: string }) {
+  return (
+    <LinearGradient
+      colors={['transparent', color, color]}
+      locations={[0, 0.8, 1]}
+      style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}
+    />
+  );
+}
+
 const styles = StyleSheet.create({
   section: {
     gap: Spacing.three,
@@ -671,9 +715,18 @@ const styles = StyleSheet.create({
     gap: Spacing.four,
     paddingTop: Spacing.two,
   },
-  // Center the "Show all" button under the collapsed grid.
-  showAll: {
-    alignSelf: 'center',
+  // The collapsed "Show all" overlay: pulled up over the last visible row (height
+  // + negative marginTop set inline), the gradient fades that row out and the
+  // button sits centred at the bottom of the fade.
+  moreOverlay: {
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingBottom: Spacing.three,
+  },
+  // Reinstates the title→grid gap between the "Pages" heading and the first tile
+  // row (the list's items start immediately after the header otherwise).
+  pagesHeading: {
+    marginBottom: Spacing.three,
   },
   // Rails span the full capped column; cancel the list's Spacing.four side inset.
   pageFooterRails: {
