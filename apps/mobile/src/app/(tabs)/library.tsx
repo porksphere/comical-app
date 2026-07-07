@@ -176,9 +176,9 @@ export default function LibraryScreen() {
         keyExtractor={(item) => String(item.id)}
         numColumns={numColumns}
         // Recycle card instances instead of remounting on every reuse: SeriesCard now resets its
-        // per-item state (cover ref/aspect, loaded, truncated, held) synchronously on entry change
-        // (see its render-phase reset + usePrefetchedImage), so reuse is safe and far cheaper than
-        // mounting a fresh heavy card per scroll row.
+        // per-item state (cover aspect, loaded, truncated, held) synchronously on entry change
+        // (see its render-phase reset), so reuse is safe and far cheaper than mounting a fresh heavy
+        // card per scroll row.
         recycleItems
         ListHeaderComponent={listHeader}
         columnWrapperStyle={numColumns > 1 ? { gap: GRID_COLUMN_GAP } : undefined}

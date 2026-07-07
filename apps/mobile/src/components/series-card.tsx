@@ -12,7 +12,7 @@ import { coverDelayMs } from '@/data/mock';
 import type { SeriesEntry } from '@/data/types';
 import { useIsCompact } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
-import { DEFAULT_THUMB_ASPECT, usePrefetchedImage } from '@/lib/aspect-ratio';
+import { clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { markNavStart } from '@/lib/nav-timing';
 
 // Shared cover card used by both the browse grid and the rails. `size` picks the
@@ -140,6 +140,7 @@ export function SeriesCard({
 }) {
   const [loaded, setLoaded] = useState(false);
   const [truncated, setTruncated] = useState(false);
+  const [coverAspect, setCoverAspect] = useState(DEFAULT_THUMB_ASPECT);
   const { active, handlers, reset: resetHeld } = useHeld();
   const fixedWidth = size === 'grid' ? undefined : (width ?? WIDTHS[size]);
 
@@ -151,13 +152,15 @@ export function SeriesCard({
   // pattern), so not one frame shows the old cover-loaded/truncation state.
   // This works identically when the card is genuinely remounted (the ref starts
   // equal to entry.id, so it's a no-op) and in the non-recycled call sites
-  // (HomeGridBlock, the wide rail grid). `usePrefetchedImage` resets its own
-  // cover/aspect the same way; `delayPassed` is already true in real mode.
+  // (HomeGridBlock, the wide rail grid). `coverAspect` resets here too so a
+  // reused slot doesn't keep the prior cover's shape; `delayPassed` is already
+  // true in real mode.
   const prevIdRef = useRef(entry.id);
   if (prevIdRef.current !== entry.id) {
     prevIdRef.current = entry.id;
     setLoaded(false);
     setTruncated(false);
+    setCoverAspect(DEFAULT_THUMB_ASPECT);
     resetHeld();
   }
 
@@ -186,17 +189,16 @@ export function SeriesCard({
     return () => clearTimeout(t);
   }, [delay, entry.id]);
 
-  // The card's configured width is a horizontal max; the cover's height flexes
-  // a bounded amount to fit the real cover instead of hard-cropping to 2:3 —
-  // but the *shell* below always keeps the default 2:3 size (matching the
-  // skeleton), so a shorter/taller cover never reflows the row. The real
-  // aspect ratio is resolved off-screen before the cover is ever shown (see
-  // `usePrefetchedImage`), so the cover appears already the right shape
-  // instead of popping in at the default size and shrinking a moment later.
-  // The prefetched `ref` is then reused as the visible `<Image>`'s source, so
-  // this doesn't cost a second network request on top of the prefetch.
-  const cover = usePrefetchedImage(entry.cover, delayPassed);
-  const coverReady = delayPassed && cover.settled && loaded;
+  // The cover's real (capped) aspect ratio, learned from the visible <Image>'s
+  // own `onLoad` (`event.source.width/height`) rather than an off-screen
+  // `Image.loadAsync` prefetch. The prefetch made the box the right shape one
+  // frame earlier, but at a real cost: a second decode kept in state PER card
+  // plus an extra re-render per card — across a grid + every related rail that's
+  // a burst of JS work and held decoded images (memory → GC) that showed up as
+  // the ~400ms main-thread stalls. The card is fixed-height (see `fillFactor` /
+  // `coverFill`), so the cover box adjusting its aspect on load doesn't reflow
+  // the row — it just settles the cover within a stable card.
+  const coverReady = delayPassed && loaded;
 
   // The cover top-aligns at its real (capped) aspect ratio and the title sits
   // right under it. To keep every card the SAME height regardless of cover shape
@@ -207,8 +209,7 @@ export function SeriesCard({
   // spacer expresses it as an `aspectRatio` so it scales with the width without
   // measuring it (works for both the flex grid and the fixed-width rails). The
   // cover shrinks and this grows by the same amount, so the total never jumps
-  // when the prefetched aspect settles.
-  const coverAspect = cover.settled ? cover.aspect : DEFAULT_THUMB_ASPECT;
+  // when the cover's real aspect lands from onLoad.
   const fillFactor = 1 / DEFAULT_THUMB_ASPECT - 1 / coverAspect;
 
   // Full-title peek. In a rail, hand the show/hide up to the rail (it owns the
@@ -290,19 +291,22 @@ export function SeriesCard({
         {/* The cover top-aligns at its real (capped) aspect ratio, and the title
             below hugs its bottom edge. Row/rail height is held constant not by
             boxing the cover into a fixed slot but by padding the card's bottom
-            (`coverFill`, after the title/sub) — see `fillFactor`. Dimensions are
-            prefetched (usePrefetchedImage) so the box is the right shape the first
-            frame the cover shows. */}
+            (`coverFill`, after the title/sub) — see `fillFactor`. The aspect is
+            learned from the image's own onLoad (no off-screen prefetch). */}
         <View style={[styles.coverBox, { aspectRatio: coverAspect }]}>
           <View style={styles.cover}>
-            {cover.settled && (
+            {delayPassed && (
               <Image
-                source={cover.ref ?? { uri: entry.cover }}
+                source={{ uri: entry.cover }}
                 style={StyleSheet.absoluteFill}
                 contentFit="cover"
                 cachePolicy="memory-disk"
                 transition={200}
-                onLoad={() => setLoaded(true)}
+                onLoad={(e) => {
+                  const src = e.source;
+                  if (src?.width && src?.height) setCoverAspect(clampThumbAspect(src.width / src.height));
+                  setLoaded(true);
+                }}
               />
             )}
             {!coverReady && <Skeleton style={StyleSheet.absoluteFill} />}
