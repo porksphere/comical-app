@@ -17,10 +17,11 @@
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
-import { QueryClient } from '@tanstack/react-query';
+import { defaultShouldDehydrateQuery, QueryClient, type Query } from '@tanstack/react-query';
 
 import { getApiBase } from './api';
 import { getResolvedModeSync } from './embedded/preference';
+import { logTiming } from '@/lib/nav-timing'; // TEMP nav timing
 
 // Content (series detail, chapters, lists, pages) is effectively immutable for
 // a browsing session, so keep it fresh for a few minutes (no refetch on
@@ -46,7 +47,37 @@ export const queryClient = new QueryClient({
 export const persister = createAsyncStoragePersister({
   storage: AsyncStorage,
   key: 'comical:query-cache',
+  // The persister re-serializes the WHOLE dehydrated cache on its throttle
+  // interval whenever anything settles. That JSON.stringify is synchronous on
+  // the JS thread and, with big scraped chapter lists cached, was the ~400ms
+  // main-thread stall firing ~1×/s (matching the 1s default throttle). Bump the
+  // interval and drop the heaviest keys from what gets persisted (below) so the
+  // blob stays small.
+  throttleTime: 3000,
+  // TEMP nav timing: measure the serialize so we can confirm it shrank.
+  serialize: (client) => {
+    const t0 = Date.now();
+    const s = JSON.stringify(client);
+    const ms = Date.now() - t0;
+    if (ms >= 20) logTiming('persist-serialize', `${Math.round(s.length / 1024)}KB`, ms);
+    return s;
+  },
 });
+
+// Big, volatile content queries (per-series detail, chapter lists, page-URL
+// lists, related rails) stay in the IN-MEMORY cache — so a within-session
+// revisit is still instant via `staleTime` — but are excluded from the persisted
+// disk cache: writing them was what made the serialize above expensive, and the
+// only thing lost is an instant repaint after a full app restart (scraped
+// content is re-fetched anyway). The cheap keys (library, history, activity,
+// favorites, bridges) still persist.
+const NO_PERSIST_KEYS = new Set(['seriesDetail', 'seriesList', 'chapterPages', 'directPages', 'relatedGroups']);
+
+/** Persist only the light keys (see `NO_PERSIST_KEYS`), keeping the default
+ *  "successful queries only" rule. */
+export function shouldDehydrateQuery(query: Query): boolean {
+  return defaultShouldDehydrateQuery(query) && !NO_PERSIST_KEYS.has(String(query.queryKey[0]));
+}
 
 /** How long a persisted entry is trusted after being written (the disk-cache TTL). */
 export const PERSIST_MAX_AGE_MS = GC_TIME_MS;

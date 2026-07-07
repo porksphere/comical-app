@@ -29,7 +29,7 @@ import { ErrorBoundary } from '@/components/error-boundary';
 import { OverlayProvider } from '@/components/overlay/overlay';
 import { startEmbeddedRuntime } from '@/data/embedded/startup';
 import { startNavDiagnostics } from '@/lib/nav-timing'; // TEMP nav timing
-import { persister, PERSIST_BUSTER, PERSIST_MAX_AGE_MS, queryClient } from '@/data/query-client';
+import { persister, PERSIST_BUSTER, PERSIST_MAX_AGE_MS, queryClient, shouldDehydrateQuery } from '@/data/query-client';
 import { useActiveColorScheme } from '@/hooks/use-theme';
 /* eslint-enable import/first */
 
@@ -46,7 +46,14 @@ function RootLayout() {
     <ErrorBoundary>
       <PersistQueryClientProvider
         client={queryClient}
-        persistOptions={{ persister, maxAge: PERSIST_MAX_AGE_MS, buster: PERSIST_BUSTER }}>
+        persistOptions={{
+          persister,
+          maxAge: PERSIST_MAX_AGE_MS,
+          buster: PERSIST_BUSTER,
+          // Keep heavy scraped content (chapters/detail/pages) out of the disk
+          // cache — see `shouldDehydrateQuery`; it was the ~400ms serialize stall.
+          dehydrateOptions: { shouldDehydrateQuery },
+        }}>
         <GestureHandlerRootView style={{ flex: 1 }}>
           <ThemeProvider value={scheme === 'dark' ? DarkTheme : DefaultTheme}>
             <AnimatedSplashOverlay />
