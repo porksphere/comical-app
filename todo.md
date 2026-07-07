@@ -7,6 +7,22 @@
       items now store the rendered `ReactNode` once at `open()` time instead of a
       `render` function re-invoked every render.)
 - [ ] Add "page" favoriting mechanism
+- [ ] Genericize the series metadata contract — typed credits/facets are handled
+      inconsistently. Some are a fixed, first-class field on `SeriesInfo` (the
+      single `author`/`authors`) while others are just another entry in the
+      free-form `tagGroups` list, even though both are really the same kind of
+      thing: a typed, named, searchable facet of a series. A source has to pick,
+      somewhat arbitrarily, which axis each facet lands on, and the app then
+      renders and searches them through two different code paths (a fixed author
+      chip vs a dynamic tag-group chip). That split is clunky and is why closely
+      related facets keep needing special-casing to search correctly. Design one
+      generic model for these typed facets (label + kind + values + how each
+      value searches) so every client treats them uniformly. Related, and
+      probably the harder half: to support library maintenance and search over
+      *saved* series, we likely need a way to massage a source's loose, dynamic
+      series shape into a more concrete, normalized "library series" shape — a
+      stable projection the library can index and query, independent of how any
+      given source happens to structure its metadata.
 - [x] More hover highlights on desktop web, feels bery unresponsive right now (new
       shared `useHover` hook, `apps/mobile/src/hooks/use-hover.ts`, wired into
       `FilterButton`, the sort/overflow chips, `Selector`'s bridge/page trigger, and
