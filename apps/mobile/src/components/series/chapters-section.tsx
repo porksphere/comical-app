@@ -1,14 +1,15 @@
+import { LegendList } from '@legendapp/list/react-native';
 import { Image } from 'expo-image';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { isAbort, resolveAssetSourceCached } from '@/data/api';
 import { coverDelayMs, relativeTime } from '@/data/mock';
@@ -49,44 +50,28 @@ const PILL_INSET_Y = 6;
 
 export function ChaptersSection({
   chapters,
-  pageThumbs,
   loading,
   seed,
   title,
   bridgeId,
-  only,
 }: {
   chapters?: Chapter[];
-  pageThumbs?: (PageThumbSource | null)[];
-  /** The deferred chapter list / page grid is still fetching (see series.tsx +
-   *  getSeriesList) — show a skeleton in this section's place. */
+  /** The deferred chapter list is still fetching (see series.tsx + getSeriesList)
+   *  — show a skeleton in this section's place. */
   loading?: boolean;
   /** Series identity, used to build reader navigation params. */
   seed: string;
   title: string;
   /** Originating bridge's stable id, carried to the reader for real API calls. */
   bridgeId?: string;
-  /** Render just one sub-part. On large screens the series detail puts the
-   *  chapter list in the right column (`'chapters'`) but the page-thumbnail grid
-   *  full-width below the columns (`'pages'`), mirroring the reference where
-   *  `#page-thumbs` sits outside `.detail-head`. Omitted = whichever applies. */
-  only?: 'chapters' | 'pages';
 }) {
-  if (only === 'chapters') {
-    if (loading) return <ChapterListSkeleton />;
-    return chapters?.length ? (
-      <ChapterList chapters={chapters} seed={seed} title={title} bridgeId={bridgeId} />
-    ) : null;
-  }
-  if (only === 'pages') {
-    if (loading) return <PageGridSkeleton />;
-    return pageThumbs?.length ? (
-      <PageThumbGrid thumbs={pageThumbs} seed={seed} title={title} bridgeId={bridgeId} />
-    ) : null;
-  }
-  if (pageThumbs?.length) return <PageThumbGrid thumbs={pageThumbs} seed={seed} title={title} bridgeId={bridgeId} />;
-  if (chapters?.length) return <ChapterList chapters={chapters} seed={seed} title={title} bridgeId={bridgeId} />;
-  return null;
+  // Direct-series page thumbnails are no longer rendered here — they're the
+  // series screen's own virtualized scroller (see `PageThumbList`); this section
+  // is just the chaptered-series list now.
+  if (loading) return <ChapterListSkeleton />;
+  return chapters?.length ? (
+    <ChapterList chapters={chapters} seed={seed} title={title} bridgeId={bridgeId} />
+  ) : null;
 }
 
 /** Chapter-list placeholder shown while the deferred chapter fetch is in flight
@@ -306,135 +291,127 @@ function ChapterRow({ chapter, onPress }: { chapter: Chapter; onPress?: () => vo
   );
 }
 
-// Rows shown before a long page set collapses behind "Show all".
+// Rows of tiles shown before a long page set collapses behind "Show all".
 const COLLAPSED_ROWS = 4;
-// Once expanded, further rows stream in this many at a time as the sentinel
-// nears the viewport, instead of mounting the whole (possibly 300+ tile) set.
-const BATCH_ROWS = 4;
-// How far below the viewport's bottom edge the sentinel can be and still
-// trigger the next batch — enough lead time that the next row is ready before
-// the user actually scrolls to it.
-const SENTINEL_MARGIN = 400;
-// How often to re-check the sentinel's on-screen position. RN has no native
-// IntersectionObserver, so this polls instead of subscribing to the ancestor
-// ScrollView's scroll events — the grid lives inside the series screen's own
-// ScrollView, and a vertical FlatList can't be nested inside one.
-const SENTINEL_POLL_MS = 250;
 
-function PageThumbGrid({
+/**
+ * The direct-series page-thumbnail grid — and the series screen's own scroll
+ * container: a virtualized, recycling `LegendList`, so an expanded 1000-page set
+ * keeps only a bounded window of tiles mounted instead of every tile the old
+ * plain-`.map` grid accumulated. A vertical virtualized list can't be nested in
+ * the series screen's old `ScrollView`, so it IS the scroller now — the hero/meta
+ * is the list `header` and the related rails are the `footer`, threaded in from
+ * `series.tsx`.
+ *
+ * The collapse is kept (it isn't only about perf): a long grid otherwise pushes
+ * the related rails far out of reach, so by default we show the first few rows
+ * with a "Show all N pages" button and the rails right below it; tapping it
+ * expands to the full (now virtualized) grid. The old batch-streaming sentinel is
+ * gone — virtualization is what makes the expanded set cheap.
+ */
+export function PageThumbList({
   thumbs,
+  loading,
   seed,
   title,
   bridgeId,
+  header,
+  footer,
 }: {
   thumbs: (PageThumbSource | null)[];
+  /** The deferred page list is still fetching — show a skeleton in the header. */
+  loading?: boolean;
   seed: string;
   title: string;
   bridgeId?: string;
+  /** Series hero/meta — the list header (this component owns the scroller). */
+  header?: ReactElement | null;
+  /** Related-series rails — the list footer, below the grid and the "Show all"
+   *  button (while collapsed). */
+  footer?: ReactElement | null;
 }) {
   const theme = useTheme();
   const router = useRouter();
-  const { width: screenW, height: screenH } = useWindowDimensions();
-  const [containerW, setContainerW] = useState(0);
+  const { width: screenW } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [expanded, setExpanded] = useState(false);
-  const [revealedCount, setRevealedCount] = useState(0);
+
   const cols = screenW >= 900 ? 5 : screenW >= 600 ? 3 : 2;
   const gap = Spacing.two;
-  const tileW = containerW > 0 ? (containerW - gap * (cols - 1)) / cols : 0;
+  // Cap + centre the content at MaxContentWidth (matching the chaptered layout),
+  // inset by Spacing.four; the tiles fill the resulting columns.
+  const sidePad = Math.max(0, (screenW - MaxContentWidth) / 2) + Spacing.four;
+  const contentWidth = Math.min(screenW, MaxContentWidth) - Spacing.four * 2;
+  const tileW = (contentWidth - gap * (cols - 1)) / cols;
 
-  // Past a few rows, collapse: a gradient fades the last visible rows out under
-  // a centered "Show all" button so it reads as "there's more". Mirrors the
-  // reference's `.page-thumbs-more`.
   const collapsedCount = cols * COLLAPSED_ROWS;
-  const batchSize = cols * BATCH_ROWS;
   const collapsed = !expanded && thumbs.length > collapsedCount;
-  const visibleCount = expanded ? Math.min(collapsedCount + revealedCount, thumbs.length) : collapsedCount;
-  const shown = thumbs.slice(0, visibleCount);
-  const hasMore = expanded && visibleCount < thumbs.length;
-  const fadeHeight = tileW > 0 ? Math.round(tileW * (3 / 2) * 0.6) : 120;
-
-  // Grow the revealed count in batches as the sentinel below the grid nears
-  // the viewport, so "Show all" on a 300-page series streams tiles (and their
-  // thumbnail fetches) in progressively rather than mounting all of them at
-  // once.
-  const sentinelRef = useRef<View>(null);
-  useEffect(() => {
-    if (!hasMore) return;
-    let cancelled = false;
-    let pending = false;
-    const check = () => {
-      if (cancelled || pending) return;
-      const node = sentinelRef.current;
-      if (!node) return;
-      pending = true;
-      node.measureInWindow((_x, y) => {
-        pending = false;
-        if (!cancelled && y < screenH + SENTINEL_MARGIN) {
-          setRevealedCount((c) => c + batchSize);
-        }
-      });
-    };
-    check();
-    const id = setInterval(check, SENTINEL_POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [hasMore, screenH, batchSize]);
+  // Collapsed shows the first few rows (so the rails stay reachable); expanded
+  // shows all, virtualized. Empty while the list is still loading (the header
+  // shows the page skeleton instead).
+  const data = loading ? [] : collapsed ? thumbs.slice(0, collapsedCount) : thumbs;
 
   return (
-    <View style={styles.section}>
-      <ThemedText type="subtitle" style={styles.headTitle}>
-        Pages
-      </ThemedText>
-      <View
-        style={styles.thumbGridWrap}
-        onLayout={(e) => setContainerW(e.nativeEvent.layout.width)}>
-        <View style={[styles.thumbGrid, { gap }]}>
-          {tileW > 0 &&
-            shown.map((thumb, i) => (
-              <PageThumb
-                key={i}
-                thumb={thumb}
-                index={i}
-                seed={seed}
-                bridgeId={bridgeId}
-                page={i + 1}
-                width={tileW}
-                onPress={() =>
-                  router.push({
-                    pathname: '/reader',
-                    params: { seed, title, direct: '1', start: String(i), ...(bridgeId ? { bridgeId } : {}) },
-                  })
-                }
-              />
-            ))}
-          {hasMore && tileW > 0 && (
-            <View ref={sentinelRef} style={{ width: tileW, height: 1, pointerEvents: 'none' }} />
+    <LegendList
+      style={styles.pageList}
+      data={data}
+      keyExtractor={(_, i) => String(i)}
+      numColumns={cols}
+      recycleItems
+      estimatedItemSize={tileW * (3 / 2) + gap}
+      columnWrapperStyle={{ gap }}
+      contentContainerStyle={{
+        paddingTop: Spacing.four,
+        paddingBottom: insets.bottom + Spacing.five,
+        paddingLeft: sidePad,
+        paddingRight: sidePad,
+      }}
+      ListHeaderComponent={
+        <View style={styles.pageHeader}>
+          {header}
+          {loading ? (
+            <PageGridSkeleton />
+          ) : (
+            <ThemedText type="subtitle" style={styles.headTitle}>
+              Pages
+            </ThemedText>
           )}
         </View>
-
-        {collapsed && (
-          <View style={[styles.moreOverlay, { height: fadeHeight, pointerEvents: 'box-none' }]}>
-            <GradientFade color={theme.background} />
-            <Pressable
-              onPress={() => {
-                setExpanded(true);
-                setRevealedCount(batchSize);
-              }}
-              hitSlop={8}>
-              <ThemedView
-                type="backgroundElement"
-                style={[styles.showMore, { borderColor: theme.hairline }]}>
+      }
+      ListFooterComponent={
+        <View style={styles.pageFooter}>
+          {collapsed && (
+            <Pressable onPress={() => setExpanded(true)} hitSlop={8} style={styles.showAll}>
+              <ThemedView type="backgroundElement" style={[styles.showMore, { borderColor: theme.hairline }]}>
                 <ThemedText type="small" style={{ color: theme.accent }}>
                   Show all {thumbs.length} pages
                 </ThemedText>
               </ThemedView>
             </Pressable>
-          </View>
-        )}
-      </View>
-    </View>
+          )}
+          {/* Rails are full-bleed to the capped column — cancel the Spacing.four inset. */}
+          {footer ? <View style={styles.pageFooterRails}>{footer}</View> : null}
+        </View>
+      }
+      renderItem={({ item, index }) => (
+        <View style={styles.pageCell}>
+          <PageThumb
+            thumb={item}
+            index={index}
+            seed={seed}
+            bridgeId={bridgeId}
+            page={index + 1}
+            width={tileW}
+            onPress={() =>
+              router.push({
+                pathname: '/reader',
+                params: { seed, title, direct: '1', start: String(index), ...(bridgeId ? { bridgeId } : {}) },
+              })
+            }
+          />
+        </View>
+      )}
+    />
   );
 }
 
@@ -470,6 +447,19 @@ function PageThumb({
   // Real aspect of a plain `image` tile, learned from its own onLoad (see the
   // note on the derivation below) rather than an off-screen prefetch.
   const [imageAspect, setImageAspect] = useState(DEFAULT_THUMB_ASPECT);
+
+  // Recycle-safety: the page grid uses recycleItems, so this instance is reused
+  // for a different page as the list scrolls. Reset per-tile state synchronously
+  // when the page index changes (React's "adjust state on prop change" pattern,
+  // same as SeriesCard) so a reused tile doesn't briefly show the previous
+  // page's thumbnail/aspect. No-op on a fresh mount.
+  const prevIndexRef = useRef(index);
+  if (prevIndexRef.current !== index) {
+    prevIndexRef.current = index;
+    setResolved(thumb);
+    setLoaded(false);
+    setImageAspect(DEFAULT_THUMB_ASPECT);
+  }
 
   useEffect(() => {
     if (resolved || !bridgeId) return;
@@ -550,6 +540,9 @@ function PageThumb({
             contentFit="cover"
             cachePolicy="memory-disk"
             transition={200}
+            // Reset the reused image view on recycle so it doesn't flash the
+            // previous page's thumbnail (see SeriesCard).
+            recyclingKey={String(index)}
             onLoad={(e) => {
               const src = e.source;
               if (src?.width && src?.height) setImageAspect(clampThumbAspect(src.width / src.height));
@@ -663,22 +656,34 @@ function useResolvedThumbUrl(url: string, onError?: (message: string) => void): 
   return resolved;
 }
 
-/** A gentle vertical transparent→`color` fade over the last rows; only the very
- *  bottom reaches solid (where it meets the page background), so the button
- *  floats over the still-visible, fading thumbnails rather than a solid block. */
-function GradientFade({ color }: { color: string }) {
-  return (
-    <LinearGradient
-      colors={['transparent', color, color]}
-      locations={[0, 0.8, 1]}
-      style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}
-    />
-  );
-}
-
 const styles = StyleSheet.create({
   section: {
     gap: Spacing.three,
+  },
+  // ── Page-thumbnail list (PageThumbList) ──────────────────────────────────
+  pageList: {
+    flex: 1,
+  },
+  pageHeader: {
+    gap: Spacing.four,
+  },
+  pageFooter: {
+    gap: Spacing.four,
+    paddingTop: Spacing.two,
+  },
+  // Center the "Show all" button under the collapsed grid.
+  showAll: {
+    alignSelf: 'center',
+  },
+  // Rails span the full capped column; cancel the list's Spacing.four side inset.
+  pageFooterRails: {
+    marginHorizontal: -Spacing.four,
+  },
+  // A grid cell: fills its column; the paddingBottom is the inter-row gap
+  // (LegendList's columnWrapperStyle only supplies the column gap).
+  pageCell: {
+    flex: 1,
+    paddingBottom: Spacing.two,
   },
   head: {
     gap: Spacing.two,
@@ -789,29 +794,6 @@ const styles = StyleSheet.create({
   },
   expandMiddleText: {
     fontWeight: '600',
-  },
-  thumbGridWrap: {
-    position: 'relative',
-  },
-  thumbGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    // Without this, flexbox's default cross-axis `stretch` forces every tile
-    // in a wrapped row to the row's tallest tile — since each tile's own chrome
-    // (rounded corners, clipping) lives directly on the flex item here (unlike
-    // the series card, where that chrome sits on an inner child), stretching
-    // visibly distorts the box itself instead of just padding empty space.
-    alignItems: 'flex-start',
-  },
-  moreOverlay: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    // Button sits at the bottom of the cards, within the short fade.
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    paddingBottom: Spacing.three,
   },
   showMore: {
     paddingVertical: Spacing.two,

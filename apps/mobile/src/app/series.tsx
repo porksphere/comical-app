@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import type { ReactNode } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions, View, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -8,7 +9,7 @@ import { ChipRow, TagGroupRow } from '@/components/chip';
 import { Rail, RailSkeleton } from '@/components/rail';
 import { RetryBlock } from '@/components/retry-block';
 import { ActionButton, NewBadge } from '@/components/series/action-button';
-import { ChaptersSection } from '@/components/series/chapters-section';
+import { ChaptersSection, PageThumbList } from '@/components/series/chapters-section';
 import { TrackerButton } from '@/components/series/tracker-panel';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
@@ -98,38 +99,43 @@ export default function SeriesScreen() {
   const contentWidth = Math.min(width, MaxContentWidth) - Spacing.four * 2;
   const actionsWidth = Math.round(Math.min(Math.max(contentWidth * 0.3, 116), 150));
 
+  // Error / deep-link skeleton stay in a plain ScrollView; a resolved SeriesBody
+  // owns its own scroll container (a ScrollView for chaptered series, a
+  // virtualized LegendList for direct/page-thumbnail series — see SeriesBody).
+  const scrollFallback = (child: ReactNode) => (
+    <ScrollView
+      contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + Spacing.five }]}
+      showsVerticalScrollIndicator={false}>
+      <View style={styles.column}>{child}</View>
+    </ScrollView>
+  );
+
   return (
     <ThemedView style={styles.container}>
       <TopBar title={series?.bridge ?? bridge ?? ''} />
 
-      <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + Spacing.five }]}
-        showsVerticalScrollIndicator={false}>
-        <View style={styles.column}>
-          {error ? (
-            <RetryBlock message={error} onRetry={retry} />
-          ) : !series ? (
-            // No forwarded cover (deep-link) — nothing to keep steady, so use the
-            // full skeleton until the fetch resolves.
-            <SeriesSkeleton actionsWidth={actionsWidth} isLarge={isLarge} title={title} cover={cover} />
-          ) : (
-            // `series` is either the placeholder (real hero, rest loading) or the
-            // resolved detail. SeriesBody stays mounted across that transition, so
-            // the cover never remounts/blanks.
-            <SeriesBody
-              series={series}
-              bridgeId={bridgeId}
-              isLarge={isLarge}
-              sticky={sticky}
-              actionsWidth={actionsWidth}
-              direct={direct === '1'}
-              width={width}
-              initialCover={cover}
-              loading={isPlaceholderData}
-            />
-          )}
-        </View>
-      </ScrollView>
+      {error ? (
+        scrollFallback(<RetryBlock message={error} onRetry={retry} />)
+      ) : !series ? (
+        // No forwarded cover (deep-link) — nothing to keep steady, so use the
+        // full skeleton until the fetch resolves.
+        scrollFallback(<SeriesSkeleton actionsWidth={actionsWidth} isLarge={isLarge} title={title} cover={cover} />)
+      ) : (
+        // `series` is either the placeholder (real hero, rest loading) or the
+        // resolved detail. SeriesBody stays mounted across that transition, so
+        // the cover never remounts/blanks.
+        <SeriesBody
+          series={series}
+          bridgeId={bridgeId}
+          isLarge={isLarge}
+          sticky={sticky}
+          actionsWidth={actionsWidth}
+          direct={direct === '1'}
+          width={width}
+          initialCover={cover}
+          loading={isPlaceholderData}
+        />
+      )}
     </ThemedView>
   );
 }
@@ -470,92 +476,110 @@ function SeriesBody({
         </ThemedText>
       ) : null}
 
-      {/* Chapters live with the metadata (right column on large screens). The
-          page-thumbnail grid for direct series is rendered separately, full-width
-          below the columns (see `pagesEl`). */}
-      <ChaptersSection
-        chapters={chapters}
-        pageThumbs={pageThumbs}
-        loading={(listLoading && !direct) || !listReady}
+      {/* Chapters live with the metadata (right column on large screens). Direct
+          series have no chapters — their page-thumbnail grid is the screen's own
+          virtualized scroller instead (see `PageThumbList` in the return). */}
+      {!direct && (
+        <ChaptersSection
+          chapters={chapters}
+          loading={listLoading || !listReady}
+          seed={series.id}
+          title={series.title}
+          bridgeId={bridgeId}
+        />
+      )}
+    </>
+  );
+
+  const insets = useSafeAreaInsets();
+  // The web-only sticky cover column is a chaptered-ScrollView affordance — a
+  // direct series' hero lives inside the page list's header, where position:sticky
+  // doesn't apply, so don't ask for it there.
+  const heroSticky = sticky && !direct;
+
+  // Hero + metadata (+ chapters, for chaptered series). Shared by both layouts
+  // below: the chaptered ScrollView renders it in a padded `inner`; the direct
+  // page list renders it as its (unpadded — the list content-container insets)
+  // header.
+  const heroBlock = (
+    <>
+      <ThemedText type="subtitle" style={styles.title}>
+        {series.title}
+      </ThemedText>
+
+      {isLarge ? (
+        /* Large screen: two-column layout — cover+actions left, content right. */
+        <View style={styles.twoCol}>
+          <View style={[styles.leftCol, heroSticky && styles.leftColSticky]}>
+            {coverEl}
+            {loading ? actionsSkel : actionsEl}
+          </View>
+          <View style={styles.rightCol}>{loading ? contentSkel : contentEl}</View>
+        </View>
+      ) : (
+        /* Small screen: hero row then content stacked below. */
+        <>
+          <View style={styles.hero}>
+            {coverEl}
+            {loading ? actionsSkel : actionsEl}
+          </View>
+          {loading ? contentSkel : contentEl}
+        </>
+      )}
+    </>
+  );
+
+  // Related rails (per-bridge): a bridge may surface any number of labeled
+  // groups (sequels, similar, …). Full-bleed to the capped column.
+  const relatedRailsEl = relatedGroups?.length ? (
+    <View style={styles.related}>
+      {relatedGroups.map(
+        (group, i) =>
+          group.items.length > 0 && (
+            <Rail
+              key={`${group.label}-${i}`}
+              section={{ id: `related-${i}`, title: group.label, kind: 'regular', items: group.items }}
+              viewportWidth={width}
+              bridge={series.bridge}
+              bridgeId={bridgeId}
+              direct={direct}
+            />
+          ),
+      )}
+    </View>
+  ) : needsRelatedFetch && relatedLoading ? (
+    <View style={styles.related}>
+      <RailSkeleton viewportWidth={width} />
+    </View>
+  ) : null;
+
+  // Direct series: the page-thumbnail grid IS the scroll container — a
+  // virtualized, recycling LegendList with the hero/meta as its header and the
+  // rails as its footer, so a huge page set stays cheap. Chaptered series keep
+  // the plain ScrollView (chapters in the two-column layout + web sticky cover).
+  if (direct) {
+    return (
+      <PageThumbList
+        thumbs={pageThumbs ?? []}
+        loading={loading || listLoading || !listReady}
         seed={series.id}
         title={series.title}
         bridgeId={bridgeId}
-        only="chapters"
+        header={<View style={styles.innerNoPad}>{heroBlock}</View>}
+        footer={relatedRailsEl}
       />
-    </>
-  );
-
-  // Page-thumbnail grid (direct series only): full-width below the two-column
-  // row, like the reference's `#page-thumbs` outside `.detail-head`. Rendering it
-  // here also lets the sticky cover column release at the top of this grid.
-  const pagesEl = (
-    <ChaptersSection
-      chapters={chapters}
-      pageThumbs={pageThumbs}
-      loading={(listLoading && direct) || !listReady}
-      seed={series.id}
-      title={series.title}
-      bridgeId={bridgeId}
-      only="pages"
-    />
-  );
+    );
+  }
 
   return (
-    <>
-      <View style={styles.inner}>
-        <ThemedText type="subtitle" style={styles.title}>
-          {series.title}
-        </ThemedText>
-
-        {isLarge ? (
-          /* Large screen: two-column layout — cover+actions left, content right. */
-          <View style={styles.twoCol}>
-            <View style={[styles.leftCol, sticky && styles.leftColSticky]}>
-              {coverEl}
-              {loading ? actionsSkel : actionsEl}
-            </View>
-            <View style={styles.rightCol}>{loading ? contentSkel : contentEl}</View>
-          </View>
-        ) : (
-          /* Small screen: hero row then content stacked below. */
-          <>
-            <View style={styles.hero}>
-              {coverEl}
-              {loading ? actionsSkel : actionsEl}
-            </View>
-            {loading ? contentSkel : contentEl}
-          </>
-        )}
-
-        {/* Page-thumbnails (direct series): full-width below the columns. Empty
-            (renders nothing) while loading, since page thumbs aren't known yet. */}
-        {loading ? null : pagesEl}
+    <ScrollView
+      contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + Spacing.five }]}
+      showsVerticalScrollIndicator={false}>
+      <View style={styles.column}>
+        <View style={styles.inner}>{heroBlock}</View>
+        {relatedRailsEl}
       </View>
-
-      {/* Related rails (per-bridge): full-bleed, outside the padded inner. A
-          bridge may surface any number of labeled groups (sequels, similar, …). */}
-      {relatedGroups?.length ? (
-        <View style={styles.related}>
-          {relatedGroups.map(
-            (group, i) =>
-              group.items.length > 0 && (
-                <Rail
-                  key={`${group.label}-${i}`}
-                  section={{ id: `related-${i}`, title: group.label, kind: 'regular', items: group.items }}
-                  viewportWidth={width}
-                  bridge={series.bridge}
-                  bridgeId={bridgeId}
-                  direct={direct}
-                />
-              ),
-          )}
-        </View>
-      ) : needsRelatedFetch && relatedLoading ? (
-        <View style={styles.related}>
-          <RailSkeleton viewportWidth={width} />
-        </View>
-      ) : null}
-    </>
+    </ScrollView>
   );
 }
 
@@ -664,6 +688,11 @@ const styles = StyleSheet.create({
   },
   inner: {
     paddingHorizontal: Spacing.four,
+    gap: Spacing.four,
+  },
+  // Same as `inner` but without the horizontal padding — used as the direct-series
+  // page list's header, where the LegendList content-container supplies the inset.
+  innerNoPad: {
     gap: Spacing.four,
   },
   title: {
