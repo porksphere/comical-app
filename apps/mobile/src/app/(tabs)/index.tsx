@@ -550,6 +550,32 @@ export default function BrowseScreen() {
     return [...gridItems, ...spacers];
   }, [gridItems, numColumns]);
 
+  // A stable identity for "which grid are we showing" — it changes exactly when the grid effect
+  // (below) clears items to [] and refetches: bridge/page/list/search/sort/filter/see-all/retry.
+  // We key the list on it so each distinct scope gets a FRESH LegendList instance. LegendList's web
+  // build resets its render state *during render* (`set$` in `shouldResetFreshDataLayout`) whenever
+  // data goes empty→non-empty after having held data — which is exactly what `setGridItems([])` +
+  // refetch does on every scope switch, and it throws "Cannot update a component while rendering a
+  // different component". Remounting sidesteps it: a fresh instance's first empty→non-empty fill is
+  // its initial render, so the reset path never runs. Every such switch is a scroll-to-top moment
+  // anyway, so the remount is behaviour-neutral. `numColumns` stays in the key (column changes also
+  // need a fresh grid). Pagination only appends (scope unchanged), so it never remounts.
+  const gridScope = [
+    numColumns,
+    bridgeId ?? '',
+    page,
+    inResults ? 'r' : 'h',
+    activeListId ?? '',
+    seeAll?.listId ?? '',
+    isFavoritesPage ? 'fav' : '',
+    isHomeTerminal ? 'term' : '',
+    scopedSearch ? 'scoped' : '',
+    query,
+    committedSort ?? '',
+    JSON.stringify(committedFilters ?? {}),
+    gridReload,
+  ].join('|');
+
   // Top bar: the bridge/page selectors sit in a band (barHeight below the
   // safe-area inset) overlaid on the scrolling list. On narrow viewports the band
   // is taller at the very top and eases down to barHeight over the first
@@ -572,6 +598,13 @@ export default function BrowseScreen() {
     (y) => runOnJS(reportOffset)(y),
     [reportOffset],
   );
+  // A scope switch remounts the list (see `gridScope`), so it comes back scrolled to the top — but
+  // the fresh instance won't emit a scroll event to reset `scrollY` on its own, which would leave
+  // the collapsing header stuck in its previous (collapsed) state. Snap the shared value back to 0
+  // so the header re-expands to match the top-aligned fresh list.
+  useEffect(() => {
+    scrollY.value = 0;
+  }, [gridScope, scrollY]);
   const hairline = theme.hairline;
   // 0 at the top → 1 once the bar has fully collapsed (and stays 1 thereafter).
   // When `expand` is 0 (wide viewports) it is always 1, i.e. fully collapsed.
@@ -759,7 +792,7 @@ export default function BrowseScreen() {
           clears the expanded header so the first content sits just below it. */}
       <AnimatedLegendList
         ref={listRef}
-        key={numColumns}
+        key={gridScope}
         // Full-width scroller so the scrollbar sits at the window edge; content centered via the
         // symmetric sidePad below. Scroll offset flows into scrollY for the collapsing header.
         style={styles.list}
@@ -1030,9 +1063,13 @@ const styles = StyleSheet.create({
   },
   // Main-grid cell only (not the header's HomeGridBlock / skeleton rows, which space themselves):
   // LegendList ignores contentContainerStyle `gap` vertically, so the inter-row gap lives here.
+  // Split top+bottom (4 + 12 = the same 16 between rows) rather than all-bottom: LegendList's web
+  // row container is `contain: paint`, so a card flush to the row's top edge has its highlight
+  // ring's top stroke clipped — paddingTop reserves room for it.
   gridCell: {
     flex: 1,
-    paddingBottom: Spacing.three,
+    paddingTop: Spacing.one,
+    paddingBottom: Spacing.three - Spacing.one,
   },
   skelFooter: {
     // No top padding: the list's content gap already separates the footer from

@@ -105,6 +105,12 @@ export function Rail({
   const size = CARD_SIZE[section.kind];
   const wide = useIsLargeScreen();
   const stripGap = stripGapFor(viewportWidth);
+  // The inter-card gap is split as symmetric padding on each item wrapper (not an
+  // ItemSeparator), so the highlight ring's outward bleed has room on BOTH sides of
+  // every card. LegendList's web item container is `contain: paint` (react-native.web.js),
+  // which hard-clips anything past the item box — with the old right-only separator the
+  // card sat flush against its box's left edge, so the ring's left stroke was cut off.
+  const stripHalfGap = stripGap / 2;
   const cardWidth = wide ? gridCardWidth(viewportWidth, stripGap) : cardWidthFor(section.kind, viewportWidth);
   const ranked = section.kind === 'ranked';
 
@@ -253,21 +259,21 @@ export function Rail({
           data={section.items}
           keyExtractor={(it) => it.id}
           recycleItems={false}
-          estimatedItemSize={cardWidth}
+          estimatedItemSize={cardWidth + stripGap}
           showsHorizontalScrollIndicator={false}
-          // LegendList positions items virtually, so it ignores `gap` on contentContainerStyle —
-          // the inter-card gap comes from ItemSeparatorComponent instead. Padding must be explicit
-          // (paddingLeft/Right; the shorthand is dropped), and the vertical ring room lives on each
-          // item wrapper below rather than contentContainerStyle (which drops cross-axis padding on
-          // a horizontal list).
-          ItemSeparatorComponent={() => <View style={{ width: stripGap }} />}
-          contentContainerStyle={{ paddingLeft: STRIP_PAD, paddingRight: STRIP_PAD }}
+          // LegendList positions items virtually and ignores `gap` on contentContainerStyle, and its
+          // web item container is `contain: paint` (clips overflow). So the inter-card gap lives as
+          // symmetric `paddingHorizontal: stripHalfGap` on each item wrapper below — this both spaces
+          // the cards (halfGap + halfGap = stripGap between neighbours) AND leaves the highlight ring
+          // room inside the clipped box on every side. The outer inset then only needs the remaining
+          // STRIP_PAD − stripHalfGap so the first card still lines up under the section heading.
+          contentContainerStyle={{ paddingLeft: STRIP_PAD - stripHalfGap, paddingRight: STRIP_PAD - stripHalfGap }}
           onLayout={(e) => setStripTop(e.nativeEvent.layout.y)}
           // Feeds scrollX on the UI thread; the lifted peek slides from it via transform (see
           // peekStyle), keeping the popover glued to its card with no JS round-trip.
           sharedValues={{ scrollOffset: scrollX }}
           renderItem={({ item, index }) => (
-            <View style={styles.stripItem}>
+            <View style={[styles.stripItem, { paddingHorizontal: stripHalfGap }]}>
               <SeriesCard
                 entry={item}
                 size={size}
@@ -387,9 +393,11 @@ const styles = StyleSheet.create({
     // card) isn't clipped at the top/bottom of the horizontal strip.
     paddingVertical: Spacing.one,
   },
-  // Per-card wrapper for the LegendList strip: gives the highlight ring vertical room (LegendList
-  // drops cross-axis padding from contentContainerStyle on a horizontal list, so it can't live
-  // there). STRIP_PAD_V matches this inset so the peek popover still lands on the title.
+  // Per-card wrapper for the LegendList strip. LegendList's web item container is `contain: paint`,
+  // so the highlight ring (which bleeds a couple px outside the cover) is clipped to this wrapper's
+  // box — hence the ring's room lives here: STRIP_PAD_V vertically, and `paddingHorizontal:
+  // stripHalfGap` (applied inline, since the gap is viewport-dependent) horizontally. STRIP_PAD_V
+  // matches the peek popover's assumed inset so it still lands on the title.
   stripItem: {
     paddingVertical: STRIP_PAD_V,
   },

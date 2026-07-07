@@ -151,7 +151,13 @@ export default function LibraryScreen() {
     <ThemedView style={styles.container}>
       <LegendList
         ref={listRef}
-        key={numColumns}
+        // Include the query/sort in the key, not just numColumns: changing either starts a fresh
+        // react-query (data → undefined → repopulates), and LegendList's web build resets its render
+        // state *during render* on an empty→non-empty data swap after it has held data ("Cannot
+        // update a component while rendering a different component"). A fresh instance per scope makes
+        // that first fill its initial render, sidestepping the reset. A search/sort change is a
+        // scroll-to-top moment anyway, so remounting is behaviour-neutral.
+        key={`${numColumns}|${query}|${sort}`}
         // Cap + center on the scroll host itself, and flex it to fill height. LegendList's web
         // content-container sits inside a plain (non-flex) block scroller, so `alignSelf:'center'`
         // on contentContainerStyle is a no-op (left-pinned) and the host won't grow — unlike
@@ -294,8 +300,12 @@ const styles = StyleSheet.create({
   cell: {
     flex: 1,
     // Row gap lives here: LegendList ignores contentContainerStyle `gap` vertically (items are
-    // absolutely positioned), so each cell reserves the inter-row space below its card itself.
-    paddingBottom: Spacing.three,
+    // absolutely positioned), so each cell reserves the inter-row space itself. It's split across
+    // top+bottom (4 + 12 = the same 16 between rows) rather than all on the bottom, because
+    // LegendList's web row container is `contain: paint` — a card flush to the row's top edge has
+    // its highlight ring's top stroke clipped, so paddingTop gives that stroke room.
+    paddingTop: Spacing.one,
+    paddingBottom: Spacing.three - Spacing.one,
   },
   stateBlock: {
     paddingTop: Spacing.five,
