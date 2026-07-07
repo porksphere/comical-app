@@ -177,6 +177,16 @@ export default function ReaderScreen() {
     if (group !== undefined) setPreferredGroup(group);
   }, [chapterId, cachedDetail]);
 
+  // The next chapter in reading order — drives the webtoon end-of-chapter sentinel.
+  // Cache-only: a cold cache just omits the sentinel; the scroll/tap auto-advance
+  // still resolves the next chapter via a fetch (`resolveNextChapterId`).
+  const nextChapter = useMemo(() => {
+    const list = cachedDetail?.chapters;
+    if (!chapterId || !list) return null;
+    const current = list.find((c) => c.id === chapterId);
+    return current ? getAdjacentChapter(list, current, 1, getPreferredGroup()) : null;
+  }, [chapterId, cachedDetail]);
+
   // Kept in a ref (reassigned every render) so the debounce + unmount-flush
   // effects below always record the latest page/membership without re-subscribing.
   const recordRef = useRef<() => void>(() => {});
@@ -336,6 +346,11 @@ export default function ReaderScreen() {
               initialPage={startIndex}
               onPageChange={setCurrent}
               onToggleChrome={toggleChrome}
+              // The continuous variant advances via its end-of-chapter sentinel
+              // (scroll-to-end or tap). The fit-page variant, whose page tracking
+              // is exact, still uses the reliable `atLastPage` end-reached advance.
+              nextChapterName={nextChapter?.name}
+              onAdvance={() => void tryAdvanceChapter()}
               onEndReached={() => {
                 if (atLastPage()) void tryAdvanceChapter();
               }}
