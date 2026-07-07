@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { InteractionManager, Platform } from 'react-native';
 
+import { logDeferReady } from '@/lib/nav-timing'; // TEMP nav timing
+
 /**
  * Returns `false` on the first commit, then `true` once the current
  * interaction/transition has settled — a gate for deferring a screen's
@@ -18,14 +20,18 @@ import { InteractionManager, Platform } from 'react-native';
  * Web has no native commit gate to protect (the "transition" is a DOM swap on a
  * far faster engine), so it resolves synchronously — no needless skeleton flash.
  */
-export function useDeferredMount(): boolean {
+export function useDeferredMount(label?: string): boolean {
   const [ready, setReady] = useState(Platform.OS === 'web');
 
   useEffect(() => {
     if (Platform.OS === 'web') return;
-    const handle = InteractionManager.runAfterInteractions(() => setReady(true));
+    const t0 = Date.now(); // TEMP nav timing
+    const handle = InteractionManager.runAfterInteractions(() => {
+      if (label) logDeferReady(label, Date.now() - t0); // TEMP nav timing
+      setReady(true);
+    });
     return () => handle.cancel();
-  }, []);
+  }, [label]);
 
   return ready;
 }

@@ -174,7 +174,7 @@ function SeriesBody({
   // grid. On a cache-warm revisit the full list would otherwise render
   // synchronously on the screen's first commit and hold the transition back; the
   // list shows its own skeleton until this flips (see ChaptersSection `loading`).
-  const listReady = useDeferredMount();
+  const listReady = useDeferredMount('series');
 
   // Favorite state: cached per series so the star is warm on revisit. Best-effort
   // — a bridge without the "favorites" capability (or one requiring auth the user
