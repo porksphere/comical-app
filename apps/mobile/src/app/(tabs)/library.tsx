@@ -23,6 +23,7 @@ import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
+import { useNavArrival } from '@/lib/nav-timing';
 
 const GRID_COLUMN_GAP = Spacing.two;
 
@@ -39,6 +40,7 @@ const labelToSort = (label: string): LibrarySort => SORT_ORDER.find((s) => SORT_
 type GridItem = (SeriesEntry & { bridgeId?: string; bridge?: string; direct?: boolean }) & { spacer?: boolean };
 
 export default function LibraryScreen() {
+  useNavArrival('library'); // TEMP nav timing
   const ds = useDataSource();
   const mock = useMockActive();
   const theme = useTheme();
