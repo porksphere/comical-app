@@ -23,7 +23,7 @@ services:
     environment:
       - COMICAL_SERVER=http://localhost:3100
     ports:
-      - 8080:80
+      - 3300:80
     depends_on:
       - comical-host
     restart: unless-stopped
