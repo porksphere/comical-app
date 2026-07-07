@@ -17,13 +17,11 @@ RUN npm install -g bun
 
 WORKDIR /build
 
-# Install deps first (cached until manifests change). The external/comical submodule is type-only
-# (tsconfig paths, erased by Metro) and not a workspace member, so a web export doesn't need it.
+# Install deps first (cached until manifests change).
 COPY package.json bun.lock ./
 COPY apps/mobile/package.json apps/mobile/
 # apps/mobile's postinstall (verify-react-versions.js) runs during install, so its scripts/ must exist.
 COPY apps/mobile/scripts/ apps/mobile/scripts/
-COPY packages/ packages/
 RUN bun install --frozen-lockfile
 
 # App source + the comical submodule (metro.config.js resolves @comical/* to external/comical/packages,
