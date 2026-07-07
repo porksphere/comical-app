@@ -37,7 +37,7 @@ export default function HistoryScreen() {
   useScrollToTopOnReselect('history', listRef);
   const { onScroll } = useHideTabBarOnScroll();
   // Let the tab swap paint before mounting the row list (see use-deferred-mount).
-  const ready = useDeferredMount();
+  const ready = useDeferredMount('history');
 
   const { data: items = undefined, error, isLoading, refetch } = useQuery(historyQuery(ds, mock));
 

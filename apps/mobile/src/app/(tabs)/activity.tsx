@@ -37,7 +37,7 @@ export default function ActivityScreen() {
   useScrollToTopOnReselect('activity', listRef);
   const { onScroll } = useHideTabBarOnScroll();
   // Let the tab swap paint before mounting the row list (see use-deferred-mount).
-  const ready = useDeferredMount();
+  const ready = useDeferredMount('activity');
 
   const { data: items = undefined, error, isLoading, refetch } = useQuery(activityQuery(ds, mock));
 

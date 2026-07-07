@@ -52,7 +52,7 @@ export default function LibraryScreen() {
   const { onScroll } = useHideTabBarOnScroll();
   // Let the tab swap paint before mounting the (non-recycled) card grid — until
   // this flips, the list holds empty data and the header shows a skeleton.
-  const ready = useDeferredMount();
+  const ready = useDeferredMount('library');
 
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<LibrarySort>('added');
