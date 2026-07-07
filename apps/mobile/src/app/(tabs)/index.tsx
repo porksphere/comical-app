@@ -558,6 +558,17 @@ export default function BrowseScreen() {
     setQuery('');
     setSeeAll(null);
     setPage('home');
+    // A tag chip / author-artist-type meta cell drives results via a filter (and
+    // possibly a sort), not `query` — so clearing just the query above would
+    // leave `hasActiveQuery` true and strand us in results. Reset every filter to
+    // its neutral value (mirrors the bridge-load init) and drop the sort so the
+    // banner dismisses and Home actually returns.
+    setFilterValues(Object.fromEntries(filterDefs.map((d) => [d.id, initialValue(d)])));
+    setSortValue(null);
+    // Drop any not-yet-applied intent so it can't re-set the filter after we've
+    // just cleared it (a race if back is pressed before this bridge's defs load).
+    setPendingTag(null);
+    setPendingMeta(null);
   };
 
   // Switching bridge or page is top-level navigation, so it drops any active
