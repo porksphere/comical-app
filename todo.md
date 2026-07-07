@@ -81,6 +81,25 @@
       shouldComponentUpdate, etc. {"contentLength": 7281.90478515625, "dt": 559,
       "prevDt": 1447}`. Audit the grid's `renderItem`/cell components for unmemoized
       props/closures forcing re-renders (relates to the Flashlist investigation item).
+- [ ] Virtualize the series screen's chapter list + page-thumbnail grid. Today neither
+      is virtualized: `ChaptersSection` renders chapter rows with plain `head.map`/
+      `tail.map` (+ a first-N/last-N collapse), and `PageThumbGrid` renders `.map` with
+      a home-grown progressive-reveal *sentinel* — a `setInterval` (250ms) that polls
+      its on-screen position and streams in `BATCH_ROWS` at a time. Both live inside the
+      series screen's `ScrollView`, and that's the reason: a vertical VirtualizedList
+      (FlatList/LegendList) can't be nested in a `ScrollView`, so the `.map` + sentinel
+      is the deliberate workaround. Proper fix = convert `series.tsx` from a `ScrollView`
+      to a single `LegendList` (hero/meta/tabs → `ListHeaderComponent`, related rails →
+      `ListFooterComponent`, chapters or page-thumbs → the list `data` with `numColumns`
+      for the page grid), which lets us delete the sentinel entirely. Payoff is memory on
+      a 300+ chapter/page series and removing the polling hack — NOT the nav stall: a
+      React `<Profiler>` wrapped around the series body logged zero commits ≥80ms during
+      the on-device js-jank, so chapter/page *rendering* is not what stalls the thread
+      (that traced to per-card image work, since fixed). Highest-risk part is the web
+      large-screen sticky cover-column (`leftColSticky`, a `position:sticky` inside the
+      current ScrollView) + the chapter tabs/sort header, both of which the LegendList
+      restructure has to preserve. Do it as its own isolated change, not bundled with
+      unrelated work. Related: the js-jank/nav-timing investigation that ruled render out.
 
 ## Reader (page viewer)
 - [x] Image retry-with-backoff on page load failure (currently just shows a placeholder) —
