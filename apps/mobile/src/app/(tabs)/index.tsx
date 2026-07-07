@@ -929,7 +929,10 @@ export default function BrowseScreen() {
           ) : null
         }
         onEndReachedThreshold={0.6}
-        onEndReached={inResults ? undefined : loadMore}
+        // `loadMore` self-guards to the terminal-home and results/favorites modes (and no-ops
+        // in pure composed-home), so it's wired unconditionally — a conditional here otherwise
+        // killed infinite scroll for page-flagged home lists (example-bridge) and the favorites page.
+        onEndReached={loadMore}
         // Show the browser's native scrollbar on web (the list scrolls in its own
         // overflow container); keep it hidden on native, where it's not idiomatic.
         showsVerticalScrollIndicator={Platform.OS === 'web'}
