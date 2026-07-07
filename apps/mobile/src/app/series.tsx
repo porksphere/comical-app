@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Profiler } from 'react'; // TEMP nav timing
 import { Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions, View, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -30,7 +31,7 @@ import { DIRECT_CHAPTER_ID, type SeriesDetail, type TagGroup } from '@/data/type
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
-import { useNavArrival } from '@/lib/nav-timing';
+import { onRenderTiming, useNavArrival } from '@/lib/nav-timing';
 
 const LARGE_COVER_WIDTH = 200;
 
@@ -107,30 +108,35 @@ export default function SeriesScreen() {
       <ScrollView
         contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + Spacing.five }]}
         showsVerticalScrollIndicator={false}>
-        <View style={styles.column}>
-          {error ? (
-            <RetryBlock message={error} onRetry={retry} />
-          ) : !series ? (
-            // No forwarded cover (deep-link) — nothing to keep steady, so use the
-            // full skeleton until the fetch resolves.
-            <SeriesSkeleton actionsWidth={actionsWidth} isLarge={isLarge} title={title} cover={cover} />
-          ) : (
-            // `series` is either the placeholder (real hero, rest loading) or the
-            // resolved detail. SeriesBody stays mounted across that transition, so
-            // the cover never remounts/blanks.
-            <SeriesBody
-              series={series}
-              bridgeId={bridgeId}
-              isLarge={isLarge}
-              sticky={sticky}
-              actionsWidth={actionsWidth}
-              direct={direct === '1'}
-              width={width}
-              initialCover={cover}
-              loading={isPlaceholderData}
-            />
-          )}
-        </View>
+        {/* TEMP nav timing: measure how long each commit of the series body
+            actually spends rendering (chapters list + related rails), to confirm
+            whether the js-jank blocks are this tree re-rendering as data lands. */}
+        <Profiler id="series-body" onRender={onRenderTiming}>
+          <View style={styles.column}>
+            {error ? (
+              <RetryBlock message={error} onRetry={retry} />
+            ) : !series ? (
+              // No forwarded cover (deep-link) — nothing to keep steady, so use the
+              // full skeleton until the fetch resolves.
+              <SeriesSkeleton actionsWidth={actionsWidth} isLarge={isLarge} title={title} cover={cover} />
+            ) : (
+              // `series` is either the placeholder (real hero, rest loading) or the
+              // resolved detail. SeriesBody stays mounted across that transition, so
+              // the cover never remounts/blanks.
+              <SeriesBody
+                series={series}
+                bridgeId={bridgeId}
+                isLarge={isLarge}
+                sticky={sticky}
+                actionsWidth={actionsWidth}
+                direct={direct === '1'}
+                width={width}
+                initialCover={cover}
+                loading={isPlaceholderData}
+              />
+            )}
+          </View>
+        </Profiler>
       </ScrollView>
     </ThemedView>
   );
@@ -187,6 +193,11 @@ function SeriesBody({
     // favorited", not spin a retry loop — keep it quiet like the previous
     // best-effort catch (the star just stays unfilled).
     retry: false,
+    // Lazy: this is a peripheral, often-slow per-series scrape (seconds on some
+    // bridges) that only fills the star. Defer it until after the transition
+    // settles (`listReady`) so opening a series doesn't fire it (and re-render on
+    // its result) on the critical path — cutting per-open slow-call volume.
+    enabled: listReady && !!bridgeId && !!series.id,
   });
   // `null` only while still loading (toggle disabled); an errored check reads as
   // `false` so the button stays usable, matching the prior best-effort behavior.
@@ -248,7 +259,13 @@ function SeriesBody({
   // (isInLibrary maps 404 → false), so the button stays a best-effort no-op
   // rather than surfacing an error, mirroring the favorite toggle above.
   const libKey = queryKeys.inLibrary(mock, bridgeId ?? '', series.id);
-  const { data: inLibraryData } = useQuery({ ...inLibraryQuery(ds, mock, bridgeId ?? '', series.id), retry: false });
+  const { data: inLibraryData } = useQuery({
+    ...inLibraryQuery(ds, mock, bridgeId ?? '', series.id),
+    retry: false,
+    // Lazy, like the favorite check: peripheral per-series call deferred off the
+    // open path until the transition settles.
+    enabled: listReady && !!bridgeId && !!series.id,
+  });
   const inLibrary = inLibraryData ?? null; // null while loading (toggle disabled)
 
   // Author snapshot for the library entry, pulled from the meta grid if present,
@@ -287,7 +304,7 @@ function SeriesBody({
   // button should continue from there instead of always restarting at the
   // oldest chapter — same lookup/param shape as the History tab's own Resume
   // action (`app/(tabs)/history.tsx`'s `resume()`).
-  const { data: history } = useQuery(historyQuery(ds, mock));
+  const { data: history } = useQuery({ ...historyQuery(ds, mock), enabled: listReady });
   const resumeEntry = history?.find((h) => h.bridgeId === bridgeId && h.seriesId === series.id);
 
   // Cover image + optional chapter-count badge — shared between layouts.

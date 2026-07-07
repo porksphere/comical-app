@@ -73,6 +73,15 @@ export function logTiming(category: string, label: string, ms: number): void {
   console.log(`[NAV-TIMING] ${category} ${label}: ${ms}ms (${Platform.OS})`);
 }
 
+// React <Profiler onRender> callback: logs a commit whose actual render work
+// crossed the threshold, so we can see directly (not by elimination) whether a
+// js-jank block is React rendering a specific tree — and which one. `id` is the
+// Profiler's id; `actualDuration` is the ms React spent rendering that commit.
+const RENDER_TIMING_MS = 80;
+export function onRenderTiming(id: string, _phase: unknown, actualDuration: number): void {
+  if (actualDuration >= RENDER_TIMING_MS) logTiming('render-timing', id, Math.round(actualDuration));
+}
+
 // ── JS-thread jank monitor ────────────────────────────────────────────────────
 // A periodic timer expects to fire every JANK_TICK_MS; if it comes back later
 // than that by ≥ JANK_THRESHOLD_MS, the main JS thread was blocked in between
