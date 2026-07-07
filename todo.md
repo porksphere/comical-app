@@ -81,6 +81,18 @@
       shouldComponentUpdate, etc. {"contentLength": 7281.90478515625, "dt": 559,
       "prevDt": 1447}`. Audit the grid's `renderItem`/cell components for unmemoized
       props/closures forcing re-renders (relates to the Flashlist investigation item).
+- [ ] Series `isFavorite` check fires a slow per-series scrape on every open. The star
+      state (`GET /bridges/{id}/favorites/{seriesId}`, `SeriesBody` in `series.tsx`) is
+      requested ~immediately on opening any series with a bridgeId, and on example-bridge it's
+      a 1–4s scrape purely to fill the ★/☆ label. (1) Make the Favorite action button
+      **visibly disabled until the state resolves** — today `favorited` is `null` while
+      loading so `toggleFavorite` no-ops, but the button still renders as a tappable
+      `☆ Favorite`; give `ActionButton` a `disabled` while `favorited === null`. (2)
+      Investigate avoiding/deferring the scrape itself: only fire it for a
+      favorites-capable bridge, and/or defer well past the open (e.g. on first
+      interaction with the actions) instead of on mount. Keyed `['isFavorite', mock,
+      bridgeId, seriesId]`, 5-min staleTime, and excluded from the persisted disk cache
+      (see the query-client persist fix), so it re-scrapes after an app restart too.
 - [ ] Virtualize the series screen's chapter list + page-thumbnail grid. Today neither
       is virtualized: `ChaptersSection` renders chapter rows with plain `head.map`/
       `tail.map` (+ a first-N/last-N collapse), and `PageThumbGrid` renders `.map` with
