@@ -17,11 +17,13 @@ import type {
   RailSection,
   SeriesDetail,
   SeriesEntry,
+  SeriesListResult,
   TagGroup,
   TrackerLink,
   TrackerSearchResult,
   TrackerService,
 } from './types';
+import { firstChapterInReadingOrder } from '@/lib/chapter-order';
 import type {
   ApiBridgeInfo,
   ApiFilter,
@@ -138,12 +140,18 @@ export function readerPagesForChapter(chapterId: string): string[] {
   return Array.from({ length: count }, (_, i) => readerPage(`${chapterId}-p${i}`));
 }
 
-/** Simulated latency (ms) for opening a series detail. */
+/** Simulated latency (ms) for opening a series detail (the fast info payload). */
 export const SERIES_OPEN_DELAY_MS = 900;
+/** Simulated latency (ms) for the deferred chapter list / page-thumbnail grid —
+ *  the ~200ms part real bridges stream in after the detail (see `getSeriesList`),
+ *  modelled here so the mock exercises the same skeleton-then-list flow. */
+export const SERIES_LIST_DELAY_MS = 900;
 /** Simulated latency (ms) for loading the next infinite-scroll grid page. */
 export const PAGE_LOAD_DELAY_MS = 900;
 /** Simulated latency (ms) for a tracker link / unlink / sync action. */
 export const TRACKER_ACTION_DELAY_MS = 500;
+/** Page count for a mock direct (chapterless) series' preview grid. */
+const MOCK_DIRECT_PAGE_COUNT = 60;
 
 /** Available tracker services a series can be linked to. Mirrors the
  *  reference's `/trackers` registry (each bridge-agnostic, configured once in
@@ -420,21 +428,21 @@ export function mockSeries(
     title: title || TITLES[h % TITLES.length],
     cover: cover(seed),
     bridge,
-    chapterCount: direct ? undefined : chapterCount,
     description: DESCRIPTION,
     meta: META,
+    // Mirror real bridges (source.ts `getSeriesDetail`): the detail is the fast info
+    // payload; the chapter list / page-thumbnail grid — the slow part — streams in via
+    // `getSeriesList` (see `mockGetSeriesList`), so both data sources share one shape.
+    listDeferred: true,
   };
 
   if (direct) {
-    // Many pages so the "Show all" affordance and the per-tile load skeletons
-    // are both exercised.
-    base.pageThumbs = mockPageThumbs(seed, 60);
+    // Static/known-from-info parts render right away; the grid streams in later
+    // (matches real, which sets these inline for a direct series and defers pageThumbs).
     base.readLabel = '▶  Read';
-  } else {
-    const chapters = mockChapters(seed, chapterCount);
-    base.chapters = chapters;
-    base.readLabel = `▶  ${chapters[chapters.length - 1].name}`;
+    base.chapterCount = MOCK_DIRECT_PAGE_COUNT;
   }
+  // Chaptered: readLabel/chapterCount aren't known until the list loads — getSeriesList fills them.
 
   if (!bare) {
     base.genres = GENRES;
@@ -542,6 +550,34 @@ export async function mockGetSeriesDetail(
 ): Promise<SeriesDetail> {
   await delay(SERIES_OPEN_DELAY_MS);
   return mockSeries(seriesId, opts.title, opts.bridgeName ?? 'Library', { direct: opts.direct });
+}
+
+/** The deferred list part of a series (mirrors real `getSeriesList`): chapters +
+ *  count/label for a chaptered series, or the page-thumbnail grid for a direct one.
+ *  `mockGetSeriesDetail` flags `listDeferred`, so the series screen fetches this
+ *  separately — same single code path as real bridges. */
+export async function mockGetSeriesList(
+  _bridgeId: string,
+  seriesId: string,
+  direct: boolean,
+): Promise<SeriesListResult> {
+  await delay(SERIES_LIST_DELAY_MS);
+  const seed = seriesId || 'series';
+  if (direct || seed.includes('direct')) {
+    return {
+      pageThumbs: mockPageThumbs(seed, MOCK_DIRECT_PAGE_COUNT),
+      chapterCount: MOCK_DIRECT_PAGE_COUNT,
+      readLabel: '▶  Read',
+    };
+  }
+  const chapterCount = 40 + (hash(seed) % 160);
+  const chapters = mockChapters(seed, chapterCount);
+  const first = firstChapterInReadingOrder(chapters);
+  return {
+    chapters,
+    chapterCount: chapters.length,
+    readLabel: first ? `▶  ${first.name}` : undefined,
+  };
 }
 
 export async function mockGetChapterPages(_bridgeId: string, _seriesId: string, chapterId: string): Promise<string[]> {

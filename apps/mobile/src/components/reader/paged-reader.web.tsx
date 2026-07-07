@@ -83,7 +83,7 @@ const DIR_DEADZONE = 8; // px
 type Mode = 'idle' | 'swipe' | 'pan' | 'pinch' | 'content-pan';
 
 export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedReader(
-  { pages, width, height, rtl, pageFit, initialPage, onPageChange, onNext, onToggleChrome },
+  { pages, width, height, rtl, pageFit, initialPage, onPageChange, onPrev, onNext, onToggleChrome },
   ref,
 ) {
   const n = pages.length;
@@ -436,8 +436,13 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   const handleTap = useCallback(
     (x: number) => {
       if (zoomedRef.current) return; // no tap zones while zoomed (mirrors native)
-      if (x < width * 0.4) settleTo(indexRef.current - 1, false);
-      else if (x > width * 0.6) {
+      if (x < width * 0.4) {
+        // Already at the first physical page (= first in reading order — `data` is
+        // pre-reversed for RTL): hand off to the reader for previous-chapter
+        // navigation instead of a silent clamp (mirrors the last-page → onNext path).
+        if (indexRef.current <= 0) onPrev?.();
+        else settleTo(indexRef.current - 1, false);
+      } else if (x > width * 0.6) {
         // Already at the last physical page (= the last page in reading order —
         // `data` is pre-reversed for RTL, so "physical +1" is direction-agnostic
         // "next"; see the file-level comment): nothing left to settle to
@@ -447,7 +452,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         else settleTo(indexRef.current + 1, false);
       } else onToggleChrome();
     },
-    [onToggleChrome, onNext, settleTo, width, n],
+    [onToggleChrome, onPrev, onNext, settleTo, width, n],
   );
 
   const finalizeSwipe = useCallback(() => {
@@ -467,11 +472,18 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         onNext?.();
         return;
       }
+      if (dir < 0 && indexRef.current <= 0) {
+        // Past the first page in reading order — hand off to previous-chapter nav
+        // (symmetric to the last-page → onNext case above).
+        writeTrack(0, false);
+        onPrev?.();
+        return;
+      }
       settleTo(indexRef.current + dir, true);
     } else {
       settleTo(indexRef.current, true); // spring back
     }
-  }, [gesture, handleTap, settleTo, width, writeTrack, onNext, n]);
+  }, [gesture, handleTap, settleTo, width, writeTrack, onPrev, onNext, n]);
 
   const endPointer = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {

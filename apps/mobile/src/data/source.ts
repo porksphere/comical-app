@@ -129,7 +129,7 @@ export interface DataSource {
     seriesId: string,
     signal?: AbortSignal,
   ): Promise<{ label: string; items: SeriesEntry[] }[]>;
-  /** Lazy per-page thumbnail for a `SeriesDetail.pageThumbs` entry that came back `null`. Resolves
+  /** Lazy per-page thumbnail for a `SeriesListResult.pageThumbs` entry that came back `null`. Resolves
    *  to `null` (rather than throwing) for "not supported" — the caller's placeholder just stays. */
   getPageThumb(bridgeId: string, seriesId: string, pageIndex: number, signal?: AbortSignal): Promise<PageThumbSource | null>;
 
@@ -580,13 +580,13 @@ const mockDataSource: DataSource = {
   getActivityCount: () => mock.mockGetActivityCount(),
   checkForUpdates: () => mock.mockCheckForUpdates(),
   getSeriesDetail: (bridgeId, seriesId, opts) => mock.mockGetSeriesDetail(bridgeId, seriesId, opts),
-  // Mock series populate chapters/pageThumbs inline in mockGetSeriesDetail (and never set
-  // `listDeferred`), so the screen never calls this — implemented only to satisfy the contract.
-  getSeriesList: () => Promise.resolve({}),
+  // Like real bridges, mock series defer the chapter list / page-thumbnail grid to this
+  // call (mockGetSeriesDetail flags `listDeferred`), so both paths share one code flow.
+  getSeriesList: (bridgeId, seriesId, direct) => mock.mockGetSeriesList(bridgeId, seriesId, direct),
   getChapterPages: (bridgeId, seriesId, chapterId) => mock.mockGetChapterPages(bridgeId, seriesId, chapterId),
   getDirectPages: (bridgeId, seriesId) => mock.mockGetDirectPages(bridgeId, seriesId),
-  // Mock series always populate every pageThumbs entry inline (see mockGetSeriesDetail), so this
-  // is never actually called — implemented only to satisfy the DataSource contract.
+  // mockGetSeriesList populates every pageThumbs entry inline (no `null` gaps), so this
+  // lazy per-tile fetch is never actually called — implemented only to satisfy the contract.
   getPageThumb: () => Promise.resolve(null),
   // Mock series always populate `relatedGroups` inline (never set `relatedGroupsDeferred`), so
   // this is never actually called — implemented only to satisfy the DataSource contract.
