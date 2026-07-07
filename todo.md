@@ -23,6 +23,25 @@
       series shape into a more concrete, normalized "library series" shape — a
       stable projection the library can index and query, independent of how any
       given source happens to structure its metadata.
+- [ ] Genericize "home" / page-surface behavior — the landing surface is wired up
+      through the magic string `'home'` and ad-hoc `page: true` / `id === 'home'`
+      special-casing scattered across `(tabs)/index.tsx` and `data/api.ts`, instead
+      of one model. Today a bridge's landing tab can be any of three things decided
+      by scattered conditionals: the built-in *composed* Home (rails + grid from
+      `page: false` lists — `composedHome = page === 'home' && !homeList`), a
+      `page: true` list whose `id` is literally `"home"` that *replaces* the composed
+      surface (`homeList = lists.find(l => l.id === 'home' && l.page)`, mirroring
+      comical-web's `selectHomeTab("home")` special case), or — when a bridge has
+      neither — its first `page: true` list (the `hasHomeList` fallback in the lists
+      effect). The string `'home'` is also the initial `page` state, the value the
+      Series tag/meta focus effect force-sets, the `backLabel`/`selectedList`
+      home branch, and is filtered out of the Page selector in `pageOptions`
+      (`api.ts`: `if (l.page && l.id !== 'home')`). `'favorites'` is a second magic
+      page value layered on the same axis. Design one flexible model for "what
+      surfaces exist, which is the landing surface, and how each is rendered/paged"
+      (e.g. a typed list of page descriptors with an explicit `home`/landing flag and
+      a render-kind), so the `'home'`/`'favorites'` strings and the `page`/`id`
+      coupling live in exactly one place rather than being re-derived everywhere.
 - [x] More hover highlights on desktop web, feels bery unresponsive right now (new
       shared `useHover` hook, `apps/mobile/src/hooks/use-hover.ts`, wired into
       `FilterButton`, the sort/overflow chips, `Selector`'s bridge/page trigger, and
