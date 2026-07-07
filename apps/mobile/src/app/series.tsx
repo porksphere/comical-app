@@ -409,11 +409,16 @@ function SeriesBody({
   // "tag" by convention). We hand the intent to Browse via the
   // shared store and jump to that tab. No-op without a real bridge id (mock).
   //
-  // `dismissTo` (not `navigate`/`push`) — Browse is already mounted underneath
-  // this pushed screen, so this pops back down to that existing instance
-  // instead of stacking a fresh one on top (which is what `navigate` did: from
-  // a screen pushed outside the tab group, it can't tell the tab is already
-  // there and pushes a duplicate rather than returning to it).
+  // `dismissTo` (not `navigate`/`push`) targets the Browse tab's route ('/'),
+  // dismissing this pushed Series screen and returning to the existing Browse
+  // instance instead of stacking a fresh one on top (which is what `navigate`
+  // did: from a screen pushed outside the tab group it can't tell the tab is
+  // already there, so it pushes a duplicate rather than returning to it). This
+  // holds no matter which tab the series was opened from (Browse, Library,
+  // History, …) — '/' resolves to the index tab, so dismissTo switches to it.
+  // Browse then applies the stashed intent on focus and forces its page to Home
+  // (see the focus effect in `(tabs)/index.tsx`), so a tag/meta search always
+  // lands on Browse › Home regardless of the originating tab.
   const onTagPress = (group: TagGroup, index: number) => {
     if (!bridgeId) return;
     const query = group.tagQueries?.[index];
