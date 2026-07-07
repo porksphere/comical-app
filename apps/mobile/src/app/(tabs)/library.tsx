@@ -151,13 +151,13 @@ export default function LibraryScreen() {
     <ThemedView style={styles.container}>
       <LegendList
         ref={listRef}
-        // Include the query/sort in the key, not just numColumns: changing either starts a fresh
-        // react-query (data → undefined → repopulates), and LegendList's web build resets its render
-        // state *during render* on an empty→non-empty data swap after it has held data ("Cannot
-        // update a component while rendering a different component"). A fresh instance per scope makes
-        // that first fill its initial render, sidestepping the reset. A search/sort change is a
-        // scroll-to-top moment anyway, so remounting is behaviour-neutral.
-        key={`${numColumns}|${query}|${sort}`}
+        // LegendList's web build resets its render state *during render* on an empty→non-empty data
+        // swap after it has held data ("Cannot update a component while rendering a different
+        // component"). Changing query/sort starts a fresh react-query (data → undefined → repopulate)
+        // and a tab-focus refetch can too, so fold the empty↔populated boundary into the key: a 0→N
+        // fill is then always a FRESH mount's initial render, which skips the reset path. query/sort
+        // stay in the key so a search/sort switch (a scroll-to-top moment) also remounts cleanly.
+        key={`${numColumns}|${query}|${sort}|${gridData.length > 0 ? 'full' : 'empty'}`}
         // Cap + center on the scroll host itself, and flex it to fill height. LegendList's web
         // content-container sits inside a plain (non-flex) block scroller, so `alignSelf:'center'`
         // on contentContainerStyle is a no-op (left-pinned) and the host won't grow — unlike
