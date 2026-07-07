@@ -1,6 +1,6 @@
 import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import type { LegendListRef } from '@legendapp/list/react-native';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
@@ -27,7 +27,8 @@ import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { isAbort, pageOptions } from '@/data/api';
 import { takeBrowseIntent } from '@/data/browse-intent';
-import { useDataSource, useHideNsfw, type QueryOpts } from '@/data/source';
+import { queryKeys } from '@/data/queries';
+import { useDataSource, useHideNsfw, useMockActive, type QueryOpts } from '@/data/source';
 import type { Bridge, BridgeList, HomeGridSection, RailSection, SeriesEntry } from '@/data/types';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useIsCompact, useTopBarHeight } from '@/hooks/use-responsive';
@@ -73,6 +74,8 @@ const META_FILTER_ALIASES: Record<'author' | 'artist' | 'type', string[]> = {
 
 export default function BrowseScreen() {
   const ds = useDataSource();
+  const queryClient = useQueryClient();
+  const mock = useMockActive();
   const router = useRouter();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -476,6 +479,17 @@ export default function BrowseScreen() {
     return ds.search(bridgeId, query, pageNum, opts);
   };
 
+  // Everything shown on the favorites page is, by definition, favorited — so warm the
+  // per-series `isFavorite` cache to `true`. Opening one from here then paints ★ instantly
+  // (and enabled) instead of gating the button on a fresh per-series status check. Mirrors
+  // comical-web's `favoritesCache` pre-seed.
+  const seedFavorited = (items: SeriesEntry[]) => {
+    if (!isFavoritesPage || !bridgeId) return;
+    for (const item of items) {
+      queryClient.setQueryData(queryKeys.isFavorite(mock, bridgeId, item.id), true);
+    }
+  };
+
   useEffect(() => {
     // `getHomeSections` already fetched the terminal section's first page —
     // just adopt it, no extra request needed.
@@ -509,6 +523,7 @@ export default function BrowseScreen() {
       .then((res) => {
         setGridItems(res.items);
         setGridHasMore(res.hasNextPage);
+        seedFavorited(res.items);
       })
       .catch((e) => {
         if (!isAbort(e)) setGridError(e.message || 'Failed to load results');
@@ -533,6 +548,7 @@ export default function BrowseScreen() {
         setGridItems((prev) => [...prev, ...res.items]);
         setGridHasMore(res.hasNextPage);
         setGridPageNum(nextPage);
+        seedFavorited(res.items);
       })
       .catch(() => {})
       .finally(() => setLoadingMore(false));
