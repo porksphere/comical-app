@@ -235,16 +235,64 @@ const DAY = 86_400_000;
 function mockChapters(seed: string, count: number): Chapter[] {
   const h = hash(seed);
   const now = Date.now();
-  // Newest first; the first ~40% are unread.
-  return Array.from({ length: count }, (_, i) => {
+  const chapters: Chapter[] = [];
+  // Newest first; the first ~40% are unread. Each chapter carries a numeric `number`
+  // (the source of truth for ordering) so the grouping logic is exercised without a
+  // live bridge. Every 3rd chapter also gets a second scanlation-group version of the
+  // same number — the case multi-scanlator grouping must collapse — deliberately
+  // inserted OUT of reading order so index-based ordering would get it wrong.
+  const readCut = Math.floor(count * 0.4);
+  for (let i = 0; i < count; i++) {
     const num = count - i;
-    return {
+    const read = i >= readCut;
+    chapters.push({
       id: `${seed}-ch-${num}`,
       name: `Chapter ${num}`,
+      number: num,
+      languageCode: 'en',
+      group: 'Scanline',
       date: now - i * DAY * (1 + (h % 3)),
-      read: i >= Math.floor(count * 0.4),
-    };
-  });
+      pageCount: 12 + (num % 8),
+      read,
+    });
+    if (num % 3 === 0) {
+      chapters.push({
+        id: `${seed}-ch-${num}-alt`,
+        name: `Chapter ${num}`,
+        number: num,
+        languageCode: 'en',
+        group: 'MangaDweebs',
+        // A day fresher than the primary version, so it becomes the group's default.
+        date: now - i * DAY * (1 + (h % 3)) + DAY,
+        pageCount: 11 + (num % 8),
+        read,
+      });
+    }
+  }
+  // A decimal bonus chapter (10.5) to prove numeric ordering slots it between 10 and 11,
+  // and a numberless "extra" that must sort last and stay its own row.
+  if (count >= 11) {
+    chapters.push({
+      id: `${seed}-ch-10-5`,
+      name: 'Chapter 10.5 — Omake',
+      number: 10.5,
+      languageCode: 'en',
+      group: 'Scanline',
+      date: now - 5 * DAY,
+      pageCount: 6,
+      read: false,
+    });
+    chapters.push({
+      id: `${seed}-ch-extra`,
+      name: 'Extra — Character Guide',
+      languageCode: 'en',
+      group: 'Scanline',
+      date: now - 2 * DAY,
+      pageCount: 4,
+      read: false,
+    });
+  }
+  return chapters;
 }
 
 /** Deterministic 0–2 tracker links for a series, seeded off its id so a given

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions, View, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -27,6 +27,8 @@ import {
   seriesListQuery,
 } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
+import { firstChapterInReadingOrder } from '@/lib/chapter-order';
+import { resetPreferredGroup, usePreferredGroup } from '@/lib/preferred-group';
 import { DIRECT_CHAPTER_ID, type SeriesDetail, type TagGroup } from '@/data/types';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
@@ -65,6 +67,14 @@ export default function SeriesScreen() {
   // Cover forwarded from the browse card, escaped the same way — decode it so the
   // loading skeleton can show the real (cache-warm) cover instead of a shimmer.
   const cover = coverParam ? decodeURIComponent(coverParam) : undefined;
+
+  // Opening a different series clears the remembered scanlation group, so a
+  // preference carried over from the last series doesn't pick versions here.
+  // Keyed on `id` so it fires on a series change, not on a back-navigation to the
+  // same series (which must keep the group the user was reading).
+  useEffect(() => {
+    resetPreferredGroup();
+  }, [id]);
 
   // Cached series fetch: revisiting a series (or reopening it from the reader)
   // now repaints instantly from the query cache instead of refetching, and the
@@ -219,6 +229,9 @@ function SeriesBody({
   );
   const listLoading = listDeferred && listFetching;
   const chapters = series.chapters ?? listData?.chapters;
+  // The scanlation group last opened for this series — so Read (with no resume)
+  // starts Chapter 1 of the source the user is reading, not an arbitrary copy.
+  const preferredGroup = usePreferredGroup();
   const pageThumbs = series.pageThumbs ?? listData?.pageThumbs;
   const chapterCount = listData?.chapterCount ?? series.chapterCount;
   const readLabel = listData?.readLabel ?? series.readLabel;
@@ -384,9 +397,13 @@ function SeriesBody({
           if (bridgeId) params.bridgeId = bridgeId;
           if (direct) params.direct = '1';
           else if (chapters?.length) {
-            const first = chapters[chapters.length - 1];
-            params.chapterId = first.id;
-            params.chapterName = first.name;
+            // Start at the first chapter in reading order (by number), preferring the
+            // user's scanlation group — not the raw array's last element.
+            const first = firstChapterInReadingOrder(chapters, preferredGroup);
+            if (first) {
+              params.chapterId = first.id;
+              params.chapterName = first.name;
+            }
           }
           router.push({ pathname: '/reader', params });
         }}

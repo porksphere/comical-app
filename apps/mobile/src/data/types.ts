@@ -53,9 +53,20 @@ export type Chapter = {
   id: string;
   /** Display name, e.g. "Chapter 176 — The Spirit Zone". */
   name: string;
-  /** Epoch ms the chapter was published. */
+  /** Epoch ms the chapter was published (mirrors the contract's `publishedAt`). */
   date: number;
   read?: boolean;
+  /** Decimal chapter number when the bridge supplies it (e.g. 10.5). This — NOT the
+   *  array order or `date` — is the source of truth for reading order and for
+   *  collapsing multi-scanlator copies of the same chapter. See `@/lib/chapter-order`. */
+  number?: number;
+  /** The party that produced this version (scanlation team, publisher, …); disambiguates
+   *  when a site carries multiple versions of the same chapter number. */
+  group?: string;
+  /** BCP-47-ish language code of this version; groups only collapse within one language. */
+  languageCode?: string;
+  /** Page count, when the backend exposes it without opening the chapter. */
+  pageCount?: number;
 };
 
 /** A trackable progress service (AniList, MyAnimeList, …) a series can be linked to. */
