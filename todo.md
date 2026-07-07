@@ -82,6 +82,7 @@
 - [ ] Filter popups don't have hover highlighting on desktop
 - [ ] Filters for single entry fields (bools/ints/strings) could use a little reworking, they shouldn't open up a new popup / overlay, they should be editable directly (for example, a bool should just be clickable as the whole thing, then the whole thing changes color to reflect bool state (with text on left showing true/false etc). The style of the filters along with their header labels should be preserved.
 - [ ] Mock data isn't really well mocked right now, it should instead be an artificially injected bridge that serves data exactly the same way (with delays internal to it)
+- [ ] Filters that have more content than the overlay / popup allows, have weird bars on the top and bottom that cutoff the internal content when scrolling. We should just use the bounds of the overlay/popup. But ensure when scrolled to the top, the inner content isn't flush to the top, there should be a bit of space to keep it looking nice at the top.
 
 ## Publish `@comical/*` packages instead of tsconfig-paths/local-stub hacks
 
