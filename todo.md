@@ -79,6 +79,9 @@
 - [ ] Center screen tapping in reader view to open overlay should be a larger percentage of the tappable area
 - [ ] Enable mouse hovering to show overlay (near top of screen and bottom for settings / page selector)
 - [ ] On web, can't select any of the page reader overlay buttons after the first time it's shown
+- [ ] Filter popups don't have hover highlighting on desktop
+- [ ] Filters for single entry fields (bools/ints/strings) could use a little reworking, they shouldn't open up a new popup / overlay, they should be editable directly (for example, a bool should just be clickable as the whole thing, then the whole thing changes color to reflect bool state (with text on left showing true/false etc). The style of the filters along with their header labels should be preserved.
+- [ ] Mock data isn't really well mocked right now, it should instead be an artificially injected bridge that serves data exactly the same way (with delays internal to it)
 
 ## Publish `@comical/*` packages instead of tsconfig-paths/local-stub hacks
 
