@@ -18,6 +18,7 @@ import { libraryQuery } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import type { Bridge, LibraryItem, SeriesEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
+import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
@@ -47,6 +48,9 @@ export default function LibraryScreen() {
   const listRef = useRef<LegendListRef>(null);
   useScrollToTopOnReselect('library', listRef);
   const { onScroll } = useHideTabBarOnScroll();
+  // Let the tab swap paint before mounting the (non-recycled) card grid — until
+  // this flips, the list holds empty data and the header shows a skeleton.
+  const ready = useDeferredMount();
 
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<LibrarySort>('added');
@@ -95,6 +99,9 @@ export default function LibraryScreen() {
     return [...cards, ...spacers];
   }, [cards, numColumns]);
 
+  // Held empty until `ready` so the tab switch isn't blocked mounting the grid.
+  const listData = ready ? gridData : [];
+
   const listHeader = (
     <View style={styles.controls}>
       <View style={styles.controlsRow}>
@@ -128,7 +135,7 @@ export default function LibraryScreen() {
         </View>
       );
     }
-    if (isLoading || items === undefined) return <GridSkeleton numColumns={numColumns} rows={3} />;
+    if (!ready || isLoading || items === undefined) return <GridSkeleton numColumns={numColumns} rows={3} />;
     if (items === null) {
       return (
         <EmptyState
@@ -157,13 +164,13 @@ export default function LibraryScreen() {
         // and a tab-focus refetch can too, so fold the empty↔populated boundary into the key: a 0→N
         // fill is then always a FRESH mount's initial render, which skips the reset path. query/sort
         // stay in the key so a search/sort switch (a scroll-to-top moment) also remounts cleanly.
-        key={`${numColumns}|${query}|${sort}|${gridData.length > 0 ? 'full' : 'empty'}`}
+        key={`${numColumns}|${query}|${sort}|${listData.length > 0 ? 'full' : 'empty'}`}
         // Cap + center on the scroll host itself, and flex it to fill height. LegendList's web
         // content-container sits inside a plain (non-flex) block scroller, so `alignSelf:'center'`
         // on contentContainerStyle is a no-op (left-pinned) and the host won't grow — unlike
         // FlatList. Doing it here fixes both the off-center grid and the short scrollbar.
         style={styles.list}
-        data={gridData}
+        data={listData}
         keyExtractor={(item) => String(item.id)}
         numColumns={numColumns}
         // Explicit: SeriesCard holds per-item state (coverAspect) that wouldn't reset on reuse, so

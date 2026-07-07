@@ -14,6 +14,7 @@ import { historyQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type HistoryEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
+import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
@@ -33,6 +34,8 @@ export default function HistoryScreen() {
   const listRef = useRef<LegendListRef>(null);
   useScrollToTopOnReselect('history', listRef);
   const { onScroll } = useHideTabBarOnScroll();
+  // Let the tab swap paint before mounting the row list (see use-deferred-mount).
+  const ready = useDeferredMount();
 
   const { data: items = undefined, error, isLoading, refetch } = useQuery(historyQuery(ds, mock));
 
@@ -98,7 +101,7 @@ export default function HistoryScreen() {
 
   const body = () => {
     if (error) return <RetryBlock message={(error as Error).message || 'Failed to load history'} onRetry={refetch} />;
-    if (isLoading || items === undefined) return <ThemedText themeColor="textSecondary">Loading…</ThemedText>;
+    if (!ready || isLoading || items === undefined) return <ThemedText themeColor="textSecondary">Loading…</ThemedText>;
     if (!visible || visible.length === 0) {
       return (
         <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
