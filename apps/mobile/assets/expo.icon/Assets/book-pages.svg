@@ -1,0 +1,23 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Icon Composer layer: left + right pages and binding shadow (middle). -->
+  <defs>
+    <linearGradient id="leftPage" x1="206.6" y1="167.1" x2="512" y2="806.5" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.45" stop-color="#EAF6FF"/>
+      <stop offset="1" stop-color="#93C5FD"/>
+    </linearGradient>
+    <linearGradient id="rightPage" x1="817.4" y1="167.1" x2="512" y2="806.5" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.45" stop-color="#DBEAFE"/>
+      <stop offset="1" stop-color="#60A5FA"/>
+    </linearGradient>
+    <linearGradient id="bindingShadow" x1="508" y1="520" x2="516" y2="520" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2563EB" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#1D4ED8" stop-opacity="0.11"/>
+      <stop offset="1" stop-color="#2563EB" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <path d="M512 241.2 C442.7 192.6 334 185.7 241.5 204.2 C195.3 213.5 167.5 250.5 167.5 292.1 V728.2 C167.5 779.1 213.7 818.3 263.5 804.4 C352.5 776.7 438.1 769.8 512 804.4 V241.2 Z" fill="url(#leftPage)"/>
+  <path d="M512 241.2 C581.3 192.6 690 185.7 782.5 204.2 C828.7 213.5 856.5 250.5 856.5 292.1 V728.2 C856.5 779.1 810.3 818.3 760.5 804.4 C671.5 776.7 585.9 769.8 512 804.4 V241.2 Z" fill="url(#rightPage)"/>
+  <path d="M512 286 C513.6 410 513.6 650 512 804 C510.4 650 510.4 410 512 286 Z" fill="url(#bindingShadow)"/>
+</svg>

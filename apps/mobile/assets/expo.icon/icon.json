@@ -1,13 +1,13 @@
 {
   "fill" : {
-    "automatic-gradient" : "extended-srgb:0.00000,0.47843,1.00000,1.00000"
+    "automatic-gradient" : "extended-srgb:0.85882,0.91765,0.99608,1.00000"
   },
   "groups" : [
     {
       "layers" : [
         {
-          "image-name" : "comical-mark.svg",
-          "name" : "comical-mark",
+          "image-name" : "ko-mark.svg",
+          "name" : "ko-mark",
           "position" : {
             "scale" : 1,
             "translation-in-points" : [
@@ -17,8 +17,26 @@
           }
         },
         {
-          "image-name" : "grid.png",
-          "name" : "grid"
+          "image-name" : "book-pages.svg",
+          "name" : "book-pages",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        },
+        {
+          "image-name" : "book-cover.svg",
+          "name" : "book-cover",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
         }
       ],
       "shadow" : {
