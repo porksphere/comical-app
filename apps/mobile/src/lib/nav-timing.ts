@@ -63,6 +63,16 @@ export function logDeferReady(label: string, ms: number): void {
   console.log(`[NAV-TIMING] defer ${label}: +${ms}ms (${Platform.OS})`);
 }
 
+/** Generic slow-operation logger (data request wall time, on-thread JSON parse)
+ *  routed to the same on-device log — thresholded by the caller so it stays low
+ *  volume. `parse-timing` runs on the RN JS thread, so a big one IS jank;
+ *  `data-timing` is total wall time (includes off-thread bridge exec), context. */
+export function logTiming(category: string, label: string, ms: number): void {
+  logDiagnostic(category, `${label}: ${ms}ms`, { context: Platform.OS });
+  // eslint-disable-next-line no-console
+  console.log(`[NAV-TIMING] ${category} ${label}: ${ms}ms (${Platform.OS})`);
+}
+
 // ── JS-thread jank monitor ────────────────────────────────────────────────────
 // A periodic timer expects to fire every JANK_TICK_MS; if it comes back later
 // than that by ≥ JANK_THRESHOLD_MS, the main JS thread was blocked in between
