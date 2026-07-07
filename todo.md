@@ -93,25 +93,27 @@
       interaction with the actions) instead of on mount. Keyed `['isFavorite', mock,
       bridgeId, seriesId]`, 5-min staleTime, and excluded from the persisted disk cache
       (see the query-client persist fix), so it re-scrapes after an app restart too.
-- [ ] Virtualize the series screen's chapter list + page-thumbnail grid. Today neither
-      is virtualized: `ChaptersSection` renders chapter rows with plain `head.map`/
-      `tail.map` (+ a first-N/last-N collapse), and `PageThumbGrid` renders `.map` with
-      a home-grown progressive-reveal *sentinel* — a `setInterval` (250ms) that polls
-      its on-screen position and streams in `BATCH_ROWS` at a time. Both live inside the
-      series screen's `ScrollView`, and that's the reason: a vertical VirtualizedList
-      (FlatList/LegendList) can't be nested in a `ScrollView`, so the `.map` + sentinel
-      is the deliberate workaround. Proper fix = convert `series.tsx` from a `ScrollView`
-      to a single `LegendList` (hero/meta/tabs → `ListHeaderComponent`, related rails →
-      `ListFooterComponent`, chapters or page-thumbs → the list `data` with `numColumns`
-      for the page grid), which lets us delete the sentinel entirely. Payoff is memory on
-      a 300+ chapter/page series and removing the polling hack — NOT the nav stall: a
-      React `<Profiler>` wrapped around the series body logged zero commits ≥80ms during
-      the on-device js-jank, so chapter/page *rendering* is not what stalls the thread
-      (that traced to per-card image work, since fixed). Highest-risk part is the web
-      large-screen sticky cover-column (`leftColSticky`, a `position:sticky` inside the
-      current ScrollView) + the chapter tabs/sort header, both of which the LegendList
-      restructure has to preserve. Do it as its own isolated change, not bundled with
-      unrelated work. Related: the js-jank/nav-timing investigation that ruled render out.
+- [x] Virtualize the series screen's **page-thumbnail grid** (direct series). Was a plain
+      `.map` inside the series `ScrollView` with a `setInterval` progressive-reveal
+      *sentinel* that only controlled initial render and never unmounted tiles, so a
+      1000-page series kept 1000 live `<Image>` tiles in memory. Now `PageThumbList` — a
+      virtualized, recycling `LegendList` (numColumns, recycleItems) that owns the scroll
+      for direct series (hero/meta = `ListHeaderComponent`, related rails =
+      `ListFooterComponent`); `PageThumb` made recycle-safe (render-phase state reset +
+      `recyclingKey`). Kept the "Show all N pages" collapse (keeps the rails reachable
+      without scrolling a huge grid); dropped the sentinel + gradient-fade. `series.tsx`
+      branches: direct → PageThumbList, chaptered → the existing ScrollView (web sticky
+      cover disabled for direct, since its hero is in the list header). Verified on web:
+      chaptered unchanged, 40-page direct series' mounted `<img>` count stays bounded
+      (~13, not 40) after expand+scroll.
+- [ ] Virtualize the series screen's **chapter list** too (deferred from the page-thumb
+      work above). Left as a plain `head.map`/`tail.map` (+ first-N/last-N collapse) for
+      now: `ChapterRow` is two `Text`s (no image), so 200+ mounted rows is cheap relative
+      to the page tiles, and virtualizing it forces the bigger disruption — on large
+      screens chapters live in the right column beside the web sticky cover, which a
+      single vertical list can't reproduce (chapters would have to move full-width below
+      the hero). Not the nav stall either (Profiler cleared chapter render). Revisit only
+      if a genuinely huge chapter list hurts on device.
 - [ ] Excluded tags don't appear to persist on iOS between restarts (unsure about genres)
 
 ## Reader (page viewer)
