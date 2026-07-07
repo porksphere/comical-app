@@ -411,15 +411,25 @@ export default function BrowseScreen() {
   // results grid — matches the reference's `doSearch`: any of
   // query/filters/sort/list-scope leaves the home surface.
   const inResults = !!query || !!seeAll || hasActiveQuery || !composedHome;
-  // The "← Home" banner is for transient drill-downs (search / "See all" / a
-  // live filter or sort) — NOT for plain page-selector navigation. Selecting a
+  // The back banner is for transient drill-downs (search / "See all" / a live
+  // filter or sort) — NOT for plain page-selector navigation. Selecting a
   // page-flagged list like "Popular" is a top-level page in its own right (the
   // Page selector itself already shows it's active and is how you switch back
   // to Home), so it shouldn't get the same back-arrow treatment a drill-down
   // does. A drill-down layered on top of a selected page (e.g. searching while
-  // on "Popular") still shows the banner, same as it would from Home.
+  // on "Popular") still shows the banner, and its arrow returns to that page.
   const showBackBanner = !!query || !!seeAll || hasActiveQuery;
-  const resultsLabel = seeAll ? seeAll.title : query ? `Results for “${query}”` : page;
+  // Where the back arrow returns to — the page the drill-down was layered on:
+  // Home if that's where we were, otherwise the selected page (e.g. "Popular").
+  // A tag/meta chip from the Series screen already forced `page` to 'home' (see
+  // the focus effect), so that flow reads "← Home" as before.
+  const backLabel =
+    page === 'home' ? 'Home' : (selectedList?.name ?? page.charAt(0).toUpperCase() + page.slice(1));
+  // Caption for what's being shown: a "See all" list, a text search, or — with
+  // neither (so `showBackBanner` is only true via a live filter/sort) — a
+  // refinement of the current page. Not the bare page name, which would just
+  // echo the back arrow.
+  const resultsLabel = seeAll ? seeAll.title : query ? `Results for “${query}”` : 'Filtered results';
 
   // ── Grid (unified: a flagged page, favorites, search, or "See all") ───────
   // Home's own grid sections (terminal + non-terminal) are fetched separately
@@ -554,15 +564,20 @@ export default function BrowseScreen() {
       .finally(() => setLoadingMore(false));
   };
 
-  const backToHome = () => {
+  // Leave a transient drill-down (search / "See all" / a live filter or sort) and
+  // return to the page it was layered on — Home if that's where we were, or the
+  // selected page (e.g. "Popular") otherwise. `page` is deliberately left
+  // untouched so we land back where the user actually was instead of always
+  // jumping to Home; a tag/meta chip from the Series screen has already set
+  // `page` to 'home' (see the focus effect), so that flow still returns Home.
+  const exitDrilldown = () => {
     setQuery('');
     setSeeAll(null);
-    setPage('home');
-    // A tag chip / author-artist-type meta cell drives results via a filter (and
-    // possibly a sort), not `query` — so clearing just the query above would
-    // leave `hasActiveQuery` true and strand us in results. Reset every filter to
-    // its neutral value (mirrors the bridge-load init) and drop the sort so the
-    // banner dismisses and Home actually returns.
+    // A tag chip / author-artist-type meta cell (and any live filter/sort) drives
+    // results via a filter, not `query` — so clearing just the query would leave
+    // `hasActiveQuery` true and strand us in results. Reset every filter to its
+    // neutral value (mirrors the bridge-load init) and drop the sort so the
+    // banner dismisses and the underlying page actually returns.
     setFilterValues(Object.fromEntries(filterDefs.map((d) => [d.id, initialValue(d)])));
     setSortValue(null);
     // Drop any not-yet-applied intent so it can't re-set the filter after we've
@@ -762,9 +777,9 @@ export default function BrowseScreen() {
       />
       {showBackBanner && (
         <View style={styles.resultsHead}>
-          <Pressable onPress={backToHome} hitSlop={8}>
+          <Pressable onPress={exitDrilldown} hitSlop={8}>
             <ThemedText type="smallBold" style={{ color: theme.accent }}>
-              ← Home
+              ← {backLabel}
             </ThemedText>
           </Pressable>
           <ThemedText type="small" themeColor="textSecondary" numberOfLines={1} style={styles.resultsLabel}>
