@@ -253,6 +253,11 @@ function FavoriteRow({ bridgeId, seriesId }: { bridgeId: string; seriesId: strin
       queryClient.setQueryData(favKey, next);
       return { prev };
     },
+    // Re-assert the confirmed state so a slow `isFavorite` scrape landing after the toggle can't
+    // revert the star (mirrors series.tsx; same query key, so both stay in sync).
+    onSuccess: (_data, next) => {
+      queryClient.setQueryData(favKey, next);
+    },
     onError: (_e, _next, ctx) => {
       if (ctx) queryClient.setQueryData(favKey, ctx.prev ?? false);
     },

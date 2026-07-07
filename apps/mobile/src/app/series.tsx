@@ -235,6 +235,12 @@ function SeriesBody({
       queryClient.setQueryData(favKey, next);
       return { prev };
     },
+    // A confirmed write is the source of truth for this series: re-assert `next` so a slow
+    // `isFavorite` scrape that resolves after the toggle can't leave the star reverted while the
+    // favorite actually landed (the reported "reverts almost instantly" flake).
+    onSuccess: (_data, next) => {
+      queryClient.setQueryData(favKey, next);
+    },
     onError: (_e, _next, ctx) => {
       if (ctx) queryClient.setQueryData(favKey, ctx.prev ?? false);
     },
@@ -388,7 +394,11 @@ function SeriesBody({
       <ActionButton label={inLibrary ? '✓  In Library' : '＋  Library'} onPress={toggleLibrary} />
       {series.hasSources && <ActionButton label="Sources" caret />}
       {series.hasTrackers && <TrackerButton seriesId={series.id} initialLinks={series.trackers ?? []} />}
-      <ActionButton label={favorited ? '★  Favorited' : '☆  Favorite'} onPress={toggleFavorite} />
+      <ActionButton
+        label={favorited ? '★  Favorited' : '☆  Favorite'}
+        onPress={toggleFavorite}
+        disabled={favorited === null}
+      />
       {series.newCount != null && <NewBadge count={series.newCount} />}
     </View>
   );

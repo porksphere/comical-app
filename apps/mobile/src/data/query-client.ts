@@ -62,7 +62,12 @@ export const persister = createAsyncStoragePersister({
 // only thing lost is an instant repaint after a full app restart (scraped
 // content is re-fetched anyway). The cheap keys (library, history, activity,
 // favorites, bridges) still persist.
-const NO_PERSIST_KEYS = new Set(['seriesDetail', 'seriesList', 'chapterPages', 'directPages', 'relatedGroups']);
+// `isFavorite` is a slow per-series scrape of the bridge's favorites list (up to 20 pages, see
+// host-server router). Persisting it would rehydrate a *stale* ★/☆ on cold start that (a) reads
+// as tappable before the true state is known and (b) can land its stale value on top of an
+// optimistic toggle, reverting the star while the write actually succeeded. Keep it out of disk
+// so it always starts `null` (button disabled) and re-scrapes fresh after a restart.
+const NO_PERSIST_KEYS = new Set(['seriesDetail', 'seriesList', 'chapterPages', 'directPages', 'relatedGroups', 'isFavorite']);
 
 /** Persist only the light keys (see `NO_PERSIST_KEYS`), keeping the default
  *  "successful queries only" rule. */
