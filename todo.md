@@ -83,16 +83,17 @@
       props/closures forcing re-renders (relates to the Flashlist investigation item).
 - [ ] Series `isFavorite` check fires a slow per-series scrape on every open. The star
       state (`GET /bridges/{id}/favorites/{seriesId}`, `SeriesBody` in `series.tsx`) is
-      requested ~immediately on opening any series with a bridgeId, and on example-bridge it's
-      a 1–4s scrape purely to fill the ★/☆ label. (1) Make the Favorite action button
-      **visibly disabled until the state resolves** — today `favorited` is `null` while
-      loading so `toggleFavorite` no-ops, but the button still renders as a tappable
-      `☆ Favorite`; give `ActionButton` a `disabled` while `favorited === null`. (2)
-      Investigate avoiding/deferring the scrape itself: only fire it for a
-      favorites-capable bridge, and/or defer well past the open (e.g. on first
-      interaction with the actions) instead of on mount. Keyed `['isFavorite', mock,
-      bridgeId, seriesId]`, 5-min staleTime, and excluded from the persisted disk cache
-      (see the query-client persist fix), so it re-scrapes after an app restart too.
+      requested ~immediately on opening any series with a bridgeId, and on some bridges it's
+      a 1–4s scrape purely to fill the ★/☆ label. (1) DONE — the Favorite action button is
+      now `disabled` while `favorited === null` (series.tsx), matching the reader panel; and
+      `isFavorite` was actually added to `NO_PERSIST_KEYS` (query-client.ts) so a stale
+      persisted value no longer rehydrates a tappable star / races the optimistic toggle —
+      this also fixed the "favorite reverts almost instantly while the favorites page shows
+      it favorited" flake (a late/stale scrape clobbering the optimistic `true`; the toggle
+      now re-asserts the confirmed state in `onSuccess`). (2) TODO — investigate
+      avoiding/deferring the scrape itself: only fire it for a favorites-capable bridge,
+      and/or defer well past the open (e.g. on first interaction with the actions) instead
+      of on mount. Keyed `['isFavorite', mock, bridgeId, seriesId]`, 5-min staleTime.
 - [x] Virtualize the series screen's **page-thumbnail grid** (direct series). Was a plain
       `.map` inside the series `ScrollView` with a `setInterval` progressive-reveal
       *sentinel* that only controlled initial render and never unmounted tiles, so a
