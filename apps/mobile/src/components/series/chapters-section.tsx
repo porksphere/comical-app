@@ -14,7 +14,7 @@ import { isAbort, resolveAssetSourceCached } from '@/data/api';
 import { coverDelayMs, relativeTime } from '@/data/mock';
 import { useDataSource } from '@/data/source';
 import type { Chapter, PageThumbSource, SpriteThumb } from '@/data/types';
-import { clampThumbAspect, DEFAULT_THUMB_ASPECT, usePrefetchedImage } from '@/lib/aspect-ratio';
+import { clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { compareChapters } from '@/lib/chapter-order';
 import { logDiagnostic } from '@/lib/diagnostics';
 
@@ -467,6 +467,9 @@ function PageThumb({
   const ds = useDataSource();
   const [resolved, setResolved] = useState(thumb);
   const [loaded, setLoaded] = useState(false);
+  // Real aspect of a plain `image` tile, learned from its own onLoad (see the
+  // note on the derivation below) rather than an off-screen prefetch.
+  const [imageAspect, setImageAspect] = useState(DEFAULT_THUMB_ASPECT);
 
   useEffect(() => {
     if (resolved || !bridgeId) return;
@@ -515,41 +518,43 @@ function PageThumb({
   // shape is already known synchronously from its `{w,h}` crop (just capped
   // so it never renders taller than the default skeleton shape — since that
   // only ever shrinks the crop within its own bounds, it can't bleed in
-  // neighbouring sheet pixels). A plain `image` tile's shape isn't known
-  // until it's fetched, so its aspect ratio is resolved off-screen first (see
-  // `usePrefetchedImage`) and the tile only mounts once that's settled, so it
-  // never pops in at the default size and shrinks a moment later — the
-  // prefetched `ref` is then reused as the visible image's source, so this
-  // doesn't cost a second network request. Either way, `thumbShell` below
-  // stays the constant default-shape slot regardless, so a shorter/taller
-  // tile never reflows its row.
+  // neighbouring sheet pixels). A plain `image` tile's shape isn't known until
+  // it's fetched, so it now mounts at the default shape and adopts its real
+  // (capped) aspect from the visible image's own `onLoad` — no off-screen
+  // `Image.loadAsync` prefetch (that kept a second decoded image per tile and
+  // added a re-render each, a per-tile cost that showed up as main-thread
+  // stalls across a full page grid). `thumbShell` below stays the constant
+  // default-shape slot regardless, so a shorter/taller tile never reflows its
+  // row while the aspect settles.
   const imageUrl = resolved?.kind === 'image' ? resolved.url : null;
   // Resolve the (possibly server-relative / embedded-transport) image URL through the transport
-  // first — the same lazy resolution `SpriteCrop` does for its sheet — then prefetch *that* resolved
-  // URL's dimensions off-screen. Prefetching the raw URL would skip embedded-mode asset resolution
-  // and fail to load. Empty string for a sprite tile resolves synchronously to '' and is never used.
+  // first — the same lazy resolution `SpriteCrop` does for its sheet. Resolving the raw URL would
+  // skip embedded-mode asset resolution and fail to load. Empty string for a sprite tile resolves
+  // synchronously to '' and is never used.
   const resolvedImageUrl = useResolvedThumbUrl(imageUrl ?? '', (msg) =>
     logDiagnostic('page-thumb-image', msg, {
       url: imageUrl ?? '',
       context: `bridge=${bridgeId ?? ''} series=${seed} page=${index}`,
     }),
   );
-  const image = usePrefetchedImage(imageUrl ? resolvedImageUrl : null, delayPassed);
-  const dimsReady = resolved?.kind === 'sprite' || image.settled;
-  const aspectRatio = resolved?.kind === 'sprite' ? clampThumbAspect(resolved.w / resolved.h) : image.aspect;
-  const ready = delayPassed && dimsReady && loaded;
+  const aspectRatio = resolved?.kind === 'sprite' ? clampThumbAspect(resolved.w / resolved.h) : imageAspect;
+  const ready = delayPassed && loaded;
 
   return (
     <Pressable style={[styles.thumbShell, { width }]} onPress={onPress}>
       <View style={[styles.thumb, { aspectRatio }]}>
-        {delayPassed && dimsReady && resolved?.kind === 'image' && (
+        {delayPassed && resolved?.kind === 'image' && resolvedImageUrl && (
           <Image
-            source={image.ref ?? { uri: resolvedImageUrl || resolved.url }}
+            source={{ uri: resolvedImageUrl }}
             style={styles.thumbImg}
             contentFit="cover"
             cachePolicy="memory-disk"
             transition={200}
-            onLoad={() => setLoaded(true)}
+            onLoad={(e) => {
+              const src = e.source;
+              if (src?.width && src?.height) setImageAspect(clampThumbAspect(src.width / src.height));
+              setLoaded(true);
+            }}
             onError={(e: { error?: string }) =>
               logDiagnostic('page-thumb-image', e.error || 'load failed', {
                 url: resolved.url,
