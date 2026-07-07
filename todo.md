@@ -71,6 +71,7 @@
 - [ ] Navigating to a series view FROM a series view (i.e. recommended / related series) does'nt push the new series onto the nav stack, it replaces the current
 - [ ] Loading skeletons for bridge pages don't line up correctly with the legend list, this is worse on searches that have a "<- Home" button, we should account for that space
 - [ ] Navigating to a sub-page other then home, clicking a series, clicking a tag, then shows the search with "<- Home" instead of the correct sub page it came from
+- [ ] "<- Home" button is very slow on iOS
 
 ## Publish `@comical/*` packages instead of tsconfig-paths/local-stub hacks
 
