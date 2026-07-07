@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useMemo } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions, View, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -27,7 +26,7 @@ import {
   seriesListQuery,
 } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
-import { DIRECT_CHAPTER_ID, type RailSection, type SeriesDetail, type TagGroup } from '@/data/types';
+import { DIRECT_CHAPTER_ID, type SeriesDetail, type TagGroup } from '@/data/types';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
@@ -200,16 +199,6 @@ function SeriesBody({
     relatedGroupsQuery(ds, mock, bridgeId ?? '', series.id, needsRelatedFetch),
   );
   const relatedGroups = series.relatedGroups ?? fetchedRelated;
-  // Stabilize the per-rail section objects so the memoized <Rail> only re-renders
-  // when the related data actually changes, not on every SeriesBody re-render
-  // (favorite/library toggles, history resolving, etc.).
-  const relatedSections = useMemo<RailSection[]>(
-    () =>
-      (relatedGroups ?? [])
-        .map((group, i) => ({ id: `related-${i}`, title: group.label, kind: 'regular' as const, items: group.items }))
-        .filter((s) => s.items.length > 0),
-    [relatedGroups],
-  );
 
   // Chapter list / page-thumbnail grid: `getSeriesDetail` returns only the fast
   // info payload and flags `listDeferred`, leaving this ~200ms fetch to stream in
@@ -545,18 +534,21 @@ function SeriesBody({
 
       {/* Related rails (per-bridge): full-bleed, outside the padded inner. A
           bridge may surface any number of labeled groups (sequels, similar, …). */}
-      {relatedSections.length ? (
+      {relatedGroups?.length ? (
         <View style={styles.related}>
-          {relatedSections.map((section) => (
-            <Rail
-              key={section.id}
-              section={section}
-              viewportWidth={width}
-              bridge={series.bridge}
-              bridgeId={bridgeId}
-              direct={direct}
-            />
-          ))}
+          {relatedGroups.map(
+            (group, i) =>
+              group.items.length > 0 && (
+                <Rail
+                  key={`${group.label}-${i}`}
+                  section={{ id: `related-${i}`, title: group.label, kind: 'regular', items: group.items }}
+                  viewportWidth={width}
+                  bridge={series.bridge}
+                  bridgeId={bridgeId}
+                  direct={direct}
+                />
+              ),
+          )}
         </View>
       ) : needsRelatedFetch && relatedLoading ? (
         <View style={styles.related}>
