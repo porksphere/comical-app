@@ -63,7 +63,18 @@
       single vertical list can't reproduce (chapters would have to move full-width below
       the hero). Not the nav stall either (Profiler cleared chapter render). Revisit only
       if a genuinely huge chapter list hurts on device.
-- [ ] Excluded tags don't appear to persist on iOS between restarts (unsure about genres)
+- [ ] Excluded tags don't appear to persist on iOS between restarts (unsure about genres).
+      (1) DONE — `TagExclusionsControl`'s save (bridge-extras.tsx) never invalidated the
+      `['bridgeSettings', bridgeId]` query its own `initialTags`/`initialLabels` come from,
+      unlike `GenreExclusionsControl` (which does `invalidateQueries` after its PUT) and the
+      parent screen's own settings save — fixed so it matches. (2) TODO — this only fixes
+      same-session staleness; the actual on-device persistence path (host-rn's
+      `NativeBridgeProvider.updateSettings` merging onto `asyncStorageSettings` — an
+      AsyncStorage-backed `SettingsStore` in `data/embedded/settings-store.ts`, keyed
+      `comical:embedded:settings:{bridgeId}`, shared with regular bridge settings) reads
+      architecturally sound end-to-end from static inspection; confirming why it'd actually
+      lose data across a real app-kill-and-relaunch on iOS needs on-device
+      reproduction/logging, which wasn't done here.
 - [ ] Related series scrolling seems bugged on iOS
 - [ ] When there aren't any related series / any content below a direct series page thumbnails, don't show the "Show all" button at all, just paginate
 - [ ] Buggy behavior when opening a bridge sub-page then changing the bridge, it uses the old bridge sub-page data
@@ -79,10 +90,78 @@
 - [ ] Center screen tapping in reader view to open overlay should be a larger percentage of the tappable area
 - [ ] Enable mouse hovering to show overlay (near top of screen and bottom for settings / page selector)
 - [ ] On web, can't select any of the page reader overlay buttons after the first time it's shown
-- [ ] Filter popups don't have hover highlighting on desktop
-- [ ] Filters for single entry fields (bools/ints/strings) could use a little reworking, they shouldn't open up a new popup / overlay, they should be editable directly (for example, a bool should just be clickable as the whole thing, then the whole thing changes color to reflect bool state (with text on left showing true/false etc). The style of the filters along with their header labels should be preserved.
+- [x] Filter popups don't have hover highlighting on desktop. Fixed: `TriRow` and the
+      `MultiEditor` option rows (filter-editors.tsx) never wired `useHover` at all, unlike
+      every other row-list in the app; both now tint `backgroundSelected` on hover like
+      `FilterButton`/`SortButton`/`OverflowChip` already did. Follow-up: the bridge/page
+      picker (`selector.tsx`) had the same gap — its option rows were an inline anonymous
+      `Pressable` with no `useHover` wiring. Extracted a `SelectRow` component (mirroring
+      `MultiRow`/`TriRow`) so it tints on hover too.
+- [x] Filters for single entry fields (bools/ints/strings) could use a little reworking, they shouldn't open up a new popup / overlay, they should be editable directly (for example, a bool should just be clickable as the whole thing, then the whole thing changes color to reflect bool state (with text on left showing true/false etc). The style of the filters along with their header labels should be preserved.
+      Fixed: `FilterButton` (filter-button.tsx) now dispatches by `def.type` — `toggle`/
+      `string`/`number` render inline (`ToggleFilterRow`/`StringFilterRow`/`NumberFilterRow`)
+      directly on the row with no overlay; `multi`/`includeExclude`/`tags` still open the
+      anchored overlay as before (`OverlayFilterRow`). A toggle's whole row is the control:
+      tapping flips it and the row background switches to the accent colour with an "On"/
+      "Off" label; number gets an inline −/+ stepper; string gets an inline text field. Same
+      row height/radius/label styling preserved throughout.
 - [ ] Mock data isn't really well mocked right now, it should instead be an artificially injected bridge that serves data exactly the same way (with delays internal to it)
-- [ ] Filters that have more content than the overlay / popup allows, have weird bars on the top and bottom that cutoff the internal content when scrolling. We should just use the bounds of the overlay/popup. But ensure when scrolled to the top, the inner content isn't flush to the top, there should be a bit of space to keep it looking nice at the top.
+- [x] Add a bool filter to a fake bridge so the toggle-filter control can actually be tested.
+      The `direct-example` demo bridge (`comical/bridges/direct-example`, "Illustration
+      Gallery (Demo)") had no `getFilters()` at all. Added `capabilities: [..., "filters"]`
+      and `getFilters()` returning a single `{ type: "toggle", key: "ongoing", label:
+      "Ongoing only" }`; `getListItems` now reads a new `data-status` attribute the fixture
+      backend (`@comical/testkit`'s `DirectFixtureBackend`) stamps on each catalog card and
+      filters to `status === "ongoing"` when the toggle is on. Added one `"ongoing"`-status
+      fixture entry ("Serialized Oddities") since all six original catalog entries were
+      `"completed"`, which would've made the toggle filter everything away with nothing left
+      to show. Mirrored identically into `comical-app/external/comical` (the submodule the
+      app actually bundles/typechecks from — see its own `CLAUDE.md`/AGENTS notes) and
+      rebuilt its bridge dist so the running app picks it up. Tests added in both copies
+      (`bridges/direct-example/test/filters.test.ts`); full `bun test` suite still green in
+      both the sibling `comical` checkout and the submodule.
+- [x] Date/int filter selectors should allow clicking the value to type it in via keyboard,
+      not just +/- stepper taps. There's no separate date filter type in `FilterDef`
+      (`filter-types.ts` only has `number`), so this applies to `NumberFilterRow`
+      (filter-button.tsx): tapping the current value now swaps it for an inline `TextInput`
+      (numeric keyboard, autofocus, select-on-focus) that commits (clamped to
+      `min`/`max`) on submit or blur, falling back to the prior value if what's typed isn't a
+      finite number.
+- [x] When the filter bar is squashed, text should shrink instead of hiding the +/- stepper
+      buttons (e.g. "Minimum chapters" was pushing the stepper out of its slot entirely).
+      Root cause: `FilterButton`'s shared `label` style was `flexShrink: 0`, so a long label
+      never gave up width, and the row (inside `FilterBar`'s `filterSlot`, `flex: 1`) simply
+      overflowed its slot — silently clipped by the bar's own `overflow: 'hidden'`, hiding
+      whatever came after the label. `label` is now `flexShrink: 1, minWidth: 0` with
+      `numberOfLines={1}` (+ `adjustsFontSizeToFit`/`minimumFontScale` as a native-only
+      progressive enhancement — react-native-web doesn't implement font auto-shrinking, so
+      truncation is the cross-platform guarantee that actually keeps the stepper visible);
+      `stepper` got an explicit `flexShrink: 0` so it's never what gives way.
+- [x] String filter's inline text field wasn't aligned with its label and had a distracting
+      default focus ring instead of a real highlight. Reused the exact pattern from the
+      app's `SearchField` (the reference the feedback pointed at): the row now reserves a
+      `borderWidth: 1` always (`transparent` at rest) and turns `theme.accent` while
+      focused/editing, plus a `Platform.select({web: {outlineStyle: 'none'}})` reset so the
+      browser's native `<input>` focus ring no longer shows through. Applied to both
+      `StringFilterRow` and `NumberFilterRow`'s new inline edit mode (see above), so number
+      and string filters share the same focus treatment as the search field.
+- [x] Filters that have more content than the overlay / popup allows, have weird bars on the top and bottom that cutoff the internal content when scrolling. We should just use the bounds of the overlay/popup. But ensure when scrolled to the top, the inner content isn't flush to the top, there should be a bit of space to keep it looking nice at the top.
+      First attempt threaded the popover's measured content bound down through a new
+      `OverlayContentBoundsContext` so `useListMaxHeight`'s manual pixel-budget arithmetic
+      (window/anchor height minus handle/insets/gaps/safety-margin constants) sized against
+      the popover instead of the sheet formula — this only patched the popover path and the
+      cutoff reportedly persisted, since the whole approach was fragile (every consumer had to
+      measure its own header via `MeasuredHeader`'s `onHeight` and hold that height in state;
+      any slightly-off constant reintroduces the same bug). Replaced entirely with plain
+      flexbox: `OverlaySheet`/`OverlayPopover`'s outer container gets an explicit `maxHeight`
+      (window- or anchor-space-based), every wrapper in between gets `flex: 1, minHeight: 0`,
+      and `OptionList` itself is `flex: 1, minHeight: 0, maxHeight: LIST_MAX_HEIGHT` (a 7-row
+      UX cap, not a correctness cap) — so it fills exactly whatever space is left after its
+      sibling header, computed by the layout engine, with zero manual height math anywhere.
+      `useListMaxHeight`, `OverlayContentBoundsContext`, and every `onHeight`/`headerHeight`
+      plumbing line were deleted (`overlay.tsx` + 6 consumers). Also kept the small
+      `paddingTop` on the list's content so a scrolled-to-top list isn't flush against its own
+      top edge.
 
 ## Publish `@comical/*` packages instead of tsconfig-paths/local-stub hacks
 

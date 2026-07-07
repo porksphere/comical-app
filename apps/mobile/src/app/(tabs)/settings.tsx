@@ -18,7 +18,6 @@ import {
   OptionList,
   OverlayHeading,
   useAnchoredOverlay,
-  useListMaxHeight,
   useOverlay,
 } from '@/components/overlay/overlay';
 import { RetryBlock } from '@/components/retry-block';
@@ -220,15 +219,13 @@ function NsfwModeRow({ mode, onChange }: { mode: NsfwMode; onChange: (mode: Nsfw
 
 function NsfwModePicker({ mode, onChange }: { mode: NsfwMode; onChange: (mode: NsfwMode) => void }) {
   const { closeTop } = useOverlay();
-  const [headerHeight, setHeaderHeight] = useState(0);
-  const maxHeight = useListMaxHeight(headerHeight);
   const theme = useTheme();
   return (
     <View style={styles.pickerBody}>
-      <MeasuredHeader onHeight={setHeaderHeight}>
+      <MeasuredHeader>
         <OverlayHeading>NSFW content</OverlayHeading>
       </MeasuredHeader>
-      <OptionList maxHeight={maxHeight}>
+      <OptionList>
         {NSFW_MODE_OPTIONS.map((opt) => (
           <Pressable
             key={opt.value}
@@ -491,6 +488,8 @@ const styles = StyleSheet.create({
     gap: Spacing.one,
   },
   pickerBody: {
+    flex: 1,
+    minHeight: 0,
     gap: Spacing.three,
   },
   confirmBody: {
