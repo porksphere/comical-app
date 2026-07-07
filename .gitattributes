@@ -1,0 +1,5 @@
+# The container entrypoint is COPYed into a Linux image and executed by /bin/sh — a CRLF shebang
+# (from a Windows checkout with core.autocrlf=true) would break it. Pin these to LF.
+*.sh text eol=lf
+Dockerfile text eol=lf
+nginx.conf text eol=lf
