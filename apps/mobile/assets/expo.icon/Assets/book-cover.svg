@@ -1,0 +1,11 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Icon Composer layer: book cover (bottom). -->
+  <defs>
+    <linearGradient id="cover" x1="109.5" y1="213.5" x2="914.5" y2="806.5" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#BFDBFE"/>
+      <stop offset="0.45" stop-color="#60A5FA"/>
+      <stop offset="1" stop-color="#1D4ED8"/>
+    </linearGradient>
+  </defs>
+  <rect x="109.5" y="234.3" width="805" height="571.4" rx="64.8" fill="url(#cover)"/>
+</svg>
