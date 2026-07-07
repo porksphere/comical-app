@@ -66,16 +66,16 @@
       in flight — the fresh skeleton rows below it always started a new row rather
       than finishing the one already on screen. Those spacer cells now render as
       skeleton cards instead of blank views while `loadingMore` is true.)
-- [ ] Support landscape image cards
+- [x] Support landscape image cards
 - [x] The mock data should all be non-existant website names, we don't want to associate with any scraping (mock bridge names replaced; scrubbing git history was assessed and declined — would've required force-pushing ~86% of main's commits)
-- [ ] Infinite series scroll: an incomplete last row loses its already-loaded thumbnails
+- [x] Infinite series scroll: an incomplete last row loses its already-loaded thumbnails
       when the loading skeleton disappears. Once the next page settles, the whole
       incomplete row appears to clear its covers, not just the still-unloaded cells —
       the loaded ones should stay put. Likely the spacer→skeleton→real-cell transition
       for that partial row re-keys/re-mounts the already-rendered cards (see the
       "Infinite paging loading skeleton" item above that made spacer cells render as
       skeletons while `loadingMore`).
-- [ ] VirtualizedList perf warning in the Android debug log: `VirtualizedList: You have
+- [x] VirtualizedList perf warning in the Android debug log: `VirtualizedList: You have
       a large list that is slow to update - make sure your renderItem function renders
       components that follow React performance best practices like PureComponent,
       shouldComponentUpdate, etc. {"contentLength": 7281.90478515625, "dt": 559,
