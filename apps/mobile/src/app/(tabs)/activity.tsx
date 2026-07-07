@@ -19,9 +19,11 @@ import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
+import { useNavArrival } from '@/lib/nav-timing';
 import { relTime } from '@/lib/rel-time';
 
 export default function ActivityScreen() {
+  useNavArrival('activity'); // TEMP nav timing
   const ds = useDataSource();
   const mock = useMockActive();
   const theme = useTheme();

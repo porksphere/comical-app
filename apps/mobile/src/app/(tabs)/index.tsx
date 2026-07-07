@@ -33,6 +33,7 @@ import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useIsCompact, useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
+import { useNavArrival } from '@/lib/nav-timing';
 
 // Scroll distance over which the top bar's bottom divider fades in: absent at the
 // very top (once collapsed, on narrow viewports), present once content scrolls
@@ -72,6 +73,7 @@ const META_FILTER_ALIASES: Record<'author' | 'artist' | 'type', string[]> = {
 };
 
 export default function BrowseScreen() {
+  useNavArrival('browse'); // TEMP nav timing
   const ds = useDataSource();
   const router = useRouter();
   const { width } = useWindowDimensions();

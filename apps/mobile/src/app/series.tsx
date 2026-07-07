@@ -30,6 +30,7 @@ import { DIRECT_CHAPTER_ID, type SeriesDetail, type TagGroup } from '@/data/type
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
+import { useNavArrival } from '@/lib/nav-timing';
 
 const LARGE_COVER_WIDTH = 200;
 
@@ -44,6 +45,7 @@ const SEARCHABLE_META_KEYS: Record<string, 'author' | 'artist' | 'type' | undefi
 };
 
 export default function SeriesScreen() {
+  useNavArrival('series'); // TEMP nav timing
   const ds = useDataSource();
   const router = useRouter();
   const theme = useTheme();
