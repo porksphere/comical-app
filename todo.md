@@ -72,6 +72,7 @@
 - [ ] Loading skeletons for bridge pages don't line up correctly with the legend list, this is worse on searches that have a "<- Home" button, we should account for that space
 - [ ] Navigating to a sub-page other then home, clicking a series, clicking a tag, then shows the search with "<- Home" instead of the correct sub page it came from
 - [ ] "<- Home" button is very slow on iOS
+- [ ] Enable resuming from series details page if not already (i.e. instead of Read Chapter 1, it's Resume Chapter 3 or something)
 
 ## Publish `@comical/*` packages instead of tsconfig-paths/local-stub hacks
 
