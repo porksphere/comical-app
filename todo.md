@@ -95,15 +95,15 @@ Metro bundles anything, so this has zero runtime/CI impact today: confirmed
   CI step is ever added without also fixing this.
 - **Future fix — once `comical` (starting with `@comical/contract`) is published:**
   drop the `tsconfig.json` paths entry entirely and add it as a real
-  `package.json` dependency resolved through GitHub Packages, exactly like the
-  already-documented `@porksphere/core` cut-over plan (`README.md`'s "The
-  business-logic core" section — `.npmrc` maps a scope to `npm.pkg.github.com`,
-  `NODE_AUTH_TOKEN` with `read:packages` auth's CI, `bun install --frozen-lockfile`
-  resolves it like any other package). No `watchFolders`/`nodeModulesPaths` Metro
-  hacks needed for a genuinely published package — those exist only for
-  `@porksphere/core`'s current *local stub* dev-linking, not real npm resolution.
-  This removes the "must have a sibling checkout" caveat above and makes it safe to
-  add a `typecheck` CI step.
+  `package.json` dependency resolved through GitHub Packages. This needs the
+  scope-auth infra that used to live here for the (now-removed) `@porksphere/core`
+  stub: an `.npmrc` mapping the scope to `npm.pkg.github.com`, plus a
+  `NODE_AUTH_TOKEN` with `read:packages` on the `bun install` CI steps
+  (`build-android`/`build-ios`/`deploy-web`) — both were deleted when the stub went,
+  so re-add them then. A genuinely published package needs no
+  `watchFolders`/`nodeModulesPaths` Metro hacks (those remain only for the
+  `@comical/*` submodule source resolution). This removes the "must have a sibling
+  checkout" caveat above and makes it safe to add a `typecheck` CI step.
 - **`@comical/library`/`@comical/runtime` are a different, bigger lift:** unlike
   `@comical/contract` (type-only usage today, could stay a `devDependency`), these
   are real runtime code Metro must actually bundle for the on-device API→library
@@ -111,7 +111,7 @@ Metro bundles anything, so this has zero runtime/CI impact today: confirmed
   until a Hermes/QuickJS-compatible `BundleEvaluator` exists
   (`comical/packages/core/src/evaluator.ts`, Node-`vm`/browser-`new Function()`
   evaluators only today). Once that lands, they'd need the full
-  `@porksphere/core`-style treatment (real `dependency`, Metro resolves through
-  `node_modules` same as above) rather than any tsconfig-paths trick — but if the
+  published-GitHub-Packages-dependency treatment (real `dependency`, Metro resolves
+  through `node_modules` same as above) rather than any tsconfig-paths trick — but if the
   publish pipeline is already built for `@comical/contract`, extending it to these
   is close to free.

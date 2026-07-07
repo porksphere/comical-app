@@ -99,8 +99,6 @@ jobs:
       - name: Install dependencies
         if: github.event_name != 'delete'
         run: bun install --frozen-lockfile
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set web base URL for this build
         if: github.event_name != 'delete'

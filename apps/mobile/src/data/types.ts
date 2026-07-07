@@ -1,6 +1,6 @@
 /**
  * Shared UI-facing data shapes for the Browse/Series/Reader screens. These
- * intentionally mirror the eventual `@porksphere/core` bridge contract: a
+ * intentionally mirror the `@comical/*` bridge contract: a
  * `SeriesEntry` with mostly OPTIONAL sections, since not every bridge supplies
  * every section (genres, tag groups, stats, related rail, page thumbnails, …).
  * Components render each section only when its field is present/non-empty —
