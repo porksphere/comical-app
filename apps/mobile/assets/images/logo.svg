@@ -1,18 +1,17 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="cover" x1="109.5" y1="213.5" x2="914.5" y2="806.5" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#BFDBFE"/>
-      <stop offset="0.45" stop-color="#60A5FA"/>
-      <stop offset="1" stop-color="#1D4ED8"/>
+      <stop offset="0" stop-color="#6EA8F7"/>
+      <stop offset="1" stop-color="#3266DC"/>
     </linearGradient>
 
-    <linearGradient id="leftPage" x1="206.6" y1="167.1" x2="512" y2="806.5" gradientUnits="userSpaceOnUse">
+    <linearGradient id="leftPage" x1="160" y1="167.1" x2="512" y2="806.5" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#FFFFFF"/>
       <stop offset="0.45" stop-color="#EAF6FF"/>
       <stop offset="1" stop-color="#93C5FD"/>
     </linearGradient>
 
-    <linearGradient id="rightPage" x1="817.4" y1="167.1" x2="512" y2="806.5" gradientUnits="userSpaceOnUse">
+    <linearGradient id="rightPage" x1="864" y1="167.1" x2="512" y2="806.5" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#FFFFFF"/>
       <stop offset="0.45" stop-color="#DBEAFE"/>
       <stop offset="1" stop-color="#60A5FA"/>
@@ -33,9 +32,9 @@
 
   <rect x="109.5" y="234.3" width="805" height="571.4" rx="64.8" fill="url(#cover)"/>
 
-  <path d="M512 241.2 C442.7 192.6 334 185.7 241.5 204.2 C195.3 213.5 167.5 250.5 167.5 292.1 V728.2 C167.5 779.1 213.7 818.3 263.5 804.4 C352.5 776.7 438.1 769.8 512 804.4 V241.2 Z" fill="url(#leftPage)"/>
+  <path d="M512 241.2 C425 186 288 178 192 202 C166 208.5 154 224 154 246 V728 C154 758 179 773 224 766 C340 748 432 763 512 804.4 V241.2 Z" fill="url(#leftPage)"/>
 
-  <path d="M512 241.2 C581.3 192.6 690 185.7 782.5 204.2 C828.7 213.5 856.5 250.5 856.5 292.1 V728.2 C856.5 779.1 810.3 818.3 760.5 804.4 C671.5 776.7 585.9 769.8 512 804.4 V241.2 Z" fill="url(#rightPage)"/>
+  <path d="M512 241.2 C599 186 736 178 832 202 C858 208.5 870 224 870 246 V728 C870 758 845 773 800 766 C684 748 592 763 512 804.4 V241.2 Z" fill="url(#rightPage)"/>
 
   <path d="M512 286 C513.6 410 513.6 650 512 804 C510.4 650 510.4 410 512 286 Z" fill="url(#bindingShadow)"/>
 
