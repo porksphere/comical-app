@@ -7,7 +7,10 @@
 # apps/mobile/src/data/api.ts). One image, re-pointable at `docker run`.
 
 # ── Stage 1: build the static web bundle (needs Node for Metro + Bun for install/scripts) ─────────
-FROM node:20-bookworm AS builder
+# Pin to the native build platform: the web export is architecture-neutral static files, so Metro
+# runs ONCE on the runner's native arch (no slow emulated arm64 bundling) and both target images
+# reuse its output — only the nginx runtime stage below varies per arch.
+FROM --platform=$BUILDPLATFORM node:20-bookworm AS builder
 
 # Bun (the repo's package manager); the official npm package fetches the platform binary.
 RUN npm install -g bun
