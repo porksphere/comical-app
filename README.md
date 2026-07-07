@@ -6,8 +6,8 @@
 
 <p align="center">A cross-platform comic reader for iOS, Android, and the web.</p>
 
-Comical reads from user-added sources — nothing is hardcoded. On iOS and Android it runs
-entirely on-device with no server required; on the web it talks to a hosted backend.
+Comical reads from sources you add yourself. On iOS and Android it runs entirely on-device
+with no server required; on the web it talks to a backend you host.
 
 ## Install
 
@@ -37,11 +37,17 @@ releases (with both binaries) live under the repo's [Releases](https://github.co
 
 ### 🌐 Web
 
-Just open it in a browser — no install needed:
+Unlike native, the web build has no on-device runtime — you host it yourself: the **app**
+(the static web bundle) and a **backend** (`@comical/host-server`, which runs the bridges).
+Point the app at your backend via `EXPO_PUBLIC_COMICAL_SERVER`. See
+[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for building the web bundle and running the server.
 
-**[porksphere.github.io/comical-app](https://porksphere.github.io/comical-app/)**
+> **TODO:** ship a Docker / `docker compose` example that brings up both the app host and the
+> backend host in one command.
 
-Works on desktop and mobile browsers. (The public web build is a preview backed by demo data.)
+A public preview is deployed to GitHub Pages as an example — **[porksphere.github.io/comical-app](https://porksphere.github.io/comical-app/)**
+— but it's backed by demo data (static hosting has no backend to reach), so it's a look at the
+UI, not a usable reader.
 
 ## How it works
 
