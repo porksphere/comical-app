@@ -22,26 +22,45 @@ const TOP_GUARD = 8;
 export function useHideTabBarOnScroll() {
   const lastY = useRef(0);
   const distance = useRef(0);
+  const lastProgress = useRef(0);
+
+  // Quantize to whole-pixel steps of the slide and drop no-op repeats before
+  // touching the store. Without this, a fast scroll — or scrolling further while
+  // the bar is already fully hidden/shown (progress clamped at 1/0) — fires a
+  // store update, and an AppTabs re-render, on *every* frame. That per-frame JS
+  // churn is exactly what a card tap right after a scroll would queue behind,
+  // adding to the pre-transition stall. Endpoints still publish (0.98 → 1 is a
+  // real change); only truly-unchanged frames are skipped.
+  const publish = useCallback((p: number) => {
+    const q = Math.round(p * SLIDE_DISTANCE) / SLIDE_DISTANCE;
+    if (q === lastProgress.current) return;
+    lastProgress.current = q;
+    setTabBarProgress(q);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
       distance.current = 0;
+      lastProgress.current = 0;
       setTabBarProgress(0);
     }, []),
   );
 
-  const reportOffset = useCallback((y: number) => {
-    const dy = y - lastY.current;
-    lastY.current = y;
-    if (dy === 0) return;
-    if (y <= TOP_GUARD) {
-      distance.current = 0;
-      setTabBarProgress(0);
-      return;
-    }
-    distance.current = Math.min(SLIDE_DISTANCE, Math.max(0, distance.current + dy));
-    setTabBarProgress(distance.current / SLIDE_DISTANCE);
-  }, []);
+  const reportOffset = useCallback(
+    (y: number) => {
+      const dy = y - lastY.current;
+      lastY.current = y;
+      if (dy === 0) return;
+      if (y <= TOP_GUARD) {
+        distance.current = 0;
+        publish(0);
+        return;
+      }
+      distance.current = Math.min(SLIDE_DISTANCE, Math.max(0, distance.current + dy));
+      publish(distance.current / SLIDE_DISTANCE);
+    },
+    [publish],
+  );
 
   const onScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
