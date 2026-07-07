@@ -1,5 +1,5 @@
 import { Image, type ImageRef } from 'expo-image';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /** Default cover/page-thumb aspect ratio (width / height) — the skeleton's
  *  fixed shape, and the vertical MAX every thumbnail is capped to. Mirrors
@@ -52,6 +52,18 @@ const IDLE_STATE: PrefetchedImage = { ref: null, aspect: DEFAULT_THUMB_ASPECT, s
  */
 export function usePrefetchedImage(uri: string | null | undefined, enabled: boolean): PrefetchedImage {
   const [state, setState] = useState<PrefetchedImage>(IDLE_STATE);
+
+  // Recycle-safety: when a recycled card slot is handed a new `uri`, drop the
+  // previous cover's ref/aspect synchronously during render (not one frame
+  // later via the effect below), so the reused card never briefly shows the
+  // prior entry's cover at its aspect ratio. No-op on a fresh mount (the ref
+  // starts equal to `uri`). The effect still (re)runs the actual off-screen
+  // decode for the new uri.
+  const prevUriRef = useRef(uri);
+  if (prevUriRef.current !== uri) {
+    prevUriRef.current = uri;
+    if (state !== IDLE_STATE) setState(IDLE_STATE);
+  }
 
   useEffect(() => {
     setState(IDLE_STATE);

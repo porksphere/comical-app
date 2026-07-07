@@ -808,7 +808,10 @@ export default function BrowseScreen() {
         data={gridData}
         keyExtractor={(item) => String(item.id)}
         numColumns={numColumns}
-        recycleItems={false}
+        // Recycle card instances rather than remounting per reuse — SeriesCard is now recycle-safe
+        // (resets its per-item state synchronously on entry change), so scrolling reuses cards
+        // instead of paying a fresh heavy mount for every row that scrolls into view.
+        recycleItems
         ListHeaderComponent={listHeader}
         // LegendList takes gap keys only in columnWrapperStyle (column gap); the outer inset +
         // centering come from contentContainerStyle's paddingLeft/Right (= sidePad), and the

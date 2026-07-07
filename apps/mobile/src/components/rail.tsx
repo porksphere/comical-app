@@ -258,7 +258,9 @@ export function Rail({
           horizontal
           data={section.items}
           keyExtractor={(it) => it.id}
-          recycleItems={false}
+          // Recycle-safe now (SeriesCard resets its per-item state on entry change), so reuse card
+          // instances as the strip scrolls instead of remounting each heavy card.
+          recycleItems
           estimatedItemSize={cardWidth + stripGap}
           showsHorizontalScrollIndicator={false}
           // LegendList positions items virtually and ignores `gap` on contentContainerStyle, and its
