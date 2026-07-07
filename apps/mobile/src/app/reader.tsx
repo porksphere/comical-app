@@ -13,9 +13,15 @@ import { RetryBlock } from '@/components/retry-block';
 import { ThemedText } from '@/components/themed-text';
 import { WebtoonReader, type WebtoonReaderHandle } from '@/components/reader/webtoon-reader';
 import { resolveAssetSourceCached } from '@/data/api';
-import { chapterPagesQuery, directPagesQuery, inLibraryQuery, queryKeys, seriesDetailQuery } from '@/data/queries';
+import {
+  chapterPagesQuery,
+  directPagesQuery,
+  inLibraryQuery,
+  queryKeys,
+  seriesListQuery,
+} from '@/data/queries';
 import { useDataSource, useMockActive, type DataSource } from '@/data/source';
-import { DIRECT_CHAPTER_ID, type Chapter, type SeriesDetail } from '@/data/types';
+import { DIRECT_CHAPTER_ID, type Chapter, type SeriesDetail, type SeriesListResult } from '@/data/types';
 import { getAdjacentChapter } from '@/lib/chapter-order';
 import { getPreferredGroup, setPreferredGroup } from '@/lib/preferred-group';
 import { useReaderSettings } from '@/hooks/use-reader-settings';
@@ -74,10 +80,13 @@ export default function ReaderScreen() {
   const error = queryError ? (queryError as Error).message || 'Failed to load pages' : null;
   const retry = refetch;
 
-  const startIndex = useMemo(
-    () => Math.max(0, Math.min((pages?.length ?? 1) - 1, Number(start ?? 0) || 0)),
-    [pages, start],
-  );
+  // `start` is a page index, or the sentinel `'last'` — used when arriving from the
+  // *next* chapter's "previous chapter" navigation, which should land on the last page.
+  const startIndex = useMemo(() => {
+    const lastPage = (pages?.length ?? 1) - 1;
+    if (start === 'last') return Math.max(0, lastPage);
+    return Math.max(0, Math.min(lastPage, Number(start ?? 0) || 0));
+  }, [pages, start]);
 
   const [settings] = useReaderSettings();
   const [currentPage, setCurrentPage] = useState(startIndex);
@@ -132,25 +141,33 @@ export default function ReaderScreen() {
     advancingRef.current = false;
   }, [pages]);
 
-  const tryAdvanceChapter = useCallback(async () => {
-    if (advancingRef.current || !chapterId) return;
-    advancingRef.current = true;
-    const nextId = await resolveNextChapterId(queryClient, ds, mock, bridgeId ?? '', seed ?? '', chapterId);
-    if (!nextId) {
-      advancingRef.current = false;
-      return;
-    }
-    const chapters = queryClient.getQueryData<SeriesDetail>(
-      queryKeys.seriesDetail(mock, bridgeId ?? '', seed ?? '', false),
-    )?.chapters;
-    const nextName = chapters?.find((c) => c.id === nextId)?.name;
-    const params: Record<string, string> = { seed: seed ?? '', title: title ?? '', start: '0', chapterId: nextId };
-    if (bridgeId) params.bridgeId = bridgeId;
-    if (nextName) params.chapterName = nextName;
-    // `replace`, not `push`: repeated auto-advances through a long series
-    // shouldn't pile up an ever-growing back-stack of finished chapters.
-    router.replace({ pathname: '/reader', params });
-  }, [chapterId, queryClient, ds, mock, bridgeId, seed, title, router]);
+  // Move to the adjacent chapter in reading order: `delta` +1 = next (land on its
+  // first page), -1 = previous (land on its last page, so paging back is continuous).
+  const goAdjacentChapter = useCallback(
+    async (delta: 1 | -1) => {
+      if (advancingRef.current || !chapterId) return;
+      advancingRef.current = true;
+      const target = await resolveAdjacentChapter(queryClient, ds, mock, bridgeId ?? '', seed ?? '', chapterId, delta);
+      if (!target) {
+        advancingRef.current = false;
+        return;
+      }
+      const params: Record<string, string> = {
+        seed: seed ?? '',
+        title: title ?? '',
+        start: delta === 1 ? '0' : 'last',
+        chapterId: target.id,
+      };
+      if (bridgeId) params.bridgeId = bridgeId;
+      if (target.name) params.chapterName = target.name;
+      // `replace`, not `push`: paging through a long series shouldn't pile up an
+      // ever-growing back-stack of finished chapters.
+      router.replace({ pathname: '/reader', params });
+    },
+    [chapterId, queryClient, ds, mock, bridgeId, seed, title, router],
+  );
+  const tryAdvanceChapter = useCallback(() => void goAdjacentChapter(1), [goAdjacentChapter]);
+  const tryPrevChapter = useCallback(() => void goAdjacentChapter(-1), [goAdjacentChapter]);
 
   // ── Reading history / progress recording ─────────────────────────────────
   // Whether this series is in the library decides how a read is persisted (like
@@ -167,25 +184,35 @@ export default function ReaderScreen() {
     queryClient.getQueryData<SeriesDetail>(queryKeys.seriesDetail(mock, bridgeId ?? '', seed ?? '', false)) ??
     queryClient.getQueryData<SeriesDetail>(queryKeys.seriesDetail(mock, bridgeId ?? '', seed ?? '', true));
 
+  // The chapter list is deferred to a separate `getSeriesList` fetch (both real bridges
+  // and the mock — see series.tsx's matching `listData?.chapters`). Subscribe to it so
+  // it's present even on a cold open (History/Resume, deep link) — otherwise the reader
+  // can't resolve the next chapter and advance silently no-ops.
+  const { data: listData } = useQuery(
+    seriesListQuery(ds, mock, bridgeId ?? '', seed ?? '', false, !!seed && !!chapterId),
+  );
+  const chapters = listData?.chapters;
+
   // Remember the scanlation group of the chapter being read, so next/prev keeps the
   // same source — including when the reader was opened from History/a deep link
   // (bypassing the chapter list, which otherwise sets this). Mirrors comical-web's
   // `openChapter`: only set when the chapter actually carries a group; never clear it.
   useEffect(() => {
     if (!chapterId) return;
-    const group = cachedDetail?.chapters?.find((c) => c.id === chapterId)?.group;
+    const group = chapters?.find((c) => c.id === chapterId)?.group;
     if (group !== undefined) setPreferredGroup(group);
-  }, [chapterId, cachedDetail]);
+  }, [chapterId, chapters]);
 
   // The next chapter in reading order — drives the webtoon end-of-chapter sentinel.
-  // Cache-only: a cold cache just omits the sentinel; the scroll/tap auto-advance
-  // still resolves the next chapter via a fetch (`resolveNextChapterId`).
+  // Resolved from the combined chapter list (`chapters`), which subscribes to the
+  // deferred `getSeriesList` for real bridges; a still-cold list just omits the
+  // sentinel, and the scroll/tap auto-advance re-resolves via a fetch
+  // (`resolveNextChapter`).
   const nextChapter = useMemo(() => {
-    const list = cachedDetail?.chapters;
-    if (!chapterId || !list) return null;
-    const current = list.find((c) => c.id === chapterId);
-    return current ? getAdjacentChapter(list, current, 1, getPreferredGroup()) : null;
-  }, [chapterId, cachedDetail]);
+    if (!chapterId || !chapters) return null;
+    const current = chapters.find((c) => c.id === chapterId);
+    return current ? getAdjacentChapter(chapters, current, 1, getPreferredGroup()) : null;
+  }, [chapterId, chapters]);
 
   // Kept in a ref (reassigned every render) so the debounce + unmount-flush
   // effects below always record the latest page/membership without re-subscribing.
@@ -268,20 +295,33 @@ export default function ReaderScreen() {
     [pages, settings.mode, setCurrent],
   );
   const atLastPage = useCallback(() => !!pages && currentRef.current >= pages.length - 1, [pages]);
-  const prev = useCallback(() => goTo(currentRef.current - 1), [goTo]);
+  const atFirstPage = useCallback(() => currentRef.current <= 0, []);
+  const prev = useCallback(() => {
+    if (atFirstPage()) {
+      tryPrevChapter();
+      return;
+    }
+    goTo(currentRef.current - 1);
+  }, [goTo, atFirstPage, tryPrevChapter]);
   const next = useCallback(() => {
     if (atLastPage()) {
-      void tryAdvanceChapter();
+      tryAdvanceChapter();
       return;
     }
     goTo(currentRef.current + 1);
   }, [goTo, atLastPage, tryAdvanceChapter]);
   // Tapping a page turns it instantly (no slide), on every platform; keyboard
   // arrows and progress-pill jumps keep the animated transition.
-  const turnPrev = useCallback(() => goTo(currentRef.current - 1, false), [goTo]);
+  const turnPrev = useCallback(() => {
+    if (atFirstPage()) {
+      tryPrevChapter();
+      return;
+    }
+    goTo(currentRef.current - 1, false);
+  }, [goTo, atFirstPage, tryPrevChapter]);
   const turnNext = useCallback(() => {
     if (atLastPage()) {
-      void tryAdvanceChapter();
+      tryAdvanceChapter();
       return;
     }
     goTo(currentRef.current + 1, false);
@@ -393,15 +433,30 @@ export default function ReaderScreen() {
   );
 }
 
+/** The cached chapter list — deferred to the `getSeriesList` query for both real
+ *  bridges and the mock (see the `chapters` derivation in the component, and
+ *  series.tsx's matching read). */
+function cachedChapters(qc: QueryClient, mock: boolean, bridgeId: string, seriesId: string): Chapter[] | undefined {
+  return qc.getQueryData<SeriesListResult>(queryKeys.seriesList(mock, bridgeId, seriesId, false))?.chapters;
+}
+
 /**
- * The chapter to read after `chapterId`, resolved from the cached series detail
- * if it's warm (i.e. the reader was opened from the series screen). Reading order
- * is derived from the numeric chapter `number` via `getAdjacentChapter` — not the
- * raw array order, which a bridge never promises tracks reading order — and it
- * keeps the same scanlation group/language where the next chapter has one (falling
- * back to the preferred group, then the freshest copy). Returns null when the
- * detail isn't cached or the current chapter is already the last.
+ * The chapter adjacent to `chapterId` in reading order (`delta` +1 = next, -1 = prev).
+ * Reading order is derived from the numeric chapter `number` via `getAdjacentChapter` —
+ * not the raw array order, which a bridge never promises tracks reading order — and it
+ * keeps the same scanlation group/language where the target has one (falling back to the
+ * preferred group, then the freshest copy). Returns null when the current chapter isn't
+ * in the list or is already at that end.
  */
+function adjacentChapterFrom(chapters: Chapter[] | undefined, chapterId: string, delta: 1 | -1): Chapter | null {
+  if (!chapters?.length) return null;
+  const current = chapters.find((c) => c.id === chapterId);
+  if (!current) return null;
+  return getAdjacentChapter(chapters, current, delta, getPreferredGroup());
+}
+
+/** Next chapter's id from the warm cache only (no fetch) — used by the prefetch
+ *  effect, where a miss is low severity and not worth a network round-trip. */
 function nextChapterId(
   qc: QueryClient,
   mock: boolean,
@@ -409,41 +464,30 @@ function nextChapterId(
   seriesId: string,
   chapterId: string,
 ): string | null {
-  const chapters = qc.getQueryData<SeriesDetail>(queryKeys.seriesDetail(mock, bridgeId, seriesId, false))?.chapters;
-  return nextIdFromChapters(chapters, chapterId);
-}
-
-/** Shared resolution: find the current chapter and hand back the next one's id in
- *  reading order, staying in its scanlation group where possible. */
-function nextIdFromChapters(chapters: Chapter[] | undefined, chapterId: string): string | null {
-  if (!chapters?.length) return null;
-  const current = chapters.find((c) => c.id === chapterId);
-  if (!current) return null;
-  return getAdjacentChapter(chapters, current, 1, getPreferredGroup())?.id ?? null;
+  return adjacentChapterFrom(cachedChapters(qc, mock, bridgeId, seriesId), chapterId, 1)?.id ?? null;
 }
 
 /**
- * Same as `nextChapterId`, but falls back to a real fetch when the series
- * detail isn't cached (e.g. the reader was opened from History's Resume
- * action or a deep link, bypassing the series screen entirely — exactly the
- * common case auto-advance needs to keep working for). Used only by the
- * auto-advance path; the cheaper prefetch effect above stays cache-only,
- * since a missed prefetch is low severity and not worth an unconditional
- * extra network round-trip every session.
+ * The adjacent chapter (`delta` +1 = next, -1 = prev), falling back to a real fetch
+ * when the chapter list isn't cached (e.g. the reader was opened from History's Resume
+ * action or a deep link, bypassing the series screen entirely — exactly the common case
+ * chapter-to-chapter navigation needs to keep working for). Used only by the
+ * navigation path; the cheaper prefetch stays cache-only, since a miss is low severity.
  */
-async function resolveNextChapterId(
+async function resolveAdjacentChapter(
   qc: QueryClient,
   ds: DataSource,
   mock: boolean,
   bridgeId: string,
   seriesId: string,
   chapterId: string,
-): Promise<string | null> {
-  const cached = nextChapterId(qc, mock, bridgeId, seriesId, chapterId);
+  delta: 1 | -1,
+): Promise<Chapter | null> {
+  const cached = adjacentChapterFrom(cachedChapters(qc, mock, bridgeId, seriesId), chapterId, delta);
   if (cached) return cached;
   try {
-    const detail = await qc.fetchQuery(seriesDetailQuery(ds, mock, bridgeId, seriesId, { direct: false }));
-    return nextIdFromChapters(detail.chapters, chapterId);
+    const list = await qc.fetchQuery(seriesListQuery(ds, mock, bridgeId, seriesId, false, true));
+    return adjacentChapterFrom(list.chapters, chapterId, delta);
   } catch {
     return null;
   }

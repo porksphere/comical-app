@@ -221,18 +221,19 @@ function SeriesBody({
   // separately so the hero/meta/description paint immediately (this is what made
   // the page feel slower than comical-web, which for chaptered series blocks its
   // whole body on the /chapters request). The chapter section shows a skeleton
-  // meanwhile, and the merged chapters/pageThumbs/count/label below prefer the
-  // deferred result but fall back to any inline values (e.g. mock data).
+  // meanwhile. The chapter list / page-thumbnail grid comes only from the deferred
+  // result now (both real and mock defer it); count/label still fall back to any
+  // inline detail value a direct series carries.
   const listDeferred = !!series.listDeferred;
   const { data: listData, isLoading: listFetching } = useQuery(
     seriesListQuery(ds, mock, bridgeId ?? '', series.id, direct, listDeferred),
   );
   const listLoading = listDeferred && listFetching;
-  const chapters = series.chapters ?? listData?.chapters;
+  const chapters = listData?.chapters;
   // The scanlation group last opened for this series — so Read (with no resume)
   // starts Chapter 1 of the source the user is reading, not an arbitrary copy.
   const preferredGroup = usePreferredGroup();
-  const pageThumbs = series.pageThumbs ?? listData?.pageThumbs;
+  const pageThumbs = listData?.pageThumbs;
   const chapterCount = listData?.chapterCount ?? series.chapterCount;
   const readLabel = listData?.readLabel ?? series.readLabel;
 

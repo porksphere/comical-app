@@ -115,14 +115,6 @@ export type SeriesDetail = SeriesEntry & {
   tagGroups?: TagGroup[];
   meta?: MetaCell[];
   description?: string;
-  /** Chaptered series. Mutually exclusive with `pageThumbs` (direct series). */
-  chapters?: Chapter[];
-  /** Direct series: page-preview thumbnails instead of a chapter list. One entry per page,
-   *  index-aligned (array position === page index, since the reader's `start` param depends on
-   *  it) — `null` means the bridge didn't supply this one inline and `PageThumbGrid` should
-   *  lazy-fetch it. Never a full-size page image: if the bridge has no thumbnail data at all, the
-   *  grid doesn't render rather than bulk-loading full pages as a preview. */
-  pageThumbs?: (PageThumbSource | null)[];
   /** Whether the bridge exposes external sources / trackers actions. */
   hasSources?: boolean;
   hasTrackers?: boolean;
