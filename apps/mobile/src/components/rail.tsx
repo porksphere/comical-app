@@ -1,6 +1,6 @@
 import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import type { LegendListRef } from '@legendapp/list/react-native';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
@@ -83,7 +83,11 @@ function gridCardWidth(viewport: number, gap: number): number {
   return Math.floor((containerWidth - (GRID_COLUMNS - 1) * gap) / GRID_COLUMNS);
 }
 
-export function Rail({
+// Memoized alongside SeriesCard: Browse renders its rails inside the list's
+// ListHeaderComponent, which is rebuilt on every BrowseScreen re-render. The
+// memo only holds if callers pass stable props — `onSeeAll` is a useCallback and
+// the related-rail `section` objects are memoized at their call sites.
+export const Rail = memo(function Rail({
   section,
   viewportWidth,
   onSeeAll,
@@ -305,7 +309,7 @@ export function Rail({
       )}
     </View>
   );
-}
+});
 
 /** Generic "a rail is loading" placeholder — shown wherever a rail's data
  *  hasn't resolved yet (e.g. a related-series rail lazily fetched after the

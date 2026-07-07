@@ -516,6 +516,10 @@ export default function BrowseScreen() {
     setPage(p);
   };
 
+  // Stable so the memoized <Rail> isn't re-rendered by a fresh closure on every
+  // BrowseScreen render (the rails live in the list header, rebuilt each render).
+  const handleSeeAll = useCallback((sec: RailSection) => setSeeAll({ listId: sec.id, title: sec.title }), []);
+
   // See plan: hold the server's column count until mount to avoid a hydration
   // mismatch on the static web export (no viewport → width 0 → 3 columns).
   const [hydrated, setHydrated] = useState(false);
@@ -734,7 +738,7 @@ export default function BrowseScreen() {
                     key={s.id}
                     section={s}
                     viewportWidth={railViewport}
-                    onSeeAll={(sec) => setSeeAll({ listId: sec.id, title: sec.title })}
+                    onSeeAll={handleSeeAll}
                     bridge={currentBridge?.name ?? undefined}
                     bridgeId={bridgeId}
                     direct={directBridge}
