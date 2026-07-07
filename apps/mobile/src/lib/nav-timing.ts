@@ -2,12 +2,17 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback } from 'react';
 import { Platform } from 'react-native';
 
+import { logDiagnostic } from '@/lib/diagnostics';
+
 /**
  * TEMPORARY press → first-commit timing for the iOS navigation / tab-switch
  * stall. Call `markNavStart` on a card or tab press; the destination screen
- * calls `useNavArrival` so it logs when it first gains focus. Prints to the JS
- * console (Metro, or the Xcode/device console for a sideloaded build) tagged
- * `[NAV-TIMING]`.
+ * calls `useNavArrival` so it logs when it first gains focus.
+ *
+ * Each arrival is written to the on-device diagnostics log (Settings → app info
+ * → Diagnostics), so it's readable on a device with no Mac / Metro console
+ * attached — newest first, so the latest navigation sits on top. Also mirrored
+ * to the JS console for when Metro *is* attached.
  *
  * The measured span is touch-down → destination screen focus, so it includes the
  * brief finger-hold before release — fine for comparing before/after, since that
@@ -30,6 +35,9 @@ export function logNavArrival(label: string): void {
   if (!start) return;
   pending = null;
   const ms = Date.now() - start.t;
+  // Surfaced in the Diagnostics screen so it's inspectable on-device (no Mac
+  // needed); one entry per navigation, so it's nowhere near a hot path.
+  logDiagnostic('nav-timing', `${start.label} -> ${label}: ${ms}ms`, { context: Platform.OS });
   // eslint-disable-next-line no-console
   console.log(`[NAV-TIMING] ${start.label} -> ${label}: ${ms}ms (${Platform.OS})`);
 }
