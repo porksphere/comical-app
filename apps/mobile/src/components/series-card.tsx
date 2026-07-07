@@ -85,6 +85,15 @@ function useHeld() {
 
   useEffect(() => () => cleanup.current?.(), []);
 
+  // Clear the held/hovered state — called when this card instance is recycled to
+  // a different entry (see SeriesCard's per-item reset) so a card reused mid-press
+  // doesn't carry the previous slot's highlight.
+  const reset = useCallback(() => {
+    setHeld(false);
+    setHovered(false);
+    cleanup.current?.();
+  }, []);
+
   return {
     active: held || hovered,
     handlers: {
@@ -93,6 +102,7 @@ function useHeld() {
       onHoverIn: () => setHovered(true),
       onHoverOut: () => setHovered(false),
     },
+    reset,
   };
 }
 
@@ -130,8 +140,26 @@ export function SeriesCard({
 }) {
   const [loaded, setLoaded] = useState(false);
   const [truncated, setTruncated] = useState(false);
-  const { active, handlers } = useHeld();
+  const { active, handlers, reset: resetHeld } = useHeld();
   const fixedWidth = size === 'grid' ? undefined : (width ?? WIDTHS[size]);
+
+  // Recycle-safety: the browse grid and rails now reuse card instances
+  // (recycleItems), so when a slot is handed a different entry this same
+  // component re-renders with new props instead of remounting. Reset the
+  // per-item state that would otherwise linger from the previous entry —
+  // synchronously, during render (React's "adjust state on prop change"
+  // pattern), so not one frame shows the old cover-loaded/truncation state.
+  // This works identically when the card is genuinely remounted (the ref starts
+  // equal to entry.id, so it's a no-op) and in the non-recycled call sites
+  // (HomeGridBlock, the wide rail grid). `usePrefetchedImage` resets its own
+  // cover/aspect the same way; `delayPassed` is already true in real mode.
+  const prevIdRef = useRef(entry.id);
+  if (prevIdRef.current !== entry.id) {
+    prevIdRef.current = entry.id;
+    setLoaded(false);
+    setTruncated(false);
+    resetHeld();
+  }
 
   // Responsive title size matching the reference's mobile/desktop type scale.
   const compact = useIsCompact();
