@@ -620,8 +620,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     // The card shares the sheet's background, so on the (also dark) page a light
     // edge — not the shadow — is what separates it; the shadow only lifts it on
-    // lighter surroundings.
-    borderWidth: 1,
+    // lighter surroundings. Left/right only — top/bottom read as an unwanted
+    // boxed-in outline once the popover's height matches its content exactly.
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
     borderColor: 'rgba(255,255,255,0.14)',
     boxShadow: '0px 12px 24px rgba(0, 0, 0, 0.35)',
     elevation: 12,
