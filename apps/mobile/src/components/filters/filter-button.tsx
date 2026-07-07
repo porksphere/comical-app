@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { Platform, Pressable, StyleSheet, TextInput, View, type TextStyle } from 'react-native';
 
 import { useAnchoredOverlay } from '@/components/overlay/overlay';
@@ -164,15 +164,17 @@ function StringFilterRow({
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         placeholder={def.placeholder ?? 'Type…'}
-        placeholderTextColor={theme.textSecondary}
+        placeholderTextColor={`${theme.textSecondary}99`}
         style={[styles.inlineInput, NO_OUTLINE, { color: theme.text }]}
       />
     </ThemedView>
   );
 }
 
-/** A `number` filter: a −/+ stepper takes the place of the summary chips,
- *  editable directly with no overlay. */
+/** A `number` filter: reads exactly like `OverlayFilterRow` at rest — label +
+ *  value, nothing else — but the value itself is an always-mounted `TextInput`
+ *  (never conditionally swapped for a `Text`/`Pressable`, so tapping it just
+ *  focuses it in place: no layout shift, no hidden UI, no popup). */
 function NumberFilterRow({
   def,
   value,
@@ -183,69 +185,48 @@ function NumberFilterRow({
   onChange: (id: string, v: number) => void;
 }) {
   const theme = useTheme();
-  const step = def.step ?? 1;
   const n = value ?? def.default ?? def.min;
-  const set = (next: number) => onChange(def.id, Math.min(def.max, Math.max(def.min, next)));
-  const [editing, setEditing] = useState(false);
   const [text, setText] = useState(String(n));
+  const [focused, setFocused] = useState(false);
+  // Keep the field in sync with external value changes (e.g. "clear filters")
+  // while untouched; don't clobber the text mid-edit.
+  useEffect(() => {
+    if (!focused) setText(String(n));
+  }, [n, focused]);
+
   const commit = () => {
     const parsed = Number(text);
-    if (Number.isFinite(parsed)) set(parsed);
-    setEditing(false);
+    if (Number.isFinite(parsed)) onChange(def.id, Math.min(def.max, Math.max(def.min, parsed)));
+    else setText(String(n));
   };
+
   return (
     <ThemedView
       type="backgroundElement"
-      style={[styles.row, { borderColor: editing ? theme.accent : 'transparent' }]}>
+      style={[styles.row, { borderColor: focused ? theme.accent : 'transparent' }]}>
       <ThemedText style={styles.label} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
         {def.label}
       </ThemedText>
       <View style={styles.summary} />
-      <View style={styles.stepper}>
-        <StepperButton label="−" disabled={n <= def.min} onPress={() => set(n - step)} />
-        {editing ? (
-          <TextInput
-            autoFocus
-            value={text}
-            onChangeText={setText}
-            onSubmitEditing={commit}
-            onBlur={commit}
-            keyboardType="numeric"
-            selectTextOnFocus
-            style={[styles.stepperInput, NO_OUTLINE, { color: theme.text }]}
-          />
-        ) : (
-          <Pressable
-            onPress={() => {
-              setText(String(n));
-              setEditing(true);
-            }}
-            hitSlop={8}>
-            <ThemedText style={styles.stepperValue}>
-              {n}
-              {def.unit ?? ''}
-            </ThemedText>
-          </Pressable>
-        )}
-        <StepperButton label="+" disabled={n >= def.max} onPress={() => set(n + step)} />
-      </View>
+      <TextInput
+        value={text}
+        onChangeText={setText}
+        onFocus={() => setFocused(true)}
+        onBlur={() => {
+          setFocused(false);
+          commit();
+        }}
+        onSubmitEditing={commit}
+        keyboardType="numeric"
+        selectTextOnFocus
+        style={[styles.valueInput, NO_OUTLINE, { color: theme.text }]}
+      />
+      {def.unit ? (
+        <ThemedText themeColor="textSecondary" style={styles.unit}>
+          {def.unit}
+        </ThemedText>
+      ) : null}
     </ThemedView>
-  );
-}
-
-function StepperButton({ label, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) {
-  const { hovered, handlers } = useHover();
-  const theme = useTheme();
-  return (
-    <Pressable onPress={onPress} disabled={disabled} hitSlop={8} {...handlers}>
-      <ThemedText
-        style={[
-          styles.stepperBtn,
-          disabled ? styles.stepperBtnDisabled : hovered ? { color: theme.text } : { color: theme.textSecondary },
-        ]}>
-        {label}
-      </ThemedText>
-    </Pressable>
   );
 }
 
@@ -264,9 +245,8 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   // Shrinks (and, on native, scales its own font down via `adjustsFontSizeToFit`)
-  // instead of the old fixed width, which let a long label like "Minimum
-  // chapters" crowd the stepper's +/- buttons out of the row entirely once the
-  // bar squashed narrow enough.
+  // instead of the old fixed width, so a long label gives way before it can
+  // crowd the value out of the row once the bar squashes narrow enough.
   label: {
     flexShrink: 1,
     minWidth: 0,
@@ -279,32 +259,18 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     fontSize: 16,
-    paddingVertical: 0,
+    lineHeight: 24,
+    padding: 0,
   },
-  stepper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    // Never shrink — the −/value/+ controls must stay fully visible; the label
-    // gives way instead (see `label` above).
+  valueInput: {
+    minWidth: 32,
     flexShrink: 0,
-  },
-  stepperValue: {
-    minWidth: 32,
-    textAlign: 'center',
-  },
-  stepperInput: {
-    minWidth: 32,
     fontSize: 16,
-    textAlign: 'center',
-    paddingVertical: 0,
+    lineHeight: 24,
+    textAlign: 'right',
+    padding: 0,
   },
-  stepperBtn: {
-    fontSize: 20,
-    fontWeight: '600',
-    paddingHorizontal: Spacing.one,
-  },
-  stepperBtnDisabled: {
-    opacity: 0.3,
+  unit: {
+    flexShrink: 0,
   },
 });
