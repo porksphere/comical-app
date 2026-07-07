@@ -112,6 +112,7 @@
       current ScrollView) + the chapter tabs/sort header, both of which the LegendList
       restructure has to preserve. Do it as its own isolated change, not bundled with
       unrelated work. Related: the js-jank/nav-timing investigation that ruled render out.
+- [ ] Excluded tags don't appear to persist on iOS between restarts (unsure about genres)
 
 ## Reader (page viewer)
 - [x] Image retry-with-backoff on page load failure (currently just shows a placeholder) —
