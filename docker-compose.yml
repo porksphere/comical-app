@@ -1,0 +1,33 @@
+# Full self-hosted Comical web stack: the backend host-server + the web app, up in one command.
+#
+#   COMICAL_SERVER=http://<this-machine>:3100 docker compose up -d
+#
+# COMICAL_SERVER is the URL the BROWSER uses to reach the backend — not the compose service name
+# (the browser runs on the user's machine, outside this network). For a local trial the default
+# below works; for a real deployment set it to the backend's public URL and put both services
+# behind a reverse proxy with TLS.
+services:
+  host:
+    image: ghcr.io/porksphere/comical-host:latest
+    ports:
+      - "3100:3100"
+    environment:
+      COMICAL_ORIGIN: "*"
+      # COMICAL_TOKEN: "change-me"   # optional bearer auth
+    volumes:
+      - comical-data:/data
+    restart: unless-stopped
+
+  web:
+    image: ghcr.io/porksphere/comical-app-web:latest
+    ports:
+      - "8080:80"
+    environment:
+      # The browser-facing URL of `host` above. Override for anything past a local trial.
+      COMICAL_SERVER: "${COMICAL_SERVER:-http://localhost:3100}"
+    depends_on:
+      - host
+    restart: unless-stopped
+
+volumes:
+  comical-data:

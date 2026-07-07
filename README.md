@@ -39,13 +39,49 @@ releases (with both binaries) live under the repo's [Releases](https://github.co
 
 Unlike native, the web build has no on-device runtime — you host it yourself: the **app**
 (the static web bundle) and a **backend** (`@comical/host-server`, which runs the bridges).
-Point the app at your backend via `EXPO_PUBLIC_COMICAL_SERVER`. See
-[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for building the web bundle and running the server.
 
-> **TODO:** ship a Docker / `docker compose` example that brings up both the app host and the
-> backend host in one command.
+Both are published as container images. This `docker-compose.yml` brings up the whole stack:
 
-A public preview is deployed to GitHub Pages as an example — **[porksphere.github.io/comical-app](https://porksphere.github.io/comical-app/)**
+```yaml
+services:
+  host:
+    image: ghcr.io/porksphere/comical-host:latest
+    ports: ["3100:3100"]
+    environment:
+      COMICAL_ORIGIN: "*"
+      # COMICAL_TOKEN: "change-me"   # optional bearer auth
+    volumes: ["comical-data:/data"]
+    restart: unless-stopped
+  web:
+    image: ghcr.io/porksphere/comical-app-web:latest
+    ports: ["8080:80"]
+    environment:
+      # The URL the BROWSER uses to reach `host` — set to the backend's public URL for a real deploy.
+      COMICAL_SERVER: "http://localhost:3100"
+    depends_on: ["host"]
+    restart: unless-stopped
+volumes:
+  comical-data:
+```
+
+```sh
+docker compose up -d
+# open http://localhost:8080
+```
+
+- **`COMICAL_SERVER`** is injected into the web app at container start (`window.__COMICAL_SERVER__`),
+  so one image re-points at any backend without rebuilding. It's the URL the **browser** uses — not
+  the compose service name — so beyond a local trial set it to the backend's public URL and front
+  both services with a reverse proxy + TLS. Users can also override it in the app's **Settings**.
+- **`host`** ships only first-party sample bridges; add real sources (a registry, then bridges) at
+  runtime via Settings. Its `/data` volume persists your library, settings, and installed bridges.
+- Image tags: `latest` + `sha-<commit>` follow the default branch; `X.Y.Z` / `X.Y` are cut from
+  `v*` git tags.
+
+To build the web bundle or run the server from source instead, see
+[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+
+A public preview is also deployed to GitHub Pages — **[porksphere.github.io/comical-app](https://porksphere.github.io/comical-app/)**
 — but it's backed by demo data (static hosting has no backend to reach), so it's a look at the
 UI, not a usable reader.
 
