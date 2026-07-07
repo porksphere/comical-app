@@ -15,7 +15,7 @@ import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { MaxContentWidth, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { setBrowseIntent } from '@/data/browse-intent';
 import {
   historyQuery,
@@ -34,7 +34,7 @@ import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 
-const LARGE_COVER_WIDTH = 200;
+const LARGE_COVER_WIDTH = 300;
 
 /** Meta cells whose value should open a matching Browse search, keyed by the
  *  cell's `label` (see `buildMeta` in `data/source.ts`) to the `BrowseIntent`
@@ -106,8 +106,10 @@ export default function SeriesScreen() {
   // Give the cover the lion's share of the hero and keep the action column
   // narrow: actions take a small fixed slice, the cover fills the rest (capped
   // so it doesn't get absurd on very wide layouts). Only used on small screens.
+  // The floor/ratio are sized so the action buttons (e.g. "▶ Chapter 1") aren't
+  // cramped against the right edge on a phone.
   const contentWidth = Math.min(width, MaxContentWidth) - Spacing.four * 2;
-  const actionsWidth = Math.round(Math.min(Math.max(contentWidth * 0.3, 116), 150));
+  const actionsWidth = Math.round(Math.min(Math.max(contentWidth * 0.34, 132), 160));
 
   // Error / deep-link skeleton stay in a plain ScrollView; a resolved SeriesBody
   // owns its own scroll container (a ScrollView for chaptered series, a
@@ -715,7 +717,12 @@ const styles = StyleSheet.create({
   },
   column: {
     width: '100%',
-    maxWidth: MaxContentWidth,
+    // Match the top-level views (browse grid, library, history) so the two-column
+    // hero and the related rails read at one width — the rails' wide-desktop grid
+    // sizes its six cards against MaxTopLevelWidth (see rail.tsx), so an 800-cap
+    // column let them overflow past the content. Below 768 (mobile/small) this cap
+    // never binds — the column is width:100% — so nothing changes there.
+    maxWidth: MaxTopLevelWidth,
     gap: Spacing.four,
   },
   inner: {
