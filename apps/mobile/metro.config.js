@@ -1,10 +1,9 @@
 // Metro config for use in a workspace monorepo.
 //
-// watchFolders + nodeModulesPaths let Metro resolve `@porksphere/core` whether it
-// comes from the workspace stub (packages/core), the published GitHub Packages
-// version (apps/mobile/node_modules), or a locally `npm link`-ed checkout of the
-// real core repo (it will be symlinked into node_modules and its source is under
-// the monorepo root, both of which are covered here).
+// watchFolders + nodeModulesPaths let Metro resolve modules from the monorepo root
+// and any workspace package, not just apps/mobile/node_modules. This is what lets the
+// `@comical/*` packages resolve from the `external/comical` submodule (mapped via
+// extraNodeModules below) whose source and node_modules live outside this app dir.
 const { getSentryExpoConfig } = require('@sentry/react-native/metro');
 const path = require('path');
 

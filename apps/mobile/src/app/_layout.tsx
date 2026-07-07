@@ -58,11 +58,10 @@ function RootLayout() {
             {/* OverlayProvider hosts the stacked bottom-sheet overlays app-wide. */}
             <OverlayProvider>
               {/* Native stack: real UINavigationController on iOS (large titles, back
-                  gesture) and the native toolbar on Android. The tab group hides its
-                  own header; the pushed `detail` screen shows a native large title. */}
+                  gesture) and the native toolbar on Android. The tab group and every
+                  pushed screen below hide the native header and render their own chrome. */}
               <Stack>
                 <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                <Stack.Screen name="detail" options={{ title: 'Detail', headerLargeTitle: true }} />
                 {/* Series page renders its own static top bar (bridge name + back
                     button), so the native stack header is hidden here. */}
                 <Stack.Screen name="series" options={{ headerShown: false }} />

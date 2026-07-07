@@ -12,14 +12,12 @@ selectable fallback on native — it talks to a remote `@comical/host-server`.
 comical/
 ├── apps/
 │   └── mobile/                 # Expo app (expo-router, New Architecture)
-│       ├── src/app/            # screens (Browse/Library/History/Activity/Settings + detail/reader)
+│       ├── src/app/            # screens (Browse/Library/History/Activity/Settings + series/reader)
 │       ├── src/data/           # data layer: api.ts (transport seam), source.ts, embedded/ (on-device wiring)
 │       ├── modules/comical-runtime/  # local Expo native module wrapping comical's ComicalBridgeContext
 │       ├── app.json            # Expo config (bundleId: com.porksphere.comical)
 │       └── eas.json            # build profiles (optional `eas build --local` path)
 ├── external/comical/           # git SUBMODULE — the Comical runtime (@comical/*), source of on-device bridges
-├── packages/
-│   └── core/                   # vestigial @porksphere/core demo stub (see On-device runtime)
 └── .github/workflows/          # Android + iOS + web build pipelines
 ```
 
@@ -28,8 +26,7 @@ comical/
 The business-logic core is **TypeScript**, so it runs directly in the RN JS runtime with
 no native bridge — the single biggest reason RN wins here over native (SwiftUI + Compose)
 or Flutter, which would force re-implementing or wrapping the core twice. Native-stack gives
-native headers/large titles, and `expo-glass-effect` covers bespoke glass surfaces
-(auto-fallback to opaque views on Android / iOS < 26). The bottom tab bar itself
+native headers/large titles. The bottom tab bar itself
 (`src/components/app-tabs.tsx`) is a custom-rendered component rather than `expo-router`'s
 `NativeTabs` — that was tried (including iOS 26's `tabBarMinimizeBehavior`) and reverted; see
 git history / `apps/mobile/AGENTS.md` for why.
@@ -55,10 +52,6 @@ module) wraps comical's `ComicalBridgeContext`. Bridge bundles are downloaded, v
 plus Ed25519 when signed), and cached from **user-managed registries** — add/remove registry
 `index.json` URLs in **Settings → Bridge registries**. Nothing is hardcoded: published builds ship
 with no registry (for local dev, seed one via a gitignored `.env.local`'s `EXPO_PUBLIC_COMICAL_REGISTRY`).
-
-> `packages/core` (`@porksphere/core`) is a **vestigial demo stub** (`greet`) left from an earlier
-> design where a separate core would ship via GitHub Packages. The real runtime is the `@comical/*`
-> embedding above; the stub is only still imported by `detail.tsx`'s Liquid Glass demo.
 
 ## Web vs. native chrome
 

@@ -52,8 +52,6 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
-        env:
-          NODE_AUTH_TOKEN: ${{ github.token }}
 
       # Install the submodule's deps (hono/zod that @comical/* import at runtime) and generate the
       # gitignored `harness.js` the iOS ComicalBridgeContext bundles (see modules/comical-runtime).
