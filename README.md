@@ -1,4 +1,8 @@
-# comical
+<p align="center">
+  <img src="apps/mobile/assets/images/logo.svg" alt="Comical logo" width="128" height="128" />
+</p>
+
+<h1 align="center">comical</h1>
 
 Cross-platform (iOS + Android) mobile app built with **React Native + Expo (SDK 56)**,
 using a native stack for navigation plus a custom-rendered bottom/top tab bar (same
