@@ -2,13 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
-import {
-  MeasuredHeader,
-  OptionList,
-  OverlayHeading,
-  useAnchoredOverlay,
-  useListMaxHeight,
-} from '@/components/overlay/overlay';
+import { MeasuredHeader, OptionList, OverlayHeading, useAnchoredOverlay } from '@/components/overlay/overlay';
 import { ChipRow } from '@/components/chip';
 import { ChevronRightIcon } from '@/components/icons/ui-icons';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
@@ -78,6 +72,7 @@ export function TagExclusionsControl({
 }) {
   const ds = useDataSource();
   const theme = useTheme();
+  const queryClient = useQueryClient();
   const [tags, setTags] = useState<{ id: string; label: string }[]>(() =>
     initialTags.map((id) => ({ id, label: initialLabels[id] ?? id })),
   );
@@ -124,6 +119,11 @@ export function TagExclusionsControl({
     try {
       await ds.putExcludedTags(bridgeId, tags);
       setDirty(false);
+      // Matches `GenreExclusionsControl` and the parent screen's own settings save: the
+      // bridge-settings screen's `data.excludedTags`/`excludedTagLabels` came from this
+      // same query, so without this it goes stale until the screen is torn down and
+      // remounted (e.g. leaving and re-entering Bridge Settings).
+      await queryClient.invalidateQueries({ queryKey: ['bridgeSettings', bridgeId] });
     } finally {
       setSaving(false);
     }
@@ -272,8 +272,6 @@ function GenrePicker({
   excluded: string[];
   onToggle: (selected: string[]) => void;
 }) {
-  const [headerHeight, setHeaderHeight] = useState(0);
-  const maxHeight = useListMaxHeight(headerHeight);
   const [selected, setSelected] = useState(excluded);
   const toggle = (id: string) => {
     const next = selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id];
@@ -282,10 +280,10 @@ function GenrePicker({
   };
   return (
     <View style={styles.body}>
-      <MeasuredHeader onHeight={setHeaderHeight}>
+      <MeasuredHeader>
         <OverlayHeading>Excluded genres</OverlayHeading>
       </MeasuredHeader>
-      <OptionList maxHeight={maxHeight}>
+      <OptionList>
         {available.map((opt) => {
           const on = selected.includes(opt.id);
           return <GenreOption key={opt.id} label={opt.label} on={on} onPress={() => toggle(opt.id)} />;
@@ -406,6 +404,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   body: {
+    flex: 1,
+    minHeight: 0,
     gap: Spacing.three,
   },
   row: {

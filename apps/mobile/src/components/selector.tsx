@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { BridgeThumb } from '@/components/bridge-thumb';
@@ -7,7 +6,6 @@ import {
   OptionList,
   OverlayHeading,
   useAnchoredOverlay,
-  useListMaxHeight,
   useOverlay,
 } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
@@ -79,46 +77,70 @@ function SelectMenu({
   thumbnails?: Record<string, string>;
 }) {
   const { closeTop } = useOverlay();
-  const [headerHeight, setHeaderHeight] = useState(0);
-  const maxHeight = useListMaxHeight(headerHeight);
   return (
     <View style={styles.menu}>
-      <MeasuredHeader onHeight={setHeaderHeight}>
+      <MeasuredHeader>
         <OverlayHeading>{title}</OverlayHeading>
       </MeasuredHeader>
-      <OptionList maxHeight={maxHeight}>
+      <OptionList>
         {options.map((opt) => (
-          <Pressable
+          <SelectRow
             key={opt}
+            label={opt}
+            selected={opt === selected}
+            thumbnail={thumbnails ? (thumbnails[opt] ?? null) : undefined}
             onPress={() => {
               onSelect(opt);
               closeTop();
-            }}>
-            <ThemedView type="backgroundElement" style={styles.row}>
-              {/* Reserve the thumbnail's slot even when this option has none, so a
-                  list mixing bridges with/without a thumbnail keeps every title
-                  starting at the same x — conditionally omitting the Image instead
-                  (as this used to) drops a child from the row, and `space-between`
-                  reflows the remaining two to fill the gap, pushing untitled rows'
-                  labels flush left while thumbnailed rows' labels sit shifted right. */}
-              {thumbnails && (
-                <BridgeThumb
-                  key={thumbnails[opt] ?? opt}
-                  uri={thumbnails[opt]}
-                  label={opt}
-                  size={BridgeThumbSize}
-                  style={styles.optionThumb}
-                />
-              )}
-              <ThemedText style={styles.optionLabel} numberOfLines={1}>
-                {opt}
-              </ThemedText>
-              <View style={[styles.dot, opt === selected && styles.dotOn]} />
-            </ThemedView>
-          </Pressable>
+            }}
+          />
         ))}
       </OptionList>
     </View>
+  );
+}
+
+function SelectRow({
+  label,
+  selected,
+  thumbnail,
+  onPress,
+}: {
+  label: string;
+  selected: boolean;
+  /** `undefined` when the menu has no thumbnails at all; `null` for an option
+   *  that just doesn't have one (still reserves the slot — see below). */
+  thumbnail?: string | null;
+  onPress: () => void;
+}) {
+  const theme = useTheme();
+  const { hovered, handlers } = useHover();
+  return (
+    <Pressable onPress={onPress} {...handlers}>
+      <ThemedView
+        type="backgroundElement"
+        style={[styles.row, hovered && { backgroundColor: theme.backgroundSelected }]}>
+        {/* Reserve the thumbnail's slot even when this option has none, so a
+            list mixing bridges with/without a thumbnail keeps every title
+            starting at the same x — conditionally omitting the Image instead
+            (as this used to) drops a child from the row, and `space-between`
+            reflows the remaining two to fill the gap, pushing untitled rows'
+            labels flush left while thumbnailed rows' labels sit shifted right. */}
+        {thumbnail !== undefined && (
+          <BridgeThumb
+            key={thumbnail ?? label}
+            uri={thumbnail ?? undefined}
+            label={label}
+            size={BridgeThumbSize}
+            style={styles.optionThumb}
+          />
+        )}
+        <ThemedText style={styles.optionLabel} numberOfLines={1}>
+          {label}
+        </ThemedText>
+        <View style={[styles.dot, selected && styles.dotOn]} />
+      </ThemedView>
+    </Pressable>
   );
 }
 
@@ -165,8 +187,9 @@ const styles = StyleSheet.create({
   caretSm: {
     fontSize: 13,
   },
-  // Matches `useListMaxHeight`'s `HEADER_TO_LIST_GAP` reservation (see overlay.tsx).
   menu: {
+    flex: 1,
+    minHeight: 0,
     gap: Spacing.three,
   },
   row: {

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { MeasuredHeader, OptionList, OverlayHeading, useListMaxHeight } from '@/components/overlay/overlay';
+import { MeasuredHeader, OptionList, OverlayHeading } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
 
 import {
@@ -27,116 +28,22 @@ const EXCLUDE_CHIP = { text: '#f87171', border: 'rgba(220,38,38,0.5)', bg: 'rgba
 
 type EditorProps = { def: FilterDef; value: FilterValue; onChange: (v: FilterValue) => void };
 
-/** Dispatches to the right editor for a filter type. Rendered inside an overlay sheet. */
+/** Dispatches to the right editor for a filter type. Rendered inside an overlay sheet.
+ *  `toggle`/`string`/`number` filters are edited directly on `FilterButton`'s own row
+ *  (see filter-button.tsx) and never reach this overlay. */
 export function FilterEditor({ def, value, onChange }: EditorProps) {
   switch (def.type) {
-    case 'string':
-      return <StringEditor def={def} value={value as string} onChange={onChange} />;
-    case 'toggle':
-      return <ToggleEditor def={def} value={value as boolean} onChange={onChange} />;
-    case 'number':
-      return <NumberEditor def={def} value={value as number} onChange={onChange} />;
     case 'multi':
       return <MultiEditor def={def} value={value as string[]} onChange={onChange} />;
     case 'includeExclude':
       return <TriEditor def={def} options={def.options} value={value as TriState} onChange={onChange} />;
     case 'tags':
       return <TagSearchEditor def={def} value={value as TriState} onChange={onChange} />;
+    case 'string':
+    case 'toggle':
+    case 'number':
+      return null;
   }
-}
-
-function ToggleEditor({
-  def,
-  value,
-  onChange,
-}: {
-  def: Extract<FilterDef, { type: 'toggle' }>;
-  value: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <View style={[styles.body, styles.toggleRow]}>
-      <OverlayHeading>{def.label}</OverlayHeading>
-      <Switch value={!!value} onValueChange={onChange} />
-    </View>
-  );
-}
-
-function StringEditor({
-  def,
-  value,
-  onChange,
-}: {
-  def: Extract<FilterDef, { type: 'string' }>;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  const theme = useTheme();
-  const [text, setText] = useState(value ?? '');
-  return (
-    <View style={styles.body}>
-      <OverlayHeading>{def.label}</OverlayHeading>
-      <TextInput
-        value={text}
-        onChangeText={(t) => {
-          setText(t);
-          onChange(t);
-        }}
-        placeholder={def.placeholder ?? 'Type…'}
-        placeholderTextColor={theme.textSecondary}
-        style={[styles.input, { color: theme.text, borderColor: theme.backgroundSelected }]}
-      />
-    </View>
-  );
-}
-
-function NumberEditor({
-  def,
-  value,
-  onChange,
-}: {
-  def: Extract<FilterDef, { type: 'number' }>;
-  value: number;
-  onChange: (v: number) => void;
-}) {
-  const step = def.step ?? 1;
-  const [n, setN] = useState(value ?? def.default ?? def.min);
-  const set = (next: number) => {
-    const clamped = Math.min(def.max, Math.max(def.min, next));
-    setN(clamped);
-    onChange(clamped);
-  };
-  return (
-    <View style={styles.body}>
-      <OverlayHeading>{def.label}</OverlayHeading>
-      <View style={styles.stepper}>
-        <StepperButton label="−" disabled={n <= def.min} onPress={() => set(n - step)} />
-        <ThemedText type="title" style={styles.stepperValue}>
-          {n}
-          {def.unit ?? ''}
-        </ThemedText>
-        <StepperButton label="+" disabled={n >= def.max} onPress={() => set(n + step)} />
-      </View>
-    </View>
-  );
-}
-
-function StepperButton({
-  label,
-  onPress,
-  disabled,
-}: {
-  label: string;
-  onPress: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <Pressable onPress={onPress} disabled={disabled} style={disabled ? styles.stepBtnDisabled : undefined}>
-      <ThemedView type="backgroundSelected" style={styles.stepBtn}>
-        <ThemedText type="title">{label}</ThemedText>
-      </ThemedView>
-    </Pressable>
-  );
 }
 
 function MultiEditor({
@@ -149,8 +56,6 @@ function MultiEditor({
   onChange: (v: string[]) => void;
 }) {
   const [selected, setSelected] = useState<string[]>(value ?? []);
-  const [headerHeight, setHeaderHeight] = useState(0);
-  const maxHeight = useListMaxHeight(headerHeight);
   const toggle = (opt: string) => {
     // `single: true` (a mapped contract `select` filter) replaces instead of accumulating.
     const next = def.single
@@ -165,20 +70,28 @@ function MultiEditor({
   };
   return (
     <View style={styles.body}>
-      <MeasuredHeader onHeight={setHeaderHeight}>
+      <MeasuredHeader>
         <OverlayHeading>{def.label}</OverlayHeading>
       </MeasuredHeader>
-      <OptionList maxHeight={maxHeight}>
+      <OptionList>
         {def.options.map((opt) => (
-          <Pressable key={opt.value} onPress={() => toggle(opt.value)}>
-            <ThemedView type="backgroundElement" style={styles.row}>
-              <ThemedText>{opt.label}</ThemedText>
-              <View style={[styles.check, selected.includes(opt.value) && styles.checkOn]} />
-            </ThemedView>
-          </Pressable>
+          <MultiRow key={opt.value} label={opt.label} checked={selected.includes(opt.value)} onPress={() => toggle(opt.value)} />
         ))}
       </OptionList>
     </View>
+  );
+}
+
+function MultiRow({ label, checked, onPress }: { label: string; checked: boolean; onPress: () => void }) {
+  const theme = useTheme();
+  const { hovered, handlers } = useHover();
+  return (
+    <Pressable onPress={onPress} {...handlers}>
+      <ThemedView type="backgroundElement" style={[styles.row, hovered && { backgroundColor: theme.backgroundSelected }]}>
+        <ThemedText>{label}</ThemedText>
+        <View style={[styles.check, checked && styles.checkOn]} />
+      </ThemedView>
+    </Pressable>
   );
 }
 
@@ -194,8 +107,6 @@ function TriEditor({
   onChange: (v: TriState) => void;
 }) {
   const [tri, setTri] = useState<TriState>(value ?? {});
-  const [headerHeight, setHeaderHeight] = useState(0);
-  const maxHeight = useListMaxHeight(headerHeight);
   const press = (opt: string) => {
     const next: TriState = { ...tri };
     const cycled = cycleTri(next[opt]);
@@ -206,13 +117,13 @@ function TriEditor({
   };
   return (
     <View style={styles.body}>
-      <MeasuredHeader onHeight={setHeaderHeight}>
+      <MeasuredHeader>
         <OverlayHeading>{def.label}</OverlayHeading>
         <ThemedText type="small" themeColor="textSecondary">
           Tap to include, tap again to exclude.
         </ThemedText>
       </MeasuredHeader>
-      <OptionList maxHeight={maxHeight}>
+      <OptionList>
         {options.map((opt) => (
           <TriRow key={opt.value} label={opt.label} state={tri[opt.value]} onPress={() => press(opt.value)} />
         ))}
@@ -233,8 +144,6 @@ function TagSearchEditor({
   const theme = useTheme();
   const [tri, setTri] = useState<TriState>(value ?? {});
   const [query, setQuery] = useState('');
-  const [headerHeight, setHeaderHeight] = useState(0);
-  const maxHeight = useListMaxHeight(headerHeight);
 
   // Static list (comical-app's own demo filters) filters client-side; a bridge-backed
   // tag-multiselect has no upfront list and searches live via `def.search`, debounced.
@@ -294,7 +203,7 @@ function TagSearchEditor({
   };
   return (
     <View style={styles.body}>
-      <MeasuredHeader onHeight={setHeaderHeight}>
+      <MeasuredHeader>
         {selected.length > 0 ? (
           <View style={styles.tagChips}>
             {selected.map(({ value, tone }) => (
@@ -320,7 +229,7 @@ function TagSearchEditor({
           Tap to include, tap again to exclude.
         </ThemedText>
       </MeasuredHeader>
-      <OptionList fixed maxHeight={maxHeight}>
+      <OptionList fixed>
         {filtered.map((opt) => (
           <TriRow key={opt.value} label={opt.label} state={tri[opt.value]} onPress={() => press(opt.value)} />
         ))}
@@ -344,10 +253,13 @@ function TriRow({
   onPress: () => void;
 }) {
   const theme = useTheme();
+  const { hovered, handlers } = useHover();
   const color = state === 'include' ? INCLUDE : state === 'exclude' ? EXCLUDE : undefined;
   return (
-    <Pressable onPress={onPress}>
-      <ThemedView type="backgroundElement" style={styles.row}>
+    <Pressable onPress={onPress} {...handlers}>
+      <ThemedView
+        type="backgroundElement"
+        style={[styles.row, hovered && { backgroundColor: theme.backgroundSelected }]}>
         {/* Unselected reads as normal (theme) text like the other selectors; the
             include/exclude colour is the differentiator once chosen. */}
         <Text style={[styles.triLabel, { color: color ?? theme.text }]}>{label}</Text>
@@ -388,12 +300,9 @@ function TagChip({
 
 const styles = StyleSheet.create({
   body: {
+    flex: 1,
+    minHeight: 0,
     gap: Spacing.three,
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
   },
   // Selected-tag chips shown in place of the title; same bottom spacing so the
   // header height stays steady as tags are added/removed.
@@ -429,25 +338,6 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.three,
     paddingHorizontal: Spacing.three,
     fontSize: 16,
-  },
-  stepper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  stepperValue: {
-    minWidth: 96,
-    textAlign: 'center',
-  },
-  stepBtn: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepBtnDisabled: {
-    opacity: 0.4,
   },
   row: {
     flexDirection: 'row',

@@ -7,7 +7,6 @@ import {
   OptionList,
   OverlayHeading,
   useAnchoredOverlay,
-  useListMaxHeight,
   useOverlay,
 } from '@/components/overlay/overlay';
 import { ThemedSwitch } from '@/components/themed-switch';
@@ -280,8 +279,6 @@ function EnumPicker({
   onChange: (v: SettingValue) => void;
 }) {
   const { closeTop } = useOverlay();
-  const [headerHeight, setHeaderHeight] = useState(0);
-  const maxHeight = useListMaxHeight(headerHeight);
   const multi = !!descriptor.multiple;
   const selected = multi ? (Array.isArray(value) ? value : []) : typeof value === 'string' ? value : undefined;
   const toggle = (v: string) => {
@@ -295,10 +292,10 @@ function EnumPicker({
   };
   return (
     <View style={styles.body}>
-      <MeasuredHeader onHeight={setHeaderHeight}>
+      <MeasuredHeader>
         <OverlayHeading>{descriptor.label}</OverlayHeading>
       </MeasuredHeader>
-      <OptionList maxHeight={maxHeight}>
+      <OptionList>
         {descriptor.options.map((opt) => {
           const on = multi ? (selected as string[]).includes(opt.value) : selected === opt.value;
           return <EnumOption key={opt.value} label={opt.label} on={on} onPress={() => toggle(opt.value)} />;
@@ -397,6 +394,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   body: {
+    flex: 1,
+    minHeight: 0,
     gap: Spacing.three,
   },
   row: {

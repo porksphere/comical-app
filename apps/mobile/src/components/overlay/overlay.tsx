@@ -123,31 +123,24 @@ export function OverlayHeading({ children }: { children: string }) {
 
 const AnimatedScrollView = Animated.createAnimatedComponent(GHScrollView);
 
-// The sheet itself (`OverlaySheet` below) has no max-height/scroll of its
-// own — only a list rendered via `OptionList` scrolls internally — so an
-// under-budgeted cap could make the sheet's total height (handle + header +
-// list + safe-area padding) exceed a short viewport, clipping the list
-// against the screen edge instead of scrolling into view. Rather than guess
-// that budget per caller (title-only vs title+helper vs chips+input+helper
-// all reserve different amounts), each caller measures its own header via
-// `MeasuredHeader` and `useListMaxHeight` computes exactly what's left.
-// A `row`'s rendered height (paddingVertical × 2 + ~24px text line) plus its
-// list's own inter-row gap is ~64px. A cap that isn't a whole multiple of
-// that slices the last visible row mid-height instead of showing it in full
-// — e.g. a 6-option list (6 × 64 - 4 = 380px of content) against a 360px cap
-// left an option showing at ~40 of its 56px, looking cut in half rather than
-// like an intentional scroll-affordance peek. 7 whole rows covers ordinary
-// lists (a handful of genres/tags/bridges); longer ones still scroll —
-// they're well past any reasonable cap.
+// The sheet/popover's outer box is capped to whatever room it actually has
+// (window height for the sheet, the anchor-clamped space for the popover —
+// see `OverlaySheet`/`OverlayPopover` below), and every container in between
+// it and `OptionList` is a plain flex column with `flex: 1, minHeight: 0` on
+// the stretchy link (the caller's own header+list wrapper, `sheetBody`).
+// That lets `OptionList` just be a flex child that fills whatever's actually
+// left after its sibling `MeasuredHeader`, computed by the layout engine
+// itself — no header-height measuring or hand-rolled pixel budget (insets +
+// handle + gaps + safety margins) to keep in sync with the real layout, and
+// no risk of that budget being wrong and clipping content the container
+// actually had room for (or leaving a blank gap it didn't).
+//
+// 7 whole rows (a `row`'s rendered height — paddingVertical × 2 + ~24px text
+// line, plus its list's own inter-row gap — is ~64px) covers ordinary lists
+// (a handful of genres/tags/bridges) before an internal scroll kicks in;
+// longer ones still scroll — they're well past any reasonable cap.
 const ROW_UNIT_HEIGHT = 64;
 const LIST_MAX_HEIGHT = ROW_UNIT_HEIGHT * 7 - Spacing.two;
-const LIST_MIN_HEIGHT = 160;
-// Matches this file's own handleArea (paddingTop + handle height + paddingBottom).
-const HANDLE_AREA_HEIGHT = Spacing.two + 5 + Spacing.three;
-// The gap between a `MeasuredHeader` and the `OptionList` below it (set on
-// each caller's own wrapping `View`), plus rounding slack.
-const HEADER_TO_LIST_GAP = Spacing.three;
-const SAFETY_MARGIN = Spacing.two;
 // Trailing space *inside* the scrollable list's own content, after the last
 // row — part of `listContent` below, not a separately-painted view and not
 // outer margin on the sheet (that either paints a bar-shaped block in the
@@ -157,32 +150,18 @@ const SAFETY_MARGIN = Spacing.two;
 // bottom edge (or, for a short list, against the screen).
 const LIST_TRAILING_SPACE = Spacing.four;
 
-/** How tall an `OptionList` in the current sheet can be, given the height its
- *  own `MeasuredHeader` (title, helper text, search input, …) measured at. */
-export function useListMaxHeight(headerHeight: number): number {
-  const insets = useSafeAreaInsets();
-  const { height: windowHeight } = useWindowDimensions();
-  // `insets.bottom` matches the sheet's own `paddingBottom` (the real
-  // home-indicator clearance); LIST_TRAILING_SPACE matches this list's own
-  // contentContainerStyle paddingBottom below.
-  const reserved =
-    insets.top + HANDLE_AREA_HEIGHT + headerHeight + HEADER_TO_LIST_GAP + insets.bottom + LIST_TRAILING_SPACE + SAFETY_MARGIN;
-  return Math.max(LIST_MIN_HEIGHT, Math.min(LIST_MAX_HEIGHT, windowHeight - reserved));
-}
-
-/** Wraps a sheet's non-list content (title, helper text, search input, …)
- *  and reports its rendered height so `useListMaxHeight` can size the list to
- *  whatever's actually left, instead of guessing a fixed budget per caller. */
-export function MeasuredHeader({ children, onHeight }: { children: ReactNode; onHeight: (h: number) => void }) {
-  return (
-    <View style={listStyles.header} onLayout={(e) => onHeight(e.nativeEvent.layout.height)}>
-      {children}
-    </View>
-  );
+/** Wraps a sheet's non-list content (title, helper text, search input, …). */
+export function MeasuredHeader({ children }: { children: ReactNode }) {
+  return <View style={listStyles.header}>{children}</View>;
 }
 
 /** Caps long option lists with an internal scroll so the sheet stays usable.
- * `fixed` keeps a constant height (so the sheet doesn't resize while searching).
+ * Fills whatever space its flex parent has left after its sibling
+ * `MeasuredHeader` (see the comment above `ROW_UNIT_HEIGHT`), up to a
+ * `LIST_MAX_HEIGHT` ceiling so a short sheet doesn't balloon just because the
+ * screen has room. `fixed` instead gives it a constant preferred height (so
+ * the sheet doesn't resize while searching) that still shrinks
+ * (`flexShrink: 1`) if the container doesn't have that much room.
  *
  * Reports its scroll offset to the enclosing overlay sheet (and registers its
  * ref) so a downward drag at the top of the list chains into dismissing the
@@ -197,15 +176,7 @@ export function MeasuredHeader({ children, onHeight }: { children: ReactNode; on
  * saw it (that API skips non-interactive elements), so it shipped even
  * though it was clearly visible on screen. Screenshots (not DOM color
  * probing) are what caught it. */
-export function OptionList({
-  children,
-  fixed,
-  maxHeight,
-}: {
-  children: ReactNode;
-  fixed?: boolean;
-  maxHeight: number;
-}) {
+export function OptionList({ children, fixed }: { children: ReactNode; fixed?: boolean }) {
   const sheet = useSheetScroll();
   const localOffset = useSharedValue(0);
   const offset = sheet?.scrollOffset ?? localOffset;
@@ -217,7 +188,11 @@ export function OptionList({
       ref={sheet?.scrollRef as never}
       onScroll={onScroll}
       scrollEventThrottle={16}
-      style={fixed ? { height: maxHeight } : { maxHeight }}
+      style={
+        fixed
+          ? { height: LIST_MAX_HEIGHT, flexShrink: 1, minHeight: 0 }
+          : { flexGrow: 1, flexShrink: 1, minHeight: 0, maxHeight: LIST_MAX_HEIGHT }
+      }
       contentContainerStyle={listStyles.listContent}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}>
@@ -232,6 +207,11 @@ const listStyles = StyleSheet.create({
   },
   listContent: {
     gap: Spacing.two,
+    // A little room at the top too, so a scrolled-to-top list doesn't sit the
+    // first row flush against the list's own top edge (mirrors the bottom
+    // trailing space, just smaller — that one also clears the sheet/popover's
+    // own edge, this one only needs to clear the header above it).
+    paddingTop: Spacing.one,
     paddingBottom: LIST_TRAILING_SPACE,
   },
 });
@@ -476,7 +456,12 @@ function OverlaySheet({
             padding, not this outer container. Putting it out here as an
             offset (a prior attempt) exposed the dimmed backdrop behind the
             sheet as a large flat stripe — worse than what it replaced. */}
-        <ThemedView type="backgroundPanel" style={[styles.sheet, { paddingBottom: insets.bottom }]}>
+        <ThemedView
+          type="backgroundPanel"
+          style={[
+            styles.sheet,
+            { paddingBottom: insets.bottom, maxHeight: height - insets.top - Spacing.four },
+          ]}>
           <GestureDetector gesture={handlePan}>
             <View style={styles.handleArea}>
               <View style={styles.handle} />
@@ -618,6 +603,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(128,128,128,0.45)',
   },
   sheetBody: {
+    flex: 1,
+    minHeight: 0,
     gap: Spacing.two,
   },
   dim: {
