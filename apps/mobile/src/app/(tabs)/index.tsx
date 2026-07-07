@@ -263,9 +263,14 @@ export default function BrowseScreen() {
     setHomeError(null);
     // Clear the previous bridge/visit's rails before fetching, so a switch shows
     // a loading skeleton instead of a stale flash of the old selection's content.
-    setHomeLoading(true);
-    setSections([]);
-    setGridSections([]);
+    // A pull-to-refresh (refreshActiveRef) is the exception: keep the current
+    // rails on screen and let the RefreshControl spinner stand in for progress.
+    const isRefresh = refreshActiveRef.current;
+    if (!isRefresh) {
+      setHomeLoading(true);
+      setSections([]);
+      setGridSections([]);
+    }
     ds.getHomeSections(bridgeId, ctrl.signal)
       .then((res) => {
         setSections(res.sections);
@@ -274,7 +279,13 @@ export default function BrowseScreen() {
       .catch((e) => {
         if (!isAbort(e)) setHomeError(e.message || 'Failed to load home');
       })
-      .finally(() => setHomeLoading(false));
+      .finally(() => {
+        setHomeLoading(false);
+        if (refreshActiveRef.current) {
+          refreshActiveRef.current = false;
+          setRefreshing(false);
+        }
+      });
     return () => ctrl.abort();
   }, [bridgeId, listsBridgeId, composedHome, ds, homeReload]);
   // Only the LAST grid section infinite-scrolls; earlier ones get "Load more" —
@@ -432,6 +443,24 @@ export default function BrowseScreen() {
   const [gridReload, setGridReload] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
 
+  // ── Pull-to-refresh (native only) ─────────────────────────────────────────
+  // Re-runs whichever fetch backs the *current* view: the composed Home surface
+  // (rails + grid sections, via `homeReload`) when not in results, or the flat
+  // results grid (search / "See all" / a page-flagged sub-page / favorites /
+  // live filters+sort, via `gridReload`) otherwise. Unlike those reload paths'
+  // normal firing (bridge/page switch etc.), a pull keeps the existing content
+  // on screen and shows only the RefreshControl spinner — the two fetch effects
+  // read `refreshActiveRef` to skip their content-clearing skeleton, and clear
+  // `refreshing` in their `finally` once the fresh data has swapped in.
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshActiveRef = useRef(false);
+  const onRefresh = useCallback(() => {
+    refreshActiveRef.current = true;
+    setRefreshing(true);
+    if (inResults) setGridReload((n) => n + 1);
+    else setHomeReload((n) => n + 1);
+  }, [inResults]);
+
   const fetchGrid = (pageNum: number) => {
     if (!bridgeId) return Promise.reject(new Error('no bridge'));
     if (isHomeTerminal) return ds.getGridPage(bridgeId, terminalGridSection!.id, pageNum);
@@ -463,13 +492,19 @@ export default function BrowseScreen() {
       return;
     }
     const ctrl = new AbortController();
-    setGridLoading(true);
     setGridError(null);
     setGridPageNum(1);
     // Clear the previous list's items before fetching — otherwise they stay on
     // screen (with no skeleton, since `gridItems.length` is non-zero) until the
     // new page swaps in, instead of showing a loading skeleton on the switch.
-    setGridItems([]);
+    // A pull-to-refresh (refreshActiveRef) is the exception: keep the current
+    // results visible under the RefreshControl spinner rather than flashing to a
+    // skeleton, then swap the fresh page in on resolve.
+    const isRefresh = refreshActiveRef.current;
+    if (!isRefresh) {
+      setGridLoading(true);
+      setGridItems([]);
+    }
     fetchGrid(1)
       .then((res) => {
         setGridItems(res.items);
@@ -478,7 +513,13 @@ export default function BrowseScreen() {
       .catch((e) => {
         if (!isAbort(e)) setGridError(e.message || 'Failed to load results');
       })
-      .finally(() => setGridLoading(false));
+      .finally(() => {
+        setGridLoading(false);
+        if (refreshActiveRef.current) {
+          refreshActiveRef.current = false;
+          setRefreshing(false);
+        }
+      });
     return () => ctrl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bridgeId, isHomeTerminal, terminalGridSection, showResultsGrid, isFavoritesPage, activeListId, query, seeAll, scopedSearch, committedFilters, committedSort, ds, gridReload]);
@@ -850,6 +891,12 @@ export default function BrowseScreen() {
         // Show the browser's native scrollbar on web (the list scrolls in its own
         // overflow container); keep it hidden on native, where it's not idiomatic.
         showsVerticalScrollIndicator={Platform.OS === 'web'}
+        // Pull-to-refresh: native only (a pull gesture isn't idiomatic on web,
+        // and react-native-web's RefreshControl is a no-op). Push the spinner
+        // down past the absolute top-bar overlay so it isn't hidden beneath it.
+        onRefresh={Platform.OS === 'web' ? undefined : onRefresh}
+        refreshing={Platform.OS === 'web' ? false : refreshing}
+        progressViewOffset={headerHeight}
       />
       {topBar}
     </ThemedView>
