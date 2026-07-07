@@ -550,16 +550,21 @@ export default function BrowseScreen() {
     return [...gridItems, ...spacers];
   }, [gridItems, numColumns]);
 
-  // A stable identity for "which grid are we showing" — it changes exactly when the grid effect
-  // (below) clears items to [] and refetches: bridge/page/list/search/sort/filter/see-all/retry.
-  // We key the list on it so each distinct scope gets a FRESH LegendList instance. LegendList's web
-  // build resets its render state *during render* (`set$` in `shouldResetFreshDataLayout`) whenever
-  // data goes empty→non-empty after having held data — which is exactly what `setGridItems([])` +
-  // refetch does on every scope switch, and it throws "Cannot update a component while rendering a
-  // different component". Remounting sidesteps it: a fresh instance's first empty→non-empty fill is
-  // its initial render, so the reset path never runs. Every such switch is a scroll-to-top moment
-  // anyway, so the remount is behaviour-neutral. `numColumns` stays in the key (column changes also
-  // need a fresh grid). Pagination only appends (scope unchanged), so it never remounts.
+  // LegendList's web build resets its render state *during render* (`set$` in
+  // `shouldResetFreshDataLayout`) whenever `data` goes empty→non-empty after it has already held
+  // data — throwing "Cannot update a component while rendering a different component". Every grid
+  // scope switch (see-all / search / sort / filter / bridge / page / retry) runs `setGridItems([])`
+  // then refetches, so it hits this constantly.
+  //
+  // The reset only fires when `previousDataLength === 0` on a PERSISTED instance. So the robust
+  // guard is to remount across the empty↔populated boundary itself: fold `gridData.length > 0` into
+  // the list key. Then a 0→N fill is never seen by an existing instance — it's always a FRESH mount
+  // whose first render already has the data (its initial render, which skips the reset path).
+  // Keying on the boundary directly (rather than trying to enumerate every dep that clears the grid)
+  // is what makes this total. `gridScope` additionally captures which logical view we're on so the
+  // collapsing header's scroll offset can be reset per real scope change (see the effect below);
+  // it's not load-bearing for the reset guard. `numColumns` forces a fresh grid on column changes.
+  // Pagination only appends (length stays > 0), so it never remounts.
   const gridScope = [
     numColumns,
     bridgeId ?? '',
@@ -575,6 +580,7 @@ export default function BrowseScreen() {
     JSON.stringify(committedFilters ?? {}),
     gridReload,
   ].join('|');
+  const gridKey = `${gridScope}|${gridData.length > 0 ? 'full' : 'empty'}`;
 
   // Top bar: the bridge/page selectors sit in a band (barHeight below the
   // safe-area inset) overlaid on the scrolling list. On narrow viewports the band
@@ -792,7 +798,7 @@ export default function BrowseScreen() {
           clears the expanded header so the first content sits just below it. */}
       <AnimatedLegendList
         ref={listRef}
-        key={gridScope}
+        key={gridKey}
         // Full-width scroller so the scrollbar sits at the window edge; content centered via the
         // symmetric sidePad below. Scroll offset flows into scrollY for the collapsing header.
         style={styles.list}
