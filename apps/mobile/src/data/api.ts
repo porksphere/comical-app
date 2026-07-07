@@ -37,7 +37,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getResolvedModeSync } from './embedded/preference';
 import type { Bridge, BridgeList } from './types';
 import { logDiagnostic } from '@/lib/diagnostics';
-import { logTiming } from '@/lib/nav-timing'; // TEMP nav timing
 
 const REMOTE_SERVER_KEY = 'comical:remoteServerUrl';
 
@@ -199,27 +198,11 @@ export type Transport = (path: string, init?: RequestInit) => Promise<Response>;
 /** The default transport: plain HTTP against `getApiBase()`. */
 export const remoteTransport: Transport = (path, init) => fetch(`${getApiBase()}${path}`, init);
 
-// TEMP nav timing: wrap the active transport to log per-request wall time (total,
-// includes off-thread bridge exec) for slow calls. Correlate against js-jank: a
-// slow call that does NOT coincide with a jank block was off-thread (fine).
-const SLOW_REQUEST_MS = 100;
-function timedTransport(t: Transport): Transport {
-  return async (path, init) => {
-    const t0 = Date.now();
-    try {
-      return await t(path, init);
-    } finally {
-      const ms = Date.now() - t0;
-      if (ms >= SLOW_REQUEST_MS) logTiming('data-timing', `${init?.method ?? 'GET'} ${path}`, ms);
-    }
-  };
-}
-
-let transport: Transport = timedTransport(remoteTransport);
+let transport: Transport = remoteTransport;
 
 /** Swap the active transport. Passing `null` restores the remote HTTP transport. */
 export function setTransport(next: Transport | null): void {
-  transport = timedTransport(next ?? remoteTransport); // TEMP: unwrap timedTransport to remove
+  transport = next ?? remoteTransport;
 }
 
 /** True for an aborted-request error, so callers can ignore unmount cancels. */
@@ -233,11 +216,7 @@ async function fetchJson<T>(path: string, signal?: AbortSignal): Promise<T> {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(body.error ?? `${res.status} ${res.statusText}`);
   }
-  const t0 = Date.now(); // TEMP nav timing: on-thread JSON.parse cost of the payload
-  const data = (await res.json()) as T;
-  const parseMs = Date.now() - t0;
-  if (parseMs >= 30) logTiming('parse-timing', path, parseMs); // TEMP nav timing
-  return data;
+  return res.json() as Promise<T>;
 }
 
 /** Like `fetchJson`, but resolves `null` on a 404 instead of throwing — for endpoints that are
@@ -250,11 +229,7 @@ async function fetchJsonOptional<T>(path: string, signal?: AbortSignal): Promise
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(body.error ?? `${res.status} ${res.statusText}`);
   }
-  const t0 = Date.now(); // TEMP nav timing
-  const data = (await res.json()) as T;
-  const parseMs = Date.now() - t0;
-  if (parseMs >= 30) logTiming('parse-timing', path, parseMs); // TEMP nav timing
-  return data;
+  return res.json() as Promise<T>;
 }
 
 /** GET /bridges → the installed bridges (id, display name, nsfw, capabilities, icon). */
