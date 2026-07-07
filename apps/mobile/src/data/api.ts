@@ -43,8 +43,20 @@ const REMOTE_SERVER_KEY = 'comical:remoteServerUrl';
 /** Default remote server when nothing else is configured. */
 const DEFAULT_API_BASE = 'http://localhost:3100';
 
-/** The build-time/env-configured base, before any Settings override. */
-const BUILT_IN_API_BASE = process.env.EXPO_PUBLIC_COMICAL_SERVER || DEFAULT_API_BASE;
+/**
+ * Runtime-injected backend URL (web only). The static Docker image can't re-bake
+ * `EXPO_PUBLIC_COMICAL_SERVER` (Metro inlines it at export time), so the container's entrypoint
+ * writes `window.__COMICAL_SERVER__` into every page's <head> from its `COMICAL_SERVER` env var —
+ * mirroring `comical-web`'s `window.COMICAL_SERVER` trick. Undefined on native and during static
+ * prerender (no `window`), where the baked env / default apply instead.
+ */
+const RUNTIME_API_BASE: string | undefined =
+  typeof window !== 'undefined'
+    ? (window as unknown as { __COMICAL_SERVER__?: string }).__COMICAL_SERVER__
+    : undefined;
+
+/** The runtime-injected / build-time / default base, before any Settings override. */
+const BUILT_IN_API_BASE = RUNTIME_API_BASE || process.env.EXPO_PUBLIC_COMICAL_SERVER || DEFAULT_API_BASE;
 
 // Undefined until AsyncStorage hydrates; null means "no override stored".
 let apiBaseOverride: string | null = null;

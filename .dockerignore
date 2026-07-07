@@ -1,0 +1,10 @@
+**/node_modules/
+apps/mobile/dist/
+apps/mobile/.expo/
+.expo/
+# Keep the comical submodule (external/comical) IN the context: metro.config.js resolves the
+# @comical/* specifiers (incl. @comical/host-rn, imported by src/data/embedded) to its packages, so
+# the web export needs it on disk. Only its node_modules/.git are excluded (via the rules above/below).
+external/**/.git
+.git/
+**/*.log
