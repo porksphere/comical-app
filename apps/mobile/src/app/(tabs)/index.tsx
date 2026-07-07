@@ -1,7 +1,7 @@
 import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
-import { Profiler, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, {
@@ -33,7 +33,6 @@ import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useIsCompact, useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
-import { onRenderTiming, useNavArrival } from '@/lib/nav-timing';
 
 // Scroll distance over which the top bar's bottom divider fades in: absent at the
 // very top (once collapsed, on narrow viewports), present once content scrolls
@@ -73,7 +72,6 @@ const META_FILTER_ALIASES: Record<'author' | 'artist' | 'type', string[]> = {
 };
 
 export default function BrowseScreen() {
-  useNavArrival('browse'); // TEMP nav timing
   const ds = useDataSource();
   const router = useRouter();
   const { width } = useWindowDimensions();
@@ -798,9 +796,6 @@ export default function BrowseScreen() {
     <ThemedView style={styles.container}>
       {/* The list fills the screen (behind the header overlay); its top padding
           clears the expanded header so the first content sits just below it. */}
-      {/* TEMP nav timing: measure Browse grid commit cost (cover-load re-renders,
-          paging) — ambient churn here is what a card tap can queue behind. */}
-      <Profiler id="browse-grid" onRender={onRenderTiming}>
       <AnimatedLegendList
         ref={listRef}
         key={gridKey}
@@ -856,7 +851,6 @@ export default function BrowseScreen() {
         // overflow container); keep it hidden on native, where it's not idiomatic.
         showsVerticalScrollIndicator={Platform.OS === 'web'}
       />
-      </Profiler>
       {topBar}
     </ThemedView>
   );

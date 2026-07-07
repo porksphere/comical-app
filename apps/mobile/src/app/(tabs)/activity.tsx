@@ -19,11 +19,9 @@ import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
-import { useNavArrival } from '@/lib/nav-timing';
 import { relTime } from '@/lib/rel-time';
 
 export default function ActivityScreen() {
-  useNavArrival('activity'); // TEMP nav timing
   const ds = useDataSource();
   const mock = useMockActive();
   const theme = useTheme();
@@ -37,7 +35,7 @@ export default function ActivityScreen() {
   useScrollToTopOnReselect('activity', listRef);
   const { onScroll } = useHideTabBarOnScroll();
   // Let the tab swap paint before mounting the row list (see use-deferred-mount).
-  const ready = useDeferredMount('activity');
+  const ready = useDeferredMount();
 
   const { data: items = undefined, error, isLoading, refetch } = useQuery(activityQuery(ds, mock));
 

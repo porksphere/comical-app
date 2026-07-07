@@ -13,7 +13,6 @@ import type { SeriesEntry } from '@/data/types';
 import { useIsCompact } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
-import { markNavStart } from '@/lib/nav-timing';
 
 // Shared cover card used by both the browse grid and the rails. `size` picks the
 // fixed rail widths; `grid` fills its parent slot (the grid controls columns).
@@ -282,12 +281,7 @@ export function SeriesCard({
         ])}
         // Native: sliding off the card keeps it held; release clears it.
         pressRetentionOffset={HOLD_RETENTION}
-        {...handlers}
-        // TEMP nav timing: mark press so the /series screen can log arrival ms.
-        onPressIn={() => {
-          markNavStart(`series-${size}`);
-          handlers.onPressIn();
-        }}>
+        {...handlers}>
         {/* The cover top-aligns at its real (capped) aspect ratio, and the title
             below hugs its bottom edge. Row/rail height is held constant not by
             boxing the cover into a fixed slot but by padding the card's bottom

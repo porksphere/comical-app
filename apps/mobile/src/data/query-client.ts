@@ -21,7 +21,6 @@ import { defaultShouldDehydrateQuery, QueryClient, type Query } from '@tanstack/
 
 import { getApiBase } from './api';
 import { getResolvedModeSync } from './embedded/preference';
-import { logTiming } from '@/lib/nav-timing'; // TEMP nav timing
 
 // Content (series detail, chapters, lists, pages) is effectively immutable for
 // a browsing session, so keep it fresh for a few minutes (no refetch on
@@ -47,21 +46,13 @@ export const queryClient = new QueryClient({
 export const persister = createAsyncStoragePersister({
   storage: AsyncStorage,
   key: 'comical:query-cache',
-  // The persister re-serializes the WHOLE dehydrated cache on its throttle
-  // interval whenever anything settles. That JSON.stringify is synchronous on
-  // the JS thread and, with big scraped chapter lists cached, was the ~400ms
-  // main-thread stall firing ~1×/s (matching the 1s default throttle). Bump the
-  // interval and drop the heaviest keys from what gets persisted (below) so the
-  // blob stays small.
+  // The persister re-serializes the WHOLE dehydrated cache (synchronous
+  // JSON.stringify, on the JS thread) on its throttle interval whenever anything
+  // settles. With big scraped chapter lists cached that was a ~400ms main-thread
+  // stall firing ~1×/s (the default 1s throttle). Bump the interval and drop the
+  // heaviest keys from what gets persisted (see `shouldDehydrateQuery`) so the
+  // serialized blob stays small.
   throttleTime: 3000,
-  // TEMP nav timing: measure the serialize so we can confirm it shrank.
-  serialize: (client) => {
-    const t0 = Date.now();
-    const s = JSON.stringify(client);
-    const ms = Date.now() - t0;
-    if (ms >= 20) logTiming('persist-serialize', `${Math.round(s.length / 1024)}KB`, ms);
-    return s;
-  },
 });
 
 // Big, volatile content queries (per-series detail, chapter lists, page-URL

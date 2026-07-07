@@ -15,7 +15,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DesktopTopBarHeight, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
-import { markNavStart } from '@/lib/nav-timing';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
 import { getTabBarProgress, subscribeTabBarProgress } from '@/lib/tab-bar-visibility';
 
@@ -261,7 +260,6 @@ function TabButton({
   // free anymore - see useScrollToTopOnReselect).
   const handlePress = (e: GestureResponderEvent) => {
     if (isFocused) scrollToTopFor(routeName);
-    else markNavStart(`tab-${routeName}`); // TEMP nav timing
     onPress?.(e);
   };
 
