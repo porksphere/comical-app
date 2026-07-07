@@ -15,7 +15,9 @@ import { WebtoonReader, type WebtoonReaderHandle } from '@/components/reader/web
 import { resolveAssetSourceCached } from '@/data/api';
 import { chapterPagesQuery, directPagesQuery, inLibraryQuery, queryKeys, seriesDetailQuery } from '@/data/queries';
 import { useDataSource, useMockActive, type DataSource } from '@/data/source';
-import { DIRECT_CHAPTER_ID, type SeriesDetail } from '@/data/types';
+import { DIRECT_CHAPTER_ID, type Chapter, type SeriesDetail } from '@/data/types';
+import { getAdjacentChapter } from '@/lib/chapter-order';
+import { getPreferredGroup, setPreferredGroup } from '@/lib/preferred-group';
 import { useReaderSettings } from '@/hooks/use-reader-settings';
 
 // Full-screen page reader. Resolves a page-URL list from route params and
@@ -164,6 +166,16 @@ export default function ReaderScreen() {
   const cachedDetail =
     queryClient.getQueryData<SeriesDetail>(queryKeys.seriesDetail(mock, bridgeId ?? '', seed ?? '', false)) ??
     queryClient.getQueryData<SeriesDetail>(queryKeys.seriesDetail(mock, bridgeId ?? '', seed ?? '', true));
+
+  // Remember the scanlation group of the chapter being read, so next/prev keeps the
+  // same source — including when the reader was opened from History/a deep link
+  // (bypassing the chapter list, which otherwise sets this). Mirrors comical-web's
+  // `openChapter`: only set when the chapter actually carries a group; never clear it.
+  useEffect(() => {
+    if (!chapterId) return;
+    const group = cachedDetail?.chapters?.find((c) => c.id === chapterId)?.group;
+    if (group !== undefined) setPreferredGroup(group);
+  }, [chapterId, cachedDetail]);
 
   // Kept in a ref (reassigned every render) so the debounce + unmount-flush
   // effects below always record the latest page/membership without re-subscribing.
@@ -368,10 +380,12 @@ export default function ReaderScreen() {
 
 /**
  * The chapter to read after `chapterId`, resolved from the cached series detail
- * if it's warm (i.e. the reader was opened from the series screen). Series detail
- * lists chapters newest-first — the Read button starts at the last element — so
- * the next chapter in reading order sits one index earlier. Returns null when the
- * detail isn't cached or the current chapter is already the newest.
+ * if it's warm (i.e. the reader was opened from the series screen). Reading order
+ * is derived from the numeric chapter `number` via `getAdjacentChapter` — not the
+ * raw array order, which a bridge never promises tracks reading order — and it
+ * keeps the same scanlation group/language where the next chapter has one (falling
+ * back to the preferred group, then the freshest copy). Returns null when the
+ * detail isn't cached or the current chapter is already the last.
  */
 function nextChapterId(
   qc: QueryClient,
@@ -380,12 +394,17 @@ function nextChapterId(
   seriesId: string,
   chapterId: string,
 ): string | null {
-  const detail = qc.getQueryData<SeriesDetail>(queryKeys.seriesDetail(mock, bridgeId, seriesId, false));
-  const chapters = detail?.chapters;
+  const chapters = qc.getQueryData<SeriesDetail>(queryKeys.seriesDetail(mock, bridgeId, seriesId, false))?.chapters;
+  return nextIdFromChapters(chapters, chapterId);
+}
+
+/** Shared resolution: find the current chapter and hand back the next one's id in
+ *  reading order, staying in its scanlation group where possible. */
+function nextIdFromChapters(chapters: Chapter[] | undefined, chapterId: string): string | null {
   if (!chapters?.length) return null;
-  const i = chapters.findIndex((c) => c.id === chapterId);
-  if (i <= 0) return null;
-  return chapters[i - 1].id;
+  const current = chapters.find((c) => c.id === chapterId);
+  if (!current) return null;
+  return getAdjacentChapter(chapters, current, 1, getPreferredGroup())?.id ?? null;
 }
 
 /**
@@ -409,9 +428,7 @@ async function resolveNextChapterId(
   if (cached) return cached;
   try {
     const detail = await qc.fetchQuery(seriesDetailQuery(ds, mock, bridgeId, seriesId, { direct: false }));
-    const chapters = detail.chapters;
-    const i = chapters?.findIndex((c) => c.id === chapterId) ?? -1;
-    return i > 0 ? chapters![i - 1].id : null;
+    return nextIdFromChapters(detail.chapters, chapterId);
   } catch {
     return null;
   }

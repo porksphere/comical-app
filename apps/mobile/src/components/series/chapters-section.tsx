@@ -17,7 +17,8 @@ import { coverDelayMs, relativeTime } from '@/data/mock';
 import { useDataSource } from '@/data/source';
 import type { Chapter, PageThumbSource, SpriteThumb } from '@/data/types';
 import { clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
-import { compareChapters } from '@/lib/chapter-order';
+import { groupChapters, pickVersion, type ChapterGroup } from '@/lib/chapter-order';
+import { setPreferredGroup, usePreferredGroup } from '@/lib/preferred-group';
 import { logDiagnostic } from '@/lib/diagnostics';
 
 // The series chapters block: tab filter (Overview / All / Read / Unread) + sort
@@ -167,12 +168,37 @@ function ChapterList({
     width: pillWidth.value,
   }));
 
-  const sorted = useMemo(() => {
-    let list = chapters;
-    if (tab === 'read') list = chapters.filter((c) => c.read);
-    else if (tab === 'unread') list = chapters.filter((c) => !c.read);
-    return [...list].sort((a, b) => compareChapters(a, b, asc));
+  // The scanlation group the user last opened — controls which version each logical
+  // chapter defaults to, so the list keeps showing the source they're reading.
+  const preferredGroup = usePreferredGroup();
+
+  // Collapse multi-scanlator copies into logical chapters and order them by number
+  // (see @/lib/chapter-order). `groupChapters` returns ascending reading order; the
+  // default view is newest-first, so reverse unless the ascending toggle is on. A
+  // group counts as read only when every one of its versions is read.
+  const groups = useMemo(() => {
+    let list = groupChapters(chapters);
+    if (tab === 'read') list = list.filter((g) => g.versions.every((v) => v.read));
+    else if (tab === 'unread') list = list.filter((g) => g.versions.some((v) => !v.read));
+    return asc ? list : [...list].reverse();
   }, [chapters, tab, asc]);
+
+  // Open a specific version: remember its group as the preferred source, then route
+  // to the reader for that copy.
+  const openVersion = (v: Chapter) => {
+    setPreferredGroup(v.group);
+    router.push({
+      pathname: '/reader',
+      params: {
+        seed,
+        title,
+        chapterId: v.id,
+        chapterName: v.name,
+        start: '0',
+        ...(bridgeId ? { bridgeId } : {}),
+      },
+    });
+  };
 
   // Overview shows the first HEAD + last TAIL chapters, with the middle behind an
   // expand button. Only collapse when it hides ≥2 chapters (a button that hides a
@@ -180,29 +206,13 @@ function ChapterList({
   const collapsible =
     tab === 'overview' &&
     !middleExpanded &&
-    sorted.length > OVERVIEW_HEAD_COUNT + OVERVIEW_TAIL_COUNT + 1;
-  const hiddenCount = collapsible ? sorted.length - OVERVIEW_HEAD_COUNT - OVERVIEW_TAIL_COUNT : 0;
-  const head = collapsible ? sorted.slice(0, OVERVIEW_HEAD_COUNT) : sorted;
-  const tail = collapsible ? sorted.slice(sorted.length - OVERVIEW_TAIL_COUNT) : [];
+    groups.length > OVERVIEW_HEAD_COUNT + OVERVIEW_TAIL_COUNT + 1;
+  const hiddenCount = collapsible ? groups.length - OVERVIEW_HEAD_COUNT - OVERVIEW_TAIL_COUNT : 0;
+  const head = collapsible ? groups.slice(0, OVERVIEW_HEAD_COUNT) : groups;
+  const tail = collapsible ? groups.slice(groups.length - OVERVIEW_TAIL_COUNT) : [];
 
-  const row = (c: Chapter) => (
-    <ChapterRow
-      key={c.id}
-      chapter={c}
-      onPress={() =>
-        router.push({
-          pathname: '/reader',
-          params: {
-            seed,
-            title,
-            chapterId: c.id,
-            chapterName: c.name,
-            start: '0',
-            ...(bridgeId ? { bridgeId } : {}),
-          },
-        })
-      }
-    />
+  const row = (g: ChapterGroup) => (
+    <ChapterRow key={g.key} group={g} preferredGroup={preferredGroup} onOpen={openVersion} />
   );
 
   return (
@@ -263,7 +273,7 @@ function ChapterList({
 
         {tail.map(row)}
 
-        {sorted.length === 0 && (
+        {groups.length === 0 && (
           <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
             No chapters here.
           </ThemedText>
@@ -273,22 +283,85 @@ function ChapterList({
   );
 }
 
-function ChapterRow({ chapter, onPress }: { chapter: Chapter; onPress?: () => void }) {
-  const theme = useTheme();
+/** A short label for one scanlator/language version of a chapter, e.g.
+ *  "MangaDweebs · EN · 18p". Falls back to the display name if it carries no
+ *  group/language/page metadata. */
+function versionLabel(v: Chapter): string {
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [pressed && styles.rowPressed]}>
-      <ThemedView type="backgroundElement" style={[styles.row, { borderColor: theme.hairline }]}>
-        <ThemedText
-          type="small"
-          numberOfLines={1}
-          style={[styles.rowName, chapter.read && { color: theme.textSecondary }]}>
-          {chapter.name}
-        </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary" style={styles.rowTime}>
-          {relativeTime(chapter.date)}
-        </ThemedText>
-      </ThemedView>
-    </Pressable>
+    [v.group, v.languageCode?.toUpperCase(), v.pageCount ? `${v.pageCount}p` : null]
+      .filter(Boolean)
+      .join(' · ') || v.name
+  );
+}
+
+/** One logical-chapter row. When the chapter has more than one scanlator/language
+ *  version it shows an "N versions ▾" toggle that expands the per-version list; the
+ *  main row opens the default version (the preferred group's copy, else the freshest),
+ *  and each expanded row opens that specific version. */
+function ChapterRow({
+  group,
+  preferredGroup,
+  onOpen,
+}: {
+  group: ChapterGroup;
+  preferredGroup?: string;
+  onOpen: (v: Chapter) => void;
+}) {
+  const theme = useTheme();
+  const [expanded, setExpanded] = useState(false);
+  const def = pickVersion(group, preferredGroup);
+  // A logical chapter reads as "read" only once every version of it is read.
+  const read = group.versions.every((v) => v.read);
+  const multi = group.versions.length > 1;
+
+  return (
+    <View>
+      <Pressable onPress={() => onOpen(def)} style={({ pressed }) => [pressed && styles.rowPressed]}>
+        <ThemedView type="backgroundElement" style={[styles.row, { borderColor: theme.hairline }]}>
+          <ThemedText
+            type="small"
+            numberOfLines={1}
+            style={[styles.rowName, read && { color: theme.textSecondary }]}>
+            {group.name}
+          </ThemedText>
+          {multi && (
+            <Pressable onPress={() => setExpanded((v) => !v)} hitSlop={6} style={styles.versionsBtn}>
+              <ThemedText type="small" style={{ color: theme.accent }}>
+                {group.versions.length} versions {expanded ? '▴' : '▾'}
+              </ThemedText>
+            </Pressable>
+          )}
+          <ThemedText type="small" themeColor="textSecondary" style={styles.rowTime}>
+            {relativeTime(def.date)}
+          </ThemedText>
+        </ThemedView>
+      </Pressable>
+      {multi && expanded && (
+        <View style={styles.versionList}>
+          {group.versions.map((v) => (
+            <Pressable
+              key={v.id}
+              onPress={() => onOpen(v)}
+              style={({ pressed }) => [styles.versionRow, pressed && styles.rowPressed]}>
+              <ThemedText
+                type="small"
+                numberOfLines={1}
+                style={[
+                  styles.versionLabel,
+                  v.read && { color: theme.textSecondary },
+                  // Highlight the copy the main row currently opens.
+                  v.id === def.id && { color: theme.accent, fontWeight: '600' },
+                ]}>
+                {versionLabel(v)}
+              </ThemedText>
+              <ThemedText type="small" themeColor="textSecondary" style={styles.rowTime}>
+                {relativeTime(v.date)}
+              </ThemedText>
+            </Pressable>
+          ))}
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -834,6 +907,28 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   rowTime: {
+    fontSize: 12,
+  },
+  // The "N versions ▾" toggle inside a row — sits between the name and the time.
+  versionsBtn: {
+    paddingHorizontal: Spacing.one,
+  },
+  // The expanded per-version list, indented under its logical-chapter row.
+  versionList: {
+    marginTop: Spacing.one,
+    marginLeft: Spacing.four,
+    gap: Spacing.one,
+  },
+  versionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.two,
+    paddingVertical: Spacing.one,
+    paddingHorizontal: Spacing.three,
+  },
+  versionLabel: {
+    flex: 1,
     fontSize: 12,
   },
   empty: {

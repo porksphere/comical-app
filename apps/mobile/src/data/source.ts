@@ -19,12 +19,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useDataEpoch } from './data-epoch';
 
 import { logDiagnostic } from '@/lib/diagnostics';
+import { firstChapterInReadingOrder } from '@/lib/chapter-order';
 import * as api from './api';
 import * as mock from './mock';
 import type {
   ActivityEntry,
   Bridge,
   BridgeList,
+  Chapter,
   GridPage,
   HistoryEntry,
   HomeGridSection,
@@ -435,11 +437,24 @@ const realDataSource: DataSource = {
       }
       return result;
     }
-    const chapters = await api.getChapters(bridgeId, seriesId, signal);
+    const chapters: Chapter[] = (await api.getChapters(bridgeId, seriesId, signal)).map((c) => ({
+      id: c.id,
+      name: c.name,
+      date: c.publishedAt ?? 0,
+      read: false,
+      ...(c.number !== undefined && { number: c.number }),
+      ...(c.group !== undefined && { group: c.group }),
+      ...(c.languageCode !== undefined && { languageCode: c.languageCode }),
+      ...(c.pageCount !== undefined && { pageCount: c.pageCount }),
+    }));
+    // The Read label mirrors the Read button's target: the first chapter in reading
+    // order (by number), not the raw array's first element (a newest-first layout the
+    // bridge never promised).
+    const first = firstChapterInReadingOrder(chapters);
     return {
-      chapters: chapters.map((c) => ({ id: c.id, name: c.name, date: c.publishedAt ?? 0, read: false })),
+      chapters,
       chapterCount: chapters.length,
-      readLabel: chapters.length ? `▶  ${chapters[0].name}` : undefined,
+      readLabel: first ? `▶  ${first.name}` : undefined,
     };
   },
 
