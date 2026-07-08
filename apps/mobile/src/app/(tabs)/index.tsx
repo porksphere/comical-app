@@ -739,9 +739,17 @@ export default function BrowseScreen() {
   const hairline = theme.hairline;
   // 0 at the top → 1 once the bar has fully collapsed (and stays 1 thereafter).
   // When `expand` is 0 (wide viewports) it is always 1, i.e. fully collapsed.
+  // `Math.abs` (rather than clamping negative offsets to 0) means a *pull*
+  // collapses the bar too, over the same `expand` distance as a normal
+  // downward scroll — otherwise the bar stayed pinned at its tallest for the
+  // whole pull gesture (offset locked at 0 collapses to nothing), and that
+  // extra `expand` px of height overlaid the top of the list's own frame the
+  // entire time, still partly covering the native refresh spinner underneath
+  // (see the `headerHeight` comment above). Collapsing it away within the
+  // first `expand` px of drag clears that sliver almost immediately.
   const collapseProgress = (y: number) => {
     'worklet';
-    return expand > 0 ? Math.min(Math.max(y / expand, 0), 1) : 1;
+    return expand > 0 ? Math.min(Math.abs(y) / expand, 1) : 1;
   };
   const headerStyle = useAnimatedStyle(() => ({
     height: headerHeight + (1 - collapseProgress(scrollY.value)) * expand,
