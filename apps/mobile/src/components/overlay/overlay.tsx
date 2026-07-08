@@ -10,14 +10,16 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react';
-import { Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, useWindowDimensions, View, type TextInput } from 'react-native';
 import { Gesture, GestureDetector, ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import Animated, {
   Extrapolation,
   interpolate,
   runOnJS,
+  useAnimatedKeyboard,
   useAnimatedScrollHandler,
   useAnimatedStyle,
+  useDerivedValue,
   useSharedValue,
   withSpring,
   withTiming,
@@ -111,6 +113,35 @@ const SheetScrollContext = createContext<SheetScroll | null>(null);
 /** Available to content rendered inside an overlay sheet; null elsewhere. */
 export function useSheetScroll(): SheetScroll | null {
   return useContext(SheetScrollContext);
+}
+
+// Lets a focused TextInput inside a sheet report its own on-screen bottom edge,
+// so the sheet can shift itself just enough to clear the keyboard instead of
+// shifting (or not shifting) as a whole regardless of where the input sits.
+type SheetKeyboard = {
+  reportFocus: (bottomY: number) => void;
+  reportBlur: () => void;
+};
+
+const SheetKeyboardContext = createContext<SheetKeyboard | null>(null);
+
+/**
+ * Wires a `TextInput` into its enclosing sheet's keyboard-avoidance. Pass the
+ * input's own ref (whatever the call site already has, or a new one) to
+ * `onFocus`/`onBlur` — no ref-merging needed. No-op outside a sheet (desktop
+ * popover, or no overlay at all).
+ */
+export function useKeyboardAvoidingInput() {
+  const ctx = useContext(SheetKeyboardContext);
+  return useMemo(
+    () => ({
+      onFocus: (node: Pick<TextInput, 'measureInWindow'> | null) => {
+        node?.measureInWindow((_x, y, _w, h) => ctx?.reportFocus(y + h));
+      },
+      onBlur: () => ctx?.reportBlur(),
+    }),
+    [ctx],
+  );
 }
 
 // How the current overlay content is being presented: the mobile bottom sheet or
@@ -546,6 +577,41 @@ function OverlaySheet({
   const dragBaseline = useSharedValue(0);
   const sheetScroll = useMemo<SheetScroll>(() => ({ scrollRef, scrollOffset }), [scrollOffset]);
 
+  // Keyboard avoidance: the focused input's own reported bottom edge (window
+  // coordinates, -1 = none focused), the sheet's own measured height (so we
+  // know how much headroom it has above `insets.top` before it'd clip), and
+  // the live keyboard height, combined into how far to shift the sheet up.
+  const focusedInputBottom = useSharedValue(-1);
+  const sheetHeightSV = useSharedValue(0);
+  const keyboard = useAnimatedKeyboard();
+  const keyboardShift = useDerivedValue(() => {
+    const kbHeight = keyboard.height.value;
+    if (kbHeight <= 0 || focusedInputBottom.value < 0) return 0;
+    // `measureInWindow` on edge-to-edge Android reports Y relative to the
+    // content area below the status bar, while `height` (useWindowDimensions)
+    // is the full physical screen — realign them before comparing.
+    const inputBottom = focusedInputBottom.value + insets.top;
+    const availableBottom = height - kbHeight - Spacing.three;
+    const overlap = inputBottom - availableBottom;
+    const sheetTop = height - sheetHeightSV.value;
+    const maxShift = Math.max(0, sheetTop - insets.top - Spacing.four);
+    const result = overlap <= 0 ? 0 : Math.min(overlap, maxShift);
+    return result;
+  });
+  const reportFocus = useCallback(
+    (bottomY: number) => {
+      focusedInputBottom.value = bottomY;
+    },
+    [focusedInputBottom],
+  );
+  const reportBlur = useCallback(() => {
+    focusedInputBottom.value = -1;
+  }, [focusedInputBottom]);
+  const sheetKeyboard = useMemo<SheetKeyboard>(
+    () => ({ reportFocus, reportBlur }),
+    [reportFocus, reportBlur],
+  );
+
   // Real budget (not content-derived) for this sheet's header+list content —
   // see the note above `ROW_UNIT_HEIGHT` for why `OptionList` needs an actual
   // number here rather than a `flexGrow` chain up through `sheetBody`.
@@ -632,7 +698,7 @@ function OverlaySheet({
   const sheetStyle = useAnimatedStyle(() => {
     const scale = interpolate(depthSV.value, [0, 1, 2], [1, 0.92, 0.86], Extrapolation.CLAMP);
     const lift = interpolate(depthSV.value, [0, 1, 2], [0, -14, -26], Extrapolation.CLAMP);
-    return { transform: [{ translateY: translateY.value + lift }, { scale }] };
+    return { transform: [{ translateY: translateY.value + lift - keyboardShift.value }, { scale }] };
   });
 
   const dimStyle = useAnimatedStyle(() => ({
@@ -643,6 +709,7 @@ function OverlaySheet({
     <Animated.View style={[styles.sheetWrap, sheetStyle, { pointerEvents: 'box-none' }]}>
       <OverlayPresentationContext.Provider value="sheet">
       <SheetScrollContext.Provider value={sheetScroll}>
+      <SheetKeyboardContext.Provider value={sheetKeyboard}>
       <SheetBudgetContext.Provider value={budget}>
         {/* `backgroundPanel` (not the default `background`) so the sheet's own
             surface reads as one consistent panel color instead of showing a
@@ -660,6 +727,7 @@ function OverlaySheet({
             padding, not this outer container. */}
         <ThemedView
           type="backgroundPanel"
+          onLayout={(e) => { sheetHeightSV.value = e.nativeEvent.layout.height; }}
           style={[styles.sheet, { maxHeight: height - insets.top - Spacing.four }]}>
           <GestureDetector gesture={handlePan}>
             <View style={styles.handleArea}>
@@ -676,6 +744,7 @@ function OverlaySheet({
           />
         </ThemedView>
       </SheetBudgetContext.Provider>
+      </SheetKeyboardContext.Provider>
       </SheetScrollContext.Provider>
       </OverlayPresentationContext.Provider>
     </Animated.View>

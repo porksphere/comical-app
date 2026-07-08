@@ -1,7 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { MeasuredHeader, OptionList, OverlayHeading, useOverlayPresentation } from '@/components/overlay/overlay';
+import {
+  MeasuredHeader,
+  OptionList,
+  OverlayHeading,
+  useKeyboardAvoidingInput,
+  useOverlayPresentation,
+} from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
@@ -149,6 +155,8 @@ function TagSearchEditor({
   onChange: (v: TriState) => void;
 }) {
   const theme = useTheme();
+  const keyboardAvoiding = useKeyboardAvoidingInput();
+  const inputRef = useRef<TextInput>(null);
   const [tri, setTri] = useState<TriState>(value ?? {});
   const [query, setQuery] = useState('');
 
@@ -226,8 +234,11 @@ function TagSearchEditor({
           <OverlayHeading>{def.label}</OverlayHeading>
         )}
         <TextInput
+          ref={inputRef}
           value={query}
           onChangeText={setQuery}
+          onFocus={() => keyboardAvoiding.onFocus(inputRef.current)}
+          onBlur={keyboardAvoiding.onBlur}
           placeholder="Search tags…"
           placeholderTextColor={theme.textSecondary}
           style={[styles.input, { color: theme.text, borderColor: theme.backgroundSelected }]}

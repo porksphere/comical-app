@@ -1,11 +1,11 @@
 import { Image } from 'expo-image';
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { Platform, Pressable, StyleSheet, TextInput, View, type TextStyle } from 'react-native';
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import Animated, { useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
 
 import { ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
-import { useOverlay, useSheetScroll } from '@/components/overlay/overlay';
+import { useKeyboardAvoidingInput, useOverlay, useSheetScroll } from '@/components/overlay/overlay';
 import { ActionButton } from '@/components/series/action-button';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -210,6 +210,8 @@ function LinkTrackerForm({
   onLink: (trackerId: string, result: TrackerSearchResult) => void;
 }) {
   const theme = useTheme();
+  const keyboardAvoiding = useKeyboardAvoidingInput();
+  const inputRef = useRef<TextInput>(null);
   const available = TRACKER_SERVICES.filter((s) => !excludeIds.includes(s.id));
   const [trackerId, setTrackerId] = useState(available[0]?.id ?? '');
   const [query, setQuery] = useState('');
@@ -244,14 +246,21 @@ function LinkTrackerForm({
         style={[styles.search, { borderColor: focused ? theme.accent : 'transparent' }]}>
         <SearchIcon color={theme.textSecondary} size={14} />
         <TextInput
+          ref={inputRef}
           value={query}
           onChangeText={(t) => {
             setQuery(t);
             setResults(null);
           }}
           onSubmitEditing={search}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
+          onFocus={() => {
+            setFocused(true);
+            keyboardAvoiding.onFocus(inputRef.current);
+          }}
+          onBlur={() => {
+            setFocused(false);
+            keyboardAvoiding.onBlur();
+          }}
           placeholder="Search title…"
           placeholderTextColor={theme.textSecondary}
           returnKeyType="search"
