@@ -29,7 +29,7 @@ import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { isAbort, pageOptions } from '@/data/api';
 import { takeBrowseIntent } from '@/data/browse-intent';
 import { queryKeys } from '@/data/queries';
-import { useDataSource, useHideNsfw, useMockActive, type QueryOpts } from '@/data/source';
+import { isRailLayout, useDataSource, useHideNsfw, useMockActive, type QueryOpts } from '@/data/source';
 import type { Bridge, BridgeList, HomeGridSection, RailSection, SeriesEntry } from '@/data/types';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useTopBarHeight } from '@/hooks/use-responsive';
@@ -310,6 +310,21 @@ export default function BrowseScreen() {
   // see HomeGridSection's doc in types.ts.
   const terminalGridSection = gridSections.at(-1) ?? null;
   const nonTerminalGridSections = gridSections.length > 1 ? gridSections.slice(0, -1) : [];
+
+  // ── Home skeleton shape, derived from `lists` (already fetched, layout included) ──────────
+  // `lists` resolves before `getHomeSections`'s per-list content fetch, so while `homeLoading`
+  // is true we already know each home list's name + layout (rail vs. grid) and can shape the
+  // skeleton to match — same partition `getHomeSections` applies to real items, just applied to
+  // the list metadata instead. Mirrors comical-web's `appendSkeletonSection`, which does the same
+  // from `SeriesList.layout` before its own per-list fetch resolves.
+  const homeListsPreview = useMemo(() => lists.filter((l) => !l.page), [lists]);
+  const railListsPreview = useMemo(() => homeListsPreview.filter((l) => isRailLayout(l.layout)), [homeListsPreview]);
+  const gridListsPreview = useMemo(
+    () => homeListsPreview.filter((l) => !isRailLayout(l.layout)),
+    [homeListsPreview],
+  );
+  const terminalGridPreview = gridListsPreview.at(-1) ?? null;
+  const nonTerminalGridListsPreview = gridListsPreview.length > 1 ? gridListsPreview.slice(0, -1) : [];
 
   // Committed search query (set on submit) and the active "See all" rail, if any.
   const [query, setQuery] = useState('');
@@ -852,10 +867,39 @@ export default function BrowseScreen() {
           {homeError ? (
             <RetryBlock message={homeError} onRetry={() => setHomeReload((n) => n + 1)} />
           ) : homeLoading ? (
-            <View style={styles.rails}>
-              <RailSkeleton viewportWidth={railViewport} />
-              <RailSkeleton viewportWidth={railViewport} />
-            </View>
+            <>
+              <View style={styles.rails}>
+                {/* Falls back to a generic pair when `lists` hasn't resolved any home
+                    sections at all (shouldn't normally happen — `composedHome` implies
+                    at least one — but avoids a blank flash if it ever does). */}
+                {railListsPreview.length > 0 || gridListsPreview.length > 0 ? (
+                  railListsPreview.map((l) => <RailSkeleton key={l.id} viewportWidth={railViewport} title={l.name} />)
+                ) : (
+                  <>
+                    <RailSkeleton viewportWidth={railViewport} />
+                    <RailSkeleton viewportWidth={railViewport} />
+                  </>
+                )}
+              </View>
+              {nonTerminalGridListsPreview.map((l) => (
+                // Mirrors HomeGridBlock's own row layout (`styles.row` + `styles.gridRow`) rather than
+                // reusing `GridSkeleton` here — that component's `skelFooter` wrapper carries its own
+                // bleed margin for its usual job as a *sibling* of this bled header (the main list's
+                // ListFooterComponent, see below); nesting it inside the header would double it up.
+                <View key={l.id} style={styles.homeGridBlock}>
+                  <SectionHead title={l.name} />
+                  <View style={styles.homeGridRows}>
+                    {Array.from({ length: 2 }).map((_, r) => (
+                      <View key={r} style={[styles.row, styles.gridRow]}>
+                        {Array.from({ length: numColumns }).map((_, c) => (
+                          <SkeletonCard key={c} />
+                        ))}
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              ))}
+            </>
           ) : (
             <>
               <View style={styles.rails}>
@@ -883,10 +927,17 @@ export default function BrowseScreen() {
               ))}
             </>
           )}
-          {terminalGridSection && (
+          {terminalGridSection ? (
             <View style={styles.browseAllHead}>
               <SectionHead title={terminalGridSection.title} />
             </View>
+          ) : (
+            homeLoading &&
+            terminalGridPreview && (
+              <View style={styles.browseAllHead}>
+                <SectionHead title={terminalGridPreview.name} />
+              </View>
+            )
           )}
         </>
       )}
@@ -1004,7 +1055,7 @@ export default function BrowseScreen() {
           )
         }
         ListFooterComponent={
-          gridLoading && gridItems.length === 0 ? (
+          (gridLoading || (homeLoading && composedHome && terminalGridPreview)) && gridItems.length === 0 ? (
             <GridSkeleton numColumns={numColumns} rows={2} />
           ) : loadingMore ? (
             <GridSkeleton numColumns={numColumns} rows={2} />

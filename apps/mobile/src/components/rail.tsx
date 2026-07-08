@@ -342,16 +342,24 @@ export function Rail({
  *  Mirrors the real `Rail`'s shape (heading + a row of 2:3 cards) without
  *  knowing the eventual title/item count, same way `SeriesSkeleton` mirrors
  *  series content it hasn't fetched yet. */
-export function RailSkeleton({ viewportWidth }: { viewportWidth: number }) {
+export function RailSkeleton({ viewportWidth, title }: { viewportWidth: number; title?: string }) {
   const wide = useIsLargeScreen();
   const stripGap = stripGapFor(viewportWidth);
   const cardWidth = wide ? gridCardWidth(viewportWidth, stripGap) : cardWidthFor('regular', viewportWidth);
   const count = wide ? GRID_COLUMNS : 4;
   return (
     <View style={styles.section}>
-      <View style={styles.head}>
-        <Skeleton style={styles.skelHeadTitle} />
-      </View>
+      {/* A known title (the Home skeleton, which already has it from the bridge's list
+          metadata) renders as real text immediately, same as SectionHead — only the cards
+          below are actually unknown. Callers with no title yet (e.g. series.tsx's related-
+          rail, fetched lazily with no name to show) keep the skeleton bar. */}
+      {title ? (
+        <SectionHead title={title} />
+      ) : (
+        <View style={styles.head}>
+          <Skeleton style={styles.skelHeadTitle} />
+        </View>
+      )}
       <View style={[styles.strip, styles.skelStrip, { gap: stripGap }]}>
         {Array.from({ length: count }).map((_, i) => (
           <View key={i} style={{ width: cardWidth }}>
