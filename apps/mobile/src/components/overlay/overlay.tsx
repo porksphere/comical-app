@@ -171,7 +171,21 @@ const AnimatedScrollView = Animated.createAnimatedComponent(GHScrollView);
 // before an internal scroll kicks in; longer ones still scroll — they're well
 // past any reasonable cap.
 const ROW_UNIT_HEIGHT = RowHeight + Spacing.two;
-const LIST_MAX_HEIGHT = ROW_UNIT_HEIGHT * 7 - Spacing.two;
+// Trailing space *inside* the scrollable list's own content, after the last
+// row — part of `listContent` below, not a separately-painted view and not
+// outer margin on the sheet (that either paints a bar-shaped block in the
+// panel's own fill or, worse, exposes the dimmed backdrop as a stripe below
+// the sheet — both tried and rejected). This just gives the content itself a
+// bit more height, so the last row isn't flush against the sheet's own
+// bottom edge (or, for a short list, against the screen).
+const LIST_TRAILING_SPACE = Spacing.four;
+// `+ Spacing.one + LIST_TRAILING_SPACE` reserves room for `listContent`'s own
+// paddingTop/paddingBottom (above): those live *inside* this same capped
+// viewport, so without adding them here the 7th row's bottom few pixels (and
+// everything after it) get clipped instead of the viewport stopping cleanly
+// after a whole row — the list cuts off mid-row with what reads as a blank
+// gap underneath, rather than reaching that gap only after a complete row.
+const LIST_MAX_HEIGHT = ROW_UNIT_HEIGHT * 7 - Spacing.two + Spacing.one + LIST_TRAILING_SPACE;
 // Floor so a not-yet-measured header (the first frame, before its own
 // `onLayout` has fired) doesn't leave the list with zero/negative room.
 const LIST_MIN_HEIGHT = 160;
@@ -181,14 +195,6 @@ const HANDLE_AREA_HEIGHT = Spacing.two + 5 + Spacing.three;
 // each caller's own wrapper (`selector.tsx`'s `menu`, `filter-editors.tsx`'s
 // `body`), not by this file, but both use the same value.
 const HEADER_TO_LIST_GAP = Spacing.three;
-// Trailing space *inside* the scrollable list's own content, after the last
-// row — part of `listContent` below, not a separately-painted view and not
-// outer margin on the sheet (that either paints a bar-shaped block in the
-// panel's own fill or, worse, exposes the dimmed backdrop as a stripe below
-// the sheet — both tried and rejected). This just gives the content itself a
-// bit more height, so the last row isn't flush against the sheet's own
-// bottom edge (or, for a short list, against the screen).
-const LIST_TRAILING_SPACE = Spacing.four;
 
 /** Wraps a sheet's non-list content (title, helper text, search input, …). */
 export function MeasuredHeader({ children }: { children: ReactNode }) {
