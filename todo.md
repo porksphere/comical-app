@@ -82,8 +82,9 @@
 - [ ] Navigating to a series view FROM a series view (i.e. recommended / related series) does'nt push the new series onto the nav stack, it replaces the current
 - [ ] Loading skeletons for bridge pages don't line up correctly with the legend list, this is worse on searches that have a "<- Home" button, we should account for that space
 - [ ] Navigating to a sub-page other then home, clicking a series, clicking a tag, then shows the search with "<- Home" instead of the correct sub page it came from
-- [ ] "<- Home" button is very slow on iOS
+- [ ] "<- Home" button feels very slow, it seems blocked on a network request maybe?
 - [ ] Enable resuming from series details page if not already (i.e. instead of Read Chapter 1, it's Resume Chapter 3 or something)
+- [ ] Add hovering to UI elements in series details view
 - [x] Keyboard page navigation shouldn't animate, it should instantly go to the next page like tapping
       Fixed: keyboard nav (`reader.tsx`) routed through the animated `prev`/`next`
       callbacks; switched to the instant `turnPrev`/`turnNext` (same ones tap zones
@@ -94,7 +95,26 @@
       Fixed: same keydown handler now treats `d`/`D` as `ArrowRight` and `a`/`A` as
       `ArrowLeft`, respecting `settings.direction` (rtl swap) like the arrows already
       did. Verified empirically — all four keys advance/retreat the correct page.
-- [ ] Up/down/W/S should scroll the webtoon view (smoothly up and down, ensure holding doesn't result in weird behavior) (left and right should do the full transition as it is now, but ensure when it's held it doesn't stutter as it does right now)
+- [x] Up/down/W/S should scroll the webtoon view (smoothly up and down, ensure holding doesn't result in weird behavior) (left and right should do the full transition as it is now, but ensure when it's held it doesn't stutter as it does right now)
+      Fixed: two parts. (1) `webtoon-reader.web.tsx` gained a smooth-scroll effect —
+      Up/Down/W/S set `held.up`/`held.down` booleans and drive a `requestAnimationFrame`
+      loop that moves `scrollTop` by a fixed `900px/sec * realDeltaTime`, so scrolling is
+      frame-rate-independent and constant-speed instead of jumping per keydown; the loop
+      self-terminates once both keys are released, and `keyup`/window `blur` clear the
+      held state. (2) The Left/Right/A/D stutter was the browser's own OS-level key-repeat
+      (uneven, sometimes very fast `keydown` events with `repeat: true`) driving page turns
+      directly; `reader.tsx`'s keydown handler now ignores repeat events and instead fires
+      the first turn immediately then drives repeats itself via a fixed `setInterval` at
+      180ms, cleared on matching `keyup` or window `blur` — same fixed-cadence approach as
+      the reader-nav interval it now double-purposes. Also added an INPUT/TEXTAREA focus
+      guard to both handlers so the progress-pill's page-jump text field isn't hijacked by
+      these keys. Verified empirically with Playwright against the live dev server: holding
+      ArrowDown in webtoon+fit-width mode produced smooth ~165-180px/180ms scroll deltas
+      (matching the 900px/sec target) that stopped instantly and cleanly on keyup with no
+      drift 400ms later; ArrowUp reversed direction correctly. In paged mode, holding
+      ArrowRight for ~1000ms advanced pages 1→7 via the controlled 180ms-interval cadence
+      and stopped dead at keyup (no further advance 500ms later); ArrowLeft held for 600ms
+      correctly reversed and also stopped cleanly.
 - [x] Center screen tapping in reader view to open overlay should be a larger percentage of the tappable area
       Fixed: widened the center chrome-toggle zone from 20% to 40% of width on both
       web (`paged-reader.web.tsx`) and native (`zoomable-page.tsx`), a 30/40/30 split

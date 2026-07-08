@@ -314,21 +314,54 @@ export default function ReaderScreen() {
   }, [goTo, atLastPage, tryAdvanceChapter]);
 
   // Web keyboard nav: arrows (or A/D) page instantly like a tap (respecting
-  // direction), Esc closes.
+  // direction), Esc closes. Held-key repeat is driven by our own fixed-rate
+  // interval rather than the browser's native key-repeat (which fires at an
+  // uneven, often very fast OS-dependent rate) — that was visibly stuttering
+  // the reader when a page turn's own work couldn't keep up with it.
+  const navRepeatRef = useRef<{ key: string; id: ReturnType<typeof setInterval> } | null>(null);
+  const NAV_REPEAT_MS = 180;
+  const stopNavRepeat = useCallback(() => {
+    if (navRepeatRef.current) {
+      clearInterval(navRepeatRef.current.id);
+      navRepeatRef.current = null;
+    }
+  }, []);
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') router.back();
-      else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D')
-        (settings.direction === 'rtl' ? turnPrev : turnNext)();
-      else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A')
-        (settings.direction === 'rtl' ? turnNext : turnPrev)();
-      else return;
+      const target = e.target as HTMLElement | null;
+      // Let the progress-pill's page-jump input handle its own arrow keys.
+      if (target && /^(INPUT|TEXTAREA)$/.test(target.tagName)) return;
+      if (e.key === 'Escape') {
+        router.back();
+        e.preventDefault();
+        return;
+      }
+      const isRight = e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D';
+      const isLeft = e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A';
+      if (!isRight && !isLeft) return;
       e.preventDefault();
+      if (e.repeat) return; // our own interval below drives the repeat cadence
+      // Right normally advances, Left retreats — both swap under RTL.
+      const forward = isRight !== (settings.direction === 'rtl');
+      const run = forward ? turnNext : turnPrev;
+      run();
+      stopNavRepeat();
+      navRepeatRef.current = { key: e.key, id: setInterval(run, NAV_REPEAT_MS) };
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (navRepeatRef.current?.key === e.key) stopNavRepeat();
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [router, turnPrev, turnNext, settings.direction]);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', stopNavRepeat);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', stopNavRepeat);
+      stopNavRepeat();
+    };
+  }, [router, turnPrev, turnNext, settings.direction, stopNavRepeat]);
 
   // Web: hovering the mouse near the top (toolbar) or bottom (progress pill /
   // settings gear) edge reveals the chrome and keeps it up for as long as the

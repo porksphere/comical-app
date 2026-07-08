@@ -272,6 +272,74 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
     };
   }, [pageFit]);
 
+  // Smooth continuous vertical scroll while Up/Down (or W/S) is held. The
+  // browser's own key-repeat doesn't drive scrollTop at all here (this div
+  // isn't natively keyboard-scrollable), so this owns movement directly via
+  // a per-frame, delta-time-based velocity instead of stepping once per
+  // keydown — constant speed regardless of frame rate, and no OS-repeat
+  // unevenness to stutter on.
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const held = { up: false, down: false };
+    const SCROLL_SPEED = 900; // px/sec
+    let rafId: number | null = null;
+    let lastT = 0;
+
+    const tick = (t: number) => {
+      if (!held.up && !held.down) {
+        rafId = null;
+        return;
+      }
+      const dt = lastT ? (t - lastT) / 1000 : 0;
+      lastT = t;
+      if (!pinch.current.active) {
+        const dir = held.down ? 1 : -1;
+        el.scrollTop = clamp(el.scrollTop + SCROLL_SPEED * dt * dir, 0, el.scrollHeight - el.clientHeight);
+        userScrolledRef.current = true;
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    const start = () => {
+      if (rafId == null) {
+        lastT = 0;
+        rafId = requestAnimationFrame(tick);
+      }
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && /^(INPUT|TEXTAREA)$/.test(target.tagName)) return;
+      if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+        held.up = true;
+        e.preventDefault();
+        start();
+      } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
+        held.down = true;
+        e.preventDefault();
+        start();
+      }
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') held.up = false;
+      else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') held.down = false;
+    };
+    const onBlur = () => {
+      held.up = false;
+      held.down = false;
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+      if (rafId != null) cancelAnimationFrame(rafId);
+    };
+  }, []);
+
   // Jump to the entry page once mounted, then correct twice more shortly after:
   // the first jump only has the generic estimate to go on for most slots (real
   // heights are unknown until each image loads), so as the seeded window around
