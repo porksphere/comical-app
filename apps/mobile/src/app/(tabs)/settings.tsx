@@ -530,9 +530,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.one,
   },
+  // No `flex: 1` (see `sheetBody` in overlay.tsx for why) — this just hugs
+  // its `MeasuredHeader`/`OptionList` content, both of which already size
+  // themselves to a real number.
   pickerBody: {
-    flex: 1,
-    minHeight: 0,
     gap: Spacing.three,
   },
   confirmBody: {
