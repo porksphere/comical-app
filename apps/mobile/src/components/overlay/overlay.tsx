@@ -181,7 +181,18 @@ export function MeasuredHeader({ children }: { children: ReactNode }) {
  * `LIST_TRAILING_SPACE` only applies on the sheet: the popover's outer
  * `paddingVertical` (see `styles.popover`) already clears its own bottom edge
  * symmetrically with the top, so adding the sheet's trailing space there too
- * would double up into a bottom gap nearly twice the top one. */
+ * would double up into a bottom gap nearly twice the top one.
+ *
+ * On the popover specifically (which has no vertical padding of its own),
+ * this also decides whether the *list* should have top/bottom padding
+ * matching its horizontal padding: only when its rows comfortably fit
+ * without scrolling. Once there's enough content to need an internal
+ * scroll, that padding goes away entirely (rows run flush to the border).
+ * Content height is measured via an inner wrapper that isn't itself
+ * padded, so the measurement can't be thrown off by the padding decision
+ * it's used to make; padding is tried once when there's room and reverted
+ * if that push turns out to tip it into scrolling — a settle that takes at
+ * most one flip, never an ongoing back-and-forth. */
 export function OptionList({ children, fixed }: { children: ReactNode; fixed?: boolean }) {
   const sheet = useSheetScroll();
   const presentation = useOverlayPresentation();
@@ -190,20 +201,83 @@ export function OptionList({ children, fixed }: { children: ReactNode; fixed?: b
   const onScroll = useAnimatedScrollHandler((e) => {
     offset.value = e.contentOffset.y;
   });
+
+  const [needsScroll, setNeedsScroll] = useState(true);
+  const needsScrollRef = useRef(needsScroll);
+  const coreHeightRef = useRef(0);
+  const scrollHeightRef = useRef(0);
+  const triedPadded = useRef(false);
+
+  // Decided imperatively off each fresh onLayout event rather than through a
+  // useEffect keyed on `needsScroll`: an effect re-running the instant
+  // `needsScroll` flips would read the *previous* render's scroll height (the
+  // new padding's own layout pass hasn't happened yet), always concluding
+  // "still clamped" and reverting on the spot. Reading straight from the
+  // event — which only ever fires once that render's real layout is in —
+  // avoids that stale-state race entirely. Both onLayout callbacks (the
+  // scroll frame and the inner unpadded row wrapper) can fire in either
+  // order, so either one re-evaluates using whatever the other last reported.
+  const evaluate = useCallback(() => {
+    const coreHeight = coreHeightRef.current;
+    const scrollHeight = scrollHeightRef.current;
+    if (coreHeight === 0 || scrollHeight === 0) return;
+    if (needsScrollRef.current) {
+      // Flush right now. An unclamped ScrollView auto-sizes down to exactly
+      // its content's height (it doesn't hold slack in reserve), so "not
+      // clamped" reads as scrollHeight ≈ coreHeight — that's the signal
+      // there's room to try adding padding, not scrollHeight already being
+      // bigger than coreHeight.
+      if (!triedPadded.current && scrollHeight >= coreHeight - 0.5) {
+        triedPadded.current = true;
+        needsScrollRef.current = false;
+        setNeedsScroll(false);
+      }
+    } else if (scrollHeight < coreHeight + Spacing.four * 2 - 0.5) {
+      // Padded right now — if that push clamped it after all, revert.
+      needsScrollRef.current = true;
+      setNeedsScroll(true);
+    }
+  }, []);
+
+  const popoverPadded = presentation === 'popover' && !needsScroll;
+
   return (
     <AnimatedScrollView
       ref={sheet?.scrollRef as never}
       onScroll={onScroll}
       scrollEventThrottle={16}
+      onLayout={
+        presentation === 'popover'
+          ? (e) => {
+              scrollHeightRef.current = e.nativeEvent.layout.height;
+              evaluate();
+            }
+          : undefined
+      }
       style={
         fixed
           ? { height: LIST_MAX_HEIGHT, flexShrink: 1, minHeight: 0 }
           : { flexGrow: 1, flexShrink: 1, minHeight: 0, maxHeight: LIST_MAX_HEIGHT }
       }
-      contentContainerStyle={presentation === 'popover' ? listStyles.listContentPopover : listStyles.listContent}
+      contentContainerStyle={
+        presentation === 'popover'
+          ? [listStyles.listContentPopover, popoverPadded && listStyles.listContentPopoverPadded]
+          : listStyles.listContent
+      }
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}>
-      {children}
+      {presentation === 'popover' ? (
+        <View
+          style={listStyles.popoverRows}
+          onLayout={(e) => {
+            coreHeightRef.current = e.nativeEvent.layout.height;
+            evaluate();
+          }}>
+          {children}
+        </View>
+      ) : (
+        children
+      )}
     </AnimatedScrollView>
   );
 }
@@ -228,9 +302,16 @@ const listStyles = StyleSheet.create({
     paddingTop: Spacing.one,
     paddingBottom: LIST_TRAILING_SPACE,
   },
-  // No top/bottom padding at all — the popover's own paddingVertical already
-  // clears its border, so the list content should butt right up against that.
-  listContentPopover: {
+  // Flush by default (see `OptionList`'s popover-padding settle logic above);
+  // `gap` lives on `popoverRows` instead, since rows sit inside that inner
+  // measuring wrapper rather than directly in this contentContainerStyle.
+  listContentPopover: {},
+  // Applied alongside `listContentPopover` once the settle logic decides the
+  // content comfortably fits without scrolling.
+  listContentPopoverPadded: {
+    paddingVertical: Spacing.four,
+  },
+  popoverRows: {
     gap: Spacing.two,
   },
 });
