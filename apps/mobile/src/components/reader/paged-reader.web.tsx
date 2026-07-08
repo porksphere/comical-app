@@ -436,13 +436,13 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   const handleTap = useCallback(
     (x: number) => {
       if (zoomedRef.current) return; // no tap zones while zoomed (mirrors native)
-      if (x < width * 0.4) {
+      if (x < width * 0.3) {
         // Already at the first physical page (= first in reading order — `data` is
         // pre-reversed for RTL): hand off to the reader for previous-chapter
         // navigation instead of a silent clamp (mirrors the last-page → onNext path).
         if (indexRef.current <= 0) onPrev?.();
         else settleTo(indexRef.current - 1, false);
-      } else if (x > width * 0.6) {
+      } else if (x > width * 0.7) {
         // Already at the last physical page (= the last page in reading order —
         // `data` is pre-reversed for RTL, so "physical +1" is direction-agnostic
         // "next"; see the file-level comment): nothing left to settle to

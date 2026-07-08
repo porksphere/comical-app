@@ -273,9 +273,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   side: {
-    flex: 4, // ~40%
+    flex: 3, // ~30%
   },
   center: {
-    flex: 2, // ~20%
+    flex: 4, // ~40%
   },
 });

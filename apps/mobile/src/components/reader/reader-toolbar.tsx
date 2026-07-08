@@ -25,7 +25,7 @@ export function ReaderToolbar({
     transform: [{ translateY: withTiming(visible ? 0 : -8, { duration: 200 }) }],
   }));
   return (
-    <Animated.View style={[styles.wrap, style, { pointerEvents: visible ? 'box-none' : 'none' }]}>
+    <Animated.View pointerEvents={visible ? 'box-none' : 'none'} style={[styles.wrap, style]}>
       <LinearGradient
         colors={['rgba(0,0,0,0.78)', 'transparent']}
         style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}
