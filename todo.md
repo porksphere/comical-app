@@ -83,9 +83,21 @@
 - [ ] Loading skeletons for bridge pages don't line up correctly with the legend list, this is worse on searches that have a "<- Home" button, we should account for that space
 - [ ] Navigating to a sub-page other then home, clicking a series, clicking a tag, then shows the search with "<- Home" instead of the correct sub page it came from
 - [ ] "<- Home" button feels very slow, it seems blocked on a network request maybe?
-- [ ] Enable resuming from series details page if not already (i.e. instead of Read Chapter 1, it's Resume Chapter 3 or something), this should work when clicking the big series cover as well.
+- [x] Enable resuming from series details page if not already (i.e. instead of Read Chapter 1, it's Resume Chapter 3 or something), this should work when clicking the big series cover as well.
+      The cover tap and primary button already shared `startReading()`, which already
+      resumed correctly (both navigated to the history entry's chapter/page) — only the
+      *label* was stale, always showing the server's `readLabel` (first chapter's name,
+      e.g. "Chapter 1") since that value has no notion of this device's local reading
+      history. Added a `resumeLabel` in `series.tsx` derived from the existing
+      `resumeEntry` lookup — "▶  Resume {chapterName}" when there's a history entry (or
+      plain "▶  Resume" for a direct/chapterless series), falling back to `readLabel`
+      otherwise — and used it for both the primary button label and the cover's
+      `accessibilityLabel`. Verified empirically with Playwright against the live dev
+      server: opening "Sakamoto Days" (a mock history entry at "Days 1") now shows
+      "▶ Resume Days 1" as the primary button (screenshot-confirmed).
 - [ ] Add hovering to UI elements in series details view
 - [ ] Make the #tags to cut off until showing the +X tags button row / viewport size relative, we can comfortably show more on desktop
+- [ ] Clicking the page settings button after it's already open should close it, not re-open it.
 - [x] Keyboard page navigation shouldn't animate, it should instantly go to the next page like tapping
       Fixed: keyboard nav (`reader.tsx`) routed through the animated `prev`/`next`
       callbacks; switched to the instant `turnPrev`/`turnNext` (same ones tap zones
