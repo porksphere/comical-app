@@ -152,7 +152,8 @@ const LIST_TRAILING_SPACE = Spacing.four;
 
 /** Wraps a sheet's non-list content (title, helper text, search input, …). */
 export function MeasuredHeader({ children }: { children: ReactNode }) {
-  return <View style={listStyles.header}>{children}</View>;
+  const presentation = useOverlayPresentation();
+  return <View style={presentation === 'popover' ? listStyles.headerPopover : listStyles.header}>{children}</View>;
 }
 
 /** Caps long option lists with an internal scroll so the sheet stays usable.
@@ -211,6 +212,13 @@ const listStyles = StyleSheet.create({
   header: {
     gap: Spacing.three,
   },
+  // The popover no longer has its own paddingVertical (see `styles.popover`),
+  // so a header that does render on the popover (TriEditor/TagSearchEditor's
+  // helper text, search input) needs its own top clearance from the border.
+  headerPopover: {
+    gap: Spacing.three,
+    paddingTop: Spacing.four,
+  },
   listContent: {
     gap: Spacing.two,
     // A little room at the top too, so a scrolled-to-top list doesn't sit the
@@ -220,12 +228,10 @@ const listStyles = StyleSheet.create({
     paddingTop: Spacing.one,
     paddingBottom: LIST_TRAILING_SPACE,
   },
-  // Same top spacing as the sheet, but no extra trailing space at the bottom
-  // — see the comment on OptionList for why the popover doesn't need it.
+  // No top/bottom padding at all — the popover's own paddingVertical already
+  // clears its border, so the list content should butt right up against that.
   listContentPopover: {
     gap: Spacing.two,
-    paddingTop: Spacing.one,
-    paddingBottom: Spacing.one,
   },
 });
 
@@ -629,7 +635,6 @@ const styles = StyleSheet.create({
   popover: {
     borderRadius: 16,
     paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.four,
     overflow: 'hidden',
     // The card shares the sheet's background, so on the (also dark) page a light
     // edge — not the shadow — is what separates it; the shadow only lifts it on
