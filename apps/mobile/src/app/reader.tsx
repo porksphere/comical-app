@@ -296,22 +296,8 @@ export default function ReaderScreen() {
   );
   const atLastPage = useCallback(() => !!pages && currentRef.current >= pages.length - 1, [pages]);
   const atFirstPage = useCallback(() => currentRef.current <= 0, []);
-  const prev = useCallback(() => {
-    if (atFirstPage()) {
-      tryPrevChapter();
-      return;
-    }
-    goTo(currentRef.current - 1);
-  }, [goTo, atFirstPage, tryPrevChapter]);
-  const next = useCallback(() => {
-    if (atLastPage()) {
-      tryAdvanceChapter();
-      return;
-    }
-    goTo(currentRef.current + 1);
-  }, [goTo, atLastPage, tryAdvanceChapter]);
-  // Tapping a page turns it instantly (no slide), on every platform; keyboard
-  // arrows and progress-pill jumps keep the animated transition.
+  // Tapping a page and keyboard navigation both turn instantly (no slide), on
+  // every platform; only the progress-pill jump keeps the animated transition.
   const turnPrev = useCallback(() => {
     if (atFirstPage()) {
       tryPrevChapter();
@@ -327,19 +313,22 @@ export default function ReaderScreen() {
     goTo(currentRef.current + 1, false);
   }, [goTo, atLastPage, tryAdvanceChapter]);
 
-  // Web keyboard nav: arrows page (respecting direction), Esc closes.
+  // Web keyboard nav: arrows (or A/D) page instantly like a tap (respecting
+  // direction), Esc closes.
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') router.back();
-      else if (e.key === 'ArrowRight') (settings.direction === 'rtl' ? prev : next)();
-      else if (e.key === 'ArrowLeft') (settings.direction === 'rtl' ? next : prev)();
+      else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D')
+        (settings.direction === 'rtl' ? turnPrev : turnNext)();
+      else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A')
+        (settings.direction === 'rtl' ? turnNext : turnPrev)();
       else return;
       e.preventDefault();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [router, prev, next, settings.direction]);
+  }, [router, turnPrev, turnNext, settings.direction]);
 
   return (
     <View style={styles.root}>
