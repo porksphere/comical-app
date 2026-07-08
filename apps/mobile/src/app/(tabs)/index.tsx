@@ -957,6 +957,13 @@ export default function BrowseScreen() {
           }
         }}
         data={gridData}
+        // LegendList memoizes each on-screen cell's rendered output, keyed off
+        // itemKey/data/extraData — renderItem's `loadingMore` check below is otherwise
+        // invisible to it, so an already-mounted trailing spacer cell never re-renders when
+        // `loadingMore` flips (it only just started fetching the next page, its item object
+        // didn't change). Passing it as extraData forces a re-evaluation of every mounted
+        // cell when it toggles, so the spacer→SkeletonCard swap actually reaches the screen.
+        extraData={loadingMore}
         keyExtractor={(item) => String(item.id)}
         numColumns={numColumns}
         // Recycle card instances rather than remounting per reuse — SeriesCard is now recycle-safe
