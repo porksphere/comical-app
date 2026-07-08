@@ -95,9 +95,36 @@
       `ArrowLeft`, respecting `settings.direction` (rtl swap) like the arrows already
       did. Verified empirically — all four keys advance/retreat the correct page.
 - [ ] Up/down/W/S should scroll the webtoon view (smoothly up and down, ensure holding doesn't result in weird behavior) (left and right should do the full transition as it is now, but ensure when it's held it doesn't stutter as it does right now)
-- [ ] Center screen tapping in reader view to open overlay should be a larger percentage of the tappable area
-- [ ] Enable mouse hovering to show overlay (near top of screen and bottom for settings / page selector)
-- [ ] On web, can't select any of the page reader overlay buttons after the first time it's shown
+- [x] Center screen tapping in reader view to open overlay should be a larger percentage of the tappable area
+      Fixed: widened the center chrome-toggle zone from 20% to 40% of width on both
+      web (`paged-reader.web.tsx`) and native (`zoomable-page.tsx`), a 30/40/30 split
+      instead of 40/20/40. Verified empirically — a tap at x=450 of a 1280px-wide
+      viewport (inside the new center band, was inside the old left band) now toggles
+      chrome instead of turning the page.
+- [x] Enable mouse hovering to show overlay (near top of screen and bottom for settings / page selector)
+      Fixed: web-only `mousemove` listener in `reader.tsx` calls the existing
+      `showChrome()` whenever the cursor is within 80px of the top or bottom edge,
+      re-arming the auto-hide timer on every move inside the band so chrome stays up
+      for as long as the cursor sits there. Verified empirically — sustained hover at
+      the top edge (jittered moves over 3.5s) kept the toolbar's opacity at 1 the
+      whole time, vs. it auto-hiding to 0 after 3s when the cursor isn't in the band;
+      bottom-edge hover also confirmed.
+- [x] On web, can't select any of the page reader overlay buttons after the first time it's shown
+      Fixed: `ReaderToolbar`/`ProgressPill`/`SettingsControl` all embedded `pointerEvents`
+      inside their `Animated.View`'s `style` array alongside a Reanimated
+      `useAnimatedStyle` object. Reanimated's web `Animated.View` updates the animated
+      (opacity) part of that array imperatively on the UI thread but wasn't reliably
+      re-diffing the static `pointerEvents` sibling on every JS re-render — after a
+      hide/show cycle the DOM node's raw inline style could be left with a stale
+      `pointer-events: none`, invisible to the eye (opacity still animated correctly)
+      but blocking clicks, so taps fell through to the page image underneath instead
+      of hitting the gear/toolbar/pill. Moved `pointerEvents` to its own component
+      prop (React Native's recommended form, and one RNWeb resolves to a stable atomic
+      CSS class instead of a per-render inline style) on all three. Verified
+      empirically with Playwright: reproduced the stuck `pointer-events: none` via
+      `getComputedStyle`/raw `style` attribute inspection before the fix, then
+      confirmed a second gear click after a hide/show cycle now reopens the settings
+      popover (screenshot-verified).
 - [x] Filter popups don't have hover highlighting on desktop. Fixed: `TriRow` and the
       `MultiEditor` option rows (filter-editors.tsx) never wired `useHover` at all, unlike
       every other row-list in the app; both now tint `backgroundSelected` on hover like

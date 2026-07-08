@@ -330,6 +330,23 @@ export default function ReaderScreen() {
     return () => window.removeEventListener('keydown', onKey);
   }, [router, turnPrev, turnNext, settings.direction]);
 
+  // Web: hovering the mouse near the top (toolbar) or bottom (progress pill /
+  // settings gear) edge reveals the chrome and keeps it up for as long as the
+  // cursor stays there (showChrome() re-arms the hide timer on every move
+  // inside the band), mirroring hover-controls behavior in video players.
+  // Outside the band it's a no-op, so it never fights the auto-hide timer
+  // while the cursor just sits elsewhere on the page.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const HOVER_ZONE = 80; // px from the top/bottom edge
+    const onMove = (e: MouseEvent) => {
+      const inZone = e.clientY < HOVER_ZONE || e.clientY > window.innerHeight - HOVER_ZONE;
+      if (inZone) showChrome();
+    };
+    window.addEventListener('mousemove', onMove);
+    return () => window.removeEventListener('mousemove', onMove);
+  }, [showChrome]);
+
   return (
     <View style={styles.root}>
       <StatusBar style="light" hidden={!chromeVisible} />
