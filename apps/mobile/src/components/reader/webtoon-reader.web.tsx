@@ -65,11 +65,24 @@ function rel(touch: Touch, rect: DOMRect): Point {
   return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
 }
 
+// A mouse+keyboard session, not a touch one: `fit-page`'s CSS scroll-snap
+// exists so a touch swipe pages one screen at a time via the browser's own
+// gesture handling, with no custom JS. On desktop that same mandatory snap
+// fights direct `scrollTop` writes — a released Up/Down hold-scroll was
+// observed snapping straight to the nearest page, which isn't something a
+// keyboard/mouse user has an equivalent "swipe" gesture for and shouldn't
+// happen — so it's skipped entirely there in favor of free scroll plus the
+// explicit instant jump `goToPage` already does for Left/Right/A/D.
+function isDesktopPointer(): boolean {
+  return typeof window !== 'undefined' && !!window.matchMedia?.('(hover: hover) and (pointer: fine)').matches;
+}
+
 export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function WebtoonReader(
   { pages, width, height, pageFit, initialPage, onPageChange, onToggleChrome },
   ref,
 ) {
   const n = pages.length;
+  const paged = pageFit === 'fit-page';
   const scrollerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const slotsRef = useRef<(HTMLDivElement | null)[]>([]);
@@ -125,22 +138,42 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
 
   const applyZoom = (z: number) => contentRef.current?.style.setProperty('zoom', String(z));
 
-  // Report the page that owns the top half of the viewport.
+  // Report the page that owns the top half of the viewport. Re-runs on every
+  // scroll frame while a hold-scroll is in flight (see `onScroll` below), so
+  // it has to stay cheap: the old version rescanned from slot 0 every time,
+  // calling `getBoundingClientRect` on every slot up to the current one —
+  // fine near the start of a chapter but increasingly expensive (and janky
+  // to hold-scroll through) the deeper into it you are, since the scan grows
+  // with your position. `lastCurrentRef` lets it pick up from where it left
+  // off instead of restarting each time.
+  const lastCurrentRef = useRef(initialPage);
   const updateCurrent = useCallback(() => {
     const root = scrollerRef.current;
     if (!root) return;
-    const rootTop = root.getBoundingClientRect().top;
     const slots = slotsRef.current;
-    let current = 0;
-    for (let i = 0; i < slots.length; i++) {
-      const el = slots[i];
-      if (!el) continue;
-      const top = el.getBoundingClientRect().top - rootTop;
-      if (top <= root.clientHeight * 0.5) current = i;
-      else break;
+    const count = slots.length;
+    if (count === 0) return;
+    if (paged && height > 0) {
+      // Fixed-height slots in this mode — direct arithmetic, no DOM reads.
+      const idx = clamp(Math.floor((root.scrollTop + root.clientHeight * 0.5) / height), 0, count - 1);
+      lastCurrentRef.current = idx;
+      onPageChangeRef.current(idx);
+      return;
     }
-    onPageChangeRef.current(current);
-  }, []);
+    const rootTop = root.getBoundingClientRect().top;
+    const half = root.clientHeight * 0.5;
+    const topOf = (i: number) => {
+      const el = slots[i];
+      return el ? el.getBoundingClientRect().top - rootTop : null;
+    };
+    let i = clamp(lastCurrentRef.current, 0, count - 1);
+    // Scrolled up: walk back while the current slot hasn't reached halfway yet.
+    while (i > 0 && (topOf(i) ?? 0) > half) i--;
+    // Scrolled down: walk forward while the next slot has already passed halfway.
+    while (i < count - 1 && (topOf(i + 1) ?? half + 1) <= half) i++;
+    lastCurrentRef.current = i;
+    onPageChangeRef.current(i);
+  }, [paged, height]);
 
   const ticking = useRef(false);
   const onScroll = useCallback(() => {
@@ -277,10 +310,13 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
   // isn't natively keyboard-scrollable), so this owns movement directly via
   // a per-frame, delta-time-based velocity instead of stepping once per
   // keydown — constant speed regardless of frame rate, and no OS-repeat
-  // unevenness to stutter on.
+  // unevenness to stutter on. Only wired up on a desktop (mouse+keyboard)
+  // session — see `isDesktopPointer` for why `fit-page`'s CSS scroll-snap is
+  // skipped there entirely, which is what makes direct `scrollTop` writes
+  // work here in the first place.
   useEffect(() => {
     const el = scrollerRef.current;
-    if (!el) return;
+    if (!el || !isDesktopPointer()) return;
     const held = { up: false, down: false };
     const SCROLL_SPEED = 900; // px/sec
     let rafId: number | null = null;
@@ -383,16 +419,24 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
           for (let i = clamped - 2; i <= clamped + 2; i++) if (i >= 0 && i < n) next.add(i);
           return next;
         });
-        requestAnimationFrame(() => slotsRef.current[clamped]?.scrollIntoView({ block: 'start' }));
+        // Left/Right/A/D jump straight to the target page — a direct `scrollTop`
+        // write, not `scrollIntoView`, so nothing can animate it (no ambient
+        // `scroll-behavior: smooth`, no scroll-snap easing on the transition).
+        requestAnimationFrame(() => {
+          const el = scrollerRef.current;
+          const target = slotsRef.current[clamped];
+          if (el && target) el.scrollTop = target.offsetTop;
+        });
       },
     }),
     [n],
   );
 
-  const paged = pageFit === 'fit-page';
+  // See `isDesktopPointer` — CSS scroll-snap only applies on touch sessions.
+  const snapEnabled = paged && !isDesktopPointer();
 
   return (
-    <div ref={scrollerRef} onScroll={onScroll} onClick={onToggleChrome} style={scrollerStyle(paged)}>
+    <div ref={scrollerRef} onScroll={onScroll} onClick={onToggleChrome} style={scrollerStyle(paged, snapEnabled)}>
       <div ref={contentRef} style={contentStyle}>
         {pages.map((uri, i) => {
           const isLoaded = loaded.has(i);
@@ -428,7 +472,7 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
   );
 });
 
-function scrollerStyle(paged: boolean): React.CSSProperties {
+function scrollerStyle(paged: boolean, snapEnabled: boolean): React.CSSProperties {
   return {
     position: 'absolute',
     top: 0,
@@ -439,7 +483,7 @@ function scrollerStyle(paged: boolean): React.CSSProperties {
     overflowX: 'hidden',
     touchAction: 'pan-y',
     WebkitOverflowScrolling: 'touch',
-    scrollSnapType: paged ? 'y mandatory' : undefined,
+    scrollSnapType: snapEnabled ? 'y mandatory' : undefined,
     // Reference: `#reader-view { background: #0f0f0f }` — not pure black.
     backgroundColor: '#0f0f0f',
   };
