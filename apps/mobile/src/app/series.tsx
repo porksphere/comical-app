@@ -313,6 +313,15 @@ function SeriesBody({
   // action (`app/(tabs)/history.tsx`'s `resume()`).
   const { data: history } = useQuery(historyQuery(ds, mock));
   const resumeEntry = history?.find((h) => h.bridgeId === bridgeId && h.seriesId === series.id);
+  // Label the primary button "Resume <chapter>" (or plain "Resume" for a direct/
+  // chapterless series) instead of the server's readLabel, which only ever names
+  // the first chapter — it has no notion of this device's local reading history.
+  const resumeLabel = resumeEntry
+    ? resumeEntry.chapterName
+      ? `▶  Resume ${resumeEntry.chapterName}`
+      : '▶  Resume'
+    : undefined;
+  const primaryLabel = resumeLabel ?? readLabel;
 
   // A chaptered series needs its (deferred) chapter list to know which chapter to
   // open — disable Read until it lands. Direct series read from page 0, and a
@@ -368,7 +377,7 @@ function SeriesBody({
       onPress={startReading}
       disabled={readDisabled}
       accessibilityRole="button"
-      accessibilityLabel={readLabel ?? 'Read'}>
+      accessibilityLabel={primaryLabel ?? 'Read'}>
       <Image
         source={{ uri: series.cover }}
         style={isLarge ? styles.coverLarge : styles.cover}
@@ -418,7 +427,7 @@ function SeriesBody({
   const actionsEl = (
     <View style={[styles.actions, !isLarge && { width: actionsWidth }]}>
       <ActionButton
-        label={readLabel ?? '▶  Read'}
+        label={primaryLabel ?? '▶  Read'}
         variant="primary"
         disabled={readDisabled}
         onPress={startReading}
