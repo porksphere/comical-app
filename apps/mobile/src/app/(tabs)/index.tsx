@@ -58,6 +58,9 @@ const FILTER_DEBOUNCE_MS = 500;
 // bar's bottom throughout (see the paddingTop note on the list).
 const EXPAND_EXTRA = Spacing.four;
 const THUMB_GROWTH = 12;
+// Minimum time pull-to-refresh's spinner stays visible once triggered — see the
+// `refreshStartedAtRef` comment below.
+const REFRESH_MIN_VISIBLE_MS = 600;
 
 type GridItem = SeriesEntry & { spacer?: boolean };
 /** A drilled-into rail: its list id (for pagination) + display title. */
@@ -251,6 +254,32 @@ export default function BrowseScreen() {
   }, [filterDefs, filterValues, sortValue]);
   const hasActiveQuery = !!committedFilters || !!committedSort;
 
+  // ── Pull-to-refresh (native only) ─────────────────────────────────────────
+  // Declared up here (rather than by `onRefresh` below) because the home-sections
+  // fetch effect just below needs `refreshActiveRef`/`finishRefresh` in its own
+  // deps/closure and is defined before `inResults` exists — see `onRefresh` for
+  // the full picture, which needs `inResults` and so stays down there.
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshActiveRef = useRef(false);
+  // A same-device fetch (embedded transport, or just a fast network) can resolve
+  // in a handful of ms — far less than the ~600ms a real pull-release-and-settle
+  // takes native iOS's UIRefreshControl. If `refreshing` flips to `false` while
+  // the user's finger is still down mid-drag, RN imperatively force-ends the
+  // native control right then instead of on release, which reads as an abrupt
+  // snap-back rather than a natural spring — and leaves no time for the spinner
+  // to even render before it's told to stop. Padding the visible window out to
+  // REFRESH_MIN_VISIBLE_MS keeps `refreshing` true long enough to see and to let
+  // the gesture resolve normally.
+  const refreshStartedAtRef = useRef(0);
+  const finishRefresh = useCallback(() => {
+    if (!refreshActiveRef.current) return;
+    refreshActiveRef.current = false;
+    const elapsed = Date.now() - refreshStartedAtRef.current;
+    const wait = Math.max(0, REFRESH_MIN_VISIBLE_MS - elapsed);
+    if (wait === 0) setRefreshing(false);
+    else setTimeout(() => setRefreshing(false), wait);
+  }, []);
+
   // ── Home rails + grid sections (only fetched while `page === 'home'`) ─────
   const [sections, setSections] = useState<RailSection[]>([]);
   const [gridSections, setGridSections] = useState<HomeGridSection[]>([]);
@@ -284,13 +313,10 @@ export default function BrowseScreen() {
       })
       .finally(() => {
         setHomeLoading(false);
-        if (refreshActiveRef.current) {
-          refreshActiveRef.current = false;
-          setRefreshing(false);
-        }
+        finishRefresh();
       });
     return () => ctrl.abort();
-  }, [bridgeId, listsBridgeId, composedHome, ds, homeReload]);
+  }, [bridgeId, listsBridgeId, composedHome, ds, homeReload, finishRefresh]);
   // Only the LAST grid section infinite-scrolls; earlier ones get "Load more" —
   // see HomeGridSection's doc in types.ts.
   const terminalGridSection = gridSections.at(-1) ?? null;
@@ -322,13 +348,16 @@ export default function BrowseScreen() {
   // (tagQueries path), stash the tag to apply once this bridge's filter defs
   // load (tagIds path), or stash the meta value to resolve against a filter
   // field the same way (meta path). Mirrors comical-web's navigateToQuerySearch /
-  // navigateToFilteredSearch (app.ts).
+  // navigateToFilteredSearch (app.ts). `originPage` restores the Browse sub-page the series
+  // was opened from (e.g. "Popular") so the drill-down's back arrow returns there instead of
+  // Home — falls back to 'home' when absent (series opened from a different tab, where there's
+  // no Browse sub-page to return to).
   useFocusEffect(
     useCallback(() => {
       const intent = takeBrowseIntent();
       if (!intent) return;
       setSeeAll(null);
-      setPage('home');
+      setPage(intent.originPage ?? 'home');
       setBridge(intent.bridgeName);
       if (intent.kind === 'query') {
         setPendingTag(null);
@@ -420,9 +449,9 @@ export default function BrowseScreen() {
   // on "Popular") still shows the banner, and its arrow returns to that page.
   const showBackBanner = !!query || !!seeAll || hasActiveQuery;
   // Where the back arrow returns to — the page the drill-down was layered on:
-  // Home if that's where we were, otherwise the selected page (e.g. "Popular").
-  // A tag/meta chip from the Series screen already forced `page` to 'home' (see
-  // the focus effect), so that flow reads "← Home" as before.
+  // Home if that's where we were, otherwise the selected page (e.g. "Popular"). A tag/meta
+  // chip from the Series screen restores whichever page it was opened from (see the focus
+  // effect's `originPage` handling) — 'home' only when it wasn't opened from Browse itself.
   const backLabel =
     page === 'home' ? 'Home' : (selectedList?.name ?? page.charAt(0).toUpperCase() + page.slice(1));
   // Caption for what's being shown: a "See all" list, a text search, or — with
@@ -456,19 +485,18 @@ export default function BrowseScreen() {
   const [gridReload, setGridReload] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  // ── Pull-to-refresh (native only) ─────────────────────────────────────────
   // Re-runs whichever fetch backs the *current* view: the composed Home surface
   // (rails + grid sections, via `homeReload`) when not in results, or the flat
   // results grid (search / "See all" / a page-flagged sub-page / favorites /
   // live filters+sort, via `gridReload`) otherwise. Unlike those reload paths'
   // normal firing (bridge/page switch etc.), a pull keeps the existing content
   // on screen and shows only the RefreshControl spinner — the two fetch effects
-  // read `refreshActiveRef` to skip their content-clearing skeleton, and clear
-  // `refreshing` in their `finally` once the fresh data has swapped in.
-  const [refreshing, setRefreshing] = useState(false);
-  const refreshActiveRef = useRef(false);
+  // read `refreshActiveRef` to skip their content-clearing skeleton, and call
+  // `finishRefresh` (declared above, before those effects) in their `finally`
+  // once the fresh data has swapped in.
   const onRefresh = useCallback(() => {
     refreshActiveRef.current = true;
+    refreshStartedAtRef.current = Date.now();
     setRefreshing(true);
     if (inResults) setGridReload((n) => n + 1);
     else setHomeReload((n) => n + 1);
@@ -540,14 +568,11 @@ export default function BrowseScreen() {
       })
       .finally(() => {
         setGridLoading(false);
-        if (refreshActiveRef.current) {
-          refreshActiveRef.current = false;
-          setRefreshing(false);
-        }
+        finishRefresh();
       });
     return () => ctrl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bridgeId, isHomeTerminal, terminalGridSection, showResultsGrid, isFavoritesPage, activeListId, query, seeAll, scopedSearch, committedFilters, committedSort, ds, gridReload]);
+  }, [bridgeId, isHomeTerminal, terminalGridSection, showResultsGrid, isFavoritesPage, activeListId, query, seeAll, scopedSearch, committedFilters, committedSort, ds, gridReload, finishRefresh]);
 
   const loadMore = () => {
     if (loadingMore || !gridHasMore || !bridgeId || (!isHomeTerminal && !showResultsGrid)) return;
@@ -580,6 +605,13 @@ export default function BrowseScreen() {
     // banner dismisses and the underlying page actually returns.
     setFilterValues(Object.fromEntries(filterDefs.map((d) => [d.id, initialValue(d)])));
     setSortValue(null);
+    // `hasActiveQuery` (and so `inResults`) reads the DEBOUNCED committed filters/sort, not
+    // `filterValues`/`sortValue` directly — clearing only those would leave `committedFilters`/
+    // `committedSort` stale for up to FILTER_DEBOUNCE_MS, stranding the banner/results grid on
+    // screen for half a second after the tap (looks like the button is blocked on a request).
+    // Clear the committed snapshot synchronously too so `inResults` flips on the same tick.
+    setCommittedFilters(undefined);
+    setCommittedSort(undefined);
     // Drop any not-yet-applied intent so it can't re-set the filter after we've
     // just cleared it (a race if back is pressed before this bridge's defs load).
     setPendingTag(null);
@@ -917,7 +949,13 @@ export default function BrowseScreen() {
             loadingMore ? <SkeletonCard /> : <View style={styles.gridCell} />
           ) : (
             <View style={styles.gridCell}>
-              <SeriesCard entry={item} bridge={currentBridge?.name ?? undefined} bridgeId={bridgeId} direct={directBridge} />
+              <SeriesCard
+                entry={item}
+                bridge={currentBridge?.name ?? undefined}
+                bridgeId={bridgeId}
+                direct={directBridge}
+                originPage={page}
+              />
             </View>
           )
         }
@@ -1038,8 +1076,12 @@ function HomeGridBlock({
 
 /** A single skeleton card (cover + two title lines) — one grid cell's worth. */
 function SkeletonCard() {
+  // `gridCell` (not the bare `cell`) so this matches a real card's cell exactly — same
+  // flex plus the same top/bottom padding — since this also fills real grid rows directly
+  // (the `loadingMore` last-row filler above), where it sits beside `gridCell`-wrapped
+  // `SeriesCard`s and must match their box, not just approximate it via the footer skeleton.
   return (
-    <View style={[styles.cell, styles.skelCell]}>
+    <View style={[styles.gridCell, styles.skelCell]}>
       <Skeleton style={styles.skelCover} />
       <Skeleton style={styles.skelLine} />
       <Skeleton style={[styles.skelLine, styles.skelLineShort]} />
@@ -1188,9 +1230,12 @@ const styles = StyleSheet.create({
     // self-pad via `styles.row`, same as the header children (see the bleed note above).
     marginHorizontal: -Spacing.four,
   },
+  // Same column gap as the real grid's `columnWrapperStyle` (GRID_COLUMN_GAP) — this used to be
+  // Spacing.three (double), so skeleton columns sat at different x-offsets than the real cards
+  // that replace them.
   skelRow: {
     flexDirection: 'row',
-    gap: Spacing.three,
+    gap: GRID_COLUMN_GAP,
   },
   skelCell: {
     flex: 1,
