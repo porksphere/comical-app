@@ -1,6 +1,7 @@
 import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Image } from 'expo-image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
@@ -891,6 +892,7 @@ export default function BrowseScreen() {
     return (
       <ThemedView style={[styles.container, styles.centerFill]}>
         <View style={styles.noBridges}>
+          <Image style={styles.noBridgesIcon} source={require('@/assets/images/comical-logo.png')} />
           <ThemedText type="subtitle" style={styles.noBridgesTitle}>
             Comical
           </ThemedText>
@@ -1117,6 +1119,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.two,
     paddingHorizontal: Spacing.four,
+  },
+  noBridgesIcon: {
+    width: 128,
+    height: 128,
+    marginBottom: Spacing.two,
   },
   noBridgesTitle: {
     textAlign: 'center',
