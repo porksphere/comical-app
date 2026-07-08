@@ -7,10 +7,11 @@ import {
   OverlayHeading,
   useAnchoredOverlay,
   useOverlay,
+  useOverlayPresentation,
 } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { RowHeight, Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
 import { useIsCompact } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
@@ -77,11 +78,18 @@ function SelectMenu({
   thumbnails?: Record<string, string>;
 }) {
   const { closeTop } = useOverlay();
+  const presentation = useOverlayPresentation();
   return (
     <View style={styles.menu}>
-      <MeasuredHeader>
-        <OverlayHeading>{title}</OverlayHeading>
-      </MeasuredHeader>
+      {/* On the popover, OverlayHeading renders nothing (the trigger already
+          names the menu) — skip the wrapper entirely there too, since
+          `styles.menu`'s flex `gap` would otherwise still reserve space
+          before an empty sibling (see filter-editors.tsx's MultiEditor). */}
+      {presentation !== 'popover' && (
+        <MeasuredHeader>
+          <OverlayHeading>{title}</OverlayHeading>
+        </MeasuredHeader>
+      )}
       <OptionList>
         {options.map((opt) => (
           <SelectRow
@@ -192,11 +200,14 @@ const styles = StyleSheet.create({
     minHeight: 0,
     gap: Spacing.three,
   },
+  // Same height as the filter bar's own rows (`CONTROL_HEIGHT` in
+  // filter-types.ts) so a bridge/page picker row reads at the same size as
+  // every other tappable row in the app.
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
-    paddingVertical: Spacing.three,
+    height: RowHeight,
     paddingHorizontal: Spacing.three,
     borderRadius: Spacing.three,
   },

@@ -122,5 +122,10 @@ export const MaxTopLevelWidth = 1200;
  *  browse bridge/page bar and the series detail bar — so they read as one bar
  *  across views. Mirrors the reference's shared `--topbar-height`. */
 export const TopBarHeight = 48;
+/** Standard height of a tappable row — the filter bar's own controls
+ *  (`CONTROL_HEIGHT` in filter-types.ts) and every selectable list row inside
+ *  an overlay (genre/tag checkboxes, bridge/page picker rows, …), so a row
+ *  reads the same size whether it's on the bar or in a dropdown beneath it. */
+export const RowHeight = 44;
 /** Taller top-bar height used on desktop (≥768px) only. */
 export const DesktopTopBarHeight = 64;
