@@ -25,7 +25,7 @@ import { SettingsRow, SettingsSection } from '@/components/settings/settings-row
 import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { isAbort, useApiBase, type BridgeSummary, type SavedRegistry, type TrackerSummary } from '@/data/api';
 import { applyEmbeddedMode, isEmbeddedRuntimeAvailable, useEmbeddedEnabled } from '@/data/embedded';
 import { bumpDataEpoch } from '@/data/data-epoch';
@@ -33,6 +33,7 @@ import { queryClient } from '@/data/query-client';
 import { useDataSource, useHideNsfw, useMockDataToggle, useNsfwMode, type NsfwMode } from '@/data/source';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useHovered } from '@/hooks/use-hovered';
+import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight, hapticSelection } from '@/lib/haptics';
@@ -57,10 +58,17 @@ function nsfwModeSummary(mode: NsfwMode): string {
 }
 
 export default function SettingsScreen() {
+  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTopOnReselect('settings', scrollRef);
   const { onScroll } = useHideTabBarOnScroll();
+  const isLargeScreen = useIsLargeScreen();
+  const barHeight = useTopBarHeight();
+  // Desktop's icon-only nav has no text label, so this screen (unlike History/Activity/Library,
+  // whose title bands show on every width) only needs its own title band on desktop — mobile
+  // already knows it's on Settings from the bottom tab bar, so it skips the band entirely.
+  const headerHeight = isLargeScreen ? insets.top + barHeight : insets.top + Spacing.four;
   return (
     <ThemedView style={styles.container}>
       <ScrollView
@@ -69,9 +77,8 @@ export default function SettingsScreen() {
         scrollEventThrottle={16}
         contentContainerStyle={[
           styles.content,
-          { paddingTop: insets.top + Spacing.four, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
+          { paddingTop: headerHeight, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
         ]}>
-        <ThemedText type="title">Settings</ThemedText>
         <GeneralSection />
         <BridgesSection />
         <TrackersSection />
@@ -79,6 +86,20 @@ export default function SettingsScreen() {
         <DiagnosticsSection />
         {__DEV__ && <DeveloperSection />}
       </ScrollView>
+
+      {isLargeScreen && (
+        <View
+          style={[
+            styles.topBar,
+            { paddingTop: insets.top, backgroundColor: theme.background, borderBottomColor: theme.hairline },
+          ]}>
+          <View style={[styles.titleRow, { height: barHeight }]}>
+            <ThemedText numberOfLines={1} style={styles.title}>
+              Settings
+            </ThemedText>
+          </View>
+        </View>
+      )}
     </ThemedView>
   );
 }
@@ -463,8 +484,30 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     paddingHorizontal: Spacing.four,
     width: '100%',
-    maxWidth: MaxContentWidth,
+    maxWidth: MaxTopLevelWidth,
     alignSelf: 'center',
+  },
+  topBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    justifyContent: 'flex-end',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.four,
+    width: '100%',
+    maxWidth: MaxTopLevelWidth,
+    alignSelf: 'center',
+  },
+  title: {
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: '700',
   },
   pressableCursor: {
     cursor: 'pointer',
