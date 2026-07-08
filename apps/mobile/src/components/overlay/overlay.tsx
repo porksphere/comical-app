@@ -10,7 +10,7 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react';
-import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Gesture, GestureDetector, ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import Animated, {
   Extrapolation,
@@ -27,7 +27,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { RowHeight, Spacing } from '@/constants/theme';
 import { useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -135,11 +135,11 @@ const AnimatedScrollView = Animated.createAnimatedComponent(GHScrollView);
 // no risk of that budget being wrong and clipping content the container
 // actually had room for (or leaving a blank gap it didn't).
 //
-// 7 whole rows (a `row`'s rendered height — paddingVertical × 2 + ~24px text
-// line, plus its list's own inter-row gap — is ~64px) covers ordinary lists
-// (a handful of genres/tags/bridges) before an internal scroll kicks in;
-// longer ones still scroll — they're well past any reasonable cap.
-const ROW_UNIT_HEIGHT = 64;
+// 7 whole rows (a `row`'s standardized `RowHeight`, plus its list's own
+// inter-row gap) covers ordinary lists (a handful of genres/tags/bridges)
+// before an internal scroll kicks in; longer ones still scroll — they're well
+// past any reasonable cap.
+const ROW_UNIT_HEIGHT = RowHeight + Spacing.two;
 const LIST_MAX_HEIGHT = ROW_UNIT_HEIGHT * 7 - Spacing.two;
 // Trailing space *inside* the scrollable list's own content, after the last
 // row — part of `listContent` below, not a separately-painted view and not
@@ -332,6 +332,9 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
   const idRef = useRef(0);
   const itemsRef = useRef<Item[]>([]);
   const closers = useRef(new Map<number, () => void>());
+  // Each open popover's last-known screen rect (web desktop only — see the
+  // outside-click effect below), keyed by item id.
+  const popoverRects = useRef(new Map<number, { left: number; top: number; width: number; height: number }>());
 
   useEffect(() => {
     itemsRef.current = items;
@@ -358,11 +361,33 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
   const api = useMemo(() => ({ open, closeTop }), [open, closeTop]);
 
   // Desktop shows anchored popovers; the mobile sheet's scale-the-app-back and
-  // heavy dim are skipped there (the backdrop stays as a transparent
-  // click-catcher so an outside click still closes the top popover).
+  // heavy dim are skipped there. On web, a popover's outside-click dismissal
+  // is handled by the `pointerdown` listener below rather than the shared
+  // backdrop, so the very click that closes the popover also lands on
+  // whatever it actually hit underneath (another control, a series card, …)
+  // instead of being swallowed by an invisible full-screen catcher — no
+  // separate second click needed. Native large-screen (tablet) popovers still
+  // fall back to the backdrop below, since there's no DOM to listen on there.
   const isLargeScreen = useIsLargeScreen();
+  const isWebPopover = Platform.OS === 'web' && isLargeScreen;
 
   const depth = items.length;
+
+  useEffect(() => {
+    if (!isWebPopover || depth === 0) return;
+    const handler = (e: MouseEvent) => {
+      const insideAny = Array.from(popoverRects.current.values()).some(
+        (r) => e.clientX >= r.left && e.clientX <= r.left + r.width && e.clientY >= r.top && e.clientY <= r.top + r.height,
+      );
+      if (!insideAny) closeTop();
+    };
+    // Capture phase, and no preventDefault/stopPropagation: this only decides
+    // whether to close the popover — the click itself keeps bubbling to reach
+    // its real target normally.
+    document.addEventListener('mousedown', handler, true);
+    return () => document.removeEventListener('mousedown', handler, true);
+  }, [isWebPopover, depth, closeTop]);
+
   const appProgress = useSharedValue(0);
   useEffect(() => {
     appProgress.value = withSpring(depth > 0 ? 1 : 0, SPRING);
@@ -396,7 +421,7 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
             StyleSheet.absoluteFill,
             styles.backdrop,
             backdropStyle,
-            { pointerEvents: depth > 0 ? 'auto' : 'none' },
+            { pointerEvents: depth > 0 && !isWebPopover ? 'auto' : 'none' },
           ]}
           onPress={closeTop}
         />
@@ -408,7 +433,11 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
               id={it.id}
               anchor={it.anchor}
               onClosed={() => remove(it.id)}
-              register={register}>
+              register={register}
+              onRect={(r) => {
+                if (r) popoverRects.current.set(it.id, r);
+                else popoverRects.current.delete(it.id);
+              }}>
               {it.node}
             </OverlayPopover>
           ) : (
@@ -596,12 +625,16 @@ function OverlayPopover({
   anchor,
   onClosed,
   register,
+  onRect,
   children,
 }: {
   id: number;
   anchor: AnchorRect;
   onClosed: () => void;
   register: (id: number, fn: () => void) => void;
+  /** Reports this popover's current screen rect (or `null` on unmount) so the
+   *  outside-click listener in OverlayProvider knows what counts as "inside". */
+  onRect?: (rect: { left: number; top: number; width: number; height: number } | null) => void;
   children: ReactNode;
 }) {
   const { width: vw, height: vh } = useWindowDimensions();
@@ -639,6 +672,13 @@ function OverlayPopover({
   const top = below
     ? anchor.y + anchor.height + POPOVER_GAP
     : Math.max(POPOVER_PAD, anchor.y - POPOVER_GAP - Math.min(h, maxHeight));
+  const rectHeight = Math.min(h, maxHeight);
+
+  useEffect(() => {
+    onRect?.({ left, top, width, height: rectHeight });
+    return () => onRect?.(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [left, top, width, rectHeight]);
 
   const animStyle = useAnimatedStyle(() => ({
     opacity: progress.value,
@@ -652,6 +692,7 @@ function OverlayPopover({
     <Animated.View
       style={[styles.popoverWrap, { left, top, width, pointerEvents: 'box-none' }, animStyle]}>
       <ThemedView
+        type="backgroundPanel"
         style={[styles.popover, { maxHeight }]}
         onLayout={(e) => {
           const { width: w, height: hh } = e.nativeEvent.layout;
@@ -717,19 +758,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingHorizontal: Spacing.four,
     overflow: 'hidden',
-    // The card shares the sheet's background, so on the (also dark) page a light
-    // edge — not the shadow — is what separates it; the shadow only lifts it on
-    // lighter surroundings. Left/right only — top/bottom read as an unwanted
-    // boxed-in outline once the popover's height matches its content exactly.
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    // Zero offset, blur only: an offset shadow (the previous `0px 12px 24px`)
-    // is asymmetric — nothing above, a hard dark band below — which reads as
-    // exactly the same "border at the bottom" the borderTop/BottomWidth removal
-    // above was trying to fix. A centered halo has no directional edge at all.
-    boxShadow: '0px 0px 24px rgba(0, 0, 0, 0.35)',
-    elevation: 12,
   },
   heading: {
     marginBottom: Spacing.one,

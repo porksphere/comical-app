@@ -9,6 +9,7 @@ import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
 
 import {
+  CONTROL_HEIGHT,
   cycleTri,
   labelFor,
   type FilterDef,
@@ -345,11 +346,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     fontSize: 16,
   },
+  // Same height as the filter bar's own rows (`CONTROL_HEIGHT`) so a genre/tag
+  // checkbox row reads at the same size as the trigger it opened from.
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: Spacing.three,
+    height: CONTROL_HEIGHT,
     paddingHorizontal: Spacing.three,
     borderRadius: Spacing.three,
   },
