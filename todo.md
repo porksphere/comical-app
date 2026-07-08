@@ -76,11 +76,35 @@
       lose data across a real app-kill-and-relaunch on iOS needs on-device
       reproduction/logging, which wasn't done here.
 - [ ] Buggy behavior when opening a bridge sub-page then changing the bridge, it uses the old bridge sub-page data
-- [ ] Loading skeletons for bridge series don't line up correctly with the legend list, this is worse on searches that have a "<- Home" button, we should account for that space
-- [ ] Navigating to a sub-page other then home, clicking a series, clicking a tag, then shows the search with "<- Home" instead of the correct sub page it came from
-- [ ] "<- Home" button feels very slow, it seems blocked on a network request maybe?
+- [x] Loading skeletons for bridge series don't line up correctly with the legend list, this is worse on searches that have a "<- Home" button, we should account for that space
+      DONE — two independent skeleton/grid mismatches, both in `(tabs)/index.tsx`: (1)
+      `SkeletonCard` wrapped itself in the bare `cell` style instead of `gridCell`, so it
+      lacked the same top/bottom padding real cards get — visible where it fills spare slots
+      directly inside a real grid row (the `loadingMore` last-row filler) alongside
+      `gridCell`-wrapped `SeriesCard`s. (2) `GridSkeleton`'s `skelRow` used `Spacing.three`
+      (16px) as its column gap where the real grid's `columnWrapperStyle` uses
+      `GRID_COLUMN_GAP` (8px) — double, so skeleton columns sat at different x-offsets than
+      the real cards that replace them. Not actually caused by the back button's header row —
+      the header (`listHeader`, including the back banner) is identical between the skeleton
+      and loaded states of the same list instance, so it doesn't need separate accounting.
+- [x] Navigating to a sub-page other then home, clicking a series, clicking a tag, then shows the search with "<- Home" instead of the correct sub page it came from
+      DONE — the Series screen's `BrowseIntent` (`data/browse-intent.ts`) now carries an
+      optional `originPage`. `series-card.tsx` forwards the Browse `page` it's rendered on as
+      a `fromPage` route param (only from Browse's own results-grid card; other tabs omit it);
+      `series.tsx` reads it and hands it back as `originPage` on a tag/meta tap; Browse's focus
+      effect (`(tabs)/index.tsx`) does `setPage(intent.originPage ?? 'home')` instead of always
+      forcing Home. From a different tab (no Browse sub-page to return to) it still falls back
+      to Home, unchanged.
+- [x] "<- Home" button feels very slow, it seems blocked on a network request maybe?
+      DONE — not a network wait, a self-inflicted debounce: `exitDrilldown` cleared
+      `filterValues`/`sortValue` but not the derived `committedFilters`/`committedSort` (only
+      updated 500ms later by the filter-change debounce effect), and `inResults`/the back
+      banner read the committed values — so a tag/filter-driven search (the only signal
+      keeping `inResults` true, since it has no `query`) stayed on screen for up to
+      `FILTER_DEBOUNCE_MS` after the tap. `exitDrilldown` now also clears
+      `committedFilters`/`committedSort` synchronously.
 - [ ] Investigate legend state
-- [ ] Come up with a way to open the app on iOS/android from a web button. This way a github repo can have a button that installs a registry with one click.
+- [x] Come up with a way to open the app on iOS/android from a web button. This way a github repo can have a button that installs a registry with one click.
       (1) DONE — in-app half of the deep link: `comical://add-registry?url=<index.json
       URL>` now resolves (via expo-router's automatic scheme routing, `scheme: "comical"`
       in app.json) to a new confirm-and-add screen (`src/app/add-registry.tsx`) that calls

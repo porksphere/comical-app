@@ -115,6 +115,7 @@ export function SeriesCard({
   bridge,
   bridgeId,
   direct,
+  originPage,
 }: {
   entry: SeriesEntry;
   size?: CardSize;
@@ -136,6 +137,11 @@ export function SeriesCard({
   /** Whether the bridge serves "direct" series (page thumbnails, no chapters);
    *  carried to the detail so it renders the page grid instead of a chapter list. */
   direct?: boolean;
+  /** The Browse `page` this card is being shown on (e.g. 'home', 'popular'), if any —
+   *  carried so a tag/meta tap on the series screen can hand it back as the intent's
+   *  `originPage` and return to this same sub-page instead of always landing on Home.
+   *  Only Browse's own card call sites pass this; other tabs (Library, History) omit it. */
+  originPage?: string;
 }) {
   const [loaded, setLoaded] = useState(false);
   const [truncated, setTruncated] = useState(false);
@@ -275,6 +281,11 @@ export function SeriesCard({
             : {}),
           ...(bridgeId ? { bridgeId } : {}),
           ...(direct ? { direct: '1' } : {}),
+          // Same paren escaping as `bridge`/`cover` — a page's name (e.g. a "Popular" list's
+          // display name lowercased) could in principle contain them too.
+          ...(originPage
+            ? { fromPage: encodeURIComponent(originPage).replace(/\(/g, '%28').replace(/\)/g, '%29') }
+            : {}),
         },
       }}
       asChild>

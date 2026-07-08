@@ -97,13 +97,14 @@ export default function SeriesScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { id, title, bridge: bridgeParam, bridgeId, direct, cover: coverParam } = useLocalSearchParams<{
+  const { id, title, bridge: bridgeParam, bridgeId, direct, cover: coverParam, fromPage: fromPageParam } = useLocalSearchParams<{
     id?: string;
     title?: string;
     bridge?: string;
     bridgeId?: string;
     direct?: string;
     cover?: string;
+    fromPage?: string;
   }>();
   // series-card.tsx percent-encodes the bridge name before putting it in a
   // route param (parens in real bridge names break expo-router's web href
@@ -112,6 +113,10 @@ export default function SeriesScreen() {
   // Cover forwarded from the browse card, escaped the same way — decode it so the
   // loading skeleton can show the real (cache-warm) cover instead of a shimmer.
   const cover = coverParam ? decodeURIComponent(coverParam) : undefined;
+  // The Browse `page` this series was opened from (same escaping) — only present when opened
+  // from Browse itself. Handed back as the intent's `originPage` so a tag/meta tap returns to
+  // that sub-page instead of always forcing Home (see the onTagPress/onMetaPress comment below).
+  const fromPage = fromPageParam ? decodeURIComponent(fromPageParam) : undefined;
 
   // Opening a different series clears the remembered scanlation group, so a
   // preference carried over from the last series doesn't pick versions here.
@@ -197,6 +202,7 @@ export default function SeriesScreen() {
           width={width}
           initialCover={cover}
           loading={isPlaceholderData}
+          fromPage={fromPage}
         />
       )}
     </ThemedView>
@@ -215,6 +221,7 @@ function SeriesBody({
   width,
   initialCover,
   loading,
+  fromPage,
 }: {
   series: SeriesDetail;
   bridgeId?: string;
@@ -230,6 +237,9 @@ function SeriesBody({
    *  The hero renders for real; the actions + content render as skeletons until
    *  the fetch resolves — all without remounting the persistent cover <Image>. */
   loading?: boolean;
+  /** The Browse sub-page this series was opened from, if any — forwarded to a tag/meta
+   *  tap's `BrowseIntent` so its back arrow returns there instead of always Home. */
+  fromPage?: string;
 }) {
   const ds = useDataSource();
   const router = useRouter();
@@ -510,17 +520,25 @@ function SeriesBody({
   // already there, so it pushes a duplicate rather than returning to it). This
   // holds no matter which tab the series was opened from (Browse, Library,
   // History, …) — '/' resolves to the index tab, so dismissTo switches to it.
-  // Browse then applies the stashed intent on focus and forces its page to Home
-  // (see the focus effect in `(tabs)/index.tsx`), so a tag/meta search always
-  // lands on Browse › Home regardless of the originating tab.
+  // Browse then applies the stashed intent on focus (see the focus effect in
+  // `(tabs)/index.tsx`), restoring `fromPage` (the Browse sub-page this series was opened
+  // from, e.g. "Popular") if we have it, or forcing Home if we don't — which is always the
+  // case from a different tab, since there's no Browse sub-page to return to there.
   const onTagPress = (group: TagGroup, index: number) => {
     if (!bridgeId) return;
     const query = group.tagQueries?.[index];
     const tagId = group.tagIds?.[index];
     if (query) {
-      setBrowseIntent({ bridgeName: series.bridge, kind: 'query', query });
+      setBrowseIntent({ bridgeName: series.bridge, originPage: fromPage, kind: 'query', query });
     } else if (tagId) {
-      setBrowseIntent({ bridgeName: series.bridge, kind: 'tag', filterKey: 'tag', tagId, label: group.tags[index] });
+      setBrowseIntent({
+        bridgeName: series.bridge,
+        originPage: fromPage,
+        kind: 'tag',
+        filterKey: 'tag',
+        tagId,
+        label: group.tags[index],
+      });
     } else {
       return;
     }
@@ -532,7 +550,7 @@ function SeriesBody({
   // search if the bridge has no such filter.
   const onMetaPress = (metaKey: 'author' | 'artist' | 'type', value: string) => {
     if (!bridgeId) return;
-    setBrowseIntent({ bridgeName: series.bridge, kind: 'meta', metaKey, value });
+    setBrowseIntent({ bridgeName: series.bridge, originPage: fromPage, kind: 'meta', metaKey, value });
     router.dismissTo('/');
   };
 

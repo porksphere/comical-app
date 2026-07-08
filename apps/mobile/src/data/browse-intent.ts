@@ -18,7 +18,14 @@
  * tries to route it into the matching filter field (if the bridge has one) and
  * otherwise falls back to a plain free-text search, same as `query`.
  */
-export type BrowseIntent = { bridgeName: string } & (
+export type BrowseIntent = {
+  bridgeName: string;
+  /** The Browse `page` (e.g. 'home', 'popular') the series screen was reached from, if it was
+   *  reached from Browse itself — so consuming the intent can return to that sub-page instead of
+   *  always forcing Home. Absent when the series was opened from a different tab (Library,
+   *  History, …), where there's no Browse sub-page to return to. */
+  originPage?: string;
+} & (
   | { kind: 'query'; query: string }
   | { kind: 'tag'; filterKey: string; tagId: string; label: string }
   | { kind: 'meta'; metaKey: 'author' | 'artist' | 'type'; value: string }
