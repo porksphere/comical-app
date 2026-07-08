@@ -164,6 +164,15 @@ export function useOverlayPresentation(): OverlayPresentation {
 type SheetBudget = { budget: number; headerHeight: number; setHeaderHeight: (h: number) => void };
 const SheetBudgetContext = createContext<SheetBudget | null>(null);
 
+// Lets `OptionList` report whether its content needs an internal scroll back up
+// to the enclosing `OverlaySheet`, which uses that to decide whether to reserve
+// the bottom safe-area inset below the sheet's content (see the note above
+// `OverlaySheet`'s `styles.sheet`). Only the sheet provides this — the popover
+// has no device-chrome inset of its own to reserve, so it's `null` (a no-op)
+// there.
+type ReportNeedsScroll = (needsScroll: boolean) => void;
+const SheetContentScrollContext = createContext<ReportNeedsScroll | null>(null);
+
 /**
  * The heading for overlay content — the single place overlay titles live, shared
  * by every editor / menu / sheet. Rendered on the mobile sheet; hidden in the
@@ -277,7 +286,12 @@ export function MeasuredHeader({ children }: { children: ReactNode }) {
  * padded, so the measurement can't be thrown off by the padding decision
  * it's used to make; padding is tried once when there's room and reverted
  * if that push turns out to tip it into scrolling — a settle that takes at
- * most one flip, never an ongoing back-and-forth. */
+ * most one flip, never an ongoing back-and-forth.
+ *
+ * That same fits-without-scrolling signal is measured on the sheet too (not
+ * just the popover) and reported up through `SheetContentScrollContext` —
+ * `OverlaySheet` uses it to decide whether to reserve the bottom safe-area
+ * inset below its content, mirroring the popover's fits→padded chrome. */
 export function OptionList({ children, fixed }: { children: ReactNode; fixed?: boolean }) {
   const sheet = useSheetScroll();
   const presentation = useOverlayPresentation();
@@ -296,6 +310,18 @@ export function OptionList({ children, fixed }: { children: ReactNode; fixed?: b
   const coreHeightRef = useRef(0);
   const scrollHeightRef = useRef(0);
   const triedPadded = useRef(false);
+
+  // Sheet-only: forward the same fits/needs-scroll verdict up to `OverlaySheet`
+  // (a no-op on the popover, which doesn't provide this context). Reported
+  // from inside `evaluate` itself (below), not a `useEffect` keyed on
+  // `needsScroll` — an effect fires after every render including the very
+  // first, before any real layout has happened, and would report the
+  // pre-measurement default guess. `evaluate` only ever runs off a real
+  // onLayout event, so its report is always backed by an actual measurement.
+  // It reports unconditionally (not just on change) so a list that's clamped
+  // from its very first evaluation — which never takes the "flip" branches
+  // below — still gets its `true` verdict sent up at least once.
+  const reportNeedsScroll = useContext(SheetContentScrollContext);
 
   // Decided imperatively off each fresh onLayout event rather than through a
   // useEffect keyed on `needsScroll`: an effect re-running the instant
@@ -326,7 +352,8 @@ export function OptionList({ children, fixed }: { children: ReactNode; fixed?: b
       needsScrollRef.current = true;
       setNeedsScroll(true);
     }
-  }, []);
+    reportNeedsScroll?.(needsScrollRef.current);
+  }, [reportNeedsScroll]);
 
   const popoverPadded = presentation === 'popover' && !needsScroll;
 
@@ -335,14 +362,10 @@ export function OptionList({ children, fixed }: { children: ReactNode; fixed?: b
       ref={sheet?.scrollRef as never}
       onScroll={onScroll}
       scrollEventThrottle={16}
-      onLayout={
-        presentation === 'popover'
-          ? (e) => {
-              scrollHeightRef.current = e.nativeEvent.layout.height;
-              evaluate();
-            }
-          : undefined
-      }
+      onLayout={(e) => {
+        scrollHeightRef.current = e.nativeEvent.layout.height;
+        evaluate();
+      }}
       style={
         fixed
           ? { height: target, flexShrink: 1, minHeight: 0 }
@@ -355,18 +378,14 @@ export function OptionList({ children, fixed }: { children: ReactNode; fixed?: b
       }
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}>
-      {presentation === 'popover' ? (
-        <View
-          style={listStyles.popoverRows}
-          onLayout={(e) => {
-            coreHeightRef.current = e.nativeEvent.layout.height;
-            evaluate();
-          }}>
-          {children}
-        </View>
-      ) : (
-        children
-      )}
+      <View
+        style={listStyles.rowsWrapper}
+        onLayout={(e) => {
+          coreHeightRef.current = e.nativeEvent.layout.height;
+          evaluate();
+        }}>
+        {children}
+      </View>
     </AnimatedScrollView>
   );
 }
@@ -383,7 +402,9 @@ const listStyles = StyleSheet.create({
     paddingTop: Spacing.four,
   },
   listContent: {
-    gap: Spacing.two,
+    // `gap` lives on `rowsWrapper` instead (below): both presentations wrap
+    // rows in that inner measuring View now, so this contentContainerStyle
+    // only ever has that one child — a `gap` here would be a no-op.
     // A little room at the top too, so a scrolled-to-top list doesn't sit the
     // first row flush against the list's own top edge (mirrors the bottom
     // trailing space, just smaller — that one also clears the sheet's own
@@ -392,7 +413,7 @@ const listStyles = StyleSheet.create({
     paddingBottom: LIST_TRAILING_SPACE,
   },
   // Flush by default (see `OptionList`'s popover-padding settle logic above);
-  // `gap` lives on `popoverRows` instead, since rows sit inside that inner
+  // `gap` lives on `rowsWrapper` instead, since rows sit inside that inner
   // measuring wrapper rather than directly in this contentContainerStyle.
   listContentPopover: {},
   // Applied alongside `listContentPopover` once the settle logic decides the
@@ -400,7 +421,10 @@ const listStyles = StyleSheet.create({
   listContentPopoverPadded: {
     paddingVertical: Spacing.four,
   },
-  popoverRows: {
+  // Shared by both presentations — the inner View `OptionList` measures its
+  // rows against, unpadded so neither presentation's fits/needs-scroll
+  // decision gets thrown off by the padding it's used to decide.
+  rowsWrapper: {
     gap: Spacing.two,
   },
 });
@@ -622,6 +646,19 @@ function OverlaySheet({
     [sheetBudget, headerHeight],
   );
 
+  // Whether this sheet's content (reported by its `OptionList`, see
+  // `SheetContentScrollContext`) needs an internal scroll — starts `false`
+  // (assume it fits), the opposite of `OptionList`'s own internal default.
+  // Plenty of sheet content (confirm dialogs, short forms like the "add
+  // registry" prompt) renders fixed content with no `OptionList` at all, so
+  // it never reports anything; defaulting to `true` here would leave those
+  // permanently un-cushioned since nothing would ever flip it back. Content
+  // that *does* use `OptionList` corrects this soon after mount if it turns
+  // out to need scrolling — see `evaluate` there, which only ever reports
+  // off a real measurement. Drives the same fits→cushioned, scrolls→flush
+  // chrome the desktop popover already has (see `styles.sheet` below).
+  const [contentNeedsScroll, setContentNeedsScroll] = useState(false);
+
   const close = useCallback(() => {
     translateY.value = withTiming(height, { duration: 240 }, (finished) => {
       if (finished) runOnJS(onClosed)();
@@ -711,24 +748,35 @@ function OverlaySheet({
       <SheetScrollContext.Provider value={sheetScroll}>
       <SheetKeyboardContext.Provider value={sheetKeyboard}>
       <SheetBudgetContext.Provider value={budget}>
+      <SheetContentScrollContext.Provider value={setContentNeedsScroll}>
         {/* `backgroundPanel` (not the default `background`) so the sheet's own
             surface reads as one consistent panel color instead of showing a
             seam where the base page background peeks through; distinct from
             `backgroundElement` (used by the rows on it) so those still stand
             out against the panel.
-            No bottom cushion here: reserving `insets.bottom` as an outer
-            offset left a same-colored gap below the last row that read as
+            Bottom cushion (`insets.bottom`) only when the content doesn't need
+            its own internal scroll: reserving it unconditionally left a
+            same-colored gap below the last row of a *tall* list that read as
             broken content rather than a clean edge (confirmed by pixel-
-            sampling a screenshot, not just eyeballing it) — the sheet's own
-            edge now sits exactly where its content ends, gesture-nav pill
-            included. Breathing room below the *content* (so a short list
-            doesn't sit flush) is still `OptionList`'s own trailing padding
-            (`listContent` above) / the overflow-filters sheet's own content
-            padding, not this outer container. */}
+            sampling a screenshot, not just eyeballing it) — a scrolling
+            sheet's own edge sits exactly where its content ends, gesture-nav
+            pill included. But a *short* sheet has nothing to lose that edge
+            to, so it gets the real device-chrome clearance back, matching the
+            desktop popover's own fits→padded chrome (see `OptionList`).
+            Breathing room below the *content* itself (so a short list doesn't
+            sit flush against this padding) is still `OptionList`'s own
+            trailing padding (`listContent` above) / the overflow-filters
+            sheet's own content padding, not this outer container. */}
         <ThemedView
           type="backgroundPanel"
           onLayout={(e) => { sheetHeightSV.value = e.nativeEvent.layout.height; }}
-          style={[styles.sheet, { maxHeight: height - insets.top - Spacing.four }]}>
+          style={[
+            styles.sheet,
+            {
+              maxHeight: height - insets.top - Spacing.four,
+              paddingBottom: contentNeedsScroll ? 0 : insets.bottom,
+            },
+          ]}>
           <GestureDetector gesture={handlePan}>
             <View style={styles.handleArea}>
               <View style={styles.handle} />
@@ -743,6 +791,7 @@ function OverlaySheet({
             style={[StyleSheet.absoluteFill, styles.dim, dimStyle, { pointerEvents: 'none' }]}
           />
         </ThemedView>
+      </SheetContentScrollContext.Provider>
       </SheetBudgetContext.Provider>
       </SheetKeyboardContext.Provider>
       </SheetScrollContext.Provider>
