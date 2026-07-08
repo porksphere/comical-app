@@ -706,8 +706,17 @@ export default function BrowseScreen() {
   // the bar tracks the scroll without per-frame re-renders.
   const expand = compact ? EXPAND_EXTRA : 0;
   const thumbGrowth = compact ? THUMB_GROWTH : 0;
-  // Resting (collapsed) header height; the list pads to headerHeight + expand so
-  // the first row clears the bar at its tallest.
+  // Resting (collapsed) header height. The list's own frame starts here (see
+  // `styles.list`'s inline `marginTop` below) rather than at the screen top —
+  // `topBar` only overlays the list for the smaller `expand` sliver above that,
+  // not its full height. This keeps the collapse animation's "list scrolls
+  // underneath" trick (no per-frame relayout of the list itself) for that small
+  // cosmetic overlap, while leaving the rest of the list's own ScrollView frame
+  // genuinely uncovered — which matters for pull-to-refresh: iOS can only reveal
+  // its overscroll gap within the ScrollView's own frame, so with the frame
+  // starting at headerHeight instead of 0, most of a pull's reveal region no
+  // longer sits behind the opaque, higher-zIndex `topBar` and its native spinner
+  // becomes visible instead of painted behind it.
   const headerHeight = insets.top + barHeight;
   // AnimatedLegendList feeds the live scroll offset into `scrollY` on the UI thread via its
   // `sharedValues` prop (below) — the collapse animations read it directly. A reaction bridges the
@@ -911,14 +920,16 @@ export default function BrowseScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      {/* The list fills the screen (behind the header overlay); its top padding
-          clears the expanded header so the first content sits just below it. */}
+      {/* The list's frame starts below the bar's resting height (its `marginTop`); its
+          contentContainer top padding covers the remaining `expand` sliver the bar overlays. */}
       <AnimatedLegendList
         ref={listRef}
         key={gridKey}
         // Full-width scroller so the scrollbar sits at the window edge; content centered via the
         // symmetric sidePad below. Scroll offset flows into scrollY for the collapsing header.
-        style={styles.list}
+        // `marginTop: headerHeight` starts the list's own frame below the bar's resting height —
+        // see the `headerHeight` comment above.
+        style={[styles.list, { marginTop: headerHeight }]}
         sharedValues={{ scrollOffset: scrollY }}
         data={gridData}
         keyExtractor={(item) => String(item.id)}
@@ -933,10 +944,11 @@ export default function BrowseScreen() {
         // header/footer bleed Spacing.four back out so their self-padded children line up.
         columnWrapperStyle={{ gap: GRID_COLUMN_GAP }}
         contentContainerStyle={{
-          // Pad to the bar's tallest (expanded) height so the first row clears it at the top; as the
-          // bar collapses by `expand`, content scrolls up by the same amount, keeping the first row
-          // pinned just under the bar's bottom edge.
-          paddingTop: headerHeight + expand,
+          // The list's own frame already starts at headerHeight (see `style` above), so only the
+          // extra `expand` sliver needs padding here — enough for the first row to clear the bar at
+          // its tallest; as the bar collapses by `expand`, content scrolls up by the same amount,
+          // keeping the first row pinned just under the bar's bottom edge.
+          paddingTop: expand,
           paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
           paddingLeft: sidePad,
           paddingRight: sidePad,
@@ -978,15 +990,15 @@ export default function BrowseScreen() {
         showsVerticalScrollIndicator={Platform.OS === 'web'}
         // Pull-to-refresh: native only (a pull gesture isn't idiomatic on web,
         // and react-native-web's RefreshControl is a no-op). We deliberately do
-        // NOT pass progressViewOffset to clear the absolute top-bar overlay:
-        // LegendList already folds the contentContainer's paddingTop
-        // (headerHeight + expand) into the RefreshControl's progressViewOffset
-        // internally, which is exactly the content's visual top (just below the
-        // overlay). Adding headerHeight again double-counts it, shoving the
-        // spinner ~a full header-height too low — off-screen (no visible
-        // animation) and, on iOS, past the natural pull distance so the control
-        // reads as already-engaged: it reserves a tall "pulled-down" region and
-        // trips mid-pull instead of firing on release.
+        // NOT pass progressViewOffset ourselves: LegendList already folds the
+        // contentContainer's paddingTop (now just `expand`, a handful of px —
+        // see the `headerHeight`/list `style` comments above) into the
+        // RefreshControl's progressViewOffset internally. Adding headerHeight on
+        // top of that would double-count the frame offset that's now baked into
+        // the list's own `marginTop`, shoving the spinner a full header-height
+        // too low — off-screen, and on iOS past the natural pull distance so the
+        // control reads as already-engaged and trips mid-pull instead of on
+        // release.
         onRefresh={Platform.OS === 'web' ? undefined : onRefresh}
         refreshing={Platform.OS === 'web' ? false : refreshing}
       />
@@ -1132,9 +1144,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     maxWidth: 320,
   },
-  // Absolute overlay so the list scrolls underneath; `justifyContent: flex-end`
-  // keeps the selector row pinned to the bottom of the band, with the collapsing
-  // breathing room above it.
+  // Absolute overlay, positioned from the screen top independent of the list's own
+  // frame (which starts lower — see `headerHeight`/list `style` above) — the list only
+  // scrolls underneath it for the `expand` sliver above the bar's resting height.
+  // `justifyContent: flex-end` keeps the selector row pinned to the bottom of the band,
+  // with the collapsing breathing room above it.
   topBar: {
     position: 'absolute',
     top: 0,
