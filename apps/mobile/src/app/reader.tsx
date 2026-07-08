@@ -221,6 +221,11 @@ export default function ReaderScreen() {
     if (!bridgeId || !seed || !pages || pages.length === 0 || inLibrary === undefined) return;
     const lastPage = currentRef.current;
     const pageCount = pages.length;
+    // Invalidate the shared history list on a successful write so the series
+    // screen's resume label (and the History tab) don't keep showing the
+    // pre-read position after navigating back — `historyQuery` has a 5-min
+    // staleTime, so without this it silently reads stale from cache.
+    const invalidateHistory = () => queryClient.invalidateQueries({ queryKey: queryKeys.history(mock) });
     if (chapterId && inLibrary) {
       void ds
         .recordChapterProgress(bridgeId, seed, chapterId, {
@@ -228,6 +233,7 @@ export default function ReaderScreen() {
           pageCount,
           ...(chapterName ? { chapterName } : {}),
         })
+        .then(invalidateHistory)
         .catch(() => {});
       return;
     }
@@ -244,6 +250,7 @@ export default function ReaderScreen() {
         lastPage,
         pageCount,
       })
+      .then(invalidateHistory)
       .catch(() => {});
   };
 

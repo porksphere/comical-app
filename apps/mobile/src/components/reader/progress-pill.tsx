@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Keyboard, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -85,14 +85,36 @@ export function ProgressPill({
     transform: [{ translateY: -keyboardHeight.value }],
   }));
 
+  const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearBlurTimer = () => {
+    if (blurTimer.current) {
+      clearTimeout(blurTimer.current);
+      blurTimer.current = null;
+    }
+  };
+  useEffect(() => clearBlurTimer, []);
+
   const startEditing = () => {
+    clearBlurTimer();
     setText(String(current + 1));
     setEditing(true);
     onEditingChange?.(true);
   };
   const stopEditing = () => {
+    clearBlurTimer();
     setEditing(false);
     onEditingChange?.(false);
+  };
+
+  // Tapping "Go" blurs the still-focused TextInput first (same event order on
+  // web and native), and closing the row synchronously on that blur used to
+  // unmount "Go" before its own press could land — so the tap silently did
+  // nothing, while Enter (which submits without blurring elsewhere first)
+  // worked. Defer the close briefly so a tap on "Go" (or Enter, which calls
+  // submit -> stopEditing directly) has a chance to cancel it first.
+  const handleBlur = () => {
+    clearBlurTimer();
+    blurTimer.current = setTimeout(stopEditing, 200);
   };
 
   const submit = () => {
@@ -109,11 +131,12 @@ export function ProgressPill({
         <View style={styles.pill}>
           <TextInput
             autoFocus
+            selectTextOnFocus
             keyboardType="number-pad"
             value={text}
             onChangeText={setText}
             onSubmitEditing={submit}
-            onBlur={stopEditing}
+            onBlur={handleBlur}
             placeholder={String(current + 1)}
             placeholderTextColor="rgba(255,255,255,0.5)"
             style={styles.input}
