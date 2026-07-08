@@ -6,7 +6,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, {
-  interpolateColor,
   runOnJS,
   useAnimatedReaction,
   useAnimatedStyle,
@@ -25,6 +24,7 @@ import { SeriesCard } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { WebPullIndicator } from '@/components/web-pull-indicator';
 import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { isAbort, pageOptions } from '@/data/api';
 import { takeBrowseIntent } from '@/data/browse-intent';
@@ -32,14 +32,11 @@ import { queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive, type QueryOpts } from '@/data/source';
 import type { Bridge, BridgeList, HomeGridSection, RailSection, SeriesEntry } from '@/data/types';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
-import { useIsCompact, useTopBarHeight } from '@/hooks/use-responsive';
+import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
+import { useWebPullToRefresh } from '@/hooks/use-web-pull-to-refresh';
 
-// Scroll distance over which the top bar's bottom divider fades in: absent at the
-// very top (once collapsed, on narrow viewports), present once content scrolls
-// under it (mirrors the reference's `.stuck` divider).
-const DIVIDER_SCROLL = Spacing.three;
 // The reference's mobile grid uses a tighter inter-card gap than its row gap
 // (`.grid { gap: 1rem 0.6rem }`, i.e. ~9.6px columns vs 16px rows) — Spacing.two
 // (8px) is the closest token to that column gap. Shared so the main grid and
@@ -50,15 +47,6 @@ const GRID_COLUMN_GAP = Spacing.two;
  *  `doSearchIfChanged` snapshot-diff-on-close contract (app.ts:4765). */
 const FILTER_DEBOUNCE_MS = 500;
 
-// Narrow-mobile only: at the very top the bar gets this much extra height (split
-// above/below the centred selector row as breathing room) and the bridge
-// thumbnail grows by THUMB_GROWTH. Both ease back to the resting dimensions over
-// the first EXPAND_EXTRA px of scroll, so once scrolled the bar matches every
-// other viewport. The expansion is purely cosmetic — `EXPAND_EXTRA` is also the
-// scroll distance the collapse spans, which keeps the content edge pinned to the
-// bar's bottom throughout (see the paddingTop note on the list).
-const EXPAND_EXTRA = Spacing.four;
-const THUMB_GROWTH = 12;
 // Minimum time pull-to-refresh's spinner stays visible once triggered — see the
 // `refreshStartedAtRef` comment below.
 const REFRESH_MIN_VISIBLE_MS = 600;
@@ -649,9 +637,6 @@ export default function BrowseScreen() {
   const barHeight = useTopBarHeight();
   // Match the bridge dropdown's thumbnail size so the bar reads at the same scale.
   const thumbSize = BridgeThumbSize;
-  // Only narrow (mobile) viewports get the scroll-driven expand/collapse; on wider
-  // screens the bar is static and these expansions are zeroed out below.
-  const compact = useIsCompact();
   const numColumns =
     !hydrated || width < 768 ? 3 : Math.min(6, Math.max(3, Math.floor(width / 200)));
   // Center content in a full-width scroller (scrollbar at the window edge) via symmetric side
@@ -707,30 +692,15 @@ export default function BrowseScreen() {
   ].join('|');
   const gridKey = `${gridScope}|${gridData.length > 0 ? 'full' : 'empty'}`;
 
-  // Top bar: the bridge/page selectors sit in a band (barHeight below the
-  // safe-area inset) overlaid on the scrolling list. On narrow viewports the band
-  // is taller at the very top and eases down to barHeight over the first
-  // EXPAND_EXTRA px of scroll; on wider viewports `expand` is 0 so it stays
-  // static. The collapse and the bottom divider are driven on the UI thread so
-  // the bar tracks the scroll without per-frame re-renders.
-  const expand = compact ? EXPAND_EXTRA : 0;
-  const thumbGrowth = compact ? THUMB_GROWTH : 0;
-  // Resting (collapsed) header height. The list's own frame starts here (see
-  // `styles.list`'s inline `marginTop` below) rather than at the screen top —
-  // `topBar` only overlays the list for the smaller `expand` sliver above that,
-  // not its full height. This keeps the collapse animation's "list scrolls
-  // underneath" trick (no per-frame relayout of the list itself) for that small
-  // cosmetic overlap, while leaving the rest of the list's own ScrollView frame
-  // genuinely uncovered — which matters for pull-to-refresh: iOS can only reveal
-  // its overscroll gap within the ScrollView's own frame, so with the frame
-  // starting at headerHeight instead of 0, most of a pull's reveal region no
-  // longer sits behind the opaque, higher-zIndex `topBar` and its native spinner
-  // becomes visible instead of painted behind it.
+  // Top bar: the bridge/page selectors sit in a fixed-height band (barHeight below
+  // the safe-area inset), overlaid on the scrolling list. Unlike the old
+  // expand-at-top/collapse-on-scroll animation, the bar itself never changes size —
+  // instead it slides away as a whole (see `headerOffsetY` below), X/Twitter-style.
   const headerHeight = insets.top + barHeight;
   // AnimatedLegendList feeds the live scroll offset into `scrollY` on the UI thread via its
-  // `sharedValues` prop (below) — the collapse animations read it directly. A reaction bridges the
-  // same value back to JS for the tab-bar-hide, replacing the old useAnimatedScrollHandler+runOnJS
-  // (LegendList doesn't take a worklet onScroll the way Animated.FlatList did).
+  // `sharedValues` prop (below). A reaction bridges the same value back to JS for the
+  // tab-bar-hide, replacing the old useAnimatedScrollHandler+runOnJS (LegendList doesn't take a
+  // worklet onScroll the way Animated.FlatList did).
   const scrollY = useSharedValue(0);
   const { reportOffset } = useHideTabBarOnScroll();
   useAnimatedReaction(
@@ -738,69 +708,87 @@ export default function BrowseScreen() {
     (y) => runOnJS(reportOffset)(y),
     [reportOffset],
   );
-  // A scope switch remounts the list (see `gridScope`), so it comes back scrolled to the top — but
-  // the fresh instance won't emit a scroll event to reset `scrollY` on its own, which would leave
-  // the collapsing header stuck in its previous (collapsed) state. Snap the shared value back to 0
-  // so the header re-expands to match the top-aligned fresh list.
+  // The list's max scroll offset (contentHeight - viewportHeight), kept in sync via the plain
+  // `onScroll` below — used only to tell a genuine upward scroll apart from the bottom's elastic
+  // bounce-back recoil (see the reaction below). `scrollY`/`sharedValues` gives a live UI-thread
+  // offset but not the content/layout sizes needed for that; a plain (non-worklet) onScroll still
+  // fires alongside it and carries both.
+  const maxScrollY = useSharedValue(0);
+  // 0 = bar fully visible (resting position); -headerHeight = fully hidden, slid up and
+  // off-screen. Tracks the scroll delta 1:1 (X/Twitter-style): scrolling down by dy px hides
+  // the bar by the same dy, scrolling up reveals it again from wherever it currently sits —
+  // it doesn't need to reach the very top first. At/above the top (y <= 0 — resting, or an
+  // active pull/overscroll, which reports negative y) it's pinned fully visible rather than
+  // following the offset: both the web pull indicator and native's RefreshControl already open
+  // their own gap below the bar's resting height (see their own comments), so the bar has
+  // nothing to get out of the way of, and staying put reads as an anchored top bar rather than
+  // something fighting the pull.
+  const headerOffsetY = useSharedValue(0);
+  useAnimatedReaction(
+    () => scrollY.value,
+    (y, prevY) => {
+      if (y <= 0) {
+        headerOffsetY.value = 0;
+        return;
+      }
+      // Past the real end of the content, the list is either overscrolled into the elastic
+      // bottom bounce or springing back out of it — both produce the same "offset decreasing"
+      // delta a genuine scroll-up does, which would otherwise reveal the bar on every bounce at
+      // the bottom of the list. Only apply the delta once the offset is genuinely below the max,
+      // i.e. actual upward scrolling past that point.
+      if (maxScrollY.value > 0 && y >= maxScrollY.value) {
+        return;
+      }
+      const dy = y - (prevY ?? y);
+      headerOffsetY.value = Math.min(0, Math.max(-headerHeight, headerOffsetY.value - dy));
+    },
+    [headerHeight],
+  );
+  // A scope switch remounts the list (see `gridScope`), so it comes back scrolled to the top —
+  // but the fresh instance won't emit a scroll event to reset `scrollY`/`headerOffsetY` on their
+  // own, which would leave the bar stuck hidden. Snap both back so it re-shows for the
+  // top-aligned fresh list.
   useEffect(() => {
     scrollY.value = 0;
-  }, [gridScope, scrollY]);
-  const hairline = theme.hairline;
-  // 0 at the top → 1 once the bar has fully collapsed (and stays 1 thereafter).
-  // When `expand` is 0 (wide viewports) it is always 1, i.e. fully collapsed.
-  // `Math.abs` (rather than clamping negative offsets to 0) means a *pull*
-  // collapses the bar too, over the same `expand` distance as a normal
-  // downward scroll — otherwise the bar stayed pinned at its tallest for the
-  // whole pull gesture (offset locked at 0 collapses to nothing), and that
-  // extra `expand` px of height overlaid the top of the list's own frame the
-  // entire time, still partly covering the native refresh spinner underneath
-  // (see the `headerHeight` comment above). Collapsing it away within the
-  // first `expand` px of drag clears that sliver almost immediately.
-  const collapseProgress = (y: number) => {
-    'worklet';
-    return expand > 0 ? Math.min(Math.abs(y) / expand, 1) : 1;
-  };
+    headerOffsetY.value = 0;
+    maxScrollY.value = 0;
+  }, [gridScope, scrollY, headerOffsetY, maxScrollY]);
   const headerStyle = useAnimatedStyle(() => ({
-    height: headerHeight + (1 - collapseProgress(scrollY.value)) * expand,
-    // The divider belongs to the resting bar, so it only begins to appear once the
-    // expansion has collapsed away.
-    borderBottomColor: interpolateColor(
-      scrollY.value,
-      [expand, expand + DIVIDER_SCROLL],
-      ['rgba(0,0,0,0)', hairline],
-    ),
+    transform: [{ translateY: headerOffsetY.value }],
   }));
-  const selectorRowStyle = useAnimatedStyle(() => ({
-    height: barHeight + (1 - collapseProgress(scrollY.value)) * expand,
+  // Web-only pull-to-refresh — see the hook's own comment for why native's RefreshControl can't
+  // just be reused here. Reuses the same `onRefresh` native does (below), so a web pull goes
+  // through the identical refetch/min-visible-duration path, `refreshing` included — that's what
+  // makes the pulled-down gap stick until the request actually resolves, same as native.
+  const webPull = useWebPullToRefresh(scrollY, onRefresh, refreshing);
+  // Shifts the whole grid down in lockstep with the pull/hold (see the hook) so the gap the
+  // WebPullIndicator's spinner sits in actually opens up, rather than the spinner floating over
+  // unmoved content. Always 0 on native — the touch handlers driving `pullY` are only wired up
+  // on web (see the `ThemedView` below) — so this is harmless dead weight there.
+  const webPullListStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: webPull.pullY.value }],
   }));
-  const thumbStyle = useAnimatedStyle(() => {
-    const size = thumbSize + (1 - collapseProgress(scrollY.value)) * thumbGrowth;
-    return { width: size, height: size };
-  });
 
   const topBar = (
     <Animated.View
       style={[
         styles.topBar,
-        { paddingTop: insets.top, backgroundColor: theme.background, pointerEvents: 'box-none' },
+        {
+          paddingTop: insets.top,
+          height: headerHeight,
+          backgroundColor: theme.background,
+          borderBottomColor: theme.hairline,
+          pointerEvents: 'box-none',
+        },
         headerStyle,
       ]}>
       {/* Inner row capped to the content width so the selectors line up with the
-          grid below, while the bar background stays full-bleed. The row grows with
-          the band (content stays vertically centred) for symmetric breathing room. */}
-      <Animated.View style={[styles.selectorRow, selectorRowStyle, { pointerEvents: 'box-none' }]}>
+          grid below, while the bar background stays full-bleed. */}
+      <View style={[styles.selectorRow, { height: barHeight }]}>
         {currentBridge ? (
-          // Animate the wrapping View (a plain host component) rather than the
-          // thumbnail itself — expo-image's `Image` is a composite class
-          // component, and wrapping it directly with `Animated.createAnimatedComponent`
-          // is fragile on native (crashed on launch; fine on web, where
-          // expo-image swaps to a ref-forwarding `<img>` container, masking
-          // the issue in dev). Gated on `currentBridge` (not `.thumbnail`) so
-          // a thumbnail-less bridge still gets its letter-fallback slot here,
-          // same as in the dropdown — just not while bridges are still loading.
-          <Animated.View style={[styles.bridgeThumb, thumbStyle]}>
+          <View style={[styles.bridgeThumb, { width: thumbSize, height: thumbSize }]}>
             <BridgeThumb uri={currentBridge.thumbnail} label={currentBridge.name} size={thumbSize} fill />
-          </Animated.View>
+          </View>
         ) : null}
         <Selector
           title="Bridge"
@@ -811,7 +799,7 @@ export default function BrowseScreen() {
           thumbnails={bridgeThumbnails}
         />
         <Selector title="Page" value={page} options={pages} onChange={selectPage} size="subtitle" />
-      </Animated.View>
+      </View>
     </Animated.View>
   );
 
@@ -936,18 +924,38 @@ export default function BrowseScreen() {
   }
 
   return (
-    <ThemedView style={styles.container}>
-      {/* The list's frame starts below the bar's resting height (its `marginTop`); its
-          contentContainer top padding covers the remaining `expand` sliver the bar overlays. */}
+    <ThemedView
+      style={styles.container}
+      // Web-only pull-to-refresh gesture — see `useWebPullToRefresh`'s comment. Touch events
+      // bubble up the DOM tree on web, so catching them here (rather than needing LegendList to
+      // forward them from wherever the touch actually started) works regardless of what's under
+      // the finger. No-op object spread on native, where the real RefreshControl below handles it.
+      {...(Platform.OS === 'web'
+        ? { onTouchStart: webPull.onTouchStart, onTouchMove: webPull.onTouchMove, onTouchEnd: webPull.onTouchEnd }
+        : null)}>
+      {/* The list's own frame spans the full screen, from behind the topBar — its contentContainer
+          top padding (headerHeight) reserves the bar's resting height so content starts below it;
+          as the bar slides away (see `headerOffsetY` above) the content already sitting there is
+          revealed, rather than the list itself needing to relayout. */}
+      {/* Wrapping rather than animating AnimatedLegendList's own `style` directly — LegendList's
+          style prop isn't typed for a Reanimated animated style the way Animated.View's is. */}
+      <Animated.View style={[styles.list, webPullListStyle]}>
       <AnimatedLegendList
         ref={listRef}
         key={gridKey}
         // Full-width scroller so the scrollbar sits at the window edge; content centered via the
-        // symmetric sidePad below. Scroll offset flows into scrollY for the collapsing header.
-        // `marginTop: headerHeight` starts the list's own frame below the bar's resting height —
-        // see the `headerHeight` comment above.
-        style={[styles.list, { marginTop: headerHeight }]}
+        // symmetric sidePad below. Scroll offset flows into scrollY for the sliding header.
+        style={styles.listInner}
         sharedValues={{ scrollOffset: scrollY }}
+        // Plain (JS-thread) onScroll alongside `sharedValues` above — only used to keep
+        // `maxScrollY` in sync (see its comment) for the bottom-bounce guard; everything else
+        // reads the UI-thread `scrollY` instead.
+        onScroll={(e) => {
+          const { contentSize, layoutMeasurement } = e.nativeEvent;
+          if (contentSize && layoutMeasurement) {
+            maxScrollY.value = Math.max(0, contentSize.height - layoutMeasurement.height);
+          }
+        }}
         data={gridData}
         keyExtractor={(item) => String(item.id)}
         numColumns={numColumns}
@@ -961,11 +969,9 @@ export default function BrowseScreen() {
         // header/footer bleed Spacing.four back out so their self-padded children line up.
         columnWrapperStyle={{ gap: GRID_COLUMN_GAP }}
         contentContainerStyle={{
-          // The list's own frame already starts at headerHeight (see `style` above), so only the
-          // extra `expand` sliver needs padding here — enough for the first row to clear the bar at
-          // its tallest; as the bar collapses by `expand`, content scrolls up by the same amount,
-          // keeping the first row pinned just under the bar's bottom edge.
-          paddingTop: expand,
+          // Reserves the bar's resting height so the first row starts just below it — see the
+          // list's leading comment above.
+          paddingTop: headerHeight,
           paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
           paddingLeft: sidePad,
           paddingRight: sidePad,
@@ -1005,21 +1011,26 @@ export default function BrowseScreen() {
         // Show the browser's native scrollbar on web (the list scrolls in its own
         // overflow container); keep it hidden on native, where it's not idiomatic.
         showsVerticalScrollIndicator={Platform.OS === 'web'}
-        // Pull-to-refresh: native only (a pull gesture isn't idiomatic on web,
-        // and react-native-web's RefreshControl is a no-op). We deliberately do
-        // NOT pass progressViewOffset ourselves: LegendList already folds the
-        // contentContainer's paddingTop (now just `expand`, a handful of px —
-        // see the `headerHeight`/list `style` comments above) into the
-        // RefreshControl's progressViewOffset internally. Adding headerHeight on
-        // top of that would double-count the frame offset that's now baked into
-        // the list's own `marginTop`, shoving the spinner a full header-height
-        // too low — off-screen, and on iOS past the natural pull distance so the
-        // control reads as already-engaged and trips mid-pull instead of on
-        // release.
+        // Native RefreshControl only — react-native-web's is a no-op, so web gets its own
+        // touch-driven implementation instead (`useWebPullToRefresh`/`WebPullIndicator` below).
+        // We deliberately do NOT pass progressViewOffset ourselves: LegendList already folds the
+        // contentContainer's paddingTop (headerHeight) into the RefreshControl's
+        // progressViewOffset internally, so the spinner settles just below the bar's resting
+        // position — the bar itself stays put throughout (see `headerOffsetY` above).
         onRefresh={Platform.OS === 'web' ? undefined : onRefresh}
         refreshing={Platform.OS === 'web' ? false : refreshing}
       />
+      </Animated.View>
       {topBar}
+      {Platform.OS === 'web' && (
+        <WebPullIndicator
+          pullY={webPull.pullY}
+          pullThreshold={webPull.pullThreshold}
+          refreshing={refreshing}
+          top={headerHeight}
+          color={theme.accent}
+        />
+      )}
     </ThemedView>
   );
 }
@@ -1161,11 +1172,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     maxWidth: 320,
   },
-  // Absolute overlay, positioned from the screen top independent of the list's own
-  // frame (which starts lower — see `headerHeight`/list `style` above) — the list only
-  // scrolls underneath it for the `expand` sliver above the bar's resting height.
-  // `justifyContent: flex-end` keeps the selector row pinned to the bottom of the band,
-  // with the collapsing breathing room above it.
+  // Absolute overlay, positioned from the screen top, fixed size — the whole bar slides
+  // as one unit via `headerOffsetY`/`headerStyle` (see the comment above `topBar`'s JSX)
+  // rather than changing height, hiding/revealing 1:1 with scroll-down/up but staying
+  // pinned in place at/above the top (see `headerOffsetY`'s own comment).
   topBar: {
     position: 'absolute',
     top: 0,
@@ -1236,6 +1246,11 @@ const styles = StyleSheet.create({
   // Full-width scroll host so the scrollbar sits at the window edge; the content is centred by the
   // symmetric sidePad on contentContainerStyle instead (see the list's paddingLeft/Right).
   list: {
+    flex: 1,
+  },
+  // Same as `list` — split out only because the web pull-to-refresh transform animates the
+  // wrapping Animated.View (see its comment), while this stays on the actual scroller beneath it.
+  listInner: {
     flex: 1,
   },
   // Cancels Spacing.four of the list's contentContainer side padding for header/footer blocks, whose
