@@ -83,6 +83,7 @@
 - [ ] Loading skeletons for bridge pages don't line up correctly with the legend list, this is worse on searches that have a "<- Home" button, we should account for that space
 - [ ] Navigating to a sub-page other then home, clicking a series, clicking a tag, then shows the search with "<- Home" instead of the correct sub page it came from
 - [ ] "<- Home" button feels very slow, it seems blocked on a network request maybe?
+- [ ] Investigate legend state
 - [x] Enable resuming from series details page if not already (i.e. instead of Read Chapter 1, it's Resume Chapter 3 or something), this should work when clicking the big series cover as well.
       The cover tap and primary button already shared `startReading()`, which already
       resumed correctly (both navigated to the history entry's chapter/page) — only the
@@ -95,9 +96,35 @@
       `accessibilityLabel`. Verified empirically with Playwright against the live dev
       server: opening "Sakamoto Days" (a mock history entry at "Days 1") now shows
       "▶ Resume Days 1" as the primary button (screenshot-confirmed).
+      Follow-up: the label went stale after backing out of the reader — reading
+      progress (`recordChapterProgress`/`recordReadingHistory` in `reader.tsx`) never
+      invalidated the `['history', mock]` query, so `historyQuery`'s 5-min `staleTime`
+      kept showing the pre-read position on return to the series screen. Both write
+      paths now chain `queryClient.invalidateQueries({ queryKey: queryKeys.history(mock) })`
+      on success.
 - [ ] Add hovering to UI elements in series details view
 - [ ] Make the #tags to cut off until showing the +X tags button row / viewport size relative, we can comfortably show more on desktop
-- [ ] Clicking the page settings button after it's already open should close it, not re-open it.
+- [ ] The chapters header bar (overview, all, etc) shouldn't expand all the way to the width of the page, however, the sort should come right after it as well.
+- [x] Clicking the page settings button after it's already open should close it, not re-open it.
+      Fixed at the shared `useAnchoredOverlay()` hook level (`overlay.tsx`), not per
+      call-site: `OverlayProvider.open()` now returns the id it assigned, and the
+      provider exposes `topId` (the currently-topmost item). The hook remembers its
+      own opened id and, if a second press comes in while that id is still topmost,
+      calls `closeTop()` instead of opening another one — otherwise it opens/stacks
+      as before. This covers every `useAnchoredOverlay()` consumer (settings gear,
+      filter rows, selectors, tracker panel, etc.) automatically, with no call-site
+      changes needed.
+- [x] When the page pill is selected, it should select all of the text inside it
+      Added `selectTextOnFocus` to the page-jump `TextInput` in `progress-pill.tsx`
+      (the same established pattern `filter-button.tsx`'s `NumberFilterRow` already
+      uses), so tapping the pill and typing immediately overwrites the current page
+      number instead of requiring a manual select-all first. While in there, also
+      fixed a related bug reported after this: tapping the "Go" button did nothing
+      (only Enter worked) because tapping "Go" blurs the still-focused `TextInput`
+      first, and the old `onBlur` closed the editing row synchronously — unmounting
+      "Go" out from under its own press before it could fire. `onBlur` now defers the
+      close by 200ms so a tap on "Go" (or Enter, which calls `submit` directly) gets
+      a chance to complete first.
 - [x] Keyboard page navigation shouldn't animate, it should instantly go to the next page like tapping
       Fixed: keyboard nav (`reader.tsx`) routed through the animated `prev`/`next`
       callbacks; switched to the instant `turnPrev`/`turnNext` (same ones tap zones

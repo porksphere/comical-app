@@ -43,8 +43,12 @@ import { useTheme } from '@/hooks/use-theme';
 export type AnchorRect = { x: number; y: number; width: number; height: number };
 
 type OverlayApi = {
-  open: (render: () => ReactNode, anchor?: AnchorRect | null) => void;
+  /** Returns the id assigned to the opened item — compare against `topId` to
+   *  tell whether that specific overlay is still the (single) topmost one. */
+  open: (render: () => ReactNode, anchor?: AnchorRect | null) => number;
   closeTop: () => void;
+  /** Id of the topmost open item, or null when the stack is empty. */
+  topId: number | null;
 };
 
 const OverlayContext = createContext<OverlayApi | null>(null);
@@ -62,22 +66,35 @@ export function useOverlay(): OverlayApi {
  * can position itself next to the trigger. On phones the rect is ignored and the
  * bottom sheet is shown as before. Falls back to a plain `open` if the ref isn't
  * measurable yet.
+ *
+ * Also makes the trigger a toggle: pressing it again while its own overlay is
+ * still the topmost one closes it instead of pushing a second copy on top of
+ * itself. Opening a *different* trigger's overlay while this one is open is
+ * unaffected — that still pushes as before (the stacked-overlay behavior).
  */
 export function useAnchoredOverlay() {
-  const { open } = useOverlay();
+  const { open, closeTop, topId } = useOverlay();
   const ref = useRef<View>(null);
+  const myId = useRef<number | null>(null);
+  const isOpen = myId.current !== null && myId.current === topId;
   const openAt = useCallback(
     (render: () => ReactNode) => {
+      if (myId.current !== null && myId.current === topId) {
+        closeTop();
+        return;
+      }
       const node = ref.current;
       if (node && typeof node.measureInWindow === 'function') {
-        node.measureInWindow((x, y, width, height) => open(render, { x, y, width, height }));
+        node.measureInWindow((x, y, width, height) => {
+          myId.current = open(render, { x, y, width, height });
+        });
       } else {
-        open(render);
+        myId.current = open(render);
       }
     },
-    [open],
+    [open, closeTop, topId],
   );
-  return { ref, openAt };
+  return { ref, openAt, isOpen };
 }
 
 // Lets a scrollable inside a sheet hand its scroll to the sheet's drag-to-
@@ -341,7 +358,9 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
   }, [items]);
 
   const open = useCallback((render: () => ReactNode, anchor?: AnchorRect | null) => {
-    setItems((prev) => [...prev, { id: idRef.current++, node: render(), anchor }]);
+    const id = idRef.current++;
+    setItems((prev) => [...prev, { id, node: render(), anchor }]);
+    return id;
   }, []);
 
   const remove = useCallback((id: number) => {
@@ -358,7 +377,8 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
     if (top) closers.current.get(top.id)?.();
   }, []);
 
-  const api = useMemo(() => ({ open, closeTop }), [open, closeTop]);
+  const topId = items.length ? items[items.length - 1].id : null;
+  const api = useMemo(() => ({ open, closeTop, topId }), [open, closeTop, topId]);
 
   // Desktop shows anchored popovers; the mobile sheet's scale-the-app-back and
   // heavy dim are skipped there. On web, a popover's outside-click dismissal
