@@ -484,12 +484,21 @@ export default function BrowseScreen() {
   const [gridLoading, setGridLoading] = useState(false);
   const [gridError, setGridError] = useState<string | null>(null);
   const [gridReload, setGridReload] = useState(0);
+  // Bumped by pull-to-refresh specifically — kept separate from `gridReload` (Retry) because
+  // `gridReload` also feeds `gridScope`/`gridKey` below, and changing that key remounts
+  // AnimatedLegendList. A Retry needs that remount (it's crossing the empty→populated boundary the
+  // key exists to guard — see the `gridScope` comment). A refresh doesn't: content stays on screen
+  // the whole time, so there's no such boundary, and remounting mid-gesture on any results page
+  // (favorites, search, see-all, filtered/sorted lists) tore down the native ScrollView/
+  // RefreshControl instance while the user's finger was still down, snapping it shut just like the
+  // pre-min-duration-fix bug. Folded into the fetch effect's deps below to still trigger a refetch.
+  const [gridRefreshTick, setGridRefreshTick] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
 
   // Re-runs whichever fetch backs the *current* view: the composed Home surface
   // (rails + grid sections, via `homeReload`) when not in results, or the flat
   // results grid (search / "See all" / a page-flagged sub-page / favorites /
-  // live filters+sort, via `gridReload`) otherwise. Unlike those reload paths'
+  // live filters+sort, via `gridRefreshTick`) otherwise. Unlike those reload paths'
   // normal firing (bridge/page switch etc.), a pull keeps the existing content
   // on screen and shows only the RefreshControl spinner — the two fetch effects
   // read `refreshActiveRef` to skip their content-clearing skeleton, and call
@@ -499,7 +508,7 @@ export default function BrowseScreen() {
     refreshActiveRef.current = true;
     refreshStartedAtRef.current = Date.now();
     setRefreshing(true);
-    if (inResults) setGridReload((n) => n + 1);
+    if (inResults) setGridRefreshTick((n) => n + 1);
     else setHomeReload((n) => n + 1);
   }, [inResults]);
 
@@ -573,7 +582,7 @@ export default function BrowseScreen() {
       });
     return () => ctrl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bridgeId, isHomeTerminal, terminalGridSection, showResultsGrid, isFavoritesPage, activeListId, query, seeAll, scopedSearch, committedFilters, committedSort, ds, gridReload, finishRefresh]);
+  }, [bridgeId, isHomeTerminal, terminalGridSection, showResultsGrid, isFavoritesPage, activeListId, query, seeAll, scopedSearch, committedFilters, committedSort, ds, gridReload, gridRefreshTick, finishRefresh]);
 
   const loadMore = () => {
     if (loadingMore || !gridHasMore || !bridgeId || (!isHomeTerminal && !showResultsGrid)) return;
