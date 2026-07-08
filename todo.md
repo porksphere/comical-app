@@ -35,13 +35,14 @@
       a render-kind), so the `'home'`/`'favorites'` strings and the `page`/`id`
       coupling live in exactly one place rather than being re-derived everywhere.
 - [ ] Investigate if we can have varied height thumbnails without weird page shifting now that we use legend list
-- [ ] Infinite paging loading skeleton doesn't add skeleton entries to incomplete rows,
+- [x] Infinite paging loading skeleton doesn't add skeleton entries to incomplete rows,
       it should ideally finish an incomplete row then add an additional row (the
       loaded grid already padded a short last row with invisible spacer cells so it
       wouldn't stretch, but that padding stayed blank even while a next-page fetch was
       in flight — the fresh skeleton rows below it always started a new row rather
       than finishing the one already on screen. Those spacer cells now render as
       skeleton cards instead of blank views while `loadingMore` is true.)
+- [ ] Page loading skeleton does'nt reflect mobile / multiple dimensions correctly
 - [ ] Series `isFavorite` check fires a slow per-series scrape on every open. The star
       state (`GET /bridges/{id}/favorites/{seriesId}`, `SeriesBody` in `series.tsx`) is
       requested ~immediately on opening any series with a bridgeId, and on some bridges it's
