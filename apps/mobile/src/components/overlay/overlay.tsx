@@ -550,7 +550,7 @@ function OverlaySheet({
   // see the note above `ROW_UNIT_HEIGHT` for why `OptionList` needs an actual
   // number here rather than a `flexGrow` chain up through `sheetBody`.
   const [headerHeight, setHeaderHeight] = useState(0);
-  const sheetBudget = height - insets.top - Spacing.four - HANDLE_AREA_HEIGHT - insets.bottom;
+  const sheetBudget = height - insets.top - Spacing.four - HANDLE_AREA_HEIGHT;
   const budget = useMemo<SheetBudget>(
     () => ({ budget: sheetBudget, headerHeight, setHeaderHeight }),
     [sheetBudget, headerHeight],
@@ -645,24 +645,22 @@ function OverlaySheet({
       <SheetScrollContext.Provider value={sheetScroll}>
       <SheetBudgetContext.Provider value={budget}>
         {/* `backgroundPanel` (not the default `background`) so the sheet's own
-            surface — including the safe-area padding below the last row — reads
-            as one consistent panel color instead of showing a seam where the
-            base page background peeks through; distinct from `backgroundElement`
-            (used by the rows on it) so those still stand out against the panel.
-            Just `insets.bottom`, no extra: the sheet itself adds no cushion
-            beyond the real home-indicator clearance — breathing room below the
-            *content* (so a short list doesn't sit flush) belongs to the
-            scrollable list's own trailing padding (`OptionList`'s
-            `listContent` above) / the overflow-filters sheet's own content
-            padding, not this outer container. Putting it out here as an
-            offset (a prior attempt) exposed the dimmed backdrop behind the
-            sheet as a large flat stripe — worse than what it replaced. */}
+            surface reads as one consistent panel color instead of showing a
+            seam where the base page background peeks through; distinct from
+            `backgroundElement` (used by the rows on it) so those still stand
+            out against the panel.
+            No bottom cushion here: reserving `insets.bottom` as an outer
+            offset left a same-colored gap below the last row that read as
+            broken content rather than a clean edge (confirmed by pixel-
+            sampling a screenshot, not just eyeballing it) — the sheet's own
+            edge now sits exactly where its content ends, gesture-nav pill
+            included. Breathing room below the *content* (so a short list
+            doesn't sit flush) is still `OptionList`'s own trailing padding
+            (`listContent` above) / the overflow-filters sheet's own content
+            padding, not this outer container. */}
         <ThemedView
           type="backgroundPanel"
-          style={[
-            styles.sheet,
-            { paddingBottom: insets.bottom, maxHeight: height - insets.top - Spacing.four },
-          ]}>
+          style={[styles.sheet, { maxHeight: height - insets.top - Spacing.four }]}>
           <GestureDetector gesture={handlePan}>
             <View style={styles.handleArea}>
               <View style={styles.handle} />
