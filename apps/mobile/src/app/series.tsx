@@ -31,10 +31,20 @@ import { firstChapterInReadingOrder } from '@/lib/chapter-order';
 import { resetPreferredGroup, usePreferredGroup } from '@/lib/preferred-group';
 import { DIRECT_CHAPTER_ID, type SeriesDetail, type TagGroup } from '@/data/types';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
+import { useHovered } from '@/hooks/use-hovered';
 import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 
 const LARGE_COVER_WIDTH = 300;
+
+// Conservative cap on the top bar's "<Bridge> / <Title>" title portion — some
+// series titles run extremely long, and letting the bar's own `numberOfLines={1}`
+// truncate the combined string could clip the bridge name off the front entirely.
+const TOP_BAR_TITLE_MAX_CHARS = 40;
+
+function truncateTopBarTitle(t: string): string {
+  return t.length > TOP_BAR_TITLE_MAX_CHARS ? `${t.slice(0, TOP_BAR_TITLE_MAX_CHARS).trimEnd()}…` : t;
+}
 
 /** Meta cells whose value should open a matching Browse search, keyed by the
  *  cell's `label` (see `buildMeta` in `data/source.ts`) to the `BrowseIntent`
@@ -45,6 +55,41 @@ const SEARCHABLE_META_KEYS: Record<string, 'author' | 'artist' | 'type' | undefi
   ARTIST: 'artist',
   TYPE: 'type',
 };
+
+/** One searchable meta-grid cell (Author/Artist/Type). Its own component so it
+ *  can call `useHovered` — the grid renders cells from a `.map`, where a hook
+ *  can't be called directly (same reasoning as chip.tsx's `PressableChip`).
+ *  A full-cell background brighten read as a big flat rectangle bleeding into
+ *  the grid's own top/bottom hairlines, so hover here instead behaves like a
+ *  text link — just the value turning accent-blue, not a block. */
+function MetaCell({
+  onPress,
+  metaLabel,
+  value,
+}: {
+  onPress: () => void;
+  metaLabel: string;
+  value: string;
+}) {
+  const theme = useTheme();
+  const { hovered, onHoverIn, onHoverOut } = useHovered();
+  return (
+    <Pressable
+      onPress={onPress}
+      onHoverIn={onHoverIn}
+      onHoverOut={onHoverOut}
+      accessibilityRole="button"
+      accessibilityLabel={`Search ${value}`}
+      style={({ pressed }) => [styles.metaCell, pressed && styles.metaCellPressed]}>
+      <ThemedText type="small" themeColor="textSecondary" style={styles.metaLabel}>
+        {metaLabel}
+      </ThemedText>
+      <ThemedText type="small" style={hovered && { color: theme.accent }}>
+        {value}
+      </ThemedText>
+    </Pressable>
+  );
+}
 
 export default function SeriesScreen() {
   const ds = useDataSource();
@@ -120,9 +165,17 @@ export default function SeriesScreen() {
     </ScrollView>
   );
 
+  const topBarSeriesTitle = series?.title ?? title;
+  const topBarBridge = series?.bridge ?? bridge;
+  const topBarTitle = topBarSeriesTitle
+    ? topBarBridge
+      ? `${topBarBridge} / ${truncateTopBarTitle(topBarSeriesTitle)}`
+      : truncateTopBarTitle(topBarSeriesTitle)
+    : (topBarBridge ?? '');
+
   return (
     <ThemedView style={styles.container}>
-      <TopBar title={series?.bridge ?? bridge ?? ''} />
+      <TopBar title={topBarTitle} />
 
       {error ? (
         scrollFallback(<RetryBlock message={error} onRetry={retry} />)
@@ -509,14 +562,12 @@ function SeriesBody({
               </>
             );
             return metaKey && bridgeId ? (
-              <Pressable
+              <MetaCell
                 key={m.label}
                 onPress={() => onMetaPress(metaKey, m.value)}
-                accessibilityRole="button"
-                accessibilityLabel={`Search ${m.value}`}
-                style={({ pressed }) => [styles.metaCell, pressed && styles.metaCellPressed]}>
-                {cellContent}
-              </Pressable>
+                metaLabel={m.label}
+                value={m.value}
+              />
             ) : (
               <View key={m.label} style={styles.metaCell}>
                 {cellContent}

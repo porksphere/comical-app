@@ -1,4 +1,6 @@
 import {
+  ArrowDown,
+  ArrowUp,
   Blocks,
   Bug,
   ChevronDown,
@@ -23,6 +25,8 @@ export const PlusIcon = ({ color, size = 16 }: IconProps) => <Plus color={color}
 export const StarIcon = ({ color, size = 16 }: IconProps) => <Star color={color} size={size} />;
 export const ChevronDownIcon = ({ color, size = 16 }: IconProps) => <ChevronDown color={color} size={size} />;
 export const ChevronRightIcon = ({ color, size = 16 }: IconProps) => <ChevronRight color={color} size={size} />;
+export const ArrowUpIcon = ({ color, size = 16 }: IconProps) => <ArrowUp color={color} size={size} />;
+export const ArrowDownIcon = ({ color, size = 16 }: IconProps) => <ArrowDown color={color} size={size} />;
 // Settings section glyphs — General/Bridges/Trackers/Registries/Developer.
 export const GeneralSettingsIcon = ({ color, size = 16 }: IconProps) => <SlidersHorizontal color={color} size={size} />;
 export const BridgesIcon = ({ color, size = 16 }: IconProps) => <Blocks color={color} size={size} />;

@@ -75,15 +75,12 @@
       architecturally sound end-to-end from static inspection; confirming why it'd actually
       lose data across a real app-kill-and-relaunch on iOS needs on-device
       reproduction/logging, which wasn't done here.
-- [ ] Related series scrolling seems bugged on iOS
-- [ ] When there aren't any related series / any content below a direct series page thumbnails, don't show the "Show all" button at all, just paginate
 - [ ] Buggy behavior when opening a bridge sub-page then changing the bridge, it uses the old bridge sub-page data
-- [ ] Virtual recycled page thumbnails don't show the loading placeholder, they show stale images
-- [ ] Navigating to a series view FROM a series view (i.e. recommended / related series) does'nt push the new series onto the nav stack, it replaces the current
-- [ ] Loading skeletons for bridge pages don't line up correctly with the legend list, this is worse on searches that have a "<- Home" button, we should account for that space
+- [ ] Loading skeletons for bridge series don't line up correctly with the legend list, this is worse on searches that have a "<- Home" button, we should account for that space
 - [ ] Navigating to a sub-page other then home, clicking a series, clicking a tag, then shows the search with "<- Home" instead of the correct sub page it came from
 - [ ] "<- Home" button feels very slow, it seems blocked on a network request maybe?
 - [ ] Investigate legend state
+- [ ] Come up with a way to open the app on iOS/android from a web button. This way a github repo can have a button that installs a registry with one click.
 - [x] Enable resuming from series details page if not already (i.e. instead of Read Chapter 1, it's Resume Chapter 3 or something), this should work when clicking the big series cover as well.
       The cover tap and primary button already shared `startReading()`, which already
       resumed correctly (both navigated to the history entry's chapter/page) — only the
@@ -102,9 +99,13 @@
       kept showing the pre-read position on return to the series screen. Both write
       paths now chain `queryClient.invalidateQueries({ queryKey: queryKeys.history(mock) })`
       on success.
-- [ ] Add hovering to UI elements in series details view
-- [ ] Make the #tags to cut off until showing the +X tags button row / viewport size relative, we can comfortably show more on desktop
-- [ ] The chapters header bar (overview, all, etc) shouldn't expand all the way to the width of the page, however, the sort should come right after it as well.
+- [x] Navigating to a series view FROM a series view (i.e. recommended / related series) does'nt push the new series onto the nav stack, it replaces the current
+- [ ] Related series scrolling seems bugged on iOS
+- [x] When there aren't any related series / any content below a direct series page thumbnails, don't show the "Show all" button at all, just paginate
+- [x] Virtual recycled page thumbnails don't show the loading placeholder, they show stale images. Look at how the bridge series cards do it.
+- [x] Add hovering to UI elements in series details view
+- [x] Make the #tags to cut off until showing the +X tags button row / viewport size relative, we can comfortably show more on desktop
+- [x] The chapters header bar (overview, all, etc) shouldn't expand all the way to the width of the page, however, the sort should come right after it as well.
 - [x] Clicking the page settings button after it's already open should close it, not re-open it.
       Fixed at the shared `useAnchoredOverlay()` hook level (`overlay.tsx`), not per
       call-site: `OverlayProvider.open()` now returns the id it assigned, and the

@@ -8,6 +8,7 @@ import { SeriesCard, TitlePeek, type CardSize } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { useHovered } from '@/hooks/use-hovered';
 import { useIsCompact, useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import type { RailSection, SeriesEntry } from '@/data/types';
@@ -200,6 +201,30 @@ export function Rail({
     };
   }, [wide]);
 
+  // iOS-only mount-time reset: a LegendList horizontal strip can render already
+  // scrolled away from its start on iOS (an upstream recycling/positioning
+  // regression — legendapp/list#458, iOS-only, Android/web unaffected). This is a
+  // no-op once already at offset 0, so it costs nothing when the bug doesn't
+  // reproduce; it's just cheap insurance against a rail opening mid-list.
+  useEffect(() => {
+    if (Platform.OS !== 'ios' || wide) return;
+    listRef.current?.scrollToOffset({ offset: 0, animated: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Hide the lifted title peek the instant a drag starts on the strip. A peek is
+  // opened by a press-hold (see SeriesCard's `useHeld`, with a huge
+  // `pressRetentionOffset` so a finger sliding off the card doesn't cancel it) —
+  // if that same touch turns into a horizontal drag of the strip, the card's
+  // `active` state never turns off mid-drag, so the popover would otherwise keep
+  // trying to follow the scroll. On iOS, `AnimatedLegendList`'s reanimated-driven
+  // transform lands a frame behind the native scroll during a fling (an upstream
+  // reanimated/UIScrollView compositing gap — legendapp/list#489, far less
+  // visible on Android/web), which reads as the popover visibly lagging/glitching
+  // behind its card — the "scrolling seems bugged" symptom. A held-but-dragging
+  // popover isn't useful anyway, so just drop it for the duration of the drag.
+  const hidePeekForDrag = useCallback(() => setPeekIndex(null), []);
+
   // Static (scroll-independent) base position of the peeked card; only changes
   // when a different card is peeked, not per scroll frame. On the wide grid the
   // peeked card sits in one of GRID_ROWS rows instead of a single scrolling row.
@@ -271,6 +296,8 @@ export function Rail({
           // STRIP_PAD − stripHalfGap so the first card still lines up under the section heading.
           contentContainerStyle={{ paddingLeft: STRIP_PAD - stripHalfGap, paddingRight: STRIP_PAD - stripHalfGap }}
           onLayout={(e) => setStripTop(e.nativeEvent.layout.y)}
+          onScrollBeginDrag={hidePeekForDrag}
+          onMomentumScrollBegin={hidePeekForDrag}
           // Feeds scrollX on the UI thread; the lifted peek slides from it via transform (see
           // peekStyle), keeping the popover glued to its card with no JS round-trip.
           sharedValues={{ scrollOffset: scrollX }}
@@ -341,6 +368,7 @@ export function SectionHead({ title, onSeeAll }: { title: string; onSeeAll?: () 
   const theme = useTheme();
   // Match the reference's `.section-head h3`: 1.2rem mobile / 1.5rem desktop.
   const compact = useIsCompact();
+  const { hovered, onHoverIn, onHoverOut } = useHovered();
   return (
     <View style={styles.head}>
       <ThemedText
@@ -350,7 +378,17 @@ export function SectionHead({ title, onSeeAll }: { title: string; onSeeAll?: () 
         {title}
       </ThemedText>
       {onSeeAll && (
-        <Pressable onPress={onSeeAll} hitSlop={8}>
+        <Pressable
+          onPress={onSeeAll}
+          onHoverIn={onHoverIn}
+          onHoverOut={onHoverOut}
+          hitSlop={8}
+          style={({ pressed }) => [
+            styles.seeAll,
+            pressed && styles.seeAllPressed,
+            // Brighten (not dim) on hover — same treatment as the chapter tab strip.
+            hovered && { backgroundColor: theme.backgroundSelected },
+          ]}>
           <ThemedText type="smallBold" style={{ color: theme.accent }}>
             See all →
           </ThemedText>
@@ -387,6 +425,14 @@ const styles = StyleSheet.create({
   headTitleWide: {
     fontSize: 24,
     lineHeight: 30,
+  },
+  seeAll: {
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.half,
+    borderRadius: 8,
+  },
+  seeAllPressed: {
+    opacity: 0.7,
   },
   strip: {
     // gap is viewport-dependent — set inline (see `stripGapFor`) alongside this.

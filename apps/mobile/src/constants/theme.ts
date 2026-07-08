@@ -21,6 +21,10 @@ export const Colors = {
     // Shared accent + chrome tokens (mirrored in `dark`). Used by cards, badges,
     // chips and the series action buttons so colors aren't re-hardcoded per file.
     accent: '#3478F6',
+    // Lighter tint of `accent` for hovering a solid accent-filled surface (the
+    // primary action button) — brightens toward white rather than dimming via
+    // opacity, matching the neutral-surface hover treatment (`backgroundSelected`).
+    accentHover: '#5A90FF',
     accentOn: '#ffffff',
     badgeInfo: '#2563eb',
     badgeWarn: '#ca8a04',
@@ -54,6 +58,7 @@ export const Colors = {
     backgroundSelected: '#2E3135',
     textSecondary: '#B0B4BA',
     accent: '#3478F6',
+    accentHover: '#5A90FF',
     accentOn: '#ffffff',
     badgeInfo: '#2563eb',
     badgeWarn: '#ca8a04',

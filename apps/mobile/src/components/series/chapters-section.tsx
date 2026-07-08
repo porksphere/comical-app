@@ -2,15 +2,17 @@ import { LegendList } from '@legendapp/list/react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
-import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
-import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
+import { Pressable, StyleSheet, useWindowDimensions, View, type StyleProp, type ViewStyle } from 'react-native';
+import Animated, { Easing, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ArrowDownIcon, ArrowUpIcon } from '@/components/icons/ui-icons';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
 import { isAbort, resolveAssetSourceCached } from '@/data/api';
 import { coverDelayMs, relativeTime } from '@/data/mock';
@@ -33,6 +35,11 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'read', label: 'Read' },
   { id: 'unread', label: 'Unread' },
 ];
+// The sort-direction toggle, in the same segmented-control chrome as TABS.
+const SORT_OPTIONS: { id: 'desc' | 'asc'; label: string; Icon: typeof ArrowDownIcon }[] = [
+  { id: 'desc', label: 'Newest first', Icon: ArrowDownIcon },
+  { id: 'asc', label: 'Oldest first', Icon: ArrowUpIcon },
+];
 // Overview collapses long lists to a configurable number of chapters from the
 // start and the end, with an expand button between them for the hidden middle.
 const OVERVIEW_HEAD_COUNT = 5;
@@ -43,12 +50,6 @@ const TAB_GAP = 4;
 // Shared with the sort button so the whole controls row (tab strip + sort
 // toggle) reads as one consistent height.
 const CONTROLS_HEIGHT = 32;
-// How much smaller the sliding highlight is than the tab it sits behind —
-// horizontally and vertically separately, since the vertical inset wants to
-// read as more of a floating capsule than the horizontal one. This is what
-// makes it a bubble rather than a block filling its slot edge-to-edge.
-const PILL_INSET_X = 3;
-const PILL_INSET_Y = 6;
 
 export function ChaptersSection({
   chapters,
@@ -117,6 +118,151 @@ function PageGridSkeleton() {
   );
 }
 
+/** A row of mutually-exclusive options with a sliding highlight pill behind
+ *  the active one — the chapter tab strip (Overview/All/Read/Unread) and the
+ *  sort direction toggle are both one of these. Each option is sized to its
+ *  own content (not an equal slice of the strip), so the pill's geometry has
+ *  to be measured per-option via `onLayout` rather than computed from a
+ *  shared segment width.
+ *
+ *  The pill animates via Reanimated's `layout` prop (`LinearTransition`)
+ *  instead of a hand-rolled `useSharedValue`/`withTiming` pair driven from a
+ *  `useEffect` — that JS-side approach could visibly snap the pill to the
+ *  strip's left edge for a frame before sliding to the new tab (a stale
+ *  `activeBox` briefly reading as unmeasured on some renders). `layout`
+ *  hands the interpolation to the UI thread instead: it only animates a
+ *  transition between two committed layouts of an already-mounted view, so
+ *  there's no intermediate JS-computed frame to glitch through. On first
+ *  mount there's nothing to transition from, so it just appears in place —
+ *  no unwanted slide-in. */
+function Segmented<T extends string>({
+  options,
+  active,
+  onChange,
+  itemStyle,
+}: {
+  options: { id: T; render: (active: boolean) => ReactNode; accessibilityLabel?: string }[];
+  active: T;
+  onChange: (id: T) => void;
+  itemStyle?: StyleProp<ViewStyle>;
+}) {
+  const theme = useTheme();
+  const [layouts, setLayouts] = useState<Partial<Record<T, { x: number; width: number }>>>({});
+  const onOptLayout = (id: T, x: number, width: number) => {
+    setLayouts((prev) => (prev[id]?.x === x && prev[id]?.width === width ? prev : { ...prev, [id]: { x, width } }));
+  };
+  const activeBox = layouts[active];
+  return (
+    <ThemedView type="backgroundElement" style={styles.tabs}>
+      {activeBox && (
+        <Animated.View
+          pointerEvents="none"
+          // A real spring (`.springify()`) only runs as physics on native — the
+          // web fallback for layout animations (react-native-web) is a CSS
+          // keyframe that ignores damping/stiffness/mass entirely and falls
+          // back to a linear curve, so the "spring" was invisible on web. An
+          // explicit overshoot bezier (the standard ease-out-back curve) gives
+          // the same bounce-then-settle feel on both, since it's just a plain
+          // easing curve rather than physics.
+          layout={LinearTransition.duration(260).easing(Easing.bezier(0.34, 1.2, 0.64, 1))}
+          style={[
+            styles.tabPill,
+            {
+              backgroundColor: theme.accent,
+              left: activeBox.x,
+              width: activeBox.width,
+            },
+          ]}
+        />
+      )}
+      {options.map((opt) => (
+        <SegmentButton
+          key={opt.id}
+          active={opt.id === active}
+          itemStyle={itemStyle}
+          accessibilityLabel={opt.accessibilityLabel}
+          onPress={() => onChange(opt.id)}
+          onLayout={(x, width) => onOptLayout(opt.id, x, width)}>
+          {opt.render(opt.id === active)}
+        </SegmentButton>
+      ))}
+    </ThemedView>
+  );
+}
+
+/** One `Segmented` option button. Its own component (rather than a raw
+ *  `Pressable` inside `options.map`) so each option gets its own `useHovered`
+ *  call — same reasoning as chip.tsx's `PressableChip`. */
+function SegmentButton({
+  active,
+  itemStyle,
+  accessibilityLabel,
+  onPress,
+  onLayout,
+  children,
+}: {
+  active: boolean;
+  itemStyle?: StyleProp<ViewStyle>;
+  accessibilityLabel?: string;
+  onPress: () => void;
+  onLayout: (x: number, width: number) => void;
+  children: ReactNode;
+}) {
+  const theme = useTheme();
+  const { hovered, onHoverIn, onHoverOut } = useHovered();
+  return (
+    <Pressable
+      onPress={onPress}
+      onHoverIn={onHoverIn}
+      onHoverOut={onHoverOut}
+      onLayout={(e) => onLayout(e.nativeEvent.layout.x, e.nativeEvent.layout.width)}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      style={[
+        itemStyle ?? styles.tab,
+        // Brighten (not dim) on hover — never on the already-highlighted
+        // active option, which already reads as selected via the pill.
+        hovered && !active && { backgroundColor: theme.backgroundSelected },
+      ]}>
+      {children}
+    </Pressable>
+  );
+}
+
+/** One expanded scanlator/language version row under a chapter. Its own
+ *  component (rather than raw `Pressable` inside `group.versions.map`) so
+ *  each row gets its own `useHovered` call. */
+function VersionRow({ v, active, onPress }: { v: Chapter; active: boolean; onPress: () => void }) {
+  const theme = useTheme();
+  const { hovered, onHoverIn, onHoverOut } = useHovered();
+  return (
+    <Pressable
+      onPress={onPress}
+      onHoverIn={onHoverIn}
+      onHoverOut={onHoverOut}
+      style={({ pressed }) => [
+        styles.versionRow,
+        pressed && styles.rowPressed,
+        hovered && { backgroundColor: theme.backgroundSelected },
+      ]}>
+      <ThemedText
+        type="small"
+        numberOfLines={1}
+        style={[
+          styles.versionLabel,
+          v.read && { color: theme.textSecondary },
+          // Highlight the copy the main row currently opens.
+          active && { color: theme.accent, fontWeight: '600' },
+        ]}>
+        {versionLabel(v)}
+      </ThemedText>
+      <ThemedText type="small" themeColor="textSecondary" style={styles.rowTime}>
+        {relativeTime(v.date)}
+      </ThemedText>
+    </Pressable>
+  );
+}
+
 function ChapterList({
   chapters,
   seed,
@@ -134,39 +280,7 @@ function ChapterList({
   const [asc, setAsc] = useState(false);
   // Overview-only: reveal the collapsed middle portion inline.
   const [middleExpanded, setMiddleExpanded] = useState(false);
-
-  // Sliding highlight behind the active tab — each tab is sized to its own
-  // label (not an equal slice of the strip), so the highlight has to be
-  // measured per-tab rather than computed from a shared segment width.
-  const [tabLayouts, setTabLayouts] = useState<Partial<Record<Tab, { x: number; width: number }>>>({});
-  const onTabLayout = (id: Tab, x: number, width: number) => {
-    setTabLayouts((prev) => (prev[id]?.x === x && prev[id]?.width === width ? prev : { ...prev, [id]: { x, width } }));
-  };
-  const activeBox = tabLayouts[tab];
-  const pillX = useSharedValue(0);
-  const pillWidth = useSharedValue(0);
-  const pillMeasured = useRef(false);
-  useEffect(() => {
-    if (!activeBox) return;
-    const x = activeBox.x + PILL_INSET_X;
-    const width = activeBox.width - PILL_INSET_X * 2;
-    // Snap into place on first measurement (no slide-in from 0); morph width
-    // and position together for every change after that — no spring/bounce,
-    // just the bubble smoothly resizing and sliding to hug the new label.
-    if (!pillMeasured.current) {
-      pillX.value = x;
-      pillWidth.value = width;
-      pillMeasured.current = true;
-    } else {
-      const config = { duration: 220, easing: Easing.out(Easing.cubic) };
-      pillX.value = withTiming(x, config);
-      pillWidth.value = withTiming(width, config);
-    }
-  }, [activeBox, pillX, pillWidth]);
-  const pillStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: pillX.value }],
-    width: pillWidth.value,
-  }));
+  const expandMiddleHover = useHovered();
 
   // The scanlation group the user last opened — controls which version each logical
   // chapter defaults to, so the list keeps showing the source they're reading.
@@ -222,41 +336,37 @@ function ChapterList({
           Chapters
         </ThemedText>
         <View style={styles.controls}>
-          <ThemedView type="backgroundElement" style={styles.tabs}>
-            {activeBox && (
-              <Animated.View
-                pointerEvents="none"
-                style={[styles.tabPill, { backgroundColor: theme.accent }, pillStyle]}
-              />
-            )}
-            {TABS.map((t) => (
-              <Pressable
-                key={t.id}
-                onPress={() => {
-                  setTab(t.id);
-                  setMiddleExpanded(false);
-                }}
-                onLayout={(e) => onTabLayout(t.id, e.nativeEvent.layout.x, e.nativeEvent.layout.width)}
-                style={styles.tab}>
+          <Segmented
+            options={TABS.map((t) => ({
+              id: t.id,
+              accessibilityLabel: t.label,
+              render: (active) => (
                 <ThemedText
                   type="small"
                   numberOfLines={1}
-                  style={[
-                    styles.tabLabel,
-                    tab === t.id ? { color: theme.accentOn } : { color: theme.textSecondary },
-                  ]}>
+                  style={[styles.tabLabel, active ? { color: theme.accentOn } : { color: theme.textSecondary }]}>
                   {t.label}
                 </ThemedText>
-              </Pressable>
-            ))}
-          </ThemedView>
-          <Pressable
-            onPress={() => setAsc((v) => !v)}
-            accessibilityLabel={asc ? 'Oldest first' : 'Newest first'}>
-            <ThemedView type="backgroundElement" style={styles.sortBtn}>
-              <ThemedText type="smallBold">{asc ? '↑' : '↓'}</ThemedText>
-            </ThemedView>
-          </Pressable>
+              ),
+            }))}
+            active={tab}
+            onChange={(id) => {
+              setTab(id);
+              setMiddleExpanded(false);
+            }}
+          />
+          <Segmented
+            options={SORT_OPTIONS.map((s) => ({
+              id: s.id,
+              accessibilityLabel: s.label,
+              render: (active) => (
+                <s.Icon color={active ? theme.accentOn : theme.textSecondary} size={16} />
+              ),
+            }))}
+            active={asc ? 'asc' : 'desc'}
+            onChange={(id) => setAsc(id === 'asc')}
+            itemStyle={styles.sortTab}
+          />
         </View>
       </View>
 
@@ -264,7 +374,15 @@ function ChapterList({
         {head.map(row)}
 
         {collapsible && (
-          <Pressable onPress={() => setMiddleExpanded(true)} style={styles.expandMiddle}>
+          <Pressable
+            onPress={() => setMiddleExpanded(true)}
+            onHoverIn={expandMiddleHover.onHoverIn}
+            onHoverOut={expandMiddleHover.onHoverOut}
+            style={[
+              styles.expandMiddle,
+              // Brighten (not dim) on hover — same treatment as the chapter tab strip.
+              expandMiddleHover.hovered && { backgroundColor: theme.backgroundSelected, borderRadius: 8 },
+            ]}>
             <ThemedText type="small" style={[styles.expandMiddleText, { color: theme.accent }]}>
               Show {hiddenCount} more chapters
             </ThemedText>
@@ -309,6 +427,8 @@ function ChapterRow({
 }) {
   const theme = useTheme();
   const [expanded, setExpanded] = useState(false);
+  const rowHover = useHovered();
+  const versionsHover = useHovered();
   const def = pickVersion(group, preferredGroup);
   // A logical chapter reads as "read" only once every version of it is read.
   const read = group.versions.every((v) => v.read);
@@ -316,8 +436,19 @@ function ChapterRow({
 
   return (
     <View>
-      <Pressable onPress={() => onOpen(def)} style={({ pressed }) => [pressed && styles.rowPressed]}>
-        <ThemedView type="backgroundElement" style={[styles.row, { borderColor: theme.hairline }]}>
+      <Pressable
+        onPress={() => onOpen(def)}
+        onHoverIn={rowHover.onHoverIn}
+        onHoverOut={rowHover.onHoverOut}
+        style={({ pressed }) => pressed && styles.rowPressed}>
+        <ThemedView
+          type="backgroundElement"
+          style={[
+            styles.row,
+            { borderColor: theme.hairline },
+            // Brighten (not dim) on hover — same treatment as the chapter tab strip.
+            rowHover.hovered && { backgroundColor: theme.backgroundSelected },
+          ]}>
           <ThemedText
             type="small"
             numberOfLines={1}
@@ -325,7 +456,15 @@ function ChapterRow({
             {group.name}
           </ThemedText>
           {multi && (
-            <Pressable onPress={() => setExpanded((v) => !v)} hitSlop={6} style={styles.versionsBtn}>
+            <Pressable
+              onPress={() => setExpanded((v) => !v)}
+              onHoverIn={versionsHover.onHoverIn}
+              onHoverOut={versionsHover.onHoverOut}
+              hitSlop={6}
+              style={[
+                styles.versionsBtn,
+                versionsHover.hovered && { backgroundColor: theme.backgroundSelected, borderRadius: 6 },
+              ]}>
               <ThemedText type="small" style={{ color: theme.accent }}>
                 {group.versions.length} versions {expanded ? '▴' : '▾'}
               </ThemedText>
@@ -339,25 +478,7 @@ function ChapterRow({
       {multi && expanded && (
         <View style={styles.versionList}>
           {group.versions.map((v) => (
-            <Pressable
-              key={v.id}
-              onPress={() => onOpen(v)}
-              style={({ pressed }) => [styles.versionRow, pressed && styles.rowPressed]}>
-              <ThemedText
-                type="small"
-                numberOfLines={1}
-                style={[
-                  styles.versionLabel,
-                  v.read && { color: theme.textSecondary },
-                  // Highlight the copy the main row currently opens.
-                  v.id === def.id && { color: theme.accent, fontWeight: '600' },
-                ]}>
-                {versionLabel(v)}
-              </ThemedText>
-              <ThemedText type="small" themeColor="textSecondary" style={styles.rowTime}>
-                {relativeTime(v.date)}
-              </ThemedText>
-            </Pressable>
+            <VersionRow key={v.id} v={v} active={v.id === def.id} onPress={() => onOpen(v)} />
           ))}
         </View>
       )}
@@ -412,6 +533,7 @@ export function PageThumbList({
   const { width: screenW } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [expanded, setExpanded] = useState(false);
+  const showMoreHover = useHovered();
 
   const cols = screenW >= 900 ? 5 : screenW >= 600 ? 3 : 2;
   const gap = Spacing.two;
@@ -425,7 +547,11 @@ export function PageThumbList({
   const fadeHeight = Math.round(tileW * (3 / 2) * 0.6);
 
   const collapsedCount = cols * COLLAPSED_ROWS;
-  const collapsed = !expanded && thumbs.length > collapsedCount;
+  // Only collapse behind "Show all" when there's a footer (related rails, or
+  // its loading skeleton) worth keeping reachable — that's the entire reason
+  // this gate exists. A series with nothing below the grid has nothing to
+  // protect, so just render the full (already-virtualized) list directly.
+  const collapsed = !expanded && !!footer && thumbs.length > collapsedCount;
   // Collapsed shows the first few rows (so the rails stay reachable); expanded
   // shows all, virtualized. Pad the last (short) row with spacers so its tiles
   // keep their column width instead of the flex cell stretching them — same
@@ -475,8 +601,19 @@ export function PageThumbList({
             // `.page-thumbs-more` overlay, reproduced in the list footer.
             <View style={[styles.moreOverlay, { height: fadeHeight, marginTop: -fadeHeight, pointerEvents: 'box-none' }]}>
               <GradientFade color={theme.background} />
-              <Pressable onPress={() => setExpanded(true)} hitSlop={8}>
-                <ThemedView type="backgroundElement" style={[styles.showMore, { borderColor: theme.hairline }]}>
+              <Pressable
+                onPress={() => setExpanded(true)}
+                onHoverIn={showMoreHover.onHoverIn}
+                onHoverOut={showMoreHover.onHoverOut}
+                hitSlop={8}>
+                <ThemedView
+                  type="backgroundElement"
+                  style={[
+                    styles.showMore,
+                    { borderColor: theme.hairline },
+                    // Brighten (not dim) on hover — same treatment as the chapter tab strip.
+                    showMoreHover.hovered && { backgroundColor: theme.backgroundSelected },
+                  ]}>
                   <ThemedText type="small" style={{ color: theme.accent }}>
                     Show all {thumbs.length} pages
                   </ThemedText>
@@ -541,6 +678,7 @@ function PageThumb({
   onPress?: () => void;
 }) {
   const ds = useDataSource();
+  const { hovered, onHoverIn, onHoverOut } = useHovered();
   const [resolved, setResolved] = useState(thumb);
   const [loaded, setLoaded] = useState(false);
   // Real aspect of a plain `image` tile, learned from its own onLoad (see the
@@ -634,7 +772,7 @@ function PageThumb({
     // (flex:1, gap-aware) is the source of truth, so the tile can't end up a
     // hair wider than its column and get its right corners clipped. `width` is
     // still the pixel width for SpriteCrop's crop math (≈ the cell width).
-    <Pressable style={styles.thumbShell} onPress={onPress}>
+    <Pressable style={styles.thumbShell} onPress={onPress} onHoverIn={onHoverIn} onHoverOut={onHoverOut}>
       <View style={[styles.thumb, { aspectRatio }]}>
         {delayPassed && resolved?.kind === 'image' && resolvedImageUrl && (
           <Image
@@ -677,6 +815,9 @@ function PageThumb({
           <ThemedText style={styles.pageNumText}>{page}</ThemedText>
         </View>
       </View>
+      {/* Hover ring (brighten, not dim) — same highlight treatment as SeriesCard's
+       *  own hover/active ring, since an opacity-dim over an image reads as broken. */}
+      {hovered && <View style={[styles.thumbRing, { pointerEvents: 'none' }]} />}
     </Pressable>
   );
 }
@@ -742,6 +883,22 @@ function useResolvedThumbUrl(url: string, onError?: (message: string) => void): 
   const [resolved, setResolved] = useState<string | null>(null);
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
+
+  // Recycle-safety: PageThumb reuses this hook's instance for a different page
+  // as the grid scrolls (recycleItems), and only the `url` prop changes — the
+  // stale `resolved` value from the PREVIOUS page otherwise survives into the
+  // first render with the new url (this state only cleared inside the effect
+  // below, which runs a commit later), so that first frame renders the old
+  // tile's resolved image/sheet under the new tile's geometry — the "stale
+  // thumbnail" flash. Clear it synchronously during render instead (same
+  // ref-compare pattern as PageThumb/SeriesCard's own per-item reset), so the
+  // gap is never visible; the effect still does the actual async resolve.
+  const prevUrlRef = useRef(url);
+  if (prevUrlRef.current !== url) {
+    prevUrlRef.current = url;
+    setResolved(null);
+  }
+
   useEffect(() => {
     let cancelled = false;
     setResolved(null);
@@ -842,11 +999,13 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
   },
   tabs: {
-    // Content-sized (not `flex: 1` on each child) — a tab's width follows its
-    // own label, so "All" and "Overview" don't get forced to the same width.
-    // Fixed height (matching the sort button) rather than letting padding
-    // drive it, so the whole controls row reads as one consistent height.
-    flex: 1,
+    // Content-sized (not `flex: 1` on each child, and not `flex: 1` on the
+    // strip itself) — a tab's width follows its own label, so "All" and
+    // "Overview" don't get forced to the same width, and the whole strip
+    // doesn't stretch to the row's full width leaving a big dead-space pill
+    // before the sort button. Fixed height (matching the sort button) rather
+    // than letting padding drive it, so the whole controls row reads as one
+    // consistent height.
     height: CONTROLS_HEIGHT,
     flexDirection: 'row',
     alignItems: 'center',
@@ -854,15 +1013,17 @@ const styles = StyleSheet.create({
     padding: TAB_PAD,
     gap: TAB_GAP,
   },
-  // Sliding highlight behind the active tab (see `pillStyle`) — inset from the
-  // active tab's own measured box (see `onTabLayout`/`activeBox`) so it reads
-  // as a floating bubble rather than a block filling its tab edge-to-edge.
-  // Height is static (every tab shares the same height) — inset vertically
-  // here; x/width (horizontal inset baked in) animate in `pillStyle`.
+  // Sliding highlight behind the active option (see `Segmented`) — sized to
+  // exactly overlay the active option's own rect (same top/bottom inset from
+  // the strip's padding, same radius as `tab`/`sortTab`), so the selected
+  // state reads as the same shape as the hover highlight, just filled with
+  // the accent color instead of `backgroundSelected`. x/width come from the
+  // active option's own measured layout, and transition via the `layout` prop
+  // when that changes.
   tabPill: {
     position: 'absolute',
-    top: PILL_INSET_Y,
-    bottom: PILL_INSET_Y,
+    top: TAB_PAD,
+    bottom: TAB_PAD,
     left: 0,
     borderRadius: 8,
   },
@@ -879,12 +1040,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
   },
-  sortBtn: {
-    width: 36,
-    height: CONTROLS_HEIGHT,
-    borderRadius: 8,
+  // The sort toggle's own segmented items: square icon buttons rather than
+  // label-width text tabs.
+  sortTab: {
+    height: CONTROLS_HEIGHT - TAB_PAD * 2,
+    width: CONTROLS_HEIGHT - TAB_PAD * 2,
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: 8,
   },
   list: {
     gap: Spacing.one,
@@ -954,6 +1117,16 @@ const styles = StyleSheet.create({
     // Constant slot — always the default 2:3 shape, the vertical max a tile
     // can occupy. Never resizes, so a tile's row never reflows.
     aspectRatio: DEFAULT_THUMB_ASPECT,
+  },
+  thumbRing: {
+    position: 'absolute',
+    top: -2,
+    left: -2,
+    right: -2,
+    bottom: -2,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#60a5fa',
   },
   thumb: {
     width: '100%',
