@@ -1,0 +1,118 @@
+import { useQueryClient } from '@tanstack/react-query';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useState } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { ThemedText } from '@/components/themed-text';
+import { ThemedView } from '@/components/themed-view';
+import { TopBar } from '@/components/top-bar';
+import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { useDataSource } from '@/data/source';
+import { useTheme } from '@/hooks/use-theme';
+
+// Deep-link entry point: comical://add-registry?url=<registry index.json URL>
+// (also reachable via a Universal/App Link once one is wired up on a verified
+// domain — see the "one-click install" investigation on the todo list).
+// Lets an external page (e.g. a bridge/tracker repo's README) send users
+// straight into a confirm-and-add flow instead of the manual paste-a-URL form
+// in registries.tsx.
+export default function AddRegistryScreen() {
+  const { url } = useLocalSearchParams<{ url?: string }>();
+  const ds = useDataSource();
+  const router = useRouter();
+  const theme = useTheme();
+  const insets = useSafeAreaInsets();
+  const queryClient = useQueryClient();
+
+  const [status, setStatus] = useState<'confirm' | 'adding' | 'error'>('confirm');
+  const [error, setError] = useState<string | null>(null);
+
+  const cancel = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/');
+  };
+
+  const add = async () => {
+    if (!url) return;
+    setStatus('adding');
+    setError(null);
+    try {
+      await ds.addRegistry(url, false);
+      await queryClient.invalidateQueries({ queryKey: ['registries'] });
+      router.replace({ pathname: '/registry-browse', params: { url } });
+    } catch (e) {
+      setError((e as Error).message || 'Failed to add registry');
+      setStatus('error');
+    }
+  };
+
+  return (
+    <ThemedView style={styles.container}>
+      <TopBar title="Add registry" />
+      <View style={[styles.content, { paddingTop: Spacing.four, paddingBottom: insets.bottom + Spacing.five }]}>
+        {!url ? (
+          <ThemedText type="small" themeColor="textSecondary">
+            No registry URL was provided with this link.
+          </ThemedText>
+        ) : (
+          <>
+            <ThemedText type="subtitle">Add this registry?</ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              {url}
+            </ThemedText>
+            {status === 'error' && error && (
+              <ThemedText type="small" style={{ color: theme.danger }}>
+                {error}
+              </ThemedText>
+            )}
+            <View style={styles.actions}>
+              <Pressable onPress={cancel} disabled={status === 'adding'} style={styles.actionBtn}>
+                <ThemedText type="smallBold">Cancel</ThemedText>
+              </Pressable>
+              <Pressable onPress={add} disabled={status === 'adding'}>
+                <ThemedView style={[styles.saveBtn, { backgroundColor: theme.accent }, status === 'adding' && styles.saveBtnDisabled]}>
+                  <ThemedText type="smallBold" style={{ color: theme.accentOn }}>
+                    {status === 'adding' ? 'Adding…' : 'Add registry'}
+                  </ThemedText>
+                </ThemedView>
+              </Pressable>
+            </View>
+          </>
+        )}
+      </View>
+    </ThemedView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  content: {
+    gap: Spacing.three,
+    paddingHorizontal: Spacing.four,
+    width: '100%',
+    maxWidth: MaxContentWidth,
+    alignSelf: 'center',
+  },
+  actions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: Spacing.five,
+    marginTop: Spacing.two,
+  },
+  actionBtn: {
+    paddingVertical: Spacing.three,
+  },
+  saveBtn: {
+    alignItems: 'center',
+    paddingVertical: Spacing.three,
+    paddingHorizontal: Spacing.four,
+    borderRadius: Spacing.three,
+  },
+  saveBtnDisabled: {
+    opacity: 0.6,
+  },
+});

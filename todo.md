@@ -81,6 +81,27 @@
 - [ ] "<- Home" button feels very slow, it seems blocked on a network request maybe?
 - [ ] Investigate legend state
 - [ ] Come up with a way to open the app on iOS/android from a web button. This way a github repo can have a button that installs a registry with one click.
+      (1) DONE — in-app half of the deep link: `comical://add-registry?url=<index.json
+      URL>` now resolves (via expo-router's automatic scheme routing, `scheme: "comical"`
+      in app.json) to a new confirm-and-add screen (`src/app/add-registry.tsx`) that calls
+      `ds.addRegistry` and lands on `registry-browse`. Works today for anyone who already
+      has the app installed; a bridge/tracker repo's README can link straight to it.
+      (2) TODO — the "not installed yet" half. A plain `comical://` link silently no-ops
+      if the app isn't installed, so a true one-click *install* needs Universal Links
+      (iOS) / App Links (Android) on a verified HTTPS domain (comical-web's prod domain is
+      the natural candidate) so the same `https://.../add-registry?url=...` link either
+      opens the app or falls back to a landing page with store badges — this needs
+      `.well-known/apple-app-site-association` + `assetlinks.json`, native config
+      (`associatedDomains`/`intentFilters`), and an EAS rebuild (not OTA-able). Beyond
+      that, carrying the registry URL *through* a fresh install (so it's auto-added on
+      first launch rather than requiring a second tap) has no free solution on iOS short
+      of a paid deferred-deep-link SDK (Branch/AppsFlyer/Firebase Dynamic Links) — ruled
+      out as unwanted heavy deps; a lightweight fallback would be the landing page copying
+      the registry URL to the clipboard before redirecting to the store, and the app
+      offering to add it from the clipboard on first cold launch (accepts iOS's one-time
+      "pasted from Safari" banner). Deferred pending appetite for the domain/EAS work.
+- [ ] Have the URL show the bridge ID so we properly get back to the right bridge in various situations.
+- [ ] A fair amount of flashing occurs when switching bridges ( on bot hthe filters and the cards )
 - [x] Enable resuming from series details page if not already (i.e. instead of Read Chapter 1, it's Resume Chapter 3 or something), this should work when clicking the big series cover as well.
       The cover tap and primary button already shared `startReading()`, which already
       resumed correctly (both navigated to the history entry's chapter/page) — only the
