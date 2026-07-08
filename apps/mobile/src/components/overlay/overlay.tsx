@@ -625,7 +625,11 @@ const styles = StyleSheet.create({
     borderLeftWidth: 1,
     borderRightWidth: 1,
     borderColor: 'rgba(255,255,255,0.14)',
-    boxShadow: '0px 12px 24px rgba(0, 0, 0, 0.35)',
+    // Zero offset, blur only: an offset shadow (the previous `0px 12px 24px`)
+    // is asymmetric — nothing above, a hard dark band below — which reads as
+    // exactly the same "border at the bottom" the borderTop/BottomWidth removal
+    // above was trying to fix. A centered halo has no directional edge at all.
+    boxShadow: '0px 0px 24px rgba(0, 0, 0, 0.35)',
     elevation: 12,
   },
   heading: {

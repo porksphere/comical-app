@@ -1,5 +1,5 @@
-import { memo, useEffect, useState } from 'react';
-import { Platform, Pressable, StyleSheet, TextInput, View, type TextStyle } from 'react-native';
+import { memo, useEffect, useRef, useState } from 'react';
+import { Platform, Pressable, StyleSheet, Text, TextInput, View, type TextStyle } from 'react-native';
 
 import { useAnchoredOverlay } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
@@ -23,6 +23,58 @@ import { OverflowChips } from './overflow-chips';
 // row's own border carries the focus highlight instead (matches SearchField).
 // No-op on native.
 const NO_OUTLINE = Platform.select({ web: { outlineStyle: 'none' } }) as TextStyle | undefined;
+
+const LABEL_FONT_SIZE = 16;
+const LABEL_LINE_HEIGHT = 24;
+const LABEL_MIN_SCALE = 0.75;
+
+/** A label that shrinks its own font size — not just truncates — to fit
+ *  whatever width flexbox actually allocates it. `adjustsFontSizeToFit` is
+ *  native-only (react-native-web doesn't implement it at all), so this
+ *  measures the label's own natural full-size width via a hidden pass and
+ *  scales the visible text down to match the allocated width, with
+ *  `numberOfLines` + ellipsis as a floor once `LABEL_MIN_SCALE` is reached.
+ *
+ *  Both the visible and measuring text are `position: absolute`, so neither
+ *  ever contributes to the box's own size — only the explicit `width` below
+ *  (set once `naturalWidth` is known) does. That's load-bearing: an in-flow
+ *  visible child would make the box auto-size to *its own current* (already
+ *  shrunk) content, so as font-size shrank the box would shrink with it and
+ *  never let the box's real flex-allocated width settle — the more a label
+ *  had to shrink, the more its box (and the blank gap around the now-smaller
+ *  text) would drift out of sync with what was actually available. */
+function ShrinkToFitLabel({ children, color }: { children: string; color?: string }) {
+  const theme = useTheme();
+  const [naturalWidth, setNaturalWidth] = useState(0);
+  const [boxWidth, setBoxWidth] = useState(0);
+  const scale =
+    naturalWidth > 0 && boxWidth > 0 ? Math.min(1, Math.max(LABEL_MIN_SCALE, boxWidth / naturalWidth)) : 1;
+  return (
+    <View
+      style={[styles.label, naturalWidth > 0 && { width: naturalWidth }]}
+      onLayout={(e) => setBoxWidth(e.nativeEvent.layout.width)}>
+      <Text
+        style={[
+          styles.labelVisible,
+          {
+            color: color ?? theme.text,
+            fontSize: LABEL_FONT_SIZE * scale,
+            lineHeight: LABEL_LINE_HEIGHT * scale,
+            fontWeight: '500',
+          },
+        ]}
+        numberOfLines={1}>
+        {children}
+      </Text>
+      <Text
+        style={[styles.measure, { fontSize: LABEL_FONT_SIZE, lineHeight: LABEL_LINE_HEIGHT, fontWeight: '500' }]}
+        numberOfLines={1}
+        onLayout={(e) => setNaturalWidth(e.nativeEvent.layout.width)}>
+        {children}
+      </Text>
+    </View>
+  );
+}
 
 /**
  * A filter row: shows the filter's label and a summary of the current value as
@@ -85,9 +137,7 @@ function OverlayFilterRow({
       <ThemedView
         type="backgroundElement"
         style={[styles.row, hovered && { backgroundColor: theme.backgroundSelected }]}>
-        <ThemedText style={styles.label} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
-          {def.label}
-        </ThemedText>
+        <ShrinkToFitLabel>{def.label}</ShrinkToFitLabel>
         <View style={styles.summary}>
           <OverflowChips items={chips} empty={emptyText(def)} />
         </View>
@@ -120,13 +170,7 @@ function ToggleFilterRow({
           styles.row,
           on ? { backgroundColor: theme.accent } : hovered ? { backgroundColor: theme.backgroundSelected } : undefined,
         ]}>
-        <ThemedText
-          style={[styles.label, on && { color: theme.accentOn }]}
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.75}>
-          {def.label}
-        </ThemedText>
+        <ShrinkToFitLabel color={on ? theme.accentOn : undefined}>{def.label}</ShrinkToFitLabel>
         <View style={styles.summary} />
         <ThemedText style={{ color: on ? theme.accentOn : theme.textSecondary }}>{on ? 'On' : 'Off'}</ThemedText>
       </ThemedView>
@@ -152,9 +196,7 @@ function StringFilterRow({
     <ThemedView
       type="backgroundElement"
       style={[styles.row, { borderColor: focused ? theme.accent : 'transparent' }]}>
-      <ThemedText style={styles.label} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
-        {def.label}
-      </ThemedText>
+      <ShrinkToFitLabel>{def.label}</ShrinkToFitLabel>
       <TextInput
         value={text}
         onChangeText={(t) => {
@@ -171,10 +213,13 @@ function StringFilterRow({
   );
 }
 
-/** A `number` filter: reads exactly like `OverlayFilterRow` at rest — label +
- *  value, nothing else — but the value itself is an always-mounted `TextInput`
- *  (never conditionally swapped for a `Text`/`Pressable`, so tapping it just
- *  focuses it in place: no layout shift, no hidden UI, no popup). */
+/** A `number` filter: label + a chip-style value pill (matching the summary
+ *  chips every other filter type shows at rest) that's directly editable in
+ *  place — no popup, no layout shift. The *row* is the control, same as
+ *  ToggleFilterRow/StringFilterRow: the whole row hover-tints, carries the
+ *  accent focus border, and tapping anywhere on it (not just the small pill)
+ *  focuses the input. The pill sizes to its own digits rather than a fixed
+ *  width, so it never reserves more room than the value actually needs. */
 function NumberFilterRow({
   def,
   value,
@@ -185,6 +230,14 @@ function NumberFilterRow({
   onChange: (id: string, v: number) => void;
 }) {
   const theme = useTheme();
+  const { hovered, handlers } = useHover();
+  const inputRef = useRef<TextInput>(null);
+  // Snapshot at press-*start* (mousedown), before this same click's own focus
+  // shift has happened — by press time (click), a blur triggered by this very
+  // click has already fired, so checking "is it focused" there can never tell
+  // us whether the click was opening the field or leaving it. Checking at
+  // press-in avoids re-focusing an input the user just committed and left.
+  const wasFocusedRef = useRef(false);
   const n = value ?? def.default ?? def.min;
   const [text, setText] = useState(String(n));
   const [focused, setFocused] = useState(false);
@@ -196,37 +249,67 @@ function NumberFilterRow({
 
   const commit = () => {
     const parsed = Number(text);
-    if (Number.isFinite(parsed)) onChange(def.id, Math.min(def.max, Math.max(def.min, parsed)));
-    else setText(String(n));
+    if (Number.isFinite(parsed)) {
+      const clamped = Math.min(def.max, Math.max(def.min, parsed));
+      onChange(def.id, clamped);
+      // Reflect the clamped value immediately rather than waiting on `value`
+      // to round-trip back through the caller's own state update — the two
+      // can land in separate render passes, and in the gap `n` is still the
+      // *pre-commit* number, so the `focused`-driven resync effect above would
+      // reset `text` right back to the old value the instant it re-runs.
+      setText(String(clamped));
+    } else {
+      setText(String(n));
+    }
   };
 
   return (
-    <ThemedView
-      type="backgroundElement"
-      style={[styles.row, { borderColor: focused ? theme.accent : 'transparent' }]}>
-      <ThemedText style={styles.label} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
-        {def.label}
-      </ThemedText>
-      <View style={styles.summary} />
-      <TextInput
-        value={text}
-        onChangeText={setText}
-        onFocus={() => setFocused(true)}
-        onBlur={() => {
-          setFocused(false);
-          commit();
-        }}
-        onSubmitEditing={commit}
-        keyboardType="numeric"
-        selectTextOnFocus
-        style={[styles.valueInput, NO_OUTLINE, { color: theme.text }]}
-      />
-      {def.unit ? (
-        <ThemedText themeColor="textSecondary" style={styles.unit}>
-          {def.unit}
-        </ThemedText>
-      ) : null}
-    </ThemedView>
+    <Pressable
+      {...handlers}
+      onPressIn={() => {
+        wasFocusedRef.current = inputRef.current?.isFocused() ?? false;
+      }}
+      onPress={() => {
+        if (!wasFocusedRef.current) inputRef.current?.focus();
+      }}>
+      <ThemedView
+        type="backgroundElement"
+        style={[
+          styles.row,
+          { borderColor: focused ? theme.accent : 'transparent' },
+          !focused && hovered && { backgroundColor: theme.backgroundSelected },
+        ]}>
+        <ShrinkToFitLabel>{def.label}</ShrinkToFitLabel>
+        <View style={styles.summary} />
+        <View style={styles.valuePill}>
+          <TextInput
+            ref={inputRef}
+            value={text}
+            onChangeText={setText}
+            onFocus={() => setFocused(true)}
+            onBlur={() => {
+              setFocused(false);
+              commit();
+            }}
+            onSubmitEditing={commit}
+            keyboardType="numeric"
+            selectTextOnFocus
+            // Sized to its own digits (plus a hair of padding), not a fixed
+            // width — that's what makes the pill hug just the value's text.
+            style={[
+              styles.valueInput,
+              NO_OUTLINE,
+              { color: theme.text, width: Math.max(1, text.length) * 9 + 2 },
+            ]}
+          />
+          {def.unit ? (
+            <ThemedText type="small" themeColor="textSecondary" style={styles.unit}>
+              {def.unit}
+            </ThemedText>
+          ) : null}
+        </View>
+      </ThemedView>
+    </Pressable>
   );
 }
 
@@ -244,12 +327,41 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'transparent',
   },
-  // Shrinks (and, on native, scales its own font down via `adjustsFontSizeToFit`)
-  // instead of the old fixed width, so a long label gives way before it can
-  // crowd the value out of the row once the bar squashes narrow enough.
+  // The allocated box for ShrinkToFitLabel: shrinks instead of the old fixed
+  // width, so a long label gives way before it can crowd the value out of the
+  // row once the bar squashes narrow enough. `minWidth` is a floor, not a
+  // target — with plenty of room the label still renders at its full natural
+  // width; this only kicks in once the row is genuinely too narrow for
+  // everything. `width` is set inline once ShrinkToFitLabel knows the label's
+  // true natural width, which is what flexShrink actually shrinks from — both
+  // of the box's children are absolutely positioned (see ShrinkToFitLabel),
+  // so nothing about its own rendered content ever feeds back into this size.
+  // `position: relative` anchors those children. The value control
+  // (valuePill/inlineInput) stays rigid (flexShrink: 0) since a truncated
+  // numeric value or partial word makes no sense to edit — the label is what
+  // should give way, per the row's design.
   label: {
     flexShrink: 1,
-    minWidth: 0,
+    minWidth: 64,
+    height: 24,
+    position: 'relative',
+  },
+  // The actually-seen text, stretched to whatever width `label` (its
+  // positioned ancestor) ends up with — never its own natural size — so it
+  // can't influence that size in turn.
+  labelVisible: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+  },
+  // Off-flow full-size copy ShrinkToFitLabel measures its natural width
+  // against; invisible and never affects the container's own layout size.
+  measure: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    opacity: 0,
   },
   summary: {
     flex: 1,
@@ -262,12 +374,29 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     padding: 0,
   },
-  valueInput: {
-    minWidth: 32,
+  // Same chip visual as OverflowChips' neutral tone, so a number filter's
+  // value reads like every other filter's summary chip at rest — the
+  // TextInput inside is what makes it directly editable in place. No border
+  // of its own: the row (see NumberFilterRow) carries the focus highlight now,
+  // not this inner pill.
+  valuePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     flexShrink: 0,
-    fontSize: 16,
-    lineHeight: 24,
-    textAlign: 'right',
+    paddingHorizontal: Spacing.two,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: 'rgba(128,128,128,0.16)',
+  },
+  // No fixed/min width here — NumberFilterRow sets an explicit `width` inline
+  // sized to the current text length, which is what makes the pill hug just
+  // the digits instead of reserving extra space.
+  valueInput: {
+    flexShrink: 0,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
     padding: 0,
   },
   unit: {
