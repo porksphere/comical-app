@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -17,6 +17,15 @@ import { useTheme } from '@/hooks/use-theme';
 // Lets an external page (e.g. a bridge/tracker repo's README) send users
 // straight into a confirm-and-add flow instead of the manual paste-a-URL form
 // in registries.tsx.
+//
+// GitHub's markdown sanitizer strips custom URI schemes from rendered links
+// (a bare `comical://...` markdown link renders as unlinked plain text), so
+// READMEs must point at this screen's *web* build — the already-public
+// https://porksphere.github.io/comical-app/add-registry?url=... — instead of
+// the scheme directly. On web this screen just hands off into the native
+// scheme (a real click, not an auto-redirect, since browsers largely require
+// a user gesture to honor a custom-scheme navigation); the native app then
+// re-enters this same screen for the actual confirm-and-add flow below.
 export default function AddRegistryScreen() {
   const { url } = useLocalSearchParams<{ url?: string }>();
   const ds = useDataSource();
@@ -27,6 +36,18 @@ export default function AddRegistryScreen() {
 
   const [status, setStatus] = useState<'confirm' | 'adding' | 'error'>('confirm');
   const [error, setError] = useState<string | null>(null);
+
+  const deepLink = url ? `comical://add-registry?url=${encodeURIComponent(url)}` : null;
+
+  const openInApp = () => {
+    if (deepLink && typeof window !== 'undefined') window.location.href = deepLink;
+  };
+
+  // Best-effort auto-handoff on page load; the visible button below is the
+  // reliable path if the browser declines to honor a scripted redirect.
+  useEffect(() => {
+    if (Platform.OS === 'web' && deepLink && typeof window !== 'undefined') window.location.href = deepLink;
+  }, [deepLink]);
 
   const cancel = () => {
     if (router.canGoBack()) router.back();
@@ -55,6 +76,24 @@ export default function AddRegistryScreen() {
           <ThemedText type="small" themeColor="textSecondary">
             No registry URL was provided with this link.
           </ThemedText>
+        ) : Platform.OS === 'web' ? (
+          <>
+            <ThemedText type="subtitle">Open in the Comical app</ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              {url}
+            </ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              This registry is added from inside the app, not the web preview. If nothing happens
+              below, you may not have Comical installed yet.
+            </ThemedText>
+            <Pressable onPress={openInApp}>
+              <ThemedView style={[styles.saveBtn, { backgroundColor: theme.accent }]}>
+                <ThemedText type="smallBold" style={{ color: theme.accentOn }}>
+                  Open in Comical app
+                </ThemedText>
+              </ThemedView>
+            </Pressable>
+          </>
         ) : (
           <>
             <ThemedText type="subtitle">Add this registry?</ThemedText>
