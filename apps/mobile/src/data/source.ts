@@ -227,7 +227,10 @@ function toActivityEntry(a: api.ApiActivityItem): ActivityEntry {
 
 const railKindFor = (layout: BridgeList['layout']): RailKind =>
   layout === 'hero' ? 'hero' : layout === 'ranked' ? 'ranked' : 'regular';
-const isRailLayout = (layout: BridgeList['layout']) =>
+/** Exported so the Home screen can shape its loading skeleton (rail rows vs. grid blocks) to match
+ *  a bridge's actual section layout before content resolves — see `getHomeSections` below, which
+ *  partitions on this same predicate once items are in hand. */
+export const isRailLayout = (layout: BridgeList['layout']) =>
   layout === 'carousel' || layout === 'ranked' || layout === 'hero';
 
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
