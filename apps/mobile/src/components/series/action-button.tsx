@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
 
 // The series actions column buttons. `primary` is the accent Read button; the
@@ -26,16 +27,25 @@ export function ActionButton({
 }) {
   const theme = useTheme();
   const primary = variant === 'primary';
+  const { hovered, onHoverIn, onHoverOut } = useHovered();
   return (
     <Pressable
       onPress={disabled ? undefined : onPress}
       disabled={disabled}
+      onHoverIn={onHoverIn}
+      onHoverOut={onHoverOut}
       accessibilityRole="button"
       accessibilityState={{ disabled: !!disabled }}
       style={({ pressed }) => [styles.btn, disabled && styles.disabled, pressed && styles.pressed]}>
       <ThemedView
         type={primary ? undefined : 'backgroundElement'}
-        style={[styles.fill, primary && { backgroundColor: theme.accent }]}>
+        style={[
+          styles.fill,
+          primary && { backgroundColor: hovered ? theme.accentHover : theme.accent },
+          // Brighten (not dim) on hover — same neutral-surface treatment as the
+          // chapter-tab strip, so hover reads consistently across the screen.
+          !primary && hovered && { backgroundColor: theme.backgroundSelected },
+        ]}>
         <ThemedText
           type="smallBold"
           numberOfLines={1}

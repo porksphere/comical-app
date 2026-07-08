@@ -3,6 +3,8 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
+import { useHovered } from '@/hooks/use-hovered';
+import { useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import type { TagGroup } from '@/data/mock';
 
@@ -12,10 +14,27 @@ import type { TagGroup } from '@/data/mock';
 /** Cap on chips shown before a row collapses behind a "Show all" chip — a bridge
  *  with a long genre or tag list would otherwise flood the whole
  *  series page. Matches `ChaptersSection`'s own collapse pattern: expanding is a
- *  one-way, per-row reveal (no re-collapse) rather than a toggle. */
-const MAX_VISIBLE_CHIPS = 10;
+ *  one-way, per-row reveal (no re-collapse) rather than a toggle. Viewport-relative:
+ *  a desktop column is wide enough to comfortably wrap far more chips before the
+ *  row gets unwieldy than a phone-width column can. */
+const MAX_VISIBLE_CHIPS_COMPACT = 20;
+const MAX_VISIBLE_CHIPS_WIDE = 48;
 
-export function Chip({ label, accent }: { label: string; accent?: boolean }) {
+function useMaxVisibleChips(): number {
+  const wide = useIsLargeScreen();
+  return wide ? MAX_VISIBLE_CHIPS_WIDE : MAX_VISIBLE_CHIPS_COMPACT;
+}
+
+export function Chip({
+  label,
+  accent,
+  highlighted,
+}: {
+  label: string;
+  accent?: boolean;
+  /** Brightens the fill (hover) — set by `PressableChip`, never by a static chip. */
+  highlighted?: boolean;
+}) {
   const theme = useTheme();
   // Matches the reference: every chip shares the neutral `chipBg` fill; tags
   // (`accent`) carry a blue border + blue text, while plain chips (genres) get a
@@ -25,7 +44,7 @@ export function Chip({ label, accent }: { label: string; accent?: boolean }) {
       style={[
         styles.chip,
         {
-          backgroundColor: theme.chipBg,
+          backgroundColor: highlighted ? theme.backgroundSelected : theme.chipBg,
           borderColor: accent ? theme.chipBorder : theme.hairline,
         },
       ]}>
@@ -38,20 +57,55 @@ export function Chip({ label, accent }: { label: string; accent?: boolean }) {
   );
 }
 
+/** Wraps a tappable chip (an actionable tag, or the "+N more" expander) with
+ *  press + hover feedback — a plain `Chip` has none, since most chips are
+ *  static. One instance per chip so each gets its own `useHovered` (chips are
+ *  rendered from a `.map`, where a hook can't be called directly). Renders the
+ *  `Chip` itself (rather than taking it as `children`) so hover can brighten
+ *  its fill directly — the same "lighten, don't dim" treatment as the chapter
+ *  tab strip — instead of dimming the whole chip via opacity. */
+function PressableChip({
+  label,
+  accent,
+  onPress,
+  accessibilityLabel,
+}: {
+  label: string;
+  accent?: boolean;
+  onPress: () => void;
+  accessibilityLabel: string;
+}) {
+  const { hovered, onHoverIn, onHoverOut } = useHovered();
+  return (
+    <Pressable
+      onPress={onPress}
+      onHoverIn={onHoverIn}
+      onHoverOut={onHoverOut}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      style={({ pressed }) => pressed && styles.chipPressed}>
+      <Chip label={label} accent={accent} highlighted={hovered} />
+    </Pressable>
+  );
+}
+
 export function ChipRow({ labels, accent }: { labels: string[]; accent?: boolean }) {
   const [expanded, setExpanded] = useState(false);
+  const maxVisible = useMaxVisibleChips();
   if (!labels.length) return null;
-  const collapsible = !expanded && labels.length > MAX_VISIBLE_CHIPS;
-  const shown = collapsible ? labels.slice(0, MAX_VISIBLE_CHIPS) : labels;
+  const collapsible = !expanded && labels.length > maxVisible;
+  const shown = collapsible ? labels.slice(0, maxVisible) : labels;
   return (
     <View style={styles.row}>
       {shown.map((l) => (
         <Chip key={l} label={l} accent={accent} />
       ))}
       {collapsible && (
-        <Pressable onPress={() => setExpanded(true)} accessibilityRole="button" accessibilityLabel="Show all">
-          <Chip label={`+${labels.length - MAX_VISIBLE_CHIPS} more`} />
-        </Pressable>
+        <PressableChip
+          onPress={() => setExpanded(true)}
+          accessibilityLabel="Show all"
+          label={`+${labels.length - maxVisible} more`}
+        />
       )}
     </View>
   );
@@ -69,9 +123,10 @@ export function TagGroupRow({
 }) {
   const theme = useTheme();
   const [expanded, setExpanded] = useState(false);
+  const maxVisible = useMaxVisibleChips();
   if (!group.tags.length) return null;
-  const collapsible = !expanded && group.tags.length > MAX_VISIBLE_CHIPS;
-  const shown = collapsible ? group.tags.slice(0, MAX_VISIBLE_CHIPS) : group.tags;
+  const collapsible = !expanded && group.tags.length > maxVisible;
+  const shown = collapsible ? group.tags.slice(0, maxVisible) : group.tags;
   return (
     <View style={styles.tagGroup}>
       <ThemedText style={[styles.groupLabel, { color: theme.textSecondary }]}>
@@ -80,21 +135,17 @@ export function TagGroupRow({
       {shown.map((t, i) => {
         const actionable = !!onTagPress && !!(group.tagQueries?.[i] || group.tagIds?.[i]);
         return actionable ? (
-          <Pressable
-            key={t}
-            onPress={() => onTagPress!(i)}
-            accessibilityRole="button"
-            accessibilityLabel={`Search ${t}`}>
-            <Chip label={t} accent />
-          </Pressable>
+          <PressableChip key={t} onPress={() => onTagPress!(i)} accessibilityLabel={`Search ${t}`} label={t} accent />
         ) : (
           <Chip key={t} label={t} accent />
         );
       })}
       {collapsible && (
-        <Pressable onPress={() => setExpanded(true)} accessibilityRole="button" accessibilityLabel="Show all">
-          <Chip label={`+${group.tags.length - MAX_VISIBLE_CHIPS} more`} />
-        </Pressable>
+        <PressableChip
+          onPress={() => setExpanded(true)}
+          accessibilityLabel="Show all"
+          label={`+${group.tags.length - maxVisible} more`}
+        />
       )}
     </View>
   );
@@ -128,5 +179,8 @@ const styles = StyleSheet.create({
   chipText: {
     fontSize: 12,
     lineHeight: 16,
+  },
+  chipPressed: {
+    opacity: 0.65,
   },
 });

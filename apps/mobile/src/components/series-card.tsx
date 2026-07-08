@@ -243,6 +243,14 @@ export function SeriesCard({
 
   return (
     <Link
+      // Force a new stack entry every time: expo-router's default `navigate`
+      // behavior unwinds to an existing `/series` route already on the stack
+      // instead of pushing another — so tapping a related/recommended series
+      // from within a series-detail screen replaced the current screen instead
+      // of drilling in. `push` always adds a new entry, which is also correct
+      // from Browse/Library/History (no `/series` on the stack yet, so it's
+      // equivalent to a plain push there).
+      push
       href={{
         pathname: '/series',
         params: {
