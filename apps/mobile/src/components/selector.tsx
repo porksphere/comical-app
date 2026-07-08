@@ -195,9 +195,10 @@ const styles = StyleSheet.create({
   caretSm: {
     fontSize: 13,
   },
+  // No `flex: 1` (see `sheetBody` in overlay.tsx for why) — this just hugs
+  // its `MeasuredHeader`/`OptionList` content, both of which already size
+  // themselves to a real number.
   menu: {
-    flex: 1,
-    minHeight: 0,
     gap: Spacing.three,
   },
   // Same height as the filter bar's own rows (`CONTROL_HEIGHT` in

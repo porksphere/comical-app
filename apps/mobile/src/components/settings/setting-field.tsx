@@ -393,9 +393,10 @@ const styles = StyleSheet.create({
   enumSummary: {
     flex: 1,
   },
+  // No `flex: 1` (see `sheetBody` in overlay.tsx for why) — this just hugs
+  // its `MeasuredHeader`/`OptionList` content, both of which already size
+  // themselves to a real number.
   body: {
-    flex: 1,
-    minHeight: 0,
     gap: Spacing.three,
   },
   row: {

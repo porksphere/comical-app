@@ -124,6 +124,15 @@ export function useOverlayPresentation(): OverlayPresentation {
   return useContext(OverlayPresentationContext);
 }
 
+// Per-overlay real-number budget for the header+list content (see the note
+// above `ROW_UNIT_HEIGHT`): `budget` is the actual space `OverlaySheet`/
+// `OverlayPopover` computed from the window/anchor (never content-derived),
+// and `headerHeight` is whatever `MeasuredHeader` last measured itself at —
+// together they let `OptionList` size itself to a real number instead of a
+// `flexGrow` chain.
+type SheetBudget = { budget: number; headerHeight: number; setHeaderHeight: (h: number) => void };
+const SheetBudgetContext = createContext<SheetBudget | null>(null);
+
 /**
  * The heading for overlay content — the single place overlay titles live, shared
  * by every editor / menu / sheet. Rendered on the mobile sheet; hidden in the
@@ -142,15 +151,20 @@ const AnimatedScrollView = Animated.createAnimatedComponent(GHScrollView);
 
 // The sheet/popover's outer box is capped to whatever room it actually has
 // (window height for the sheet, the anchor-clamped space for the popover —
-// see `OverlaySheet`/`OverlayPopover` below), and every container in between
-// it and `OptionList` is a plain flex column with `flex: 1, minHeight: 0` on
-// the stretchy link (the caller's own header+list wrapper, `sheetBody`).
-// That lets `OptionList` just be a flex child that fills whatever's actually
-// left after its sibling `MeasuredHeader`, computed by the layout engine
-// itself — no header-height measuring or hand-rolled pixel budget (insets +
-// handle + gaps + safety margins) to keep in sync with the real layout, and
-// no risk of that budget being wrong and clipping content the container
-// actually had room for (or leaving a blank gap it didn't).
+// see `OverlaySheet`/`OverlayPopover` below). `OptionList` needs to fill
+// whatever's left after its sibling `MeasuredHeader`, but it can't do that
+// with `flexGrow` the way it would on plain web flexbox: that outer box only
+// has a `maxHeight` cap, not a definite `height`, and a `flexGrow` ScrollView
+// nested under an ancestor whose own size is merely capped (rather than
+// definite) resolves to ~0 height on iOS/Android — Yoga has no definite size
+// to grow into there, even though browsers (react-native-web) handle exactly
+// this case fine, which is why a `flexGrow`-based version of this only ever
+// broke on native. So instead `MeasuredHeader` reports its own rendered
+// height into `SheetBudgetContext` (set up per-overlay by
+// `OverlaySheet`/`OverlayPopover`), and `OptionList` computes its own
+// explicit `maxHeight`/`height` from that real budget minus the header — a
+// genuine number on every platform, not a flex chain that only resolves on
+// some of them.
 //
 // 7 whole rows (a `row`'s standardized `RowHeight`, plus its list's own
 // inter-row gap) covers ordinary lists (a handful of genres/tags/bridges)
@@ -158,6 +172,15 @@ const AnimatedScrollView = Animated.createAnimatedComponent(GHScrollView);
 // past any reasonable cap.
 const ROW_UNIT_HEIGHT = RowHeight + Spacing.two;
 const LIST_MAX_HEIGHT = ROW_UNIT_HEIGHT * 7 - Spacing.two;
+// Floor so a not-yet-measured header (the first frame, before its own
+// `onLayout` has fired) doesn't leave the list with zero/negative room.
+const LIST_MIN_HEIGHT = 160;
+// Matches this file's own `handleArea` (paddingTop + handle height + paddingBottom).
+const HANDLE_AREA_HEIGHT = Spacing.two + 5 + Spacing.three;
+// Gap between a `MeasuredHeader` and the `OptionList` below it — owned by
+// each caller's own wrapper (`selector.tsx`'s `menu`, `filter-editors.tsx`'s
+// `body`), not by this file, but both use the same value.
+const HEADER_TO_LIST_GAP = Spacing.three;
 // Trailing space *inside* the scrollable list's own content, after the last
 // row — part of `listContent` below, not a separately-painted view and not
 // outer margin on the sheet (that either paints a bar-shaped block in the
@@ -170,16 +193,24 @@ const LIST_TRAILING_SPACE = Spacing.four;
 /** Wraps a sheet's non-list content (title, helper text, search input, …). */
 export function MeasuredHeader({ children }: { children: ReactNode }) {
   const presentation = useOverlayPresentation();
-  return <View style={presentation === 'popover' ? listStyles.headerPopover : listStyles.header}>{children}</View>;
+  const budget = useContext(SheetBudgetContext);
+  return (
+    <View
+      style={presentation === 'popover' ? listStyles.headerPopover : listStyles.header}
+      onLayout={budget ? (e) => budget.setHeaderHeight(e.nativeEvent.layout.height) : undefined}>
+      {children}
+    </View>
+  );
 }
 
 /** Caps long option lists with an internal scroll so the sheet stays usable.
- * Fills whatever space its flex parent has left after its sibling
+ * Fills whatever `SheetBudgetContext` reports is left after its sibling
  * `MeasuredHeader` (see the comment above `ROW_UNIT_HEIGHT`), up to a
  * `LIST_MAX_HEIGHT` ceiling so a short sheet doesn't balloon just because the
- * screen has room. `fixed` instead gives it a constant preferred height (so
- * the sheet doesn't resize while searching) that still shrinks
- * (`flexShrink: 1`) if the container doesn't have that much room.
+ * screen has room. `fixed` instead gives it that same computed height as a
+ * constant preferred height (so the sheet doesn't resize while searching)
+ * that still shrinks (`flexShrink: 1`) if the container doesn't have that
+ * much room.
  *
  * Reports its scroll offset to the enclosing overlay sheet (and registers its
  * ref) so a downward drag at the top of the list chains into dismissing the
@@ -213,6 +244,10 @@ export function MeasuredHeader({ children }: { children: ReactNode }) {
 export function OptionList({ children, fixed }: { children: ReactNode; fixed?: boolean }) {
   const sheet = useSheetScroll();
   const presentation = useOverlayPresentation();
+  const budget = useContext(SheetBudgetContext);
+  const target = budget
+    ? Math.max(LIST_MIN_HEIGHT, Math.min(LIST_MAX_HEIGHT, budget.budget - budget.headerHeight - HEADER_TO_LIST_GAP))
+    : LIST_MAX_HEIGHT;
   const localOffset = useSharedValue(0);
   const offset = sheet?.scrollOffset ?? localOffset;
   const onScroll = useAnimatedScrollHandler((e) => {
@@ -273,8 +308,8 @@ export function OptionList({ children, fixed }: { children: ReactNode; fixed?: b
       }
       style={
         fixed
-          ? { height: LIST_MAX_HEIGHT, flexShrink: 1, minHeight: 0 }
-          : { flexGrow: 1, flexShrink: 1, minHeight: 0, maxHeight: LIST_MAX_HEIGHT }
+          ? { height: target, flexShrink: 1, minHeight: 0 }
+          : { maxHeight: target, flexShrink: 1, minHeight: 0 }
       }
       contentContainerStyle={
         presentation === 'popover'
@@ -505,6 +540,16 @@ function OverlaySheet({
   const dragBaseline = useSharedValue(0);
   const sheetScroll = useMemo<SheetScroll>(() => ({ scrollRef, scrollOffset }), [scrollOffset]);
 
+  // Real budget (not content-derived) for this sheet's header+list content —
+  // see the note above `ROW_UNIT_HEIGHT` for why `OptionList` needs an actual
+  // number here rather than a `flexGrow` chain up through `sheetBody`.
+  const [headerHeight, setHeaderHeight] = useState(0);
+  const sheetBudget = height - insets.top - Spacing.four - HANDLE_AREA_HEIGHT - insets.bottom;
+  const budget = useMemo<SheetBudget>(
+    () => ({ budget: sheetBudget, headerHeight, setHeaderHeight }),
+    [sheetBudget, headerHeight],
+  );
+
   const close = useCallback(() => {
     translateY.value = withTiming(height, { duration: 240 }, (finished) => {
       if (finished) runOnJS(onClosed)();
@@ -592,6 +637,7 @@ function OverlaySheet({
     <Animated.View style={[styles.sheetWrap, sheetStyle, { pointerEvents: 'box-none' }]}>
       <OverlayPresentationContext.Provider value="sheet">
       <SheetScrollContext.Provider value={sheetScroll}>
+      <SheetBudgetContext.Provider value={budget}>
         {/* `backgroundPanel` (not the default `background`) so the sheet's own
             surface — including the safe-area padding below the last row — reads
             as one consistent panel color instead of showing a seam where the
@@ -625,6 +671,7 @@ function OverlaySheet({
             style={[StyleSheet.absoluteFill, styles.dim, dimStyle, { pointerEvents: 'none' }]}
           />
         </ThemedView>
+      </SheetBudgetContext.Provider>
       </SheetScrollContext.Provider>
       </OverlayPresentationContext.Provider>
     </Animated.View>
@@ -700,6 +747,12 @@ function OverlayPopover({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [left, top, width, rectHeight]);
 
+  // Same real-number budget as `OverlaySheet` (see the note above
+  // `ROW_UNIT_HEIGHT`) — `maxHeight` here is already a real, anchor-clamped
+  // number, so it's used directly rather than re-derived.
+  const [headerHeight, setHeaderHeight] = useState(0);
+  const budget = useMemo<SheetBudget>(() => ({ budget: maxHeight, headerHeight, setHeaderHeight }), [maxHeight, headerHeight]);
+
   const animStyle = useAnimatedStyle(() => ({
     opacity: progress.value,
     transform: [
@@ -718,7 +771,9 @@ function OverlayPopover({
           const { width: w, height: hh } = e.nativeEvent.layout;
           setCard((prev) => (prev && prev.height === hh && prev.width === w ? prev : { width: w, height: hh }));
         }}>
-        <OverlayPresentationContext.Provider value="popover">{children}</OverlayPresentationContext.Provider>
+        <OverlayPresentationContext.Provider value="popover">
+          <SheetBudgetContext.Provider value={budget}>{children}</SheetBudgetContext.Provider>
+        </OverlayPresentationContext.Provider>
       </ThemedView>
     </Animated.View>
   );
@@ -763,9 +818,17 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: 'rgba(128,128,128,0.45)',
   },
+  // No `flex: 1` here (deliberately): that RN shorthand sets `flexBasis: 0`,
+  // which Yoga resolves to a literal zero — not content size — inside `sheet`
+  // above, whose own height is only capped (`maxHeight`), not definite. A
+  // `%`-based flex-basis falls back to content size against an indefinite
+  // container on the web (why this ever looked fine there); Yoga doesn't do
+  // that fallback, so this collapsed to ~0 height on iOS/Android. Every child
+  // here (`MeasuredHeader`, `OptionList`) already sizes itself to a real
+  // number (see the note above `ROW_UNIT_HEIGHT`), so this wrapper only needs
+  // to hug that content — the plain, unflexed default does that correctly on
+  // every platform.
   sheetBody: {
-    flex: 1,
-    minHeight: 0,
     gap: Spacing.two,
   },
   dim: {
