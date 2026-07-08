@@ -1,10 +1,10 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useOverlay } from '@/components/overlay/overlay';
+import { useKeyboardAvoidingInput, useOverlay } from '@/components/overlay/overlay';
 import { RetryBlock } from '@/components/retry-block';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedSwitch } from '@/components/themed-switch';
@@ -66,6 +66,8 @@ export default function RegistriesScreen() {
 
   function AddRegistryForm() {
     const { closeTop } = useOverlay();
+    const keyboardAvoiding = useKeyboardAvoidingInput();
+    const inputRef = useRef<TextInput>(null);
     const [url, setUrl] = useState('');
     const [requireSignature, setRequireSignature] = useState(false);
     const [adding, setAdding] = useState(false);
@@ -88,8 +90,11 @@ export default function RegistriesScreen() {
       <View style={styles.confirmBody}>
         <ThemedText type="subtitle">Add registry</ThemedText>
         <TextInput
+          ref={inputRef}
           value={url}
           onChangeText={setUrl}
+          onFocus={() => keyboardAvoiding.onFocus(inputRef.current)}
+          onBlur={keyboardAvoiding.onBlur}
           placeholder="https://example.com/registry"
           placeholderTextColor={theme.textSecondary}
           autoCapitalize="none"

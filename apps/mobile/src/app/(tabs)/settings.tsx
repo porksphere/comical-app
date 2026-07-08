@@ -18,6 +18,7 @@ import {
   OptionList,
   OverlayHeading,
   useAnchoredOverlay,
+  useKeyboardAvoidingInput,
   useOverlay,
 } from '@/components/overlay/overlay';
 import { RetryBlock } from '@/components/retry-block';
@@ -158,6 +159,8 @@ function GeneralSection() {
 function RemoteServerForm({ currentUrl, onSave }: { currentUrl: string; onSave: (url: string | null) => void }) {
   const theme = useTheme();
   const { closeTop } = useOverlay();
+  const keyboardAvoiding = useKeyboardAvoidingInput();
+  const inputRef = useRef<TextInput>(null);
   const [url, setUrl] = useState(currentUrl);
 
   return (
@@ -167,8 +170,11 @@ function RemoteServerForm({ currentUrl, onSave }: { currentUrl: string; onSave: 
         The Comical server this app talks to when not running bridges on this device.
       </ThemedText>
       <TextInput
+        ref={inputRef}
         value={url}
         onChangeText={setUrl}
+        onFocus={() => keyboardAvoiding.onFocus(inputRef.current)}
+        onBlur={keyboardAvoiding.onBlur}
         placeholder="http://localhost:3100"
         placeholderTextColor={theme.textSecondary}
         autoCapitalize="none"

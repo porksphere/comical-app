@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View, type TextStyle } from 'react-native';
 
-import { useAnchoredOverlay } from '@/components/overlay/overlay';
+import { useAnchoredOverlay, useKeyboardAvoidingInput } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
@@ -163,6 +163,8 @@ function StringFilterRow({
   onChange: (id: string, v: string) => void;
 }) {
   const theme = useTheme();
+  const keyboardAvoiding = useKeyboardAvoidingInput();
+  const inputRef = useRef<TextInput>(null);
   const [text, setText] = useState(value ?? '');
   const [focused, setFocused] = useState(false);
   return (
@@ -171,13 +173,20 @@ function StringFilterRow({
       style={[styles.row, { borderColor: focused ? theme.accent : 'transparent' }]}>
       <ShrinkToFitLabel>{def.label}</ShrinkToFitLabel>
       <TextInput
+        ref={inputRef}
         value={text}
         onChangeText={(t) => {
           setText(t);
           onChange(def.id, t);
         }}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
+        onFocus={() => {
+          setFocused(true);
+          keyboardAvoiding.onFocus(inputRef.current);
+        }}
+        onBlur={() => {
+          setFocused(false);
+          keyboardAvoiding.onBlur();
+        }}
         placeholder={def.placeholder ?? 'Type…'}
         placeholderTextColor={`${theme.textSecondary}99`}
         style={[styles.inlineInput, NO_OUTLINE, { color: theme.text }]}
@@ -204,6 +213,7 @@ function NumberFilterRow({
 }) {
   const theme = useTheme();
   const { hovered, handlers } = useHover();
+  const keyboardAvoiding = useKeyboardAvoidingInput();
   const inputRef = useRef<TextInput>(null);
   // Snapshot at press-*start* (mousedown), before this same click's own focus
   // shift has happened — by press time (click), a blur triggered by this very
@@ -259,9 +269,13 @@ function NumberFilterRow({
             ref={inputRef}
             value={text}
             onChangeText={setText}
-            onFocus={() => setFocused(true)}
+            onFocus={() => {
+              setFocused(true);
+              keyboardAvoiding.onFocus(inputRef.current);
+            }}
             onBlur={() => {
               setFocused(false);
+              keyboardAvoiding.onBlur();
               commit();
             }}
             onSubmitEditing={commit}
