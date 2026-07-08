@@ -84,8 +84,16 @@
 - [ ] Navigating to a sub-page other then home, clicking a series, clicking a tag, then shows the search with "<- Home" instead of the correct sub page it came from
 - [ ] "<- Home" button is very slow on iOS
 - [ ] Enable resuming from series details page if not already (i.e. instead of Read Chapter 1, it's Resume Chapter 3 or something)
-- [ ] Keyboard page navigation shouldn't animate, it should instantly go to the next page like tapping
-- [ ] A/D should work like arrow keys <-/-> in reader pages
+- [x] Keyboard page navigation shouldn't animate, it should instantly go to the next page like tapping
+      Fixed: keyboard nav (`reader.tsx`) routed through the animated `prev`/`next`
+      callbacks; switched to the instant `turnPrev`/`turnNext` (same ones tap zones
+      use) and deleted the now-dead `prev`/`next`. Verified empirically with
+      Playwright against the live dev server — track element's `style.transition`
+      reads `"none"` after each keypress.
+- [x] A/D should work like arrow keys <-/-> in reader pages
+      Fixed: same keydown handler now treats `d`/`D` as `ArrowRight` and `a`/`A` as
+      `ArrowLeft`, respecting `settings.direction` (rtl swap) like the arrows already
+      did. Verified empirically — all four keys advance/retreat the correct page.
 - [ ] Up/down/W/S should scroll the webtoon view (smoothly up and down, ensure holding doesn't result in weird behavior) (left and right should do the full transition as it is now, but ensure when it's held it doesn't stutter as it does right now)
 - [ ] Center screen tapping in reader view to open overlay should be a larger percentage of the tappable area
 - [ ] Enable mouse hovering to show overlay (near top of screen and bottom for settings / page selector)
