@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { MeasuredHeader, OptionList, OverlayHeading } from '@/components/overlay/overlay';
+import { MeasuredHeader, OptionList, OverlayHeading, useOverlayPresentation } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
@@ -56,6 +56,7 @@ function MultiEditor({
   onChange: (v: string[]) => void;
 }) {
   const [selected, setSelected] = useState<string[]>(value ?? []);
+  const presentation = useOverlayPresentation();
   const toggle = (opt: string) => {
     // `single: true` (a mapped contract `select` filter) replaces instead of accumulating.
     const next = def.single
@@ -70,9 +71,14 @@ function MultiEditor({
   };
   return (
     <View style={styles.body}>
-      <MeasuredHeader>
-        <OverlayHeading>{def.label}</OverlayHeading>
-      </MeasuredHeader>
+      {/* On the popover, OverlayHeading renders nothing (the trigger row already
+          names the filter) — skip the wrapper entirely there too, since `styles.body`'s
+          flex `gap` would otherwise still reserve space before an empty sibling. */}
+      {presentation !== 'popover' && (
+        <MeasuredHeader>
+          <OverlayHeading>{def.label}</OverlayHeading>
+        </MeasuredHeader>
+      )}
       <OptionList>
         {def.options.map((opt) => (
           <MultiRow key={opt.value} label={opt.label} checked={selected.includes(opt.value)} onPress={() => toggle(opt.value)} />

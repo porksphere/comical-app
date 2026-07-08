@@ -175,9 +175,15 @@ export function MeasuredHeader({ children }: { children: ReactNode }) {
  * was `pointerEvents: 'none'`, pixel probes done via `elementFromPoint` never
  * saw it (that API skips non-interactive elements), so it shipped even
  * though it was clearly visible on screen. Screenshots (not DOM color
- * probing) are what caught it. */
+ * probing) are what caught it.
+ *
+ * `LIST_TRAILING_SPACE` only applies on the sheet: the popover's outer
+ * `paddingVertical` (see `styles.popover`) already clears its own bottom edge
+ * symmetrically with the top, so adding the sheet's trailing space there too
+ * would double up into a bottom gap nearly twice the top one. */
 export function OptionList({ children, fixed }: { children: ReactNode; fixed?: boolean }) {
   const sheet = useSheetScroll();
+  const presentation = useOverlayPresentation();
   const localOffset = useSharedValue(0);
   const offset = sheet?.scrollOffset ?? localOffset;
   const onScroll = useAnimatedScrollHandler((e) => {
@@ -193,7 +199,7 @@ export function OptionList({ children, fixed }: { children: ReactNode; fixed?: b
           ? { height: LIST_MAX_HEIGHT, flexShrink: 1, minHeight: 0 }
           : { flexGrow: 1, flexShrink: 1, minHeight: 0, maxHeight: LIST_MAX_HEIGHT }
       }
-      contentContainerStyle={listStyles.listContent}
+      contentContainerStyle={presentation === 'popover' ? listStyles.listContentPopover : listStyles.listContent}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}>
       {children}
@@ -209,10 +215,17 @@ const listStyles = StyleSheet.create({
     gap: Spacing.two,
     // A little room at the top too, so a scrolled-to-top list doesn't sit the
     // first row flush against the list's own top edge (mirrors the bottom
-    // trailing space, just smaller — that one also clears the sheet/popover's
-    // own edge, this one only needs to clear the header above it).
+    // trailing space, just smaller — that one also clears the sheet's own
+    // edge, this one only needs to clear the header above it).
     paddingTop: Spacing.one,
     paddingBottom: LIST_TRAILING_SPACE,
+  },
+  // Same top spacing as the sheet, but no extra trailing space at the bottom
+  // — see the comment on OptionList for why the popover doesn't need it.
+  listContentPopover: {
+    gap: Spacing.two,
+    paddingTop: Spacing.one,
+    paddingBottom: Spacing.one,
   },
 });
 

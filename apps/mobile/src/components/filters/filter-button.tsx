@@ -26,52 +26,21 @@ const NO_OUTLINE = Platform.select({ web: { outlineStyle: 'none' } }) as TextSty
 
 const LABEL_FONT_SIZE = 16;
 const LABEL_LINE_HEIGHT = 24;
-const LABEL_MIN_SCALE = 0.75;
 
-/** A label that shrinks its own font size — not just truncates — to fit
- *  whatever width flexbox actually allocates it. `adjustsFontSizeToFit` is
- *  native-only (react-native-web doesn't implement it at all), so this
- *  measures the label's own natural full-size width via a hidden pass and
- *  scales the visible text down to match the allocated width, with
- *  `numberOfLines` + ellipsis as a floor once `LABEL_MIN_SCALE` is reached.
- *
- *  Both the visible and measuring text are `position: absolute`, so neither
- *  ever contributes to the box's own size — only the explicit `width` below
- *  (set once `naturalWidth` is known) does. That's load-bearing: an in-flow
- *  visible child would make the box auto-size to *its own current* (already
- *  shrunk) content, so as font-size shrank the box would shrink with it and
- *  never let the box's real flex-allocated width settle — the more a label
- *  had to shrink, the more its box (and the blank gap around the now-smaller
- *  text) would drift out of sync with what was actually available. */
+/** A filter row's label. Renders at its natural size, full stop — no
+ *  shrinking, no truncation. The label's own box (`styles.label`) can still
+ *  flexShrink so it doesn't force the row wider than available space, but the
+ *  `Text` inside isn't stretched/clipped to that box, so if the box ends up
+ *  narrower than the text, the text just overflows past it rather than
+ *  wrapping or ellipsizing. Whatever follows the label in the row (chips,
+ *  value pill, on/off text) sits later in paint order and carries its own
+ *  opaque-enough background, so it always renders in front of any overflow
+ *  instead of getting visually clipped by it. */
 function ShrinkToFitLabel({ children, color }: { children: string; color?: string }) {
   const theme = useTheme();
-  const [naturalWidth, setNaturalWidth] = useState(0);
-  const [boxWidth, setBoxWidth] = useState(0);
-  const scale =
-    naturalWidth > 0 && boxWidth > 0 ? Math.min(1, Math.max(LABEL_MIN_SCALE, boxWidth / naturalWidth)) : 1;
   return (
-    <View
-      style={[styles.label, naturalWidth > 0 && { width: naturalWidth }]}
-      onLayout={(e) => setBoxWidth(e.nativeEvent.layout.width)}>
-      <Text
-        style={[
-          styles.labelVisible,
-          {
-            color: color ?? theme.text,
-            fontSize: LABEL_FONT_SIZE * scale,
-            lineHeight: LABEL_LINE_HEIGHT * scale,
-            fontWeight: '500',
-          },
-        ]}
-        numberOfLines={1}>
-        {children}
-      </Text>
-      <Text
-        style={[styles.measure, { fontSize: LABEL_FONT_SIZE, lineHeight: LABEL_LINE_HEIGHT, fontWeight: '500' }]}
-        numberOfLines={1}
-        onLayout={(e) => setNaturalWidth(e.nativeEvent.layout.width)}>
-        {children}
-      </Text>
+    <View style={styles.label}>
+      <Text style={[styles.labelText, { color: color ?? theme.text }]}>{children}</Text>
     </View>
   );
 }
@@ -141,7 +110,9 @@ function OverlayFilterRow({
         <View style={styles.summary}>
           <OverflowChips items={chips} empty={emptyText(def)} />
         </View>
-        <ThemedText themeColor="textSecondary">{'›'}</ThemedText>
+        <ThemedText themeColor="textSecondary" style={styles.trailing}>
+          {'›'}
+        </ThemedText>
       </ThemedView>
     </Pressable>
   );
@@ -172,7 +143,9 @@ function ToggleFilterRow({
         ]}>
         <ShrinkToFitLabel color={on ? theme.accentOn : undefined}>{def.label}</ShrinkToFitLabel>
         <View style={styles.summary} />
-        <ThemedText style={{ color: on ? theme.accentOn : theme.textSecondary }}>{on ? 'On' : 'Off'}</ThemedText>
+        <ThemedText style={[styles.trailing, { color: on ? theme.accentOn : theme.textSecondary }]}>
+          {on ? 'On' : 'Off'}
+        </ThemedText>
       </ThemedView>
     </Pressable>
   );
@@ -327,45 +300,25 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'transparent',
   },
-  // The allocated box for ShrinkToFitLabel: shrinks instead of the old fixed
-  // width, so a long label gives way before it can crowd the value out of the
-  // row once the bar squashes narrow enough. `minWidth` is a floor, not a
-  // target — with plenty of room the label still renders at its full natural
-  // width; this only kicks in once the row is genuinely too narrow for
-  // everything. `width` is set inline once ShrinkToFitLabel knows the label's
-  // true natural width, which is what flexShrink actually shrinks from — both
-  // of the box's children are absolutely positioned (see ShrinkToFitLabel),
-  // so nothing about its own rendered content ever feeds back into this size.
-  // `position: relative` anchors those children. The value control
-  // (valuePill/inlineInput) stays rigid (flexShrink: 0) since a truncated
-  // numeric value or partial word makes no sense to edit — the label is what
-  // should give way, per the row's design.
+  // The allocated box for ShrinkToFitLabel: can flexShrink so a long label
+  // gives way before it forces the row wider than available space, but the
+  // Text inside it (styles.labelText) isn't stretched/clipped to match — see
+  // ShrinkToFitLabel for why.
   label: {
     flexShrink: 1,
-    minWidth: 64,
-    height: 24,
-    position: 'relative',
+    minWidth: 0,
   },
-  // The actually-seen text, stretched to whatever width `label` (its
-  // positioned ancestor) ends up with — never its own natural size — so it
-  // can't influence that size in turn.
-  labelVisible: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
+  labelText: {
+    fontSize: LABEL_FONT_SIZE,
+    lineHeight: LABEL_LINE_HEIGHT,
+    fontWeight: '500',
   },
-  // Off-flow full-size copy ShrinkToFitLabel measures its natural width
-  // against; invisible and never affects the container's own layout size.
-  measure: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    opacity: 0,
-  },
+  // zIndex so chips/value always paint over an overflowing label rather than
+  // getting visually covered by it (see ShrinkToFitLabel).
   summary: {
     flex: 1,
     minWidth: 0,
+    zIndex: 1,
   },
   inlineInput: {
     flex: 1,
@@ -373,6 +326,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 24,
     padding: 0,
+    zIndex: 1,
   },
   // Same chip visual as OverflowChips' neutral tone, so a number filter's
   // value reads like every other filter's summary chip at rest — the
@@ -388,6 +342,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 6,
     backgroundColor: 'rgba(128,128,128,0.16)',
+    zIndex: 1,
   },
   // No fixed/min width here — NumberFilterRow sets an explicit `width` inline
   // sized to the current text length, which is what makes the pill hug just
@@ -401,5 +356,10 @@ const styles = StyleSheet.create({
   },
   unit: {
     flexShrink: 0,
+  },
+  // zIndex so this always paints over an overflowing label rather than
+  // getting visually covered by it (see ShrinkToFitLabel).
+  trailing: {
+    zIndex: 1,
   },
 });
