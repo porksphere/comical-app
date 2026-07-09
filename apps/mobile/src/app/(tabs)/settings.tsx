@@ -37,7 +37,7 @@ import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useHovered } from '@/hooks/use-hovered';
 import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
-import { useTheme } from '@/hooks/use-theme';
+import { useTheme, useThemePreference, type ThemePreference } from '@/hooks/use-theme';
 import { friendlyError } from '@/lib/friendly-error';
 import { hapticImpactLight, hapticSelection } from '@/lib/haptics';
 
@@ -58,6 +58,16 @@ const NSFW_MODE_OPTIONS: { value: NsfwMode; label: string; description: string }
 
 function nsfwModeSummary(mode: NsfwMode): string {
   return NSFW_MODE_OPTIONS.find((o) => o.value === mode)?.label ?? 'Off';
+}
+
+const THEME_OPTIONS: { value: ThemePreference; label: string; description: string }[] = [
+  { value: 'system', label: 'System', description: 'Follow the device’s light or dark setting.' },
+  { value: 'light', label: 'Light', description: 'Always use the light theme.' },
+  { value: 'dark', label: 'Dark', description: 'Always use the dark theme.' },
+];
+
+function themePreferenceSummary(pref: ThemePreference): string {
+  return THEME_OPTIONS.find((o) => o.value === pref)?.label ?? 'System';
 }
 
 export default function SettingsScreen() {
@@ -110,6 +120,7 @@ export default function SettingsScreen() {
 function GeneralSection() {
   const theme = useTheme();
   const [nsfwMode, setNsfwMode] = useNsfwMode();
+  const [themePref, setThemePref] = useThemePreference();
   const [onDevice, setOnDevice] = useEmbeddedEnabled();
   const [apiBase, setApiBaseOverride] = useApiBase();
   const { open } = useOverlay();
@@ -136,6 +147,7 @@ function GeneralSection() {
 
   return (
     <SettingsSection title="General" icon={<GeneralSettingsIcon color={theme.textSecondary} size={14} />}>
+      <AppearanceRow preference={themePref} onChange={setThemePref} />
       <NsfwModeRow mode={nsfwMode} onChange={setNsfwMode} />
       {embeddedAvailable && (
         <SettingsRow
@@ -205,6 +217,77 @@ function RemoteServerForm({ currentUrl, onSave }: { currentUrl: string; onSave: 
           </ThemedText>
         </Pressable>
       </View>
+    </View>
+  );
+}
+
+/** Row + anchored picker for the 3-way appearance preference (System/Light/Dark),
+ *  mirroring `NsfwModeRow` below — a picker rather than a switch since it's a
+ *  three-way choice (see `useThemePreference` in `hooks/use-theme.ts`). */
+function AppearanceRow({ preference, onChange }: { preference: ThemePreference; onChange: (pref: ThemePreference) => void }) {
+  const theme = useTheme();
+  const { ref, openAt } = useAnchoredOverlay();
+  const { hovered, onHoverIn, onHoverOut } = useHovered();
+  return (
+    <Pressable
+      ref={ref}
+      onPress={() => {
+        hapticImpactLight();
+        openAt(() => <AppearancePicker preference={preference} onChange={onChange} />);
+      }}
+      onHoverIn={onHoverIn}
+      onHoverOut={onHoverOut}
+      android_ripple={{ color: theme.backgroundSelected }}
+      style={styles.pressableCursor}>
+      <View style={[styles.row, hovered && { backgroundColor: theme.backgroundSelected }]}>
+        <View style={styles.rowText}>
+          <ThemedText type="small">Appearance</ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">
+            {THEME_OPTIONS.find((o) => o.value === preference)?.description}
+          </ThemedText>
+        </View>
+        <View style={styles.rowValue}>
+          <ThemedText type="small" themeColor="textSecondary">
+            {themePreferenceSummary(preference)}
+          </ThemedText>
+          <ChevronRightIcon color={theme.textSecondary} size={18} />
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+function AppearancePicker({ preference, onChange }: { preference: ThemePreference; onChange: (pref: ThemePreference) => void }) {
+  const { closeTop } = useOverlay();
+  const theme = useTheme();
+  return (
+    <View style={styles.pickerBody}>
+      <MeasuredHeader>
+        <OverlayHeading>Appearance</OverlayHeading>
+      </MeasuredHeader>
+      <OptionList>
+        {THEME_OPTIONS.map((opt) => (
+          <Pressable
+            key={opt.value}
+            onPress={() => {
+              hapticSelection();
+              onChange(opt.value);
+              closeTop();
+            }}
+            android_ripple={{ color: theme.backgroundSelected }}
+            style={styles.pressableCursor}>
+            <ThemedView type="backgroundElement" style={styles.pickerRow}>
+              <View style={styles.rowText}>
+                <ThemedText type="smallBold">{opt.label}</ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">
+                  {opt.description}
+                </ThemedText>
+              </View>
+              <View style={[styles.check, opt.value === preference && { borderColor: theme.accent, backgroundColor: theme.accent }]} />
+            </ThemedView>
+          </Pressable>
+        ))}
+      </OptionList>
     </View>
   );
 }
