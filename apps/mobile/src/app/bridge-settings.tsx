@@ -13,6 +13,7 @@ import { TopBar } from '@/components/top-bar';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import type { SettingValue } from '@/data/api';
 import { bumpDataEpoch } from '@/data/data-epoch';
+import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -29,7 +30,7 @@ export default function BridgeSettingsScreen() {
   const queryClient = useQueryClient();
 
   const { data, error, isLoading, refetch } = useQuery({
-    queryKey: ['bridgeSettings', bridgeId],
+    queryKey: queryKeys.bridgeSettings(bridgeId ?? ''),
     queryFn: ({ signal }) => ds.getBridgeSettings(bridgeId ?? '', signal),
     enabled: !!bridgeId,
   });
@@ -46,7 +47,7 @@ export default function BridgeSettingsScreen() {
     mutationFn: (body: Record<string, SettingValue>) => ds.putBridgeSettings(bridgeId!, body),
     onSuccess: async () => {
       setEdits({});
-      await queryClient.invalidateQueries({ queryKey: ['bridgeSettings', bridgeId] });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.bridgeSettings(bridgeId ?? '') });
     },
   });
   const saving = saveMutation.isPending;
@@ -73,7 +74,7 @@ export default function BridgeSettingsScreen() {
       bumpDataEpoch();
       // Broad invalidate — the Settings bridge list, Browse bridge selector, and
       // Library/History/Activity's bridge map are all react-query-backed and need to drop this
-      // bridge immediately, not just this screen's own ['bridgeSettings', bridgeId] query.
+      // bridge immediately, not just this screen's own queryKeys.bridgeSettings(bridgeId ?? '') query.
       await queryClient.invalidateQueries();
       router.back();
     },

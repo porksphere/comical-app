@@ -31,6 +31,7 @@ import { useApiBase, type BridgeSummary } from '@/data/api';
 import { applyEmbeddedMode, isEmbeddedRuntimeAvailable, useEmbeddedEnabled } from '@/data/embedded';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { queryClient } from '@/data/query-client';
+import { queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockDataToggle, useNsfwMode, type NsfwMode } from '@/data/source';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useHovered } from '@/hooks/use-hovered';
@@ -301,7 +302,7 @@ function BridgesSection() {
   // bridge-settings.tsx) — not a plain effect keyed on `ds`, since this section is very often
   // mounted-but-unfocused in the background while the user installs/uninstalls elsewhere.
   const bridgesQuery = useQuery({
-    queryKey: ['bridgeSummaries'],
+    queryKey: queryKeys.bridgeSummaries(),
     queryFn: ({ signal }) => ds.getBridgeSummaries(signal),
   });
   const bridges = bridgesQuery.data ?? null;
@@ -355,7 +356,7 @@ function TrackersSection() {
   // Through react-query for consistency + free retry/staleness. `data === undefined` = still loading;
   // `null` = this server has no tracker support (an expected state, not an error).
   const { data: trackers, isError, error, refetch } = useQuery({
-    queryKey: ['trackers'],
+    queryKey: queryKeys.trackers(),
     queryFn: ({ signal }) => ds.getTrackers(signal),
   });
 
@@ -398,7 +399,7 @@ function RegistriesSection() {
   // registry there refreshes this section too — the old manual effect only re-ran on its own reload
   // counter and missed those invalidations. `undefined` = loading; `null` = no registry support.
   const { data: registries, isError, error, refetch } = useQuery({
-    queryKey: ['registries'],
+    queryKey: queryKeys.registries(),
     queryFn: ({ signal }) => ds.getRegistries(signal),
   });
 

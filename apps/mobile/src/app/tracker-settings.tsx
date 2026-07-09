@@ -11,6 +11,7 @@ import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import type { SettingValue } from '@/data/api';
+import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -22,7 +23,7 @@ export default function TrackerSettingsScreen() {
   const queryClient = useQueryClient();
 
   const { data, error, isLoading, refetch } = useQuery({
-    queryKey: ['trackerSettings', trackerId],
+    queryKey: queryKeys.trackerSettings(trackerId ?? ''),
     queryFn: ({ signal }) => ds.getTrackerSettings(trackerId ?? '', signal),
     enabled: !!trackerId,
   });
@@ -35,7 +36,7 @@ export default function TrackerSettingsScreen() {
     mutationFn: (body: Record<string, SettingValue>) => ds.putTrackerSettings(trackerId!, body),
     onSuccess: async () => {
       setEdits({});
-      await queryClient.invalidateQueries({ queryKey: ['trackerSettings', trackerId] });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.trackerSettings(trackerId ?? '') });
     },
   });
   const saving = saveMutation.isPending;

@@ -11,6 +11,7 @@ import { TopBar } from '@/components/top-bar';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import type { AvailableBridge, AvailableTracker } from '@/data/api';
 import { bumpDataEpoch } from '@/data/data-epoch';
+import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
 
 export default function RegistryBrowseScreen() {
@@ -20,12 +21,12 @@ export default function RegistryBrowseScreen() {
   const queryClient = useQueryClient();
 
   const bridgesQuery = useQuery({
-    queryKey: ['registryBridges', url],
+    queryKey: queryKeys.registryBridges(url ?? ''),
     queryFn: ({ signal }) => ds.browseRegistryBridges(url ?? '', signal),
     enabled: !!url,
   });
   const trackersQuery = useQuery({
-    queryKey: ['registryTrackers', url],
+    queryKey: queryKeys.registryTrackers(url ?? ''),
     queryFn: ({ signal }) => ds.browseRegistryTrackers(url ?? '', signal),
     enabled: !!url,
   });
