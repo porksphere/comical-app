@@ -72,6 +72,10 @@ export const queryKeys = {
   activityCount: (mock: boolean) => ['activityCount', mock] as const,
   // The composed Home surface (rails + grid sections) for a bridge.
   homeSections: (mock: boolean, bridgeId: string) => ['homeSections', mock, bridgeId] as const,
+  // Per-bridge browse metadata (the Page selector's lists, and the filter/sort definitions).
+  bridgeLists: (mock: boolean, bridgeId: string) => ['bridgeLists', mock, bridgeId] as const,
+  bridgeFilters: (mock: boolean, bridgeId: string) => ['bridgeFilters', mock, bridgeId] as const,
+  bridgeSortOptions: (mock: boolean, bridgeId: string) => ['bridgeSortOptions', mock, bridgeId] as const,
   // The flat Browse results/terminal grid. `scope` (a `BrowseScope`) fully discriminates what's
   // shown — react-query's default key hashing is stable over object key order, so this dedupes
   // correctly. A bridge switch or filter/sort/search change is just a new key here.

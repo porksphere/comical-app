@@ -15,7 +15,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BridgeThumb } from '@/components/bridge-thumb';
 import { FilterBar, type SortOption, type SortState } from '@/components/filters/filter-demo';
-import { filterDefFromApi, filterValueToApi, initialValue, type FilterDef, type FilterValue, type TriState } from '@/components/filters/filter-types';
+import {
+  resolveMetaIntent,
+  resolveTagIntent,
+  type MetaIntent,
+  type TagIntent,
+} from '@/components/filters/filter-intents';
+import { filterDefFromApi, filterValueToApi, initialValue, type FilterDef, type FilterValue } from '@/components/filters/filter-types';
 import { Rail, RailSkeleton, SectionHead } from '@/components/rail';
 import { RetryBlock } from '@/components/retry-block';
 import { SearchField } from '@/components/search-field';
@@ -26,7 +32,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { WebPullIndicator } from '@/components/web-pull-indicator';
 import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
-import { isAbort, pageOptions } from '@/data/api';
+import { pageOptions } from '@/data/api';
 import { takeBrowseIntent } from '@/data/browse-intent';
 import { fetchBrowseScope, homeSectionsQuery, queryKeys, type BrowseScope } from '@/data/queries';
 import { isRailLayout, useDataSource, useHideNsfw, useMockActive, type QueryOpts } from '@/data/source';
@@ -61,15 +67,6 @@ type SeeAll = { listId: string; title: string } | null;
 // can't collide with a real `browseGrid` key (which always carries mock/bridgeId/scope).
 const DISABLED_RESULTS_KEY = ['browseGrid', 'disabled', 'results'] as const;
 const DISABLED_TERMINAL_KEY = ['browseGrid', 'disabled', 'terminal'] as const;
-
-/** Candidate filter-field ids (lowercased) a bridge might use for each meta key
- *  tapped on the Series screen — matched against `FilterDef.id` so e.g. an
- *  Author tap lands on that bridge's own author filter when it has one. */
-const META_FILTER_ALIASES: Record<'author' | 'artist' | 'type', string[]> = {
-  author: ['author', 'authors'],
-  artist: ['artist', 'artists'],
-  type: ['type', 'format', 'category'],
-};
 
 export default function BrowseScreen() {
   const ds = useDataSource();
@@ -121,35 +118,40 @@ export default function BrowseScreen() {
   const directBridge = currentBridge?.capabilities.includes('direct') ?? false;
 
   // ── Lists (drives the Page selector) ──────────────────────────────────────
-  const [lists, setLists] = useState<BridgeList[]>([]);
-  // Which bridge `lists` were loaded for. Until this matches `bridgeId`, `lists` (and everything
-  // derived from it — `homeList`, `composedHome`) is stale/empty and must not drive a fetch: on first
-  // load `lists` is `[]`, which would momentarily look like "composed Home with no sections" and fire
-  // getHomeSections against a bridge whose lists are all page-flagged (a spurious home-sections-empty).
-  const [listsBridgeId, setListsBridgeId] = useState<string | null>(null);
+  // Fetched via react-query, keyed by bridge, so `lists` is DERIVED from the cache rather than
+  // effect-synced into local state: switching back to a bridge reuses its cached lists instantly,
+  // and there's no "which bridge are these lists for?" mirror id. The query key answers that, and
+  // `listsSettled` (below) is the "loaded for the current bridge" signal the old `listsBridgeId`
+  // provided. keepPreviousData holds the prior bridge's lists during a switch — same as the old
+  // effect, which left `lists` in place until the new fetch resolved.
+  const bridgeListsQuery = useQuery({
+    queryKey: queryKeys.bridgeLists(mock, bridgeId ?? ''),
+    queryFn: ({ signal }) => ds.getBridgeLists(bridgeId!, signal),
+    enabled: !!bridgeId,
+    placeholderData: keepPreviousData,
+  });
+  const lists = useMemo<BridgeList[]>(() => bridgeListsQuery.data ?? [], [bridgeListsQuery.data]);
+  // "Lists are loaded for the CURRENT bridge" — resolved at least once AND not a keepPreviousData
+  // placeholder from the previous bridge. Gates the Home fetch and the results scope so neither
+  // fires off stale lists (the old `listsBridgeId === bridgeId` check).
+  const listsSettled =
+    !!bridgeId && (bridgeListsQuery.isSuccess || bridgeListsQuery.isError) && !bridgeListsQuery.isPlaceholderData;
   const [page, setPage] = useState('home');
 
+  // Default landing page for a bridge, applied once its lists settle: a bridge whose lists are ALL
+  // page-flagged (no composed Home) opens on its first page instead of a blank Home; anything with a
+  // home-eligible (or home-backing) list opens on Home. Ref-guarded to once per bridge so a later
+  // lists refetch — or the user navigating to a sub-page — can't reset the page out from under them
+  // (matches the old effect, which only re-picked on a bridge switch).
+  const pageInitedForRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!bridgeId) return;
-    const ctrl = new AbortController();
-    ds.getBridgeLists(bridgeId, ctrl.signal)
-      .then((ls) => {
-        setLists(ls);
-        setListsBridgeId(bridgeId);
-        // The composed Home renders only `page: false` lists (the rest live in the page selector),
-        // UNLESS a `page: true` list with id "home" backs the Home tab directly (handled below). A
-        // bridge with neither has nothing to show on Home, so default to its first page instead of
-        // stranding the user on a blank Home; a bridge with a home-eligible (or home-backing) list
-        // still opens on Home as before.
-        const hasHomeList = ls.some((l) => !l.page || l.id === 'home');
-        const firstPage = ls.find((l) => l.page);
-        setPage(hasHomeList || !firstPage ? 'home' : firstPage.name.toLowerCase());
-      })
-      .catch((e) => {
-        if (!isAbort(e)) setLists([]);
-      });
-    return () => ctrl.abort();
-  }, [bridgeId, ds]);
+    if (!bridgeId || !listsSettled) return;
+    if (pageInitedForRef.current === bridgeId) return;
+    pageInitedForRef.current = bridgeId;
+    const hasHomeList = lists.some((l) => !l.page || l.id === 'home');
+    const firstPage = lists.find((l) => l.page);
+    setPage(hasHomeList || !firstPage ? 'home' : firstPage.name.toLowerCase());
+  }, [bridgeId, listsSettled, lists]);
 
   const pages = useMemo(
     () => (currentBridge ? pageOptions(lists, currentBridge.capabilities) : ['home']),
@@ -171,83 +173,93 @@ export default function BrowseScreen() {
   );
   const isFavoritesPage = page === 'favorites';
 
-  // ── Filters + sort (fetched once per bridge; capability-gated) ────────────
-  const [filterDefs, setFilterDefs] = useState<FilterDef[]>([]);
-  const [sortOptions, setSortOptions] = useState<SortOption[]>([]);
+  // ── Filters + sort (react-query per bridge; capability-gated) ─────────────
+  const hasFiltersCap = currentBridge?.capabilities.includes('filters') ?? false;
+  const hasSortCap = currentBridge?.capabilities.includes('sort') ?? false;
+  const filtersRawQuery = useQuery({
+    queryKey: queryKeys.bridgeFilters(mock, bridgeId ?? ''),
+    queryFn: ({ signal }) => ds.getFilters(bridgeId!, signal),
+    enabled: !!bridgeId && hasFiltersCap,
+    placeholderData: keepPreviousData,
+  });
+  const sortRawQuery = useQuery({
+    queryKey: queryKeys.bridgeSortOptions(mock, bridgeId ?? ''),
+    queryFn: ({ signal }) => ds.getSortOptions(bridgeId!, signal),
+    enabled: !!bridgeId && hasSortCap,
+    placeholderData: keepPreviousData,
+  });
+
+  // id→label hints for tag values selected out-of-band (a tapped tag chip on a Series screen),
+  // merged into the DERIVED `filterDefs` below rather than mutated into them, since the defs now
+  // come straight from the query cache. Reset on bridge change.
+  const [labelHints, setLabelHints] = useState<Record<string, Record<string, string>>>({});
+
+  // `filterDefs` is DERIVED from the query (enriched with the live tag-search fn + any label hints),
+  // not effect-synced local state. Because it updates in the SAME render as the query data, there's
+  // no lag between "query settled" and "defs are current" — which is what lets the tag/meta intent
+  // effects below gate purely on `filtersSettled`, with no `filterDefsBridgeId` mirror.
+  const filterDefs = useMemo<FilterDef[]>(() => {
+    if (!hasFiltersCap) return [];
+    return (filtersRawQuery.data ?? []).map((f) => {
+      let def = filterDefFromApi(f);
+      // Live tag search for a bridge-backed tag-multiselect (no static option list).
+      if (def.type === 'tags' && !def.options) def = { ...def, search: (query: string) => ds.getTags(bridgeId!, query) };
+      const hints = labelHints[def.id];
+      if (def.type === 'tags' && hints) def = { ...def, labelHints: { ...(def.labelHints ?? {}), ...hints } };
+      return def;
+    });
+  }, [hasFiltersCap, filtersRawQuery.data, labelHints, ds, bridgeId]);
+  const sortOptions = useMemo<SortOption[]>(
+    () => (hasSortCap ? (sortRawQuery.data ?? []) : []),
+    [hasSortCap, sortRawQuery.data],
+  );
+  // "Filters are loaded for the CURRENT bridge" — the timing gate the old `filterDefsBridgeId`
+  // provided for intent application. No filters capability ⇒ nothing to wait for.
+  const filtersSettled =
+    !hasFiltersCap || ((filtersRawQuery.isSuccess || filtersRawQuery.isError) && !filtersRawQuery.isPlaceholderData);
+
+  // User-editable selections. `filterValues` is SPARSE — it holds only the user's explicit changes;
+  // any unset filter falls back to its `initialValue` lazily (see `resolvedValues`). That removes
+  // the old "seed every value on bridge load" step and the ordering it forced against intent
+  // application. Reset on bridge change (below).
   const [filterValues, setFilterValues] = useState<Record<string, FilterValue>>({});
   const [sortValue, setSortValue] = useState<SortState>(null);
-  // Which bridge the current `filterDefs` belong to — a bridge switch reloads them
-  // async and resets `filterValues`, so a pending tag selection (see below) must
-  // wait until this matches its bridge before applying, or it'd land on the wrong
-  // (soon-to-be-reset) defs.
-  const [filterDefsBridgeId, setFilterDefsBridgeId] = useState<string | null>(null);
-  // Stable reference so `FilterBar`'s per-filter `React.memo` isn't defeated by
-  // a freshly-allocated closure on every render (see `FilterButton`).
+  // Stable reference so `FilterBar`'s per-filter `React.memo` isn't defeated by a freshly-allocated
+  // closure on every render (see `FilterButton`).
   const setFilterValue = useCallback((id: string, v: FilterValue) => {
     setFilterValues((prev) => ({ ...prev, [id]: v }));
   }, []);
+  // The full value map the bar + committed snapshot read: the user's sparse changes over each def's
+  // lazy default.
+  const resolvedValues = useMemo<Record<string, FilterValue>>(
+    () => Object.fromEntries(filterDefs.map((d) => [d.id, filterValues[d.id] ?? initialValue(d)])),
+    [filterDefs, filterValues],
+  );
 
+  // Reset user filter/sort state (and label hints) when the bridge changes — the new bridge's
+  // defaults apply lazily. A pending tag/meta intent (set by the focus effect) applies AFTER this,
+  // gated on `filtersSettled`, so it is never wiped by the reset.
   useEffect(() => {
-    if (!bridgeId || !currentBridge) {
-      setFilterDefs([]);
-      setSortOptions([]);
-      setFilterValues({});
-      setSortValue(null);
-      setFilterDefsBridgeId(null);
-      return;
-    }
-    const ctrl = new AbortController();
-    const hasTags = (query: string) => ds.getTags(bridgeId, query, ctrl.signal);
-    if (currentBridge.capabilities.includes('filters')) {
-      ds.getFilters(bridgeId, ctrl.signal)
-        .then((apiDefs) => {
-          const defs = apiDefs.map((f) => {
-            const def = filterDefFromApi(f);
-            // Live tag search for a bridge-backed tag-multiselect (no static option list).
-            return def.type === 'tags' && !def.options ? { ...def, search: hasTags } : def;
-          });
-          setFilterDefs(defs);
-          setFilterValues(Object.fromEntries(defs.map((d) => [d.id, initialValue(d)])));
-          setFilterDefsBridgeId(bridgeId);
-        })
-        .catch(() => {
-          setFilterDefs([]);
-          setFilterDefsBridgeId(bridgeId);
-        });
-    } else {
-      setFilterDefs([]);
-      setFilterValues({});
-      setFilterDefsBridgeId(bridgeId);
-    }
-    if (currentBridge.capabilities.includes('sort')) {
-      ds.getSortOptions(bridgeId, ctrl.signal)
-        .then((opts) => {
-          setSortOptions(opts);
-          setSortValue(null);
-        })
-        .catch(() => setSortOptions([]));
-    } else {
-      setSortOptions([]);
-      setSortValue(null);
-    }
-    return () => ctrl.abort();
-  }, [bridgeId, currentBridge, ds]);
+    setFilterValues({});
+    setSortValue(null);
+    setLabelHints({});
+  }, [bridgeId]);
 
-  // Debounced "committed" snapshot — the actual fetch effect depends on this,
-  // not on `filterValues`/`sortValue` directly, so rapid taps don't each fire a
-  // request. Reference contract: `doSearchIfChanged`, app.ts:4765.
+  // Debounced "committed" snapshot — the actual fetch depends on this, not on
+  // `filterValues`/`sortValue` directly, so rapid taps don't each fire a request. Reference
+  // contract: `doSearchIfChanged`, app.ts:4765.
   const [committedFilters, setCommittedFilters] = useState<QueryOpts['filters']>(undefined);
   const [committedSort, setCommittedSort] = useState<QueryOpts['sort']>(undefined);
   useEffect(() => {
     const t = setTimeout(() => {
       const next = filterDefs
-        .map((d) => filterValueToApi(d, filterValues[d.id]))
+        .map((d) => filterValueToApi(d, resolvedValues[d.id]))
         .filter((v): v is { key: string; value: unknown } => v !== null);
       setCommittedFilters(next.length ? (next as QueryOpts['filters']) : undefined);
       setCommittedSort(sortValue ? { key: sortValue.key, ascending: sortValue.ascending } : undefined);
     }, FILTER_DEBOUNCE_MS);
     return () => clearTimeout(t);
-  }, [filterDefs, filterValues, sortValue]);
+  }, [filterDefs, resolvedValues, sortValue]);
   const hasActiveQuery = !!committedFilters || !!committedSort;
 
   // ── Pull-to-refresh (native only) ─────────────────────────────────────────
@@ -281,9 +293,9 @@ export default function BrowseScreen() {
   // Home on screen until the new one resolves rather than clearing to a skeleton, so the shared
   // LegendList instance — and the filter bar in its header — never unmounts on a switch (that
   // remount was the reported flash). Gated on `composedHome` AND this bridge's lists being loaded
-  // (`listsBridgeId === bridgeId`) so stale/empty lists can't make `composedHome` briefly true and
-  // fire a spurious fetch for a page-only bridge.
-  const homeQuery = useQuery(homeSectionsQuery(ds, mock, bridgeId ?? '', composedHome && listsBridgeId === bridgeId));
+  // (`listsSettled`) so stale/empty lists can't make `composedHome` briefly true and fire a
+  // spurious fetch for a page-only bridge.
+  const homeQuery = useQuery(homeSectionsQuery(ds, mock, bridgeId ?? '', composedHome && listsSettled));
   const sections = useMemo(() => homeQuery.data?.sections ?? [], [homeQuery.data]);
   const gridSections = useMemo(() => homeQuery.data?.gridSections ?? [], [homeQuery.data]);
   // Surface a Retry when the CURRENT bridge's Home failed and we have no real data for it — either
@@ -329,17 +341,10 @@ export default function BrowseScreen() {
   // A `tagIds` chip resolves to a tag-multiselect filter, which can only be set
   // once this bridge's defs have loaded — stash it here and apply it in the
   // effect below (a `tagQueries` chip is handled inline as a plain query).
-  const [pendingTag, setPendingTag] = useState<{
-    filterKey: string;
-    tagId: string;
-    label: string;
-  } | null>(null);
+  const [pendingTag, setPendingTag] = useState<TagIntent | null>(null);
   // Same idea for a tapped Author/Artist/Type meta cell: resolved once this
   // bridge's filter defs have loaded, against whichever field it maps to.
-  const [pendingMeta, setPendingMeta] = useState<{
-    metaKey: 'author' | 'artist' | 'type';
-    value: string;
-  } | null>(null);
+  const [pendingMeta, setPendingMeta] = useState<MetaIntent | null>(null);
   // Consume the Series screen's intent when Browse gains focus (i.e. after we've
   // navigated to it), not on a background re-render while Series is still on top —
   // so it lands on the instance that's actually shown. Switch to the originating
@@ -374,65 +379,30 @@ export default function BrowseScreen() {
     }, []),
   );
 
+  // Apply once the CURRENT bridge's filter defs are loaded (`filtersSettled`). Because `filterDefs`
+  // is derived (never lagging the query), a null resolution here genuinely means this bridge has no
+  // matching tag filter — so it's safe to drop the intent. See resolveTagIntent + its tests.
   useEffect(() => {
-    if (!pendingTag) return;
-    // Apply once the CURRENT bridge's filter defs have loaded. The focus effect
-    // switched us to the intent's bridge; `filterDefsBridgeId === bridgeId` means
-    // those filters are now loaded, so the tag filter def (if any) is the right
-    // bridge's. Comparing Browse's own two ids (not the series route param) avoids
-    // any mismatch between how the two screens name the bridge.
-    if (!bridgeId || filterDefsBridgeId !== bridgeId) return;
-    const def = filterDefs.find((d) => d.id === pendingTag.filterKey && d.type === 'tags');
-    if (!def) {
-      // This bridge doesn't expose that tag filter — nothing to apply.
-      setPendingTag(null);
-      return;
+    if (!pendingTag || !bridgeId || !filtersSettled) return;
+    const res = resolveTagIntent(filterDefs, pendingTag);
+    if (res) {
+      // Seed the id→label hint so the trigger/editor show the tag's name, not its raw id (a
+      // live-search filter has no static options to look it up in), and select it.
+      setLabelHints((prev) => ({ ...prev, [res.defId]: { ...(prev[res.defId] ?? {}), ...res.labelHint } }));
+      setFilterValues((prev) => ({ ...prev, [res.defId]: res.value }));
     }
-    // Seed the id→label hint so the trigger/editor show the tag's name, not its
-    // raw id (a live-search filter has no static options to look it up in).
-    setFilterDefs((prev) =>
-      prev.map((d) =>
-        d.id === def.id && d.type === 'tags'
-          ? { ...d, labelHints: { ...(d.labelHints ?? {}), [pendingTag.tagId]: pendingTag.label } }
-          : d,
-      ),
-    );
-    setFilterValues((prev) => ({ ...prev, [def.id]: { [pendingTag.tagId]: 'include' } as TriState }));
     setPendingTag(null);
-  }, [pendingTag, filterDefs, filterDefsBridgeId, bridgeId]);
+  }, [pendingTag, filterDefs, filtersSettled, bridgeId]);
 
   useEffect(() => {
-    if (!pendingMeta) return;
-    if (!bridgeId || filterDefsBridgeId !== bridgeId) return;
-    // Look for a filter field this bridge exposes for the tapped meta key (a
-    // handful of common key spellings) — if found, set the value there instead
-    // of just running a raw text search, so e.g. tapping an Author lands on
-    // that bridge's actual author filter rather than a fuzzy full-text match.
-    const aliases = META_FILTER_ALIASES[pendingMeta.metaKey];
-    const def = filterDefs.find((d) => aliases.includes(d.id.toLowerCase()));
-    if (def) {
-      if (def.type === 'string') {
-        setFilterValues((prev) => ({ ...prev, [def.id]: pendingMeta.value }));
-        setPendingMeta(null);
-        return;
-      }
-      if (def.type === 'multi' || def.type === 'includeExclude' || def.type === 'tags') {
-        const match = def.options?.find((o) => o.label.toLowerCase() === pendingMeta.value.toLowerCase());
-        if (match) {
-          setFilterValues((prev) => ({
-            ...prev,
-            [def.id]: def.type === 'multi' ? [match.value] : ({ [match.value]: 'include' } as TriState),
-          }));
-          setPendingMeta(null);
-          return;
-        }
-      }
-    }
-    // No matching filter field (or no matching option within it) — fall back to
-    // a plain free-text search, same as a `query` intent.
-    setQuery(pendingMeta.value);
+    if (!pendingMeta || !bridgeId || !filtersSettled) return;
+    // Prefer the bridge's own field for that meta key (so an Author tap lands on its author filter),
+    // else fall back to a plain free-text search — see resolveMetaIntent + its tests.
+    const res = resolveMetaIntent(filterDefs, pendingMeta);
+    if (res.kind === 'filter') setFilterValues((prev) => ({ ...prev, [res.defId]: res.value }));
+    else setQuery(res.query);
     setPendingMeta(null);
-  }, [pendingMeta, filterDefs, filterDefsBridgeId, bridgeId]);
+  }, [pendingMeta, filterDefs, filtersSettled, bridgeId]);
 
   // A search, a rail's "See all", a live filter/sort choice, or picking a
   // page-flagged sub-list (e.g. "Popular"/"Favorites") all drop to the flat
@@ -479,7 +449,11 @@ export default function BrowseScreen() {
   // Both the query key and the fetch derive from this one value (see BrowseScope), which is what
   // lets the grid move between scopes without ever clearing to empty.
   const resultsScope = useMemo<BrowseScope | null>(() => {
-    if (isHomeTerminal || !showResultsGrid || !bridgeId) return null;
+    // Wait for the current bridge's lists to settle: `activeListId`/`scopedSearch` derive from
+    // `lists`, so computing a scope off the previous bridge's placeholder lists would fetch a list
+    // id that doesn't exist on the new bridge (an "unknown list" / HTML-parse error). keepPreviousData
+    // keeps the grid populated meanwhile.
+    if (isHomeTerminal || !showResultsGrid || !bridgeId || !listsSettled) return null;
     if (isFavoritesPage) return { kind: 'favorites' };
     if (seeAll) return { kind: 'seeAll', listId: seeAll.listId };
     const opts: QueryOpts = { filters: committedFilters, sort: committedSort };
@@ -490,7 +464,7 @@ export default function BrowseScreen() {
     }
     // Global search: an unscoped query, or filters/sort with no specific list (home).
     return { kind: 'search', query, opts };
-  }, [isHomeTerminal, showResultsGrid, bridgeId, isFavoritesPage, seeAll, activeListId, scopedSearch, query, committedFilters, committedSort]);
+  }, [isHomeTerminal, showResultsGrid, bridgeId, listsSettled, isFavoritesPage, seeAll, activeListId, scopedSearch, query, committedFilters, committedSort]);
 
   const getNextPageParam = (last: GridPage, _all: GridPage[], lastParam: number) =>
     last.hasNextPage ? lastParam + 1 : undefined;
@@ -606,10 +580,10 @@ export default function BrowseScreen() {
     setSeeAll(null);
     // A tag chip / author-artist-type meta cell (and any live filter/sort) drives
     // results via a filter, not `query` — so clearing just the query would leave
-    // `hasActiveQuery` true and strand us in results. Reset every filter to its
-    // neutral value (mirrors the bridge-load init) and drop the sort so the
+    // `hasActiveQuery` true and strand us in results. Clear the user's filter selections
+    // (each filter falls back to its neutral default lazily) and drop the sort so the
     // banner dismisses and the underlying page actually returns.
-    setFilterValues(Object.fromEntries(filterDefs.map((d) => [d.id, initialValue(d)])));
+    setFilterValues({});
     setSortValue(null);
     // `hasActiveQuery` (and so `inResults`) reads the DEBOUNCED committed filters/sort, not
     // `filterValues`/`sortValue` directly — clearing only those would leave `committedFilters`/
@@ -825,7 +799,7 @@ export default function BrowseScreen() {
       />
       <FilterBar
         defs={filterDefs}
-        values={filterValues}
+        values={resolvedValues}
         onValueChange={setFilterValue}
         sortOptions={sortOptions}
         sort={sortValue}
