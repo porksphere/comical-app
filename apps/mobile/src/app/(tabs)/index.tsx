@@ -31,6 +31,7 @@ import { takeBrowseIntent } from '@/data/browse-intent';
 import { fetchBrowseScope, homeSectionsQuery, queryKeys, type BrowseScope } from '@/data/queries';
 import { isRailLayout, useDataSource, useHideNsfw, useMockActive, type QueryOpts } from '@/data/source';
 import type { Bridge, BridgeList, GridPage, HomeGridSection, SeriesEntry } from '@/data/types';
+import { friendlyError } from '@/lib/friendly-error';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
@@ -95,7 +96,7 @@ export default function BrowseScreen() {
   });
   const bridges = useMemo(() => bridgesQuery.data ?? [], [bridgesQuery.data]);
   const bridgesError = bridgesQuery.isError
-    ? (bridgesQuery.error as Error).message || 'Failed to load bridges'
+    ? friendlyError(bridgesQuery.error, 'Failed to load bridges. Try again.')
     : null;
   // Distinguishes "still fetching" from "fetched, and there are none" — both start out as an empty
   // `bridges` array, so without this the no-bridges placeholder would flash before the first load
@@ -292,11 +293,14 @@ export default function BrowseScreen() {
   // while we hold real current data (e.g. a pull-to-refresh) keeps the content and shows no banner.
   const homeError =
     homeQuery.isError && (!homeQuery.data || homeQuery.isPlaceholderData)
-      ? (homeQuery.error as Error).message || 'Failed to load home'
+      ? friendlyError(homeQuery.error, "Couldn't load this bridge's home. Try again.")
       : null;
   // Skeleton only on a genuinely dataless first load: keepPreviousData keeps prior data during a
   // bridge switch (isPlaceholderData) and a refetch keeps its own data, so neither shows a skeleton.
   const homeLoading = homeQuery.isLoading;
+  // While a bridge switch is in flight, keepPreviousData shows the PREVIOUS bridge's Home — dim it
+  // so it reads as "updating" rather than as the new bridge's real content.
+  const homeUpdating = homeQuery.isPlaceholderData;
   // Only the LAST grid section infinite-scrolls; earlier ones get "Load more" —
   // see HomeGridSection's doc in types.ts.
   const terminalGridSection = gridSections.at(-1) ?? null;
@@ -542,10 +546,13 @@ export default function BrowseScreen() {
   );
   const gridError =
     resultsScope && resultsQuery.isError && (!resultsQuery.data || resultsQuery.isPlaceholderData)
-      ? (resultsQuery.error as Error).message || 'Failed to load results'
+      ? friendlyError(resultsQuery.error, "Couldn't load results. Try again.")
       : null;
   // Skeleton only on a genuinely dataless first load (see homeLoading for the same reasoning).
   const gridLoading = !!resultsScope && resultsQuery.isLoading;
+  // The active grid query is showing the previous scope's items (keepPreviousData) while the new
+  // scope loads — dim the cards to signal the refresh (bridge / page / filter / sort / search).
+  const gridUpdating = activeGridQuery.isPlaceholderData;
 
   // Everything shown on the favorites page is, by definition, favorited — so warm the per-series
   // `isFavorite` cache to `true`. Opening one from here then paints ★ instantly (and enabled)
@@ -889,7 +896,9 @@ export default function BrowseScreen() {
               ))}
             </>
           ) : (
-            <>
+            // Dimmed while showing the previous bridge's rails/sections during a switch (see
+            // `homeUpdating`) so the placeholder reads as "updating", not as real content.
+            <View style={homeUpdating ? styles.dimmed : undefined}>
               <View style={styles.rails}>
                 {sections.map((s) => (
                   <Rail
@@ -913,7 +922,7 @@ export default function BrowseScreen() {
                   numColumns={numColumns}
                 />
               ))}
-            </>
+            </View>
           )}
           {terminalGridSection ? (
             <View style={styles.browseAllHead}>
@@ -1028,12 +1037,16 @@ export default function BrowseScreen() {
           paddingLeft: sidePad,
           paddingRight: sidePad,
         }}
+        // `gridUpdating` fed as extraData so recycled cells re-render (and pick up the dim) the
+        // moment the grid enters the keepPreviousData placeholder state — at which point the item
+        // data reference is unchanged, so a data-diff alone wouldn't trigger it.
+        extraData={gridUpdating}
         renderItem={({ item }) => {
           if (item.spacer) {
             return <View style={styles.gridCell} />;
           }
           return (
-            <View style={styles.gridCell}>
+            <View style={[styles.gridCell, gridUpdating && styles.dimmed]}>
               <SeriesCard
                 entry={item}
                 bridge={currentBridge?.name ?? undefined}
@@ -1322,6 +1335,11 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingTop: Spacing.one,
     paddingBottom: Spacing.three - Spacing.one,
+  },
+  // Applied to placeholder content (rails/sections/cards) while a switch loads — see `homeUpdating`
+  // / `gridUpdating`. Signals "updating" without tearing the content down (which was the flash).
+  dimmed: {
+    opacity: 0.45,
   },
   skelFooter: {
     // No top padding: the list's content gap already separates the footer from
