@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RetryBlock } from '@/components/retry-block';
 import { SearchField } from '@/components/search-field';
 import { Selector } from '@/components/selector';
-import { SeriesCard } from '@/components/series-card';
+import { estimatedCardHeight, SeriesCard } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -79,6 +79,10 @@ export default function LibraryScreen() {
   // LegendList drops `paddingHorizontal` and ignores `alignSelf`/`marginHorizontal:auto` on its
   // content container, but honors explicit paddingLeft/Right — so this is the reliable lever.
   const sidePad = Math.max(0, (width - MaxTopLevelWidth) / 2) + Spacing.four;
+  // Feeds LegendList's `estimatedItemSize` below — see the identical calc/comment in Browse's
+  // `index.tsx`.
+  const gridContentWidth = width - sidePad * 2;
+  const cardWidth = (gridContentWidth - (numColumns - 1) * GRID_COLUMN_GAP) / numColumns;
 
   const cards = useMemo<GridItem[]>(() => {
     if (!items) return [];
@@ -171,6 +175,7 @@ export default function LibraryScreen() {
         // FlatList. Doing it here fixes both the off-center grid and the short scrollbar.
         style={styles.list}
         data={listData}
+        estimatedItemSize={estimatedCardHeight(cardWidth)}
         keyExtractor={(item) => String(item.id)}
         numColumns={numColumns}
         // Recycle card instances instead of remounting on every reuse: SeriesCard now resets its
@@ -186,15 +191,14 @@ export default function LibraryScreen() {
           paddingLeft: sidePad,
           paddingRight: sidePad,
         }}
-        renderItem={({ item }) =>
-          item.spacer ? (
-            <View style={styles.cell} />
-          ) : (
+        renderItem={({ item }) => {
+          if (item.spacer) return <View style={styles.cell} />;
+          return (
             <View style={styles.cell}>
               <SeriesCard entry={item} bridge={item.bridge} bridgeId={item.bridgeId} direct={item.direct} />
             </View>
-          )
-        }
+          );
+        }}
         showsVerticalScrollIndicator={Platform.OS === 'web'}
         onScroll={onScroll}
       />

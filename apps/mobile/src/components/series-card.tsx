@@ -45,6 +45,21 @@ const SUB_LINE_HEIGHT = { regular: 16, compact: 15 };
 const HOLD_RETENTION = { top: 1000, bottom: 1000, left: 1000, right: 1000 };
 
 /**
+ * Predicted card height for a given column width, in the common (worst) case of a 3-line title
+ * plus a sub-line — fed to the grids' `estimatedItemSize` so LegendList can size unmeasured rows
+ * without a first-paint layout pass. Mirrors `styles.card`'s `gap` (Spacing.two, 8px, between
+ * every child) and `styles.sub`'s `marginTop: -5` (title→sub net gap is therefore 8 - 5 = 3px).
+ * A hint, not an exact match — real cards vary with cover aspect (`fillFactor` backfills the
+ * difference) and title/sub line count, so this doesn't need to be exact.
+ */
+export function estimatedCardHeight(cardWidth: number): number {
+  const coverHeight = cardWidth / DEFAULT_THUMB_ASPECT;
+  const titleHeight = MAX_TITLE_LINES * TITLE_LINE_HEIGHT.regular;
+  const titleToSubGap = Spacing.two - 5;
+  return coverHeight + Spacing.two + titleHeight + titleToSubGap + SUB_LINE_HEIGHT.regular;
+}
+
+/**
  * Held-highlight state. A press/touch "holds" the card active; on the web the
  * hold is only released by an actual pointer/touch *release* anywhere on the
  * page — moving the finger or scrolling does NOT end it (a scroll isn't a

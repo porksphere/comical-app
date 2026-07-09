@@ -20,7 +20,7 @@ import { Rail, RailSkeleton, SectionHead } from '@/components/rail';
 import { RetryBlock } from '@/components/retry-block';
 import { SearchField } from '@/components/search-field';
 import { BridgeThumbSize, Selector } from '@/components/selector';
-import { SeriesCard } from '@/components/series-card';
+import { estimatedCardHeight, SeriesCard } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -497,6 +497,12 @@ export default function BrowseScreen() {
   // pre-min-duration-fix bug. Folded into the fetch effect's deps below to still trigger a refetch.
   const [gridRefreshTick, setGridRefreshTick] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
+  // `onEndReached` can fire multiple times in quick succession during a fast fling, all before
+  // `setLoadingMore(true)` has actually re-rendered — the `loadingMore` state read in `loadMore`
+  // below is stale for every call after the first until that render lands. A ref closes that gap
+  // synchronously, so a fast fling can't fire the same page's fetch twice and append duplicate
+  // items into `gridItems` (which LegendList then flags as overlapping keys and mis-recycles).
+  const loadingMoreRef = useRef(false);
 
   // Re-runs whichever fetch backs the *current* view: the composed Home surface
   // (rails + grid sections, via `homeReload`) when not in results, or the flat
@@ -588,7 +594,14 @@ export default function BrowseScreen() {
   }, [bridgeId, isHomeTerminal, terminalGridSection, showResultsGrid, isFavoritesPage, activeListId, query, seeAll, scopedSearch, committedFilters, committedSort, ds, gridReload, gridRefreshTick, finishRefresh]);
 
   const loadMore = () => {
-    if (loadingMore || !gridHasMore || !bridgeId || (!isHomeTerminal && !showResultsGrid)) return;
+    if (
+      loadingMoreRef.current ||
+      !gridHasMore ||
+      !bridgeId ||
+      (!isHomeTerminal && !showResultsGrid)
+    )
+      return;
+    loadingMoreRef.current = true;
     setLoadingMore(true);
     const nextPage = gridPageNum + 1;
     fetchGrid(nextPage)
@@ -599,7 +612,10 @@ export default function BrowseScreen() {
         seedFavorited(res.items);
       })
       .catch(() => {})
-      .finally(() => setLoadingMore(false));
+      .finally(() => {
+        loadingMoreRef.current = false;
+        setLoadingMore(false);
+      });
   };
 
   // Leave a transient drill-down (search / "See all" / a live filter or sort) and
@@ -662,6 +678,12 @@ export default function BrowseScreen() {
   // Single hydration-safe viewport width for the rails: a deterministic mobile
   // fallback during prerender/first paint, the real width once mounted.
   const railViewport = hydrated ? width : 390;
+  // Feeds LegendList's `estimatedItemSize` below — a first-paint/pagination size hint so it
+  // doesn't have to lay out a full screen of never-measured rows during a fast fling. Mirrors the
+  // content width math above (window width minus the same symmetric `sidePad`) minus the grid's
+  // own column gaps.
+  const gridContentWidth = width - sidePad * 2;
+  const cardWidth = (gridContentWidth - (numColumns - 1) * GRID_COLUMN_GAP) / numColumns;
 
   const gridData = useMemo<GridItem[]>(() => {
     const remainder = gridItems.length % numColumns;
@@ -1008,6 +1030,7 @@ export default function BrowseScreen() {
           }
         }}
         data={gridData}
+        estimatedItemSize={estimatedCardHeight(cardWidth)}
         // LegendList memoizes each on-screen cell's rendered output, keyed off
         // itemKey/data/extraData — renderItem's `loadingMore` check below is otherwise
         // invisible to it, so an already-mounted trailing spacer cell never re-renders when
@@ -1034,15 +1057,16 @@ export default function BrowseScreen() {
           paddingLeft: sidePad,
           paddingRight: sidePad,
         }}
-        renderItem={({ item }) =>
-          item.spacer ? (
+        renderItem={({ item }) => {
+          if (item.spacer) {
             // While a next page is actually loading, fill the last row's
             // remaining slots with skeleton cards (matching the footer's) instead
             // of an invisible spacer — otherwise the row reads as "done" and the
             // incoming skeleton rows below look like they jumped straight to a
             // fresh row rather than finishing this one first.
-            loadingMore ? <SkeletonCard /> : <View style={styles.gridCell} />
-          ) : (
+            return loadingMore ? <SkeletonCard /> : <View style={styles.gridCell} />;
+          }
+          return (
             <View style={styles.gridCell}>
               <SeriesCard
                 entry={item}
@@ -1052,8 +1076,8 @@ export default function BrowseScreen() {
                 originPage={page}
               />
             </View>
-          )
-        }
+          );
+        }}
         ListFooterComponent={
           (gridLoading || (homeLoading && composedHome && terminalGridPreview)) && gridItems.length === 0 ? (
             <GridSkeleton numColumns={numColumns} rows={2} />
