@@ -30,7 +30,7 @@ import { ErrorBoundary } from '@/components/error-boundary';
 import { OverlayProvider } from '@/components/overlay/overlay';
 import { startEmbeddedRuntime } from '@/data/embedded/startup';
 import { persister, PERSIST_BUSTER, PERSIST_MAX_AGE_MS, queryClient, shouldDehydrateQuery } from '@/data/query-client';
-import { useActiveColorScheme } from '@/hooks/use-theme';
+import { ThemeSchemeProvider, useActiveColorScheme } from '@/hooks/use-theme';
 /* eslint-enable import/first */
 
 // Install the on-device transport per the persisted preference before any screen queries fire
@@ -38,10 +38,6 @@ import { useActiveColorScheme } from '@/hooks/use-theme';
 startEmbeddedRuntime();
 
 function RootLayout() {
-  // Active scheme (the user's appearance preference, else the OS) so the
-  // navigation theme + status bar match the app content and re-theme live when
-  // the preference changes.
-  const scheme = useActiveColorScheme();
   return (
     <ErrorBoundary>
       <PersistQueryClientProvider
@@ -55,39 +51,53 @@ function RootLayout() {
           dehydrateOptions: { shouldDehydrateQuery },
         }}>
         <GestureHandlerRootView style={{ flex: 1 }}>
-          <ThemeProvider value={scheme === 'dark' ? DarkTheme : DefaultTheme}>
-            {/* Status-bar contents follow the active scheme (light glyphs on the
-                dark theme, dark glyphs on light) so a forced theme reads right
-                even when it differs from the OS. */}
-            <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
-            <AnimatedSplashOverlay />
-            {/* OverlayProvider hosts the stacked bottom-sheet overlays app-wide. */}
-            <OverlayProvider>
-              {/* Native stack: real UINavigationController on iOS (large titles, back
-                  gesture) and the native toolbar on Android. The tab group and every
-                  pushed screen below hide the native header and render their own chrome. */}
-              <Stack>
-                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                {/* Series page renders its own static top bar (bridge name + back
-                    button), so the native stack header is hidden here. */}
-                <Stack.Screen name="series" options={{ headerShown: false }} />
-                {/* Full-screen page reader; its own dark chrome, fade in/out. */}
-                <Stack.Screen name="reader" options={{ headerShown: false, animation: 'fade' }} />
-                {/* These render their own <TopBar> (matching series.tsx), so the native
-                    stack header is hidden here too. */}
-                <Stack.Screen name="bridge-settings" options={{ headerShown: false }} />
-                <Stack.Screen name="tracker-settings" options={{ headerShown: false }} />
-                <Stack.Screen name="registries" options={{ headerShown: false }} />
-                <Stack.Screen name="registry-browse" options={{ headerShown: false }} />
-                <Stack.Screen name="add-registry" options={{ headerShown: false }} />
-                <Stack.Screen name="diagnostics" options={{ headerShown: false }} />
-              </Stack>
-              <DemoBanner />
-            </OverlayProvider>
-          </ThemeProvider>
+          {/* Resolves the active scheme once for the whole tree; every `useTheme`
+              consumer below reads it from context. */}
+          <ThemeSchemeProvider>
+            <RootNavigation />
+          </ThemeSchemeProvider>
         </GestureHandlerRootView>
       </PersistQueryClientProvider>
     </ErrorBoundary>
+  );
+}
+
+function RootNavigation() {
+  // Active scheme from context (resolved once by ThemeSchemeProvider above) so the
+  // navigation theme + status bar match the app content and re-theme live when the
+  // preference changes.
+  const scheme = useActiveColorScheme();
+  return (
+    <ThemeProvider value={scheme === 'dark' ? DarkTheme : DefaultTheme}>
+      {/* Status-bar contents follow the active scheme (light glyphs on the dark
+          theme, dark glyphs on light) so a forced theme reads right even when it
+          differs from the OS. */}
+      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+      <AnimatedSplashOverlay />
+      {/* OverlayProvider hosts the stacked bottom-sheet overlays app-wide. */}
+      <OverlayProvider>
+        {/* Native stack: real UINavigationController on iOS (large titles, back
+            gesture) and the native toolbar on Android. The tab group and every
+            pushed screen below hide the native header and render their own chrome. */}
+        <Stack>
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          {/* Series page renders its own static top bar (bridge name + back
+              button), so the native stack header is hidden here. */}
+          <Stack.Screen name="series" options={{ headerShown: false }} />
+          {/* Full-screen page reader; its own dark chrome, fade in/out. */}
+          <Stack.Screen name="reader" options={{ headerShown: false, animation: 'fade' }} />
+          {/* These render their own <TopBar> (matching series.tsx), so the native
+              stack header is hidden here too. */}
+          <Stack.Screen name="bridge-settings" options={{ headerShown: false }} />
+          <Stack.Screen name="tracker-settings" options={{ headerShown: false }} />
+          <Stack.Screen name="registries" options={{ headerShown: false }} />
+          <Stack.Screen name="registry-browse" options={{ headerShown: false }} />
+          <Stack.Screen name="add-registry" options={{ headerShown: false }} />
+          <Stack.Screen name="diagnostics" options={{ headerShown: false }} />
+        </Stack>
+        <DemoBanner />
+      </OverlayProvider>
+    </ThemeProvider>
   );
 }
 
