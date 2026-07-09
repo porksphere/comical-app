@@ -13,12 +13,13 @@
  * is the only reachable path, and a failed fetch is a real error — no silent
  * fallback to fake content.
  */
-import { useMemo, useSyncExternalStore } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useMemo } from 'react';
+import { use$ } from '@legendapp/state/react';
 import { useDataEpoch } from './data-epoch';
 
 import { logDiagnostic } from '@/lib/diagnostics';
 import { firstChapterInReadingOrder } from '@/lib/chapter-order';
+import { persisted$ } from '@/lib/observable';
 import * as api from './api';
 import * as mock from './mock';
 import type {
@@ -627,54 +628,33 @@ const MOCK_TOGGLE_KEY = 'comical:devUseMockData';
 /** Set only by the GH Pages preview workflow — see deploy-web.yml. */
 export const IS_DEMO_MODE = process.env.EXPO_PUBLIC_COMICAL_DEMO_MODE === '1';
 
-let mockToggleOn = false;
-const listeners = new Set<() => void>();
+// Persisted dev-only toggle (Legend State; see `lib/observable.ts`). Holds the raw stored value; the
+// `__DEV__` mask is applied at read, so a non-dev build always reports false and never activates mock
+// via the toggle. The old store wrote '1'/'0', which parse back as truthy/falsy, so the key carries over.
+const mockToggle$ = persisted$<boolean>(MOCK_TOGGLE_KEY, false);
+
 /** The one source of truth for "is mock mode active", mirrored into the mock module so its simulated
- *  latency is a no-op in real mode no matter which screen calls it. Kept in sync at every point
- *  `mockToggleOn` changes (below), plus once at module load for the demo build. */
+ *  latency is a no-op in real mode no matter which screen calls it. Runs once at load (below) and on
+ *  every toggle change, including the async hydrate. */
 function syncMockActive(): void {
-  mock.setMockActive(IS_DEMO_MODE || (__DEV__ && mockToggleOn));
-}
-function notifyMockToggleChange(): void {
-  syncMockActive();
-  for (const l of listeners) l();
-}
-function subscribeMockToggle(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
-function getMockToggleSnapshot(): boolean {
-  return __DEV__ && mockToggleOn;
-}
-function getMockToggleServerSnapshot(): boolean {
-  return false;
+  mock.setMockActive(IS_DEMO_MODE || (__DEV__ && Boolean(mockToggle$.peek())));
 }
 
-// Seed the mock module's flag at load (before the async toggle read below resolves), so the demo
-// build (IS_DEMO_MODE) is mock-active immediately and every real build is mock-inactive from the start.
+// Seed the mock module's flag at load (before the async toggle read resolves), so the demo build
+// (IS_DEMO_MODE) is mock-active immediately and every real build is mock-inactive from the start; then
+// keep it in sync whenever the toggle changes or finishes hydrating.
 syncMockActive();
-
-if (__DEV__) {
-  AsyncStorage.getItem(MOCK_TOGGLE_KEY)
-    .then((stored) => {
-      mockToggleOn = stored === '1';
-      notifyMockToggleChange();
-    })
-    .catch(() => {});
-}
+mockToggle$.onChange(syncMockActive);
 
 /** Dev-only: flip the "Use mock data" toggle and persist it locally. No-op outside `__DEV__`. */
 export function setMockToggle(enabled: boolean): void {
   if (!__DEV__) return;
-  mockToggleOn = enabled;
-  notifyMockToggleChange();
-  AsyncStorage.setItem(MOCK_TOGGLE_KEY, enabled ? '1' : '0').catch(() => {});
+  mockToggle$.set(enabled);
 }
 
 /** Dev-only hook: [enabled, setEnabled] for the Settings screen's mock-data toggle. */
 export function useMockDataToggle(): [boolean, (enabled: boolean) => void] {
-  const enabled = useSyncExternalStore(subscribeMockToggle, getMockToggleSnapshot, getMockToggleServerSnapshot);
-  return [enabled, setMockToggle];
+  return [__DEV__ && Boolean(use$(mockToggle$)), setMockToggle];
 }
 
 /** True whenever mock data should be used: the GH Pages demo build, or the dev toggle. */
