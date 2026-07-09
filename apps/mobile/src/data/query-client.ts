@@ -67,7 +67,17 @@ export const persister = createAsyncStoragePersister({
 // as tappable before the true state is known and (b) can land its stale value on top of an
 // optimistic toggle, reverting the star while the write actually succeeded. Keep it out of disk
 // so it always starts `null` (button disabled) and re-scrapes fresh after a restart.
-const NO_PERSIST_KEYS = new Set(['seriesDetail', 'seriesList', 'chapterPages', 'directPages', 'relatedGroups', 'isFavorite']);
+// `pageThumb` is a per-page lazy scrape (potentially hundreds per long series) — keep it in memory
+// for scroll-back within a session, but never write that volume to the AsyncStorage blob.
+const NO_PERSIST_KEYS = new Set([
+  'seriesDetail',
+  'seriesList',
+  'chapterPages',
+  'directPages',
+  'relatedGroups',
+  'isFavorite',
+  'pageThumb',
+]);
 
 /** Persist only the light keys (see `NO_PERSIST_KEYS`), keeping the default
  *  "successful queries only" rule. */
