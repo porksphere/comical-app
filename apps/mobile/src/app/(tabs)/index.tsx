@@ -30,7 +30,7 @@ import { estimatedCardHeight, SeriesCard } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { WebPullIndicator } from '@/components/web-pull-indicator';
+import { PullIndicator } from '@/components/pull-indicator';
 import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { pageOptions } from '@/data/api';
 import { takeBrowseIntent } from '@/data/browse-intent';
@@ -40,6 +40,7 @@ import type { Bridge, BridgeList, GridPage, HomeGridSection, SeriesEntry } from 
 import { friendlyError } from '@/lib/friendly-error';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useTopBarHeight } from '@/hooks/use-responsive';
+import { useNativePullToRefresh } from '@/hooks/use-native-pull-to-refresh';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
 import { useWebPullToRefresh } from '@/hooks/use-web-pull-to-refresh';
@@ -702,26 +703,18 @@ export default function BrowseScreen() {
   // 0 = bar fully visible (resting position); -headerHeight = fully hidden, slid up and
   // off-screen. Tracks the scroll delta 1:1 (X/Twitter-style): scrolling down by dy px hides
   // the bar by the same dy, scrolling up reveals it again from wherever it currently sits —
-  // it doesn't need to reach the very top first. At rest (y === 0) it's pinned fully visible.
-  //
-  // An active pull/overscroll (y < 0) is handled separately, sliding the bar away 1:1 with pull
-  // depth instead of staying pinned: the list's own ScrollView frame spans the full screen (see
-  // the `headerHeight` comment above) rather than starting below the bar, so a native
-  // RefreshControl's spinner reveals itself within that same full-screen frame — right where the
-  // opaque, higher-zIndex bar sits — and `progressViewOffset` (see the list's own comment) is only
-  // a soft position hint, not a hard gap the bar can just stay out of. Sliding the bar away as the
-  // pull deepens is what actually clears that area for the spinner (mirrors what the web pull
-  // indicator's own gap-opening achieves by shifting the list itself instead — see `webPull`).
+  // it doesn't need to reach the very top first. At/above the top (y <= 0 — resting, or an
+  // active pull/overscroll, which reports negative y) it's pinned fully visible: the pull-to-
+  // refresh spinner is a separate overlay that sits just below the bar's resting edge (the shared
+  // PullIndicator, driven by useWebPullToRefresh on web / useNativePullToRefresh on iOS — not a
+  // native RefreshControl behind the bar), so the bar has nothing to get out of the way of, and
+  // staying put reads as an anchored top bar with the spinner emerging beneath it, X-style.
   const headerOffsetY = useSharedValue(0);
   useAnimatedReaction(
     () => scrollY.value,
     (y, prevY) => {
-      if (y === 0) {
+      if (y <= 0) {
         headerOffsetY.value = 0;
-        return;
-      }
-      if (y < 0) {
-        headerOffsetY.value = Math.max(-headerHeight, y);
         return;
       }
       // Past the real end of the content, the list is either overscrolled into the elastic
@@ -750,15 +743,21 @@ export default function BrowseScreen() {
   const headerStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: headerOffsetY.value }],
   }));
-  // Web-only pull-to-refresh — see the hook's own comment for why native's RefreshControl can't
-  // just be reused here. Reuses the same `onRefresh` native does (below), so a web pull goes
-  // through the identical refetch/min-visible-duration path, `refreshing` included — that's what
-  // makes the pulled-down gap stick until the request actually resolves, same as native.
+  // Pull-to-refresh comes in three flavors, all feeding the same `onRefresh`/`refreshing` pair:
+  //  - Web (`useWebPullToRefresh`): touch-driven, since react-native-web's RefreshControl is inert.
+  //  - iOS (`useNativePullToRefresh`): overscroll-driven overlay, since iOS's RefreshControl draws
+  //    its spinner behind the top bar with no working offset (see that hook).
+  //  - Android: RN's native RefreshControl, wired on the list below (its offset works there).
+  // Both custom hooks are inert off their platform (web never bounces; Android clamps overscroll),
+  // so calling both unconditionally is safe. Each reuses the same `onRefresh` closure, so every
+  // path runs the identical refetch/min-visible-duration flow, `refreshing` included.
   const webPull = useWebPullToRefresh(scrollY, onRefresh, refreshing);
-  // Shifts the whole grid down in lockstep with the pull/hold (see the hook) so the gap the
-  // WebPullIndicator's spinner sits in actually opens up, rather than the spinner floating over
-  // unmoved content. Always 0 on native — the touch handlers driving `pullY` are only wired up
-  // on web (see the `ThemedView` below) — so this is harmless dead weight there.
+  const nativePull = useNativePullToRefresh(scrollY, onRefresh, refreshing);
+  // Which custom indicator (if any) is active on this platform — Android uses the native control.
+  const customPull = Platform.OS === 'ios' ? nativePull : Platform.OS === 'web' ? webPull : null;
+  // Web only: shifts the whole grid down in lockstep with the pull/hold (see the web hook) so the
+  // gap the spinner sits in actually opens up. iOS opens its own gap via elastic overscroll (the
+  // content already moves), and native has no touch-driven pull, so this stays 0 off web.
   const webPullListStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: webPull.pullY.value }],
   }));
@@ -1058,21 +1057,23 @@ export default function BrowseScreen() {
         // Show the browser's native scrollbar on web (the list scrolls in its own
         // overflow container); keep it hidden on native, where it's not idiomatic.
         showsVerticalScrollIndicator={Platform.OS === 'web'}
-        // Native RefreshControl only — react-native-web's is a no-op, so web gets its own
-        // touch-driven implementation instead (`useWebPullToRefresh`/`WebPullIndicator` below).
-        // We deliberately do NOT pass progressViewOffset ourselves: LegendList already folds the
-        // contentContainer's paddingTop (headerHeight) into the RefreshControl's
-        // progressViewOffset internally, so the spinner settles just below the bar's resting
-        // position — the bar itself stays put throughout (see `headerOffsetY` above).
-        onRefresh={Platform.OS === 'web' ? undefined : onRefresh}
-        refreshing={Platform.OS === 'web' ? false : refreshing}
+        // Android-only native RefreshControl. Its `progressViewOffset` actually works on Android
+        // (SwipeRefreshLayout), so LegendList folding in the contentContainer's paddingTop
+        // (headerHeight) settles the spinner just below the bar. iOS ignores that offset entirely
+        // (facebook/react-native#54183) — its spinner would draw behind the bar — so iOS opts out
+        // here and uses the overlay `PullIndicator` (see `useNativePullToRefresh`); web's is a
+        // no-op there and likewise uses the overlay. Both drive it off `onScrollEndDrag` below.
+        onRefresh={Platform.OS === 'android' ? onRefresh : undefined}
+        refreshing={Platform.OS === 'android' ? refreshing : false}
+        // iOS: a release past the overscroll threshold triggers the refresh (see the native hook).
+        onScrollEndDrag={Platform.OS === 'ios' ? nativePull.onScrollEndDrag : undefined}
       />
       </Animated.View>
       {topBar}
-      {Platform.OS === 'web' && (
-        <WebPullIndicator
-          pullY={webPull.pullY}
-          pullThreshold={webPull.pullThreshold}
+      {customPull && (
+        <PullIndicator
+          pullY={customPull.pullY}
+          pullThreshold={customPull.pullThreshold}
           refreshing={refreshing}
           top={headerHeight}
           color={theme.accent}
