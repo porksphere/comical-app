@@ -27,7 +27,7 @@ import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
-import { isAbort, useApiBase, type BridgeSummary, type SavedRegistry, type TrackerSummary } from '@/data/api';
+import { useApiBase, type BridgeSummary } from '@/data/api';
 import { applyEmbeddedMode, isEmbeddedRuntimeAvailable, useEmbeddedEnabled } from '@/data/embedded';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { queryClient } from '@/data/query-client';
@@ -37,6 +37,7 @@ import { useHovered } from '@/hooks/use-hovered';
 import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
+import { friendlyError } from '@/lib/friendly-error';
 import { hapticImpactLight, hapticSelection } from '@/lib/haptics';
 
 const NSFW_MODE_OPTIONS: { value: NsfwMode; label: string; description: string }[] = [
@@ -351,25 +352,17 @@ function TrackersSection() {
   const ds = useDataSource();
   const router = useRouter();
   const theme = useTheme();
-  const [trackers, setTrackers] = useState<TrackerSummary[] | null | undefined>(undefined);
-  const [error, setError] = useState<string | null>(null);
-  const [reload, setReload] = useState(0);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    setError(null);
-    ds.getTrackers(ctrl.signal)
-      .then(setTrackers)
-      .catch((e) => {
-        if (!isAbort(e)) setError(e.message || 'Failed to load trackers');
-      });
-    return () => ctrl.abort();
-  }, [ds, reload]);
+  // Through react-query for consistency + free retry/staleness. `data === undefined` = still loading;
+  // `null` = this server has no tracker support (an expected state, not an error).
+  const { data: trackers, isError, error, refetch } = useQuery({
+    queryKey: ['trackers'],
+    queryFn: ({ signal }) => ds.getTrackers(signal),
+  });
 
   return (
     <SettingsSection title="Trackers" icon={<TrackersIcon color={theme.textSecondary} size={14} />}>
-      {error ? (
-        <RetryBlock message={error} onRetry={() => setReload((n) => n + 1)} />
+      {isError ? (
+        <RetryBlock message={friendlyError(error, 'Failed to load trackers. Try again.')} onRetry={() => refetch()} />
       ) : trackers === undefined ? (
         <ThemedText type="small" themeColor="textSecondary">
           Loading…
@@ -401,25 +394,18 @@ function RegistriesSection() {
   const ds = useDataSource();
   const router = useRouter();
   const theme = useTheme();
-  const [registries, setRegistries] = useState<SavedRegistry[] | null | undefined>(undefined);
-  const [error, setError] = useState<string | null>(null);
-  const [reload, setReload] = useState(0);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    setError(null);
-    ds.getRegistries(ctrl.signal)
-      .then(setRegistries)
-      .catch((e) => {
-        if (!isAbort(e)) setError(e.message || 'Failed to load registries');
-      });
-    return () => ctrl.abort();
-  }, [ds, reload]);
+  // Shares the ['registries'] cache with registries.tsx / add-registry.tsx, so adding or removing a
+  // registry there refreshes this section too — the old manual effect only re-ran on its own reload
+  // counter and missed those invalidations. `undefined` = loading; `null` = no registry support.
+  const { data: registries, isError, error, refetch } = useQuery({
+    queryKey: ['registries'],
+    queryFn: ({ signal }) => ds.getRegistries(signal),
+  });
 
   return (
     <SettingsSection title="Registries" icon={<RegistriesIcon color={theme.textSecondary} size={14} />}>
-      {error ? (
-        <RetryBlock message={error} onRetry={() => setReload((n) => n + 1)} />
+      {isError ? (
+        <RetryBlock message={friendlyError(error, 'Failed to load registries. Try again.')} onRetry={() => refetch()} />
       ) : registries === undefined ? (
         <ThemedText type="small" themeColor="textSecondary">
           Loading…
