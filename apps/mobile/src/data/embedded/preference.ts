@@ -9,32 +9,50 @@
  */
 import { use$ } from '@legendapp/state/react';
 import { isEmbeddedRuntimeAvailable } from '@comical/host-rn';
-import { persisted$ } from '@/lib/observable';
+import { migrateLegacyKey, persisted$ } from '@/lib/observable';
 
 export type DataSourceMode = 'embedded' | 'remote';
 
-const PREF_KEY = 'comical:embedded:enabled';
+// JSON-owned key; the old store wrote a bare '1'/'0' under `comical:embedded:enabled`, migrated once.
+const PREF_KEY = 'comical:embeddedEnabled';
+const LEGACY_KEY = 'comical:embedded:enabled';
 
-// Fresh installs default to "on when the native runtime is available" — availability is fixed for a
-// process, so capturing it as the initial matches the old `enabledPref ?? isEmbeddedRuntimeAvailable()`
-// fallback. Once the user flips the toggle, their explicit choice is persisted and wins.
-//
-// The old store wrote this key as '1'/'0'; Legend State now owns it as a JSON boolean. An upgrading
-// user's legacy value still parses truthy/falsy (1/0) on the first load, so `Boolean(...)` normalizes
-// it — and the next toggle rewrites the key in the new format. Coerced everywhere it's read.
-const enabled$ = persisted$<boolean>(PREF_KEY, isEmbeddedRuntimeAvailable());
+// Tri-state: true / false / unset (null). Unset means "default to whether the native runtime is
+// available" — and that availability MUST be read lazily, never captured, because it flips false→true
+// during bootstrap when `setNativeBridgeRuntime` runs (see embedded/startup.ts). Baking it into the
+// persisted initial would freeze the pre-bootstrap `false` and strand the app in remote mode even
+// with the toggle on. Wrapped in an object so the null/unset state round-trips (a persisted primitive
+// reads back as `{}` before anything is stored).
+type EmbeddedPref = { enabled: boolean | null };
+const pref$ = persisted$<EmbeddedPref>(PREF_KEY, { enabled: null });
+
+// Carry a pre-migration '1'/'0' choice across to the new key, once.
+migrateLegacyKey(LEGACY_KEY, pref$, (raw) => {
+  if (storedPref() == null) pref$.set({ enabled: raw === '1' });
+});
+
+/** The user's explicit choice, or null when they've never set it. */
+function storedPref(): boolean | null {
+  return (pref$.peek() as Partial<EmbeddedPref>).enabled ?? null;
+}
+
+/** Enabled-by-preference, resolving an unset choice to live runtime availability (evaluated now). */
+function resolvedEnabled(pref: boolean | null): boolean {
+  return pref ?? isEmbeddedRuntimeAvailable();
+}
 
 /** Persist + broadcast the preference. Side effects (transport swap, cache clear) are the caller's. */
 export function setEmbeddedEnabled(enabled: boolean): void {
-  enabled$.set(enabled);
+  pref$.set({ enabled });
 }
 
 /** `[enabled, setEnabled]` for the Settings toggle. */
 export function useEmbeddedEnabled(): [boolean, (enabled: boolean) => void] {
-  return [Boolean(use$(enabled$)), setEmbeddedEnabled];
+  const pref = (use$(pref$) as Partial<EmbeddedPref>).enabled ?? null;
+  return [resolvedEnabled(pref), setEmbeddedEnabled];
 }
 
 /** The resolved transport mode: 'embedded' only when both enabled AND the native runtime exists. */
 export function getResolvedModeSync(): DataSourceMode {
-  return enabled$.peek() && isEmbeddedRuntimeAvailable() ? 'embedded' : 'remote';
+  return resolvedEnabled(storedPref()) && isEmbeddedRuntimeAvailable() ? 'embedded' : 'remote';
 }
