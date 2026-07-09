@@ -1,6 +1,6 @@
 import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import type { LegendListRef } from '@legendapp/list/react-native';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -28,9 +28,9 @@ import { WebPullIndicator } from '@/components/web-pull-indicator';
 import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { isAbort, pageOptions } from '@/data/api';
 import { takeBrowseIntent } from '@/data/browse-intent';
-import { queryKeys } from '@/data/queries';
+import { fetchBrowseScope, homeSectionsQuery, queryKeys, type BrowseScope } from '@/data/queries';
 import { isRailLayout, useDataSource, useHideNsfw, useMockActive, type QueryOpts } from '@/data/source';
-import type { Bridge, BridgeList, HomeGridSection, RailSection, SeriesEntry } from '@/data/types';
+import type { Bridge, BridgeList, GridPage, HomeGridSection, SeriesEntry } from '@/data/types';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
@@ -54,6 +54,12 @@ const REFRESH_MIN_VISIBLE_MS = 600;
 type GridItem = SeriesEntry & { spacer?: boolean };
 /** A drilled-into rail: its list id (for pagination) + display title. */
 type SeeAll = { listId: string; title: string } | null;
+
+// Stable, never-fetched keys for the two grid infinite queries while they're disabled (no active
+// scope) — hooks must be called unconditionally, so a disabled query still needs a queryKey; these
+// can't collide with a real `browseGrid` key (which always carries mock/bridgeId/scope).
+const DISABLED_RESULTS_KEY = ['browseGrid', 'disabled', 'results'] as const;
+const DISABLED_TERMINAL_KEY = ['browseGrid', 'disabled', 'terminal'] as const;
 
 /** Candidate filter-field ids (lowercased) a bridge might use for each meta key
  *  tapped on the Series screen — matched against `FilterDef.id` so e.g. an
@@ -269,43 +275,23 @@ export default function BrowseScreen() {
     else setTimeout(() => setRefreshing(false), wait);
   }, []);
 
-  // ── Home rails + grid sections (only fetched while `page === 'home'`) ─────
-  const [sections, setSections] = useState<RailSection[]>([]);
-  const [gridSections, setGridSections] = useState<HomeGridSection[]>([]);
-  const [homeError, setHomeError] = useState<string | null>(null);
-  const [homeReload, setHomeReload] = useState(0);
-  const [homeLoading, setHomeLoading] = useState(false);
-
-  useEffect(() => {
-    // Wait until `lists` are actually this bridge's — otherwise stale/empty lists make `composedHome`
-    // briefly true and fire a spurious fetch (and home-sections-empty log) for a page-only bridge.
-    if (!bridgeId || listsBridgeId !== bridgeId || !composedHome) return;
-    const ctrl = new AbortController();
-    setHomeError(null);
-    // Clear the previous bridge/visit's rails before fetching, so a switch shows
-    // a loading skeleton instead of a stale flash of the old selection's content.
-    // A pull-to-refresh (refreshActiveRef) is the exception: keep the current
-    // rails on screen and let the RefreshControl spinner stand in for progress.
-    const isRefresh = refreshActiveRef.current;
-    if (!isRefresh) {
-      setHomeLoading(true);
-      setSections([]);
-      setGridSections([]);
-    }
-    ds.getHomeSections(bridgeId, ctrl.signal)
-      .then((res) => {
-        setSections(res.sections);
-        setGridSections(res.gridSections);
-      })
-      .catch((e) => {
-        if (!isAbort(e)) setHomeError(e.message || 'Failed to load home');
-      })
-      .finally(() => {
-        setHomeLoading(false);
-        finishRefresh();
-      });
-    return () => ctrl.abort();
-  }, [bridgeId, listsBridgeId, composedHome, ds, homeReload, finishRefresh]);
+  // ── Home rails + grid sections (composed Home surface) ─────────────────────
+  // react-query with keepPreviousData (see homeSectionsQuery): a bridge switch keeps the prior
+  // Home on screen until the new one resolves rather than clearing to a skeleton, so the shared
+  // LegendList instance — and the filter bar in its header — never unmounts on a switch (that
+  // remount was the reported flash). Gated on `composedHome` AND this bridge's lists being loaded
+  // (`listsBridgeId === bridgeId`) so stale/empty lists can't make `composedHome` briefly true and
+  // fire a spurious fetch for a page-only bridge.
+  const homeQuery = useQuery(homeSectionsQuery(ds, mock, bridgeId ?? '', composedHome && listsBridgeId === bridgeId));
+  const sections = useMemo(() => homeQuery.data?.sections ?? [], [homeQuery.data]);
+  const gridSections = useMemo(() => homeQuery.data?.gridSections ?? [], [homeQuery.data]);
+  // Don't blow away shown rails with an error banner if a refetch fails but we still have data —
+  // only a dataless first load surfaces the error.
+  const homeError =
+    homeQuery.isError && !homeQuery.data ? (homeQuery.error as Error).message || 'Failed to load home' : null;
+  // Skeleton only on a genuinely dataless first load: keepPreviousData keeps prior data during a
+  // bridge switch (isPlaceholderData) and a refetch keeps its own data, so neither shows a skeleton.
+  const homeLoading = homeQuery.isLoading;
   // Only the LAST grid section infinite-scrolls; earlier ones get "Load more" —
   // see HomeGridSection's doc in types.ts.
   const terminalGridSection = gridSections.at(-1) ?? null;
@@ -464,12 +450,10 @@ export default function BrowseScreen() {
   // echo the back arrow.
   const resultsLabel = seeAll ? seeAll.title : query ? `Results for “${query}”` : 'Filtered results';
 
-  // ── Grid (unified: a flagged page, favorites, search, or "See all") ───────
-  // Home's own grid sections (terminal + non-terminal) are fetched separately
-  // above; this is everything else, sharing one fetch/pagination pipeline.
-  // "See all" keeps its existing simple behavior (browse that list's items,
-  // page-only, no filters/sort/scoped-search) — those apply to the page-flagged
-  // list / global search case below instead.
+  // ── Grid derivations (which logical view the flat grid is showing) ─────────
+  // These discriminators feed `resultsScope`/`terminalScope` below, which the infinite queries key
+  // and fetch from. "See all" keeps its simple behavior (browse that list's items, page-only, no
+  // filters/sort/scoped-search); those apply to the page-flagged list / global search case instead.
   const activeListId = seeAll ? seeAll.listId : !composedHome ? (selectedList?.id ?? null) : null;
   // Scoped-list search: route through the list endpoint's `q` param when the
   // active list is `searchable`, instead of always calling `/search` — mirrors
@@ -481,138 +465,123 @@ export default function BrowseScreen() {
   // "Load more" blocks non-terminal sections get — so it feeds `gridItems` too.
   const isHomeTerminal = !inResults && composedHome && !!terminalGridSection;
 
-  const [gridItems, setGridItems] = useState<SeriesEntry[]>([]);
-  const [gridPageNum, setGridPageNum] = useState(1);
-  const [gridHasMore, setGridHasMore] = useState(false);
-  const [gridLoading, setGridLoading] = useState(false);
-  const [gridError, setGridError] = useState<string | null>(null);
-  const [gridReload, setGridReload] = useState(0);
-  // Bumped by pull-to-refresh specifically — kept separate from `gridReload` (Retry) because
-  // `gridReload` also feeds `gridScope`/`gridKey` below, and changing that key remounts
-  // AnimatedLegendList. A Retry needs that remount (it's crossing the empty→populated boundary the
-  // key exists to guard — see the `gridScope` comment). A refresh doesn't: content stays on screen
-  // the whole time, so there's no such boundary, and remounting mid-gesture on any results page
-  // (favorites, search, see-all, filtered/sorted lists) tore down the native ScrollView/
-  // RefreshControl instance while the user's finger was still down, snapping it shut just like the
-  // pre-min-duration-fix bug. Folded into the fetch effect's deps below to still trigger a refetch.
-  const [gridRefreshTick, setGridRefreshTick] = useState(0);
-  // `onEndReached` can fire multiple times in quick succession during a fast fling, all before
-  // a state-based guard would have re-rendered — a plain ref closes that gap synchronously, so
-  // a fast fling can't fire the same page's fetch twice and append duplicate items into
-  // `gridItems` (which LegendList then flags as overlapping keys and mis-recycles).
-  const loadingMoreRef = useRef(false);
+  // The results scope (search / "See all" / a page-flagged list / favorites), or null when we're
+  // not showing a results grid (pure composed Home, or Home's terminal section — handled below).
+  // Both the query key and the fetch derive from this one value (see BrowseScope), which is what
+  // lets the grid move between scopes without ever clearing to empty.
+  const resultsScope = useMemo<BrowseScope | null>(() => {
+    if (isHomeTerminal || !showResultsGrid || !bridgeId) return null;
+    if (isFavoritesPage) return { kind: 'favorites' };
+    if (seeAll) return { kind: 'seeAll', listId: seeAll.listId };
+    const opts: QueryOpts = { filters: committedFilters, sort: committedSort };
+    // A page-flagged list browsed with no query (optionally filtered/sorted), or scoped-search on
+    // that same list when it's `searchable` and a query is set.
+    if (activeListId && (scopedSearch || !query)) {
+      return { kind: 'list', listId: activeListId, opts: scopedSearch && query ? { ...opts, query } : opts };
+    }
+    // Global search: an unscoped query, or filters/sort with no specific list (home).
+    return { kind: 'search', query, opts };
+  }, [isHomeTerminal, showResultsGrid, bridgeId, isFavoritesPage, seeAll, activeListId, scopedSearch, query, committedFilters, committedSort]);
 
-  // Re-runs whichever fetch backs the *current* view: the composed Home surface
-  // (rails + grid sections, via `homeReload`) when not in results, or the flat
-  // results grid (search / "See all" / a page-flagged sub-page / favorites /
-  // live filters+sort, via `gridRefreshTick`) otherwise. Unlike those reload paths'
-  // normal firing (bridge/page switch etc.), a pull keeps the existing content
-  // on screen and shows only the RefreshControl spinner — the two fetch effects
-  // read `refreshActiveRef` to skip their content-clearing skeleton, and call
-  // `finishRefresh` (declared above, before those effects) in their `finally`
-  // once the fresh data has swapped in.
+  const getNextPageParam = (last: GridPage, _all: GridPage[], lastParam: number) =>
+    last.hasNextPage ? lastParam + 1 : undefined;
+
+  // keepPreviousData holds the previous scope's items until the new scope resolves, so a
+  // bridge/page/filter/sort/search switch never clears the grid to empty — no flash, and no
+  // empty→populated transition for the list to choke on (see the list `key` below).
+  const resultsQuery = useInfiniteQuery({
+    queryKey: resultsScope ? queryKeys.browseGrid(mock, bridgeId ?? '', resultsScope) : DISABLED_RESULTS_KEY,
+    queryFn: ({ pageParam, signal }) => fetchBrowseScope(ds, bridgeId ?? '', resultsScope!, pageParam, signal),
+    enabled: !!resultsScope,
+    initialPageParam: 1,
+    getNextPageParam,
+    placeholderData: keepPreviousData,
+  });
+
+  // Home's terminal grid section shares the main list's infinite scroll. Page 1 is seeded from
+  // `getHomeSections` via `initialData` (no extra request on Home); pages 2+ come through here.
+  // Keyed on the terminal list's id, so a bridge switch (a different terminal list) is a fresh scope.
+  //
+  // Gate the fetch scope on the home data being SETTLED (`!isPlaceholderData`): mid-switch,
+  // keepPreviousData makes `homeQuery.data` briefly the previous bridge's Home, so
+  // `terminalGridSection.id` would be the OLD list paired with the NEW `bridgeId` — a wrong fetch.
+  // While unsettled, `terminalScope` is null (query disabled), and keepPreviousData keeps the prior
+  // terminal items on screen so the body never empties; once Home settles, `initialData` seeds the
+  // new page 1 with no extra request. `isHomeTerminal` itself stays true across the switch (so we
+  // keep reading `terminalQuery`, not the empty results query) — only the fetch key waits.
+  const terminalScope: BrowseScope | null =
+    isHomeTerminal && terminalGridSection && !homeQuery.isPlaceholderData
+      ? { kind: 'homeTerminal', listId: terminalGridSection.id }
+      : null;
+  const terminalQuery = useInfiniteQuery({
+    queryKey: terminalScope ? queryKeys.browseGrid(mock, bridgeId ?? '', terminalScope) : DISABLED_TERMINAL_KEY,
+    queryFn: ({ pageParam, signal }) => fetchBrowseScope(ds, bridgeId ?? '', terminalScope!, pageParam, signal),
+    enabled: !!terminalScope,
+    initialPageParam: 1,
+    getNextPageParam,
+    ...(terminalScope && terminalGridSection
+      ? {
+          initialData: {
+            pages: [{ items: terminalGridSection.items, hasNextPage: terminalGridSection.hasNextPage }],
+            pageParams: [1],
+          },
+        }
+      : {}),
+    placeholderData: keepPreviousData,
+  });
+
+  const activeGridQuery = isHomeTerminal ? terminalQuery : resultsQuery;
+  const gridItems = useMemo<SeriesEntry[]>(
+    () => activeGridQuery.data?.pages.flatMap((p) => p.items) ?? [],
+    [activeGridQuery.data],
+  );
+  const gridError =
+    resultsScope && resultsQuery.isError && !resultsQuery.data
+      ? (resultsQuery.error as Error).message || 'Failed to load results'
+      : null;
+  // Skeleton only on a genuinely dataless first load (see homeLoading for the same reasoning).
+  const gridLoading = !!resultsScope && resultsQuery.isLoading;
+
+  // Everything shown on the favorites page is, by definition, favorited — so warm the per-series
+  // `isFavorite` cache to `true`. Opening one from here then paints ★ instantly (and enabled)
+  // instead of gating the button on a fresh per-series status check. Mirrors comical-web's
+  // `favoritesCache` pre-seed. Runs as items arrive (page 1 and each infinite-scroll page).
+  useEffect(() => {
+    if (!isFavoritesPage || !bridgeId) return;
+    for (const item of gridItems) {
+      queryClient.setQueryData(queryKeys.isFavorite(mock, bridgeId, item.id), true);
+    }
+  }, [isFavoritesPage, bridgeId, mock, gridItems, queryClient]);
+
+  const loadMore = () => {
+    // `hasNextPage`/`isFetchingNextPage` are react-query's own guards — a fast fling firing
+    // `onEndReached` repeatedly can't double-fetch the same page (it dedupes internally).
+    if (!activeGridQuery.hasNextPage || activeGridQuery.isFetchingNextPage || !bridgeId) return;
+    if (!isHomeTerminal && !showResultsGrid) return;
+    void activeGridQuery.fetchNextPage();
+  };
+
+  // Re-runs whichever query backs the current view. keepPreviousData keeps the existing content on
+  // screen under the RefreshControl spinner (no skeleton), and `finishRefresh` enforces the minimum
+  // visible spinner duration once the refetch resolves. A ref holds the latest refetch closure so
+  // `onRefresh` itself stays stable (the query objects it closes over change identity every render).
+  const refreshRef = useRef<() => Promise<unknown>>(() => Promise.resolve());
+  refreshRef.current = () => {
+    const jobs: Promise<unknown>[] = [];
+    if (inResults) {
+      if (resultsScope) jobs.push(resultsQuery.refetch());
+    } else {
+      jobs.push(homeQuery.refetch());
+      if (isHomeTerminal) jobs.push(terminalQuery.refetch());
+    }
+    return Promise.all(jobs);
+  };
   const onRefresh = useCallback(() => {
     refreshActiveRef.current = true;
     refreshStartedAtRef.current = Date.now();
     setRefreshing(true);
-    if (inResults) setGridRefreshTick((n) => n + 1);
-    else setHomeReload((n) => n + 1);
-  }, [inResults]);
-
-  const fetchGrid = (pageNum: number) => {
-    if (!bridgeId) return Promise.reject(new Error('no bridge'));
-    if (isHomeTerminal) return ds.getGridPage(bridgeId, terminalGridSection!.id, pageNum);
-    if (isFavoritesPage) return ds.getFavorites(bridgeId, pageNum);
-    if (seeAll) return ds.getGridPage(bridgeId, seeAll.listId, pageNum);
-    const opts: QueryOpts = { filters: committedFilters, sort: committedSort };
-    // A page-flagged list browsed with no query (optionally filtered/sorted), or
-    // scoped-search on that same list when it's `searchable` and a query is set.
-    if (activeListId && (scopedSearch || !query)) {
-      return ds.getGridPage(bridgeId, activeListId, pageNum, scopedSearch && query ? { ...opts, query } : opts);
-    }
-    // Global search: an unscoped query, or filters/sort with no specific list (home).
-    return ds.search(bridgeId, query, pageNum, opts);
-  };
-
-  // Everything shown on the favorites page is, by definition, favorited — so warm the
-  // per-series `isFavorite` cache to `true`. Opening one from here then paints ★ instantly
-  // (and enabled) instead of gating the button on a fresh per-series status check. Mirrors
-  // comical-web's `favoritesCache` pre-seed.
-  const seedFavorited = (items: SeriesEntry[]) => {
-    if (!isFavoritesPage || !bridgeId) return;
-    for (const item of items) {
-      queryClient.setQueryData(queryKeys.isFavorite(mock, bridgeId, item.id), true);
-    }
-  };
-
-  useEffect(() => {
-    // `getHomeSections` already fetched the terminal section's first page —
-    // just adopt it, no extra request needed.
-    if (isHomeTerminal) {
-      setGridItems(terminalGridSection!.items);
-      setGridHasMore(terminalGridSection!.hasNextPage);
-      setGridPageNum(1);
-      setGridError(null);
-      return;
-    }
-    if (!bridgeId || !showResultsGrid) {
-      setGridItems([]);
-      setGridHasMore(false);
-      return;
-    }
-    const ctrl = new AbortController();
-    setGridError(null);
-    setGridPageNum(1);
-    // Clear the previous list's items before fetching — otherwise they stay on
-    // screen (with no skeleton, since `gridItems.length` is non-zero) until the
-    // new page swaps in, instead of showing a loading skeleton on the switch.
-    // A pull-to-refresh (refreshActiveRef) is the exception: keep the current
-    // results visible under the RefreshControl spinner rather than flashing to a
-    // skeleton, then swap the fresh page in on resolve.
-    const isRefresh = refreshActiveRef.current;
-    if (!isRefresh) {
-      setGridLoading(true);
-      setGridItems([]);
-    }
-    fetchGrid(1)
-      .then((res) => {
-        setGridItems(res.items);
-        setGridHasMore(res.hasNextPage);
-        seedFavorited(res.items);
-      })
-      .catch((e) => {
-        if (!isAbort(e)) setGridError(e.message || 'Failed to load results');
-      })
-      .finally(() => {
-        setGridLoading(false);
-        finishRefresh();
-      });
-    return () => ctrl.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bridgeId, isHomeTerminal, terminalGridSection, showResultsGrid, isFavoritesPage, activeListId, query, seeAll, scopedSearch, committedFilters, committedSort, ds, gridReload, gridRefreshTick, finishRefresh]);
-
-  const loadMore = () => {
-    if (
-      loadingMoreRef.current ||
-      !gridHasMore ||
-      !bridgeId ||
-      (!isHomeTerminal && !showResultsGrid)
-    )
-      return;
-    loadingMoreRef.current = true;
-    const nextPage = gridPageNum + 1;
-    fetchGrid(nextPage)
-      .then((res) => {
-        setGridItems((prev) => [...prev, ...res.items]);
-        setGridHasMore(res.hasNextPage);
-        setGridPageNum(nextPage);
-        seedFavorited(res.items);
-      })
-      .catch(() => {})
-      .finally(() => {
-        loadingMoreRef.current = false;
-      });
-  };
+    void refreshRef.current().finally(finishRefresh);
+  }, [finishRefresh]);
 
   // Leave a transient drill-down (search / "See all" / a live filter or sort) and
   // return to the page it was layered on — Home if that's where we were, or the
@@ -693,23 +662,20 @@ export default function BrowseScreen() {
     return [...gridItems, ...spacers];
   }, [gridItems, numColumns]);
 
-  // LegendList's web build resets its render state *during render* (`set$` in
-  // `shouldResetFreshDataLayout`) whenever `data` goes empty→non-empty after it has already held
-  // data — throwing "Cannot update a component while rendering a different component". Every grid
-  // scope switch (see-all / search / sort / filter / bridge / page / retry) runs `setGridItems([])`
-  // then refetches, so it hits this constantly.
-  //
-  // The reset only fires when `previousDataLength === 0` on a PERSISTED instance. So the robust
-  // guard is to remount across the empty↔populated boundary itself: fold `gridData.length > 0` into
-  // the list key. Then a 0→N fill is never seen by an existing instance — it's always a FRESH mount
-  // whose first render already has the data (its initial render, which skips the reset path).
-  // Keying on the boundary directly (rather than trying to enumerate every dep that clears the grid)
-  // is what makes this total. `gridScope` additionally captures which logical view we're on so the
-  // collapsing header's scroll offset can be reset per real scope change (see the effect below);
-  // it's not load-bearing for the reset guard. `numColumns` forces a fresh grid on column changes.
-  // Pagination only appends (length stays > 0), so it never remounts.
+  // A scope switch no longer remounts the list: keepPreviousData keeps the grid populated across
+  // switches (see the grid queries above), so the filter bar in the header stays mounted — no flash.
+  // The list key is reduced to just the two things that genuinely require a fresh instance:
+  //  - `numColumns` (a different column count is a different grid layout), and
+  //  - the empty↔populated boundary, which still guards LegendList's web "reset during render" bug
+  //    (`set$` in `shouldResetFreshDataLayout`, thrown as "Cannot update a component while rendering
+  //    a different component") on the rare genuinely-empty→populated transition. keepPreviousData
+  //    removes it for the common populated→populated scope switch, but a scope that legitimately
+  //    returns 0 results, followed by one that returns some, still crosses 0→N on a persisted
+  //    instance — remounting across that boundary keeps the fill on a fresh mount's first render.
+  const gridKey = `${numColumns}|${gridData.length > 0 ? 'full' : 'empty'}`;
+  // Logical scope string — drives ONLY the header/scroll reset effect below (not the list key), so
+  // the collapsing top bar snaps back and the persisted list scrolls to top on a real scope change.
   const gridScope = [
-    numColumns,
     bridgeId ?? '',
     page,
     inResults ? 'r' : 'h',
@@ -721,9 +687,7 @@ export default function BrowseScreen() {
     query,
     committedSort ?? '',
     JSON.stringify(committedFilters ?? {}),
-    gridReload,
   ].join('|');
-  const gridKey = `${gridScope}|${gridData.length > 0 ? 'full' : 'empty'}`;
 
   // Top bar: the bridge/page selectors sit in a fixed-height band (barHeight below
   // the safe-area inset), overlaid on the scrolling list. Unlike the old
@@ -777,14 +741,15 @@ export default function BrowseScreen() {
     },
     [headerHeight],
   );
-  // A scope switch remounts the list (see `gridScope`), so it comes back scrolled to the top —
-  // but the fresh instance won't emit a scroll event to reset `scrollY`/`headerOffsetY` on their
-  // own, which would leave the bar stuck hidden. Snap both back so it re-shows for the
-  // top-aligned fresh list.
+  // On a real scope change, snap the sliding top bar back to fully-visible (resetting the shared
+  // scroll values) AND scroll the list itself to the top. The list instance now persists across
+  // scope changes (no remount — see `gridKey`), so unlike before it won't come back at the top on
+  // its own; `scrollToOffset` puts it there to match the reset bar.
   useEffect(() => {
     scrollY.value = 0;
     headerOffsetY.value = 0;
     maxScrollY.value = 0;
+    listRef.current?.scrollToOffset({ offset: 0, animated: false });
   }, [gridScope, scrollY, headerOffsetY, maxScrollY]);
   const headerStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: headerOffsetY.value }],
@@ -883,7 +848,7 @@ export default function BrowseScreen() {
       {!inResults && composedHome && (
         <>
           {homeError ? (
-            <RetryBlock message={homeError} onRetry={() => setHomeReload((n) => n + 1)} />
+            <RetryBlock message={homeError} onRetry={() => homeQuery.refetch()} />
           ) : homeLoading ? (
             <>
               <View style={styles.rails}>
@@ -959,7 +924,7 @@ export default function BrowseScreen() {
           )}
         </>
       )}
-      {gridError && <RetryBlock message={gridError} onRetry={() => setGridReload((n) => n + 1)} />}
+      {gridError && <RetryBlock message={gridError} onRetry={() => resultsQuery.refetch()} />}
     </View>
   );
 
