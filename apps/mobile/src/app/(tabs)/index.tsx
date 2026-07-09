@@ -496,12 +496,10 @@ export default function BrowseScreen() {
   // RefreshControl instance while the user's finger was still down, snapping it shut just like the
   // pre-min-duration-fix bug. Folded into the fetch effect's deps below to still trigger a refetch.
   const [gridRefreshTick, setGridRefreshTick] = useState(0);
-  const [loadingMore, setLoadingMore] = useState(false);
   // `onEndReached` can fire multiple times in quick succession during a fast fling, all before
-  // `setLoadingMore(true)` has actually re-rendered — the `loadingMore` state read in `loadMore`
-  // below is stale for every call after the first until that render lands. A ref closes that gap
-  // synchronously, so a fast fling can't fire the same page's fetch twice and append duplicate
-  // items into `gridItems` (which LegendList then flags as overlapping keys and mis-recycles).
+  // a state-based guard would have re-rendered — a plain ref closes that gap synchronously, so
+  // a fast fling can't fire the same page's fetch twice and append duplicate items into
+  // `gridItems` (which LegendList then flags as overlapping keys and mis-recycles).
   const loadingMoreRef = useRef(false);
 
   // Re-runs whichever fetch backs the *current* view: the composed Home surface
@@ -602,7 +600,6 @@ export default function BrowseScreen() {
     )
       return;
     loadingMoreRef.current = true;
-    setLoadingMore(true);
     const nextPage = gridPageNum + 1;
     fetchGrid(nextPage)
       .then((res) => {
@@ -614,7 +611,6 @@ export default function BrowseScreen() {
       .catch(() => {})
       .finally(() => {
         loadingMoreRef.current = false;
-        setLoadingMore(false);
       });
   };
 
@@ -1031,13 +1027,6 @@ export default function BrowseScreen() {
         }}
         data={gridData}
         estimatedItemSize={estimatedCardHeight(cardWidth)}
-        // LegendList memoizes each on-screen cell's rendered output, keyed off
-        // itemKey/data/extraData — renderItem's `loadingMore` check below is otherwise
-        // invisible to it, so an already-mounted trailing spacer cell never re-renders when
-        // `loadingMore` flips (it only just started fetching the next page, its item object
-        // didn't change). Passing it as extraData forces a re-evaluation of every mounted
-        // cell when it toggles, so the spacer→SkeletonCard swap actually reaches the screen.
-        extraData={loadingMore}
         keyExtractor={(item) => String(item.id)}
         numColumns={numColumns}
         // Recycle card instances rather than remounting per reuse — SeriesCard is now recycle-safe
@@ -1059,12 +1048,7 @@ export default function BrowseScreen() {
         }}
         renderItem={({ item }) => {
           if (item.spacer) {
-            // While a next page is actually loading, fill the last row's
-            // remaining slots with skeleton cards (matching the footer's) instead
-            // of an invisible spacer — otherwise the row reads as "done" and the
-            // incoming skeleton rows below look like they jumped straight to a
-            // fresh row rather than finishing this one first.
-            return loadingMore ? <SkeletonCard /> : <View style={styles.gridCell} />;
+            return <View style={styles.gridCell} />;
           }
           return (
             <View style={styles.gridCell}>
@@ -1078,10 +1062,12 @@ export default function BrowseScreen() {
             </View>
           );
         }}
+        // No footer skeleton for infinite-scroll pagination (`loadingMore`) — it was
+        // unreliable on web (LegendList's web recycling/remeasure timing made it flicker
+        // or vanish before the next page landed) and, per feedback, more trouble than it
+        // was worth. Only the initial/scope-switch loading state still shows one.
         ListFooterComponent={
           (gridLoading || (homeLoading && composedHome && terminalGridPreview)) && gridItems.length === 0 ? (
-            <GridSkeleton numColumns={numColumns} rows={2} />
-          ) : loadingMore ? (
             <GridSkeleton numColumns={numColumns} rows={2} />
           ) : null
         }
@@ -1201,9 +1187,7 @@ function HomeGridBlock({
 /** A single skeleton card (cover + two title lines) — one grid cell's worth. */
 function SkeletonCard() {
   // `gridCell` (not the bare `cell`) so this matches a real card's cell exactly — same
-  // flex plus the same top/bottom padding — since this also fills real grid rows directly
-  // (the `loadingMore` last-row filler above), where it sits beside `gridCell`-wrapped
-  // `SeriesCard`s and must match their box, not just approximate it via the footer skeleton.
+  // flex plus the same top/bottom padding as a real `gridCell`-wrapped `SeriesCard`.
   return (
     <View style={[styles.gridCell, styles.skelCell]}>
       <Skeleton style={styles.skelCover} />
@@ -1213,8 +1197,9 @@ function SkeletonCard() {
   );
 }
 
-/** Skeleton rows shown while the next infinite-scroll page loads — mirrors the
- *  grid card (cover + two title lines) so it reads as "more cards incoming". */
+/** Skeleton rows shown while a grid's first page loads (scope switch, retry, etc.) — mirrors
+ *  the grid card (cover + two title lines) so it reads as "cards incoming". Infinite-scroll
+ *  pagination itself shows no skeleton (see `ListFooterComponent`/`loadMore`). */
 function GridSkeleton({ numColumns, rows }: { numColumns: number; rows: number }) {
   return (
     <View style={styles.skelFooter}>
