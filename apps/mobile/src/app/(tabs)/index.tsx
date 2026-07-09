@@ -756,12 +756,12 @@ export default function BrowseScreen() {
   const touchPull = useTouchPullToRefresh(scrollY, onRefresh, refreshing);
   const nativePull = useNativePullToRefresh(scrollY, onRefresh, refreshing);
   const customPull = Platform.OS === 'ios' ? nativePull : touchPull;
-  // Web + Android: shift the whole grid down in lockstep with the pull/hold (see the touch hook) so
-  // the gap the spinner sits in actually opens up. iOS opens its own gap via elastic overscroll (the
-  // content already moves), where the touch hook is inert, so `touchPull.pullY` stays 0 there and
-  // this is naturally a no-op — no Platform gating needed.
-  const touchPullListStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: touchPull.pullY.value }],
+  // Shift the whole grid down so the gap the spinner sits in opens up. On web + Android that tracks
+  // the pull the whole way (the touch hook translates the list to create the gap). On iOS it stays 0
+  // during the pull — the native bounce already moves the content — and only engages during the hold
+  // to keep the content pinned down while refreshing (see `listTranslateY` in the native hook).
+  const listPullStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: customPull.listTranslateY.value }],
   }));
 
   const topBar = (
@@ -972,7 +972,7 @@ export default function BrowseScreen() {
           revealed, rather than the list itself needing to relayout. */}
       {/* Wrapping rather than animating AnimatedLegendList's own `style` directly — LegendList's
           style prop isn't typed for a Reanimated animated style the way Animated.View's is. */}
-      <Animated.View style={[styles.list, touchPullListStyle]}>
+      <Animated.View style={[styles.list, listPullStyle]}>
       <AnimatedLegendList
         ref={listRef}
         key={gridKey}
