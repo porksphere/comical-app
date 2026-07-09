@@ -10,14 +10,46 @@
  * "Use mock data" toggle swaps to a separate keyspace instead of serving stale
  * cross-source data.
  */
-import type { UseQueryOptions } from '@tanstack/react-query';
+import { keepPreviousData, type UseQueryOptions } from '@tanstack/react-query';
 
 import type { LibrarySort } from './api';
-import type { DataSource } from './source';
-import type { ActivityEntry, HistoryEntry, LibraryItem, SeriesDetail, SeriesEntry, SeriesListResult } from './types';
+import type { DataSource, QueryOpts } from './source';
+import type {
+  ActivityEntry,
+  GridPage,
+  HistoryEntry,
+  HomeGridSection,
+  LibraryItem,
+  RailSection,
+  SeriesDetail,
+  SeriesEntry,
+  SeriesListResult,
+} from './types';
 
 /** Per-series fetch options that affect the *shape* of the result (and thus the key). */
 export type SeriesDetailOpts = { direct?: boolean; bridgeName?: string; title?: string; cover?: string };
+
+/**
+ * A single logical Browse grid "scope" — everything the flat results/terminal grid can be showing,
+ * as one discriminated value. It's both the query-key discriminator (so each scope caches
+ * separately and a scope switch is a key change, not a manual `setState([])`) and the input to
+ * `fetchBrowseScope` below, which maps it to the right data-source call. Keeping the two derived
+ * from one value is what lets the grid move between scopes without ever clearing to empty (the old
+ * flash / LegendList-remount trigger): react-query holds the previous scope's data (keepPreviousData)
+ * until the new scope resolves.
+ */
+export type BrowseScope =
+  | { kind: 'favorites' }
+  /** A page-flagged list (e.g. "Popular"), optionally filtered/sorted, or scoped-searched when the
+   *  list is `searchable` and a query is set. */
+  | { kind: 'list'; listId: string; opts?: QueryOpts }
+  /** Global search: an unscoped query, or filters/sort with no specific list. */
+  | { kind: 'search'; query: string; opts?: QueryOpts }
+  /** A rail's "See all" drill-down — that list's items, page-only. */
+  | { kind: 'seeAll'; listId: string }
+  /** Home's terminal grid section, sharing the main list's infinite scroll. Page 1 is seeded from
+   *  `getHomeSections` (no extra request); later pages come through here. */
+  | { kind: 'homeTerminal'; listId: string };
 
 export const queryKeys = {
   seriesDetail: (mock: boolean, bridgeId: string, seriesId: string, direct: boolean) =>
@@ -38,7 +70,37 @@ export const queryKeys = {
   history: (mock: boolean) => ['history', mock] as const,
   activity: (mock: boolean) => ['activity', mock] as const,
   activityCount: (mock: boolean) => ['activityCount', mock] as const,
+  // The composed Home surface (rails + grid sections) for a bridge.
+  homeSections: (mock: boolean, bridgeId: string) => ['homeSections', mock, bridgeId] as const,
+  // The flat Browse results/terminal grid. `scope` (a `BrowseScope`) fully discriminates what's
+  // shown — react-query's default key hashing is stable over object key order, so this dedupes
+  // correctly. A bridge switch or filter/sort/search change is just a new key here.
+  browseGrid: (mock: boolean, bridgeId: string, scope: BrowseScope) =>
+    ['browseGrid', mock, bridgeId, scope] as const,
 };
+
+/** Maps a `BrowseScope` (+ page number) to the data-source call that fetches it — the single place
+ *  the grid's "which endpoint for this view" branching lives, shared by the infinite query's
+ *  `queryFn`. Mirrors the old inline `fetchGrid`. */
+export function fetchBrowseScope(
+  ds: DataSource,
+  bridgeId: string,
+  scope: BrowseScope,
+  page: number,
+  signal?: AbortSignal,
+): Promise<GridPage> {
+  switch (scope.kind) {
+    case 'favorites':
+      return ds.getFavorites(bridgeId, page, signal);
+    case 'seeAll':
+    case 'homeTerminal':
+      return ds.getGridPage(bridgeId, scope.listId, page, undefined, signal);
+    case 'list':
+      return ds.getGridPage(bridgeId, scope.listId, page, scope.opts, signal);
+    case 'search':
+      return ds.search(bridgeId, scope.query, page, scope.opts, signal);
+  }
+}
 
 // The builders return a widened `UseQueryOptions` (queryKey typed as the general
 // `QueryKey`) so a ternary between two of them — e.g. chapter vs. direct pages in
@@ -159,6 +221,25 @@ export function inLibraryQuery(
     queryKey: queryKeys.inLibrary(mock, bridgeId, seriesId),
     queryFn: ({ signal }) => ds.isInLibrary(bridgeId, seriesId, signal),
     enabled: !!bridgeId && !!seriesId,
+  };
+}
+
+/** `useQuery` options for the composed Home surface (rails + grid sections). `keepPreviousData`
+ *  keeps the prior bridge's Home on screen while the new one loads instead of clearing to a
+ *  skeleton — so the shared list instance (and the filter bar in its header) never unmounts on a
+ *  bridge switch. `enabled` should gate on the Home tab being active AND this bridge's lists being
+ *  loaded (see the screen). */
+export function homeSectionsQuery(
+  ds: DataSource,
+  mock: boolean,
+  bridgeId: string,
+  enabled: boolean,
+): UseQueryOptions<{ sections: RailSection[]; gridSections: HomeGridSection[] }, Error> {
+  return {
+    queryKey: queryKeys.homeSections(mock, bridgeId),
+    queryFn: ({ signal }) => ds.getHomeSections(bridgeId, signal),
+    enabled: enabled && !!bridgeId,
+    placeholderData: keepPreviousData,
   };
 }
 
