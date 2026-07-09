@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, type ReactNode } from 'react';
@@ -17,21 +17,15 @@ import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { setBrowseIntent } from '@/data/browse-intent';
-import {
-  historyQuery,
-  inLibraryQuery,
-  isFavoriteQuery,
-  queryKeys,
-  relatedGroupsQuery,
-  seriesDetailQuery,
-  seriesListQuery,
-} from '@/data/queries';
+import { historyQuery, relatedGroupsQuery, seriesDetailQuery, seriesListQuery } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import { firstChapterInReadingOrder } from '@/lib/chapter-order';
 import { resetPreferredGroup, usePreferredGroup } from '@/lib/preferred-group';
 import { DIRECT_CHAPTER_ID, type SeriesDetail, type TagGroup } from '@/data/types';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
+import { useFavorite } from '@/hooks/use-favorite';
 import { useHovered } from '@/hooks/use-hovered';
+import { useLibrary } from '@/hooks/use-library';
 import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -245,7 +239,6 @@ function SeriesBody({
   const router = useRouter();
   const theme = useTheme();
   const mock = useMockActive();
-  const queryClient = useQueryClient();
 
   // Let the native push transition play before mounting the heavy chapter/page
   // grid. On a cache-warm revisit the full list would otherwise render
@@ -253,21 +246,10 @@ function SeriesBody({
   // list shows its own skeleton until this flips (see ChaptersSection `loading`).
   const listReady = useDeferredMount();
 
-  // Favorite state: cached per series so the star is warm on revisit. Best-effort
-  // — a bridge without the "favorites" capability (or one requiring auth the user
-  // hasn't configured) 400s/401s here; the star just stays unfilled rather than
-  // surfacing a full error state for what's a peripheral action, not content.
-  const favKey = queryKeys.isFavorite(mock, bridgeId ?? '', series.id);
-  const { data: favData, isError: favIsError } = useQuery({
-    ...isFavoriteQuery(ds, mock, bridgeId ?? '', series.id),
-    // A favorites check that errors (unsupported/unauthed) should read as "not
-    // favorited", not spin a retry loop — keep it quiet like the previous
-    // best-effort catch (the star just stays unfilled).
-    retry: false,
-  });
-  // `null` only while still loading (toggle disabled); an errored check reads as
-  // `false` so the button stays usable, matching the prior best-effort behavior.
-  const favorited = favData ?? (favIsError ? false : null);
+  // Favorite state + optimistic toggle — shared hook so the Series screen and the reader's settings
+  // panel stay in lockstep (see useFavorite). `favorited` is null while loading (button disabled),
+  // false on an unsupported/errored check (the star stays unfilled).
+  const { favorited, toggle: toggleFavorite } = useFavorite(bridgeId, series.id);
 
   // Related-series rails: the main query leaves `relatedGroups` unset and flags
   // `relatedGroupsDeferred` when the bridge only serves them via a separate,
@@ -300,75 +282,16 @@ function SeriesBody({
   const chapterCount = listData?.chapterCount ?? series.chapterCount;
   const readLabel = listData?.readLabel ?? series.readLabel;
 
-  // Optimistic toggle: flip the cached value immediately, invalidate the
-  // favorites list so it reflects the change, and roll back on failure — mirrors
-  // comical-web's optimistic favorite + `favoritesCache.delete` invalidation.
-  const favMutation = useMutation({
-    mutationFn: (next: boolean) =>
-      next ? ds.addFavorite(bridgeId!, series.id) : ds.removeFavorite(bridgeId!, series.id),
-    onMutate: async (next: boolean) => {
-      await queryClient.cancelQueries({ queryKey: favKey });
-      const prev = queryClient.getQueryData<boolean>(favKey);
-      queryClient.setQueryData(favKey, next);
-      return { prev };
-    },
-    // A confirmed write is the source of truth for this series: re-assert `next` so a slow
-    // `isFavorite` scrape that resolves after the toggle can't leave the star reverted while the
-    // favorite actually landed (the reported "reverts almost instantly" flake).
-    onSuccess: (_data, next) => {
-      queryClient.setQueryData(favKey, next);
-    },
-    onError: (_e, _next, ctx) => {
-      if (ctx) queryClient.setQueryData(favKey, ctx.prev ?? false);
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['favorites', mock, bridgeId] });
-    },
-  });
-  const toggleFavorite = () => {
-    if (!bridgeId || favorited === null) return;
-    favMutation.mutate(!favorited);
-  };
-
-  // Library membership: cached per series so the button is warm on revisit. A
-  // server/runtime with no library store 404s here → reads as "not in library"
-  // (isInLibrary maps 404 → false), so the button stays a best-effort no-op
-  // rather than surfacing an error, mirroring the favorite toggle above.
-  const libKey = queryKeys.inLibrary(mock, bridgeId ?? '', series.id);
-  const { data: inLibraryData } = useQuery({ ...inLibraryQuery(ds, mock, bridgeId ?? '', series.id), retry: false });
-  const inLibrary = inLibraryData ?? null; // null while loading (toggle disabled)
-
-  // Author snapshot for the library entry, pulled from the meta grid if present,
-  // so the library/history render it without re-hitting the bridge.
+  // Author snapshot for the library entry, pulled from the meta grid if present, so the
+  // library/history render it without re-hitting the bridge.
   const author = series.meta?.find((m) => m.label === 'AUTHOR')?.value;
-  const libMutation = useMutation({
-    mutationFn: (next: boolean) =>
-      next
-        ? ds.addToLibrary(bridgeId!, series.id, {
-            title: series.title,
-            ...(series.cover ? { thumbnailUrl: series.cover } : {}),
-            ...(author ? { author } : {}),
-          })
-        : ds.removeFromLibrary(bridgeId!, series.id),
-    onMutate: async (next: boolean) => {
-      await queryClient.cancelQueries({ queryKey: libKey });
-      const prev = queryClient.getQueryData<boolean>(libKey);
-      queryClient.setQueryData(libKey, next);
-      return { prev };
-    },
-    onError: (_e, _next, ctx) => {
-      if (ctx) queryClient.setQueryData(libKey, ctx.prev ?? false);
-    },
-    onSettled: () => {
-      // The Library tab keys its grid on ['library', mock, …] — refresh it so an
-      // add/remove here shows up when the user switches back to that tab.
-      queryClient.invalidateQueries({ queryKey: ['library', mock] });
-    },
-  });
-  const toggleLibrary = () => {
-    if (!bridgeId || inLibrary === null) return;
-    libMutation.mutate(!inLibrary);
-  };
+  // Library membership + optimistic toggle — shared hook (see useLibrary). The ADD snapshot is built
+  // lazily from the loaded detail (title/cover/author).
+  const { inLibrary, toggle: toggleLibrary } = useLibrary(bridgeId, series.id, () => ({
+    title: series.title,
+    ...(series.cover ? { thumbnailUrl: series.cover } : {}),
+    ...(author ? { author } : {}),
+  }));
 
   // Resume point: if this series has a reading-history entry, the primary Read
   // button should continue from there instead of always restarting at the

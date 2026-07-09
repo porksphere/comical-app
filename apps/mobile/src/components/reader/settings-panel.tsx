@@ -1,4 +1,3 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ComponentType } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
@@ -9,8 +8,8 @@ import type { IconProps } from '@/components/icons/ui-icons';
 import { OverlayHeading, useAnchoredOverlay } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
-import { inLibraryQuery, isFavoriteQuery, queryKeys } from '@/data/queries';
-import { useDataSource, useMockActive } from '@/data/source';
+import { useFavorite } from '@/hooks/use-favorite';
+import { useLibrary } from '@/hooks/use-library';
 import {
   useReaderSettings,
   type PageFit,
@@ -180,44 +179,19 @@ function LibraryRow({
   thumbnailUrl?: string;
   author?: string;
 }) {
-  const ds = useDataSource();
-  const mock = useMockActive();
-  const queryClient = useQueryClient();
-  const libKey = queryKeys.inLibrary(mock, bridgeId, seriesId);
-  const { data: libData, isError: libIsError } = useQuery({
-    ...inLibraryQuery(ds, mock, bridgeId, seriesId),
-    retry: false,
-  });
-  const inLibrary = libData ?? (libIsError ? false : null);
-
-  const libMutation = useMutation({
-    mutationFn: (next: boolean) =>
-      next
-        ? ds.addToLibrary(bridgeId, seriesId, {
-            ...(title ? { title } : {}),
-            ...(thumbnailUrl ? { thumbnailUrl } : {}),
-            ...(author ? { author } : {}),
-          })
-        : ds.removeFromLibrary(bridgeId, seriesId),
-    onMutate: async (next: boolean) => {
-      await queryClient.cancelQueries({ queryKey: libKey });
-      const prev = queryClient.getQueryData<boolean>(libKey);
-      queryClient.setQueryData(libKey, next);
-      return { prev };
-    },
-    onError: (_e, _next, ctx) => {
-      if (ctx) queryClient.setQueryData(libKey, ctx.prev ?? false);
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['library', mock] });
-    },
-  });
+  // Shared hook (see useLibrary) — same cache key + optimistic flow as the Series screen, so
+  // toggling from either place stays in sync. The ADD snapshot is built lazily from the reader props.
+  const { inLibrary, toggle } = useLibrary(bridgeId, seriesId, () => ({
+    ...(title ? { title } : {}),
+    ...(thumbnailUrl ? { thumbnailUrl } : {}),
+    ...(author ? { author } : {}),
+  }));
 
   return (
     <View style={styles.seg}>
       <ThemedText style={styles.segLabel}>This series</ThemedText>
       <Pressable
-        onPress={() => inLibrary !== null && libMutation.mutate(!inLibrary)}
+        onPress={toggle}
         style={[styles.opt, inLibrary && styles.optOn]}
         disabled={inLibrary === null}>
         <ThemedText style={[styles.optText, inLibrary && styles.optTextOn]}>
@@ -232,42 +206,15 @@ function LibraryRow({
  *  (same query key), so favoriting from either place stays in sync. Best-effort: a bridge
  *  without the "favorites" capability just leaves the star unfilled rather than erroring. */
 function FavoriteRow({ bridgeId, seriesId }: { bridgeId: string; seriesId: string }) {
-  const ds = useDataSource();
-  const mock = useMockActive();
-  const queryClient = useQueryClient();
-  const favKey = queryKeys.isFavorite(mock, bridgeId, seriesId);
-  const { data: favData, isError: favIsError } = useQuery({
-    ...isFavoriteQuery(ds, mock, bridgeId, seriesId),
-    retry: false,
-  });
-  const favorited = favData ?? (favIsError ? false : null);
-
-  const favMutation = useMutation({
-    mutationFn: (next: boolean) => (next ? ds.addFavorite(bridgeId, seriesId) : ds.removeFavorite(bridgeId, seriesId)),
-    onMutate: async (next: boolean) => {
-      await queryClient.cancelQueries({ queryKey: favKey });
-      const prev = queryClient.getQueryData<boolean>(favKey);
-      queryClient.setQueryData(favKey, next);
-      return { prev };
-    },
-    // Re-assert the confirmed state so a slow `isFavorite` scrape landing after the toggle can't
-    // revert the star (mirrors series.tsx; same query key, so both stay in sync).
-    onSuccess: (_data, next) => {
-      queryClient.setQueryData(favKey, next);
-    },
-    onError: (_e, _next, ctx) => {
-      if (ctx) queryClient.setQueryData(favKey, ctx.prev ?? false);
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['favorites', mock, bridgeId] });
-    },
-  });
+  // Shared hook (see useFavorite) — same cache key as the Series screen's star, so favoriting from
+  // either place stays in sync.
+  const { favorited, toggle } = useFavorite(bridgeId, seriesId);
 
   return (
     <View style={styles.seg}>
       <ThemedText style={styles.segLabel}>This series</ThemedText>
       <Pressable
-        onPress={() => favorited !== null && favMutation.mutate(!favorited)}
+        onPress={toggle}
         style={[styles.opt, favorited && styles.optOn]}
         disabled={favorited === null}>
         <ThemedText style={[styles.optText, favorited && styles.optTextOn]}>
