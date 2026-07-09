@@ -72,10 +72,10 @@ export function SettingsControl({
 }
 
 /** Reader settings content, rendered inside the overlay (sheet or popover).
- *  Note: the app currently forces a dark color scheme everywhere
- *  (`FORCED_COLOR_SCHEME` in `use-theme.ts`), which is why the overlay's
- *  themed panel already matches the reader's own always-dark surface with no
- *  override needed here — revisit if that force is ever lifted. */
+ *  Note: the overlay panel follows the app's theme (`useTheme`), so under a
+ *  light appearance it renders light while the reader keeps its own always-dark
+ *  viewing surface (see `reader.tsx`) — an intentional split, matching how media
+ *  readers stay dark for immersion while their controls track the app theme. */
 function SettingsContent({
   bridgeId,
   seriesId,

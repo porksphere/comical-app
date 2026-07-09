@@ -21,6 +21,7 @@ Sentry.init({
    first thing to run. */
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
@@ -37,8 +38,9 @@ import { useActiveColorScheme } from '@/hooks/use-theme';
 startEmbeddedRuntime();
 
 function RootLayout() {
-  // Resolved (forced dark for now) scheme so the navigation theme matches the
-  // app content and renders identically on the static export's server + client.
+  // Active scheme (the user's appearance preference, else the OS) so the
+  // navigation theme + status bar match the app content and re-theme live when
+  // the preference changes.
   const scheme = useActiveColorScheme();
   return (
     <ErrorBoundary>
@@ -54,6 +56,10 @@ function RootLayout() {
         }}>
         <GestureHandlerRootView style={{ flex: 1 }}>
           <ThemeProvider value={scheme === 'dark' ? DarkTheme : DefaultTheme}>
+            {/* Status-bar contents follow the active scheme (light glyphs on the
+                dark theme, dark glyphs on light) so a forced theme reads right
+                even when it differs from the OS. */}
+            <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
             <AnimatedSplashOverlay />
             {/* OverlayProvider hosts the stacked bottom-sheet overlays app-wide. */}
             <OverlayProvider>

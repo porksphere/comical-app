@@ -3,29 +3,46 @@
  * https://docs.expo.dev/guides/color-schemes/
  */
 
+import { use$ } from '@legendapp/state/react';
+
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { persisted$ } from '@/lib/observable';
 
 /**
- * The app currently ships **dark-only**. Forcing a single scheme means the
- * static web export renders the same theme on the server and the client, so
- * there is no hydration color flash (the OS-driven path renders 'light' first,
- * then flips to the real scheme on mount — the source of the flicker).
+ * The user's appearance preference: follow the device OS (`'system'`), or force
+ * one scheme everywhere. Persisted device-local via Legend State (see
+ * `lib/observable.ts`) so the choice survives an app restart, and read reactively
+ * through `use$` so flipping it re-themes the whole app live.
  *
- * Theming is otherwise left fully wired for the future: `Colors` still defines
- * both palettes and every surface reads them through `useTheme`, so re-enabling
- * OS light/dark is just flipping this one switch:
- *   - `'dark'` / `'light'` — force that scheme everywhere.
- *   - `null` — follow the device OS color scheme (`useColorScheme`).
- * (If you set this back to `null`, also restore the responsive page background
- * in `src/app/+html.tsx`.)
+ * `Colors` (see `constants/theme.ts`) defines both palettes and every surface
+ * reads them through `useTheme`, so all three modes are fully wired: `'light'`
+ * and `'dark'` pin that palette, `'system'` follows `useColorScheme()`.
  */
-export const FORCED_COLOR_SCHEME: 'light' | 'dark' | null = 'dark';
+export type ThemePreference = 'system' | 'light' | 'dark';
 
-/** The active color scheme: the forced override if set, else the device OS scheme. */
+const STORAGE_KEY = 'comical:themePreference';
+const DEFAULT_PREFERENCE: ThemePreference = 'system';
+
+// Starts at DEFAULT_PREFERENCE (also the deterministic pre-hydration value the
+// web static export renders) and rehydrates from AsyncStorage once it resolves.
+const themePreference$ = persisted$<ThemePreference>(STORAGE_KEY, DEFAULT_PREFERENCE);
+
+/** Set the appearance preference; persists and re-themes every mounted screen. */
+export function setThemePreference(preference: ThemePreference): void {
+  themePreference$.set(preference);
+}
+
+/** `[preference, setPreference]` — the current appearance choice and its setter. */
+export function useThemePreference(): [ThemePreference, (preference: ThemePreference) => void] {
+  return [use$(themePreference$), setThemePreference];
+}
+
+/** The active color scheme: the forced palette if the preference pins one, else the device OS scheme. */
 export function useActiveColorScheme(): 'light' | 'dark' {
   const osScheme = useColorScheme();
-  if (FORCED_COLOR_SCHEME) return FORCED_COLOR_SCHEME;
+  const preference = use$(themePreference$);
+  if (preference === 'light' || preference === 'dark') return preference;
   return osScheme === 'dark' ? 'dark' : 'light';
 }
 
