@@ -13,13 +13,13 @@
  * is the only reachable path, and a failed fetch is a real error — no silent
  * fallback to fake content.
  */
-import { useMemo, useSyncExternalStore } from 'react';
-import { AppState } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useMemo } from 'react';
+import { use$ } from '@legendapp/state/react';
 import { useDataEpoch } from './data-epoch';
 
 import { logDiagnostic } from '@/lib/diagnostics';
 import { firstChapterInReadingOrder } from '@/lib/chapter-order';
+import { persisted$ } from '@/lib/observable';
 import * as api from './api';
 import * as mock from './mock';
 import type {
@@ -628,54 +628,33 @@ const MOCK_TOGGLE_KEY = 'comical:devUseMockData';
 /** Set only by the GH Pages preview workflow — see deploy-web.yml. */
 export const IS_DEMO_MODE = process.env.EXPO_PUBLIC_COMICAL_DEMO_MODE === '1';
 
-let mockToggleOn = false;
-const listeners = new Set<() => void>();
+// Persisted dev-only toggle (Legend State; see `lib/observable.ts`). Holds the raw stored value; the
+// `__DEV__` mask is applied at read, so a non-dev build always reports false and never activates mock
+// via the toggle. The old store wrote '1'/'0', which parse back as truthy/falsy, so the key carries over.
+const mockToggle$ = persisted$<boolean>(MOCK_TOGGLE_KEY, false);
+
 /** The one source of truth for "is mock mode active", mirrored into the mock module so its simulated
- *  latency is a no-op in real mode no matter which screen calls it. Kept in sync at every point
- *  `mockToggleOn` changes (below), plus once at module load for the demo build. */
+ *  latency is a no-op in real mode no matter which screen calls it. Runs once at load (below) and on
+ *  every toggle change, including the async hydrate. */
 function syncMockActive(): void {
-  mock.setMockActive(IS_DEMO_MODE || (__DEV__ && mockToggleOn));
-}
-function notifyMockToggleChange(): void {
-  syncMockActive();
-  for (const l of listeners) l();
-}
-function subscribeMockToggle(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
-function getMockToggleSnapshot(): boolean {
-  return __DEV__ && mockToggleOn;
-}
-function getMockToggleServerSnapshot(): boolean {
-  return false;
+  mock.setMockActive(IS_DEMO_MODE || (__DEV__ && Boolean(mockToggle$.peek())));
 }
 
-// Seed the mock module's flag at load (before the async toggle read below resolves), so the demo
-// build (IS_DEMO_MODE) is mock-active immediately and every real build is mock-inactive from the start.
+// Seed the mock module's flag at load (before the async toggle read resolves), so the demo build
+// (IS_DEMO_MODE) is mock-active immediately and every real build is mock-inactive from the start; then
+// keep it in sync whenever the toggle changes or finishes hydrating.
 syncMockActive();
-
-if (__DEV__) {
-  AsyncStorage.getItem(MOCK_TOGGLE_KEY)
-    .then((stored) => {
-      mockToggleOn = stored === '1';
-      notifyMockToggleChange();
-    })
-    .catch(() => {});
-}
+mockToggle$.onChange(syncMockActive);
 
 /** Dev-only: flip the "Use mock data" toggle and persist it locally. No-op outside `__DEV__`. */
 export function setMockToggle(enabled: boolean): void {
   if (!__DEV__) return;
-  mockToggleOn = enabled;
-  notifyMockToggleChange();
-  AsyncStorage.setItem(MOCK_TOGGLE_KEY, enabled ? '1' : '0').catch(() => {});
+  mockToggle$.set(enabled);
 }
 
 /** Dev-only hook: [enabled, setEnabled] for the Settings screen's mock-data toggle. */
 export function useMockDataToggle(): [boolean, (enabled: boolean) => void] {
-  const enabled = useSyncExternalStore(subscribeMockToggle, getMockToggleSnapshot, getMockToggleServerSnapshot);
-  return [enabled, setMockToggle];
+  return [__DEV__ && Boolean(use$(mockToggle$)), setMockToggle];
 }
 
 /** True whenever mock data should be used: the GH Pages demo build, or the dev toggle. */
@@ -693,75 +672,6 @@ export function useDataSource(): DataSource {
   return useMemo(() => (mock ? mockDataSource : { ...realDataSource }), [mock, epoch]);
 }
 
-// ─── NSFW visibility (persisted, not dev-gated) ──────────────────────────────
-//
-// Four states, picked from Settings:
-//   - 'off' / 'on': durable — written to disk, so they're still in effect after
-//     the app is force-quit and relaunched.
-//   - 'until-background': a session-only override that shows NSFW content, but
-//     reverts to whichever durable mode is stored the moment the app is
-//     backgrounded (minimized on iOS/Android) — not just on a full restart.
-//   - 'until-restart': a session-only override that lasts for this process's
-//     lifetime. It survives backgrounding (the JS process is still alive) but
-//     is naturally gone after a cold start, since — like 'until-background' —
-//     nothing is ever written to storage for it; the module reinitializes from
-//     the durable value below.
-export type NsfwMode = 'off' | 'on' | 'until-background' | 'until-restart';
-type DurableNsfwMode = 'off' | 'on';
-
-const NSFW_MODE_KEY = 'comical:nsfwMode';
-
-let durableNsfwMode: DurableNsfwMode = 'off';
-let nsfwMode: NsfwMode = 'off';
-const nsfwModeListeners = new Set<() => void>();
-function notifyNsfwModeChange(): void {
-  for (const l of nsfwModeListeners) l();
-}
-function subscribeNsfwMode(listener: () => void): () => void {
-  nsfwModeListeners.add(listener);
-  return () => nsfwModeListeners.delete(listener);
-}
-function getNsfwModeSnapshot(): NsfwMode {
-  return nsfwMode;
-}
-function getNsfwModeServerSnapshot(): NsfwMode {
-  return 'off';
-}
-
-AsyncStorage.getItem(NSFW_MODE_KEY)
-  .then((stored) => {
-    durableNsfwMode = stored === 'on' ? 'on' : 'off';
-    nsfwMode = durableNsfwMode;
-    notifyNsfwModeChange();
-  })
-  .catch(() => {});
-
-AppState.addEventListener('change', (state) => {
-  if (state === 'background' && nsfwMode === 'until-background') {
-    nsfwMode = durableNsfwMode;
-    notifyNsfwModeChange();
-  }
-});
-
-function setNsfwMode(mode: NsfwMode): void {
-  nsfwMode = mode;
-  if (mode === 'off' || mode === 'on') {
-    durableNsfwMode = mode;
-    AsyncStorage.setItem(NSFW_MODE_KEY, mode).catch(() => {});
-  }
-  notifyNsfwModeChange();
-}
-
-/** [mode, setMode] — the Settings screen's NSFW picker. */
-export function useNsfwMode(): [NsfwMode, (mode: NsfwMode) => void] {
-  const mode = useSyncExternalStore(subscribeNsfwMode, getNsfwModeSnapshot, getNsfwModeServerSnapshot);
-  return [mode, setNsfwMode];
-}
-
-/** True whenever NSFW-flagged bridges/content should stay hidden — every screen
- *  that filters on NSFW (Browse, Library, History, Activity, the Settings
- *  bridge list) reads this instead of caring about the 4 underlying modes. */
-export function useHideNsfw(): boolean {
-  const [mode] = useNsfwMode();
-  return mode === 'off';
-}
+// NSFW visibility now lives in its own Legend State store; re-exported here so
+// screens keep importing it from `@/data/source`.
+export { useNsfwMode, useHideNsfw, type NsfwMode } from './nsfw';
