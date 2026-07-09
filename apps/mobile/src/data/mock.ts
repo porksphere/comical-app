@@ -81,6 +81,31 @@ const SUBS = [
 export const cover = (seed: string | number) =>
   `https://picsum.photos/seed/comical-${seed}/300/450`;
 
+/** A handful of cover box shapes (width×height), deterministically picked per
+ *  series — used only for `VARIED_ASPECT_BRIDGE`'s series so ONE mock bridge
+ *  stands in for a real bridge whose thumbnails aren't all cropped to a
+ *  uniform shape (every other mock bridge stays a fixed 300×450 / 2:3, same
+ *  as `cover` above). Exercises `SeriesCard`/`PageThumb`'s aspect-ratio-lands
+ *  shrink animation, which a uniform-2:3 catalog never triggers. */
+const VARIED_COVER_SHAPES: [width: number, height: number][] = [
+  [300, 450], // 2:3 — matches the default placeholder, no visible shrink
+  [300, 400],
+  [300, 350],
+  [300, 300], // square
+  [300, 220], // landscape-ish — the most visible shrink
+];
+
+/** Slug of the one mock bridge whose covers vary shape (see
+ *  `VARIED_COVER_SHAPES`); every other mock bridge reports the uniform
+ *  `cover()` shape. Matches `slugify('Nightshelf')` in `MOCK_BRIDGE_NAMES`. */
+const VARIED_ASPECT_BRIDGE = 'nightshelf';
+
+function coverForBridge(seed: string, bridgeId?: string): string {
+  if (bridgeId !== VARIED_ASPECT_BRIDGE) return cover(seed);
+  const [w, h] = VARIED_COVER_SHAPES[hash(seed) % VARIED_COVER_SHAPES.length]!;
+  return `https://picsum.photos/seed/comical-${seed}/${w}/${h}`;
+}
+
 /** Deterministic pseudo-random so a given id always yields the same entry. */
 function hash(s: string): number {
   let h = 2166136261;
@@ -162,12 +187,16 @@ export const TRACKER_SERVICES: TrackerService[] = [
   { id: 'kitsu', name: 'Kitsu' },
 ];
 
-function entry(seed: string, i: number, opts: { badges?: boolean; unread?: boolean; sub?: boolean } = {}): SeriesEntry {
+function entry(
+  seed: string,
+  i: number,
+  opts: { badges?: boolean; unread?: boolean; sub?: boolean; bridgeId?: string } = {},
+): SeriesEntry {
   const h = hash(seed);
   const e: SeriesEntry = {
     id: seed,
     title: TITLES[(h + i) % TITLES.length],
-    cover: cover(seed),
+    cover: coverForBridge(seed, opts.bridgeId),
   };
   if (opts.sub) e.sub = SUBS[(h + i) % SUBS.length];
   if (opts.badges && i % 3 === 0)
@@ -178,7 +207,11 @@ function entry(seed: string, i: number, opts: { badges?: boolean; unread?: boole
   return e;
 }
 
-function items(prefix: string, n: number, opts?: { badges?: boolean; unread?: boolean; sub?: boolean }): SeriesEntry[] {
+function items(
+  prefix: string,
+  n: number,
+  opts?: { badges?: boolean; unread?: boolean; sub?: boolean; bridgeId?: string },
+): SeriesEntry[] {
   return Array.from({ length: n }, (_, i) => entry(`${prefix}-${i}`, i, opts));
 }
 
@@ -186,10 +219,11 @@ function items(prefix: string, n: number, opts?: { badges?: boolean; unread?: bo
  * A page's stack of rails (hero / ranked / regular). Every top-level page
  * (home, popular, favorites, …) is its own full page, so the seed is salted
  * with the page name to give each one distinct cards while sharing the layout.
+ * `bridgeId` is only meaningful for `VARIED_ASPECT_BRIDGE` (see `coverForBridge`).
  */
-export function mockHomeSections(page = 'home'): RailSection[] {
+export function mockHomeSections(page = 'home', bridgeId?: string): RailSection[] {
   const p = page === 'home' ? '' : `${page}-`;
-  const featured = items(`${p}hero`, 6, { sub: true });
+  const featured = items(`${p}hero`, 6, { sub: true, bridgeId });
   // On home, force the lead featured card to carry the very long title (and a
   // stable id whose detail page also gets the "ton of tags" treatment) so the
   // clamp/peek and tag-wrapping can be checked from a known card.
@@ -198,16 +232,16 @@ export function mockHomeSections(page = 'home'): RailSection[] {
   }
   return [
     { id: `${p}featured`, title: 'Featured', kind: 'hero', items: featured },
-    { id: `${p}trending`, title: 'Trending now', kind: 'ranked', items: items(`${p}rank`, 10, { sub: true }) },
-    { id: `${p}updates`, title: 'Latest updates', kind: 'regular', items: items(`${p}upd`, 14, { badges: true, unread: true, sub: true }) },
-    { id: `${p}popular`, title: 'Popular this season', kind: 'regular', items: items(`${p}pop`, 14, { badges: true }) },
-    { id: `${p}newish`, title: 'Newly added', kind: 'regular', items: items(`${p}new`, 14, { badges: true }) },
+    { id: `${p}trending`, title: 'Trending now', kind: 'ranked', items: items(`${p}rank`, 10, { sub: true, bridgeId }) },
+    { id: `${p}updates`, title: 'Latest updates', kind: 'regular', items: items(`${p}upd`, 14, { badges: true, unread: true, sub: true, bridgeId }) },
+    { id: `${p}popular`, title: 'Popular this season', kind: 'regular', items: items(`${p}pop`, 14, { badges: true, bridgeId }) },
+    { id: `${p}newish`, title: 'Newly added', kind: 'regular', items: items(`${p}new`, 14, { badges: true, bridgeId }) },
   ];
 }
 
 /** Flat grid of results (search / "See all" / non-home page). */
-export function mockGrid(prefix = 'grid', n = 30): SeriesEntry[] {
-  return items(prefix, n, { badges: true, unread: true, sub: true });
+export function mockGrid(prefix = 'grid', n = 30, bridgeId?: string): SeriesEntry[] {
+  return items(prefix, n, { badges: true, unread: true, sub: true, bridgeId });
 }
 
 const GENRES = ['Fantasy', 'Action', 'Adventure', 'Drama'];
@@ -514,7 +548,7 @@ export async function mockGetBridgeLists(_bridgeId: string): Promise<BridgeList[
 }
 
 export async function mockGetHomeSections(
-  _bridgeId: string,
+  bridgeId: string,
 ): Promise<{ sections: RailSection[]; gridSections: HomeGridSection[] }> {
   // Simulate bridge-switch latency so the Browse screen's loading skeleton
   // (shown while this is in flight) is actually observable in mock/demo mode.
@@ -522,25 +556,25 @@ export async function mockGetHomeSections(
   // Two grid sections so the non-terminal "Load more" / terminal infinite-scroll
   // split (see types.ts's HomeGridSection doc) is exercisable in mock mode too.
   return {
-    sections: mockHomeSections('home'),
+    sections: mockHomeSections('home', bridgeId),
     gridSections: [
-      { id: 'staff-picks', title: 'Staff Picks', items: mockGrid('staff-picks', 12), hasNextPage: true },
-      { id: 'home', title: 'Browse all', items: mockGrid('home', 24), hasNextPage: true },
+      { id: 'staff-picks', title: 'Staff Picks', items: mockGrid('staff-picks', 12, bridgeId), hasNextPage: true },
+      { id: 'home', title: 'Browse all', items: mockGrid('home', 24, bridgeId), hasNextPage: true },
     ],
   };
 }
 
 /** Infinite mock grid: always reports another page so infinite-scroll stays exercisable. Also
  *  delays the first page so sub-page switches (and "See all") show their loading skeleton. */
-export async function mockGetGridPage(_bridgeId: string, listId: string, page: number): Promise<GridPage> {
+export async function mockGetGridPage(bridgeId: string, listId: string, page: number): Promise<GridPage> {
   await delay(PAGE_LOAD_DELAY_MS);
-  return { items: mockGrid(`${listId}-p${page}`, 24), hasNextPage: true };
+  return { items: mockGrid(`${listId}-p${page}`, 24, bridgeId), hasNextPage: true };
 }
 
 /** Finite mock search results (3 pages), so the "end of results" case is reachable too. */
-export async function mockSearch(_bridgeId: string, query: string, page: number): Promise<GridPage> {
+export async function mockSearch(bridgeId: string, query: string, page: number): Promise<GridPage> {
   await delay(PAGE_LOAD_DELAY_MS);
-  return { items: mockGrid(`${query || 'search'}-p${page}`, 24), hasNextPage: page < 3 };
+  return { items: mockGrid(`${query || 'search'}-p${page}`, 24, bridgeId), hasNextPage: page < 3 };
 }
 
 export async function mockGetSeriesDetail(
