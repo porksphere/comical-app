@@ -53,6 +53,49 @@ plus Ed25519 when signed), and cached from **user-managed registries** — add/r
 `index.json` URLs in **Settings → Bridge registries**. Nothing is hardcoded: published builds ship
 with no registry (for local dev, seed one via a gitignored `.env.local`'s `EXPO_PUBLIC_COMICAL_REGISTRY`).
 
+## State management
+
+Two layers, split by what the state *is* — not by screen. **Reach for the layer that owns the
+kind of state you have; don't hand-roll a third one.**
+
+| Layer | Owns | Lives in |
+| --- | --- | --- |
+| **TanStack Query** (`@tanstack/react-query`) | **Server / async state** — anything fetched through `useDataSource()`: series detail, chapter lists, pages, home/browse grids, library, favorites, search. The cache, background refetch, retries, and cross-navigation reuse. | `src/data/query-client.ts` (client + AsyncStorage persistence), `src/data/queries.ts` (`queryKeys` factory + query/mutation options) |
+| **Legend State** (`@legendapp/state`) | **Local / client state** — device-local preferences and UI state that is *not* a copy of anything on the server: reader settings, the on-device-runtime toggle, NSFW visibility, mock-data toggle, the data-invalidation epoch, the remembered scanlation group. | `src/lib/observable.ts` (shared `persisted$` helper) + one small module per store |
+
+These are complementary, not competing. TanStack Query is the async cache the web client hand-rolled
+in `client/app.ts`, ported; **it should never be used for local preferences**, and Legend State should
+**never** mirror server data — that's what re-fetching through Query is for. (Legend State ships a
+TanStack Query sync plugin; we deliberately don't use it — the server cache already has one owner.)
+
+**Why Legend State for the local half.** Every preference/UI store used to hand-roll the same
+`useSyncExternalStore` boilerplate: a module variable, a `Set` of listeners, `notify` / `subscribe`,
+`getSnapshot` / `getServerSnapshot`, a one-shot `AsyncStorage` read to hydrate, and a write-through on
+every setter. Legend State collapses that to an `observable()` read with `use$()`, and — for the
+persisted ones — declarative AsyncStorage persistence via the shared `persisted$()` helper, which also
+carries the runway to swap AsyncStorage for **MMKV** (synchronous, flicker-free hydration) by changing
+one line. Fine-grained reactivity means a component re-renders only for the field it reads.
+
+Most persisted stores keep their original AsyncStorage keys, so existing on-device preferences carry
+over. Two stores whose old format was a *bare* string (not JSON, which Legend State can't parse) moved
+to a fresh JSON key and adopt any legacy value once via `migrateLegacyKey` (see `lib/observable.ts`):
+the NSFW durable mode (`src/data/nsfw.ts`, `'on'`/`'off'` → `comical:nsfwDurable`) and the server URL
+override (`src/data/api.ts` → `comical:remoteServer`). NSFW is a two-observable store — a persisted
+durable off/on plus a live, in-memory mode that carries the session-only `until-background` /
+`until-restart` overrides on top of it. The server-URL store owns only the value; clearing the query
+cache on a server switch stays with the caller (`settings.tsx`), keeping the local preference and the
+TanStack Query cache separated.
+
+The dev-only mock-data toggle (`source.ts`) is also a Legend State observable: it keeps its
+`'1'`/`'0'` key (those parse back as truthy/falsy), applies the `__DEV__` mask at read so a non-dev
+build always reports off, and drives the mock module's `syncMockActive()` side effect from a
+module-level `onChange` (plus one call at load, so a demo build is mock-active before hydration).
+
+Every preference/UI store is now on Legend State. The only module-level stores intentionally left
+hand-rolled are `lib/tab-bar-visibility.ts` (a per-frame scroll value driven on the reanimated UI
+thread) and `lib/diagnostics.ts` (its own ring buffer) — neither is a preference, and both have
+reasons not to go through the observable path.
+
 ## Web vs. native chrome
 
 Web uses a top nav bar instead of the native Liquid Glass tab bar (see the `.web.tsx` splits in

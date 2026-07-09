@@ -31,14 +31,17 @@
  * runtime or CI. `source.ts` adapts these into the UI-facing types in
  * `types.ts` — this file has no knowledge of mock data or the UI shapes.
  */
-import { useSyncExternalStore } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { use$ } from '@legendapp/state/react';
 
 import { getResolvedModeSync } from './embedded/preference';
 import type { Bridge, BridgeList } from './types';
 import { logDiagnostic } from '@/lib/diagnostics';
+import { migrateLegacyKey, persisted$ } from '@/lib/observable';
 
-const REMOTE_SERVER_KEY = 'comical:remoteServerUrl';
+// JSON-owned key for the Legend State store; the old store wrote a bare URL string
+// under `comical:remoteServerUrl`, which we migrate off of once (below).
+const SERVER_KEY = 'comical:remoteServer';
+const LEGACY_SERVER_KEY = 'comical:remoteServerUrl';
 
 /** Default remote server when nothing else is configured. */
 const DEFAULT_API_BASE = 'http://localhost:3100';
@@ -58,51 +61,46 @@ const RUNTIME_API_BASE: string | undefined =
 /** The runtime-injected / build-time / default base, before any Settings override. */
 const BUILT_IN_API_BASE = RUNTIME_API_BASE || process.env.EXPO_PUBLIC_COMICAL_SERVER || DEFAULT_API_BASE;
 
-// Undefined until AsyncStorage hydrates; null means "no override stored".
-let apiBaseOverride: string | null = null;
-const apiBaseListeners = new Set<() => void>();
+// The Settings server override, persisted as JSON. Wrapped in an object because a
+// persisted *primitive* observable reads back as `{}` before anything is stored,
+// whereas an object initial round-trips cleanly; `{ url: null }` means "no override".
+type ServerOverride = { url: string | null };
+const serverOverride$ = persisted$<ServerOverride>(SERVER_KEY, { url: null });
 
-function notifyApiBaseChange(): void {
-  for (const l of apiBaseListeners) l();
+// Defensive read: the empty / pre-hydration state can surface as `{}` (no `url`),
+// so treat a missing field as "no override".
+function overrideUrl(): string | null {
+  return (serverOverride$.peek() as Partial<ServerOverride>).url ?? null;
 }
 
-function subscribeApiBase(listener: () => void): () => void {
-  apiBaseListeners.add(listener);
-  return () => apiBaseListeners.delete(listener);
-}
+// One-time migration from the old bare-string key (a raw URL, not JSON). No-ops once a
+// value has been set through the new store, so a stale legacy key never wins.
+migrateLegacyKey(LEGACY_SERVER_KEY, serverOverride$, (rawUrl) => {
+  if (overrideUrl() == null) serverOverride$.set({ url: rawUrl });
+});
 
 /** The current effective remote base URL — a Settings override if one is set, else the built-in
  *  (env var or `DEFAULT_API_BASE`). Read this instead of caching the value: it can change at
  *  runtime via the Settings screen. */
 export function getApiBase(): string {
-  return apiBaseOverride ?? BUILT_IN_API_BASE;
+  return overrideUrl() ?? BUILT_IN_API_BASE;
 }
-
-AsyncStorage.getItem(REMOTE_SERVER_KEY)
-  .then((stored) => {
-    if (stored) {
-      apiBaseOverride = stored;
-      notifyApiBaseChange();
-    }
-  })
-  .catch(() => {});
 
 /** Set (or, with `null`, clear) the user's remote-server override from the Settings screen.
  *  Persisted; trailing slashes are stripped so `${getApiBase()}${path}` never double-slashes.
  *  Callers are responsible for clearing any cached data that assumed the old server (see
- *  `settings.tsx`'s `queryClient.clear()` + `bumpDataEpoch()`). */
+ *  `settings.tsx`'s `queryClient.clear()` + `bumpDataEpoch()`). This store owns only the URL
+ *  value — the query-cache side of a server switch stays with the caller, keeping the local
+ *  preference and the TanStack Query cache cleanly separated. */
 export function setApiBaseOverride(url: string | null): void {
   const trimmed = url?.trim().replace(/\/+$/, '') || null;
-  apiBaseOverride = trimmed;
-  notifyApiBaseChange();
-  if (trimmed) AsyncStorage.setItem(REMOTE_SERVER_KEY, trimmed).catch(() => {});
-  else AsyncStorage.removeItem(REMOTE_SERVER_KEY).catch(() => {});
+  serverOverride$.set({ url: trimmed });
 }
 
 /** `[effectiveUrl, setOverride]` for the Settings screen's remote-server row. */
 export function useApiBase(): [string, (url: string | null) => void] {
-  const base = useSyncExternalStore(subscribeApiBase, getApiBase, getApiBase);
-  return [base, setApiBaseOverride];
+  const url = (use$(serverOverride$) as Partial<ServerOverride>).url ?? null;
+  return [url ?? BUILT_IN_API_BASE, setApiBaseOverride];
 }
 
 export type { Bridge, BridgeList };
