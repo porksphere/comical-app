@@ -202,8 +202,10 @@ export default function BrowseScreen() {
     if (!hasFiltersCap) return [];
     return (filtersRawQuery.data ?? []).map((f) => {
       let def = filterDefFromApi(f);
-      // Live tag search for a bridge-backed tag-multiselect (no static option list).
-      if (def.type === 'tags' && !def.options) def = { ...def, search: (query: string) => ds.getTags(bridgeId!, query) };
+      // Live tag search for a bridge-backed tag-multiselect (no static option list). `searchKey`
+      // (the bridge id) scopes the react-query cache the editor keys its search on.
+      if (def.type === 'tags' && !def.options)
+        def = { ...def, search: (query: string) => ds.getTags(bridgeId!, query), searchKey: bridgeId };
       const hints = labelHints[def.id];
       if (def.type === 'tags' && hints) def = { ...def, labelHints: { ...(def.labelHints ?? {}), ...hints } };
       return def;

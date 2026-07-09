@@ -31,7 +31,17 @@ export type FilterDef =
    *  `labelHints` seeds id→label pairs for values selected out-of-band (a tapped tag chip on a
    *  series) so they render with their name before any live search has returned them — it never
    *  turns the filter into a static list (that's `options`'s job), it only aids label lookup. */
-  | { id: string; label: string; type: 'tags'; options?: Option[]; search?: (query: string) => Promise<Option[]>; labelHints?: Record<string, string> };
+  | {
+      id: string;
+      label: string;
+      type: 'tags';
+      options?: Option[];
+      search?: (query: string) => Promise<Option[]>;
+      /** Per-source cache token for the live `search` (e.g. the bridge id) — see queries.ts
+       *  `tagSearch`, so one bridge's tag results don't collide with another's in the global cache. */
+      searchKey?: string;
+      labelHints?: Record<string, string>;
+    };
 
 export type FilterValue = string | number | boolean | string[] | TriState;
 
