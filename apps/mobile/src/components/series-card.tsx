@@ -22,6 +22,18 @@ import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/
 
 export type CardSize = 'grid' | 'rail' | 'ranked' | 'hero';
 
+// Cross-instance cache of covers that have already resolved at least once this session.
+// Recycled list cells reset their component-local `loaded`/`delayPassed`/`coverAspect` state on
+// every entry-id change (see the recycle-safety block below) — correct for genuinely per-item
+// state like the held-highlight or truncation flag, but it was ALSO replaying the skeleton (and,
+// in mock mode, the whole simulated network delay) for entries that had already loaded moments
+// earlier, e.g. scrolling back up over rows already seen — even though the real image is already
+// sitting in expo-image's own memory-disk cache. These two maps mirror that "already resolved"
+// fact across recycles so a revisit skips straight to the settled state. Module-level and
+// session-lifetime only (cleared on reload) — same lifetime as expo-image's own cache.
+const resolvedCoverIds = new Set<string>();
+const resolvedCoverAspects = new Map<string, number>();
+
 const WIDTHS: Record<Exclude<CardSize, 'grid'>, number> = {
   rail: 130,
   ranked: 150,
@@ -158,7 +170,7 @@ export function SeriesCard({
    *  Only Browse's own card call sites pass this; other tabs (Library, History) omit it. */
   originPage?: string;
 }) {
-  const [loaded, setLoaded] = useState(false);
+  const [loaded, setLoaded] = useState(() => resolvedCoverIds.has(entry.id));
   const [truncated, setTruncated] = useState(false);
   // The cover's real (capped) aspect ratio — a plain, UNanimated value. Since
   // `clampThumbAspect` only ever returns >= DEFAULT_THUMB_ASPECT, the box only ever
@@ -166,8 +178,10 @@ export function SeriesCard({
   // this is always a single, one-time relayout — no cheaper way to know a cover's
   // shape than to just let that relayout happen once. What's smoothed below is the
   // *visual* shrink, via a `transform`-only illusion that never triggers another
-  // relayout — see `pictureStyle`/`trailingStyle`.
-  const [coverAspect, setCoverAspect] = useState(DEFAULT_THUMB_ASPECT);
+  // relayout — see `pictureStyle`/`trailingStyle`. Seeded from `resolvedCoverAspects`
+  // when this id has already resolved before, so a revisit renders at its real shape
+  // immediately instead of popping back to the placeholder and re-shrinking.
+  const [coverAspect, setCoverAspect] = useState(() => resolvedCoverAspects.get(entry.id) ?? DEFAULT_THUMB_ASPECT);
   // FLIP-style shrink illusion. Animating `aspectRatio` itself (a layout property)
   // would force a native relayout every frame — Reanimated's own docs discourage
   // this in favor of `transform`/`opacity`, which are compositor-only. Instead: the
@@ -202,9 +216,9 @@ export function SeriesCard({
   const prevIdRef = useRef(entry.id);
   if (prevIdRef.current !== entry.id) {
     prevIdRef.current = entry.id;
-    setLoaded(false);
+    setLoaded(resolvedCoverIds.has(entry.id));
     setTruncated(false);
-    setCoverAspect(DEFAULT_THUMB_ASPECT);
+    setCoverAspect(resolvedCoverAspects.get(entry.id) ?? DEFAULT_THUMB_ASPECT);
     shrinkProgressSV.value = 1;
     shrinkFromScaleSV.value = 1;
     shrinkFromOffsetSV.value = 0;
@@ -221,7 +235,12 @@ export function SeriesCard({
   // <Image> until the delay elapses, so the skeleton stays visible (a stand-in
   // for real bridge image latency). Most covers are instant.
   // `coverDelayMs` self-gates on mock mode (0 in real mode), so real covers get no fake latency.
-  const delay = useMemo(() => coverDelayMs(entry.id), [entry.id]);
+  // Already-resolved ids (see `resolvedCoverIds`) also skip the delay on a revisit — a recycle
+  // shouldn't re-simulate network latency for a cover it's already shown once this session.
+  const delay = useMemo(
+    () => (resolvedCoverIds.has(entry.id) ? 0 : coverDelayMs(entry.id)),
+    [entry.id],
+  );
   const [delayPassed, setDelayPassed] = useState(delay === 0);
   useEffect(() => {
     // Assert delayPassed=true on no delay rather than early-returning, so a delay/key change can't
@@ -391,9 +410,11 @@ export function SeriesCard({
                   // while !loaded) covers the gap instead.
                   recyclingKey={entry.id}
                   onLoad={(e) => {
+                    resolvedCoverIds.add(entry.id);
                     const src = e.source;
                     if (src?.width && src?.height) {
                       const nextAspect = clampThumbAspect(src.width / src.height);
+                      resolvedCoverAspects.set(entry.id, nextAspect);
                       // Kick off the shrink illusion only when there's an actual
                       // shape change AND the box's pixel width is already known
                       // (from onLayout above) — width cancels out of the scale

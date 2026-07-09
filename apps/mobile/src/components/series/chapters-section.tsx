@@ -657,6 +657,21 @@ export function PageThumbList({
   );
 }
 
+// Cross-instance cache of page thumbnails that have already resolved at least once this
+// session — same rationale and lifetime as SeriesCard's `resolvedCoverIds`/`resolvedCoverAspects`:
+// the page grid recycles tile instances, so without this a revisit (e.g. scrolling back up over
+// already-seen pages) replayed the whole skeleton/simulated-delay sequence for a thumbnail that's
+// already sitting in expo-image's own memory-disk cache. Keyed by the same URL used for the
+// simulated-latency hash (`delayKey` below), not `index`, since that's the thumbnail's actual
+// content identity — `index` is just this page's position, which a recycled instance reuses for
+// a different page entirely.
+const resolvedThumbIds = new Set<string>();
+const resolvedThumbAspects = new Map<string, number>();
+
+function thumbDelayKey(t: PageThumbSource | null): string {
+  return t ? (t.kind === 'sprite' ? t.sheetUrl : t.url) : '';
+}
+
 /** A single page tile: holds the image behind a simulated network delay and
  *  shows a shimmer skeleton until it's both elapsed and loaded — same treatment
  *  as the cover images, so a long page set visibly streams in. A `null` thumb
@@ -686,14 +701,17 @@ function PageThumb({
   const ds = useDataSource();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
   const [resolved, setResolved] = useState(thumb);
-  const [loaded, setLoaded] = useState(false);
+  const [loaded, setLoaded] = useState(() => resolvedThumbIds.has(thumbDelayKey(thumb)));
   // Real aspect of a plain `image` tile, learned from its own onLoad (see the
   // note on the derivation below) rather than an off-screen prefetch. A plain,
   // UNanimated value — like SeriesCard's `coverAspect`, this only ever shrinks
   // from the default (never grows past it), so setting it is always a single,
   // one-time relayout of `thumbBox`. The *visual* shrink is smoothed separately
-  // by `picturePageStyle` (pure `transform`, no further relayout) below.
-  const [imageAspect, setImageAspect] = useState(DEFAULT_THUMB_ASPECT);
+  // by `picturePageStyle` (pure `transform`, no further relayout) below. Seeded
+  // from `resolvedThumbAspects` when this thumbnail has already resolved before.
+  const [imageAspect, setImageAspect] = useState(
+    () => resolvedThumbAspects.get(thumbDelayKey(thumb)) ?? DEFAULT_THUMB_ASPECT,
+  );
   // FLIP-style shrink illusion, same technique as SeriesCard's cover — no
   // trailing-group equivalent needed here since `thumbShell` is a constant 2:3
   // slot and `pageNum` sits outside the scaled layer, so nothing else needs to
@@ -711,8 +729,9 @@ function PageThumb({
   if (prevIndexRef.current !== index) {
     prevIndexRef.current = index;
     setResolved(thumb);
-    setLoaded(false);
-    setImageAspect(DEFAULT_THUMB_ASPECT);
+    const key = thumbDelayKey(thumb);
+    setLoaded(resolvedThumbIds.has(key));
+    setImageAspect(resolvedThumbAspects.get(key) ?? DEFAULT_THUMB_ASPECT);
     shrinkProgressSV.value = 1;
     shrinkFromScaleSV.value = 1;
   }
@@ -742,8 +761,12 @@ function PageThumb({
   // for a full image.
   const delayKey = resolved ? (resolved.kind === 'sprite' ? resolved.sheetUrl : resolved.url) : '';
   // `coverDelayMs` self-gates on mock mode (returns 0 in real mode), so real thumbnails get no fake
-  // latency — no gate needed here.
-  const delay = useMemo(() => coverDelayMs(delayKey), [delayKey]);
+  // latency — no gate needed here. Already-resolved keys also skip the delay on a revisit (see
+  // `resolvedThumbIds`) — a recycle shouldn't re-simulate latency for a thumbnail already shown.
+  const delay = useMemo(
+    () => (resolvedThumbIds.has(delayKey) ? 0 : coverDelayMs(delayKey)),
+    [delayKey],
+  );
   const [delayPassed, setDelayPassed] = useState(delay === 0);
   useEffect(() => {
     // MUST assert delayPassed=true when there's no delay — not just early-return. A lazy tile's key
@@ -821,9 +844,11 @@ function PageThumb({
                 // previous page's thumbnail (see SeriesCard).
                 recyclingKey={String(index)}
                 onLoad={(e) => {
+                  resolvedThumbIds.add(delayKey);
                   const src = e.source;
                   if (src?.width && src?.height) {
                     const nextAspect = clampThumbAspect(src.width / src.height);
+                    resolvedThumbAspects.set(delayKey, nextAspect);
                     // Same FLIP kick-off as SeriesCard: only animate when there's
                     // an actual shape change and the box's pixel width is already
                     // known (from onLayout above).
@@ -854,7 +879,10 @@ function PageThumb({
               <SpriteCrop
                 thumb={resolved}
                 width={width}
-                onLoad={() => setLoaded(true)}
+                onLoad={() => {
+                  resolvedThumbIds.add(delayKey);
+                  setLoaded(true);
+                }}
                 onError={(msg) =>
                   logDiagnostic('page-thumb-sprite', msg, {
                     url: resolved.sheetUrl,
