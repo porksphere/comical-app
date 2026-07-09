@@ -43,7 +43,7 @@ import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useNativePullToRefresh } from '@/hooks/use-native-pull-to-refresh';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
-import { useWebPullToRefresh } from '@/hooks/use-web-pull-to-refresh';
+import { useTouchPullToRefresh } from '@/hooks/use-touch-pull-to-refresh';
 
 // The reference's mobile grid uses a tighter inter-card gap than its row gap
 // (`.grid { gap: 1rem 0.6rem }`, i.e. ~9.6px columns vs 16px rows) — Spacing.two
@@ -706,7 +706,7 @@ export default function BrowseScreen() {
   // it doesn't need to reach the very top first. At/above the top (y <= 0 — resting, or an
   // active pull/overscroll, which reports negative y) it's pinned fully visible: the pull-to-
   // refresh spinner is a separate overlay that sits just below the bar's resting edge (the shared
-  // PullIndicator, driven by useWebPullToRefresh on web / useNativePullToRefresh on iOS — not a
+  // PullIndicator, driven by useTouchPullToRefresh on web+Android / useNativePullToRefresh on iOS — not a
   // native RefreshControl behind the bar), so the bar has nothing to get out of the way of, and
   // staying put reads as an anchored top bar with the spinner emerging beneath it, X-style.
   const headerOffsetY = useSharedValue(0);
@@ -743,23 +743,25 @@ export default function BrowseScreen() {
   const headerStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: headerOffsetY.value }],
   }));
-  // Pull-to-refresh comes in three flavors, all feeding the same `onRefresh`/`refreshing` pair:
-  //  - Web (`useWebPullToRefresh`): touch-driven, since react-native-web's RefreshControl is inert.
-  //  - iOS (`useNativePullToRefresh`): overscroll-driven overlay, since iOS's RefreshControl draws
-  //    its spinner behind the top bar with no working offset (see that hook).
-  //  - Android: RN's native RefreshControl, wired on the list below (its offset works there).
-  // Both custom hooks are inert off their platform (web never bounces; Android clamps overscroll),
-  // so calling both unconditionally is safe. Each reuses the same `onRefresh` closure, so every
-  // path runs the identical refetch/min-visible-duration flow, `refreshing` included.
-  const webPull = useWebPullToRefresh(scrollY, onRefresh, refreshing);
+  // Pull-to-refresh: one overlay spinner (`PullIndicator`) across every platform, fed by whichever
+  // hook can source a pull there — all funneling into the same `onRefresh`/`refreshing` pair, so
+  // every path runs the identical refetch/min-visible-duration flow:
+  //  - Web + Android (`useTouchPullToRefresh`): touch-driven, since neither has usable elastic
+  //    overscroll (web's RefreshControl is inert; Android clamps to a glow).
+  //  - iOS (`useNativePullToRefresh`): reads the native bounce directly — no touch plumbing needed,
+  //    and its RefreshControl can't be used anyway (spinner draws behind the top bar, see the hook).
+  // We deliberately don't use RN's native RefreshControl on any platform — a consistent custom
+  // spinner beats the Material control looking different on Android alone. Both hooks are inert off
+  // their platforms, so calling both unconditionally is safe.
+  const touchPull = useTouchPullToRefresh(scrollY, onRefresh, refreshing);
   const nativePull = useNativePullToRefresh(scrollY, onRefresh, refreshing);
-  // Which custom indicator (if any) is active on this platform — Android uses the native control.
-  const customPull = Platform.OS === 'ios' ? nativePull : Platform.OS === 'web' ? webPull : null;
-  // Web only: shifts the whole grid down in lockstep with the pull/hold (see the web hook) so the
-  // gap the spinner sits in actually opens up. iOS opens its own gap via elastic overscroll (the
-  // content already moves), and native has no touch-driven pull, so this stays 0 off web.
-  const webPullListStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: webPull.pullY.value }],
+  const customPull = Platform.OS === 'ios' ? nativePull : touchPull;
+  // Web + Android: shift the whole grid down in lockstep with the pull/hold (see the touch hook) so
+  // the gap the spinner sits in actually opens up. iOS opens its own gap via elastic overscroll (the
+  // content already moves), where the touch hook is inert, so `touchPull.pullY` stays 0 there and
+  // this is naturally a no-op — no Platform gating needed.
+  const touchPullListStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: touchPull.pullY.value }],
   }));
 
   const topBar = (
@@ -957,20 +959,20 @@ export default function BrowseScreen() {
   return (
     <ThemedView
       style={styles.container}
-      // Web-only pull-to-refresh gesture — see `useWebPullToRefresh`'s comment. Touch events
-      // bubble up the DOM tree on web, so catching them here (rather than needing LegendList to
-      // forward them from wherever the touch actually started) works regardless of what's under
-      // the finger. No-op object spread on native, where the real RefreshControl below handles it.
-      {...(Platform.OS === 'web'
-        ? { onTouchStart: webPull.onTouchStart, onTouchMove: webPull.onTouchMove, onTouchEnd: webPull.onTouchEnd }
-        : null)}>
+      // Touch-driven pull-to-refresh for web + Android — see `useTouchPullToRefresh`. Catching the
+      // raw touch events here (rather than needing LegendList to forward them from wherever the
+      // touch actually started) works regardless of what's under the finger. Not wired on iOS,
+      // which sources its pull from the native bounce instead (`useNativePullToRefresh`).
+      {...(Platform.OS === 'ios'
+        ? null
+        : { onTouchStart: touchPull.onTouchStart, onTouchMove: touchPull.onTouchMove, onTouchEnd: touchPull.onTouchEnd })}>
       {/* The list's own frame spans the full screen, from behind the topBar — its contentContainer
           top padding (headerHeight) reserves the bar's resting height so content starts below it;
           as the bar slides away (see `headerOffsetY` above) the content already sitting there is
           revealed, rather than the list itself needing to relayout. */}
       {/* Wrapping rather than animating AnimatedLegendList's own `style` directly — LegendList's
           style prop isn't typed for a Reanimated animated style the way Animated.View's is. */}
-      <Animated.View style={[styles.list, webPullListStyle]}>
+      <Animated.View style={[styles.list, touchPullListStyle]}>
       <AnimatedLegendList
         ref={listRef}
         key={gridKey}
@@ -1057,28 +1059,22 @@ export default function BrowseScreen() {
         // Show the browser's native scrollbar on web (the list scrolls in its own
         // overflow container); keep it hidden on native, where it's not idiomatic.
         showsVerticalScrollIndicator={Platform.OS === 'web'}
-        // Android-only native RefreshControl. Its `progressViewOffset` actually works on Android
-        // (SwipeRefreshLayout), so LegendList folding in the contentContainer's paddingTop
-        // (headerHeight) settles the spinner just below the bar. iOS ignores that offset entirely
-        // (facebook/react-native#54183) — its spinner would draw behind the bar — so iOS opts out
-        // here and uses the overlay `PullIndicator` (see `useNativePullToRefresh`); web's is a
-        // no-op there and likewise uses the overlay. Both drive it off `onScrollEndDrag` below.
-        onRefresh={Platform.OS === 'android' ? onRefresh : undefined}
-        refreshing={Platform.OS === 'android' ? refreshing : false}
-        // iOS: a release past the overscroll threshold triggers the refresh (see the native hook).
+        // No native RefreshControl on any platform — pull-to-refresh is the custom overlay spinner
+        // (see the two pull hooks above), consistent everywhere. Android's edge-stretch glow is
+        // suppressed so it doesn't fight the custom pull; iOS keeps its bounce (that's what sources
+        // the pull there), and a release past the threshold triggers the refresh via onScrollEndDrag.
+        overScrollMode={Platform.OS === 'android' ? 'never' : undefined}
         onScrollEndDrag={Platform.OS === 'ios' ? nativePull.onScrollEndDrag : undefined}
       />
       </Animated.View>
       {topBar}
-      {customPull && (
-        <PullIndicator
-          pullY={customPull.pullY}
-          pullThreshold={customPull.pullThreshold}
-          refreshing={refreshing}
-          top={headerHeight}
-          color={theme.accent}
-        />
-      )}
+      <PullIndicator
+        pullY={customPull.pullY}
+        pullThreshold={customPull.pullThreshold}
+        refreshing={refreshing}
+        top={headerHeight}
+        color={theme.accent}
+      />
     </ThemedView>
   );
 }

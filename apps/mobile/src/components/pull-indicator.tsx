@@ -4,11 +4,11 @@ import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reani
 const HEIGHT = 56;
 
 /**
- * The pull-to-refresh spinner overlay, shared by web (`useWebPullToRefresh`) and iOS
- * (`useNativePullToRefresh`) — both drive it through the same `pullY`. Slides down from behind the
- * top bar as the user pulls, and stays fully shown for as long as `refreshing` is true (independent
- * of `pullY`, which has sprung back to 0 by then — see the hooks). Android keeps RN's native
- * RefreshControl (its `progressViewOffset` works), so this isn't used there.
+ * The pull-to-refresh spinner overlay, shared across every platform — fed by
+ * `useTouchPullToRefresh` (web + Android) or `useNativePullToRefresh` (iOS), both through the same
+ * `pullY`. Slides down from behind the top bar as the user pulls, and stays fully shown for as long
+ * as `refreshing` is true (independent of `pullY`, which has sprung back to 0 by then — see the
+ * hooks).
  */
 export function PullIndicator({
   pullY,
