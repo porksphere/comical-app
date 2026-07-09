@@ -494,7 +494,7 @@ export default function BrowseScreen() {
   // keep reading `terminalQuery`, not the empty results query) — only the fetch key waits.
   const terminalScope: BrowseScope | null =
     isHomeTerminal && terminalGridSection && !homeQuery.isPlaceholderData
-      ? { kind: 'homeTerminal', listId: terminalGridSection.id }
+      ? { kind: 'homeGrid', listId: terminalGridSection.id }
       : null;
   const terminalQuery = useInfiniteQuery({
     queryKey: terminalScope ? queryKeys.browseGrid(mock, bridgeId ?? '', terminalScope) : DISABLED_TERMINAL_KEY,
@@ -1092,29 +1092,37 @@ function HomeGridBlock({
   numColumns: number;
 }) {
   const ds = useDataSource();
-  const [items, setItems] = useState(section.items);
-  const [hasNextPage, setHasNextPage] = useState(section.hasNextPage);
-  const [pageNum, setPageNum] = useState(1);
-  const [loading, setLoading] = useState(false);
-
+  const mock = useMockActive();
+  const queryClient = useQueryClient();
+  // Same infinite-query pipeline as the main grid (`homeGrid` scope keyed on this section's list
+  // id). Page 1 is seeded from the section itself via `initialData`, so no extra request fires on
+  // Home; "Load more" pulls pages 2+.
+  const query = useInfiniteQuery({
+    queryKey: queryKeys.browseGrid(mock, bridgeId ?? '', { kind: 'homeGrid', listId: section.id }),
+    queryFn: ({ pageParam, signal }) =>
+      fetchBrowseScope(ds, bridgeId ?? '', { kind: 'homeGrid', listId: section.id }, pageParam, signal),
+    enabled: !!bridgeId,
+    initialPageParam: 1,
+    getNextPageParam: (last: GridPage, _all: GridPage[], lastParam: number) =>
+      last.hasNextPage ? lastParam + 1 : undefined,
+    initialData: { pages: [{ items: section.items, hasNextPage: section.hasNextPage }], pageParams: [1] },
+  });
+  // When the underlying section changes (a Home refetch / pull-to-refresh brought fresh page-1
+  // content), reset this block's cache to that fresh page 1 — matching the old reset-on-prop-change,
+  // discarding any expanded "Load more" pages so the block never shows stale content after a refresh.
   useEffect(() => {
-    setItems(section.items);
-    setHasNextPage(section.hasNextPage);
-    setPageNum(1);
-  }, [section]);
+    queryClient.setQueryData(queryKeys.browseGrid(mock, bridgeId ?? '', { kind: 'homeGrid', listId: section.id }), {
+      pages: [{ items: section.items, hasNextPage: section.hasNextPage }],
+      pageParams: [1],
+    });
+  }, [section, mock, bridgeId, queryClient]);
 
+  const items = query.data?.pages.flatMap((p) => p.items) ?? section.items;
+  const hasNextPage = !!query.hasNextPage;
+  const loading = query.isFetchingNextPage;
   const loadMore = () => {
-    if (loading || !hasNextPage || !bridgeId) return;
-    setLoading(true);
-    const nextPage = pageNum + 1;
-    ds.getGridPage(bridgeId, section.id, nextPage)
-      .then((res) => {
-        setItems((prev) => [...prev, ...res.items]);
-        setHasNextPage(res.hasNextPage);
-        setPageNum(nextPage);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    if (!query.hasNextPage || query.isFetchingNextPage || !bridgeId) return;
+    void query.fetchNextPage();
   };
 
   // Chunk into fixed-column rows, matching the main FlatList grid's own

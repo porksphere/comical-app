@@ -47,9 +47,10 @@ export type BrowseScope =
   | { kind: 'search'; query: string; opts?: QueryOpts }
   /** A rail's "See all" drill-down — that list's items, page-only. */
   | { kind: 'seeAll'; listId: string }
-  /** Home's terminal grid section, sharing the main list's infinite scroll. Page 1 is seeded from
-   *  `getHomeSections` (no extra request); later pages come through here. */
-  | { kind: 'homeTerminal'; listId: string };
+  /** A composed-Home grid section (the terminal one that shares the main list's infinite scroll, or
+   *  a non-terminal "Load more" block). Page 1 is seeded from `getHomeSections` (no extra request);
+   *  later pages come through here. */
+  | { kind: 'homeGrid'; listId: string };
 
 export const queryKeys = {
   seriesDetail: (mock: boolean, bridgeId: string, seriesId: string, direct: boolean) =>
@@ -97,7 +98,7 @@ export function fetchBrowseScope(
     case 'favorites':
       return ds.getFavorites(bridgeId, page, signal);
     case 'seeAll':
-    case 'homeTerminal':
+    case 'homeGrid':
       return ds.getGridPage(bridgeId, scope.listId, page, undefined, signal);
     case 'list':
       return ds.getGridPage(bridgeId, scope.listId, page, scope.opts, signal);
