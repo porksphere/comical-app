@@ -22,13 +22,34 @@ import { observable, syncState, when, type Observable, type ObservableParam } fr
 import { configureSynced, synced } from '@legendapp/state/sync';
 import { observablePersistAsyncStorage } from '@legendapp/state/persist-plugins/async-storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
+
+// The Node pass of the web static export (`expo export -p web`) evaluates modules with no `window`,
+// where the AsyncStorage *web* shim (backed by `window.localStorage`) throws the moment it's
+// touched. Legend State activates persistence eagerly (the `onChange` in `persisted$` below, and
+// `migrateLegacyKey`), so that throw fires at module load and aborts the whole export. The exported
+// HTML can't read a device's storage anyway — it only needs each store's `initial` value — so on
+// that pass alone we hand the plugin a no-op storage and skip eager hydration. Real browsers
+// (`window` present) and native (not 'web'; native AsyncStorage never touches `window`) are
+// unaffected — `Platform.OS !== 'web'` keeps this true on device even if RN leaves `window` unset.
+const canPersist = Platform.OS !== 'web' || typeof window !== 'undefined';
+
+const noopAsyncStorage = {
+  getItem: async () => null,
+  setItem: async () => {},
+  removeItem: async () => {},
+  getAllKeys: async () => [],
+  multiGet: async () => [],
+  multiSet: async () => {},
+  multiRemove: async () => {},
+} as unknown as typeof AsyncStorage;
 
 // Same AsyncStorage the query-client persister (`data/query-client.ts`) and the
 // embedded stores use, so all of the app's persistence goes through one backend.
 // To get synchronous, flicker-free hydration everywhere, swap this single line
 // for `@legendapp/state/persist-plugins/mmkv` — no store needs to change.
 const persistedSynced = configureSynced(synced, {
-  persist: { plugin: observablePersistAsyncStorage({ AsyncStorage }) },
+  persist: { plugin: observablePersistAsyncStorage({ AsyncStorage: canPersist ? AsyncStorage : noopAsyncStorage }) },
 });
 
 /**
@@ -47,7 +68,10 @@ const persistedSynced = configureSynced(synced, {
  */
 export function persisted$<T>(name: string, initial: T): Observable<T> {
   const store$ = observable(persistedSynced({ initial, persist: { name } }));
-  store$.onChange(() => {});
+  // The permanent activator — but not during the storage-less static export, where activating would
+  // reach for `window` (see `canPersist`). There, the store just stays at `initial`, which is all
+  // the exported HTML needs.
+  if (canPersist) store$.onChange(() => {});
   return store$;
 }
 
@@ -70,6 +94,7 @@ export function migrateLegacyKey<T>(
   store$: Observable<T>,
   adopt: (legacyRawValue: string) => void,
 ): void {
+  if (!canPersist) return; // no storage (nor `window`) during the static export — nothing to migrate
   void AsyncStorage.getItem(legacyKey).then(async (raw) => {
     if (raw == null) return;
     await AsyncStorage.removeItem(legacyKey);
