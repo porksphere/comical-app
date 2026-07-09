@@ -83,5 +83,7 @@ export function useTouchPullToRefresh(scrollY: SharedValue<number>, onRefresh: (
     }
   }, [pullY, onRefresh]);
 
-  return { pullY, pullThreshold: PULL_THRESHOLD, onTouchStart, onTouchMove, onTouchEnd };
+  // Here the list translates by the pull itself, so the wrapper offset *is* `pullY` — exposed under
+  // the same name the native hook uses (where the two differ) so the caller can treat them alike.
+  return { pullY, listTranslateY: pullY, pullThreshold: PULL_THRESHOLD, onTouchStart, onTouchMove, onTouchEnd };
 }
