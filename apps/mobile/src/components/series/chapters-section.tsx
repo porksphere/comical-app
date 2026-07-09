@@ -668,6 +668,12 @@ export function PageThumbList({
 const resolvedThumbIds = new Set<string>();
 const resolvedThumbAspects = new Map<string, number>();
 
+// Rolling "last resolved" aspect ratio for page thumbnails — same rationale as SeriesCard's
+// `lastResolvedCoverAspect` (page thumbnails within a chapter are typically all the same
+// shape), kept as a separate scalar since page thumbs and series covers don't share a
+// distribution. Used as the initial/recycle seed below instead of the flat placeholder.
+let lastResolvedThumbAspect = DEFAULT_THUMB_ASPECT;
+
 function thumbDelayKey(t: PageThumbSource | null): string {
   return t ? (t.kind === 'sprite' ? t.sheetUrl : t.url) : '';
 }
@@ -708,9 +714,11 @@ function PageThumb({
   // from the default (never grows past it), so setting it is always a single,
   // one-time relayout of `thumbBox`. The *visual* shrink is smoothed separately
   // by `picturePageStyle` (pure `transform`, no further relayout) below. Seeded
-  // from `resolvedThumbAspects` when this thumbnail has already resolved before.
+  // from `resolvedThumbAspects` when this thumbnail has already resolved before,
+  // else from the rolling `lastResolvedThumbAspect` guess rather than the flat
+  // placeholder (page thumbs in a chapter tend to share a shape).
   const [imageAspect, setImageAspect] = useState(
-    () => resolvedThumbAspects.get(thumbDelayKey(thumb)) ?? DEFAULT_THUMB_ASPECT,
+    () => resolvedThumbAspects.get(thumbDelayKey(thumb)) ?? lastResolvedThumbAspect,
   );
   // FLIP-style shrink illusion, same technique as SeriesCard's cover — no
   // trailing-group equivalent needed here since `thumbShell` is a constant 2:3
@@ -731,7 +739,7 @@ function PageThumb({
     setResolved(thumb);
     const key = thumbDelayKey(thumb);
     setLoaded(resolvedThumbIds.has(key));
-    setImageAspect(resolvedThumbAspects.get(key) ?? DEFAULT_THUMB_ASPECT);
+    setImageAspect(resolvedThumbAspects.get(key) ?? lastResolvedThumbAspect);
     shrinkProgressSV.value = 1;
     shrinkFromScaleSV.value = 1;
   }
@@ -849,6 +857,7 @@ function PageThumb({
                   if (src?.width && src?.height) {
                     const nextAspect = clampThumbAspect(src.width / src.height);
                     resolvedThumbAspects.set(delayKey, nextAspect);
+                    lastResolvedThumbAspect = nextAspect;
                     // Same FLIP kick-off as SeriesCard: only animate when there's
                     // an actual shape change and the box's pixel width is already
                     // known (from onLayout above).
