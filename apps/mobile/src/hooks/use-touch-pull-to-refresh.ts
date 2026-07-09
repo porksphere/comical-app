@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { GestureResponderEvent } from 'react-native';
-import { useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
+import { useSharedValue, withSpring, withTiming, type SharedValue } from 'react-native-reanimated';
+import { hapticImpactLight } from '@/lib/haptics';
 
 /** Drag distance (post-slop) that triggers a refresh on release. */
 const PULL_THRESHOLD = 64;
@@ -10,6 +11,9 @@ const PULL_MAX = 96;
 const PULL_RESISTANCE = 0.5;
 /** Dead zone before a downward drag starts counting as a pull at all. */
 const PULL_START_SLOP = 8;
+/** Settle motion for the snap-into-refresh and spring-back — a quick, barely-overshooting spring
+ *  (matches the iOS hook), which reads as more alive than a linear timing. */
+const SETTLE_SPRING = { damping: 18, stiffness: 220, mass: 0.7 } as const;
 
 /**
  * Touch-driven pull-to-refresh, shared by web and Android — the two platforms with no usable
@@ -38,17 +42,21 @@ export function useTouchPullToRefresh(scrollY: SharedValue<number>, onRefresh: (
   const startY = useRef(0);
   const pulling = useRef(false);
   const holding = useRef(false);
+  // Pulled past the trigger line as of the last move — so the threshold haptic fires once per
+  // crossing (on the false→true edge) rather than every move event while held past it.
+  const armed = useRef(false);
 
   useEffect(() => {
     if (holding.current && !refreshing) {
       holding.current = false;
-      pullY.value = withTiming(0, { duration: 200 });
+      pullY.value = withSpring(0, SETTLE_SPRING);
     }
   }, [refreshing, pullY]);
 
   const onTouchStart = useCallback(
     (e: GestureResponderEvent) => {
       pulling.current = scrollY.value <= 0;
+      armed.current = false;
       startY.current = e.nativeEvent.pageY;
     },
     [scrollY],
@@ -64,7 +72,13 @@ export function useTouchPullToRefresh(scrollY: SharedValue<number>, onRefresh: (
         return;
       }
       const dy = e.nativeEvent.pageY - startY.current - PULL_START_SLOP;
-      pullY.value = dy > 0 ? Math.min(PULL_MAX, dy * PULL_RESISTANCE) : 0;
+      const next = dy > 0 ? Math.min(PULL_MAX, dy * PULL_RESISTANCE) : 0;
+      // Tap the moment the pull first crosses the trigger line — the "you've pulled far enough"
+      // feedback; reset on the way back so a re-cross re-fires. (No-op on iOS Safari/desktop.)
+      const nowArmed = next >= PULL_THRESHOLD;
+      if (nowArmed && !armed.current) hapticImpactLight();
+      armed.current = nowArmed;
+      pullY.value = next;
     },
     [pullY, scrollY],
   );
@@ -76,10 +90,10 @@ export function useTouchPullToRefresh(scrollY: SharedValue<number>, onRefresh: (
       // Snap into (and hold at) the resting "activated" position instead of springing all the
       // way back — the `refreshing` effect above releases it once the request actually resolves.
       holding.current = true;
-      pullY.value = withTiming(PULL_THRESHOLD, { duration: 150 });
+      pullY.value = withSpring(PULL_THRESHOLD, SETTLE_SPRING);
       onRefresh();
     } else {
-      pullY.value = withTiming(0, { duration: 200 });
+      pullY.value = withSpring(0, SETTLE_SPRING);
     }
   }, [pullY, onRefresh]);
 
