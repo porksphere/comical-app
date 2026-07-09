@@ -116,7 +116,7 @@ export function TagExclusionsControl({
       // bridge-settings screen's `data.excludedTags`/`excludedTagLabels` came from this
       // same query, so without this it goes stale until the screen is torn down and
       // remounted (e.g. leaving and re-entering Bridge Settings).
-      await queryClient.invalidateQueries({ queryKey: ['bridgeSettings', bridgeId] });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.bridgeSettings(bridgeId) });
     },
   });
   const saving = saveMutation.isPending;
@@ -183,13 +183,13 @@ export function GenreExclusionsControl({ bridgeId }: { bridgeId: string }) {
   const { ref, openAt } = useAnchoredOverlay();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
   const { data, error, isLoading, refetch } = useQuery({
-    queryKey: ['genreExclusions', bridgeId],
+    queryKey: queryKeys.genreExclusions(bridgeId),
     queryFn: ({ signal }) => ds.getGenreExclusions(bridgeId, signal),
   });
   const toggleMutation = useMutation({
     mutationFn: (selected: string[]) => ds.putGenreExclusions(bridgeId, selected),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['genreExclusions', bridgeId] });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.genreExclusions(bridgeId) });
     },
   });
   const saving = toggleMutation.isPending;
@@ -311,14 +311,14 @@ export function BridgePrefsToggles({ bridgeId }: { bridgeId: string }) {
   const ds = useDataSource();
   const queryClient = useQueryClient();
   const { data } = useQuery({
-    queryKey: ['bridgePrefs', bridgeId],
+    queryKey: queryKeys.bridgePrefs(bridgeId),
     queryFn: ({ signal }) => ds.getBridgePrefs(bridgeId, signal),
   });
 
   const setMutation = useMutation({
     mutationFn: (update: { trackersDisabled?: boolean; historyDisabled?: boolean }) => ds.putBridgePrefs(bridgeId, update),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['bridgePrefs', bridgeId] });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.bridgePrefs(bridgeId) });
     },
   });
   const set = (update: { trackersDisabled?: boolean; historyDisabled?: boolean }) => setMutation.mutate(update);

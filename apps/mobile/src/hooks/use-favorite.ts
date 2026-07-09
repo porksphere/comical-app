@@ -35,9 +35,9 @@ export function useFavorite(bridgeId: string | undefined, seriesId: string) {
     onError: (_e, _next, ctx) => {
       if (ctx) queryClient.setQueryData(key, ctx.prev ?? false);
     },
-    // The favorites page keys its grid on ['favorites', mock, bridgeId] — refresh it so a toggle
+    // The favorites page keys its grid on queryKeys.favoritesList(mock, bridgeId) — refresh it so a toggle
     // here shows up there.
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ['favorites', mock, bridgeId] }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.favoritesList(mock, bridgeId) }),
   });
 
   const toggle = () => {

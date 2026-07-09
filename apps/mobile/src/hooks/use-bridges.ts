@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
+import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
 import type { Bridge } from '@/data/types';
 
@@ -23,7 +24,7 @@ export function useBridgeMap(): {
 } {
   const ds = useDataSource();
   const { data: bridges = [] } = useQuery({
-    queryKey: ['bridges'],
+    queryKey: queryKeys.bridges(),
     queryFn: ({ signal }) => ds.getBridges(signal),
   });
 

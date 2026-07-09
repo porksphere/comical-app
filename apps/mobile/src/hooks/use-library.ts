@@ -37,7 +37,7 @@ export function useLibrary(bridgeId: string | undefined, seriesId: string, snaps
     },
     // The Library tab keys its grid on ['library', mock, …] — refresh it so an add/remove here shows
     // up when the user switches back to that tab.
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ['library', mock] }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.libraryList(mock) }),
   });
 
   const toggle = () => {

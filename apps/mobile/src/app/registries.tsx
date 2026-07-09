@@ -12,6 +12,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -24,7 +25,7 @@ export default function RegistriesScreen() {
   const { open } = useOverlay();
 
   const { data: registries, error, isLoading, refetch } = useQuery({
-    queryKey: ['registries'],
+    queryKey: queryKeys.registries(),
     queryFn: ({ signal }) => ds.getRegistries(signal),
   });
 
@@ -37,7 +38,7 @@ export default function RegistriesScreen() {
     const removeMutation = useMutation({
       mutationFn: () => ds.removeRegistry(url),
       onSuccess: async () => {
-        await queryClient.invalidateQueries({ queryKey: ['registries'] });
+        await queryClient.invalidateQueries({ queryKey: queryKeys.registries()});
         closeTop();
       },
     });
@@ -75,7 +76,7 @@ export default function RegistriesScreen() {
     const addMutation = useMutation({
       mutationFn: () => ds.addRegistry(url.trim(), requireSignature),
       onSuccess: async () => {
-        await queryClient.invalidateQueries({ queryKey: ['registries'] });
+        await queryClient.invalidateQueries({ queryKey: queryKeys.registries()});
         closeTop();
       },
     });

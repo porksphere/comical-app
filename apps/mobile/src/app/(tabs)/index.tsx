@@ -88,7 +88,7 @@ export default function BrowseScreen() {
   // this is the list that must reflect a bridge change immediately, on a screen that's very often
   // sitting mounted-but-unfocused in the background while the user installs/uninstalls elsewhere.
   const bridgesQuery = useQuery({
-    queryKey: ['bridges'],
+    queryKey: queryKeys.bridges(),
     queryFn: ({ signal }) => ds.getBridges(signal),
   });
   const bridges = useMemo(() => bridgesQuery.data ?? [], [bridgesQuery.data]);

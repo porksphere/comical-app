@@ -579,6 +579,16 @@ export function PageThumbList({
       keyExtractor={(_, i) => String(i)}
       numColumns={cols}
       recycleItems
+      // Every cell's real height is this, exactly, regardless of content — `thumbShell` is a
+      // constant 2:3 slot (see its style comment) that never resizes once mounted, so unlike a
+      // normal dynamic-height list this doesn't need to be *learned* via onLayout. Declaring it
+      // via getFixedItemSize (not just estimatedItemSize, which is only ever a pre-measurement
+      // guess) tells LegendList every row's exact position upfront, so it can jump straight to
+      // any scroll offset — e.g. dragging a scrollbar or `scrollToEnd` to the last row of a long
+      // page grid — without needing to render (and thus mount/fetch) every row above it first
+      // just to measure its way there. Excludes `gap` here since the library adds its own
+      // `ctx.scrollAxisGap` (derived from columnWrapperStyle.gap below) on top automatically.
+      getFixedItemSize={() => tileW * (3 / 2)}
       estimatedItemSize={tileW * (3 / 2) + gap}
       columnWrapperStyle={{ gap }}
       contentContainerStyle={{

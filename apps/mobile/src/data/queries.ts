@@ -87,6 +87,28 @@ export const queryKeys = {
   // correctly. A bridge switch or filter/sort/search change is just a new key here.
   browseGrid: (mock: boolean, bridgeId: string, scope: BrowseScope) =>
     ['browseGrid', mock, bridgeId, scope] as const,
+
+  // ─── Server-infra reads (Settings / registry screens) ──────────────────────
+  // These are mock-agnostic — the registry/bridge/tracker plumbing is the same regardless of the
+  // dev mock toggle — so, unlike the content keys above, they carry no `mock`. Several are shared
+  // across files (a bridge-settings save must invalidate the same key the settings screen reads),
+  // which is why they live here rather than as raw literals that can silently drift apart.
+  bridges: () => ['bridges'] as const,
+  bridgeSummaries: () => ['bridgeSummaries'] as const,
+  bridgeSettings: (bridgeId: string) => ['bridgeSettings', bridgeId] as const,
+  genreExclusions: (bridgeId: string) => ['genreExclusions', bridgeId] as const,
+  bridgePrefs: (bridgeId: string) => ['bridgePrefs', bridgeId] as const,
+  trackers: () => ['trackers'] as const,
+  trackerSettings: (trackerId: string) => ['trackerSettings', trackerId] as const,
+  registries: () => ['registries'] as const,
+  registryBridges: (url: string) => ['registryBridges', url] as const,
+  registryTrackers: (url: string) => ['registryTrackers', url] as const,
+
+  // List keys used only as invalidation targets — they prefix-match the per-item content keys
+  // (invalidating `['favorites', mock, bridgeId]` / `['library', mock]` refreshes the corresponding
+  // lists, since react-query invalidation matches by key prefix).
+  favoritesList: (mock: boolean, bridgeId: string | undefined) => ['favorites', mock, bridgeId] as const,
+  libraryList: (mock: boolean) => ['library', mock] as const,
 };
 
 /** Maps a `BrowseScope` (+ page number) to the data-source call that fetches it — the single place
