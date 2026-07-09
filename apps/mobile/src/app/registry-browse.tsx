@@ -1,6 +1,5 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -98,32 +97,28 @@ export default function RegistryBrowseScreen() {
 
 function BridgeRow({ bridge, url, onDone }: { bridge: AvailableBridge; url: string; onDone: () => Promise<void> }) {
   const ds = useDataSource();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const install = async () => {
-    setBusy(true);
-    setError(null);
-    try {
+  // `onDone` (a refetch) is folded into each mutationFn so `isPending` stays true through the
+  // refresh, matching the old shared `busy`.
+  const installMutation = useMutation({
+    mutationFn: async () => {
       await ds.installRegistryBridge(url, bridge.entry.id);
       await onDone();
-    } catch (e) {
-      setError((e as Error).message || 'Failed to install bridge');
-    } finally {
-      setBusy(false);
-    }
-  };
-  const update = async () => {
-    setBusy(true);
-    setError(null);
-    try {
+    },
+  });
+  const updateMutation = useMutation({
+    mutationFn: async () => {
       await ds.updateBridge(bridge.entry.id);
       await onDone();
-    } catch (e) {
-      setError((e as Error).message || 'Failed to update bridge');
-    } finally {
-      setBusy(false);
-    }
-  };
+    },
+  });
+  const busy = installMutation.isPending || updateMutation.isPending;
+  const error = installMutation.isError
+    ? (installMutation.error as Error).message || 'Failed to install bridge'
+    : updateMutation.isError
+      ? (updateMutation.error as Error).message || 'Failed to update bridge'
+      : null;
+  const install = () => installMutation.mutate();
+  const update = () => updateMutation.mutate();
   return (
     <View>
       <SettingsRow
@@ -142,32 +137,26 @@ function BridgeRow({ bridge, url, onDone }: { bridge: AvailableBridge; url: stri
 
 function TrackerRow({ tracker, url, onDone }: { tracker: AvailableTracker; url: string; onDone: () => Promise<void> }) {
   const ds = useDataSource();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const install = async () => {
-    setBusy(true);
-    setError(null);
-    try {
+  const installMutation = useMutation({
+    mutationFn: async () => {
       await ds.installRegistryTracker(url, tracker.entry.id);
       await onDone();
-    } catch (e) {
-      setError((e as Error).message || 'Failed to install tracker');
-    } finally {
-      setBusy(false);
-    }
-  };
-  const update = async () => {
-    setBusy(true);
-    setError(null);
-    try {
+    },
+  });
+  const updateMutation = useMutation({
+    mutationFn: async () => {
       await ds.updateTracker(tracker.entry.id);
       await onDone();
-    } catch (e) {
-      setError((e as Error).message || 'Failed to update tracker');
-    } finally {
-      setBusy(false);
-    }
-  };
+    },
+  });
+  const busy = installMutation.isPending || updateMutation.isPending;
+  const error = installMutation.isError
+    ? (installMutation.error as Error).message || 'Failed to install tracker'
+    : updateMutation.isError
+      ? (updateMutation.error as Error).message || 'Failed to update tracker'
+      : null;
+  const install = () => installMutation.mutate();
+  const update = () => updateMutation.mutate();
   return (
     <View>
       <SettingsRow

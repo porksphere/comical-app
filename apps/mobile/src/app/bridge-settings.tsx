@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
@@ -42,15 +42,18 @@ export default function BridgeSettingsScreen() {
   const [edits, setEdits] = useState<Record<string, SettingValue>>({});
   const setField = (key: string, value: SettingValue) => setEdits((prev) => ({ ...prev, [key]: value }));
 
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
-
-  const save = async () => {
+  const saveMutation = useMutation({
+    mutationFn: (body: Record<string, SettingValue>) => ds.putBridgeSettings(bridgeId!, body),
+    onSuccess: async () => {
+      setEdits({});
+      await queryClient.invalidateQueries({ queryKey: ['bridgeSettings', bridgeId] });
+    },
+  });
+  const saving = saveMutation.isPending;
+  const saved = saveMutation.isSuccess;
+  const saveError = saveMutation.isError ? (saveMutation.error as Error).message || 'Failed to save settings' : null;
+  const save = () => {
     if (!bridgeId || !data) return;
-    setSaving(true);
-    setSaveError(null);
-    setSaved(false);
     const body: Record<string, SettingValue> = {};
     for (const d of data.settings) {
       const isSecret = d.type === 'string' && d.secret;
@@ -61,58 +64,41 @@ export default function BridgeSettingsScreen() {
       if (d.key in edits) body[d.key] = edits[d.key];
       else if (d.key in data.values) body[d.key] = data.values[d.key];
     }
-    try {
-      await ds.putBridgeSettings(bridgeId, body);
-      setEdits({});
-      setSaved(true);
-      await queryClient.invalidateQueries({ queryKey: ['bridgeSettings', bridgeId] });
-    } catch (e) {
-      setSaveError((e as Error).message || 'Failed to save settings');
-    } finally {
-      setSaving(false);
-    }
+    saveMutation.mutate(body);
   };
 
-  const [uninstalling, setUninstalling] = useState(false);
-  const [uninstallError, setUninstallError] = useState<string | null>(null);
-
-  const uninstall = async () => {
-    if (!bridgeId) return;
-    setUninstalling(true);
-    setUninstallError(null);
-    try {
-      await ds.uninstallBridge(bridgeId);
+  const uninstallMutation = useMutation({
+    mutationFn: () => ds.uninstallBridge(bridgeId!),
+    onSuccess: async () => {
       bumpDataEpoch();
       // Broad invalidate — the Settings bridge list, Browse bridge selector, and
       // Library/History/Activity's bridge map are all react-query-backed and need to drop this
       // bridge immediately, not just this screen's own ['bridgeSettings', bridgeId] query.
       await queryClient.invalidateQueries();
       router.back();
-    } catch (e) {
-      setUninstallError((e as Error).message || 'Failed to uninstall bridge');
-      setUninstalling(false);
-    }
+    },
+  });
+  const uninstalling = uninstallMutation.isPending;
+  const uninstallError = uninstallMutation.isError
+    ? (uninstallMutation.error as Error).message || 'Failed to uninstall bridge'
+    : null;
+  const uninstall = () => {
+    if (bridgeId) uninstallMutation.mutate();
   };
 
-  const [updating, setUpdating] = useState(false);
-  const [updateError, setUpdateError] = useState<string | null>(null);
-  const [updated, setUpdated] = useState(false);
-
-  const performUpdate = async () => {
-    if (!bridgeId) return;
-    setUpdating(true);
-    setUpdateError(null);
-    try {
-      await ds.updateBridge(bridgeId);
+  const updateMutation = useMutation({
+    mutationFn: () => ds.updateBridge(bridgeId!),
+    onSuccess: async () => {
       bumpDataEpoch();
-      setUpdated(true);
       // Broad invalidate — same reasoning as uninstall() above.
       await queryClient.invalidateQueries();
-    } catch (e) {
-      setUpdateError((e as Error).message || 'Failed to update bridge');
-    } finally {
-      setUpdating(false);
-    }
+    },
+  });
+  const updating = updateMutation.isPending;
+  const updated = updateMutation.isSuccess;
+  const updateError = updateMutation.isError ? (updateMutation.error as Error).message || 'Failed to update bridge' : null;
+  const performUpdate = () => {
+    if (bridgeId) updateMutation.mutate();
   };
 
   return (
