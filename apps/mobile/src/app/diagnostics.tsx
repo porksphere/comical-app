@@ -38,8 +38,9 @@ export default function DiagnosticsScreen() {
           { paddingTop: Spacing.four, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
         ]}>
         <ThemedText type="small" themeColor="textSecondary">
-          Asset load failures (page images, thumbnails) that would otherwise fail silently — newest
-          first. Nothing here is sent anywhere automatically; use Share to send it yourself.
+          Failures that would otherwise be invisible — bridge scrapes, writes (favorites, settings),
+          and asset loads (page images, thumbnails) — newest first. Nothing here is sent anywhere
+          automatically; use Share to send it yourself.
         </ThemedText>
 
         <View style={styles.actions}>
