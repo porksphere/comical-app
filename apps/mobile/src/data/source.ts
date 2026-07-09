@@ -14,7 +14,6 @@
  * fallback to fake content.
  */
 import { useMemo, useSyncExternalStore } from 'react';
-import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useDataEpoch } from './data-epoch';
 
@@ -693,75 +692,6 @@ export function useDataSource(): DataSource {
   return useMemo(() => (mock ? mockDataSource : { ...realDataSource }), [mock, epoch]);
 }
 
-// ─── NSFW visibility (persisted, not dev-gated) ──────────────────────────────
-//
-// Four states, picked from Settings:
-//   - 'off' / 'on': durable — written to disk, so they're still in effect after
-//     the app is force-quit and relaunched.
-//   - 'until-background': a session-only override that shows NSFW content, but
-//     reverts to whichever durable mode is stored the moment the app is
-//     backgrounded (minimized on iOS/Android) — not just on a full restart.
-//   - 'until-restart': a session-only override that lasts for this process's
-//     lifetime. It survives backgrounding (the JS process is still alive) but
-//     is naturally gone after a cold start, since — like 'until-background' —
-//     nothing is ever written to storage for it; the module reinitializes from
-//     the durable value below.
-export type NsfwMode = 'off' | 'on' | 'until-background' | 'until-restart';
-type DurableNsfwMode = 'off' | 'on';
-
-const NSFW_MODE_KEY = 'comical:nsfwMode';
-
-let durableNsfwMode: DurableNsfwMode = 'off';
-let nsfwMode: NsfwMode = 'off';
-const nsfwModeListeners = new Set<() => void>();
-function notifyNsfwModeChange(): void {
-  for (const l of nsfwModeListeners) l();
-}
-function subscribeNsfwMode(listener: () => void): () => void {
-  nsfwModeListeners.add(listener);
-  return () => nsfwModeListeners.delete(listener);
-}
-function getNsfwModeSnapshot(): NsfwMode {
-  return nsfwMode;
-}
-function getNsfwModeServerSnapshot(): NsfwMode {
-  return 'off';
-}
-
-AsyncStorage.getItem(NSFW_MODE_KEY)
-  .then((stored) => {
-    durableNsfwMode = stored === 'on' ? 'on' : 'off';
-    nsfwMode = durableNsfwMode;
-    notifyNsfwModeChange();
-  })
-  .catch(() => {});
-
-AppState.addEventListener('change', (state) => {
-  if (state === 'background' && nsfwMode === 'until-background') {
-    nsfwMode = durableNsfwMode;
-    notifyNsfwModeChange();
-  }
-});
-
-function setNsfwMode(mode: NsfwMode): void {
-  nsfwMode = mode;
-  if (mode === 'off' || mode === 'on') {
-    durableNsfwMode = mode;
-    AsyncStorage.setItem(NSFW_MODE_KEY, mode).catch(() => {});
-  }
-  notifyNsfwModeChange();
-}
-
-/** [mode, setMode] — the Settings screen's NSFW picker. */
-export function useNsfwMode(): [NsfwMode, (mode: NsfwMode) => void] {
-  const mode = useSyncExternalStore(subscribeNsfwMode, getNsfwModeSnapshot, getNsfwModeServerSnapshot);
-  return [mode, setNsfwMode];
-}
-
-/** True whenever NSFW-flagged bridges/content should stay hidden — every screen
- *  that filters on NSFW (Browse, Library, History, Activity, the Settings
- *  bridge list) reads this instead of caring about the 4 underlying modes. */
-export function useHideNsfw(): boolean {
-  const [mode] = useNsfwMode();
-  return mode === 'off';
-}
+// NSFW visibility now lives in its own Legend State store; re-exported here so
+// screens keep importing it from `@/data/source`.
+export { useNsfwMode, useHideNsfw, type NsfwMode } from './nsfw';

@@ -18,7 +18,7 @@
  * re-implement. Read it in a component with `use$(store$)`; read/write outside
  * React with `store$.peek()` / `store$.set(...)`.
  */
-import { observable, type Observable } from '@legendapp/state';
+import { observable, syncState, when, type Observable, type ObservableParam } from '@legendapp/state';
 import { configureSynced, synced } from '@legendapp/state/sync';
 import { observablePersistAsyncStorage } from '@legendapp/state/persist-plugins/async-storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -49,4 +49,31 @@ export function persisted$<T>(name: string, initial: T): Observable<T> {
   const store$ = observable(persistedSynced({ initial, persist: { name } }));
   store$.onChange(() => {});
   return store$;
+}
+
+/**
+ * One-time migration off a legacy AsyncStorage key. The pre–Legend State stores
+ * wrote some keys as *bare* strings (e.g. a raw URL, or `'on'`/`'off'`) rather
+ * than JSON, which Legend State can't parse — so those stores move to a fresh
+ * JSON-owned key and adopt any legacy value once. `adopt` receives the raw
+ * legacy string and decides how to interpret it and whether to apply it (it
+ * should no-op if `store$` already holds a user-set value, so a stale legacy key
+ * never clobbers a newer choice).
+ *
+ * The wait on `isPersistLoaded` is load-order-critical: writing to `store$`
+ * before its own persistence has finished loading drops the write, so the
+ * adopted value wouldn't survive the next launch. We remove the legacy key
+ * regardless, so this is genuinely one-shot.
+ */
+export function migrateLegacyKey<T>(
+  legacyKey: string,
+  store$: Observable<T>,
+  adopt: (legacyRawValue: string) => void,
+): void {
+  void AsyncStorage.getItem(legacyKey).then(async (raw) => {
+    if (raw == null) return;
+    await AsyncStorage.removeItem(legacyKey);
+    await when(syncState(store$ as ObservableParam).isPersistLoaded);
+    adopt(raw);
+  });
 }

@@ -76,11 +76,20 @@ persisted ones — declarative AsyncStorage persistence via the shared `persiste
 carries the runway to swap AsyncStorage for **MMKV** (synchronous, flicker-free hydration) by changing
 one line. Fine-grained reactivity means a component re-renders only for the field it reads.
 
-The persisted stores keep their original AsyncStorage keys, so existing on-device preferences carry
-over. A few module-level stores are intentionally **not** Legend State: `lib/tab-bar-visibility.ts`
-(a per-frame scroll value driven on the reanimated UI thread) and `lib/diagnostics.ts` (its own ring
-buffer). The still-hand-rolled `source.ts` (mock + NSFW) and `api.ts` (server URL) stores are the next
-candidates to migrate onto `persisted$`.
+Most persisted stores keep their original AsyncStorage keys, so existing on-device preferences carry
+over. Two stores whose old format was a *bare* string (not JSON, which Legend State can't parse) moved
+to a fresh JSON key and adopt any legacy value once via `migrateLegacyKey` (see `lib/observable.ts`):
+the NSFW durable mode (`src/data/nsfw.ts`, `'on'`/`'off'` → `comical:nsfwDurable`) and the server URL
+override (`src/data/api.ts` → `comical:remoteServer`). NSFW is a two-observable store — a persisted
+durable off/on plus a live, in-memory mode that carries the session-only `until-background` /
+`until-restart` overrides on top of it. The server-URL store owns only the value; clearing the query
+cache on a server switch stays with the caller (`settings.tsx`), keeping the local preference and the
+TanStack Query cache separated.
+
+A few module-level stores are intentionally **not** Legend State: `lib/tab-bar-visibility.ts` (a
+per-frame scroll value driven on the reanimated UI thread) and `lib/diagnostics.ts` (its own ring
+buffer). The dev-only mock-data toggle in `source.ts` is the last hand-rolled `useSyncExternalStore`
+holdout — it's coupled to the mock module's `syncMockActive()` side effect, so it's the next candidate.
 
 ## Web vs. native chrome
 
