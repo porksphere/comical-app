@@ -7,42 +7,30 @@
  * and the ordering helpers in `@/lib/chapter-order` read it via `usePreferredGroup()`
  * to pick which version of a logical chapter to show/advance to.
  *
- * Uses the app's `useSyncExternalStore` external-store convention (see
- * `data/data-epoch.ts`) rather than hand-rolled useState+listeners.
+ * A Legend State observable (see `lib/observable.ts`) — in-memory only, no persistence.
  */
-import { useSyncExternalStore } from 'react';
+import { observable } from '@legendapp/state';
+import { use$ } from '@legendapp/state/react';
 
-let preferredGroup: string | undefined;
-const listeners = new Set<() => void>();
+const preferredGroup$ = observable<string | undefined>(undefined);
 
-function emit(): void {
-  for (const l of listeners) l();
-}
-
-/** Record the scanlation group of the chapter the user just opened. No-op when it's
- *  already the current value, so it won't needlessly re-render subscribers. */
+/** Record the scanlation group of the chapter the user just opened. Legend State no-ops a
+ *  set to the current value, so this won't needlessly re-render subscribers. */
 export function setPreferredGroup(group: string | undefined): void {
-  if (group === preferredGroup) return;
-  preferredGroup = group;
-  emit();
+  preferredGroup$.set(group);
 }
 
 /** Clear the remembered group — call when a different series is opened. */
 export function resetPreferredGroup(): void {
-  setPreferredGroup(undefined);
+  preferredGroup$.set(undefined);
 }
 
 /** Non-reactive read, for use outside React (e.g. navigation helpers). */
 export function getPreferredGroup(): string | undefined {
-  return preferredGroup;
-}
-
-function subscribe(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
+  return preferredGroup$.peek();
 }
 
 /** Reactive read: components re-render when the preferred group changes. */
 export function usePreferredGroup(): string | undefined {
-  return useSyncExternalStore(subscribe, () => preferredGroup, () => undefined);
+  return use$(preferredGroup$);
 }

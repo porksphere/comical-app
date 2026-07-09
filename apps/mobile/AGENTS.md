@@ -60,3 +60,38 @@ mock is decided.
   `deploy-web.yml`, since static hosting has no backend to reach — see
   `components/demo-banner.tsx`). A real production build never falls back to
   mock data on a failed request; screens show a retry state instead.
+
+# State: TanStack Query for server, Legend State for local
+
+Two layers, picked by what the state *is*. Don't invent a third — no new
+`useSyncExternalStore` stores, no context for shared preferences, no `useState`
+lifted to a parent for data that outlives the screen.
+
+- **Server / async state → TanStack Query.** Anything fetched through
+  `useDataSource()` lives in the query cache. Add query/mutation options in
+  `src/data/queries.ts` and register every key in the `queryKeys` factory there
+  (a write must invalidate the same key the reader subscribes to). See
+  `src/data/query-client.ts` for the client + AsyncStorage persistence.
+- **Local / client state → Legend State** (`@legendapp/state`, v3). Device-local
+  preferences and UI state that is *not* a copy of the server: reader settings,
+  toggles, the data epoch, the remembered scanlation group. **Never** mirror
+  server data into an observable — re-fetch through Query instead.
+
+Writing a local store:
+
+- **Persisted** (survives restart): `const x$ = persisted$('comical:someKey', DEFAULT)`
+  from `@/lib/observable` — that helper wires AsyncStorage persistence and keeps
+  the observable eagerly loaded/saving. Reuse the store's existing AsyncStorage
+  key so on-device values carry over.
+- **In-memory**: `const x$ = observable(initial)` directly.
+- **Read** in a component with `use$(x$)` (from `@legendapp/state/react`); read
+  outside React with `x$.peek()` (non-tracking); write with `x$.set(v)` /
+  `x$.assign(patch)`. Legend State no-ops a set to the current value, so no
+  "skip if equal" guards. Keep exported hook signatures stable when migrating an
+  existing store so call sites don't change.
+
+`src/hooks/use-reader-settings.ts` (persisted object) and `src/data/data-epoch.ts`
+(in-memory) are the reference implementations. `lib/tab-bar-visibility.ts`
+(reanimated UI-thread value) and `lib/diagnostics.ts` (ring buffer) stay
+hand-rolled on purpose. Rationale + the full split: `docs/ARCHITECTURE.md` →
+"State management".

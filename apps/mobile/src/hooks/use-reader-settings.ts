@@ -1,9 +1,10 @@
-import { useSyncExternalStore } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { use$ } from '@legendapp/state/react';
+import { persisted$ } from '@/lib/observable';
 
-// Reader preferences, persisted to AsyncStorage (single JSON key) via a tiny
-// module-level store, so they survive leaving and reopening the reader, and an
-// app restart. Mirrors the reference's localStorage `readDirection` / `pageLayout`.
+// Reader preferences, persisted to AsyncStorage (single key) via a Legend State
+// observable (see `lib/observable.ts`), so they survive leaving and reopening the
+// reader, and an app restart. Mirrors the reference's localStorage
+// `readDirection` / `pageLayout`.
 
 export type ReaderMode = 'paged' | 'webtoon';
 export type ReaderDirection = 'ltr' | 'rtl';
@@ -19,44 +20,19 @@ export type ReaderSettings = {
 const STORAGE_KEY = 'comical:readerSettings';
 const DEFAULT_SETTINGS: ReaderSettings = { mode: 'paged', direction: 'ltr', pageFit: 'fit-page', prefetchAhead: 4 };
 
-let settings: ReaderSettings = DEFAULT_SETTINGS;
-const listeners = new Set<() => void>();
+// Starts at DEFAULT_SETTINGS (also the pre-hydration value the web static export
+// renders) and rehydrates from the same `comical:readerSettings` key the old
+// hand-rolled store wrote, so existing persisted preferences carry over.
+const settings$ = persisted$<ReaderSettings>(STORAGE_KEY, DEFAULT_SETTINGS);
 
-function notify(): void {
-  listeners.forEach((l) => l());
-}
-
-function subscribe(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
-
-function getSnapshot(): ReaderSettings {
-  return settings;
-}
-
-// Static web export renders server + client identically before hydration —
-// always the unpersisted default, same as the app's other persisted toggles.
-function getServerSnapshot(): ReaderSettings {
-  return DEFAULT_SETTINGS;
-}
-
-AsyncStorage.getItem(STORAGE_KEY)
-  .then((stored) => {
-    if (!stored) return;
-    settings = { ...DEFAULT_SETTINGS, ...JSON.parse(stored) };
-    notify();
-  })
-  .catch(() => {});
-
+/** `patch` merges into the stored settings; the observable persists and notifies readers. */
 export function setReaderSettings(patch: Partial<ReaderSettings>): void {
-  settings = { ...settings, ...patch };
-  notify();
-  AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(settings)).catch(() => {});
+  settings$.assign(patch);
 }
 
-/** `[settings, patch]` — `patch` merges, persists, and notifies all readers. */
+/** `[settings, patch]`. Reads spread over the defaults so a blob persisted before a
+ *  field existed still surfaces every key. */
 export function useReaderSettings(): [ReaderSettings, (patch: Partial<ReaderSettings>) => void] {
-  const value = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-  return [value, setReaderSettings];
+  const value = use$(settings$);
+  return [{ ...DEFAULT_SETTINGS, ...value }, setReaderSettings];
 }
