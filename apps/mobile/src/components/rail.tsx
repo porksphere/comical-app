@@ -2,7 +2,7 @@ import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
-import { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
 import { SeriesCard, TitlePeek, type CardSize } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
@@ -288,6 +288,15 @@ export function Rail({
           recycleItems
           estimatedItemSize={cardWidth + stripGap}
           showsHorizontalScrollIndicator={false}
+          // Same fix as Browse/Library's main grid (see that list's comment): without a
+          // renderScrollComponent, @legendapp/list/reanimated's scroll bridge renders
+          // Animated.ScrollView at whatever scrollEventThrottle LegendList's internals hardcode
+          // (0), and react-native-web's ScrollView at throttle 0 only fires onScroll at gesture
+          // start and ~100ms after it goes idle — so on web, holding a finger down and dragging
+          // through the strip never recycled newly-visible cards (or moved the peek popover, or
+          // advanced anything else keyed off scroll position) until you let go. Passing this
+          // routes through the bridge's other branch, which forces scrollEventThrottle: 1.
+          renderScrollComponent={(scrollProps) => <Animated.ScrollView {...scrollProps} />}
           // LegendList positions items virtually and ignores `gap` on contentContainerStyle, and its
           // web item container is `contain: paint` (clips overflow). So the inter-card gap lives as
           // symmetric `paddingHorizontal: stripHalfGap` on each item wrapper below — this both spaces
