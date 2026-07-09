@@ -100,6 +100,15 @@ export const persister = createAsyncStoragePersister({
 // so it always starts `null` (button disabled) and re-scrapes fresh after a restart.
 // `pageThumb` is a per-page lazy scrape (potentially hundreds per long series) — keep it in memory
 // for scroll-back within a session, but never write that volume to the AsyncStorage blob.
+// `browseGrid` is the Browse screen's infinite-scroll grid (search / "See all" / page-list /
+// favorites / Home's terminal section): every `fetchNextPage` appends a page, so as you scroll it
+// grows without bound, and — being persisted — each new page scheduled a full-cache re-serialize on
+// the 3s throttle (synchronous JSON.stringify on the JS thread over an ever-larger blob), the exact
+// stall pattern noted above but paid *while scrolling*. It's volatile scraped content re-fetched on
+// mount anyway (same as `seriesList`), so keep it in memory for instant same-session scroll-back via
+// `staleTime` but never write it to disk; the only thing lost is an instant grid repaint on cold
+// start, which re-fetches page 1 regardless. (`homeSections` stays persisted — it's page 1 only, one
+// bounded fetch that gives an instant Home repaint on restart; its pages 2+ live under `browseGrid`.)
 const NO_PERSIST_KEYS = new Set([
   'seriesDetail',
   'seriesList',
@@ -108,6 +117,7 @@ const NO_PERSIST_KEYS = new Set([
   'relatedGroups',
   'isFavorite',
   'pageThumb',
+  'browseGrid',
 ]);
 
 /** Persist only the light keys (see `NO_PERSIST_KEYS`), keeping the default
