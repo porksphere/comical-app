@@ -1,16 +1,22 @@
 import { useCallback, useEffect } from 'react';
 import {
+  runOnJS,
   useAnimatedReaction,
   useDerivedValue,
   useSharedValue,
+  withSpring,
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
+import { hapticImpactLight } from '@/lib/haptics';
 
 /** Overscroll distance (px) past which a release triggers a refresh. Matches the web hook. */
 const PULL_THRESHOLD = 64;
 /** Hard cap on how far the indicator travels, however far the list is overscrolled. */
 const PULL_MAX = 96;
+/** Settle motion for the snap-into-refresh and spring-back — a quick, barely-overshooting spring,
+ *  which reads as more alive than a linear timing and closer to the native refresh recoil. */
+const SETTLE_SPRING = { damping: 18, stiffness: 220, mass: 0.7 } as const;
 
 /**
  * iOS-only pull-to-refresh, driven entirely by the list's own elastic overscroll rather than a
@@ -59,7 +65,11 @@ export function useNativePullToRefresh(scrollY: SharedValue<number>, onRefresh: 
       if (holding.value) return;
       const over = y < 0 ? -y : 0;
       pullY.value = over > PULL_MAX ? PULL_MAX : over;
-      armed.value = over >= PULL_THRESHOLD;
+      const nowArmed = over >= PULL_THRESHOLD;
+      // Tap the moment the pull first crosses the trigger line — the signature "you've pulled far
+      // enough" feedback the native control gives. Fire only on the false→true edge, not every frame.
+      if (nowArmed && !armed.value) runOnJS(hapticImpactLight)();
+      armed.value = nowArmed;
     },
   );
 
@@ -70,12 +80,12 @@ export function useNativePullToRefresh(scrollY: SharedValue<number>, onRefresh: 
 
   useEffect(() => {
     if (holding.value && !refreshing) {
-      holdOffset.value = withTiming(0, { duration: 200 }, (finished) => {
+      holdOffset.value = withSpring(0, SETTLE_SPRING, (finished) => {
         // Stay in hold mode until the spring-back lands, so listTranslateY eases to 0 rather than
         // snapping there; only then release so the next pull starts clean.
         if (finished) holding.value = false;
       });
-      pullY.value = withTiming(0, { duration: 200 });
+      pullY.value = withSpring(0, SETTLE_SPRING);
     }
   }, [refreshing, holding, holdOffset, pullY]);
 
@@ -85,7 +95,7 @@ export function useNativePullToRefresh(scrollY: SharedValue<number>, onRefresh: 
     // Start the hold at the actual release distance, then ease to the resting threshold — the same
     // snap web does — while `listTranslateY` counteracts the native recoil to keep it smooth.
     holdOffset.value = scrollY.value < 0 ? -scrollY.value : 0;
-    holdOffset.value = withTiming(PULL_THRESHOLD, { duration: 150 });
+    holdOffset.value = withSpring(PULL_THRESHOLD, SETTLE_SPRING);
     onRefresh();
   }, [armed, holding, holdOffset, scrollY, onRefresh]);
 
