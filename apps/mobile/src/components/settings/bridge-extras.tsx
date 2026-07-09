@@ -1,5 +1,5 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { MeasuredHeader, OptionList, OverlayHeading, useAnchoredOverlay } from '@/components/overlay/overlay';
@@ -11,7 +11,9 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import type { ApiBridgeInfo } from '@/data/api';
+import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
+import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight, hapticSelection } from '@/lib/haptics';
@@ -77,35 +79,28 @@ export function TagExclusionsControl({
     initialTags.map((id) => ({ id, label: initialLabels[id] ?? id })),
   );
   const [query, setQuery] = useState('');
-  const [suggestions, setSuggestions] = useState<{ value: string; label: string }[]>([]);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
 
-  useEffect(() => {
-    if (!query.trim()) return;
-    const controller = new AbortController();
-    const timer = setTimeout(async () => {
-      try {
-        const results = await ds.getTags(bridgeId, query.trim(), controller.signal);
-        setSuggestions(results.filter((r) => !tags.some((t) => t.id === r.value)));
-      } catch {
-        // stale/aborted request — ignore
-      }
-    }, 250);
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, bridgeId]);
-  const visibleSuggestions = query.trim() ? suggestions : [];
+  // Debounced + cached live tag search (dedupes/caches per query — see queries.ts `tagSearch`).
+  const debouncedQuery = useDebouncedValue(query.trim(), 250);
+  const tagSearch = useQuery({
+    queryKey: queryKeys.tagSearch(bridgeId, debouncedQuery),
+    queryFn: ({ signal }) => ds.getTags(bridgeId, debouncedQuery, signal),
+    enabled: debouncedQuery.length > 0,
+    placeholderData: keepPreviousData,
+  });
+  // Suggestions minus tags already added (recomputed as `tags` changes).
+  const visibleSuggestions = useMemo(
+    () => (query.trim() ? (tagSearch.data ?? []).filter((r) => !tags.some((t) => t.id === r.value)) : []),
+    [query, tagSearch.data, tags],
+  );
 
   const addTag = (id: string, label: string) => {
     const trimmed = id.trim();
     if (!trimmed || tags.some((t) => t.id === trimmed)) return;
     setTags((prev) => [...prev, { id: trimmed, label: label || trimmed }]);
     setQuery('');
-    setSuggestions([]);
     setDirty(true);
   };
 

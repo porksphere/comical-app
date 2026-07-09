@@ -1,3 +1,4 @@
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
@@ -11,6 +12,8 @@ import {
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { queryKeys } from '@/data/queries';
+import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -161,31 +164,31 @@ function TagSearchEditor({
   const [query, setQuery] = useState('');
 
   // Static list (comical-app's own demo filters) filters client-side; a bridge-backed
-  // tag-multiselect has no upfront list and searches live via `def.search`, debounced.
-  const [remoteOptions, setRemoteOptions] = useState<Option[]>([]);
-  // Labels for already-selected values can scroll out of `remoteOptions` once
-  // the query changes (or a live search moves on), so remember every
-  // value/label pair a live search has ever returned — not just the page —
-  // for the chips. Unused for a static `def.options` list, which is already
-  // exhaustive on its own.
+  // tag-multiselect has no upfront list and searches live via `def.search`, debounced and cached
+  // per (source, query) through react-query so repeating a search is instant and in-flight
+  // duplicates dedupe. keepPreviousData keeps the last results on screen while the next search runs.
+  const debouncedQuery = useDebouncedValue(query.trim(), 300);
+  const search = def.search;
+  const tagSearch = useQuery({
+    queryKey: queryKeys.tagSearch(def.searchKey ?? def.id, debouncedQuery),
+    queryFn: () => search!(debouncedQuery),
+    enabled: !def.options && !!search,
+    placeholderData: keepPreviousData,
+  });
+  const remoteOptions = useMemo<Option[]>(() => tagSearch.data ?? [], [tagSearch.data]);
+  // Labels for already-selected values can scroll out of `remoteOptions` once the query changes (or
+  // a live search moves on), so remember every value/label pair a live search has ever returned —
+  // not just the current page — for the chips. Unused for a static `def.options` list, which is
+  // already exhaustive on its own.
   const [knownOptions, setKnownOptions] = useState<Option[]>([]);
   useEffect(() => {
-    if (def.options || !def.search) return;
-    const search = def.search;
-    const t = setTimeout(() => {
-      search(query.trim())
-        .then((opts) => {
-          setRemoteOptions(opts);
-          setKnownOptions((prev) => {
-            const map = new Map(prev.map((o) => [o.value, o.label]));
-            for (const o of opts) map.set(o.value, o.label);
-            return Array.from(map, ([value, label]) => ({ value, label }));
-          });
-        })
-        .catch(() => setRemoteOptions([]));
-    }, 300);
-    return () => clearTimeout(t);
-  }, [def.options, def.search, query]);
+    if (!tagSearch.data) return;
+    setKnownOptions((prev) => {
+      const map = new Map(prev.map((o) => [o.value, o.label]));
+      for (const o of tagSearch.data) map.set(o.value, o.label);
+      return Array.from(map, ([value, label]) => ({ value, label }));
+    });
+  }, [tagSearch.data]);
 
   const filtered = useMemo(() => {
     if (def.options) return def.options.filter((o) => o.label.toLowerCase().includes(query.trim().toLowerCase()));

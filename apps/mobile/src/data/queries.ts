@@ -79,6 +79,9 @@ export const queryKeys = {
   bridgeLists: (mock: boolean, bridgeId: string) => ['bridgeLists', mock, bridgeId] as const,
   bridgeFilters: (mock: boolean, bridgeId: string) => ['bridgeFilters', mock, bridgeId] as const,
   bridgeSortOptions: (mock: boolean, bridgeId: string) => ['bridgeSortOptions', mock, bridgeId] as const,
+  // Live tag autocomplete. `sourceKey` is a per-bridge token (so two bridges' searches for the same
+  // text don't collide in the global cache); `query` is the debounced search text.
+  tagSearch: (sourceKey: string, query: string) => ['tagSearch', sourceKey, query] as const,
   // The flat Browse results/terminal grid. `scope` (a `BrowseScope`) fully discriminates what's
   // shown — react-query's default key hashing is stable over object key order, so this dedupes
   // correctly. A bridge switch or filter/sort/search change is just a new key here.
