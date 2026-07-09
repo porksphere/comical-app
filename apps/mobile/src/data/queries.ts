@@ -104,10 +104,8 @@ export const queryKeys = {
   registryBridges: (url: string) => ['registryBridges', url] as const,
   registryTrackers: (url: string) => ['registryTrackers', url] as const,
 
-  // List keys used only as invalidation targets — they prefix-match the per-item content keys
-  // (invalidating `['favorites', mock, bridgeId]` / `['library', mock]` refreshes the corresponding
-  // lists, since react-query invalidation matches by key prefix).
-  favoritesList: (mock: boolean, bridgeId: string | undefined) => ['favorites', mock, bridgeId] as const,
+  // Invalidation target that prefix-matches the library grid (`['library', mock, q, sort]`), so
+  // invalidating this refreshes the Library tab regardless of its current search/sort.
   libraryList: (mock: boolean) => ['library', mock] as const,
 };
 
