@@ -21,8 +21,8 @@ import Svg, { Defs, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
  *   directly drives the art, landing fully open right as the trigger haptic fires.
  * - **こ inks in.** The glyph fades + rises into place over the same pull, so the logo "completes"
  *   as you reach the threshold.
- * - **Refreshing loops softly.** While the request runs the pages fan open/closed on a gentle
- *   breath, the mark bobs, and こ shimmers — a calm "working" state, not a frantic spin.
+ * - **Refreshing loops softly.** While the request runs the mark bobs and こ shimmers — a calm
+ *   "working" state, not a frantic spin. The pages stay fully open; they move only under the pull.
  *
  * Everything animates via plain View transforms over static SVG (no per-frame SVG prop animation),
  * so it behaves identically on iOS, Android, and web. Fed the same `pullY`/`refreshing` the old
@@ -59,10 +59,10 @@ export function PullBookMark({
   }, [refreshing]);
 
   const pagesStyle = useAnimatedStyle(() => {
+    // Pages open only under the pull — half-open at rest, fully splayed at the threshold — then hold
+    // fully open while refreshing. The bob + こ shimmer carry the working state, not the pages.
     const base = refreshing ? 1 : Math.min(1, Math.max(0, pullY.value / pullThreshold));
-    const breathe = refreshing ? loop.value * 0.14 : 0;
-    // Half-open at rest, fully splayed at the threshold; the breath eases it shut a touch on loop.
-    return { transform: [{ scaleX: 0.5 + 0.5 * base - breathe }] };
+    return { transform: [{ scaleX: 0.5 + 0.5 * base }] };
   }, [refreshing]);
 
   const koStyle = useAnimatedStyle(() => {
