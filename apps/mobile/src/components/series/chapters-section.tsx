@@ -4,7 +4,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View, type StyleProp, type ViewStyle } from 'react-native';
-import Animated, { Easing, LinearTransition } from 'react-native-reanimated';
+import Animated, {
+  Easing,
+  LinearTransition,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ArrowDownIcon, ArrowUpIcon } from '@/components/icons/ui-icons';
@@ -18,7 +24,7 @@ import { isAbort, resolveAssetSourceCached } from '@/data/api';
 import { coverDelayMs, relativeTime } from '@/data/mock';
 import { useDataSource } from '@/data/source';
 import type { Chapter, PageThumbSource, SpriteThumb } from '@/data/types';
-import { clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
+import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { groupChapters, pickVersion, type ChapterGroup } from '@/lib/chapter-order';
 import { setPreferredGroup, usePreferredGroup } from '@/lib/preferred-group';
 import { logDiagnostic } from '@/lib/diagnostics';
@@ -682,8 +688,19 @@ function PageThumb({
   const [resolved, setResolved] = useState(thumb);
   const [loaded, setLoaded] = useState(false);
   // Real aspect of a plain `image` tile, learned from its own onLoad (see the
-  // note on the derivation below) rather than an off-screen prefetch.
+  // note on the derivation below) rather than an off-screen prefetch. A plain,
+  // UNanimated value — like SeriesCard's `coverAspect`, this only ever shrinks
+  // from the default (never grows past it), so setting it is always a single,
+  // one-time relayout of `thumbBox`. The *visual* shrink is smoothed separately
+  // by `picturePageStyle` (pure `transform`, no further relayout) below.
   const [imageAspect, setImageAspect] = useState(DEFAULT_THUMB_ASPECT);
+  // FLIP-style shrink illusion, same technique as SeriesCard's cover — no
+  // trailing-group equivalent needed here since `thumbShell` is a constant 2:3
+  // slot and `pageNum` sits outside the scaled layer, so nothing else needs to
+  // shift when the tile's real aspect lands.
+  const thumbWidthSV = useSharedValue(0);
+  const shrinkProgressSV = useSharedValue(1); // 1 = settled; animates 0 -> 1 per transition
+  const shrinkFromScaleSV = useSharedValue(1); // picture's scaleY at progress 0
 
   // Recycle-safety: the page grid uses recycleItems, so this instance is reused
   // for a different page as the list scrolls. Reset per-tile state synchronously
@@ -696,6 +713,8 @@ function PageThumb({
     setResolved(thumb);
     setLoaded(false);
     setImageAspect(DEFAULT_THUMB_ASPECT);
+    shrinkProgressSV.value = 1;
+    shrinkFromScaleSV.value = 1;
   }
 
   useEffect(() => {
@@ -767,52 +786,88 @@ function PageThumb({
   const aspectRatio = resolved?.kind === 'sprite' ? clampThumbAspect(resolved.w / resolved.h) : imageAspect;
   const ready = delayPassed && loaded;
 
+  // The picture layer's scaleY: eases from its old apparent size down to 1 (its
+  // real, already-committed size) as `shrinkProgressSV` runs 0 -> 1 — same
+  // technique as SeriesCard's `pictureStyle`. `styles.thumbPicture` fixes
+  // `transformOrigin: 'top'` to match `thumbBox`'s own top-aligned layout.
+  const picturePageStyle = useAnimatedStyle(() => ({
+    transform: [{ scaleY: shrinkFromScaleSV.value + (1 - shrinkFromScaleSV.value) * shrinkProgressSV.value }],
+  }));
+
   return (
     // Fill the grid cell rather than sizing to an explicit `width`: the cell
     // (flex:1, gap-aware) is the source of truth, so the tile can't end up a
     // hair wider than its column and get its right corners clipped. `width` is
     // still the pixel width for SpriteCrop's crop math (≈ the cell width).
     <Pressable style={styles.thumbShell} onPress={onPress} onHoverIn={onHoverIn} onHoverOut={onHoverOut}>
-      <View style={[styles.thumb, { aspectRatio }]}>
-        {delayPassed && resolved?.kind === 'image' && resolvedImageUrl && (
-          <Image
-            source={{ uri: resolvedImageUrl }}
-            style={styles.thumbImg}
-            contentFit="cover"
-            cachePolicy="memory-disk"
-            transition={200}
-            // Reset the reused image view on recycle so it doesn't flash the
-            // previous page's thumbnail (see SeriesCard).
-            recyclingKey={String(index)}
-            onLoad={(e) => {
-              const src = e.source;
-              if (src?.width && src?.height) setImageAspect(clampThumbAspect(src.width / src.height));
-              setLoaded(true);
-            }}
-            onError={(e: { error?: string }) =>
-              logDiagnostic('page-thumb-image', e.error || 'load failed', {
-                url: resolved.url,
-                context: `bridge=${bridgeId ?? ''} series=${seed} page=${index}`,
-              })
-            }
-          />
-        )}
-        {delayPassed && resolved?.kind === 'sprite' && (
-          <SpriteCrop
-            thumb={resolved}
-            width={width}
-            onLoad={() => setLoaded(true)}
-            onError={(msg) =>
-              logDiagnostic('page-thumb-sprite', msg, {
-                url: resolved.sheetUrl,
-                context: `bridge=${bridgeId ?? ''} series=${seed} page=${index}`,
-              })
-            }
-          />
-        )}
-        {!ready && <Skeleton style={StyleSheet.absoluteFill} />}
-        <View style={styles.pageNum}>
-          <ThemedText style={styles.pageNumText}>{page}</ThemedText>
+      <View
+        style={[styles.thumbBox, { aspectRatio }]}
+        onLayout={(layoutEvent) => {
+          thumbWidthSV.value = layoutEvent.nativeEvent.layout.width;
+        }}>
+        <View style={styles.thumbClip}>
+          {/* The picture layer: scaled by `picturePageStyle` to fake the shrink
+              illusion. `pageNum` below is a sibling, NOT inside this layer, so
+              it never gets stretched by the scale. */}
+          <Animated.View style={[StyleSheet.absoluteFill, styles.thumbPicture, picturePageStyle]}>
+            {delayPassed && resolved?.kind === 'image' && resolvedImageUrl && (
+              <Image
+                source={{ uri: resolvedImageUrl }}
+                style={styles.thumbImg}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+                transition={90}
+                // Reset the reused image view on recycle so it doesn't flash the
+                // previous page's thumbnail (see SeriesCard).
+                recyclingKey={String(index)}
+                onLoad={(e) => {
+                  const src = e.source;
+                  if (src?.width && src?.height) {
+                    const nextAspect = clampThumbAspect(src.width / src.height);
+                    // Same FLIP kick-off as SeriesCard: only animate when there's
+                    // an actual shape change and the box's pixel width is already
+                    // known (from onLayout above).
+                    const boxWidth = thumbWidthSV.value;
+                    if (boxWidth > 0 && nextAspect !== imageAspect) {
+                      const oldHeight = boxWidth / imageAspect;
+                      const newHeight = boxWidth / nextAspect;
+                      shrinkFromScaleSV.value = newHeight > 0 ? oldHeight / newHeight : 1;
+                      shrinkProgressSV.value = 0;
+                      shrinkProgressSV.value = withTiming(1, {
+                        duration: ASPECT_TRANSITION_MS,
+                        easing: Easing.out(Easing.cubic),
+                      });
+                    }
+                    setImageAspect(nextAspect);
+                  }
+                  setLoaded(true);
+                }}
+                onError={(e: { error?: string }) =>
+                  logDiagnostic('page-thumb-image', e.error || 'load failed', {
+                    url: resolved.url,
+                    context: `bridge=${bridgeId ?? ''} series=${seed} page=${index}`,
+                  })
+                }
+              />
+            )}
+            {delayPassed && resolved?.kind === 'sprite' && (
+              <SpriteCrop
+                thumb={resolved}
+                width={width}
+                onLoad={() => setLoaded(true)}
+                onError={(msg) =>
+                  logDiagnostic('page-thumb-sprite', msg, {
+                    url: resolved.sheetUrl,
+                    context: `bridge=${bridgeId ?? ''} series=${seed} page=${index}`,
+                  })
+                }
+              />
+            )}
+            {!ready && <Skeleton style={StyleSheet.absoluteFill} />}
+          </Animated.View>
+          <View style={styles.pageNum}>
+            <ThemedText style={styles.pageNumText}>{page}</ThemedText>
+          </View>
         </View>
       </View>
       {/* Hover ring (brighten, not dim) — same highlight treatment as SeriesCard's
@@ -825,7 +880,7 @@ function PageThumb({
 /** Crops a `sprite`-kind thumbnail's tile out of its shared sheet image. The sheet loads once —
  *  `expo-image`'s cache keys on `sheetUrl`, so every tile cut from the same sheet reuses one
  *  request — scaled so the tile matches `width`, then offset so only its `{x,y,w,h}` rect shows
- *  through the tile's `overflow: hidden` bounds (`styles.thumb`). Same idea as a CSS sprite: plain
+ *  through the tile's `overflow: hidden` bounds (`styles.thumbClip`). Same idea as a CSS sprite: plain
  *  View/Image layout math, so it renders identically on web, iOS, and Android with no SVG or
  *  native region-decoding needed.
  *
@@ -1128,12 +1183,25 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#60a5fa',
   },
-  thumb: {
+  thumbBox: {
+    // The tile itself, at its real (capped) aspect ratio — `thumbShell` above
+    // is the constant 2:3 slot this top-aligns within.
     width: '100%',
     position: 'relative',
+  },
+  thumbClip: {
+    // Fixed (never transformed) clipping ancestor — the scaled `thumbPicture`
+    // layer sits inside this, since clipping the SAME element being scaled
+    // wouldn't actually contain overflow (the clip rect would scale too).
+    flex: 1,
     borderRadius: 8,
     overflow: 'hidden',
     backgroundColor: 'rgba(128,128,128,0.15)',
+  },
+  thumbPicture: {
+    // Top-aligned scale origin so the shrink illusion (`picturePageStyle`)
+    // settles toward the bottom, matching `thumbBox`'s own top-aligned layout.
+    transformOrigin: 'top',
   },
   thumbImg: {
     width: '100%',
