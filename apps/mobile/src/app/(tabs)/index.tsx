@@ -1038,6 +1038,7 @@ export default function BrowseScreen() {
                 bridgeId={bridgeId}
                 direct={directBridge}
                 originPage={page}
+                cohort={gridScope}
               />
             </View>
           );

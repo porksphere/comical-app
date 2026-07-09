@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
-import { SeriesCard, TitlePeek, type CardSize } from '@/components/series-card';
+import { estimatedCardHeight, SeriesCard, TitlePeek, type CardSize } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { MaxTopLevelWidth, Spacing } from '@/constants/theme';
@@ -114,6 +114,14 @@ export function Rail({
   const stripHalfGap = stripGap / 2;
   const cardWidth = wide ? gridCardWidth(viewportWidth, stripGap) : cardWidthFor(section.kind, viewportWidth);
   const ranked = section.kind === 'ranked';
+  // Reserve the strip's height up front (worst-case card: cover + a 3-line title + sub, plus the
+  // stripItem's vertical padding) so a fresh horizontal LegendList — one that mounts cold on a
+  // bridge switch, since rails are keyed by section.id and remount rather than recycle — occupies
+  // its final height immediately instead of virtualizing up from 0 and visibly popping the cards
+  // in. Shares the grid's own `estimatedCardHeight` math so the two can't drift. `minHeight` (not a
+  // fixed height): titles clamp to 3 lines so a card can't exceed this, and a rail whose cards all
+  // have short titles just reserves a little unused bottom space, consistently.
+  const stripMinHeight = estimatedCardHeight(cardWidth) + STRIP_PAD_V * 2;
 
   // The full-title peek lives here (not in the card) so it can float ABOVE the
   // horizontal scroller / grid, which would otherwise clip the card's own
@@ -281,6 +289,7 @@ export function Rail({
         <AnimatedLegendList
           ref={listRef}
           horizontal
+          style={{ minHeight: stripMinHeight }}
           data={section.items}
           keyExtractor={(it) => it.id}
           // Recycle-safe now (SeriesCard resets its per-item state on entry change), so reuse card

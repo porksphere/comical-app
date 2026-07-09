@@ -154,6 +154,7 @@ export function SeriesCard({
   bridgeId,
   direct,
   originPage,
+  cohort,
 }: {
   entry: SeriesEntry;
   size?: CardSize;
@@ -180,6 +181,14 @@ export function SeriesCard({
    *  `originPage` and return to this same sub-page instead of always landing on Home.
    *  Only Browse's own card call sites pass this; other tabs (Library, History) omit it. */
   originPage?: string;
+  /** The card's content cohort (the browse grid passes its `gridScope`). When this changes
+   *  between two entries handed to the SAME recycled instance, the swap is a scope change (bridge /
+   *  page / filter / search), not an in-scope scroll — see the recycle-safety block, which then
+   *  forces the skeleton back on to mask the stale cover until the new one loads, instead of taking
+   *  the `resolvedCoverIds` fast-path. Omitted by call sites whose cards don't recycle across
+   *  scopes (rails remount per section, HomeGridBlock, Library/History), where today's behavior is
+   *  already correct. */
+  cohort?: string;
 }) {
   const [loaded, setLoaded] = useState(() => resolvedCoverIds.has(entry.id));
   const [truncated, setTruncated] = useState(false);
@@ -228,9 +237,20 @@ export function SeriesCard({
   // further down, sets the illusion in motion). `delayPassed` is already true in
   // real mode.
   const prevIdRef = useRef(entry.id);
+  const prevCohortRef = useRef(cohort);
   if (prevIdRef.current !== entry.id) {
     prevIdRef.current = entry.id;
-    setLoaded(resolvedCoverIds.has(entry.id));
+    // A recycle that ALSO crosses a cohort boundary is a scope swap (bridge/page/filter/search),
+    // where this instance is still painting the previous scope's cover — so force the skeleton on
+    // (loaded=false) to mask it until the new cover's own onLoad fires, no matter how long that
+    // takes (event-driven, never a timer — a slow swap keeps the skeleton the whole time). A plain
+    // in-scope scroll recycle (cohort unchanged) keeps the `resolvedCoverIds` fast-path, so
+    // scrolling over already-seen rows still doesn't replay the skeleton. `prevCohortRef` only
+    // advances here, on an entry change, so a cohort switch that lands a frame BEFORE its new items
+    // (keepPreviousData still showing the old scope) is still detected when the items finally swap.
+    const scopeSwap = prevCohortRef.current !== cohort;
+    prevCohortRef.current = cohort;
+    setLoaded(scopeSwap ? false : resolvedCoverIds.has(entry.id));
     setTruncated(false);
     setCoverAspect(resolvedCoverAspects.get(entry.id) ?? lastResolvedCoverAspect);
     shrinkProgressSV.value = 1;
