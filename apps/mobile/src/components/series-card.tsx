@@ -34,6 +34,17 @@ export type CardSize = 'grid' | 'rail' | 'ranked' | 'hero';
 const resolvedCoverIds = new Set<string>();
 const resolvedCoverAspects = new Map<string, number>();
 
+// Rolling "last resolved" aspect ratio, updated every time any cover resolves (see onLoad
+// below). Covers tend to cluster by shape — series uploaded back-to-back, or just runs of
+// same-shaped thumbnails — so for an entry seen for the first time this session, this is a
+// cheap, decent guess at its real shape, used as the initial/recycle seed below instead of
+// the flat placeholder. A closer seed means a smaller (or zero) shrink-illusion delta in
+// onLoad, i.e. fewer/less-drastic visible resizes. Deliberately a single rolling scalar, not
+// a real nearest-by-list-position lookup — no `index` prop reaches this component from the
+// main grid call sites, and list/scroll order already correlates with resolve order closely
+// enough that the extra complexity of a position-indexed cache isn't worth it.
+let lastResolvedCoverAspect = DEFAULT_THUMB_ASPECT;
+
 const WIDTHS: Record<Exclude<CardSize, 'grid'>, number> = {
   rail: 130,
   ranked: 150,
@@ -179,9 +190,12 @@ export function SeriesCard({
   // shape than to just let that relayout happen once. What's smoothed below is the
   // *visual* shrink, via a `transform`-only illusion that never triggers another
   // relayout — see `pictureStyle`/`trailingStyle`. Seeded from `resolvedCoverAspects`
-  // when this id has already resolved before, so a revisit renders at its real shape
-  // immediately instead of popping back to the placeholder and re-shrinking.
-  const [coverAspect, setCoverAspect] = useState(() => resolvedCoverAspects.get(entry.id) ?? DEFAULT_THUMB_ASPECT);
+  // when this id has already resolved before (revisit renders at its real shape
+  // immediately), else from the rolling `lastResolvedCoverAspect` guess (see above)
+  // rather than the flat placeholder.
+  const [coverAspect, setCoverAspect] = useState(
+    () => resolvedCoverAspects.get(entry.id) ?? lastResolvedCoverAspect
+  );
   // FLIP-style shrink illusion. Animating `aspectRatio` itself (a layout property)
   // would force a native relayout every frame — Reanimated's own docs discourage
   // this in favor of `transform`/`opacity`, which are compositor-only. Instead: the
@@ -218,7 +232,7 @@ export function SeriesCard({
     prevIdRef.current = entry.id;
     setLoaded(resolvedCoverIds.has(entry.id));
     setTruncated(false);
-    setCoverAspect(resolvedCoverAspects.get(entry.id) ?? DEFAULT_THUMB_ASPECT);
+    setCoverAspect(resolvedCoverAspects.get(entry.id) ?? lastResolvedCoverAspect);
     shrinkProgressSV.value = 1;
     shrinkFromScaleSV.value = 1;
     shrinkFromOffsetSV.value = 0;
@@ -415,6 +429,7 @@ export function SeriesCard({
                     if (src?.width && src?.height) {
                       const nextAspect = clampThumbAspect(src.width / src.height);
                       resolvedCoverAspects.set(entry.id, nextAspect);
+                      lastResolvedCoverAspect = nextAspect;
                       // Kick off the shrink illusion only when there's an actual
                       // shape change AND the box's pixel width is already known
                       // (from onLayout above) — width cancels out of the scale
