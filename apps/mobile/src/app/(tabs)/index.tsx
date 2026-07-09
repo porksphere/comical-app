@@ -702,18 +702,26 @@ export default function BrowseScreen() {
   // 0 = bar fully visible (resting position); -headerHeight = fully hidden, slid up and
   // off-screen. Tracks the scroll delta 1:1 (X/Twitter-style): scrolling down by dy px hides
   // the bar by the same dy, scrolling up reveals it again from wherever it currently sits —
-  // it doesn't need to reach the very top first. At/above the top (y <= 0 — resting, or an
-  // active pull/overscroll, which reports negative y) it's pinned fully visible rather than
-  // following the offset: both the web pull indicator and native's RefreshControl already open
-  // their own gap below the bar's resting height (see their own comments), so the bar has
-  // nothing to get out of the way of, and staying put reads as an anchored top bar rather than
-  // something fighting the pull.
+  // it doesn't need to reach the very top first. At rest (y === 0) it's pinned fully visible.
+  //
+  // An active pull/overscroll (y < 0) is handled separately, sliding the bar away 1:1 with pull
+  // depth instead of staying pinned: the list's own ScrollView frame spans the full screen (see
+  // the `headerHeight` comment above) rather than starting below the bar, so a native
+  // RefreshControl's spinner reveals itself within that same full-screen frame — right where the
+  // opaque, higher-zIndex bar sits — and `progressViewOffset` (see the list's own comment) is only
+  // a soft position hint, not a hard gap the bar can just stay out of. Sliding the bar away as the
+  // pull deepens is what actually clears that area for the spinner (mirrors what the web pull
+  // indicator's own gap-opening achieves by shifting the list itself instead — see `webPull`).
   const headerOffsetY = useSharedValue(0);
   useAnimatedReaction(
     () => scrollY.value,
     (y, prevY) => {
-      if (y <= 0) {
+      if (y === 0) {
         headerOffsetY.value = 0;
+        return;
+      }
+      if (y < 0) {
+        headerOffsetY.value = Math.max(-headerHeight, y);
         return;
       }
       // Past the real end of the content, the list is either overscrolled into the elastic
