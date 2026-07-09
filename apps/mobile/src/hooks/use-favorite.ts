@@ -33,11 +33,7 @@ export function useFavorite(bridgeId: string | undefined, seriesId: string) {
     // resolves after the toggle can't leave the star reverted while the favorite actually landed.
     onSuccess: (_data, next) => queryClient.setQueryData(key, next),
     onError: (_e, _next, ctx) => {
-      // Roll back optimistically, THEN re-check the real state: some bridges (e.g. example.test under
-      // rate-limiting) return an error status even when the write actually landed, so trusting the
-      // rollback would revert a favorite that really succeeded. A fresh `isFavorite` read settles it.
       if (ctx) queryClient.setQueryData(key, ctx.prev ?? false);
-      void queryClient.invalidateQueries({ queryKey: key });
     },
     // Refresh the Browse favorites list so a toggle here shows up there. Since the grid migration
     // it's a `browseGrid` `favorites` scope — a plain `['favorites', …]` key would match nothing.

@@ -17,10 +17,11 @@
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
-import { defaultShouldDehydrateQuery, QueryClient, type Query } from '@tanstack/react-query';
+import { defaultShouldDehydrateQuery, MutationCache, QueryCache, QueryClient, type Query } from '@tanstack/react-query';
 
-import { getApiBase } from './api';
+import { getApiBase, isAbort } from './api';
 import { getResolvedModeSync } from './embedded/preference';
+import { logDiagnostic } from '@/lib/diagnostics';
 
 // Content (series detail, chapters, lists, pages) is effectively immutable for
 // a browsing session, so keep it fresh for a few minutes (no refetch on
@@ -28,7 +29,37 @@ import { getResolvedModeSync } from './embedded/preference';
 const STALE_TIME_MS = 5 * 60 * 1000; // 5 min — mirrors web's "reuse within session"
 const GC_TIME_MS = 24 * 60 * 60 * 1000; // 24 h — kept for the persisted cache's maxAge
 
+/** Message + which query/mutation, for the diagnostics log. */
+function errMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+function keyContext(key: unknown): string | undefined {
+  if (key == null) return undefined;
+  try {
+    return JSON.stringify(key);
+  } catch {
+    return String(key);
+  }
+}
+
 export const queryClient = new QueryClient({
+  // Every query/mutation failure flows through these two caches, so logging here feeds the Settings →
+  // Diagnostics window with ALL comical-core failures (bridge scrapes, writes, network) in one place
+  // — including ones that fail quietly (a `retry:false` favorite check, a background refetch) with no
+  // visible RetryBlock. Error-path only (never on success), and aborts — the constant cancellations
+  // from scope switches / unmounts — are skipped, so there's no hot-path or scroll cost.
+  queryCache: new QueryCache({
+    onError: (error, query) => {
+      if (isAbort(error)) return;
+      logDiagnostic('query', errMessage(error), { context: keyContext(query.queryKey) });
+    },
+  }),
+  mutationCache: new MutationCache({
+    onError: (error, _vars, _ctx, mutation) => {
+      if (isAbort(error)) return;
+      logDiagnostic('mutation', errMessage(error), { context: keyContext(mutation.options.mutationKey) });
+    },
+  }),
   defaultOptions: {
     queries: {
       staleTime: STALE_TIME_MS,
