@@ -6,9 +6,14 @@ import { type PropsWithChildren } from 'react';
  * This component runs only in Node during static rendering — it has no access to
  * the DOM or browser APIs.
  *
- * The app is dark-only (see `FORCED_COLOR_SCHEME` in `@/hooks/use-theme`), so we
- * declare a dark `color-scheme` and paint the page background dark up front. This
- * stops the browser from flashing a white page before React mounts.
+ * The app supports light/dark/system (see `useThemePreference` in
+ * `@/hooks/use-theme`), and the static export can't read the persisted
+ * preference before React mounts. So we declare `color-scheme: light dark` and
+ * paint the pre-hydration page background from the OS preference via a
+ * `prefers-color-scheme` media query — matching the `'system'` default and
+ * stopping a white flash before React takes over. A user who has pinned the
+ * opposite fixed theme may still see a brief flash on first paint; that's the
+ * one case the media query can't cover without the stored value.
  *
  * We intentionally do NOT disable browser zoom globally here. The reader owns its
  * own pinch-zoom and suppresses the browser's native pinch *only on the reader
@@ -24,7 +29,7 @@ export default function Root({ children }: PropsWithChildren) {
         <meta charSet="utf-8" />
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-        <meta name="color-scheme" content="dark" />
+        <meta name="color-scheme" content="light dark" />
 
         {/*
           Disable body scrolling on web so position: fixed React Native
@@ -32,7 +37,8 @@ export default function Root({ children }: PropsWithChildren) {
         */}
         <ScrollViewStyleReset />
 
-        {/* Dark page background before hydration — matches Colors.dark.background. */}
+        {/* Page background before hydration — light by default, dark when the OS
+            prefers dark. Matches Colors.light/​dark.background. */}
         <style dangerouslySetInnerHTML={{ __html: rootStyle }} />
       </head>
       <body>{children}</body>
@@ -41,5 +47,9 @@ export default function Root({ children }: PropsWithChildren) {
 }
 
 const rootStyle = `
-body { background-color: #000000; }
+:root { color-scheme: light dark; }
+body { background-color: #ffffff; }
+@media (prefers-color-scheme: dark) {
+  body { background-color: #0f0f0f; }
+}
 `;

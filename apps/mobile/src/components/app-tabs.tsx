@@ -31,8 +31,6 @@ const TABS: { name: string; href: string; label: string; Icon: LucideIcon }[] = 
 ];
 
 const MOBILE_BREAKPOINT = 768;
-const ACTIVE = '#ffffff';
-const INACTIVE = '#8E8E93';
 
 // Mobile bottom-bar auto-hide thresholds (px of cumulative scroll in one
 // direction). Hiding only after a chunk of downward scroll lets the fade land
@@ -156,6 +154,7 @@ function useNativeTabBarProgress(enabled: boolean) {
 export default function AppTabs() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
 
   // Static web export (`web.output: "static"`) prerenders every route on the
   // server, where there's no viewport so `width` is 0 — i.e. the server always
@@ -219,6 +218,8 @@ export default function AppTabs() {
             styles.bottomBar,
             Platform.OS === 'web' && FADE_TRANSITION,
             {
+              backgroundColor: theme.tabBar,
+              borderTopColor: theme.tabBarBorder,
               paddingBottom: Math.max(insets.bottom, Spacing.two),
               // Web: fade to a faint ghost (still touchable, so tapping where it
               // sits brings it back) while scrolling down. Native: slide the whole
@@ -264,7 +265,7 @@ function TabButton({
   };
 
   if (mobile) {
-    const color = isFocused ? ACTIVE : INACTIVE;
+    const color = isFocused ? theme.tabIconActive : theme.tabIconInactive;
     return (
       <Pressable
         {...props}
@@ -323,10 +324,10 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.6,
   },
-  // --- Mobile black icon bottom bar ---
-  // Reference: `.bottom-nav { background: #111113; border-top: 1px solid
-  // #242427; }` — its own shade, distinct from both the page background
-  // (#0f0f0f) and general element surfaces.
+  // --- Mobile icon bottom bar ---
+  // Its own shade (theme `tabBar`/`tabBarBorder`, set inline), distinct from both
+  // the page background and general element surfaces — mirrors the reference's
+  // `.bottom-nav` on dark and adapts to the light theme.
   // Absolute overlay pinned to the bottom: content scrolls behind it (screens
   // reserve BottomTabInset so their last items clear it), so when it fades on
   // scroll the content stays visible through the ghost instead of being hidden
@@ -339,10 +340,8 @@ const styles = StyleSheet.create({
     zIndex: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#111113',
     paddingTop: Spacing.two,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#242427',
   },
   bottomButton: {
     flex: 1,

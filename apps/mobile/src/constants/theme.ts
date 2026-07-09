@@ -32,6 +32,14 @@ export const Colors = {
     badgeNew: '#f59e0b',
     badgeNewOn: '#111111',
     hairline: 'rgba(0,0,0,0.12)',
+    // The mobile bottom nav bar — its own shade, distinct from both the page
+    // background and general element surfaces (mirrors the reference's
+    // `.bottom-nav`, which on dark is `#111113` with a `#242427` top border).
+    // `tabIconActive`/`Inactive` are the selected/unselected icon tints.
+    tabBar: '#F7F7F9',
+    tabBarBorder: '#E0E1E6',
+    tabIconActive: '#000000',
+    tabIconInactive: '#8E8E93',
     // Neutral chip fill (shared by genre + tag chips, like the reference); a
     // dedicated token so chip fill can diverge from generic surfaces later.
     chipBg: '#F0F0F3',
@@ -66,6 +74,14 @@ export const Colors = {
     badgeNew: '#f59e0b',
     badgeNewOn: '#111111',
     hairline: 'rgba(128,128,128,0.25)',
+    // Reference: `.bottom-nav { background: #111113; border-top: 1px solid
+    // #242427 }` — its own shade, distinct from the page background (#0f0f0f)
+    // and general element surfaces. Active icon is pure white, inactive the iOS
+    // system gray (which reads on both themes).
+    tabBar: '#111113',
+    tabBarBorder: '#242427',
+    tabIconActive: '#ffffff',
+    tabIconInactive: '#8E8E93',
     chipBg: '#212225',
     chipBorder: '#2c4060',
     chipText: '#8ab4f8',
