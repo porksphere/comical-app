@@ -53,6 +53,35 @@ plus Ed25519 when signed), and cached from **user-managed registries** — add/r
 `index.json` URLs in **Settings → Bridge registries**. Nothing is hardcoded: published builds ship
 with no registry (for local dev, seed one via a gitignored `.env.local`'s `EXPO_PUBLIC_COMICAL_REGISTRY`).
 
+## State management
+
+Two layers, split by what the state *is* — not by screen. **Reach for the layer that owns the
+kind of state you have; don't hand-roll a third one.**
+
+| Layer | Owns | Lives in |
+| --- | --- | --- |
+| **TanStack Query** (`@tanstack/react-query`) | **Server / async state** — anything fetched through `useDataSource()`: series detail, chapter lists, pages, home/browse grids, library, favorites, search. The cache, background refetch, retries, and cross-navigation reuse. | `src/data/query-client.ts` (client + AsyncStorage persistence), `src/data/queries.ts` (`queryKeys` factory + query/mutation options) |
+| **Legend State** (`@legendapp/state`) | **Local / client state** — device-local preferences and UI state that is *not* a copy of anything on the server: reader settings, the on-device-runtime toggle, NSFW visibility, mock-data toggle, the data-invalidation epoch, the remembered scanlation group. | `src/lib/observable.ts` (shared `persisted$` helper) + one small module per store |
+
+These are complementary, not competing. TanStack Query is the async cache the web client hand-rolled
+in `client/app.ts`, ported; **it should never be used for local preferences**, and Legend State should
+**never** mirror server data — that's what re-fetching through Query is for. (Legend State ships a
+TanStack Query sync plugin; we deliberately don't use it — the server cache already has one owner.)
+
+**Why Legend State for the local half.** Every preference/UI store used to hand-roll the same
+`useSyncExternalStore` boilerplate: a module variable, a `Set` of listeners, `notify` / `subscribe`,
+`getSnapshot` / `getServerSnapshot`, a one-shot `AsyncStorage` read to hydrate, and a write-through on
+every setter. Legend State collapses that to an `observable()` read with `use$()`, and — for the
+persisted ones — declarative AsyncStorage persistence via the shared `persisted$()` helper, which also
+carries the runway to swap AsyncStorage for **MMKV** (synchronous, flicker-free hydration) by changing
+one line. Fine-grained reactivity means a component re-renders only for the field it reads.
+
+The persisted stores keep their original AsyncStorage keys, so existing on-device preferences carry
+over. A few module-level stores are intentionally **not** Legend State: `lib/tab-bar-visibility.ts`
+(a per-frame scroll value driven on the reanimated UI thread) and `lib/diagnostics.ts` (its own ring
+buffer). The still-hand-rolled `source.ts` (mock + NSFW) and `api.ts` (server URL) stores are the next
+candidates to migrate onto `persisted$`.
+
 ## Web vs. native chrome
 
 Web uses a top nav bar instead of the native Liquid Glass tab bar (see the `.web.tsx` splits in
