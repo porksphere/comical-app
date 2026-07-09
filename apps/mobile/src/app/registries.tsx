@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
@@ -34,13 +34,15 @@ export default function RegistriesScreen() {
 
   function RemoveRegistryConfirm({ url }: { url: string }) {
     const { closeTop } = useOverlay();
-    const [removing, setRemoving] = useState(false);
-    const doRemove = async () => {
-      setRemoving(true);
-      await ds.removeRegistry(url);
-      await queryClient.invalidateQueries({ queryKey: ['registries'] });
-      closeTop();
-    };
+    const removeMutation = useMutation({
+      mutationFn: () => ds.removeRegistry(url),
+      onSuccess: async () => {
+        await queryClient.invalidateQueries({ queryKey: ['registries'] });
+        closeTop();
+      },
+    });
+    const removing = removeMutation.isPending;
+    const doRemove = () => removeMutation.mutate();
     return (
       <View style={styles.confirmBody}>
         <ThemedText type="subtitle">Remove registry?</ThemedText>
@@ -70,21 +72,17 @@ export default function RegistriesScreen() {
     const inputRef = useRef<TextInput>(null);
     const [url, setUrl] = useState('');
     const [requireSignature, setRequireSignature] = useState(false);
-    const [adding, setAdding] = useState(false);
-    const [addError, setAddError] = useState<string | null>(null);
-    const doAdd = async () => {
-      if (!url.trim()) return;
-      setAdding(true);
-      setAddError(null);
-      try {
-        await ds.addRegistry(url.trim(), requireSignature);
+    const addMutation = useMutation({
+      mutationFn: () => ds.addRegistry(url.trim(), requireSignature),
+      onSuccess: async () => {
         await queryClient.invalidateQueries({ queryKey: ['registries'] });
         closeTop();
-      } catch (e) {
-        setAddError((e as Error).message || 'Failed to add registry');
-      } finally {
-        setAdding(false);
-      }
+      },
+    });
+    const adding = addMutation.isPending;
+    const addError = addMutation.isError ? (addMutation.error as Error).message || 'Failed to add registry' : null;
+    const doAdd = () => {
+      if (url.trim()) addMutation.mutate();
     };
     return (
       <View style={styles.confirmBody}>

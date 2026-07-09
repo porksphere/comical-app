@@ -1,6 +1,6 @@
-import { useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -34,10 +34,16 @@ export default function AddRegistryScreen() {
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
 
-  const [status, setStatus] = useState<'confirm' | 'adding' | 'error'>('confirm');
-  const [error, setError] = useState<string | null>(null);
-
   const deepLink = url ? `comical://add-registry?url=${encodeURIComponent(url)}` : null;
+
+  const addMutation = useMutation({
+    mutationFn: () => ds.addRegistry(url!, false),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['registries'] });
+      router.replace({ pathname: '/registry-browse', params: { url: url! } });
+    },
+  });
+  const adding = addMutation.isPending;
 
   const openInApp = () => {
     if (deepLink && typeof window !== 'undefined') window.location.href = deepLink;
@@ -54,18 +60,8 @@ export default function AddRegistryScreen() {
     else router.replace('/');
   };
 
-  const add = async () => {
-    if (!url) return;
-    setStatus('adding');
-    setError(null);
-    try {
-      await ds.addRegistry(url, false);
-      await queryClient.invalidateQueries({ queryKey: ['registries'] });
-      router.replace({ pathname: '/registry-browse', params: { url } });
-    } catch (e) {
-      setError((e as Error).message || 'Failed to add registry');
-      setStatus('error');
-    }
+  const add = () => {
+    if (url) addMutation.mutate();
   };
 
   return (
@@ -100,19 +96,19 @@ export default function AddRegistryScreen() {
             <ThemedText type="small" themeColor="textSecondary">
               {url}
             </ThemedText>
-            {status === 'error' && error && (
+            {addMutation.isError && (
               <ThemedText type="small" style={{ color: theme.danger }}>
-                {error}
+                {(addMutation.error as Error).message || 'Failed to add registry'}
               </ThemedText>
             )}
             <View style={styles.actions}>
-              <Pressable onPress={cancel} disabled={status === 'adding'} style={styles.actionBtn}>
+              <Pressable onPress={cancel} disabled={adding} style={styles.actionBtn}>
                 <ThemedText type="smallBold">Cancel</ThemedText>
               </Pressable>
-              <Pressable onPress={add} disabled={status === 'adding'}>
-                <ThemedView style={[styles.saveBtn, { backgroundColor: theme.accent }, status === 'adding' && styles.saveBtnDisabled]}>
+              <Pressable onPress={add} disabled={adding}>
+                <ThemedView style={[styles.saveBtn, { backgroundColor: theme.accent }, adding && styles.saveBtnDisabled]}>
                   <ThemedText type="smallBold" style={{ color: theme.accentOn }}>
-                    {status === 'adding' ? 'Adding…' : 'Add registry'}
+                    {adding ? 'Adding…' : 'Add registry'}
                   </ThemedText>
                 </ThemedView>
               </Pressable>

@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
@@ -31,15 +31,19 @@ export default function TrackerSettingsScreen() {
   const [edits, setEdits] = useState<Record<string, SettingValue>>({});
   const setField = (key: string, value: SettingValue) => setEdits((prev) => ({ ...prev, [key]: value }));
 
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+  const saveMutation = useMutation({
+    mutationFn: (body: Record<string, SettingValue>) => ds.putTrackerSettings(trackerId!, body),
+    onSuccess: async () => {
+      setEdits({});
+      await queryClient.invalidateQueries({ queryKey: ['trackerSettings', trackerId] });
+    },
+  });
+  const saving = saveMutation.isPending;
+  const saved = saveMutation.isSuccess;
+  const saveError = saveMutation.isError ? (saveMutation.error as Error).message || 'Failed to save settings' : null;
 
-  const save = async () => {
+  const save = () => {
     if (!trackerId || !data) return;
-    setSaving(true);
-    setSaveError(null);
-    setSaved(false);
     const body: Record<string, SettingValue> = {};
     for (const d of data.settings) {
       const isSecret = d.type === 'string' && d.secret;
@@ -50,16 +54,7 @@ export default function TrackerSettingsScreen() {
       if (d.key in edits) body[d.key] = edits[d.key];
       else if (d.key in data.values) body[d.key] = data.values[d.key];
     }
-    try {
-      await ds.putTrackerSettings(trackerId, body);
-      setEdits({});
-      setSaved(true);
-      await queryClient.invalidateQueries({ queryKey: ['trackerSettings', trackerId] });
-    } catch (e) {
-      setSaveError((e as Error).message || 'Failed to save settings');
-    } finally {
-      setSaving(false);
-    }
+    saveMutation.mutate(body);
   };
 
   return (

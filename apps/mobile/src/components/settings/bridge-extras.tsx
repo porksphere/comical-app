@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
@@ -79,7 +79,6 @@ export function TagExclusionsControl({
     initialTags.map((id) => ({ id, label: initialLabels[id] ?? id })),
   );
   const [query, setQuery] = useState('');
-  const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
 
   // Debounced + cached live tag search (dedupes/caches per query — see queries.ts `tagSearch`).
@@ -109,20 +108,19 @@ export function TagExclusionsControl({
     setDirty(true);
   };
 
-  const save = async () => {
-    setSaving(true);
-    try {
-      await ds.putExcludedTags(bridgeId, tags);
+  const saveMutation = useMutation({
+    mutationFn: () => ds.putExcludedTags(bridgeId, tags),
+    onSuccess: async () => {
       setDirty(false);
       // Matches `GenreExclusionsControl` and the parent screen's own settings save: the
       // bridge-settings screen's `data.excludedTags`/`excludedTagLabels` came from this
       // same query, so without this it goes stale until the screen is torn down and
       // remounted (e.g. leaving and re-entering Bridge Settings).
       await queryClient.invalidateQueries({ queryKey: ['bridgeSettings', bridgeId] });
-    } finally {
-      setSaving(false);
-    }
-  };
+    },
+  });
+  const saving = saveMutation.isPending;
+  const save = () => saveMutation.mutate();
 
   return (
     <SettingsSection title="Excluded tags">
@@ -188,17 +186,14 @@ export function GenreExclusionsControl({ bridgeId }: { bridgeId: string }) {
     queryKey: ['genreExclusions', bridgeId],
     queryFn: ({ signal }) => ds.getGenreExclusions(bridgeId, signal),
   });
-  const [saving, setSaving] = useState(false);
-
-  const toggle = async (selected: string[]) => {
-    setSaving(true);
-    try {
-      await ds.putGenreExclusions(bridgeId, selected);
+  const toggleMutation = useMutation({
+    mutationFn: (selected: string[]) => ds.putGenreExclusions(bridgeId, selected),
+    onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['genreExclusions', bridgeId] });
-    } finally {
-      setSaving(false);
-    }
-  };
+    },
+  });
+  const saving = toggleMutation.isPending;
+  const toggle = (selected: string[]) => toggleMutation.mutate(selected);
 
   if (isLoading) {
     return (
@@ -320,10 +315,13 @@ export function BridgePrefsToggles({ bridgeId }: { bridgeId: string }) {
     queryFn: ({ signal }) => ds.getBridgePrefs(bridgeId, signal),
   });
 
-  const set = async (update: { trackersDisabled?: boolean; historyDisabled?: boolean }) => {
-    await ds.putBridgePrefs(bridgeId, update);
-    await queryClient.invalidateQueries({ queryKey: ['bridgePrefs', bridgeId] });
-  };
+  const setMutation = useMutation({
+    mutationFn: (update: { trackersDisabled?: boolean; historyDisabled?: boolean }) => ds.putBridgePrefs(bridgeId, update),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['bridgePrefs', bridgeId] });
+    },
+  });
+  const set = (update: { trackersDisabled?: boolean; historyDisabled?: boolean }) => setMutation.mutate(update);
 
   if (!data) return null;
 
