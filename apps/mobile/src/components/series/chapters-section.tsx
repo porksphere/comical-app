@@ -1,4 +1,5 @@
 import { LegendList } from '@legendapp/list/react-native';
+import { useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -20,9 +21,10 @@ import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
-import { isAbort, resolveAssetSourceCached } from '@/data/api';
+import { resolveAssetSourceCached } from '@/data/api';
 import { coverDelayMs, relativeTime } from '@/data/mock';
-import { useDataSource } from '@/data/source';
+import { queryKeys } from '@/data/queries';
+import { useDataSource, useMockActive } from '@/data/source';
 import type { Chapter, PageThumbSource, SpriteThumb } from '@/data/types';
 import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { groupChapters, pickVersion, type ChapterGroup } from '@/lib/chapter-order';
@@ -705,6 +707,7 @@ function PageThumb({
   onPress?: () => void;
 }) {
   const ds = useDataSource();
+  const mock = useMockActive();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
   const [resolved, setResolved] = useState(thumb);
   const [loaded, setLoaded] = useState(() => resolvedThumbIds.has(thumbDelayKey(thumb)));
@@ -744,25 +747,19 @@ function PageThumb({
     shrinkFromScaleSV.value = 1;
   }
 
+  // Lazy per-page thumbnail (only the pages a bridge didn't inline, i.e. `thumb === null`). Via
+  // react-query so scrolling back to an already-fetched page is instant (cached, in-memory only —
+  // see NO_PERSIST_KEYS) and identical tiles dedupe. `getPageThumb` never rejects — it maps errors
+  // to `null` and logs its own diagnostic in source.ts — so a failure just leaves the tile a
+  // skeleton, same as before.
+  const thumbQuery = useQuery({
+    queryKey: queryKeys.pageThumb(mock, bridgeId ?? '', seed, index),
+    queryFn: ({ signal }) => ds.getPageThumb(bridgeId!, seed, index, signal),
+    enabled: !!bridgeId && !thumb,
+  });
   useEffect(() => {
-    if (resolved || !bridgeId) return;
-    const ctrl = new AbortController();
-    ds.getPageThumb(bridgeId, seed, index, ctrl.signal)
-      .then((fetched) => {
-        if (fetched) setResolved(fetched);
-      })
-      .catch((e) => {
-        // Non-fatal: the tile just stays a skeleton — but log it so a bridge that always fails
-        // this lookup is visible somewhere instead of just an unexplained blank grid.
-        if (!isAbort(e)) {
-          logDiagnostic('page-thumb-fetch', (e as Error).message || String(e), {
-            context: `bridge=${bridgeId} series=${seed} page=${index}`,
-          });
-        }
-      });
-    return () => ctrl.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bridgeId, seed, index]);
+    if (thumbQuery.data) setResolved(thumbQuery.data);
+  }, [thumbQuery.data]);
 
   // A stable key for the simulated-latency hash: the sheet URL for a sprite tile (every tile cut
   // from the same sheet shares one request, so they should "arrive" together) or the plain URL

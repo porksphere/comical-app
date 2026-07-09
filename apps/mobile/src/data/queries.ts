@@ -61,6 +61,8 @@ export const queryKeys = {
     ['chapterPages', mock, bridgeId, seriesId, chapterId] as const,
   directPages: (mock: boolean, bridgeId: string, seriesId: string) =>
     ['directPages', mock, bridgeId, seriesId] as const,
+  pageThumb: (mock: boolean, bridgeId: string, seriesId: string, pageIndex: number) =>
+    ['pageThumb', mock, bridgeId, seriesId, pageIndex] as const,
   isFavorite: (mock: boolean, bridgeId: string, seriesId: string) =>
     ['isFavorite', mock, bridgeId, seriesId] as const,
   relatedGroups: (mock: boolean, bridgeId: string, seriesId: string) =>
