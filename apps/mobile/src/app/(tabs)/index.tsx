@@ -285,10 +285,15 @@ export default function BrowseScreen() {
   const homeQuery = useQuery(homeSectionsQuery(ds, mock, bridgeId ?? '', composedHome && listsBridgeId === bridgeId));
   const sections = useMemo(() => homeQuery.data?.sections ?? [], [homeQuery.data]);
   const gridSections = useMemo(() => homeQuery.data?.gridSections ?? [], [homeQuery.data]);
-  // Don't blow away shown rails with an error banner if a refetch fails but we still have data —
-  // only a dataless first load surfaces the error.
+  // Surface a Retry when the CURRENT bridge's Home failed and we have no real data for it — either
+  // a dataless first load (`!data`) or a failed switch where keepPreviousData is still showing the
+  // PREVIOUS bridge's Home as a placeholder (`isPlaceholderData`); without the placeholder check a
+  // failed switch would silently strand the user on the old bridge's content. A refetch that fails
+  // while we hold real current data (e.g. a pull-to-refresh) keeps the content and shows no banner.
   const homeError =
-    homeQuery.isError && !homeQuery.data ? (homeQuery.error as Error).message || 'Failed to load home' : null;
+    homeQuery.isError && (!homeQuery.data || homeQuery.isPlaceholderData)
+      ? (homeQuery.error as Error).message || 'Failed to load home'
+      : null;
   // Skeleton only on a genuinely dataless first load: keepPreviousData keeps prior data during a
   // bridge switch (isPlaceholderData) and a refetch keeps its own data, so neither shows a skeleton.
   const homeLoading = homeQuery.isLoading;
@@ -536,7 +541,7 @@ export default function BrowseScreen() {
     [activeGridQuery.data],
   );
   const gridError =
-    resultsScope && resultsQuery.isError && !resultsQuery.data
+    resultsScope && resultsQuery.isError && (!resultsQuery.data || resultsQuery.isPlaceholderData)
       ? (resultsQuery.error as Error).message || 'Failed to load results'
       : null;
   // Skeleton only on a genuinely dataless first load (see homeLoading for the same reasoning).
