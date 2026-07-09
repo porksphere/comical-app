@@ -1073,7 +1073,6 @@ export default function BrowseScreen() {
         pullThreshold={customPull.pullThreshold}
         refreshing={refreshing}
         top={headerHeight}
-        color={theme.accent}
       />
     </ThemedView>
   );
