@@ -18,6 +18,7 @@ import { estimatedCardHeight, SeriesCard } from '@/components/series-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { useDedupedPages } from '@/data/grid-pages';
 import { fetchBrowseScope, queryKeys, type BrowseScope } from '@/data/queries';
 import { takeSearchIntent } from '@/data/search-intent';
 import { useSelectedBridge } from '@/data/selected-bridge';
@@ -164,10 +165,10 @@ export default function SearchScreen() {
     placeholderData: keepPreviousData,
   });
 
-  const gridItems = useMemo<SeriesEntry[]>(
-    () => resultsQuery.data?.pages.flatMap((p) => p.items) ?? [],
-    [resultsQuery.data],
-  );
+  // De-duplicate by series id while flattening the infinite pages — a live-reordering search feed can
+  // return the same series on two adjacent pages, colliding on the list `keyExtractor`. Same helper
+  // the Browse grid uses.
+  const gridItems = useDedupedPages(resultsQuery.data);
   const gridError =
     scope && resultsQuery.isError && (!resultsQuery.data || resultsQuery.isPlaceholderData)
       ? friendlyError(resultsQuery.error, "Couldn't load results. Try again.")
