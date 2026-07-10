@@ -1065,18 +1065,22 @@ export default function BrowseScreen() {
         // symmetric sidePad below. Scroll offset flows into scrollY for the sliding header.
         style={styles.listInner}
         sharedValues={{ scrollOffset: scrollY }}
-        // Root-causes the "loading only resumes once you lift your finger" symptom on web: when no
-        // `renderScrollComponent` is given, `@legendapp/list/reanimated`'s internal scroll bridge
-        // renders `Animated.ScrollView` with whatever `scrollEventThrottle` LegendList's own internal
-        // ListComponent hardcodes for it — which is 0. At 0, react-native-web's ScrollView only fires
-        // `onScroll` once at gesture start and once ~100ms after the gesture goes idle (its 100ms
-        // debounced `handleScrollEnd`), never during an active drag/momentum — so LegendList's visible
-        // range (and onEndReached) only advances once you let go. Passing ANY renderScrollComponent
-        // here routes through the bridge's *other* branch, which forces scrollEventThrottle: 1 before
-        // calling us — restoring continuous updates during the gesture. This mirrors what the library
-        // itself already does when a consumer supplies a custom scroll component; we're just supplying
-        // the plain default to opt into that path.
-        renderScrollComponent={(scrollProps) => <Animated.ScrollView {...scrollProps} />}
+        // WEB ONLY. Root-causes the "loading only resumes once you lift your finger" symptom on web:
+        // when no `renderScrollComponent` is given, `@legendapp/list/reanimated`'s internal scroll
+        // bridge renders `Animated.ScrollView` with whatever `scrollEventThrottle` LegendList's own
+        // internal ListComponent hardcodes for it — which is 0. At 0, react-native-web's ScrollView
+        // only fires `onScroll` once at gesture start and once ~100ms after the gesture goes idle (its
+        // 100ms debounced `handleScrollEnd`), never during an active drag/momentum — so LegendList's
+        // visible range (and onEndReached) only advances once you let go. Passing ANY
+        // renderScrollComponent here routes through the bridge's *other* branch, which forces
+        // scrollEventThrottle: 1 before calling us — restoring continuous updates during the gesture.
+        // On NATIVE we deliberately don't pass it: forcing scrollEventThrottle:1 there just saturates
+        // the JS thread every frame during a fling (the plain onScroll below and the UI→JS tab-bar
+        // reaction already run per frame), and native's default scroll bridge is fine — the UI-thread
+        // `scrollY` (sharedValues) that drives the sliding header works regardless of this.
+        renderScrollComponent={
+          Platform.OS === 'web' ? (scrollProps) => <Animated.ScrollView {...scrollProps} /> : undefined
+        }
         // Plain (JS-thread) onScroll alongside `sharedValues` above — only used to keep
         // `maxScrollY` in sync (see its comment) for the bottom-bounce guard; everything else
         // reads the UI-thread `scrollY` instead.
@@ -1088,6 +1092,12 @@ export default function BrowseScreen() {
         }}
         data={gridData}
         estimatedItemSize={estimatedCardHeight(cardWidth)}
+        // `estimatedItemSize` is a deliberately rough hint (worst-case 3-line titles), so measured
+        // rows routinely differ from it. LegendList's default `maintainVisibleContentPosition`
+        // (size:true) reacts to that by retro-correcting the scroll offset — which shows up as a
+        // visible bounce/jitter while flinging. Turn it off (data:false is already the default: no
+        // re-anchor on page-append) so positions settle once measured instead of nudging the offset.
+        maintainVisibleContentPosition={{ data: false, size: false }}
         keyExtractor={(item) => String(item.id)}
         numColumns={numColumns}
         // Recycle card instances rather than remounting per reuse — SeriesCard is now recycle-safe
