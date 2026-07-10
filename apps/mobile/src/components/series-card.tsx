@@ -238,6 +238,11 @@ export function SeriesCard({
   const shrinkFromOffsetSV = useSharedValue(0); // trailing group's translateY (px) at progress 0
   const { active, handlers, reset: resetHeld } = useHeld();
   const fixedWidth = size === 'grid' ? undefined : (width ?? WIDTHS[size]);
+  // The active/held decorations differ by platform: web keeps the hover highlight ring + full-title
+  // peek popover; iOS/Android drop both (the OS-native long-press context menu is the affordance
+  // there, and its own lifted preview would fight an inline ring/popover) in favor of a subtle
+  // non-scaling held scrim on the cover — see the ring/peek/scrim below.
+  const isWeb = Platform.OS === 'web';
 
   // The context menu's favorite/library status checks are armed lazily: they only run once the user
   // has actually interacted with THIS card (`active` = held on touch / hovered on web), so a full
@@ -386,8 +391,9 @@ export function SeriesCard({
 
   // Full-title peek. In a rail, hand the show/hide up to the rail (it owns the
   // un-clipped popover); in the grid, render it in-card (the vertical list
-  // doesn't clip downward overflow).
-  const showPeek = active && truncated;
+  // doesn't clip downward overflow). Web only — on native the full title is shown
+  // by the long-press context menu instead (see SeriesCardMenu's `title`).
+  const showPeek = active && truncated && isWeb;
   const onPeekRef = useRef(onPeekChange);
   onPeekRef.current = onPeekChange;
   useEffect(() => {
@@ -417,6 +423,9 @@ export function SeriesCard({
   return (
     <SeriesCardMenu
       enabled={menuEnabled}
+      title={entry.title}
+      cover={entry.cover}
+      coverAspect={coverAspect}
       favorited={favorited}
       inLibrary={inLibrary}
       onToggleFavorite={toggleFavorite}
@@ -548,10 +557,14 @@ export function SeriesCard({
                 <ThemedText style={styles.rankText}>{rank}</ThemedText>
               </View>
             )}
+            {/* Native held cue: a subtle scrim over the cover (clipped to its rounded corners) while
+                pressed — a non-scaling "held" indicator, since the card must NOT scale up (a scaled
+                lift reads badly clipped by the rail/grid bounds). Web keeps the ring below instead. */}
+            {active && !isWeb && <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.heldScrim]} />}
           </View>
-          {/* Highlight ring hugs the cover edge (flush, just outside) — only
-              visible while active. */}
-          {active && <View style={[styles.ring, { pointerEvents: 'none' }]} />}
+          {/* Highlight ring hugs the cover edge (flush, just outside) — web-only hover/active
+              highlight; native uses the held scrim above. */}
+          {active && isWeb && <View style={[styles.ring, { pointerEvents: 'none' }]} />}
         </View>
 
         <Animated.View style={[styles.trailingGroup, trailingStyle]}>
@@ -676,6 +689,11 @@ const styles = StyleSheet.create({
     // wrapped together (so the whole group can be nudged by `trailingStyle`),
     // this reproduces that spacing internally.
     gap: Spacing.two,
+  },
+  heldScrim: {
+    // Non-scaling press feedback on native — a light dark wash over the cover. Sits inside
+    // `coverClip` so it inherits the cover's rounded corners.
+    backgroundColor: 'rgba(0,0,0,0.22)',
   },
   ring: {
     position: 'absolute',

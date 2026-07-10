@@ -497,8 +497,18 @@ function ChapterRow({
 // Rows of tiles shown before a long page set collapses behind "Show all".
 const COLLAPSED_ROWS = 4;
 
-/** Sentinel for a trailing spacer cell that pads a short last row (see `data`). */
-const SPACER = Symbol('page-spacer');
+/**
+ * One grid cell fed to the `LegendList`. A discriminated, always-non-null value on purpose:
+ * `@legendapp/list` treats a bare `null` entry in `data` as the end of the list and stops
+ * virtualizing past it (both its web and native builds share this core), which capped the grid
+ * at the first lazily-fetched page. So a page whose thumbnail isn't inlined yet is still a real
+ * `page` cell carrying a `null` thumb — the absence lives *inside* the descriptor, not as the
+ * cell itself. `spacer` cells pad a short last row so its tiles keep their column width.
+ */
+type PageCell =
+  | { kind: "page"; pageIndex: number; thumb: PageThumbSource | null }
+  | { kind: "spacer" };
+const SPACER_CELL: PageCell = { kind: "spacer" };
 
 /**
  * The direct-series page-thumbnail grid — and the series screen's own scroll
@@ -566,10 +576,14 @@ export function PageThumbList({
   // pattern as the browse grid. Empty while loading (the header shows the page
   // skeleton instead).
   const base = loading ? [] : collapsed ? thumbs.slice(0, collapsedCount) : thumbs;
-  const data = useMemo<(PageThumbSource | null | symbol)[]>(() => {
-    const remainder = base.length % cols;
-    if (base.length === 0 || remainder === 0) return base;
-    return [...base, ...Array.from({ length: cols - remainder }, () => SPACER)];
+  const data = useMemo<PageCell[]>(() => {
+    // `base` is sliced from index 0 (collapsed or not), so its position IS the page index.
+    const cells: PageCell[] = base.map((thumb, pageIndex) => ({ kind: "page", pageIndex, thumb }));
+    const remainder = cells.length % cols;
+    if (cells.length > 0 && remainder !== 0) {
+      cells.push(...Array.from({ length: cols - remainder }, () => SPACER_CELL));
+    }
+    return cells;
   }, [base, cols]);
 
   return (
@@ -643,22 +657,22 @@ export function PageThumbList({
           {footer ? <View style={styles.pageFooterRails}>{footer}</View> : null}
         </View>
       }
-      renderItem={({ item, index }) =>
-        item === SPACER ? (
+      renderItem={({ item }) =>
+        item.kind === 'spacer' ? (
           <View style={styles.pageCell} />
         ) : (
           <View style={styles.pageCell}>
             <PageThumb
-              thumb={item as PageThumbSource | null}
-              index={index}
+              thumb={item.thumb}
+              index={item.pageIndex}
               seed={seed}
               bridgeId={bridgeId}
-              page={index + 1}
+              page={item.pageIndex + 1}
               width={tileW}
               onPress={() =>
                 router.push({
                   pathname: '/reader',
-                  params: { seed, title, direct: '1', start: String(index), ...(bridgeId ? { bridgeId } : {}) },
+                  params: { seed, title, direct: '1', start: String(item.pageIndex), ...(bridgeId ? { bridgeId } : {}) },
                 })
               }
             />

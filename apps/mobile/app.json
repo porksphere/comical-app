@@ -51,6 +51,9 @@
           "android": {
             "minSdkVersion": 26,
             "kotlinVersion": "2.3.20"
+          },
+          "ios": {
+            "ccacheEnabled": true
           }
         }
       ],

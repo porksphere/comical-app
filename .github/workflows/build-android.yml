@@ -15,10 +15,43 @@ on:
     paths:
       - 'apps/**'
       - 'packages/**'
+      # On-device runtime submodule pointer — a bump changes the built app.
+      - 'external/comical'
       - 'package.json'
       - 'bun.lock'
       - '.github/workflows/build-android.yml'
       - '.github/workflows/build-android-reusable.yml'
+      # Exclude docs-only and eas.json changes. These negations are evaluated
+      # after the positives above, so a commit touching ONLY markdown, the docs
+      # dir, or eas.json won't fire a build; a mixed commit still does. (eas.json
+      # isn't used by CI — it does bare `expo prebuild`.)
+      - '!**/*.md'
+      - '!apps/mobile/docs/**'
+      - '!apps/mobile/eas.json'
+  # PR builds verify the branch compiles and produce a downloadable APK artifact.
+  # They read main's warm caches (see the reusable workflow) but never write
+  # them, and the rolling `publish` job below is gated to main so a PR can't
+  # clobber the android-latest channel.
+  pull_request:
+    # `closed` is included so the cleanup job can tear down the per-PR release
+    # when the PR is merged/closed; the build + publish-pr jobs skip that action.
+    types: [opened, synchronize, reopened, closed]
+    paths:
+      - 'apps/**'
+      - 'packages/**'
+      # On-device runtime submodule pointer — a bump changes the built app.
+      - 'external/comical'
+      - 'package.json'
+      - 'bun.lock'
+      - '.github/workflows/build-android.yml'
+      - '.github/workflows/build-android-reusable.yml'
+      # Exclude docs-only and eas.json changes. These negations are evaluated
+      # after the positives above, so a commit touching ONLY markdown, the docs
+      # dir, or eas.json won't fire a build; a mixed commit still does. (eas.json
+      # isn't used by CI — it does bare `expo prebuild`.)
+      - '!**/*.md'
+      - '!apps/mobile/docs/**'
+      - '!apps/mobile/eas.json'
 
 concurrency:
   group: android-${{ github.ref }}
@@ -30,11 +63,16 @@ permissions:
 
 jobs:
   build:
+    # Skip the build when a PR merely closes — cleanup-pr handles that event.
+    if: github.event.action != 'closed'
     uses: ./.github/workflows/build-android-reusable.yml
     secrets: inherit
 
   publish:
     needs: build
+    # Rolling android-latest channel is main-only; PR/branch builds stop at the
+    # uploaded artifact so they can't overwrite the download URL.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Download APK
@@ -64,3 +102,63 @@ jobs:
           \`${BASE}/comical-android.apk\`
 
           On-device: enable \"Install unknown apps\" for your browser, open the link, install."
+
+  # Per-PR channel. Each open PR gets its own `android-pr-<N>` Release with a
+  # stable APK download URL (parity with the iOS per-PR channel). The APK keeps
+  # the production applicationId (com.porksphere.comical), so it REPLACES the
+  # main app on device. cleanup-pr tears it down when the PR closes. Fork PRs
+  # get a read-only token and skip this — this repo builds its own branches.
+  publish-pr:
+    needs: build
+    # Same-repo PRs only: fork PRs get a read-only token (can't create Releases),
+    # so skip publishing for them — the build job still verifies they compile.
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.action != 'closed'
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download APK
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: ${{ runner.temp }}/apk
+
+      - name: Publish APK to the android-pr-<N> Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          TAG="android-pr-${PR}"
+          APK="$RUNNER_TEMP/apk/comical-android.apk"
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
+
+          # Recreate the per-PR tag/release (pointed at the PR head) so the URL
+          # stays stable across pushes to the PR.
+          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          gh release create "$TAG" \
+            "$APK" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$HEAD_SHA" \
+            --prerelease \
+            --title "Comical Android — PR #${PR}" \
+            --notes "Installable release APK for PR #${PR} (debug-keystore signed).
+
+          **Install directly:**
+          \`${BASE}/comical-android.apk\`
+
+          ⚠️ Same applicationId as the release app — installing this replaces Comical on your device.
+          On-device: enable \"Install unknown apps\" for your browser, open the link, install."
+
+  # Tear down the per-PR release + tag when the PR is merged or closed.
+  cleanup-pr:
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete android-pr-<N> Release + tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.number }}
+        run: gh release delete "android-pr-${PR}" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
