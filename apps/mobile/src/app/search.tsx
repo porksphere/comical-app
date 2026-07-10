@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FilterBar, SortControl } from '@/components/filters/filter-demo';
 import { resolveMetaIntent, resolveTagIntent, type MetaIntent, type TagIntent } from '@/components/filters/filter-intents';
-import { filterValueToApi } from '@/components/filters/filter-types';
+import { CONTROL_HEIGHT, filterValueToApi } from '@/components/filters/filter-types';
 import { GridSkeleton } from '@/components/grid-skeleton';
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
 import { RetryBlock } from '@/components/retry-block';
@@ -142,9 +142,11 @@ export default function SearchScreen() {
   }, [filterDefs, resolvedValues]);
 
   const hasFilterBar = filterDefs.length > 0;
-  // The filter bar matches the top bar row's height so its "+N" overflow chip lines up exactly with
-  // where the sort button ends in the bar above.
-  const filtersBarH = hasFilterBar ? barHeight : 0;
+  // Height of the filter bar. It tracks the top bar row's height (so on desktop the two read as one
+  // unit) but never drops below the control height plus a little breathing room — otherwise on short
+  // mobile top bars the 44pt chips end up squashed with almost no padding above/below. Its horizontal
+  // insets still match the top bar, so the "+N" overflow chip lines up with the sort button above.
+  const filtersBarH = hasFilterBar ? Math.max(barHeight, CONTROL_HEIGHT + Spacing.two * 2) : 0;
 
   // A search runs once there's a query, or a committed filter/sort. Until then the page is a blank
   // landing (the desktop entry opens straight here). Both the query key and the fetch derive from
