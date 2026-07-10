@@ -16,7 +16,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { MaxTopLevelWidth, Spacing } from '@/constants/theme';
-import { setBrowseIntent } from '@/data/browse-intent';
+import { setSearchIntent } from '@/data/search-intent';
 import { historyQuery, relatedGroupsQuery, seriesDetailQuery, seriesListQuery } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import { firstChapterInReadingOrder } from '@/lib/chapter-order';
@@ -40,8 +40,8 @@ function truncateTopBarTitle(t: string): string {
   return t.length > TOP_BAR_TITLE_MAX_CHARS ? `${t.slice(0, TOP_BAR_TITLE_MAX_CHARS).trimEnd()}…` : t;
 }
 
-/** Meta cells whose value should open a matching Browse search, keyed by the
- *  cell's `label` (see `buildMeta` in `data/source.ts`) to the `BrowseIntent`
+/** Meta cells whose value should open a matching search, keyed by the
+ *  cell's `label` (see `buildMeta` in `data/source.ts`) to the `SearchIntent`
  *  meta key it maps to. STATUS is left static — a lifecycle value like
  *  "Ongoing" isn't a meaningful search term the way an author/artist/type is. */
 const SEARCHABLE_META_KEYS: Record<string, 'author' | 'artist' | 'type' | undefined> = {
@@ -91,14 +91,13 @@ export default function SeriesScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { id, title, bridge: bridgeParam, bridgeId, direct, cover: coverParam, fromPage: fromPageParam } = useLocalSearchParams<{
+  const { id, title, bridge: bridgeParam, bridgeId, direct, cover: coverParam } = useLocalSearchParams<{
     id?: string;
     title?: string;
     bridge?: string;
     bridgeId?: string;
     direct?: string;
     cover?: string;
-    fromPage?: string;
   }>();
   // series-card.tsx percent-encodes the bridge name before putting it in a
   // route param (parens in real bridge names break expo-router's web href
@@ -107,10 +106,6 @@ export default function SeriesScreen() {
   // Cover forwarded from the browse card, escaped the same way — decode it so the
   // loading skeleton can show the real (cache-warm) cover instead of a shimmer.
   const cover = coverParam ? decodeURIComponent(coverParam) : undefined;
-  // The Browse `page` this series was opened from (same escaping) — only present when opened
-  // from Browse itself. Handed back as the intent's `originPage` so a tag/meta tap returns to
-  // that sub-page instead of always forcing Home (see the onTagPress/onMetaPress comment below).
-  const fromPage = fromPageParam ? decodeURIComponent(fromPageParam) : undefined;
 
   // Opening a different series clears the remembered scanlation group, so a
   // preference carried over from the last series doesn't pick versions here.
@@ -196,7 +191,6 @@ export default function SeriesScreen() {
           width={width}
           initialCover={cover}
           loading={isPlaceholderData}
-          fromPage={fromPage}
         />
       )}
     </ThemedView>
@@ -215,7 +209,6 @@ function SeriesBody({
   width,
   initialCover,
   loading,
-  fromPage,
 }: {
   series: SeriesDetail;
   bridgeId?: string;
@@ -231,9 +224,6 @@ function SeriesBody({
    *  The hero renders for real; the actions + content render as skeletons until
    *  the fetch resolves — all without remounting the persistent cover <Image>. */
   loading?: boolean;
-  /** The Browse sub-page this series was opened from, if any — forwarded to a tag/meta
-   *  tap's `BrowseIntent` so its back arrow returns there instead of always Home. */
-  fromPage?: string;
 }) {
   const ds = useDataSource();
   const router = useRouter();
@@ -433,30 +423,21 @@ function SeriesBody({
   // Tapping a tag chip drops the Browse tab into a matching search, mirroring
   // comical-web's tag chips (app.ts): a `tagQueries` entry runs a free-text
   // search; a `tagIds` entry selects the bridge's tag-multiselect filter (keyed
-  // "tag" by convention). We hand the intent to Browse via the
-  // shared store and jump to that tab. No-op without a real bridge id (mock).
+  // "tag" by convention). We hand the intent to the Search screen via the shared
+  // store and push it. No-op without a real bridge id (mock).
   //
-  // `dismissTo` (not `navigate`/`push`) targets the Browse tab's route ('/'),
-  // dismissing this pushed Series screen and returning to the existing Browse
-  // instance instead of stacking a fresh one on top (which is what `navigate`
-  // did: from a screen pushed outside the tab group it can't tell the tab is
-  // already there, so it pushes a duplicate rather than returning to it). This
-  // holds no matter which tab the series was opened from (Browse, Library,
-  // History, …) — '/' resolves to the index tab, so dismissTo switches to it.
-  // Browse then applies the stashed intent on focus (see the focus effect in
-  // `(tabs)/index.tsx`), restoring `fromPage` (the Browse sub-page this series was opened
-  // from, e.g. "Popular") if we have it, or forcing Home if we don't — which is always the
-  // case from a different tab, since there's no Browse sub-page to return to there.
+  // `push('/search')` overlays the Search screen on top of this pushed Series
+  // screen, so its back arrow returns here. Search consumes the stashed intent on
+  // mount (see search.tsx) and applies it against the intent's bridge.
   const onTagPress = (group: TagGroup, index: number) => {
     if (!bridgeId) return;
     const query = group.tagQueries?.[index];
     const tagId = group.tagIds?.[index];
     if (query) {
-      setBrowseIntent({ bridgeName: series.bridge, originPage: fromPage, kind: 'query', query });
+      setSearchIntent({ bridgeName: series.bridge, kind: 'query', query });
     } else if (tagId) {
-      setBrowseIntent({
+      setSearchIntent({
         bridgeName: series.bridge,
-        originPage: fromPage,
         kind: 'tag',
         filterKey: 'tag',
         tagId,
@@ -465,16 +446,16 @@ function SeriesBody({
     } else {
       return;
     }
-    router.dismissTo('/');
+    router.push('/search');
   };
 
-  // Same idea for the Author/Artist/Type meta cells: Browse will try to route
-  // the value into the matching filter field, falling back to a free-text
-  // search if the bridge has no such filter.
+  // Same idea for the Author/Artist/Type meta cells: Search will try to route the
+  // value into the matching filter field, falling back to a free-text search if
+  // the bridge has no such filter.
   const onMetaPress = (metaKey: 'author' | 'artist' | 'type', value: string) => {
     if (!bridgeId) return;
-    setBrowseIntent({ bridgeName: series.bridge, originPage: fromPage, kind: 'meta', metaKey, value });
-    router.dismissTo('/');
+    setSearchIntent({ bridgeName: series.bridge, kind: 'meta', metaKey, value });
+    router.push('/search');
   };
 
   // Metadata, description, and chapters — placed in the right column (large)

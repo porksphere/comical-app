@@ -3,8 +3,8 @@ import type { LegendListRef } from '@legendapp/list/react-native';
 import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useFocusEffect, useRouter } from 'expo-router';
-import { Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { useRouter } from 'expo-router';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
   runOnJS,
@@ -16,32 +16,25 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BridgeThumb } from '@/components/bridge-thumb';
-import { FilterBar, type SortOption, type SortState } from '@/components/filters/filter-demo';
-import {
-  resolveMetaIntent,
-  resolveTagIntent,
-  type MetaIntent,
-  type TagIntent,
-} from '@/components/filters/filter-intents';
-import { filterDefFromApi, filterValueToApi, initialValue, type FilterDef, type FilterValue } from '@/components/filters/filter-types';
+import { GridSkeleton, SkeletonCard } from '@/components/grid-skeleton';
+import { SearchIcon } from '@/components/icons/ui-icons';
 import { Rail, RailSkeleton, SectionHead } from '@/components/rail';
 import { RetryBlock } from '@/components/retry-block';
-import { SearchField } from '@/components/search-field';
 import { BridgeThumbSize, Selector } from '@/components/selector';
 import { estimatedCardHeight, SeriesCard } from '@/components/series-card';
-import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { PullIndicator } from '@/components/pull-indicator';
 import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { pageOptions } from '@/data/api';
-import { takeBrowseIntent } from '@/data/browse-intent';
 import { fetchBrowseScope, homeSectionsQuery, queryKeys, type BrowseScope } from '@/data/queries';
-import { isRailLayout, useDataSource, useHideNsfw, useMockActive, type QueryOpts } from '@/data/source';
-import type { Bridge, BridgeList, GridPage, HomeGridSection, SeriesEntry } from '@/data/types';
+import { useSelectedBridge } from '@/data/selected-bridge';
+import { isRailLayout, useDataSource, useMockActive } from '@/data/source';
+import type { BridgeList, GridPage, HomeGridSection, SeriesEntry } from '@/data/types';
 import { friendlyError } from '@/lib/friendly-error';
+import { useGridLayout } from '@/hooks/use-grid-layout';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
-import { useTopBarHeight } from '@/hooks/use-responsive';
+import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
 import { useNativePullToRefresh } from '@/hooks/use-native-pull-to-refresh';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
@@ -52,10 +45,6 @@ import { useTouchPullToRefresh } from '@/hooks/use-touch-pull-to-refresh';
 // (8px) is the closest token to that column gap. Shared so the main grid and
 // HomeGridBlock's non-terminal sections can't drift apart from each other.
 const GRID_COLUMN_GAP = Spacing.two;
-/** Debounce before a filter/sort change actually triggers a re-fetch — avoids
- *  spamming the bridge's backend on every tap, mirroring the reference's
- *  `doSearchIfChanged` snapshot-diff-on-close contract (app.ts:4765). */
-const FILTER_DEBOUNCE_MS = 500;
 
 // Minimum time pull-to-refresh's spinner stays visible once triggered — see the
 // `refreshStartedAtRef` comment below.
@@ -76,49 +65,27 @@ export default function BrowseScreen() {
   const queryClient = useQueryClient();
   const mock = useMockActive();
   const router = useRouter();
-  const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const listRef = useRef<LegendListRef>(null);
   useScrollToTopOnReselect('browse', listRef);
 
   // ── Bridges ────────────────────────────────────────────────────────────
-  const hideNsfw = useHideNsfw();
-  const [bridge, setBridge] = useState<string | null>(null);
-
-  // Fetched via react-query (invalidated explicitly by install/update/uninstall — see
-  // registry-browse.tsx and bridge-settings.tsx) rather than a plain effect keyed on `ds`, since
-  // this is the list that must reflect a bridge change immediately, on a screen that's very often
-  // sitting mounted-but-unfocused in the background while the user installs/uninstalls elsewhere.
-  const bridgesQuery = useQuery({
-    queryKey: queryKeys.bridges(),
-    queryFn: ({ signal }) => ds.getBridges(signal),
-  });
-  const bridges = useMemo(() => bridgesQuery.data ?? [], [bridgesQuery.data]);
-  const bridgesError = bridgesQuery.isError
-    ? friendlyError(bridgesQuery.error, 'Failed to load bridges. Try again.')
-    : null;
-  // Distinguishes "still fetching" from "fetched, and there are none" — both start out as an empty
-  // `bridges` array, so without this the no-bridges placeholder would flash before the first load
-  // resolves.
-  const bridgesLoaded = bridgesQuery.isFetched;
-
-  const visibleBridges = useMemo(
-    () => (hideNsfw ? bridges.filter((b) => !b.nsfw) : bridges),
-    [bridges, hideNsfw],
-  );
-  // Falls back to the first visible bridge whenever the sticky `bridge` selection
-  // isn't among the currently-visible ones (initial load, or hidden by Hide
-  // NSFW) — derived at render instead of synced via an effect, so toggling Hide
-  // NSFW back off restores the original selection with no extra state.
-  const currentBridge = visibleBridges.find((b) => b.name === bridge) ?? visibleBridges[0];
-  const bridgeId = currentBridge?.id;
-  const bridgeThumbnails = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const b of visibleBridges) if (b.thumbnail) map[b.name] = b.thumbnail;
-    return map;
-  }, [visibleBridges]);
-  const directBridge = currentBridge?.capabilities.includes('direct') ?? false;
+  // Selected bridge + its resolution live in a shared hook (`useSelectedBridge`) so the pushed
+  // Search screen inherits whichever bridge Browse is on. `setBridge` writes the shared observable;
+  // the crossfade's deferred commit (see `commitBridgeTo`) still drives it.
+  const {
+    setBridge,
+    bridges,
+    visibleBridges,
+    currentBridge,
+    bridgeId,
+    bridgeThumbnails,
+    directBridge,
+    bridgesError,
+    bridgesLoaded,
+    refetchBridges,
+  } = useSelectedBridge();
 
   // ── Lists (drives the Page selector) ──────────────────────────────────────
   // Fetched via react-query, keyed by bridge, so `lists` is DERIVED from the cache rather than
@@ -176,96 +143,9 @@ export default function BrowseScreen() {
   );
   const isFavoritesPage = page === 'favorites';
 
-  // ── Filters + sort (react-query per bridge; capability-gated) ─────────────
-  const hasFiltersCap = currentBridge?.capabilities.includes('filters') ?? false;
-  const hasSortCap = currentBridge?.capabilities.includes('sort') ?? false;
-  const filtersRawQuery = useQuery({
-    queryKey: queryKeys.bridgeFilters(mock, bridgeId ?? ''),
-    queryFn: ({ signal }) => ds.getFilters(bridgeId!, signal),
-    enabled: !!bridgeId && hasFiltersCap,
-    placeholderData: keepPreviousData,
-  });
-  const sortRawQuery = useQuery({
-    queryKey: queryKeys.bridgeSortOptions(mock, bridgeId ?? ''),
-    queryFn: ({ signal }) => ds.getSortOptions(bridgeId!, signal),
-    enabled: !!bridgeId && hasSortCap,
-    placeholderData: keepPreviousData,
-  });
-
-  // id→label hints for tag values selected out-of-band (a tapped tag chip on a Series screen),
-  // merged into the DERIVED `filterDefs` below rather than mutated into them, since the defs now
-  // come straight from the query cache. Reset on bridge change.
-  const [labelHints, setLabelHints] = useState<Record<string, Record<string, string>>>({});
-
-  // `filterDefs` is DERIVED from the query (enriched with the live tag-search fn + any label hints),
-  // not effect-synced local state. Because it updates in the SAME render as the query data, there's
-  // no lag between "query settled" and "defs are current" — which is what lets the tag/meta intent
-  // effects below gate purely on `filtersSettled`, with no `filterDefsBridgeId` mirror.
-  const filterDefs = useMemo<FilterDef[]>(() => {
-    if (!hasFiltersCap) return [];
-    return (filtersRawQuery.data ?? []).map((f) => {
-      let def = filterDefFromApi(f);
-      // Live tag search for a bridge-backed tag-multiselect (no static option list). `searchKey`
-      // (the bridge id) scopes the react-query cache the editor keys its search on.
-      if (def.type === 'tags' && !def.options)
-        def = { ...def, search: (query: string) => ds.getTags(bridgeId!, query), searchKey: bridgeId };
-      const hints = labelHints[def.id];
-      if (def.type === 'tags' && hints) def = { ...def, labelHints: { ...(def.labelHints ?? {}), ...hints } };
-      return def;
-    });
-  }, [hasFiltersCap, filtersRawQuery.data, labelHints, ds, bridgeId]);
-  const sortOptions = useMemo<SortOption[]>(
-    () => (hasSortCap ? (sortRawQuery.data ?? []) : []),
-    [hasSortCap, sortRawQuery.data],
-  );
-  // "Filters are loaded for the CURRENT bridge" — the timing gate the old `filterDefsBridgeId`
-  // provided for intent application. No filters capability ⇒ nothing to wait for.
-  const filtersSettled =
-    !hasFiltersCap || ((filtersRawQuery.isSuccess || filtersRawQuery.isError) && !filtersRawQuery.isPlaceholderData);
-
-  // User-editable selections. `filterValues` is SPARSE — it holds only the user's explicit changes;
-  // any unset filter falls back to its `initialValue` lazily (see `resolvedValues`). That removes
-  // the old "seed every value on bridge load" step and the ordering it forced against intent
-  // application. Reset on bridge change (below).
-  const [filterValues, setFilterValues] = useState<Record<string, FilterValue>>({});
-  const [sortValue, setSortValue] = useState<SortState>(null);
-  // Stable reference so `FilterBar`'s per-filter `React.memo` isn't defeated by a freshly-allocated
-  // closure on every render (see `FilterButton`).
-  const setFilterValue = useCallback((id: string, v: FilterValue) => {
-    setFilterValues((prev) => ({ ...prev, [id]: v }));
-  }, []);
-  // The full value map the bar + committed snapshot read: the user's sparse changes over each def's
-  // lazy default.
-  const resolvedValues = useMemo<Record<string, FilterValue>>(
-    () => Object.fromEntries(filterDefs.map((d) => [d.id, filterValues[d.id] ?? initialValue(d)])),
-    [filterDefs, filterValues],
-  );
-
-  // Reset user filter/sort state (and label hints) when the bridge changes — the new bridge's
-  // defaults apply lazily. A pending tag/meta intent (set by the focus effect) applies AFTER this,
-  // gated on `filtersSettled`, so it is never wiped by the reset.
-  useEffect(() => {
-    setFilterValues({});
-    setSortValue(null);
-    setLabelHints({});
-  }, [bridgeId]);
-
-  // Debounced "committed" snapshot — the actual fetch depends on this, not on
-  // `filterValues`/`sortValue` directly, so rapid taps don't each fire a request. Reference
-  // contract: `doSearchIfChanged`, app.ts:4765.
-  const [committedFilters, setCommittedFilters] = useState<QueryOpts['filters']>(undefined);
-  const [committedSort, setCommittedSort] = useState<QueryOpts['sort']>(undefined);
-  useEffect(() => {
-    const t = setTimeout(() => {
-      const next = filterDefs
-        .map((d) => filterValueToApi(d, resolvedValues[d.id]))
-        .filter((v): v is { key: string; value: unknown } => v !== null);
-      setCommittedFilters(next.length ? (next as QueryOpts['filters']) : undefined);
-      setCommittedSort(sortValue ? { key: sortValue.key, ascending: sortValue.ascending } : undefined);
-    }, FILTER_DEBOUNCE_MS);
-    return () => clearTimeout(t);
-  }, [filterDefs, resolvedValues, sortValue]);
-  const hasActiveQuery = !!committedFilters || !!committedSort;
+  // Search + filters now live on the pushed Search screen (`app/search.tsx`), reachable from this
+  // screen's top bar. Browse itself is pure discovery: bridge/page selectors, rails, home grid,
+  // "See all", favorites, and page-flagged list browsing (unfiltered).
 
   // ── Pull-to-refresh (native only) ─────────────────────────────────────────
   // Declared up here (rather than by `onRefresh` below) because the home-sections
@@ -338,138 +218,49 @@ export default function BrowseScreen() {
   const terminalGridPreview = gridListsPreview.at(-1) ?? null;
   const nonTerminalGridListsPreview = gridListsPreview.length > 1 ? gridListsPreview.slice(0, -1) : [];
 
-  // Committed search query (set on submit) and the active "See all" rail, if any.
-  const [query, setQuery] = useState('');
+  // The active "See all" rail drill-down, if any. Free-text search + filters now live on the pushed
+  // Search screen (`app/search.tsx`), so Browse no longer holds a query/filter scope of its own.
   const [seeAll, setSeeAll] = useState<SeeAll>(null);
 
-  // ── Tag-chip / meta-cell search intent (from the Series screen) ───────────
-  // A `tagIds` chip resolves to a tag-multiselect filter, which can only be set
-  // once this bridge's defs have loaded — stash it here and apply it in the
-  // effect below (a `tagQueries` chip is handled inline as a plain query).
-  const [pendingTag, setPendingTag] = useState<TagIntent | null>(null);
-  // Same idea for a tapped Author/Artist/Type meta cell: resolved once this
-  // bridge's filter defs have loaded, against whichever field it maps to.
-  const [pendingMeta, setPendingMeta] = useState<MetaIntent | null>(null);
-  // Consume the Series screen's intent when Browse gains focus (i.e. after we've
-  // navigated to it), not on a background re-render while Series is still on top —
-  // so it lands on the instance that's actually shown. Switch to the originating
-  // bridge, leave any "See all" / sub-page scope, then either set the query
-  // (tagQueries path), stash the tag to apply once this bridge's filter defs
-  // load (tagIds path), or stash the meta value to resolve against a filter
-  // field the same way (meta path). Mirrors comical-web's navigateToQuerySearch /
-  // navigateToFilteredSearch (app.ts). `originPage` restores the Browse sub-page the series
-  // was opened from (e.g. "Popular") so the drill-down's back arrow returns there instead of
-  // Home — falls back to 'home' when absent (series opened from a different tab, where there's
-  // no Browse sub-page to return to).
-  useFocusEffect(
-    useCallback(() => {
-      const intent = takeBrowseIntent();
-      if (!intent) return;
-      setSeeAll(null);
-      setPage(intent.originPage ?? 'home');
-      setBridge(intent.bridgeName);
-      if (intent.kind === 'query') {
-        setPendingTag(null);
-        setPendingMeta(null);
-        setQuery(intent.query);
-      } else if (intent.kind === 'tag') {
-        setQuery('');
-        setPendingMeta(null);
-        setPendingTag({ filterKey: intent.filterKey, tagId: intent.tagId, label: intent.label });
-      } else {
-        setQuery('');
-        setPendingTag(null);
-        setPendingMeta({ metaKey: intent.metaKey, value: intent.value });
-      }
-    }, []),
-  );
-
-  // Apply once the CURRENT bridge's filter defs are loaded (`filtersSettled`). Because `filterDefs`
-  // is derived (never lagging the query), a null resolution here genuinely means this bridge has no
-  // matching tag filter — so it's safe to drop the intent. See resolveTagIntent + its tests.
-  useEffect(() => {
-    if (!pendingTag || !bridgeId || !filtersSettled) return;
-    const res = resolveTagIntent(filterDefs, pendingTag);
-    if (res) {
-      // Seed the id→label hint so the trigger/editor show the tag's name, not its raw id (a
-      // live-search filter has no static options to look it up in), and select it.
-      setLabelHints((prev) => ({ ...prev, [res.defId]: { ...(prev[res.defId] ?? {}), ...res.labelHint } }));
-      setFilterValues((prev) => ({ ...prev, [res.defId]: res.value }));
-    }
-    setPendingTag(null);
-  }, [pendingTag, filterDefs, filtersSettled, bridgeId]);
-
-  useEffect(() => {
-    if (!pendingMeta || !bridgeId || !filtersSettled) return;
-    // Prefer the bridge's own field for that meta key (so an Author tap lands on its author filter),
-    // else fall back to a plain free-text search — see resolveMetaIntent + its tests.
-    const res = resolveMetaIntent(filterDefs, pendingMeta);
-    if (res.kind === 'filter') setFilterValues((prev) => ({ ...prev, [res.defId]: res.value }));
-    else setQuery(res.query);
-    setPendingMeta(null);
-  }, [pendingMeta, filterDefs, filtersSettled, bridgeId]);
-
-  // A search, a rail's "See all", a live filter/sort choice, or picking a
-  // page-flagged sub-list (e.g. "Popular"/"Favorites") all drop to the flat
-  // results grid — matches the reference's `doSearch`: any of
-  // query/filters/sort/list-scope leaves the home surface.
-  const inResults = !!query || !!seeAll || hasActiveQuery || !composedHome;
-  // The back banner is for transient drill-downs (search / "See all" / a live
-  // filter or sort) — NOT for plain page-selector navigation. Selecting a
-  // page-flagged list like "Popular" is a top-level page in its own right (the
-  // Page selector itself already shows it's active and is how you switch back
-  // to Home), so it shouldn't get the same back-arrow treatment a drill-down
-  // does. A drill-down layered on top of a selected page (e.g. searching while
-  // on "Popular") still shows the banner, and its arrow returns to that page.
-  const showBackBanner = !!query || !!seeAll || hasActiveQuery;
-  // Where the back arrow returns to — the page the drill-down was layered on:
-  // Home if that's where we were, otherwise the selected page (e.g. "Popular"). A tag/meta
-  // chip from the Series screen restores whichever page it was opened from (see the focus
-  // effect's `originPage` handling) — 'home' only when it wasn't opened from Browse itself.
+  // A rail's "See all", or picking a page-flagged sub-list (e.g. "Popular"/"Favorites"), drops to
+  // the flat results grid; plain composed Home shows the rails + grid surface.
+  const inResults = !!seeAll || !composedHome;
+  // The back banner is for a "See all" drill-down only — NOT for plain page-selector navigation
+  // (selecting "Popular" is a top-level page the Page selector already reflects).
+  const showBackBanner = !!seeAll;
+  // Where the back arrow returns to — Home if that's where we were, otherwise the selected page.
   const backLabel =
     page === 'home' ? 'Home' : (selectedList?.name ?? page.charAt(0).toUpperCase() + page.slice(1));
-  // Caption for what's being shown: a "See all" list, a text search, or — with
-  // neither (so `showBackBanner` is only true via a live filter/sort) — a
-  // refinement of the current page. Not the bare page name, which would just
-  // echo the back arrow.
-  const resultsLabel = seeAll ? seeAll.title : query ? `Results for “${query}”` : 'Filtered results';
+  // Caption for the "See all" drill-down.
+  const resultsLabel = seeAll ? seeAll.title : '';
 
   // ── Grid derivations (which logical view the flat grid is showing) ─────────
   // These discriminators feed `resultsScope`/`terminalScope` below, which the infinite queries key
-  // and fetch from. "See all" keeps its simple behavior (browse that list's items, page-only, no
-  // filters/sort/scoped-search); those apply to the page-flagged list / global search case instead.
+  // and fetch from.
   const activeListId = seeAll ? seeAll.listId : !composedHome ? (selectedList?.id ?? null) : null;
-  // Scoped-list search: route through the list endpoint's `q` param when the
-  // active list is `searchable`, instead of always calling `/search` — mirrors
-  // `runSearch`'s branch at app.ts:4857.
-  const scopedSearch = !seeAll && !composedHome && !!selectedList?.searchable && !!activeListId;
   const showResultsGrid = inResults;
   // Home's terminal grid section (the last one in `gridSections`) shares the
   // SAME scrollable FlatList + infinite scroll as results mode, not the
   // "Load more" blocks non-terminal sections get — so it feeds `gridItems` too.
   const isHomeTerminal = !inResults && composedHome && !!terminalGridSection;
 
-  // The results scope (search / "See all" / a page-flagged list / favorites), or null when we're
-  // not showing a results grid (pure composed Home, or Home's terminal section — handled below).
-  // Both the query key and the fetch derive from this one value (see BrowseScope), which is what
-  // lets the grid move between scopes without ever clearing to empty.
+  // The results scope ("See all" / a page-flagged list / favorites), or null when we're not showing
+  // a results grid (pure composed Home, or Home's terminal section — handled below). Both the query
+  // key and the fetch derive from this one value (see BrowseScope), which is what lets the grid move
+  // between scopes without ever clearing to empty.
   const resultsScope = useMemo<BrowseScope | null>(() => {
-    // Wait for the current bridge's lists to settle: `activeListId`/`scopedSearch` derive from
-    // `lists`, so computing a scope off the previous bridge's placeholder lists would fetch a list
-    // id that doesn't exist on the new bridge (an "unknown list" / HTML-parse error). keepPreviousData
-    // keeps the grid populated meanwhile.
+    // Wait for the current bridge's lists to settle: `activeListId` derives from `lists`, so
+    // computing a scope off the previous bridge's placeholder lists would fetch a list id that
+    // doesn't exist on the new bridge (an "unknown list" / HTML-parse error). keepPreviousData keeps
+    // the grid populated meanwhile.
     if (isHomeTerminal || !showResultsGrid || !bridgeId || !listsSettled) return null;
     if (isFavoritesPage) return { kind: 'favorites' };
     if (seeAll) return { kind: 'seeAll', listId: seeAll.listId };
-    const opts: QueryOpts = { filters: committedFilters, sort: committedSort };
-    // A page-flagged list browsed with no query (optionally filtered/sorted), or scoped-search on
-    // that same list when it's `searchable` and a query is set.
-    if (activeListId && (scopedSearch || !query)) {
-      return { kind: 'list', listId: activeListId, opts: scopedSearch && query ? { ...opts, query } : opts };
-    }
-    // Global search: an unscoped query, or filters/sort with no specific list (home).
-    return { kind: 'search', query, opts };
-  }, [isHomeTerminal, showResultsGrid, bridgeId, listsSettled, isFavoritesPage, seeAll, activeListId, scopedSearch, query, committedFilters, committedSort]);
+    // A page-flagged list (e.g. "Popular") browsed unfiltered — refinement now happens on the
+    // Search screen, so no `opts` here.
+    if (activeListId) return { kind: 'list', listId: activeListId };
+    return null;
+  }, [isHomeTerminal, showResultsGrid, bridgeId, listsSettled, isFavoritesPage, seeAll, activeListId]);
 
   const getNextPageParam = (last: GridPage, _all: GridPage[], lastParam: number) =>
     last.hasNextPage ? lastParam + 1 : undefined;
@@ -534,14 +325,14 @@ export default function BrowseScreen() {
   const gridUpdating = activeGridQuery.isPlaceholderData;
 
   // ── Full-home crossfade on a bridge switch ────────────────────────────────
-  // A source switch is a wholesale change, so dissolve the ENTIRE home (controls + rails + grid,
-  // everything in the list): fade it out, COMMIT the switch only once it's hidden, then fade the new
-  // bridge's home in. Committing at opacity 0 is what makes it seamless for an already-cached bridge
-  // too — its content is available instantly and would otherwise hard-cut before any fade. The commit
-  // is deferred by holding setBridge/setQuery/setSeeAll until the fade-out's completion callback (see
+  // A source switch is a wholesale change, so dissolve the ENTIRE home (rails + grid, everything in
+  // the list): fade it out, COMMIT the switch only once it's hidden, then fade the new bridge's home
+  // in. Committing at opacity 0 is what makes it seamless for an already-cached bridge too — its
+  // content is available instantly and would otherwise hard-cut before any fade. The commit is
+  // deferred by holding setBridge/setSeeAll until the fade-out's completion callback (see
   // `selectBridge`); until then the OLD bridge stays fully rendered and fades out as itself. The
   // bridge/page selector (topBar, outside the list) stays put throughout. Within-bridge refinements
-  // (page/filter/sort/search) keep the lighter dim below, suppressed while `switching`.
+  // (page) keep the lighter dim below, suppressed while `switching`.
   const XFADE_OUT_MS = 140;
   const XFADE_IN_MS = 200;
   // Hard cap on the hidden window — reveal whatever's there rather than ever leaving the home
@@ -552,13 +343,13 @@ export default function BrowseScreen() {
   const [switching, setSwitching] = useState(false);
   const [committed, setCommitted] = useState(false);
   // Run at the bottom of the fade-out (opacity 0): swap to the new bridge here, so the old→new change
-  // is never on screen. `selectBridge` also drops query/seeAll (as it always has) as part of the same
-  // top-level navigation. Stable so the fade-out worklet callback closes over a fixed reference.
+  // is never on screen. `selectBridge` also drops any "See all" as part of the same top-level
+  // navigation. Stable so the fade-out worklet callback closes over a fixed reference.
   const commitBridgeTo = useCallback((name: string) => {
     setBridge(name);
-    setQuery('');
     setSeeAll(null);
     setCommitted(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   // "The new bridge's home is ready to reveal": its content query has settled, or errored (so a
   // failed switch shows its Retry instead of stranding a blank home). Only consult `homeUpdating`
@@ -643,44 +434,20 @@ export default function BrowseScreen() {
     void refreshRef.current().finally(finishRefresh);
   }, [finishRefresh]);
 
-  // Leave a transient drill-down (search / "See all" / a live filter or sort) and
-  // return to the page it was layered on — Home if that's where we were, or the
-  // selected page (e.g. "Popular") otherwise. `page` is deliberately left
-  // untouched so we land back where the user actually was instead of always
-  // jumping to Home; a tag/meta chip from the Series screen has already set
-  // `page` to 'home' (see the focus effect), so that flow still returns Home.
+  // Leave a "See all" drill-down and return to the page it was layered on — Home if that's where we
+  // were, or the selected page (e.g. "Popular") otherwise. `page` is deliberately left untouched so
+  // we land back where the user actually was.
   const exitDrilldown = () => {
-    setQuery('');
     setSeeAll(null);
-    // A tag chip / author-artist-type meta cell (and any live filter/sort) drives
-    // results via a filter, not `query` — so clearing just the query would leave
-    // `hasActiveQuery` true and strand us in results. Clear the user's filter selections
-    // (each filter falls back to its neutral default lazily) and drop the sort so the
-    // banner dismisses and the underlying page actually returns.
-    setFilterValues({});
-    setSortValue(null);
-    // `hasActiveQuery` (and so `inResults`) reads the DEBOUNCED committed filters/sort, not
-    // `filterValues`/`sortValue` directly — clearing only those would leave `committedFilters`/
-    // `committedSort` stale for up to FILTER_DEBOUNCE_MS, stranding the banner/results grid on
-    // screen for half a second after the tap (looks like the button is blocked on a request).
-    // Clear the committed snapshot synchronously too so `inResults` flips on the same tick.
-    setCommittedFilters(undefined);
-    setCommittedSort(undefined);
-    // Drop any not-yet-applied intent so it can't re-set the filter after we've
-    // just cleared it (a race if back is pressed before this bridge's defs load).
-    setPendingTag(null);
-    setPendingMeta(null);
   };
 
-  // Switching bridge or page is top-level navigation, so it drops any active
-  // search / "See all" drill-down and lands on that page's full rails+grid.
-  // A real bridge change runs through the deferred-commit crossfade (see the crossfade block):
-  // fade the whole home out, then commit (setBridge/setQuery/setSeeAll) at opacity 0 so the swap is
-  // never seen, then fade the new bridge in. A no-op re-tap (or before any bridge resolves) just
-  // commits immediately — nothing to dissolve.
+  // Switching bridge or page is top-level navigation, so it drops any active "See all" drill-down
+  // and lands on that page's full rails+grid. A real bridge change runs through the deferred-commit
+  // crossfade (see the crossfade block): fade the whole home out, then commit (setBridge/setSeeAll)
+  // at opacity 0 so the swap is never seen, then fade the new bridge in. A no-op re-tap (or before
+  // any bridge resolves) just commits immediately — nothing to dissolve.
   const selectBridge = (b: string) => {
     if (!currentBridge || b === currentBridge.name) {
-      setQuery('');
       setSeeAll(null);
       setBridge(b);
       return;
@@ -692,35 +459,20 @@ export default function BrowseScreen() {
     });
   };
   const selectPage = (p: string) => {
-    setQuery('');
     setSeeAll(null);
     setPage(p);
   };
 
-  // See plan: hold the server's column count until mount to avoid a hydration
-  // mismatch on the static web export (no viewport → width 0 → 3 columns).
-  const [hydrated, setHydrated] = useState(false);
-  useEffect(() => setHydrated(true), []);
   // Shared with the series-detail bar so both stay the same height.
   const barHeight = useTopBarHeight();
   // Match the bridge dropdown's thumbnail size so the bar reads at the same scale.
   const thumbSize = BridgeThumbSize;
-  const numColumns =
-    !hydrated || width < 768 ? 3 : Math.min(6, Math.max(3, Math.floor(width / 200)));
-  // Center content in a full-width scroller (scrollbar at the window edge) via symmetric side
-  // padding — LegendList drops paddingHorizontal / ignores alignSelf on its content container, so
-  // explicit paddingLeft/Right is the reliable lever. The header/footer bleed Spacing.four of this
-  // back out so their own self-padded children (controls, rails, section heads) stay aligned.
-  const sidePad = Math.max(0, (width - MaxTopLevelWidth) / 2) + Spacing.four;
-  // Single hydration-safe viewport width for the rails: a deterministic mobile
-  // fallback during prerender/first paint, the real width once mounted.
-  const railViewport = hydrated ? width : 390;
-  // Feeds LegendList's `estimatedItemSize` below — a first-paint/pagination size hint so it
-  // doesn't have to lay out a full screen of never-measured rows during a fast fling. Mirrors the
-  // content width math above (window width minus the same symmetric `sidePad`) minus the grid's
-  // own column gaps.
-  const gridContentWidth = width - sidePad * 2;
-  const cardWidth = (gridContentWidth - (numColumns - 1) * GRID_COLUMN_GAP) / numColumns;
+  // Desktop shows an always-visible search pill in the top bar; mobile shows just a search icon.
+  // Both open the pushed Search screen (search field in its own top bar, filters + results below).
+  const isLargeScreen = useIsLargeScreen();
+  const openSearch = () => router.push('/search');
+  // Responsive grid geometry (column count, centering pad, card size) — shared with the Search grid.
+  const { numColumns, sidePad, railViewport, cardWidth } = useGridLayout();
 
   const gridData = useMemo<GridItem[]>(() => {
     const remainder = gridItems.length % numColumns;
@@ -755,10 +507,6 @@ export default function BrowseScreen() {
     seeAll?.listId ?? '',
     isFavoritesPage ? 'fav' : '',
     isHomeTerminal ? 'term' : '',
-    scopedSearch ? 'scoped' : '',
-    query,
-    committedSort ?? '',
-    JSON.stringify(committedFilters ?? {}),
   ].join('|');
 
   // Top bar: the bridge/page selectors sit in a fixed-height band (barHeight below
@@ -877,43 +625,56 @@ export default function BrowseScreen() {
           thumbnails={bridgeThumbnails}
         />
         <Selector title="Page" value={page} options={pages} onChange={selectPage} size="subtitle" />
+        {isLargeScreen ? (
+          // Desktop: an always-visible search pill in the middle of the bar. Pressing it opens the
+          // (blank) Search screen — real typing happens there. `searchPillWrap`'s right margin
+          // reserves room for the desktop tab-icon nav overlaid at the row's right edge (app-tabs).
+          <View style={styles.searchPillWrap}>
+            <Pressable
+              onPress={openSearch}
+              accessibilityRole="button"
+              accessibilityLabel="Search"
+              style={styles.searchPill}>
+              <ThemedView type="backgroundElement" style={styles.searchPillInner}>
+                <SearchIcon color={theme.textSecondary} size={16} />
+                <ThemedText type="small" themeColor="textSecondary">
+                  Search…
+                </ThemedText>
+              </ThemedView>
+            </Pressable>
+          </View>
+        ) : (
+          // Mobile: just the lucide search icon, pushed to the trailing edge, until you're on the
+          // Search screen (where the real field appears in its top bar).
+          <Pressable
+            onPress={openSearch}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Search"
+            style={styles.searchIconButton}>
+            <SearchIcon color={theme.text} size={22} />
+          </Pressable>
+        )}
       </View>
     </Animated.View>
   );
 
-  const controls = (
+  // Only the "See all" back banner remains in the list header (search + filters moved to the Search
+  // screen). Nothing renders on plain Home / page-flagged browsing, so the rails start at the top.
+  const controls = showBackBanner ? (
     <View style={styles.controls}>
-      <SearchField
-        value={query}
-        onSubmit={(q) => {
-          setSeeAll(null);
-          setQuery(q.trim());
-        }}
-        onClear={() => setQuery('')}
-      />
-      <FilterBar
-        defs={filterDefs}
-        values={resolvedValues}
-        onValueChange={setFilterValue}
-        sortOptions={sortOptions}
-        sort={sortValue}
-        onSortChange={setSortValue}
-        searchActive={inResults}
-      />
-      {showBackBanner && (
-        <View style={styles.resultsHead}>
-          <Pressable onPress={exitDrilldown} hitSlop={8}>
-            <ThemedText type="smallBold" style={{ color: theme.accent }}>
-              ← {backLabel}
-            </ThemedText>
-          </Pressable>
-          <ThemedText type="small" themeColor="textSecondary" numberOfLines={1} style={styles.resultsLabel}>
-            {resultsLabel}
+      <View style={styles.resultsHead}>
+        <Pressable onPress={exitDrilldown} hitSlop={8}>
+          <ThemedText type="smallBold" style={{ color: theme.accent }}>
+            ← {backLabel}
           </ThemedText>
-        </View>
-      )}
+        </Pressable>
+        <ThemedText type="small" themeColor="textSecondary" numberOfLines={1} style={styles.resultsLabel}>
+          {resultsLabel}
+        </ThemedText>
+      </View>
     </View>
-  );
+  ) : null;
 
   // The list header holds the controls, and — on home — the rails, any
   // non-terminal grid sections (their own "Load more"), and the terminal
@@ -1014,7 +775,7 @@ export default function BrowseScreen() {
   if (bridgesError && bridges.length === 0) {
     return (
       <ThemedView style={[styles.container, styles.centerFill]}>
-        <RetryBlock message={bridgesError} onRetry={() => bridgesQuery.refetch()} />
+        <RetryBlock message={bridgesError} onRetry={refetchBridges} />
       </ThemedView>
     );
   }
@@ -1249,36 +1010,6 @@ function HomeGridBlock({
   );
 }
 
-/** A single skeleton card (cover + two title lines) — one grid cell's worth. */
-function SkeletonCard() {
-  // `gridCell` (not the bare `cell`) so this matches a real card's cell exactly — same
-  // flex plus the same top/bottom padding as a real `gridCell`-wrapped `SeriesCard`.
-  return (
-    <View style={[styles.gridCell, styles.skelCell]}>
-      <Skeleton style={styles.skelCover} />
-      <Skeleton style={styles.skelLine} />
-      <Skeleton style={[styles.skelLine, styles.skelLineShort]} />
-    </View>
-  );
-}
-
-/** Skeleton rows shown while a grid's first page loads (scope switch, retry, etc.) — mirrors
- *  the grid card (cover + two title lines) so it reads as "cards incoming". Infinite-scroll
- *  pagination itself shows no skeleton (see `ListFooterComponent`/`loadMore`). */
-function GridSkeleton({ numColumns, rows }: { numColumns: number; rows: number }) {
-  return (
-    <View style={styles.skelFooter}>
-      {Array.from({ length: rows }).map((_, r) => (
-        <View key={r} style={[styles.row, styles.skelRow]}>
-          {Array.from({ length: numColumns }).map((_, c) => (
-            <SkeletonCard key={c} />
-          ))}
-        </View>
-      ))}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -1406,36 +1137,28 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.one,
     paddingBottom: Spacing.three - Spacing.one,
   },
-  skelFooter: {
-    // No top padding: the list's content gap already separates the footer from
-    // the last row, so matching it here keeps the loaded rows from popping up
-    // when they replace the skeleton.
-    gap: Spacing.three,
-    // Bleed the list's contentContainer horizontal padding back out — the skeleton rows
-    // self-pad via `styles.row`, same as the header children (see the bleed note above).
-    marginHorizontal: -Spacing.four,
-  },
-  // Same column gap as the real grid's `columnWrapperStyle` (GRID_COLUMN_GAP) — this used to be
-  // Spacing.three (double), so skeleton columns sat at different x-offsets than the real cards
-  // that replace them.
-  skelRow: {
-    flexDirection: 'row',
-    gap: GRID_COLUMN_GAP,
-  },
-  skelCell: {
+  // Desktop search pill: takes the middle of the selector row (flex), capped so it reads as a
+  // search bar, with a right margin reserving space for the desktop tab-icon nav (app-tabs).
+  searchPillWrap: {
     flex: 1,
-    gap: Spacing.one,
+    alignItems: 'center',
+    marginRight: 200,
   },
-  skelCover: {
+  searchPill: {
     width: '100%',
-    aspectRatio: 2 / 3,
-    borderRadius: 10,
+    maxWidth: 420,
   },
-  skelLine: {
-    height: 12,
-    borderRadius: 4,
+  searchPillInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    height: 40,
+    paddingHorizontal: Spacing.three,
+    borderRadius: Spacing.three,
   },
-  skelLineShort: {
-    width: '60%',
+  // Mobile search icon: pushed to the trailing edge of the selector row.
+  searchIconButton: {
+    marginLeft: 'auto',
+    padding: Spacing.one,
   },
 });

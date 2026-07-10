@@ -23,11 +23,14 @@ export function SearchField({
   onSubmit,
   onClear,
   placeholder = 'Search…',
+  autoFocus = false,
 }: {
   value: string;
   onSubmit: (q: string) => void;
   onClear: () => void;
   placeholder?: string;
+  /** Focus the field (and raise the keyboard) on mount — used by the Search screen. */
+  autoFocus?: boolean;
 }) {
   const theme = useTheme();
   const inputRef = useRef<TextInput>(null);
@@ -68,6 +71,7 @@ export function SearchField({
         onSubmitEditing={() => onSubmit(text)}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
+        autoFocus={autoFocus}
         placeholder={placeholder}
         placeholderTextColor={theme.textSecondary}
         returnKeyType="search"

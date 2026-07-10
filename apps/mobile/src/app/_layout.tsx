@@ -84,6 +84,8 @@ function RootNavigation() {
           {/* Series page renders its own static top bar (bridge name + back
               button), so the native stack header is hidden here. */}
           <Stack.Screen name="series" options={{ headerShown: false }} />
+          {/* Search renders its own top bar (search field + back button), so hide the native one. */}
+          <Stack.Screen name="search" options={{ headerShown: false }} />
           {/* Full-screen page reader; its own dark chrome, fade in/out. */}
           <Stack.Screen name="reader" options={{ headerShown: false, animation: 'fade' }} />
           {/* These render their own <TopBar> (matching series.tsx), so the native

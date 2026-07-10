@@ -388,7 +388,7 @@ const realDataSource: DataSource = {
       genres: info.genres,
       // Carry the per-tag `tagIds`/`tagQueries` through (dropping the UI-unused
       // `kind`) so a tapped tag chip can drive a filter/search — see chip.tsx +
-      // browse-intent.ts. Both are index-parallel to `tags`.
+      // search-intent.ts. Both are index-parallel to `tags`.
       tagGroups: info.tagGroups?.map((g) => ({
         label: g.label,
         tags: g.tags,
