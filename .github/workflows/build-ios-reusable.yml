@@ -33,15 +33,8 @@ jobs:
     # build-phase script (injected during `expo prebuild` below) so it can upload
     # sourcemaps/dSYMs during the archive step. A missing/empty token makes that
     # step no-op rather than fail.
-    #
-    # CCACHE_DIR: pins ccache's cache to a fixed, cacheable path. The
-    # expo-build-properties `ios.ccacheEnabled` flag (set in app.json) makes the
-    # generated Podfile compile C/C++/Obj-C++ through ccache; caching this dir
-    # across runs turns the otherwise-clean xcodebuild archive into a mostly
-    # incremental compile even though `expo prebuild` regenerates ios/ each time.
     env:
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-      CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
       - uses: actions/checkout@v4
         with:
@@ -83,33 +76,6 @@ jobs:
           key: pods-ios-${{ hashFiles('bun.lock') }}
           restore-keys: pods-ios-
 
-      # ccache — the big one. main saves a fresh per-commit entry; branches fall
-      # back to the newest via restore-keys and only recompile their delta.
-      - name: Restore ccache
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ github.workspace }}/.ccache
-          key: ccache-ios-${{ hashFiles('bun.lock') }}-${{ github.sha }}
-          restore-keys: |
-            ccache-ios-${{ hashFiles('bun.lock') }}-
-            ccache-ios-
-
-      # ccache is NOT preinstalled on the macos-26 image, so install it. During
-      # the archive the compiler is routed through React Native's ccache-clang.sh
-      # wrapper (wired up by the Podfile because app.json's expo-build-properties
-      # ios.ccacheEnabled is set). The wrapper pins CCACHE_CONFIGPATH to RN's OWN
-      # bundled ccache.conf and does not read CCACHE_DIR — and Xcode does not
-      # propagate our CCACHE_DIR env (nor command-line build settings) into the
-      # per-compile environment. So the ONLY reliable way to point compile-time
-      # ccache at the dir we cache is to add cache_dir to that bundled conf; see
-      # the "Point ccache.conf at the cached dir" step after deps are installed.
-      # Here we just install ccache and zero stats for the report.
-      - name: Install + prep ccache
-        run: |
-          set -euo pipefail
-          command -v ccache >/dev/null || brew install ccache
-          ccache --zero-stats
-
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
@@ -146,27 +112,6 @@ jobs:
           echo "Patching $PLIST -> CFBundleShortVersionString=${{ steps.ver.outputs.full }}"
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${{ steps.ver.outputs.full }}" "$PLIST"
 
-      # THE ccache fix (must be the last thing before the archive so nothing
-      # reinstalls node_modules after it). RN's ccache-clang.sh wrapper pins
-      # CCACHE_CONFIGPATH to react-native's bundled scripts/xcode/ccache.conf,
-      # which ships without cache_dir — so compile-time ccache falls back to its
-      # default dir, which we don't cache (0 hits every run). Neither our
-      # CCACHE_DIR env nor xcodebuild build settings reach the per-compile
-      # environment; adding cache_dir to that conf is the one knob that does.
-      # Patch every copy under node_modules (bun may hoist RN to the repo root or
-      # keep it under apps/mobile); skip the comical submodule's own RN.
-      - name: Point ccache.conf at the cached dir
-        run: |
-          set -euo pipefail
-          found=0
-          while IFS= read -r conf; do
-            printf '\ncache_dir = %s\nmax_size = 3G\n' "$CCACHE_DIR" >> "$conf"
-            echo "patched $conf"
-            found=$((found + 1))
-          done < <(find . -path '*/react-native/scripts/xcode/ccache.conf' \
-                          -not -path '*/external/comical/*' -not -path '*/.git/*')
-          [ "$found" -gt 0 ] || { echo "ERROR: react-native ccache.conf not found"; exit 1; }
-
       - name: Build unsigned archive
         working-directory: apps/mobile/ios
         run: |
@@ -178,8 +123,6 @@ jobs:
           # Sentry upload no-ops without SENTRY_AUTH_TOKEN, so nothing consumes
           # dSYMs here (switch back to dwarf-with-dsym once Sentry is wired up).
           # COMPILER_INDEX_STORE_ENABLE=NO drops CI-useless source indexing.
-          # (ccache dir is set via RN's ccache.conf in the step above, not here —
-          # xcodebuild build settings do not reach the per-compile environment.)
           xcodebuild \
             -workspace "$WORKSPACE" \
             -scheme "$SCHEME" \
@@ -193,10 +136,6 @@ jobs:
             DEVELOPMENT_TEAM="" \
             DEBUG_INFORMATION_FORMAT=dwarf \
             COMPILER_INDEX_STORE_ENABLE=NO
-
-      - name: Report ccache stats
-        if: always()
-        run: ccache --show-stats --verbose || ccache --show-stats
 
       - name: Package unsigned IPA
         run: |
@@ -221,13 +160,6 @@ jobs:
       # Persist the freshly-populated caches from the default branch only, so
       # the shared 10 GB budget holds one authoritative warm cache instead of a
       # per-branch pile that evicts it. Feature branches restore these read-only.
-      - name: Save ccache
-        if: github.ref == 'refs/heads/main'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ github.workspace }}/.ccache
-          key: ccache-ios-${{ hashFiles('bun.lock') }}-${{ github.sha }}
-
       - name: Save Bun modules
         if: github.ref == 'refs/heads/main'
         uses: actions/cache/save@v4

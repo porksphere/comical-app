@@ -63,11 +63,14 @@ export — start that server first with `cd ../comical-web && bun run dev`. The 
 Native projects are generated on the fly (`expo prebuild`, CNG); `ios/` and `android/` are
 git-ignored. Workflows in `.github/workflows/` run on push to `main`, on every **pull request**
 (build + downloadable artifact, so branches are verified — see the dev channel below), and via
-manual dispatch. Builds are cached to keep the (macOS-heavy) compile times down: iOS compiles
-through **ccache** (`expo-build-properties` `ios.ccacheEnabled`) and Android reuses the **Gradle**
-cache. Only `main` *writes* those caches; every branch/PR restores them read-only, so the shared
-10 GB Actions cache budget holds one authoritative warm cache instead of being thrashed per branch
-(the first PR after a change is only fast once `main` has built and populated the cache):
+manual dispatch. Dependency/tooling caches keep the non-compile steps quick: iOS caches Bun +
+CocoaPods, Android caches Bun + the **Gradle** cache. Only `main` *writes* those caches; every
+branch/PR restores them read-only, so the shared 10 GB Actions cache budget holds one
+authoritative warm cache instead of being thrashed per branch. The native **compile** itself
+isn't cached: ccache doesn't work with React Native under Xcode 26 (compiles come through as
+uncacheable), and there's no maintained alternative — but iOS already skips compiling React
+Native core via RN's prebuilt `ReactNativeDependencies.xcframework`/`React-Core-prebuilt` (default
+on RN 0.80+), so the bulk of the win is captured without a compiler cache:
 
 - **Android** (`ubuntu-latest`): `expo prebuild` → `gradlew assembleRelease` → installable
   `.apk` artifact (release is signed with the auto-generated debug keystore). `build-android.yml`
