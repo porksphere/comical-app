@@ -36,6 +36,7 @@ import { friendlyError } from '@/lib/friendly-error';
 import { useGridLayout } from '@/hooks/use-grid-layout';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
+import { useSlidingBar } from '@/hooks/use-sliding-bar';
 import { useNativePullToRefresh } from '@/hooks/use-native-pull-to-refresh';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
@@ -515,66 +516,21 @@ export default function BrowseScreen() {
   // expand-at-top/collapse-on-scroll animation, the bar itself never changes size —
   // instead it slides away as a whole (see `headerOffsetY` below), X/Twitter-style.
   const headerHeight = insets.top + barHeight;
-  // AnimatedLegendList feeds the live scroll offset into `scrollY` on the UI thread via its
-  // `sharedValues` prop (below). A reaction bridges the same value back to JS for the
-  // tab-bar-hide, replacing the old useAnimatedScrollHandler+runOnJS (LegendList doesn't take a
-  // worklet onScroll the way Animated.FlatList did).
-  const scrollY = useSharedValue(0);
+  // The bridge/page bar slides away 1:1 with scroll (X/Twitter-style) via the shared `useSlidingBar`
+  // helper — the same one the Search filter bar uses, so their motion can't drift. It's fed the
+  // list's UI-thread scroll offset via `sharedValues` + the plain `onListScroll` (both wired on the
+  // list below); a `gridScope` change snaps the bar back to visible and scrolls the list to the top.
+  const { scrollY, barStyle: headerStyle, sharedValues, onScroll: onListScroll } = useSlidingBar(
+    headerHeight,
+    { resetKey: gridScope, listRef },
+  );
+  // Bridge the same UI-thread offset back to JS for the mobile tab-bar auto-hide.
   const { reportOffset } = useHideTabBarOnScroll();
   useAnimatedReaction(
     () => scrollY.value,
     (y) => runOnJS(reportOffset)(y),
     [reportOffset],
   );
-  // The list's max scroll offset (contentHeight - viewportHeight), kept in sync via the plain
-  // `onScroll` below — used only to tell a genuine upward scroll apart from the bottom's elastic
-  // bounce-back recoil (see the reaction below). `scrollY`/`sharedValues` gives a live UI-thread
-  // offset but not the content/layout sizes needed for that; a plain (non-worklet) onScroll still
-  // fires alongside it and carries both.
-  const maxScrollY = useSharedValue(0);
-  // 0 = bar fully visible (resting position); -headerHeight = fully hidden, slid up and
-  // off-screen. Tracks the scroll delta 1:1 (X/Twitter-style): scrolling down by dy px hides
-  // the bar by the same dy, scrolling up reveals it again from wherever it currently sits —
-  // it doesn't need to reach the very top first. At/above the top (y <= 0 — resting, or an
-  // active pull/overscroll, which reports negative y) it's pinned fully visible: the pull-to-
-  // refresh spinner is a separate overlay that sits just below the bar's resting edge (the shared
-  // PullIndicator, driven by useTouchPullToRefresh on web+Android / useNativePullToRefresh on iOS — not a
-  // native RefreshControl behind the bar), so the bar has nothing to get out of the way of, and
-  // staying put reads as an anchored top bar with the spinner emerging beneath it, X-style.
-  const headerOffsetY = useSharedValue(0);
-  useAnimatedReaction(
-    () => scrollY.value,
-    (y, prevY) => {
-      if (y <= 0) {
-        headerOffsetY.value = 0;
-        return;
-      }
-      // Past the real end of the content, the list is either overscrolled into the elastic
-      // bottom bounce or springing back out of it — both produce the same "offset decreasing"
-      // delta a genuine scroll-up does, which would otherwise reveal the bar on every bounce at
-      // the bottom of the list. Only apply the delta once the offset is genuinely below the max,
-      // i.e. actual upward scrolling past that point.
-      if (maxScrollY.value > 0 && y >= maxScrollY.value) {
-        return;
-      }
-      const dy = y - (prevY ?? y);
-      headerOffsetY.value = Math.min(0, Math.max(-headerHeight, headerOffsetY.value - dy));
-    },
-    [headerHeight],
-  );
-  // On a real scope change, snap the sliding top bar back to fully-visible (resetting the shared
-  // scroll values) AND scroll the list itself to the top. The list instance now persists across
-  // scope changes (no remount — see `gridKey`), so unlike before it won't come back at the top on
-  // its own; `scrollToOffset` puts it there to match the reset bar.
-  useEffect(() => {
-    scrollY.value = 0;
-    headerOffsetY.value = 0;
-    maxScrollY.value = 0;
-    listRef.current?.scrollToOffset({ offset: 0, animated: false });
-  }, [gridScope, scrollY, headerOffsetY, maxScrollY]);
-  const headerStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: headerOffsetY.value }],
-  }));
   // The bar's bottom hairline fades in only once the list is scrolled: at the very top the bar reads
   // as part of the page (no divider), then the line appears to separate it from the content beneath.
   const headerBorderStyle = useAnimatedStyle(() => ({
@@ -830,7 +786,7 @@ export default function BrowseScreen() {
         // Full-width scroller so the scrollbar sits at the window edge; content centered via the
         // symmetric sidePad below. Scroll offset flows into scrollY for the sliding header.
         style={styles.listInner}
-        sharedValues={{ scrollOffset: scrollY }}
+        sharedValues={sharedValues}
         // Root-causes the "loading only resumes once you lift your finger" symptom on web: when no
         // `renderScrollComponent` is given, `@legendapp/list/reanimated`'s internal scroll bridge
         // renders `Animated.ScrollView` with whatever `scrollEventThrottle` LegendList's own internal
@@ -843,15 +799,9 @@ export default function BrowseScreen() {
         // itself already does when a consumer supplies a custom scroll component; we're just supplying
         // the plain default to opt into that path.
         renderScrollComponent={(scrollProps) => <Animated.ScrollView {...scrollProps} />}
-        // Plain (JS-thread) onScroll alongside `sharedValues` above — only used to keep
-        // `maxScrollY` in sync (see its comment) for the bottom-bounce guard; everything else
-        // reads the UI-thread `scrollY` instead.
-        onScroll={(e) => {
-          const { contentSize, layoutMeasurement } = e.nativeEvent;
-          if (contentSize && layoutMeasurement) {
-            maxScrollY.value = Math.max(0, contentSize.height - layoutMeasurement.height);
-          }
-        }}
+        // Plain (JS-thread) onScroll alongside `sharedValues` above — keeps the helper's `maxScrollY`
+        // in sync (for its bottom-bounce guard); everything else reads the UI-thread `scrollY`.
+        onScroll={onListScroll}
         data={gridData}
         estimatedItemSize={estimatedCardHeight(cardWidth)}
         keyExtractor={(item) => String(item.id)}
