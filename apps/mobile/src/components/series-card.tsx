@@ -425,6 +425,7 @@ export function SeriesCard({
       enabled={menuEnabled}
       title={entry.title}
       cover={entry.cover}
+      coverAspect={coverAspect}
       favorited={favorited}
       inLibrary={inLibrary}
       onToggleFavorite={toggleFavorite}

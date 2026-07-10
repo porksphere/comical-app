@@ -17,6 +17,8 @@ export type SeriesCardMenuProps = {
   /** Cover URL. Unused on Android (the dropdown has no preview surface); accepted so the prop shape
    *  matches the iOS variant, whose lifted preview shows it. */
   cover?: string;
+  /** Cover aspect ratio. Unused on Android; accepted so the prop shape matches the iOS variant. */
+  coverAspect?: number;
   /** `null` while the status check is still loading — the action is shown disabled until it resolves. */
   favorited: boolean | null;
   inLibrary: boolean | null;

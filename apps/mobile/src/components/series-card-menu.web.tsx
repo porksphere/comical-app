@@ -23,6 +23,8 @@ export type SeriesCardMenuProps = {
   title?: string;
   /** Cover URL. Unused on web; accepted so the prop shape matches the iOS variant's lifted preview. */
   cover?: string;
+  /** Cover aspect ratio. Unused on web; accepted so the prop shape matches the iOS variant. */
+  coverAspect?: number;
   /** `null` while the status check is still loading — the row is shown disabled until it resolves. */
   favorited: boolean | null;
   inLibrary: boolean | null;

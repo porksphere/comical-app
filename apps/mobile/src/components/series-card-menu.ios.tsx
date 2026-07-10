@@ -6,6 +6,7 @@ import { disabled as disabledModifier } from '@expo/ui/swift-ui/modifiers';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 
 /**
  * iOS variant of the per-card quick-actions menu. Android uses `series-card-menu.tsx` (@expo/ui
@@ -24,6 +25,9 @@ export type SeriesCardMenuProps = {
   title: string;
   /** Cover URL, shown in the preview (falls back to an empty placeholder box when absent). */
   cover?: string;
+  /** The cover's real (capped) aspect ratio, so the preview shows the cover at its true shape rather
+   *  than a forced 2:3. Falls back to the 2:3 default until the cover has loaded. */
+  coverAspect?: number;
   /** `null` while the status check is still loading — the action is disabled until it resolves. */
   favorited: boolean | null;
   inLibrary: boolean | null;
@@ -36,13 +40,19 @@ export type SeriesCardMenuProps = {
 // the title to wrap over a couple of lines, without the preview ballooning across the screen.
 const PREVIEW_WIDTH = 200;
 
-function PreviewCard({ title, cover }: { title: string; cover?: string }) {
+function PreviewCard({ title, cover, coverAspect }: { title: string; cover?: string; coverAspect?: number }) {
+  const aspect = coverAspect ?? DEFAULT_THUMB_ASPECT;
   return (
     <ThemedView type="backgroundElement" style={styles.preview}>
       {cover ? (
-        <Image source={{ uri: cover }} style={styles.previewCover} contentFit="cover" cachePolicy="memory-disk" />
+        <Image
+          source={{ uri: cover }}
+          style={[styles.previewCover, { aspectRatio: aspect }]}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+        />
       ) : (
-        <View style={[styles.previewCover, styles.previewCoverEmpty]} />
+        <View style={[styles.previewCover, styles.previewCoverEmpty, { aspectRatio: aspect }]} />
       )}
       <ThemedText type="small" style={styles.previewTitle}>
         {title}
@@ -55,6 +65,7 @@ export function SeriesCardMenu({
   enabled,
   title,
   cover,
+  coverAspect,
   favorited,
   inLibrary,
   onToggleFavorite,
@@ -75,7 +86,7 @@ export function SeriesCardMenu({
         </ContextMenu.Trigger>
         <ContextMenu.Preview>
           <RNHostView matchContents>
-            <PreviewCard title={title} cover={cover} />
+            <PreviewCard title={title} cover={cover} coverAspect={coverAspect} />
           </RNHostView>
         </ContextMenu.Preview>
         <ContextMenu.Items>
@@ -104,13 +115,15 @@ export function SeriesCardMenu({
 const styles = StyleSheet.create({
   preview: {
     width: PREVIEW_WIDTH,
-    padding: Spacing.two,
-    gap: Spacing.two,
-    borderRadius: 12,
+    // A generous, even frame around the cover + title so the background reads as a proper card
+    // rather than a thin strip hugging the content.
+    padding: Spacing.three,
+    gap: Spacing.three,
+    borderRadius: 18,
   },
   previewCover: {
     width: '100%',
-    aspectRatio: 2 / 3,
+    // aspectRatio is set inline from the cover's real (capped) shape.
     borderRadius: 10,
     backgroundColor: 'rgba(128,128,128,0.15)',
   },
