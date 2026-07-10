@@ -753,9 +753,17 @@ function PageThumb({
     const key = thumbDelayKey(thumb);
     setLoaded(resolvedThumbIds.has(key));
     setImageAspect(resolvedThumbAspects.get(key) ?? lastResolvedThumbAspect);
+  }
+
+  // Reset the press-shrink animation to rest on recycle. Kept out of the render-phase reset above
+  // because writing a reanimated shared value during render is disallowed (it trips the strict-mode
+  // "Writing to `value` during component render" warning, seen on every recycle while scrolling); an
+  // effect is the correct place. No flash risk — the shrink is only driven off-rest by a user
+  // expand/collapse (the onLayout below), so a recycled tile is virtually always already at rest.
+  useEffect(() => {
     shrinkProgressSV.value = 1;
     shrinkFromScaleSV.value = 1;
-  }
+  }, [index, shrinkProgressSV, shrinkFromScaleSV]);
 
   // Lazy per-page thumbnail (only the pages a bridge didn't inline, i.e. `thumb === null`). Via
   // react-query so scrolling back to an already-fetched page is instant (cached, in-memory only —

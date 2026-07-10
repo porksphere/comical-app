@@ -274,11 +274,20 @@ export function SeriesCard({
     setMaskStale(maskSwap);
     setTruncated(false);
     setCoverAspect(resolvedCoverAspects.get(entry.id) ?? lastResolvedCoverAspect);
+    resetHeld();
+  }
+
+  // Reset the press-shrink animation to rest on recycle. Unlike the plain-state resets above (React
+  // explicitly allows setState during render), writing a reanimated shared value during render is
+  // disallowed and trips its strict-mode "Writing to `value` during component render" warning — which
+  // fired on every recycle while scrolling. An effect is the correct place. There's no flash risk: the
+  // shrink is only ever driven off-rest by a user expand/collapse (the onLayout below), so a recycled
+  // card is virtually always already at rest, and on a fresh mount the SVs start at these values anyway.
+  useEffect(() => {
     shrinkProgressSV.value = 1;
     shrinkFromScaleSV.value = 1;
     shrinkFromOffsetSV.value = 0;
-    resetHeld();
-  }
+  }, [entry.id, shrinkProgressSV, shrinkFromScaleSV, shrinkFromOffsetSV]);
 
   // Responsive title size matching the reference's mobile/desktop type scale.
   const compact = useIsCompact();
