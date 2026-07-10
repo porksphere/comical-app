@@ -7,6 +7,7 @@ import { useRouter } from 'expo-router';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
+  interpolateColor,
   runOnJS,
   useAnimatedReaction,
   useAnimatedStyle,
@@ -574,6 +575,11 @@ export default function BrowseScreen() {
   const headerStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: headerOffsetY.value }],
   }));
+  // The bar's bottom hairline fades in only once the list is scrolled: at the very top the bar reads
+  // as part of the page (no divider), then the line appears to separate it from the content beneath.
+  const headerBorderStyle = useAnimatedStyle(() => ({
+    borderBottomColor: interpolateColor(scrollY.value, [0, 8], ['transparent', theme.hairline]),
+  }));
   // Pull-to-refresh: one overlay spinner (`PullIndicator`) across every platform, fed by whichever
   // hook can source a pull there — all funneling into the same `onRefresh`/`refreshing` pair, so
   // every path runs the identical refetch/min-visible-duration flow:
@@ -603,10 +609,10 @@ export default function BrowseScreen() {
           paddingTop: insets.top,
           height: headerHeight,
           backgroundColor: theme.background,
-          borderBottomColor: theme.hairline,
           pointerEvents: 'box-none',
         },
         headerStyle,
+        headerBorderStyle,
       ]}>
       {/* Inner row capped to the content width so the selectors line up with the
           grid below, while the bar background stays full-bleed. */}
@@ -860,9 +866,9 @@ export default function BrowseScreen() {
         // header/footer bleed Spacing.four back out so their self-padded children line up.
         columnWrapperStyle={{ gap: GRID_COLUMN_GAP }}
         contentContainerStyle={{
-          // Reserves the bar's resting height so the first row starts just below it — see the
-          // list's leading comment above.
-          paddingTop: headerHeight,
+          // Reserves the bar's resting height so the first row starts just below it (see the list's
+          // leading comment above), plus a little breathing room so content doesn't butt against the bar.
+          paddingTop: headerHeight + Spacing.three,
           paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
           paddingLeft: sidePad,
           paddingRight: sidePad,
