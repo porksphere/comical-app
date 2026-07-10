@@ -1,22 +1,22 @@
+import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect } from 'react';
-import { BackHandler, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
-import Animated, { Easing, interpolate, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { BackHandler, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import Animated, { Easing, interpolate, runOnJS, useAnimatedProps, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { use$ } from '@legendapp/state/react';
 
 import { CheckIcon, PlusIcon, StarIcon, type IconProps } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useFavorite } from '@/hooks/use-favorite';
 import { useLibrary } from '@/hooks/use-library';
-import { useTheme } from '@/hooks/use-theme';
+import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { closeSeriesCardMenu, seriesCardMenu$, type SeriesCardMenuRequest } from '@/lib/series-card-menu';
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
 
 const EDGE_PAD = 12; // keep the whole thing off the screen edges
 const GAP = 10; // between the lifted card and the menu
@@ -24,7 +24,14 @@ const LIFT_SCALE = 1.06; // how much the pressed card grows as it lifts
 const MENU_WIDTH = 240;
 const ROW_HEIGHT = 48;
 const MENU_PAD_V = Spacing.one;
-const BACKDROP_OPACITY = 0.55;
+// Blur strengths (0–100). The backdrop ramps in; the menu is a static frosted panel faded in by its
+// own entrance (opacity/scale).
+const BACKDROP_BLUR = 40;
+const MENU_BLUR = 70;
+// A faint extra darkening over the backdrop blur so content reads as pushed back in both themes.
+const BACKDROP_TINT_OPACITY = 0.18;
+// Android's blur is the experimental Dimezis path; a no-op elsewhere.
+const ANDROID_BLUR = Platform.OS === 'android' ? ('dimezisBlurView' as const) : undefined;
 
 /**
  * Root-mounted host for the native card context menu (the iOS / X hold-down): a dimmed backdrop, the
@@ -45,6 +52,8 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const { width: winW, height: winH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
+  const scheme = useActiveColorScheme();
+  const menuTint = scheme === 'dark' ? 'dark' : 'light';
   const progress = useSharedValue(0);
 
   const { favorited, toggle: toggleFavorite } = useFavorite(bridgeId, entry.id);
@@ -99,7 +108,9 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   if (unionBottom > bottomLimit) shift = bottomLimit - unionBottom;
   if (unionTop + shift < topLimit) shift = topLimit - unionTop;
 
-  const backdropStyle = useAnimatedStyle(() => ({ opacity: progress.value * BACKDROP_OPACITY }));
+  // Backdrop: ramp the blur in with progress, plus a faint darkening layer over it.
+  const backdropBlurProps = useAnimatedProps(() => ({ intensity: progress.value * BACKDROP_BLUR }));
+  const backdropTintStyle = useAnimatedStyle(() => ({ opacity: progress.value * BACKDROP_TINT_OPACITY }));
   const previewStyle = useAnimatedStyle(() => ({
     transform: [
       { translateY: shift * progress.value },
@@ -126,8 +137,16 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-      {/* Dimmed, tap-to-dismiss backdrop. */}
-      <AnimatedPressable style={[StyleSheet.absoluteFill, styles.backdrop, backdropStyle]} onPress={dismiss} />
+      {/* Blurred, tap-to-dismiss backdrop (blur ramps in; a faint dark layer adds contrast). */}
+      <Pressable style={StyleSheet.absoluteFill} onPress={dismiss}>
+        <AnimatedBlurView
+          tint="dark"
+          experimentalBlurMethod={ANDROID_BLUR}
+          animatedProps={backdropBlurProps}
+          style={StyleSheet.absoluteFill}
+        />
+        <Animated.View style={[StyleSheet.absoluteFill, styles.backdropTint, backdropTintStyle]} />
+      </Pressable>
 
       {/* The lifted card preview — a copy of the pressed card at its own on-screen rect, with the
           full (unclamped) title revealed. */}
@@ -144,9 +163,13 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
         </ThemedText>
       </Animated.View>
 
-      {/* The actions menu. */}
+      {/* The actions menu — a frosted (blurred) panel. */}
       <Animated.View style={[styles.menuWrap, { left: menuLeft, top: menuTop, width: menuW }, menuStyle]}>
-        <ThemedView type="backgroundPanel" style={styles.menu}>
+        <BlurView
+          tint={menuTint}
+          intensity={MENU_BLUR}
+          experimentalBlurMethod={ANDROID_BLUR}
+          style={[styles.menu, { borderColor: theme.backgroundSelected }]}>
           <MenuRow
             label={inLibrary ? 'Remove from Library' : 'Add to Library'}
             Icon={inLibrary ? CheckIcon : PlusIcon}
@@ -162,7 +185,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
             active={!!favorited}
             onPress={() => act(toggleFavorite)}
           />
-        </ThemedView>
+        </BlurView>
       </Animated.View>
     </View>
   );
@@ -197,7 +220,7 @@ function MenuRow({
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
+  backdropTint: {
     backgroundColor: '#000000',
   },
   preview: {
@@ -222,17 +245,20 @@ const styles = StyleSheet.create({
   },
   menuWrap: {
     position: 'absolute',
+    // Shadow lives on the wrap (not the blur panel, which clips it with overflow: hidden), following
+    // its rounded bounds so the frosted menu reads as floating.
+    borderRadius: 14,
+    shadowColor: '#000000',
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
   },
   menu: {
     borderRadius: 14,
     paddingVertical: MENU_PAD_V,
     overflow: 'hidden',
-    // Menu shadow so it reads as floating over the dim.
-    shadowColor: '#000000',
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 10,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   row: {
     flexDirection: 'row',
