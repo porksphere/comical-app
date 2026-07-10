@@ -10,6 +10,13 @@ import { Spacing } from '@/constants/theme';
 import type { SeriesEntry } from '@/data/types';
 import { DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 
+// TEMPORARY DIAGNOSTIC (2026-07-10): the per-card SwiftUI Host + ContextMenu is the prime suspect for
+// the remaining iOS scroll lag — a native context-menu host mounted for every grid cell. With this
+// true, cards render with NO native menu, so we can A/B scrolling on-device against the same build's
+// previous behavior. If scrolling is smooth with this on, the host is confirmed as the cost and the
+// real fix is a single shared long-press menu (which trades away the lifted preview). Then set false.
+const DISABLE_NATIVE_CARD_MENU = true;
+
 /**
  * iOS variant of the per-card quick-actions menu. Android uses `series-card-menu.tsx` (@expo/ui
  * `MenuView` → a Compose dropdown, which has no lifted preview) and web `series-card-menu.web.tsx`.
@@ -66,7 +73,9 @@ function PreviewCard({ title, cover, coverAspect }: { title: string; cover?: str
 export function SeriesCardMenu({ enabled, armed, bridgeId, entry, coverAspect, children }: SeriesCardMenuProps) {
   const { status, togglesRef, onStatus } = useCardMenuStatus();
 
-  if (!enabled) return <>{children}</>;
+  // Diagnostic: render the bare card with no SwiftUI context-menu host. See the flag's comment above.
+  // (Hook above still runs — it's just useState/useRef, so hook order stays valid — but nothing mounts.)
+  if (DISABLE_NATIVE_CARD_MENU || !enabled) return <>{children}</>;
 
   return (
     <>
