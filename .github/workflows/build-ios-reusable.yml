@@ -29,11 +29,19 @@ jobs:
     runs-on: macos-26
     outputs:
       version: ${{ steps.meta.outputs.version }}
-    # Read by the Sentry Expo config plugin's Xcode build-phase script (injected
-    # during `expo prebuild` below) so it can upload sourcemaps/dSYMs during the
-    # archive step. A missing/empty token makes that step no-op rather than fail.
+    # SENTRY_AUTH_TOKEN: read by the Sentry Expo config plugin's Xcode
+    # build-phase script (injected during `expo prebuild` below) so it can upload
+    # sourcemaps/dSYMs during the archive step. A missing/empty token makes that
+    # step no-op rather than fail.
+    #
+    # CCACHE_DIR: pins ccache's cache to a fixed, cacheable path. The
+    # expo-build-properties `ios.ccacheEnabled` flag (set in app.json) makes the
+    # generated Podfile compile C/C++/Obj-C++ through ccache; caching this dir
+    # across runs turns the otherwise-clean xcodebuild archive into a mostly
+    # incremental compile even though `expo prebuild` regenerates ios/ each time.
     env:
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
       - uses: actions/checkout@v4
         with:
@@ -49,6 +57,58 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+
+      # --- Cache RESTORE (all branches) ------------------------------------
+      # Only `main` writes caches (the save steps at the end are gated on it);
+      # every other ref restores read-only. GitHub lets a branch/PR run read the
+      # default-branch cache, so the `restore-keys` prefixes below match main's
+      # newest entry and give feature branches a warm start — while keeping the
+      # shared 10 GB budget from being thrashed by per-branch writes (which would
+      # LRU-evict main's warm cache and slow everyone down).
+
+      # Bun's global module cache — speeds both the root install and the
+      # external/comical submodule install.
+      - name: Restore Bun modules
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-ios-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-ios-
+
+      # CocoaPods CDN spec + downloaded pod source cache — trims `pod install`.
+      - name: Restore CocoaPods
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/Library/Caches/CocoaPods
+          key: pods-ios-${{ hashFiles('bun.lock') }}
+          restore-keys: pods-ios-
+
+      # ccache — the big one. main saves a fresh per-commit entry; branches fall
+      # back to the newest via restore-keys and only recompile their delta.
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-ios-${{ hashFiles('bun.lock') }}-${{ github.sha }}
+          restore-keys: |
+            ccache-ios-${{ hashFiles('bun.lock') }}-
+            ccache-ios-
+
+      # ccache is preinstalled on GitHub's macOS images; guard just in case.
+      # Sloppiness settings let cache entries survive a fresh checkout: prebuild
+      # rewrites ios/ every run, so header ctime/mtime change even when content
+      # doesn't — without these, ccache would treat every header as modified and
+      # never hit. file_clone uses fast APFS copies for the cached objects.
+      # 2 GB cap keeps main's combined footprint (ccache + Pods + Bun, fresh per
+      # commit) comfortably under the repo's 10 GB cache budget.
+      - name: Configure ccache
+        run: |
+          set -euo pipefail
+          command -v ccache >/dev/null || brew install ccache
+          ccache --max-size=2G
+          ccache --set-config=sloppiness=clang_index_store,include_file_ctime,include_file_mtime,ivfsoverlay,pch_defines,modules,system_headers,time_macros,gcno_cwd
+          ccache --set-config=file_clone=true
+          ccache --zero-stats
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -100,6 +160,10 @@ jobs:
           WORKSPACE=$(ls -d *.xcworkspace | head -1)
           SCHEME=$(basename "$WORKSPACE" .xcworkspace)
           echo "Building workspace=$WORKSPACE scheme=$SCHEME"
+          # DEBUG_INFORMATION_FORMAT=dwarf skips the dSYM generation pass — the
+          # Sentry upload no-ops without SENTRY_AUTH_TOKEN, so nothing consumes
+          # dSYMs here (switch back to dwarf-with-dsym once Sentry is wired up).
+          # COMPILER_INDEX_STORE_ENABLE=NO drops CI-useless source indexing.
           xcodebuild \
             -workspace "$WORKSPACE" \
             -scheme "$SCHEME" \
@@ -110,7 +174,13 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            DEVELOPMENT_TEAM=""
+            DEVELOPMENT_TEAM="" \
+            DEBUG_INFORMATION_FORMAT=dwarf \
+            COMPILER_INDEX_STORE_ENABLE=NO
+
+      - name: Report ccache stats
+        if: always()
+        run: ccache --show-stats --verbose || ccache --show-stats
 
       - name: Package unsigned IPA
         run: |
@@ -130,3 +200,28 @@ jobs:
           name: comical-ios-unsigned-ipa
           path: ${{ runner.temp }}/comical-unsigned.ipa
           if-no-files-found: error
+
+      # --- Cache SAVE (main only) ------------------------------------------
+      # Persist the freshly-populated caches from the default branch only, so
+      # the shared 10 GB budget holds one authoritative warm cache instead of a
+      # per-branch pile that evicts it. Feature branches restore these read-only.
+      - name: Save ccache
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-ios-${{ hashFiles('bun.lock') }}-${{ github.sha }}
+
+      - name: Save Bun modules
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-ios-${{ hashFiles('bun.lock') }}
+
+      - name: Save CocoaPods
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/Library/Caches/CocoaPods
+          key: pods-ios-${{ hashFiles('bun.lock') }}

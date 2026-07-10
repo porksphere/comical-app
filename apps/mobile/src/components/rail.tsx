@@ -289,7 +289,13 @@ export function Rail({
         <AnimatedLegendList
           ref={listRef}
           horizontal
-          style={{ minHeight: stripMinHeight }}
+          // iOS only: let content escape the strip's vertical bounds so a long-pressed card's lifted
+          // context-menu preview isn't clipped at the top. The strip is short (just card height), so
+          // unlike the full-height vertical grid it has no headroom for the lift — `overflow: visible`
+          // turns off the scroll view's clipsToBounds so the system preview can draw above it. Kept
+          // iOS-only: on web/Android the horizontal scroller must keep clipping (web relies on it to
+          // not overflow the page; Android's menu is a dropdown with no lift to clear anyway).
+          style={[{ minHeight: stripMinHeight }, Platform.OS === 'ios' && { overflow: 'visible' }]}
           data={section.items}
           keyExtractor={(it) => it.id}
           // Recycle-safe now (SeriesCard resets its per-item state on entry change), so reuse card

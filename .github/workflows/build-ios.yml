@@ -18,10 +18,43 @@ on:
     paths:
       - 'apps/**'
       - 'packages/**'
+      # On-device runtime submodule pointer — a bump changes the built app.
+      - 'external/comical'
       - 'package.json'
       - 'bun.lock'
       - '.github/workflows/build-ios.yml'
       - '.github/workflows/build-ios-reusable.yml'
+      # Exclude docs-only and eas.json changes. These negations are evaluated
+      # after the positives above, so a commit touching ONLY markdown, the docs
+      # dir, or eas.json won't fire an (expensive, macOS) build; a mixed commit
+      # still does. (eas.json isn't used by CI — it does bare `expo prebuild`.)
+      - '!**/*.md'
+      - '!apps/mobile/docs/**'
+      - '!apps/mobile/eas.json'
+  # PR builds verify the branch compiles and produce a downloadable IPA artifact.
+  # They read main's warm caches (see the reusable workflow) but never write
+  # them, and the rolling `publish` job below is gated to main so a PR can't
+  # clobber the ios-latest channel.
+  pull_request:
+    # `closed` is included so the cleanup job can tear down the per-PR release
+    # when the PR is merged/closed; the build + publish-pr jobs skip that action.
+    types: [opened, synchronize, reopened, closed]
+    paths:
+      - 'apps/**'
+      - 'packages/**'
+      # On-device runtime submodule pointer — a bump changes the built app.
+      - 'external/comical'
+      - 'package.json'
+      - 'bun.lock'
+      - '.github/workflows/build-ios.yml'
+      - '.github/workflows/build-ios-reusable.yml'
+      # Exclude docs-only and eas.json changes. These negations are evaluated
+      # after the positives above, so a commit touching ONLY markdown, the docs
+      # dir, or eas.json won't fire an (expensive, macOS) build; a mixed commit
+      # still does. (eas.json isn't used by CI — it does bare `expo prebuild`.)
+      - '!**/*.md'
+      - '!apps/mobile/docs/**'
+      - '!apps/mobile/eas.json'
 
 concurrency:
   group: ios-${{ github.ref }}
@@ -34,11 +67,17 @@ permissions:
 
 jobs:
   build:
+    # Skip the (expensive, macOS) build when a PR merely closes — cleanup-pr
+    # handles that event and needs no IPA.
+    if: github.event.action != 'closed'
     uses: ./.github/workflows/build-ios-reusable.yml
     secrets: inherit
 
   publish:
     needs: build
+    # Rolling ios-latest channel is main-only; PR/branch builds stop at the
+    # uploaded artifact so they can't overwrite the AltStore source.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -139,12 +178,27 @@ jobs:
               }]
             }' > "$RUNNER_TEMP/apps.json"
 
+          # meta.json fragment consumed by refresh-ios-dev-source.sh to place
+          # main at versions[0] of the aggregate ios-dev source. `sort` is the
+          # run number (same one baked into $FULL_VERSION) so PRs order by it.
+          jq -n \
+            --arg version "$FULL_VERSION" \
+            --arg date "$DATE" \
+            --arg desc "main (${GITHUB_SHA:0:7})" \
+            --arg dl "${BASE}/comical-unsigned.ipa" \
+            --argjson size "$SIZE" \
+            --argjson sort "$GITHUB_RUN_NUMBER" \
+            '{version: $version, date: $date, localizedDescription: $desc,
+              downloadURL: $dl, size: $size, channel: "main", sort: $sort}' \
+            > "$RUNNER_TEMP/meta.json"
+
           # Recreate the rolling tag/release so the URLs above stay stable.
           gh release delete ios-latest --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
           gh release create ios-latest \
             "$IPA" \
             "$RUNNER_TEMP/apps.json" \
             "$RUNNER_TEMP/icon.png" \
+            "$RUNNER_TEMP/meta.json" \
             --repo "$GITHUB_REPOSITORY" \
             --title "Comical iOS (latest unsigned IPA)" \
             --notes "Unsigned IPA for SideStore/AltStore (re-signed on-device with your free Apple ID).
@@ -156,3 +210,110 @@ jobs:
           \`${BASE}/comical-unsigned.ipa\`
 
           <!-- built-sha: ${GITHUB_SHA} -->"
+
+  # Per-PR IPA host. Each open PR gets an `ios-pr-<N>` prerelease holding just
+  # the IPA + a `meta.json` fragment — NOT its own source. The refresh-dev-source
+  # job aggregates every open PR (plus main) into the single stable `ios-dev`
+  # source, so you add ONE source once instead of one per branch. The app keeps
+  # the production bundle id, so a dev build replaces Comical on device (pick a
+  # version in SideStore to switch). cleanup-pr deletes this release on close.
+  # Fork PRs get a read-only token and skip publishing (still built/verified).
+  publish-pr:
+    needs: build
+    # Same-repo PRs only: fork PRs get a read-only token (can't create Releases),
+    # so skip publishing for them — the build job still verifies they compile.
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.action != 'closed'
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download unsigned IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: ${{ runner.temp }}/ipa
+
+      - name: Publish IPA + meta to the ios-pr-<N> Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+          PR: ${{ github.event.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          TAG="ios-pr-${PR}"
+          IPA="$RUNNER_TEMP/ipa/comical-unsigned.ipa"
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
+          SIZE=$(stat -c%s "$IPA")
+          DATE=$(date -u +%Y-%m-%d)
+
+          # meta.json fragment consumed by refresh-ios-dev-source.sh. `sort` is
+          # this run's number (same one baked into $VERSION) so PRs order newest
+          # first in the aggregate source. localizedDescription = PR title; jq
+          # JSON-escapes it safely (titles may contain quotes/$/backticks).
+          jq -n \
+            --arg version "$VERSION" \
+            --arg date "$DATE" \
+            --arg desc "$(printf 'PR #%s: %s' "$PR" "$PR_TITLE")" \
+            --arg dl "${BASE}/comical-unsigned.ipa" \
+            --argjson size "$SIZE" \
+            --argjson sort "$GITHUB_RUN_NUMBER" \
+            '{version: $version, date: $date, localizedDescription: $desc,
+              downloadURL: $dl, size: $size, channel: "pr", sort: $sort}' \
+            > "$RUNNER_TEMP/meta.json"
+
+          # Recreate the per-PR tag/release (pointed at the PR head) so the IPA
+          # URL stays stable across pushes to the PR.
+          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          gh release create "$TAG" \
+            "$IPA" \
+            "$RUNNER_TEMP/meta.json" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$HEAD_SHA" \
+            --prerelease \
+            --title "Comical iOS — PR #${PR}" \
+            --notes "Unsigned IPA for PR #${PR}. Install via the shared dev source
+          (main + all open PRs) — add it once in SideStore/AltStore → Sources → +
+          \`https://github.com/${GITHUB_REPOSITORY}/releases/download/ios-dev/apps.json\`
+          then pick this PR's version. Or grab the IPA directly:
+          \`${BASE}/comical-unsigned.ipa\`
+
+          ⚠️ Same bundle id as the release app — installing this replaces Comical on your device."
+
+  # Tear down the per-PR release + tag when the PR is merged or closed.
+  cleanup-pr:
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete ios-pr-<N> Release + tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.number }}
+        run: gh release delete "ios-pr-${PR}" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+
+  # Regenerate the single stable `ios-dev` source (main at versions[0] + every
+  # open PR) after whichever of the jobs above ran. Enumerates the ios-latest /
+  # ios-pr-* releases and their meta.json fragments — stateless, so a close and
+  # an open converge. Concurrency-locked (no cancel) so overlapping runs from
+  # different PRs serialize instead of clobbering the source.
+  refresh-dev-source:
+    needs: [publish, publish-pr, cleanup-pr]
+    if: >-
+      always()
+      && (needs.publish.result == 'success'
+          || needs.publish-pr.result == 'success'
+          || needs.cleanup-pr.result == 'success')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ios-dev-source
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rebuild ios-dev source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/refresh-ios-dev-source.sh

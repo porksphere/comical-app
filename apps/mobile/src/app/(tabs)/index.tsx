@@ -28,6 +28,7 @@ import { ThemedView } from '@/components/themed-view';
 import { PullIndicator } from '@/components/pull-indicator';
 import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { pageOptions } from '@/data/api';
+import { useDedupedPages } from '@/data/grid-pages';
 import { fetchBrowseScope, homeSectionsQuery, queryKeys, type BrowseScope } from '@/data/queries';
 import { useSelectedBridge } from '@/data/selected-bridge';
 import { isRailLayout, useDataSource, useMockActive } from '@/data/source';
@@ -312,10 +313,10 @@ export default function BrowseScreen() {
   });
 
   const activeGridQuery = isHomeTerminal ? terminalQuery : resultsQuery;
-  const gridItems = useMemo<SeriesEntry[]>(
-    () => activeGridQuery.data?.pages.flatMap((p) => p.items) ?? [],
-    [activeGridQuery.data],
-  );
+  // De-duplicate by series id while flattening the infinite pages: live-reordering browse feeds
+  // (e.g. a trending / recently-updated list paginated by offset) can return the same series on
+  // two adjacent pages, which would collide on the list `keyExtractor`. See useDedupedPages.
+  const gridItems = useDedupedPages(activeGridQuery.data);
   const gridError =
     resultsScope && resultsQuery.isError && (!resultsQuery.data || resultsQuery.isPlaceholderData)
       ? friendlyError(resultsQuery.error, "Couldn't load results. Try again.")
@@ -922,7 +923,8 @@ function HomeGridBlock({
     });
   }, [section, mock, bridgeId, queryClient]);
 
-  const items = query.data?.pages.flatMap((p) => p.items) ?? section.items;
+  const flat = useDedupedPages(query.data);
+  const items = query.data ? flat : section.items;
   const hasNextPage = !!query.hasNextPage;
   const loading = query.isFetchingNextPage;
   const loadMore = () => {

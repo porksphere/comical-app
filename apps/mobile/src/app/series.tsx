@@ -22,6 +22,7 @@ import { useDataSource, useMockActive } from '@/data/source';
 import { firstChapterInReadingOrder } from '@/lib/chapter-order';
 import { resetPreferredGroup, usePreferredGroup } from '@/lib/preferred-group';
 import { DIRECT_CHAPTER_ID, type SeriesDetail, type TagGroup } from '@/data/types';
+import { useBridgeMap } from '@/hooks/use-bridges';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useFavorite } from '@/hooks/use-favorite';
 import { useHovered } from '@/hooks/use-hovered';
@@ -245,7 +246,20 @@ function SeriesBody({
   // `relatedGroupsDeferred` when the bridge only serves them via a separate,
   // slower endpoint (see source.ts) — fetch that lazily here so the rest of the
   // page never waits on it, and show a rail skeleton in its place meanwhile.
-  const needsRelatedFetch = !!series.relatedGroupsDeferred && !series.relatedGroups;
+  //
+  // But `relatedGroupsDeferred` is set whenever the detail simply lacked inline
+  // related groups, which can't distinguish "deferred to /related" from "this
+  // bridge has none at all" — so gate the lazy fetch (and its rail skeleton) on
+  // the bridge actually advertising the "related-series" capability. Without
+  // this, a direct source with no related rails still showed a rail skeleton
+  // footer, which made `PageThumbList` collapse the page grid
+  // behind "Show all" for nothing — the page thumbnails past the first
+  // `cols * COLLAPSED_ROWS` (20 on wide screens) appeared cut off.
+  const { byId: bridgeById } = useBridgeMap();
+  const relatedCapable = bridgeId
+    ? (bridgeById.get(bridgeId)?.capabilities.includes('related-series') ?? false)
+    : false;
+  const needsRelatedFetch = relatedCapable && !!series.relatedGroupsDeferred && !series.relatedGroups;
   const { data: fetchedRelated, isLoading: relatedLoading } = useQuery(
     relatedGroupsQuery(ds, mock, bridgeId ?? '', series.id, needsRelatedFetch),
   );
