@@ -95,20 +95,19 @@ jobs:
             ccache-ios-
 
       # ccache is NOT preinstalled on the macos-26 image, so install it. During
-      # the archive below the compiler is routed through React Native's
-      # ccache-clang.sh wrapper (wired up by the Podfile because app.json's
-      # expo-build-properties ios.ccacheEnabled is set). That wrapper pins
-      # CCACHE_CONFIGPATH to RN's OWN bundled ccache.conf (sloppiness / depend_mode
-      # / file_clone / inode_cache), so any config we set on $CCACHE_DIR's conf
-      # here does NOT apply at compile time. The cache dir + max size are instead
-      # handed to xcodebuild as build settings (see the archive step) — the only
-      # channel Xcode propagates into the compiler environment. We just zero stats
-      # so "Report ccache stats" shows this run's hits/misses against our dir.
+      # the archive the compiler is routed through React Native's ccache-clang.sh
+      # wrapper (wired up by the Podfile because app.json's expo-build-properties
+      # ios.ccacheEnabled is set). The wrapper pins CCACHE_CONFIGPATH to RN's OWN
+      # bundled ccache.conf and does not read CCACHE_DIR — and Xcode does not
+      # propagate our CCACHE_DIR env (nor command-line build settings) into the
+      # per-compile environment. So the ONLY reliable way to point compile-time
+      # ccache at the dir we cache is to add cache_dir to that bundled conf; see
+      # the "Point ccache.conf at the cached dir" step after deps are installed.
+      # Here we just install ccache and zero stats for the report.
       - name: Install + prep ccache
         run: |
           set -euo pipefail
           command -v ccache >/dev/null || brew install ccache
-          ccache --max-size=3G
           ccache --zero-stats
 
       - name: Install dependencies
@@ -147,6 +146,27 @@ jobs:
           echo "Patching $PLIST -> CFBundleShortVersionString=${{ steps.ver.outputs.full }}"
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${{ steps.ver.outputs.full }}" "$PLIST"
 
+      # THE ccache fix (must be the last thing before the archive so nothing
+      # reinstalls node_modules after it). RN's ccache-clang.sh wrapper pins
+      # CCACHE_CONFIGPATH to react-native's bundled scripts/xcode/ccache.conf,
+      # which ships without cache_dir — so compile-time ccache falls back to its
+      # default dir, which we don't cache (0 hits every run). Neither our
+      # CCACHE_DIR env nor xcodebuild build settings reach the per-compile
+      # environment; adding cache_dir to that conf is the one knob that does.
+      # Patch every copy under node_modules (bun may hoist RN to the repo root or
+      # keep it under apps/mobile); skip the comical submodule's own RN.
+      - name: Point ccache.conf at the cached dir
+        run: |
+          set -euo pipefail
+          found=0
+          while IFS= read -r conf; do
+            printf '\ncache_dir = %s\nmax_size = 3G\n' "$CCACHE_DIR" >> "$conf"
+            echo "patched $conf"
+            found=$((found + 1))
+          done < <(find . -path '*/react-native/scripts/xcode/ccache.conf' \
+                          -not -path '*/external/comical/*' -not -path '*/.git/*')
+          [ "$found" -gt 0 ] || { echo "ERROR: react-native ccache.conf not found"; exit 1; }
+
       - name: Build unsigned archive
         working-directory: apps/mobile/ios
         run: |
@@ -158,14 +178,8 @@ jobs:
           # Sentry upload no-ops without SENTRY_AUTH_TOKEN, so nothing consumes
           # dSYMs here (switch back to dwarf-with-dsym once Sentry is wired up).
           # COMPILER_INDEX_STORE_ENABLE=NO drops CI-useless source indexing.
-          #
-          # CCACHE_DIR / CCACHE_MAXSIZE are passed as BUILD SETTINGS, not env vars.
-          # RN's ccache-clang.sh wrapper runs the compiler through ccache, but
-          # Xcode's build system only propagates build settings into the compiler
-          # environment — a plain CCACHE_DIR env var never reaches it, so ccache
-          # would silently use its default dir (which we don't cache), giving 0
-          # hits every run. As build settings they're exported alongside RN's own
-          # CCACHE_BINARY, so ccache reads/writes the .ccache dir we restore+save.
+          # (ccache dir is set via RN's ccache.conf in the step above, not here —
+          # xcodebuild build settings do not reach the per-compile environment.)
           xcodebuild \
             -workspace "$WORKSPACE" \
             -scheme "$SCHEME" \
@@ -178,9 +192,7 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM="" \
             DEBUG_INFORMATION_FORMAT=dwarf \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            CCACHE_DIR="$CCACHE_DIR" \
-            CCACHE_MAXSIZE=3G
+            COMPILER_INDEX_STORE_ENABLE=NO
 
       - name: Report ccache stats
         if: always()
