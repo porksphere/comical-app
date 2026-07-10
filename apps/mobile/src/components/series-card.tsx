@@ -242,17 +242,10 @@ export function SeriesCard({
   // non-scaling held scrim on the cover — see the ring/peek/scrim below.
   const isWeb = Platform.OS === 'web';
 
-  // The context menu's favorite/library status checks are armed lazily: they only run once the user
-  // has actually interacted with THIS card (`active` = held on touch / hovered on web), so a full
-  // grid doesn't fire two status checks per cell. Once armed it stays armed (so reopening is instant)
-  // until this instance is recycled to a different entry, which resets it below. `armed` is handed to
-  // SeriesCardMenu, which mounts the actual status queries (SeriesCardMenuStatus) only then — keeping
-  // the two react-query observers entirely off the scroll hot path. The menu itself is only attached
-  // when there's a real bridge to act against (`bridgeId` — absent in mock mode).
-  const [armed, setArmed] = useState(false);
-  useEffect(() => {
-    if (active) setArmed(true);
-  }, [active]);
+  // The quick-actions menu is only offered when there's a real bridge to act against (`bridgeId` —
+  // absent in mock mode). Its status queries no longer touch the card at all: they run inside the
+  // shared `SeriesActionsMenu`, which only mounts while the menu is open (native long-press / web
+  // 3-dot), so a scrolling grid pays nothing for them. See `series-card-menu.tsx`.
   const menuEnabled = !!bridgeId;
 
   // Recycle-safety: the browse grid and rails now reuse card instances
@@ -294,9 +287,6 @@ export function SeriesCard({
     setTruncated(false);
     setCoverAspect(resolvedCoverAspects.get(entry.id) ?? lastResolvedCoverAspect);
     resetHeld();
-    // Re-arm from scratch for the new entry — the previous entry's favorite/library status must not
-    // carry over, and the checks should only re-run once the user interacts with this new slot.
-    setArmed(false);
   }
 
   // Reset the press-shrink animation to rest on recycle. Unlike the plain-state resets above (React
@@ -414,10 +404,10 @@ export function SeriesCard({
   return (
     <SeriesCardMenu
       enabled={menuEnabled}
-      armed={armed}
       bridgeId={bridgeId}
       entry={entry}
       coverAspect={coverAspect}>
+      {({ onLongPress }) => (
       <Link
       // Force a new stack entry every time: expo-router's default `navigate`
       // behavior unwinds to an existing `/series` route already on the stack
@@ -470,6 +460,9 @@ export function SeriesCard({
         ])}
         // Native: sliding off the card keeps it held; release clears it.
         pressRetentionOffset={HOLD_RETENTION}
+        // Native long-press opens the shared quick-actions menu; undefined on web (which uses the
+        // hover 3-dot instead). A long-press suppresses the tap, so it never also navigates.
+        onLongPress={onLongPress}
         {...handlers}>
         {/* The cover top-aligns at its real (capped) aspect ratio — this relayout
             happens ONCE, instantly, the moment the real aspect is known (never
@@ -593,6 +586,7 @@ export function SeriesCard({
         </Animated.View>
       </Pressable>
       </Link>
+      )}
     </SeriesCardMenu>
   );
 }

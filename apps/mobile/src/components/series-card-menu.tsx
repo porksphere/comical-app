@@ -1,77 +1,38 @@
-import { useMemo } from 'react';
-import { MenuView, type MenuAction } from '@expo/ui/community/menu';
+import { useCallback } from 'react';
 
-import { SeriesCardMenuStatus, useCardMenuStatus } from '@/components/series-card-menu-status';
+import { useOverlay } from '@/components/overlay/overlay';
+import { SeriesActionsMenu } from '@/components/series-card-actions-menu';
 import type { SeriesEntry } from '@/data/types';
 
 /**
- * Per-card quick actions (add-to-library / favorite), presented as an OS-native context menu on a
- * long-press. Web has its own affordance — a hover-revealed 3-dot button opening the app's overlay
- * menu — so this file is the **native** implementation (Android; iOS has its own `.ios.tsx` with a
- * lifted preview) and `series-card-menu.web.tsx` the web one; all take the same props and wrap the
- * card's rendered tree.
+ * Native (iOS + Android) per-card quick-actions menu. A long-press anywhere on the card opens the
+ * app's shared overlay menu (a bottom sheet) — see `series-card-actions-menu.tsx`. Web has its own
+ * affordance (a hover-revealed 3-dot button), in `series-card-menu.web.tsx`.
  *
- * The favorite/library status queries are deferred: they only run once the card is `armed` (first
- * press-in), via the armed-gated `SeriesCardMenuStatus` — so a scrolling grid of untouched cards
- * pays nothing. See `series-card-menu-status.tsx`.
+ * There is deliberately NO per-card native context-menu host here anymore. Wrapping every grid cell
+ * in a SwiftUI `Host` + `ContextMenu` (the old `.ios.tsx`) mounted a native menu host per cell that
+ * was re-created as LegendList recycled rows — the dominant cause of iOS scroll jank. The long-press
+ * now just opens one shared menu on demand, so scrolling cards pay nothing.
+ *
+ * Children is a render function so the long-press handler lands on the card's OWN Pressable: a
+ * wrapping Pressable would steal the tap from the inner navigation Pressable (RN gives the touch to
+ * the deepest responder), so the handler must be threaded down to it.
  */
 export type SeriesCardMenuProps = {
-  /** When false (no `bridgeId` — e.g. mock mode), render the card with no menu attached. */
+  /** When false (no `bridgeId` — e.g. mock mode), the card renders with no menu (onLongPress undefined). */
   enabled: boolean;
-  /** True once the user has engaged this card (press-in / hover). Gates the status queries. */
-  armed: boolean;
   bridgeId?: string;
   entry: SeriesEntry;
-  /** Cover aspect ratio. Unused here (no preview surface); accepted so the prop shape matches the
-   *  iOS variant, whose lifted preview shows the cover at its true shape. */
+  /** Cover aspect ratio, so the menu header shows the cover at its true shape. */
   coverAspect?: number;
-  children: React.ReactNode;
+  children: (api: { onLongPress?: () => void }) => React.ReactNode;
 };
 
-export function SeriesCardMenu({ enabled, armed, bridgeId, entry, children }: SeriesCardMenuProps) {
-  const { status, togglesRef, onStatus } = useCardMenuStatus();
-
-  // `image` is an SF Symbol name (rendered on iOS); Android draws the `state` checkmark + title
-  // instead. `state: 'on'` marks the current membership so the menu reads as a toggle, and a
-  // still-loading (`null`) status disables the row until the check resolves. Memoized so recycling a
-  // card (new children) doesn't churn the native menu's action props while nothing relevant changed.
-  const actions = useMemo<MenuAction[]>(
-    () => [
-      {
-        id: 'library',
-        title: status.inLibrary ? 'Remove from Library' : 'Add to Library',
-        image: status.inLibrary ? 'checkmark' : 'plus',
-        state: status.inLibrary ? 'on' : 'off',
-        attributes: { disabled: status.inLibrary === null },
-      },
-      {
-        id: 'favorite',
-        title: status.favorited ? 'Unfavorite' : 'Favorite',
-        image: status.favorited ? 'star.fill' : 'star',
-        state: status.favorited ? 'on' : 'off',
-        attributes: { disabled: status.favorited === null },
-      },
-    ],
-    [status.favorited, status.inLibrary],
-  );
-
-  if (!enabled) return <>{children}</>;
-
-  return (
-    <>
-      {armed && bridgeId && (
-        <SeriesCardMenuStatus bridgeId={bridgeId} entry={entry} onStatus={onStatus} togglesRef={togglesRef} />
-      )}
-      <MenuView
-        title={entry.title}
-        shouldOpenOnLongPress
-        actions={actions}
-        onPressAction={({ nativeEvent }) => {
-          if (nativeEvent.event === 'library') togglesRef.current.library();
-          else if (nativeEvent.event === 'favorite') togglesRef.current.favorite();
-        }}>
-        {children}
-      </MenuView>
-    </>
-  );
+export function SeriesCardMenu({ enabled, bridgeId, entry, coverAspect, children }: SeriesCardMenuProps) {
+  const { open } = useOverlay();
+  const onLongPress = useCallback(() => {
+    if (!bridgeId) return;
+    open(() => <SeriesActionsMenu bridgeId={bridgeId} entry={entry} coverAspect={coverAspect} />);
+  }, [open, bridgeId, entry, coverAspect]);
+  return <>{children({ onLongPress: enabled ? onLongPress : undefined })}</>;
 }
