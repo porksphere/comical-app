@@ -118,13 +118,14 @@ it — no adding a new source per branch. Add this URL in SideStore/AltStore →
 
 > `https://github.com/porksphere/comical-app/releases/download/ios-dev/apps.json`
 
-It exposes a single **Comical (dev)** app whose version list is ordered **main first** (the
-canonical "latest"/update target — SideStore picks the latest by array order, not by comparing
-version numbers) followed by each open PR (`PR #<N>: <title>`, newest first). Tap a version in
-SideStore to install that specific build. It uses the **production bundle id**, so a dev build
-**replaces** the installed Comical (they don't coexist) — reinstall `main` from the top of the
-list, or the public `ios-latest` source, to switch back. The public `ios-latest` source stays
-clean (main only), so normal users never get branch-build updates.
+It exposes a single **Comical (dev)** app whose version list is ordered **newest build first**
+(main and every open PR, `PR #<N>: <title>`, sorted by build/run number). SideStore/AltStore pick
+the installable "latest" by array order — not by comparing version numbers — so whatever you built
+most recently is `versions[0]` and installs with one tap; older builds sit below and are still
+selectable from SideStore's version list. It uses the **production bundle id**, so a dev build
+**replaces** the installed Comical (they don't coexist) — install `main`'s entry (or the public
+`ios-latest` source) to switch back. The public `ios-latest` source stays clean (main only), so
+normal users never get branch-build updates.
 
 How it's produced (see `.github/workflows/build-ios.yml` + `.github/scripts/refresh-ios-dev-source.sh`):
 
