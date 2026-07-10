@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View, type GestureResponderEvent } from 'react-native';
 
 import { MoreVerticalIcon } from '@/components/icons/ui-icons';
 import { useAnchoredOverlay } from '@/components/overlay/overlay';
@@ -25,7 +25,7 @@ export type SeriesCardMenuProps = {
   entry: SeriesEntry;
   /** Cover aspect ratio, so the menu header shows the cover at its true shape. */
   coverAspect?: number;
-  children: (api: { onLongPress?: () => void }) => React.ReactNode;
+  children: (api: { onLongPress?: (e: GestureResponderEvent) => void }) => React.ReactNode;
 };
 
 export function SeriesCardMenu({ enabled, bridgeId, entry, coverAspect, children }: SeriesCardMenuProps) {
