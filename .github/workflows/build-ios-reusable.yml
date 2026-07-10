@@ -94,20 +94,21 @@ jobs:
             ccache-ios-${{ hashFiles('bun.lock') }}-
             ccache-ios-
 
-      # ccache is preinstalled on GitHub's macOS images; guard just in case.
-      # Sloppiness settings let cache entries survive a fresh checkout: prebuild
-      # rewrites ios/ every run, so header ctime/mtime change even when content
-      # doesn't — without these, ccache would treat every header as modified and
-      # never hit. file_clone uses fast APFS copies for the cached objects.
-      # 2 GB cap keeps main's combined footprint (ccache + Pods + Bun, fresh per
-      # commit) comfortably under the repo's 10 GB cache budget.
-      - name: Configure ccache
+      # ccache is NOT preinstalled on the macos-26 image, so install it. During
+      # the archive below the compiler is routed through React Native's
+      # ccache-clang.sh wrapper (wired up by the Podfile because app.json's
+      # expo-build-properties ios.ccacheEnabled is set). That wrapper pins
+      # CCACHE_CONFIGPATH to RN's OWN bundled ccache.conf (sloppiness / depend_mode
+      # / file_clone / inode_cache), so any config we set on $CCACHE_DIR's conf
+      # here does NOT apply at compile time. The cache dir + max size are instead
+      # handed to xcodebuild as build settings (see the archive step) — the only
+      # channel Xcode propagates into the compiler environment. We just zero stats
+      # so "Report ccache stats" shows this run's hits/misses against our dir.
+      - name: Install + prep ccache
         run: |
           set -euo pipefail
           command -v ccache >/dev/null || brew install ccache
-          ccache --max-size=2G
-          ccache --set-config=sloppiness=clang_index_store,include_file_ctime,include_file_mtime,ivfsoverlay,pch_defines,modules,system_headers,time_macros,gcno_cwd
-          ccache --set-config=file_clone=true
+          ccache --max-size=3G
           ccache --zero-stats
 
       - name: Install dependencies
@@ -157,6 +158,14 @@ jobs:
           # Sentry upload no-ops without SENTRY_AUTH_TOKEN, so nothing consumes
           # dSYMs here (switch back to dwarf-with-dsym once Sentry is wired up).
           # COMPILER_INDEX_STORE_ENABLE=NO drops CI-useless source indexing.
+          #
+          # CCACHE_DIR / CCACHE_MAXSIZE are passed as BUILD SETTINGS, not env vars.
+          # RN's ccache-clang.sh wrapper runs the compiler through ccache, but
+          # Xcode's build system only propagates build settings into the compiler
+          # environment — a plain CCACHE_DIR env var never reaches it, so ccache
+          # would silently use its default dir (which we don't cache), giving 0
+          # hits every run. As build settings they're exported alongside RN's own
+          # CCACHE_BINARY, so ccache reads/writes the .ccache dir we restore+save.
           xcodebuild \
             -workspace "$WORKSPACE" \
             -scheme "$SCHEME" \
@@ -169,7 +178,9 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM="" \
             DEBUG_INFORMATION_FORMAT=dwarf \
-            COMPILER_INDEX_STORE_ENABLE=NO
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            CCACHE_DIR="$CCACHE_DIR" \
+            CCACHE_MAXSIZE=3G
 
       - name: Report ccache stats
         if: always()
