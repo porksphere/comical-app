@@ -2,7 +2,7 @@ import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
-import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
 import { estimatedCardHeight, SeriesCard, TitlePeek, type CardSize } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
@@ -143,17 +143,6 @@ export function Rail({
   // `sharedValues` prop (below); the peek transform reads it directly — no worklet onScroll needed.
   const scrollX = useSharedValue(0);
 
-  // Fade the rail in from 0 on mount. Rails are keyed by section.id, so a bridge switch remounts
-  // them (the outgoing bridge's home is held by keepPreviousData and may have no carousel at all) —
-  // fading in, combined with the reserved strip height, makes a cold-mounted rail dissolve into its
-  // slot instead of popping. Manual SV + mount effect (not reanimated `entering`, which is flaky on
-  // web / inside LegendList's header) to match the rest of this file's UI-thread animation style.
-  const reveal = useSharedValue(0);
-  useEffect(() => {
-    reveal.value = withTiming(1, { duration: 240, easing: Easing.out(Easing.quad) });
-  }, [reveal]);
-  const revealStyle = useAnimatedStyle(() => ({ opacity: reveal.value }));
-
   // Desktop web only: a horizontal ScrollView (LegendList or FlatList alike) can't be dragged with a
   // mouse — touch swipe and shift+wheel work, but click-and-drag does nothing. Add grab-and-pull
   // drag-to-scroll on the strip's scroll node, and swallow the click that follows a real drag so a
@@ -264,7 +253,7 @@ export function Rail({
   for (let i = 0; i < gridItems.length; i += GRID_COLUMNS) gridRows.push(gridItems.slice(i, i + GRID_COLUMNS));
 
   return (
-    <Animated.View style={[styles.section, peekIndex != null && styles.sectionPeeking, revealStyle]}>
+    <View style={[styles.section, peekIndex != null && styles.sectionPeeking]}>
       <SectionHead title={section.title} onSeeAll={onSeeAll ? () => onSeeAll(section) : undefined} />
       {wide ? (
         <View style={[styles.grid, { paddingHorizontal: STRIP_PAD, gap: stripGap }]}>
@@ -369,7 +358,7 @@ export function Rail({
           ]}
         />
       )}
-    </Animated.View>
+    </View>
   );
 }
 

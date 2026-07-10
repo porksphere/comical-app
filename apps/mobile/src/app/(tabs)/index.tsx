@@ -533,25 +533,58 @@ export default function BrowseScreen() {
   // scope loads — dim the cards to signal the refresh (bridge / page / filter / sort / search).
   const gridUpdating = activeGridQuery.isPlaceholderData;
 
-  // Crossfade the placeholder→fresh handoff (bridge/scope switch) instead of hard-cutting the dim:
-  // the outgoing (kept) content eases down to a dimmed 0.45 while the new data loads, then eases
-  // back to full as it lands — so the swap reads as old fading out / new fading in rather than a
-  // pop. Two signals because the home rails/sections and the grid settle on their own queries
-  // (homeUpdating vs gridUpdating). Driven on the UI thread, and one shared animated style is reused
-  // across every grid cell (no per-cell hook — renderItem isn't a component). The rails themselves
-  // additionally fade in from 0 on mount (see Rail) so a cold-mounted carousel fades into its
-  // reserved height rather than popping.
+  // ── Full-home crossfade on a bridge switch ────────────────────────────────
+  // A source switch is a wholesale change, so dissolve the ENTIRE home (controls + rails + grid,
+  // everything in the list): fade it out, COMMIT the switch only once it's hidden, then fade the new
+  // bridge's home in. Committing at opacity 0 is what makes it seamless for an already-cached bridge
+  // too — its content is available instantly and would otherwise hard-cut before any fade. The commit
+  // is deferred by holding setBridge/setQuery/setSeeAll until the fade-out's completion callback (see
+  // `selectBridge`); until then the OLD bridge stays fully rendered and fades out as itself. The
+  // bridge/page selector (topBar, outside the list) stays put throughout. Within-bridge refinements
+  // (page/filter/sort/search) keep the lighter dim below, suppressed while `switching`.
+  const XFADE_OUT_MS = 140;
+  const XFADE_IN_MS = 200;
+  const homeXfade = useSharedValue(1);
+  const homeXfadeStyle = useAnimatedStyle(() => ({ opacity: homeXfade.value }));
+  const [switching, setSwitching] = useState(false);
+  const [committed, setCommitted] = useState(false);
+  // Run at the bottom of the fade-out (opacity 0): swap to the new bridge here, so the old→new change
+  // is never on screen. `selectBridge` also drops query/seeAll (as it always has) as part of the same
+  // top-level navigation. Stable so the fade-out worklet callback closes over a fixed reference.
+  const commitBridgeTo = useCallback((name: string) => {
+    setBridge(name);
+    setQuery('');
+    setSeeAll(null);
+    setCommitted(true);
+  }, []);
+  // Fade the new bridge's home back in once the switch is COMMITTED and its content is ready —
+  // settled, or errored (so a failed switch reveals its Retry rather than stranding a blank,
+  // opacity-0 home). The `committed` gate stops this firing mid-fade-out, when `homeReady` still
+  // reflects the (settled) outgoing bridge.
+  const homeReady = !!homeError || !!gridError || (!homeUpdating && !gridUpdating);
+  useEffect(() => {
+    if (!switching || !committed || !homeReady) return;
+    homeXfade.value = withTiming(1, { duration: XFADE_IN_MS, easing: Easing.out(Easing.quad) });
+    setSwitching(false);
+    setCommitted(false);
+  }, [switching, committed, homeReady, homeXfade]);
+
+  // ── Within-bridge dim (page/filter/sort/search refinements) ───────────────
+  // A lighter treatment than a full source switch: the kept content eases to a dimmed 0.45 while the
+  // new scope loads, then back to full — "refreshing", not "swapping". Suppressed while `switching`
+  // (the full crossfade above owns a bridge change; this would just fight it). One shared animated
+  // style is reused across every grid cell (no per-cell hook — renderItem isn't a component).
   const REVEAL_DIM = 0.45;
   const REVEAL_MS = 200;
   const homeReveal = useSharedValue(1);
   useEffect(() => {
-    homeReveal.value = withTiming(homeUpdating ? REVEAL_DIM : 1, { duration: REVEAL_MS, easing: Easing.out(Easing.quad) });
-  }, [homeUpdating, homeReveal]);
+    homeReveal.value = withTiming(homeUpdating && !switching ? REVEAL_DIM : 1, { duration: REVEAL_MS, easing: Easing.out(Easing.quad) });
+  }, [homeUpdating, switching, homeReveal]);
   const homeContentStyle = useAnimatedStyle(() => ({ opacity: homeReveal.value }));
   const gridReveal = useSharedValue(1);
   useEffect(() => {
-    gridReveal.value = withTiming(gridUpdating ? REVEAL_DIM : 1, { duration: REVEAL_MS, easing: Easing.out(Easing.quad) });
-  }, [gridUpdating, gridReveal]);
+    gridReveal.value = withTiming(gridUpdating && !switching ? REVEAL_DIM : 1, { duration: REVEAL_MS, easing: Easing.out(Easing.quad) });
+  }, [gridUpdating, switching, gridReveal]);
   const gridCellStyle = useAnimatedStyle(() => ({ opacity: gridReveal.value }));
 
   // Everything shown on the favorites page is, by definition, favorited — so warm the per-series
@@ -626,10 +659,22 @@ export default function BrowseScreen() {
 
   // Switching bridge or page is top-level navigation, so it drops any active
   // search / "See all" drill-down and lands on that page's full rails+grid.
+  // A real bridge change runs through the deferred-commit crossfade (see the crossfade block):
+  // fade the whole home out, then commit (setBridge/setQuery/setSeeAll) at opacity 0 so the swap is
+  // never seen, then fade the new bridge in. A no-op re-tap (or before any bridge resolves) just
+  // commits immediately — nothing to dissolve.
   const selectBridge = (b: string) => {
-    setQuery('');
-    setSeeAll(null);
-    setBridge(b);
+    if (!currentBridge || b === currentBridge.name) {
+      setQuery('');
+      setSeeAll(null);
+      setBridge(b);
+      return;
+    }
+    setSwitching(true);
+    setCommitted(false);
+    homeXfade.value = withTiming(0, { duration: XFADE_OUT_MS, easing: Easing.in(Easing.quad) }, (finished) => {
+      if (finished) runOnJS(commitBridgeTo)(b);
+    });
   };
   const selectPage = (p: string) => {
     setQuery('');
@@ -996,7 +1041,7 @@ export default function BrowseScreen() {
           revealed, rather than the list itself needing to relayout. */}
       {/* Wrapping rather than animating AnimatedLegendList's own `style` directly — LegendList's
           style prop isn't typed for a Reanimated animated style the way Animated.View's is. */}
-      <Animated.View style={[styles.list, listPullStyle]}>
+      <Animated.View style={[styles.list, listPullStyle, homeXfadeStyle]}>
       <AnimatedLegendList
         ref={listRef}
         key={gridKey}
