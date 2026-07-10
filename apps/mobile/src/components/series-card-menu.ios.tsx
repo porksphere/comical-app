@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { ContextMenu, Host, RNHostView, Toggle } from '@expo/ui/swift-ui';
 import { disabled as disabledModifier } from '@expo/ui/swift-ui/modifiers';
 
@@ -36,25 +36,30 @@ export type SeriesCardMenuProps = {
   children: React.ReactNode;
 };
 
-// Width of the lifted preview card. Roughly a grid card's width — enough for the cover to read and
-// the title to wrap over a couple of lines, without the preview ballooning across the screen.
-const PREVIEW_WIDTH = 200;
-
 function PreviewCard({ title, cover, coverAspect }: { title: string; cover?: string; coverAspect?: number }) {
-  const aspect = coverAspect ?? DEFAULT_THUMB_ASPECT;
+  const { width: winW, height: winH } = useWindowDimensions();
+  const aspect = coverAspect ?? DEFAULT_THUMB_ASPECT; // width / height
+  // Size the cover by fitting its real shape into a generous, responsive box at maximum size rather
+  // than pinning the width — so a tall portrait grows to the height cap and a wide landscape grows to
+  // the width cap (it no longer stays short because the width was fixed). The lift feels bigger overall
+  // while never overflowing the screen (the caps leave margin for the frame padding + title).
+  const maxW = Math.min(winW * 0.74, 340);
+  const maxH = Math.min(winH * 0.5, 440);
+  let coverW = maxW;
+  let coverH = coverW / aspect;
+  if (coverH > maxH) {
+    coverH = maxH;
+    coverW = coverH * aspect;
+  }
+  const coverSize = { width: coverW, height: coverH };
   return (
     <ThemedView type="backgroundElement" style={styles.preview}>
       {cover ? (
-        <Image
-          source={{ uri: cover }}
-          style={[styles.previewCover, { aspectRatio: aspect }]}
-          contentFit="cover"
-          cachePolicy="memory-disk"
-        />
+        <Image source={{ uri: cover }} style={[styles.previewCover, coverSize]} contentFit="cover" cachePolicy="memory-disk" />
       ) : (
-        <View style={[styles.previewCover, styles.previewCoverEmpty, { aspectRatio: aspect }]} />
+        <View style={[styles.previewCover, styles.previewCoverEmpty, coverSize]} />
       )}
-      <ThemedText type="small" style={styles.previewTitle}>
+      <ThemedText type="small" style={[styles.previewTitle, { width: coverW }]}>
         {title}
       </ThemedText>
     </ThemedView>
@@ -114,16 +119,16 @@ export function SeriesCardMenu({
 
 const styles = StyleSheet.create({
   preview: {
-    width: PREVIEW_WIDTH,
+    // No fixed width — the frame hugs the (inline-sized) cover, so it fits both tall and wide covers.
     // A generous, even frame around the cover + title so the background reads as a proper card
     // rather than a thin strip hugging the content.
+    alignSelf: 'flex-start',
     padding: Spacing.three,
     gap: Spacing.three,
     borderRadius: 18,
   },
   previewCover: {
-    width: '100%',
-    // aspectRatio is set inline from the cover's real (capped) shape.
+    // width/height are set inline from the cover's real (capped) shape, fit into a responsive box.
     borderRadius: 10,
     backgroundColor: 'rgba(128,128,128,0.15)',
   },
