@@ -6,7 +6,6 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
-import { useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 
 import { FilterButton } from './filter-button';
@@ -19,14 +18,12 @@ export type SortState = { key: string; ascending: boolean } | null;
 // Layout rules for the single-line filter bar.
 const GAP = Spacing.two;
 const FILTER_MIN_WIDTH = 200; // a full-size filter row stays at least this wide
-const SORT_RESERVE_LABELLED = 128; // sort pill with icon + current sort label
-const SORT_RESERVE_ICON = CONTROL_HEIGHT; // sort collapsed to an icon-only square
 const OVERFLOW_RESERVE = 64; // funnel icon + "+X" count
 
 /** How many full-size filters fit on one line given the measured bar width. */
-function fitCount(containerW: number, total: number, sortReserve: number): number {
+function fitCount(containerW: number, total: number): number {
   if (containerW <= 0) return total;
-  const base = containerW - sortReserve - GAP;
+  const base = containerW - GAP;
   // If every filter fits with no overflow control, show them all.
   const colsAll = Math.floor((base + GAP) / (FILTER_MIN_WIDTH + GAP));
   if (colsAll >= total) return total;
@@ -37,35 +34,25 @@ function fitCount(containerW: number, total: number, sortReserve: number): numbe
 }
 
 /**
- * Row shown on the Browse screen: a Sort icon plus the filter rows. The filters
- * use the same full display as the overflow sheet, sized so each stays readable;
- * only as many as fit on one line are shown and the rest collapse into a "+X"
- * funnel chip. A wide-enough screen shows every filter with no overflow at all.
+ * The filter rows. The filters use the same full display as the overflow sheet,
+ * sized so each stays readable; only as many as fit on one line are shown and
+ * the rest collapse into a "+X" funnel chip. A wide-enough screen shows every
+ * filter with no overflow at all. (Sort lives separately — see `SortControl`,
+ * which the Search screen renders in its top bar.)
  *
- * Fully controlled: `defs`/`sortOptions` come from the bridge (`getFilters`/
- * `getSortOptions`), `values`/`sort` are owned by the caller so they can feed
- * the actual list/search fetch — this component only renders and reports
- * interaction, it never fetches or decides what to show for an empty bridge.
+ * Fully controlled: `defs` come from the bridge (`getFilters`), `values` are
+ * owned by the caller so they can feed the actual search fetch — this component
+ * only renders and reports interaction, it never fetches.
  */
 export function FilterBar({
   defs,
   values,
   onValueChange,
-  sortOptions,
-  sort,
-  onSortChange,
-  searchActive,
 }: {
   defs: FilterDef[];
   values: Record<string, FilterValue>;
   onValueChange: (id: string, v: FilterValue) => void;
-  sortOptions: SortOption[];
-  sort: SortState;
-  onSortChange: (sort: SortState) => void;
-  searchActive: boolean;
 }) {
-  const wide = useIsLargeScreen();
-
   const [containerW, setContainerW] = useState(0);
   // Bar width comes from the parent's flex layout, not from what's rendered
   // inside it — so on the very first render, before `onLayout` reports the
@@ -74,15 +61,9 @@ export function FilterBar({
   // still occupies its real height) so the fit is only ever seen already
   // correct, never mid-collapse.
   const measured = containerW > 0;
-  // Sort only shows once results are on screen; until then it reserves no room.
-  // On narrow viewports it collapses to an icon-only square, reserving less.
-  const hasSort = sortOptions.length > 0;
-  const sortReserve = searchActive && hasSort ? (wide ? SORT_RESERVE_LABELLED : SORT_RESERVE_ICON) : 0;
-  const visible = fitCount(containerW, defs.length, sortReserve);
+  const visible = fitCount(containerW, defs.length);
   const shown = defs.slice(0, visible);
   const hidden = defs.slice(visible);
-
-  const currentSortLabel = sortOptions.find((o) => o.key === sort?.key)?.label ?? sortOptions[0]?.label ?? '';
 
   return (
     <View
@@ -99,24 +80,44 @@ export function FilterBar({
           render={() => <FiltersSheet defs={hidden} initial={values} onChange={onValueChange} />}
         />
       )}
-      {searchActive && hasSort && (
-        <SortButton
-          label={currentSortLabel}
-          showLabel={wide}
-          render={() => (
-            <OptionMenu
-              title="Sort by"
-              options={sortOptions.map((o) => o.label)}
-              selected={currentSortLabel}
-              onSelect={(label) => {
-                const opt = sortOptions.find((o) => o.label === label);
-                if (opt) onSortChange({ key: opt.key, ascending: true });
-              }}
-            />
-          )}
+    </View>
+  );
+}
+
+/**
+ * The sort control (icon, or icon + current-sort label when `showLabel`), opening
+ * a single-select menu of the bridge's sort options. Extracted so the Search
+ * screen can place it in its top bar next to the search field, rather than in the
+ * filter row. Fully controlled by the caller (`sort`/`onSortChange`).
+ */
+export function SortControl({
+  sortOptions,
+  sort,
+  onSortChange,
+  showLabel = false,
+}: {
+  sortOptions: SortOption[];
+  sort: SortState;
+  onSortChange: (sort: SortState) => void;
+  showLabel?: boolean;
+}) {
+  const currentSortLabel = sortOptions.find((o) => o.key === sort?.key)?.label ?? sortOptions[0]?.label ?? '';
+  return (
+    <SortButton
+      label={currentSortLabel}
+      showLabel={showLabel}
+      render={() => (
+        <OptionMenu
+          title="Sort by"
+          options={sortOptions.map((o) => o.label)}
+          selected={currentSortLabel}
+          onSelect={(label) => {
+            const opt = sortOptions.find((o) => o.label === label);
+            if (opt) onSortChange({ key: opt.key, ascending: true });
+          }}
         />
       )}
-    </View>
+    />
   );
 }
 
