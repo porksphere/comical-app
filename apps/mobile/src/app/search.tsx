@@ -1,12 +1,15 @@
-import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
+import { AnimatedLegendList } from '@legendapp/list/reanimated';
+import type { LegendListRef } from '@legendapp/list/react-native';
 import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import Animated, { useAnimatedReaction, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FilterBar } from '@/components/filters/filter-demo';
 import { resolveMetaIntent, resolveTagIntent, type MetaIntent, type TagIntent } from '@/components/filters/filter-intents';
+import { CONTROL_HEIGHT, filterValueToApi } from '@/components/filters/filter-types';
 import { GridSkeleton } from '@/components/grid-skeleton';
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
 import { RetryBlock } from '@/components/retry-block';
@@ -22,6 +25,7 @@ import { useDataSource, useMockActive } from '@/data/source';
 import type { GridPage, SeriesEntry } from '@/data/types';
 import { friendlyError } from '@/lib/friendly-error';
 import { useBridgeFilters } from '@/hooks/use-bridge-filters';
+import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { GRID_COLUMN_GAP, padWithSpacers, useGridLayout } from '@/hooks/use-grid-layout';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
@@ -32,16 +36,19 @@ type GridItem = SeriesEntry & { spacer?: boolean };
 // Stable, never-fetched key for the results infinite query while it's disabled (no active search).
 const DISABLED_RESULTS_KEY = ['browseGrid', 'disabled', 'search'] as const;
 
+// The secondary filter bar's height: one row of controls plus a little vertical breathing room.
+const FILTERS_BAR_HEIGHT = CONTROL_HEIGHT + Spacing.two * 2;
+
 const getNextPageParam = (last: GridPage, _all: GridPage[], lastParam: number) =>
   last.hasNextPage ? lastParam + 1 : undefined;
 
 /**
  * The dedicated Search screen, pushed over the tabs. Its top bar holds the search
- * field; the filters sit at the top of the page content, with the results grid
- * below. It inherits the Browse-selected bridge (`useSelectedBridge`) — filters
- * are per-bridge — and owns the free-text query + filter/sort state
- * (`useBridgeFilters`). A Series→Search tag/meta intent (see search-intent.ts) is
- * consumed on mount and applied against the intent's bridge.
+ * field; a secondary bar directly below holds the filters and slides away as the
+ * results scroll down (reappearing on scroll up). It inherits the Browse-selected
+ * bridge (`useSelectedBridge`) — filters are per-bridge — and owns the free-text
+ * query + filter/sort state (`useBridgeFilters`). A Series→Search tag/meta intent
+ * (see search-intent.ts) is consumed on mount and applied against the intent's bridge.
  */
 export default function SearchScreen() {
   const ds = useDataSource();
@@ -51,6 +58,9 @@ export default function SearchScreen() {
   const insets = useSafeAreaInsets();
   const barHeight = useTopBarHeight();
   const listRef = useRef<LegendListRef>(null);
+  // Paint the top/filter bars first, then mount the heavy grid `runAfterInteractions` so the push
+  // transition plays immediately instead of stuttering behind the list's first render (native only).
+  const ready = useDeferredMount();
 
   // Take the one-shot Series→Search intent exactly once (lazy initializer), before the first render
   // reads it. `query` seeds directly from a `query` intent; `tag`/`meta` are stashed and applied
@@ -115,6 +125,23 @@ export default function SearchScreen() {
     setPendingMeta(null);
   }, [pendingMeta, filterDefs, filtersSettled, bridgeId, setFilterValues]);
 
+  // Filter ordering: default is the bridge's own order; once a filter has an edit (a non-default
+  // value that actually contributes to the query), move it to the FRONT. A stable partition — edited
+  // filters keep their relative bridge order, then the untouched ones in bridge order — so the list
+  // never shuffles unpredictably, and the filters you've set are the ones most likely to stay
+  // visible before the "+N" overflow.
+  const orderedDefs = useMemo(() => {
+    const edited: typeof filterDefs = [];
+    const rest: typeof filterDefs = [];
+    for (const d of filterDefs) {
+      (filterValueToApi(d, resolvedValues[d.id]) !== null ? edited : rest).push(d);
+    }
+    return edited.length ? [...edited, ...rest] : filterDefs;
+  }, [filterDefs, resolvedValues]);
+
+  const hasFilterBar = filterDefs.length > 0 || sortOptions.length > 0;
+  const filtersBarH = hasFilterBar ? FILTERS_BAR_HEIGHT : 0;
+
   // A search runs once there's a query, or a committed filter/sort. Until then the page is a blank
   // landing (the desktop entry opens straight here). Both the query key and the fetch derive from
   // this one value (see BrowseScope).
@@ -154,6 +181,31 @@ export default function SearchScreen() {
   const scopeKey = scope ? `${bridgeId}|${query}|${committedSort?.key ?? ''}|${JSON.stringify(committedFilters ?? {})}` : 'blank';
   const gridKey = `${numColumns}|${gridData.length > 0 ? 'full' : 'empty'}`;
 
+  // ── Sliding filter bar ─────────────────────────────────────────────────────
+  // The filter bar sits just below the (fixed) search bar and slides up out of view as the results
+  // scroll down, back in as they scroll up — X/Twitter-style, tracking the scroll delta 1:1. The
+  // list reserves `filtersBarH` of top padding so its first row starts below the bar; as the bar
+  // slides up, that content is revealed. `scrollY` comes from the list on the UI thread.
+  const scrollY = useSharedValue(0);
+  const maxScrollY = useSharedValue(0);
+  const filtersOffsetY = useSharedValue(0);
+  useAnimatedReaction(
+    () => scrollY.value,
+    (y, prevY) => {
+      if (y <= 0) {
+        filtersOffsetY.value = 0;
+        return;
+      }
+      // Ignore the elastic bottom-bounce recoil (offset decreasing past the content end) so it
+      // doesn't reveal the bar at the very bottom — only real upward scrolling should.
+      if (maxScrollY.value > 0 && y >= maxScrollY.value) return;
+      const dy = y - (prevY ?? y);
+      filtersOffsetY.value = Math.min(0, Math.max(-filtersBarH, filtersOffsetY.value - dy));
+    },
+    [filtersBarH],
+  );
+  const filtersStyle = useAnimatedStyle(() => ({ transform: [{ translateY: filtersOffsetY.value }] }));
+
   const loadMore = () => {
     if (!scope || !resultsQuery.hasNextPage || resultsQuery.isFetchingNextPage) return;
     void resultsQuery.fetchNextPage();
@@ -164,9 +216,9 @@ export default function SearchScreen() {
     router.back();
   };
 
-  // Empty-state body shown beneath the filters when the grid has no items: a retry on error, the
-  // blank-landing hint before any search, a first-load skeleton, or "no results". Folded into the
-  // list header (rather than ListEmptyComponent) to match the Browse/Library grids.
+  // Empty-state body shown when the grid has no items: a retry on error, the blank-landing hint
+  // before any search, a first-load skeleton, or "no results". Folded into the list header to match
+  // the Browse/Library grids.
   const showEmpty = gridData.length === 0 && (bridgesLoaded || bridges.length > 0);
   const emptyBody = !showEmpty ? null : gridError ? (
     <RetryBlock message={gridError} onRetry={() => resultsQuery.refetch()} />
@@ -186,11 +238,15 @@ export default function SearchScreen() {
     </View>
   );
 
-  const listHeader = (
-    <>
-      <View style={styles.filters}>
+  const filterBar = hasFilterBar ? (
+    // Absolute overlay pinned to the top of the list host; slides up via `filtersStyle`. Opaque
+    // background so results pass behind it. Inner row capped + centred to line up with the grid.
+    <Animated.View
+      style={[styles.filtersBar, { height: filtersBarH, backgroundColor: theme.background }, filtersStyle]}
+      pointerEvents="box-none">
+      <View style={styles.filtersInner}>
         <FilterBar
-          defs={filterDefs}
+          defs={orderedDefs}
           values={resolvedValues}
           onValueChange={setFilterValue}
           sortOptions={sortOptions}
@@ -199,14 +255,12 @@ export default function SearchScreen() {
           searchActive={!!scope}
         />
       </View>
-      {emptyBody}
-    </>
-  );
+    </Animated.View>
+  ) : null;
 
   return (
     <ThemedView style={styles.container}>
-      {/* Static top bar: back button + the search field (autofocused unless we arrived with an
-          intent, which shouldn't pop the keyboard). Centred to the content width on desktop. */}
+      {/* Fixed top bar: back button + the search field (autofocused after the push settles). */}
       <View style={[styles.topBar, { paddingTop: insets.top, borderBottomColor: theme.hairline }]}>
         <View style={[styles.topBarRow, { height: barHeight }]}>
           <Pressable
@@ -234,42 +288,58 @@ export default function SearchScreen() {
           <RetryBlock message={bridgesError} onRetry={refetchBridges} />
         </View>
       ) : (
-        <LegendList
-          ref={listRef}
-          key={gridKey}
-          style={styles.list}
-          data={gridData}
-          estimatedItemSize={estimatedCardHeight(cardWidth)}
-          keyExtractor={(item) => String(item.id)}
-          numColumns={numColumns}
-          recycleItems
-          ListHeaderComponent={listHeader}
-          columnWrapperStyle={numColumns > 1 ? { gap: GRID_COLUMN_GAP } : undefined}
-          contentContainerStyle={{
-            paddingTop: Spacing.three,
-            paddingBottom: insets.bottom + Spacing.five,
-            paddingLeft: sidePad,
-            paddingRight: sidePad,
-          }}
-          renderItem={({ item }) =>
-            item.spacer ? (
-              <View style={styles.gridCell} />
-            ) : (
-              <View style={styles.gridCell}>
-                <SeriesCard
-                  entry={item}
-                  bridge={currentBridge?.name ?? undefined}
-                  bridgeId={bridgeId}
-                  direct={directBridge}
-                  cohort={scopeKey}
-                />
-              </View>
-            )
-          }
-          onEndReachedThreshold={0.6}
-          onEndReached={loadMore}
-          showsVerticalScrollIndicator={Platform.OS === 'web'}
-        />
+        <View style={styles.listHost}>
+          {ready && (
+            <AnimatedLegendList
+              ref={listRef}
+              key={gridKey}
+              style={styles.list}
+              sharedValues={{ scrollOffset: scrollY }}
+              // Force scrollEventThrottle:1 on web so onScroll/onEndReached advance during the
+              // gesture, not only on release (see the same note in the Browse list).
+              renderScrollComponent={(scrollProps) => <Animated.ScrollView {...scrollProps} />}
+              onScroll={(e) => {
+                const { contentSize, layoutMeasurement } = e.nativeEvent;
+                if (contentSize && layoutMeasurement) {
+                  maxScrollY.value = Math.max(0, contentSize.height - layoutMeasurement.height);
+                }
+              }}
+              data={gridData}
+              estimatedItemSize={estimatedCardHeight(cardWidth)}
+              keyExtractor={(item) => String(item.id)}
+              numColumns={numColumns}
+              recycleItems
+              ListHeaderComponent={emptyBody}
+              columnWrapperStyle={numColumns > 1 ? { gap: GRID_COLUMN_GAP } : undefined}
+              contentContainerStyle={{
+                // Reserve the filter bar's height so the first row starts below it, plus a little gap.
+                paddingTop: filtersBarH + Spacing.three,
+                paddingBottom: insets.bottom + Spacing.five,
+                paddingLeft: sidePad,
+                paddingRight: sidePad,
+              }}
+              renderItem={({ item }) =>
+                item.spacer ? (
+                  <View style={styles.gridCell} />
+                ) : (
+                  <View style={styles.gridCell}>
+                    <SeriesCard
+                      entry={item}
+                      bridge={currentBridge?.name ?? undefined}
+                      bridgeId={bridgeId}
+                      direct={directBridge}
+                      cohort={scopeKey}
+                    />
+                  </View>
+                )
+              }
+              onEndReachedThreshold={0.6}
+              onEndReached={loadMore}
+              showsVerticalScrollIndicator={Platform.OS === 'web'}
+            />
+          )}
+          {filterBar}
+        </View>
       )}
     </ThemedView>
   );
@@ -285,6 +355,7 @@ const styles = StyleSheet.create({
   },
   topBar: {
     borderBottomWidth: StyleSheet.hairlineWidth,
+    zIndex: 20,
   },
   topBarRow: {
     flexDirection: 'row',
@@ -302,11 +373,25 @@ const styles = StyleSheet.create({
   searchWrap: {
     flex: 1,
   },
+  listHost: {
+    flex: 1,
+  },
   list: {
     flex: 1,
   },
-  filters: {
-    paddingVertical: Spacing.three,
+  filtersBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    justifyContent: 'center',
+  },
+  filtersInner: {
+    width: '100%',
+    maxWidth: MaxTopLevelWidth,
+    alignSelf: 'center',
+    paddingHorizontal: Spacing.four,
   },
   gridCell: {
     flex: 1,

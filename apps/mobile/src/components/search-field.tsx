@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, TextInput, type TextStyle } from 'react-native';
+import { InteractionManager, Platform, Pressable, StyleSheet, TextInput, type TextStyle } from 'react-native';
 
 import { ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
 import { ThemedView } from '@/components/themed-view';
@@ -39,6 +39,15 @@ export function SearchField({
   // Keep the field in sync when the committed query is cleared elsewhere.
   useEffect(() => setText(value), [value]);
 
+  // Autofocus AFTER the screen's push/transition settles, not via the native `autoFocus` prop —
+  // focusing (and raising the keyboard) during the in-transition makes the animation stutter. On
+  // web there's no native transition, so it focuses on the next frame all the same.
+  useEffect(() => {
+    if (!autoFocus) return;
+    const handle = InteractionManager.runAfterInteractions(() => inputRef.current?.focus());
+    return () => handle.cancel();
+  }, [autoFocus]);
+
   // On mobile web the soft keyboard can be dismissed without the input firing a
   // blur (e.g. Android's "hide keyboard" button keeps DOM focus). Previously this
   // just set `focused` to false directly, which desynced app state from the real
@@ -71,7 +80,6 @@ export function SearchField({
         onSubmitEditing={() => onSubmit(text)}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
-        autoFocus={autoFocus}
         placeholder={placeholder}
         placeholderTextColor={theme.textSecondary}
         returnKeyType="search"
