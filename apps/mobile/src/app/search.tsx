@@ -211,6 +211,16 @@ export default function SearchScreen() {
     },
     [filtersBarH],
   );
+  // A new search (query / committed filters / sort / bridge change → a new `scopeKey`) resets the
+  // view to the top: scroll the list up, snap the filter bar back to fully visible, and clear the
+  // shared scroll values. Mirrors the Browse grid's scope-change reset. `keepPreviousData` keeps the
+  // old results on screen through the switch, so this is a clean jump, not a flash to empty.
+  useEffect(() => {
+    scrollY.value = 0;
+    filtersOffsetY.value = 0;
+    maxScrollY.value = 0;
+    listRef.current?.scrollToOffset({ offset: 0, animated: false });
+  }, [scopeKey, scrollY, filtersOffsetY, maxScrollY]);
   const filtersStyle = useAnimatedStyle(() => ({ transform: [{ translateY: filtersOffsetY.value }] }));
   // The top bar's own bottom hairline is the inverse of the filter bar's visibility: hidden while the
   // filter bar is fully expanded right below it (the filter bar's hairline is the divider then), and
