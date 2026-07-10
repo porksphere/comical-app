@@ -4,12 +4,7 @@ import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
-import Animated, {
-  interpolateColor,
-  useAnimatedReaction,
-  useAnimatedStyle,
-  useSharedValue,
-} from 'react-native-reanimated';
+import Animated, { interpolateColor, useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FilterBar, SortControl } from '@/components/filters/filter-demo';
@@ -32,6 +27,7 @@ import { friendlyError } from '@/lib/friendly-error';
 import { useBridgeFilters } from '@/hooks/use-bridge-filters';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { GRID_COLUMN_GAP, padWithSpacers, useGridLayout } from '@/hooks/use-grid-layout';
+import { useSlidingBar } from '@/hooks/use-sliding-bar';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight } from '@/lib/haptics';
@@ -190,38 +186,10 @@ export default function SearchScreen() {
 
   // ── Sliding filter bar ─────────────────────────────────────────────────────
   // The filter bar sits just below the (fixed) search bar and slides up out of view as the results
-  // scroll down, back in as they scroll up — X/Twitter-style, tracking the scroll delta 1:1. The
-  // list reserves `filtersBarH` of top padding so its first row starts below the bar; as the bar
-  // slides up, that content is revealed. `scrollY` comes from the list on the UI thread.
-  const scrollY = useSharedValue(0);
-  const maxScrollY = useSharedValue(0);
-  const filtersOffsetY = useSharedValue(0);
-  useAnimatedReaction(
-    () => scrollY.value,
-    (y, prevY) => {
-      if (y <= 0) {
-        filtersOffsetY.value = 0;
-        return;
-      }
-      // Ignore the elastic bottom-bounce recoil (offset decreasing past the content end) so it
-      // doesn't reveal the bar at the very bottom — only real upward scrolling should.
-      if (maxScrollY.value > 0 && y >= maxScrollY.value) return;
-      const dy = y - (prevY ?? y);
-      filtersOffsetY.value = Math.min(0, Math.max(-filtersBarH, filtersOffsetY.value - dy));
-    },
-    [filtersBarH],
-  );
-  // A new search (query / committed filters / sort / bridge change → a new `scopeKey`) resets the
-  // view to the top: scroll the list up, snap the filter bar back to fully visible, and clear the
-  // shared scroll values. Mirrors the Browse grid's scope-change reset. `keepPreviousData` keeps the
-  // old results on screen through the switch, so this is a clean jump, not a flash to empty.
-  useEffect(() => {
-    scrollY.value = 0;
-    filtersOffsetY.value = 0;
-    maxScrollY.value = 0;
-    listRef.current?.scrollToOffset({ offset: 0, animated: false });
-  }, [scopeKey, scrollY, filtersOffsetY, maxScrollY]);
-  const filtersStyle = useAnimatedStyle(() => ({ transform: [{ translateY: filtersOffsetY.value }] }));
+  // scroll down, back in as they scroll up. Same shared helper the Browse bar uses (so the motion
+  // can't drift); a new search (`scopeKey` change) snaps it back to visible and the list to the top.
+  const { offset: filtersOffsetY, barStyle: filtersStyle, sharedValues, onScroll: onListScroll } =
+    useSlidingBar(filtersBarH, { resetKey: scopeKey, listRef });
   // The top bar's own bottom hairline is the inverse of the filter bar's visibility: hidden while the
   // filter bar is fully expanded right below it (the filter bar's hairline is the divider then), and
   // fading in as the filter bar slides up out of view (so the top bar keeps a divider from the
@@ -328,16 +296,11 @@ export default function SearchScreen() {
               ref={listRef}
               key={gridKey}
               style={styles.list}
-              sharedValues={{ scrollOffset: scrollY }}
+              sharedValues={sharedValues}
               // Force scrollEventThrottle:1 on web so onScroll/onEndReached advance during the
               // gesture, not only on release (see the same note in the Browse list).
               renderScrollComponent={(scrollProps) => <Animated.ScrollView {...scrollProps} />}
-              onScroll={(e) => {
-                const { contentSize, layoutMeasurement } = e.nativeEvent;
-                if (contentSize && layoutMeasurement) {
-                  maxScrollY.value = Math.max(0, contentSize.height - layoutMeasurement.height);
-                }
-              }}
+              onScroll={onListScroll}
               data={gridData}
               estimatedItemSize={estimatedCardHeight(cardWidth)}
               keyExtractor={(item) => String(item.id)}
