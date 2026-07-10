@@ -160,12 +160,27 @@ jobs:
               }]
             }' > "$RUNNER_TEMP/apps.json"
 
+          # meta.json fragment consumed by refresh-ios-dev-source.sh to place
+          # main at versions[0] of the aggregate ios-dev source. `sort` is the
+          # run number (same one baked into $FULL_VERSION) so PRs order by it.
+          jq -n \
+            --arg version "$FULL_VERSION" \
+            --arg date "$DATE" \
+            --arg desc "main (${GITHUB_SHA:0:7})" \
+            --arg dl "${BASE}/comical-unsigned.ipa" \
+            --argjson size "$SIZE" \
+            --argjson sort "$GITHUB_RUN_NUMBER" \
+            '{version: $version, date: $date, localizedDescription: $desc,
+              downloadURL: $dl, size: $size, channel: "main", sort: $sort}' \
+            > "$RUNNER_TEMP/meta.json"
+
           # Recreate the rolling tag/release so the URLs above stay stable.
           gh release delete ios-latest --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
           gh release create ios-latest \
             "$IPA" \
             "$RUNNER_TEMP/apps.json" \
             "$RUNNER_TEMP/icon.png" \
+            "$RUNNER_TEMP/meta.json" \
             --repo "$GITHUB_REPOSITORY" \
             --title "Comical iOS (latest unsigned IPA)" \
             --notes "Unsigned IPA for SideStore/AltStore (re-signed on-device with your free Apple ID).
@@ -178,14 +193,13 @@ jobs:
 
           <!-- built-sha: ${GITHUB_SHA} -->"
 
-  # Per-PR install channel. Each open PR gets its own `ios-pr-<N>` Release
-  # hosting the IPA + a dedicated AltStore source (apps.json) at a stable URL,
-  # so you can add that source once and AltStore keeps updating it as the PR
-  # moves. The app keeps the production bundle id (com.porksphere.comical), so
-  # installing a PR build REPLACES the main app on device (and vice versa) —
-  # intentional per the "replace on device" choice. cleanup-pr tears it down
-  # when the PR closes. Note: PRs from forks get a read-only token and will skip
-  # this step (no secrets exposure) — this repo builds its own branches.
+  # Per-PR IPA host. Each open PR gets an `ios-pr-<N>` prerelease holding just
+  # the IPA + a `meta.json` fragment — NOT its own source. The refresh-dev-source
+  # job aggregates every open PR (plus main) into the single stable `ios-dev`
+  # source, so you add ONE source once instead of one per branch. The app keeps
+  # the production bundle id, so a dev build replaces Comical on device (pick a
+  # version in SideStore to switch). cleanup-pr deletes this release on close.
+  # Fork PRs get a read-only token and skip publishing (still built/verified).
   publish-pr:
     needs: build
     # Same-repo PRs only: fork PRs get a read-only token (can't create Releases),
@@ -204,7 +218,7 @@ jobs:
           name: ${{ needs.build.outputs.artifact }}
           path: ${{ runner.temp }}/ipa
 
-      - name: Publish IPA + AltStore source to the ios-pr-<N> Release
+      - name: Publish IPA + meta to the ios-pr-<N> Release
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.build.outputs.version }}
@@ -218,65 +232,36 @@ jobs:
           BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
           SIZE=$(stat -c%s "$IPA")
           DATE=$(date -u +%Y-%m-%d)
-          cp apps/mobile/assets/images/icon.png "$RUNNER_TEMP/icon.png"
 
-          # Patch notes = the PR title (kept simple/robust vs. a git-log diff on
-          # the merge ref). jq -Rs JSON-escapes it safely.
-          NOTES=$(printf 'PR #%s: %s' "$PR" "$PR_TITLE")
-
-          # Unique source `identifier` per PR so AltStore treats each PR source
-          # as distinct; the app `bundleIdentifier` stays production (replace).
+          # meta.json fragment consumed by refresh-ios-dev-source.sh. `sort` is
+          # this run's number (same one baked into $VERSION) so PRs order newest
+          # first in the aggregate source. localizedDescription = PR title; jq
+          # JSON-escapes it safely (titles may contain quotes/$/backticks).
           jq -n \
             --arg version "$VERSION" \
             --arg date "$DATE" \
-            --arg notes "$NOTES" \
+            --arg desc "$(printf 'PR #%s: %s' "$PR" "$PR_TITLE")" \
             --arg dl "${BASE}/comical-unsigned.ipa" \
             --argjson size "$SIZE" \
-            --arg icon "${BASE}/icon.png" \
-            --arg srcid "com.porksphere.comical.source.pr${PR}" \
-            --arg name "Comical (PR ${PR})" \
-            '{
-              name: $name,
-              identifier: $srcid,
-              apps: [{
-                name: $name,
-                bundleIdentifier: "com.porksphere.comical",
-                developerName: "porksphere",
-                localizedDescription: "Comical PR build — unsigned; re-signed on-device by SideStore/AltStore. Installs over the main app (same bundle id).",
-                iconURL: $icon,
-                tintColor: "208AEF",
-                versions: [{
-                  version: $version,
-                  date: $date,
-                  localizedDescription: $notes,
-                  downloadURL: $dl,
-                  size: $size
-                }],
-                version: $version,
-                versionDate: $date,
-                versionDescription: $notes,
-                downloadURL: $dl,
-                size: $size
-              }]
-            }' > "$RUNNER_TEMP/apps.json"
+            --argjson sort "$GITHUB_RUN_NUMBER" \
+            '{version: $version, date: $date, localizedDescription: $desc,
+              downloadURL: $dl, size: $size, channel: "pr", sort: $sort}' \
+            > "$RUNNER_TEMP/meta.json"
 
-          # Recreate the per-PR tag/release (pointed at the PR head) so the URLs
-          # stay stable across pushes to the PR.
+          # Recreate the per-PR tag/release (pointed at the PR head) so the IPA
+          # URL stays stable across pushes to the PR.
           gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
           gh release create "$TAG" \
             "$IPA" \
-            "$RUNNER_TEMP/apps.json" \
-            "$RUNNER_TEMP/icon.png" \
+            "$RUNNER_TEMP/meta.json" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$HEAD_SHA" \
             --prerelease \
             --title "Comical iOS — PR #${PR}" \
-            --notes "Unsigned IPA for PR #${PR} (SideStore/AltStore, re-signed on-device).
-
-          **Install via source:** add this URL in SideStore/AltStore → Sources → +
-          \`${BASE}/apps.json\`
-
-          **Or install the IPA directly:**
+            --notes "Unsigned IPA for PR #${PR}. Install via the shared dev source
+          (main + all open PRs) — add it once in SideStore/AltStore → Sources → +
+          \`https://github.com/${GITHUB_REPOSITORY}/releases/download/ios-dev/apps.json\`
+          then pick this PR's version. Or grab the IPA directly:
           \`${BASE}/comical-unsigned.ipa\`
 
           ⚠️ Same bundle id as the release app — installing this replaces Comical on your device."
@@ -291,3 +276,26 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.number }}
         run: gh release delete "ios-pr-${PR}" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+
+  # Regenerate the single stable `ios-dev` source (main at versions[0] + every
+  # open PR) after whichever of the jobs above ran. Enumerates the ios-latest /
+  # ios-pr-* releases and their meta.json fragments — stateless, so a close and
+  # an open converge. Concurrency-locked (no cancel) so overlapping runs from
+  # different PRs serialize instead of clobbering the source.
+  refresh-dev-source:
+    needs: [publish, publish-pr, cleanup-pr]
+    if: >-
+      always()
+      && (needs.publish.result == 'success'
+          || needs.publish-pr.result == 'success'
+          || needs.cleanup-pr.result == 'success')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ios-dev-source
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rebuild ios-dev source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/refresh-ios-dev-source.sh
