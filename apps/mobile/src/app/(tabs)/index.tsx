@@ -1108,6 +1108,7 @@ export default function BrowseScreen() {
                 direct={directBridge}
                 originPage={page}
                 cohort={gridScope}
+                crossfading={switching}
               />
             </Animated.View>
           );

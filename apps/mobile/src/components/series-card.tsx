@@ -155,6 +155,7 @@ export function SeriesCard({
   direct,
   originPage,
   cohort,
+  crossfading,
 }: {
   entry: SeriesEntry;
   size?: CardSize;
@@ -189,6 +190,12 @@ export function SeriesCard({
    *  scopes (rails remount per section, HomeGridBlock, Library/History), where today's behavior is
    *  already correct. */
   cohort?: string;
+  /** True while the whole home is mid bridge-switch crossfade. A cohort swap that lands here happens
+   *  at opacity 0 (the crossfade hides it), so there's NO stale cover to mask — skip the forced
+   *  skeleton and take the `resolvedCoverIds` fast-path, so a cached cover paints immediately on
+   *  reveal instead of a needless skeleton-then-cover. A non-crossfaded swap (within-bridge recycle)
+   *  still masks. */
+  crossfading?: boolean;
 }) {
   const [loaded, setLoaded] = useState(() => resolvedCoverIds.has(entry.id));
   const [truncated, setTruncated] = useState(false);
@@ -256,12 +263,15 @@ export function SeriesCard({
     // scrolling over already-seen rows still doesn't replay the skeleton. `prevCohortRef` only
     // advances here, on an entry change, so a cohort switch that lands a frame BEFORE its new items
     // (keepPreviousData still showing the old scope) is still detected when the items finally swap.
-    const scopeSwap = prevCohortRef.current !== cohort;
+    // A cohort swap normally means a stale cover is on screen to mask — UNLESS it's happening under
+    // the home crossfade (bridge switch), where the swap is hidden at opacity 0 and there's nothing
+    // to hide. In that case take the fast-path so a cached cover paints on reveal (see `crossfading`).
+    const maskSwap = prevCohortRef.current !== cohort && !crossfading;
     prevCohortRef.current = cohort;
-    setLoaded(scopeSwap ? false : resolvedCoverIds.has(entry.id));
-    // Opaque mask only on a swap (there's a stale bitmap to hide); a plain scroll recycle clears it
-    // so already-seen rows keep the subtle skeleton (or none, via the resolvedCoverIds fast-path).
-    setMaskStale(scopeSwap);
+    setLoaded(maskSwap ? false : resolvedCoverIds.has(entry.id));
+    // Opaque mask only on a masked swap (there's a stale bitmap to hide); a plain scroll recycle (or
+    // a crossfaded swap) clears it so already-seen rows keep the subtle skeleton, or none at all.
+    setMaskStale(maskSwap);
     setTruncated(false);
     setCoverAspect(resolvedCoverAspects.get(entry.id) ?? lastResolvedCoverAspect);
     shrinkProgressSV.value = 1;
