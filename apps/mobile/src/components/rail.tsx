@@ -296,6 +296,14 @@ export function Rail({
           // instances as the strip scrolls instead of remounting each heavy card.
           recycleItems
           estimatedItemSize={cardWidth + stripGap}
+          // Give LegendList the strip's size on the very first render. Without it, its
+          // `initialScrollLength` defaults to 0 (`react-native.web.js`: estimatedListSize ?? {width:0}),
+          // so a cold-mounting rail lays every card out as if the container were zero-width — all
+          // squashed at the left — until `onLayout` measures the real width and it repositions (the
+          // visible "expand out to correct spacing"). Rails remount on a bridge switch (keyed by
+          // section.id), so they hit this every time; seeding the width positions them correctly on
+          // frame one. Width is the viewport the strip spans; height reuses the reserved strip height.
+          estimatedListSize={{ width: viewportWidth, height: stripMinHeight }}
           showsHorizontalScrollIndicator={false}
           // Same fix as Browse/Library's main grid (see that list's comment): without a
           // renderScrollComponent, @legendapp/list/reanimated's scroll bridge renders

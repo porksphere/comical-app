@@ -192,6 +192,14 @@ export function SeriesCard({
 }) {
   const [loaded, setLoaded] = useState(() => resolvedCoverIds.has(entry.id));
   const [truncated, setTruncated] = useState(false);
+  // True while masking a scope swap (see the recycle-safety block): the shared `Skeleton` is only
+  // ~18% opaque, which reads fine over an empty cover box on a fresh load but does NOT hide a
+  // lingering *old* cover — expo-image reuses the recycled <img> and (on web) doesn't clear the
+  // previous bitmap synchronously on a recyclingKey change, so it shows straight through the
+  // translucent skeleton until the new source decodes. On a swap we drop an OPAQUE backing behind
+  // the skeleton to actually cover it; fresh mounts (no stale bitmap) leave the subtle look untouched.
+  const [maskStale, setMaskStale] = useState(false);
+  const theme = useTheme();
   // The cover's real (capped) aspect ratio — a plain, UNanimated value. Since
   // `clampThumbAspect` only ever returns >= DEFAULT_THUMB_ASPECT, the box only ever
   // shrinks from its default placeholder height (never grows past it), so setting
@@ -251,6 +259,9 @@ export function SeriesCard({
     const scopeSwap = prevCohortRef.current !== cohort;
     prevCohortRef.current = cohort;
     setLoaded(scopeSwap ? false : resolvedCoverIds.has(entry.id));
+    // Opaque mask only on a swap (there's a stale bitmap to hide); a plain scroll recycle clears it
+    // so already-seen rows keep the subtle skeleton (or none, via the resolvedCoverIds fast-path).
+    setMaskStale(scopeSwap);
     setTruncated(false);
     setCoverAspect(resolvedCoverAspects.get(entry.id) ?? lastResolvedCoverAspect);
     shrinkProgressSV.value = 1;
@@ -470,8 +481,12 @@ export function SeriesCard({
                       setCoverAspect(nextAspect);
                     }
                     setLoaded(true);
+                    setMaskStale(false);
                   }}
                 />
+              )}
+              {!coverReady && maskStale && (
+                <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.backgroundElement }]} />
               )}
               {!coverReady && <Skeleton style={StyleSheet.absoluteFill} />}
             </Animated.View>
