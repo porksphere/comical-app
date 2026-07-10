@@ -44,17 +44,10 @@ import { useTheme } from '@/hooks/use-theme';
  *  coordinates (from `measureInWindow`). Used to position the desktop popover. */
 export type AnchorRect = { x: number; y: number; width: number; height: number };
 
-export type OverlayOpenOptions = {
-  /** Present as an anchored popover even on phones (which otherwise always get the bottom sheet).
-   *  Requires an `anchor`. Used by the per-card long-press menu, which wants a compact popup next to
-   *  the card rather than a full-width sheet. */
-  preferPopover?: boolean;
-};
-
 type OverlayApi = {
   /** Returns the id assigned to the opened item — compare against `topId` to
    *  tell whether that specific overlay is still the (single) topmost one. */
-  open: (render: () => ReactNode, anchor?: AnchorRect | null, opts?: OverlayOpenOptions) => number;
+  open: (render: () => ReactNode, anchor?: AnchorRect | null) => number;
   closeTop: () => void;
   /** Id of the topmost open item, or null when the stack is empty. */
   topId: number | null;
@@ -442,7 +435,7 @@ const listStyles = StyleSheet.create({
 // whenever a second overlay opens on top), needlessly re-rendering overlays
 // that aren't even changing. Keeping the same `ReactNode` reference across
 // renders lets React bail out of re-rendering that subtree entirely.
-type Item = { id: number; node: ReactNode; anchor?: AnchorRect | null; preferPopover?: boolean };
+type Item = { id: number; node: ReactNode; anchor?: AnchorRect | null };
 
 const SPRING = { damping: 22, stiffness: 240, mass: 0.7 } as const;
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -460,9 +453,9 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
     itemsRef.current = items;
   }, [items]);
 
-  const open = useCallback((render: () => ReactNode, anchor?: AnchorRect | null, opts?: OverlayOpenOptions) => {
+  const open = useCallback((render: () => ReactNode, anchor?: AnchorRect | null) => {
     const id = idRef.current++;
-    setItems((prev) => [...prev, { id, node: render(), anchor, preferPopover: opts?.preferPopover }]);
+    setItems((prev) => [...prev, { id, node: render(), anchor }]);
     return id;
   }, []);
 
@@ -495,11 +488,6 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
   const isWebPopover = Platform.OS === 'web' && isLargeScreen;
 
   const depth = items.length;
-  // The topmost overlay's presentation drives the app chrome. A card-anchored popover requested on a
-  // phone (`preferPopover`) uses popover chrome — no scale-the-app-back — same as the large-screen
-  // anchored popover; the dimmed, tappable backdrop below still applies so tapping off dismisses it.
-  const topItem = depth ? items[depth - 1] : null;
-  const popoverChrome = isLargeScreen || !!(topItem?.anchor && topItem.preferPopover);
 
   useEffect(() => {
     if (!isWebPopover || depth === 0) return;
@@ -522,7 +510,7 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
   }, [depth, appProgress]);
 
   const appStyle = useAnimatedStyle(() =>
-    popoverChrome
+    isLargeScreen
       ? { transform: [{ scale: 1 }], borderRadius: 0 }
       : {
           transform: [{ scale: interpolate(appProgress.value, [0, 1], [1, 0.93]) }],
@@ -555,7 +543,7 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
         />
 
         {items.map((it, i) =>
-          (isLargeScreen || it.preferPopover) && it.anchor ? (
+          isLargeScreen && it.anchor ? (
             <OverlayPopover
               key={it.id}
               id={it.id}
