@@ -21,6 +21,7 @@ import {
   useKeyboardAvoidingInput,
   useOverlay,
 } from '@/components/overlay/overlay';
+import { BarBlur } from '@/components/bar-blur';
 import { RetryBlock } from '@/components/retry-block';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedSwitch } from '@/components/themed-switch';
@@ -104,8 +105,9 @@ export default function SettingsScreen() {
         <View
           style={[
             styles.topBar,
-            { paddingTop: insets.top, backgroundColor: theme.background, borderBottomColor: theme.hairline },
+            { paddingTop: insets.top, borderBottomColor: theme.hairline },
           ]}>
+          <BarBlur fallback={theme.background} />
           <View style={[styles.titleRow, { height: barHeight }]}>
             <ThemedText numberOfLines={1} style={styles.title}>
               Settings

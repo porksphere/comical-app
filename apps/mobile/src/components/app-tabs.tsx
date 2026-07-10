@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BarBlur } from '@/components/bar-blur';
 import { DesktopTopBarHeight, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
@@ -226,7 +227,6 @@ export default function AppTabs() {
             styles.bottomBar,
             Platform.OS === 'web' && FADE_TRANSITION,
             {
-              backgroundColor: theme.tabBar,
               borderTopColor: theme.tabBarBorder,
               paddingBottom: Math.max(insets.bottom, Spacing.two),
               // Web: fade to a faint ghost (still touchable, so tapping where it
@@ -244,6 +244,8 @@ export default function AppTabs() {
               transform: [{ translateY: NATIVE_HIDE_OFFSET * nativeProgress }],
             },
           ]}>
+          {/* Frosted background behind the icons (content scrolls under the bar). */}
+          <BarBlur fallback={theme.tabBar} />
           {triggers}
         </TabList>
       )}

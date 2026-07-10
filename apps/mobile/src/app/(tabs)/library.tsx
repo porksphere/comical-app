@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RetryBlock } from '@/components/retry-block';
 import { SearchField } from '@/components/search-field';
 import { Selector } from '@/components/selector';
+import { BarBlur } from '@/components/bar-blur';
 import { estimatedCardHeight, SeriesCard } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
@@ -209,11 +210,11 @@ export default function LibraryScreen() {
           styles.topBar,
           {
             paddingTop: insets.top,
-            backgroundColor: theme.background,
             borderBottomColor: theme.hairline,
             pointerEvents: 'box-none',
           },
         ]}>
+        <BarBlur fallback={theme.background} />
         <View style={[styles.titleRow, { height: barHeight }]}>
           <ThemedText numberOfLines={1} style={styles.title}>
             Library

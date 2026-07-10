@@ -24,6 +24,7 @@ import {
   type TagIntent,
 } from '@/components/filters/filter-intents';
 import { filterDefFromApi, filterValueToApi, initialValue, type FilterDef, type FilterValue } from '@/components/filters/filter-types';
+import { BarBlur } from '@/components/bar-blur';
 import { Rail, RailSkeleton, SectionHead } from '@/components/rail';
 import { RetryBlock } from '@/components/retry-block';
 import { SearchField } from '@/components/search-field';
@@ -855,12 +856,13 @@ export default function BrowseScreen() {
         {
           paddingTop: insets.top,
           height: headerHeight,
-          backgroundColor: theme.background,
           borderBottomColor: theme.hairline,
           pointerEvents: 'box-none',
         },
         headerStyle,
       ]}>
+      {/* Frosted, full-bleed background; the grid scrolls under the bar and shows through. */}
+      <BarBlur fallback={theme.background} />
       {/* Inner row capped to the content width so the selectors line up with the
           grid below, while the bar background stays full-bleed. */}
       <View style={[styles.selectorRow, { height: barHeight }]}>
