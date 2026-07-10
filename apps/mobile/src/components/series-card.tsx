@@ -11,8 +11,6 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { coverDelayMs } from '@/data/mock';
 import type { SeriesEntry } from '@/data/types';
-import { useFavorite } from '@/hooks/use-favorite';
-import { useLibrary } from '@/hooks/use-library';
 import { useIsCompact } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
@@ -247,22 +245,15 @@ export function SeriesCard({
   // The context menu's favorite/library status checks are armed lazily: they only run once the user
   // has actually interacted with THIS card (`active` = held on touch / hovered on web), so a full
   // grid doesn't fire two status checks per cell. Once armed it stays armed (so reopening is instant)
-  // until this instance is recycled to a different entry, which resets it below. The menu itself is
-  // only attached when there's a real bridge to act against (`bridgeId` — absent in mock mode).
+  // until this instance is recycled to a different entry, which resets it below. `armed` is handed to
+  // SeriesCardMenu, which mounts the actual status queries (SeriesCardMenuStatus) only then — keeping
+  // the two react-query observers entirely off the scroll hot path. The menu itself is only attached
+  // when there's a real bridge to act against (`bridgeId` — absent in mock mode).
   const [armed, setArmed] = useState(false);
   useEffect(() => {
     if (active) setArmed(true);
   }, [active]);
   const menuEnabled = !!bridgeId;
-  const { favorited, toggle: toggleFavorite } = useFavorite(bridgeId, entry.id, {
-    enabled: armed && menuEnabled,
-  });
-  const { inLibrary, toggle: toggleLibrary } = useLibrary(
-    bridgeId,
-    entry.id,
-    () => ({ title: entry.title, ...(entry.cover ? { thumbnailUrl: entry.cover } : {}) }),
-    { enabled: armed && menuEnabled },
-  );
 
   // Recycle-safety: the browse grid and rails now reuse card instances
   // (recycleItems), so when a slot is handed a different entry this same
@@ -423,13 +414,10 @@ export function SeriesCard({
   return (
     <SeriesCardMenu
       enabled={menuEnabled}
-      title={entry.title}
-      cover={entry.cover}
-      coverAspect={coverAspect}
-      favorited={favorited}
-      inLibrary={inLibrary}
-      onToggleFavorite={toggleFavorite}
-      onToggleLibrary={toggleLibrary}>
+      armed={armed}
+      bridgeId={bridgeId}
+      entry={entry}
+      coverAspect={coverAspect}>
       <Link
       // Force a new stack entry every time: expo-router's default `navigate`
       // behavior unwinds to an existing `/series` route already on the stack

@@ -3,50 +3,42 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { CheckIcon, MoreVerticalIcon, PlusIcon, StarIcon, type IconProps } from '@/components/icons/ui-icons';
 import { OptionList, useAnchoredOverlay, useOverlay } from '@/components/overlay/overlay';
+import { SeriesCardMenuStatus, useCardMenuStatus } from '@/components/series-card-menu-status';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { RowHeight, Spacing } from '@/constants/theme';
+import type { SeriesEntry } from '@/data/types';
 import { useTheme } from '@/hooks/use-theme';
 
 /**
  * Web variant of the per-card quick-actions menu (see `series-card-menu.tsx` for the native
  * long-press version). On web there's no OS context menu, so the affordance is a 3-dot button that
  * fades in when the card is hovered and opens the app's overlay menu (an anchored popover on desktop,
- * a bottom sheet on narrow web — the same system `Selector` uses). State + toggles are lifted into
- * `SeriesCard`; this file is pure presentation.
+ * a bottom sheet on narrow web — the same system `Selector` uses).
+ *
+ * The favorite/library status queries are deferred behind `armed` (set on hover), via the armed-gated
+ * `SeriesCardMenuStatus`, so a scrolling grid of un-hovered cards runs no per-card status checks.
  */
 export type SeriesCardMenuProps = {
   /** When false (no `bridgeId` — e.g. mock mode), render the card with no menu attached. */
   enabled: boolean;
-  /** Series title. Unused on web (the card's hover peek already reveals the full title); accepted so
-   *  the prop shape matches the native variant, which shows it atop the long-press menu. */
-  title?: string;
-  /** Cover URL. Unused on web; accepted so the prop shape matches the iOS variant's lifted preview. */
-  cover?: string;
+  /** True once the user has engaged this card (hover). Gates the status queries. */
+  armed: boolean;
+  bridgeId?: string;
+  entry: SeriesEntry;
   /** Cover aspect ratio. Unused on web; accepted so the prop shape matches the iOS variant. */
   coverAspect?: number;
-  /** `null` while the status check is still loading — the row is shown disabled until it resolves. */
-  favorited: boolean | null;
-  inLibrary: boolean | null;
-  onToggleFavorite: () => void;
-  onToggleLibrary: () => void;
   children: React.ReactNode;
 };
 
-export function SeriesCardMenu({
-  enabled,
-  favorited,
-  inLibrary,
-  onToggleFavorite,
-  onToggleLibrary,
-  children,
-}: SeriesCardMenuProps) {
+export function SeriesCardMenu({ enabled, armed, bridgeId, entry, children }: SeriesCardMenuProps) {
   const theme = useTheme();
   const { ref, openAt, isOpen } = useAnchoredOverlay();
   // Track hover on the wrapper (not the card or the button individually): moving the pointer from
   // the card onto the 3-dot button stays *inside* the wrapper, so the button doesn't flicker out
   // from under the cursor the moment you reach for it. Kept visible while the menu is open too.
   const [hovered, setHovered] = useState(false);
+  const { status, togglesRef, onStatus } = useCardMenuStatus();
 
   if (!enabled) return <>{children}</>;
 
@@ -56,6 +48,9 @@ export function SeriesCardMenu({
       style={styles.wrapper}
       onPointerEnter={() => setHovered(true)}
       onPointerLeave={() => setHovered(false)}>
+      {armed && bridgeId && (
+        <SeriesCardMenuStatus bridgeId={bridgeId} entry={entry} onStatus={onStatus} togglesRef={togglesRef} />
+      )}
       {children}
       <Pressable
         ref={ref}
@@ -65,10 +60,10 @@ export function SeriesCardMenu({
           e?.stopPropagation?.();
           openAt(() => (
             <SeriesActionsMenu
-              favorited={favorited}
-              inLibrary={inLibrary}
-              onToggleFavorite={onToggleFavorite}
-              onToggleLibrary={onToggleLibrary}
+              favorited={status.favorited}
+              inLibrary={status.inLibrary}
+              onToggleFavorite={() => togglesRef.current.favorite()}
+              onToggleLibrary={() => togglesRef.current.library()}
             />
           ));
         }}
@@ -92,7 +87,12 @@ function SeriesActionsMenu({
   inLibrary,
   onToggleFavorite,
   onToggleLibrary,
-}: Pick<SeriesCardMenuProps, 'favorited' | 'inLibrary' | 'onToggleFavorite' | 'onToggleLibrary'>) {
+}: {
+  favorited: boolean | null;
+  inLibrary: boolean | null;
+  onToggleFavorite: () => void;
+  onToggleLibrary: () => void;
+}) {
   const { closeTop } = useOverlay();
   return (
     <View style={styles.menu}>

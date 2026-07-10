@@ -3,9 +3,11 @@ import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { ContextMenu, Host, RNHostView, Toggle } from '@expo/ui/swift-ui';
 import { disabled as disabledModifier } from '@expo/ui/swift-ui/modifiers';
 
+import { SeriesCardMenuStatus, useCardMenuStatus } from '@/components/series-card-menu-status';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import type { SeriesEntry } from '@/data/types';
 import { DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 
 /**
@@ -21,18 +23,13 @@ import { DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 export type SeriesCardMenuProps = {
   /** When false (no `bridgeId` — e.g. mock mode), render the card with no menu attached. */
   enabled: boolean;
-  /** Full series title, shown unclamped in the lifted preview. */
-  title: string;
-  /** Cover URL, shown in the preview (falls back to an empty placeholder box when absent). */
-  cover?: string;
+  /** True once the user has engaged this card (press-in). Gates the status queries. */
+  armed: boolean;
+  bridgeId?: string;
+  entry: SeriesEntry;
   /** The cover's real (capped) aspect ratio, so the preview shows the cover at its true shape rather
    *  than a forced 2:3. Falls back to the 2:3 default until the cover has loaded. */
   coverAspect?: number;
-  /** `null` while the status check is still loading — the action is disabled until it resolves. */
-  favorited: boolean | null;
-  inLibrary: boolean | null;
-  onToggleFavorite: () => void;
-  onToggleLibrary: () => void;
   children: React.ReactNode;
 };
 
@@ -66,54 +63,52 @@ function PreviewCard({ title, cover, coverAspect }: { title: string; cover?: str
   );
 }
 
-export function SeriesCardMenu({
-  enabled,
-  title,
-  cover,
-  coverAspect,
-  favorited,
-  inLibrary,
-  onToggleFavorite,
-  onToggleLibrary,
-  children,
-}: SeriesCardMenuProps) {
+export function SeriesCardMenu({ enabled, armed, bridgeId, entry, coverAspect, children }: SeriesCardMenuProps) {
+  const { status, togglesRef, onStatus } = useCardMenuStatus();
+
   if (!enabled) return <>{children}</>;
 
   return (
-    // Mirrors @expo/ui MenuView.ios's own hosting: `matchContents` sizes the SwiftUI host to the
-    // card so layout is unchanged, and RN subtrees (trigger + preview) are bridged via RNHostView.
-    <Host matchContents ignoreSafeArea="all">
-      <ContextMenu>
-        <ContextMenu.Trigger>
-          <RNHostView matchContents>
-            <>{children}</>
-          </RNHostView>
-        </ContextMenu.Trigger>
-        <ContextMenu.Preview>
-          <RNHostView matchContents>
-            <PreviewCard title={title} cover={cover} coverAspect={coverAspect} />
-          </RNHostView>
-        </ContextMenu.Preview>
-        <ContextMenu.Items>
-          {/* Toggles (not plain Buttons) so iOS renders the current membership as a checkmark, matching
-              the Android dropdown; the dynamic label states the action, `isOn` marks current state. */}
-          <Toggle
-            label={inLibrary ? 'Remove from Library' : 'Add to Library'}
-            systemImage={inLibrary ? 'checkmark' : 'plus'}
-            isOn={!!inLibrary}
-            onIsOnChange={() => onToggleLibrary()}
-            modifiers={inLibrary === null ? [disabledModifier(true)] : undefined}
-          />
-          <Toggle
-            label={favorited ? 'Unfavorite' : 'Favorite'}
-            systemImage={favorited ? 'star.fill' : 'star'}
-            isOn={!!favorited}
-            onIsOnChange={() => onToggleFavorite()}
-            modifiers={favorited === null ? [disabledModifier(true)] : undefined}
-          />
-        </ContextMenu.Items>
-      </ContextMenu>
-    </Host>
+    <>
+      {/* Renders nothing; runs the status queries only once the card is armed (see status module). */}
+      {armed && bridgeId && (
+        <SeriesCardMenuStatus bridgeId={bridgeId} entry={entry} onStatus={onStatus} togglesRef={togglesRef} />
+      )}
+      {/* Mirrors @expo/ui MenuView.ios's own hosting: `matchContents` sizes the SwiftUI host to the
+          card so layout is unchanged, and RN subtrees (trigger + preview) are bridged via RNHostView. */}
+      <Host matchContents ignoreSafeArea="all">
+        <ContextMenu>
+          <ContextMenu.Trigger>
+            <RNHostView matchContents>
+              <>{children}</>
+            </RNHostView>
+          </ContextMenu.Trigger>
+          <ContextMenu.Preview>
+            <RNHostView matchContents>
+              <PreviewCard title={entry.title} cover={entry.cover} coverAspect={coverAspect} />
+            </RNHostView>
+          </ContextMenu.Preview>
+          <ContextMenu.Items>
+            {/* Toggles (not plain Buttons) so iOS renders the current membership as a checkmark, matching
+                the Android dropdown; the dynamic label states the action, `isOn` marks current state. */}
+            <Toggle
+              label={status.inLibrary ? 'Remove from Library' : 'Add to Library'}
+              systemImage={status.inLibrary ? 'checkmark' : 'plus'}
+              isOn={!!status.inLibrary}
+              onIsOnChange={() => togglesRef.current.library()}
+              modifiers={status.inLibrary === null ? [disabledModifier(true)] : undefined}
+            />
+            <Toggle
+              label={status.favorited ? 'Unfavorite' : 'Favorite'}
+              systemImage={status.favorited ? 'star.fill' : 'star'}
+              isOn={!!status.favorited}
+              onIsOnChange={() => togglesRef.current.favorite()}
+              modifiers={status.favorited === null ? [disabledModifier(true)] : undefined}
+            />
+          </ContextMenu.Items>
+        </ContextMenu>
+      </Host>
+    </>
   );
 }
 
