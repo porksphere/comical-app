@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FilterBar, SortControl } from '@/components/filters/filter-demo';
 import { resolveMetaIntent, resolveTagIntent, type MetaIntent, type TagIntent } from '@/components/filters/filter-intents';
-import { CONTROL_HEIGHT, filterValueToApi } from '@/components/filters/filter-types';
+import { filterValueToApi } from '@/components/filters/filter-types';
 import { GridSkeleton } from '@/components/grid-skeleton';
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
 import { RetryBlock } from '@/components/retry-block';
@@ -41,8 +41,8 @@ type GridItem = SeriesEntry & { spacer?: boolean };
 // Stable, never-fetched key for the results infinite query while it's disabled (no active search).
 const DISABLED_RESULTS_KEY = ['browseGrid', 'disabled', 'search'] as const;
 
-// The secondary filter bar's height: one row of controls plus a little vertical breathing room.
-const FILTERS_BAR_HEIGHT = CONTROL_HEIGHT + Spacing.two * 2;
+// Peak opacity of the top bar's drop shadow at the mid-point of the filter bar's slide.
+const SHADOW_PEAK_OPACITY = 0.16;
 
 const getNextPageParam = (last: GridPage, _all: GridPage[], lastParam: number) =>
   last.hasNextPage ? lastParam + 1 : undefined;
@@ -144,8 +144,10 @@ export default function SearchScreen() {
     return edited.length ? [...edited, ...rest] : filterDefs;
   }, [filterDefs, resolvedValues]);
 
-  const hasFilterBar = filterDefs.length > 0 || sortOptions.length > 0;
-  const filtersBarH = hasFilterBar ? FILTERS_BAR_HEIGHT : 0;
+  const hasFilterBar = filterDefs.length > 0;
+  // The filter bar matches the top bar row's height so its "+N" overflow chip lines up exactly with
+  // where the sort button ends in the bar above.
+  const filtersBarH = hasFilterBar ? barHeight : 0;
 
   // A search runs once there's a query, or a committed filter/sort. Until then the page is a blank
   // landing (the desktop entry opens straight here). Both the query key and the fetch derive from
@@ -218,6 +220,13 @@ export default function SearchScreen() {
     const t = filtersBarH > 0 ? Math.min(1, Math.max(0, -filtersOffsetY.value / filtersBarH)) : 1;
     return { borderBottomColor: interpolateColor(t, [0, 1], ['transparent', theme.hairline]) };
   });
+  // A subtle drop shadow only while the filter bar is mid-slide — a depth cue as it pops out from
+  // behind the top bar. Zero at both rest states (fully expanded = flush unit; fully collapsed = the
+  // hairline takes over), peaking in the middle of the motion (a parabola over the slide progress).
+  const topBarShadowStyle = useAnimatedStyle(() => {
+    const t = filtersBarH > 0 ? Math.min(1, Math.max(0, -filtersOffsetY.value / filtersBarH)) : 0;
+    return { shadowOpacity: SHADOW_PEAK_OPACITY * 4 * t * (1 - t) };
+  });
 
   const loadMore = () => {
     if (!scope || !resultsQuery.hasNextPage || resultsQuery.isFetchingNextPage) return;
@@ -268,7 +277,12 @@ export default function SearchScreen() {
           Opaque background so the filter bar tucks fully behind it as it slides up. Its bottom
           hairline fades in only once the filter bar has slid away (see topBarBorderStyle). */}
       <Animated.View
-        style={[styles.topBar, { paddingTop: insets.top, backgroundColor: theme.background }, topBarBorderStyle]}>
+        style={[
+          styles.topBar,
+          { paddingTop: insets.top, backgroundColor: theme.background },
+          topBarBorderStyle,
+          topBarShadowStyle,
+        ]}>
         <View style={[styles.topBarRow, { height: barHeight }]}>
           <Pressable
             onPress={goBack}
@@ -366,6 +380,12 @@ const styles = StyleSheet.create({
   topBar: {
     borderBottomWidth: StyleSheet.hairlineWidth,
     zIndex: 20,
+    // Downward drop shadow (iOS/web); its opacity is animated by topBarShadowStyle so it only shows
+    // mid-slide. Elevation is deliberately omitted — the Android system shadow can't be faded the
+    // same way, and this is a minor iOS/web depth cue.
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
   },
   topBarRow: {
     flexDirection: 'row',
@@ -399,10 +419,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   filtersInner: {
+    // Same cap + horizontal padding as the top bar row, so the filter row spans exactly the same
+    // width — the "+N" overflow chip ends where the sort button above it ends.
     width: '100%',
     maxWidth: MaxTopLevelWidth,
     alignSelf: 'center',
-    paddingHorizontal: Spacing.four,
+    paddingHorizontal: Spacing.three,
   },
   gridCell: {
     flex: 1,
