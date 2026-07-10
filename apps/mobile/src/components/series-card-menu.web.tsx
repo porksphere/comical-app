@@ -18,6 +18,11 @@ import { useTheme } from '@/hooks/use-theme';
 export type SeriesCardMenuProps = {
   /** When false (no `bridgeId` — e.g. mock mode), render the card with no menu attached. */
   enabled: boolean;
+  /** Series title. Unused on web (the card's hover peek already reveals the full title); accepted so
+   *  the prop shape matches the native variant, which shows it atop the long-press menu. */
+  title?: string;
+  /** Cover URL. Unused on web; accepted so the prop shape matches the iOS variant's lifted preview. */
+  cover?: string;
   /** `null` while the status check is still loading — the row is shown disabled until it resolves. */
   favorited: boolean | null;
   inLibrary: boolean | null;

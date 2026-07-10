@@ -11,6 +11,12 @@ import { MenuView, type MenuAction } from '@expo/ui/community/menu';
 export type SeriesCardMenuProps = {
   /** When false (no `bridgeId` — e.g. mock mode), render the card with no menu attached. */
   enabled: boolean;
+  /** The series title, shown at the top of the native menu (the card's own title is clamped, so this
+   *  is where the full title is revealed once the card is long-pressed / "expanded"). */
+  title: string;
+  /** Cover URL. Unused on Android (the dropdown has no preview surface); accepted so the prop shape
+   *  matches the iOS variant, whose lifted preview shows it. */
+  cover?: string;
   /** `null` while the status check is still loading — the action is shown disabled until it resolves. */
   favorited: boolean | null;
   inLibrary: boolean | null;
@@ -21,6 +27,7 @@ export type SeriesCardMenuProps = {
 
 export function SeriesCardMenu({
   enabled,
+  title,
   favorited,
   inLibrary,
   onToggleFavorite,
@@ -51,6 +58,7 @@ export function SeriesCardMenu({
 
   return (
     <MenuView
+      title={title}
       shouldOpenOnLongPress
       actions={actions}
       onPressAction={({ nativeEvent }) => {
