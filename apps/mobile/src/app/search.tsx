@@ -4,10 +4,15 @@ import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
-import Animated, { useAnimatedReaction, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import Animated, {
+  interpolateColor,
+  useAnimatedReaction,
+  useAnimatedStyle,
+  useSharedValue,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { FilterBar } from '@/components/filters/filter-demo';
+import { FilterBar, SortControl } from '@/components/filters/filter-demo';
 import { resolveMetaIntent, resolveTagIntent, type MetaIntent, type TagIntent } from '@/components/filters/filter-intents';
 import { CONTROL_HEIGHT, filterValueToApi } from '@/components/filters/filter-types';
 import { GridSkeleton } from '@/components/grid-skeleton';
@@ -205,6 +210,14 @@ export default function SearchScreen() {
     [filtersBarH],
   );
   const filtersStyle = useAnimatedStyle(() => ({ transform: [{ translateY: filtersOffsetY.value }] }));
+  // The top bar's own bottom hairline is the inverse of the filter bar's visibility: hidden while the
+  // filter bar is fully expanded right below it (the filter bar's hairline is the divider then), and
+  // fading in as the filter bar slides up out of view (so the top bar keeps a divider from the
+  // content). With no filter bar at all, it's simply always shown.
+  const topBarBorderStyle = useAnimatedStyle(() => {
+    const t = filtersBarH > 0 ? Math.min(1, Math.max(0, -filtersOffsetY.value / filtersBarH)) : 1;
+    return { borderBottomColor: interpolateColor(t, [0, 1], ['transparent', theme.hairline]) };
+  });
 
   const loadMore = () => {
     if (!scope || !resultsQuery.hasNextPage || resultsQuery.isFetchingNextPage) return;
@@ -216,19 +229,13 @@ export default function SearchScreen() {
     router.back();
   };
 
-  // Empty-state body shown when the grid has no items: a retry on error, the blank-landing hint
-  // before any search, a first-load skeleton, or "no results". Folded into the list header to match
-  // the Browse/Library grids.
+  // Empty-state body shown when the grid has no items: a retry on error, a first-load skeleton, or
+  // "no results". The blank landing (no query/filter yet) shows nothing. Folded into the list header
+  // to match the Browse/Library grids.
   const showEmpty = gridData.length === 0 && (bridgesLoaded || bridges.length > 0);
   const emptyBody = !showEmpty ? null : gridError ? (
     <RetryBlock message={gridError} onRetry={() => resultsQuery.refetch()} />
-  ) : !scope ? (
-    <View style={styles.hint}>
-      <ThemedText type="small" themeColor="textSecondary" style={styles.hintText}>
-        {currentBridge ? `Search ${currentBridge.name}` : 'Search'}
-      </ThemedText>
-    </View>
-  ) : resultsQuery.isLoading ? (
+  ) : !scope ? null : resultsQuery.isLoading ? (
     <GridSkeleton numColumns={numColumns} rows={2} />
   ) : (
     <View style={styles.hint}>
@@ -240,28 +247,28 @@ export default function SearchScreen() {
 
   const filterBar = hasFilterBar ? (
     // Absolute overlay pinned to the top of the list host; slides up via `filtersStyle`. Opaque
-    // background so results pass behind it. Inner row capped + centred to line up with the grid.
+    // background so results pass behind it, with a bottom hairline as the divider from the content.
+    // Inner row capped + centred to line up with the grid.
     <Animated.View
-      style={[styles.filtersBar, { height: filtersBarH, backgroundColor: theme.background }, filtersStyle]}
+      style={[
+        styles.filtersBar,
+        { height: filtersBarH, backgroundColor: theme.background, borderBottomColor: theme.hairline },
+        filtersStyle,
+      ]}
       pointerEvents="box-none">
       <View style={styles.filtersInner}>
-        <FilterBar
-          defs={orderedDefs}
-          values={resolvedValues}
-          onValueChange={setFilterValue}
-          sortOptions={sortOptions}
-          sort={sortValue}
-          onSortChange={setSortValue}
-          searchActive={!!scope}
-        />
+        <FilterBar defs={orderedDefs} values={resolvedValues} onValueChange={setFilterValue} />
       </View>
     </Animated.View>
   ) : null;
 
   return (
     <ThemedView style={styles.container}>
-      {/* Fixed top bar: back button + the search field (autofocused after the push settles). */}
-      <View style={[styles.topBar, { paddingTop: insets.top, borderBottomColor: theme.hairline }]}>
+      {/* Fixed top bar: back button + search field (autofocused after the push settles) + sort.
+          Opaque background so the filter bar tucks fully behind it as it slides up. Its bottom
+          hairline fades in only once the filter bar has slid away (see topBarBorderStyle). */}
+      <Animated.View
+        style={[styles.topBar, { paddingTop: insets.top, backgroundColor: theme.background }, topBarBorderStyle]}>
         <View style={[styles.topBarRow, { height: barHeight }]}>
           <Pressable
             onPress={goBack}
@@ -280,8 +287,11 @@ export default function SearchScreen() {
               autoFocus={!initialIntent}
             />
           </View>
+          {sortOptions.length > 0 && (
+            <SortControl sortOptions={sortOptions} sort={sortValue} onSortChange={setSortValue} />
+          )}
         </View>
-      </View>
+      </Animated.View>
 
       {bridgesError && bridges.length === 0 ? (
         <View style={[styles.container, styles.centerFill]}>
@@ -338,7 +348,7 @@ export default function SearchScreen() {
               showsVerticalScrollIndicator={Platform.OS === 'web'}
             />
           )}
-          {filterBar}
+          {ready && filterBar}
         </View>
       )}
     </ThemedView>
@@ -386,6 +396,7 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 10,
     justifyContent: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   filtersInner: {
     width: '100%',
