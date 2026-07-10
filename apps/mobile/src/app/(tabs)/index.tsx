@@ -544,6 +544,9 @@ export default function BrowseScreen() {
   // (page/filter/sort/search) keep the lighter dim below, suppressed while `switching`.
   const XFADE_OUT_MS = 140;
   const XFADE_IN_MS = 200;
+  // Hard cap on the hidden window — reveal whatever's there rather than ever leaving the home
+  // stranded invisible if readiness somehow never resolves.
+  const XFADE_MAX_WAIT_MS = 1800;
   const homeXfade = useSharedValue(1);
   const homeXfadeStyle = useAnimatedStyle(() => ({ opacity: homeXfade.value }));
   const [switching, setSwitching] = useState(false);
@@ -557,16 +560,31 @@ export default function BrowseScreen() {
     setSeeAll(null);
     setCommitted(true);
   }, []);
-  // Fade the new bridge's home back in once the switch is COMMITTED and its content is ready —
-  // settled, or errored (so a failed switch reveals its Retry rather than stranding a blank,
-  // opacity-0 home). The `committed` gate stops this firing mid-fade-out, when `homeReady` still
-  // reflects the (settled) outgoing bridge.
-  const homeReady = !!homeError || !!gridError || (!homeUpdating && !gridUpdating);
+  // "The new bridge's home is ready to reveal": its content query has settled, or errored (so a
+  // failed switch shows its Retry instead of stranding a blank home). Only consult `homeUpdating`
+  // when the COMPOSED home actually drives the surface. A page-list bridge (home is a page-flagged
+  // list, composedHome=false) has its home query DISABLED, and under keepPreviousData a disabled
+  // query sits on the previous bridge's data as a permanent placeholder — so homeUpdating would be
+  // stuck true forever and the crossfade would never fade back in, leaving the home invisible at
+  // opacity 0 (a page-list bridge showed no home content). Such a home is ready on its grid alone.
+  const homeReady =
+    !!homeError || !!gridError || (!gridUpdating && (composedHome ? !homeUpdating : true));
   useEffect(() => {
-    if (!switching || !committed || !homeReady) return;
-    homeXfade.value = withTiming(1, { duration: XFADE_IN_MS, easing: Easing.out(Easing.quad) });
-    setSwitching(false);
-    setCommitted(false);
+    // `committed` gates out the fade-out phase, when `homeReady` still reflects the outgoing bridge.
+    if (!switching || !committed) return;
+    const revealNow = () => {
+      homeXfade.value = withTiming(1, { duration: XFADE_IN_MS, easing: Easing.out(Easing.quad) });
+      setSwitching(false);
+      setCommitted(false);
+    };
+    if (homeReady) {
+      revealNow();
+      return;
+    }
+    // Not ready yet — reveal on readiness (this effect re-runs when homeReady flips), but never wait
+    // past the cap, so a stuck/edge query state can't strand the home invisible.
+    const t = setTimeout(revealNow, XFADE_MAX_WAIT_MS);
+    return () => clearTimeout(t);
   }, [switching, committed, homeReady, homeXfade]);
 
   // ── Within-bridge grid dim (page/filter/sort/search refinements) ──────────
