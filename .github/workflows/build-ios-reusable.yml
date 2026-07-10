@@ -58,30 +58,35 @@ jobs:
         with:
           node-version: 20
 
-      # --- Caches (all keyed on bun.lock; each run writes a fresh entry and
-      # restores from the newest prior via restore-keys) --------------------
+      # --- Cache RESTORE (all branches) ------------------------------------
+      # Only `main` writes caches (the save steps at the end are gated on it);
+      # every other ref restores read-only. GitHub lets a branch/PR run read the
+      # default-branch cache, so the `restore-keys` prefixes below match main's
+      # newest entry and give feature branches a warm start — while keeping the
+      # shared 10 GB budget from being thrashed by per-branch writes (which would
+      # LRU-evict main's warm cache and slow everyone down).
 
       # Bun's global module cache — speeds both the root install and the
       # external/comical submodule install.
-      - name: Cache Bun modules
-        uses: actions/cache@v4
+      - name: Restore Bun modules
+        uses: actions/cache/restore@v4
         with:
           path: ~/.bun/install/cache
           key: bun-ios-${{ hashFiles('bun.lock') }}
           restore-keys: bun-ios-
 
       # CocoaPods CDN spec + downloaded pod source cache — trims `pod install`.
-      - name: Cache CocoaPods
-        uses: actions/cache@v4
+      - name: Restore CocoaPods
+        uses: actions/cache/restore@v4
         with:
           path: ~/Library/Caches/CocoaPods
           key: pods-ios-${{ hashFiles('bun.lock') }}
           restore-keys: pods-ios-
 
-      # ccache — the big one. Keyed with a per-run suffix so every build saves an
-      # updated cache, falling back to the most recent one for a warm start.
-      - name: Cache ccache
-        uses: actions/cache@v4
+      # ccache — the big one. main saves a fresh per-commit entry; branches fall
+      # back to the newest via restore-keys and only recompile their delta.
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
         with:
           path: ${{ github.workspace }}/.ccache
           key: ccache-ios-${{ hashFiles('bun.lock') }}-${{ github.sha }}
@@ -94,11 +99,13 @@ jobs:
       # rewrites ios/ every run, so header ctime/mtime change even when content
       # doesn't — without these, ccache would treat every header as modified and
       # never hit. file_clone uses fast APFS copies for the cached objects.
+      # 2 GB cap keeps main's combined footprint (ccache + Pods + Bun, fresh per
+      # commit) comfortably under the repo's 10 GB cache budget.
       - name: Configure ccache
         run: |
           set -euo pipefail
           command -v ccache >/dev/null || brew install ccache
-          ccache --max-size=3G
+          ccache --max-size=2G
           ccache --set-config=sloppiness=clang_index_store,include_file_ctime,include_file_mtime,ivfsoverlay,pch_defines,modules,system_headers,time_macros,gcno_cwd
           ccache --set-config=file_clone=true
           ccache --zero-stats
@@ -186,3 +193,28 @@ jobs:
           name: comical-ios-unsigned-ipa
           path: ${{ runner.temp }}/comical-unsigned.ipa
           if-no-files-found: error
+
+      # --- Cache SAVE (main only) ------------------------------------------
+      # Persist the freshly-populated caches from the default branch only, so
+      # the shared 10 GB budget holds one authoritative warm cache instead of a
+      # per-branch pile that evicts it. Feature branches restore these read-only.
+      - name: Save ccache
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-ios-${{ hashFiles('bun.lock') }}-${{ github.sha }}
+
+      - name: Save Bun modules
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-ios-${{ hashFiles('bun.lock') }}
+
+      - name: Save CocoaPods
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/Library/Caches/CocoaPods
+          key: pods-ios-${{ hashFiles('bun.lock') }}

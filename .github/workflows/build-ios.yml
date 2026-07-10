@@ -22,6 +22,18 @@ on:
       - 'bun.lock'
       - '.github/workflows/build-ios.yml'
       - '.github/workflows/build-ios-reusable.yml'
+  # PR builds verify the branch compiles and produce a downloadable IPA artifact.
+  # They read main's warm caches (see the reusable workflow) but never write
+  # them, and the rolling `publish` job below is gated to main so a PR can't
+  # clobber the ios-latest channel.
+  pull_request:
+    paths:
+      - 'apps/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'bun.lock'
+      - '.github/workflows/build-ios.yml'
+      - '.github/workflows/build-ios-reusable.yml'
 
 concurrency:
   group: ios-${{ github.ref }}
@@ -39,6 +51,9 @@ jobs:
 
   publish:
     needs: build
+    # Rolling ios-latest channel is main-only; PR/branch builds stop at the
+    # uploaded artifact so they can't overwrite the AltStore source.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

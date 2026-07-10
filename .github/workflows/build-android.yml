@@ -19,6 +19,18 @@ on:
       - 'bun.lock'
       - '.github/workflows/build-android.yml'
       - '.github/workflows/build-android-reusable.yml'
+  # PR builds verify the branch compiles and produce a downloadable APK artifact.
+  # They read main's warm caches (see the reusable workflow) but never write
+  # them, and the rolling `publish` job below is gated to main so a PR can't
+  # clobber the android-latest channel.
+  pull_request:
+    paths:
+      - 'apps/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'bun.lock'
+      - '.github/workflows/build-android.yml'
+      - '.github/workflows/build-android-reusable.yml'
 
 concurrency:
   group: android-${{ github.ref }}
@@ -35,6 +47,9 @@ jobs:
 
   publish:
     needs: build
+    # Rolling android-latest channel is main-only; PR/branch builds stop at the
+    # uploaded artifact so they can't overwrite the download URL.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Download APK
