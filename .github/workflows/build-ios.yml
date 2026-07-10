@@ -27,6 +27,9 @@ on:
   # them, and the rolling `publish` job below is gated to main so a PR can't
   # clobber the ios-latest channel.
   pull_request:
+    # `closed` is included so the cleanup job can tear down the per-PR release
+    # when the PR is merged/closed; the build + publish-pr jobs skip that action.
+    types: [opened, synchronize, reopened, closed]
     paths:
       - 'apps/**'
       - 'packages/**'
@@ -46,6 +49,9 @@ permissions:
 
 jobs:
   build:
+    # Skip the (expensive, macOS) build when a PR merely closes — cleanup-pr
+    # handles that event and needs no IPA.
+    if: github.event.action != 'closed'
     uses: ./.github/workflows/build-ios-reusable.yml
     secrets: inherit
 
@@ -171,3 +177,117 @@ jobs:
           \`${BASE}/comical-unsigned.ipa\`
 
           <!-- built-sha: ${GITHUB_SHA} -->"
+
+  # Per-PR install channel. Each open PR gets its own `ios-pr-<N>` Release
+  # hosting the IPA + a dedicated AltStore source (apps.json) at a stable URL,
+  # so you can add that source once and AltStore keeps updating it as the PR
+  # moves. The app keeps the production bundle id (com.porksphere.comical), so
+  # installing a PR build REPLACES the main app on device (and vice versa) —
+  # intentional per the "replace on device" choice. cleanup-pr tears it down
+  # when the PR closes. Note: PRs from forks get a read-only token and will skip
+  # this step (no secrets exposure) — this repo builds its own branches.
+  publish-pr:
+    needs: build
+    # Same-repo PRs only: fork PRs get a read-only token (can't create Releases),
+    # so skip publishing for them — the build job still verifies they compile.
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.action != 'closed'
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download unsigned IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: ${{ runner.temp }}/ipa
+
+      - name: Publish IPA + AltStore source to the ios-pr-<N> Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+          PR: ${{ github.event.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          TAG="ios-pr-${PR}"
+          IPA="$RUNNER_TEMP/ipa/comical-unsigned.ipa"
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
+          SIZE=$(stat -c%s "$IPA")
+          DATE=$(date -u +%Y-%m-%d)
+          cp apps/mobile/assets/images/icon.png "$RUNNER_TEMP/icon.png"
+
+          # Patch notes = the PR title (kept simple/robust vs. a git-log diff on
+          # the merge ref). jq -Rs JSON-escapes it safely.
+          NOTES=$(printf 'PR #%s: %s' "$PR" "$PR_TITLE")
+
+          # Unique source `identifier` per PR so AltStore treats each PR source
+          # as distinct; the app `bundleIdentifier` stays production (replace).
+          jq -n \
+            --arg version "$VERSION" \
+            --arg date "$DATE" \
+            --arg notes "$NOTES" \
+            --arg dl "${BASE}/comical-unsigned.ipa" \
+            --argjson size "$SIZE" \
+            --arg icon "${BASE}/icon.png" \
+            --arg srcid "com.porksphere.comical.source.pr${PR}" \
+            --arg name "Comical (PR ${PR})" \
+            '{
+              name: $name,
+              identifier: $srcid,
+              apps: [{
+                name: $name,
+                bundleIdentifier: "com.porksphere.comical",
+                developerName: "porksphere",
+                localizedDescription: "Comical PR build — unsigned; re-signed on-device by SideStore/AltStore. Installs over the main app (same bundle id).",
+                iconURL: $icon,
+                tintColor: "208AEF",
+                versions: [{
+                  version: $version,
+                  date: $date,
+                  localizedDescription: $notes,
+                  downloadURL: $dl,
+                  size: $size
+                }],
+                version: $version,
+                versionDate: $date,
+                versionDescription: $notes,
+                downloadURL: $dl,
+                size: $size
+              }]
+            }' > "$RUNNER_TEMP/apps.json"
+
+          # Recreate the per-PR tag/release (pointed at the PR head) so the URLs
+          # stay stable across pushes to the PR.
+          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          gh release create "$TAG" \
+            "$IPA" \
+            "$RUNNER_TEMP/apps.json" \
+            "$RUNNER_TEMP/icon.png" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$HEAD_SHA" \
+            --prerelease \
+            --title "Comical iOS — PR #${PR}" \
+            --notes "Unsigned IPA for PR #${PR} (SideStore/AltStore, re-signed on-device).
+
+          **Install via source:** add this URL in SideStore/AltStore → Sources → +
+          \`${BASE}/apps.json\`
+
+          **Or install the IPA directly:**
+          \`${BASE}/comical-unsigned.ipa\`
+
+          ⚠️ Same bundle id as the release app — installing this replaces Comical on your device."
+
+  # Tear down the per-PR release + tag when the PR is merged or closed.
+  cleanup-pr:
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete ios-pr-<N> Release + tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.number }}
+        run: gh release delete "ios-pr-${PR}" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
