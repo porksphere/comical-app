@@ -8,10 +8,13 @@ name: Deploy Web (GitHub Pages)
 #
 # The gh-pages branch is a persistent content store: each branch's static
 # output lives in its own subfolder (root for main, branches/<slug> for others).
-# On every push the new build is merged in; on every branch deletion the
-# subfolder is removed. The full site is then assembled from the store and
-# published via actions/deploy-pages — no separate "pages build and deployment"
-# workflow fires.
+# On every deploy the new build is merged in AND the store is reconciled against
+# the live remote branches: any branches/<slug> whose branch no longer exists is
+# pruned. This self-heals even when a `delete` event was missed (bulk deletes,
+# deletions from before this handler existed, skipped runs), so the assembled
+# site and the summary never link to dead branches. The full site is then
+# assembled from the store and published via actions/deploy-pages — no separate
+# "pages build and deployment" workflow fires.
 #
 # ONE-TIME SETUP: in repo Settings → Pages, set Source to "GitHub Actions"
 # (not "Deploy from a branch"). This hands control of the CDN publish to our
@@ -139,28 +142,52 @@ jobs:
           user_email: 'github-actions[bot]@users.noreply.github.com'
           commit_message: "Deploy web preview for ${{ github.ref_name }} (${{ github.sha }})"
 
-      - name: Remove deleted branch from gh-pages content store
-        if: github.event_name == 'delete'
+      # Reconcile the store against live branches — runs for every event
+      # (push / dispatch / delete), so it also removes the just-deleted branch
+      # AND any older orphans a missed `delete` event left behind. Operates in a
+      # detached worktree so the main checkout (and its auth config, reused for
+      # the push) is left untouched.
+      - name: Prune previews for branches that no longer exist
         env:
-          SLUG: ${{ steps.meta.outputs.slug }}
-          BRANCH: ${{ github.event.ref }}
+          GIT_AUTHOR_NAME: 'github-actions[bot]'
+          GIT_AUTHOR_EMAIL: 'github-actions[bot]@users.noreply.github.com'
+          GIT_COMMITTER_NAME: 'github-actions[bot]'
+          GIT_COMMITTER_EMAIL: 'github-actions[bot]@users.noreply.github.com'
         run: |
+          set -euo pipefail
           if ! git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
-            echo "No gh-pages branch; nothing to remove."
+            echo "No gh-pages branch yet; nothing to prune."
             exit 0
           fi
-          git fetch origin gh-pages
-          git checkout -b _ghpages origin/gh-pages
-          TARGET="branches/${SLUG}"
-          if [ ! -d "$TARGET" ]; then
-            echo "No preview folder ${TARGET}; nothing to remove."
+          git fetch --depth=1 origin gh-pages
+          work="$(mktemp -d)"
+          git worktree add --detach "$work" FETCH_HEAD
+          cd "$work"
+          if [ ! -d branches ]; then
+            echo "No branches/ in content store; nothing to prune."
             exit 0
           fi
-          git config user.name 'github-actions[bot]'
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git rm -r --quiet "$TARGET"
-          git commit -m "Remove web preview for deleted branch ${BRANCH}"
-          git push origin HEAD:gh-pages
+          # Slugs of every live remote branch, via the same transform used to
+          # build destination_dir when deploying (non-alnum -> '-').
+          live="$(git ls-remote --heads origin \
+            | sed -E 's#^.*refs/heads/##; s#[^A-Za-z0-9._-]#-#g' | sort -u)"
+          removed=0
+          for dir in branches/*/; do
+            [ -d "$dir" ] || continue
+            slug="$(basename "$dir")"
+            if ! printf '%s\n' "$live" | grep -qxF "$slug"; then
+              echo "Pruning stale preview: branches/${slug}"
+              git rm -rq "$dir"
+              removed=$((removed + 1))
+            fi
+          done
+          if [ "$removed" -gt 0 ]; then
+            git commit -qm "Prune ${removed} stale branch preview(s) with no live branch"
+            git push origin HEAD:gh-pages
+            echo "Pruned ${removed} stale preview(s)."
+          else
+            echo "No stale previews to prune."
+          fi
 
       # ── Assemble full site and deploy ─────────────────────────────────────────
 
