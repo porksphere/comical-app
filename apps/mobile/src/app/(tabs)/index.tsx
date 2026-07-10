@@ -569,18 +569,15 @@ export default function BrowseScreen() {
     setCommitted(false);
   }, [switching, committed, homeReady, homeXfade]);
 
-  // ── Within-bridge dim (page/filter/sort/search refinements) ───────────────
-  // A lighter treatment than a full source switch: the kept content eases to a dimmed 0.45 while the
-  // new scope loads, then back to full — "refreshing", not "swapping". Suppressed while `switching`
-  // (the full crossfade above owns a bridge change; this would just fight it). One shared animated
-  // style is reused across every grid cell (no per-cell hook — renderItem isn't a component).
+  // ── Within-bridge grid dim (page/filter/sort/search refinements) ──────────
+  // A lighter treatment than a full source switch: the kept grid eases to a dimmed 0.45 while the new
+  // scope loads, then back to full — "refreshing", not "swapping". Suppressed while `switching` (the
+  // full crossfade above owns a bridge change; this would just fight it). One shared animated style is
+  // reused across every grid cell (no per-cell hook — renderItem isn't a component). Only the grid
+  // needs it: the composed-home rails are only ever placeholder-swapped by a bridge change, which the
+  // crossfade already covers — so there's no separate rails dim (homeUpdating ⇒ switching).
   const REVEAL_DIM = 0.45;
   const REVEAL_MS = 200;
-  const homeReveal = useSharedValue(1);
-  useEffect(() => {
-    homeReveal.value = withTiming(homeUpdating && !switching ? REVEAL_DIM : 1, { duration: REVEAL_MS, easing: Easing.out(Easing.quad) });
-  }, [homeUpdating, switching, homeReveal]);
-  const homeContentStyle = useAnimatedStyle(() => ({ opacity: homeReveal.value }));
   const gridReveal = useSharedValue(1);
   useEffect(() => {
     gridReveal.value = withTiming(gridUpdating && !switching ? REVEAL_DIM : 1, { duration: REVEAL_MS, easing: Easing.out(Easing.quad) });
@@ -949,10 +946,10 @@ export default function BrowseScreen() {
               ))}
             </>
           ) : (
-            // Crossfaded while showing the previous bridge's rails/sections during a switch (see
-            // `homeReveal`/`homeContentStyle`) so the placeholder eases to dim, then the new
-            // bridge's content eases back to full — rather than a hard dim toggle / pop.
-            <Animated.View style={homeContentStyle}>
+            // The whole home (this block included) is dissolved as one by the bridge-switch crossfade
+            // on the list wrapper — see `homeXfade` — so the rails need no opacity treatment of their
+            // own here; they only ever placeholder-swap on a bridge change, which the crossfade owns.
+            <View>
               <View style={styles.rails}>
                 {sections.map((s) => (
                   <Rail
@@ -976,7 +973,7 @@ export default function BrowseScreen() {
                   numColumns={numColumns}
                 />
               ))}
-            </Animated.View>
+            </View>
           )}
           {terminalGridSection ? (
             <View style={styles.browseAllHead}>
@@ -1091,10 +1088,6 @@ export default function BrowseScreen() {
           paddingLeft: sidePad,
           paddingRight: sidePad,
         }}
-        // `gridUpdating` fed as extraData so recycled cells re-render (and pick up the dim) the
-        // moment the grid enters the keepPreviousData placeholder state — at which point the item
-        // data reference is unchanged, so a data-diff alone wouldn't trigger it.
-        extraData={gridUpdating}
         renderItem={({ item }) => {
           if (item.spacer) {
             return <View style={styles.gridCell} />;
