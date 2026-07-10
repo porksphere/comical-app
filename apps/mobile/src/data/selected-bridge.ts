@@ -29,6 +29,21 @@ export const selectedBridge$ = observable<string | null>(null);
  *  state, so consumers (e.g. the Browse crossfade's deferred commit) get a fixed reference. */
 export const setSelectedBridge = (name: string) => selectedBridge$.set(name);
 
+/**
+ * The reactive selected-bridge name.
+ *
+ * Isolated into its own hook on purpose: the React Compiler (`experiments.reactCompiler`) detects
+ * hooks by name — `use` + an uppercase letter — so it does NOT recognise `use$` (the `$` isn't a
+ * letter) and treats it as a plain call. Calling `use$` directly *before* another hook like
+ * `useQuery` in the same compiled function throws off the compiler's hook-slot accounting and
+ * crashes at runtime ("Cannot read property 'length' of undefined" in `updateEffectImpl`). Nesting
+ * it here — with nothing after it — keeps the caller's hook accounting correct, the same safe shape
+ * `useHideNsfw` already uses.
+ */
+function useSelectedBridgeName(): string | null {
+  return use$(selectedBridge$);
+}
+
 export type SelectedBridge = {
   /** The raw selected bridge name, or null before the user has picked one. */
   bridge: string | null;
@@ -55,7 +70,7 @@ export type SelectedBridge = {
 export function useSelectedBridge(): SelectedBridge {
   const ds = useDataSource();
   const hideNsfw = useHideNsfw();
-  const bridge = use$(selectedBridge$);
+  const bridge = useSelectedBridgeName();
 
   const bridgesQuery = useQuery({
     queryKey: queryKeys.bridges(),
