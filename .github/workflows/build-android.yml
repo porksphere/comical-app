@@ -15,15 +15,19 @@ on:
     paths:
       - 'apps/**'
       - 'packages/**'
+      # On-device runtime submodule pointer — a bump changes the built app.
+      - 'external/comical'
       - 'package.json'
       - 'bun.lock'
       - '.github/workflows/build-android.yml'
       - '.github/workflows/build-android-reusable.yml'
-      # Exclude docs-only changes. These negations are evaluated after the
-      # positives above, so a commit that touches ONLY markdown or the docs
-      # dir won't fire a build; a mixed commit still does.
+      # Exclude docs-only and eas.json changes. These negations are evaluated
+      # after the positives above, so a commit touching ONLY markdown, the docs
+      # dir, or eas.json won't fire a build; a mixed commit still does. (eas.json
+      # isn't used by CI — it does bare `expo prebuild`.)
       - '!**/*.md'
       - '!apps/mobile/docs/**'
+      - '!apps/mobile/eas.json'
   # PR builds verify the branch compiles and produce a downloadable APK artifact.
   # They read main's warm caches (see the reusable workflow) but never write
   # them, and the rolling `publish` job below is gated to main so a PR can't
@@ -35,15 +39,19 @@ on:
     paths:
       - 'apps/**'
       - 'packages/**'
+      # On-device runtime submodule pointer — a bump changes the built app.
+      - 'external/comical'
       - 'package.json'
       - 'bun.lock'
       - '.github/workflows/build-android.yml'
       - '.github/workflows/build-android-reusable.yml'
-      # Exclude docs-only changes. These negations are evaluated after the
-      # positives above, so a commit that touches ONLY markdown or the docs
-      # dir won't fire a build; a mixed commit still does.
+      # Exclude docs-only and eas.json changes. These negations are evaluated
+      # after the positives above, so a commit touching ONLY markdown, the docs
+      # dir, or eas.json won't fire a build; a mixed commit still does. (eas.json
+      # isn't used by CI — it does bare `expo prebuild`.)
       - '!**/*.md'
       - '!apps/mobile/docs/**'
+      - '!apps/mobile/eas.json'
 
 concurrency:
   group: android-${{ github.ref }}
