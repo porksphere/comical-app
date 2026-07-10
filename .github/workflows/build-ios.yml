@@ -22,6 +22,11 @@ on:
       - 'bun.lock'
       - '.github/workflows/build-ios.yml'
       - '.github/workflows/build-ios-reusable.yml'
+      # Exclude docs-only changes. These negations are evaluated after the
+      # positives above, so a commit that touches ONLY markdown or the docs
+      # dir won't fire an (expensive, macOS) build; a mixed commit still does.
+      - '!**/*.md'
+      - '!apps/mobile/docs/**'
   # PR builds verify the branch compiles and produce a downloadable IPA artifact.
   # They read main's warm caches (see the reusable workflow) but never write
   # them, and the rolling `publish` job below is gated to main so a PR can't
@@ -37,6 +42,11 @@ on:
       - 'bun.lock'
       - '.github/workflows/build-ios.yml'
       - '.github/workflows/build-ios-reusable.yml'
+      # Exclude docs-only changes. These negations are evaluated after the
+      # positives above, so a commit that touches ONLY markdown or the docs
+      # dir won't fire an (expensive, macOS) build; a mixed commit still does.
+      - '!**/*.md'
+      - '!apps/mobile/docs/**'
 
 concurrency:
   group: ios-${{ github.ref }}
