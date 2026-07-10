@@ -6,10 +6,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, {
+  Easing,
   runOnJS,
   useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
+  withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -531,6 +533,27 @@ export default function BrowseScreen() {
   // scope loads — dim the cards to signal the refresh (bridge / page / filter / sort / search).
   const gridUpdating = activeGridQuery.isPlaceholderData;
 
+  // Crossfade the placeholder→fresh handoff (bridge/scope switch) instead of hard-cutting the dim:
+  // the outgoing (kept) content eases down to a dimmed 0.45 while the new data loads, then eases
+  // back to full as it lands — so the swap reads as old fading out / new fading in rather than a
+  // pop. Two signals because the home rails/sections and the grid settle on their own queries
+  // (homeUpdating vs gridUpdating). Driven on the UI thread, and one shared animated style is reused
+  // across every grid cell (no per-cell hook — renderItem isn't a component). The rails themselves
+  // additionally fade in from 0 on mount (see Rail) so a cold-mounted carousel fades into its
+  // reserved height rather than popping.
+  const REVEAL_DIM = 0.45;
+  const REVEAL_MS = 200;
+  const homeReveal = useSharedValue(1);
+  useEffect(() => {
+    homeReveal.value = withTiming(homeUpdating ? REVEAL_DIM : 1, { duration: REVEAL_MS, easing: Easing.out(Easing.quad) });
+  }, [homeUpdating, homeReveal]);
+  const homeContentStyle = useAnimatedStyle(() => ({ opacity: homeReveal.value }));
+  const gridReveal = useSharedValue(1);
+  useEffect(() => {
+    gridReveal.value = withTiming(gridUpdating ? REVEAL_DIM : 1, { duration: REVEAL_MS, easing: Easing.out(Easing.quad) });
+  }, [gridUpdating, gridReveal]);
+  const gridCellStyle = useAnimatedStyle(() => ({ opacity: gridReveal.value }));
+
   // Everything shown on the favorites page is, by definition, favorited — so warm the per-series
   // `isFavorite` cache to `true`. Opening one from here then paints ★ instantly (and enabled)
   // instead of gating the button on a fresh per-series status check. Mirrors comical-web's
@@ -881,9 +904,10 @@ export default function BrowseScreen() {
               ))}
             </>
           ) : (
-            // Dimmed while showing the previous bridge's rails/sections during a switch (see
-            // `homeUpdating`) so the placeholder reads as "updating", not as real content.
-            <View style={homeUpdating ? styles.dimmed : undefined}>
+            // Crossfaded while showing the previous bridge's rails/sections during a switch (see
+            // `homeReveal`/`homeContentStyle`) so the placeholder eases to dim, then the new
+            // bridge's content eases back to full — rather than a hard dim toggle / pop.
+            <Animated.View style={homeContentStyle}>
               <View style={styles.rails}>
                 {sections.map((s) => (
                   <Rail
@@ -907,7 +931,7 @@ export default function BrowseScreen() {
                   numColumns={numColumns}
                 />
               ))}
-            </View>
+            </Animated.View>
           )}
           {terminalGridSection ? (
             <View style={styles.browseAllHead}>
@@ -1031,7 +1055,7 @@ export default function BrowseScreen() {
             return <View style={styles.gridCell} />;
           }
           return (
-            <View style={[styles.gridCell, gridUpdating && styles.dimmed]}>
+            <Animated.View style={[styles.gridCell, gridCellStyle]}>
               <SeriesCard
                 entry={item}
                 bridge={currentBridge?.name ?? undefined}
@@ -1040,7 +1064,7 @@ export default function BrowseScreen() {
                 originPage={page}
                 cohort={gridScope}
               />
-            </View>
+            </Animated.View>
           );
         }}
         // No footer skeleton for infinite-scroll pagination (`loadingMore`) — it was
@@ -1324,11 +1348,6 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingTop: Spacing.one,
     paddingBottom: Spacing.three - Spacing.one,
-  },
-  // Applied to placeholder content (rails/sections/cards) while a switch loads — see `homeUpdating`
-  // / `gridUpdating`. Signals "updating" without tearing the content down (which was the flash).
-  dimmed: {
-    opacity: 0.45,
   },
   skelFooter: {
     // No top padding: the list's content gap already separates the footer from
