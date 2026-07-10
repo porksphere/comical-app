@@ -69,6 +69,13 @@ jobs:
         working-directory: apps/mobile
 
       - name: Build release APK
+        env:
+          # A transient Sentry outage during the release JS-bundle's source-map upload (sentry.gradle
+          # shells out to sentry-cli) must not fail the app build — the APK is what ships; the upload
+          # is best-effort telemetry. sentry-cli honours this flag and keeps going on upload errors
+          # instead of failing the Gradle bundle task. Mirrors the iOS build and this workflow's intent
+          # that Sentry integration is optional, never build-blocking.
+          SENTRY_ALLOW_FAILURE: 'true'
         run: ./gradlew assembleRelease --no-daemon
         working-directory: apps/mobile/android
 

@@ -88,6 +88,13 @@ jobs:
 
       - name: Build unsigned archive
         working-directory: apps/mobile/ios
+        env:
+          # A transient Sentry outage (e.g. an unresolvable sentry.io during the "Bundle React Native
+          # code" phase's source-map upload) must not fail the app build — the archive is what ships;
+          # the source-map upload is best-effort telemetry. sentry-cli honours this flag and keeps
+          # going on upload errors instead of returning non-zero and failing the Xcode build phase.
+          # Matches this workflow's intent that Sentry integration is optional, never build-blocking.
+          SENTRY_ALLOW_FAILURE: 'true'
         run: |
           set -euo pipefail
           WORKSPACE=$(ls -d *.xcworkspace | head -1)
