@@ -29,11 +29,19 @@ jobs:
     runs-on: macos-26
     outputs:
       version: ${{ steps.meta.outputs.version }}
-    # Read by the Sentry Expo config plugin's Xcode build-phase script (injected
-    # during `expo prebuild` below) so it can upload sourcemaps/dSYMs during the
-    # archive step. A missing/empty token makes that step no-op rather than fail.
+    # SENTRY_AUTH_TOKEN: read by the Sentry Expo config plugin's Xcode
+    # build-phase script (injected during `expo prebuild` below) so it can upload
+    # sourcemaps/dSYMs during the archive step. A missing/empty token makes that
+    # step no-op rather than fail.
+    #
+    # CCACHE_DIR: pins ccache's cache to a fixed, cacheable path. The
+    # expo-build-properties `ios.ccacheEnabled` flag (set in app.json) makes the
+    # generated Podfile compile C/C++/Obj-C++ through ccache; caching this dir
+    # across runs turns the otherwise-clean xcodebuild archive into a mostly
+    # incremental compile even though `expo prebuild` regenerates ios/ each time.
     env:
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
       - uses: actions/checkout@v4
         with:
@@ -49,6 +57,51 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+
+      # --- Caches (all keyed on bun.lock; each run writes a fresh entry and
+      # restores from the newest prior via restore-keys) --------------------
+
+      # Bun's global module cache — speeds both the root install and the
+      # external/comical submodule install.
+      - name: Cache Bun modules
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-ios-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-ios-
+
+      # CocoaPods CDN spec + downloaded pod source cache — trims `pod install`.
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/CocoaPods
+          key: pods-ios-${{ hashFiles('bun.lock') }}
+          restore-keys: pods-ios-
+
+      # ccache — the big one. Keyed with a per-run suffix so every build saves an
+      # updated cache, falling back to the most recent one for a warm start.
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-ios-${{ hashFiles('bun.lock') }}-${{ github.sha }}
+          restore-keys: |
+            ccache-ios-${{ hashFiles('bun.lock') }}-
+            ccache-ios-
+
+      # ccache is preinstalled on GitHub's macOS images; guard just in case.
+      # Sloppiness settings let cache entries survive a fresh checkout: prebuild
+      # rewrites ios/ every run, so header ctime/mtime change even when content
+      # doesn't — without these, ccache would treat every header as modified and
+      # never hit. file_clone uses fast APFS copies for the cached objects.
+      - name: Configure ccache
+        run: |
+          set -euo pipefail
+          command -v ccache >/dev/null || brew install ccache
+          ccache --max-size=3G
+          ccache --set-config=sloppiness=clang_index_store,include_file_ctime,include_file_mtime,ivfsoverlay,pch_defines,modules,system_headers,time_macros,gcno_cwd
+          ccache --set-config=file_clone=true
+          ccache --zero-stats
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -93,6 +146,10 @@ jobs:
           WORKSPACE=$(ls -d *.xcworkspace | head -1)
           SCHEME=$(basename "$WORKSPACE" .xcworkspace)
           echo "Building workspace=$WORKSPACE scheme=$SCHEME"
+          # DEBUG_INFORMATION_FORMAT=dwarf skips the dSYM generation pass — the
+          # Sentry upload no-ops without SENTRY_AUTH_TOKEN, so nothing consumes
+          # dSYMs here (switch back to dwarf-with-dsym once Sentry is wired up).
+          # COMPILER_INDEX_STORE_ENABLE=NO drops CI-useless source indexing.
           xcodebuild \
             -workspace "$WORKSPACE" \
             -scheme "$SCHEME" \
@@ -103,7 +160,13 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            DEVELOPMENT_TEAM=""
+            DEVELOPMENT_TEAM="" \
+            DEBUG_INFORMATION_FORMAT=dwarf \
+            COMPILER_INDEX_STORE_ENABLE=NO
+
+      - name: Report ccache stats
+        if: always()
+        run: ccache --show-stats --verbose || ccache --show-stats
 
       - name: Package unsigned IPA
         run: |

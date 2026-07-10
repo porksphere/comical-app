@@ -54,6 +54,31 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # --- Caches (keyed on bun.lock; each run writes a fresh entry and restores
+      # from the newest prior via restore-keys) -----------------------------
+
+      # Bun's global module cache — speeds the root and submodule installs.
+      - name: Cache Bun modules
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-android-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-android-
+
+      # Gradle caches (downloaded deps + the build cache of task outputs). With
+      # `--build-cache` below, this turns most of assembleRelease into cache
+      # hits on repeat runs even though `expo prebuild` regenerates android/.
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-android-${{ hashFiles('bun.lock') }}-${{ github.sha }}
+          restore-keys: |
+            gradle-android-${{ hashFiles('bun.lock') }}-
+            gradle-android-
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
@@ -69,7 +94,7 @@ jobs:
         working-directory: apps/mobile
 
       - name: Build release APK
-        run: ./gradlew assembleRelease --no-daemon
+        run: ./gradlew assembleRelease --no-daemon --build-cache
         working-directory: apps/mobile/android
 
       - name: Read app version
