@@ -5,11 +5,14 @@ import { Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle }
 import Animated, { Easing, type AnimatedStyle, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { CardBadge, UnreadBadge } from '@/components/card-badge';
+import { SeriesCardMenu } from '@/components/series-card-menu';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { coverDelayMs } from '@/data/mock';
 import type { SeriesEntry } from '@/data/types';
+import { useFavorite } from '@/hooks/use-favorite';
+import { useLibrary } from '@/hooks/use-library';
 import { useIsCompact } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
@@ -236,6 +239,26 @@ export function SeriesCard({
   const { active, handlers, reset: resetHeld } = useHeld();
   const fixedWidth = size === 'grid' ? undefined : (width ?? WIDTHS[size]);
 
+  // The context menu's favorite/library status checks are armed lazily: they only run once the user
+  // has actually interacted with THIS card (`active` = held on touch / hovered on web), so a full
+  // grid doesn't fire two status checks per cell. Once armed it stays armed (so reopening is instant)
+  // until this instance is recycled to a different entry, which resets it below. The menu itself is
+  // only attached when there's a real bridge to act against (`bridgeId` — absent in mock mode).
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (active) setArmed(true);
+  }, [active]);
+  const menuEnabled = !!bridgeId;
+  const { favorited, toggle: toggleFavorite } = useFavorite(bridgeId, entry.id, {
+    enabled: armed && menuEnabled,
+  });
+  const { inLibrary, toggle: toggleLibrary } = useLibrary(
+    bridgeId,
+    entry.id,
+    () => ({ title: entry.title, ...(entry.cover ? { thumbnailUrl: entry.cover } : {}) }),
+    { enabled: armed && menuEnabled },
+  );
+
   // Recycle-safety: the browse grid and rails now reuse card instances
   // (recycleItems), so when a slot is handed a different entry this same
   // component re-renders with new props instead of remounting. Reset the
@@ -275,6 +298,9 @@ export function SeriesCard({
     setTruncated(false);
     setCoverAspect(resolvedCoverAspects.get(entry.id) ?? lastResolvedCoverAspect);
     resetHeld();
+    // Re-arm from scratch for the new entry — the previous entry's favorite/library status must not
+    // carry over, and the checks should only re-run once the user interacts with this new slot.
+    setArmed(false);
   }
 
   // Reset the press-shrink animation to rest on recycle. Unlike the plain-state resets above (React
@@ -389,7 +415,13 @@ export function SeriesCard({
   }
 
   return (
-    <Link
+    <SeriesCardMenu
+      enabled={menuEnabled}
+      favorited={favorited}
+      inLibrary={inLibrary}
+      onToggleFavorite={toggleFavorite}
+      onToggleLibrary={toggleLibrary}>
+      <Link
       // Force a new stack entry every time: expo-router's default `navigate`
       // behavior unwinds to an existing `/series` route already on the stack
       // instead of pushing another — so tapping a related/recommended series
@@ -559,7 +591,8 @@ export function SeriesCard({
           {fillFactor > 0.001 && <View style={[styles.coverFill, { aspectRatio: 1 / fillFactor }]} />}
         </Animated.View>
       </Pressable>
-    </Link>
+      </Link>
+    </SeriesCardMenu>
   );
 }
 

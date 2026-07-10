@@ -15,12 +15,24 @@ import { useDataSource, useMockActive } from '@/data/source';
  * author) — passed as a thunk because those fields come from different places per caller (series
  * detail vs. reader props) and are only needed at mutate time.
  */
-export function useLibrary(bridgeId: string | undefined, seriesId: string, snapshot: () => LibrarySnapshot) {
+export function useLibrary(
+  bridgeId: string | undefined,
+  seriesId: string,
+  snapshot: () => LibrarySnapshot,
+  options?: { enabled?: boolean },
+) {
   const ds = useDataSource();
   const mock = useMockActive();
   const queryClient = useQueryClient();
   const key = queryKeys.inLibrary(mock, bridgeId ?? '', seriesId);
-  const { data, isError } = useQuery({ ...inLibraryQuery(ds, mock, bridgeId ?? '', seriesId), retry: false });
+  // `enabled` lets a caller defer the membership check until needed (e.g. a per-card context menu
+  // only arms it once the user interacts with that card), so a full grid doesn't run a check per
+  // cell; defaults to on, leaving the existing always-checking callers unchanged.
+  const { data, isError } = useQuery({
+    ...inLibraryQuery(ds, mock, bridgeId ?? '', seriesId),
+    retry: false,
+    enabled: (options?.enabled ?? true) && !!bridgeId && !!seriesId,
+  });
   const inLibrary = data ?? (isError ? false : null);
 
   const mutation = useMutation({

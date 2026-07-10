@@ -3,10 +3,12 @@ import {
   ArrowUp,
   Blocks,
   Bug,
+  Check,
   ChevronDown,
   ChevronRight,
   Compass,
   Database,
+  MoreVertical,
   Play,
   Plus,
   Search,
@@ -23,6 +25,9 @@ export const ClearIcon = ({ color, size = 16 }: IconProps) => <X color={color} s
 export const PlayIcon = ({ color, size = 16 }: IconProps) => <Play color={color} size={size} fill={color} />;
 export const PlusIcon = ({ color, size = 16 }: IconProps) => <Plus color={color} size={size} />;
 export const StarIcon = ({ color, size = 16 }: IconProps) => <Star color={color} size={size} />;
+export const CheckIcon = ({ color, size = 16 }: IconProps) => <Check color={color} size={size} />;
+// Vertical 3-dot "more actions" trigger — the web series-card context-menu affordance.
+export const MoreVerticalIcon = ({ color, size = 16 }: IconProps) => <MoreVertical color={color} size={size} />;
 export const ChevronDownIcon = ({ color, size = 16 }: IconProps) => <ChevronDown color={color} size={size} />;
 export const ChevronRightIcon = ({ color, size = 16 }: IconProps) => <ChevronRight color={color} size={size} />;
 export const ArrowUpIcon = ({ color, size = 16 }: IconProps) => <ArrowUp color={color} size={size} />;

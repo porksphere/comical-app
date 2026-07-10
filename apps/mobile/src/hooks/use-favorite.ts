@@ -12,13 +12,24 @@ import { useDataSource, useMockActive } from '@/data/source';
  * unsupported check (a bridge without "favorites", or one needing auth) reads as `false` so the
  * star stays usable but empty rather than surfacing an error for a peripheral action.
  */
-export function useFavorite(bridgeId: string | undefined, seriesId: string) {
+export function useFavorite(
+  bridgeId: string | undefined,
+  seriesId: string,
+  options?: { enabled?: boolean },
+) {
   const ds = useDataSource();
   const mock = useMockActive();
   const queryClient = useQueryClient();
   const key = queryKeys.isFavorite(mock, bridgeId ?? '', seriesId);
   // retry:false — an unsupported/unauthed check should read as "not favorited", not spin a retry.
-  const { data, isError } = useQuery({ ...isFavoriteQuery(ds, mock, bridgeId ?? '', seriesId), retry: false });
+  // `enabled` lets a caller defer the check until it's actually needed (e.g. a per-card context menu
+  // only arms it once the user interacts with that card) so a full grid doesn't fan out into a
+  // status check per cell; defaults to on, so the existing always-checking callers are unchanged.
+  const { data, isError } = useQuery({
+    ...isFavoriteQuery(ds, mock, bridgeId ?? '', seriesId),
+    retry: false,
+    enabled: (options?.enabled ?? true) && !!bridgeId && !!seriesId,
+  });
   const favorited = data ?? (isError ? false : null);
 
   const mutation = useMutation({
