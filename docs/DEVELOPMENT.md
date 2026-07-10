@@ -61,7 +61,13 @@ export — start that server first with `cd ../comical-web && bun run dev`. The 
 ## Build (GitHub-hosted runners, local builds — no Expo cloud)
 
 Native projects are generated on the fly (`expo prebuild`, CNG); `ios/` and `android/` are
-git-ignored. Workflows in `.github/workflows/` run on push to `main` and via manual dispatch:
+git-ignored. Workflows in `.github/workflows/` run on push to `main`, on every **pull request**
+(build + downloadable artifact, so branches are verified — see the dev channel below), and via
+manual dispatch. Builds are cached to keep the (macOS-heavy) compile times down: iOS compiles
+through **ccache** (`expo-build-properties` `ios.ccacheEnabled`) and Android reuses the **Gradle**
+cache. Only `main` *writes* those caches; every branch/PR restores them read-only, so the shared
+10 GB Actions cache budget holds one authoritative warm cache instead of being thrashed per branch
+(the first PR after a change is only fast once `main` has built and populated the cache):
 
 - **Android** (`ubuntu-latest`): `expo prebuild` → `gradlew assembleRelease` → installable
   `.apk` artifact (release is signed with the auto-generated debug keystore). `build-android.yml`
@@ -103,6 +109,33 @@ login page, which the sideloader reports as `Encountered unknown tag html on lin
 `isn't in the correct format`. Artifacts are also double-zipped.)
 
 See the [README](../README.md#-ios) for the end-user install links (source URL + direct IPA).
+
+### Dev / branch builds — one source, every PR
+
+For testing unmerged work on-device there's a **second, separate** SideStore/AltStore source
+that lists `main` **plus every open PR**, so you add it **once** and every branch shows up inside
+it — no adding a new source per branch. Add this URL in SideStore/AltStore → Sources → +:
+
+> `https://github.com/porksphere/comical-app/releases/download/ios-dev/apps.json`
+
+It exposes a single **Comical (dev)** app whose version list is ordered **main first** (the
+canonical "latest"/update target — SideStore picks the latest by array order, not by comparing
+version numbers) followed by each open PR (`PR #<N>: <title>`, newest first). Tap a version in
+SideStore to install that specific build. It uses the **production bundle id**, so a dev build
+**replaces** the installed Comical (they don't coexist) — reinstall `main` from the top of the
+list, or the public `ios-latest` source, to switch back. The public `ios-latest` source stays
+clean (main only), so normal users never get branch-build updates.
+
+How it's produced (see `.github/workflows/build-ios.yml` + `.github/scripts/refresh-ios-dev-source.sh`):
+
+- Each PR build publishes its IPA to an `ios-pr-<N>` **prerelease** (just the IPA + a small
+  `meta.json`), and `main` drops the same `meta.json` on `ios-latest`.
+- A concurrency-locked `refresh-dev-source` job then regenerates `ios-dev/apps.json` from scratch
+  by enumerating those releases — stateless, so opening/closing PRs converge without races.
+- Closing/merging a PR deletes its `ios-pr-<N>` release; the next refresh drops it from the list.
+
+Android needs no equivalent — its per-PR `android-pr-<N>` prerelease already exposes a direct,
+stable APK download URL (there's no "source" concept to aggregate).
 
 Constraint: avoid entitlements a free Apple ID can't grant (push, certain App Groups) for
 now. A future TestFlight/App Store path can be added as an extra `eas.json` profile + signed
