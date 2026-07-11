@@ -1,5 +1,7 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { View, type GestureResponderEvent } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { runOnJS } from 'react-native-reanimated';
 
 import type { SeriesEntry } from '@/data/types';
 import { openSeriesCardMenu } from '@/lib/series-card-menu';
@@ -7,19 +9,20 @@ import { openSeriesCardMenu } from '@/lib/series-card-menu';
 /**
  * Native (iOS + Android) per-card quick-actions menu. A long-press anywhere on the card opens the
  * iOS / X-style hold-down menu — a dimmed backdrop, the card lifted as a preview, and a rounded menu
- * springing in from its edge (rendered by the root `SeriesCardContextMenuHost`, driven by
- * `openSeriesCardMenu`). Web has its own affordance (a hover 3-dot button), in the `.web.tsx` file.
+ * springing in (rendered by the root `SeriesCardContextMenuHost`, driven by `openSeriesCardMenu`).
+ * Web has its own affordance (a hover 3-dot button), in the `.web.tsx` file.
  *
- * There is no per-card native context-menu host: wrapping every grid cell in a SwiftUI
- * `Host`/`ContextMenu` (the old `.ios.tsx`) was re-created as LegendList recycled rows — the cause
- * of iOS scroll jank. Now scrolling cards cost nothing; the menu is built on demand, once, on press.
+ * The long-press is detected with `react-native-gesture-handler` (not a `Pressable`'s `onLongPress`):
+ * inside a scrolling list on iOS the Pressable's `onLongPress` doesn't fire reliably — the touch is
+ * routed to the scroll view — so the card reacted to the press (held state) but nothing opened. A GH
+ * `LongPress` gesture recognizes the hold at the native layer and coexists with the card's tap
+ * (navigation) and the list's scroll: a quick tap still navigates; moving the finger cancels it.
  *
- * A thin measuring `View` wraps the card so we can anchor the menu (and the lifted preview) to the
- * card's on-screen rect. Children is a render function so the long-press handler lands on the card's
- * OWN Pressable — a wrapping Pressable would steal the tap from the inner navigation Pressable.
+ * There is NO per-card native context-menu host (the old SwiftUI `.ios.tsx` was the iOS scroll-jank
+ * cause). Scrolling cards cost nothing; the menu is built on demand, once, on press.
  */
 export type SeriesCardMenuProps = {
-  /** When false (no `bridgeId` — e.g. mock mode), the card renders with no menu (onLongPress undefined). */
+  /** When false (no `bridgeId` — e.g. mock mode), the card renders with no menu. */
   enabled: boolean;
   bridgeId?: string;
   entry: SeriesEntry;
@@ -30,19 +33,16 @@ export type SeriesCardMenuProps = {
 
 export function SeriesCardMenu({ enabled, bridgeId, entry, coverAspect, children }: SeriesCardMenuProps) {
   const anchorRef = useRef<View>(null);
-  const onLongPress = useCallback(
-    (e: GestureResponderEvent) => {
+  // Open immediately from the long-press point so the menu ALWAYS appears, then best-effort refine to
+  // the card's measured rect (host re-renders in place, same entry key → preview snaps to the card).
+  const openMenuAt = useCallback(
+    (absoluteX: number, absoluteY: number) => {
       if (!bridgeId) return;
-      // Open SYNCHRONOUSLY from the touch point the instant the long-press fires — never wait on a
-      // measure. (measureInWindow's callback can silently never fire on iOS, which is why the menu
-      // wasn't opening at all.) Then, best-effort, refine to the card's exact rect if the measure
-      // resolves — the host re-renders in place (same entry key) and the preview snaps to the card.
-      const { pageX, pageY } = e.nativeEvent;
       openSeriesCardMenu({
         entry,
         bridgeId,
         coverAspect,
-        rect: { x: pageX - 80, y: pageY - 110, width: 160, height: 220 },
+        rect: { x: absoluteX - 80, y: absoluteY - 110, width: 160, height: 220 },
       });
       anchorRef.current?.measureInWindow?.((x, y, width, height) => {
         if (width > 0 && height > 0) openSeriesCardMenu({ entry, bridgeId, coverAspect, rect: { x, y, width, height } });
@@ -50,10 +50,26 @@ export function SeriesCardMenu({ enabled, bridgeId, entry, coverAspect, children
     },
     [bridgeId, entry, coverAspect],
   );
+
+  const longPress = useMemo(
+    () =>
+      Gesture.LongPress()
+        .minDuration(350)
+        // Cancel if the finger travels (i.e. it's a scroll, not a hold), so it never fires mid-scroll.
+        .maxDistance(20)
+        .enabled(enabled && !!bridgeId)
+        .onStart((e) => {
+          runOnJS(openMenuAt)(e.absoluteX, e.absoluteY);
+        }),
+    [enabled, bridgeId, openMenuAt],
+  );
+
   return (
-    // collapsable={false} so Android keeps the view around to be measurable.
-    <View ref={anchorRef} collapsable={false}>
-      {children({ onLongPress: enabled ? onLongPress : undefined })}
-    </View>
+    <GestureDetector gesture={longPress}>
+      {/* collapsable={false} so the view stays measurable (for refining to the card's rect). */}
+      <View ref={anchorRef} collapsable={false}>
+        {children({ onLongPress: undefined })}
+      </View>
+    </GestureDetector>
   );
 }

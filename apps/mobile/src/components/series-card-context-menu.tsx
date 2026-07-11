@@ -26,10 +26,10 @@ const ROW_HEIGHT = 48;
 const MENU_PAD_V = Spacing.one;
 // Blur strengths (0–100). The backdrop ramps in; the menu is a static frosted panel faded in by its
 // own entrance (opacity/scale).
-const BACKDROP_BLUR = 40;
-const MENU_BLUR = 70;
+const BACKDROP_BLUR = 28;
+const MENU_BLUR = 55;
 // A faint extra darkening over the backdrop blur so content reads as pushed back in both themes.
-const BACKDROP_TINT_OPACITY = 0.18;
+const BACKDROP_TINT_OPACITY = 0.15;
 // Android's blur is the experimental Dimezis path; a no-op elsewhere.
 const ANDROID_BLUR = Platform.OS === 'android' ? ('dimezisBlurView' as const) : undefined;
 

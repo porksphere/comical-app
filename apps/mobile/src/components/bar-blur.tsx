@@ -3,9 +3,9 @@ import { Platform, StyleSheet, View } from 'react-native';
 
 import { useActiveColorScheme } from '@/hooks/use-theme';
 
-// How frosted the top/bottom bars are (0–100). High enough that content scrolling under the bar
-// doesn't fight the bar's own text/controls, while still reading as translucent.
-const BAR_BLUR_INTENSITY = 60;
+// How frosted the top/bottom bars are (0–100). Enough to read as translucent without the content
+// under them fighting the bar's own text/controls.
+const BAR_BLUR_INTENSITY = 42;
 
 /**
  * Frosted background for the app's top and bottom bars — an absolute-fill layer placed BEHIND a
