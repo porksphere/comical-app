@@ -80,6 +80,7 @@ jobs:
       # Bun's global module cache — speeds both the root install and the
       # external/comical submodule install.
       - name: Restore Bun modules
+        id: restore-bun
         uses: actions/cache/restore@v4
         with:
           path: ~/.bun/install/cache
@@ -88,6 +89,7 @@ jobs:
 
       # CocoaPods CDN spec + downloaded pod source cache — trims `pod install`.
       - name: Restore CocoaPods
+        id: restore-pods-cdn
         uses: actions/cache/restore@v4
         with:
           path: ~/Library/Caches/CocoaPods
@@ -255,15 +257,21 @@ jobs:
           path: ${{ github.workspace }}/.ccache
           key: ccache-ios-${{ hashFiles('bun.lock') }}-${{ github.sha }}
 
+      # Bun + CocoaPods CDN caches are keyed on bun.lock (one authoritative warm
+      # entry each). Gate their save on a restore MISS: an exact hit means the
+      # entry already exists, and cache/save can't overwrite an existing key — it
+      # was failing every run with "Unable to reserve cache … another job may be
+      # creating this cache". Saving only on a miss keeps the entry fresh when
+      # bun.lock changes and stays silent otherwise.
       - name: Save Bun modules
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && steps.restore-bun.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ~/.bun/install/cache
           key: bun-ios-${{ hashFiles('bun.lock') }}
 
       - name: Save CocoaPods
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && steps.restore-pods-cdn.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ~/Library/Caches/CocoaPods
