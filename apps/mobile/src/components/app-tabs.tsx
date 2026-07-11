@@ -1,6 +1,6 @@
 import { Tabs, TabList, TabTrigger, TabSlot, TabTriggerSlotProps } from 'expo-router/ui';
 import { Activity, History, LayoutGrid, Library, Settings, type LucideIcon } from 'lucide-react-native';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Platform,
   Pressable,
@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BarBlur } from '@/components/bar-blur';
 import { DesktopTopBarHeight, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
@@ -180,13 +181,21 @@ export default function AppTabs() {
   // lines up with the Browse selector bar on wide viewports.
   const navRight = Math.max(0, (width - MaxTopLevelWidth) / 2) + Spacing.four;
 
-  const triggers = TABS.map((tab) => (
-    <TabTrigger key={tab.name} name={tab.name} href={tab.href as never} asChild>
-      <TabButton mobile={isMobile} Icon={tab.Icon} onInteract={reveal} routeName={tab.name}>
-        {tab.label}
-      </TabButton>
-    </TabTrigger>
-  ));
+  // Memoized so a scroll-driven `nativeProgress` change (which re-renders AppTabs every reported
+  // frame while the bar slides) doesn't re-create these elements — with stable refs React skips
+  // reconciling the trigger subtrees, leaving only the TabList's own (transform-only) style to
+  // update. Without this, every frame of a fling re-rendered all five Pressables + icons.
+  const triggers = useMemo(
+    () =>
+      TABS.map((tab) => (
+        <TabTrigger key={tab.name} name={tab.name} href={tab.href as never} asChild>
+          <TabButton mobile={isMobile} Icon={tab.Icon} onInteract={reveal} routeName={tab.name}>
+            {tab.label}
+          </TabButton>
+        </TabTrigger>
+      )),
+    [isMobile, reveal],
+  );
 
   return (
     <Tabs style={styles.tabs}>
@@ -218,7 +227,6 @@ export default function AppTabs() {
             styles.bottomBar,
             Platform.OS === 'web' && FADE_TRANSITION,
             {
-              backgroundColor: theme.tabBar,
               borderTopColor: theme.tabBarBorder,
               paddingBottom: Math.max(insets.bottom, Spacing.two),
               // Web: fade to a faint ghost (still touchable, so tapping where it
@@ -228,9 +236,16 @@ export default function AppTabs() {
               // an absolute overlay (see styles.bottomBar), so screen content scrolls
               // behind it and stays visible rather than being clipped by a dead strip.
               opacity: hidden ? FADED_OPACITY : 1,
-              bottom: -NATIVE_HIDE_OFFSET * nativeProgress,
+              // Slide via transform (compositor) rather than animating `bottom` (layout): the bar
+              // is repositioned on every scroll-reported frame, so a translate avoids a native
+              // layout pass each time. translateY > 0 pushes it down off-screen. Native only —
+              // nativeProgress is 0 on web, where the opacity fade above handles hiding instead.
+              bottom: 0,
+              transform: [{ translateY: NATIVE_HIDE_OFFSET * nativeProgress }],
             },
           ]}>
+          {/* Frosted background behind the icons (content scrolls under the bar). */}
+          <BarBlur fallback={theme.tabBar} />
           {triggers}
         </TabList>
       )}
@@ -334,7 +349,8 @@ const styles = StyleSheet.create({
   // behind a reserved strip.
   bottomBar: {
     position: 'absolute',
-    // bottom is set inline (0, or slid off-screen on native — see useNativeTabBarSlide).
+    // Pinned to the bottom inline (bottom: 0); on native it slides off-screen via a transform
+    // translateY driven by useNativeTabBarProgress.
     left: 0,
     right: 0,
     zIndex: 10,

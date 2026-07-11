@@ -21,9 +21,11 @@ import {
   useKeyboardAvoidingInput,
   useOverlay,
 } from '@/components/overlay/overlay';
+import { BarBlur } from '@/components/bar-blur';
 import { RetryBlock } from '@/components/retry-block';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedSwitch } from '@/components/themed-switch';
+import { lightCards$, useLightCards } from '@/lib/perf-flags';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
@@ -104,8 +106,9 @@ export default function SettingsScreen() {
         <View
           style={[
             styles.topBar,
-            { paddingTop: insets.top, backgroundColor: theme.background, borderBottomColor: theme.hairline },
+            { paddingTop: insets.top, borderBottomColor: theme.hairline },
           ]}>
+          <BarBlur fallback={theme.background} />
           <View style={[styles.titleRow, { height: barHeight }]}>
             <ThemedText numberOfLines={1} style={styles.title}>
               Settings
@@ -123,6 +126,7 @@ function GeneralSection() {
   const [themePref, setThemePref] = useThemePreference();
   const [onDevice, setOnDevice] = useEmbeddedEnabled();
   const [apiBase, setApiBaseOverride] = useApiBase();
+  const lightCards = useLightCards();
   const { open } = useOverlay();
   // The on-device runtime is only offered where a native bridge engine exists (iOS/Android with the
   // native module built) — never on web, which always uses a remote server.
@@ -164,6 +168,11 @@ function GeneralSection() {
           onPress={() => open(() => <RemoteServerForm currentUrl={apiBase} onSave={saveApiBase} />)}
         />
       )}
+      <SettingsRow
+        label="Lightweight cards"
+        description="Drops the cover shrink animation and cross-fade for smoother scrolling."
+        right={<ThemedSwitch value={lightCards} onValueChange={(v) => lightCards$.light.set(v)} />}
+      />
     </SettingsSection>
   );
 }

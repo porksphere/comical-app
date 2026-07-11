@@ -1,7 +1,8 @@
 # Development
 
 Building Comical from source, running it locally, and the CI/release pipeline. For the
-architecture (on-device runtime, bridges, why RN), see [ARCHITECTURE.md](ARCHITECTURE.md).
+architecture (on-device runtime, bridges, why RN), see [ARCHITECTURE.md](ARCHITECTURE.md); for
+finding performance bottlenecks on-device, see [PROFILING.md](PROFILING.md).
 
 Bun is the package manager. Node is still used under the hood — Metro and the native build
 phases (Gradle/Xcode "bundle React Native code") shell out to `node`.
@@ -63,11 +64,17 @@ export — start that server first with `cd ../comical-web && bun run dev`. The 
 Native projects are generated on the fly (`expo prebuild`, CNG); `ios/` and `android/` are
 git-ignored. Workflows in `.github/workflows/` run on push to `main`, on every **pull request**
 (build + downloadable artifact, so branches are verified — see the dev channel below), and via
-manual dispatch. Builds are cached to keep the (macOS-heavy) compile times down: iOS compiles
-through **ccache** (`expo-build-properties` `ios.ccacheEnabled`) and Android reuses the **Gradle**
-cache. Only `main` *writes* those caches; every branch/PR restores them read-only, so the shared
-10 GB Actions cache budget holds one authoritative warm cache instead of being thrashed per branch
-(the first PR after a change is only fast once `main` has built and populated the cache):
+manual dispatch. Caches keep repeat builds fast: iOS caches Bun + CocoaPods + **ccache** (native
+compile), Android caches Bun + the **Gradle** cache. Only `main` *writes* those caches; every
+branch/PR restores them read-only, so the shared 10 GB Actions cache budget holds one
+authoritative warm cache instead of being thrashed per branch. Two iOS-specific notes on the
+native compile: RN core itself isn't compiled at all (prebuilt via
+`ReactNativeDependencies.xcframework`/`React-Core-prebuilt`, default on RN 0.80+); and the
+third-party pods that *do* compile go through **ccache** — but only because the "Route ccache"
+step patches RN's `ccache-clang.sh` wrapper to hard-code the ccache path. RN's wrapper otherwise
+relies on the `CCACHE_BINARY` build setting reaching the compile env, which Xcode 26 doesn't do
+([RN #55381](https://github.com/facebook/react-native/issues/55381)), so without the patch ccache
+silently never fires (0 hits/misses). With it, ~99.9% of compiles are cacheable:
 
 - **Android** (`ubuntu-latest`): `expo prebuild` → `gradlew assembleRelease` → installable
   `.apk` artifact (release is signed with the auto-generated debug keystore). `build-android.yml`
@@ -118,13 +125,22 @@ it — no adding a new source per branch. Add this URL in SideStore/AltStore →
 
 > `https://github.com/porksphere/comical-app/releases/download/ios-dev/apps.json`
 
-It exposes a single **Comical (dev)** app whose version list is ordered **main first** (the
-canonical "latest"/update target — SideStore picks the latest by array order, not by comparing
-version numbers) followed by each open PR (`PR #<N>: <title>`, newest first). Tap a version in
-SideStore to install that specific build. It uses the **production bundle id**, so a dev build
-**replaces** the installed Comical (they don't coexist) — reinstall `main` from the top of the
-list, or the public `ios-latest` source, to switch back. The public `ios-latest` source stays
-clean (main only), so normal users never get branch-build updates.
+It exposes a single **Comical (dev)** app whose version list is ordered **newest build first**
+(main and every open PR, `PR #<N>: <title>`, sorted by build/run number). SideStore/AltStore pick
+the installable "latest" by array order — not by comparing version numbers — so whatever you built
+most recently is `versions[0]` and installs with one tap; older builds sit below and are still
+selectable from SideStore's version list. It uses the **production bundle id**, so a dev build
+**replaces** the installed Comical (they don't coexist) — install `main`'s entry (or the public
+`ios-latest` source) to switch back. The public `ios-latest` source stays clean (main only), so
+normal users never get branch-build updates.
+
+**PR builds are Debug (dev) builds.** Since the dev source exists for testing/profiling unmerged
+work, `build-ios.yml` builds PR IPAs with `-configuration Debug` (via the reusable workflow's
+`configuration` input), so they carry the **shake dev menu + live Perf Monitor** for on-device
+profiling — see [PROFILING.md](PROFILING.md). `main` (and the normal `ios-latest` source) stays
+**Release**; a run is only ever one event type, so the single build job is Debug xor Release. Note
+a Debug build runs JS in dev mode (`__DEV__`), so its perf is directional, not production-accurate;
+the dev-source `main` entry is the Release IPA shared with the normal source.
 
 How it's produced (see `.github/workflows/build-ios.yml` + `.github/scripts/refresh-ios-dev-source.sh`):
 

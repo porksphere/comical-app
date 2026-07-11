@@ -48,4 +48,19 @@ config.resolver.extraNodeModules = {
   '@comical/contract': path.resolve(comicalRoot, 'packages/contract'),
 };
 
+// CI-only: pin Metro's transform cache to a fixed, cacheable location so GitHub
+// Actions can persist/restore it across runs. Metro's default FileStore lives in
+// os.tmpdir()/metro-cache — a per-boot random path that can't be cached — so a
+// cold CI runner re-transforms (Babel) the entire module graph every build. With
+// a stable path the workflow restores the warm store and only re-transforms the
+// modules that actually changed (Metro keys entries by content, so this is safe:
+// a stale entry simply misses). Locals keep the default tmpdir behavior.
+// `cacheStores` accepts a factory that receives the metro-cache module, so we
+// don't have to resolve `metro-cache` ourselves (it isn't a direct dependency).
+if (process.env.CI) {
+  config.cacheStores = ({ FileStore }) => [
+    new FileStore({ root: path.join(monorepoRoot, 'node_modules', '.cache', 'metro') }),
+  ];
+}
+
 module.exports = config;

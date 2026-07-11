@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Regenerates the single stable "ios-dev" SideStore/AltStore source: one app
-# (com.porksphere.comical) whose versions[] lists main's latest build at index 0
-# — the canonical "latest"/update target, since AltStore uses ARRAY ORDER, not
-# version-string comparison — followed by every open PR build, newest-first.
+# (com.porksphere.comical) whose versions[] lists main + every open PR build,
+# ordered newest-first by run number. SideStore/AltStore pick the installable
+# "latest" by ARRAY ORDER (not version-string comparison), so whatever you built
+# most recently sits at versions[0] and installs with one tap — no digging into
+# version history to find your branch.
 #
 # Rebuilt from scratch on every run by enumerating the ios-latest + ios-pr-*
 # releases and reading the meta.json fragment each publish leaves on its release,
@@ -27,8 +29,8 @@ fetch_meta() {
   fi
 }
 
-# main first (index 0). Prefix "00-" so the glob lists it ahead of PRs; the jq
-# below re-sorts anyway, but keep the on-disk order deterministic.
+# main's build (the jq below sorts everything by run number, so on-disk order
+# doesn't matter — the "00-" prefix is just for readable listings).
 fetch_meta "ios-latest" "00-main.json" || true
 
 # every open PR (its release is deleted on close, so this is the live set)
@@ -45,11 +47,13 @@ if [ ${#meta_files[@]} -eq 0 ]; then
   exit 0
 fi
 
-# versions[]: main entry first, then PRs by descending sort key (run number).
+# versions[]: ALL builds (main + every open PR) newest-first by run number.
+# SideStore/AltStore treat versions[0] as the headline installable version (by
+# ARRAY ORDER, not version-string comparison), so the most recently built thing
+# — whichever branch/main you just pushed — lands on top and installs with one
+# tap. (This is a dev-only source; the public ios-latest source stays main-only.)
 VERSIONS="$(jq -s '
-  (map(select(.channel == "main")))                              as $main
-  | (map(select(.channel != "main")) | sort_by(.sort) | reverse) as $prs
-  | ($main + $prs)
+  sort_by(.sort) | reverse
   | map({version, date, localizedDescription, downloadURL, size})
 ' "${meta_files[@]}")"
 
