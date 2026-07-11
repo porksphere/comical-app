@@ -18,6 +18,8 @@
  * tries to route it into the matching filter field (if the bridge has one) and
  * otherwise falls back to a plain free-text search, same as `query`.
  */
+import type { TagGroup } from '@/data/mock';
+
 export type BrowseIntent = {
   bridgeName: string;
   /** The Browse `page` (e.g. 'home', 'popular') the series screen was reached from, if it was
@@ -30,6 +32,24 @@ export type BrowseIntent = {
   | { kind: 'tag'; filterKey: string; tagId: string; label: string }
   | { kind: 'meta'; metaKey: 'author' | 'artist' | 'type'; value: string }
 );
+
+/**
+ * Build the search intent for a tapped tag chip — the shared logic behind both the Series screen's
+ * tag chips and the card long-press preview's tag rows. Mirrors comical-web: a `tagQueries` entry
+ * runs a free-text search; a `tagIds` entry selects the bridge's tag-multiselect filter. Returns null
+ * for a non-actionable tag (no id/query at that index). Callers `setBrowseIntent` it and navigate.
+ */
+export function tagBrowseIntent(
+  group: TagGroup,
+  index: number,
+  base: { bridgeName: string; originPage?: string },
+): BrowseIntent | null {
+  const query = group.tagQueries?.[index];
+  const tagId = group.tagIds?.[index];
+  if (query) return { ...base, kind: 'query', query };
+  if (tagId) return { ...base, kind: 'tag', filterKey: 'tag', tagId, label: group.tags[index] };
+  return null;
+}
 
 let pending: BrowseIntent | null = null;
 

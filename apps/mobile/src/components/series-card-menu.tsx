@@ -25,6 +25,8 @@ export type SeriesCardMenuProps = {
   /** When false (no `bridgeId` — e.g. mock mode), the card renders with no menu. */
   enabled: boolean;
   bridgeId?: string;
+  /** Bridge display name — carried so a tapped tag in the preview can drive a Browse search. */
+  bridge?: string;
   entry: SeriesEntry;
   /** Whether the bridge serves direct (page-thumbnail) series — the preview shows a page rail. */
   direct?: boolean;
@@ -33,7 +35,7 @@ export type SeriesCardMenuProps = {
   children: (api: { onLongPress?: (e: GestureResponderEvent) => void }) => React.ReactNode;
 };
 
-export function SeriesCardMenu({ enabled, bridgeId, entry, direct, coverAspect, children }: SeriesCardMenuProps) {
+export function SeriesCardMenu({ enabled, bridgeId, bridge, entry, direct, coverAspect, children }: SeriesCardMenuProps) {
   const anchorRef = useRef<View>(null);
   // Hide THIS card while its menu is open so it doesn't show in the grid behind the lifted preview.
   // Local state → only this card re-renders (twice: open, close); no global store, nothing added to
@@ -49,6 +51,7 @@ export function SeriesCardMenu({ enabled, bridgeId, entry, direct, coverAspect, 
       openSeriesCardMenu({
         entry,
         bridgeId,
+        bridge,
         direct,
         coverAspect,
         rect: { x: absoluteX - 80, y: absoluteY - 110, width: 160, height: 220 },
@@ -56,11 +59,11 @@ export function SeriesCardMenu({ enabled, bridgeId, entry, direct, coverAspect, 
       });
       anchorRef.current?.measureInWindow?.((x, y, width, height) => {
         if (width > 0 && height > 0) {
-          openSeriesCardMenu({ entry, bridgeId, direct, coverAspect, rect: { x, y, width, height }, onClose });
+          openSeriesCardMenu({ entry, bridgeId, bridge, direct, coverAspect, rect: { x, y, width, height }, onClose });
         }
       });
     },
-    [bridgeId, entry, direct, coverAspect],
+    [bridgeId, bridge, entry, direct, coverAspect],
   );
 
   const longPress = useMemo(

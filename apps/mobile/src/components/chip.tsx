@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
@@ -89,10 +89,21 @@ function PressableChip({
   );
 }
 
-export function ChipRow({ labels, accent }: { labels: string[]; accent?: boolean }) {
+export function ChipRow({ labels, accent, horizontal }: { labels: string[]; accent?: boolean; horizontal?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const maxVisible = useMaxVisibleChips();
   if (!labels.length) return null;
+  // A single non-wrapping horizontally-scrolling row (used in the card preview panel) — all chips,
+  // no collapse (the scroll handles overflow).
+  if (horizontal) {
+    return (
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hChips}>
+        {labels.map((l) => (
+          <Chip key={l} label={l} accent={accent} />
+        ))}
+      </ScrollView>
+    );
+  }
   const collapsible = !expanded && labels.length > maxVisible;
   const shown = collapsible ? labels.slice(0, maxVisible) : labels;
   return (
@@ -114,17 +125,39 @@ export function ChipRow({ labels, accent }: { labels: string[]; accent?: boolean
 export function TagGroupRow({
   group,
   onTagPress,
+  horizontal,
 }: {
   group: TagGroup;
   /** Called with a tapped tag's index. Only tags the bridge made actionable — a
    *  `tagIds`/`tagQueries` entry at that index — render as pressable; the rest
    *  (e.g. a Characters/Parodies group with no ids/queries) stay static. */
   onTagPress?: (index: number) => void;
+  /** Render as a labeled, non-wrapping horizontally-scrolling row (used in the card preview panel)
+   *  instead of the wrapping, collapsible layout. */
+  horizontal?: boolean;
 }) {
   const theme = useTheme();
   const [expanded, setExpanded] = useState(false);
   const maxVisible = useMaxVisibleChips();
   if (!group.tags.length) return null;
+  const chip = (t: string, i: number) => {
+    const actionable = !!onTagPress && !!(group.tagQueries?.[i] || group.tagIds?.[i]);
+    return actionable ? (
+      <PressableChip key={t} onPress={() => onTagPress!(i)} accessibilityLabel={`Search ${t}`} label={t} accent />
+    ) : (
+      <Chip key={t} label={t} accent />
+    );
+  };
+  if (horizontal) {
+    return (
+      <View style={styles.tagGroupHeaderRow}>
+        <ThemedText style={[styles.groupLabel, { color: theme.textSecondary }]}>{group.label.toUpperCase()}</ThemedText>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.hScroll} contentContainerStyle={styles.hChips}>
+          {group.tags.map(chip)}
+        </ScrollView>
+      </View>
+    );
+  }
   const collapsible = !expanded && group.tags.length > maxVisible;
   const shown = collapsible ? group.tags.slice(0, maxVisible) : group.tags;
   return (
@@ -161,6 +194,19 @@ const styles = StyleSheet.create({
   tagGroup: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: Spacing.one,
+  },
+  // Horizontal variant: fixed label + a single scrolling chip row that takes the rest of the width.
+  tagGroupHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  hScroll: {
+    flex: 1,
+  },
+  hChips: {
     alignItems: 'center',
     gap: Spacing.one,
   },

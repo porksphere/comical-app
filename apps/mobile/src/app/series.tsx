@@ -16,7 +16,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { MaxTopLevelWidth, Spacing } from '@/constants/theme';
-import { setBrowseIntent } from '@/data/browse-intent';
+import { setBrowseIntent, tagBrowseIntent } from '@/data/browse-intent';
 import { historyQuery, relatedGroupsQuery, seriesDetailQuery, seriesListQuery } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import { firstChapterInReadingOrder } from '@/lib/chapter-order';
@@ -463,22 +463,9 @@ function SeriesBody({
   // case from a different tab, since there's no Browse sub-page to return to there.
   const onTagPress = (group: TagGroup, index: number) => {
     if (!bridgeId) return;
-    const query = group.tagQueries?.[index];
-    const tagId = group.tagIds?.[index];
-    if (query) {
-      setBrowseIntent({ bridgeName: series.bridge, originPage: fromPage, kind: 'query', query });
-    } else if (tagId) {
-      setBrowseIntent({
-        bridgeName: series.bridge,
-        originPage: fromPage,
-        kind: 'tag',
-        filterKey: 'tag',
-        tagId,
-        label: group.tags[index],
-      });
-    } else {
-      return;
-    }
+    const intent = tagBrowseIntent(group, index, { bridgeName: series.bridge, originPage: fromPage });
+    if (!intent) return;
+    setBrowseIntent(intent);
     router.dismissTo('/');
   };
 

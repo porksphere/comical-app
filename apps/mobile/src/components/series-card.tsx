@@ -531,6 +531,7 @@ export function SeriesCard({
     <SeriesCardMenu
       enabled={menuEnabled}
       bridgeId={bridgeId}
+      bridge={bridge}
       entry={entry}
       direct={direct}
       coverAspect={coverAspect}>

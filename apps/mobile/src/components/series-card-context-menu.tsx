@@ -9,11 +9,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LegendList } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
 
+import { ChipRow, TagGroupRow } from '@/components/chip';
 import { CheckIcon, PlusIcon, StarIcon, type IconProps } from '@/components/icons/ui-icons';
 import { PageThumb } from '@/components/series/chapters-section';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { setBrowseIntent, tagBrowseIntent } from '@/data/browse-intent';
+import type { TagGroup } from '@/data/mock';
 import { seriesDetailQuery, seriesListQuery } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import type { PageThumbSource } from '@/data/types';
@@ -62,7 +65,7 @@ export function SeriesCardContextMenuHost() {
 }
 
 function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
-  const { entry, bridgeId, direct, coverAspect, rect } = req;
+  const { entry, bridgeId, bridge, direct, coverAspect, rect } = req;
   const { width: winW, height: winH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
@@ -184,6 +187,20 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     dismiss();
   };
 
+  // Tapping a tag drops Browse into a matching search — same shared intent + navigation as the
+  // Series screen's tag chips (see tagBrowseIntent). Close instantly and jump to Browse.
+  const onTagPress = useCallback(
+    (group: TagGroup, index: number) => {
+      const intent = tagBrowseIntent(group, index, { bridgeName: bridge ?? '' });
+      if (!intent) return;
+      setBrowseIntent(intent);
+      req.onClose?.();
+      closeSeriesCardMenu();
+      router.dismissTo('/');
+    },
+    [bridge, req, router],
+  );
+
   // Tapping a page thumbnail opens the reader there. Close instantly (un-hide the card + drop the
   // host so the pushed reader isn't left under it) rather than playing the morph-back.
   const openReaderAt = useCallback(
@@ -232,6 +249,14 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
               ) : null}
             </View>
           </View>
+          {detail.data?.genres?.length || detail.data?.tagGroups?.length ? (
+            <View style={styles.tags}>
+              {detail.data?.genres?.length ? <ChipRow horizontal labels={detail.data.genres} /> : null}
+              {detail.data?.tagGroups?.map((g) => (
+                <TagGroupRow key={g.label} group={g} horizontal onTagPress={(i) => onTagPress(g, i)} />
+              ))}
+            </View>
+          ) : null}
           {direct ? (
             <PageRail thumbs={pageList.data?.pageThumbs} loading={pageList.isLoading} bridgeId={bridgeId} seed={entry.id} onOpenPage={openReaderAt} />
           ) : null}
@@ -408,6 +433,9 @@ const styles = StyleSheet.create({
   meta: {},
   desc: {
     marginTop: Spacing.one,
+  },
+  tags: {
+    gap: Spacing.two,
   },
   coverLayer: {
     position: 'absolute',
