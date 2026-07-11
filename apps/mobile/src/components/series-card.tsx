@@ -3,7 +3,6 @@ import { Link } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { Easing, type AnimatedStyle, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
-import { use$ } from '@legendapp/state/react';
 
 import { CardBadge, UnreadBadge } from '@/components/card-badge';
 import { SeriesCardMenu } from '@/components/series-card-menu';
@@ -15,7 +14,7 @@ import type { SeriesEntry } from '@/data/types';
 import { useIsCompact } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
-import { lightCards$ } from '@/lib/perf-flags';
+import { useLightCards } from '@/lib/perf-flags';
 
 // Shared cover card used by both the browse grid and the rails. `size` picks the
 // fixed rail widths; `grid` fills its parent slot (the grid controls columns).
@@ -201,7 +200,7 @@ export function SeriesCard({
   crossfading?: boolean;
 }) {
   // Temporary perf A/B lever (Settings → "Lightweight cards"); see lib/perf-flags.
-  const lightCards = use$(lightCards$);
+  const lightCards = useLightCards();
   const [loaded, setLoaded] = useState(() => resolvedCoverIds.has(entry.id));
   const [truncated, setTruncated] = useState(false);
   // True while masking a scope swap (see the recycle-safety block): the shared `Skeleton` is only
