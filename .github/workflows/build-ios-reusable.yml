@@ -96,20 +96,6 @@ jobs:
           key: pods-ios-${{ hashFiles('bun.lock') }}
           restore-keys: pods-ios-
 
-      # Metro's transform cache (see metro.config.js's CI branch, which pins the
-      # FileStore here). Content-keyed, so unlike ccache it's immune to the
-      # mtime churn from prebuild; a warm store means the "Bundle React Native"
-      # Xcode phase re-transforms only the modules that changed. Keyed on bun.lock
-      # so a single warm entry is kept (like the caches above) instead of a
-      # per-commit pile — a JS-only change still hits the whole unchanged graph.
-      - name: Restore Metro cache
-        id: restore-metro
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ github.workspace }}/node_modules/.cache/metro
-          key: metro-ios-${{ hashFiles('bun.lock') }}
-          restore-keys: metro-ios-
-
       # Compiler cache: the actual native-compile speedup. main saves a fresh
       # per-commit entry; branches restore the newest read-only and recompile
       # only their delta. See "Route ccache" for why this needs a wrapper patch.
@@ -143,23 +129,6 @@ jobs:
       - name: Generate native iOS project (CNG)
         run: bunx expo prebuild --platform ios --no-install
         working-directory: apps/mobile
-
-      # Restore the resolved Pods tree AFTER prebuild (prebuild regenerates ios/
-      # and would clobber an earlier restore). This holds the installed pod
-      # sources + generated Pods.xcodeproj/support files. On a hit, `pod install`
-      # below sees Podfile.lock == Pods/Manifest.lock and no-ops instead of
-      # re-resolving + recopying ~60 pods — the ~38s step becomes a few seconds.
-      # Keyed on bun.lock (pods only change when JS deps do); a miss falls back to
-      # the CDN cache path (still fast) and does a full install.
-      - name: Restore Pods tree
-        id: restore-pods-tree
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            apps/mobile/ios/Pods
-            apps/mobile/ios/Podfile.lock
-          key: podstree-ios-${{ hashFiles('bun.lock') }}
-          restore-keys: podstree-ios-
 
       - name: Install CocoaPods
         run: pod install
@@ -239,9 +208,6 @@ jobs:
           # COMPILER_INDEX_STORE_ENABLE=NO drops CI-useless source indexing.
           # A Debug configuration yields a dev build (shake menu / Perf Monitor);
           # on iphoneos the JS bundle is still embedded so the IPA runs offline.
-          # -showBuildTimingSummary: prints a per-phase wall-clock table at the
-          #   end (compile vs link vs "Bundle React Native" vs asset catalog) so
-          #   the next optimization is data-driven rather than guessed.
           xcodebuild \
             -workspace "$WORKSPACE" \
             -scheme "$SCHEME" \
@@ -249,7 +215,6 @@ jobs:
             -sdk iphoneos \
             -archivePath "$RUNNER_TEMP/comical.xcarchive" \
             archive \
-            -showBuildTimingSummary \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -292,10 +257,10 @@ jobs:
           path: ${{ github.workspace }}/.ccache
           key: ccache-ios-${{ hashFiles('bun.lock') }}-${{ github.sha }}
 
-      # The remaining caches are keyed on bun.lock (one authoritative warm entry
-      # each). Gate their save on a restore MISS: an exact hit means the entry
-      # already exists, and cache/save can't overwrite an existing key — it was
-      # failing every run with "Unable to reserve cache … another job may be
+      # Bun + CocoaPods CDN caches are keyed on bun.lock (one authoritative warm
+      # entry each). Gate their save on a restore MISS: an exact hit means the
+      # entry already exists, and cache/save can't overwrite an existing key — it
+      # was failing every run with "Unable to reserve cache … another job may be
       # creating this cache". Saving only on a miss keeps the entry fresh when
       # bun.lock changes and stays silent otherwise.
       - name: Save Bun modules
@@ -311,24 +276,3 @@ jobs:
         with:
           path: ~/Library/Caches/CocoaPods
           key: pods-ios-${{ hashFiles('bun.lock') }}
-
-      - name: Save Pods tree
-        if: github.ref == 'refs/heads/main' && steps.restore-pods-tree.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            apps/mobile/ios/Pods
-            apps/mobile/ios/Podfile.lock
-          key: podstree-ios-${{ hashFiles('bun.lock') }}
-
-      # Saved once per bun.lock (first main build after a deps change); later
-      # JS-only commits restore that baseline and re-transform just their delta.
-      # We deliberately don't refresh it per-commit — a single warm entry keeps
-      # the shared 10 GB budget from being churned, and the baseline already
-      # covers the large unchanged graph (node_modules / RN / expo).
-      - name: Save Metro cache
-        if: github.ref == 'refs/heads/main' && steps.restore-metro.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ github.workspace }}/node_modules/.cache/metro
-          key: metro-ios-${{ hashFiles('bun.lock') }}
