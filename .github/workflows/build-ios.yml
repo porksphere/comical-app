@@ -67,8 +67,11 @@ permissions:
 
 jobs:
   build:
-    # Skip the (expensive, macOS) build when a PR merely closes — cleanup-pr
-    # handles that event and needs no IPA.
+    # On a PR this runs via the pull_request trigger; its IPA is published (by
+    # publish-pr) to the ios-dev SideStore source — a Release build, installable
+    # for on-device UI checks (no dev menu). On push to main it feeds the rolling
+    # ios-latest source. Skip the (expensive, macOS) build when a PR merely
+    # closes — cleanup-pr handles that event and needs no IPA.
     if: github.event.action != 'closed'
     uses: ./.github/workflows/build-ios-reusable.yml
     secrets: inherit
