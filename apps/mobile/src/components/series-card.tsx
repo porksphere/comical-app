@@ -64,6 +64,12 @@ const TITLE_LINE_HEIGHT = { regular: 18, compact: 17 };
 const SUB_FONT_SIZE = { regular: 12, compact: 11.5 };
 const SUB_LINE_HEIGHT = { regular: 16, compact: 15 };
 
+// TEMPORARY PERF LEVER (2026-07-10): A/B whether the remaining scroll cost is the per-card
+// reanimated cover-aspect "shrink" illusion and expo-image's cross-fade. When true, cards DON'T
+// attach the shrink animated styles (so no per-frame worklets run per card) and skip the image
+// cross-fade on (re)load. Flip to false to restore the polish once measured.
+const PERF_LIGHT_CARDS = true;
+
 // Large enough to cover any screen: the press stays "active" wherever the finger
 // goes, so the highlight only ends on release.
 const HOLD_RETENTION = { top: 1000, bottom: 1000, left: 1000, right: 1000 };
@@ -481,14 +487,15 @@ export function SeriesCard({
             {/* The picture layer: scaled by `pictureStyle` to fake the shrink
                 illusion. Badges/rank/ring below are siblings, NOT inside this
                 layer, so they never get stretched by the scale. */}
-            <Animated.View style={[StyleSheet.absoluteFill, styles.picture, pictureStyle]}>
+            <Animated.View
+              style={PERF_LIGHT_CARDS ? [StyleSheet.absoluteFill, styles.picture] : [StyleSheet.absoluteFill, styles.picture, pictureStyle]}>
               {delayPassed && (
                 <Image
                   source={{ uri: entry.cover }}
                   style={StyleSheet.absoluteFill}
                   contentFit="cover"
                   cachePolicy="memory-disk"
-                  transition={90}
+                  transition={PERF_LIGHT_CARDS ? 0 : 90}
                   // Recycled lists reuse this <Image> instance for a different
                   // entry; without a recyclingKey expo-image keeps painting the
                   // PREVIOUS cover until the new one decodes (the "old thumbnail
@@ -508,7 +515,7 @@ export function SeriesCard({
                       // factor but not the pixel offset, so without it this just
                       // falls back to today's instant (unanimated) snap.
                       const width = coverBoxWidthSV.value;
-                      if (width > 0 && nextAspect !== coverAspect) {
+                      if (!PERF_LIGHT_CARDS && width > 0 && nextAspect !== coverAspect) {
                         const oldHeight = width / coverAspect;
                         const newHeight = width / nextAspect;
                         shrinkFromScaleSV.value = newHeight > 0 ? oldHeight / newHeight : 1;
@@ -548,7 +555,7 @@ export function SeriesCard({
           {active && isWeb && <View style={[styles.ring, { pointerEvents: 'none' }]} />}
         </View>
 
-        <Animated.View style={[styles.trailingGroup, trailingStyle]}>
+        <Animated.View style={PERF_LIGHT_CARDS ? styles.trailingGroup : [styles.trailingGroup, trailingStyle]}>
           <View style={styles.titleWrap}>
             <ThemedText type="small" numberOfLines={MAX_TITLE_LINES} style={[styles.title, titleSize]}>
               {entry.title}
