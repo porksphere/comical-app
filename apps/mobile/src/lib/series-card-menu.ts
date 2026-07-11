@@ -12,6 +12,9 @@ export type SeriesCardMenuRequest = {
   /** The cover's real (capped) aspect ratio, so the lifted preview matches the card's shape. */
   coverAspect?: number;
   rect: CardRect;
+  /** Called when the menu finishes closing — the source card uses it to un-hide itself (it hides
+   *  while the menu is open so it doesn't show behind the lifted preview). */
+  onClose?: () => void;
 };
 
 /**

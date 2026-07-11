@@ -68,15 +68,21 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // lightly overshooting) reads less abrupt than the old fast timing curve.
   useEffect(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    // Slower, weightier spring so the morph starts gently and "sells" the pop-out.
-    progress.value = withSpring(1, { damping: 18, stiffness: 90, mass: 1.1 });
+    // Snappy spring with a small pop — the pop-out should feel quick.
+    progress.value = withSpring(1, { damping: 16, stiffness: 170, mass: 0.8 });
   }, [progress]);
 
+  // On close: un-hide the source card (req.onClose) as it clears, so the card reappears exactly as the
+  // preview finishes morphing back onto it.
+  const finishClose = useCallback(() => {
+    req.onClose?.();
+    closeSeriesCardMenu();
+  }, [req]);
   const dismiss = useCallback(() => {
     progress.value = withTiming(0, { duration: 150, easing: Easing.in(Easing.quad) }, (finished) => {
-      if (finished) runOnJS(closeSeriesCardMenu)();
+      if (finished) runOnJS(finishClose)();
     });
-  }, [progress]);
+  }, [progress, finishClose]);
 
   // Android hardware back closes the menu (and consumes the event).
   useEffect(() => {
