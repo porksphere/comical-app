@@ -1,73 +1,89 @@
-import { MenuView, type MenuAction } from '@expo/ui/community/menu';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { StyleSheet, View, type GestureResponderEvent } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { runOnJS } from 'react-native-reanimated';
+
+import type { SeriesEntry } from '@/data/types';
+import { openSeriesCardMenu } from '@/lib/series-card-menu';
 
 /**
- * Per-card quick actions (add-to-library / favorite), presented as an OS-native context menu on a
- * long-press. Web has its own affordance — a hover-revealed 3-dot button opening the app's overlay
- * menu — so this file is the **native** implementation and `series-card-menu.web.tsx` the web one;
- * both take the same props and wrap the card's rendered tree. The favorite/library state and toggles
- * are lifted into `SeriesCard` (which owns the two hooks, armed lazily) so both platform variants are
- * pure presentation over the same data.
+ * Native (iOS + Android) per-card quick-actions menu. A long-press anywhere on the card opens the
+ * iOS / X-style hold-down menu — a dimmed backdrop, the card lifted as a preview, and a rounded menu
+ * springing in (rendered by the root `SeriesCardContextMenuHost`, driven by `openSeriesCardMenu`).
+ * Web has its own affordance (a hover 3-dot button), in the `.web.tsx` file.
+ *
+ * The long-press is detected with `react-native-gesture-handler` (not a `Pressable`'s `onLongPress`):
+ * inside a scrolling list on iOS the Pressable's `onLongPress` doesn't fire reliably — the touch is
+ * routed to the scroll view — so the card reacted to the press (held state) but nothing opened. A GH
+ * `LongPress` gesture recognizes the hold at the native layer and coexists with the card's tap
+ * (navigation) and the list's scroll: a quick tap still navigates; moving the finger cancels it.
+ *
+ * There is NO per-card native context-menu host (the old SwiftUI `.ios.tsx` was the iOS scroll-jank
+ * cause). Scrolling cards cost nothing; the menu is built on demand, once, on press.
  */
 export type SeriesCardMenuProps = {
-  /** When false (no `bridgeId` — e.g. mock mode), render the card with no menu attached. */
+  /** When false (no `bridgeId` — e.g. mock mode), the card renders with no menu. */
   enabled: boolean;
-  /** The series title, shown at the top of the native menu (the card's own title is clamped, so this
-   *  is where the full title is revealed once the card is long-pressed / "expanded"). */
-  title: string;
-  /** Cover URL. Unused on Android (the dropdown has no preview surface); accepted so the prop shape
-   *  matches the iOS variant, whose lifted preview shows it. */
-  cover?: string;
-  /** Cover aspect ratio. Unused on Android; accepted so the prop shape matches the iOS variant. */
+  bridgeId?: string;
+  entry: SeriesEntry;
+  /** Cover aspect ratio, so the lifted preview matches the card's shape. */
   coverAspect?: number;
-  /** `null` while the status check is still loading — the action is shown disabled until it resolves. */
-  favorited: boolean | null;
-  inLibrary: boolean | null;
-  onToggleFavorite: () => void;
-  onToggleLibrary: () => void;
-  children: React.ReactNode;
+  children: (api: { onLongPress?: (e: GestureResponderEvent) => void }) => React.ReactNode;
 };
 
-export function SeriesCardMenu({
-  enabled,
-  title,
-  favorited,
-  inLibrary,
-  onToggleFavorite,
-  onToggleLibrary,
-  children,
-}: SeriesCardMenuProps) {
-  if (!enabled) return <>{children}</>;
+export function SeriesCardMenu({ enabled, bridgeId, entry, coverAspect, children }: SeriesCardMenuProps) {
+  const anchorRef = useRef<View>(null);
+  // Hide THIS card while its menu is open so it doesn't show in the grid behind the lifted preview.
+  // Local state → only this card re-renders (twice: open, close); no global store, nothing added to
+  // any other card's scroll path. The menu carries `onClose` to flip it back.
+  const [hidden, setHidden] = useState(false);
+  // Open immediately from the long-press point so the menu ALWAYS appears, then best-effort refine to
+  // the card's measured rect (host re-renders in place, same entry key → preview snaps to the card).
+  const openMenuAt = useCallback(
+    (absoluteX: number, absoluteY: number) => {
+      if (!bridgeId) return;
+      setHidden(true);
+      const onClose = () => setHidden(false);
+      openSeriesCardMenu({
+        entry,
+        bridgeId,
+        coverAspect,
+        rect: { x: absoluteX - 80, y: absoluteY - 110, width: 160, height: 220 },
+        onClose,
+      });
+      anchorRef.current?.measureInWindow?.((x, y, width, height) => {
+        if (width > 0 && height > 0) {
+          openSeriesCardMenu({ entry, bridgeId, coverAspect, rect: { x, y, width, height }, onClose });
+        }
+      });
+    },
+    [bridgeId, entry, coverAspect],
+  );
 
-  // `image` is an SF Symbol name (rendered on iOS); Android draws the `state` checkmark + title
-  // instead. `state: 'on'` marks the current membership so the menu reads as a toggle, and a
-  // still-loading (`null`) status disables the row until the check resolves.
-  const actions: MenuAction[] = [
-    {
-      id: 'library',
-      title: inLibrary ? 'Remove from Library' : 'Add to Library',
-      image: inLibrary ? 'checkmark' : 'plus',
-      state: inLibrary ? 'on' : 'off',
-      attributes: { disabled: inLibrary === null },
-    },
-    {
-      id: 'favorite',
-      title: favorited ? 'Unfavorite' : 'Favorite',
-      image: favorited ? 'star.fill' : 'star',
-      state: favorited ? 'on' : 'off',
-      attributes: { disabled: favorited === null },
-    },
-  ];
+  const longPress = useMemo(
+    () =>
+      Gesture.LongPress()
+        .minDuration(350)
+        // Cancel if the finger travels (i.e. it's a scroll, not a hold), so it never fires mid-scroll.
+        .maxDistance(20)
+        .enabled(enabled && !!bridgeId)
+        .onStart((e) => {
+          runOnJS(openMenuAt)(e.absoluteX, e.absoluteY);
+        }),
+    [enabled, bridgeId, openMenuAt],
+  );
 
   return (
-    <MenuView
-      title={title}
-      shouldOpenOnLongPress
-      actions={actions}
-      onPressAction={({ nativeEvent }) => {
-        if (nativeEvent.event === 'library') onToggleLibrary();
-        else if (nativeEvent.event === 'favorite') onToggleFavorite();
-      }}>
-      {children}
-    </MenuView>
+    <GestureDetector gesture={longPress}>
+      {/* collapsable={false} so the view stays measurable (for refining to the card's rect). Hidden
+          (opacity 0, layout preserved) while its menu is open. */}
+      <View ref={anchorRef} collapsable={false} style={hidden ? styles.hidden : undefined}>
+        {children({ onLongPress: undefined })}
+      </View>
+    </GestureDetector>
   );
 }
+
+const styles = StyleSheet.create({
+  hidden: { opacity: 0 },
+});

@@ -2,6 +2,7 @@ import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BarBlur } from '@/components/bar-blur';
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
@@ -29,6 +30,7 @@ export function TopBar({ title, onBack }: { title: string; onBack?: () => void }
         styles.topBar,
         { paddingTop: insets.top, height: insets.top + barHeight, borderBottomColor: theme.hairline },
       ]}>
+      <BarBlur fallback={theme.background} />
       <Pressable
         onPress={() => {
           hapticImpactLight();

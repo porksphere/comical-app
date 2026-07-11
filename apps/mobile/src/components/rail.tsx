@@ -311,7 +311,7 @@ export function Rail({
           // frame one. Width is the viewport the strip spans; height reuses the reserved strip height.
           estimatedListSize={{ width: viewportWidth, height: stripMinHeight }}
           showsHorizontalScrollIndicator={false}
-          // Same fix as Browse/Library's main grid (see that list's comment): without a
+          // WEB ONLY (same rationale + native carve-out as Browse's main grid): without a
           // renderScrollComponent, @legendapp/list/reanimated's scroll bridge renders
           // Animated.ScrollView at whatever scrollEventThrottle LegendList's internals hardcode
           // (0), and react-native-web's ScrollView at throttle 0 only fires onScroll at gesture
@@ -319,7 +319,12 @@ export function Rail({
           // through the strip never recycled newly-visible cards (or moved the peek popover, or
           // advanced anything else keyed off scroll position) until you let go. Passing this
           // routes through the bridge's other branch, which forces scrollEventThrottle: 1.
-          renderScrollComponent={(scrollProps) => <Animated.ScrollView {...scrollProps} />}
+          // On NATIVE we don't pass it: forcing throttle:1 there just adds per-frame JS work during
+          // a fling, and the peek is driven by the UI-thread `scrollX` (sharedValues below), which
+          // works regardless — native's default bridge recycles fine (the debounce bug is web-only).
+          renderScrollComponent={
+            Platform.OS === 'web' ? (scrollProps) => <Animated.ScrollView {...scrollProps} /> : undefined
+          }
           // LegendList positions items virtually and ignores `gap` on contentContainerStyle, and its
           // web item container is `contain: paint` (clips overflow). So the inter-card gap lives as
           // symmetric `paddingHorizontal: stripHalfGap` on each item wrapper below — this both spaces

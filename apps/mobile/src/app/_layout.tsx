@@ -28,6 +28,7 @@ import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { DemoBanner } from '@/components/demo-banner';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { OverlayProvider } from '@/components/overlay/overlay';
+import { SeriesCardContextMenuHost } from '@/components/series-card-context-menu';
 import { startEmbeddedRuntime } from '@/data/embedded/startup';
 import { persister, PERSIST_BUSTER, PERSIST_MAX_AGE_MS, queryClient, shouldDehydrateQuery } from '@/data/query-client';
 import { ThemeSchemeProvider, useActiveColorScheme } from '@/hooks/use-theme';
@@ -98,6 +99,9 @@ function RootNavigation() {
           <Stack.Screen name="diagnostics" options={{ headerShown: false }} />
         </Stack>
         <DemoBanner />
+        {/* Root host for the native card long-press context menu (dim + lifted preview + menu). Only
+            renders while a card menu is open; any card opens it via openSeriesCardMenu. */}
+        <SeriesCardContextMenuHost />
       </OverlayProvider>
     </ThemeProvider>
   );

@@ -8,6 +8,21 @@ name: Build iOS IPA (reusable)
 
 on:
   workflow_call:
+    inputs:
+      configuration:
+        # Xcode build configuration. "Release" (default) is the production build
+        # used by the normal ios-latest source and versioned releases. "Debug"
+        # produces a DEV build — Hermes runs JS with __DEV__ = true and RCT_DEV
+        # is compiled in, so the app has the shake dev menu + live Perf Monitor
+        # for on-device profiling. build-ios.yml passes Debug for PR builds only
+        # (the ios-dev SideStore source); main stays Release. Note: an iphoneos
+        # Debug archive still embeds the JS bundle (react-native-xcode.sh only
+        # skips bundling for the *Simulator* in Debug), so the IPA runs
+        # standalone with no Metro — the dev menu just becomes available.
+        description: Xcode build configuration (Release or Debug).
+        type: string
+        default: Release
+        required: false
     secrets:
       SENTRY_AUTH_TOKEN:
         # Optional: without it, the Sentry build-phase script below no-ops
@@ -33,12 +48,8 @@ jobs:
     # build-phase script (injected during `expo prebuild` below) so it can upload
     # sourcemaps/dSYMs during the archive step. A missing/empty token makes that
     # step no-op rather than fail.
-    #
-    # CCACHE_DIR: pins ccache's cache to a fixed, cacheable path. The
-    # expo-build-properties `ios.ccacheEnabled` flag (set in app.json) makes the
-    # generated Podfile compile C/C++/Obj-C++ through ccache; caching this dir
-    # across runs turns the otherwise-clean xcodebuild archive into a mostly
-    # incremental compile even though `expo prebuild` regenerates ios/ each time.
+    # CCACHE_DIR: the dir we restore/save and that the patched RN wrapper writes
+    # to (see "Route ccache" below). Fixed path so it's cacheable across runs.
     env:
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
       CCACHE_DIR: ${{ github.workspace }}/.ccache
@@ -69,6 +80,7 @@ jobs:
       # Bun's global module cache — speeds both the root install and the
       # external/comical submodule install.
       - name: Restore Bun modules
+        id: restore-bun
         uses: actions/cache/restore@v4
         with:
           path: ~/.bun/install/cache
@@ -77,14 +89,30 @@ jobs:
 
       # CocoaPods CDN spec + downloaded pod source cache — trims `pod install`.
       - name: Restore CocoaPods
+        id: restore-pods-cdn
         uses: actions/cache/restore@v4
         with:
           path: ~/Library/Caches/CocoaPods
           key: pods-ios-${{ hashFiles('bun.lock') }}
           restore-keys: pods-ios-
 
-      # ccache — the big one. main saves a fresh per-commit entry; branches fall
-      # back to the newest via restore-keys and only recompile their delta.
+      # Metro's transform cache (see metro.config.js's CI branch, which pins the
+      # FileStore here). Content-keyed, so unlike ccache it's immune to the
+      # mtime churn from prebuild; a warm store means the "Bundle React Native"
+      # Xcode phase re-transforms only the modules that changed. Keyed on bun.lock
+      # so a single warm entry is kept (like the caches above) instead of a
+      # per-commit pile — a JS-only change still hits the whole unchanged graph.
+      - name: Restore Metro cache
+        id: restore-metro
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/node_modules/.cache/metro
+          key: metro-ios-${{ hashFiles('bun.lock') }}
+          restore-keys: metro-ios-
+
+      # Compiler cache: the actual native-compile speedup. main saves a fresh
+      # per-commit entry; branches restore the newest read-only and recompile
+      # only their delta. See "Route ccache" for why this needs a wrapper patch.
       - name: Restore ccache
         uses: actions/cache/restore@v4
         with:
@@ -94,21 +122,14 @@ jobs:
             ccache-ios-${{ hashFiles('bun.lock') }}-
             ccache-ios-
 
-      # ccache is preinstalled on GitHub's macOS images; guard just in case.
-      # Sloppiness settings let cache entries survive a fresh checkout: prebuild
-      # rewrites ios/ every run, so header ctime/mtime change even when content
-      # doesn't — without these, ccache would treat every header as modified and
-      # never hit. file_clone uses fast APFS copies for the cached objects.
-      # 2 GB cap keeps main's combined footprint (ccache + Pods + Bun, fresh per
-      # commit) comfortably under the repo's 10 GB cache budget.
-      - name: Configure ccache
+      # ccache isn't preinstalled on macos-26; install it BEFORE pod install so
+      # RN's Podfile detects it and wires CC=ccache-clang.sh. Zero stats so the
+      # report below reflects just this run.
+      - name: Install ccache
         run: |
           set -euo pipefail
           command -v ccache >/dev/null || brew install ccache
-          ccache --max-size=2G
-          ccache --set-config=sloppiness=clang_index_store,include_file_ctime,include_file_mtime,ivfsoverlay,pch_defines,modules,system_headers,time_macros,gcno_cwd
-          ccache --set-config=file_clone=true
-          ccache --zero-stats
+          ccache -z
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -122,6 +143,23 @@ jobs:
       - name: Generate native iOS project (CNG)
         run: bunx expo prebuild --platform ios --no-install
         working-directory: apps/mobile
+
+      # Restore the resolved Pods tree AFTER prebuild (prebuild regenerates ios/
+      # and would clobber an earlier restore). This holds the installed pod
+      # sources + generated Pods.xcodeproj/support files. On a hit, `pod install`
+      # below sees Podfile.lock == Pods/Manifest.lock and no-ops instead of
+      # re-resolving + recopying ~60 pods — the ~38s step becomes a few seconds.
+      # Keyed on bun.lock (pods only change when JS deps do); a miss falls back to
+      # the CDN cache path (still fast) and does a full install.
+      - name: Restore Pods tree
+        id: restore-pods-tree
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            apps/mobile/ios/Pods
+            apps/mobile/ios/Podfile.lock
+          key: podstree-ios-${{ hashFiles('bun.lock') }}
+          restore-keys: podstree-ios-
 
       - name: Install CocoaPods
         run: pod install
@@ -146,6 +184,46 @@ jobs:
           echo "Patching $PLIST -> CFBundleShortVersionString=${{ steps.ver.outputs.full }}"
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${{ steps.ver.outputs.full }}" "$PLIST"
 
+      # Route the compiler through ccache. RN wires CC=ccache-clang.sh, whose
+      # `exec $CCACHE_BINARY clang` relies on the CCACHE_BINARY build setting
+      # reaching the compile env — but Xcode 26 doesn't propagate user-defined
+      # settings to compile tasks (RN #55381), so $CCACHE_BINARY is empty and the
+      # wrapper runs bare clang (ccache never fires: 0 hits/misses, no speedup).
+      # Work around it by patching the wrapper to hard-code the ccache path and
+      # export CCACHE_DIR (verified: 99.86% of compiles become cacheable). Runs
+      # last before the archive so nothing reinstalls node_modules afterward;
+      # patches the resolved RN copy + any others, skipping the comical submodule.
+      - name: Route ccache (patch RN wrapper for Xcode 26)
+        run: |
+          set -euo pipefail
+          CCACHE_BIN="$(command -v ccache || true)"
+          [ -n "$CCACHE_BIN" ] || { echo "ERROR: ccache not on PATH"; exit 1; }
+          count=0
+          patch() {
+            local w="$1"
+            [ -f "$w" ] || return 0
+            grep -q 'COMICAL_CCACHE_FIX' "$w" && return 0
+            local tmp; tmp="$(mktemp)"
+            awk -v bin="$CCACHE_BIN" -v dir="$CCACHE_DIR" '
+              /^exec / && !ins {
+                print "export CCACHE_DIR=\"" dir "\"  # COMICAL_CCACHE_FIX"
+                print "export CCACHE_MAXSIZE=3G"
+                sub(/\$CCACHE_BINARY/, bin)   # Xcode 26 leaves $CCACHE_BINARY empty
+                ins=1
+              }
+              { print }
+            ' "$w" > "$tmp"
+            chmod +x "$tmp"; mv "$tmp" "$w"
+            echo "patched $w"; count=$((count + 1))
+          }
+          RN="$(cd apps/mobile && node -e "console.log(require('path').dirname(require.resolve('react-native/package.json')))" 2>/dev/null || true)"
+          [ -n "$RN" ] && { patch "$RN/scripts/xcode/ccache-clang.sh"; patch "$RN/scripts/xcode/ccache-clang++.sh"; }
+          while IFS= read -r w; do patch "$w"; done < <(
+            find -L . -path '*/react-native/scripts/xcode/ccache-clang*.sh' \
+                 -not -path '*/external/comical/*' -not -path '*/.git/*' 2>/dev/null \
+              | xargs -r -n1 realpath 2>/dev/null | sort -u)
+          [ "$count" -gt 0 ] || { echo "ERROR: no RN ccache wrapper found to patch"; exit 1; }
+
       - name: Build unsigned archive
         working-directory: apps/mobile/ios
         env:
@@ -155,22 +233,29 @@ jobs:
           # going on upload errors instead of returning non-zero and failing the Xcode build phase.
           # Matches this workflow's intent that Sentry integration is optional, never build-blocking.
           SENTRY_ALLOW_FAILURE: 'true'
+          CONFIGURATION: ${{ inputs.configuration }}
         run: |
           set -euo pipefail
           WORKSPACE=$(ls -d *.xcworkspace | head -1)
           SCHEME=$(basename "$WORKSPACE" .xcworkspace)
-          echo "Building workspace=$WORKSPACE scheme=$SCHEME"
+          echo "Building workspace=$WORKSPACE scheme=$SCHEME configuration=$CONFIGURATION"
           # DEBUG_INFORMATION_FORMAT=dwarf skips the dSYM generation pass — the
           # Sentry upload no-ops without SENTRY_AUTH_TOKEN, so nothing consumes
           # dSYMs here (switch back to dwarf-with-dsym once Sentry is wired up).
           # COMPILER_INDEX_STORE_ENABLE=NO drops CI-useless source indexing.
+          # A Debug configuration yields a dev build (shake menu / Perf Monitor);
+          # on iphoneos the JS bundle is still embedded so the IPA runs offline.
+          # -showBuildTimingSummary: prints a per-phase wall-clock table at the
+          #   end (compile vs link vs "Bundle React Native" vs asset catalog) so
+          #   the next optimization is data-driven rather than guessed.
           xcodebuild \
             -workspace "$WORKSPACE" \
             -scheme "$SCHEME" \
-            -configuration Release \
+            -configuration "$CONFIGURATION" \
             -sdk iphoneos \
             -archivePath "$RUNNER_TEMP/comical.xcarchive" \
             archive \
+            -showBuildTimingSummary \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -178,9 +263,10 @@ jobs:
             DEBUG_INFORMATION_FORMAT=dwarf \
             COMPILER_INDEX_STORE_ENABLE=NO
 
+      # Hits climb once main has saved a warm cache; a cold run shows ~all misses.
       - name: Report ccache stats
         if: always()
-        run: ccache --show-stats --verbose || ccache --show-stats
+        run: ccache -s -v 2>/dev/null || ccache -s
 
       - name: Package unsigned IPA
         run: |
@@ -212,16 +298,43 @@ jobs:
           path: ${{ github.workspace }}/.ccache
           key: ccache-ios-${{ hashFiles('bun.lock') }}-${{ github.sha }}
 
+      # The remaining caches are keyed on bun.lock (one authoritative warm entry
+      # each). Gate their save on a restore MISS: an exact hit means the entry
+      # already exists, and cache/save can't overwrite an existing key — it was
+      # failing every run with "Unable to reserve cache … another job may be
+      # creating this cache". Saving only on a miss keeps the entry fresh when
+      # bun.lock changes and stays silent otherwise.
       - name: Save Bun modules
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && steps.restore-bun.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ~/.bun/install/cache
           key: bun-ios-${{ hashFiles('bun.lock') }}
 
       - name: Save CocoaPods
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && steps.restore-pods-cdn.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ~/Library/Caches/CocoaPods
           key: pods-ios-${{ hashFiles('bun.lock') }}
+
+      - name: Save Pods tree
+        if: github.ref == 'refs/heads/main' && steps.restore-pods-tree.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            apps/mobile/ios/Pods
+            apps/mobile/ios/Podfile.lock
+          key: podstree-ios-${{ hashFiles('bun.lock') }}
+
+      # Saved once per bun.lock (first main build after a deps change); later
+      # JS-only commits restore that baseline and re-transform just their delta.
+      # We deliberately don't refresh it per-commit — a single warm entry keeps
+      # the shared 10 GB budget from being churned, and the baseline already
+      # covers the large unchanged graph (node_modules / RN / expo).
+      - name: Save Metro cache
+        if: github.ref == 'refs/heads/main' && steps.restore-metro.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ github.workspace }}/node_modules/.cache/metro
+          key: metro-ios-${{ hashFiles('bun.lock') }}

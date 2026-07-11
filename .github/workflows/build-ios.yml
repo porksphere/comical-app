@@ -71,6 +71,13 @@ jobs:
     # handles that event and needs no IPA.
     if: github.event.action != 'closed'
     uses: ./.github/workflows/build-ios-reusable.yml
+    # PR builds feed the ios-dev SideStore source, so build them Debug — a dev
+    # build with the shake menu + Perf Monitor for on-device profiling (see
+    # docs/PROFILING.md). Push-to-main / dispatch builds feed the normal
+    # ios-latest source and stay Release. A given run is only ever one event
+    # type, so this single build job is Debug xor Release, never both.
+    with:
+      configuration: ${{ github.event_name == 'pull_request' && 'Debug' || 'Release' }}
     secrets: inherit
 
   publish:
@@ -178,9 +185,9 @@ jobs:
               }]
             }' > "$RUNNER_TEMP/apps.json"
 
-          # meta.json fragment consumed by refresh-ios-dev-source.sh to place
-          # main at versions[0] of the aggregate ios-dev source. `sort` is the
-          # run number (same one baked into $FULL_VERSION) so PRs order by it.
+          # meta.json fragment consumed by refresh-ios-dev-source.sh, which
+          # orders the aggregate ios-dev source newest-first. `sort` is the run
+          # number (same one baked into $FULL_VERSION) that it sorts on.
           jq -n \
             --arg version "$FULL_VERSION" \
             --arg date "$DATE" \
@@ -295,8 +302,8 @@ jobs:
           PR: ${{ github.event.number }}
         run: gh release delete "ios-pr-${PR}" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
 
-  # Regenerate the single stable `ios-dev` source (main at versions[0] + every
-  # open PR) after whichever of the jobs above ran. Enumerates the ios-latest /
+  # Regenerate the single stable `ios-dev` source (main + every open PR, newest
+  # build first) after whichever of the jobs above ran. Enumerates the ios-latest /
   # ios-pr-* releases and their meta.json fragments — stateless, so a close and
   # an open converge. Concurrency-locked (no cancel) so overlapping runs from
   # different PRs serialize instead of clobbering the source.

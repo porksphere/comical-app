@@ -5,6 +5,7 @@ import { useCallback, useRef, useState } from 'react';
 import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BarBlur } from '@/components/bar-blur';
 import { HistoryRow } from '@/components/history-row';
 import { RetryBlock } from '@/components/retry-block';
 import { ThemedText } from '@/components/themed-text';
@@ -157,11 +158,11 @@ export default function HistoryScreen() {
           styles.topBar,
           {
             paddingTop: insets.top,
-            backgroundColor: theme.background,
             borderBottomColor: theme.hairline,
             pointerEvents: 'box-none',
           },
         ]}>
+        <BarBlur fallback={theme.background} />
         <View style={[styles.titleRow, { height: barHeight }]}>
           <ThemedText numberOfLines={1} style={styles.title}>
             History

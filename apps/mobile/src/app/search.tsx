@@ -300,12 +300,20 @@ export default function SearchScreen() {
               key={gridKey}
               style={styles.list}
               sharedValues={sharedValues}
-              // Force scrollEventThrottle:1 on web so onScroll/onEndReached advance during the
-              // gesture, not only on release (see the same note in the Browse list).
-              renderScrollComponent={(scrollProps) => <Animated.ScrollView {...scrollProps} />}
+              // Web only: forces scrollEventThrottle:1 so onScroll/onEndReached advance during the
+              // gesture, not only on release. On native it just saturates the JS thread each frame
+              // during a fling — the UI-thread `scrollY` drives the sliding bar regardless. (Same
+              // reasoning as the Browse list.)
+              renderScrollComponent={
+                Platform.OS === 'web' ? (scrollProps) => <Animated.ScrollView {...scrollProps} /> : undefined
+              }
               onScroll={onListScroll}
               data={gridData}
               estimatedItemSize={estimatedCardHeight(cardWidth)}
+              // Rough `estimatedItemSize` means measured rows differ from it; LegendList's default
+              // maintain-visible-content-position would retro-correct the offset and cause a
+              // fling bounce/jitter. Turn it off so positions settle once measured. (Same as Browse.)
+              maintainVisibleContentPosition={{ data: false, size: false }}
               keyExtractor={(item) => String(item.id)}
               numColumns={numColumns}
               recycleItems
