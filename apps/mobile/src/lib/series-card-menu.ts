@@ -9,6 +9,8 @@ export type CardRect = { x: number; y: number; width: number; height: number };
 export type SeriesCardMenuRequest = {
   entry: SeriesEntry;
   bridgeId: string;
+  /** The bridge's display name — carried so a tapped tag can drive a Browse search on that bridge. */
+  bridge?: string;
   /** Whether the bridge serves "direct" (chapterless, page-thumbnail) series — the preview shows a
    *  horizontal page-thumbnail rail for these. */
   direct?: boolean;
