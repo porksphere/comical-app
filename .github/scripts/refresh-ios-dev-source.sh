@@ -44,12 +44,25 @@ while IFS= read -r rel; do
   [ -n "$rel" ] || continue
   num="${rel#ios-pr-}"
   state="$(gh pr view "$num" --repo "$REPO" --json state -q .state 2>/dev/null || true)"
-  if [ "$state" = "OPEN" ]; then
-    fetch_meta "$rel" "pr-${num}.json" || true
-  else
-    echo "PR #${num} is ${state:-missing} (not OPEN) — excluding and deleting orphaned release ${rel}."
-    gh release delete "$rel" --repo "$REPO" --yes --cleanup-tag 2>/dev/null || true
-  fi
+  case "$state" in
+    OPEN)
+      fetch_meta "$rel" "pr-${num}.json" || true
+      ;;
+    MERGED|CLOSED)
+      # Confirmed dead: exclude from the source and delete the orphaned release.
+      echo "PR #${num} is ${state} — excluding and deleting orphaned release ${rel}."
+      gh release delete "$rel" --repo "$REPO" --yes --cleanup-tag 2>/dev/null || true
+      ;;
+    *)
+      # Indeterminate (gh pr view errored: permissions, rate limit, transient).
+      # Fail SAFE — never delete on uncertainty: keep and include the release, and
+      # let a later refresh correct it once the PR state resolves. This is the
+      # important guard: an empty state must NOT be treated as "closed", or a
+      # single API hiccup would wipe every open PR's release.
+      echo "PR #${num}: indeterminate state ('${state}') — keeping release ${rel} (fail-safe)."
+      fetch_meta "$rel" "pr-${num}.json" || true
+      ;;
+  esac
 done < <(gh release list --repo "$REPO" --limit 200 --json tagName -q '.[].tagName' \
            | grep '^ios-pr-' || true)
 
