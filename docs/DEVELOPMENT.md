@@ -1,7 +1,8 @@
 # Development
 
 Building Comical from source, running it locally, and the CI/release pipeline. For the
-architecture (on-device runtime, bridges, why RN), see [ARCHITECTURE.md](ARCHITECTURE.md).
+architecture (on-device runtime, bridges, why RN), see [ARCHITECTURE.md](ARCHITECTURE.md); for
+finding performance bottlenecks on-device, see [PROFILING.md](PROFILING.md).
 
 Bun is the package manager. Node is still used under the hood — Metro and the native build
 phases (Gradle/Xcode "bundle React Native code") shell out to `node`.
@@ -132,6 +133,14 @@ selectable from SideStore's version list. It uses the **production bundle id**, 
 **replaces** the installed Comical (they don't coexist) — install `main`'s entry (or the public
 `ios-latest` source) to switch back. The public `ios-latest` source stays clean (main only), so
 normal users never get branch-build updates.
+
+**PR builds are Debug (dev) builds.** Since the dev source exists for testing/profiling unmerged
+work, `build-ios.yml` builds PR IPAs with `-configuration Debug` (via the reusable workflow's
+`configuration` input), so they carry the **shake dev menu + live Perf Monitor** for on-device
+profiling — see [PROFILING.md](PROFILING.md). `main` (and the normal `ios-latest` source) stays
+**Release**; a run is only ever one event type, so the single build job is Debug xor Release. Note
+a Debug build runs JS in dev mode (`__DEV__`), so its perf is directional, not production-accurate;
+the dev-source `main` entry is the Release IPA shared with the normal source.
 
 How it's produced (see `.github/workflows/build-ios.yml` + `.github/scripts/refresh-ios-dev-source.sh`):
 

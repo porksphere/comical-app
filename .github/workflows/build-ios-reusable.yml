@@ -8,6 +8,21 @@ name: Build iOS IPA (reusable)
 
 on:
   workflow_call:
+    inputs:
+      configuration:
+        # Xcode build configuration. "Release" (default) is the production build
+        # used by the normal ios-latest source and versioned releases. "Debug"
+        # produces a DEV build — Hermes runs JS with __DEV__ = true and RCT_DEV
+        # is compiled in, so the app has the shake dev menu + live Perf Monitor
+        # for on-device profiling. build-ios.yml passes Debug for PR builds only
+        # (the ios-dev SideStore source); main stays Release. Note: an iphoneos
+        # Debug archive still embeds the JS bundle (react-native-xcode.sh only
+        # skips bundling for the *Simulator* in Debug), so the IPA runs
+        # standalone with no Metro — the dev menu just becomes available.
+        description: Xcode build configuration (Release or Debug).
+        type: string
+        default: Release
+        required: false
     secrets:
       SENTRY_AUTH_TOKEN:
         # Optional: without it, the Sentry build-phase script below no-ops
@@ -178,19 +193,23 @@ jobs:
 
       - name: Build unsigned archive
         working-directory: apps/mobile/ios
+        env:
+          CONFIGURATION: ${{ inputs.configuration }}
         run: |
           set -euo pipefail
           WORKSPACE=$(ls -d *.xcworkspace | head -1)
           SCHEME=$(basename "$WORKSPACE" .xcworkspace)
-          echo "Building workspace=$WORKSPACE scheme=$SCHEME"
+          echo "Building workspace=$WORKSPACE scheme=$SCHEME configuration=$CONFIGURATION"
           # DEBUG_INFORMATION_FORMAT=dwarf skips the dSYM generation pass — the
           # Sentry upload no-ops without SENTRY_AUTH_TOKEN, so nothing consumes
           # dSYMs here (switch back to dwarf-with-dsym once Sentry is wired up).
           # COMPILER_INDEX_STORE_ENABLE=NO drops CI-useless source indexing.
+          # A Debug configuration yields a dev build (shake menu / Perf Monitor);
+          # on iphoneos the JS bundle is still embedded so the IPA runs offline.
           xcodebuild \
             -workspace "$WORKSPACE" \
             -scheme "$SCHEME" \
-            -configuration Release \
+            -configuration "$CONFIGURATION" \
             -sdk iphoneos \
             -archivePath "$RUNNER_TEMP/comical.xcarchive" \
             archive \

@@ -71,6 +71,13 @@ jobs:
     # handles that event and needs no IPA.
     if: github.event.action != 'closed'
     uses: ./.github/workflows/build-ios-reusable.yml
+    # PR builds feed the ios-dev SideStore source, so build them Debug — a dev
+    # build with the shake menu + Perf Monitor for on-device profiling (see
+    # docs/PROFILING.md). Push-to-main / dispatch builds feed the normal
+    # ios-latest source and stay Release. A given run is only ever one event
+    # type, so this single build job is Debug xor Release, never both.
+    with:
+      configuration: ${{ github.event_name == 'pull_request' && 'Debug' || 'Release' }}
     secrets: inherit
 
   publish:
