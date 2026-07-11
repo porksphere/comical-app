@@ -33,10 +33,23 @@ fetch_meta() {
 # doesn't matter — the "00-" prefix is just for readable listings).
 fetch_meta "ios-latest" "00-main.json" || true
 
-# every open PR (its release is deleted on close, so this is the live set)
+# Every open PR. cleanup-pr normally deletes a PR's ios-pr-<N> release on close,
+# but that races with publish-pr: an in-flight build from a push made just before
+# the merge can recreate ios-pr-<N> *after* cleanup-pr deleted it, leaving a
+# merged PR squatting at the top of the source. So don't trust the release's mere
+# existence — check each PR's actual state and include only OPEN ones. Any release
+# whose PR is closed/merged (or gone) is orphaned: exclude it and delete it so the
+# source self-heals without hand-pruning.
 while IFS= read -r rel; do
   [ -n "$rel" ] || continue
-  fetch_meta "$rel" "pr-${rel#ios-pr-}.json" || true
+  num="${rel#ios-pr-}"
+  state="$(gh pr view "$num" --repo "$REPO" --json state -q .state 2>/dev/null || true)"
+  if [ "$state" = "OPEN" ]; then
+    fetch_meta "$rel" "pr-${num}.json" || true
+  else
+    echo "PR #${num} is ${state:-missing} (not OPEN) — excluding and deleting orphaned release ${rel}."
+    gh release delete "$rel" --repo "$REPO" --yes --cleanup-tag 2>/dev/null || true
+  fi
 done < <(gh release list --repo "$REPO" --limit 200 --json tagName -q '.[].tagName' \
            | grep '^ios-pr-' || true)
 
