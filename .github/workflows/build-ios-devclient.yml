@@ -19,6 +19,11 @@ on:
   # (or `gh workflow run build-ios-devclient.yml --ref <branch>`); the whole
   # workflow — including the reusable build's checkout — runs on that ref.
   workflow_dispatch: {}
+  # TEMPORARY — remove before merging this PR. workflow_dispatch can't target a
+  # workflow that isn't on the default branch yet, so this branch-scoped push
+  # trigger lets us verify the dev-client build on the feature branch first.
+  push:
+    branches: [windows-dev-client]
 
 concurrency:
   group: ios-devclient
