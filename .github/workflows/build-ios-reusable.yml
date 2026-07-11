@@ -8,21 +8,6 @@ name: Build iOS IPA (reusable)
 
 on:
   workflow_call:
-    inputs:
-      configuration:
-        # Xcode build configuration. "Release" (default) is the production build
-        # used by the normal ios-latest source and versioned releases. "Debug"
-        # produces a DEV build — Hermes runs JS with __DEV__ = true and RCT_DEV
-        # is compiled in, so the app has the shake dev menu + live Perf Monitor
-        # for on-device profiling. build-ios.yml passes Debug for PR builds only
-        # (the ios-dev SideStore source); main stays Release. Note: an iphoneos
-        # Debug archive still embeds the JS bundle (react-native-xcode.sh only
-        # skips bundling for the *Simulator* in Debug), so the IPA runs
-        # standalone with no Metro — the dev menu just becomes available.
-        description: Xcode build configuration (Release or Debug).
-        type: string
-        default: Release
-        required: false
     secrets:
       SENTRY_AUTH_TOKEN:
         # Optional: without it, the Sentry build-phase script below no-ops
@@ -195,30 +180,11 @@ jobs:
 
       - name: Build unsigned archive
         working-directory: apps/mobile/ios
-        env:
-          CONFIGURATION: ${{ inputs.configuration }}
         run: |
           set -euo pipefail
           WORKSPACE=$(ls -d *.xcworkspace | head -1)
           SCHEME=$(basename "$WORKSPACE" .xcworkspace)
-          echo "Building workspace=$WORKSPACE scheme=$SCHEME configuration=$CONFIGURATION"
-
-          # For a Debug (dev) build we need the JS bundle EMBEDDED so the IPA runs
-          # standalone (no Metro) — see docs/PROFILING.md + with-ios-dev-bundle-fallback.
-          # Expo's device-Debug setup does the opposite by default: react-native-xcode.sh
-          # sees SKIP_BUNDLING=1 and exits before bundling (FORCE_BUNDLING can't override
-          # it — the SKIP check runs first), and it writes an ip.txt pointing at the CI
-          # runner's LAN IP. So on Debug only, override via command-line build settings
-          # (highest xcodebuild precedence): clear SKIP_BUNDLING and force bundling so a
-          # __DEV__ main.jsbundle is embedded, and set SKIP_BUNDLING_METRO_IP=1 so no
-          # ip.txt is baked in — with no packager host, RCTBundleURLProvider returns nil
-          # on-device and the AppDelegate falls back to that embedded bundle. Release is
-          # left untouched (it embeds the bundle normally).
-          BUNDLE_SETTINGS=()
-          if [ "$CONFIGURATION" = "Debug" ]; then
-            BUNDLE_SETTINGS=(SKIP_BUNDLING= FORCE_BUNDLING=1 SKIP_BUNDLING_METRO_IP=1)
-          fi
-
+          echo "Building workspace=$WORKSPACE scheme=$SCHEME"
           # DEBUG_INFORMATION_FORMAT=dwarf skips the dSYM generation pass — the
           # Sentry upload no-ops without SENTRY_AUTH_TOKEN, so nothing consumes
           # dSYMs here (switch back to dwarf-with-dsym once Sentry is wired up).
@@ -226,7 +192,7 @@ jobs:
           xcodebuild \
             -workspace "$WORKSPACE" \
             -scheme "$SCHEME" \
-            -configuration "$CONFIGURATION" \
+            -configuration Release \
             -sdk iphoneos \
             -archivePath "$RUNNER_TEMP/comical.xcarchive" \
             archive \
@@ -235,8 +201,7 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM="" \
             DEBUG_INFORMATION_FORMAT=dwarf \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            ${BUNDLE_SETTINGS[@]+"${BUNDLE_SETTINGS[@]}"}
+            COMPILER_INDEX_STORE_ENABLE=NO
 
       # Hits climb once main has saved a warm cache; a cold run shows ~all misses.
       - name: Report ccache stats
