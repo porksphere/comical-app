@@ -113,15 +113,30 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const previewTop = groupH <= available ? clamp(rect.y, topLimit, bottomLimit - groupH) : topLimit;
   const menuTop = previewTop + effPreviewH + GAP;
 
+  // FLIP: the preview is laid out at its final (enlarged) frame, but animates FROM the pressed card's
+  // on-screen frame — start scaled down to the card's width and translated so its centre sits on the
+  // card's centre, then ease to identity. (Center transform origin, so scaling doesn't move the
+  // centre; the translate is the centre delta.)
+  const fromScale = rect.width / previewW;
+  const dx = rect.x + rect.width / 2 - (previewLeft + previewW / 2);
+  const dy = rect.y + rect.height / 2 - (previewTop + effPreviewH / 2);
+
   // Backdrop: ramp the blur in with progress, plus a faint darkening layer over it.
   const backdropBlurProps = useAnimatedProps(() => ({ intensity: progress.value * BACKDROP_BLUR }));
   const backdropTintStyle = useAnimatedStyle(() => ({ opacity: progress.value * BACKDROP_TINT_OPACITY }));
-  // Preview pops in (scale + fade); shadow deepens as it settles.
-  const previewStyle = useAnimatedStyle(() => ({
-    opacity: progress.value,
-    transform: [{ scale: interpolate(progress.value, [0, 1], [0.9, 1]) }],
-    shadowOpacity: progress.value * 0.3,
-  }));
+  // Preview zooms out from the card to its final frame; shadow deepens as it settles.
+  const previewStyle = useAnimatedStyle(
+    () => ({
+      opacity: interpolate(progress.value, [0, 0.35, 1], [0, 1, 1]),
+      transform: [
+        { translateX: interpolate(progress.value, [0, 1], [dx, 0]) },
+        { translateY: interpolate(progress.value, [0, 1], [dy, 0]) },
+        { scale: interpolate(progress.value, [0, 1], [fromScale, 1]) },
+      ],
+      shadowOpacity: progress.value * 0.3,
+    }),
+    [dx, dy, fromScale],
+  );
   const menuStyle = useAnimatedStyle(() => ({
     opacity: progress.value,
     transform: [
