@@ -99,14 +99,18 @@ Shake → **Show Perf Monitor** overlays live JS-thread and UI-thread FPS. If UI
 FPS stays high, the bottleneck is native/render (→ Instruments); if JS FPS tanks, it's your
 JavaScript (→ React Native DevTools). That one glance tells you which profiler to reach for.
 
-## On-device without a cable: the dev SideStore build
+## Why there's no cable-free "dev build"
 
-If you don't want to tether to a Mac, the **dev SideStore/AltStore source** serves Debug (dev)
-builds for open PRs (see
-[DEVELOPMENT.md → Dev / branch builds](DEVELOPMENT.md#dev--branch-builds--one-source-every-pr) —
-its `main` entry stays Release and won't have the dev menu; install a PR build for that). Installed
-standalone a Debug build gives you the **shake menu** and the **live Perf Monitor FPS overlay**
-offline — enough to spot *which screen* drops frames. But the flamegraph-quality profilers (tools 1
-and 2 above) need the app talking to a Metro server, so for real hotspot-hunting come back to the
-local dev build. And remember a dev build runs JS in dev mode: treat its FPS as directional, not
-as production truth.
+You might expect to install a dev build from the SideStore **dev source** and profile on-device with
+no Mac. That doesn't work, and it's worth knowing why so you don't chase it: **Expo intentionally
+skips embedding the JS bundle in debug builds** (its build phase sets `SKIP_BUNDLING=1`, since debug
+builds are meant to load JS from Metro over the network). A CI-built standalone "dev build" therefore
+has no bundle to run and crashes with *"No script URL provided."* Forcing an embedded dev bundle
+means fighting the framework, and a `__DEV__` bundle is too slow to give meaningful numbers anyway.
+
+So the per-PR builds in the dev source are plain **Release** builds — installable to eyeball a PR's
+UI on real hardware, but with **no** shake menu or Perf Monitor. All actual profiling (the shake
+menu, Perf Monitor, and every tool above) requires the **local `expo run:ios --device` build with
+Metro** — that's the only path that gives on-device dev tooling. If you want the full launcher +
+network-inspector experience, add [`expo-dev-client`](https://docs.expo.dev/develop/development-builds/introduction/)
+to make it a proper Expo development build.

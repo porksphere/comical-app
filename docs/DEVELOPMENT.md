@@ -134,13 +134,11 @@ selectable from SideStore's version list. It uses the **production bundle id**, 
 `ios-latest` source) to switch back. The public `ios-latest` source stays clean (main only), so
 normal users never get branch-build updates.
 
-**PR builds are Debug (dev) builds.** Since the dev source exists for testing/profiling unmerged
-work, `build-ios.yml` builds PR IPAs with `-configuration Debug` (via the reusable workflow's
-`configuration` input), so they carry the **shake dev menu + live Perf Monitor** for on-device
-profiling — see [PROFILING.md](PROFILING.md). `main` (and the normal `ios-latest` source) stays
-**Release**; a run is only ever one event type, so the single build job is Debug xor Release. Note
-a Debug build runs JS in dev mode (`__DEV__`), so its perf is directional, not production-accurate;
-the dev-source `main` entry is the Release IPA shared with the normal source.
+These are **Release** builds — installable on-device to eyeball a PR's UI on real hardware, but with
+no dev menu / Perf Monitor. (An offline "dev build" from CI isn't practical: Expo intentionally
+skips embedding JS in debug builds, and a dev-mode bundle would be too slow to profile usefully
+anyway — do on-device profiling from a local `expo run:ios --device` build instead; see
+[PROFILING.md](PROFILING.md).)
 
 How it's produced (see `.github/workflows/build-ios.yml` + `.github/scripts/refresh-ios-dev-source.sh`):
 
