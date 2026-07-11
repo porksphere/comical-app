@@ -3,6 +3,7 @@ import { Link } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { Easing, type AnimatedStyle, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { use$ } from '@legendapp/state/react';
 
 import { CardBadge, UnreadBadge } from '@/components/card-badge';
 import { SeriesCardMenu } from '@/components/series-card-menu';
@@ -14,6 +15,7 @@ import type { SeriesEntry } from '@/data/types';
 import { useIsCompact } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
+import { lightCards$ } from '@/lib/perf-flags';
 
 // Shared cover card used by both the browse grid and the rails. `size` picks the
 // fixed rail widths; `grid` fills its parent slot (the grid controls columns).
@@ -63,12 +65,6 @@ const TITLE_LINE_HEIGHT = { regular: 18, compact: 17 };
 // 0.72rem mobile, line-height ~1.3, color #888 (here: the theme's muted text).
 const SUB_FONT_SIZE = { regular: 12, compact: 11.5 };
 const SUB_LINE_HEIGHT = { regular: 16, compact: 15 };
-
-// TEMPORARY PERF LEVER (2026-07-10): A/B whether the remaining scroll cost is the per-card
-// reanimated cover-aspect "shrink" illusion and expo-image's cross-fade. When true, cards DON'T
-// attach the shrink animated styles (so no per-frame worklets run per card) and skip the image
-// cross-fade on (re)load. Flip to false to restore the polish once measured.
-const PERF_LIGHT_CARDS = true;
 
 // Large enough to cover any screen: the press stays "active" wherever the finger
 // goes, so the highlight only ends on release.
@@ -204,6 +200,8 @@ export function SeriesCard({
    *  still masks. */
   crossfading?: boolean;
 }) {
+  // Temporary perf A/B lever (Settings → "Lightweight cards"); see lib/perf-flags.
+  const lightCards = use$(lightCards$);
   const [loaded, setLoaded] = useState(() => resolvedCoverIds.has(entry.id));
   const [truncated, setTruncated] = useState(false);
   // True while masking a scope swap (see the recycle-safety block): the shared `Skeleton` is only
@@ -488,14 +486,14 @@ export function SeriesCard({
                 illusion. Badges/rank/ring below are siblings, NOT inside this
                 layer, so they never get stretched by the scale. */}
             <Animated.View
-              style={PERF_LIGHT_CARDS ? [StyleSheet.absoluteFill, styles.picture] : [StyleSheet.absoluteFill, styles.picture, pictureStyle]}>
+              style={lightCards ? [StyleSheet.absoluteFill, styles.picture] : [StyleSheet.absoluteFill, styles.picture, pictureStyle]}>
               {delayPassed && (
                 <Image
                   source={{ uri: entry.cover }}
                   style={StyleSheet.absoluteFill}
                   contentFit="cover"
                   cachePolicy="memory-disk"
-                  transition={PERF_LIGHT_CARDS ? 0 : 90}
+                  transition={lightCards ? 0 : 90}
                   // Recycled lists reuse this <Image> instance for a different
                   // entry; without a recyclingKey expo-image keeps painting the
                   // PREVIOUS cover until the new one decodes (the "old thumbnail
@@ -515,7 +513,7 @@ export function SeriesCard({
                       // factor but not the pixel offset, so without it this just
                       // falls back to today's instant (unanimated) snap.
                       const width = coverBoxWidthSV.value;
-                      if (!PERF_LIGHT_CARDS && width > 0 && nextAspect !== coverAspect) {
+                      if (!lightCards && width > 0 && nextAspect !== coverAspect) {
                         const oldHeight = width / coverAspect;
                         const newHeight = width / nextAspect;
                         shrinkFromScaleSV.value = newHeight > 0 ? oldHeight / newHeight : 1;
@@ -555,7 +553,7 @@ export function SeriesCard({
           {active && isWeb && <View style={[styles.ring, { pointerEvents: 'none' }]} />}
         </View>
 
-        <Animated.View style={PERF_LIGHT_CARDS ? styles.trailingGroup : [styles.trailingGroup, trailingStyle]}>
+        <Animated.View style={lightCards ? styles.trailingGroup : [styles.trailingGroup, trailingStyle]}>
           <View style={styles.titleWrap}>
             <ThemedText type="small" numberOfLines={MAX_TITLE_LINES} style={[styles.title, titleSize]}>
               {entry.title}

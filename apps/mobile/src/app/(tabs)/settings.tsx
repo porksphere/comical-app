@@ -25,6 +25,8 @@ import { BarBlur } from '@/components/bar-blur';
 import { RetryBlock } from '@/components/retry-block';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedSwitch } from '@/components/themed-switch';
+import { use$ } from '@legendapp/state/react';
+import { lightCards$ } from '@/lib/perf-flags';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
@@ -125,6 +127,7 @@ function GeneralSection() {
   const [themePref, setThemePref] = useThemePreference();
   const [onDevice, setOnDevice] = useEmbeddedEnabled();
   const [apiBase, setApiBaseOverride] = useApiBase();
+  const lightCards = use$(lightCards$);
   const { open } = useOverlay();
   // The on-device runtime is only offered where a native bridge engine exists (iOS/Android with the
   // native module built) — never on web, which always uses a remote server.
@@ -166,6 +169,12 @@ function GeneralSection() {
           onPress={() => open(() => <RemoteServerForm currentUrl={apiBase} onSave={saveApiBase} />)}
         />
       )}
+      {/* TEMPORARY perf A/B toggle — see lib/perf-flags. Remove once decided. */}
+      <SettingsRow
+        label="Lightweight cards (perf test)"
+        description="Drops the cover shrink animation and cross-fade to A/B scroll performance."
+        right={<ThemedSwitch value={lightCards} onValueChange={(v) => lightCards$.set(v)} />}
+      />
     </SettingsSection>
   );
 }
