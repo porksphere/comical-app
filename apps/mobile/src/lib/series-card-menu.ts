@@ -9,6 +9,9 @@ export type CardRect = { x: number; y: number; width: number; height: number };
 export type SeriesCardMenuRequest = {
   entry: SeriesEntry;
   bridgeId: string;
+  /** Whether the bridge serves "direct" (chapterless, page-thumbnail) series — the preview shows a
+   *  horizontal page-thumbnail rail for these. */
+  direct?: boolean;
   /** The cover's real (capped) aspect ratio, so the lifted preview matches the card's shape. */
   coverAspect?: number;
   rect: CardRect;

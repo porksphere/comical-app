@@ -532,6 +532,7 @@ export function SeriesCard({
       enabled={menuEnabled}
       bridgeId={bridgeId}
       entry={entry}
+      direct={direct}
       coverAspect={coverAspect}>
       {({ onLongPress }) => (
       <Link

@@ -713,7 +713,7 @@ function thumbDelayKey(t: PageThumbSource | null): string {
  *  A `sprite` thumb renders via `SpriteCrop` instead of a plain `Image`; a
  *  sprite tile also takes its own aspect ratio (`w`/`h`) rather than the
  *  uniform 2:3 default, since sprite sheets often pack mixed page shapes. */
-function PageThumb({
+export function PageThumb({
   thumb,
   index,
   seed,
