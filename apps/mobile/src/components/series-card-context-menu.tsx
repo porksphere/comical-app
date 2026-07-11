@@ -2,9 +2,10 @@ import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, BackHandler, FlatList, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, BackHandler, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import Animated, { Easing, interpolate, runOnJS, useAnimatedProps, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LegendList } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
 
 import { CheckIcon, PlusIcon, StarIcon, type IconProps } from '@/components/icons/ui-icons';
@@ -290,17 +291,19 @@ function PageRail({
     );
   }
   if (!thumbs || thumbs.length === 0) return null;
-  // Wrap in objects so `null` thumbs never appear as raw list data.
+  // Wrap in objects so `null` thumbs never appear as raw list data (a null entry ends LegendList's
+  // virtualization). The inter-tile gap lives as a per-item marginRight, since LegendList positions
+  // items virtually and ignores a contentContainerStyle gap.
   const data: RailCell[] = thumbs.map((thumb, index) => ({ thumb, index }));
   return (
-    <FlatList
+    <LegendList
       horizontal
       data={data}
       keyExtractor={(it) => String(it.index)}
+      recycleItems
+      estimatedItemSize={RAIL_THUMB_W + RAIL_GAP}
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={styles.rail}
-      ItemSeparatorComponent={RailSeparator}
-      getItemLayout={(_, i) => ({ length: RAIL_THUMB_W + RAIL_GAP, offset: (RAIL_THUMB_W + RAIL_GAP) * i, index: i })}
       renderItem={({ item }) => (
         <View style={styles.railItem}>
           <PageThumb thumb={item.thumb} index={item.index} seed={seed} bridgeId={bridgeId} page={item.index + 1} width={RAIL_THUMB_W} />
@@ -309,8 +312,6 @@ function PageRail({
     />
   );
 }
-
-const RailSeparator = () => <View style={{ width: RAIL_GAP }} />;
 
 function MenuRow({
   label,
@@ -404,6 +405,7 @@ const styles = StyleSheet.create({
   railItem: {
     width: RAIL_THUMB_W,
     height: RAIL_THUMB_H,
+    marginRight: RAIL_GAP,
     borderRadius: 8,
     overflow: 'hidden',
     backgroundColor: 'rgba(128,128,128,0.15)',
