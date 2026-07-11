@@ -202,12 +202,27 @@ jobs:
           WORKSPACE=$(ls -d *.xcworkspace | head -1)
           SCHEME=$(basename "$WORKSPACE" .xcworkspace)
           echo "Building workspace=$WORKSPACE scheme=$SCHEME configuration=$CONFIGURATION"
+
+          # For a Debug (dev) build we need the JS bundle EMBEDDED so the IPA runs
+          # standalone (no Metro) — see docs/PROFILING.md + with-ios-dev-bundle-fallback.
+          # Expo's device-Debug setup does the opposite by default: react-native-xcode.sh
+          # sees SKIP_BUNDLING=1 and exits before bundling (FORCE_BUNDLING can't override
+          # it — the SKIP check runs first), and it writes an ip.txt pointing at the CI
+          # runner's LAN IP. So on Debug only, override via command-line build settings
+          # (highest xcodebuild precedence): clear SKIP_BUNDLING and force bundling so a
+          # __DEV__ main.jsbundle is embedded, and set SKIP_BUNDLING_METRO_IP=1 so no
+          # ip.txt is baked in — with no packager host, RCTBundleURLProvider returns nil
+          # on-device and the AppDelegate falls back to that embedded bundle. Release is
+          # left untouched (it embeds the bundle normally).
+          BUNDLE_SETTINGS=()
+          if [ "$CONFIGURATION" = "Debug" ]; then
+            BUNDLE_SETTINGS=(SKIP_BUNDLING= FORCE_BUNDLING=1 SKIP_BUNDLING_METRO_IP=1)
+          fi
+
           # DEBUG_INFORMATION_FORMAT=dwarf skips the dSYM generation pass — the
           # Sentry upload no-ops without SENTRY_AUTH_TOKEN, so nothing consumes
           # dSYMs here (switch back to dwarf-with-dsym once Sentry is wired up).
           # COMPILER_INDEX_STORE_ENABLE=NO drops CI-useless source indexing.
-          # A Debug configuration yields a dev build (shake menu / Perf Monitor);
-          # on iphoneos the JS bundle is still embedded so the IPA runs offline.
           xcodebuild \
             -workspace "$WORKSPACE" \
             -scheme "$SCHEME" \
@@ -220,7 +235,8 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM="" \
             DEBUG_INFORMATION_FORMAT=dwarf \
-            COMPILER_INDEX_STORE_ENABLE=NO
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            ${BUNDLE_SETTINGS[@]+"${BUNDLE_SETTINGS[@]}"}
 
       # Hits climb once main has saved a warm cache; a cold run shows ~all misses.
       - name: Report ccache stats
