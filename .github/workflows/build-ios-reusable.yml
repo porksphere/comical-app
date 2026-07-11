@@ -33,8 +33,11 @@ jobs:
     # build-phase script (injected during `expo prebuild` below) so it can upload
     # sourcemaps/dSYMs during the archive step. A missing/empty token makes that
     # step no-op rather than fail.
+    # CCACHE_DIR: the dir we restore/save and that the patched RN wrapper writes
+    # to (see "Route ccache" below). Fixed path so it's cacheable across runs.
     env:
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
       - uses: actions/checkout@v4
         with:
@@ -76,6 +79,27 @@ jobs:
           key: pods-ios-${{ hashFiles('bun.lock') }}
           restore-keys: pods-ios-
 
+      # Compiler cache: the actual native-compile speedup. main saves a fresh
+      # per-commit entry; branches restore the newest read-only and recompile
+      # only their delta. See "Route ccache" for why this needs a wrapper patch.
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-ios-${{ hashFiles('bun.lock') }}-${{ github.sha }}
+          restore-keys: |
+            ccache-ios-${{ hashFiles('bun.lock') }}-
+            ccache-ios-
+
+      # ccache isn't preinstalled on macos-26; install it BEFORE pod install so
+      # RN's Podfile detects it and wires CC=ccache-clang.sh. Zero stats so the
+      # report below reflects just this run.
+      - name: Install ccache
+        run: |
+          set -euo pipefail
+          command -v ccache >/dev/null || brew install ccache
+          ccache -z
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
@@ -112,6 +136,46 @@ jobs:
           echo "Patching $PLIST -> CFBundleShortVersionString=${{ steps.ver.outputs.full }}"
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${{ steps.ver.outputs.full }}" "$PLIST"
 
+      # Route the compiler through ccache. RN wires CC=ccache-clang.sh, whose
+      # `exec $CCACHE_BINARY clang` relies on the CCACHE_BINARY build setting
+      # reaching the compile env — but Xcode 26 doesn't propagate user-defined
+      # settings to compile tasks (RN #55381), so $CCACHE_BINARY is empty and the
+      # wrapper runs bare clang (ccache never fires: 0 hits/misses, no speedup).
+      # Work around it by patching the wrapper to hard-code the ccache path and
+      # export CCACHE_DIR (verified: 99.86% of compiles become cacheable). Runs
+      # last before the archive so nothing reinstalls node_modules afterward;
+      # patches the resolved RN copy + any others, skipping the comical submodule.
+      - name: Route ccache (patch RN wrapper for Xcode 26)
+        run: |
+          set -euo pipefail
+          CCACHE_BIN="$(command -v ccache || true)"
+          [ -n "$CCACHE_BIN" ] || { echo "ERROR: ccache not on PATH"; exit 1; }
+          count=0
+          patch() {
+            local w="$1"
+            [ -f "$w" ] || return 0
+            grep -q 'COMICAL_CCACHE_FIX' "$w" && return 0
+            local tmp; tmp="$(mktemp)"
+            awk -v bin="$CCACHE_BIN" -v dir="$CCACHE_DIR" '
+              /^exec / && !ins {
+                print "export CCACHE_DIR=\"" dir "\"  # COMICAL_CCACHE_FIX"
+                print "export CCACHE_MAXSIZE=3G"
+                sub(/\$CCACHE_BINARY/, bin)   # Xcode 26 leaves $CCACHE_BINARY empty
+                ins=1
+              }
+              { print }
+            ' "$w" > "$tmp"
+            chmod +x "$tmp"; mv "$tmp" "$w"
+            echo "patched $w"; count=$((count + 1))
+          }
+          RN="$(cd apps/mobile && node -e "console.log(require('path').dirname(require.resolve('react-native/package.json')))" 2>/dev/null || true)"
+          [ -n "$RN" ] && { patch "$RN/scripts/xcode/ccache-clang.sh"; patch "$RN/scripts/xcode/ccache-clang++.sh"; }
+          while IFS= read -r w; do patch "$w"; done < <(
+            find -L . -path '*/react-native/scripts/xcode/ccache-clang*.sh' \
+                 -not -path '*/external/comical/*' -not -path '*/.git/*' 2>/dev/null \
+              | xargs -r -n1 realpath 2>/dev/null | sort -u)
+          [ "$count" -gt 0 ] || { echo "ERROR: no RN ccache wrapper found to patch"; exit 1; }
+
       - name: Build unsigned archive
         working-directory: apps/mobile/ios
         run: |
@@ -137,6 +201,11 @@ jobs:
             DEBUG_INFORMATION_FORMAT=dwarf \
             COMPILER_INDEX_STORE_ENABLE=NO
 
+      # Hits climb once main has saved a warm cache; a cold run shows ~all misses.
+      - name: Report ccache stats
+        if: always()
+        run: ccache -s -v 2>/dev/null || ccache -s
+
       - name: Package unsigned IPA
         run: |
           set -euo pipefail
@@ -160,6 +229,13 @@ jobs:
       # Persist the freshly-populated caches from the default branch only, so
       # the shared 10 GB budget holds one authoritative warm cache instead of a
       # per-branch pile that evicts it. Feature branches restore these read-only.
+      - name: Save ccache
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-ios-${{ hashFiles('bun.lock') }}-${{ github.sha }}
+
       - name: Save Bun modules
         if: github.ref == 'refs/heads/main'
         uses: actions/cache/save@v4

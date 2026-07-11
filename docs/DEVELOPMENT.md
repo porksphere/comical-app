@@ -63,14 +63,17 @@ export — start that server first with `cd ../comical-web && bun run dev`. The 
 Native projects are generated on the fly (`expo prebuild`, CNG); `ios/` and `android/` are
 git-ignored. Workflows in `.github/workflows/` run on push to `main`, on every **pull request**
 (build + downloadable artifact, so branches are verified — see the dev channel below), and via
-manual dispatch. Dependency/tooling caches keep the non-compile steps quick: iOS caches Bun +
-CocoaPods, Android caches Bun + the **Gradle** cache. Only `main` *writes* those caches; every
+manual dispatch. Caches keep repeat builds fast: iOS caches Bun + CocoaPods + **ccache** (native
+compile), Android caches Bun + the **Gradle** cache. Only `main` *writes* those caches; every
 branch/PR restores them read-only, so the shared 10 GB Actions cache budget holds one
-authoritative warm cache instead of being thrashed per branch. The native **compile** itself
-isn't cached: ccache doesn't work with React Native under Xcode 26 (compiles come through as
-uncacheable), and there's no maintained alternative — but iOS already skips compiling React
-Native core via RN's prebuilt `ReactNativeDependencies.xcframework`/`React-Core-prebuilt` (default
-on RN 0.80+), so the bulk of the win is captured without a compiler cache:
+authoritative warm cache instead of being thrashed per branch. Two iOS-specific notes on the
+native compile: RN core itself isn't compiled at all (prebuilt via
+`ReactNativeDependencies.xcframework`/`React-Core-prebuilt`, default on RN 0.80+); and the
+third-party pods that *do* compile go through **ccache** — but only because the "Route ccache"
+step patches RN's `ccache-clang.sh` wrapper to hard-code the ccache path. RN's wrapper otherwise
+relies on the `CCACHE_BINARY` build setting reaching the compile env, which Xcode 26 doesn't do
+([RN #55381](https://github.com/facebook/react-native/issues/55381)), so without the patch ccache
+silently never fires (0 hits/misses). With it, ~99.9% of compiles are cacheable:
 
 - **Android** (`ubuntu-latest`): `expo prebuild` → `gradlew assembleRelease` → installable
   `.apk` artifact (release is signed with the auto-generated debug keystore). `build-android.yml`
