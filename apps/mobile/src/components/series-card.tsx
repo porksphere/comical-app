@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { Link } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Platform, Pressable, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { Easing, type AnimatedStyle, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { CardBadge, UnreadBadge } from '@/components/card-badge';
@@ -145,6 +145,68 @@ function useHeld() {
   };
 }
 
+/**
+ * The FLIP-style cover-aspect "shrink" illusion, extracted into its own component so its reanimated
+ * hooks (4 shared values + 2 animated styles) are only allocated when it's actually used. SeriesCard
+ * mounts this (via render-prop) only when `lightCards` is off; when on, it passes a no-op API so a
+ * scrolling grid of cards pays nothing for the shrink machinery.
+ *
+ * Animating `aspectRatio` (a layout prop) would relayout every frame; instead the box's aspect is
+ * committed instantly and these transform-only styles fake the settle: the picture layer scales down
+ * from its old apparent size, and the text below translates up to catch it.
+ */
+type ShrinkApi = {
+  pictureStyle?: StyleProp<AnimatedStyle<ViewStyle>>;
+  trailingStyle?: StyleProp<AnimatedStyle<ViewStyle>>;
+  onCoverLayout?: (e: LayoutChangeEvent) => void;
+  /** Kick off the settle from the old aspect to the new one (called from the cover's onLoad). */
+  runShrink?: (oldAspect: number, newAspect: number) => void;
+};
+
+const NOOP_SHRINK: ShrinkApi = {};
+
+function CoverShrink({ entryId, children }: { entryId: string; children: (api: ShrinkApi) => React.ReactNode }) {
+  const coverBoxWidthSV = useSharedValue(0);
+  const shrinkProgressSV = useSharedValue(1); // 1 = settled; animates 0 -> 1 per transition
+  const shrinkFromScaleSV = useSharedValue(1); // picture's scaleY at progress 0
+  const shrinkFromOffsetSV = useSharedValue(0); // trailing group's translateY (px) at progress 0
+  // Reset to rest when this instance is recycled to a different entry (effect, not render — writing a
+  // shared value during render trips reanimated's strict-mode warning).
+  useEffect(() => {
+    shrinkProgressSV.value = 1;
+    shrinkFromScaleSV.value = 1;
+    shrinkFromOffsetSV.value = 0;
+  }, [entryId, shrinkProgressSV, shrinkFromScaleSV, shrinkFromOffsetSV]);
+  const pictureStyle = useAnimatedStyle(() => ({
+    transform: [{ scaleY: shrinkFromScaleSV.value + (1 - shrinkFromScaleSV.value) * shrinkProgressSV.value }],
+  }));
+  const trailingStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: shrinkFromOffsetSV.value * (1 - shrinkProgressSV.value) }],
+  }));
+  const onCoverLayout = useCallback(
+    (e: LayoutChangeEvent) => {
+      coverBoxWidthSV.value = e.nativeEvent.layout.width;
+    },
+    [coverBoxWidthSV],
+  );
+  const runShrink = useCallback(
+    (oldAspect: number, newAspect: number) => {
+      // width cancels out of the scale factor but not the pixel offset, so it must be known first.
+      const width = coverBoxWidthSV.value;
+      if (width > 0 && newAspect !== oldAspect) {
+        const oldHeight = width / oldAspect;
+        const newHeight = width / newAspect;
+        shrinkFromScaleSV.value = newHeight > 0 ? oldHeight / newHeight : 1;
+        shrinkFromOffsetSV.value = oldHeight - newHeight;
+        shrinkProgressSV.value = 0;
+        shrinkProgressSV.value = withTiming(1, { duration: ASPECT_TRANSITION_MS, easing: Easing.out(Easing.cubic) });
+      }
+    },
+    [coverBoxWidthSV, shrinkFromScaleSV, shrinkFromOffsetSV, shrinkProgressSV],
+  );
+  return <>{children({ pictureStyle, trailingStyle, onCoverLayout, runShrink })}</>;
+}
+
 export function SeriesCard({
   entry,
   size = 'grid',
@@ -224,19 +286,9 @@ export function SeriesCard({
   const [coverAspect, setCoverAspect] = useState(
     () => resolvedCoverAspects.get(entry.id) ?? lastResolvedCoverAspect
   );
-  // FLIP-style shrink illusion. Animating `aspectRatio` itself (a layout property)
-  // would force a native relayout every frame — Reanimated's own docs discourage
-  // this in favor of `transform`/`opacity`, which are compositor-only. Instead: the
-  // real layout change above happens instantly, and these three shared values drive
-  // a transform illusion on top of it — the cover's picture layer scales down from
-  // its old apparent size to fit the box's new (already-committed) size, while the
-  // text below translates up from where it'd sit under the old (bigger) box to its
-  // new (already-committed) position. Reset to their settled (no-offset) values on
-  // recycle below; only a genuine onLoad (further down) sets them in motion.
-  const coverBoxWidthSV = useSharedValue(0);
-  const shrinkProgressSV = useSharedValue(1); // 1 = settled; animates 0 -> 1 per transition
-  const shrinkFromScaleSV = useSharedValue(1); // picture's scaleY at progress 0
-  const shrinkFromOffsetSV = useSharedValue(0); // trailing group's translateY (px) at progress 0
+  // The FLIP-style cover-aspect shrink illusion lives in `CoverShrink` (rendered only when its
+  // effects are wanted — see the render below), so its reanimated hooks aren't allocated per card
+  // when Lightweight cards is on.
   const { active, handlers, reset: resetHeld } = useHeld();
   const fixedWidth = size === 'grid' ? undefined : (width ?? WIDTHS[size]);
   // The active/held decorations differ by platform: web keeps the hover highlight ring + full-title
@@ -292,18 +344,6 @@ export function SeriesCard({
     resetHeld();
   }
 
-  // Reset the press-shrink animation to rest on recycle. Unlike the plain-state resets above (React
-  // explicitly allows setState during render), writing a reanimated shared value during render is
-  // disallowed and trips its strict-mode "Writing to `value` during component render" warning — which
-  // fired on every recycle while scrolling. An effect is the correct place. There's no flash risk: the
-  // shrink is only ever driven off-rest by a user expand/collapse (the onLayout below), so a recycled
-  // card is virtually always already at rest, and on a fresh mount the SVs start at these values anyway.
-  useEffect(() => {
-    shrinkProgressSV.value = 1;
-    shrinkFromScaleSV.value = 1;
-    shrinkFromOffsetSV.value = 0;
-  }, [entry.id, shrinkProgressSV, shrinkFromScaleSV, shrinkFromOffsetSV]);
-
   // Responsive title size matching the reference's mobile/desktop type scale.
   const compact = useIsCompact();
   const titleFontSize = compact ? TITLE_FONT_SIZE.compact : TITLE_FONT_SIZE.regular;
@@ -357,22 +397,6 @@ export function SeriesCard({
   // when the cover's real aspect lands from onLoad.
   const fillFactor = 1 / DEFAULT_THUMB_ASPECT - 1 / coverAspect;
 
-  // The picture layer's scaleY: eases from its old apparent size down to 1 (its
-  // real, already-committed size) as `shrinkProgressSV` runs 0 -> 1. `styles.picture`
-  // fixes `transformOrigin: 'top'` so it shrinks toward the bottom, matching the
-  // box's own top-aligned layout — pure `transform`, so this never triggers a
-  // relayout no matter how many cards are mid-shrink at once.
-  const pictureStyle = useAnimatedStyle(() => ({
-    transform: [{ scaleY: shrinkFromScaleSV.value + (1 - shrinkFromScaleSV.value) * shrinkProgressSV.value }],
-  }));
-  // The trailing group's (title/sub/coverFill) translateY: eases from where it'd sit
-  // under the cover's old (bigger) apparent size down to 0 (its real, already-
-  // committed position) over the same progress, so the text "catches up" to the box
-  // instead of popping there instantly. Also pure `transform`.
-  const trailingStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: shrinkFromOffsetSV.value * (1 - shrinkProgressSV.value) }],
-  }));
-
   // Full-title peek. In a rail, hand the show/hide up to the rail (it owns the
   // un-clipped popover); in the grid, render it in-card (the vertical list
   // doesn't clip downward overflow). Web only — on native the full title is shown
@@ -403,6 +427,105 @@ export function SeriesCard({
       </View>
     );
   }
+
+  // The card's cover + trailing content, parameterized by the shrink-illusion API. Rendered plainly
+  // (no-op API) when Lightweight cards is on, or wrapped in <CoverShrink> (which supplies real
+  // animated styles) when off — so the shrink hooks are only paid for when actually animating.
+  const renderCardBody = (shrink: ShrinkApi) => (
+    <>
+      <View style={[styles.coverBox, { aspectRatio: coverAspect }]} onLayout={shrink.onCoverLayout}>
+        <View style={styles.coverClip}>
+          {/* The picture layer: scaled by `pictureStyle` to fake the shrink illusion. Badges/rank/
+              ring below are siblings, NOT inside this layer, so they never get stretched. */}
+          <Animated.View
+            style={
+              shrink.pictureStyle
+                ? [StyleSheet.absoluteFill, styles.picture, shrink.pictureStyle]
+                : [StyleSheet.absoluteFill, styles.picture]
+            }>
+            {delayPassed && (
+              <Image
+                source={{ uri: entry.cover }}
+                style={StyleSheet.absoluteFill}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+                transition={lightCards ? 0 : 90}
+                // Recycled lists reuse this <Image> instance for a different entry; without a
+                // recyclingKey expo-image keeps painting the PREVIOUS cover until the new one decodes.
+                recyclingKey={entry.id}
+                onLoad={(e) => {
+                  resolvedCoverIds.add(entry.id);
+                  const src = e.source;
+                  if (src?.width && src?.height) {
+                    const nextAspect = clampThumbAspect(src.width / src.height);
+                    resolvedCoverAspects.set(entry.id, nextAspect);
+                    lastResolvedCoverAspect = nextAspect;
+                    // Smooth the aspect settle when the shape changes; no-op when Lightweight is on.
+                    shrink.runShrink?.(coverAspect, nextAspect);
+                    setCoverAspect(nextAspect);
+                  }
+                  setLoaded(true);
+                  setMaskStale(false);
+                }}
+              />
+            )}
+            {!coverReady && maskStale && (
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.backgroundElement }]} />
+            )}
+            {!coverReady && <Skeleton style={StyleSheet.absoluteFill} />}
+          </Animated.View>
+          {entry.badges?.map((b, i) => <CardBadge key={i} badge={b} />)}
+          {entry.unread != null && <UnreadBadge count={entry.unread} />}
+          {rank != null && (
+            <View style={styles.rank}>
+              <ThemedText style={styles.rankText}>{rank}</ThemedText>
+            </View>
+          )}
+          {/* Native held cue: a subtle scrim over the cover while pressed (web uses the ring below). */}
+          {active && !isWeb && <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.heldScrim]} />}
+        </View>
+        {/* Highlight ring hugs the cover edge — web-only hover/active highlight. */}
+        {active && isWeb && <View style={[styles.ring, { pointerEvents: 'none' }]} />}
+      </View>
+
+      <Animated.View style={shrink.trailingStyle ? [styles.trailingGroup, shrink.trailingStyle] : styles.trailingGroup}>
+        <View style={styles.titleWrap}>
+          <ThemedText type="small" numberOfLines={MAX_TITLE_LINES} style={[styles.title, titleSize]}>
+            {entry.title}
+          </ThemedText>
+          {/* Off-screen full-height copy measured to detect clamping — WEB ONLY (only drives the hover
+              peek popover; on native it was a wasted per-card text layout + setTruncated re-render). */}
+          {isWeb && (
+            <ThemedText
+              type="small"
+              style={[styles.title, titleSize, styles.measure]}
+              onLayout={(e) =>
+                setTruncated(e.nativeEvent.layout.height > MAX_TITLE_LINES * titleLineHeight + 1)
+              }>
+              {entry.title}
+            </ThemedText>
+          )}
+          {/* Grid-only in-card popover (rails render it at the rail level). */}
+          {!onPeekChange && showPeek && <TitlePeek title={entry.title} />}
+        </View>
+        {/* Secondary line (author, latest chapter, …) — bridge-supplied, absent for many. */}
+        {entry.sub ? (
+          <ThemedText
+            type="small"
+            themeColor="textSecondary"
+            numberOfLines={1}
+            style={[
+              styles.sub,
+              { fontSize: compact ? SUB_FONT_SIZE.compact : SUB_FONT_SIZE.regular, lineHeight: compact ? SUB_LINE_HEIGHT.compact : SUB_LINE_HEIGHT.regular },
+            ]}>
+            {entry.sub}
+          </ThemedText>
+        ) : null}
+        {/* Bottom filler — reserves the height a shorter-than-2:3 cover leaves unused (see fillFactor). */}
+        {fillFactor > 0.001 && <View style={[styles.coverFill, { aspectRatio: 1 / fillFactor }]} />}
+      </Animated.View>
+    </>
+  );
 
   return (
     <SeriesCardMenu
@@ -467,127 +590,13 @@ export function SeriesCard({
         // hover 3-dot instead). A long-press suppresses the tap, so it never also navigates.
         onLongPress={onLongPress}
         {...handlers}>
-        {/* The cover top-aligns at its real (capped) aspect ratio — this relayout
-            happens ONCE, instantly, the moment the real aspect is known (never
-            grows past the default, so it's a one-shot shrink, not a repeated one).
-            The visual shrink is smoothed by `pictureStyle`/`trailingStyle` (pure
-            `transform`, no further relayout) instead of animating this aspectRatio
-            itself. Row/rail height is held constant not by boxing the cover into a
-            fixed slot but by padding the card's bottom (`coverFill`, after the
-            title/sub) — see `fillFactor`. */}
-        <View
-          style={[styles.coverBox, { aspectRatio: coverAspect }]}
-          onLayout={(layoutEvent) => {
-            coverBoxWidthSV.value = layoutEvent.nativeEvent.layout.width;
-          }}>
-          <View style={styles.coverClip}>
-            {/* The picture layer: scaled by `pictureStyle` to fake the shrink
-                illusion. Badges/rank/ring below are siblings, NOT inside this
-                layer, so they never get stretched by the scale. */}
-            <Animated.View
-              style={lightCards ? [StyleSheet.absoluteFill, styles.picture] : [StyleSheet.absoluteFill, styles.picture, pictureStyle]}>
-              {delayPassed && (
-                <Image
-                  source={{ uri: entry.cover }}
-                  style={StyleSheet.absoluteFill}
-                  contentFit="cover"
-                  cachePolicy="memory-disk"
-                  transition={lightCards ? 0 : 90}
-                  // Recycled lists reuse this <Image> instance for a different
-                  // entry; without a recyclingKey expo-image keeps painting the
-                  // PREVIOUS cover until the new one decodes (the "old thumbnail
-                  // flash"). Resetting on entry id means the skeleton below (shown
-                  // while !loaded) covers the gap instead.
-                  recyclingKey={entry.id}
-                  onLoad={(e) => {
-                    resolvedCoverIds.add(entry.id);
-                    const src = e.source;
-                    if (src?.width && src?.height) {
-                      const nextAspect = clampThumbAspect(src.width / src.height);
-                      resolvedCoverAspects.set(entry.id, nextAspect);
-                      lastResolvedCoverAspect = nextAspect;
-                      // Kick off the shrink illusion only when there's an actual
-                      // shape change AND the box's pixel width is already known
-                      // (from onLayout above) — width cancels out of the scale
-                      // factor but not the pixel offset, so without it this just
-                      // falls back to today's instant (unanimated) snap.
-                      const width = coverBoxWidthSV.value;
-                      if (!lightCards && width > 0 && nextAspect !== coverAspect) {
-                        const oldHeight = width / coverAspect;
-                        const newHeight = width / nextAspect;
-                        shrinkFromScaleSV.value = newHeight > 0 ? oldHeight / newHeight : 1;
-                        shrinkFromOffsetSV.value = oldHeight - newHeight;
-                        shrinkProgressSV.value = 0;
-                        shrinkProgressSV.value = withTiming(1, {
-                          duration: ASPECT_TRANSITION_MS,
-                          easing: Easing.out(Easing.cubic),
-                        });
-                      }
-                      setCoverAspect(nextAspect);
-                    }
-                    setLoaded(true);
-                    setMaskStale(false);
-                  }}
-                />
-              )}
-              {!coverReady && maskStale && (
-                <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.backgroundElement }]} />
-              )}
-              {!coverReady && <Skeleton style={StyleSheet.absoluteFill} />}
-            </Animated.View>
-            {entry.badges?.map((b, i) => <CardBadge key={i} badge={b} />)}
-            {entry.unread != null && <UnreadBadge count={entry.unread} />}
-            {rank != null && (
-              <View style={styles.rank}>
-                <ThemedText style={styles.rankText}>{rank}</ThemedText>
-              </View>
-            )}
-            {/* Native held cue: a subtle scrim over the cover (clipped to its rounded corners) while
-                pressed — a non-scaling "held" indicator, since the card must NOT scale up (a scaled
-                lift reads badly clipped by the rail/grid bounds). Web keeps the ring below instead. */}
-            {active && !isWeb && <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.heldScrim]} />}
-          </View>
-          {/* Highlight ring hugs the cover edge (flush, just outside) — web-only hover/active
-              highlight; native uses the held scrim above. */}
-          {active && isWeb && <View style={[styles.ring, { pointerEvents: 'none' }]} />}
-        </View>
-
-        <Animated.View style={lightCards ? styles.trailingGroup : [styles.trailingGroup, trailingStyle]}>
-          <View style={styles.titleWrap}>
-            <ThemedText type="small" numberOfLines={MAX_TITLE_LINES} style={[styles.title, titleSize]}>
-              {entry.title}
-            </ThemedText>
-            {/* Off-screen full-height copy measured via onLayout (which, unlike
-                onTextLayout, fires on react-native-web) to detect clamping. */}
-            <ThemedText
-              type="small"
-              style={[styles.title, titleSize, styles.measure]}
-              onLayout={(e) =>
-                setTruncated(e.nativeEvent.layout.height > MAX_TITLE_LINES * titleLineHeight + 1)
-              }>
-              {entry.title}
-            </ThemedText>
-            {/* Grid-only in-card popover (rails render it at the rail level). */}
-            {!onPeekChange && showPeek && <TitlePeek title={entry.title} />}
-          </View>
-          {/* Secondary line (author, latest chapter, …) — bridge-supplied, absent for many. */}
-          {entry.sub ? (
-            <ThemedText
-              type="small"
-              themeColor="textSecondary"
-              numberOfLines={1}
-              style={[
-                styles.sub,
-                { fontSize: compact ? SUB_FONT_SIZE.compact : SUB_FONT_SIZE.regular, lineHeight: compact ? SUB_LINE_HEIGHT.compact : SUB_LINE_HEIGHT.regular },
-              ]}>
-              {entry.sub}
-            </ThemedText>
-          ) : null}
-          {/* Bottom filler — reserves the height a shorter-than-2:3 cover leaves
-              unused above, so the card total stays constant (see `fillFactor`).
-              Only rendered when the cover is actually shorter than 2:3. */}
-          {fillFactor > 0.001 && <View style={[styles.coverFill, { aspectRatio: 1 / fillFactor }]} />}
-        </Animated.View>
+        {/* Shrink illusion only when Lightweight is off: wrap in CoverShrink (owns the reanimated
+            hooks + supplies real animated styles); otherwise render plainly with a no-op API. */}
+        {lightCards ? (
+          renderCardBody(NOOP_SHRINK)
+        ) : (
+          <CoverShrink entryId={entry.id}>{renderCardBody}</CoverShrink>
+        )}
       </Pressable>
       </Link>
       )}
