@@ -58,7 +58,8 @@
         }
       ],
       "./plugins/with-kotlin-version.js",
-      "./plugins/with-comical-ios-sources.js"
+      "./plugins/with-comical-ios-sources.js",
+      "./plugins/with-ios-dev-bundle-fallback.js"
     ],
     "experiments": {
       "typedRoutes": true,
