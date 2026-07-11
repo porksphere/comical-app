@@ -25,6 +25,7 @@ import { BarBlur } from '@/components/bar-blur';
 import { RetryBlock } from '@/components/retry-block';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedSwitch } from '@/components/themed-switch';
+import { lightCards$, useLightCards } from '@/lib/perf-flags';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
@@ -125,6 +126,7 @@ function GeneralSection() {
   const [themePref, setThemePref] = useThemePreference();
   const [onDevice, setOnDevice] = useEmbeddedEnabled();
   const [apiBase, setApiBaseOverride] = useApiBase();
+  const lightCards = useLightCards();
   const { open } = useOverlay();
   // The on-device runtime is only offered where a native bridge engine exists (iOS/Android with the
   // native module built) — never on web, which always uses a remote server.
@@ -166,6 +168,11 @@ function GeneralSection() {
           onPress={() => open(() => <RemoteServerForm currentUrl={apiBase} onSave={saveApiBase} />)}
         />
       )}
+      <SettingsRow
+        label="Lightweight cards"
+        description="Drops the cover shrink animation and cross-fade for smoother scrolling."
+        right={<ThemedSwitch value={lightCards} onValueChange={(v) => lightCards$.set(v)} />}
+      />
     </SettingsSection>
   );
 }

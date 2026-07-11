@@ -3,7 +3,7 @@ import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect } from 'react';
 import { BackHandler, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
-import Animated, { Easing, interpolate, runOnJS, useAnimatedProps, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, interpolate, runOnJS, useAnimatedProps, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CheckIcon, PlusIcon, StarIcon, type IconProps } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
@@ -60,10 +60,11 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     ...(entry.cover ? { thumbnailUrl: entry.cover } : {}),
   }));
 
-  // Enter: spring the lift + menu in, with a haptic — the iOS "it popped" cue.
+  // Enter: ease the lift + menu in, with a haptic — the iOS "it popped" cue. A gentle spring (soft,
+  // lightly overshooting) reads less abrupt than the old fast timing curve.
   useEffect(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    progress.value = withTiming(1, { duration: 220, easing: Easing.out(Easing.back(1.3)) });
+    progress.value = withSpring(1, { damping: 17, stiffness: 130, mass: 0.9 });
   }, [progress]);
 
   const dismiss = useCallback(() => {
