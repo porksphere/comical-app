@@ -1,5 +1,6 @@
 import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
+import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, BackHandler, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
@@ -30,7 +31,7 @@ const PANEL_MAX_WIDTH = 360; // cap the panel width on wide screens
 const PANEL_PAD = Spacing.three;
 const COVER_W = 118; // cover width inside the panel
 const RAIL_THUMB_W = 64; // page-thumbnail width in the direct rail
-const RAIL_THUMB_H = 90; // …and its capped height (pages can be very tall; clip to this)
+const RAIL_THUMB_H = 180; // …and its capped height (pages can be very tall; clip to this)
 const RAIL_GAP = Spacing.two;
 // Rough panel height before it's measured, so the menu is roughly placed on frame one.
 const PANEL_HEIGHT_ESTIMATE = 190;
@@ -67,6 +68,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const theme = useTheme();
   const scheme = useActiveColorScheme();
   const menuTint = scheme === 'dark' ? 'dark' : 'light';
+  const router = useRouter();
   const progress = useSharedValue(0);
 
   const ds = useDataSource();
@@ -182,6 +184,20 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     dismiss();
   };
 
+  // Tapping a page thumbnail opens the reader there. Close instantly (un-hide the card + drop the
+  // host so the pushed reader isn't left under it) rather than playing the morph-back.
+  const openReaderAt = useCallback(
+    (pageIndex: number) => {
+      req.onClose?.();
+      closeSeriesCardMenu();
+      router.push({
+        pathname: '/reader',
+        params: { seed: entry.id, title: entry.title, direct: '1', start: String(pageIndex), ...(bridgeId ? { bridgeId } : {}) },
+      });
+    },
+    [req, router, entry.id, entry.title, bridgeId],
+  );
+
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
       {/* Blurred, tap-to-dismiss backdrop. */}
@@ -216,7 +232,9 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
               ) : null}
             </View>
           </View>
-          {direct ? <PageRail thumbs={pageList.data?.pageThumbs} loading={pageList.isLoading} bridgeId={bridgeId} seed={entry.id} /> : null}
+          {direct ? (
+            <PageRail thumbs={pageList.data?.pageThumbs} loading={pageList.isLoading} bridgeId={bridgeId} seed={entry.id} onOpenPage={openReaderAt} />
+          ) : null}
         </ThemedView>
       </Animated.View>
 
@@ -276,11 +294,13 @@ function PageRail({
   loading,
   bridgeId,
   seed,
+  onOpenPage,
 }: {
   thumbs: (PageThumbSource | null)[] | undefined;
   loading: boolean;
   bridgeId?: string;
   seed: string;
+  onOpenPage: (pageIndex: number) => void;
 }) {
   const theme = useTheme();
   if (loading) {
@@ -306,7 +326,15 @@ function PageRail({
       contentContainerStyle={styles.rail}
       renderItem={({ item }) => (
         <View style={styles.railItem}>
-          <PageThumb thumb={item.thumb} index={item.index} seed={seed} bridgeId={bridgeId} page={item.index + 1} width={RAIL_THUMB_W} />
+          <PageThumb
+            thumb={item.thumb}
+            index={item.index}
+            seed={seed}
+            bridgeId={bridgeId}
+            page={item.index + 1}
+            width={RAIL_THUMB_W}
+            onPress={() => onOpenPage(item.index)}
+          />
         </View>
       )}
     />
