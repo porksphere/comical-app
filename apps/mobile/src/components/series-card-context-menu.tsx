@@ -137,10 +137,12 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const backdropTintStyle = useAnimatedStyle(() => ({
     opacity: interpolate(progress.value, [0, 0.2, 1], [0, 0, BACKDROP_TINT_OPACITY]),
   }));
-  // Preview zooms out from the card to its final frame; shadow deepens as it settles.
+  // Preview zooms out from the card to its final frame; shadow deepens as it settles. Kept fully
+  // OPAQUE (no opacity fade): the source card is hidden behind it, so it must stay solid the whole
+  // morph — including shrinking all the way back onto the card on dismiss, then swapping with the real
+  // card at the end. Fading it would leave a gap where neither the preview nor the card is visible.
   const previewStyle = useAnimatedStyle(
     () => ({
-      opacity: interpolate(progress.value, [0, 0.35, 1], [0, 1, 1]),
       transform: [
         { translateX: interpolate(progress.value, [0, 1], [dx, 0]) },
         { translateY: interpolate(progress.value, [0, 1], [dy, 0]) },
