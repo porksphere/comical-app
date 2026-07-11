@@ -2,7 +2,7 @@ import { useCallback, useRef } from 'react';
 import { View, type GestureResponderEvent } from 'react-native';
 
 import type { SeriesEntry } from '@/data/types';
-import { openSeriesCardMenu, type CardRect } from '@/lib/series-card-menu';
+import { openSeriesCardMenu } from '@/lib/series-card-menu';
 
 /**
  * Native (iOS + Android) per-card quick-actions menu. A long-press anywhere on the card opens the
@@ -33,20 +33,20 @@ export function SeriesCardMenu({ enabled, bridgeId, entry, coverAspect, children
   const onLongPress = useCallback(
     (e: GestureResponderEvent) => {
       if (!bridgeId) return;
-      // Prefer the card's measured rect (so the menu anchors to its edge and the lifted preview starts
-      // exactly over it). But NEVER swallow the open: if measuring isn't available or returns nothing,
-      // fall back to a card-sized rect around the touch point so the long-press still opens the menu.
+      // Open SYNCHRONOUSLY from the touch point the instant the long-press fires — never wait on a
+      // measure. (measureInWindow's callback can silently never fire on iOS, which is why the menu
+      // wasn't opening at all.) Then, best-effort, refine to the card's exact rect if the measure
+      // resolves — the host re-renders in place (same entry key) and the preview snaps to the card.
       const { pageX, pageY } = e.nativeEvent;
-      const fallback: CardRect = { x: pageX - 80, y: pageY - 110, width: 160, height: 220 };
-      const openWith = (rect: CardRect) => openSeriesCardMenu({ entry, bridgeId, coverAspect, rect });
-      const node = anchorRef.current;
-      if (node && typeof node.measureInWindow === 'function') {
-        node.measureInWindow((x, y, width, height) =>
-          openWith(width > 0 && height > 0 ? { x, y, width, height } : fallback),
-        );
-      } else {
-        openWith(fallback);
-      }
+      openSeriesCardMenu({
+        entry,
+        bridgeId,
+        coverAspect,
+        rect: { x: pageX - 80, y: pageY - 110, width: 160, height: 220 },
+      });
+      anchorRef.current?.measureInWindow?.((x, y, width, height) => {
+        if (width > 0 && height > 0) openSeriesCardMenu({ entry, bridgeId, coverAspect, rect: { x, y, width, height } });
+      });
     },
     [bridgeId, entry, coverAspect],
   );
