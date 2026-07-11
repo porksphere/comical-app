@@ -60,10 +60,13 @@ concurrency:
   group: ios-${{ github.ref }}
   cancel-in-progress: true
 
-# Needed to publish the IPA to a GitHub Release (a public, unauthenticated,
-# raw direct-download URL that SideStore/AltStore can actually fetch).
+# contents: write — publish the IPA to a GitHub Release (a public, unauthenticated,
+#   raw direct-download URL that SideStore/AltStore can actually fetch).
+# pull-requests: read — refresh-ios-dev-source.sh calls `gh pr view` to check each
+#   ios-pr-<N>'s state so it only lists OPEN PRs (self-heals merged squatters).
 permissions:
   contents: write
+  pull-requests: read
 
 jobs:
   build:
