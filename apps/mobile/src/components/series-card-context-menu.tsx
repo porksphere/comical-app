@@ -2,7 +2,7 @@ import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, BackHandler, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, BackHandler, FlatList, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import Animated, { Easing, interpolate, runOnJS, useAnimatedProps, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
@@ -29,13 +29,14 @@ const PANEL_MAX_WIDTH = 360; // cap the panel width on wide screens
 const PANEL_PAD = Spacing.three;
 const COVER_W = 118; // cover width inside the panel
 const RAIL_THUMB_W = 64; // page-thumbnail width in the direct rail
-const RAIL_MAX = 24; // cap how many page thumbnails the rail renders
+const RAIL_THUMB_H = 90; // …and its capped height (pages can be very tall; clip to this)
+const RAIL_GAP = Spacing.two;
 // Rough panel height before it's measured, so the menu is roughly placed on frame one.
 const PANEL_HEIGHT_ESTIMATE = 190;
 const MENU_WIDTH = 240;
 const ROW_HEIGHT = 48;
 const MENU_PAD_V = Spacing.one;
-// Blur strengths (0–100). The backdrop ramps in a bit after the panel pops.
+// Blur strengths (0–100). The backdrop ramps in a bit after the cover pops.
 const BACKDROP_BLUR = 28;
 const MENU_BLUR = 55;
 const BACKDROP_TINT_OPACITY = 0.15;
@@ -44,10 +45,13 @@ const ANDROID_BLUR = Platform.OS === 'android' ? ('dimezisBlurView' as const) : 
 
 /**
  * Root-mounted host for the native card context menu (the iOS / X hold-down): a dimmed backdrop, a
- * rich preview panel (cover + title + series info, and a page-thumbnail rail for direct series) that
- * pops out from the pressed card, and a rounded actions menu below it. Rendered once (see
- * `app/_layout.tsx`); any card opens it via `openSeriesCardMenu` on long-press. Only mounted while
- * open, so its series-detail / status queries cost nothing during scroll.
+ * rich preview panel (cover + title + series info, and a page-thumbnail rail for direct series), and
+ * a rounded actions menu below it. Rendered once (see `app/_layout.tsx`); any card opens it via
+ * `openSeriesCardMenu` on long-press. Only mounted while open, so its queries cost nothing during
+ * scroll.
+ *
+ * Animation is a shared-element: the COVER morphs precisely out of the pressed card (FLIP), while the
+ * panel background + its content (title/info/rail) just fade in at the final position around it.
  */
 export function SeriesCardContextMenuHost() {
   const req = useSeriesCardMenu();
@@ -66,7 +70,6 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
 
   const ds = useDataSource();
   const mock = useMockActive();
-  // Fast info payload (title/cover already known, so seed to avoid a flash): description + meta.
   const detail = useQuery(
     seriesDetailQuery(ds, mock, bridgeId ?? '', entry.id, {
       direct: !!direct,
@@ -74,7 +77,6 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       cover: entry.cover,
     }),
   );
-  // Direct (chapterless) series: the page-thumbnail list for the rail. Only for direct bridges.
   const pageList = useQuery(seriesListQuery(ds, mock, bridgeId ?? '', entry.id, !!direct, !!direct && !!bridgeId));
 
   const { favorited, toggle: toggleFavorite } = useFavorite(bridgeId, entry.id);
@@ -85,7 +87,6 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
 
   useEffect(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    // Snappy spring with a small pop.
     progress.value = withSpring(1, { damping: 16, stiffness: 170, mass: 0.8 });
   }, [progress]);
 
@@ -120,6 +121,8 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const menuH = ROW_HEIGHT * 2 + MENU_PAD_V * 2;
   const menuLeft = clamp(cardCenterX - menuW / 2, EDGE_PAD, winW - menuW - EDGE_PAD);
 
+  const coverH = COVER_W / clampThumbAspect(coverAspect ?? DEFAULT_THUMB_ASPECT);
+
   // Real panel height once measured (estimate before then). The menu always sits BELOW the panel.
   const [panelH, setPanelH] = useState<number | null>(null);
   const effPanelH = panelH ?? PANEL_HEIGHT_ESTIMATE;
@@ -129,12 +132,15 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const panelTop = groupH <= available ? clamp(rect.y, topLimit, bottomLimit - groupH) : topLimit;
   const menuTop = panelTop + effPanelH + GAP;
 
-  // FLIP: the panel is laid out at its final frame but animates FROM the pressed card — scaled down
-  // to the card's width and translated onto the card (top-left origin), then eased to identity, so it
-  // grows out of the card that was long-pressed.
-  const fromScale = rect.width / panelW;
-  const dx = rect.x - panelLeft;
-  const dy = rect.y - panelTop;
+  // Shared-element FLIP for the COVER only: it's laid out at its final slot (top-left of the panel's
+  // top row) but animates FROM the pressed card's cover — scaled to the card's width and translated
+  // onto it (top-left origin), then eased to identity. Same width/height (both use coverAspect), and
+  // the radius is counter-scaled so the visual corner stays a constant 10px.
+  const coverSlotX = panelLeft + PANEL_PAD;
+  const coverSlotY = panelTop + PANEL_PAD;
+  const fromScale = rect.width / COVER_W;
+  const coverDx = rect.x - coverSlotX;
+  const coverDy = rect.y - coverSlotY;
 
   const backdropBlurProps = useAnimatedProps(() => ({
     intensity: interpolate(progress.value, [0, 0.3, 1], [0, 0, BACKDROP_BLUR]),
@@ -142,17 +148,23 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const backdropTintStyle = useAnimatedStyle(() => ({
     opacity: interpolate(progress.value, [0, 0.2, 1], [0, 0, BACKDROP_TINT_OPACITY]),
   }));
-  // Panel stays opaque the whole morph (source card is hidden behind it), shadow deepens as it settles.
-  const panelStyle = useAnimatedStyle(
+  // The panel background + content just FADE in at their final position (no movement).
+  const panelStyle = useAnimatedStyle(() => ({ opacity: interpolate(progress.value, [0, 0.4, 1], [0, 0, 1]) }));
+  // The cover morphs from the card; stays opaque (the source card is hidden behind it).
+  const coverStyle = useAnimatedStyle(
     () => ({
       transform: [
-        { translateX: interpolate(progress.value, [0, 1], [dx, 0]) },
-        { translateY: interpolate(progress.value, [0, 1], [dy, 0]) },
+        { translateX: interpolate(progress.value, [0, 1], [coverDx, 0]) },
+        { translateY: interpolate(progress.value, [0, 1], [coverDy, 0]) },
         { scale: interpolate(progress.value, [0, 1], [fromScale, 1]) },
       ],
-      shadowOpacity: progress.value * 0.3,
+      shadowOpacity: progress.value * 0.28,
     }),
-    [dx, dy, fromScale],
+    [coverDx, coverDy, fromScale],
+  );
+  const coverRadiusStyle = useAnimatedStyle(
+    () => ({ borderRadius: 10 / (fromScale + (1 - fromScale) * progress.value) }),
+    [fromScale],
   );
   const menuStyle = useAnimatedStyle(() => ({
     opacity: progress.value,
@@ -162,7 +174,6 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     ],
   }));
 
-  const coverH = COVER_W / clampThumbAspect(coverAspect ?? DEFAULT_THUMB_ASPECT);
   const metaLine = buildMetaLine(detail.data?.meta, detail.data?.chapterCount, direct);
 
   const act = (toggle: () => void) => {
@@ -178,19 +189,16 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
         <Animated.View style={[StyleSheet.absoluteFill, styles.backdropTint, backdropTintStyle]} />
       </Pressable>
 
-      {/* The preview panel. `box-none` so taps on it fall through to the backdrop (dismiss), while the
-          page rail's own ScrollView still receives touches. */}
+      {/* Panel background + content — fades in at the final position. `box-none` so taps fall through
+          to the dismiss backdrop while the page rail's FlatList still receives touches. The cover slot
+          is a transparent placeholder; the real cover is the morphing layer below. */}
       <Animated.View
         pointerEvents="box-none"
         onLayout={(e) => setPanelH(e.nativeEvent.layout.height)}
         style={[styles.panelWrap, { left: panelLeft, top: panelTop, width: panelW }, panelStyle]}>
         <ThemedView type="backgroundPanel" style={styles.panel}>
           <View style={styles.topRow}>
-            <View style={[styles.cover, { width: COVER_W, height: coverH }]}>
-              {entry.cover ? (
-                <Image source={{ uri: entry.cover }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" />
-              ) : null}
-            </View>
+            <View style={[styles.coverSlot, { width: COVER_W, height: coverH }]} />
             <View style={styles.info}>
               <ThemedText style={styles.title} numberOfLines={3}>
                 {entry.title}
@@ -209,6 +217,17 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
           </View>
           {direct ? <PageRail thumbs={pageList.data?.pageThumbs} loading={pageList.isLoading} bridgeId={bridgeId} seed={entry.id} /> : null}
         </ThemedView>
+      </Animated.View>
+
+      {/* The cover — morphs out of the card, on top of the (fading-in) panel. */}
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.coverLayer, { left: coverSlotX, top: coverSlotY, width: COVER_W, height: coverH }, coverStyle]}>
+        <Animated.View style={[styles.coverInner, coverRadiusStyle]}>
+          {entry.cover ? (
+            <Image source={{ uri: entry.cover }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" />
+          ) : null}
+        </Animated.View>
       </Animated.View>
 
       {/* The actions menu — a frosted (blurred) panel. */}
@@ -247,7 +266,10 @@ function buildMetaLine(
   return parts.join('  ·  ');
 }
 
-/** Horizontal rail of a direct series' page thumbnails. */
+type RailCell = { thumb: PageThumbSource | null; index: number };
+
+/** Horizontal, VIRTUALIZED + lazy rail of a direct series' page thumbnails: the FlatList only mounts
+ *  the visible tiles, and each `PageThumb` lazily fetches its own thumbnail when it isn't inlined. */
 function PageRail({
   thumbs,
   loading,
@@ -262,21 +284,33 @@ function PageRail({
   const theme = useTheme();
   if (loading) {
     return (
-      <View style={[styles.railLoading, { height: RAIL_THUMB_W * 1.5 }]}>
+      <View style={[styles.railLoading, { height: RAIL_THUMB_H }]}>
         <ActivityIndicator color={theme.textSecondary} />
       </View>
     );
   }
   if (!thumbs || thumbs.length === 0) return null;
-  const shown = thumbs.slice(0, RAIL_MAX);
+  // Wrap in objects so `null` thumbs never appear as raw list data.
+  const data: RailCell[] = thumbs.map((thumb, index) => ({ thumb, index }));
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
-      {shown.map((thumb, i) => (
-        <PageThumb key={i} thumb={thumb} index={i} seed={seed} bridgeId={bridgeId} page={i + 1} width={RAIL_THUMB_W} />
-      ))}
-    </ScrollView>
+    <FlatList
+      horizontal
+      data={data}
+      keyExtractor={(it) => String(it.index)}
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.rail}
+      ItemSeparatorComponent={RailSeparator}
+      getItemLayout={(_, i) => ({ length: RAIL_THUMB_W + RAIL_GAP, offset: (RAIL_THUMB_W + RAIL_GAP) * i, index: i })}
+      renderItem={({ item }) => (
+        <View style={styles.railItem}>
+          <PageThumb thumb={item.thumb} index={item.index} seed={seed} bridgeId={bridgeId} page={item.index + 1} width={RAIL_THUMB_W} />
+        </View>
+      )}
+    />
   );
 }
+
+const RailSeparator = () => <View style={{ width: RAIL_GAP }} />;
 
 function MenuRow({
   label,
@@ -312,10 +346,9 @@ const styles = StyleSheet.create({
   },
   panelWrap: {
     position: 'absolute',
-    // Scale/translate about the top-left so the FLIP starts on the card.
-    transformOrigin: '0% 0%',
     borderRadius: 16,
     shadowColor: '#000000',
+    shadowOpacity: 0.22,
     shadowRadius: 24,
     shadowOffset: { width: 0, height: 12 },
     elevation: 12,
@@ -330,10 +363,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: Spacing.three,
   },
-  cover: {
+  coverSlot: {
     borderRadius: 10,
-    overflow: 'hidden',
-    backgroundColor: 'rgba(128,128,128,0.2)',
+    backgroundColor: 'rgba(128,128,128,0.15)',
   },
   info: {
     flex: 1,
@@ -348,13 +380,33 @@ const styles = StyleSheet.create({
   desc: {
     marginTop: Spacing.one,
   },
+  coverLayer: {
+    position: 'absolute',
+    // Scale/translate about the top-left so the FLIP starts exactly on the card's cover.
+    transformOrigin: '0% 0%',
+    shadowColor: '#000000',
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 14,
+  },
+  coverInner: {
+    flex: 1,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(128,128,128,0.2)',
+  },
   railLoading: {
     alignItems: 'center',
     justifyContent: 'center',
   },
   rail: {
-    gap: Spacing.two,
     paddingTop: Spacing.one,
+  },
+  railItem: {
+    width: RAIL_THUMB_W,
+    height: RAIL_THUMB_H,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(128,128,128,0.15)',
   },
   menuWrap: {
     position: 'absolute',
