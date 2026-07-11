@@ -2,7 +2,7 @@ import { useCallback, useRef } from 'react';
 import { View, type GestureResponderEvent } from 'react-native';
 
 import type { SeriesEntry } from '@/data/types';
-import { openSeriesCardMenu } from '@/lib/series-card-menu';
+import { openSeriesCardMenu, type CardRect } from '@/lib/series-card-menu';
 
 /**
  * Native (iOS + Android) per-card quick-actions menu. A long-press anywhere on the card opens the
@@ -30,15 +30,26 @@ export type SeriesCardMenuProps = {
 
 export function SeriesCardMenu({ enabled, bridgeId, entry, coverAspect, children }: SeriesCardMenuProps) {
   const anchorRef = useRef<View>(null);
-  const onLongPress = useCallback(() => {
-    if (!bridgeId) return;
-    // Measure the card in window coords so the menu opens anchored to its edge and the lifted preview
-    // starts exactly over it.
-    anchorRef.current?.measureInWindow((x, y, width, height) => {
-      if (!width && !height) return; // not measurable (shouldn't happen once laid out)
-      openSeriesCardMenu({ entry, bridgeId, coverAspect, rect: { x, y, width, height } });
-    });
-  }, [bridgeId, entry, coverAspect]);
+  const onLongPress = useCallback(
+    (e: GestureResponderEvent) => {
+      if (!bridgeId) return;
+      // Prefer the card's measured rect (so the menu anchors to its edge and the lifted preview starts
+      // exactly over it). But NEVER swallow the open: if measuring isn't available or returns nothing,
+      // fall back to a card-sized rect around the touch point so the long-press still opens the menu.
+      const { pageX, pageY } = e.nativeEvent;
+      const fallback: CardRect = { x: pageX - 80, y: pageY - 110, width: 160, height: 220 };
+      const openWith = (rect: CardRect) => openSeriesCardMenu({ entry, bridgeId, coverAspect, rect });
+      const node = anchorRef.current;
+      if (node && typeof node.measureInWindow === 'function') {
+        node.measureInWindow((x, y, width, height) =>
+          openWith(width > 0 && height > 0 ? { x, y, width, height } : fallback),
+        );
+      } else {
+        openWith(fallback);
+      }
+    },
+    [bridgeId, entry, coverAspect],
+  );
   return (
     // collapsable={false} so Android keeps the view around to be measurable.
     <View ref={anchorRef} collapsable={false}>
