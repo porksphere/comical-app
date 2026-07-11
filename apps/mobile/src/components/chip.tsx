@@ -89,7 +89,20 @@ function PressableChip({
   );
 }
 
-export function ChipRow({ labels, accent, horizontal }: { labels: string[]; accent?: boolean; horizontal?: boolean }) {
+export function ChipRow({
+  labels,
+  accent,
+  horizontal,
+  contentInset,
+}: {
+  labels: string[];
+  accent?: boolean;
+  horizontal?: boolean;
+  /** Leading padding inside a `horizontal` row's scroll content, so a full-bleed row (its viewport
+   *  spanning to a panel's rounded edges) still rests with breathing room but scrolls content all the
+   *  way to the edge rather than clipping it at an inset viewport. */
+  contentInset?: number;
+}) {
   const [expanded, setExpanded] = useState(false);
   const maxVisible = useMaxVisibleChips();
   if (!labels.length) return null;
@@ -97,7 +110,10 @@ export function ChipRow({ labels, accent, horizontal }: { labels: string[]; acce
   // no collapse (the scroll handles overflow).
   if (horizontal) {
     return (
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hChips}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={[styles.hChips, contentInset != null && { paddingLeft: contentInset }]}>
         {labels.map((l) => (
           <Chip key={l} label={l} accent={accent} />
         ))}
@@ -126,6 +142,7 @@ export function TagGroupRow({
   group,
   onTagPress,
   horizontal,
+  contentInset,
 }: {
   group: TagGroup;
   /** Called with a tapped tag's index. Only tags the bridge made actionable — a
@@ -135,6 +152,9 @@ export function TagGroupRow({
   /** Render as a labeled, non-wrapping horizontally-scrolling row (used in the card preview panel)
    *  instead of the wrapping, collapsible layout. */
   horizontal?: boolean;
+  /** Leading padding for a full-bleed `horizontal` row — applied to the label so it clears a panel's
+   *  edge, while the chip scroller still bleeds to the edge. See `ChipRow`'s `contentInset`. */
+  contentInset?: number;
 }) {
   const theme = useTheme();
   const [expanded, setExpanded] = useState(false);
@@ -150,7 +170,7 @@ export function TagGroupRow({
   };
   if (horizontal) {
     return (
-      <View style={styles.tagGroupHeaderRow}>
+      <View style={[styles.tagGroupHeaderRow, contentInset != null && { paddingLeft: contentInset }]}>
         <ThemedText style={[styles.groupLabel, { color: theme.textSecondary }]}>{group.label.toUpperCase()}</ThemedText>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.hScroll} contentContainerStyle={styles.hChips}>
           {group.tags.map(chip)}

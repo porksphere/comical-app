@@ -33,8 +33,8 @@ const GAP = 12; // between the preview panel and the menu
 const PANEL_MAX_WIDTH = 360; // cap the panel width on wide screens
 const PANEL_PAD = Spacing.three;
 const COVER_W = 118; // cover width inside the panel
-const RAIL_THUMB_W = 64; // page-thumbnail width in the direct rail
-const RAIL_THUMB_H = 180; // …and its capped height (pages can be very tall; clip to this)
+const RAIL_THUMB_W = 64; // nominal fallback width (unused in slot mode: PageThumb sizes to slotHeight)
+const RAIL_THUMB_H = 180; // the rail's fixed tile height; each tile's width follows its own page aspect
 const RAIL_GAP = Spacing.two;
 // Rough panel height before it's measured, so the menu is roughly placed on frame one.
 const PANEL_HEIGHT_ESTIMATE = 190;
@@ -138,11 +138,18 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const panelTop = groupH <= available ? clamp(rect.y, topLimit, bottomLimit - groupH) : topLimit;
   const menuTop = panelTop + effPanelH + GAP;
 
-  // Shared-element FLIP for the COVER only: it's laid out at its final slot (top-left of the panel's
-  // top row) but animates FROM the pressed card's cover — scaled to the card's width and translated
-  // onto it (top-left origin), then eased to identity. Same width/height (both use coverAspect), and
-  // the radius is counter-scaled so the visual corner stays a constant 10px.
-  const coverSlotX = panelLeft + PANEL_PAD;
+  // Shared-element FLIP for the COVER only: it's laid out at its final slot (a top corner of the
+  // panel's top row) but animates FROM the pressed card's cover — scaled to the card's width and
+  // translated onto it, then eased to identity. Same width/height (both use coverAspect), and the
+  // radius is counter-scaled so the visual corner stays a constant 10px.
+  //
+  // The slot goes on whichever side (left/right) is nearer the pressed card, so the morph travels the
+  // shortest distance — a card near the right edge lifts into a right-anchored cover instead of flying
+  // across the panel. Pure open-time geometry (from the card's rect); no per-frame cost.
+  const leftSlotX = panelLeft + PANEL_PAD;
+  const rightSlotX = panelLeft + panelW - PANEL_PAD - COVER_W;
+  const coverOnRight = Math.abs(rect.x - rightSlotX) < Math.abs(rect.x - leftSlotX);
+  const coverSlotX = coverOnRight ? rightSlotX : leftSlotX;
   const coverSlotY = panelTop + PANEL_PAD;
   const fromScale = rect.width / COVER_W;
   const coverDx = rect.x - coverSlotX;
@@ -231,7 +238,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
         onLayout={(e) => setPanelH(e.nativeEvent.layout.height)}
         style={[styles.panelWrap, { left: panelLeft, top: panelTop, width: panelW }, panelStyle]}>
         <ThemedView type="backgroundPanel" style={styles.panel}>
-          <View style={styles.topRow}>
+          <View style={[styles.topRow, coverOnRight && styles.topRowReverse]}>
             <View style={[styles.coverSlot, { width: COVER_W, height: coverH }]} />
             <View style={styles.info}>
               <ThemedText style={styles.title} numberOfLines={3}>
@@ -251,9 +258,9 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
           </View>
           {detail.data?.genres?.length || detail.data?.tagGroups?.length ? (
             <View style={styles.tags}>
-              {detail.data?.genres?.length ? <ChipRow horizontal labels={detail.data.genres} /> : null}
+              {detail.data?.genres?.length ? <ChipRow horizontal contentInset={PANEL_PAD} labels={detail.data.genres} /> : null}
               {detail.data?.tagGroups?.map((g) => (
-                <TagGroupRow key={g.label} group={g} horizontal onTagPress={(i) => onTagPress(g, i)} />
+                <TagGroupRow key={g.label} group={g} horizontal contentInset={PANEL_PAD} onTagPress={(i) => onTagPress(g, i)} />
               ))}
             </View>
           ) : null}
@@ -346,7 +353,7 @@ function PageRail({
       data={data}
       keyExtractor={(it) => String(it.index)}
       recycleItems
-      estimatedItemSize={RAIL_THUMB_W + RAIL_GAP}
+      estimatedItemSize={RAIL_THUMB_H * DEFAULT_THUMB_ASPECT + RAIL_GAP}
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={styles.rail}
       renderItem={({ item }) => (
@@ -358,6 +365,7 @@ function PageRail({
             bridgeId={bridgeId}
             page={item.index + 1}
             width={RAIL_THUMB_W}
+            slotHeight={RAIL_THUMB_H}
             showPageNumber={false}
             onPress={() => onOpenPage(item.index)}
           />
@@ -410,13 +418,21 @@ const styles = StyleSheet.create({
   },
   panel: {
     borderRadius: 16,
-    padding: PANEL_PAD,
+    // Only vertical padding: the horizontal scrollers (tags, page rail) bleed to the panel's rounded
+    // edges (clipped by `overflow: hidden`) so their content isn't cut off at an inset viewport; they
+    // carry their own leading inset (`PANEL_PAD`) instead. The top row re-adds horizontal padding.
+    paddingVertical: PANEL_PAD,
     gap: Spacing.three,
     overflow: 'hidden',
   },
   topRow: {
     flexDirection: 'row',
     gap: Spacing.three,
+    paddingHorizontal: PANEL_PAD,
+  },
+  // Cover on the right (nearer a right-edge card): swap the row so the cover slot lands on that side.
+  topRowReverse: {
+    flexDirection: 'row-reverse',
   },
   coverSlot: {
     borderRadius: 10,
@@ -458,14 +474,15 @@ const styles = StyleSheet.create({
   },
   rail: {
     paddingTop: Spacing.one,
+    // Leading inset so the first tile rests off the panel edge, while the list viewport itself spans
+    // full-bleed (content scrolls all the way to the rounded edge instead of clipping at an inset).
+    paddingLeft: PANEL_PAD,
   },
   railItem: {
-    width: RAIL_THUMB_W,
+    // Fixed height; width follows each page's real aspect (PageThumb `slotHeight` mode). No bg/clip —
+    // the tile rounds and clips itself.
     height: RAIL_THUMB_H,
     marginRight: RAIL_GAP,
-    borderRadius: 8,
-    overflow: 'hidden',
-    backgroundColor: 'rgba(128,128,128,0.15)',
   },
   menuWrap: {
     position: 'absolute',
