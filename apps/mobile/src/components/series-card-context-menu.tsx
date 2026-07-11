@@ -68,7 +68,8 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // lightly overshooting) reads less abrupt than the old fast timing curve.
   useEffect(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    progress.value = withSpring(1, { damping: 17, stiffness: 130, mass: 0.9 });
+    // Slower, weightier spring so the morph starts gently and "sells" the pop-out.
+    progress.value = withSpring(1, { damping: 18, stiffness: 90, mass: 1.1 });
   }, [progress]);
 
   const dismiss = useCallback(() => {
@@ -113,17 +114,23 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const previewTop = groupH <= available ? clamp(rect.y, topLimit, bottomLimit - groupH) : topLimit;
   const menuTop = previewTop + effPreviewH + GAP;
 
-  // FLIP: the preview is laid out at its final (enlarged) frame, but animates FROM the pressed card's
-  // on-screen frame — start scaled down to the card's width and translated so its centre sits on the
-  // card's centre, then ease to identity. (Center transform origin, so scaling doesn't move the
-  // centre; the translate is the centre delta.)
+  // FLIP: the preview is laid out at its final (enlarged) frame but animates FROM the pressed card's
+  // cover. With `transformOrigin: top-left`, scaling pins the top-left, so translating the top-left to
+  // the card's cover top-left + scaling to the card's width makes the thumbnail start EXACTLY as the
+  // card's cover (same width; same height, since both use coverAspect). The cover's border radius is
+  // counter-scaled below so the visual corner stays a constant 10px through the morph.
   const fromScale = rect.width / previewW;
-  const dx = rect.x + rect.width / 2 - (previewLeft + previewW / 2);
-  const dy = rect.y + rect.height / 2 - (previewTop + effPreviewH / 2);
+  const dx = rect.x - previewLeft;
+  const dy = rect.y - previewTop;
 
-  // Backdrop: ramp the blur in with progress, plus a faint darkening layer over it.
-  const backdropBlurProps = useAnimatedProps(() => ({ intensity: progress.value * BACKDROP_BLUR }));
-  const backdropTintStyle = useAnimatedStyle(() => ({ opacity: progress.value * BACKDROP_TINT_OPACITY }));
+  // Backdrop: the blur/tint ramp in a bit LATER than the preview (the 0→0.3 flat lead), so the card
+  // reads as popping out first and the background then settles behind it.
+  const backdropBlurProps = useAnimatedProps(() => ({
+    intensity: interpolate(progress.value, [0, 0.3, 1], [0, 0, BACKDROP_BLUR]),
+  }));
+  const backdropTintStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(progress.value, [0, 0.2, 1], [0, 0, BACKDROP_TINT_OPACITY]),
+  }));
   // Preview zooms out from the card to its final frame; shadow deepens as it settles.
   const previewStyle = useAnimatedStyle(
     () => ({
@@ -136,6 +143,12 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       shadowOpacity: progress.value * 0.3,
     }),
     [dx, dy, fromScale],
+  );
+  // Keep the cover's visual corner radius a constant 10px: it's inside the scaled preview, so its own
+  // radius must be 10 / scale to cancel the container scale.
+  const coverRadiusStyle = useAnimatedStyle(
+    () => ({ borderRadius: 10 / (fromScale + (1 - fromScale) * progress.value) }),
+    [fromScale],
   );
   const menuStyle = useAnimatedStyle(() => ({
     opacity: progress.value,
@@ -170,9 +183,11 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
         onLayout={(e) => setPreviewH(e.nativeEvent.layout.height)}
         style={[styles.preview, { left: previewLeft, top: previewTop, width: previewW }, previewStyle]}>
         {entry.cover ? (
-          <Image source={{ uri: entry.cover }} style={[styles.previewCover, { height: coverH }]} contentFit="cover" cachePolicy="memory-disk" />
+          <Animated.View style={[styles.previewCover, { height: coverH }, coverRadiusStyle]}>
+            <Image source={{ uri: entry.cover }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" />
+          </Animated.View>
         ) : (
-          <View style={[styles.previewCover, styles.previewCoverEmpty, { height: coverH }]} />
+          <Animated.View style={[styles.previewCover, styles.previewCoverEmpty, { height: coverH }, coverRadiusStyle]} />
         )}
         <ThemedText style={styles.previewTitle}>{entry.title}</ThemedText>
       </Animated.View>
@@ -240,6 +255,9 @@ const styles = StyleSheet.create({
   preview: {
     position: 'absolute',
     gap: Spacing.two,
+    // Scale/translate about the top-left (0% 0%) so the FLIP starts exactly on the card's cover (see
+    // the transform above).
+    transformOrigin: '0% 0%',
     // Lifted-card shadow (opacity animated above).
     shadowColor: '#000000',
     shadowRadius: 24,
@@ -249,6 +267,8 @@ const styles = StyleSheet.create({
   previewCover: {
     width: '100%',
     borderRadius: 10,
+    // Clip the child image to the (animated) rounded corners.
+    overflow: 'hidden',
     backgroundColor: 'rgba(128,128,128,0.2)',
   },
   previewCoverEmpty: {
