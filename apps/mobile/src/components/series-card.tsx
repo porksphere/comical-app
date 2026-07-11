@@ -14,7 +14,11 @@ import type { SeriesEntry } from '@/data/types';
 import { useIsCompact } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
-import { useLightCards } from '@/lib/perf-flags';
+
+// Perf: skip the per-card reanimated cover-aspect "shrink" illusion (leave its animated styles
+// unattached, so no per-frame worklets run per card) and expo-image's cover cross-fade. Hardcoded on
+// for now — the two were the remaining SeriesCard scroll cost. Flip to false to restore the polish.
+const LIGHT_CARDS = true;
 
 // Shared cover card used by both the browse grid and the rails. `size` picks the
 // fixed rail widths; `grid` fills its parent slot (the grid controls columns).
@@ -199,8 +203,6 @@ export function SeriesCard({
    *  still masks. */
   crossfading?: boolean;
 }) {
-  // Temporary perf A/B lever (Settings → "Lightweight cards"); see lib/perf-flags.
-  const lightCards = useLightCards();
   const [loaded, setLoaded] = useState(() => resolvedCoverIds.has(entry.id));
   const [truncated, setTruncated] = useState(false);
   // True while masking a scope swap (see the recycle-safety block): the shared `Skeleton` is only
@@ -485,14 +487,14 @@ export function SeriesCard({
                 illusion. Badges/rank/ring below are siblings, NOT inside this
                 layer, so they never get stretched by the scale. */}
             <Animated.View
-              style={lightCards ? [StyleSheet.absoluteFill, styles.picture] : [StyleSheet.absoluteFill, styles.picture, pictureStyle]}>
+              style={LIGHT_CARDS ? [StyleSheet.absoluteFill, styles.picture] : [StyleSheet.absoluteFill, styles.picture, pictureStyle]}>
               {delayPassed && (
                 <Image
                   source={{ uri: entry.cover }}
                   style={StyleSheet.absoluteFill}
                   contentFit="cover"
                   cachePolicy="memory-disk"
-                  transition={lightCards ? 0 : 90}
+                  transition={LIGHT_CARDS ? 0 : 90}
                   // Recycled lists reuse this <Image> instance for a different
                   // entry; without a recyclingKey expo-image keeps painting the
                   // PREVIOUS cover until the new one decodes (the "old thumbnail
@@ -512,7 +514,7 @@ export function SeriesCard({
                       // factor but not the pixel offset, so without it this just
                       // falls back to today's instant (unanimated) snap.
                       const width = coverBoxWidthSV.value;
-                      if (!lightCards && width > 0 && nextAspect !== coverAspect) {
+                      if (!LIGHT_CARDS && width > 0 && nextAspect !== coverAspect) {
                         const oldHeight = width / coverAspect;
                         const newHeight = width / nextAspect;
                         shrinkFromScaleSV.value = newHeight > 0 ? oldHeight / newHeight : 1;
@@ -552,7 +554,7 @@ export function SeriesCard({
           {active && isWeb && <View style={[styles.ring, { pointerEvents: 'none' }]} />}
         </View>
 
-        <Animated.View style={lightCards ? styles.trailingGroup : [styles.trailingGroup, trailingStyle]}>
+        <Animated.View style={LIGHT_CARDS ? styles.trailingGroup : [styles.trailingGroup, trailingStyle]}>
           <View style={styles.titleWrap}>
             <ThemedText type="small" numberOfLines={MAX_TITLE_LINES} style={[styles.title, titleSize]}>
               {entry.title}

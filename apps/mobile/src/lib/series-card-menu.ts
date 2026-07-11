@@ -1,4 +1,5 @@
 import { observable } from '@legendapp/state';
+import { useSyncExternalStore } from 'react';
 
 import type { SeriesEntry } from '@/data/types';
 
@@ -28,4 +29,18 @@ export function openSeriesCardMenu(req: SeriesCardMenuRequest): void {
 
 export function closeSeriesCardMenu(): void {
   seriesCardMenu$.set(null);
+}
+
+/**
+ * Reactive read of the open request, via `useSyncExternalStore` — NOT a bare `use$(seriesCardMenu$)`
+ * in the host. A bare `use$` call isn't recognized as a hook (name isn't `useX`), so under React
+ * Compiler it gets memoized and the host never re-renders when the store is set — the long-press
+ * fired but no menu appeared. `useSyncExternalStore` is a real, compiler-recognized hook.
+ */
+export function useSeriesCardMenu(): SeriesCardMenuRequest | null {
+  return useSyncExternalStore(
+    (onStoreChange) => seriesCardMenu$.onChange(onStoreChange),
+    () => seriesCardMenu$.peek(),
+    () => seriesCardMenu$.peek(),
+  );
 }

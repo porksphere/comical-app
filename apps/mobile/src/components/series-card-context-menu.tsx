@@ -5,8 +5,6 @@ import { useCallback, useEffect } from 'react';
 import { BackHandler, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import Animated, { Easing, interpolate, runOnJS, useAnimatedProps, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { use$ } from '@legendapp/state/react';
-
 import { CheckIcon, PlusIcon, StarIcon, type IconProps } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
@@ -14,7 +12,7 @@ import { useFavorite } from '@/hooks/use-favorite';
 import { useLibrary } from '@/hooks/use-library';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
-import { closeSeriesCardMenu, seriesCardMenu$, type SeriesCardMenuRequest } from '@/lib/series-card-menu';
+import { closeSeriesCardMenu, useSeriesCardMenu, type SeriesCardMenuRequest } from '@/lib/series-card-menu';
 
 const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
 
@@ -40,7 +38,7 @@ const ANDROID_BLUR = Platform.OS === 'android' ? ('dimezisBlurView' as const) : 
  * while open, so its status queries cost nothing during scroll.
  */
 export function SeriesCardContextMenuHost() {
-  const req = use$(seriesCardMenu$);
+  const req = useSeriesCardMenu();
   if (!req) return null;
   // Keyed on the entry so a re-open (rare — the backdrop blocks a second long-press) is a fresh
   // mount with a fresh entrance.
