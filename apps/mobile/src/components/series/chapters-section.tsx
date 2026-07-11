@@ -721,6 +721,7 @@ export function PageThumb({
   page,
   width,
   onPress,
+  showPageNumber = true,
 }: {
   thumb: PageThumbSource | null;
   index: number;
@@ -729,6 +730,8 @@ export function PageThumb({
   page: number;
   width: number;
   onPress?: () => void;
+  /** The page-number badge — on for the series page grid, off for the compact card-preview rail. */
+  showPageNumber?: boolean;
 }) {
   const ds = useDataSource();
   const mock = useMockActive();
@@ -931,9 +934,11 @@ export function PageThumb({
             )}
             {!ready && <Skeleton style={StyleSheet.absoluteFill} />}
           </Animated.View>
-          <View style={styles.pageNum}>
-            <ThemedText style={styles.pageNumText}>{page}</ThemedText>
-          </View>
+          {showPageNumber && (
+            <View style={styles.pageNum}>
+              <ThemedText style={styles.pageNumText}>{page}</ThemedText>
+            </View>
+          )}
         </View>
       </View>
       {/* Hover ring (brighten, not dim) — same highlight treatment as SeriesCard's
