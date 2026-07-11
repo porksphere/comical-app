@@ -1,7 +1,7 @@
 import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { BackHandler, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import Animated, { Easing, interpolate, runOnJS, useAnimatedProps, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,8 +17,12 @@ import { closeSeriesCardMenu, useSeriesCardMenu, type SeriesCardMenuRequest } fr
 const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
 
 const EDGE_PAD = 12; // keep the whole thing off the screen edges
-const GAP = 10; // between the lifted card and the menu
-const LIFT_SCALE = 1.06; // how much the pressed card grows as it lifts
+const GAP = 12; // between the preview and the menu
+const PREVIEW_SCALE = 2; // preview ≈ double the pressed card's width
+const MAX_PREVIEW_WIDTH = 260; // cap so it doesn't get huge on wide screens
+// Rough preview title height (cover + this) before the real height is measured, so the menu is
+// roughly placed on the first frame and snaps tight once measured.
+const PREVIEW_TITLE_ESTIMATE = 52;
 const MENU_WIDTH = 240;
 const ROW_HEIGHT = 48;
 const MENU_PAD_V = Spacing.one;
@@ -83,51 +87,48 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   }, [dismiss]);
 
   // ── Geometry ──────────────────────────────────────────────────────────────
-  const menuW = Math.min(MENU_WIDTH, winW - EDGE_PAD * 2);
-  const menuH = ROW_HEIGHT * 2 + MENU_PAD_V * 2;
+  const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
   const topLimit = insets.top + EDGE_PAD;
   const bottomLimit = winH - insets.bottom - EDGE_PAD;
+  const cardCenterX = rect.x + rect.width / 2;
 
-  // Menu below the card by default; above if it doesn't fit below (and does above).
-  const belowTop = rect.y + rect.height + GAP;
-  const aboveTop = rect.y - GAP - menuH;
-  const placeBelow = belowTop + menuH <= bottomLimit || aboveTop < topLimit;
-  const menuTop = placeBelow ? belowTop : aboveTop;
-  // Left-align the menu to the card, clamped on-screen.
-  const menuLeft = Math.min(Math.max(EDGE_PAD, rect.x), winW - menuW - EDGE_PAD);
+  // Enlarged preview: ~double the card's width (capped to the screen / MAX), centered over the card.
+  const previewW = Math.min(rect.width * PREVIEW_SCALE, winW - EDGE_PAD * 2, MAX_PREVIEW_WIDTH);
+  const coverH = previewW / clampThumbAspect(coverAspect ?? DEFAULT_THUMB_ASPECT);
+  const previewLeft = clamp(cardCenterX - previewW / 2, EDGE_PAD, winW - previewW - EDGE_PAD);
 
-  // Shift the whole group (lifted card + menu) so both stay fully on-screen: the card grows around
-  // its centre, so account for the scaled bounds too.
-  const cy = rect.y + rect.height / 2;
-  const scaledTop = cy - (rect.height * LIFT_SCALE) / 2;
-  const scaledBottom = cy + (rect.height * LIFT_SCALE) / 2;
-  const unionTop = Math.min(scaledTop, menuTop);
-  const unionBottom = Math.max(scaledBottom, menuTop + menuH);
-  let shift = 0;
-  if (unionBottom > bottomLimit) shift = bottomLimit - unionBottom;
-  if (unionTop + shift < topLimit) shift = topLimit - unionTop;
+  const menuW = Math.min(MENU_WIDTH, winW - EDGE_PAD * 2);
+  const menuH = ROW_HEIGHT * 2 + MENU_PAD_V * 2;
+  const menuLeft = clamp(cardCenterX - menuW / 2, EDGE_PAD, winW - menuW - EDGE_PAD);
+
+  // Real preview height (cover + FULL title) once measured; estimate before then so the first frame is
+  // roughly placed. The menu always sits BELOW the whole preview, so it never covers the title.
+  const [previewH, setPreviewH] = useState<number | null>(null);
+  const effPreviewH = previewH ?? coverH + Spacing.two + PREVIEW_TITLE_ESTIMATE;
+
+  // Place the preview near the pressed card, then clamp the whole {preview + gap + menu} group into
+  // the safe area (shift up if it would overflow the bottom; pin to the top if taller than the space).
+  const groupH = effPreviewH + GAP + menuH;
+  const available = bottomLimit - topLimit;
+  const previewTop = groupH <= available ? clamp(rect.y, topLimit, bottomLimit - groupH) : topLimit;
+  const menuTop = previewTop + effPreviewH + GAP;
 
   // Backdrop: ramp the blur in with progress, plus a faint darkening layer over it.
   const backdropBlurProps = useAnimatedProps(() => ({ intensity: progress.value * BACKDROP_BLUR }));
   const backdropTintStyle = useAnimatedStyle(() => ({ opacity: progress.value * BACKDROP_TINT_OPACITY }));
+  // Preview pops in (scale + fade); shadow deepens as it settles.
   const previewStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateY: shift * progress.value },
-      { scale: 1 + (LIFT_SCALE - 1) * progress.value },
-    ],
-    // Shadow deepens as it lifts.
+    opacity: progress.value,
+    transform: [{ scale: interpolate(progress.value, [0, 1], [0.9, 1]) }],
     shadowOpacity: progress.value * 0.3,
   }));
   const menuStyle = useAnimatedStyle(() => ({
     opacity: progress.value,
     transform: [
-      { translateY: shift + interpolate(progress.value, [0, 1], [placeBelow ? -10 : 10, 0]) },
+      { translateY: interpolate(progress.value, [0, 1], [-10, 0]) },
       { scale: interpolate(progress.value, [0, 1], [0.9, 1]) },
     ],
   }));
-
-  const coverW = rect.width;
-  const coverH = coverW / clampThumbAspect(coverAspect ?? DEFAULT_THUMB_ASPECT);
 
   const act = (toggle: () => void) => {
     toggle();
@@ -147,19 +148,18 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
         <Animated.View style={[StyleSheet.absoluteFill, styles.backdropTint, backdropTintStyle]} />
       </Pressable>
 
-      {/* The lifted card preview — a copy of the pressed card at its own on-screen rect, with the
-          full (unclamped) title revealed. */}
+      {/* The enlarged preview (≈2× the card) with the FULL title. Measured so the menu can sit just
+          below it. */}
       <Animated.View
         pointerEvents="none"
-        style={[styles.preview, { left: rect.x, top: rect.y, width: rect.width }, previewStyle]}>
+        onLayout={(e) => setPreviewH(e.nativeEvent.layout.height)}
+        style={[styles.preview, { left: previewLeft, top: previewTop, width: previewW }, previewStyle]}>
         {entry.cover ? (
           <Image source={{ uri: entry.cover }} style={[styles.previewCover, { height: coverH }]} contentFit="cover" cachePolicy="memory-disk" />
         ) : (
           <View style={[styles.previewCover, styles.previewCoverEmpty, { height: coverH }]} />
         )}
-        <ThemedText style={styles.previewTitle} numberOfLines={3}>
-          {entry.title}
-        </ThemedText>
+        <ThemedText style={styles.previewTitle}>{entry.title}</ThemedText>
       </Animated.View>
 
       {/* The actions menu — a frosted (blurred) panel. */}
@@ -233,7 +233,7 @@ const styles = StyleSheet.create({
   },
   previewCover: {
     width: '100%',
-    borderRadius: 8,
+    borderRadius: 10,
     backgroundColor: 'rgba(128,128,128,0.2)',
   },
   previewCoverEmpty: {
@@ -241,6 +241,8 @@ const styles = StyleSheet.create({
   },
   previewTitle: {
     fontWeight: '600',
+    fontSize: 15,
+    lineHeight: 20,
   },
   menuWrap: {
     position: 'absolute',
