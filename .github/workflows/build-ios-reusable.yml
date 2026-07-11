@@ -110,25 +110,6 @@ jobs:
           key: metro-ios-${{ hashFiles('bun.lock') }}
           restore-keys: metro-ios-
 
-      # Xcode DerivedData (build intermediates + object graph). ccache already
-      # makes each compile a cache hit, but Xcode still re-walks the graph and
-      # re-invokes clang for all ~700 files because prebuild/pod install hand it
-      # sources with fresh mtimes. Reusing DerivedData lets Xcode SKIP unchanged
-      # targets outright — but only if their inputs' mtimes stay stable, which is
-      # why this is paired with the Pods-tree cache below (restored with mtimes
-      # intact, and `pod install` no-ops when the lock matches so it doesn't
-      # rewrite them). Keyed on bun.lock: native deps only move when bun.lock
-      # does, so one warm entry stays valid across JS-only commits. Correctness is
-      # backstopped by ccache; worst case is a redundant recompile, not a bad
-      # binary.
-      - name: Restore DerivedData
-        id: restore-deriveddata
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ github.workspace }}/DerivedData
-          key: deriveddata-ios-${{ hashFiles('bun.lock') }}
-          restore-keys: deriveddata-ios-
-
       # Compiler cache: the actual native-compile speedup. main saves a fresh
       # per-commit entry; branches restore the newest read-only and recompile
       # only their delta. See "Route ccache" for why this needs a wrapper patch.
@@ -165,12 +146,11 @@ jobs:
 
       # Restore the resolved Pods tree AFTER prebuild (prebuild regenerates ios/
       # and would clobber an earlier restore). This holds the installed pod
-      # sources + generated Pods.xcodeproj/support files with their cached mtimes.
-      # On a hit, `pod install` below sees Podfile.lock == Pods/Manifest.lock and
-      # no-ops without rewriting sources — so their mtimes stay put and the
-      # DerivedData cache above can actually skip the pod targets. Keyed on
-      # bun.lock (pods only change when JS deps do); a miss falls back to the CDN
-      # cache path (still fast) and does a full install.
+      # sources + generated Pods.xcodeproj/support files. On a hit, `pod install`
+      # below sees Podfile.lock == Pods/Manifest.lock and no-ops instead of
+      # re-resolving + recopying ~60 pods — the ~38s step becomes a few seconds.
+      # Keyed on bun.lock (pods only change when JS deps do); a miss falls back to
+      # the CDN cache path (still fast) and does a full install.
       - name: Restore Pods tree
         id: restore-pods-tree
         uses: actions/cache/restore@v4
@@ -259,9 +239,6 @@ jobs:
           # COMPILER_INDEX_STORE_ENABLE=NO drops CI-useless source indexing.
           # A Debug configuration yields a dev build (shake menu / Perf Monitor);
           # on iphoneos the JS bundle is still embedded so the IPA runs offline.
-          # -derivedDataPath: fixed, cacheable location (restored/saved around
-          #   this build) so Xcode can reuse intermediates and skip unchanged
-          #   targets instead of recompiling the whole graph every run.
           # -showBuildTimingSummary: prints a per-phase wall-clock table at the
           #   end (compile vs link vs "Bundle React Native" vs asset catalog) so
           #   the next optimization is data-driven rather than guessed.
@@ -270,7 +247,6 @@ jobs:
             -scheme "$SCHEME" \
             -configuration "$CONFIGURATION" \
             -sdk iphoneos \
-            -derivedDataPath "$GITHUB_WORKSPACE/DerivedData" \
             -archivePath "$RUNNER_TEMP/comical.xcarchive" \
             archive \
             -showBuildTimingSummary \
@@ -344,13 +320,6 @@ jobs:
             apps/mobile/ios/Pods
             apps/mobile/ios/Podfile.lock
           key: podstree-ios-${{ hashFiles('bun.lock') }}
-
-      - name: Save DerivedData
-        if: github.ref == 'refs/heads/main' && steps.restore-deriveddata.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ github.workspace }}/DerivedData
-          key: deriveddata-ios-${{ hashFiles('bun.lock') }}
 
       # Saved once per bun.lock (first main build after a deps change); later
       # JS-only commits restore that baseline and re-transform just their delta.
