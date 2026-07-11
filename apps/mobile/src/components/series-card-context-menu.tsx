@@ -358,6 +358,7 @@ function PageRail({
             bridgeId={bridgeId}
             page={item.index + 1}
             width={RAIL_THUMB_W}
+            showPageNumber={false}
             onPress={() => onOpenPage(item.index)}
           />
         </View>
