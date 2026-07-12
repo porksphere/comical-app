@@ -9,9 +9,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FilterBar, SortControl } from '@/components/filters/filter-demo';
 import { resolveMetaIntent, resolveTagIntent, type MetaIntent, type TagIntent } from '@/components/filters/filter-intents';
-import { CONTROL_HEIGHT, filterValueToApi } from '@/components/filters/filter-types';
+import { filterValueToApi } from '@/components/filters/filter-types';
 import { GridSkeleton } from '@/components/grid-skeleton';
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
+import { PullIndicator } from '@/components/pull-indicator';
 import { RetryBlock } from '@/components/retry-block';
 import { SearchField } from '@/components/search-field';
 import { estimatedCardHeight, SeriesCard } from '@/components/series-card';
@@ -28,6 +29,8 @@ import { friendlyError } from '@/lib/friendly-error';
 import { useBridgeFilters } from '@/hooks/use-bridge-filters';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { GRID_COLUMN_GAP, padWithSpacers, useGridLayout } from '@/hooks/use-grid-layout';
+import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
+import { useRevealDim } from '@/hooks/use-reveal-dim';
 import { useSlidingBar } from '@/hooks/use-sliding-bar';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
@@ -186,11 +189,12 @@ export default function SearchScreen() {
   }, [filterDefs, resolvedValues]);
 
   const hasFilterBar = filterDefs.length > 0;
-  // Height of the filter bar. It tracks the top bar row's height (so on desktop the two read as one
-  // unit) but never drops below the control height plus a little breathing room — otherwise on short
-  // mobile top bars the 44pt chips end up squashed with almost no padding above/below. Its horizontal
-  // insets still match the top bar, so the "+N" overflow chip lines up with the sort button above.
-  const filtersBarH = hasFilterBar ? Math.max(barHeight, CONTROL_HEIGHT + Spacing.two * 2) : 0;
+  // The filter bar is exactly the top bar's height, so the two read as one stacked unit. No floor is
+  // needed here any more: `TopBarHeight` is itself derived as CONTROL_HEIGHT + BarVerticalPad * 2
+  // (see constants/theme.ts), so the bar can never be too short to hold its own 44pt chips without
+  // squashing them. Its horizontal insets match the top bar too, so the "+N" overflow chip lines up
+  // with the sort button above.
+  const filtersBarH = hasFilterBar ? barHeight : 0;
 
   // A search runs once there's a query, or a committed filter/sort. Until then the page is a blank
   // landing (the desktop entry opens straight here). Both the query key and the fetch derive from
@@ -210,6 +214,14 @@ export default function SearchScreen() {
     getNextPageParam,
     placeholderData: keepPreviousData,
   });
+
+  // Re-search dim: while a NEW scope (query / filter / sort change) loads, keepPreviousData holds the
+  // previous results on screen — ease them to a dim and back rather than letting them sit there
+  // looking live, or flashing to a skeleton. `isPlaceholderData` is true exactly for that case and
+  // NOT for a plain refetch, so a pull-to-refresh doesn't dim (it has the spinner below instead).
+  // Same hook the Browse grid uses. See useRevealDim for why a refinement dims where a bridge/page
+  // switch crossfades.
+  const gridCellStyle = useRevealDim(resultsQuery.isPlaceholderData);
 
   // De-duplicate by series id while flattening the infinite pages — a live-reordering search feed can
   // return the same series on two adjacent pages, colliding on the list `keyExtractor`. Same helper
@@ -235,7 +247,7 @@ export default function SearchScreen() {
   // The filter bar sits just below the (fixed) search bar and slides up out of view as the results
   // scroll down, back in as they scroll up. Same shared helper the Browse bar uses (so the motion
   // can't drift); a new search (`scopeKey` change) snaps it back to visible and the list to the top.
-  const { offset: filtersOffsetY, barStyle: filtersStyle, sharedValues, onScroll: onListScroll } =
+  const { scrollY, offset: filtersOffsetY, barStyle: filtersStyle, sharedValues, onScroll: onListScroll } =
     useSlidingBar(filtersBarH, { resetKey: scopeKey, listRef });
   // The top bar's own bottom hairline is the inverse of the filter bar's visibility: hidden while the
   // filter bar is fully expanded right below it (the filter bar's hairline is the divider then), and
@@ -252,6 +264,12 @@ export default function SearchScreen() {
     const t = filtersBarH > 0 ? Math.min(1, Math.max(0, -filtersOffsetY.value / filtersBarH)) : 0;
     return { shadowOpacity: SHADOW_PEAK_OPACITY * 4 * t * (1 - t) };
   });
+
+  // Pull-to-refresh: the whole thing (gesture per platform, spinner, min-visible window, content
+  // shift) lives in the shared hook — same one the Browse grid uses. Refetches the CURRENT search;
+  // guarded on `scope` because the blank landing has nothing to refresh, and refetching a disabled
+  // query would resolve instantly and just flash the spinner.
+  const pull = usePullToRefresh(scrollY, () => (scope ? resultsQuery.refetch() : Promise.resolve()));
 
   const loadMore = () => {
     if (!scope || !resultsQuery.hasNextPage || resultsQuery.isFetchingNextPage) return;
@@ -297,7 +315,9 @@ export default function SearchScreen() {
   ) : null;
 
   return (
-    <ThemedView style={styles.container}>
+    // Touch-driven pull-to-refresh for web + Android is caught here on the outer view, so it works
+    // regardless of what's under the finger (iOS sources its pull from the native bounce instead).
+    <ThemedView style={styles.container} {...pull.touchHandlers}>
       {/* Fixed top bar: back button + search field (autofocused after the push settles) + sort.
           Opaque background so the filter bar tucks fully behind it as it slides up. Its bottom
           hairline fades in only once the filter bar has slid away (see topBarBorderStyle). */}
@@ -338,7 +358,11 @@ export default function SearchScreen() {
         </View>
       ) : (
         <View style={styles.listHost}>
+          {/* Wrapping rather than animating AnimatedLegendList's own `style` — LegendList's style prop
+              isn't typed for a Reanimated animated style the way Animated.View's is. Shifts the grid
+              down to open the gap the spinner sits in. */}
           {ready && (
+            <Animated.View style={[styles.list, pull.listStyle]}>
             <AnimatedLegendList
               ref={listRef}
               key={gridKey}
@@ -374,7 +398,9 @@ export default function SearchScreen() {
                 item.spacer ? (
                   <View style={styles.gridCell} />
                 ) : (
-                  <View style={styles.gridCell}>
+                  // One shared animated style across every cell (renderItem isn't a component, so it
+                  // can't hold a hook) — dims the kept results while a re-search loads. See useRevealDim.
+                  <Animated.View style={[styles.gridCell, gridCellStyle]}>
                     <SeriesCard
                       entry={item}
                       bridge={currentBridge?.name ?? undefined}
@@ -382,15 +408,22 @@ export default function SearchScreen() {
                       direct={directBridge}
                       cohort={scopeKey}
                     />
-                  </View>
+                  </Animated.View>
                 )
               }
               onEndReachedThreshold={0.6}
               onEndReached={loadMore}
               showsVerticalScrollIndicator={Platform.OS === 'web'}
+              // Android's edge glow would fight the custom pull; iOS keeps its bounce (that's what
+              // sources the pull there), and a release past the threshold fires via onScrollEndDrag.
+              overScrollMode={Platform.OS === 'android' ? 'never' : undefined}
+              onScrollEndDrag={pull.onScrollEndDrag}
             />
+            </Animated.View>
           )}
           {ready && filterBar}
+          {/* Settles just below the filter bar, in the gap the pull opens. */}
+          <PullIndicator {...pull.indicator} top={filtersBarH} />
         </View>
       )}
     </ThemedView>

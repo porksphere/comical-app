@@ -139,14 +139,25 @@ export const MaxContentWidth = 800;
  *  1200px; margin: … auto }` so the whole app reads at one width. Tweak here to
  *  resize every top-level view at once. */
 export const MaxTopLevelWidth = 1200;
-/** Content height (below the safe-area top inset) of the sticky top bars — the
- *  browse bridge/page bar and the series detail bar — so they read as one bar
- *  across views. Mirrors the reference's shared `--topbar-height`. */
-export const TopBarHeight = 48;
 /** Standard height of a tappable row — the filter bar's own controls
  *  (`CONTROL_HEIGHT` in filter-types.ts) and every selectable list row inside
  *  an overlay (genre/tag checkboxes, bridge/page picker rows, …), so a row
  *  reads the same size whether it's on the bar or in a dropdown beneath it. */
 export const RowHeight = 44;
-/** Taller top-bar height used on desktop (≥768px) only. */
+/** Breathing room above and below a `RowHeight` control sitting on a bar. Below
+ *  this the 44pt chips/buttons read as squashed against the bar's edges. */
+export const BarVerticalPad = Spacing.two;
+/** Content height (below the safe-area top inset) of the sticky top bars — the
+ *  browse bridge/page bar, the series detail bar, and the search bar — so they
+ *  read as one bar across views. Mirrors the reference's shared `--topbar-height`.
+ *
+ *  DERIVED, not a magic number: a bar is exactly a `RowHeight` control plus
+ *  `BarVerticalPad` above and below it. That's what makes the Search screen's top
+ *  bar and the filter bar directly beneath it the same height *by construction* —
+ *  the filter bar holds the same 44pt controls, so any other value would leave the
+ *  two bars visibly mismatched (and a shorter bar squashes the chips). Change the
+ *  padding or the row height and every bar in the app tracks it together. */
+export const TopBarHeight = RowHeight + BarVerticalPad * 2;
+/** Taller top-bar height used on desktop (≥768px) only. Must stay >= TopBarHeight
+ *  so the same "control + padding" floor holds on desktop too. */
 export const DesktopTopBarHeight = 64;

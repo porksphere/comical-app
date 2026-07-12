@@ -39,14 +39,10 @@ import { GRID_COLUMN_GAP, padWithSpacers, useGridLayout } from '@/hooks/use-grid
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
 import { useSlidingBar } from '@/hooks/use-sliding-bar';
-import { useNativePullToRefresh } from '@/hooks/use-native-pull-to-refresh';
+import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
+import { useRevealDim } from '@/hooks/use-reveal-dim';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
-import { useTouchPullToRefresh } from '@/hooks/use-touch-pull-to-refresh';
-
-// Minimum time pull-to-refresh's spinner stays visible once triggered — see the
-// `refreshStartedAtRef` comment below.
-const REFRESH_MIN_VISIBLE_MS = 600;
 
 type GridItem = SeriesEntry & { spacer?: boolean };
 /** A drilled-into rail: its list id (for pagination) + display title. */
@@ -144,32 +140,6 @@ export default function BrowseScreen() {
   // Search + filters now live on the pushed Search screen (`app/search.tsx`), reachable from this
   // screen's top bar. Browse itself is pure discovery: bridge/page selectors, rails, home grid,
   // "See all", favorites, and page-flagged list browsing (unfiltered).
-
-  // ── Pull-to-refresh (native only) ─────────────────────────────────────────
-  // Declared up here (rather than by `onRefresh` below) because the home-sections
-  // fetch effect just below needs `refreshActiveRef`/`finishRefresh` in its own
-  // deps/closure and is defined before `inResults` exists — see `onRefresh` for
-  // the full picture, which needs `inResults` and so stays down there.
-  const [refreshing, setRefreshing] = useState(false);
-  const refreshActiveRef = useRef(false);
-  // A same-device fetch (embedded transport, or just a fast network) can resolve
-  // in a handful of ms — far less than the ~600ms a real pull-release-and-settle
-  // takes native iOS's UIRefreshControl. If `refreshing` flips to `false` while
-  // the user's finger is still down mid-drag, RN imperatively force-ends the
-  // native control right then instead of on release, which reads as an abrupt
-  // snap-back rather than a natural spring — and leaves no time for the spinner
-  // to even render before it's told to stop. Padding the visible window out to
-  // REFRESH_MIN_VISIBLE_MS keeps `refreshing` true long enough to see and to let
-  // the gesture resolve normally.
-  const refreshStartedAtRef = useRef(0);
-  const finishRefresh = useCallback(() => {
-    if (!refreshActiveRef.current) return;
-    refreshActiveRef.current = false;
-    const elapsed = Date.now() - refreshStartedAtRef.current;
-    const wait = Math.max(0, REFRESH_MIN_VISIBLE_MS - elapsed);
-    if (wait === 0) setRefreshing(false);
-    else setTimeout(() => setRefreshing(false), wait);
-  }, []);
 
   // ── Home rails + grid sections (composed Home surface) ─────────────────────
   // react-query with keepPreviousData (see homeSectionsQuery): a bridge switch keeps the prior
@@ -405,20 +375,14 @@ export default function BrowseScreen() {
     return () => clearTimeout(t);
   }, [switching, committed, homeReady, homeXfade]);
 
-  // ── Within-page grid dim (filter/sort/search refinements) ─────────────────
-  // A lighter treatment than a full bridge/page switch: the kept grid eases to a dimmed 0.45 while the
-  // new scope loads, then back to full — "refreshing", not "swapping". Suppressed while `switching`
-  // (the full crossfade above owns a bridge/page change; this would just fight it). One shared animated
-  // style is reused across every grid cell (no per-cell hook — renderItem isn't a component). Only the
-  // grid needs it: the composed-home rails are only ever placeholder-swapped by a bridge change, which
-  // the crossfade already covers — so there's no separate rails dim (homeUpdating ⇒ switching).
-  const REVEAL_DIM = 0.45;
-  const REVEAL_MS = 200;
-  const gridReveal = useSharedValue(1);
-  useEffect(() => {
-    gridReveal.value = withTiming(gridUpdating && !switching ? REVEAL_DIM : 1, { duration: REVEAL_MS, easing: Easing.out(Easing.quad) });
-  }, [gridUpdating, switching, gridReveal]);
-  const gridCellStyle = useAnimatedStyle(() => ({ opacity: gridReveal.value }));
+  // ── Within-page grid dim (a "See all" / list-scope refinement) ────────────
+  // The kept grid eases to a dim while the new scope loads, then back to full — "refreshing", not
+  // "swapping" (see useRevealDim, shared with the Search grid so the two can't drift). Suppressed
+  // while `switching`: the full crossfade above owns a bridge/page change and this would fight it.
+  // One shared animated style is reused across every grid cell (no per-cell hook — renderItem isn't
+  // a component). Only the grid needs it: the composed-home rails are only ever placeholder-swapped
+  // by a bridge change, which the crossfade already covers (homeUpdating ⇒ switching).
+  const gridCellStyle = useRevealDim(gridUpdating && !switching);
 
   // Everything shown on the favorites page is, by definition, favorited — so warm the per-series
   // `isFavorite` cache to `true`. Opening one from here then paints ★ instantly (and enabled)
@@ -440,11 +404,9 @@ export default function BrowseScreen() {
   };
 
   // Re-runs whichever query backs the current view. keepPreviousData keeps the existing content on
-  // screen under the RefreshControl spinner (no skeleton), and `finishRefresh` enforces the minimum
-  // visible spinner duration once the refetch resolves. A ref holds the latest refetch closure so
-  // `onRefresh` itself stays stable (the query objects it closes over change identity every render).
-  const refreshRef = useRef<() => Promise<unknown>>(() => Promise.resolve());
-  refreshRef.current = () => {
+  // screen under the spinner (no skeleton). Passed to `usePullToRefresh` below, which holds it in a
+  // ref — so this closure can freely change identity every render as the query objects do.
+  const refreshCurrentView = () => {
     const jobs: Promise<unknown>[] = [];
     if (inResults) {
       if (resultsScope) jobs.push(resultsQuery.refetch());
@@ -454,12 +416,6 @@ export default function BrowseScreen() {
     }
     return Promise.all(jobs);
   };
-  const onRefresh = useCallback(() => {
-    refreshActiveRef.current = true;
-    refreshStartedAtRef.current = Date.now();
-    setRefreshing(true);
-    void refreshRef.current().finally(finishRefresh);
-  }, [finishRefresh]);
 
   // Leave a "See all" drill-down and return to the page it was layered on — Home if that's where we
   // were, or the selected page (e.g. "Popular") otherwise. `page` is deliberately left untouched so
@@ -565,26 +521,9 @@ export default function BrowseScreen() {
   const headerBorderStyle = useAnimatedStyle(() => ({
     borderBottomColor: interpolateColor(scrollY.value, [0, 8], ['transparent', theme.hairline]),
   }));
-  // Pull-to-refresh: one overlay spinner (`PullIndicator`) across every platform, fed by whichever
-  // hook can source a pull there — all funneling into the same `onRefresh`/`refreshing` pair, so
-  // every path runs the identical refetch/min-visible-duration flow:
-  //  - Web + Android (`useTouchPullToRefresh`): touch-driven, since neither has usable elastic
-  //    overscroll (web's RefreshControl is inert; Android clamps to a glow).
-  //  - iOS (`useNativePullToRefresh`): reads the native bounce directly — no touch plumbing needed,
-  //    and its RefreshControl can't be used anyway (spinner draws behind the top bar, see the hook).
-  // We deliberately don't use RN's native RefreshControl on any platform — a consistent custom
-  // spinner beats the Material control looking different on Android alone. Both hooks are inert off
-  // their platforms, so calling both unconditionally is safe.
-  const touchPull = useTouchPullToRefresh(scrollY, onRefresh, refreshing);
-  const nativePull = useNativePullToRefresh(scrollY, onRefresh, refreshing);
-  const customPull = Platform.OS === 'ios' ? nativePull : touchPull;
-  // Shift the whole grid down so the gap the spinner sits in opens up. On web + Android that tracks
-  // the pull the whole way (the touch hook translates the list to create the gap). On iOS it stays 0
-  // during the pull — the native bounce already moves the content — and only engages during the hold
-  // to keep the content pinned down while refreshing (see `listTranslateY` in the native hook).
-  const listPullStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: customPull.listTranslateY.value }],
-  }));
+  // Pull-to-refresh: gesture (per platform), spinner, min-visible window and content shift all live
+  // in the shared hook — the same one the Search grid uses.
+  const pull = usePullToRefresh(scrollY, refreshCurrentView);
 
   const topBar = (
     <Animated.View
@@ -796,20 +735,17 @@ export default function BrowseScreen() {
   return (
     <ThemedView
       style={styles.container}
-      // Touch-driven pull-to-refresh for web + Android — see `useTouchPullToRefresh`. Catching the
-      // raw touch events here (rather than needing LegendList to forward them from wherever the
-      // touch actually started) works regardless of what's under the finger. Not wired on iOS,
-      // which sources its pull from the native bounce instead (`useNativePullToRefresh`).
-      {...(Platform.OS === 'ios'
-        ? null
-        : { onTouchStart: touchPull.onTouchStart, onTouchMove: touchPull.onTouchMove, onTouchEnd: touchPull.onTouchEnd })}>
+      // Touch-driven pull-to-refresh for web + Android. Catching the raw touch events here (rather
+      // than needing LegendList to forward them from wherever the touch actually started) works
+      // regardless of what's under the finger. Empty on iOS, which sources its pull from the bounce.
+      {...pull.touchHandlers}>
       {/* The list's own frame spans the full screen, from behind the topBar — its contentContainer
           top padding (headerHeight) reserves the bar's resting height so content starts below it;
           as the bar slides away (see `headerOffsetY` above) the content already sitting there is
           revealed, rather than the list itself needing to relayout. */}
       {/* Wrapping rather than animating AnimatedLegendList's own `style` directly — LegendList's
           style prop isn't typed for a Reanimated animated style the way Animated.View's is. */}
-      <Animated.View style={[styles.list, listPullStyle, homeXfadeStyle]}>
+      <Animated.View style={[styles.list, pull.listStyle, homeXfadeStyle]}>
       <AnimatedLegendList
         ref={listRef}
         key={gridKey}
@@ -899,20 +835,15 @@ export default function BrowseScreen() {
         // overflow container); keep it hidden on native, where it's not idiomatic.
         showsVerticalScrollIndicator={Platform.OS === 'web'}
         // No native RefreshControl on any platform — pull-to-refresh is the custom overlay spinner
-        // (see the two pull hooks above), consistent everywhere. Android's edge-stretch glow is
-        // suppressed so it doesn't fight the custom pull; iOS keeps its bounce (that's what sources
-        // the pull there), and a release past the threshold triggers the refresh via onScrollEndDrag.
+        // (see `usePullToRefresh`), consistent everywhere. Android's edge-stretch glow is suppressed
+        // so it doesn't fight the custom pull; iOS keeps its bounce (that's what sources the pull
+        // there), and a release past the threshold triggers the refresh via onScrollEndDrag.
         overScrollMode={Platform.OS === 'android' ? 'never' : undefined}
-        onScrollEndDrag={Platform.OS === 'ios' ? nativePull.onScrollEndDrag : undefined}
+        onScrollEndDrag={pull.onScrollEndDrag}
       />
       </Animated.View>
       {topBar}
-      <PullIndicator
-        pullY={customPull.pullY}
-        pullThreshold={customPull.pullThreshold}
-        refreshing={refreshing}
-        top={headerHeight}
-      />
+      <PullIndicator {...pull.indicator} top={headerHeight} />
     </ThemedView>
   );
 }
