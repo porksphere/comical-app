@@ -38,7 +38,7 @@ import { queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockDataToggle, useNsfwMode, type NsfwMode } from '@/data/source';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useHovered } from '@/hooks/use-hovered';
-import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
+import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme, useThemePreference, type ThemePreference } from '@/hooks/use-theme';
 import { friendlyError } from '@/lib/friendly-error';
@@ -78,12 +78,11 @@ export default function SettingsScreen() {
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTopOnReselect('settings', scrollRef);
   const { onScroll } = useHideTabBarOnScroll();
-  const isLargeScreen = useIsLargeScreen();
   const barHeight = useTopBarHeight();
-  // Desktop's icon-only nav has no text label, so this screen (unlike History/Activity/Library,
-  // whose title bands show on every width) only needs its own title band on desktop — mobile
-  // already knows it's on Settings from the bottom tab bar, so it skips the band entirely.
-  const headerHeight = isLargeScreen ? insets.top + barHeight : insets.top + Spacing.four;
+  // The title band shows at every width now, like History/Activity/Library — so the content reserves
+  // the real bar height on mobile too (it used to fake a shorter inset there, since the band was
+  // desktop-only).
+  const headerHeight = insets.top + barHeight;
   return (
     <ThemedView style={styles.container}>
       <ScrollView
@@ -102,7 +101,7 @@ export default function SettingsScreen() {
         {__DEV__ && <DeveloperSection />}
       </ScrollView>
 
-      {isLargeScreen && <TabTitleBar title="Settings" />}
+      <TabTitleBar title="Settings" />
     </ThemedView>
   );
 }
