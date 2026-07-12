@@ -26,7 +26,7 @@ import { coverDelayMs, relativeTime } from '@/data/mock';
 import { queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import type { Chapter, PageThumbSource, SpriteThumb } from '@/data/types';
-import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT, pageSlotAspect } from '@/lib/aspect-ratio';
+import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { groupChapters, pickVersion, type ChapterGroup } from '@/lib/chapter-order';
 import { setPreferredGroup, usePreferredGroup } from '@/lib/preferred-group';
 import { logDiagnostic } from '@/lib/diagnostics';
@@ -563,10 +563,11 @@ export function PageThumbList({
   const sidePad = Math.max(0, (screenW - MaxContentWidth) / 2) + Spacing.four;
   const contentWidth = Math.min(screenW, MaxContentWidth) - Spacing.four * 2;
   const tileW = (contentWidth - gap * (cols - 1)) / cols;
-  // Every row is one slot tall, sized from the tiles' own shape rather than an assumed 2:3 — see
-  // pageSlotAspect for why (a wider-than-2:3 source left a strip of background under every tile).
-  const slotAspect = useMemo(() => pageSlotAspect(thumbs), [thumbs]);
-  const slotHeightPx = tileW / slotAspect;
+  // Row height: the constant 2:3 slot (`thumbShell`). It must be the vertical MAX a tile can take —
+  // clampThumbAspect floors every tile there — so a taller tile can never overflow its row. A tile
+  // wider than 2:3 is SHORTER than its slot and top-aligns in it, keeping its own shape; that space
+  // below it is by design, not the grey strip (which was the crop, see SpriteCrop).
+  const slotHeightPx = tileW / DEFAULT_THUMB_ASPECT;
   // The collapsed fade height mirrors the reference's `.page-thumbs-more`: ~0.6 of
   // a tile's height, so the last row reads as fading out under the button.
   const fadeHeight = Math.round(slotHeightPx * 0.6);
@@ -601,7 +602,7 @@ export function PageThumbList({
       numColumns={cols}
       recycleItems
       // Every cell's real height is this, exactly, regardless of content — the slot never resizes
-      // once mounted (its aspect is fixed up front by `slotAspect`), so unlike a
+      // once mounted (`thumbShell` is a constant 2:3 slot), so unlike a
       // normal dynamic-height list this doesn't need to be *learned* via onLayout. Declaring it
       // via getFixedItemSize (not just estimatedItemSize, which is only ever a pre-measurement
       // guess) tells LegendList every row's exact position upfront, so it can jump straight to
@@ -676,7 +677,6 @@ export function PageThumbList({
               bridgeId={bridgeId}
               page={item.pageIndex + 1}
               width={tileW}
-              slotAspect={slotAspect}
               onPress={() =>
                 router.push({
                   pathname: '/reader',
@@ -731,7 +731,6 @@ export function PageThumb({
   onPress,
   showPageNumber = true,
   slotHeight,
-  slotAspect = DEFAULT_THUMB_ASPECT,
 }: {
   thumb: PageThumbSource | null;
   index: number;
@@ -742,10 +741,6 @@ export function PageThumb({
   onPress?: () => void;
   /** The page-number badge — on for the series page grid, off for the compact card-preview rail. */
   showPageNumber?: boolean;
-  /** The grid slot's aspect — every row is this tall, so a tile top-aligns inside it. Derived by the
-   *  caller from the tiles' own shape (see PageThumbList) rather than assumed 2:3, so a source whose
-   *  thumbnails are wider than 2:3 doesn't leave a strip of background under every tile. */
-  slotAspect?: number;
   /** When set, the tile fills this fixed height and its WIDTH follows the page's real aspect ratio
    *  (variable-width, for the card-preview rail) instead of the grid's default width-driven, constant
    *  2:3 slot. `width` is then ignored for layout — the sprite crop scales to `slotHeight * aspect`. */
@@ -873,22 +868,20 @@ export function PageThumb({
   // exactly and the picture inside crops to cover it — a box sized to the image's own aspect is what
   // left a strip of background under every tile. In the rail there is no slot: the box takes the
   // image's real aspect and the width follows, so nothing is ever cropped there.
-  const boxAspect = slotHeight != null ? aspectRatio : slotAspect;
-  // The box in PIXELS — what the sprite crop must cover.
+  // The box in PIXELS — what the sprite crop has to fill.
   //
-  // MEASURED, not computed. This is the whole bug: the crop used to be scaled by the `width` prop,
-  // which the grid derives from screen-width arithmetic and its own gap/padding maths — "≈ the cell
-  // width", as the comment below cheerfully put it. The box is actually laid out by flex, to the real
-  // cell width, and the two disagree by a couple of px. Scale a 2:3 crop by a width 3px short and its
-  // HEIGHT lands ~4px short of the box — a strip of the tile's placeholder grey under every single
-  // thumbnail, about half the corner radius tall. Web happened to agree on the number; the device
-  // didn't, which is why this only ever showed up there.
+  // MEASURED, not computed. This was the bug behind the grey strip, and the old code confessed to it:
+  // the crop was scaled by the `width` prop — derived from screen-width arithmetic and the grid's own
+  // gap/padding maths, "≈ the cell width" — while the box is laid out by FLEX, to the real cell width.
+  // The two disagree by a couple of px on device. Scale a 2:3 crop by a width 3px short and its HEIGHT
+  // lands ~4px short of the box, so the tile's placeholder grey shows beneath every thumbnail. The
+  // browser's layout happened to agree with the estimate, which is why it never reproduced there.
   //
-  // `onLayout` gives us the box's true size, so use it and let the estimate be a first-frame
-  // fallback only.
-  const measured = boxSize;
-  const boxWidth = measured ? measured.w : slotHeight != null ? slotHeight * aspectRatio : width;
-  const boxHeight = measured ? measured.h : slotHeight != null ? slotHeight : width / slotAspect;
+  // With the box measured, the crop cannot disagree with the thing it fills — so the tile is free to
+  // keep its OWN aspect (see `aspectRatio` on the box below) instead of being squashed into a uniform
+  // slot. A short-lived version of this file did exactly that, and flattened every page to one shape.
+  const boxWidth = boxSize ? boxSize.w : slotHeight != null ? slotHeight * aspectRatio : width;
+  const boxHeight = boxSize ? boxSize.h : slotHeight != null ? slotHeight : width / aspectRatio;
 
   // The picture layer's scaleY: eases from its old apparent size down to 1 (its
   // real, already-committed size) as `shrinkProgressSV` runs 0 -> 1 — same
@@ -904,12 +897,12 @@ export function PageThumb({
     // corners clipped. The `width` prop is only a FIRST-FRAME estimate for the crop — `onLayout`
     // below replaces it with the box's real size (see boxWidth/boxHeight).
     <Pressable
-      style={slotHeight != null ? { height: slotHeight, aspectRatio } : { aspectRatio: slotAspect }}
+      style={slotHeight != null ? { height: slotHeight, aspectRatio } : styles.thumbShell}
       onPress={onPress}
       onHoverIn={onHoverIn}
       onHoverOut={onHoverOut}>
       <View
-        style={[styles.thumbBox, { aspectRatio: boxAspect }]}
+        style={[styles.thumbBox, { aspectRatio }]}
         onLayout={(layoutEvent) => {
           const { width: laidOutW, height: laidOutH } = layoutEvent.nativeEvent.layout;
           thumbWidthSV.value = laidOutW;
@@ -942,12 +935,8 @@ export function PageThumb({
                     lastResolvedThumbAspect = nextAspect;
                     // Same FLIP kick-off as SeriesCard: only animate when there's an actual shape
                     // change and the box's pixel width is already known (from onLayout above).
-                    //
-                    // Rail only. In the GRID the box is the slot's shape and no longer resizes when
-                    // the real aspect lands, so there's nothing to smooth — running the shrink there
-                    // would scale a picture that already fits, squashing it for no reason.
                     const measuredWidth = thumbWidthSV.value;
-                    if (slotHeight != null && measuredWidth > 0 && nextAspect !== imageAspect) {
+                    if (measuredWidth > 0 && nextAspect !== imageAspect) {
                       const oldHeight = measuredWidth / imageAspect;
                       const newHeight = measuredWidth / nextAspect;
                       shrinkFromScaleSV.value = newHeight > 0 ? oldHeight / newHeight : 1;
@@ -1323,9 +1312,16 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#60a5fa',
   },
+  thumbShell: {
+    // Constant slot — the 2:3 default, the vertical MAX a tile can occupy (clampThumbAspect floors
+    // every aspect there, so no tile can exceed it). Never resizes, so a tile's row never reflows and
+    // the grid stays virtualizable at a fixed row height. A tile SHORTER than this top-aligns inside
+    // it — that's how the grid keeps each page's own shape.
+    aspectRatio: DEFAULT_THUMB_ASPECT,
+  },
   thumbBox: {
-    // The tile itself, at its real (capped) aspect ratio — the constant `slotAspect`
-    // slot above is what this top-aligns within.
+    // The tile itself, at its real (capped) aspect ratio — `thumbShell` above is the
+    // constant 2:3 slot this top-aligns within.
     width: '100%',
     position: 'relative',
   },
