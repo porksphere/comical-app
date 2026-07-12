@@ -2,19 +2,29 @@ import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
 import { usePathname, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { BackHandler, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
-import Animated, { interpolate, LinearTransition, runOnJS, useAnimatedProps, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import Animated, {
+  interpolate,
+  LinearTransition,
+  runOnJS,
+  useAnimatedProps,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  type SharedValue,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LegendList } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
 
+import { NATIVE_HIDE_OFFSET } from '@/components/app-tabs';
 import { ChipRow, TagGroupRow } from '@/components/chip';
 import { CheckIcon, PlusIcon, StarIcon, type IconProps } from '@/components/icons/ui-icons';
 import { PageThumb } from '@/components/series/chapters-section';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { BottomTabInset, Spacing } from '@/constants/theme';
 import { setSearchIntent, tagSearchIntent } from '@/data/search-intent';
 import type { TagGroup } from '@/data/mock';
 import { seriesDetailQuery, seriesListQuery } from '@/data/queries';
@@ -22,17 +32,27 @@ import { useDataSource, useMockActive } from '@/data/source';
 import type { PageThumbSource } from '@/data/types';
 import { useFavorite } from '@/hooks/use-favorite';
 import { useLibrary } from '@/hooks/use-library';
+import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { closeSeriesCardMenu, useSeriesCardMenu, type SeriesCardMenuRequest } from '@/lib/series-card-menu';
+import { getTabBarProgress } from '@/lib/tab-bar-visibility';
+import { getTopBarHidden } from '@/lib/top-bar-visibility';
 
 const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
-// The one spring used everywhere: the open morph, the reversed close morph, and the panel/menu
-// resize — so every motion in the popup shares the same bouncy feel.
+// The one spring used everywhere: the open morph, the panel/menu resize, and any late correction to
+// the popup's geometry — so every motion shares the same bouncy feel.
 const MORPH_SPRING = { damping: 16, stiffness: 170, mass: 0.8 } as const;
-// How the panel + menu resize/reposition when late content lands — the panel is a plain Animated.View
-// (not the ThemedView, which doesn't forward a ref) so its height can spring when async content swaps
-// a skeleton for the real thing, instead of the panel popping to its final size.
+// The close is the SAME spring, roughly twice as fast: the overlay swallows touches until it
+// unmounts, so every millisecond of the return (bounce included) is time the list can't be scrolled.
+// Damping and stiffness are raised together to keep the damping RATIO — i.e. the size of the little
+// overshoot at the end, the springy part — while doubling the decay rate (damping / 2·mass), which is
+// what actually sets how long the motion takes to die out. Bouncy, just less lingering.
+const CLOSE_SPRING = { damping: 28, stiffness: 660, mass: 0.7 } as const;
+// How the panel RESIZES when late content lands — it's a plain Animated.View (not the ThemedView,
+// which doesn't forward a ref) so its height can spring when async content swaps a skeleton for the
+// real thing, instead of popping to its final size. Everything's POSITION springs separately, through
+// the shared values in "Live geometry" below.
 const RESIZE = LinearTransition.springify().damping(MORPH_SPRING.damping).stiffness(MORPH_SPRING.stiffness).mass(MORPH_SPRING.mass);
 
 // Last-seen count of tag rows (genres row + one per tag group), remembered across opens so the
@@ -40,7 +60,11 @@ const RESIZE = LinearTransition.springify().damping(MORPH_SPRING.damping).stiffn
 // global: it's a cheap heuristic for the placeholder shape, not state anything renders off directly.
 let lastTagRowCount = 2;
 
-const EDGE_PAD = 12; // keep the whole thing off the screen edges
+// The routes that show the bottom tab bar (a pushed screen — series, search — covers it). Used to
+// decide whether the bottom of the screen is chrome the cover has to slide under.
+const TAB_ROUTES = new Set(['/', '/library', '/history', '/activity', '/settings']);
+
+const EDGE_PAD = 12; // keep the whole thing off the screen edges (and off the bars — see chromeTop)
 const GAP = 12; // between the preview panel and the menu
 const PANEL_MAX_WIDTH = 360; // cap the panel width on wide screens
 const PANEL_PAD = Spacing.three;
@@ -143,8 +167,9 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     closeSeriesCardMenu();
   }, [req]);
   const dismiss = useCallback(() => {
-    // The open spring, reversed — the cover morphs back onto the card the same bouncy way it came out.
-    progress.value = withSpring(0, MORPH_SPRING, (finished) => {
+    // The open spring, reversed and quickened (see CLOSE_SPRING) — the cover morphs back onto the card
+    // the same bouncy way it came out, just without the long tail that kept the list locked.
+    progress.value = withSpring(0, CLOSE_SPRING, (finished) => {
       if (finished) runOnJS(finishClose)();
     });
   }, [progress, finishClose]);
@@ -157,10 +182,27 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     return () => sub.remove();
   }, [dismiss]);
 
+  // ── Chrome band ───────────────────────────────────────────────────────────
+  // The app's bars are chrome the grids scroll UNDER (see bar-surface / app-tabs), so a card at either
+  // end of the screen is partly hidden behind one. The lifted cover has to respect that: it's clipped
+  // to the band BETWEEN the bars, so it slides out from under the chrome rather than popping over it.
+  // Actually drawing it beneath them isn't possible — the bars live deep inside the navigator while
+  // this is a root overlay, and z-order is a total order: the backdrop must cover the bars, the cover
+  // must be over the backdrop. Clipping is how the cover ends up behind the bars anyway.
+  //
+  // Both bars slide away on scroll, so what's on screen at press time is what clips — hence the live
+  // stores rather than constants. The band also bounds the panel + menu below, so the RESTING cover is
+  // always inside it (a popup that reached into the top bar would clip its own cover).
+  const chromeTop = Math.max(0, insets.top + useTopBarHeight() - getTopBarHidden());
+  const tabBarH = BottomTabInset + insets.bottom;
+  const hasTabBar = !useIsLargeScreen() && TAB_ROUTES.has(pathname);
+  const tabBarShown = hasTabBar ? Math.max(0, tabBarH - NATIVE_HIDE_OFFSET * getTabBarProgress()) : 0;
+  const chromeBottom = winH - tabBarShown;
+
   // ── Geometry ──────────────────────────────────────────────────────────────
   const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
-  const topLimit = insets.top + EDGE_PAD;
-  const bottomLimit = winH - insets.bottom - EDGE_PAD;
+  const topLimit = chromeTop + EDGE_PAD;
+  const bottomLimit = chromeBottom - EDGE_PAD;
   const cardCenterX = rect.x + rect.width / 2;
 
   const panelW = Math.min(winW - EDGE_PAD * 2, PANEL_MAX_WIDTH);
@@ -179,7 +221,8 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // Gate the resize spring so it only animates CONTENT-driven size changes (a skeleton swapping for
   // real content), not the one-time correction from the rough estimate to the first measured height —
   // otherwise the menu would spring down from its estimate placement on every open. Turns on a render
-  // after the first measurement, so that first correction snaps into place un-animated.
+  // after the first measurement, so that first correction snaps into place un-animated (it lands
+  // before the morph is visible anyway).
   const [resizeReady, setResizeReady] = useState(false);
   useEffect(() => {
     if (panelH != null && !resizeReady) setResizeReady(true);
@@ -191,22 +234,58 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const panelTop = groupH <= available ? clamp(rect.y, topLimit, bottomLimit - groupH) : topLimit;
   const menuTop = panelTop + effPanelH + GAP;
 
-  // Shared-element FLIP for the COVER only: it's laid out at its final slot (a top corner of the
-  // panel's top row) but animates FROM the pressed card's cover — scaled to the card's width and
-  // translated onto it, then eased to identity. Same width/height (both use coverAspect), and the
-  // radius is counter-scaled so the visual corner stays a constant 10px.
+  // Shared-element FLIP for the COVER only: it travels from the pressed card's cover (scaled to the
+  // card's width) to its resting SLOT — a top corner of the panel's top row. Same width/height at rest
+  // (both use coverAspect), and the radius is counter-scaled so the visual corner stays a constant 10px.
   //
   // The slot goes on whichever side (left/right) is nearer the pressed card, so the morph travels the
   // shortest distance — a card near the right edge lifts into a right-anchored cover instead of flying
-  // across the panel. Pure open-time geometry (from the card's rect); no per-frame cost.
+  // across the panel.
   const leftSlotX = panelLeft + PANEL_PAD;
   const rightSlotX = panelLeft + panelW - PANEL_PAD - COVER_W;
   const coverOnRight = Math.abs(rect.x - rightSlotX) < Math.abs(rect.x - leftSlotX);
   const coverSlotX = coverOnRight ? rightSlotX : leftSlotX;
   const coverSlotY = panelTop + PANEL_PAD;
   const fromScale = rect.width / COVER_W;
-  const coverDx = rect.x - coverSlotX;
-  const coverDy = rect.y - coverSlotY;
+
+  // ── Live geometry ─────────────────────────────────────────────────────────
+  // Every position above can CHANGE while the morph is already playing: the card's measured rect
+  // arrives a frame or two after the finger-point estimate the menu opens with (see
+  // `series-card-menu.tsx`), and the panel grows when the detail query swaps skeletons for real
+  // content, which pushes `panelTop` (and with it the cover's slot) up on a low card. Feeding those
+  // straight into `left`/`top` teleported the panel and the flying cover mid-flight — the first-press
+  // jump, invisible on a re-press only because the cached query + warm JS thread land the corrections
+  // on frame 0.
+  //
+  // So the panel/menu/cover are laid out at the origin and positioned purely by transform, from shared
+  // values that SPRING to a new target once the popup is up. A correction now continues the animation
+  // from wherever it is instead of cutting to the new trajectory. Before the first measurement they're
+  // written straight (same gate as `resize`), so opening is still a clean single motion.
+  const panelPos = { x: useSharedValue(panelLeft), y: useSharedValue(panelTop) };
+  const menuPos = { x: useSharedValue(menuLeft), y: useSharedValue(menuTop) };
+  const coverTo = { x: useSharedValue(coverSlotX), y: useSharedValue(coverSlotY) };
+  const coverFrom = { x: useSharedValue(rect.x), y: useSharedValue(rect.y), scale: useSharedValue(fromScale) };
+
+  // Compared against the last TARGET written, not `sv.value` — that reads the animating value, so a
+  // re-render mid-spring would look like a change and restart the spring (killing its momentum).
+  const targets = useRef<Record<string, number>>({});
+  useEffect(() => {
+    const put = (key: string, sv: SharedValue<number>, v: number) => {
+      if (targets.current[key] === v) return;
+      const first = targets.current[key] === undefined;
+      targets.current[key] = v;
+      sv.value = resizeReady && !first ? withSpring(v, MORPH_SPRING) : v;
+    };
+    put('panelX', panelPos.x, panelLeft);
+    put('panelY', panelPos.y, panelTop);
+    put('menuX', menuPos.x, menuLeft);
+    put('menuY', menuPos.y, menuTop);
+    put('coverToX', coverTo.x, coverSlotX);
+    put('coverToY', coverTo.y, coverSlotY);
+    put('coverFromX', coverFrom.x, rect.x);
+    put('coverFromY', coverFrom.y, rect.y);
+    put('coverFromScale', coverFrom.scale, fromScale);
+  });
 
   const backdropBlurProps = useAnimatedProps(() => ({
     intensity: interpolate(progress.value, [0, 0.3, 1], [0, 0, BACKDROP_BLUR]),
@@ -214,28 +293,32 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const backdropTintStyle = useAnimatedStyle(() => ({
     opacity: interpolate(progress.value, [0, 0.2, 1], [0, 0, BACKDROP_TINT_OPACITY]),
   }));
-  // The panel background + content just FADE in at their final position (no movement).
-  const panelStyle = useAnimatedStyle(() => ({ opacity: interpolate(progress.value, [0, 0.4, 1], [0, 0, 1]) }));
-  // The cover morphs from the card; stays opaque (the source card is hidden behind it).
-  const coverStyle = useAnimatedStyle(
-    () => ({
-      transform: [
-        { translateX: interpolate(progress.value, [0, 1], [coverDx, 0]) },
-        { translateY: interpolate(progress.value, [0, 1], [coverDy, 0]) },
-        { scale: interpolate(progress.value, [0, 1], [fromScale, 1]) },
-      ],
-      shadowOpacity: progress.value * 0.28,
-    }),
-    [coverDx, coverDy, fromScale],
-  );
-  const coverRadiusStyle = useAnimatedStyle(
-    () => ({ borderRadius: 10 / (fromScale + (1 - fromScale) * progress.value) }),
-    [fromScale],
-  );
+  // The panel background + content just FADE in at their final position (no movement of their own —
+  // the transform only carries the panel's live position).
+  const panelStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(progress.value, [0, 0.4, 1], [0, 0, 1]),
+    transform: [{ translateX: panelPos.x.value }, { translateY: panelPos.y.value }],
+  }));
+  // The cover morphs from the card; stays opaque (the source card is hidden behind it). Both ends of
+  // the FLIP are live, so a corrected card rect or a shifted slot bends the path instead of cutting it.
+  // Y is offset by the clip band's origin, since the cover is laid out inside it (see `coverClip`).
+  const coverStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: interpolate(progress.value, [0, 1], [coverFrom.x.value, coverTo.x.value]) },
+      { translateY: interpolate(progress.value, [0, 1], [coverFrom.y.value, coverTo.y.value]) - chromeTop },
+      { scale: interpolate(progress.value, [0, 1], [coverFrom.scale.value, 1]) },
+    ],
+    shadowOpacity: progress.value * 0.28,
+  }));
+  const coverRadiusStyle = useAnimatedStyle(() => {
+    const s = coverFrom.scale.value;
+    return { borderRadius: 10 / (s + (1 - s) * progress.value) };
+  });
   const menuStyle = useAnimatedStyle(() => ({
     opacity: progress.value,
     transform: [
-      { translateY: interpolate(progress.value, [0, 1], [-10, 0]) },
+      { translateX: menuPos.x.value },
+      { translateY: menuPos.y.value + interpolate(progress.value, [0, 1], [-10, 0]) },
       { scale: interpolate(progress.value, [0, 1], [0.9, 1]) },
     ],
   }));
@@ -295,7 +378,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       <Animated.View
         pointerEvents="box-none"
         onLayout={(e) => setPanelH(e.nativeEvent.layout.height)}
-        style={[styles.panelWrap, { left: panelLeft, top: panelTop, width: panelW }, panelStyle]}>
+        style={[styles.panelWrap, { width: panelW }, panelStyle]}>
         <Animated.View layout={resize} style={[styles.panel, { backgroundColor: theme.backgroundPanel }]}>
           <View style={[styles.topRow, coverOnRight && styles.topRowReverse]}>
             <View style={[styles.coverSlot, { width: COVER_W, height: coverH }]} />
@@ -358,20 +441,21 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
         </Animated.View>
       </Animated.View>
 
-      {/* The cover — morphs out of the card, on top of the (fading-in) panel. */}
-      <Animated.View
-        pointerEvents="none"
-        style={[styles.coverLayer, { left: coverSlotX, top: coverSlotY, width: COVER_W, height: coverH }, coverStyle]}>
-        <Animated.View style={[styles.coverInner, coverRadiusStyle]}>
-          {entry.cover ? (
-            <Image source={{ uri: entry.cover }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" />
-          ) : null}
+      {/* The cover — morphs out of the card, on top of the (fading-in) panel, clipped to the band
+          between the bars so it emerges from under the chrome instead of over it (see "Chrome band"). */}
+      <View pointerEvents="none" style={[styles.coverClip, { top: chromeTop, height: chromeBottom - chromeTop }]}>
+        <Animated.View pointerEvents="none" style={[styles.coverLayer, { width: COVER_W, height: coverH }, coverStyle]}>
+          <Animated.View style={[styles.coverInner, coverRadiusStyle]}>
+            {entry.cover ? (
+              <Image source={{ uri: entry.cover }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" />
+            ) : null}
+          </Animated.View>
         </Animated.View>
-      </Animated.View>
+      </View>
 
-      {/* The actions menu — a frosted (blurred) panel. `layout` so it eases down when the panel grows
-          (late content) instead of jumping to the new position below it. */}
-      <Animated.View layout={resize} style={[styles.menuWrap, { left: menuLeft, top: menuTop, width: menuW }, menuStyle]}>
+      {/* The actions menu — a frosted (blurred) panel. Its position springs (see `menuPos`) so it eases
+          down when the panel grows on late content instead of jumping to the new spot below it. */}
+      <Animated.View style={[styles.menuWrap, { width: menuW }, menuStyle]}>
         <BlurView tint={menuTint} intensity={MENU_BLUR} experimentalBlurMethod={ANDROID_BLUR} style={[styles.menu, { borderColor: theme.backgroundSelected }]}>
           <MenuRow
             label={inLibrary ? 'Remove from Library' : 'Add to Library'}
@@ -525,8 +609,12 @@ const styles = StyleSheet.create({
   backdropTint: {
     backgroundColor: '#000000',
   },
+  // The panel, cover and menu are all laid out at the overlay's origin and placed by an animated
+  // translate (see "Live geometry") — never by `left`/`top`, which can't animate a late correction.
   panelWrap: {
     position: 'absolute',
+    left: 0,
+    top: 0,
     borderRadius: 16,
     shadowColor: '#000000',
     shadowOpacity: 0.22,
@@ -577,9 +665,20 @@ const styles = StyleSheet.create({
   tags: {
     gap: Spacing.two,
   },
+  // Full-bleed horizontally; vertically it spans only the gap between the bars, and clips the cover to
+  // it. Transparent and non-interactive — it exists purely as the clip boundary.
+  coverClip: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    overflow: 'hidden',
+  },
   coverLayer: {
     position: 'absolute',
-    // Scale/translate about the top-left so the FLIP starts exactly on the card's cover.
+    left: 0,
+    top: 0,
+    // Scale/translate about the top-left, so the translate IS the cover's on-screen top-left corner
+    // and the FLIP starts exactly on the card's cover.
     transformOrigin: '0% 0%',
     shadowColor: '#000000',
     shadowRadius: 16,
@@ -645,6 +744,8 @@ const styles = StyleSheet.create({
   },
   menuWrap: {
     position: 'absolute',
+    left: 0,
+    top: 0,
     borderRadius: 14,
     shadowColor: '#000000',
     shadowOpacity: 0.28,

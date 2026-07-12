@@ -128,8 +128,11 @@ function useAutoHideBottomBar(enabled: boolean) {
 }
 
 // Vertical distance the mobile bar slides to clear the viewport, plus a little
-// extra so its shadow/border doesn't peek in on lower-end devices.
-const NATIVE_HIDE_OFFSET = 120;
+// extra so its shadow/border doesn't peek in on lower-end devices. Exported so
+// anything that has to know where the bar currently IS — the long-press overlay
+// clips its flying cover to the on-screen chrome — can turn the shared
+// `tab-bar-visibility` progress back into pixels.
+export const NATIVE_HIDE_OFFSET = 120;
 
 /**
  * Native only: tracks the bottom bar's hidden-ness continuously (0 shown → 1 fully
