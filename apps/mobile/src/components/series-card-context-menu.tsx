@@ -3,8 +3,8 @@ import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, BackHandler, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
-import Animated, { Easing, interpolate, runOnJS, useAnimatedProps, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import { BackHandler, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import Animated, { Easing, interpolate, LinearTransition, runOnJS, useAnimatedProps, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LegendList } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
@@ -12,8 +12,8 @@ import { useQuery } from '@tanstack/react-query';
 import { ChipRow, TagGroupRow } from '@/components/chip';
 import { CheckIcon, PlusIcon, StarIcon, type IconProps } from '@/components/icons/ui-icons';
 import { PageThumb } from '@/components/series/chapters-section';
+import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { setBrowseIntent, tagBrowseIntent } from '@/data/browse-intent';
 import type { TagGroup } from '@/data/mock';
@@ -27,6 +27,15 @@ import { clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { closeSeriesCardMenu, useSeriesCardMenu, type SeriesCardMenuRequest } from '@/lib/series-card-menu';
 
 const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
+// How the panel + menu resize/reposition when late content lands — the panel is a plain Animated.View
+// (not the ThemedView, which doesn't forward a ref) so its height can ease when async content swaps a
+// skeleton for the real thing, instead of the panel popping to its final size.
+const RESIZE = LinearTransition.duration(220).easing(Easing.out(Easing.cubic));
+
+// Last-seen count of tag rows (genres row + one per tag group), remembered across opens so the
+// loading skeleton can show a plausible number of rows instead of a fixed guess. A plain module
+// global: it's a cheap heuristic for the placeholder shape, not state anything renders off directly.
+let lastTagRowCount = 2;
 
 const EDGE_PAD = 12; // keep the whole thing off the screen edges
 const GAP = 12; // between the preview panel and the menu
@@ -95,6 +104,14 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     progress.value = withSpring(1, { damping: 16, stiffness: 170, mass: 0.8 });
   }, [progress]);
+
+  // Remember how many tag rows this kind of series carries, so the next open's skeleton is shaped
+  // closer to reality (fewer size corrections when the real tags land).
+  useEffect(() => {
+    if (!detail.data) return;
+    const rows = (detail.data.genres?.length ? 1 : 0) + (detail.data.tagGroups?.length ?? 0);
+    if (rows > 0) lastTagRowCount = rows;
+  }, [detail.data]);
 
   const finishClose = useCallback(() => {
     req.onClose?.();
@@ -237,37 +254,47 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
         pointerEvents="box-none"
         onLayout={(e) => setPanelH(e.nativeEvent.layout.height)}
         style={[styles.panelWrap, { left: panelLeft, top: panelTop, width: panelW }, panelStyle]}>
-        <ThemedView type="backgroundPanel" style={styles.panel}>
+        <Animated.View layout={RESIZE} style={[styles.panel, { backgroundColor: theme.backgroundPanel }]}>
           <View style={[styles.topRow, coverOnRight && styles.topRowReverse]}>
             <View style={[styles.coverSlot, { width: COVER_W, height: coverH }]} />
             <View style={styles.info}>
               <ThemedText style={styles.title} numberOfLines={3}>
                 {entry.title}
               </ThemedText>
-              {metaLine ? (
-                <ThemedText type="small" themeColor="textSecondary" numberOfLines={2} style={styles.meta}>
-                  {metaLine}
-                </ThemedText>
-              ) : null}
-              {detail.data?.description ? (
-                <ThemedText type="small" themeColor="textSecondary" numberOfLines={5} style={styles.desc}>
-                  {detail.data.description}
-                </ThemedText>
-              ) : null}
+              {detail.data ? (
+                <>
+                  {metaLine ? (
+                    <ThemedText type="small" themeColor="textSecondary" numberOfLines={2} style={styles.meta}>
+                      {metaLine}
+                    </ThemedText>
+                  ) : null}
+                  {detail.data.description ? (
+                    <ThemedText type="small" themeColor="textSecondary" numberOfLines={5} style={styles.desc}>
+                      {detail.data.description}
+                    </ThemedText>
+                  ) : null}
+                </>
+              ) : (
+                <InfoSkeleton />
+              )}
             </View>
           </View>
-          {detail.data?.genres?.length || detail.data?.tagGroups?.length ? (
-            <View style={styles.tags}>
-              {detail.data?.genres?.length ? <ChipRow horizontal contentInset={PANEL_PAD} labels={detail.data.genres} /> : null}
-              {detail.data?.tagGroups?.map((g) => (
-                <TagGroupRow key={g.label} group={g} horizontal contentInset={PANEL_PAD} onTagPress={(i) => onTagPress(g, i)} />
-              ))}
-            </View>
-          ) : null}
+          {detail.data ? (
+            detail.data.genres?.length || detail.data.tagGroups?.length ? (
+              <View style={styles.tags}>
+                {detail.data.genres?.length ? <ChipRow horizontal contentInset={PANEL_PAD} labels={detail.data.genres} /> : null}
+                {detail.data.tagGroups?.map((g) => (
+                  <TagGroupRow key={g.label} group={g} horizontal contentInset={PANEL_PAD} onTagPress={(i) => onTagPress(g, i)} />
+                ))}
+              </View>
+            ) : null
+          ) : (
+            <TagsSkeleton />
+          )}
           {direct ? (
             <PageRail thumbs={pageList.data?.pageThumbs} loading={pageList.isLoading} bridgeId={bridgeId} seed={entry.id} onOpenPage={openReaderAt} />
           ) : null}
-        </ThemedView>
+        </Animated.View>
       </Animated.View>
 
       {/* The cover — morphs out of the card, on top of the (fading-in) panel. */}
@@ -281,8 +308,9 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
         </Animated.View>
       </Animated.View>
 
-      {/* The actions menu — a frosted (blurred) panel. */}
-      <Animated.View style={[styles.menuWrap, { left: menuLeft, top: menuTop, width: menuW }, menuStyle]}>
+      {/* The actions menu — a frosted (blurred) panel. `layout` so it eases down when the panel grows
+          (late content) instead of jumping to the new position below it. */}
+      <Animated.View layout={RESIZE} style={[styles.menuWrap, { left: menuLeft, top: menuTop, width: menuW }, menuStyle]}>
         <BlurView tint={menuTint} intensity={MENU_BLUR} experimentalBlurMethod={ANDROID_BLUR} style={[styles.menu, { borderColor: theme.backgroundSelected }]}>
           <MenuRow
             label={inLibrary ? 'Remove from Library' : 'Add to Library'}
@@ -334,14 +362,7 @@ function PageRail({
   seed: string;
   onOpenPage: (pageIndex: number) => void;
 }) {
-  const theme = useTheme();
-  if (loading) {
-    return (
-      <View style={[styles.railLoading, { height: RAIL_THUMB_H }]}>
-        <ActivityIndicator color={theme.textSecondary} />
-      </View>
-    );
-  }
+  if (loading) return <RailSkeleton />;
   if (!thumbs || thumbs.length === 0) return null;
   // Wrap in objects so `null` thumbs never appear as raw list data (a null entry ends LegendList's
   // virtualization). The inter-tile gap lives as a per-item marginRight, since LegendList positions
@@ -355,6 +376,7 @@ function PageRail({
       recycleItems
       estimatedItemSize={RAIL_THUMB_H * DEFAULT_THUMB_ASPECT + RAIL_GAP}
       showsHorizontalScrollIndicator={false}
+      style={styles.railList}
       contentContainerStyle={styles.rail}
       renderItem={({ item }) => (
         <View style={styles.railItem}>
@@ -372,6 +394,55 @@ function PageRail({
         </View>
       )}
     />
+  );
+}
+
+// ── Loading skeletons ────────────────────────────────────────────────────────
+// Shown while `detail` / `pageList` fetch, so the panel opens at roughly its final size (title is
+// already known synchronously) and the swap to real content is a small, animated size change rather
+// than a jarring pop-in. Shapes mirror the real elements: a meta line, a few description lines, a
+// remembered number of tag rows (`lastTagRowCount`), and a rail of page-sized tiles.
+
+const SKELETON_CHIP_WIDTHS = [56, 44, 72, 38, 60, 50];
+const RAIL_SKELETON_W = Math.round(RAIL_THUMB_H * DEFAULT_THUMB_ASPECT);
+
+/** Meta line + description placeholder inside the info column. */
+function InfoSkeleton() {
+  return (
+    <>
+      <Skeleton style={styles.metaSkeleton} />
+      <View style={styles.descSkeleton}>
+        <Skeleton style={styles.descLine} />
+        <Skeleton style={styles.descLine} />
+        <Skeleton style={[styles.descLine, styles.descLineShort]} />
+      </View>
+    </>
+  );
+}
+
+/** `lastTagRowCount` full-bleed rows of pill placeholders (offset per row so they don't look like a grid). */
+function TagsSkeleton() {
+  return (
+    <View style={styles.tags}>
+      {Array.from({ length: lastTagRowCount }).map((_, row) => (
+        <View key={row} style={styles.tagRowSkeleton}>
+          {SKELETON_CHIP_WIDTHS.slice(row % 2, row % 2 + 5).map((w, i) => (
+            <Skeleton key={i} style={[styles.chipSkeleton, { width: w }]} />
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/** A short run of page-sized tiles filling the rail's height. */
+function RailSkeleton() {
+  return (
+    <View style={styles.railSkeleton}>
+      {[0, 1, 2, 3, 4].map((i) => (
+        <Skeleton key={i} style={styles.railSkeletonTile} />
+      ))}
+    </View>
   );
 }
 
@@ -468,12 +539,12 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: 'rgba(128,128,128,0.2)',
   },
-  railLoading: {
-    alignItems: 'center',
-    justifyContent: 'center',
+  // The list is exactly one tile tall, so no stray vertical padding pushes the tile past the viewport
+  // and clips its bottom edge (the panel's own `gap` already spaces the rail from the tags above).
+  railList: {
+    height: RAIL_THUMB_H,
   },
   rail: {
-    paddingTop: Spacing.one,
     // Leading inset so the first tile rests off the panel edge, while the list viewport itself spans
     // full-bleed (content scrolls all the way to the rounded edge instead of clipping at an inset).
     paddingLeft: PANEL_PAD,
@@ -483,6 +554,43 @@ const styles = StyleSheet.create({
     // the tile rounds and clips itself.
     height: RAIL_THUMB_H,
     marginRight: RAIL_GAP,
+  },
+  metaSkeleton: {
+    height: 13,
+    width: '70%',
+    borderRadius: 4,
+  },
+  descSkeleton: {
+    marginTop: Spacing.one,
+    gap: 6,
+  },
+  descLine: {
+    height: 11,
+    borderRadius: 4,
+  },
+  descLineShort: {
+    width: '55%',
+  },
+  tagRowSkeleton: {
+    flexDirection: 'row',
+    gap: Spacing.one,
+    paddingLeft: PANEL_PAD,
+  },
+  chipSkeleton: {
+    height: 24,
+    borderRadius: 999,
+  },
+  railSkeleton: {
+    flexDirection: 'row',
+    gap: RAIL_GAP,
+    height: RAIL_THUMB_H,
+    paddingLeft: PANEL_PAD,
+    overflow: 'hidden',
+  },
+  railSkeletonTile: {
+    height: RAIL_THUMB_H,
+    width: RAIL_SKELETON_W,
+    borderRadius: 8,
   },
   menuWrap: {
     position: 'absolute',
