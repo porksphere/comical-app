@@ -15,7 +15,7 @@ import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar, useTopBarInset } from '@/components/top-bar';
-import { MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { BarContentGap, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { setSearchIntent, tagSearchIntent } from '@/data/search-intent';
 import { historyQuery, relatedGroupsQuery, seriesDetailQuery, seriesListQuery } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
@@ -156,7 +156,7 @@ export default function SeriesScreen() {
   const scrollFallback = (child: ReactNode) => (
     <ScrollView
       // The TopBar overlays the screen, so content pads past it and scrolls under its frost.
-      contentContainerStyle={[styles.scroll, { paddingTop: topBarInset, paddingBottom: insets.bottom + Spacing.five }]}
+      contentContainerStyle={[styles.scroll, { paddingTop: topBarInset + BarContentGap, paddingBottom: insets.bottom + Spacing.five }]}
       showsVerticalScrollIndicator={false}>
       <View style={styles.column}>{child}</View>
     </ScrollView>
@@ -610,7 +610,7 @@ function SeriesBody({
 
   return (
     <ScrollView
-      contentContainerStyle={[styles.scroll, { paddingTop: topBarInset, paddingBottom: insets.bottom + Spacing.five }]}
+      contentContainerStyle={[styles.scroll, { paddingTop: topBarInset + BarContentGap, paddingBottom: insets.bottom + Spacing.five }]}
       showsVerticalScrollIndicator={false}>
       <View style={styles.column}>
         <View style={styles.inner}>{heroBlock}</View>

@@ -18,7 +18,7 @@ import { ArrowDownIcon, ArrowUpIcon } from '@/components/icons/ui-icons';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { BarContentGap, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
 import { resolveAssetSourceCached } from '@/data/api';
@@ -609,7 +609,7 @@ export function PageThumbList({
       estimatedItemSize={tileW * (3 / 2) + gap}
       columnWrapperStyle={{ gap }}
       contentContainerStyle={{
-        paddingTop: Spacing.four + topInset,
+        paddingTop: BarContentGap + topInset,
         paddingBottom: insets.bottom + Spacing.five,
         paddingLeft: sidePad,
         paddingRight: sidePad,

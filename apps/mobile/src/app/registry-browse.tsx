@@ -8,7 +8,7 @@ import { SettingsRow, SettingsSection } from '@/components/settings/settings-row
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar, useTopBarInset } from '@/components/top-bar';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { BarContentGap, BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import type { AvailableBridge, AvailableTracker } from '@/data/api';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { queryKeys } from '@/data/queries';
@@ -50,7 +50,7 @@ export default function RegistryBrowseScreen() {
         contentContainerStyle={[
           styles.content,
           // The TopBar is an absolute overlay, so the content pads past it (and scrolls under its frost).
-          { paddingTop: topBarInset + Spacing.four, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
+          { paddingTop: topBarInset + BarContentGap, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
         ]}>
         <ThemedText type="small" themeColor="textSecondary">
           {url}
