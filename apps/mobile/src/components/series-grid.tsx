@@ -10,6 +10,14 @@ import { BottomTabInset, Spacing } from '@/constants/theme';
 import type { SeriesEntry } from '@/data/types';
 import { GRID_COLUMN_GAP, padWithSpacers, useGridLayout } from '@/hooks/use-grid-layout';
 
+// A cell reserves the inter-row space itself (LegendList ignores vertical `gap` — items are absolutely
+// positioned). Split top/bottom rather than all-bottom because LegendList's web row container is
+// `contain: paint`, which would clip a card's hover-lift if it were flush to the row's top edge. These
+// feed both `styles.cell`'s padding AND the fixed `cellHeight` below, so the two never drift.
+const CELL_PAD_TOP = Spacing.one;
+const CELL_PAD_BOTTOM = Spacing.three - Spacing.one;
+const CELL_ROW_GAP = CELL_PAD_TOP + CELL_PAD_BOTTOM;
+
 /**
  * A cell in a series grid. `spacer` cells pad a short final row so real cards keep their column
  * width. The bridge fields are per-item OVERRIDES of the grid-level `bridge`/`bridgeId`/`direct`
@@ -92,6 +100,16 @@ export function SeriesGrid({
 }) {
   const { numColumns, sidePad, cardWidth } = useGridLayout();
 
+  // FIXED row height — this is the fix for the release profile's #1 JS cost. Every cell is forced to
+  // the SAME height (worst-case card content = 3-line title + sub, via `estimatedCardHeight`, plus the
+  // cell's own vertical padding `CELL_ROW_GAP`). With every row identical AND matching
+  // `estimatedItemSize` exactly, LegendList never re-measures a row on scroll — so no `set$` /
+  // `updateItemSizes` churn, no `batchedUpdates` re-render, and the `propagateParentContextChanges`
+  // walk (20% of release busy time) + a chunk of GC collapse. Cards shorter than the worst case (1–2
+  // line titles, no sub) just get a little empty space at the bottom; the cover's real aspect and the
+  // title hugging it are unchanged.
+  const cellHeight = estimatedCardHeight(cardWidth) + CELL_ROW_GAP;
+
   const data = useMemo(
     () => padWithSpacers<SeriesGridItem>(items, numColumns, (id) => ({ id, title: '', cover: '', spacer: true })),
     [items, numColumns],
@@ -130,11 +148,11 @@ export function SeriesGrid({
         // `maxScrollY` in sync, and to drive the tab-bar auto-hide.
         onScroll={onScroll}
         data={data}
-        estimatedItemSize={estimatedCardHeight(cardWidth)}
-        // `estimatedItemSize` is a deliberately rough hint (worst-case 3-line titles), so measured rows
-        // routinely differ from it. LegendList's default `maintainVisibleContentPosition` (size:true)
-        // reacts by retro-correcting the scroll offset — a visible bounce/jitter while flinging. Turn
-        // it off so positions settle once measured instead of nudging the offset.
+        // EXACT, not a hint: every cell is pinned to `cellHeight` below, so this matches every measured
+        // row and LegendList never re-anchors or re-measures on scroll (see `cellHeight`).
+        estimatedItemSize={cellHeight}
+        // Belt-and-suspenders: don't retro-correct the offset from size measurements (there shouldn't
+        // be any now that rows are fixed) — a visible bounce/jitter while flinging otherwise.
         maintainVisibleContentPosition={{ data: false, size: false }}
         keyExtractor={(item) => String(item.id)}
         numColumns={numColumns}
@@ -162,9 +180,9 @@ export function SeriesGrid({
         }}
         renderItem={({ item }) =>
           item.spacer ? (
-            <View style={styles.cell} />
+            <View style={[styles.cell, { height: cellHeight }]} />
           ) : (
-            <View style={styles.cell}>
+            <View style={[styles.cell, { height: cellHeight }]}>
               <SeriesCard
                 entry={item}
                 bridge={item.bridge ?? bridge}
@@ -199,12 +217,11 @@ const styles = StyleSheet.create({
   },
   cell: {
     flex: 1,
-    // Row gap lives here: LegendList ignores contentContainerStyle `gap` vertically (items are
-    // absolutely positioned), so each cell reserves the inter-row space itself. It's split across
-    // top+bottom (4 + 12 = the same 16 between rows) rather than all on the bottom, because
-    // LegendList's web row container is `contain: paint` — a card flush to the row's top edge has its
-    // hover-lift clipped.
-    paddingTop: Spacing.one,
-    paddingBottom: Spacing.three - Spacing.one,
+    // Inter-row spacing (see CELL_PAD_TOP/BOTTOM above, shared with the fixed cellHeight so they can't
+    // drift). `justifyContent: flex-start` so a card shorter than the fixed cell top-aligns, leaving
+    // any extra space at the BOTTOM (below the title) — the cover + title-hugging stay put.
+    justifyContent: 'flex-start',
+    paddingTop: CELL_PAD_TOP,
+    paddingBottom: CELL_PAD_BOTTOM,
   },
 });
