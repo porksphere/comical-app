@@ -62,10 +62,12 @@ const MORPH_SPRING = { damping: 16, stiffness: 170, mass: 0.8 } as const;
 // stiffness are raised TOGETHER, which keeps the damping ratio (the size of the overshoot — the
 // springy part) while doubling the decay rate, and decay is what actually sets how long it lingers.
 const CLOSE_SPRING = { damping: 28, stiffness: 660, mass: 0.7 } as const;
-// The resize settling after you let go — the one that genuinely was lifeless. Bouncier than the morph
-// (ζ ≈ 0.49, against the morph's 0.69) and quick with it: your thumb just threw this, so it should
-// land like a thing with weight rather than glide to a halt.
-const RESIZE_SPRING = { damping: 16, stiffness: 300, mass: 0.9 } as const;
+// The resize settling after you let go. The first attempt at this was ζ ≈ 0.49 and stiff, which was
+// far too much: swapping between the preview and the menu is NAVIGATION, not a flourish, and it
+// snapped and wobbled. Softer (ζ ≈ 0.78 — it eases past the end just enough to feel physical, without
+// bouncing about) and noticeably slower to settle. A big travelling movement wants to be calmer than a
+// small one, not more excitable.
+const RESIZE_SPRING = { damping: 20, stiffness: 150, mass: 1.1 } as const;
 
 // The routes that show the bottom tab bar (a pushed screen — series, search — covers it). Used to
 // decide whether the bottom of the screen is chrome the cover has to slide under.
@@ -120,6 +122,10 @@ const RUBBER_RESIST = 0.25; // how much of the extra pull actually moves anythin
 const RUBBER_LIMIT = 0.06; // and how far it can go, in range units
 // How far ahead a fling is projected when deciding which end of the range to spring to.
 const FLING_PROJECTION = 0.12; // seconds
+// Where the expanded panel sits in the band: the fraction of the LEFTOVER space that goes ABOVE it.
+// 0.5 would centre it; 2/3 drops it lower, which reads better (nearer the thumb, and the space it
+// leaves below is where the menu lives).
+const EXPANDED_BIAS = 2 / 3;
 // Blur strengths (0–100). The backdrop ramps in a bit after the cover pops.
 const BACKDROP_BLUR = 28;
 const MENU_BLUR = 55;
@@ -317,8 +323,9 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // meant that at full size the panel and menu were jammed against the top edge with all the slack
   // dumped below — the popup looked shoved up out of the way rather than presented.
   //
-  //   expanded  → the panel sits CENTRED in the band. It's the thing you're looking at; give it the
-  //               room. The menu hangs below it, off the bottom if it must, one swipe away.
+  //   expanded  → the panel sits LOW in the band — most of the leftover space goes above it (see
+  //               EXPANDED_BIAS), so it lands about two thirds down rather than dead centre. It's
+  //               nearer the thumb, and it leaves the room it needs below for the menu it's hiding.
   //   collapsed → the panel rides up only as far as it has to for the group (panel + gap + menu) to
   //               land exactly on the bottom limit — i.e. the menu is fully visible and nothing is
   //               wasted, but the panel is no higher than it needs to be.
@@ -327,7 +334,11 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // it, which is what makes the resize read as one movement rather than a scale plus a jump.
   const panelHAtMax = naturalPanelH * maxScale;
   const panelHAtMin = naturalPanelH * minScale;
-  const topAtMax = clamp(topLimit + (available - panelHAtMax) / 2, topLimit, bottomLimit - panelHAtMax);
+  const topAtMax = clamp(
+    topLimit + (available - panelHAtMax) * EXPANDED_BIAS,
+    topLimit,
+    bottomLimit - panelHAtMax,
+  );
   // Deliberately NOT clamped to `topLimit`: a menu so long that it can't fit even with the panel at its
   // minimum scale (the floor exists so the preview never becomes a postage stamp) would otherwise leave
   // its last rows below the bottom edge with no swipe left to reach them — the collapsed end IS the end
