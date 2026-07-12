@@ -3,27 +3,33 @@
 type Scheme = 'light' | 'dark';
 
 /**
- * A colour per tag GROUP, stable across series and guaranteed distinct within one.
+ * A colour per tag GROUP: the same hue for a group on every series, and never two groups sharing one
+ * within a series.
  *
- * Groups are the only thing that says what kind of tag you're looking at ("Artist", "Character",
- * "Parody"…), and the series page spends a whole labelled row per group to say so. The card popup
- * can't afford those rows, so it folds every group into one strip and lets COLOUR carry the grouping
- * instead (see `TagStrip`). That only works if it's the same colour the series page shows — hence one
- * shared source of truth, used by both.
+ * Groups are the only thing that says what kind of tag you're looking at ("Artists", "Characters",
+ * "Parodies"…). The series page spends a labelled row per group to say so; the card popup can't
+ * afford those rows, so it folds every group into one strip and lets COLOUR carry the grouping (see
+ * `TagStrip`). That only works if it's the same colour the series page shows — hence one shared
+ * source of truth, used by both.
  *
- * Two properties, and they pull against each other:
+ * ── Why known labels get RESERVED slots ──────────────────────────────────────
+ * Hashing the label alone gives stability but not distinctness: with a handful of hues, real labels
+ * collide (measured: "Misc" and "Male Tags" want the same hue), and a strip whose Artists and Misc
+ * chips are the same colour distinguishes nothing.
  *
- *   STABLE   — "Artist" should look the same on every series and every bridge, so the colour is
- *              derived by hashing the label. Nothing to fetch, store, or keep in sync, and a bridge
- *              can invent any group it likes and still get a sensible colour.
- *   DISTINCT — within ONE series, two groups must never share a colour, or the strip stops
- *              distinguishing anything. Hashing alone doesn't give you this: on real data
- *              (artist/character/parody/group/language/female/male/mixed…) several labels collide on
- *              the same hue no matter how good the mixer is — the birthday problem, with 8 buckets.
+ * Resolving that by probing to the next free hue then breaks stability in a subtler way, and this is
+ * the trap worth naming: whether a group collides depends on which OTHER groups that series happens
+ * to carry. A source emits a group only when the series has such tags — plenty have no "Male Tags" —
+ * so "Misc" would render fuchsia on one series and amber on the next, purely because a group it never
+ * had anything to do with was absent. Colour that moves means nothing.
  *
- * So: hash first, then resolve collisions by probing to the next free hue, in the series' own group
- * order. Groups keep their natural colour in the common case, and a clash only shifts the LATER
- * group. Deterministic either way — the same series always renders the same colours.
+ * So the vocabulary the sources actually emit gets a HAND-ASSIGNED slot each, distinct by
+ * construction. No collision, nothing to probe, and a group's colour cannot depend on its neighbours.
+ * Only an unrecognized label falls back to hash-and-probe — it can still shift, but it's the tail
+ * case, and it can only be displaced by a group that's genuinely present.
+ *
+ * Slots may be REUSED across sources that never co-occur (one series has one source's groups), which
+ * is why "Theme"/"Format" style labels don't need their own reservation.
  *
  * The palette is hand-picked rather than a hue rotation: evenly-spaced HSL produces muddy
  * yellow-greens, and each entry needs its own light/dark value (a colour legible on a white panel is
@@ -36,24 +42,60 @@ export type TagColor = {
   border: string;
 };
 
-// Deliberately no blue: `theme.accent` is blue, and a blue chip reads as "primary action".
+// Deliberately NO BLUE: `theme.accent` is blue, and a blue chip reads as "primary action".
 const PALETTE: { light: string; dark: string }[] = [
-  { light: '#0E7490', dark: '#67E8F9' }, // teal
-  { light: '#6D28D9', dark: '#C4B5FD' }, // violet
-  { light: '#BE123C', dark: '#FDA4AF' }, // rose
-  { light: '#B45309', dark: '#FCD34D' }, // amber
-  { light: '#15803D', dark: '#86EFAC' }, // green
-  { light: '#A21CAF', dark: '#F0ABFC' }, // fuchsia
-  { light: '#C2410C', dark: '#FDBA74' }, // orange
-  { light: '#4338CA', dark: '#A5B4FC' }, // indigo
+  { light: '#0E7490', dark: '#67E8F9' }, // 0 teal
+  { light: '#6D28D9', dark: '#C4B5FD' }, // 1 violet
+  { light: '#BE123C', dark: '#FDA4AF' }, // 2 rose
+  { light: '#B45309', dark: '#FCD34D' }, // 3 amber
+  { light: '#15803D', dark: '#86EFAC' }, // 4 green
+  { light: '#A21CAF', dark: '#F0ABFC' }, // 5 fuchsia
+  { light: '#C2410C', dark: '#FDBA74' }, // 6 orange
+  { light: '#4D7C0F', dark: '#BEF264' }, // 7 lime
+  { light: '#7C2D12', dark: '#E7B49A' }, // 8 sienna
+  { light: '#475569', dark: '#CBD5E1' }, // 9 slate — near-neutral, which suits a catch-all group
 ];
+
+/**
+ * The group labels the sources actually emit, each pinned to its own hue so its colour never depends
+ * on which other groups a series carries. Singular/plural and the "… Tags" suffix are both in here
+ * rather than stemmed: sources word these differently ("Male Tags", "male"), and a lookup table is
+ * easier to audit than a stemmer that has to get "Parodies" → "parody" right.
+ *
+ * Adding a source with new group labels? Give its labels slots here if they can co-occur; otherwise
+ * the hash fallback handles them. Reusing a slot across sources is fine — two labels only need
+ * different hues if they can appear on the SAME series.
+ */
+const RESERVED: Record<string, number> = {
+  artist: 0,
+  artists: 0,
+  group: 1,
+  groups: 1,
+  parody: 2,
+  parodies: 2,
+  character: 3,
+  characters: 3,
+  female: 4,
+  'female tags': 4,
+  male: 5,
+  'male tags': 5,
+  tag: 6,
+  tags: 6,
+  language: 7,
+  languages: 7,
+  demographic: 8,
+  demographics: 8,
+  misc: 9,
+  other: 9,
+  others: 9,
+};
 
 /** Border alpha, as an #RRGGBB**AA** suffix: the hue, present but not shouting, over `theme.chipBg`. */
 const BORDER_ALPHA = '66';
 
 /** FNV-1a plus a murmur3 avalanche finalizer. The finalizer is the point: raw FNV over short, similar
- *  words ("Male", "Mixed", "Tags") clusters badly — measured, it put 7 of 15 real group labels on one
- *  hue — and mixing the bits scatters them properly before the modulo. */
+ *  words clusters badly — measured, it put 7 of 15 real labels on one hue — and mixing the bits
+ *  scatters them before the modulo. Only unreserved labels reach this. */
 function hash(s: string): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < s.length; i++) {
@@ -68,31 +110,32 @@ function hash(s: string): number {
   return h >>> 0;
 }
 
-function toColor(index: number, scheme: Scheme): TagColor {
-  const entry = PALETTE[index % PALETTE.length]!;
+function toColor(slot: number, scheme: Scheme): TagColor {
+  const entry = PALETTE[slot % PALETTE.length]!;
   const base = scheme === 'dark' ? entry.dark : entry.light;
   return { text: base, border: `${base}${BORDER_ALPHA}` };
 }
 
 /**
- * One colour per group, index-parallel to `labels` — pass a series' whole group list, not one label,
- * because avoiding collisions is a property of the SET (see above).
- *
- * Matching is case/whitespace-insensitive, so "Artist" and "artist " — which different bridges will
- * absolutely both emit — land on the same hue. More groups than hues (>8) is the one case where two
- * must share: the palette wraps, and that's fine, since a series with nine tag groups has bigger
- * legibility problems than colour reuse.
+ * One colour per group, index-parallel to `labels`. Takes the series' whole group list because
+ * avoiding collisions among UNRESERVED labels is a property of the set (see above) — reserved ones
+ * would give the same answer alone.
  */
 export function tagPaletteFor(labels: string[], scheme: Scheme): TagColor[] {
-  const taken = new Set<number>();
-  return labels.map((label) => {
-    let i = hash(label.trim().toLowerCase()) % PALETTE.length;
-    // Probe to the next free hue on a clash — only until every hue is spoken for, after which reuse
-    // is unavoidable and we just take the natural one.
-    for (let probe = 0; probe < PALETTE.length && taken.has(i); probe++) {
-      i = (i + 1) % PALETTE.length;
+  const key = (l: string) => l.trim().toLowerCase();
+  const slots: (number | undefined)[] = labels.map((l) => RESERVED[key(l)]);
+  // Reserved slots are claimed FIRST — including by groups later in the list — so an unknown label
+  // can never squat on a hue a known group is entitled to.
+  const taken = new Set<number>(slots.filter((s): s is number => s !== undefined));
+
+  return labels.map((label, i) => {
+    const reserved = slots[i];
+    if (reserved !== undefined) return toColor(reserved, scheme);
+    let slot = hash(key(label)) % PALETTE.length;
+    for (let probe = 0; probe < PALETTE.length && taken.has(slot); probe++) {
+      slot = (slot + 1) % PALETTE.length;
     }
-    taken.add(i);
-    return toColor(i, scheme);
+    taken.add(slot);
+    return toColor(slot, scheme);
   });
 }
