@@ -43,6 +43,7 @@ import {
   closeSeriesCardMenu,
   commitHoveredRow,
   holdActive,
+  holdArmed,
   holdX,
   holdY,
   hoveredRow,
@@ -188,7 +189,7 @@ if (__DEV__ && Platform.OS === 'web') {
   // The peek-and-commit channel, so the hit-test/highlight/commit can be driven from a browser too.
   // On web the CARD never writes these (web cards use the 3-dot affordance and never long-press), so
   // this is the only way to exercise them outside a device.
-  g.__seriesCardMenuHold = { holdActive, holdX, holdY, hoveredRow, commitHoveredRow };
+  g.__seriesCardMenuHold = { holdActive, holdArmed, holdX, holdY, hoveredRow, commitHoveredRow };
 }
 
 export function SeriesCardContextMenuHost() {
@@ -827,7 +828,9 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // do. Off the TOP (into the preview) or below the last row still selects nothing.
   useAnimatedReaction(
     () => {
-      if (!holdActive.value) return -1;
+      // Not armed = you haven't reached for anything yet, so nothing is selected — which is what stops
+      // a plain hold-and-release from running whatever row happened to be under your thumb.
+      if (!holdActive.value || !holdArmed.value) return -1;
       const scale = minS.value + expand.value * (maxS.value - minS.value);
       const top = topMin.value + expand.value * (topMax.value - topMin.value);
       const menuTop = top + naturalH.value * scale + GAP;

@@ -1,12 +1,14 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View, type GestureResponderEvent } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { runOnJS } from 'react-native-reanimated';
+import { runOnJS, useSharedValue } from 'react-native-reanimated';
 
 import type { SeriesEntry } from '@/data/types';
 import {
   commitHoveredRow,
+  HOLD_ARM_DISTANCE,
   holdActive,
+  holdArmed,
   holdX,
   holdY,
   hoveredRow,
@@ -44,6 +46,10 @@ export type SeriesCardMenuProps = {
 
 export function SeriesCardMenu({ enabled, bridgeId, bridge, entry, direct, coverAspect, children }: SeriesCardMenuProps) {
   const anchorRef = useRef<View>(null);
+  // Where the hold began — the arming distance is measured from here (see `holdArmed`). Shared values,
+  // because the gesture's worklets are the only thing that reads or writes them.
+  const holdOriginX = useSharedValue(0);
+  const holdOriginY = useSharedValue(0);
   // Hide THIS card while its menu is open so it doesn't show in the grid behind the lifted preview.
   // Local state → only this card re-renders (twice: open, close); no global store, nothing added to
   // any other card's scroll path. The menu carries `onClose` to flip it back.
@@ -90,6 +96,11 @@ export function SeriesCardMenu({ enabled, bridgeId, bridge, entry, direct, cover
         .enabled(enabled && !!bridgeId)
         .onStart((e) => {
           holdActive.value = true;
+          // Dormant until the finger travels — see `holdArmed`. A hold you never moved selects nothing,
+          // so opening the menu just to look at it and letting go can't run an action by accident.
+          holdArmed.value = false;
+          holdOriginX.value = e.absoluteX;
+          holdOriginY.value = e.absoluteY;
           holdX.value = e.absoluteX;
           holdY.value = e.absoluteY;
           hoveredRow.value = -1;
@@ -99,12 +110,19 @@ export function SeriesCardMenu({ enabled, bridgeId, bridge, entry, direct, cover
           // Keep reporting while the finger is still down; the popup hit-tests its rows against this.
           holdX.value = e.absoluteX;
           holdY.value = e.absoluteY;
+          if (!holdArmed.value) {
+            const dx = e.absoluteX - holdOriginX.value;
+            const dy = e.absoluteY - holdOriginY.value;
+            // Latches on: past this point jitter can't disarm you mid-pick.
+            if (Math.hypot(dx, dy) > HOLD_ARM_DISTANCE) holdArmed.value = true;
+          }
         })
         .onEnd(() => {
-          // Lift = commit whatever the finger was over. Nothing under it (you slid off, or never
-          // moved) simply leaves the menu open, which is what the iOS one does.
+          // Lift = commit whatever the finger was over. Nothing under it (you never moved, or you slid
+          // off) simply leaves the menu open, which is what the iOS one does.
           const row = hoveredRow.value;
           holdActive.value = false;
+          holdArmed.value = false;
           hoveredRow.value = -1;
           if (row >= 0) runOnJS(commitHoveredRow)(row);
         })
@@ -112,9 +130,10 @@ export function SeriesCardMenu({ enabled, bridgeId, bridge, entry, direct, cover
           // Cancelled rather than ended (an interrupting touch, a navigation): drop the hold, don't
           // run anything.
           holdActive.value = false;
+          holdArmed.value = false;
           hoveredRow.value = -1;
         }),
-    [enabled, bridgeId, openMenuAt],
+    [enabled, bridgeId, openMenuAt, holdOriginX, holdOriginY],
   );
 
   return (

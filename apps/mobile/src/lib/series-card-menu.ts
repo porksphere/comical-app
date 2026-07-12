@@ -72,6 +72,19 @@ export function useSeriesCardMenu(): SeriesCardMenuRequest | null {
 export const holdActive = makeMutable(false);
 export const holdX = makeMutable(0);
 export const holdY = makeMutable(0);
+/**
+ * Whether the hold has MOVED enough to be picking something.
+ *
+ * Selection stays dormant until the finger has actually travelled (see HOLD_ARM_DISTANCE). Without
+ * this, a plain long-press-and-release — the way you open the menu just to look at it — lifts over
+ * whatever row happened to be under your thumb and runs it. You'd have chosen something by doing
+ * nothing. Arming on movement means picking a row is always a deliberate act: you have to reach for it.
+ *
+ * Latching, not a live test: once you've reached, small jitter mustn't disarm you mid-pick.
+ */
+export const holdArmed = makeMutable(false);
+/** How far the held finger must travel before it starts selecting anything (px). */
+export const HOLD_ARM_DISTANCE = 16;
 /** Index of the menu row the held finger is currently over, or -1. Written by the popup. */
 export const hoveredRow = makeMutable(-1);
 
