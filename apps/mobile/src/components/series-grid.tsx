@@ -148,6 +148,13 @@ export function SeriesGrid({
         // centering come from contentContainerStyle's paddingLeft/Right (= sidePad).
         columnWrapperStyle={numColumns > 1 ? { gap: GRID_COLUMN_GAP } : undefined}
         contentContainerStyle={{
+          // Fill the viewport even when the items don't. Without this the scrollable content ends at
+          // the last row, so the empty space below it belongs to nothing: a drag started down there
+          // isn't on the scroller and does nothing — you have to start the gesture ON a card to
+          // scroll or to pull the list. With flexGrow the content always spans the full height, so
+          // the whole screen is draggable (and the overscroll stretch/pull-to-refresh can be started
+          // anywhere), regardless of how few items there are.
+          flexGrow: 1,
           paddingTop,
           paddingBottom: paddingBottom ?? BottomTabInset + Spacing.five,
           paddingLeft: sidePad,

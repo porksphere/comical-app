@@ -91,7 +91,9 @@ export default function SettingsScreen() {
         scrollEventThrottle={16}
         contentContainerStyle={[
           styles.content,
-          { paddingTop: headerHeight + BarContentGap, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
+          // flexGrow: fill the viewport even when the sections are short, so the space below them is
+          // still draggable (see SeriesGrid's note).
+          { flexGrow: 1, paddingTop: headerHeight + BarContentGap, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
         ]}>
         <GeneralSection />
         <BridgesSection />
