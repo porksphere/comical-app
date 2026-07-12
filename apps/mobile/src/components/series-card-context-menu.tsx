@@ -2,18 +2,20 @@ import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
 import { usePathname, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import Animated, {
+  cancelAnimation,
   interpolate,
-  LinearTransition,
   runOnJS,
   useAnimatedProps,
   useAnimatedStyle,
   useSharedValue,
+  withDecay,
   withSpring,
   type SharedValue,
 } from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LegendList } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
@@ -36,7 +38,7 @@ import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
 import { useStartReading } from '@/hooks/use-start-reading';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
-import { closeSeriesCardMenu, useSeriesCardMenu, type SeriesCardMenuRequest } from '@/lib/series-card-menu';
+import { closeSeriesCardMenu, openSeriesCardMenu, useSeriesCardMenu, type SeriesCardMenuRequest } from '@/lib/series-card-menu';
 import { getTabBarProgress } from '@/lib/tab-bar-visibility';
 import { getTopBarHidden } from '@/lib/top-bar-visibility';
 
@@ -50,11 +52,6 @@ const MORPH_SPRING = { damping: 16, stiffness: 170, mass: 0.8 } as const;
 // overshoot at the end, the springy part — while doubling the decay rate (damping / 2·mass), which is
 // what actually sets how long the motion takes to die out. Bouncy, just less lingering.
 const CLOSE_SPRING = { damping: 28, stiffness: 660, mass: 0.7 } as const;
-// How the panel RESIZES when late content lands — it's a plain Animated.View (not the ThemedView,
-// which doesn't forward a ref) so its height can spring when async content swaps a skeleton for the
-// real thing, instead of popping to its final size. Everything's POSITION springs separately, through
-// the shared values in "Live geometry" below.
-const RESIZE = LinearTransition.springify().damping(MORPH_SPRING.damping).stiffness(MORPH_SPRING.stiffness).mass(MORPH_SPRING.mass);
 
 // The routes that show the bottom tab bar (a pushed screen — series, search — covers it). Used to
 // decide whether the bottom of the screen is chrome the cover has to slide under.
@@ -80,10 +77,28 @@ const DESC_H = DESC_LINES * SMALL_LINE_H;
 const PANEL_HEIGHT_ESTIMATE = 190;
 const MENU_WIDTH = 240;
 const ROW_HEIGHT = 48;
-// Read + Add to Library + Favorite. Keep in step with the rows rendered below — the menu is placed
-// from this height (it's what `panelTop`'s bottom-edge clamp budgets for), not measured.
-const MENU_ROWS = 3;
 const MENU_PAD_V = Spacing.one;
+// Read + Add to Library + Favorite. Keep in step with the rows rendered below — the menu's height is
+// computed from this (it's what the panel's resize range budgets for), not measured.
+const MENU_ROWS = 3;
+// DEV ONLY: pad the menu out with dummy rows, to exercise the case the pan gesture exists for — a
+// group too tall for the screen, where the panel has to give up height for the menu to be reachable.
+// Set to 0 to see the real menu. Never on in a release build.
+const DEBUG_EXTRA_MENU_ROWS = __DEV__ ? 8 : 0;
+
+// ── Pan / resize ─────────────────────────────────────────────────────────────
+// The panel never shrinks below this, however tall the menu gets — a preview with no preview in it is
+// worse than a menu you have to scroll to.
+const MIN_PANEL_H = 120;
+// Drag past either end of the panel's resize range and the popup starts CLOSING with the finger: this
+// is how far you'd have to pull to take it all the way back onto the card (progress 1 → 0). It reuses
+// the open morph, so a drag-dismiss IS the shared-element animation running backwards under your
+// thumb — nothing new to look at, just driven by you instead of a spring.
+const DISMISS_DRAG = 220;
+// Release past this much overscroll (or with this much velocity) and it dismisses rather than settling
+// back — the usual "did they mean it" test, deliberately forgiving.
+const DISMISS_RELEASE_PX = 64;
+const DISMISS_RELEASE_VELOCITY = 900;
 // Blur strengths (0–100). The backdrop ramps in a bit after the cover pops.
 const BACKDROP_BLUR = 28;
 const MENU_BLUR = 55;
@@ -101,6 +116,14 @@ const ANDROID_BLUR = Platform.OS === 'android' ? ('dimezisBlurView' as const) : 
  * Animation is a shared-element: the COVER morphs precisely out of the pressed card (FLIP), while the
  * panel background + its content (title/info/rail) just fade in at the final position around it.
  */
+// DEV + WEB only: a handle to open this from a browser, where the long-press path doesn't exist (web
+// cards use the hover 3-dot affordance instead — see series-card-menu.web.tsx). Without it the popup
+// is unreachable outside a device, which makes its gesture behaviour untestable in a browser.
+// Stripped from any release build, and from native entirely.
+if (__DEV__ && Platform.OS === 'web') {
+  (globalThis as { __openSeriesCardMenu?: typeof openSeriesCardMenu }).__openSeriesCardMenu = openSeriesCardMenu;
+}
+
 export function SeriesCardContextMenuHost() {
   const req = useSeriesCardMenu();
   if (!req) return null;
@@ -211,30 +234,51 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const panelLeft = clamp(cardCenterX - panelW / 2, EDGE_PAD, winW - panelW - EDGE_PAD);
 
   const menuW = Math.min(MENU_WIDTH, winW - EDGE_PAD * 2);
-  const menuH = ROW_HEIGHT * MENU_ROWS + StyleSheet.hairlineWidth * (MENU_ROWS - 1) + MENU_PAD_V * 2;
+  const menuRowCount = MENU_ROWS + DEBUG_EXTRA_MENU_ROWS;
+  const menuH = ROW_HEIGHT * menuRowCount + StyleSheet.hairlineWidth * (menuRowCount - 1) + MENU_PAD_V * 2;
   const menuLeft = clamp(cardCenterX - menuW / 2, EDGE_PAD, winW - menuW - EDGE_PAD);
 
   const coverH = COVER_W / clampThumbAspect(coverAspect ?? DEFAULT_THUMB_ASPECT);
 
-  // Real panel height once measured (estimate before then). The menu always sits BELOW the panel.
-  const [panelH, setPanelH] = useState<number | null>(null);
-  const effPanelH = panelH ?? PANEL_HEIGHT_ESTIMATE;
+  // The panel's NATURAL height — what it would be if nothing constrained it. Measured from the content
+  // itself (not the panel, whose height we now drive), so it stays known even while the panel is
+  // squeezed below it.
+  const [contentH, setContentH] = useState<number | null>(null);
+  const naturalPanelH = contentH != null ? contentH + PANEL_PAD * 2 : PANEL_HEIGHT_ESTIMATE;
 
-  // Gate the resize spring so it only animates CONTENT-driven size changes (a skeleton swapping for
+  // Gate the geometry springs so they only animate CONTENT-driven changes (a skeleton swapping for
   // real content), not the one-time correction from the rough estimate to the first measured height —
-  // otherwise the menu would spring down from its estimate placement on every open. Turns on a render
+  // otherwise everything would spring out of its estimate placement on every open. Turns on a render
   // after the first measurement, so that first correction snaps into place un-animated (it lands
   // before the morph is visible anyway).
   const [resizeReady, setResizeReady] = useState(false);
   useEffect(() => {
-    if (panelH != null && !resizeReady) setResizeReady(true);
-  }, [panelH, resizeReady]);
-  const resize = resizeReady ? RESIZE : undefined;
+    if (contentH != null && !resizeReady) setResizeReady(true);
+  }, [contentH, resizeReady]);
 
-  const groupH = effPanelH + GAP + menuH;
+  // ── The resize range ──────────────────────────────────────────────────────
+  // The panel and the menu are one column, and it doesn't always fit: a rich preview plus a long menu
+  // easily overruns the band between the bars. Rather than shrink the preview to nothing (or let the
+  // menu run off the bottom where it can't be reached), the panel gets a RANGE of heights and the pan
+  // gesture picks a point in it:
+  //
+  //   expand 0  →  panel gives up exactly enough height for the whole menu to sit below it
+  //   expand 1  →  panel takes everything it can (its natural height, capped by the band); the menu
+  //                is pushed below the fold, where a downward swipe brings it back
+  //
+  // If the column already fits, the range is empty and the pan has nothing to resize — every drag is
+  // then an overscroll, i.e. a drag-to-dismiss. Which is the behaviour you'd want anyway.
   const available = bottomLimit - topLimit;
-  const panelTop = groupH <= available ? clamp(rect.y, topLimit, bottomLimit - groupH) : topLimit;
-  const menuTop = panelTop + effPanelH + GAP;
+  const maxPanelH = Math.min(naturalPanelH, available);
+  const fitPanelH = available - GAP - menuH; // panel height that leaves the menu fully visible
+  const collapsedPanelH = Math.max(MIN_PANEL_H, Math.min(maxPanelH, fitPanelH));
+  const expandRange = Math.max(0, maxPanelH - collapsedPanelH);
+  const expandable = expandRange > 1;
+
+  // Placement: a column that fits keeps sitting near the card it came from; one that doesn't is pinned
+  // to the top of the band, so its growth has somewhere to go.
+  const groupH = collapsedPanelH + GAP + menuH;
+  const panelTop = expandable ? topLimit : clamp(rect.y, topLimit, bottomLimit - groupH);
 
   // Shared-element FLIP for the COVER only: it travels from the pressed card's cover (scaled to the
   // card's width) to its resting SLOT — a top corner of the panel's top row. Same width/height at rest
@@ -264,9 +308,16 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // from wherever it is instead of cutting to the new trajectory. Before the first measurement they're
   // written straight (same gate as `resize`), so opening is still a clean single motion.
   const panelPos = { x: useSharedValue(panelLeft), y: useSharedValue(panelTop) };
-  const menuPos = { x: useSharedValue(menuLeft), y: useSharedValue(menuTop) };
+  const menuPos = { x: useSharedValue(menuLeft) };
   const coverTo = { x: useSharedValue(coverSlotX), y: useSharedValue(coverSlotY) };
   const coverFrom = { x: useSharedValue(rect.x), y: useSharedValue(rect.y), scale: useSharedValue(fromScale) };
+  // The panel's height range, as shared values so the pan can interpolate between them on the UI
+  // thread — and so a LATE content change springs the panel (and the menu tracking it) instead of
+  // resizing it out from under the finger.
+  const collapsedH = useSharedValue(collapsedPanelH);
+  const maxH = useSharedValue(maxPanelH);
+  /** Where in the range we are: 0 = menu fully visible, 1 = panel at its full height. Driven by pan. */
+  const expand = useSharedValue(0);
 
   // Compared against the last TARGET written, not `sv.value` — that reads the animating value, so a
   // re-render mid-spring would look like a change and restart the spring (killing its momentum).
@@ -281,13 +332,107 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     put('panelX', panelPos.x, panelLeft);
     put('panelY', panelPos.y, panelTop);
     put('menuX', menuPos.x, menuLeft);
-    put('menuY', menuPos.y, menuTop);
+    put('collapsedH', collapsedH, collapsedPanelH);
+    put('maxH', maxH, maxPanelH);
     put('coverToX', coverTo.x, coverSlotX);
     put('coverToY', coverTo.y, coverSlotY);
     put('coverFromX', coverFrom.x, rect.x);
     put('coverFromY', coverFrom.y, rect.y);
     put('coverFromScale', coverFrom.scale, fromScale);
   });
+
+  // NOTE: the panel-height maths is INLINED into each animated style below rather than factored into a
+  // shared worklet. `useAnimatedStyle` works out what to subscribe to by looking at the shared values
+  // referenced in its own body — hide them inside a helper it calls and it subscribes to nothing, so
+  // the style never re-runs and the panel never moves. (Cost me a debugging session; hence the note.)
+
+  // ── The pan ───────────────────────────────────────────────────────────────
+  // One vertical drag, anywhere on the screen, doing two things depending on where it is in the range:
+  //
+  //   inside the range   → RESIZE the panel (drag up to grow it, down to shrink it). The menu isn't
+  //                        dragged; it just tracks the panel's bottom edge, so it slides into view as
+  //                        the panel gives up height and slides out as the panel takes it back.
+  //   past either end    → DISMISS. The overscroll feeds `progress` directly, so the popup morphs back
+  //                        toward the card under your thumb — the open animation, played backwards by
+  //                        your finger rather than by a spring. Let go past a threshold (or with a
+  //                        flick) and it finishes closing; let go short of it and it springs back.
+  //
+  // A column that already fits has an empty range, so EVERY drag on it is an overscroll — i.e. it's
+  // simply drag-to-dismiss, which is what you'd want there anyway. No special case needed.
+  const panStartExpand = useSharedValue(0);
+  const overscroll = useSharedValue(0); // px dragged past an end; sign follows the drag direction
+
+
+  const pan = useMemo(
+    () =>
+      Gesture.Pan()
+        // Vertical intent only: a horizontal drag must reach the page rail (a horizontally-scrolling
+        // list inside the panel) rather than being swallowed as a resize.
+        .activeOffsetY([-8, 8])
+        .failOffsetX([-16, 16])
+        .onStart(() => {
+          cancelAnimation(progress);
+          cancelAnimation(expand);
+          panStartExpand.value = expand.value;
+          overscroll.value = 0;
+        })
+        .onUpdate((e) => {
+          // Drag UP grows the panel, so expand moves opposite to translationY.
+          const range = expandRange;
+          const raw = range > 0 ? panStartExpand.value + -e.translationY / range : panStartExpand.value;
+          const clamped = Math.min(1, Math.max(0, raw));
+          expand.value = clamped;
+          // Whatever the drag couldn't spend on resizing is overscroll — including ALL of it when
+          // there's no range to spend it on.
+          const over = range > 0 ? (raw - clamped) * range : -e.translationY;
+          overscroll.value = over;
+          progress.value = 1 - Math.min(1, Math.abs(over) / DISMISS_DRAG);
+        })
+        .onEnd((e) => {
+          const past = Math.abs(overscroll.value) > DISMISS_RELEASE_PX;
+          const flicked =
+            Math.abs(e.velocityY) > DISMISS_RELEASE_VELOCITY &&
+            // A flick only dismisses if it's flicking AWAY from the range, not back into it.
+            Math.sign(e.velocityY) === Math.sign(-overscroll.value) &&
+            overscroll.value !== 0;
+          if (past || flicked) {
+            runOnJS(dismiss)();
+            return;
+          }
+          // Settle: the popup comes back to full, and the panel keeps the momentum of the drag,
+          // decelerating into its range like a scroll would.
+          progress.value = withSpring(1, MORPH_SPRING);
+          overscroll.value = 0;
+          if (expandRange > 0) {
+            expand.value = withDecay({
+              velocity: -e.velocityY / expandRange,
+              clamp: [0, 1],
+              deceleration: 0.994,
+            });
+          }
+        }),
+    [dismiss, expand, expandRange, overscroll, panStartExpand, progress],
+  );
+
+  // Tap the backdrop to dismiss. A GESTURE, not a Pressable: the root pan and a Pressable are two
+  // different touch systems, and the Pressable still fired its press on release after a pan had
+  // already run — so a resize drag that happened to start on the backdrop also dismissed the popup.
+  // As a gesture it simply loses the race to the pan the moment the finger travels.
+  //
+  // `success` is NOT optional here: RNGH calls onEnd when the gesture ends *however* it ended,
+  // including when it FAILED — so without this check every drag ended in a dismiss, which is exactly
+  // the bug this replacement was meant to fix.
+  const tapDismiss = useMemo(
+    () =>
+      Gesture.Tap()
+        // A tap is a tap, not a drag that happened to end. Without a distance bound the backdrop
+        // counted a 200px resize drag as a successful tap and dismissed the popup underneath it.
+        .maxDistance(10)
+        .onEnd((_e, success) => {
+          if (success) runOnJS(dismiss)();
+        }),
+    [dismiss],
+  );
 
   const backdropBlurProps = useAnimatedProps(() => ({
     intensity: interpolate(progress.value, [0, 0.3, 1], [0, 0, BACKDROP_BLUR]),
@@ -300,6 +445,12 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const panelStyle = useAnimatedStyle(() => ({
     opacity: interpolate(progress.value, [0, 0.4, 1], [0, 0, 1]),
     transform: [{ translateX: panelPos.x.value }, { translateY: panelPos.y.value }],
+  }));
+  // The panel's HEIGHT is now driven, not measured: it's a point in the resize range (see `expand`).
+  // Its content is laid out at natural height inside and simply clipped by `overflow: hidden`, so
+  // growing the panel reveals more of the preview rather than reflowing it — no relayout per frame.
+  const panelSizeStyle = useAnimatedStyle(() => ({
+    height: collapsedH.value + expand.value * (maxH.value - collapsedH.value),
   }));
   // The cover morphs from the card; stays opaque (the source card is hidden behind it). Both ends of
   // the FLIP are live, so a corrected card rect or a shifted slot bends the path instead of cutting it.
@@ -316,11 +467,20 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     const s = coverFrom.scale.value;
     return { borderRadius: 10 / (s + (1 - s) * progress.value) };
   });
+  // The menu isn't dragged — it TRACKS the panel's bottom edge. Its position is derived from the same
+  // range the panel's height is, so resizing the panel slides the menu in lockstep with no second
+  // animation to keep in sync (that's the whole trick: one value, two consumers).
   const menuStyle = useAnimatedStyle(() => ({
     opacity: progress.value,
     transform: [
       { translateX: menuPos.x.value },
-      { translateY: menuPos.y.value + interpolate(progress.value, [0, 1], [-10, 0]) },
+      {
+        translateY:
+          panelPos.y.value +
+          (collapsedH.value + expand.value * (maxH.value - collapsedH.value)) +
+          GAP +
+          interpolate(progress.value, [0, 1], [-10, 0]),
+      },
       { scale: interpolate(progress.value, [0, 1], [0.9, 1]) },
     ],
   }));
@@ -367,21 +527,31 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   );
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-      {/* Blurred, tap-to-dismiss backdrop. */}
-      <Pressable style={StyleSheet.absoluteFill} onPress={dismiss}>
-        <AnimatedBlurView tint="dark" experimentalBlurMethod={ANDROID_BLUR} animatedProps={backdropBlurProps} style={StyleSheet.absoluteFill} />
-        <Animated.View style={[StyleSheet.absoluteFill, styles.backdropTint, backdropTintStyle]} />
-      </Pressable>
+    // The pan lives on the ROOT, so the resize/dismiss drag works anywhere on the screen — over the
+    // backdrop, the panel, or the menu — which is the point of it. It only claims a gesture once the
+    // finger has travelled vertically (see activeOffsetY), so taps still reach the menu rows and the
+    // backdrop, and a horizontal drag still belongs to the page rail.
+    <GestureDetector gesture={pan}>
+      <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+        {/* Blurred, tap-to-dismiss backdrop. */}
+        <GestureDetector gesture={tapDismiss}>
+          <View style={StyleSheet.absoluteFill}>
+            <AnimatedBlurView tint="dark" experimentalBlurMethod={ANDROID_BLUR} animatedProps={backdropBlurProps} style={StyleSheet.absoluteFill} />
+            <Animated.View style={[StyleSheet.absoluteFill, styles.backdropTint, backdropTintStyle]} />
+          </View>
+        </GestureDetector>
 
       {/* Panel background + content — fades in at the final position. `box-none` so taps fall through
           to the dismiss backdrop while the page rail's FlatList still receives touches. The cover slot
           is a transparent placeholder; the real cover is the morphing layer below. */}
       <Animated.View
         pointerEvents="box-none"
-        onLayout={(e) => setPanelH(e.nativeEvent.layout.height)}
         style={[styles.panelWrap, { width: panelW }, panelStyle]}>
-        <Animated.View layout={resize} style={[styles.panel, { backgroundColor: theme.backgroundPanel }]}>
+        <Animated.View style={[styles.panel, { backgroundColor: theme.backgroundPanel }, panelSizeStyle]}>
+          {/* The content lays out at its NATURAL height and is clipped by the panel — that's what lets
+              the panel's height be dragged without reflowing anything. Measured here (not on the panel,
+              whose height we drive) so the resize range knows how tall the preview actually wants to be. */}
+          <View style={styles.panelContent} onLayout={(e) => setContentH(e.nativeEvent.layout.height)}>
           <View style={[styles.topRow, coverOnRight && styles.topRowReverse]}>
             <View style={[styles.coverSlot, { width: COVER_W, height: coverH }]} />
             <View style={styles.info}>
@@ -434,6 +604,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
           {direct ? (
             <PageRail thumbs={pageList.data?.pageThumbs} loading={pageList.isLoading} bridgeId={bridgeId} seed={entry.id} onOpenPage={openReaderAt} />
           ) : null}
+          </View>
         </Animated.View>
       </Animated.View>
 
@@ -449,8 +620,9 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
         </Animated.View>
       </View>
 
-      {/* The actions menu — a frosted (blurred) panel. Its position springs (see `menuPos`) so it eases
-          down when the panel grows on late content instead of jumping to the new spot below it. */}
+      {/* The actions menu — a frosted (blurred) panel. It is never dragged: its position is DERIVED
+          from the panel's live height (see menuStyle), so it tracks the panel's bottom edge as the pan
+          resizes it, and eases with it when late content changes the panel's natural height. */}
       <Animated.View style={[styles.menuWrap, { width: menuW }, menuStyle]}>
         <BlurView tint={menuTint} intensity={MENU_BLUR} experimentalBlurMethod={ANDROID_BLUR} style={[styles.menu, { borderColor: theme.backgroundSelected }]}>
           {/* Read is the one real ACTION here (the others toggle state), so it leads and it's bold —
@@ -483,9 +655,18 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
             active={!!favorited}
             onPress={() => act(toggleFavorite)}
           />
+          {/* DEV ONLY: dummy rows so the menu is long enough to overrun the screen, which is the only
+              state the pan gesture exists for. See DEBUG_EXTRA_MENU_ROWS. */}
+          {Array.from({ length: DEBUG_EXTRA_MENU_ROWS }).map((_, i) => (
+            <View key={i}>
+              <View style={[styles.separator, { backgroundColor: theme.backgroundSelected }]} />
+              <MenuRow label={`Placeholder action ${i + 1}`} Icon={PlusIcon} loading={false} onPress={dismiss} />
+            </View>
+          ))}
         </BlurView>
       </Animated.View>
-    </View>
+      </View>
+    </GestureDetector>
   );
 }
 
@@ -655,13 +836,17 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 12 },
     elevation: 12,
   },
+  panelContent: {
+    // The preview at its natural height, inside a panel whose height is DRAGGED (see panelSizeStyle).
+    // The panel clips it, so growing the panel reveals more of this rather than reflowing it.
+    gap: Spacing.three,
+  },
   panel: {
     borderRadius: 16,
     // Only vertical padding: the horizontal scrollers (tags, page rail) bleed to the panel's rounded
     // edges (clipped by `overflow: hidden`) so their content isn't cut off at an inset viewport; they
     // carry their own leading inset (`PANEL_PAD`) instead. The top row re-adds horizontal padding.
     paddingVertical: PANEL_PAD,
-    gap: Spacing.three,
     overflow: 'hidden',
   },
   topRow: {
