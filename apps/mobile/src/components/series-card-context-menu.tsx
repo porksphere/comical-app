@@ -53,16 +53,18 @@ const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
 //                                                          stiffer-feeling by raising damping AND
 //                                                          stiffness together.
 //
-// All three below sit near ζ ≈ 0.5 — properly springy, not the mushy near-critical damping this used
-// to have — and differ only in how quickly they settle.
-//
-// The open morph, plus any late correction to the popup's geometry.
-const MORPH_SPRING = { damping: 18, stiffness: 420, mass: 0.8 } as const;
-// The close: the same character, quicker — the overlay swallows touches until it unmounts, so every
-// millisecond of the return is time the list underneath can't be scrolled.
-const CLOSE_SPRING = { damping: 24, stiffness: 700, mass: 0.7 } as const;
-// The resize settling after you let go. Looser and bouncier: this one is meant to feel like a thing
-// with weight landing, since your thumb just threw it.
+// The MORPH — the cover popping out of the card and back — is deliberately unhurried. Don't speed it
+// up: it was quickened once (in the name of "springier") and the pop became a snap, which reads as
+// cheap. The lift is the moment the whole interaction is built around; let it take its time.
+const MORPH_SPRING = { damping: 16, stiffness: 170, mass: 0.8 } as const;
+// The close is the same spring, roughly twice as fast: the overlay swallows touches until it unmounts,
+// so every millisecond of the return is time the list underneath can't be scrolled. Damping and
+// stiffness are raised TOGETHER, which keeps the damping ratio (the size of the overshoot — the
+// springy part) while doubling the decay rate, and decay is what actually sets how long it lingers.
+const CLOSE_SPRING = { damping: 28, stiffness: 660, mass: 0.7 } as const;
+// The resize settling after you let go — the one that genuinely was lifeless. Bouncier than the morph
+// (ζ ≈ 0.49, against the morph's 0.69) and quick with it: your thumb just threw this, so it should
+// land like a thing with weight rather than glide to a halt.
 const RESIZE_SPRING = { damping: 16, stiffness: 300, mass: 0.9 } as const;
 
 // The routes that show the bottom tab bar (a pushed screen — series, search — covers it). Used to
@@ -310,10 +312,34 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const dragRange = naturalPanelH * scaleRange;
   const expandable = dragRange > 1;
 
-  // Placement: a column that fits keeps sitting near the card it came from; one that has to scale is
-  // pinned to the top of the band, so it grows downward into the space.
-  const groupH = naturalPanelH * minScale + GAP + menuH;
-  const panelTop = expandable ? topLimit : clamp(rect.y, topLimit, bottomLimit - groupH);
+  // ── Placement ─────────────────────────────────────────────────────────────
+  // The panel's TOP is part of the range too, not a fixed anchor. Pinning it to the top of the band
+  // meant that at full size the panel and menu were jammed against the top edge with all the slack
+  // dumped below — the popup looked shoved up out of the way rather than presented.
+  //
+  //   expanded  → the panel sits CENTRED in the band. It's the thing you're looking at; give it the
+  //               room. The menu hangs below it, off the bottom if it must, one swipe away.
+  //   collapsed → the panel rides up only as far as it has to for the group (panel + gap + menu) to
+  //               land exactly on the bottom limit — i.e. the menu is fully visible and nothing is
+  //               wasted, but the panel is no higher than it needs to be.
+  //
+  // Interpolating between the two means the panel drifts up as you shrink it and back down as you grow
+  // it, which is what makes the resize read as one movement rather than a scale plus a jump.
+  const panelHAtMax = naturalPanelH * maxScale;
+  const panelHAtMin = naturalPanelH * minScale;
+  const topAtMax = clamp(topLimit + (available - panelHAtMax) / 2, topLimit, bottomLimit - panelHAtMax);
+  // Deliberately NOT clamped to `topLimit`: a menu so long that it can't fit even with the panel at its
+  // minimum scale (the floor exists so the preview never becomes a postage stamp) would otherwise leave
+  // its last rows below the bottom edge with no swipe left to reach them — the collapsed end IS the end
+  // of the range. Letting the panel ride above the band instead keeps every row reachable, which
+  // matters more than the panel staying tidily inside it at the one extreme where the two conflict.
+  const topAtMin = Math.min(bottomLimit - (panelHAtMin + GAP + menuH), bottomLimit - panelHAtMin);
+  // A column that already fits keeps sitting near the card it came from — nothing to resize, nothing to
+  // reposition.
+  const groupH = panelHAtMin + GAP + menuH;
+  const restingTop = clamp(rect.y, topLimit, bottomLimit - groupH);
+  const panelTopMin = expandable ? topAtMin : restingTop;
+  const panelTopMax = expandable ? topAtMax : restingTop;
 
   // Shared-element FLIP for the COVER only: it travels from the pressed card's cover (scaled to the
   // card's width) to its resting SLOT — a top corner of the panel's top row. The radius is
@@ -347,7 +373,11 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // values that SPRING to a new target once the popup is up. A correction now continues the animation
   // from wherever it is instead of cutting to the new trajectory. Before the first measurement they're
   // written straight (same gate as `resize`), so opening is still a clean single motion.
-  const panelPos = { x: useSharedValue(panelLeft), y: useSharedValue(panelTop) };
+  const panelPos = { x: useSharedValue(panelLeft) };
+  // The panel's top is interpolated by the SAME `expand` as its scale (see "Placement"), so growing it
+  // also walks it down the screen — one movement, not a scale plus a jump.
+  const topMin = useSharedValue(panelTopMin);
+  const topMax = useSharedValue(panelTopMax);
   const menuPos = { x: useSharedValue(menuLeft) };
   // No `coverTo` pair: the cover's resting slot isn't a fixed point any more, it's wherever the panel's
   // top corner currently is AT the panel's current scale — so it's derived in the worklet instead.
@@ -376,7 +406,8 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       sv.value = resizeReady && !first ? withSpring(v, MORPH_SPRING) : v;
     };
     put('panelX', panelPos.x, panelLeft);
-    put('panelY', panelPos.y, panelTop);
+    put('topMin', topMin, panelTopMin);
+    put('topMax', topMax, panelTopMax);
     put('menuX', menuPos.x, menuLeft);
     put('minScale', minS, minScale);
     put('maxScale', maxS, maxScale);
@@ -511,9 +542,10 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // Scaling is transform-only, so resizing costs no layout at all.
   const panelStyle = useAnimatedStyle(() => {
     const scale = minS.value + expand.value * (maxS.value - minS.value);
+    const top = topMin.value + expand.value * (topMax.value - topMin.value);
     return {
       opacity: interpolate(progress.value, [0, 0.4, 1], [0, 0, 1]),
-      transform: [{ translateX: panelPos.x.value }, { translateY: panelPos.y.value }, { scale }],
+      transform: [{ translateX: panelPos.x.value }, { translateY: top }, { scale }],
     };
   });
   // The cover morphs from the card; stays opaque (the source card is hidden behind it). Both ends of
@@ -522,8 +554,9 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const coverStyle = useAnimatedStyle(() => {
     // The slot, in screen coords, at the panel's live scale (the panel scales about its own top-left).
     const scale = minS.value + expand.value * (maxS.value - minS.value);
+    const top = topMin.value + expand.value * (topMax.value - topMin.value);
     const toX = panelPos.x.value + coverSlotLocalX * scale;
-    const toY = panelPos.y.value + coverSlotLocalY * scale;
+    const toY = top + coverSlotLocalY * scale;
     return {
     transform: [
       { translateX: interpolate(progress.value, [0, 1], [coverFrom.x.value, toX]) },
@@ -545,13 +578,13 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // no second animation to keep in sync (that's the whole trick: one value, two consumers).
   const menuStyle = useAnimatedStyle(() => {
     const scale = minS.value + expand.value * (maxS.value - minS.value);
+    const top = topMin.value + expand.value * (topMax.value - topMin.value);
     return {
       opacity: progress.value,
       transform: [
         { translateX: menuPos.x.value },
         {
-          translateY:
-            panelPos.y.value + naturalH.value * scale + GAP + interpolate(progress.value, [0, 1], [-10, 0]),
+          translateY: top + naturalH.value * scale + GAP + interpolate(progress.value, [0, 1], [-10, 0]),
         },
         { scale: interpolate(progress.value, [0, 1], [0.9, 1]) },
       ],
