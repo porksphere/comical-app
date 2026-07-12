@@ -2,8 +2,8 @@ name: Build iOS profiling (release + on-device profiler)
 
 # Manual-only. Builds a **Release** IPA that ALSO carries the on-device Hermes
 # profiler (react-native-release-profiler pod + PROFILING_ENABLED baked in via
-# EXPO_PUBLIC_COMICAL_PROFILING), under the coexisting `com.porksphere.comical.profiling`
-# bundle id, and publishes it to its own rolling `ios-profiling` SideStore/AltStore source.
+# EXPO_PUBLIC_COMICAL_PROFILING), under the PRODUCTION `com.porksphere.comical` bundle id so
+# it installs OVER the normal app, and publishes to its own rolling `ios-profiling` source.
 #
 # Purpose: capture a Hermes trace from a REAL Release binary — where the dev-mode
 # instrumentation that dominates (and distorts) a dev-build profile is gone — so we can
@@ -65,9 +65,10 @@ jobs:
 
           # SideStore/AltStore source manifest. Add this URL as a source:
           #   $BASE/apps.json
-          # Distinct bundle id (com.porksphere.comical.profiling) so it coexists with the
-          # release app. Emits both the modern versions[] array and the legacy
-          # top-level fields so either client parses it.
+          # SAME bundle id as production (com.porksphere.comical) so it installs OVER the
+          # normal app (profile, then reinstall ios-latest to revert) — no extra app against
+          # SideStore's free-account limit. Emits both the modern versions[] array and the
+          # legacy top-level fields so either client parses it.
           jq -n \
             --arg version "$VERSION" \
             --arg date "$DATE" \
@@ -80,9 +81,9 @@ jobs:
               identifier: "com.porksphere.comical.profiling.source",
               apps: [{
                 name: "Comical (profiling)",
-                bundleIdentifier: "com.porksphere.comical.profiling",
+                bundleIdentifier: "com.porksphere.comical",
                 developerName: "porksphere",
-                localizedDescription: "Comical Release build carrying the on-device Hermes profiler, for capturing a real release-mode performance trace. Unsigned; re-signed on-device by SideStore/AltStore.",
+                localizedDescription: "Comical Release build carrying the on-device Hermes profiler, for capturing a real release-mode performance trace. Same bundle id as the normal app, so it installs over it — reinstall the ios-latest build to revert. Unsigned; re-signed on-device by SideStore/AltStore.",
                 iconURL: $icon,
                 tintColor: "208AEF",
                 versions: [{
@@ -108,7 +109,7 @@ jobs:
             "$RUNNER_TEMP/icon.png" \
             --repo "$GITHUB_REPOSITORY" \
             --title "Comical iOS profiling (release + on-device profiler)" \
-            --notes "Release binary WITH the on-device Hermes profiler (bundle id \`com.porksphere.comical.profiling\`, coexists with the release app).
+            --notes "Release binary WITH the on-device Hermes profiler (SAME bundle id \`com.porksphere.comical\` as the normal app — installs over it; reinstall the ios-latest build to revert).
 
           **Install via source:** add this URL in SideStore/AltStore → Sources → +
           \`${BASE}/apps.json\`

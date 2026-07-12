@@ -20,7 +20,6 @@
  * no native-file mods needed.
  */
 const DEV_SUFFIX = '.dev';
-const PROFILING_SUFFIX = '.profiling';
 
 // Suffix the bundle id / package and append " (label)" to the display name, so a variant coexists
 // with the production app on the same device instead of replacing it.
@@ -43,11 +42,14 @@ function applyDevClientVariant(config, enabled) {
   return enabled ? applyVariant(config, DEV_SUFFIX, 'dev') : config;
 }
 
-// The profiling-release variant: a normal Release binary that carries the on-device profiler, given
-// `com.porksphere.comical.profiling` + " (profiling)" so it sits next to the real app for a
-// before/after release profile. Activated by COMICAL_PROFILING=1 (build-ios-profiling.yml only).
+// The profiling-release variant: a normal Release binary that carries the on-device profiler. It
+// keeps the PRODUCTION bundle id so it installs OVER the normal app (same slot — profile, then
+// reinstall ios-latest to revert; no extra app against SideStore's free-account limit). Only the
+// display name is marked " (profiling)" so you can tell which build is on the phone. Activated by
+// COMICAL_PROFILING=1 (build-ios-profiling.yml only).
 function applyProfilingVariant(config, enabled) {
-  return enabled ? applyVariant(config, PROFILING_SUFFIX, 'profiling') : config;
+  if (!enabled) return config;
+  return { ...config, name: config.name ? `${config.name} (profiling)` : config.name };
 }
 
 module.exports = function withDevClientVariant(config) {
