@@ -307,7 +307,6 @@ export default function BrowseScreen() {
   // stranded invisible if readiness somehow never resolves.
   const XFADE_MAX_WAIT_MS = 1800;
   const homeXfade = useSharedValue(1);
-  const homeXfadeStyle = useAnimatedStyle(() => ({ opacity: homeXfade.value }));
   const [switching, setSwitching] = useState(false);
   const [committed, setCommitted] = useState(false);
   // Both selectors (bridge AND page) drive the same crossfade, so the thing to swap at opacity 0 is
@@ -382,7 +381,13 @@ export default function BrowseScreen() {
   // One shared animated style is reused across every grid cell (no per-cell hook — renderItem isn't
   // a component). Only the grid needs it: the composed-home rails are only ever placeholder-swapped
   // by a bridge change, which the crossfade already covers (homeUpdating ⇒ switching).
-  const gridCellStyle = useRevealDim(gridUpdating && !switching);
+  // Gated by `gridActive` so a composed-home (rails) stale placeholder never dims — the per-cell
+  // version only ever reached grid cells, which exist only when a grid backs the surface.
+  const { value: revealDimSV } = useRevealDim(gridActive && gridUpdating && !switching);
+  // Hoisted off the cells onto the list wrapper: ONE combined opacity instead of a Reanimated
+  // Animated.View per card. homeXfade (bridge/page crossfade) and the reveal dim are mutually
+  // exclusive, so multiply them into a single style (stacking two opacity styles would override).
+  const listDimStyle = useAnimatedStyle(() => ({ opacity: homeXfade.value * revealDimSV.value }));
 
   // Everything shown on the favorites page is, by definition, favorited — so warm the per-series
   // `isFavorite` cache to `true`. Opening one from here then paints ★ instantly (and enabled)
@@ -745,7 +750,7 @@ export default function BrowseScreen() {
           revealed, rather than the list itself needing to relayout. */}
       {/* Wrapping rather than animating AnimatedLegendList's own `style` directly — LegendList's
           style prop isn't typed for a Reanimated animated style the way Animated.View's is. */}
-      <Animated.View style={[styles.list, pull.listStyle, homeXfadeStyle]}>
+      <Animated.View style={[styles.list, pull.listStyle, listDimStyle]}>
       <AnimatedLegendList
         ref={listRef}
         key={gridKey}
@@ -804,7 +809,9 @@ export default function BrowseScreen() {
             return <View style={styles.gridCell} />;
           }
           return (
-            <Animated.View style={[styles.gridCell, gridCellStyle]}>
+            // Plain View — the refinement dim now rides the list wrapper (listDimStyle), so no
+            // Reanimated Animated.View per cell.
+            <View style={styles.gridCell}>
               <SeriesCard
                 entry={item}
                 bridge={currentBridge?.name ?? undefined}
@@ -814,7 +821,7 @@ export default function BrowseScreen() {
                 cohort={gridScope}
                 crossfading={switching}
               />
-            </Animated.View>
+            </View>
           );
         }}
         // No footer skeleton for infinite-scroll pagination (`loadingMore`) — it was

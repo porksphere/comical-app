@@ -221,7 +221,8 @@ export default function SearchScreen() {
   // NOT for a plain refetch, so a pull-to-refresh doesn't dim (it has the spinner below instead).
   // Same hook the Browse grid uses. See useRevealDim for why a refinement dims where a bridge/page
   // switch crossfades.
-  const gridCellStyle = useRevealDim(resultsQuery.isPlaceholderData);
+  // Applied to the list wrapper (below), not per cell, so every result cell is a plain View.
+  const { style: listDimStyle } = useRevealDim(resultsQuery.isPlaceholderData);
 
   // De-duplicate by series id while flattening the infinite pages — a live-reordering search feed can
   // return the same series on two adjacent pages, colliding on the list `keyExtractor`. Same helper
@@ -362,7 +363,7 @@ export default function SearchScreen() {
               isn't typed for a Reanimated animated style the way Animated.View's is. Shifts the grid
               down to open the gap the spinner sits in. */}
           {ready && (
-            <Animated.View style={[styles.list, pull.listStyle]}>
+            <Animated.View style={[styles.list, pull.listStyle, listDimStyle]}>
             <AnimatedLegendList
               ref={listRef}
               key={gridKey}
@@ -398,9 +399,9 @@ export default function SearchScreen() {
                 item.spacer ? (
                   <View style={styles.gridCell} />
                 ) : (
-                  // One shared animated style across every cell (renderItem isn't a component, so it
-                  // can't hold a hook) — dims the kept results while a re-search loads. See useRevealDim.
-                  <Animated.View style={[styles.gridCell, gridCellStyle]}>
+                  // Plain View — the re-search dim now rides the list wrapper (listDimStyle above),
+                  // so no Reanimated Animated.View per result cell.
+                  <View style={styles.gridCell}>
                     <SeriesCard
                       entry={item}
                       bridge={currentBridge?.name ?? undefined}
@@ -408,7 +409,7 @@ export default function SearchScreen() {
                       direct={directBridge}
                       cohort={scopeKey}
                     />
-                  </Animated.View>
+                  </View>
                 )
               }
               onEndReachedThreshold={0.6}
