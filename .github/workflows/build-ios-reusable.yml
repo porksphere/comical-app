@@ -8,6 +8,26 @@ name: Build iOS IPA (reusable)
 
 on:
   workflow_call:
+    inputs:
+      configuration:
+        # Xcode configuration. "Release" (default) is what every normal caller
+        # uses (ios-latest, per-PR, versioned releases). "Debug" is used ONLY by
+        # build-ios-devclient.yml together with dev_client — a development-client
+        # shell that loads JS from Metro (no embedded bundle needed; expo-dev-client
+        # shows its launcher). This is NOT the reverted offline-dev-build hack —
+        # there are no SKIP_BUNDLING overrides here.
+        description: Xcode build configuration (Release or Debug).
+        type: string
+        default: Release
+        required: false
+      dev_client:
+        # When true, sets COMICAL_DEVCLIENT=1 for `expo prebuild` so the
+        # with-devclient-variant plugin gives the app the coexisting `.dev`
+        # bundle id. Only build-ios-devclient.yml passes this.
+        description: Build a development-client (expo-dev-client) shell.
+        type: boolean
+        default: false
+        required: false
     secrets:
       SENTRY_AUTH_TOKEN:
         # Optional: without it, the Sentry build-phase script below no-ops
@@ -114,6 +134,10 @@ jobs:
       - name: Generate native iOS project (CNG)
         run: bunx expo prebuild --platform ios --no-install
         working-directory: apps/mobile
+        # COMICAL_DEVCLIENT=1 makes the with-devclient-variant plugin apply the
+        # coexisting `.dev` bundle id (dev-client builds only); empty otherwise.
+        env:
+          COMICAL_DEVCLIENT: ${{ inputs.dev_client && '1' || '' }}
 
       - name: Install CocoaPods
         run: pod install
@@ -180,11 +204,13 @@ jobs:
 
       - name: Build unsigned archive
         working-directory: apps/mobile/ios
+        env:
+          CONFIGURATION: ${{ inputs.configuration }}
         run: |
           set -euo pipefail
           WORKSPACE=$(ls -d *.xcworkspace | head -1)
           SCHEME=$(basename "$WORKSPACE" .xcworkspace)
-          echo "Building workspace=$WORKSPACE scheme=$SCHEME"
+          echo "Building workspace=$WORKSPACE scheme=$SCHEME configuration=$CONFIGURATION"
           # DEBUG_INFORMATION_FORMAT=dwarf skips the dSYM generation pass — the
           # Sentry upload no-ops without SENTRY_AUTH_TOKEN, so nothing consumes
           # dSYMs here (switch back to dwarf-with-dsym once Sentry is wired up).
@@ -192,7 +218,7 @@ jobs:
           xcodebuild \
             -workspace "$WORKSPACE" \
             -scheme "$SCHEME" \
-            -configuration Release \
+            -configuration "$CONFIGURATION" \
             -sdk iphoneos \
             -archivePath "$RUNNER_TEMP/comical.xcarchive" \
             archive \
