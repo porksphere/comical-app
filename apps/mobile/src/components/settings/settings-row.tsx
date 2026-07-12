@@ -114,8 +114,10 @@ export function SettingsRow({
 }
 
 const styles = StyleSheet.create({
+  // No marginTop: that would also push the FIRST section down, stacking on top of the screen's
+  // `BarContentGap` and making every settings-style screen start lower than the other tabs. The space
+  // BETWEEN sections is the container's `gap` (Spacing.five), which never applies before the first.
   sectionWrap: {
-    marginTop: Spacing.five,
     width: '100%',
   },
   section: {
