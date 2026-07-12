@@ -27,5 +27,11 @@ export function useRevealDim(updating: boolean) {
   useEffect(() => {
     reveal.value = withTiming(updating ? REVEAL_DIM : 1, { duration: REVEAL_MS, easing: Easing.out(Easing.quad) });
   }, [updating, reveal]);
-  return useAnimatedStyle(() => ({ opacity: reveal.value }));
+  // `style` is the ready-made opacity style for the simple single-opacity case (apply it to the list
+  // wrapper so every cell can be a plain View — no Reanimated Animated.View per card). `value` exposes
+  // the raw shared value for callers that must COMBINE this dim with another animated opacity (e.g.
+  // Browse's crossfade): two opacity styles in an array override rather than multiply, so they have to
+  // be multiplied into one style.
+  const style = useAnimatedStyle(() => ({ opacity: reveal.value }));
+  return { style, value: reveal };
 }
