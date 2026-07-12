@@ -467,8 +467,10 @@ function SeriesBody({
       {series.genres?.length || series.tagGroups?.length ? (
         <View style={styles.tagsBlock}>
           {series.genres?.length ? <ChipRow labels={series.genres} /> : null}
-          {series.tagGroups?.map((g) => (
-            <TagGroupRow key={g.label} group={g} onTagPress={(i) => onTagPress(g, i)} />
+          {/* Keyed by index, not `g.label` — a bridge can repeat a group label, and two siblings on
+              the same key is a duplicate-key error (same reasoning as chip.tsx's `chipKey`). */}
+          {series.tagGroups?.map((g, gi) => (
+            <TagGroupRow key={`${gi}:${g.label}`} group={g} onTagPress={(i) => onTagPress(g, i)} />
           ))}
         </View>
       ) : null}
