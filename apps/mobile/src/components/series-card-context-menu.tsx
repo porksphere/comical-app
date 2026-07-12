@@ -11,7 +11,6 @@ import Animated, {
   useAnimatedProps,
   useAnimatedStyle,
   useSharedValue,
-  withDecay,
   withSpring,
   type SharedValue,
 } from 'react-native-reanimated';
@@ -43,15 +42,28 @@ import { getTabBarProgress } from '@/lib/tab-bar-visibility';
 import { getTopBarHidden } from '@/lib/top-bar-visibility';
 
 const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
-// The one spring used everywhere: the open morph, the panel/menu resize, and any late correction to
-// the popup's geometry — so every motion shares the same bouncy feel.
-const MORPH_SPRING = { damping: 16, stiffness: 170, mass: 0.8 } as const;
-// The close is the SAME spring, roughly twice as fast: the overlay swallows touches until it
-// unmounts, so every millisecond of the return (bounce included) is time the list can't be scrolled.
-// Damping and stiffness are raised together to keep the damping RATIO — i.e. the size of the little
-// overshoot at the end, the springy part — while doubling the decay rate (damping / 2·mass), which is
-// what actually sets how long the motion takes to die out. Bouncy, just less lingering.
-const CLOSE_SPRING = { damping: 28, stiffness: 660, mass: 0.7 } as const;
+// Every motion in this popup is a spring, and they're all tuned around the same two numbers, because
+// those are the two things you actually feel:
+//
+//   damping ratio  ζ = damping / (2·√(stiffness·mass))  — how much it OVERSHOOTS. Below 1 it bounces;
+//                                                          around 0.5 it bounces visibly and settles.
+//   decay rate         damping / (2·mass)               — how fast it DIES OUT. Independent of
+//                                                          stiffness, which is the non-obvious part:
+//                                                          you make a spring quicker without making it
+//                                                          stiffer-feeling by raising damping AND
+//                                                          stiffness together.
+//
+// All three below sit near ζ ≈ 0.5 — properly springy, not the mushy near-critical damping this used
+// to have — and differ only in how quickly they settle.
+//
+// The open morph, plus any late correction to the popup's geometry.
+const MORPH_SPRING = { damping: 18, stiffness: 420, mass: 0.8 } as const;
+// The close: the same character, quicker — the overlay swallows touches until it unmounts, so every
+// millisecond of the return is time the list underneath can't be scrolled.
+const CLOSE_SPRING = { damping: 24, stiffness: 700, mass: 0.7 } as const;
+// The resize settling after you let go. Looser and bouncier: this one is meant to feel like a thing
+// with weight landing, since your thumb just threw it.
+const RESIZE_SPRING = { damping: 16, stiffness: 300, mass: 0.9 } as const;
 
 // The routes that show the bottom tab bar (a pushed screen — series, search — covers it). Used to
 // decide whether the bottom of the screen is chrome the cover has to slide under.
@@ -90,15 +102,22 @@ const DEBUG_EXTRA_MENU_ROWS = __DEV__ ? 8 : 0;
 // The panel never scales below this, however long the menu gets — a preview shrunk to a postage stamp
 // is worse than a menu you have to swipe for.
 const MIN_PANEL_SCALE = 0.45;
-// Drag past either end of the panel's resize range and the popup starts CLOSING with the finger: this
-// is how far you'd have to pull to take it all the way back onto the card (progress 1 → 0). It reuses
-// the open morph, so a drag-dismiss IS the shared-element animation running backwards under your
-// thumb — nothing new to look at, just driven by you instead of a spring.
+// Drag DOWN past the top of the resize range (the panel already at full size) and the popup starts
+// CLOSING with the finger: this is how far you'd pull to take it all the way back onto the card
+// (progress 1 → 0). It reuses the open morph, so a drag-dismiss IS the shared-element animation
+// running backwards under your thumb — nothing new to look at, just driven by you instead of a spring.
+// DOWN only. Up is how you reach the menu (see RUBBER_RESIST).
 const DISMISS_DRAG = 220;
-// Release past this much overscroll (or with this much velocity) and it dismisses rather than settling
-// back — the usual "did they mean it" test, deliberately forgiving.
+// Release past this much overscroll (or with this much downward velocity) and it dismisses rather than
+// settling back — the usual "did they mean it" test, deliberately forgiving.
 const DISMISS_RELEASE_PX = 64;
 const DISMISS_RELEASE_VELOCITY = 900;
+// Pulling UP past the end of the range doesn't dismiss — it rubber-bands. Reaching for the menu is a
+// swipe UP, and reaching for the menu must never throw the popup away.
+const RUBBER_RESIST = 0.25; // how much of the extra pull actually moves anything
+const RUBBER_LIMIT = 0.06; // and how far it can go, in range units
+// How far ahead a fling is projected when deciding which end of the range to spring to.
+const FLING_PROJECTION = 0.12; // seconds
 // Blur strengths (0–100). The backdrop ramps in a bit after the cover pops.
 const BACKDROP_BLUR = 28;
 const MENU_BLUR = 55;
@@ -228,15 +247,22 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
   const topLimit = chromeTop + EDGE_PAD;
   const bottomLimit = chromeBottom - EDGE_PAD;
-  const cardCenterX = rect.x + rect.width / 2;
 
   const panelW = Math.min(winW - EDGE_PAD * 2, PANEL_MAX_WIDTH);
-  const panelLeft = clamp(cardCenterX - panelW / 2, EDGE_PAD, winW - panelW - EDGE_PAD);
+  // The popup ALWAYS opens against the left edge — panel and menu both — rather than centring itself on
+  // whichever card you pressed. It used to drift horizontally with the card, so the same three actions
+  // landed under a different part of your thumb every time; a fixed edge is what makes the muscle
+  // memory work. The cover still flies from the card it came from, so nothing is lost in the morph.
+  const panelLeft = EDGE_PAD;
 
   const menuW = Math.min(MENU_WIDTH, winW - EDGE_PAD * 2);
   const menuRowCount = MENU_ROWS + DEBUG_EXTRA_MENU_ROWS;
   const menuH = ROW_HEIGHT * menuRowCount + StyleSheet.hairlineWidth * (menuRowCount - 1) + MENU_PAD_V * 2;
-  const menuLeft = clamp(cardCenterX - menuW / 2, EDGE_PAD, winW - menuW - EDGE_PAD);
+  // Always on the LEFT, flush with the panel's own left edge — not centred under the pressed card. The
+  // menu used to slide left/right depending on which card you happened to long-press, so the same three
+  // actions landed under a different part of your thumb every time. A fixed edge means the muscle
+  // memory works: the rows are always in the same place.
+  const menuLeft = panelLeft;
 
   const coverH = COVER_W / clampThumbAspect(coverAspect ?? DEFAULT_THUMB_ASPECT);
 
@@ -398,39 +424,57 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
         })
         .onUpdate((e) => {
           // The column moves WITH the finger, like a scroll: drag UP and the panel shrinks so the menu
-          // below rises into view; drag DOWN and the panel grows back over it. (The first cut had this
-          // backwards — it grew on an upward drag, which reads as the content fighting your thumb.)
+          // below rises into view; drag DOWN and the panel grows back over it.
           const range = dragRange;
           const raw = range > 0 ? panStartExpand.value + e.translationY / range : panStartExpand.value;
-          const clamped = Math.min(1, Math.max(0, raw));
-          expand.value = clamped;
-          // Whatever the drag couldn't spend on resizing is overscroll — including ALL of it when
-          // there's no range to spend it on.
-          const over = range > 0 ? (raw - clamped) * range : e.translationY;
-          overscroll.value = over;
-          progress.value = 1 - Math.min(1, Math.abs(over) / DISMISS_DRAG);
+
+          if (raw > 1 || range <= 0) {
+            // Past the top of the range (or nothing to resize at all): dragging DOWN now pulls the
+            // whole popup back toward the card it came from. `progress` is the open morph, so this IS
+            // the open animation running backwards under your thumb.
+            const over = range > 0 ? (raw - 1) * range : Math.max(0, e.translationY);
+            expand.value = 1;
+            overscroll.value = over;
+            progress.value = 1 - Math.min(1, over / DISMISS_DRAG);
+            return;
+          }
+
+          if (raw < 0) {
+            // Past the bottom of the range — this direction does NOT dismiss. Dragging up is how you
+            // reach the menu, and reaching for the menu should never throw the popup away. It just
+            // rubber-bands: the pull is resisted and springs back on release, which says "that's the
+            // end" without punishing you for it.
+            expand.value = Math.max(-RUBBER_LIMIT, raw * RUBBER_RESIST);
+            overscroll.value = 0;
+            progress.value = 1;
+            return;
+          }
+
+          expand.value = raw;
+          overscroll.value = 0;
+          progress.value = 1;
         })
         .onEnd((e) => {
-          const past = Math.abs(overscroll.value) > DISMISS_RELEASE_PX;
-          const flicked =
-            Math.abs(e.velocityY) > DISMISS_RELEASE_VELOCITY &&
-            // A flick only dismisses if it's flicking AWAY from the range, not back into it.
-            Math.sign(e.velocityY) === Math.sign(-overscroll.value) &&
-            overscroll.value !== 0;
+          // Only a DOWNWARD pull dismisses (overscroll is only ever set by that branch above), either
+          // by distance or by a flick that's still heading that way.
+          const past = overscroll.value > DISMISS_RELEASE_PX;
+          const flicked = overscroll.value > 0 && e.velocityY > DISMISS_RELEASE_VELOCITY;
           if (past || flicked) {
             runOnJS(dismiss)();
             return;
           }
-          // Settle: the popup comes back to full, and the panel keeps the momentum of the drag,
-          // decelerating into its range like a scroll would.
+
           progress.value = withSpring(1, MORPH_SPRING);
           overscroll.value = 0;
           if (dragRange > 0) {
-            expand.value = withDecay({
-              velocity: e.velocityY / dragRange,
-              clamp: [0, 1],
-              deceleration: 0.994,
-            });
+            // Springy settle to the nearer END of the range, carrying the fling's velocity into it —
+            // so a flick lands the panel decisively at full size or with the menu fully up, with a
+            // little bounce, rather than coasting to a stop wherever the finger happened to leave it.
+            // (`withDecay` did the latter and felt lifeless, which is what "meh" meant.)
+            const velocity = e.velocityY / dragRange; // px/s → range units/s
+            const projected = expand.value + velocity * FLING_PROJECTION;
+            const target = projected >= 0.5 ? 1 : 0;
+            expand.value = withSpring(target, { ...RESIZE_SPRING, velocity });
           }
         }),
     [dismiss, dragRange, expand, overscroll, panStartExpand, progress],
