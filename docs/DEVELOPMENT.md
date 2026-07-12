@@ -29,10 +29,16 @@ See `apps/mobile/modules/comical-runtime/SETUP.md` for the full story.
 bun run setup          # first-time / fresh clone: submodule + deps + native harness (see above)
 bun install            # install all workspaces (subset of setup; web-only work)
 bun run dev            # local web dev in a browser (hot reload) → http://localhost:8081
+bun run dev:device     # Metro for a native device (dev-client) — iterate on a phone from any OS
 bun start              # expo start (apps/mobile) — dev menu for iOS/Android/web
 bun run ios            # or: bun run android
 bun run typecheck      # tsc across app + core
 ```
+
+`bun run dev:device` is the **Windows-friendly native loop**: it starts Metro bound to your LAN IP
+and prints a QR. Install the **dev-client** shell once (below), open it on a phone on the same Wi-Fi,
+connect to this server, and every JS/TS edit hot-reloads on-device — no Mac needed for JS work. Full
+story (incl. profiling over it): [PROFILING.md](PROFILING.md) → "Iterative dev & profiling from Windows".
 
 ### Local web dev (`bun run dev`)
 
@@ -134,13 +140,11 @@ selectable from SideStore's version list. It uses the **production bundle id**, 
 `ios-latest` source) to switch back. The public `ios-latest` source stays clean (main only), so
 normal users never get branch-build updates.
 
-**PR builds are Debug (dev) builds.** Since the dev source exists for testing/profiling unmerged
-work, `build-ios.yml` builds PR IPAs with `-configuration Debug` (via the reusable workflow's
-`configuration` input), so they carry the **shake dev menu + live Perf Monitor** for on-device
-profiling — see [PROFILING.md](PROFILING.md). `main` (and the normal `ios-latest` source) stays
-**Release**; a run is only ever one event type, so the single build job is Debug xor Release. Note
-a Debug build runs JS in dev mode (`__DEV__`), so its perf is directional, not production-accurate;
-the dev-source `main` entry is the Release IPA shared with the normal source.
+These are **Release** builds — installable on-device to eyeball a PR's UI on real hardware, but with
+no dev menu / Perf Monitor. (An offline "dev build" from CI isn't practical: Expo intentionally
+skips embedding JS in debug builds, and a dev-mode bundle would be too slow to profile usefully
+anyway — do on-device profiling from a local `expo run:ios --device` build instead; see
+[PROFILING.md](PROFILING.md).)
 
 How it's produced (see `.github/workflows/build-ios.yml` + `.github/scripts/refresh-ios-dev-source.sh`):
 
@@ -152,6 +156,21 @@ How it's produced (see `.github/workflows/build-ios.yml` + `.github/scripts/refr
 
 Android needs no equivalent — its per-PR `android-pr-<N>` prerelease already exposes a direct,
 stable APK download URL (there's no "source" concept to aggregate).
+
+### Dev-client build — iterate on a device from any OS (incl. Windows)
+
+Separate from the Release builds above: the **`Build iOS dev-client`** workflow
+(`build-ios-devclient.yml`, manual `workflow_dispatch`) builds a Debug + `expo-dev-client` shell —
+via the reusable workflow's `configuration: Debug` + `dev_client: true` inputs — and publishes it to
+a rolling **`ios-devclient`** SideStore source. It carries the coexisting `com.porksphere.comical.dev`
+bundle id (the env-gated `with-devclient-variant` plugin, active only when `COMICAL_DEVCLIENT=1`), so
+it installs *alongside* the release app.
+
+This is the shell for the Windows iterative loop: build it once on CI, install via the `ios-devclient`
+source, then drive it from `bun run dev:device` (Metro over your LAN). Rebuild only when native code
+changes. It's the sanctioned Expo development-build flow — the JS loads from Metro (online), which is
+why it works where an offline debug build can't. Full walkthrough: [PROFILING.md](PROFILING.md) →
+"Iterative dev & profiling from Windows".
 
 Constraint: avoid entitlements a free Apple ID can't grant (push, certain App Groups) for
 now. A future TestFlight/App Store path can be added as an extra `eas.json` profile + signed

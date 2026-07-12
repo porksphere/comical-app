@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
@@ -89,10 +89,37 @@ function PressableChip({
   );
 }
 
-export function ChipRow({ labels, accent }: { labels: string[]; accent?: boolean }) {
+export function ChipRow({
+  labels,
+  accent,
+  horizontal,
+  contentInset,
+}: {
+  labels: string[];
+  accent?: boolean;
+  horizontal?: boolean;
+  /** Leading padding inside a `horizontal` row's scroll content, so a full-bleed row (its viewport
+   *  spanning to a panel's rounded edges) still rests with breathing room but scrolls content all the
+   *  way to the edge rather than clipping it at an inset viewport. */
+  contentInset?: number;
+}) {
   const [expanded, setExpanded] = useState(false);
   const maxVisible = useMaxVisibleChips();
   if (!labels.length) return null;
+  // A single non-wrapping horizontally-scrolling row (used in the card preview panel) — all chips,
+  // no collapse (the scroll handles overflow).
+  if (horizontal) {
+    return (
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={[styles.hChips, contentInset != null && { paddingLeft: contentInset }]}>
+        {labels.map((l) => (
+          <Chip key={l} label={l} accent={accent} />
+        ))}
+      </ScrollView>
+    );
+  }
   const collapsible = !expanded && labels.length > maxVisible;
   const shown = collapsible ? labels.slice(0, maxVisible) : labels;
   return (
@@ -114,17 +141,42 @@ export function ChipRow({ labels, accent }: { labels: string[]; accent?: boolean
 export function TagGroupRow({
   group,
   onTagPress,
+  horizontal,
+  contentInset,
 }: {
   group: TagGroup;
   /** Called with a tapped tag's index. Only tags the bridge made actionable — a
    *  `tagIds`/`tagQueries` entry at that index — render as pressable; the rest
    *  (e.g. a Characters/Parodies group with no ids/queries) stay static. */
   onTagPress?: (index: number) => void;
+  /** Render as an unlabeled, non-wrapping horizontally-scrolling row (used in the card preview panel)
+   *  instead of the wrapping, collapsible layout. */
+  horizontal?: boolean;
+  /** Leading padding inside a `horizontal` row's scroll content — see `ChipRow`'s `contentInset`. */
+  contentInset?: number;
 }) {
   const theme = useTheme();
   const [expanded, setExpanded] = useState(false);
   const maxVisible = useMaxVisibleChips();
   if (!group.tags.length) return null;
+  const chip = (t: string, i: number) => {
+    const actionable = !!onTagPress && !!(group.tagQueries?.[i] || group.tagIds?.[i]);
+    return actionable ? (
+      <PressableChip key={t} onPress={() => onTagPress!(i)} accessibilityLabel={`Search ${t}`} label={t} accent />
+    ) : (
+      <Chip key={t} label={t} accent />
+    );
+  };
+  if (horizontal) {
+    return (
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={[styles.hChips, contentInset != null && { paddingLeft: contentInset }]}>
+        {group.tags.map(chip)}
+      </ScrollView>
+    );
+  }
   const collapsible = !expanded && group.tags.length > maxVisible;
   const shown = collapsible ? group.tags.slice(0, maxVisible) : group.tags;
   return (
@@ -161,6 +213,10 @@ const styles = StyleSheet.create({
   tagGroup: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: Spacing.one,
+  },
+  hChips: {
     alignItems: 'center',
     gap: Spacing.one,
   },

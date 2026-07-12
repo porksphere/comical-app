@@ -99,14 +99,37 @@ Shake → **Show Perf Monitor** overlays live JS-thread and UI-thread FPS. If UI
 FPS stays high, the bottleneck is native/render (→ Instruments); if JS FPS tanks, it's your
 JavaScript (→ React Native DevTools). That one glance tells you which profiler to reach for.
 
-## On-device without a cable: the dev SideStore build
+## Iterative dev & profiling from Windows (the dev-client loop)
 
-If you don't want to tether to a Mac, the **dev SideStore/AltStore source** serves Debug (dev)
-builds for open PRs (see
-[DEVELOPMENT.md → Dev / branch builds](DEVELOPMENT.md#dev--branch-builds--one-source-every-pr) —
-its `main` entry stays Release and won't have the dev menu; install a PR build for that). Installed
-standalone a Debug build gives you the **shake menu** and the **live Perf Monitor FPS overlay**
-offline — enough to spot *which screen* drops frames. But the flamegraph-quality profilers (tools 1
-and 2 above) need the app talking to a Metro server, so for real hotspot-hunting come back to the
-local dev build. And remember a dev build runs JS in dev mode: treat its FPS as directional, not
-as production truth.
+You don't need a Mac in the loop. An Expo app splits in two: the **native binary** (built on macOS
+— but CI's `macos-26` runner does that, not you) and the **JS/TS bundle** (Metro, which runs fine on
+Windows). The trick is a [**development-client**](https://docs.expo.dev/develop/development-builds/introduction/)
+build — a debug shell with `expo-dev-client` — that loads its JS from a Metro server over your LAN.
+Build the shell once; iterate the JS forever from the PC.
+
+> Note what does **not** work: a *standalone offline* debug build. Expo deliberately sets
+> `SKIP_BUNDLING=1` for debug, so a CI debug build embeds no JS and crashes with *"No script URL
+> provided."* The dev-client build sidesteps this by loading JS from Metro (online), not from an
+> embedded bundle — and its launcher shows instead of crashing when no server is set. That's the
+> supported path; don't chase the offline one.
+
+**One-time (CI does the macOS part):**
+1. Run the **Build iOS dev-client** workflow (`build-ios-devclient.yml`, manual `workflow_dispatch`)
+   — it builds a Debug + `expo-dev-client` shell with the coexisting `com.porksphere.comical.dev`
+   bundle id and publishes it to a rolling `ios-devclient` SideStore source.
+2. Add that source in SideStore/AltStore and install **Comical (dev)**. It sits next to the release
+   app. Rebuild only when *native* code changes (a native module, a config plugin, an SDK bump).
+
+**Every day (all on Windows):**
+1. `bun run dev:device` on the PC → Metro on `http://<lan-ip>:8081`, prints a QR.
+2. On the phone (same Wi-Fi): open **Comical (dev)** → scan the QR / enter the URL from its launcher.
+3. Edit `.tsx` → **Fast Refresh** on device in ~1s. **Shake → dev menu.** No rebuild.
+
+**Profiling over this loop:** React Native DevTools attaches to the *Metro* server, so tools **1**
+and **2** above (Hermes sampling profiler, React Profiler) work from the PC against the app on your
+phone — press `j` in the `bun run dev:device` terminal. Only **Xcode Instruments** (tool 3, native
+CPU/GPU/memory) still needs macOS. So Windows covers JS-thread profiling; the Mac is only for native.
+
+For a fully local setup on a Mac instead, `cd apps/mobile && bun run ios --device` builds and runs the
+same dev-client shell directly. See [DEVELOPMENT.md](DEVELOPMENT.md) for the build pipeline; the
+per-PR SideStore builds remain plain **Release** (installable for UI checks, no dev menu).

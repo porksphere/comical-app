@@ -16,7 +16,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { MaxTopLevelWidth, Spacing } from '@/constants/theme';
-import { setSearchIntent } from '@/data/search-intent';
+import { setSearchIntent, tagSearchIntent } from '@/data/search-intent';
 import { historyQuery, relatedGroupsQuery, seriesDetailQuery, seriesListQuery } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import { firstChapterInReadingOrder } from '@/lib/chapter-order';
@@ -445,21 +445,9 @@ function SeriesBody({
   // mount (see search.tsx) and applies it against the intent's bridge.
   const onTagPress = (group: TagGroup, index: number) => {
     if (!bridgeId) return;
-    const query = group.tagQueries?.[index];
-    const tagId = group.tagIds?.[index];
-    if (query) {
-      setSearchIntent({ bridgeName: series.bridge, kind: 'query', query });
-    } else if (tagId) {
-      setSearchIntent({
-        bridgeName: series.bridge,
-        kind: 'tag',
-        filterKey: 'tag',
-        tagId,
-        label: group.tags[index],
-      });
-    } else {
-      return;
-    }
+    const intent = tagSearchIntent(group, index, { bridgeName: series.bridge });
+    if (!intent) return;
+    setSearchIntent(intent);
     router.push('/search');
   };
 

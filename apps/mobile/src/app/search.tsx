@@ -20,7 +20,7 @@ import { ThemedView } from '@/components/themed-view';
 import { MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { useDedupedPages } from '@/data/grid-pages';
 import { fetchBrowseScope, queryKeys, type BrowseScope } from '@/data/queries';
-import { takeSearchIntent } from '@/data/search-intent';
+import { subscribeSearchIntent, takeSearchIntent } from '@/data/search-intent';
 import { useSelectedBridge } from '@/data/selected-bridge';
 import { useDataSource, useMockActive } from '@/data/source';
 import type { GridPage, SeriesEntry } from '@/data/types';
@@ -104,6 +104,34 @@ export default function SearchScreen() {
   );
   const [pendingMeta, setPendingMeta] = useState<MetaIntent | null>(
     initialIntent?.kind === 'meta' ? { metaKey: initialIntent.metaKey, value: initialIntent.value } : null,
+  );
+
+  // An intent can also arrive while Search is ALREADY mounted: cards in the results grid below carry
+  // the long-press preview, and tapping one of its tag rows sets an intent without changing the route
+  // (see series-card-context-menu), so the mount-only read above would never see it.
+  //
+  // Seed the same three paths as mount — but clear the existing query/filters/sort first, so the tap
+  // lands on a clean slate exactly as it would on a freshly-pushed Search. Without that, the new tag
+  // would MERGE into whatever refinement is already on screen (the filters hook only self-resets on a
+  // bridge CHANGE, and this intent is usually for the same bridge), silently ANDing the tag with the
+  // previous search's filters — not what "search this tag" means.
+  useEffect(
+    () =>
+      subscribeSearchIntent(() => {
+        const intent = takeSearchIntent();
+        if (!intent) return;
+        setBridge(intent.bridgeName);
+        setFilterValues({});
+        setSortValue(null);
+        setQuery(intent.kind === 'query' ? intent.query : '');
+        setPendingTag(
+          intent.kind === 'tag'
+            ? { filterKey: intent.filterKey, tagId: intent.tagId, label: intent.label }
+            : null,
+        );
+        setPendingMeta(intent.kind === 'meta' ? { metaKey: intent.metaKey, value: intent.value } : null);
+      }),
+    [setBridge, setFilterValues, setSortValue],
   );
 
   useEffect(() => {
