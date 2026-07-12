@@ -5,7 +5,8 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { useIsLargeScreen } from '@/hooks/use-responsive';
-import { useTheme } from '@/hooks/use-theme';
+import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
+import { tagPaletteFor, type TagColor } from '@/lib/tag-colors';
 import type { TagGroup } from '@/data/mock';
 
 // Genre / tag chips and a labeled tag-group row. Mirrors `.chip` / `.tag-group`
@@ -28,29 +29,33 @@ function useMaxVisibleChips(): number {
 export function Chip({
   label,
   accent,
+  color,
   highlighted,
 }: {
   label: string;
   accent?: boolean;
+  /** The tag group's own colour (see lib/tag-colors) — overrides `accent`'s default chip blue, so a
+   *  chip says which GROUP it belongs to without a row heading to sit under. */
+  color?: TagColor;
   /** Brightens the fill (hover) — set by `PressableChip`, never by a static chip. */
   highlighted?: boolean;
 }) {
   const theme = useTheme();
   // Matches the reference: every chip shares the neutral `chipBg` fill; tags
-  // (`accent`) carry a blue border + blue text, while plain chips (genres) get a
-  // subtle border and muted text — rather than a blue-tinted fill.
+  // (`accent`) carry a coloured border + coloured text, while plain chips (genres) get a
+  // subtle border and muted text — rather than a tinted fill.
+  const border = color ? color.border : accent ? theme.chipBorder : theme.hairline;
+  const text = color ? color.text : accent ? theme.chipText : theme.textSecondary;
   return (
     <View
       style={[
         styles.chip,
         {
           backgroundColor: highlighted ? theme.backgroundSelected : theme.chipBg,
-          borderColor: accent ? theme.chipBorder : theme.hairline,
+          borderColor: border,
         },
       ]}>
-      <ThemedText
-        style={[styles.chipText, { color: accent ? theme.chipText : theme.textSecondary }]}
-        numberOfLines={1}>
+      <ThemedText style={[styles.chipText, { color: text }]} numberOfLines={1}>
         {label}
       </ThemedText>
     </View>
@@ -83,11 +88,13 @@ const chipKey = (label: string, index: number) => `${index}:${label}`;
 function PressableChip({
   label,
   accent,
+  color,
   onPress,
   accessibilityLabel,
 }: {
   label: string;
   accent?: boolean;
+  color?: TagColor;
   onPress: () => void;
   accessibilityLabel: string;
 }) {
@@ -100,8 +107,77 @@ function PressableChip({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       style={({ pressed }) => pressed && styles.chipPressed}>
-      <Chip label={label} accent={accent} highlighted={hovered} />
+      <Chip label={label} accent={accent} color={color} highlighted={hovered} />
     </Pressable>
+  );
+}
+
+/** One group's tag chips, in that group's colour — the piece `TagGroupRow` (labelled rows, series
+ *  page) and `TagStrip` (one unlabelled row, card popup) share, so a tag looks the same in both. */
+function groupChips(
+  group: TagGroup,
+  color: TagColor,
+  keyPrefix: string,
+  onTagPress?: (index: number) => void,
+): React.ReactElement[] {
+  return group.tags.map((t, i) => {
+    // Only tags the bridge made actionable — a `tagIds`/`tagQueries` entry at that index — are
+    // pressable; the rest (e.g. a Characters/Parodies group with no ids/queries) stay static.
+    const actionable = !!onTagPress && !!(group.tagQueries?.[i] || group.tagIds?.[i]);
+    const key = `${keyPrefix}${chipKey(t, i)}`;
+    return actionable ? (
+      <PressableChip
+        key={key}
+        onPress={() => onTagPress!(i)}
+        accessibilityLabel={`Search ${t}`}
+        label={t}
+        accent
+        color={color}
+      />
+    ) : (
+      <Chip key={key} label={t} accent color={color} />
+    );
+  });
+}
+
+/**
+ * Every tag group flattened into ONE horizontally-scrolling row, each chip carrying its group's
+ * colour instead of sitting under a group heading. For the card long-press popup, where a row per
+ * group would push the panel past the height a preview can justify — the colour is what still tells
+ * you an "Artist" tag from a "Character" one, and it's the same colour the series page uses.
+ *
+ * Genres lead, in neutral: they aren't a group and have no colour of their own.
+ */
+export function TagStrip({
+  genres,
+  groups,
+  contentInset,
+  onTagPress,
+}: {
+  genres?: string[];
+  groups?: TagGroup[];
+  /** Leading padding inside the scroll content — see `ChipRow`'s `contentInset`. */
+  contentInset?: number;
+  onTagPress?: (group: TagGroup, index: number) => void;
+}) {
+  const scheme = useActiveColorScheme();
+  // The palette is computed over ALL the groups at once — a group's colour depends on the others it
+  // shares a series with (collisions get probed apart), so it can't be derived per-chip.
+  const colors = tagPaletteFor(groups?.map((g) => g.label) ?? [], scheme);
+  const hasTags = !!genres?.length || !!groups?.some((g) => g.tags.length);
+  if (!hasTags) return null;
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={[styles.hChips, contentInset != null && { paddingLeft: contentInset }]}>
+      {genres?.map((g, i) => (
+        <Chip key={`g${chipKey(g, i)}`} label={g} />
+      ))}
+      {groups?.flatMap((group, gi) =>
+        groupChips(group, colors[gi]!, `t${gi}:`, onTagPress ? (i) => onTagPress(group, i) : undefined),
+      )}
+    </ScrollView>
   );
 }
 
@@ -154,59 +230,37 @@ export function ChipRow({
   );
 }
 
+/**
+ * One labelled, wrapping row per tag group (the series page). The heading and the chips share the
+ * group's colour — the same one the popup's `TagStrip` gives those tags when it drops the heading, so
+ * the row here doubles as the legend for the strip there.
+ */
 export function TagGroupRow({
   group,
+  color,
   onTagPress,
-  horizontal,
   contentInset,
 }: {
   group: TagGroup;
-  /** Called with a tapped tag's index. Only tags the bridge made actionable — a
-   *  `tagIds`/`tagQueries` entry at that index — render as pressable; the rest
-   *  (e.g. a Characters/Parodies group with no ids/queries) stay static. */
+  /** This group's colour. Passed in, not derived here: it depends on the OTHER groups in the same
+   *  series (see tagPaletteFor), so only the caller — which holds the whole list — can work it out. */
+  color: TagColor;
+  /** Called with a tapped tag's index. */
   onTagPress?: (index: number) => void;
-  /** Render as an unlabeled, non-wrapping horizontally-scrolling row (used in the card preview panel)
-   *  instead of the wrapping, collapsible layout. */
-  horizontal?: boolean;
-  /** Leading padding inside a `horizontal` row's scroll content — see `ChipRow`'s `contentInset`. */
+  /** Leading padding inside the row — see `ChipRow`'s `contentInset`. */
   contentInset?: number;
 }) {
-  const theme = useTheme();
   const [expanded, setExpanded] = useState(false);
   const maxVisible = useMaxVisibleChips();
   if (!group.tags.length) return null;
-  const chip = (t: string, i: number) => {
-    const actionable = !!onTagPress && !!(group.tagQueries?.[i] || group.tagIds?.[i]);
-    return actionable ? (
-      <PressableChip
-        key={chipKey(t, i)}
-        onPress={() => onTagPress!(i)}
-        accessibilityLabel={`Search ${t}`}
-        label={t}
-        accent
-      />
-    ) : (
-      <Chip key={chipKey(t, i)} label={t} accent />
-    );
-  };
-  if (horizontal) {
-    return (
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={[styles.hChips, contentInset != null && { paddingLeft: contentInset }]}>
-        {group.tags.map(chip)}
-      </ScrollView>
-    );
-  }
   const collapsible = !expanded && group.tags.length > maxVisible;
-  const shown = collapsible ? group.tags.slice(0, maxVisible) : group.tags;
+  const shown = collapsible
+    ? { ...group, tags: group.tags.slice(0, maxVisible) }
+    : group;
   return (
-    <View style={styles.tagGroup}>
-      <ThemedText style={[styles.groupLabel, { color: theme.textSecondary }]}>
-        {group.label.toUpperCase()}
-      </ThemedText>
-      {shown.map(chip)}
+    <View style={[styles.tagGroup, contentInset != null && { paddingLeft: contentInset }]}>
+      <ThemedText style={[styles.groupLabel, { color: color.text }]}>{group.label.toUpperCase()}</ThemedText>
+      {groupChips(shown, color, '', onTagPress)}
       {collapsible && (
         <PressableChip
           onPress={() => setExpanded(true)}

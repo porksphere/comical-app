@@ -20,6 +20,7 @@ import { setSearchIntent, tagSearchIntent } from '@/data/search-intent';
 import { relatedGroupsQuery, seriesDetailQuery, seriesListQuery } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import { resetPreferredGroup } from '@/lib/preferred-group';
+import { tagPaletteFor } from '@/lib/tag-colors';
 import { type SeriesDetail, type TagGroup } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
@@ -28,7 +29,7 @@ import { useHovered } from '@/hooks/use-hovered';
 import { useLibrary } from '@/hooks/use-library';
 import { useStartReading } from '@/hooks/use-start-reading';
 import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
-import { useTheme } from '@/hooks/use-theme';
+import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 
 const LARGE_COVER_WIDTH = 300;
 
@@ -231,6 +232,7 @@ function SeriesBody({
   const ds = useDataSource();
   const router = useRouter();
   const theme = useTheme();
+  const scheme = useActiveColorScheme();
   const mock = useMockActive();
 
   // Let the native push transition play before mounting the heavy chapter/page
@@ -414,6 +416,12 @@ function SeriesBody({
     router.push('/search');
   };
 
+  // One colour per tag group, computed over the whole list at once (a group's hue depends on the
+  // others it shares this series with — see tagPaletteFor). The card popup gives these same tags the
+  // same colours when it folds the groups into a single row, so these labelled rows read as its
+  // legend.
+  const tagColors = tagPaletteFor(series.tagGroups?.map((g) => g.label) ?? [], scheme);
+
   // Metadata, description, and chapters — placed in the right column (large)
   // or stacked below the hero row (small).
   const contentEl = (
@@ -424,7 +432,12 @@ function SeriesBody({
           {/* Keyed by index, not `g.label` — a bridge can repeat a group label, and two siblings on
               the same key is a duplicate-key error (same reasoning as chip.tsx's `chipKey`). */}
           {series.tagGroups?.map((g, gi) => (
-            <TagGroupRow key={`${gi}:${g.label}`} group={g} onTagPress={(i) => onTagPress(g, i)} />
+            <TagGroupRow
+              key={`${gi}:${g.label}`}
+              group={g}
+              color={tagColors[gi]!}
+              onTagPress={(i) => onTagPress(g, i)}
+            />
           ))}
         </View>
       ) : null}
