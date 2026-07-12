@@ -526,33 +526,48 @@ export function SeriesCard({
       </>
     );
 
+    // Cover contents: the (optionally scaled) picture, overlaid badges/rank, and the native held
+    // scrim. Shared by both the web (box > clip) and native (single merged box) structures below.
+    const coverContents = (
+      <>
+        {/* Picture layer scaled by `pictureStyle` to fake the shrink illusion; badges/rank/ring are
+            siblings so they never get stretched. Lightweight path (no scaling) skips the wrapper and
+            renders the image/skeleton straight into the clip. */}
+        {shrink.pictureStyle ? (
+          <Animated.View style={[StyleSheet.absoluteFill, styles.picture, shrink.pictureStyle]}>
+            {pictureInner}
+          </Animated.View>
+        ) : (
+          pictureInner
+        )}
+        {entry.badges?.map((b, i) => <CardBadge key={i} badge={b} />)}
+        {entry.unread != null && <UnreadBadge count={entry.unread} />}
+        {rank != null && (
+          <View style={styles.rank}>
+            <ThemedText style={styles.rankText}>{rank}</ThemedText>
+          </View>
+        )}
+        {/* Native held cue: a subtle scrim over the cover while pressed (web uses the ring instead). */}
+        {active && !isWeb && <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.heldScrim]} />}
+      </>
+    );
+
     return (
       <>
-        <View style={[styles.coverBox, { aspectRatio: coverAspect }]} onLayout={shrink.onCoverLayout}>
-          <View style={styles.coverClip}>
-            {/* Picture layer scaled by `pictureStyle` to fake the shrink illusion; badges/rank/ring
-                are siblings so they never get stretched. Lightweight path (no scaling) skips the
-                wrapper and renders the image/skeleton straight into the clip. */}
-            {shrink.pictureStyle ? (
-              <Animated.View style={[StyleSheet.absoluteFill, styles.picture, shrink.pictureStyle]}>
-                {pictureInner}
-              </Animated.View>
-            ) : (
-              pictureInner
-            )}
-            {entry.badges?.map((b, i) => <CardBadge key={i} badge={b} />)}
-            {entry.unread != null && <UnreadBadge count={entry.unread} />}
-            {rank != null && (
-              <View style={styles.rank}>
-                <ThemedText style={styles.rankText}>{rank}</ThemedText>
-              </View>
-            )}
-            {/* Native held cue: a subtle scrim over the cover while pressed (web uses the ring below). */}
-            {active && !isWeb && <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.heldScrim]} />}
+        {isWeb ? (
+          // Web keeps a non-clipping `coverBox` around the clipping `coverClip` so the active hover
+          // ring (negative insets) can extend past the clip without being cut off.
+          <View style={[styles.coverBox, { aspectRatio: coverAspect }]} onLayout={shrink.onCoverLayout}>
+            <View style={styles.coverClip}>{coverContents}</View>
+            {active && <View style={[styles.ring, { pointerEvents: 'none' }]} />}
           </View>
-          {/* Highlight ring hugs the cover edge — web-only hover/active highlight. */}
-          {active && isWeb && <View style={[styles.ring, { pointerEvents: 'none' }]} />}
-        </View>
+        ) : (
+          // Native has no ring, so the box IS the clip — one fewer host view means one fewer Fabric
+          // clone up the ancestor chain on every commit, on the platform that scrolls these grids.
+          <View style={[styles.coverBoxClip, { aspectRatio: coverAspect }]} onLayout={shrink.onCoverLayout}>
+            {coverContents}
+          </View>
+        )}
 
         {/* Trailing group is an Animated.View only when the shrink illusion drives its translateY;
             otherwise a plain View, so lightweight cards carry no Reanimated wrapper here either. */}
@@ -697,6 +712,15 @@ const styles = StyleSheet.create({
     // than the 2:3 max for a wider-than-2:3 cover; `coverFill` reserves the rest.
     width: '100%',
     position: 'relative',
+  },
+  coverBoxClip: {
+    // Native-only: `coverBox` and `coverClip` merged into one host view (no hover ring to escape the
+    // clip there). Same aspect box, but it clips + backs the cover directly — one fewer view per card.
+    width: '100%',
+    position: 'relative',
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(128,128,128,0.15)',
   },
   coverFill: {
     // Bottom filler that reserves a shorter cover's unused height so every card is
