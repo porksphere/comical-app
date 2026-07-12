@@ -52,13 +52,27 @@ export function tagBrowseIntent(
 }
 
 let pending: BrowseIntent | null = null;
+const listeners = new Set<() => void>();
 
-/** Stash an intent for the Browse tab to pick up when it next gains focus. */
+/**
+ * Stash an intent for the Browse tab to pick up. Browse consumes it on focus (after navigation from a
+ * pushed Series screen), OR — when it's ALREADY the focused tab (e.g. the card long-press preview,
+ * a root overlay that changes no route, was opened right on Browse) — immediately, via the listeners
+ * below: dismissing that overlay fires no focus change, so on-focus alone would leave the intent
+ * pending until the tab was left and re-entered.
+ */
 export function setBrowseIntent(intent: BrowseIntent): void {
   pending = intent;
+  listeners.forEach((l) => l());
 }
 
-/** Read and clear the pending intent — Browse calls this from its focus effect. */
+/** Subscribe to intents being set. Browse uses this to consume one while it's already focused. */
+export function subscribeBrowseIntent(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+/** Read and clear the pending intent — Browse calls this from its focus effect / the subscription. */
 export function takeBrowseIntent(): BrowseIntent | null {
   const intent = pending;
   pending = null;

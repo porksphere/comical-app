@@ -36,7 +36,7 @@ import { ThemedView } from '@/components/themed-view';
 import { PullIndicator } from '@/components/pull-indicator';
 import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { pageOptions } from '@/data/api';
-import { takeBrowseIntent } from '@/data/browse-intent';
+import { subscribeBrowseIntent, takeBrowseIntent } from '@/data/browse-intent';
 import { useDedupedPages } from '@/data/grid-pages';
 import { fetchBrowseScope, homeSectionsQuery, queryKeys, type BrowseScope } from '@/data/queries';
 import { isRailLayout, useDataSource, useHideNsfw, useMockActive, type QueryOpts } from '@/data/source';
@@ -363,28 +363,43 @@ export default function BrowseScreen() {
   // was opened from (e.g. "Popular") so the drill-down's back arrow returns there instead of
   // Home — falls back to 'home' when absent (series opened from a different tab, where there's
   // no Browse sub-page to return to).
+  const consumeBrowseIntent = useCallback(() => {
+    const intent = takeBrowseIntent();
+    if (!intent) return;
+    setSeeAll(null);
+    setPage(intent.originPage ?? 'home');
+    setBridge(intent.bridgeName);
+    if (intent.kind === 'query') {
+      setPendingTag(null);
+      setPendingMeta(null);
+      setQuery(intent.query);
+    } else if (intent.kind === 'tag') {
+      setQuery('');
+      setPendingMeta(null);
+      setPendingTag({ filterKey: intent.filterKey, tagId: intent.tagId, label: intent.label });
+    } else {
+      setQuery('');
+      setPendingTag(null);
+      setPendingMeta({ metaKey: intent.metaKey, value: intent.value });
+    }
+  }, []);
+  const focusedRef = useRef(false);
   useFocusEffect(
     useCallback(() => {
-      const intent = takeBrowseIntent();
-      if (!intent) return;
-      setSeeAll(null);
-      setPage(intent.originPage ?? 'home');
-      setBridge(intent.bridgeName);
-      if (intent.kind === 'query') {
-        setPendingTag(null);
-        setPendingMeta(null);
-        setQuery(intent.query);
-      } else if (intent.kind === 'tag') {
-        setQuery('');
-        setPendingMeta(null);
-        setPendingTag({ filterKey: intent.filterKey, tagId: intent.tagId, label: intent.label });
-      } else {
-        setQuery('');
-        setPendingTag(null);
-        setPendingMeta({ metaKey: intent.metaKey, value: intent.value });
-      }
-    }, []),
+      focusedRef.current = true;
+      consumeBrowseIntent();
+      return () => {
+        focusedRef.current = false;
+      };
+    }, [consumeBrowseIntent]),
   );
+  // Also consume immediately when an intent is set WHILE Browse is already the focused tab — e.g. a
+  // tag tapped in the card long-press preview (a root overlay), whose dismissal triggers no focus
+  // change, so the on-focus path above would never fire. When Browse isn't focused, the setter's
+  // navigation brings it into focus and the focus effect handles it, so ignore it here.
+  useEffect(() => subscribeBrowseIntent(() => {
+    if (focusedRef.current) consumeBrowseIntent();
+  }), [consumeBrowseIntent]);
 
   // Apply once the CURRENT bridge's filter defs are loaded (`filtersSettled`). Because `filterDefs`
   // is derived (never lagging the query), a null resolution here genuinely means this bridge has no
