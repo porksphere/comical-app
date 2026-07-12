@@ -419,9 +419,9 @@ export default function BrowseScreen() {
       pendingCommitRef.current = commit;
       setSwitching(true);
       setCommitted(false);
-      homeXfade.value = withTiming(0, { duration: XFADE_OUT_MS, easing: Easing.in(Easing.quad) }, (finished) => {
+      homeXfade.set(withTiming(0, { duration: XFADE_OUT_MS, easing: Easing.in(Easing.quad) }, (finished) => {
         if (finished) runOnJS(runPendingCommit)();
-      });
+      }));
     },
     [homeXfade, runPendingCommit],
   );
@@ -454,7 +454,7 @@ export default function BrowseScreen() {
     // `committed` gates out the fade-out phase, when `homeReady` still reflects the outgoing bridge.
     if (!switching || !committed) return;
     const revealNow = () => {
-      homeXfade.value = withTiming(1, { duration: XFADE_IN_MS, easing: Easing.out(Easing.quad) });
+      homeXfade.set(withTiming(1, { duration: XFADE_IN_MS, easing: Easing.out(Easing.quad) }));
       setSwitching(false);
       setCommitted(false);
     };
@@ -478,7 +478,7 @@ export default function BrowseScreen() {
     if (!switching) return;
     const t = setTimeout(() => {
       if (pendingCommitRef.current) runPendingCommit();
-      homeXfade.value = withTiming(1, { duration: XFADE_IN_MS, easing: Easing.out(Easing.quad) });
+      homeXfade.set(withTiming(1, { duration: XFADE_IN_MS, easing: Easing.out(Easing.quad) }));
       setSwitching(false);
       setCommitted(false);
     }, XFADE_MAX_WAIT_MS);

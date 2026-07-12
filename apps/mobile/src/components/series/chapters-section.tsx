@@ -733,8 +733,8 @@ function ThumbShrink({ index, children }: { index: number; children: (api: Thumb
   // Reset to rest when this instance is recycled to a different page (an effect, not render — writing
   // a shared value during render trips reanimated's strict-mode warning on every recycle).
   useEffect(() => {
-    progressSV.value = 1;
-    fromScaleSV.value = 1;
+    progressSV.set(1);
+    fromScaleSV.set(1);
   }, [index, progressSV, fromScaleSV]);
 
   const pictureStyle = useAnimatedStyle(() => ({
@@ -747,9 +747,9 @@ function ThumbShrink({ index, children }: { index: number; children: (api: Thumb
       if (!(boxWidth > 0) || oldAspect === newAspect) return;
       const oldHeight = boxWidth / oldAspect;
       const newHeight = boxWidth / newAspect;
-      fromScaleSV.value = newHeight > 0 ? oldHeight / newHeight : 1;
-      progressSV.value = 0;
-      progressSV.value = withTiming(1, { duration: ASPECT_TRANSITION_MS, easing: Easing.out(Easing.cubic) });
+      fromScaleSV.set(newHeight > 0 ? oldHeight / newHeight : 1);
+      progressSV.set(0);
+      progressSV.set(withTiming(1, { duration: ASPECT_TRANSITION_MS, easing: Easing.out(Easing.cubic) }));
     },
     [fromScaleSV, progressSV],
   );

@@ -58,7 +58,7 @@ export function useSlidingBar(
     (y, prevY) => {
       // At/above the top (resting, or an active pull/overscroll reporting negative y): pinned visible.
       if (y <= 0) {
-        offset.value = 0;
+        offset.set(0);
         return;
       }
       // Past the content end the list is in (or springing out of) its elastic bottom bounce, which
@@ -66,7 +66,7 @@ export function useSlidingBar(
       // isn't revealed on every bottom bounce. Only apply the delta below the max (real scrolling).
       if (maxScrollY.value > 0 && y >= maxScrollY.value) return;
       const dy = y - (prevY ?? y);
-      offset.value = Math.min(0, Math.max(-barHeight, offset.value - dy));
+      offset.set(Math.min(0, Math.max(-barHeight, offset.value - dy)));
     },
     [barHeight],
   );
@@ -105,9 +105,9 @@ export function useSlidingBar(
   useEffect(() => {
     // A scope change snaps the bar back to visible + the list to the top. The list instance persists
     // across scope changes (keepPreviousData, no remount), so it won't return to the top on its own.
-    scrollY.value = 0;
-    offset.value = 0;
-    maxScrollY.value = 0;
+    scrollY.set(0);
+    offset.set(0);
+    maxScrollY.set(0);
     listRef?.current?.scrollToOffset({ offset: 0, animated: false });
     // Shared values + listRef are stable refs; only a resetKey change should re-run this.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -117,7 +117,7 @@ export function useSlidingBar(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       const { contentSize, layoutMeasurement } = e.nativeEvent;
       if (contentSize && layoutMeasurement) {
-        maxScrollY.value = Math.max(0, contentSize.height - layoutMeasurement.height);
+        maxScrollY.set(Math.max(0, contentSize.height - layoutMeasurement.height));
       }
     },
     [maxScrollY],

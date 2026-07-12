@@ -173,9 +173,9 @@ function CoverShrink({ entryId, children }: { entryId: string; children: (api: S
   // Reset to rest when this instance is recycled to a different entry (effect, not render — writing a
   // shared value during render trips reanimated's strict-mode warning).
   useEffect(() => {
-    shrinkProgressSV.value = 1;
-    shrinkFromScaleSV.value = 1;
-    shrinkFromOffsetSV.value = 0;
+    shrinkProgressSV.set(1);
+    shrinkFromScaleSV.set(1);
+    shrinkFromOffsetSV.set(0);
   }, [entryId, shrinkProgressSV, shrinkFromScaleSV, shrinkFromOffsetSV]);
   const pictureStyle = useAnimatedStyle(() => ({
     transform: [{ scaleY: shrinkFromScaleSV.value + (1 - shrinkFromScaleSV.value) * shrinkProgressSV.value }],
@@ -185,7 +185,7 @@ function CoverShrink({ entryId, children }: { entryId: string; children: (api: S
   }));
   const onCoverLayout = useCallback(
     (e: LayoutChangeEvent) => {
-      coverBoxWidthSV.value = e.nativeEvent.layout.width;
+      coverBoxWidthSV.set(e.nativeEvent.layout.width);
     },
     [coverBoxWidthSV],
   );
@@ -196,10 +196,10 @@ function CoverShrink({ entryId, children }: { entryId: string; children: (api: S
       if (width > 0 && newAspect !== oldAspect) {
         const oldHeight = width / oldAspect;
         const newHeight = width / newAspect;
-        shrinkFromScaleSV.value = newHeight > 0 ? oldHeight / newHeight : 1;
-        shrinkFromOffsetSV.value = oldHeight - newHeight;
-        shrinkProgressSV.value = 0;
-        shrinkProgressSV.value = withTiming(1, { duration: ASPECT_TRANSITION_MS, easing: Easing.out(Easing.cubic) });
+        shrinkFromScaleSV.set(newHeight > 0 ? oldHeight / newHeight : 1);
+        shrinkFromOffsetSV.set(oldHeight - newHeight);
+        shrinkProgressSV.set(0);
+        shrinkProgressSV.set(withTiming(1, { duration: ASPECT_TRANSITION_MS, easing: Easing.out(Easing.cubic) }));
       }
     },
     [coverBoxWidthSV, shrinkFromScaleSV, shrinkFromOffsetSV, shrinkProgressSV],

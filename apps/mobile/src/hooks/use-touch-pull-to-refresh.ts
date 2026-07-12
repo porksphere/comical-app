@@ -49,7 +49,7 @@ export function useTouchPullToRefresh(scrollY: SharedValue<number>, onRefresh: (
   useEffect(() => {
     if (holding.current && !refreshing) {
       holding.current = false;
-      pullY.value = withSpring(0, SETTLE_SPRING);
+      pullY.set(withSpring(0, SETTLE_SPRING));
     }
   }, [refreshing, pullY]);
 
@@ -68,7 +68,7 @@ export function useTouchPullToRefresh(scrollY: SharedValue<number>, onRefresh: (
       if (scrollY.value > 0) {
         // The list itself started scrolling mid-gesture — hand off to it entirely.
         pulling.current = false;
-        pullY.value = withTiming(0, { duration: 150 });
+        pullY.set(withTiming(0, { duration: 150 }));
         return;
       }
       const dy = e.nativeEvent.pageY - startY.current - PULL_START_SLOP;
@@ -78,7 +78,7 @@ export function useTouchPullToRefresh(scrollY: SharedValue<number>, onRefresh: (
       const nowArmed = next >= PULL_THRESHOLD;
       if (nowArmed && !armed.current) hapticImpactLight();
       armed.current = nowArmed;
-      pullY.value = next;
+      pullY.set(next);
     },
     [pullY, scrollY],
   );
@@ -90,10 +90,10 @@ export function useTouchPullToRefresh(scrollY: SharedValue<number>, onRefresh: (
       // Snap into (and hold at) the resting "activated" position instead of springing all the
       // way back — the `refreshing` effect above releases it once the request actually resolves.
       holding.current = true;
-      pullY.value = withSpring(PULL_THRESHOLD, SETTLE_SPRING);
+      pullY.set(withSpring(PULL_THRESHOLD, SETTLE_SPRING));
       onRefresh();
     } else {
-      pullY.value = withSpring(0, SETTLE_SPRING);
+      pullY.set(withSpring(0, SETTLE_SPRING));
     }
   }, [pullY, onRefresh]);
 
