@@ -38,6 +38,13 @@ import { ThemeSchemeProvider, useActiveColorScheme } from '@/hooks/use-theme';
 // (native only; a no-op on web and until the native module is linked — the app stays remote).
 startEmbeddedRuntime();
 
+// DevProfiler is DEV-only tooling; require it behind `__DEV__` so its module (and the
+// react-native-release-profiler dependency it pulls in) is stripped from production
+// bundles. It renders nothing unless the Settings → Developer "JS profiler button"
+// toggle is on.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const DevProfiler = __DEV__ ? require('@/components/dev-profiler').DevProfiler : null;
+
 function RootLayout() {
   return (
     <ErrorBoundary>
@@ -100,6 +107,9 @@ function RootNavigation() {
         {/* Root host for the native card long-press context menu (dim + lifted preview + menu). Only
             renders while a card menu is open; any card opens it via openSeriesCardMenu. */}
         <SeriesCardContextMenuHost />
+        {/* DEV-only floating Hermes JS profiler; null in production (see require above),
+            and hidden unless the Settings → Developer toggle is on. Temporary tooling. */}
+        {DevProfiler ? <DevProfiler /> : null}
       </OverlayProvider>
     </ThemeProvider>
   );
