@@ -10,6 +10,7 @@ import Animated, {
   runOnJS,
   useAnimatedProps,
   useAnimatedStyle,
+  useFrameCallback,
   useSharedValue,
   withSpring,
   type SharedValue,
@@ -62,12 +63,20 @@ const MORPH_SPRING = { damping: 16, stiffness: 170, mass: 0.8 } as const;
 // stiffness are raised TOGETHER, which keeps the damping ratio (the size of the overshoot — the
 // springy part) while doubling the decay rate, and decay is what actually sets how long it lingers.
 const CLOSE_SPRING = { damping: 28, stiffness: 660, mass: 0.7 } as const;
-// The resize settling after you let go. The first attempt at this was ζ ≈ 0.49 and stiff, which was
-// far too much: swapping between the preview and the menu is NAVIGATION, not a flourish, and it
-// snapped and wobbled. Softer (ζ ≈ 0.78 — it eases past the end just enough to feel physical, without
-// bouncing about) and noticeably slower to settle. A big travelling movement wants to be calmer than a
-// small one, not more excitable.
-const RESIZE_SPRING = { damping: 20, stiffness: 150, mass: 1.1 } as const;
+// ── How the resize FOLLOWS the finger ────────────────────────────────────────
+// The panel does NOT track your thumb 1:1. The pan writes a TARGET and the panel chases it with a
+// time-based lerp, so it always runs a little behind and eases into place — including while your
+// finger is still down. Welding it to the finger is what made this feel linear and cheap: the panel
+// arrived exactly when the thumb did, with no weight to it, and every frame of the movement was a
+// straight line. Lagging behind is what makes a big object feel like a big object.
+//
+// Time-based, not per-frame: the smoothing has to be a function of elapsed time or it changes
+// character with the frame rate (a dropped frame would visibly jump).
+const FOLLOW_TAU = 0.13; // seconds to close ~63% of the remaining distance
+// And the drag is GEARED DOWN: a full sweep of the range takes about twice the finger travel it used
+// to. 1:1 with the panel's own edge sounded principled and felt frantic — the range is only a couple
+// of hundred pixels, so a normal flick crossed all of it instantly.
+const DRAG_GAIN = 0.5;
 
 // The routes that show the bottom tab bar (a pushed screen — series, search — covers it). Used to
 // decide whether the bottom of the screen is chrome the cover has to slide under.
@@ -118,8 +127,12 @@ const DISMISS_RELEASE_PX = 64;
 const DISMISS_RELEASE_VELOCITY = 900;
 // Pulling UP past the end of the range doesn't dismiss — it rubber-bands. Reaching for the menu is a
 // swipe UP, and reaching for the menu must never throw the popup away.
-const RUBBER_RESIST = 0.25; // how much of the extra pull actually moves anything
-const RUBBER_LIMIT = 0.06; // and how far it can go, in range units
+//
+// It has to GIVE, though, and visibly. The first values here barely moved (a quarter of the pull,
+// capped at 6% of the range), so once the menu was fully up, swiping up on it did essentially nothing —
+// which doesn't read as "you're at the end", it reads as the app having stopped responding to you.
+const RUBBER_RESIST = 0.35; // how much of the extra pull actually moves anything
+const RUBBER_LIMIT = 0.1; // and how far it can go, in range units
 // How far ahead a fling is projected when deciding which end of the range to spring to.
 const FLING_PROJECTION = 0.12; // seconds
 // Where the expanded panel sits in the band: the fraction of the LEFTOVER space that goes ABOVE it.
@@ -407,6 +420,12 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
    * can, because that's what you long-pressed for; the menu is one swipe away.
    */
   const expand = useSharedValue(1);
+  /**
+   * Where the pan WANTS the panel to be. The finger writes this; `expand` chases it (see below), so
+   * the panel is never welded to your thumb — it trails it and eases in, which is what gives the
+   * movement any weight at all.
+   */
+  const expandTarget = useSharedValue(1);
 
   // Compared against the last TARGET written, not `sv.value` — that reads the animating value, so a
   // re-render mid-spring would look like a change and restart the spring (killing its momentum).
@@ -449,6 +468,20 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   //
   // A column that already fits has an empty range, so EVERY drag on it is an overscroll — i.e. it's
   // simply drag-to-dismiss, which is what you'd want there anyway. No special case needed.
+  // The follower. Every frame, close a time-proportional fraction of the gap between where the panel is
+  // and where the finger (or the release's chosen end) wants it. That single line is the whole "it
+  // should lerp behind the scroll, not match it 1:1" — and because it keeps running after the finger
+  // lifts, it doubles as the settle: no separate release animation to tune or keep in sync.
+  useFrameCallback((frame) => {
+    const dt = (frame.timeSincePreviousFrame ?? 16) / 1000;
+    const gap = expandTarget.value - expand.value;
+    if (Math.abs(gap) < 0.0005) {
+      expand.value = expandTarget.value;
+      return;
+    }
+    expand.value += gap * (1 - Math.exp(-dt / FOLLOW_TAU));
+  });
+
   const panStartExpand = useSharedValue(0);
   const overscroll = useSharedValue(0); // px dragged past an end; sign follows the drag direction
 
@@ -462,22 +495,30 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
         .failOffsetX([-16, 16])
         .onStart(() => {
           cancelAnimation(progress);
-          cancelAnimation(expand);
+          // The pan drives the TARGET, never `expand` itself — the follower owns that. Start from where
+          // the panel actually IS, not from the target, so grabbing it mid-settle picks it up where you
+          // can see it rather than snapping to where it was headed.
           panStartExpand.value = expand.value;
+          expandTarget.value = expand.value;
           overscroll.value = 0;
         })
         .onUpdate((e) => {
           // The column moves WITH the finger, like a scroll: drag UP and the panel shrinks so the menu
-          // below rises into view; drag DOWN and the panel grows back over it.
+          // below rises into view; drag DOWN and it grows back over it. Geared down by DRAG_GAIN, and
+          // the panel then TRAILS this target rather than pinning itself to the thumb.
           const range = dragRange;
-          const raw = range > 0 ? panStartExpand.value + e.translationY / range : panStartExpand.value;
+          const raw =
+            range > 0
+              ? panStartExpand.value + (e.translationY * DRAG_GAIN) / range
+              : panStartExpand.value;
 
           if (raw > 1 || range <= 0) {
             // Past the top of the range (or nothing to resize at all): dragging DOWN now pulls the
             // whole popup back toward the card it came from. `progress` is the open morph, so this IS
-            // the open animation running backwards under your thumb.
-            const over = range > 0 ? (raw - 1) * range : Math.max(0, e.translationY);
-            expand.value = 1;
+            // the open animation running backwards under your thumb. This one DOES track the finger 1:1
+            // — a dismiss you're performing yourself should answer immediately.
+            const over = range > 0 ? ((raw - 1) * range) / DRAG_GAIN : Math.max(0, e.translationY);
+            expandTarget.value = 1;
             overscroll.value = over;
             progress.value = 1 - Math.min(1, over / DISMISS_DRAG);
             return;
@@ -486,15 +527,14 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
           if (raw < 0) {
             // Past the bottom of the range — this direction does NOT dismiss. Dragging up is how you
             // reach the menu, and reaching for the menu should never throw the popup away. It just
-            // rubber-bands: the pull is resisted and springs back on release, which says "that's the
-            // end" without punishing you for it.
-            expand.value = Math.max(-RUBBER_LIMIT, raw * RUBBER_RESIST);
+            // rubber-bands: resisted, capped, and eased back on release.
+            expandTarget.value = Math.max(-RUBBER_LIMIT, raw * RUBBER_RESIST);
             overscroll.value = 0;
             progress.value = 1;
             return;
           }
 
-          expand.value = raw;
+          expandTarget.value = raw;
           overscroll.value = 0;
           progress.value = 1;
         })
@@ -511,17 +551,19 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
           progress.value = withSpring(1, MORPH_SPRING);
           overscroll.value = 0;
           if (dragRange > 0) {
-            // Springy settle to the nearer END of the range, carrying the fling's velocity into it —
-            // so a flick lands the panel decisively at full size or with the menu fully up, with a
-            // little bounce, rather than coasting to a stop wherever the finger happened to leave it.
-            // (`withDecay` did the latter and felt lifeless, which is what "meh" meant.)
-            const velocity = e.velocityY / dragRange; // px/s → range units/s
-            const projected = expand.value + velocity * FLING_PROJECTION;
-            const target = projected >= 0.5 ? 1 : 0;
-            expand.value = withSpring(target, { ...RESIZE_SPRING, velocity });
+            // Pick the end the flick was heading for and just point the TARGET at it — the follower
+            // eases the panel over, with the same lag it had under the finger. There is no separate
+            // release animation, which is the point: the settle can't feel different from the drag,
+            // because it IS the drag's motion, still running.
+            const velocity = (e.velocityY * DRAG_GAIN) / dragRange; // px/s → range units/s
+            // Project from the TARGET — where the finger actually got to — not from `expand`, which is
+            // deliberately lagging behind it. Judge the flick by what the user did, not by how far the
+            // panel had managed to follow them by the time they let go.
+            const projected = expandTarget.value + velocity * FLING_PROJECTION;
+            expandTarget.value = projected >= 0.5 ? 1 : 0;
           }
         }),
-    [dismiss, dragRange, expand, overscroll, panStartExpand, progress],
+    [dismiss, dragRange, expand, expandTarget, overscroll, panStartExpand, progress],
   );
 
   // Tap the backdrop to dismiss. A GESTURE, not a Pressable: the root pan and a Pressable are two
