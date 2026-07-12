@@ -18,13 +18,21 @@ import {
   X,
 } from 'lucide-react-native';
 
-export type IconProps = { color: string; size?: number };
+export type IconProps = {
+  color: string;
+  size?: number;
+  /** Paint the glyph solid rather than as an outline — how a toggled-ON state reads (a filled star),
+   *  without spending a colour on it. Ignored by glyphs that have no meaningful fill. */
+  filled?: boolean;
+};
 
 export const SearchIcon = ({ color, size = 16 }: IconProps) => <Search color={color} size={size} />;
 export const ClearIcon = ({ color, size = 16 }: IconProps) => <X color={color} size={size} />;
 export const PlayIcon = ({ color, size = 16 }: IconProps) => <Play color={color} size={size} fill={color} />;
 export const PlusIcon = ({ color, size = 16 }: IconProps) => <Plus color={color} size={size} />;
-export const StarIcon = ({ color, size = 16 }: IconProps) => <Star color={color} size={size} />;
+export const StarIcon = ({ color, size = 16, filled }: IconProps) => (
+  <Star color={color} size={size} fill={filled ? color : 'none'} />
+);
 export const CheckIcon = ({ color, size = 16 }: IconProps) => <Check color={color} size={size} />;
 // Vertical 3-dot "more actions" trigger — the web series-card context-menu affordance.
 export const MoreVerticalIcon = ({ color, size = 16 }: IconProps) => <MoreVertical color={color} size={size} />;
