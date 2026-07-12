@@ -43,6 +43,15 @@
       page grid AND the card long-press popup (`series-card-context-menu.tsx`) — so the fixed height
       must NOT be baked into `PageThumb`; the series page and the popup should each wrap it in a
       container that defines the fixed height for THAT context. See the A–D plan for the why.
+- [ ] Investigate **app-side image downsampling** (decode to the displayed size, not the source size).
+      Even with correct-aspect small covers, a source is often larger than the card renders — e.g. one
+      bridge's smallest 2:3 cover variant is ~360×540 / ~80 KB where a grid card is only ~130–180px
+      wide, vs another bridge's ~256px / ~40 KB thumbnail. Decoding to the view bounds cuts decode CPU +
+      memory + GC per card. Check whether expo-image already downsamples to the view size on
+      iOS/Android or needs an explicit target (e.g. a decode/thumbnail size hint); measure whether it's
+      worth it — probably marginal now that the big source-side win landed (see A–D plan option D), but
+      worth confirming on a fast fling through many cards. For a source whose only smaller variant is a
+      square crop, downsampling its 2:3 variant app-side is the only remaining size lever.
 - [x] Infinite paging loading skeleton doesn't add skeleton entries to incomplete rows,
       it should ideally finish an incomplete row then add an additional row (the
       loaded grid already padded a short last row with invisible spacer cells so it
