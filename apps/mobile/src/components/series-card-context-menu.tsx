@@ -19,7 +19,7 @@ import { LegendList } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
 
 import { NATIVE_HIDE_OFFSET } from '@/components/app-tabs';
-import { ChipRow, TagGroupRow } from '@/components/chip';
+import { TagStrip } from '@/components/chip';
 import { CheckIcon, PlayIcon, PlusIcon, StarIcon, type IconProps } from '@/components/icons/ui-icons';
 import { PageThumb } from '@/components/series/chapters-section';
 import { Skeleton } from '@/components/skeleton';
@@ -55,11 +55,6 @@ const CLOSE_SPRING = { damping: 28, stiffness: 660, mass: 0.7 } as const;
 // real thing, instead of popping to its final size. Everything's POSITION springs separately, through
 // the shared values in "Live geometry" below.
 const RESIZE = LinearTransition.springify().damping(MORPH_SPRING.damping).stiffness(MORPH_SPRING.stiffness).mass(MORPH_SPRING.mass);
-
-// Last-seen count of tag rows (genres row + one per tag group), remembered across opens so the
-// loading skeleton can show a plausible number of rows instead of a fixed guess. A plain module
-// global: it's a cheap heuristic for the placeholder shape, not state anything renders off directly.
-let lastTagRowCount = 2;
 
 // The routes that show the bottom tab bar (a pushed screen — series, search — covers it). Used to
 // decide whether the bottom of the screen is chrome the cover has to slide under.
@@ -162,14 +157,6 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     progress.value = withSpring(1, MORPH_SPRING);
   }, [progress]);
-
-  // Remember how many tag rows this kind of series carries, so the next open's skeleton is shaped
-  // closer to reality (fewer size corrections when the real tags land).
-  useEffect(() => {
-    if (!detailLoaded) return;
-    const rows = (detail.data?.genres?.length ? 1 : 0) + (detail.data?.tagGroups?.length ?? 0);
-    if (rows > 0) lastTagRowCount = rows;
-  }, [detailLoaded, detail.data]);
 
   // The source card stays hidden until the morph-back has fully settled, then un-hides in one go. If
   // it un-hid partway, the spring's overshoot would carry the flying cover PAST the card and briefly
@@ -431,22 +418,16 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
               </View>
             </View>
           </View>
+          {/* Every group folded into ONE row, each chip in its group's colour (see TagStrip). A row
+              per group was the single biggest thing making this panel tall — and the colour is the
+              same one the series page puts on those tags, so the strip stays readable. */}
           {detailLoaded ? (
-            detail.data?.genres?.length || detail.data?.tagGroups?.length ? (
-              <View style={styles.tags}>
-                {detail.data.genres?.length ? <ChipRow horizontal contentInset={PANEL_PAD} labels={detail.data.genres} /> : null}
-                {/* Keyed by index, not `g.label` — a bridge can repeat a group label (see chipKey). */}
-                {detail.data.tagGroups?.map((g, gi) => (
-                  <TagGroupRow
-                    key={`${gi}:${g.label}`}
-                    group={g}
-                    horizontal
-                    contentInset={PANEL_PAD}
-                    onTagPress={(i) => onTagPress(g, i)}
-                  />
-                ))}
-              </View>
-            ) : null
+            <TagStrip
+              genres={detail.data?.genres}
+              groups={detail.data?.tagGroups}
+              contentInset={PANEL_PAD}
+              onTagPress={onTagPress}
+            />
           ) : (
             <TagsSkeleton />
           )}
@@ -472,8 +453,8 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
           down when the panel grows on late content instead of jumping to the new spot below it. */}
       <Animated.View style={[styles.menuWrap, { width: menuW }, menuStyle]}>
         <BlurView tint={menuTint} intensity={MENU_BLUR} experimentalBlurMethod={ANDROID_BLUR} style={[styles.menu, { borderColor: theme.backgroundSelected }]}>
-          {/* Read is the one real ACTION here (the others toggle state), so it's the only row that
-              carries the accent — and it leads, the way a context menu's primary item does. */}
+          {/* Read is the one real ACTION here (the others toggle state), so it leads and it's bold —
+              the way a context menu's primary item does. Bold, NOT blue: see MenuRow. */}
           <MenuRow
             label={reading.label}
             Icon={PlayIcon}
@@ -575,22 +556,19 @@ function PageRail({
 // ── Loading skeletons ────────────────────────────────────────────────────────
 // Shown while `detail` / `pageList` fetch, so the panel opens at roughly its final size (title is
 // already known synchronously) and the swap to real content is a small, animated size change rather
-// than a jarring pop-in. Shapes mirror the real elements: a meta line, a few description lines, a
-// remembered number of tag rows (`lastTagRowCount`), and a rail of page-sized tiles.
+// than a jarring pop-in. Shapes mirror the real elements: a meta line, a few description lines, one
+// row of tag pills, and a rail of page-sized tiles.
 
 const SKELETON_CHIP_WIDTHS = [56, 44, 72, 38, 60, 50];
 const RAIL_SKELETON_W = Math.round(RAIL_THUMB_H * DEFAULT_THUMB_ASPECT);
 
-/** `lastTagRowCount` full-bleed rows of pill placeholders (offset per row so they don't look like a grid). */
+/** A single full-bleed row of pill placeholders — the tags always collapse to one row now
+ *  (see TagStrip), so the skeleton is exactly the shape the real thing lands in. */
 function TagsSkeleton() {
   return (
-    <View style={styles.tags}>
-      {Array.from({ length: lastTagRowCount }).map((_, row) => (
-        <View key={row} style={styles.tagRowSkeleton}>
-          {SKELETON_CHIP_WIDTHS.slice(row % 2, row % 2 + 5).map((w, i) => (
-            <Skeleton key={i} style={[styles.chipSkeleton, { width: w }]} />
-          ))}
-        </View>
+    <View style={styles.tagRowSkeleton}>
+      {SKELETON_CHIP_WIDTHS.map((w, i) => (
+        <Skeleton key={i} style={[styles.chipSkeleton, { width: w }]} />
       ))}
     </View>
   );
@@ -610,11 +588,18 @@ function RailSkeleton() {
 /**
  * One row of the actions menu.
  *
- * Colour means ACTION here, not state: only the `primary` row (Read) is tinted with the accent. The
- * toggles say what they are through their icon — a checkmark once in the library, a filled star once
- * favourited — and keep the plain label colour whether they're on or off. Painting an on-state row
- * blue made "in Library" shout louder than the one thing you'd actually come here to do, and the
- * accent was carrying two meanings at once ("this is tappable" and "this is on").
+ * ⚠️ NO `theme.accent` (BLUE) IN THIS MENU — not on the state toggles, and NOT on the Read row.
+ * Do not "promote" the primary action by tinting it blue; that has now been done twice and reverted
+ * twice. The blue chip/label look is disliked here, full stop. If a row needs to stand out, use
+ * WEIGHT and POSITION (Read is bold and it leads), never hue.
+ *
+ * So nothing in this menu is coloured:
+ *   • Read is bold, first, and carries a solid play glyph — that's what makes it primary.
+ *   • The toggles keep the plain label colour whether on or off, and say which they are through the
+ *     glyph alone: a checkmark once in the library, a filled star once favourited.
+ *
+ * The original sin was `accent` carrying two meanings at once — "this is tappable" AND "this is on" —
+ * which made "in Library" shout louder than the thing you actually opened the menu to do.
  */
 function MenuRow({
   label,
@@ -631,12 +616,12 @@ function MenuRow({
   iconFilled?: boolean;
   loading: boolean;
   active?: boolean;
-  /** The menu's one real action: accent-tinted, and the row people reach for first. */
+  /** The menu's one real action (Read): bold and leading. NOT coloured — see above. */
   primary?: boolean;
   onPress: () => void;
 }) {
   const theme = useTheme();
-  const color = loading ? theme.textSecondary : primary ? theme.accent : theme.text;
+  const color = loading ? theme.textSecondary : theme.text;
   // An off toggle's glyph sits back a little, so the on-state (solid glyph, full contrast) reads as
   // a change without needing a colour of its own.
   const iconColor = loading ? theme.textSecondary : primary || active ? color : theme.textSecondary;
@@ -645,7 +630,7 @@ function MenuRow({
       onPress={loading ? undefined : onPress}
       disabled={loading}
       style={({ pressed }) => [styles.row, pressed && { backgroundColor: theme.backgroundSelected }]}>
-      <ThemedText style={[styles.rowLabel, { color }]} numberOfLines={1}>
+      <ThemedText style={[styles.rowLabel, primary && styles.rowLabelPrimary, { color }]} numberOfLines={1}>
         {label}
       </ThemedText>
       <Icon color={iconColor} size={19} filled={iconFilled} />
@@ -709,9 +694,6 @@ const styles = StyleSheet.create({
   },
   descSlot: {
     height: DESC_H,
-  },
-  tags: {
-    gap: Spacing.two,
   },
   // Full-bleed horizontally; vertically it spans only the gap between the bars, and clips the cover to
   // it. Transparent and non-interactive — it exists purely as the clip boundary.
@@ -818,6 +800,10 @@ const styles = StyleSheet.create({
   rowLabel: {
     flex: 1,
     fontSize: 16,
+  },
+  // Read leads and is bold — that is the ONLY way it's marked as primary. No colour. See MenuRow.
+  rowLabelPrimary: {
+    fontWeight: '600',
   },
   separator: {
     height: StyleSheet.hairlineWidth,
