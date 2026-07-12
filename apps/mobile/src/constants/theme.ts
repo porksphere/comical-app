@@ -132,6 +132,15 @@ export const Spacing = {
 // scroll (web only) — so this is roughly its height everywhere. Screens add
 // `insets.bottom` on top of this.
 export const BottomTabInset = 48;
+/**
+ * Breathing room between a top bar and the first content beneath it — on top of the bar's own height
+ * (`useTopBarInset()`), which only gets content *clear* of the bar.
+ *
+ * Shared so every screen with a top bar starts its content at the same place. It didn't used to be:
+ * the series screen was a bar-height with no gap while the settings/registry screens all added
+ * `Spacing.four`, so the series page visibly started higher than every other pushed screen.
+ */
+export const BarContentGap = Spacing.four;
 /** Max width of the series-detail reading column (cover + metadata). */
 export const MaxContentWidth = 800;
 /** Max width of the top-level views (browse grid, library, settings, …),

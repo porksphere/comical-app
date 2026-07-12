@@ -24,7 +24,7 @@ import { useActiveColorScheme } from '@/hooks/use-theme';
  * of motion/colour survives.
  */
 const BAR_BLUR_INTENSITY = 65;
-const BAR_TINT_OPACITY = 0.55;
+const BAR_TINT_OPACITY = 0.42;
 
 /**
  * Frosted background for the app's top and bottom bars — an absolute-fill layer placed BEHIND a

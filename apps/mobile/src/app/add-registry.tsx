@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar, useTopBarInset } from '@/components/top-bar';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { BarContentGap, MaxContentWidth, Spacing } from '@/constants/theme';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
 import { useTheme } from '@/hooks/use-theme';
@@ -69,7 +69,7 @@ export default function AddRegistryScreen() {
   return (
     <ThemedView style={styles.container}>
       <TopBar title="Add registry" />
-      <View style={[styles.content, { paddingTop: topBarInset + Spacing.four, paddingBottom: insets.bottom + Spacing.five }]}>
+      <View style={[styles.content, { paddingTop: topBarInset + BarContentGap, paddingBottom: insets.bottom + Spacing.five }]}>
         {!url ? (
           <ThemedText type="small" themeColor="textSecondary">
             No registry URL was provided with this link.
