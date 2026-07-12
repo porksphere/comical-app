@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useState } from 'react';
 import { BackHandler, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
-import Animated, { Easing, interpolate, LinearTransition, runOnJS, useAnimatedProps, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import Animated, { interpolate, LinearTransition, runOnJS, useAnimatedProps, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LegendList } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
@@ -27,10 +27,13 @@ import { clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { closeSeriesCardMenu, useSeriesCardMenu, type SeriesCardMenuRequest } from '@/lib/series-card-menu';
 
 const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
+// The one spring used everywhere: the open morph, the reversed close morph, and the panel/menu
+// resize — so every motion in the popup shares the same bouncy feel.
+const MORPH_SPRING = { damping: 16, stiffness: 170, mass: 0.8 } as const;
 // How the panel + menu resize/reposition when late content lands — the panel is a plain Animated.View
-// (not the ThemedView, which doesn't forward a ref) so its height can ease when async content swaps a
-// skeleton for the real thing, instead of the panel popping to its final size.
-const RESIZE = LinearTransition.duration(220).easing(Easing.out(Easing.cubic));
+// (not the ThemedView, which doesn't forward a ref) so its height can spring when async content swaps
+// a skeleton for the real thing, instead of the panel popping to its final size.
+const RESIZE = LinearTransition.springify().damping(MORPH_SPRING.damping).stiffness(MORPH_SPRING.stiffness).mass(MORPH_SPRING.mass);
 
 // Last-seen count of tag rows (genres row + one per tag group), remembered across opens so the
 // loading skeleton can show a plausible number of rows instead of a fixed guess. A plain module
@@ -45,6 +48,14 @@ const COVER_W = 118; // cover width inside the panel
 const RAIL_THUMB_W = 64; // nominal fallback width (unused in slot mode: PageThumb sizes to slotHeight)
 const RAIL_THUMB_H = 180; // the rail's fixed tile height; each tile's width follows its own page aspect
 const RAIL_GAP = Spacing.two;
+// Fixed-height meta + description slots. Reserved identically in the loading skeleton and the loaded
+// state so a fresh (uncached) series opens at the height it settles to — the title is synchronous and
+// the tag-row count is remembered, so the description (wildly variable per series) was the one thing
+// that made the panel jump; a constant reserve trades a little empty space for a stable size.
+const SMALL_LINE_H = 20; // ThemedText "small" lineHeight
+const META_H = SMALL_LINE_H; // one line
+const DESC_LINES = 3;
+const DESC_H = DESC_LINES * SMALL_LINE_H;
 // Rough panel height before it's measured, so the menu is roughly placed on frame one.
 const PANEL_HEIGHT_ESTIMATE = 190;
 const MENU_WIDTH = 240;
@@ -102,7 +113,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
 
   useEffect(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    progress.value = withSpring(1, { damping: 16, stiffness: 170, mass: 0.8 });
+    progress.value = withSpring(1, MORPH_SPRING);
   }, [progress]);
 
   // Remember how many tag rows this kind of series carries, so the next open's skeleton is shaped
@@ -118,7 +129,9 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     closeSeriesCardMenu();
   }, [req]);
   const dismiss = useCallback(() => {
-    progress.value = withTiming(0, { duration: 150, easing: Easing.in(Easing.quad) }, (finished) => {
+    // Same spring as the open, reversed — the cover morphs back onto the card exactly the way it came
+    // out, instead of a plain quick fade.
+    progress.value = withSpring(0, MORPH_SPRING, (finished) => {
       if (finished) runOnJS(finishClose)();
     });
   }, [progress, finishClose]);
@@ -149,6 +162,16 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // Real panel height once measured (estimate before then). The menu always sits BELOW the panel.
   const [panelH, setPanelH] = useState<number | null>(null);
   const effPanelH = panelH ?? PANEL_HEIGHT_ESTIMATE;
+
+  // Gate the resize spring so it only animates CONTENT-driven size changes (a skeleton swapping for
+  // real content), not the one-time correction from the rough estimate to the first measured height —
+  // otherwise the menu would spring down from its estimate placement on every open. Turns on a render
+  // after the first measurement, so that first correction snaps into place un-animated.
+  const [resizeReady, setResizeReady] = useState(false);
+  useEffect(() => {
+    if (panelH != null && !resizeReady) setResizeReady(true);
+  }, [panelH, resizeReady]);
+  const resize = resizeReady ? RESIZE : undefined;
 
   const groupH = effPanelH + GAP + menuH;
   const available = bottomLimit - topLimit;
@@ -254,29 +277,41 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
         pointerEvents="box-none"
         onLayout={(e) => setPanelH(e.nativeEvent.layout.height)}
         style={[styles.panelWrap, { left: panelLeft, top: panelTop, width: panelW }, panelStyle]}>
-        <Animated.View layout={RESIZE} style={[styles.panel, { backgroundColor: theme.backgroundPanel }]}>
+        <Animated.View layout={resize} style={[styles.panel, { backgroundColor: theme.backgroundPanel }]}>
           <View style={[styles.topRow, coverOnRight && styles.topRowReverse]}>
             <View style={[styles.coverSlot, { width: COVER_W, height: coverH }]} />
             <View style={styles.info}>
               <ThemedText style={styles.title} numberOfLines={3}>
                 {entry.title}
               </ThemedText>
-              {detail.data ? (
-                <>
-                  {metaLine ? (
-                    <ThemedText type="small" themeColor="textSecondary" numberOfLines={2} style={styles.meta}>
+              {/* Fixed-height slots (reserved in both states) so the panel doesn't jump when the real
+                  meta/description replace their skeletons. */}
+              <View style={styles.metaSlot}>
+                {detail.data ? (
+                  metaLine ? (
+                    <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
                       {metaLine}
                     </ThemedText>
-                  ) : null}
-                  {detail.data.description ? (
-                    <ThemedText type="small" themeColor="textSecondary" numberOfLines={5} style={styles.desc}>
+                  ) : null
+                ) : (
+                  <Skeleton style={styles.metaSkeleton} />
+                )}
+              </View>
+              <View style={styles.descSlot}>
+                {detail.data ? (
+                  detail.data.description ? (
+                    <ThemedText type="small" themeColor="textSecondary" numberOfLines={DESC_LINES}>
                       {detail.data.description}
                     </ThemedText>
-                  ) : null}
-                </>
-              ) : (
-                <InfoSkeleton />
-              )}
+                  ) : null
+                ) : (
+                  <View style={styles.descSkeleton}>
+                    <Skeleton style={styles.descLine} />
+                    <Skeleton style={styles.descLine} />
+                    <Skeleton style={[styles.descLine, styles.descLineShort]} />
+                  </View>
+                )}
+              </View>
             </View>
           </View>
           {detail.data ? (
@@ -310,7 +345,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
 
       {/* The actions menu — a frosted (blurred) panel. `layout` so it eases down when the panel grows
           (late content) instead of jumping to the new position below it. */}
-      <Animated.View layout={RESIZE} style={[styles.menuWrap, { left: menuLeft, top: menuTop, width: menuW }, menuStyle]}>
+      <Animated.View layout={resize} style={[styles.menuWrap, { left: menuLeft, top: menuTop, width: menuW }, menuStyle]}>
         <BlurView tint={menuTint} intensity={MENU_BLUR} experimentalBlurMethod={ANDROID_BLUR} style={[styles.menu, { borderColor: theme.backgroundSelected }]}>
           <MenuRow
             label={inLibrary ? 'Remove from Library' : 'Add to Library'}
@@ -405,20 +440,6 @@ function PageRail({
 
 const SKELETON_CHIP_WIDTHS = [56, 44, 72, 38, 60, 50];
 const RAIL_SKELETON_W = Math.round(RAIL_THUMB_H * DEFAULT_THUMB_ASPECT);
-
-/** Meta line + description placeholder inside the info column. */
-function InfoSkeleton() {
-  return (
-    <>
-      <Skeleton style={styles.metaSkeleton} />
-      <View style={styles.descSkeleton}>
-        <Skeleton style={styles.descLine} />
-        <Skeleton style={styles.descLine} />
-        <Skeleton style={[styles.descLine, styles.descLineShort]} />
-      </View>
-    </>
-  );
-}
 
 /** `lastTagRowCount` full-bleed rows of pill placeholders (offset per row so they don't look like a grid). */
 function TagsSkeleton() {
@@ -520,9 +541,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 21,
   },
-  meta: {},
-  desc: {
-    marginTop: Spacing.one,
+  metaSlot: {
+    height: META_H,
+    justifyContent: 'center',
+  },
+  descSlot: {
+    height: DESC_H,
   },
   tags: {
     gap: Spacing.two,
@@ -558,16 +582,15 @@ const styles = StyleSheet.create({
     marginRight: RAIL_GAP,
   },
   metaSkeleton: {
-    height: 13,
+    height: 12,
     width: '70%',
     borderRadius: 4,
   },
   descSkeleton: {
-    marginTop: Spacing.one,
     gap: 6,
   },
   descLine: {
-    height: 11,
+    height: 12,
     borderRadius: 4,
   },
   descLineShort: {
