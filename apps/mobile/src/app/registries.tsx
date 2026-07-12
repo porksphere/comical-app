@@ -10,7 +10,7 @@ import { SettingsRow, SettingsSection } from '@/components/settings/settings-row
 import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { TopBar } from '@/components/top-bar';
+import { TopBar, useTopBarInset } from '@/components/top-bar';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
@@ -20,6 +20,7 @@ export default function RegistriesScreen() {
   const ds = useDataSource();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const topBarInset = useTopBarInset();
   const theme = useTheme();
   const queryClient = useQueryClient();
   const { open } = useOverlay();
@@ -127,7 +128,8 @@ export default function RegistriesScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.content,
-          { paddingTop: Spacing.four, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
+          // The TopBar is an absolute overlay, so the content pads past it (and scrolls under its frost).
+          { paddingTop: topBarInset + Spacing.four, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
         ]}>
         {isLoading ? (
           <ActivityIndicator />

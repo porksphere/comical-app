@@ -4,7 +4,7 @@ import { Image } from 'expo-image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
-import Animated, {
+import {
   Easing,
   interpolateColor,
   runOnJS,
@@ -15,7 +15,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { BarBlur } from '@/components/bar-blur';
+import { BarSurface } from '@/components/bar-surface';
 import { BridgeThumb } from '@/components/bridge-thumb';
 import { GridSkeleton, SkeletonCard } from '@/components/grid-skeleton';
 import { SearchIcon } from '@/components/icons/ui-icons';
@@ -516,19 +516,9 @@ export default function BrowseScreen() {
   const pull = usePullToRefresh(scrollY, refreshCurrentView);
 
   const topBar = (
-    <Animated.View
-      style={[
-        styles.topBar,
-        {
-          paddingTop: insets.top,
-          height: headerHeight,
-          pointerEvents: 'box-none',
-        },
-        headerStyle,
-        headerBorderStyle,
-      ]}>
-      {/* Frosted, full-bleed background; the grid scrolls under the bar and shows through. */}
-      <BarBlur fallback={theme.background} />
+    // BarSurface carries the frosted, full-bleed background + hairline shared by every bar in the
+    // app (see bar-surface.tsx); the grid scrolls under it and shows through.
+    <BarSurface style={[styles.topBar, { height: headerHeight }, headerStyle, headerBorderStyle]}>
       {/* Inner row capped to the content width so the selectors line up with the
           grid below, while the bar background stays full-bleed. */}
       <View style={[styles.selectorRow, { height: barHeight }]}>
@@ -577,7 +567,7 @@ export default function BrowseScreen() {
           </Pressable>
         )}
       </View>
-    </Animated.View>
+    </BarSurface>
   );
 
   // Only the "See all" back banner remains in the list header (search + filters moved to the Search
@@ -897,7 +887,6 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 10,
     justifyContent: 'flex-end',
-    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   selectorRow: {
     flexDirection: 'row',

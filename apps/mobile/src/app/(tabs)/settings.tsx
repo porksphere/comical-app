@@ -21,7 +21,7 @@ import {
   useKeyboardAvoidingInput,
   useOverlay,
 } from '@/components/overlay/overlay';
-import { BarBlur } from '@/components/bar-blur';
+import { TabTitleBar } from '@/components/tab-title-bar';
 import { RetryBlock } from '@/components/retry-block';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedSwitch } from '@/components/themed-switch';
@@ -74,7 +74,6 @@ function themePreferenceSummary(pref: ThemePreference): string {
 }
 
 export default function SettingsScreen() {
-  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTopOnReselect('settings', scrollRef);
@@ -103,20 +102,7 @@ export default function SettingsScreen() {
         {__DEV__ && <DeveloperSection />}
       </ScrollView>
 
-      {isLargeScreen && (
-        <View
-          style={[
-            styles.topBar,
-            { paddingTop: insets.top, borderBottomColor: theme.hairline },
-          ]}>
-          <BarBlur fallback={theme.background} />
-          <View style={[styles.titleRow, { height: barHeight }]}>
-            <ThemedText numberOfLines={1} style={styles.title}>
-              Settings
-            </ThemedText>
-          </View>
-        </View>
-      )}
+      {isLargeScreen && <TabTitleBar title="Settings" />}
     </ThemedView>
   );
 }
@@ -578,28 +564,6 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: MaxTopLevelWidth,
     alignSelf: 'center',
-  },
-  topBar: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-    justifyContent: 'flex-end',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.four,
-    width: '100%',
-    maxWidth: MaxTopLevelWidth,
-    alignSelf: 'center',
-  },
-  title: {
-    fontSize: 22,
-    lineHeight: 28,
-    fontWeight: '700',
   },
   pressableCursor: {
     cursor: 'pointer',

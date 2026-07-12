@@ -7,7 +7,7 @@ import { RetryBlock } from '@/components/retry-block';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { TopBar } from '@/components/top-bar';
+import { TopBar, useTopBarInset } from '@/components/top-bar';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import type { AvailableBridge, AvailableTracker } from '@/data/api';
 import { bumpDataEpoch } from '@/data/data-epoch';
@@ -18,6 +18,7 @@ export default function RegistryBrowseScreen() {
   const { url } = useLocalSearchParams<{ url?: string }>();
   const ds = useDataSource();
   const insets = useSafeAreaInsets();
+  const topBarInset = useTopBarInset();
   const queryClient = useQueryClient();
 
   const bridgesQuery = useQuery({
@@ -48,7 +49,8 @@ export default function RegistryBrowseScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.content,
-          { paddingTop: Spacing.four, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
+          // The TopBar is an absolute overlay, so the content pads past it (and scrolls under its frost).
+          { paddingTop: topBarInset + Spacing.four, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
         ]}>
         <ThemedText type="small" themeColor="textSecondary">
           {url}

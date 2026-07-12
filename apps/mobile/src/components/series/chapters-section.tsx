@@ -533,6 +533,7 @@ export function PageThumbList({
   bridgeId,
   header,
   footer,
+  topInset = 0,
 }: {
   thumbs: (PageThumbSource | null)[];
   /** The deferred page list is still fetching — show a skeleton in the header. */
@@ -542,6 +543,8 @@ export function PageThumbList({
   bridgeId?: string;
   /** Series hero/meta — the list header (this component owns the scroller). */
   header?: ReactElement | null;
+  /** Height of an overlaying top bar, so the first row clears it (and scrolls under its frost). */
+  topInset?: number;
   /** Related-series rails — the list footer, below the grid and the "Show all"
    *  button (while collapsed). */
   footer?: ReactElement | null;
@@ -606,7 +609,7 @@ export function PageThumbList({
       estimatedItemSize={tileW * (3 / 2) + gap}
       columnWrapperStyle={{ gap }}
       contentContainerStyle={{
-        paddingTop: Spacing.four,
+        paddingTop: Spacing.four + topInset,
         paddingBottom: insets.bottom + Spacing.five,
         paddingLeft: sidePad,
         paddingRight: sidePad,

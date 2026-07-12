@@ -8,7 +8,7 @@ import { SettingFieldEditor } from '@/components/settings/setting-field';
 import { SettingsSection } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { TopBar } from '@/components/top-bar';
+import { TopBar, useTopBarInset } from '@/components/top-bar';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import type { SettingValue } from '@/data/api';
 import { queryKeys } from '@/data/queries';
@@ -20,6 +20,7 @@ export default function TrackerSettingsScreen() {
   const ds = useDataSource();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const topBarInset = useTopBarInset();
   const queryClient = useQueryClient();
 
   const { data, error, isLoading, refetch } = useQuery({
@@ -64,7 +65,8 @@ export default function TrackerSettingsScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.content,
-          { paddingTop: Spacing.four, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
+          // The TopBar is an absolute overlay, so the content pads past it (and scrolls under its frost).
+          { paddingTop: topBarInset + Spacing.four, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
         ]}>
         {isLoading ? (
           <ActivityIndicator />
