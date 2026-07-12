@@ -161,8 +161,8 @@ export function TagStrip({
   onTagPress?: (group: TagGroup, index: number) => void;
 }) {
   const scheme = useActiveColorScheme();
-  // The palette is computed over ALL the groups at once — a group's colour depends on the others it
-  // shares a series with (collisions get probed apart), so it can't be derived per-chip.
+  // Computed over ALL the groups at once, not per-chip: an unrecognized label's hue depends on which
+  // others are present (it probes around them), so the set is the input — see tagPaletteFor.
   const colors = tagPaletteFor(groups?.map((g) => g.label) ?? [], scheme);
   const hasTags = !!genres?.length || !!groups?.some((g) => g.tags.length);
   if (!hasTags) return null;
@@ -231,9 +231,10 @@ export function ChipRow({
 }
 
 /**
- * One labelled, wrapping row per tag group (the series page). The heading and the chips share the
- * group's colour — the same one the popup's `TagStrip` gives those tags when it drops the heading, so
- * the row here doubles as the legend for the strip there.
+ * One labelled, wrapping row per tag group (the series page). The CHIPS carry the group's colour —
+ * the same one the popup's `TagStrip` gives them when it drops the headings — but the heading itself
+ * stays neutral: it already names the group in words, so colouring it too just adds noise to a screen
+ * that has the room to spell things out.
  */
 export function TagGroupRow({
   group,
@@ -250,6 +251,7 @@ export function TagGroupRow({
   /** Leading padding inside the row — see `ChipRow`'s `contentInset`. */
   contentInset?: number;
 }) {
+  const theme = useTheme();
   const [expanded, setExpanded] = useState(false);
   const maxVisible = useMaxVisibleChips();
   if (!group.tags.length) return null;
@@ -259,7 +261,7 @@ export function TagGroupRow({
     : group;
   return (
     <View style={[styles.tagGroup, contentInset != null && { paddingLeft: contentInset }]}>
-      <ThemedText style={[styles.groupLabel, { color: color.text }]}>{group.label.toUpperCase()}</ThemedText>
+      <ThemedText style={[styles.groupLabel, { color: theme.textSecondary }]}>{group.label.toUpperCase()}</ThemedText>
       {groupChips(shown, color, '', onTagPress)}
       {collapsible && (
         <PressableChip

@@ -42,18 +42,29 @@ export type TagColor = {
   border: string;
 };
 
-// Deliberately NO BLUE: `theme.accent` is blue, and a blue chip reads as "primary action".
+/**
+ * Muted on purpose. These chips are METADATA — the colour is there to group them at a glance, not to
+ * compete with the cover, the title, or the one action in the menu. Saturation sits around 30% (the
+ * first cut ran at ~90% and shouted); the hue does the work, the intensity stays out of the way.
+ *
+ * Deliberately NO BLUE: `theme.accent` is blue, and a blue chip reads as "primary action".
+ *
+ * Hues are spread rather than evenly stepped, because muting COMPRESSES them — at low saturation
+ * neighbouring hues converge into the same dusty tone. Every pair here was checked to stay apart:
+ * closest is rose/orange at RGB distance 33 (a naive low-saturation ramp put violet and fuchsia at
+ * 17, which is indistinguishable). If you retune one, re-check the others — that's the trap.
+ */
 const PALETTE: { light: string; dark: string }[] = [
-  { light: '#0E7490', dark: '#67E8F9' }, // 0 teal
-  { light: '#6D28D9', dark: '#C4B5FD' }, // 1 violet
-  { light: '#BE123C', dark: '#FDA4AF' }, // 2 rose
-  { light: '#B45309', dark: '#FCD34D' }, // 3 amber
-  { light: '#15803D', dark: '#86EFAC' }, // 4 green
-  { light: '#A21CAF', dark: '#F0ABFC' }, // 5 fuchsia
-  { light: '#C2410C', dark: '#FDBA74' }, // 6 orange
-  { light: '#4D7C0F', dark: '#BEF264' }, // 7 lime
-  { light: '#7C2D12', dark: '#E7B49A' }, // 8 sienna
-  { light: '#475569', dark: '#CBD5E1' }, // 9 slate — near-neutral, which suits a catch-all group
+  { light: '#377981', dark: '#8DBEC4' }, // 0 teal
+  { light: '#734FB0', dark: '#BDAFD4' }, // 1 violet
+  { light: '#A5404E', dark: '#CE979E' }, // 2 rose
+  { light: '#7F692F', dark: '#C4B382' }, // 3 amber
+  { light: '#337150', dark: '#88BFA1' }, // 4 green
+  { light: '#763774', dark: '#B67CB4' }, // 5 fuchsia
+  { light: '#AE663D', dark: '#D6B6A4' }, // 6 orange
+  { light: '#48662E', dark: '#92B474' }, // 7 lime
+  { light: '#4D3C2D', dark: '#8D745E' }, // 8 brown
+  { light: '#737373', dark: '#ADADAD' }, // 9 grey — neutral, which suits a catch-all group
 ];
 
 /**
