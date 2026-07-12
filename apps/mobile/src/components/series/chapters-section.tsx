@@ -1017,11 +1017,19 @@ function SpriteCrop({
   // resolved; the parent tile shows its skeleton (no `onLoad` yet) in the meantime.
   const sheet = useResolvedThumbUrl(thumb.sheetUrl, onError);
   // COVER the box (the larger of the two scales), rather than matching its width and letting the
-  // height land where it may. Width-only scaling meant a tile whose shape didn't match its slot came
-  // up short and left a strip of background beneath it — the grey line under every thumbnail. The
-  // excess now overflows and is clipped instead, which is what a cover-fit thumbnail does everywhere
-  // else in the app.
-  const scale = Math.max(width / thumb.w, height / thumb.h);
+  // height land where it may — a tile whose shape didn't match its slot came up short and left a
+  // strip of background beneath it. The excess now overflows and is clipped instead, which is what a
+  // cover-fit thumbnail does everywhere else in the app.
+  //
+  // The +1 is the important part, and it's why this bug survived two "fixes". A source whose tiles
+  // are EXACTLY the slot's shape (a 200x300 cell in a 2:3 slot — the common case) makes both scales
+  // identical, so the crop lands on precisely the box's height... which is a FRACTIONAL layout value
+  // (a column width like 177.66 gives a 266.49 box). Round that down on the native pixel grid and the
+  // picture ends a hair above its box: a 1px grey hairline under every single thumbnail, on device
+  // only — web rounds the other way, which is why it never showed up in a browser. Overscanning by a
+  // pixel makes the crop always slightly larger than the box, so rounding can never expose the
+  // background. A pixel of extra crop is invisible.
+  const scale = Math.max((width + 1) / thumb.w, (height + 1) / thumb.h);
   // Centre the crop horizontally when it's wider than the box (so a fill trims both edges evenly
   // rather than lopping off the right), but keep it TOP-aligned vertically — the top of a page is
   // the part worth showing.
