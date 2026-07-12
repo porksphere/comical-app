@@ -4,14 +4,16 @@
  * `MaxTopLevelWidth`, and the per-card width hint. Extracted from the Browse
  * screen so the Search page lays cards out identically.
  *
- * Hydration-safe: the static web export prerenders with no viewport (width 0),
- * so we hold the mobile column count until mount, then switch to the real
- * viewport width — matching `useIsCompact`/`useTopBarHeight` (see use-responsive).
+ * Hydration-safe on WEB only (see `useHydrated`): the static export prerenders with
+ * no viewport (width 0), so on web we hold the mobile column count / a 390px rail
+ * viewport until mount, then switch to the real width. On NATIVE the real width is
+ * known on the first render, so it's used immediately — deferring there would lay every
+ * rail card out at the 390px fallback for one frame and then visibly snap them wider.
  */
-import { useEffect, useState } from 'react';
 import { useWindowDimensions } from 'react-native';
 
 import { MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { useHydrated } from '@/hooks/use-responsive';
 
 // The reference's mobile grid uses a tighter inter-card gap than its row gap; Spacing.two (8px) is
 // the closest token. Shared so every card grid keeps the same column gap.
@@ -31,8 +33,7 @@ export type GridLayout = {
 
 export function useGridLayout(): GridLayout {
   const { width } = useWindowDimensions();
-  const [hydrated, setHydrated] = useState(false);
-  useEffect(() => setHydrated(true), []);
+  const hydrated = useHydrated();
 
   const numColumns = !hydrated || width < 768 ? 3 : Math.min(6, Math.max(3, Math.floor(width / 200)));
   // Center content in a full-width scroller (scrollbar at the window edge) via symmetric side

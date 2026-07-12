@@ -510,15 +510,17 @@ export default function BrowseScreen() {
   // helper — the same one the Search filter bar uses, so their motion can't drift. It's fed the
   // list's UI-thread scroll offset via `sharedValues` + the plain `onListScroll` (both wired on the
   // list below); a `gridScope` change snaps the bar back to visible and scrolls the list to the top.
-  const { scrollY, barStyle: headerStyle, sharedValues, onScroll: onListScroll } = useSlidingBar(
+  const { scrollY, maxScrollY, barStyle: headerStyle, sharedValues, onScroll: onListScroll } = useSlidingBar(
     headerHeight,
     { resetKey: gridScope, listRef },
   );
-  // Bridge the same UI-thread offset back to JS for the mobile tab-bar auto-hide.
+  // Bridge the same UI-thread offset back to JS for the mobile tab-bar auto-hide. `maxScrollY` rides
+  // along so the tab bar can ignore the elastic bottom bounce, exactly as the top bar does — without
+  // it, overscrolling the end of the grid slides the tab bar back in.
   const { reportOffset } = useHideTabBarOnScroll();
   useAnimatedReaction(
     () => scrollY.value,
-    (y) => runOnJS(reportOffset)(y),
+    (y) => runOnJS(reportOffset)(y, maxScrollY.value),
     [reportOffset],
   );
   // The bar's bottom hairline fades in only once the list is scrolled: at the very top the bar reads
