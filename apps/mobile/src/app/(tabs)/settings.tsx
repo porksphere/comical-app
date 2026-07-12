@@ -27,6 +27,7 @@ import { SettingsRow, SettingsSection } from '@/components/settings/settings-row
 import { ThemedSwitch } from '@/components/themed-switch';
 import { devProfiler$, useDevProfilerEnabled } from '@/lib/dev-profiler-flag';
 import { lightCards$, useLightCards } from '@/lib/perf-flags';
+import { PROFILING_ENABLED } from '@/lib/profiling';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
@@ -100,7 +101,7 @@ export default function SettingsScreen() {
         <TrackersSection />
         <RegistriesSection />
         <DiagnosticsSection />
-        {__DEV__ && <DeveloperSection />}
+        {PROFILING_ENABLED && <DeveloperSection />}
       </ScrollView>
 
       <TabTitleBar title="Settings" />

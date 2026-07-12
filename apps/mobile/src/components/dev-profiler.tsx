@@ -6,23 +6,21 @@ import { NativeModules, Pressable, Text, View } from "react-native";
 import { useDevProfilerEnabled } from "@/lib/dev-profiler-flag";
 
 /**
- * DEV-ONLY on-device Hermes JS profiler. Tap ● PROFILE → do the janky
- * interaction → tap ⏹ STOP. Uses `react-native-release-profiler` (a native
- * module that drives Hermes's C++ sampling profiler — RN 0.85 removed the JS
- * `HermesInternal.enableSamplingProfiler` API), captures entirely on-device (no
- * debugger/inspector connection, so it dodges the unstable device link), then
- * uploads the raw Hermes trace to the dev PC (profile-server.ts). Mounted from
- * app/_layout.tsx behind `__DEV__`. Temporary tooling; safe to delete.
+ * On-device Hermes JS profiler. Tap ● PROFILE → do the janky interaction → tap ⏹ STOP. Uses
+ * `react-native-release-profiler` (a native module driving Hermes's C++ sampling profiler — RN 0.85
+ * removed the JS `HermesInternal.enableSamplingProfiler` API), captures entirely on-device (no
+ * debugger/inspector connection), then gets the trace off the device:
+ *  - DEV (Metro running): POST to Metro's own `/_devprofile` route (metro.config.js middleware).
+ *  - RELEASE profiling build (no Metro): hand the file to the OS share sheet (AirDrop / Save to Files).
+ *
+ * Mounted from app/_layout.tsx behind `PROFILING_ENABLED` (dev, or a CI profiling-release build), and
+ * hidden unless the Settings → Developer toggle is on. Temporary tooling; safe to delete.
  */
-// POST the trace to Metro itself — its own host+port — at the /_devprofile route added in
-// metro.config.js. Riding Metro's port means it works on a Public-network dev machine where
-// the firewall only opens Metro's port (a separate :8099 server gets blocked).
-//
-// Host source is `Constants.expoConfig.hostUri` — the LAN "host:port" the dev client actually
-// connected to (e.g. "192.168.1.239:8081"). `NativeModules.SourceCode.scriptURL` is unreliable
-// here: under the New Architecture dev client it comes back empty, collapsing to "localhost",
-// which is the *phone itself* → "could not connect". Never hardcode a LAN IP.
-function uploadUrl(): string {
+
+// The Metro host:port the dev client connected to, or null in a release build (no Metro). Source is
+// `Constants.expoConfig.hostUri` (the LAN "host:port", e.g. "192.168.1.239:8081"); `scriptURL` is
+// unreliable under the New-Arch dev client (comes back empty → "localhost", the phone itself).
+function metroHost(): string | null {
   const c = Constants as any;
   const hostUri: string =
     Constants.expoConfig?.hostUri ||
@@ -30,15 +28,13 @@ function uploadUrl(): string {
     c.manifest2?.extra?.expoClient?.hostUri ||
     "";
   const hostPort = hostUri.split("/")[0]; // strip any trailing path
-  if (hostPort) return `http://${hostPort}/_devprofile`;
-  // last-ditch fallback (rarely reached): the scriptURL origin.
+  if (hostPort) return hostPort;
   const scriptURL: string = NativeModules.SourceCode?.scriptURL ?? "";
-  const base = scriptURL.match(/^https?:\/\/[^/]+/)?.[0] ?? "http://localhost:8081";
-  return `${base}/_devprofile`;
+  return scriptURL.match(/^https?:\/\/([^/]+)/)?.[1] ?? null; // null in release
 }
 
-// Lazy so an app shell built *before* this native module was added doesn't crash
-// on load — it just reports "not in this build" until you reinstall the rebuilt shell.
+// Lazy so an app shell built *before* this native module was added doesn't crash on load — it just
+// reports "not in this build" until you reinstall the rebuilt shell.
 function loadProfiler(): {
   startProfiling: () => void;
   stopProfiling: (saveInDownloads?: boolean, fileName?: string) => Promise<string>;
@@ -59,7 +55,7 @@ export function DevProfiler() {
   async function toggle() {
     const prof = loadProfiler();
     if (!prof?.startProfiling) {
-      setMsg("profiler module not in this build — reinstall the rebuilt dev shell");
+      setMsg("profiler module not in this build — reinstall the rebuilt shell");
       return;
     }
     if (!rec) {
@@ -72,20 +68,35 @@ export function DevProfiler() {
       }
       return;
     }
-    // stop → the lib writes the trace to a file and returns its path → read → upload
+    // stop → the lib writes the trace to a file and returns its path → deliver it off-device
     setRec(false);
     setMsg("saving…");
-    const dest = uploadUrl();
     try {
       const path = await prof.stopProfiling(false);
       const fileUrl = path.startsWith("file://") ? path : "file://" + path;
-      const data = await FileSystem.readAsStringAsync(fileUrl);
-      setMsg(`→ ${dest} (${data.length}b)…`);
-      const r = await fetch(dest, { method: "POST", body: data });
-      setMsg(`uploaded ${data.length}b → HTTP ${r.status}`);
+      const host = metroHost();
+      if (host) {
+        // DEV: POST straight to Metro's /_devprofile route.
+        const dest = `http://${host}/_devprofile`;
+        const data = await FileSystem.readAsStringAsync(fileUrl);
+        setMsg(`→ ${dest} (${data.length}b)…`);
+        const r = await fetch(dest, { method: "POST", body: data });
+        setMsg(`uploaded ${data.length}b → HTTP ${r.status}`);
+      } else {
+        // RELEASE profiling build: no Metro — share the trace file out (AirDrop to a Mac / Save to
+        // Files), then pull it onto the PC and run it through the same analysis.
+        setMsg("saved — opening share…");
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const Sharing = require("expo-sharing");
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(fileUrl, { mimeType: "application/json", dialogTitle: "Hermes profile" });
+          setMsg("shared — AirDrop / Save to Files");
+        } else {
+          setMsg("saved: " + fileUrl);
+        }
+      }
     } catch (e: any) {
-      // Show the exact destination + error so a failing upload is diagnosable on-device.
-      setMsg(`err → ${dest} : ${String(e?.message || e)}`);
+      setMsg("err: " + String(e?.message || e));
     }
   }
 
