@@ -506,8 +506,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row-reverse',
   },
   coverSlot: {
-    borderRadius: 10,
-    backgroundColor: 'rgba(128,128,128,0.15)',
+    // A purely transparent spacer that reserves the cover's resting spot in the row (so the title
+    // column doesn't shift). No fill/radius: a visible placeholder here would read as a second shape
+    // sitting under the cover as it morphs over from the card.
+    backgroundColor: 'transparent',
   },
   info: {
     flex: 1,
