@@ -1,8 +1,8 @@
 import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated, { interpolateColor, useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -110,14 +110,30 @@ export default function SearchScreen() {
   // the long-press preview, and tapping one of its tag rows sets an intent without changing the route
   // (see series-card-context-menu), so the mount-only read above would never see it.
   //
+  // Only consume it while FOCUSED. This screen can also sit BACKGROUNDED in the stack (Search → tap a
+  // card → Series), and a tag tapped up on that Series pushes a NEW Search for it — if this
+  // backgrounded instance answered the subscription it would swallow the intent, leaving the pushed
+  // screen to mount on an empty `takeSearchIntent()`. Unfocused, we ignore it and let the push consume
+  // it on mount.
+  //
   // Seed the same three paths as mount — but clear the existing query/filters/sort first, so the tap
   // lands on a clean slate exactly as it would on a freshly-pushed Search. Without that, the new tag
   // would MERGE into whatever refinement is already on screen (the filters hook only self-resets on a
   // bridge CHANGE, and this intent is usually for the same bridge), silently ANDing the tag with the
   // previous search's filters — not what "search this tag" means.
+  const focusedRef = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      focusedRef.current = true;
+      return () => {
+        focusedRef.current = false;
+      };
+    }, []),
+  );
   useEffect(
     () =>
       subscribeSearchIntent(() => {
+        if (!focusedRef.current) return;
         const intent = takeSearchIntent();
         if (!intent) return;
         setBridge(intent.bridgeName);
