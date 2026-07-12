@@ -550,15 +550,16 @@ export default function BrowseScreen() {
   // scope loads — dim the cards to signal the refresh (bridge / page / filter / sort / search).
   const gridUpdating = activeGridQuery.isPlaceholderData;
 
-  // ── Full-home crossfade on a bridge switch ────────────────────────────────
-  // A source switch is a wholesale change, so dissolve the ENTIRE home (controls + rails + grid,
+  // ── Full-home crossfade on a bridge OR page switch ────────────────────────
+  // Both are a wholesale change of the surface, so dissolve the ENTIRE home (controls + rails + grid,
   // everything in the list): fade it out, COMMIT the switch only once it's hidden, then fade the new
-  // bridge's home in. Committing at opacity 0 is what makes it seamless for an already-cached bridge
-  // too — its content is available instantly and would otherwise hard-cut before any fade. The commit
-  // is deferred by holding setBridge/setQuery/setSeeAll until the fade-out's completion callback (see
-  // `selectBridge`); until then the OLD bridge stays fully rendered and fades out as itself. The
-  // bridge/page selector (topBar, outside the list) stays put throughout. Within-bridge refinements
-  // (page/filter/sort/search) keep the lighter dim below, suppressed while `switching`.
+  // content in. Committing at opacity 0 is what makes it seamless for already-cached content too — it's
+  // available instantly and would otherwise hard-cut before any fade. The commit is deferred by holding
+  // the setBridge/setPage (+ setQuery/setSeeAll) until the fade-out's completion callback (see
+  // `beginCrossfade` / the two selectors); until then the OLD surface stays fully rendered and fades
+  // out as itself. The bridge/page selector (topBar, outside the list) stays put throughout. The
+  // remaining within-page refinements (filter/sort/search) keep the lighter dim below, suppressed
+  // while `switching`.
   const XFADE_OUT_MS = 140;
   const XFADE_IN_MS = 200;
   // Hard cap on the hidden window — reveal whatever's there rather than ever leaving the home
@@ -568,15 +569,36 @@ export default function BrowseScreen() {
   const homeXfadeStyle = useAnimatedStyle(() => ({ opacity: homeXfade.value }));
   const [switching, setSwitching] = useState(false);
   const [committed, setCommitted] = useState(false);
-  // Run at the bottom of the fade-out (opacity 0): swap to the new bridge here, so the old→new change
-  // is never on screen. `selectBridge` also drops query/seeAll (as it always has) as part of the same
-  // top-level navigation. Stable so the fade-out worklet callback closes over a fixed reference.
-  const commitBridgeTo = useCallback((name: string) => {
-    setBridge(name);
-    setQuery('');
-    setSeeAll(null);
+  // Both selectors (bridge AND page) drive the same crossfade, so the thing to swap at opacity 0 is
+  // deferred generically: `beginCrossfade` stashes the caller's commit here, and `runPendingCommit`
+  // fires it at the bottom of the fade-out. A ref (not a state closure) so the fade-out worklet
+  // callback closes over one stable JS function regardless of which navigation started it.
+  const pendingCommitRef = useRef<(() => void) | null>(null);
+  // Run at the bottom of the fade-out (opacity 0): apply the deferred swap here, so the old→new
+  // change is never on screen. Null-guarded and one-shot (clear before calling) so a cancelled
+  // animation's stray callback — or a rapid re-tap that already committed — is a harmless no-op.
+  const runPendingCommit = useCallback(() => {
+    const commit = pendingCommitRef.current;
+    pendingCommitRef.current = null;
+    commit?.();
     setCommitted(true);
   }, []);
+  // Start a full-home crossfade: fade to opacity 0, then commit `commit` while invisible. The
+  // `if (finished)` guard is load-bearing — a second select mid-fade starts a NEW withTiming(0)
+  // that cancels this one, whose callback then fires with finished=false; skipping it means we
+  // never commit at a partial opacity (which would flash the swap). Only the latest (completing)
+  // animation commits, running whatever `pendingCommitRef` holds by then — last tap wins.
+  const beginCrossfade = useCallback(
+    (commit: () => void) => {
+      pendingCommitRef.current = commit;
+      setSwitching(true);
+      setCommitted(false);
+      homeXfade.value = withTiming(0, { duration: XFADE_OUT_MS, easing: Easing.in(Easing.quad) }, (finished) => {
+        if (finished) runOnJS(runPendingCommit)();
+      });
+    },
+    [homeXfade, runPendingCommit],
+  );
   // "The new bridge's home is ready to reveal": its content query has settled, or errored (so a
   // failed switch shows its Retry instead of stranding a blank home). Only consult `homeUpdating`
   // when the COMPOSED home actually drives the surface. A page-list bridge (home is a page-flagged
@@ -584,8 +606,16 @@ export default function BrowseScreen() {
   // query sits on the previous bridge's data as a permanent placeholder — so homeUpdating would be
   // stuck true forever and the crossfade would never fade back in, leaving the home invisible at
   // opacity 0 (a page-list bridge showed no home content). Such a home is ready on its grid alone.
+  // `gridUpdating` is only meaningful when a grid actually backs the surface. A rails-only composed
+  // home (no grid section) leaves the results query DISABLED, and under keepPreviousData a disabled
+  // query that previously held results sits on them as a permanent placeholder — so `gridUpdating`
+  // would be stuck true forever and the crossfade would only reveal via the cap (a ~1.8s invisible
+  // hold), even with the home cached. Guard it the same way `homeUpdating` is guarded below.
+  const gridActive = showResultsGrid || isHomeTerminal;
   const homeReady =
-    !!homeError || !!gridError || (!gridUpdating && (composedHome ? !homeUpdating : true));
+    !!homeError ||
+    !!gridError ||
+    ((gridActive ? !gridUpdating : true) && (composedHome ? !homeUpdating : true));
   useEffect(() => {
     // `committed` gates out the fade-out phase, when `homeReady` still reflects the outgoing bridge.
     if (!switching || !committed) return;
@@ -604,13 +634,13 @@ export default function BrowseScreen() {
     return () => clearTimeout(t);
   }, [switching, committed, homeReady, homeXfade]);
 
-  // ── Within-bridge grid dim (page/filter/sort/search refinements) ──────────
-  // A lighter treatment than a full source switch: the kept grid eases to a dimmed 0.45 while the new
-  // scope loads, then back to full — "refreshing", not "swapping". Suppressed while `switching` (the
-  // full crossfade above owns a bridge change; this would just fight it). One shared animated style is
-  // reused across every grid cell (no per-cell hook — renderItem isn't a component). Only the grid
-  // needs it: the composed-home rails are only ever placeholder-swapped by a bridge change, which the
-  // crossfade already covers — so there's no separate rails dim (homeUpdating ⇒ switching).
+  // ── Within-page grid dim (filter/sort/search refinements) ─────────────────
+  // A lighter treatment than a full bridge/page switch: the kept grid eases to a dimmed 0.45 while the
+  // new scope loads, then back to full — "refreshing", not "swapping". Suppressed while `switching`
+  // (the full crossfade above owns a bridge/page change; this would just fight it). One shared animated
+  // style is reused across every grid cell (no per-cell hook — renderItem isn't a component). Only the
+  // grid needs it: the composed-home rails are only ever placeholder-swapped by a bridge change, which
+  // the crossfade already covers — so there's no separate rails dim (homeUpdating ⇒ switching).
   const REVEAL_DIM = 0.45;
   const REVEAL_MS = 200;
   const gridReveal = useSharedValue(1);
@@ -702,16 +732,29 @@ export default function BrowseScreen() {
       setBridge(b);
       return;
     }
-    setSwitching(true);
-    setCommitted(false);
-    homeXfade.value = withTiming(0, { duration: XFADE_OUT_MS, easing: Easing.in(Easing.quad) }, (finished) => {
-      if (finished) runOnJS(commitBridgeTo)(b);
+    beginCrossfade(() => {
+      setBridge(b);
+      setQuery('');
+      setSeeAll(null);
     });
   };
+  // A page switch is a top-level navigation too — a home↔page-list↔favorites swap of the whole
+  // surface — so it runs the SAME crossfade as a bridge change (fade out, commit setPage at opacity
+  // 0, fade the new page in) rather than the lighter grid dim. A no-op re-tap of the current page
+  // just commits immediately (nothing to dissolve): dropping any active search / "See all" drilldown
+  // in place, matching the bridge no-op branch.
   const selectPage = (p: string) => {
-    setQuery('');
-    setSeeAll(null);
-    setPage(p);
+    if (p === page) {
+      setQuery('');
+      setSeeAll(null);
+      setPage(p);
+      return;
+    }
+    beginCrossfade(() => {
+      setQuery('');
+      setSeeAll(null);
+      setPage(p);
+    });
   };
 
   // See plan: hold the server's column count until mount to avoid a hydration
