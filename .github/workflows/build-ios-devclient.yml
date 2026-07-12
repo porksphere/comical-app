@@ -1,0 +1,120 @@
+name: Build iOS dev-client (Windows iterative dev)
+
+# Manual-only. Builds the iOS **development-client** shell — a Debug build with
+# expo-dev-client and the coexisting `com.porksphere.comical.dev` bundle id — and
+# publishes it to its own rolling `ios-devclient` SideStore/AltStore source.
+#
+# Install it once via that source; from then on you iterate entirely from a
+# Windows PC: run `bun run dev:device` (Metro over your LAN) and connect the
+# installed dev build to it from the phone's launcher. JS/TS edits hot-reload on
+# device; only NATIVE changes (new native module / config plugin / SDK bump)
+# need a fresh run of this workflow. See docs/PROFILING.md → "Iterative Expo dev
+# from Windows".
+#
+# Kept separate from build-ios.yml on purpose: the per-PR / ios-latest builds
+# stay plain Release. This is the only thing that builds Debug.
+
+on:
+  # Manual only. Pick the branch/tag to build from in the "Run workflow" dialog
+  # (or `gh workflow run build-ios-devclient.yml --ref <branch>`); the whole
+  # workflow — including the reusable build's checkout — runs on that ref.
+  workflow_dispatch: {}
+
+concurrency:
+  group: ios-devclient
+  cancel-in-progress: true
+
+# Publish the IPA + source manifest to a GitHub Release (public, unauthenticated
+# direct-download URLs that SideStore/AltStore can fetch).
+permissions:
+  contents: write
+
+jobs:
+  build:
+    uses: ./.github/workflows/build-ios-reusable.yml
+    with:
+      configuration: Debug
+      dev_client: true
+    secrets: inherit
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download unsigned dev-client IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: ${{ runner.temp }}/ipa
+
+      - name: Publish IPA + SideStore source to the ios-devclient Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          # The reusable build always names the artifact comical-unsigned.ipa;
+          # rename so the dev-client asset URL is unambiguous alongside ios-latest.
+          mv "$RUNNER_TEMP/ipa/comical-unsigned.ipa" "$RUNNER_TEMP/ipa/comical-devclient.ipa"
+          IPA="$RUNNER_TEMP/ipa/comical-devclient.ipa"
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/ios-devclient"
+          SIZE=$(stat -c%s "$IPA")
+          DATE=$(date -u +%Y-%m-%d)
+
+          cp apps/mobile/assets/images/icon.png "$RUNNER_TEMP/icon.png"
+
+          # SideStore/AltStore source manifest. Add this URL as a source:
+          #   $BASE/apps.json
+          # Distinct bundle id (com.porksphere.comical.dev) so it coexists with the
+          # release app. Emits both the modern versions[] array and the legacy
+          # top-level fields so either client parses it.
+          jq -n \
+            --arg version "$VERSION" \
+            --arg date "$DATE" \
+            --arg notes "Development-client shell — loads JS from your Metro dev server (bun run dev:device). Rebuild only on native changes." \
+            --arg dl "${BASE}/comical-devclient.ipa" \
+            --argjson size "$SIZE" \
+            --arg icon "${BASE}/icon.png" \
+            '{
+              name: "Comical (dev-client)",
+              identifier: "com.porksphere.comical.dev.source",
+              apps: [{
+                name: "Comical (dev)",
+                bundleIdentifier: "com.porksphere.comical.dev",
+                developerName: "porksphere",
+                localizedDescription: "Comical development-client build for on-device iteration from a Windows PC. Unsigned; re-signed on-device by SideStore/AltStore.",
+                iconURL: $icon,
+                tintColor: "208AEF",
+                versions: [{
+                  version: $version,
+                  date: $date,
+                  localizedDescription: $notes,
+                  downloadURL: $dl,
+                  size: $size
+                }],
+                version: $version,
+                versionDate: $date,
+                versionDescription: $notes,
+                downloadURL: $dl,
+                size: $size
+              }]
+            }' > "$RUNNER_TEMP/apps.json"
+
+          # Recreate the rolling tag/release so the URLs above stay stable.
+          gh release delete ios-devclient --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          gh release create ios-devclient \
+            "$IPA" \
+            "$RUNNER_TEMP/apps.json" \
+            "$RUNNER_TEMP/icon.png" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Comical iOS dev-client (Windows iterative dev)" \
+            --notes "Development-client shell (Debug + expo-dev-client, bundle id \`com.porksphere.comical.dev\` so it coexists with the release app).
+
+          **Install via source (recommended):** add this URL in SideStore/AltStore → Sources → +
+          \`${BASE}/apps.json\`
+
+          Then run \`bun run dev:device\` on your PC and connect from the app's launcher.
+          Rebuild (re-run this workflow) only when native code changes — pure JS/TS
+          iterates over Metro with no rebuild."
