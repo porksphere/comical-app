@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { Link } from 'expo-router';
+import { Link, router } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { Easing, type AnimatedStyle, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -535,73 +535,80 @@ export function SeriesCard({
       entry={entry}
       direct={direct}
       coverAspect={coverAspect}>
-      {({ onLongPress }) => (
-      <Link
-      // Force a new stack entry every time: expo-router's default `navigate`
-      // behavior unwinds to an existing `/series` route already on the stack
-      // instead of pushing another — so tapping a related/recommended series
-      // from within a series-detail screen replaced the current screen instead
-      // of drilling in. `push` always adds a new entry, which is also correct
-      // from Browse/Library/History (no `/series` on the stack yet, so it's
-      // equivalent to a plain push there).
-      push
-      href={{
-        pathname: '/series',
-        params: {
-          id: entry.id,
-          title: entry.title,
-          // Percent-encoded: expo-router's web href resolution breaks when a
-          // route param value contains literal parentheses (real bridge
-          // display names commonly do, e.g. "Illustration Gallery (Demo)").
-          // `encodeURIComponent` alone doesn't touch '(' ')' — they're in its
-          // unreserved set — so escape them explicitly. Decoded back in
-          // series.tsx with a single `decodeURIComponent` (which does handle
-          // %28/%29 like any other percent-escape).
-          ...(bridge
-            ? { bridge: encodeURIComponent(bridge).replace(/\(/g, '%28').replace(/\)/g, '%29') }
-            : {}),
-          // Forward the cover the browse grid already has so the series screen can
-          // paint it instantly from expo-image's cache (see series.tsx skeleton),
-          // rather than shimmering until the full detail query resolves. Same paren
-          // escaping as `bridge` above — arbitrary cover URLs may contain '(' ')'.
-          ...(entry.cover
-            ? { cover: encodeURIComponent(entry.cover).replace(/\(/g, '%28').replace(/\)/g, '%29') }
-            : {}),
-          ...(bridgeId ? { bridgeId } : {}),
-          ...(direct ? { direct: '1' } : {}),
-          // Same paren escaping as `bridge`/`cover` — a page's name (e.g. a "Popular" list's
-          // display name lowercased) could in principle contain them too.
-          ...(originPage
-            ? { fromPage: encodeURIComponent(originPage).replace(/\(/g, '%28').replace(/\)/g, '%29') }
-            : {}),
-        },
-      }}
-      asChild>
-      {/* Flatten to a single style object: as the `asChild` of <Link>, the
-          Pressable is cloned by expo-router's <Slot>, which rejects array styles. */}
-      <Pressable
-        style={StyleSheet.flatten([
-          styles.card,
-          fixedWidth != null && { width: fixedWidth },
-          // Lift the active card so its full-title popover draws over neighbours.
-          active && styles.cardActive,
-        ])}
-        // Native: sliding off the card keeps it held; release clears it.
-        pressRetentionOffset={HOLD_RETENTION}
-        // Native long-press opens the shared quick-actions menu; undefined on web (which uses the
-        // hover 3-dot instead). A long-press suppresses the tap, so it never also navigates.
-        onLongPress={onLongPress}
-        {...handlers}>
-        {/* Shrink illusion only when Lightweight is off: wrap in CoverShrink (owns the reanimated
-            hooks + supplies real animated styles); otherwise render plainly with a no-op API. */}
-        {lightCards ? (
-          renderCardBody(NOOP_SHRINK)
+      {({ onLongPress }) => {
+        // Force a new stack entry every time: expo-router's default `navigate` behavior unwinds to
+        // an existing `/series` route already on the stack instead of pushing another — so tapping a
+        // related/recommended series from within a series-detail screen replaced the current screen
+        // instead of drilling in. `push` always adds a new entry, also correct from
+        // Browse/Library/History (no `/series` on the stack yet there, so equivalent to a plain push).
+        const href = {
+          pathname: '/series' as const,
+          params: {
+            id: entry.id,
+            title: entry.title,
+            // Percent-encoded: expo-router's web href resolution breaks when a route param value
+            // contains literal parentheses (real bridge display names commonly do, e.g.
+            // "Illustration Gallery (Demo)"). `encodeURIComponent` alone doesn't touch '(' ')' —
+            // they're in its unreserved set — so escape them explicitly. Decoded back in series.tsx
+            // with a single `decodeURIComponent` (which handles %28/%29 like any percent-escape).
+            ...(bridge
+              ? { bridge: encodeURIComponent(bridge).replace(/\(/g, '%28').replace(/\)/g, '%29') }
+              : {}),
+            // Forward the cover the browse grid already has so the series screen can paint it
+            // instantly from expo-image's cache (see series.tsx skeleton), rather than shimmering
+            // until the full detail query resolves. Same paren escaping — cover URLs may contain '()'.
+            ...(entry.cover
+              ? { cover: encodeURIComponent(entry.cover).replace(/\(/g, '%28').replace(/\)/g, '%29') }
+              : {}),
+            ...(bridgeId ? { bridgeId } : {}),
+            ...(direct ? { direct: '1' } : {}),
+            // Same paren escaping — a page's name (e.g. a "Popular" list's display name lowercased)
+            // could in principle contain them too.
+            ...(originPage
+              ? { fromPage: encodeURIComponent(originPage).replace(/\(/g, '%28').replace(/\)/g, '%29') }
+              : {}),
+          },
+        };
+        const pressable = (
+          <Pressable
+            // Flat single style object: as the `asChild` of <Link> (web), the Pressable is cloned by
+            // expo-router's <Slot>, which rejects array styles.
+            style={StyleSheet.flatten([
+              styles.card,
+              fixedWidth != null && { width: fixedWidth },
+              // Lift the active card so its full-title popover draws over neighbours.
+              active && styles.cardActive,
+            ])}
+            // Native: sliding off the card keeps it held; release clears it.
+            pressRetentionOffset={HOLD_RETENTION}
+            // On web the wrapping <Link> owns navigation via a real <a> (keeps middle-click /
+            // open-in-new-tab / a crawlable href); on native we navigate imperatively so each card
+            // doesn't mount an expo-router <Link> — its per-render router hooks were a top scroll cost
+            // (createTask/ExpoLink), and native has no anchor semantics to preserve anyway.
+            onPress={isWeb ? undefined : () => router.push(href)}
+            // Native long-press opens the shared quick-actions menu; undefined on web (which uses the
+            // hover 3-dot instead). A long-press suppresses the tap, so it never also navigates.
+            onLongPress={onLongPress}
+            {...handlers}>
+            {/* Shrink illusion only when Lightweight is off: wrap in CoverShrink (owns the reanimated
+                hooks + supplies real animated styles); otherwise render plainly with a no-op API. */}
+            {lightCards ? (
+              renderCardBody(NOOP_SHRINK)
+            ) : (
+              <CoverShrink entryId={entry.id}>{renderCardBody}</CoverShrink>
+            )}
+          </Pressable>
+        );
+        // Web keeps the real anchor (asChild clones it onto the Pressable); native renders the
+        // Pressable directly and pushes imperatively on press.
+        return isWeb ? (
+          <Link push href={href} asChild>
+            {pressable}
+          </Link>
         ) : (
-          <CoverShrink entryId={entry.id}>{renderCardBody}</CoverShrink>
-        )}
-      </Pressable>
-      </Link>
-      )}
+          pressable
+        );
+      }}
     </SeriesCardMenu>
   );
 }
