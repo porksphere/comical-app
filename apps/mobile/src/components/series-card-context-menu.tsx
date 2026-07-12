@@ -2,9 +2,9 @@ import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { BackHandler, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
-import Animated, { interpolate, LinearTransition, runOnJS, useAnimatedProps, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import Animated, { interpolate, LinearTransition, runOnJS, useAnimatedProps, useAnimatedReaction, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LegendList } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
@@ -30,6 +30,10 @@ const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
 // The one spring used everywhere: the open morph, the reversed close morph, and the panel/menu
 // resize — so every motion in the popup shares the same bouncy feel.
 const MORPH_SPRING = { damping: 16, stiffness: 170, mass: 0.8 } as const;
+// On dismiss, hand the cover back to the source card once the morph is this far along (progress
+// counting DOWN from 1): the card un-hides — so its title reappears without waiting for the spring's
+// long tail — and the flying cover fades out over the same span, so the two never read as a duplicate.
+const CARD_REVEAL_AT = 0.45;
 // How the panel + menu resize/reposition when late content lands — the panel is a plain Animated.View
 // (not the ThemedView, which doesn't forward a ref) so its height can spring when async content swaps
 // a skeleton for the real thing, instead of the panel popping to its final size.
@@ -129,17 +133,42 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     if (rows > 0) lastTagRowCount = rows;
   }, [detailLoaded, detail.data]);
 
-  const finishClose = useCallback(() => {
-    req.onClose?.();
-    closeSeriesCardMenu();
+  // Once dismiss begins, the overlay stops capturing touches so the list underneath is scrollable
+  // WHILE the morph is still settling (like Apple's peek dismiss) — driven on the UI thread too so an
+  // animated style can react. The source card is un-hidden partway through (CARD_REVEAL_AT) rather
+  // than at the very end.
+  const [dismissing, setDismissing] = useState(false);
+  const dismissSV = useSharedValue(0);
+  const revealedRef = useRef(false);
+  const revealCard = useCallback(() => {
+    if (revealedRef.current) return;
+    revealedRef.current = true;
+    req.onClose?.(); // un-hide the source card (its title comes back) while the cover finishes landing
   }, [req]);
+
+  const finishClose = useCallback(() => {
+    revealCard();
+    closeSeriesCardMenu();
+  }, [revealCard]);
   const dismiss = useCallback(() => {
     // Same spring as the open, reversed — the cover morphs back onto the card exactly the way it came
     // out, instead of a plain quick fade.
+    setDismissing(true);
+    dismissSV.value = 1;
     progress.value = withSpring(0, MORPH_SPRING, (finished) => {
       if (finished) runOnJS(finishClose)();
     });
-  }, [progress, finishClose]);
+  }, [progress, finishClose, dismissSV]);
+
+  // Reveal the card as soon as the morph-back passes CARD_REVEAL_AT (progress falling), not at the
+  // spring's rest — so the title doesn't wait out the tail. Guarded to the dismiss phase (progress
+  // also passes this value while OPENING, when the card must stay hidden).
+  useAnimatedReaction(
+    () => progress.value,
+    (v) => {
+      if (dismissSV.value === 1 && v < CARD_REVEAL_AT) runOnJS(revealCard)();
+    },
+  );
 
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -217,6 +246,9 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
         { scale: interpolate(progress.value, [0, 1], [fromScale, 1]) },
       ],
       shadowOpacity: progress.value * 0.28,
+      // Opaque during the open morph (the source card is hidden behind it). On dismiss, fade out as it
+      // lands so it hands off to the now-revealed card instead of doubling it.
+      opacity: dismissSV.value === 1 ? Math.min(1, progress.value / CARD_REVEAL_AT) : 1,
     }),
     [coverDx, coverDy, fromScale],
   );
@@ -268,7 +300,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   );
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+    <View style={StyleSheet.absoluteFill} pointerEvents={dismissing ? 'none' : 'box-none'}>
       {/* Blurred, tap-to-dismiss backdrop. */}
       <Pressable style={StyleSheet.absoluteFill} onPress={dismiss}>
         <AnimatedBlurView tint="dark" experimentalBlurMethod={ANDROID_BLUR} animatedProps={backdropBlurProps} style={StyleSheet.absoluteFill} />
