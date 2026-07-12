@@ -357,3 +357,34 @@ Metro bundles anything, so this has zero runtime/CI impact today: confirmed
   through `node_modules` same as above) rather than any tsconfig-paths trick — but if the
   publish pipeline is already built for `@comical/contract`, extending it to these
   is close to free.
+
+## Perf: virtualize composed-home rails (mount/memory — NOT scroll)
+
+From the card-scroll perf investigation (2026-07). Browse's composed home is already one
+vertical scroll: a single `SeriesGrid` (`AnimatedLegendList`) whose `ListHeaderComponent`
+(`listHeader` in `src/app/(tabs)/index.tsx`) holds *all* the rails + section blocks, with the
+terminal section's cards as the grid's `data`.
+
+The catch: **`ListHeaderComponent` is never virtualized.** So every rail on a composed home is
+mounted at once (N rails = N live horizontal `AnimatedLegendList`s), even ones scrolled far
+off-screen. That's a **mount/memory** cost, *not* a per-scroll-commit cost — during a vertical
+scroll the rails sit static in the header and don't re-commit, so this is unrelated to the
+`completeRoot`/`replaceContainerChildren` scroll cost (that's the terminal grid's row commits,
+already optimized in the perf commits `8efaf7f`→`7f83bbb`).
+
+**Fix (only if a rail-heavy composed home shows an enter/mount lag):** make the rails
+**virtualized items of the vertical list** instead of header children — outer `data` =
+`[rail-1 … rail-N, grid-rows…]`, `renderItem` switching on item type (`<Rail>` vs card-row), so
+off-screen rails unmount (the Netflix-home pattern).
+
+**Caveats / why it's not obviously worth it:**
+- Does **nothing** for the scroll-commit jank (rails don't commit during scroll).
+- Cards **still** can't recycle between a rail and the grid — horizontal vs vertical scroll axis =
+  separate virtualization pools. Architecturally impossible, not a bug.
+- Mixed item types + variable heights (rails tall, grid rows short) make `estimatedItemSize`
+  fuzzier; LegendList recycling across item types is limited, so rails likely mount/unmount
+  rather than recycle (acceptable — they're few).
+- Re-tangles the crossfade / reveal-dim / sliding-header wiring on `index.tsx`.
+
+**Decision gate:** first confirm a composed-home *enter/mount* actually lags at a realistic rail
+count. Skip if homes are only ~3–5 rails.
