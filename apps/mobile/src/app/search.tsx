@@ -3,7 +3,7 @@ import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { interpolateColor, useAnimatedStyle } from 'react-native-reanimated';
+import { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FilterBar, SortControl } from '@/components/filters/filter-demo';
@@ -247,14 +247,14 @@ export default function SearchScreen() {
   // can't drift); a new search (`scopeKey` change) snaps it back to visible and the list to the top.
   const { scrollY, offset: filtersOffsetY, barStyle: filtersStyle, sharedValues, onScroll: onListScroll } =
     useSlidingBar(filtersBarH, { resetKey: scopeKey, listRef });
-  // The top bar's own bottom hairline is the inverse of the filter bar's visibility: hidden while the
-  // filter bar is fully expanded right below it (the filter bar's hairline is the divider then), and
-  // fading in as the filter bar slides up out of view (so the top bar keeps a divider from the
-  // content). With no filter bar at all, it's simply always shown.
-  const topBarBorderStyle = useAnimatedStyle(() => {
-    const t = filtersBarH > 0 ? Math.min(1, Math.max(0, -filtersOffsetY.value / filtersBarH)) : 1;
-    return { borderBottomColor: interpolateColor(t, [0, 1], ['transparent', theme.hairline]) };
-  });
+  // The top bar's hairline is ALWAYS on (BarSurface draws it), including while the filter bar is
+  // expanded right beneath it. It used to fade out there, so the two bars read as one flush unit —
+  // but they are two separate blur surfaces, and a blur only samples the content directly behind
+  // ITSELF (its kernel doesn't reach across the boundary into the neighbouring bar's backdrop). So
+  // the two never quite match at the join, and with no divider that mismatch reads as a smudge.
+  // A crisp hairline makes the seam deliberate instead: a divider between two bars, which is what it
+  // actually is. (Truly seamless would need ONE blur surface spanning both — incompatible with the
+  // filter bar sliding up BEHIND the top bar, which requires something to slide behind.)
   // A subtle drop shadow only while the filter bar is mid-slide — a depth cue as it pops out from
   // behind the top bar. Zero at both rest states (fully expanded = flush unit; fully collapsed = the
   // hairline takes over), peaking in the middle of the motion (a parabola over the slide progress).
@@ -322,9 +322,8 @@ export default function SearchScreen() {
       {/* Overlaid top bar: back button + search field (autofocused after the push settles) + sort.
           Frosted like every other bar (BarSurface): the RESULTS scroll under it and show through. The
           filter bar does NOT — it's clipped out before it can reach here (see `filterBar`) — so the
-          frost only ever carries content, never chrome. Its bottom hairline fades in once the filter
-          bar has slid away (see topBarBorderStyle). */}
-      <BarSurface style={[styles.topBar, topBarBorderStyle, topBarShadowStyle]}>
+          frost only ever carries content, never chrome. */}
+      <BarSurface style={[styles.topBar, topBarShadowStyle]}>
         <View style={[styles.topBarRow, { height: barHeight }]}>
           <Pressable
             onPress={goBack}
