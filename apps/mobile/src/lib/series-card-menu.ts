@@ -1,5 +1,6 @@
 import { observable } from '@legendapp/state';
 import { useSyncExternalStore } from 'react';
+import { makeMutable } from 'react-native-reanimated';
 
 import type { SeriesEntry } from '@/data/types';
 
@@ -51,4 +52,37 @@ export function useSeriesCardMenu(): SeriesCardMenuRequest | null {
     () => seriesCardMenu$.peek(),
     () => seriesCardMenu$.peek(),
   );
+}
+
+// ── Peek and commit (the iOS hold-down) ──────────────────────────────────────
+/**
+ * Keep holding after the menu opens, slide onto a row, lift to run it — without ever releasing the
+ * finger you long-pressed with.
+ *
+ * This has to live in a module, and it has to be shared values, because of who owns the touch: the
+ * finger is still held down inside the CARD's gesture (`series-card-menu.tsx`), and a root overlay
+ * that mounts mid-touch can never be handed an in-flight one. So the card's gesture keeps reporting
+ * the finger, and the popup — which knows where its rows are — reads it and decides what's under it.
+ * The two never meet; they only share these values.
+ *
+ * All UI-thread: the card writes `holdPoint` from its gesture worklet, the popup reacts on the UI
+ * thread and writes back `hoveredRow`, and the card reads THAT back when the finger lifts to decide
+ * what to run. Nothing round-trips through JS until something is actually chosen.
+ */
+export const holdActive = makeMutable(false);
+export const holdX = makeMutable(0);
+export const holdY = makeMutable(0);
+/** Index of the menu row the held finger is currently over, or -1. Written by the popup. */
+export const hoveredRow = makeMutable(-1);
+
+/** What each row does, in render order — registered by the popup so a lift can run the right one. */
+let rowActions: (() => void)[] = [];
+export function setMenuRowActions(actions: (() => void)[]): void {
+  rowActions = actions;
+}
+
+/** Called on release of the original long-press. Runs the row the finger was over, if any. */
+export function commitHoveredRow(index: number): void {
+  const action = rowActions[index];
+  if (action) action();
 }

@@ -4,7 +4,14 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
 
 import type { SeriesEntry } from '@/data/types';
-import { openSeriesCardMenu } from '@/lib/series-card-menu';
+import {
+  commitHoveredRow,
+  holdActive,
+  holdX,
+  holdY,
+  hoveredRow,
+  openSeriesCardMenu,
+} from '@/lib/series-card-menu';
 
 /**
  * Native (iOS + Android) per-card quick-actions menu. A long-press anywhere on the card opens the
@@ -66,15 +73,46 @@ export function SeriesCardMenu({ enabled, bridgeId, bridge, entry, direct, cover
     [bridgeId, bridge, entry, direct, coverAspect],
   );
 
+  // A PAN that only activates after a hold — not a LongPress. The difference is the whole peek-and-
+  // commit behaviour: a LongPress with `maxDistance(20)` cancels itself the moment the finger travels,
+  // which is exactly what you do next when you slide onto a menu row. `activateAfterLongPress` gives
+  // the same "hold, don't scroll" contract (movement before the hold elapses loses to the list's
+  // scroll, so it still never fires mid-scroll) while keeping the finger AFTER it fires — so the same
+  // uninterrupted touch that opened the menu can then pick from it.
+  //
+  // The touch can only ever belong to this gesture: the popup is a root overlay that mounts mid-touch,
+  // and no touch system hands an in-flight gesture to a view that didn't exist when it began. So this
+  // card reports the finger, and the popup reads it (see `holdActive`/`holdX`/`holdY`).
   const longPress = useMemo(
     () =>
-      Gesture.LongPress()
-        .minDuration(350)
-        // Cancel if the finger travels (i.e. it's a scroll, not a hold), so it never fires mid-scroll.
-        .maxDistance(20)
+      Gesture.Pan()
+        .activateAfterLongPress(350)
         .enabled(enabled && !!bridgeId)
         .onStart((e) => {
+          holdActive.value = true;
+          holdX.value = e.absoluteX;
+          holdY.value = e.absoluteY;
+          hoveredRow.value = -1;
           runOnJS(openMenuAt)(e.absoluteX, e.absoluteY);
+        })
+        .onUpdate((e) => {
+          // Keep reporting while the finger is still down; the popup hit-tests its rows against this.
+          holdX.value = e.absoluteX;
+          holdY.value = e.absoluteY;
+        })
+        .onEnd(() => {
+          // Lift = commit whatever the finger was over. Nothing under it (you slid off, or never
+          // moved) simply leaves the menu open, which is what the iOS one does.
+          const row = hoveredRow.value;
+          holdActive.value = false;
+          hoveredRow.value = -1;
+          if (row >= 0) runOnJS(commitHoveredRow)(row);
+        })
+        .onFinalize(() => {
+          // Cancelled rather than ended (an interrupting touch, a navigation): drop the hold, don't
+          // run anything.
+          holdActive.value = false;
+          hoveredRow.value = -1;
         }),
     [enabled, bridgeId, openMenuAt],
   );
