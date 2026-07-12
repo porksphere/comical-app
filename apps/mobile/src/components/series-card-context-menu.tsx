@@ -39,11 +39,26 @@ import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
 import { useStartReading } from '@/hooks/use-start-reading';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
-import { closeSeriesCardMenu, openSeriesCardMenu, useSeriesCardMenu, type SeriesCardMenuRequest } from '@/lib/series-card-menu';
+import {
+  closeSeriesCardMenu,
+  commitHoveredRow,
+  holdActive,
+  holdX,
+  holdY,
+  hoveredRow,
+  openSeriesCardMenu,
+  setMenuRowActions,
+  useSeriesCardMenu,
+  type SeriesCardMenuRequest,
+} from '@/lib/series-card-menu';
 import { getTabBarProgress } from '@/lib/tab-bar-visibility';
 import { getTopBarHidden } from '@/lib/top-bar-visibility';
 
 const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
+/** The tick as the held finger moves between rows — what gives the iOS menu its detents. */
+function selectionTick(): void {
+  void Haptics.selectionAsync();
+}
 // Every motion in this popup is a spring, and they're all tuned around the same two numbers, because
 // those are the two things you actually feel:
 //
@@ -168,7 +183,12 @@ const ANDROID_BLUR = Platform.OS === 'android' ? ('dimezisBlurView' as const) : 
 // is unreachable outside a device, which makes its gesture behaviour untestable in a browser.
 // Stripped from any release build, and from native entirely.
 if (__DEV__ && Platform.OS === 'web') {
-  (globalThis as { __openSeriesCardMenu?: typeof openSeriesCardMenu }).__openSeriesCardMenu = openSeriesCardMenu;
+  const g = globalThis as Record<string, unknown>;
+  g.__openSeriesCardMenu = openSeriesCardMenu;
+  // The peek-and-commit channel, so the hit-test/highlight/commit can be driven from a browser too.
+  // On web the CARD never writes these (web cards use the 3-dot affordance and never long-press), so
+  // this is the only way to exercise them outside a device.
+  g.__seriesCardMenuHold = { holdActive, holdX, holdY, hoveredRow, commitHoveredRow };
 }
 
 export function SeriesCardContextMenuHost() {
@@ -285,6 +305,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
 
   const menuW = Math.min(MENU_WIDTH, winW - EDGE_PAD * 2);
   const menuRowCount = MENU_ROWS + DEBUG_EXTRA_MENU_ROWS;
+  const rowCount = menuRowCount;
   const menuH = ROW_HEIGHT * menuRowCount + StyleSheet.hairlineWidth * (menuRowCount - 1) + MENU_PAD_V * 2;
   // Always on the LEFT, flush with the panel's own left edge — not centred under the pressed card. The
   // menu used to slide left/right depending on which card you happened to long-press, so the same three
@@ -746,6 +767,80 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     [req, router, entry.id, entry.title, bridgeId],
   );
 
+  // ── The rows, as data ─────────────────────────────────────────────────────
+  // Rendering them from a list (rather than three hand-written JSX rows) is what lets a ROW INDEX mean
+  // something — which is what the held finger is hit-tested into, and what a lift commits.
+  const rows: MenuRowSpec[] = [
+    {
+      label: reading.label,
+      Icon: PlayIcon,
+      primary: true,
+      loading: false,
+      onPress: () => {
+        req.onClose?.(); // un-hide the card and drop the overlay — the reader is about to cover it
+        closeSeriesCardMenu();
+        reading.start();
+      },
+    },
+    {
+      label: inLibrary ? 'Remove from Library' : 'Add to Library',
+      Icon: inLibrary ? CheckIcon : PlusIcon,
+      loading: inLibrary === null,
+      active: !!inLibrary,
+      onPress: () => act(toggleLibrary),
+    },
+    {
+      label: favorited ? 'Unfavorite' : 'Favorite',
+      Icon: StarIcon,
+      iconFilled: !!favorited,
+      loading: favorited === null,
+      active: !!favorited,
+      onPress: () => act(toggleFavorite),
+    },
+    // DEV ONLY: dummy rows so the menu is long enough to overrun the screen, which is the only state
+    // the pan gesture exists for. See DEBUG_EXTRA_MENU_ROWS.
+    ...Array.from({ length: DEBUG_EXTRA_MENU_ROWS }, (_, i) => ({
+      label: `Placeholder action ${i + 1}`,
+      Icon: PlusIcon,
+      loading: false,
+      onPress: dismiss,
+    })),
+  ];
+
+  // What a lift runs. Registered rather than passed, because the finger that lifts belongs to the
+  // CARD's gesture, which knows nothing about this component (see lib/series-card-menu).
+  useEffect(() => {
+    setMenuRowActions(rows.map((r) => (r.loading ? () => {} : r.onPress)));
+  });
+
+  // ── Peek and commit ───────────────────────────────────────────────────────
+  // While the original long-press is STILL held, work out which row the finger is over and light it up;
+  // lifting runs it. The row rects aren't measured — they're derived, exactly as the menu's own position
+  // is (same value, same formula), so this stays a pure UI-thread computation with nothing to keep in
+  // sync and no per-row onLayout.
+  useAnimatedReaction(
+    () => {
+      if (!holdActive.value) return -1;
+      const scale = minS.value + expand.value * (maxS.value - minS.value);
+      const top = topMin.value + expand.value * (topMax.value - topMin.value);
+      const menuTop = top + naturalH.value * scale + GAP;
+      const x = holdX.value;
+      const y = holdY.value;
+      if (x < menuPos.x.value || x > menuPos.x.value + menuW) return -1;
+      const local = y - menuTop - MENU_PAD_V;
+      if (local < 0) return -1;
+      const index = Math.floor(local / (ROW_HEIGHT + StyleSheet.hairlineWidth));
+      return index >= 0 && index < rowCount ? index : -1;
+    },
+    (row, prev) => {
+      if (row === prev) return;
+      hoveredRow.value = row;
+      // The little tick as the selection moves between rows — the thing that makes the iOS one feel
+      // like it has detents rather than being a hover state.
+      if (row >= 0) runOnJS(selectionTick)();
+    },
+  );
+
   return (
     // The pan lives on the ROOT, so the resize/dismiss drag works anywhere on the screen — over the
     // backdrop, the panel, or the menu — which is the point of it. It only claims a gesture once the
@@ -850,42 +945,10 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
           resizes it, and eases with it when late content changes the panel's natural height. */}
       <Animated.View style={[styles.menuWrap, { width: menuW }, menuStyle]}>
         <BlurView tint={menuTint} intensity={MENU_BLUR} experimentalBlurMethod={ANDROID_BLUR} style={[styles.menu, { borderColor: theme.backgroundSelected }]}>
-          {/* Read is the one real ACTION here (the others toggle state), so it leads and it's bold —
-              the way a context menu's primary item does. Bold, NOT blue: see MenuRow. */}
-          <MenuRow
-            label={reading.label}
-            Icon={PlayIcon}
-            loading={false}
-            primary
-            onPress={() => {
-              req.onClose?.(); // un-hide the card and drop the overlay — the reader is about to cover it
-              closeSeriesCardMenu();
-              reading.start();
-            }}
-          />
-          <View style={[styles.separator, { backgroundColor: theme.backgroundSelected }]} />
-          <MenuRow
-            label={inLibrary ? 'Remove from Library' : 'Add to Library'}
-            Icon={inLibrary ? CheckIcon : PlusIcon}
-            loading={inLibrary === null}
-            active={!!inLibrary}
-            onPress={() => act(toggleLibrary)}
-          />
-          <View style={[styles.separator, { backgroundColor: theme.backgroundSelected }]} />
-          <MenuRow
-            label={favorited ? 'Unfavorite' : 'Favorite'}
-            Icon={StarIcon}
-            iconFilled={!!favorited}
-            loading={favorited === null}
-            active={!!favorited}
-            onPress={() => act(toggleFavorite)}
-          />
-          {/* DEV ONLY: dummy rows so the menu is long enough to overrun the screen, which is the only
-              state the pan gesture exists for. See DEBUG_EXTRA_MENU_ROWS. */}
-          {Array.from({ length: DEBUG_EXTRA_MENU_ROWS }).map((_, i) => (
+          {rows.map((row, i) => (
             <View key={i}>
-              <View style={[styles.separator, { backgroundColor: theme.backgroundSelected }]} />
-              <MenuRow label={`Placeholder action ${i + 1}`} Icon={PlusIcon} loading={false} onPress={dismiss} />
+              {i > 0 && <View style={[styles.separator, { backgroundColor: theme.backgroundSelected }]} />}
+              <MenuRow {...row} index={i} />
             </View>
           ))}
         </BlurView>
@@ -1007,15 +1070,7 @@ function RailSkeleton() {
  * The original sin was `accent` carrying two meanings at once — "this is tappable" AND "this is on" —
  * which made "in Library" shout louder than the thing you actually opened the menu to do.
  */
-function MenuRow({
-  label,
-  Icon,
-  iconFilled,
-  loading,
-  active,
-  primary,
-  onPress,
-}: {
+export type MenuRowSpec = {
   label: string;
   Icon: (props: IconProps) => React.ReactElement;
   /** Fill the glyph rather than tint it — how an "on" toggle reads (see above). */
@@ -1025,8 +1080,25 @@ function MenuRow({
   /** The menu's one real action (Read): bold and leading. NOT coloured — see above. */
   primary?: boolean;
   onPress: () => void;
+};
+
+function MenuRow({
+  label,
+  Icon,
+  iconFilled,
+  loading,
+  active,
+  primary,
+  index,
+  onPress,
+}: MenuRowSpec & {
+  /** This row's position, which is what the held finger is hit-tested into (see "Peek and commit"). */
+  index: number;
 }) {
   const theme = useTheme();
+  // Lit up while the still-held finger is over this row. Opacity, not a background swap: it animates on
+  // the UI thread with no re-render, and there is one of these per row.
+  const highlight = useAnimatedStyle(() => ({ opacity: hoveredRow.value === index ? 1 : 0 }));
   const color = loading ? theme.textSecondary : theme.text;
   // An off toggle's glyph sits back a little, so the on-state (solid glyph, full contrast) reads as
   // a change without needing a colour of its own.
@@ -1036,6 +1108,10 @@ function MenuRow({
       onPress={loading ? undefined : onPress}
       disabled={loading}
       style={({ pressed }) => [styles.row, pressed && { backgroundColor: theme.backgroundSelected }]}>
+      <Animated.View
+        pointerEvents="none"
+        style={[StyleSheet.absoluteFill, { backgroundColor: theme.backgroundSelected }, highlight]}
+      />
       <ThemedText style={[styles.rowLabel, primary && styles.rowLabelPrimary, { color }]} numberOfLines={1}>
         {label}
       </ThemedText>
