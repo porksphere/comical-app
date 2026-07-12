@@ -193,6 +193,9 @@ export default function SearchScreen() {
   // squashing them. Its horizontal insets match the top bar too, so the "+N" overflow chip lines up
   // with the sort button above.
   const filtersBarH = hasFilterBar ? barHeight : 0;
+  // Full height the (overlaid) top bar occupies — status bar + the bar itself. Everything below it
+  // positions from here: the filter bar's clip window, the grid's top padding, the pull spinner.
+  const topBarTotal = insets.top + barHeight;
 
   // A search runs once there's a query, or a committed filter/sort. Until then the page is a blank
   // landing (the desktop entry opens straight here). Both the query key and the fetch derive from
@@ -293,24 +296,34 @@ export default function SearchScreen() {
   );
 
   const filterBar = hasFilterBar ? (
-    // Absolute overlay pinned to the top of the list host; slides up via `filtersStyle`. Frosted like
-    // every other bar (BarSurface) so the results scroll under it and show through, with a bottom
-    // hairline as the divider. Inner row capped + centred to line up with the grid.
-    <BarSurface safeAreaTop={false} style={[styles.filtersBar, { height: filtersBarH }, filtersStyle]}>
-      <View style={styles.filtersInner}>
-        <FilterBar defs={orderedDefs} values={resolvedValues} onValueChange={setFilterValue} />
-      </View>
-    </BarSurface>
+    // The CLIP MASK. The filter bar slides up (`filtersStyle`) to hide, and this fixed-height,
+    // overflow:hidden window sits exactly in the gap below the top bar — so the bar is progressively
+    // CUT OFF at the top bar's bottom edge instead of travelling underneath it.
+    //
+    // This is what lets the top bar be frosted at all. A blur samples whatever is physically beneath
+    // it and can't tell "chrome" from "content", so an unclipped filter bar sliding under it would
+    // smear through the frost. Clipped, the filter bar never exists under the top bar, and the only
+    // thing left to show through is the RESULTS scrolling up under it — which is the entire point of
+    // a frosted bar. The tuck looks the same as before: the clip edge IS the top bar's bottom edge,
+    // so the chips still read as sliding in behind it.
+    <View pointerEvents="box-none" style={[styles.filtersClip, { top: topBarTotal, height: filtersBarH }]}>
+      <BarSurface safeAreaTop={false} style={[styles.filtersBar, { height: filtersBarH }, filtersStyle]}>
+        <View style={styles.filtersInner}>
+          <FilterBar defs={orderedDefs} values={resolvedValues} onValueChange={setFilterValue} />
+        </View>
+      </BarSurface>
+    </View>
   ) : null;
 
   return (
     // Touch-driven pull-to-refresh for web + Android is caught here on the outer view, so it works
     // regardless of what's under the finger (iOS sources its pull from the native bounce instead).
     <ThemedView style={styles.container} {...pull.touchHandlers}>
-      {/* Fixed top bar: back button + search field (autofocused after the push settles) + sort.
-          Frosted like every other bar (BarSurface), so the filter bar shows through it — softened —
-          as it tucks behind on the way up, rather than vanishing behind an opaque slab. Its bottom
-          hairline fades in only once the filter bar has slid away (see topBarBorderStyle). */}
+      {/* Overlaid top bar: back button + search field (autofocused after the push settles) + sort.
+          Frosted like every other bar (BarSurface): the RESULTS scroll under it and show through. The
+          filter bar does NOT — it's clipped out before it can reach here (see `filterBar`) — so the
+          frost only ever carries content, never chrome. Its bottom hairline fades in once the filter
+          bar has slid away (see topBarBorderStyle). */}
       <BarSurface style={[styles.topBar, topBarBorderStyle, topBarShadowStyle]}>
         <View style={[styles.topBarRow, { height: barHeight }]}>
           <Pressable
@@ -348,8 +361,9 @@ export default function SearchScreen() {
               scopeKey={scopeKey}
               listRef={listRef}
               header={emptyBody}
-              // Reserve the filter bar's height so the first row starts below it, plus a little gap.
-              paddingTop={filtersBarH + Spacing.three}
+              // The top bar OVERLAYS the list (so results scroll under its frost), so reserve it as
+              // well as the filter bar beneath it, plus a little breathing room.
+              paddingTop={topBarTotal + filtersBarH + Spacing.three}
               paddingBottom={insets.bottom + Spacing.five}
               bridge={currentBridge?.name ?? undefined}
               bridgeId={bridgeId}
@@ -363,8 +377,8 @@ export default function SearchScreen() {
             />
           )}
           {ready && filterBar}
-          {/* Settles just below the filter bar, in the gap the pull opens. */}
-          <PullIndicator {...pull.indicator} top={filtersBarH} />
+          {/* Settles just below the bars, in the gap the pull opens. */}
+          <PullIndicator {...pull.indicator} top={topBarTotal + filtersBarH} />
         </View>
       )}
     </ThemedView>
@@ -379,7 +393,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // OVERLAYS the list, so the results scroll underneath and show through its frost (the same shape
+  // as the Browse bar). The grid reserves `topBarTotal` at the top of its content to compensate.
   topBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
     zIndex: 20,
     // Downward drop shadow (iOS/web); its opacity is animated by topBarShadowStyle so it only shows
     // mid-slide. Elevation is deliberately omitted — the Android system shadow can't be faded the
@@ -410,12 +430,21 @@ const styles = StyleSheet.create({
   list: {
     flex: 1,
   },
+  // Fixed window between the top bar and the results. `overflow: hidden` is the mask: the filter bar
+  // inside is cut off at this box's top edge (= the top bar's bottom edge) as it slides up, so it
+  // never passes under the top bar and can never be picked up by its blur. See `filterBar`.
+  filtersClip: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    overflow: 'hidden',
+  },
   filtersBar: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    zIndex: 10,
     justifyContent: 'center',
   },
   filtersInner: {
