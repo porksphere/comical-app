@@ -60,24 +60,23 @@ concurrency:
   group: ios-${{ github.ref }}
   cancel-in-progress: true
 
-# Needed to publish the IPA to a GitHub Release (a public, unauthenticated,
-# raw direct-download URL that SideStore/AltStore can actually fetch).
+# contents: write — publish the IPA to a GitHub Release (a public, unauthenticated,
+#   raw direct-download URL that SideStore/AltStore can actually fetch).
+# pull-requests: read — refresh-ios-dev-source.sh calls `gh pr view` to check each
+#   ios-pr-<N>'s state so it only lists OPEN PRs (self-heals merged squatters).
 permissions:
   contents: write
+  pull-requests: read
 
 jobs:
   build:
-    # Skip the (expensive, macOS) build when a PR merely closes — cleanup-pr
-    # handles that event and needs no IPA.
+    # On a PR this runs via the pull_request trigger; its IPA is published (by
+    # publish-pr) to the ios-dev SideStore source — a Release build, installable
+    # for on-device UI checks (no dev menu). On push to main it feeds the rolling
+    # ios-latest source. Skip the (expensive, macOS) build when a PR merely
+    # closes — cleanup-pr handles that event and needs no IPA.
     if: github.event.action != 'closed'
     uses: ./.github/workflows/build-ios-reusable.yml
-    # PR builds feed the ios-dev SideStore source, so build them Debug — a dev
-    # build with the shake menu + Perf Monitor for on-device profiling (see
-    # docs/PROFILING.md). Push-to-main / dispatch builds feed the normal
-    # ios-latest source and stay Release. A given run is only ever one event
-    # type, so this single build job is Debug xor Release, never both.
-    with:
-      configuration: ${{ github.event_name == 'pull_request' && 'Debug' || 'Release' }}
     secrets: inherit
 
   publish:

@@ -713,7 +713,7 @@ function thumbDelayKey(t: PageThumbSource | null): string {
  *  A `sprite` thumb renders via `SpriteCrop` instead of a plain `Image`; a
  *  sprite tile also takes its own aspect ratio (`w`/`h`) rather than the
  *  uniform 2:3 default, since sprite sheets often pack mixed page shapes. */
-function PageThumb({
+export function PageThumb({
   thumb,
   index,
   seed,
@@ -721,6 +721,8 @@ function PageThumb({
   page,
   width,
   onPress,
+  showPageNumber = true,
+  slotHeight,
 }: {
   thumb: PageThumbSource | null;
   index: number;
@@ -729,6 +731,12 @@ function PageThumb({
   page: number;
   width: number;
   onPress?: () => void;
+  /** The page-number badge — on for the series page grid, off for the compact card-preview rail. */
+  showPageNumber?: boolean;
+  /** When set, the tile fills this fixed height and its WIDTH follows the page's real aspect ratio
+   *  (variable-width, for the card-preview rail) instead of the grid's default width-driven, constant
+   *  2:3 slot. `width` is then ignored for layout — the sprite crop scales to `slotHeight * aspect`. */
+  slotHeight?: number;
 }) {
   const ds = useDataSource();
   const mock = useMockActive();
@@ -845,6 +853,9 @@ function PageThumb({
   );
   const aspectRatio = resolved?.kind === 'sprite' ? clampThumbAspect(resolved.w / resolved.h) : imageAspect;
   const ready = delayPassed && loaded;
+  // Rail (`slotHeight`) mode fills a fixed height, so the pixel width the sprite crop must scale to
+  // is derived from that height and the aspect — not the `width` prop (which is the grid cell width).
+  const spriteWidth = slotHeight != null ? slotHeight * aspectRatio : width;
 
   // The picture layer's scaleY: eases from its old apparent size down to 1 (its
   // real, already-committed size) as `shrinkProgressSV` runs 0 -> 1 — same
@@ -859,7 +870,11 @@ function PageThumb({
     // (flex:1, gap-aware) is the source of truth, so the tile can't end up a
     // hair wider than its column and get its right corners clipped. `width` is
     // still the pixel width for SpriteCrop's crop math (≈ the cell width).
-    <Pressable style={styles.thumbShell} onPress={onPress} onHoverIn={onHoverIn} onHoverOut={onHoverOut}>
+    <Pressable
+      style={slotHeight != null ? { height: slotHeight, aspectRatio } : styles.thumbShell}
+      onPress={onPress}
+      onHoverIn={onHoverIn}
+      onHoverOut={onHoverOut}>
       <View
         style={[styles.thumbBox, { aspectRatio }]}
         onLayout={(layoutEvent) => {
@@ -916,7 +931,7 @@ function PageThumb({
             {delayPassed && resolved?.kind === 'sprite' && (
               <SpriteCrop
                 thumb={resolved}
-                width={width}
+                width={spriteWidth}
                 onLoad={() => {
                   resolvedThumbIds.add(delayKey);
                   setLoaded(true);
@@ -931,9 +946,11 @@ function PageThumb({
             )}
             {!ready && <Skeleton style={StyleSheet.absoluteFill} />}
           </Animated.View>
-          <View style={styles.pageNum}>
-            <ThemedText style={styles.pageNumText}>{page}</ThemedText>
-          </View>
+          {showPageNumber && (
+            <View style={styles.pageNum}>
+              <ThemedText style={styles.pageNumText}>{page}</ThemedText>
+            </View>
+          )}
         </View>
       </View>
       {/* Hover ring (brighten, not dim) — same highlight treatment as SeriesCard's
