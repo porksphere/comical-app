@@ -26,3 +26,32 @@ export function clampThumbAspect(ratio?: number | null): number {
   if (!ratio || !Number.isFinite(ratio) || ratio <= 0) return DEFAULT_THUMB_ASPECT;
   return Math.max(DEFAULT_THUMB_ASPECT, ratio);
 }
+
+/**
+ * The aspect of the page grid's row SLOT — every row is this tall, and a tile top-aligns inside it.
+ *
+ * It used to be a flat 2:3, which quietly assumed every source's page thumbnails are 2:3. They
+ * aren't — a source shipping 200x289 tiles (a touch wider) is real — so each tile sized itself to its
+ * real shape inside a taller slot and left a strip of page background under it: a grey row beneath
+ * every thumbnail, across the whole grid. (The card popup's rail was never affected: it sizes each
+ * tile to a fixed HEIGHT, so it has no slot to fall short of.)
+ *
+ * Sprite tiles carry their pixel rect in the payload, so their true shape is known before anything
+ * loads. Take the TALLEST of them (the smallest aspect): the slot then fits every tile exactly on the
+ * uniform sheets sources actually ship, and no tile is ever clipped. Aspects are clamped at 2:3
+ * first, so the result can only ever be SHORTER than the old constant, never taller.
+ *
+ * A genuinely mixed-aspect gallery still has one tile clamped to 2:3, so it lands on exactly the old
+ * height — the wider tiles there keep their gap, which is unavoidable in a fixed-height grid and is
+ * what it did before. Image thumbnails are ignored: their shape isn't known until they load, and
+ * forcing a slot before it exists would reflow the row.
+ */
+export function pageSlotAspect(thumbs: readonly ({ kind: string; w?: number; h?: number } | null)[]): number {
+  let min: number | null = null;
+  for (const t of thumbs) {
+    if (t?.kind !== 'sprite' || !t.w || !t.h) continue;
+    const a = clampThumbAspect(t.w / t.h);
+    if (min === null || a < min) min = a;
+  }
+  return min ?? DEFAULT_THUMB_ASPECT;
+}

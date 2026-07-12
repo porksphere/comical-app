@@ -26,7 +26,7 @@ import { coverDelayMs, relativeTime } from '@/data/mock';
 import { queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import type { Chapter, PageThumbSource, SpriteThumb } from '@/data/types';
-import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
+import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT, pageSlotAspect } from '@/lib/aspect-ratio';
 import { groupChapters, pickVersion, type ChapterGroup } from '@/lib/chapter-order';
 import { setPreferredGroup, usePreferredGroup } from '@/lib/preferred-group';
 import { logDiagnostic } from '@/lib/diagnostics';
@@ -563,9 +563,13 @@ export function PageThumbList({
   const sidePad = Math.max(0, (screenW - MaxContentWidth) / 2) + Spacing.four;
   const contentWidth = Math.min(screenW, MaxContentWidth) - Spacing.four * 2;
   const tileW = (contentWidth - gap * (cols - 1)) / cols;
+  // Every row is one slot tall, sized from the tiles' own shape rather than an assumed 2:3 — see
+  // pageSlotAspect for why (a wider-than-2:3 source left a strip of background under every tile).
+  const slotAspect = useMemo(() => pageSlotAspect(thumbs), [thumbs]);
+  const slotHeightPx = tileW / slotAspect;
   // The collapsed fade height mirrors the reference's `.page-thumbs-more`: ~0.6 of
   // a tile's height, so the last row reads as fading out under the button.
-  const fadeHeight = Math.round(tileW * (3 / 2) * 0.6);
+  const fadeHeight = Math.round(slotHeightPx * 0.6);
 
   const collapsedCount = cols * COLLAPSED_ROWS;
   // Only collapse behind "Show all" when there's a footer (related rails, or
@@ -596,8 +600,8 @@ export function PageThumbList({
       keyExtractor={(_, i) => String(i)}
       numColumns={cols}
       recycleItems
-      // Every cell's real height is this, exactly, regardless of content — `thumbShell` is a
-      // constant 2:3 slot (see its style comment) that never resizes once mounted, so unlike a
+      // Every cell's real height is this, exactly, regardless of content — the slot never resizes
+      // once mounted (its aspect is fixed up front by `slotAspect`), so unlike a
       // normal dynamic-height list this doesn't need to be *learned* via onLayout. Declaring it
       // via getFixedItemSize (not just estimatedItemSize, which is only ever a pre-measurement
       // guess) tells LegendList every row's exact position upfront, so it can jump straight to
@@ -605,8 +609,8 @@ export function PageThumbList({
       // page grid — without needing to render (and thus mount/fetch) every row above it first
       // just to measure its way there. Excludes `gap` here since the library adds its own
       // `ctx.scrollAxisGap` (derived from columnWrapperStyle.gap below) on top automatically.
-      getFixedItemSize={() => tileW * (3 / 2)}
-      estimatedItemSize={tileW * (3 / 2) + gap}
+      getFixedItemSize={() => slotHeightPx}
+      estimatedItemSize={slotHeightPx + gap}
       columnWrapperStyle={{ gap }}
       contentContainerStyle={{
         paddingTop: BarContentGap + topInset,
@@ -672,6 +676,7 @@ export function PageThumbList({
               bridgeId={bridgeId}
               page={item.pageIndex + 1}
               width={tileW}
+              slotAspect={slotAspect}
               onPress={() =>
                 router.push({
                   pathname: '/reader',
@@ -726,6 +731,7 @@ export function PageThumb({
   onPress,
   showPageNumber = true,
   slotHeight,
+  slotAspect = DEFAULT_THUMB_ASPECT,
 }: {
   thumb: PageThumbSource | null;
   index: number;
@@ -736,6 +742,10 @@ export function PageThumb({
   onPress?: () => void;
   /** The page-number badge — on for the series page grid, off for the compact card-preview rail. */
   showPageNumber?: boolean;
+  /** The grid slot's aspect — every row is this tall, so a tile top-aligns inside it. Derived by the
+   *  caller from the tiles' own shape (see PageThumbList) rather than assumed 2:3, so a source whose
+   *  thumbnails are wider than 2:3 doesn't leave a strip of background under every tile. */
+  slotAspect?: number;
   /** When set, the tile fills this fixed height and its WIDTH follows the page's real aspect ratio
    *  (variable-width, for the card-preview rail) instead of the grid's default width-driven, constant
    *  2:3 slot. `width` is then ignored for layout — the sprite crop scales to `slotHeight * aspect`. */
@@ -759,8 +769,8 @@ export function PageThumb({
     () => resolvedThumbAspects.get(thumbDelayKey(thumb)) ?? lastResolvedThumbAspect,
   );
   // FLIP-style shrink illusion, same technique as SeriesCard's cover — no
-  // trailing-group equivalent needed here since `thumbShell` is a constant 2:3
-  // slot and `pageNum` sits outside the scaled layer, so nothing else needs to
+  // trailing-group equivalent needed here since the grid slot is a constant shape
+  // and `pageNum` sits outside the scaled layer, so nothing else needs to
   // shift when the tile's real aspect lands.
   const thumbWidthSV = useSharedValue(0);
   const shrinkProgressSV = useSharedValue(1); // 1 = settled; animates 0 -> 1 per transition
@@ -840,9 +850,9 @@ export function PageThumb({
   // (capped) aspect from the visible image's own `onLoad` — no off-screen
   // `Image.loadAsync` prefetch (that kept a second decoded image per tile and
   // added a re-render each, a per-tile cost that showed up as main-thread
-  // stalls across a full page grid). `thumbShell` below stays the constant
-  // default-shape slot regardless, so a shorter/taller tile never reflows its
-  // row while the aspect settles.
+  // stalls across a full page grid). The grid slot below stays a constant shape
+  // regardless, so a shorter/taller tile never reflows its row while the aspect
+  // settles.
   const imageUrl = resolved?.kind === 'image' ? resolved.url : null;
   // Resolve the (possibly server-relative / embedded-transport) image URL through the transport
   // first — the same lazy resolution `SpriteCrop` does for its sheet. Resolving the raw URL would
@@ -874,7 +884,7 @@ export function PageThumb({
     // hair wider than its column and get its right corners clipped. `width` is
     // still the pixel width for SpriteCrop's crop math (≈ the cell width).
     <Pressable
-      style={slotHeight != null ? { height: slotHeight, aspectRatio } : styles.thumbShell}
+      style={slotHeight != null ? { height: slotHeight, aspectRatio } : { aspectRatio: slotAspect }}
       onPress={onPress}
       onHoverIn={onHoverIn}
       onHoverOut={onHoverOut}>
@@ -1254,11 +1264,6 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
   },
-  thumbShell: {
-    // Constant slot — always the default 2:3 shape, the vertical max a tile
-    // can occupy. Never resizes, so a tile's row never reflows.
-    aspectRatio: DEFAULT_THUMB_ASPECT,
-  },
   thumbRing: {
     position: 'absolute',
     top: -2,
@@ -1270,8 +1275,8 @@ const styles = StyleSheet.create({
     borderColor: '#60a5fa',
   },
   thumbBox: {
-    // The tile itself, at its real (capped) aspect ratio — `thumbShell` above
-    // is the constant 2:3 slot this top-aligns within.
+    // The tile itself, at its real (capped) aspect ratio — the constant `slotAspect`
+    // slot above is what this top-aligns within.
     width: '100%',
     position: 'relative',
   },
