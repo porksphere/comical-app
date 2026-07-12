@@ -6,6 +6,7 @@
 // extraNodeModules below) whose source and node_modules live outside this app dir.
 const { getSentryExpoConfig } = require('@sentry/react-native/metro');
 const path = require('path');
+const fs = require('fs');
 
 const projectRoot = __dirname;
 const monorepoRoot = path.resolve(projectRoot, '../..');
@@ -46,6 +47,40 @@ config.resolver.extraNodeModules = {
   // on-device store); Node-free. Never imported on web (startup.web.ts is a no-op).
   '@comical/runtime': path.resolve(comicalRoot, 'packages/runtime'),
   '@comical/contract': path.resolve(comicalRoot, 'packages/contract'),
+};
+
+// DEV-ONLY: on-device Hermes profiler upload sink (see src/components/dev-profiler.tsx).
+// The phone can't reach a separate port on a Public-network dev machine (Windows Firewall
+// only allows Metro's own port), so the profiler POSTs its trace to Metro itself at
+// `<metro-host>:<metro-port>/_devprofile` and this middleware writes it to a gitignored
+// `.devprofile/received.hermesprofile`. This only runs on the `expo start` dev server —
+// it's never in a production app bundle. Temporary tooling; safe to delete with the profiler.
+const PROFILE_OUT = path.resolve(projectRoot, '.devprofile', 'received.hermesprofile');
+const priorEnhance = config.server && config.server.enhanceMiddleware;
+config.server = config.server || {};
+config.server.enhanceMiddleware = (metroMiddleware, server) => {
+  const base = priorEnhance ? priorEnhance(metroMiddleware, server) : metroMiddleware;
+  return (req, res, next) => {
+    if (req.method === 'POST' && (req.url || '').split('?')[0] === '/_devprofile') {
+      const chunks = [];
+      req.on('data', (c) => chunks.push(c));
+      req.on('end', () => {
+        try {
+          const buf = Buffer.concat(chunks);
+          fs.mkdirSync(path.dirname(PROFILE_OUT), { recursive: true });
+          fs.writeFileSync(PROFILE_OUT, buf);
+          console.log(`[devprofile] received ${buf.length} bytes -> .devprofile/received.hermesprofile`);
+          res.writeHead(200, { 'content-type': 'text/plain' });
+          res.end('ok');
+        } catch (e) {
+          res.writeHead(500, { 'content-type': 'text/plain' });
+          res.end('err: ' + (e && e.message ? e.message : String(e)));
+        }
+      });
+      return;
+    }
+    return base(req, res, next);
+  };
 };
 
 module.exports = config;
