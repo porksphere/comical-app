@@ -5,7 +5,7 @@ import { useCallback, useRef, useState } from 'react';
 import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { BarBlur } from '@/components/bar-blur';
+import { TabTitleBar } from '@/components/tab-title-bar';
 import { HistoryRow } from '@/components/history-row';
 import { RetryBlock } from '@/components/retry-block';
 import { ThemedText } from '@/components/themed-text';
@@ -153,22 +153,7 @@ export default function HistoryScreen() {
         />
       )}
 
-      <View
-        style={[
-          styles.topBar,
-          {
-            paddingTop: insets.top,
-            borderBottomColor: theme.hairline,
-            pointerEvents: 'box-none',
-          },
-        ]}>
-        <BarBlur fallback={theme.background} />
-        <View style={[styles.titleRow, { height: barHeight }]}>
-          <ThemedText numberOfLines={1} style={styles.title}>
-            History
-          </ThemedText>
-        </View>
-      </View>
+      <TabTitleBar title="History" />
     </ThemedView>
   );
 }
@@ -207,27 +192,5 @@ const styles = StyleSheet.create({
   },
   sep: {
     height: StyleSheet.hairlineWidth,
-  },
-  topBar: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-    justifyContent: 'flex-end',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.four,
-    width: '100%',
-    maxWidth: MaxTopLevelWidth,
-    alignSelf: 'center',
-  },
-  title: {
-    fontSize: 22,
-    lineHeight: 28,
-    fontWeight: '700',
   },
 });

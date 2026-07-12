@@ -14,7 +14,7 @@ import { TrackerButton } from '@/components/series/tracker-panel';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { TopBar } from '@/components/top-bar';
+import { TopBar, useTopBarInset } from '@/components/top-bar';
 import { MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { setSearchIntent, tagSearchIntent } from '@/data/search-intent';
 import { historyQuery, relatedGroupsQuery, seriesDetailQuery, seriesListQuery } from '@/data/queries';
@@ -91,6 +91,7 @@ export default function SeriesScreen() {
   const router = useRouter();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const topBarInset = useTopBarInset();
   const { width } = useWindowDimensions();
   const { id, title, bridge: bridgeParam, bridgeId, direct, cover: coverParam } = useLocalSearchParams<{
     id?: string;
@@ -154,7 +155,8 @@ export default function SeriesScreen() {
   // virtualized LegendList for direct/page-thumbnail series — see SeriesBody).
   const scrollFallback = (child: ReactNode) => (
     <ScrollView
-      contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + Spacing.five }]}
+      // The TopBar overlays the screen, so content pads past it and scrolls under its frost.
+      contentContainerStyle={[styles.scroll, { paddingTop: topBarInset, paddingBottom: insets.bottom + Spacing.five }]}
       showsVerticalScrollIndicator={false}>
       <View style={styles.column}>{child}</View>
     </ScrollView>
@@ -525,6 +527,7 @@ function SeriesBody({
   );
 
   const insets = useSafeAreaInsets();
+  const topBarInset = useTopBarInset();
   // The web-only sticky cover column is a chaptered-ScrollView affordance — a
   // direct series' hero lives inside the page list's header, where position:sticky
   // doesn't apply, so don't ask for it there.
@@ -593,6 +596,7 @@ function SeriesBody({
   if (direct) {
     return (
       <PageThumbList
+        topInset={topBarInset}
         thumbs={pageThumbs ?? []}
         loading={loading || listLoading || !listReady}
         seed={series.id}
@@ -606,7 +610,7 @@ function SeriesBody({
 
   return (
     <ScrollView
-      contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + Spacing.five }]}
+      contentContainerStyle={[styles.scroll, { paddingTop: topBarInset, paddingBottom: insets.bottom + Spacing.five }]}
       showsVerticalScrollIndicator={false}>
       <View style={styles.column}>
         <View style={styles.inner}>{heroBlock}</View>

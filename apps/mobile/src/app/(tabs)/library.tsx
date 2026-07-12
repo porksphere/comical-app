@@ -8,12 +8,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RetryBlock } from '@/components/retry-block';
 import { SearchField } from '@/components/search-field';
 import { Selector } from '@/components/selector';
-import { BarBlur } from '@/components/bar-blur';
+import { TabTitleBar } from '@/components/tab-title-bar';
 import { SeriesGrid, type SeriesGridItem } from '@/components/series-grid';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { BottomTabInset, Spacing } from '@/constants/theme';
 import { type LibrarySort } from '@/data/api';
 import { libraryQuery } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
@@ -24,7 +24,6 @@ import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
-import { useTheme } from '@/hooks/use-theme';
 
 // Sort options shown in the header selector, mapped to the `/library?sort=` param.
 const SORT_LABELS: Record<LibrarySort, string> = {
@@ -44,7 +43,6 @@ type GridItem = SeriesGridItem;
 export default function LibraryScreen() {
   const ds = useDataSource();
   const mock = useMockActive();
-  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const hideNsfw = useHideNsfw();
   const listRef = useRef<LegendListRef>(null);
@@ -155,23 +153,7 @@ export default function LibraryScreen() {
         onScroll={onScroll}
       />
 
-      {/* Static title band overlaid on top (matches Browse's top-bar height/inset). */}
-      <View
-        style={[
-          styles.topBar,
-          {
-            paddingTop: insets.top,
-            borderBottomColor: theme.hairline,
-            pointerEvents: 'box-none',
-          },
-        ]}>
-        <BarBlur fallback={theme.background} />
-        <View style={[styles.titleRow, { height: barHeight }]}>
-          <ThemedText numberOfLines={1} style={styles.title}>
-            Library
-          </ThemedText>
-        </View>
-      </View>
+      <TabTitleBar title="Library" />
     </ThemedView>
   );
 }
@@ -223,28 +205,6 @@ function GridSkeleton({ numColumns, rows }: { numColumns: number; rows: number }
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  topBar: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-    justifyContent: 'flex-end',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.four,
-    width: '100%',
-    maxWidth: MaxTopLevelWidth,
-    alignSelf: 'center',
-  },
-  title: {
-    fontSize: 22,
-    lineHeight: 28,
-    fontWeight: '700',
   },
   controls: {
     paddingTop: Spacing.three,

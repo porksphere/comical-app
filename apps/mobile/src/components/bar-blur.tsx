@@ -3,9 +3,15 @@ import { Platform, StyleSheet, View } from 'react-native';
 
 import { useActiveColorScheme } from '@/hooks/use-theme';
 
-// How frosted the top/bottom bars are (0–100). Enough to read as translucent without the content
-// under them fighting the bar's own text/controls.
-const BAR_BLUR_INTENSITY = 42;
+/**
+ * How frosted the bars are (0–100). THE single knob for every bar in the app — the top bars (via
+ * `BarSurface`) and the bottom tab bar both render this component, so they are always tuned together
+ * and can't drift apart. Tune here and nowhere else.
+ *
+ * Lower = a lighter frost, with the content beneath showing through more sharply (at 0 the layer is
+ * effectively clear); higher = a milkier bar that hides what's under it.
+ */
+const BAR_BLUR_INTENSITY = 28;
 
 /**
  * Frosted background for the app's top and bottom bars — an absolute-fill layer placed BEHIND a

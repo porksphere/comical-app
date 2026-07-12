@@ -3,7 +3,7 @@ import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import Animated, { interpolateColor, useAnimatedStyle } from 'react-native-reanimated';
+import { interpolateColor, useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FilterBar, SortControl } from '@/components/filters/filter-demo';
@@ -11,6 +11,7 @@ import { resolveMetaIntent, resolveTagIntent, type MetaIntent, type TagIntent } 
 import { filterValueToApi } from '@/components/filters/filter-types';
 import { GridSkeleton } from '@/components/grid-skeleton';
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
+import { BarSurface } from '@/components/bar-surface';
 import { PullIndicator } from '@/components/pull-indicator';
 import { SeriesGrid } from '@/components/series-grid';
 import { RetryBlock } from '@/components/retry-block';
@@ -292,20 +293,14 @@ export default function SearchScreen() {
   );
 
   const filterBar = hasFilterBar ? (
-    // Absolute overlay pinned to the top of the list host; slides up via `filtersStyle`. Opaque
-    // background so results pass behind it, with a bottom hairline as the divider from the content.
-    // Inner row capped + centred to line up with the grid.
-    <Animated.View
-      style={[
-        styles.filtersBar,
-        { height: filtersBarH, backgroundColor: theme.background, borderBottomColor: theme.hairline },
-        filtersStyle,
-      ]}
-      pointerEvents="box-none">
+    // Absolute overlay pinned to the top of the list host; slides up via `filtersStyle`. Frosted like
+    // every other bar (BarSurface) so the results scroll under it and show through, with a bottom
+    // hairline as the divider. Inner row capped + centred to line up with the grid.
+    <BarSurface safeAreaTop={false} style={[styles.filtersBar, { height: filtersBarH }, filtersStyle]}>
       <View style={styles.filtersInner}>
         <FilterBar defs={orderedDefs} values={resolvedValues} onValueChange={setFilterValue} />
       </View>
-    </Animated.View>
+    </BarSurface>
   ) : null;
 
   return (
@@ -313,15 +308,10 @@ export default function SearchScreen() {
     // regardless of what's under the finger (iOS sources its pull from the native bounce instead).
     <ThemedView style={styles.container} {...pull.touchHandlers}>
       {/* Fixed top bar: back button + search field (autofocused after the push settles) + sort.
-          Opaque background so the filter bar tucks fully behind it as it slides up. Its bottom
+          Frosted like every other bar (BarSurface), so the filter bar shows through it — softened —
+          as it tucks behind on the way up, rather than vanishing behind an opaque slab. Its bottom
           hairline fades in only once the filter bar has slid away (see topBarBorderStyle). */}
-      <Animated.View
-        style={[
-          styles.topBar,
-          { paddingTop: insets.top, backgroundColor: theme.background },
-          topBarBorderStyle,
-          topBarShadowStyle,
-        ]}>
+      <BarSurface style={[styles.topBar, topBarBorderStyle, topBarShadowStyle]}>
         <View style={[styles.topBarRow, { height: barHeight }]}>
           <Pressable
             onPress={goBack}
@@ -344,7 +334,7 @@ export default function SearchScreen() {
             <SortControl sortOptions={sortOptions} sort={sortValue} onSortChange={setSortValue} />
           )}
         </View>
-      </Animated.View>
+      </BarSurface>
 
       {bridgesError && bridges.length === 0 ? (
         <View style={[styles.container, styles.centerFill]}>
@@ -390,7 +380,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   topBar: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
     zIndex: 20,
     // Downward drop shadow (iOS/web); its opacity is animated by topBarShadowStyle so it only shows
     // mid-slide. Elevation is deliberately omitted — the Android system shadow can't be faded the
@@ -428,7 +417,6 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 10,
     justifyContent: 'center',
-    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   filtersInner: {
     // Same cap + horizontal padding as the top bar row, so the filter row spans exactly the same
