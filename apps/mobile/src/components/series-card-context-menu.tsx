@@ -20,7 +20,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { NATIVE_HIDE_OFFSET } from '@/components/app-tabs';
 import { ChipRow, TagGroupRow } from '@/components/chip';
-import { CheckIcon, PlusIcon, StarIcon, type IconProps } from '@/components/icons/ui-icons';
+import { CheckIcon, PlayIcon, PlusIcon, StarIcon, type IconProps } from '@/components/icons/ui-icons';
 import { PageThumb } from '@/components/series/chapters-section';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
@@ -33,6 +33,7 @@ import type { PageThumbSource } from '@/data/types';
 import { useFavorite } from '@/hooks/use-favorite';
 import { useLibrary } from '@/hooks/use-library';
 import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
+import { useResumeEntry, useStartReading } from '@/hooks/use-start-reading';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { closeSeriesCardMenu, useSeriesCardMenu, type SeriesCardMenuRequest } from '@/lib/series-card-menu';
@@ -84,6 +85,9 @@ const DESC_H = DESC_LINES * SMALL_LINE_H;
 const PANEL_HEIGHT_ESTIMATE = 190;
 const MENU_WIDTH = 240;
 const ROW_HEIGHT = 48;
+// Read + Add to Library + Favorite. Keep in step with the rows rendered below — the menu is placed
+// from this height (it's what `panelTop`'s bottom-edge clamp budgets for), not measured.
+const MENU_ROWS = 3;
 const MENU_PAD_V = Spacing.one;
 // Blur strengths (0–100). The backdrop ramps in a bit after the cover pops.
 const BACKDROP_BLUR = 28;
@@ -130,7 +134,25 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       cover: entry.cover,
     }),
   );
-  const pageList = useQuery(seriesListQuery(ds, mock, bridgeId ?? '', entry.id, !!direct, !!direct && !!bridgeId));
+  // One query, two consumers: the page rail (direct series) and the chapter Read starts at. A
+  // chaptered series only pays for it when Read actually needs it — i.e. when there's no resume point
+  // to open instead. Hence the history lookup FIRST, standalone: it decides whether we fetch at all.
+  const { resume, pending: resumePending } = useResumeEntry(bridgeId, entry.id);
+  const needsChapters = !direct && !resume && !resumePending;
+  const pageList = useQuery(
+    seriesListQuery(ds, mock, bridgeId ?? '', entry.id, !!direct, !!bridgeId && (!!direct || needsChapters)),
+  );
+  // Where Read takes you — the resume point, or the first chapter / page 0. Shared with the series
+  // screen's primary button, so the two can't resume at different places (see useStartReading).
+  const reading = useStartReading({
+    bridgeId,
+    seriesId: entry.id,
+    title: entry.title,
+    direct: !!direct,
+    chapters: pageList.data?.chapters,
+    chaptersLoading: needsChapters && pageList.isLoading,
+    readLabel: pageList.data?.readLabel ?? detail.data?.readLabel,
+  });
   // The detail query is SEEDED with placeholder data (the card's title + cover) so the panel has them
   // instantly — so "has data" is true from frame one. The real meta/description/tags only exist once
   // the fetch resolves (`isPlaceholderData` flips false); gate the skeletons on THAT, not on presence,
@@ -209,7 +231,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const panelLeft = clamp(cardCenterX - panelW / 2, EDGE_PAD, winW - panelW - EDGE_PAD);
 
   const menuW = Math.min(MENU_WIDTH, winW - EDGE_PAD * 2);
-  const menuH = ROW_HEIGHT * 2 + MENU_PAD_V * 2;
+  const menuH = ROW_HEIGHT * MENU_ROWS + StyleSheet.hairlineWidth * (MENU_ROWS - 1) + MENU_PAD_V * 2;
   const menuLeft = clamp(cardCenterX - menuW / 2, EDGE_PAD, winW - menuW - EDGE_PAD);
 
   const coverH = COVER_W / clampThumbAspect(coverAspect ?? DEFAULT_THUMB_ASPECT);
@@ -457,6 +479,20 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
           down when the panel grows on late content instead of jumping to the new spot below it. */}
       <Animated.View style={[styles.menuWrap, { width: menuW }, menuStyle]}>
         <BlurView tint={menuTint} intensity={MENU_BLUR} experimentalBlurMethod={ANDROID_BLUR} style={[styles.menu, { borderColor: theme.backgroundSelected }]}>
+          {/* Read is the one real ACTION here (the others toggle state), so it's the only row that
+              carries the accent — and it leads, the way a context menu's primary item does. */}
+          <MenuRow
+            label={reading.label}
+            Icon={PlayIcon}
+            loading={reading.disabled}
+            primary
+            onPress={() => {
+              req.onClose?.(); // un-hide the card and drop the overlay — the reader is about to cover it
+              closeSeriesCardMenu();
+              reading.start();
+            }}
+          />
+          <View style={[styles.separator, { backgroundColor: theme.backgroundSelected }]} />
           <MenuRow
             label={inLibrary ? 'Remove from Library' : 'Add to Library'}
             Icon={inLibrary ? CheckIcon : PlusIcon}
@@ -468,6 +504,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
           <MenuRow
             label={favorited ? 'Unfavorite' : 'Favorite'}
             Icon={StarIcon}
+            iconFilled={!!favorited}
             loading={favorited === null}
             active={!!favorited}
             onPress={() => act(toggleFavorite)}
@@ -577,21 +614,39 @@ function RailSkeleton() {
   );
 }
 
+/**
+ * One row of the actions menu.
+ *
+ * Colour means ACTION here, not state: only the `primary` row (Read) is tinted with the accent. The
+ * toggles say what they are through their icon — a checkmark once in the library, a filled star once
+ * favourited — and keep the plain label colour whether they're on or off. Painting an on-state row
+ * blue made "in Library" shout louder than the one thing you'd actually come here to do, and the
+ * accent was carrying two meanings at once ("this is tappable" and "this is on").
+ */
 function MenuRow({
   label,
   Icon,
+  iconFilled,
   loading,
   active,
+  primary,
   onPress,
 }: {
   label: string;
   Icon: (props: IconProps) => React.ReactElement;
+  /** Fill the glyph rather than tint it — how an "on" toggle reads (see above). */
+  iconFilled?: boolean;
   loading: boolean;
-  active: boolean;
+  active?: boolean;
+  /** The menu's one real action: accent-tinted, and the row people reach for first. */
+  primary?: boolean;
   onPress: () => void;
 }) {
   const theme = useTheme();
-  const color = loading ? theme.textSecondary : active ? theme.accent : theme.text;
+  const color = loading ? theme.textSecondary : primary ? theme.accent : theme.text;
+  // An off toggle's glyph sits back a little, so the on-state (solid glyph, full contrast) reads as
+  // a change without needing a colour of its own.
+  const iconColor = loading ? theme.textSecondary : primary || active ? color : theme.textSecondary;
   return (
     <Pressable
       onPress={loading ? undefined : onPress}
@@ -600,7 +655,7 @@ function MenuRow({
       <ThemedText style={[styles.rowLabel, { color }]} numberOfLines={1}>
         {label}
       </ThemedText>
-      <Icon color={color} size={19} />
+      <Icon color={iconColor} size={19} filled={iconFilled} />
     </Pressable>
   );
 }

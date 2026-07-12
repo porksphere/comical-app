@@ -17,16 +17,16 @@ import { ThemedView } from '@/components/themed-view';
 import { TopBar, useTopBarInset } from '@/components/top-bar';
 import { BarContentGap, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { setSearchIntent, tagSearchIntent } from '@/data/search-intent';
-import { historyQuery, relatedGroupsQuery, seriesDetailQuery, seriesListQuery } from '@/data/queries';
+import { relatedGroupsQuery, seriesDetailQuery, seriesListQuery } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
-import { firstChapterInReadingOrder } from '@/lib/chapter-order';
-import { resetPreferredGroup, usePreferredGroup } from '@/lib/preferred-group';
-import { DIRECT_CHAPTER_ID, type SeriesDetail, type TagGroup } from '@/data/types';
+import { resetPreferredGroup } from '@/lib/preferred-group';
+import { type SeriesDetail, type TagGroup } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useFavorite } from '@/hooks/use-favorite';
 import { useHovered } from '@/hooks/use-hovered';
 import { useLibrary } from '@/hooks/use-library';
+import { useStartReading } from '@/hooks/use-start-reading';
 import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -281,9 +281,6 @@ function SeriesBody({
   );
   const listLoading = listDeferred && listFetching;
   const chapters = listData?.chapters;
-  // The scanlation group last opened for this series — so Read (with no resume)
-  // starts Chapter 1 of the source the user is reading, not an arbitrary copy.
-  const preferredGroup = usePreferredGroup();
   const pageThumbs = listData?.pageThumbs;
   const chapterCount = listData?.chapterCount ?? series.chapterCount;
   const readLabel = listData?.readLabel ?? series.readLabel;
@@ -299,66 +296,25 @@ function SeriesBody({
     ...(author ? { author } : {}),
   }));
 
-  // Resume point: if this series has a reading-history entry, the primary Read
-  // button should continue from there instead of always restarting at the
-  // oldest chapter — same lookup/param shape as the History tab's own Resume
-  // action (`app/(tabs)/history.tsx`'s `resume()`).
-  const { data: history } = useQuery(historyQuery(ds, mock));
-  const resumeEntry = history?.find((h) => h.bridgeId === bridgeId && h.seriesId === series.id);
-  // Label the primary button "Resume <chapter>" (or plain "Resume" for a direct/
-  // chapterless series) instead of the server's readLabel, which only ever names
-  // the first chapter — it has no notion of this device's local reading history.
-  const resumeLabel = resumeEntry
-    ? resumeEntry.chapterName
-      ? `▶  Resume ${resumeEntry.chapterName}`
-      : '▶  Resume'
-    : undefined;
-  const primaryLabel = resumeLabel ?? readLabel;
-
-  // A chaptered series needs its (deferred) chapter list to know which chapter to
-  // open — disable Read until it lands. Direct series read from page 0, and a
-  // resume entry carries its own chapter, so both stay enabled immediately.
-  const readDisabled = !direct && !resumeEntry && listLoading;
-  // Start reading: resume from history if present, else the first chapter in
-  // reading order (or page 0 for a direct series). Shared by the primary Read
-  // button and tapping the cover.
-  const startReading = () => {
-    if (readDisabled) return;
-    if (resumeEntry) {
-      const isDirect = resumeEntry.chapterId === DIRECT_CHAPTER_ID || !resumeEntry.chapterId;
-      const params: Record<string, string> = {
-        seed: series.id,
-        title: series.title,
-        start: String(resumeEntry.lastPage ?? 0),
-      };
-      if (bridgeId) params.bridgeId = bridgeId;
-      if (!isDirect) {
-        params.chapterId = resumeEntry.chapterId!;
-        params.chapterName = resumeEntry.chapterName ?? '';
-      } else if (direct) {
-        params.direct = '1';
-      }
-      router.push({ pathname: '/reader', params });
-      return;
-    }
-    const params: Record<string, string> = {
-      seed: series.id,
-      title: series.title,
-      start: '0',
-    };
-    if (bridgeId) params.bridgeId = bridgeId;
-    if (direct) params.direct = '1';
-    else if (chapters?.length) {
-      // Start at the first chapter in reading order (by number), preferring the
-      // user's scanlation group — not the raw array's last element.
-      const first = firstChapterInReadingOrder(chapters, preferredGroup);
-      if (first) {
-        params.chapterId = first.id;
-        params.chapterName = first.name;
-      }
-    }
-    router.push({ pathname: '/reader', params });
-  };
+  // Resume point + the push that opens it — shared with the card long-press menu's Read row, so the
+  // two can't resume at different places (see useStartReading).
+  const {
+    label: readingLabel,
+    resume: resumeEntry,
+    disabled: readDisabled,
+    start: startReading,
+  } = useStartReading({
+    bridgeId,
+    seriesId: series.id,
+    title: series.title,
+    direct,
+    chapters,
+    chaptersLoading: listLoading,
+    readLabel,
+  });
+  // The play glyph leads a RESUME (and the bare "Read" fallback); a bridge's own readLabel is shown
+  // as it comes.
+  const primaryLabel = !resumeEntry && readLabel ? readLabel : `▶  ${readingLabel}`;
 
   // Cover image + optional chapter-count badge — shared between layouts. Tapping
   // it starts reading, same as the primary Read button (disabled in lockstep so a
@@ -369,7 +325,7 @@ function SeriesBody({
       onPress={startReading}
       disabled={readDisabled}
       accessibilityRole="button"
-      accessibilityLabel={primaryLabel ?? 'Read'}>
+      accessibilityLabel={primaryLabel}>
       <Image
         source={{ uri: series.cover }}
         style={isLarge ? styles.coverLarge : styles.cover}
@@ -419,7 +375,7 @@ function SeriesBody({
   const actionsEl = (
     <View style={[styles.actions, !isLarge && { width: actionsWidth }]}>
       <ActionButton
-        label={primaryLabel ?? '▶  Read'}
+        label={primaryLabel}
         variant="primary"
         disabled={readDisabled}
         onPress={startReading}
