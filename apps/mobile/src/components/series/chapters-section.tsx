@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, {
   Easing,
@@ -11,6 +11,7 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withTiming,
+  type AnimatedStyle,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -20,6 +21,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BarContentGap, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
+import { useLightCards } from '@/lib/perf-flags';
 import { useTheme } from '@/hooks/use-theme';
 import { resolveAssetSourceCached } from '@/data/api';
 import { coverDelayMs, relativeTime } from '@/data/mock';
@@ -712,6 +714,56 @@ function thumbDelayKey(t: PageThumbSource | null): string {
   return t ? (t.kind === 'sprite' ? t.sheetUrl : t.url) : '';
 }
 
+/**
+ * The FLIP-style aspect "shrink" illusion for a page tile — the same technique (and the same
+ * rationale) as SeriesCard's CoverShrink, in its own component so its reanimated hooks are only
+ * ALLOCATED when they're used. PageThumb mounts it only when the Lightweight cards lever is off; when
+ * on, it renders the body with a no-op API, so a scrolling page grid pays nothing for the machinery.
+ *
+ * Animating `aspectRatio` (a layout prop) would relayout every frame; instead the box's aspect is
+ * committed instantly and this transform-only style fakes the settle: the picture layer scales down
+ * from its old apparent size to its real one. No trailing-group equivalent is needed here — the tile
+ * top-aligns in a constant slot and `pageNum` sits outside the scaled layer, so nothing else shifts.
+ */
+type ThumbShrinkApi = {
+  pictureStyle?: StyleProp<AnimatedStyle<ViewStyle>>;
+  /** Kick off the settle from the old aspect to the new one (called from the picture's onLoad). */
+  runShrink?: (oldAspect: number, newAspect: number, boxWidth: number) => void;
+};
+
+const NOOP_THUMB_SHRINK: ThumbShrinkApi = {};
+
+function ThumbShrink({ index, children }: { index: number; children: (api: ThumbShrinkApi) => ReactNode }) {
+  const progressSV = useSharedValue(1); // 1 = settled; animates 0 -> 1 per transition
+  const fromScaleSV = useSharedValue(1); // picture's scaleY at progress 0
+
+  // Reset to rest when this instance is recycled to a different page (an effect, not render — writing
+  // a shared value during render trips reanimated's strict-mode warning on every recycle).
+  useEffect(() => {
+    progressSV.value = 1;
+    fromScaleSV.value = 1;
+  }, [index, progressSV, fromScaleSV]);
+
+  const pictureStyle = useAnimatedStyle(() => ({
+    transform: [{ scaleY: fromScaleSV.value + (1 - fromScaleSV.value) * progressSV.value }],
+  }));
+
+  const runShrink = useCallback(
+    (oldAspect: number, newAspect: number, boxWidth: number) => {
+      // Only animate a real shape change, and only once the box's pixel width is known (from onLayout).
+      if (!(boxWidth > 0) || oldAspect === newAspect) return;
+      const oldHeight = boxWidth / oldAspect;
+      const newHeight = boxWidth / newAspect;
+      fromScaleSV.value = newHeight > 0 ? oldHeight / newHeight : 1;
+      progressSV.value = 0;
+      progressSV.value = withTiming(1, { duration: ASPECT_TRANSITION_MS, easing: Easing.out(Easing.cubic) });
+    },
+    [fromScaleSV, progressSV],
+  );
+
+  return <>{children({ pictureStyle, runShrink })}</>;
+}
+
 /** A single page tile: holds the image behind a simulated network delay and
  *  shows a shimmer skeleton until it's both elapsed and loaded — same treatment
  *  as the cover images, so a long page set visibly streams in. A `null` thumb
@@ -763,16 +815,15 @@ export function PageThumb({
   const [imageAspect, setImageAspect] = useState(
     () => resolvedThumbAspects.get(thumbDelayKey(thumb)) ?? lastResolvedThumbAspect,
   );
-  // FLIP-style shrink illusion, same technique as SeriesCard's cover — no
-  // trailing-group equivalent needed here since the grid slot is a constant shape
-  // and `pageNum` sits outside the scaled layer, so nothing else needs to
-  // shift when the tile's real aspect lands.
+  // Lightweight cards: the same Settings lever SeriesCard honours (see lib/perf-flags). When on, the
+  // tile pays for NO animation machinery at all — the shrink's reanimated hooks aren't even allocated
+  // (they live in ThumbShrink, mounted only when the lever is off), the image cross-fade is dropped,
+  // and the skeleton (plus the `loaded` state flip that only exists to hide it) goes with them. A
+  // page grid mounts far more of these than a browse grid mounts cards, so it's the same argument.
+  const lightCards = useLightCards();
   // The tile box's REAL laid-out size — what the sprite crop must be scaled by (see boxWidth/
   // boxHeight). Null until the first layout, when the `width` estimate stands in.
   const [boxSize, setBoxSize] = useState<{ w: number; h: number } | null>(null);
-  const thumbWidthSV = useSharedValue(0);
-  const shrinkProgressSV = useSharedValue(1); // 1 = settled; animates 0 -> 1 per transition
-  const shrinkFromScaleSV = useSharedValue(1); // picture's scaleY at progress 0
 
   // Recycle-safety: the page grid uses recycleItems, so this instance is reused
   // for a different page as the list scrolls. Reset per-tile state synchronously
@@ -787,16 +838,6 @@ export function PageThumb({
     setLoaded(resolvedThumbIds.has(key));
     setImageAspect(resolvedThumbAspects.get(key) ?? lastResolvedThumbAspect);
   }
-
-  // Reset the press-shrink animation to rest on recycle. Kept out of the render-phase reset above
-  // because writing a reanimated shared value during render is disallowed (it trips the strict-mode
-  // "Writing to `value` during component render" warning, seen on every recycle while scrolling); an
-  // effect is the correct place. No flash risk — the shrink is only driven off-rest by a user
-  // expand/collapse (the onLayout below), so a recycled tile is virtually always already at rest.
-  useEffect(() => {
-    shrinkProgressSV.value = 1;
-    shrinkFromScaleSV.value = 1;
-  }, [index, shrinkProgressSV, shrinkFromScaleSV]);
 
   // Lazy per-page thumbnail (only the pages a bridge didn't inline, i.e. `thumb === null`). Via
   // react-query so scrolling back to an already-fetched page is instant (cached, in-memory only —
@@ -883,15 +924,68 @@ export function PageThumb({
   const boxWidth = boxSize ? boxSize.w : slotHeight != null ? slotHeight * aspectRatio : width;
   const boxHeight = boxSize ? boxSize.h : slotHeight != null ? slotHeight : width / aspectRatio;
 
-  // The picture layer's scaleY: eases from its old apparent size down to 1 (its
-  // real, already-committed size) as `shrinkProgressSV` runs 0 -> 1 — same
-  // technique as SeriesCard's `pictureStyle`. `styles.thumbPicture` fixes
-  // `transformOrigin: 'top'` to match `thumbBox`'s own top-aligned layout.
-  const picturePageStyle = useAnimatedStyle(() => ({
-    transform: [{ scaleY: shrinkFromScaleSV.value + (1 - shrinkFromScaleSV.value) * shrinkProgressSV.value }],
-  }));
-
-  return (
+  // Body as a render-prop of the shrink API: mounted inside ThumbShrink when the Lightweight lever is
+  // off (real animated style), or called directly with the no-op API when it's on — in which case the
+  // reanimated hooks are never allocated at all. Same shape as SeriesCard's renderCardBody.
+  const renderTileBody = (shrink: ThumbShrinkApi) => {
+    const pictureInner = (
+      <>
+        {delayPassed && resolved?.kind === 'image' && resolvedImageUrl && (
+          <Image
+            source={{ uri: resolvedImageUrl }}
+            style={styles.thumbImg}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            transition={lightCards ? 0 : 90}
+            // Reset the reused image view on recycle so it doesn't flash the
+            // previous page's thumbnail (see SeriesCard).
+            recyclingKey={String(index)}
+            onLoad={(e) => {
+              resolvedThumbIds.add(delayKey);
+              const src = e.source;
+              if (src?.width && src?.height) {
+                const nextAspect = clampThumbAspect(src.width / src.height);
+                resolvedThumbAspects.set(delayKey, nextAspect);
+                lastResolvedThumbAspect = nextAspect;
+                // Smooth the aspect settle when the shape changes; a no-op when Lightweight is on.
+                shrink.runShrink?.(imageAspect, nextAspect, boxSize?.w ?? 0);
+                setImageAspect(nextAspect);
+              }
+              // Light path: the clip's own grey backing IS the placeholder and expo-image paints
+              // over it natively, so there's no skeleton to hide — and thus no reason to spend a
+              // state commit per tile flipping `loaded` (same reasoning as SeriesCard).
+              if (!lightCards) setLoaded(true);
+            }}
+            onError={(e: { error?: string }) =>
+              logDiagnostic('page-thumb-image', e.error || 'load failed', {
+                url: resolved.url,
+                context: `bridge=${bridgeId ?? ''} series=${seed} page=${index}`,
+              })
+            }
+          />
+        )}
+        {delayPassed && resolved?.kind === 'sprite' && (
+          <SpriteCrop
+            thumb={resolved}
+            width={boxWidth}
+            height={boxHeight}
+            transition={lightCards ? 0 : 200}
+            onLoad={() => {
+              resolvedThumbIds.add(delayKey);
+              if (!lightCards) setLoaded(true);
+            }}
+            onError={(msg) =>
+              logDiagnostic('page-thumb-sprite', msg, {
+                url: resolved.sheetUrl,
+                context: `bridge=${bridgeId ?? ''} series=${seed} page=${index}`,
+              })
+            }
+          />
+        )}
+        {!ready && !lightCards && <Skeleton style={StyleSheet.absoluteFill} />}
+      </>
+    );
+    return (
     // Fill the grid cell rather than sizing to an explicit `width`: the cell (flex:1, gap-aware) is
     // the source of truth, so the tile can't end up a hair wider than its column and get its right
     // corners clipped. The `width` prop is only a FIRST-FRAME estimate for the crop — `onLayout`
@@ -905,78 +999,23 @@ export function PageThumb({
         style={[styles.thumbBox, { aspectRatio }]}
         onLayout={(layoutEvent) => {
           const { width: laidOutW, height: laidOutH } = layoutEvent.nativeEvent.layout;
-          thumbWidthSV.value = laidOutW;
           // Feed the crop the box's TRUE size. Guarded so a no-op layout pass can't loop re-renders.
           if (!boxSize || Math.abs(boxSize.w - laidOutW) > 0.5 || Math.abs(boxSize.h - laidOutH) > 0.5) {
             setBoxSize({ w: laidOutW, h: laidOutH });
           }
         }}>
         <View style={styles.thumbClip}>
-          {/* The picture layer: scaled by `picturePageStyle` to fake the shrink
-              illusion. `pageNum` below is a sibling, NOT inside this layer, so
-              it never gets stretched by the scale. */}
-          <Animated.View style={[StyleSheet.absoluteFill, styles.thumbPicture, picturePageStyle]}>
-            {delayPassed && resolved?.kind === 'image' && resolvedImageUrl && (
-              <Image
-                source={{ uri: resolvedImageUrl }}
-                style={styles.thumbImg}
-                contentFit="cover"
-                cachePolicy="memory-disk"
-                transition={90}
-                // Reset the reused image view on recycle so it doesn't flash the
-                // previous page's thumbnail (see SeriesCard).
-                recyclingKey={String(index)}
-                onLoad={(e) => {
-                  resolvedThumbIds.add(delayKey);
-                  const src = e.source;
-                  if (src?.width && src?.height) {
-                    const nextAspect = clampThumbAspect(src.width / src.height);
-                    resolvedThumbAspects.set(delayKey, nextAspect);
-                    lastResolvedThumbAspect = nextAspect;
-                    // Same FLIP kick-off as SeriesCard: only animate when there's an actual shape
-                    // change and the box's pixel width is already known (from onLayout above).
-                    const measuredWidth = thumbWidthSV.value;
-                    if (measuredWidth > 0 && nextAspect !== imageAspect) {
-                      const oldHeight = measuredWidth / imageAspect;
-                      const newHeight = measuredWidth / nextAspect;
-                      shrinkFromScaleSV.value = newHeight > 0 ? oldHeight / newHeight : 1;
-                      shrinkProgressSV.value = 0;
-                      shrinkProgressSV.value = withTiming(1, {
-                        duration: ASPECT_TRANSITION_MS,
-                        easing: Easing.out(Easing.cubic),
-                      });
-                    }
-                    setImageAspect(nextAspect);
-                  }
-                  setLoaded(true);
-                }}
-                onError={(e: { error?: string }) =>
-                  logDiagnostic('page-thumb-image', e.error || 'load failed', {
-                    url: resolved.url,
-                    context: `bridge=${bridgeId ?? ''} series=${seed} page=${index}`,
-                  })
-                }
-              />
-            )}
-            {delayPassed && resolved?.kind === 'sprite' && (
-              <SpriteCrop
-                thumb={resolved}
-                width={boxWidth}
-                height={boxHeight}
-                onLoad={() => {
-                  resolvedThumbIds.add(delayKey);
-                  setLoaded(true);
-                }}
-                onError={(msg) =>
-                  logDiagnostic('page-thumb-sprite', msg, {
-                    url: resolved.sheetUrl,
-                    context: `bridge=${bridgeId ?? ''} series=${seed} page=${index}`,
-                  })
-                }
-              />
-            )}
-            {!ready && <Skeleton style={StyleSheet.absoluteFill} />}
-          </Animated.View>
+          {/* Picture layer, scaled by `pictureStyle` to fake the shrink illusion; `pageNum` is a
+              sibling so it never gets stretched. The Lightweight path skips the wrapper VIEW entirely
+              (no animated style, one less view per tile) and renders straight into the clip — the
+              image, sprite and skeleton all fill it on their own. Mirrors SeriesCard. */}
+          {shrink.pictureStyle ? (
+            <Animated.View style={[StyleSheet.absoluteFill, styles.thumbPicture, shrink.pictureStyle]}>
+              {pictureInner}
+            </Animated.View>
+          ) : (
+            pictureInner
+          )}
           {showPageNumber && (
             <View style={styles.pageNum}>
               <ThemedText style={styles.pageNumText}>{page}</ThemedText>
@@ -988,6 +1027,13 @@ export function PageThumb({
        *  own hover/active ring, since an opacity-dim over an image reads as broken. */}
       {hovered && <View style={[styles.thumbRing, { pointerEvents: 'none' }]} />}
     </Pressable>
+    );
+  };
+
+  return lightCards ? (
+    renderTileBody(NOOP_THUMB_SHRINK)
+  ) : (
+    <ThumbShrink index={index}>{renderTileBody}</ThumbShrink>
   );
 }
 
@@ -1011,6 +1057,7 @@ function SpriteCrop({
   thumb,
   width,
   height,
+  transition = 200,
   onLoad,
   onError,
 }: {
@@ -1018,6 +1065,8 @@ function SpriteCrop({
   /** The box to fill, in px. The crop COVERS it (see `scale`), so the tile never falls short of it. */
   width: number;
   height: number;
+  /** Cross-fade duration; 0 on the Lightweight path (see PageThumb). */
+  transition?: number;
   onLoad?: () => void;
   onError?: (message: string) => void;
 }) {
@@ -1057,7 +1106,7 @@ function SpriteCrop({
       contentFit="cover"
       contentPosition={{ top: 0, left: 0 }}
       cachePolicy="memory-disk"
-      transition={200}
+      transition={transition}
       onLoad={onLoad}
       onError={(e: { error?: string }) => onError?.(e.error || 'load failed')}
     />
