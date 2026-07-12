@@ -149,11 +149,10 @@ export function TagGroupRow({
    *  `tagIds`/`tagQueries` entry at that index — render as pressable; the rest
    *  (e.g. a Characters/Parodies group with no ids/queries) stay static. */
   onTagPress?: (index: number) => void;
-  /** Render as a labeled, non-wrapping horizontally-scrolling row (used in the card preview panel)
+  /** Render as an unlabeled, non-wrapping horizontally-scrolling row (used in the card preview panel)
    *  instead of the wrapping, collapsible layout. */
   horizontal?: boolean;
-  /** Leading padding for a full-bleed `horizontal` row — applied to the label so it clears a panel's
-   *  edge, while the chip scroller still bleeds to the edge. See `ChipRow`'s `contentInset`. */
+  /** Leading padding inside a `horizontal` row's scroll content — see `ChipRow`'s `contentInset`. */
   contentInset?: number;
 }) {
   const theme = useTheme();
@@ -170,12 +169,12 @@ export function TagGroupRow({
   };
   if (horizontal) {
     return (
-      <View style={[styles.tagGroupHeaderRow, contentInset != null && { paddingLeft: contentInset }]}>
-        <ThemedText style={[styles.groupLabel, { color: theme.textSecondary }]}>{group.label.toUpperCase()}</ThemedText>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.hScroll} contentContainerStyle={styles.hChips}>
-          {group.tags.map(chip)}
-        </ScrollView>
-      </View>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={[styles.hChips, contentInset != null && { paddingLeft: contentInset }]}>
+        {group.tags.map(chip)}
+      </ScrollView>
     );
   }
   const collapsible = !expanded && group.tags.length > maxVisible;
@@ -216,15 +215,6 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     alignItems: 'center',
     gap: Spacing.one,
-  },
-  // Horizontal variant: fixed label + a single scrolling chip row that takes the rest of the width.
-  tagGroupHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-  },
-  hScroll: {
-    flex: 1,
   },
   hChips: {
     alignItems: 'center',
