@@ -35,6 +35,14 @@
       a render-kind), so the `'home'`/`'favorites'` strings and the `page`/`id`
       coupling live in exactly one place rather than being re-derived everywhere.
 - [ ] Investigate if we can have varied height thumbnails without weird page shifting now that we use legend list
+- [ ] Apply the release-scroll card optimizations to the series page's **page-thumbnail cards**
+      (`PageThumb`/`PageThumbList`, `components/series/chapters-section.tsx`): fixed-height cells so
+      LegendList stops re-measuring on scroll (mirror `series-grid.tsx`'s `cellHeight` +
+      `estimatedItemSize`), and build any per-render allocation (e.g. an href) lazily on press
+      (mirror `series-card.tsx`'s `buildHref`). NUANCE: `PageThumb` renders in TWO places — the series
+      page grid AND the card long-press popup (`series-card-context-menu.tsx`) — so the fixed height
+      must NOT be baked into `PageThumb`; the series page and the popup should each wrap it in a
+      container that defines the fixed height for THAT context. See the A–D plan for the why.
 - [x] Infinite paging loading skeleton doesn't add skeleton entries to incomplete rows,
       it should ideally finish an incomplete row then add an additional row (the
       loaded grid already padded a short last row with invisible spacer cells so it
@@ -414,3 +422,22 @@ dev-profile wins (`8efaf7f`→`7f83bbb`) shipped; remaining plan, in order:
   (downsample at source / via expo-image); limit concurrent decodes. Many full-res decodes during a
   fast fling is a classic RN scroll killer. (Cover-size audit of the API-based bridge in progress —
   it passes covers through from the source un-resized, so cover size = whatever the source stores.)
+
+### What actually shipped from A (release profile, 2026-07-12)
+Release profile (real binary, dev noise gone): **80% idle** — the felt jank is spikes, not load. Top
+JS costs were **`propagateParentContextChanges` 20%** (React 19 context walk) and **GC ~11%** (the
+biggest single stalls); Fabric commit was only ~7% (C was over-weighted). Both #1 and #2 traced to
+**render churn + allocation**, not the commit. Fixes shipped:
+- **GC:** build the card `href` lazily on press instead of per render (`series-card.tsx` `buildHref`).
+- **Context walk (#1 cost):** the 20% was a *symptom* of LegendList re-measuring variable-height cards
+  every scroll (`commitLayoutEffect → measure → set$/updateItemSizes → batchedUpdates → the walk`).
+  Fixed by pinning every grid cell to a constant height (`series-grid.tsx` `cellHeight`, matching
+  `estimatedItemSize`) so rows never re-measure. Theme itself was a red herring (stable, no new context).
+
+### TODO — extend the card fixes to series-page page thumbnails
+The two fixes above landed on the series-CARD grid only. The series page's **page-thumbnail grid**
+(`PageThumb`/`PageThumbList`, `components/series/chapters-section.tsx`) has the same variable-row
+re-measure problem and should get the same treatment (fixed-height cells + lazy per-render alloc).
+IMPORTANT: `PageThumb` also renders inside the card long-press popup (`series-card-context-menu.tsx`),
+so the fixed height can't be baked into `PageThumb` itself — the series page and the popup should each
+wrap it in a container that supplies the fixed height for that context.
