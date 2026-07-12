@@ -22,7 +22,7 @@ import {
 } from '@/data/queries';
 import { useDataSource, useMockActive, type DataSource } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type Chapter, type SeriesDetail, type SeriesListResult } from '@/data/types';
-import { getAdjacentChapter } from '@/lib/chapter-order';
+import { firstChapterInReadingOrder, getAdjacentChapter } from '@/lib/chapter-order';
 import { getPreferredGroup, setPreferredGroup } from '@/lib/preferred-group';
 import { useReaderSettings } from '@/hooks/use-reader-settings';
 
@@ -54,29 +54,64 @@ export default function ReaderScreen() {
   const ds = useDataSource();
   const router = useRouter();
   const { width, height } = useWindowDimensions();
-  const { seed, title, bridgeId, chapterId, chapterName, start } = useLocalSearchParams<{
+  const {
+    seed,
+    title,
+    bridgeId,
+    chapterId: paramChapterId,
+    chapterName: paramChapterName,
+    start,
+    direct,
+  } = useLocalSearchParams<{
     seed?: string;
     title?: string;
     bridgeId?: string;
     chapterId?: string;
     chapterName?: string;
     start?: string;
+    /** '1' for a direct (chapterless) series — its pages ARE the series. */
+    direct?: string;
   }>();
+  const mock = useMockActive();
+  const queryClient = useQueryClient();
+
+  // ── Which chapter are we reading? ────────────────────────────────────────
+  // A caller that knows the chapter passes it. One that DOESN'T — the card long-press menu, opening a
+  // series you've never read — passes neither `chapterId` nor `direct`, and the reader starts at the
+  // first chapter in reading order. Resolving it here is free: the reader already subscribes to the
+  // chapter list below (it needs it for next/prev anyway), so the alternative was making every
+  // long-press of an unread series fetch that same list just to label a menu row.
+  //
+  // Note a missing `chapterId` used to mean "direct" all by itself, which is why `direct` is now an
+  // explicit param: absent chapterId no longer implies chapterless.
+  const isDirect = direct === '1';
+  const resolveFirst = !paramChapterId && !isDirect;
+  const { data: listData } = useQuery(
+    seriesListQuery(ds, mock, bridgeId ?? '', seed ?? '', false, !!seed && (!!paramChapterId || resolveFirst)),
+  );
+  const chapters = listData?.chapters;
+  const firstChapter = useMemo(
+    () => (resolveFirst && chapters?.length ? firstChapterInReadingOrder(chapters, getPreferredGroup()) : null),
+    [resolveFirst, chapters],
+  );
+  const chapterId = paramChapterId ?? firstChapter?.id;
+  const chapterName = paramChapterName ?? firstChapter?.name;
+  // Still waiting on the list to tell us where to start — don't fetch pages for the wrong thing.
+  const resolvingFirst = resolveFirst && !chapterId;
 
   // Cached page fetch: reopening a chapter (or coming back to it) repaints from
   // the query cache instead of refetching, and next-chapter prefetch below can
   // pre-populate this same cache so the following chapter opens instantly.
-  const mock = useMockActive();
-  const queryClient = useQueryClient();
   const {
     data: pages = null,
     error: queryError,
     refetch,
-  } = useQuery(
-    chapterId
+  } = useQuery({
+    ...(chapterId
       ? chapterPagesQuery(ds, mock, bridgeId ?? '', seed ?? '', chapterId)
-      : directPagesQuery(ds, mock, bridgeId ?? '', seed ?? ''),
-  );
+      : directPagesQuery(ds, mock, bridgeId ?? '', seed ?? '')),
+    enabled: !resolvingFirst,
+  });
   const error = queryError ? (queryError as Error).message || 'Failed to load pages' : null;
   const retry = refetch;
 
@@ -183,15 +218,6 @@ export default function ReaderScreen() {
   const cachedDetail =
     queryClient.getQueryData<SeriesDetail>(queryKeys.seriesDetail(mock, bridgeId ?? '', seed ?? '', false)) ??
     queryClient.getQueryData<SeriesDetail>(queryKeys.seriesDetail(mock, bridgeId ?? '', seed ?? '', true));
-
-  // The chapter list is deferred to a separate `getSeriesList` fetch (both real bridges
-  // and the mock — see series.tsx's matching `listData?.chapters`). Subscribe to it so
-  // it's present even on a cold open (History/Resume, deep link) — otherwise the reader
-  // can't resolve the next chapter and advance silently no-ops.
-  const { data: listData } = useQuery(
-    seriesListQuery(ds, mock, bridgeId ?? '', seed ?? '', false, !!seed && !!chapterId),
-  );
-  const chapters = listData?.chapters;
 
   // Remember the scanlation group of the chapter being read, so next/prev keeps the
   // same source — including when the reader was opened from History/a deep link

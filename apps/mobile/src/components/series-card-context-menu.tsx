@@ -33,7 +33,7 @@ import type { PageThumbSource } from '@/data/types';
 import { useFavorite } from '@/hooks/use-favorite';
 import { useLibrary } from '@/hooks/use-library';
 import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
-import { useResumeEntry, useStartReading } from '@/hooks/use-start-reading';
+import { useStartReading } from '@/hooks/use-start-reading';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { closeSeriesCardMenu, useSeriesCardMenu, type SeriesCardMenuRequest } from '@/lib/series-card-menu';
@@ -134,14 +134,9 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       cover: entry.cover,
     }),
   );
-  // One query, two consumers: the page rail (direct series) and the chapter Read starts at. A
-  // chaptered series only pays for it when Read actually needs it — i.e. when there's no resume point
-  // to open instead. Hence the history lookup FIRST, standalone: it decides whether we fetch at all.
-  const { resume, pending: resumePending } = useResumeEntry(bridgeId, entry.id);
-  const needsChapters = !direct && !resume && !resumePending;
-  const pageList = useQuery(
-    seriesListQuery(ds, mock, bridgeId ?? '', entry.id, !!direct, !!bridgeId && (!!direct || needsChapters)),
-  );
+  // The page rail (direct series only). A chaptered series fetches NOTHING here: Read either resumes
+  // from history or hands the reader an unspecified chapter, which it resolves itself.
+  const pageList = useQuery(seriesListQuery(ds, mock, bridgeId ?? '', entry.id, !!direct, !!direct && !!bridgeId));
   // Where Read takes you — the resume point, or the first chapter / page 0. Shared with the series
   // screen's primary button, so the two can't resume at different places (see useStartReading).
   const reading = useStartReading({
@@ -149,9 +144,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     seriesId: entry.id,
     title: entry.title,
     direct: !!direct,
-    chapters: pageList.data?.chapters,
-    chaptersLoading: needsChapters && pageList.isLoading,
-    readLabel: pageList.data?.readLabel ?? detail.data?.readLabel,
+    readLabel: detail.data?.readLabel,
   });
   // The detail query is SEEDED with placeholder data (the card's title + cover) so the panel has them
   // instantly — so "has data" is true from frame one. The real meta/description/tags only exist once
@@ -484,7 +477,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
           <MenuRow
             label={reading.label}
             Icon={PlayIcon}
-            loading={reading.disabled}
+            loading={false}
             primary
             onPress={() => {
               req.onClose?.(); // un-hide the card and drop the overlay — the reader is about to cover it

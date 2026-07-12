@@ -95,7 +95,9 @@ export default function HistoryScreen() {
         title: h.title,
         bridgeId: h.bridgeId,
         start: String(h.lastPage ?? 0),
-        ...(isDirect ? {} : { chapterId: h.chapterId!, chapterName: h.chapterName ?? '' }),
+        // `direct` must be explicit: a missing chapterId no longer implies a chapterless series — it
+        // now means "start at the first chapter" (see reader.tsx).
+        ...(isDirect ? { direct: '1' } : { chapterId: h.chapterId!, chapterName: h.chapterName ?? '' }),
       },
     });
   };
