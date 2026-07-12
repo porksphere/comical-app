@@ -104,6 +104,11 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     }),
   );
   const pageList = useQuery(seriesListQuery(ds, mock, bridgeId ?? '', entry.id, !!direct, !!direct && !!bridgeId));
+  // The detail query is SEEDED with placeholder data (the card's title + cover) so the panel has them
+  // instantly — so "has data" is true from frame one. The real meta/description/tags only exist once
+  // the fetch resolves (`isPlaceholderData` flips false); gate the skeletons on THAT, not on presence,
+  // or they never show and the panel opens condensed then jumps when the real detail lands.
+  const detailLoaded = !!detail.data && !detail.isPlaceholderData;
 
   const { favorited, toggle: toggleFavorite } = useFavorite(bridgeId, entry.id);
   const { inLibrary, toggle: toggleLibrary } = useLibrary(bridgeId, entry.id, () => ({
@@ -119,10 +124,10 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // Remember how many tag rows this kind of series carries, so the next open's skeleton is shaped
   // closer to reality (fewer size corrections when the real tags land).
   useEffect(() => {
-    if (!detail.data) return;
-    const rows = (detail.data.genres?.length ? 1 : 0) + (detail.data.tagGroups?.length ?? 0);
+    if (!detailLoaded) return;
+    const rows = (detail.data?.genres?.length ? 1 : 0) + (detail.data?.tagGroups?.length ?? 0);
     if (rows > 0) lastTagRowCount = rows;
-  }, [detail.data]);
+  }, [detailLoaded, detail.data]);
 
   const finishClose = useCallback(() => {
     req.onClose?.();
@@ -287,7 +292,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
               {/* Fixed-height slots (reserved in both states) so the panel doesn't jump when the real
                   meta/description replace their skeletons. */}
               <View style={styles.metaSlot}>
-                {detail.data ? (
+                {detailLoaded ? (
                   metaLine ? (
                     <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
                       {metaLine}
@@ -298,8 +303,8 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
                 )}
               </View>
               <View style={styles.descSlot}>
-                {detail.data ? (
-                  detail.data.description ? (
+                {detailLoaded ? (
+                  detail.data?.description ? (
                     <ThemedText type="small" themeColor="textSecondary" numberOfLines={DESC_LINES}>
                       {detail.data.description}
                     </ThemedText>
@@ -314,8 +319,8 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
               </View>
             </View>
           </View>
-          {detail.data ? (
-            detail.data.genres?.length || detail.data.tagGroups?.length ? (
+          {detailLoaded ? (
+            detail.data?.genres?.length || detail.data?.tagGroups?.length ? (
               <View style={styles.tags}>
                 {detail.data.genres?.length ? <ChipRow horizontal contentInset={PANEL_PAD} labels={detail.data.genres} /> : null}
                 {detail.data.tagGroups?.map((g) => (
