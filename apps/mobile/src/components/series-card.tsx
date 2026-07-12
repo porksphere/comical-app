@@ -589,12 +589,18 @@ export function SeriesCard({
       direct={direct}
       coverAspect={coverAspect}>
       {({ onLongPress }) => {
-        // Force a new stack entry every time: expo-router's default `navigate` behavior unwinds to
-        // an existing `/series` route already on the stack instead of pushing another — so tapping a
+        // Built LAZILY (only when actually navigating) — NOT per render. This object plus its
+        // encodeURIComponent/.replace string churn was allocated for every card on every render, so a
+        // scroll that recycles many cards produced steady garbage → GC pauses (a top cost in the
+        // release profile). Native builds it in onPress (once, on tap); web still needs it at render
+        // for the <Link> anchor, so it's built there.
+        //
+        // `push` forces a new stack entry every time: expo-router's default `navigate` unwinds to an
+        // existing `/series` route already on the stack instead of pushing another — so tapping a
         // related/recommended series from within a series-detail screen replaced the current screen
-        // instead of drilling in. `push` always adds a new entry, also correct from
-        // Browse/Library/History (no `/series` on the stack yet there, so equivalent to a plain push).
-        const href = {
+        // instead of drilling in. Also correct from Browse/Library/History (no `/series` on the stack
+        // yet there, so equivalent to a plain push).
+        const buildHref = () => ({
           pathname: '/series' as const,
           params: {
             id: entry.id,
@@ -621,7 +627,7 @@ export function SeriesCard({
               ? { fromPage: encodeURIComponent(originPage).replace(/\(/g, '%28').replace(/\)/g, '%29') }
               : {}),
           },
-        };
+        });
         const pressable = (
           <Pressable
             // Flat single style object: as the `asChild` of <Link> (web), the Pressable is cloned by
@@ -638,7 +644,7 @@ export function SeriesCard({
             // open-in-new-tab / a crawlable href); on native we navigate imperatively so each card
             // doesn't mount an expo-router <Link> — its per-render router hooks were a top scroll cost
             // (createTask/ExpoLink), and native has no anchor semantics to preserve anyway.
-            onPress={isWeb ? undefined : () => router.push(href)}
+            onPress={isWeb ? undefined : () => router.push(buildHref())}
             // Native long-press opens the shared quick-actions menu; undefined on web (which uses the
             // hover 3-dot instead). A long-press suppresses the tap, so it never also navigates.
             onLongPress={onLongPress}
@@ -655,7 +661,7 @@ export function SeriesCard({
         // Web keeps the real anchor (asChild clones it onto the Pressable); native renders the
         // Pressable directly and pushes imperatively on press.
         return isWeb ? (
-          <Link push href={href} asChild>
+          <Link push href={buildHref()} asChild>
             {pressable}
           </Link>
         ) : (
