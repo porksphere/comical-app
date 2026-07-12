@@ -47,7 +47,7 @@ export function useHideTabBarOnScroll() {
   );
 
   const reportOffset = useCallback(
-    (y: number) => {
+    (y: number, maxY?: number) => {
       const dy = y - lastY.current;
       lastY.current = y;
       if (dy === 0) return;
@@ -56,6 +56,15 @@ export function useHideTabBarOnScroll() {
         publish(0);
         return;
       }
+      // Past the content end the list is in (or springing back out of) its elastic bottom bounce.
+      // That stretch reports the same "offset decreasing" deltas a genuine scroll-UP does, so without
+      // this the tab bar slides back in every time you overscroll the end of a list — the bar visibly
+      // reacting to the rubber-band. Ignore deltas at/beyond the end; only real scrolling below the
+      // max moves the bar. This is the same guard the top bar already has (see `useSlidingBar`, whose
+      // `maxScrollY` check exists for exactly this) — the two bars now behave symmetrically.
+      //
+      // `maxY` unknown (a caller that can't supply it) ⇒ no guard, i.e. the previous behaviour.
+      if (maxY !== undefined && maxY > 0 && y >= maxY) return;
       distance.current = Math.min(SLIDE_DISTANCE, Math.max(0, distance.current + dy));
       publish(distance.current / SLIDE_DISTANCE);
     },
@@ -64,7 +73,8 @@ export function useHideTabBarOnScroll() {
 
   const onScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      reportOffset(e.nativeEvent.contentOffset.y);
+      const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+      reportOffset(contentOffset.y, contentSize.height - layoutMeasurement.height);
     },
     [reportOffset],
   );

@@ -1,7 +1,25 @@
 import { useEffect, useState } from 'react';
-import { useWindowDimensions } from 'react-native';
+import { Platform, useWindowDimensions } from 'react-native';
 
 import { DesktopTopBarHeight, TopBarHeight } from '@/constants/theme';
+
+/**
+ * "The real viewport width is safe to use." True on the FIRST render on native, and only after mount
+ * on web.
+ *
+ * The deferral is a web-only concern: the static export prerenders with no viewport (width 0), so the
+ * client's first render has to reproduce that same small-screen assumption or React warns and
+ * reflows. Native has no prerender — `useWindowDimensions()` returns the true width on the very first
+ * render — so deferring there buys nothing and COSTS a guaranteed-wrong first frame: every consumer
+ * lays out at the fallback size, then jumps to the real one a frame later (rail cards visibly
+ * snapping wider, a desktop-width top bar starting short). Gate the deferral on web so native is
+ * correct immediately.
+ */
+export function useHydrated(): boolean {
+  const [hydrated, setHydrated] = useState(Platform.OS !== 'web');
+  useEffect(() => setHydrated(true), []);
+  return hydrated;
+}
 
 // The reference site switches its type scale at 560/561px (max-width:560 reads as
 // "mobile", min-width:561 as "desktop"). Mirror that single breakpoint so the
@@ -16,29 +34,25 @@ export const LARGE_SCREEN_BREAKPOINT = 768;
 /**
  * True when the viewport is at the reference's mobile width.
  *
- * Hydration-safe: the static web export prerenders with no viewport (width 0 →
- * compact), so the first client render must also report compact or React warns
- * and reflows. We hold the mobile assumption until mount — matching the column
- * logic in the browse screen — then switch to the real viewport width.
+ * Hydration-safe on WEB (see `useHydrated`): the static export prerenders with no
+ * viewport, so the first client render holds the compact assumption and then switches
+ * to the real width. On native the real width is used from the first render.
  */
 export function useIsCompact(): boolean {
   const { width } = useWindowDimensions();
-  const [hydrated, setHydrated] = useState(false);
-  useEffect(() => setHydrated(true), []);
+  const hydrated = useHydrated();
   return hydrated ? width <= COMPACT_BREAKPOINT : true;
 }
 
 /**
  * True when the viewport is at the large-screen (desktop) width (≥768px).
  *
- * Hydration-safe like `useIsCompact`: holds the not-large assumption until mount
- * so the static web export's first client render (which has no viewport) matches
- * the server render, then switches to the real viewport width.
+ * Hydration-safe on web like `useIsCompact`; on native the real width applies from
+ * the first render (see `useHydrated`).
  */
 export function useIsLargeScreen(): boolean {
   const { width } = useWindowDimensions();
-  const [hydrated, setHydrated] = useState(false);
-  useEffect(() => setHydrated(true), []);
+  const hydrated = useHydrated();
   return hydrated ? width >= LARGE_SCREEN_BREAKPOINT : false;
 }
 
@@ -48,13 +62,11 @@ export function useIsLargeScreen(): boolean {
  * the two stay the same height and resize together (just change the
  * `TopBarHeight` / `DesktopTopBarHeight` constants).
  *
- * Hydration-safe like `useIsCompact`: holds the compact height until mount so
- * the static web export's first client render matches the (viewport-less)
- * server render.
+ * Hydration-safe on web like `useIsCompact`; on native the real width applies from
+ * the first render, so a desktop-width bar doesn't start short and jump (see `useHydrated`).
  */
 export function useTopBarHeight(): number {
   const { width } = useWindowDimensions();
-  const [hydrated, setHydrated] = useState(false);
-  useEffect(() => setHydrated(true), []);
+  const hydrated = useHydrated();
   return hydrated && width >= LARGE_SCREEN_BREAKPOINT ? DesktopTopBarHeight : TopBarHeight;
 }
