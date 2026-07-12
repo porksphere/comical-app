@@ -818,16 +818,20 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // lifting runs it. The row rects aren't measured — they're derived, exactly as the menu's own position
   // is (same value, same formula), so this stays a pure UI-thread computation with nothing to keep in
   // sync and no per-row onLayout.
+  //
+  // Only the finger's HEIGHT is tested, not its horizontal position: a row is selected by being level
+  // with it, anywhere across the screen. The menu is a narrow strip pinned to the left edge, so
+  // requiring the finger to be inside it means holding your thumb over the very thing you're choosing
+  // from — and a thumb that drifts a few px off the right edge shouldn't drop the selection. Sliding
+  // out to the empty space beside the menu and running up and down it works, which is what you actually
+  // do. Off the TOP (into the preview) or below the last row still selects nothing.
   useAnimatedReaction(
     () => {
       if (!holdActive.value) return -1;
       const scale = minS.value + expand.value * (maxS.value - minS.value);
       const top = topMin.value + expand.value * (topMax.value - topMin.value);
       const menuTop = top + naturalH.value * scale + GAP;
-      const x = holdX.value;
-      const y = holdY.value;
-      if (x < menuPos.x.value || x > menuPos.x.value + menuW) return -1;
-      const local = y - menuTop - MENU_PAD_V;
+      const local = holdY.value - menuTop - MENU_PAD_V;
       if (local < 0) return -1;
       const index = Math.floor(local / (ROW_HEIGHT + StyleSheet.hairlineWidth));
       return index >= 0 && index < rowCount ? index : -1;
