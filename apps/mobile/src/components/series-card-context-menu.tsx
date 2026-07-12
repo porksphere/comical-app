@@ -30,10 +30,12 @@ const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
 // The one spring used everywhere: the open morph, the reversed close morph, and the panel/menu
 // resize — so every motion in the popup shares the same bouncy feel.
 const MORPH_SPRING = { damping: 16, stiffness: 170, mass: 0.8 } as const;
-// On dismiss, hand the cover back to the source card once the morph is this far along (progress
-// counting DOWN from 1): the card un-hides — so its title reappears without waiting for the spring's
-// long tail — and the flying cover fades out over the same span, so the two never read as a duplicate.
-const CARD_REVEAL_AT = 0.45;
+// On dismiss, un-hide the source card once the morph-back is most of the way home (progress counting
+// DOWN from 1): its title reappears without waiting out the spring's bouncy tail, and by this point
+// the (still-opaque) cover is nearly on top of the card, so it springs/settles ONTO the revealed card
+// rather than reading as a separate duplicate. Kept low so the springy overshoot stays visible — a
+// fade here would hide exactly the bounce, since that happens as progress approaches 0.
+const CARD_REVEAL_AT = 0.25;
 // How the panel + menu resize/reposition when late content lands — the panel is a plain Animated.View
 // (not the ThemedView, which doesn't forward a ref) so its height can spring when async content swaps
 // a skeleton for the real thing, instead of the panel popping to its final size.
@@ -246,9 +248,6 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
         { scale: interpolate(progress.value, [0, 1], [fromScale, 1]) },
       ],
       shadowOpacity: progress.value * 0.28,
-      // Opaque during the open morph (the source card is hidden behind it). On dismiss, fade out as it
-      // lands so it hands off to the now-revealed card instead of doubling it.
-      opacity: dismissSV.value === 1 ? Math.min(1, progress.value / CARD_REVEAL_AT) : 1,
     }),
     [coverDx, coverDy, fromScale],
   );
