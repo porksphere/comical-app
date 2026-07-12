@@ -772,6 +772,9 @@ export function PageThumb({
   // trailing-group equivalent needed here since the grid slot is a constant shape
   // and `pageNum` sits outside the scaled layer, so nothing else needs to
   // shift when the tile's real aspect lands.
+  // The tile box's REAL laid-out size — what the sprite crop must be scaled by (see boxWidth/
+  // boxHeight). Null until the first layout, when the `width` estimate stands in.
+  const [boxSize, setBoxSize] = useState<{ w: number; h: number } | null>(null);
   const thumbWidthSV = useSharedValue(0);
   const shrinkProgressSV = useSharedValue(1); // 1 = settled; animates 0 -> 1 per transition
   const shrinkFromScaleSV = useSharedValue(1); // picture's scaleY at progress 0
@@ -872,8 +875,20 @@ export function PageThumb({
   // image's real aspect and the width follows, so nothing is ever cropped there.
   const boxAspect = slotHeight != null ? aspectRatio : slotAspect;
   // The box in PIXELS — what the sprite crop must cover.
-  const boxWidth = slotHeight != null ? slotHeight * aspectRatio : width;
-  const boxHeight = slotHeight != null ? slotHeight : width / slotAspect;
+  //
+  // MEASURED, not computed. This is the whole bug: the crop used to be scaled by the `width` prop,
+  // which the grid derives from screen-width arithmetic and its own gap/padding maths — "≈ the cell
+  // width", as the comment below cheerfully put it. The box is actually laid out by flex, to the real
+  // cell width, and the two disagree by a couple of px. Scale a 2:3 crop by a width 3px short and its
+  // HEIGHT lands ~4px short of the box — a strip of the tile's placeholder grey under every single
+  // thumbnail, about half the corner radius tall. Web happened to agree on the number; the device
+  // didn't, which is why this only ever showed up there.
+  //
+  // `onLayout` gives us the box's true size, so use it and let the estimate be a first-frame
+  // fallback only.
+  const measured = boxSize;
+  const boxWidth = measured ? measured.w : slotHeight != null ? slotHeight * aspectRatio : width;
+  const boxHeight = measured ? measured.h : slotHeight != null ? slotHeight : width / slotAspect;
 
   // The picture layer's scaleY: eases from its old apparent size down to 1 (its
   // real, already-committed size) as `shrinkProgressSV` runs 0 -> 1 — same
@@ -884,10 +899,10 @@ export function PageThumb({
   }));
 
   return (
-    // Fill the grid cell rather than sizing to an explicit `width`: the cell
-    // (flex:1, gap-aware) is the source of truth, so the tile can't end up a
-    // hair wider than its column and get its right corners clipped. `width` is
-    // still the pixel width for SpriteCrop's crop math (≈ the cell width).
+    // Fill the grid cell rather than sizing to an explicit `width`: the cell (flex:1, gap-aware) is
+    // the source of truth, so the tile can't end up a hair wider than its column and get its right
+    // corners clipped. The `width` prop is only a FIRST-FRAME estimate for the crop — `onLayout`
+    // below replaces it with the box's real size (see boxWidth/boxHeight).
     <Pressable
       style={slotHeight != null ? { height: slotHeight, aspectRatio } : { aspectRatio: slotAspect }}
       onPress={onPress}
@@ -896,7 +911,12 @@ export function PageThumb({
       <View
         style={[styles.thumbBox, { aspectRatio: boxAspect }]}
         onLayout={(layoutEvent) => {
-          thumbWidthSV.value = layoutEvent.nativeEvent.layout.width;
+          const { width: laidOutW, height: laidOutH } = layoutEvent.nativeEvent.layout;
+          thumbWidthSV.value = laidOutW;
+          // Feed the crop the box's TRUE size. Guarded so a no-op layout pass can't loop re-renders.
+          if (!boxSize || Math.abs(boxSize.w - laidOutW) > 0.5 || Math.abs(boxSize.h - laidOutH) > 0.5) {
+            setBoxSize({ w: laidOutW, h: laidOutH });
+          }
         }}>
         <View style={styles.thumbClip}>
           {/* The picture layer: scaled by `picturePageStyle` to fake the shrink
