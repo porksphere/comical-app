@@ -27,7 +27,7 @@ import { SeriesCard } from '@/components/series-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { PullIndicator } from '@/components/pull-indicator';
-import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { pageOptions } from '@/data/api';
 import { useDedupedPages } from '@/data/grid-pages';
 import { fetchBrowseScope, homeSectionsQuery, queryKeys, type BrowseScope } from '@/data/queries';
@@ -738,7 +738,7 @@ export default function BrowseScreen() {
             <GridSkeleton numColumns={numColumns} rows={2} />
           ) : null
         }
-        paddingTop={headerHeight + Spacing.three}
+        paddingTop={headerHeight + BarContentGap}
         paddingBottom={BottomTabInset + insets.bottom + Spacing.five}
         bridge={currentBridge?.name ?? undefined}
         bridgeId={bridgeId}

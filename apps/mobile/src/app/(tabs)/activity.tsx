@@ -10,7 +10,7 @@ import { HistoryRow } from '@/components/history-row';
 import { RetryBlock } from '@/components/retry-block';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { activityQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import type { ActivityEntry } from '@/data/types';
@@ -139,7 +139,7 @@ export default function ActivityScreen() {
   return (
     <ThemedView style={styles.container}>
       {emptyBody ? (
-        <View style={[styles.centeredColumn, { paddingTop: headerHeight }]}>
+        <View style={[styles.centeredColumn, { paddingTop: headerHeight + BarContentGap }]}>
           {listHeader}
           <View style={styles.centerFill}>{emptyBody}</View>
         </View>
@@ -153,7 +153,7 @@ export default function ActivityScreen() {
           recycleItems={false}
           ListHeaderComponent={listHeader}
           contentContainerStyle={{
-            paddingTop: headerHeight,
+            paddingTop: headerHeight + BarContentGap,
             paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
             paddingLeft: sidePad,
             paddingRight: sidePad,
@@ -209,7 +209,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   controls: {
-    paddingTop: Spacing.three,
+    // No leading padding — the list's own `BarContentGap` is the bar->content gap (see theme.ts).
     paddingBottom: Spacing.three,
   },
   controlsRow: {

@@ -133,12 +133,18 @@ export const Spacing = {
 // `insets.bottom` on top of this.
 export const BottomTabInset = 48;
 /**
- * Breathing room between a top bar and the first content beneath it — on top of the bar's own height
- * (`useTopBarInset()`), which only gets content *clear* of the bar.
+ * Breathing room between a top bar and the first content beneath it — added ON TOP of the bar's own
+ * height (which only gets content *clear* of the bar, flush against it).
  *
- * Shared so every screen with a top bar starts its content at the same place. It didn't used to be:
- * the series screen was a bar-height with no gap while the settings/registry screens all added
- * `Spacing.four`, so the series page visibly started higher than every other pushed screen.
+ * EVERY screen with a top bar derives its content's top padding from this: the pushed screens
+ * (series, settings, registries, …) and the three grids (Browse, Search, Library) alike. They used to
+ * disagree — the grids sat at Spacing.three, the pushed screens at Spacing.four, and the series page
+ * at zero — so content started at a different height depending on where you were.
+ *
+ * The gap belongs to the SCROLL CONTENT, not to a header block inside it. The Library used to pay it
+ * via its controls' own `paddingTop`, which is the trap here: a screen paying for it twice (once here,
+ * once in a header) ends up double-padded. If a screen looks too low, check its header isn't adding a
+ * leading pad of its own.
  */
 export const BarContentGap = Spacing.four;
 /** Max width of the series-detail reading column (cover + metadata). */

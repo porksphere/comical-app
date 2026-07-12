@@ -18,7 +18,7 @@ import { RetryBlock } from '@/components/retry-block';
 import { SearchField } from '@/components/search-field';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { BarContentGap, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { useDedupedPages } from '@/data/grid-pages';
 import { fetchBrowseScope, queryKeys, type BrowseScope } from '@/data/queries';
 import { subscribeSearchIntent, takeSearchIntent } from '@/data/search-intent';
@@ -362,7 +362,7 @@ export default function SearchScreen() {
               header={emptyBody}
               // The top bar OVERLAYS the list (so results scroll under its frost), so reserve it as
               // well as the filter bar beneath it, plus a little breathing room.
-              paddingTop={topBarTotal + filtersBarH + Spacing.three}
+              paddingTop={topBarTotal + filtersBarH + BarContentGap}
               paddingBottom={insets.bottom + Spacing.five}
               bridge={currentBridge?.name ?? undefined}
               bridgeId={bridgeId}
