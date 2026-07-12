@@ -1,10 +1,9 @@
-import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
   interpolateColor,
@@ -22,8 +21,9 @@ import { GridSkeleton, SkeletonCard } from '@/components/grid-skeleton';
 import { SearchIcon } from '@/components/icons/ui-icons';
 import { Rail, RailSkeleton, SectionHead } from '@/components/rail';
 import { RetryBlock } from '@/components/retry-block';
+import { SeriesGrid } from '@/components/series-grid';
 import { BridgeThumbSize, Selector } from '@/components/selector';
-import { estimatedCardHeight, SeriesCard } from '@/components/series-card';
+import { SeriesCard } from '@/components/series-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { PullIndicator } from '@/components/pull-indicator';
@@ -35,7 +35,7 @@ import { useSelectedBridge } from '@/data/selected-bridge';
 import { isRailLayout, useDataSource, useMockActive } from '@/data/source';
 import type { BridgeList, GridPage, HomeGridSection, SeriesEntry } from '@/data/types';
 import { friendlyError } from '@/lib/friendly-error';
-import { GRID_COLUMN_GAP, padWithSpacers, useGridLayout } from '@/hooks/use-grid-layout';
+import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
 import { useSlidingBar } from '@/hooks/use-sliding-bar';
@@ -44,7 +44,6 @@ import { useRevealDim } from '@/hooks/use-reveal-dim';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
 
-type GridItem = SeriesEntry & { spacer?: boolean };
 /** A drilled-into rail: its list id (for pagination) + display title. */
 type SeeAll = { listId: string; title: string } | null;
 
@@ -470,25 +469,9 @@ export default function BrowseScreen() {
   // Both open the pushed Search screen (search field in its own top bar, filters + results below).
   const isLargeScreen = useIsLargeScreen();
   const openSearch = () => router.push('/search');
-  // Responsive grid geometry (column count, centering pad, card size) — shared with the Search grid.
-  const { numColumns, sidePad, railViewport, cardWidth } = useGridLayout();
-
-  const gridData = useMemo<GridItem[]>(
-    () => padWithSpacers<GridItem>(gridItems, numColumns, (id) => ({ id, title: '', cover: '', spacer: true })),
-    [gridItems, numColumns],
-  );
-
-  // A scope switch no longer remounts the list: keepPreviousData keeps the grid populated across
-  // switches (see the grid queries above), so the filter bar in the header stays mounted — no flash.
-  // The list key is reduced to just the two things that genuinely require a fresh instance:
-  //  - `numColumns` (a different column count is a different grid layout), and
-  //  - the empty↔populated boundary, which still guards LegendList's web "reset during render" bug
-  //    (`set$` in `shouldResetFreshDataLayout`, thrown as "Cannot update a component while rendering
-  //    a different component") on the rare genuinely-empty→populated transition. keepPreviousData
-  //    removes it for the common populated→populated scope switch, but a scope that legitimately
-  //    returns 0 results, followed by one that returns some, still crosses 0→N on a persisted
-  //    instance — remounting across that boundary keeps the fill on a fresh mount's first render.
-  const gridKey = `${numColumns}|${gridData.length > 0 ? 'full' : 'empty'}`;
+  // Column count for the home rails/skeletons, and the rail viewport. The main grid derives its own
+  // layout from the same hook (see SeriesGrid), so the two can't disagree.
+  const { numColumns, railViewport } = useGridLayout();
   // Logical scope string — drives ONLY the header/scroll reset effect below (not the list key), so
   // the collapsing top bar snaps back and the persisted list scrolls to top on a real scope change.
   const gridScope = [
@@ -746,111 +729,42 @@ export default function BrowseScreen() {
       // than needing LegendList to forward them from wherever the touch actually started) works
       // regardless of what's under the finger. Empty on iOS, which sources its pull from the bounce.
       {...pull.touchHandlers}>
-      {/* The list's own frame spans the full screen, from behind the topBar — its contentContainer
-          top padding (headerHeight) reserves the bar's resting height so content starts below it;
-          as the bar slides away (see `headerOffsetY` above) the content already sitting there is
-          revealed, rather than the list itself needing to relayout. */}
-      {/* Wrapping rather than animating AnimatedLegendList's own `style` directly — LegendList's
-          style prop isn't typed for a Reanimated animated style the way Animated.View's is. */}
-      <Animated.View style={[styles.list, pull.listStyle, listDimStyle]}>
-      <AnimatedLegendList
-        ref={listRef}
-        key={gridKey}
-        // Full-width scroller so the scrollbar sits at the window edge; content centered via the
-        // symmetric sidePad below. Scroll offset flows into scrollY for the sliding header.
-        style={styles.listInner}
-        sharedValues={sharedValues}
-        // WEB ONLY. Root-causes the "loading only resumes once you lift your finger" symptom on web:
-        // when no `renderScrollComponent` is given, `@legendapp/list/reanimated`'s internal scroll
-        // bridge renders `Animated.ScrollView` with whatever `scrollEventThrottle` LegendList's own
-        // internal ListComponent hardcodes for it — which is 0. At 0, react-native-web's ScrollView
-        // only fires `onScroll` once at gesture start and once ~100ms after the gesture goes idle (its
-        // 100ms debounced `handleScrollEnd`), never during an active drag/momentum — so LegendList's
-        // visible range (and onEndReached) only advances once you let go. Passing ANY
-        // renderScrollComponent here routes through the bridge's *other* branch, which forces
-        // scrollEventThrottle: 1 before calling us — restoring continuous updates during the gesture.
-        // On NATIVE we deliberately don't pass it: forcing scrollEventThrottle:1 there just saturates
-        // the JS thread every frame during a fling (the plain onScroll below and the UI→JS tab-bar
-        // reaction already run per frame), and native's default scroll bridge is fine — the UI-thread
-        // `scrollY` (sharedValues) that drives the sliding header works regardless of this.
-        renderScrollComponent={
-          Platform.OS === 'web' ? (scrollProps) => <Animated.ScrollView {...scrollProps} /> : undefined
-        }
-        // Plain (JS-thread) onScroll alongside `sharedValues` above — keeps the helper's `maxScrollY`
-        // in sync (for its bottom-bounce guard); everything else reads the UI-thread `scrollY`.
-        onScroll={onListScroll}
-        data={gridData}
-        estimatedItemSize={estimatedCardHeight(cardWidth)}
-        // `estimatedItemSize` is a deliberately rough hint (worst-case 3-line titles), so measured
-        // rows routinely differ from it. LegendList's default `maintainVisibleContentPosition`
-        // (size:true) reacts to that by retro-correcting the scroll offset — which shows up as a
-        // visible bounce/jitter while flinging. Turn it off (data:false is already the default: no
-        // re-anchor on page-append) so positions settle once measured instead of nudging the offset.
-        maintainVisibleContentPosition={{ data: false, size: false }}
-        keyExtractor={(item) => String(item.id)}
-        numColumns={numColumns}
-        // Recycle card instances rather than remounting per reuse — SeriesCard is now recycle-safe
-        // (resets its per-item state synchronously on entry change), so scrolling reuses cards
-        // instead of paying a fresh heavy mount for every row that scrolls into view.
-        recycleItems
-        ListHeaderComponent={listHeader}
-        // LegendList takes gap keys only in columnWrapperStyle (column gap); the outer inset +
-        // centering come from contentContainerStyle's paddingLeft/Right (= sidePad), and the
-        // header/footer bleed Spacing.four back out so their self-padded children line up.
-        columnWrapperStyle={{ gap: GRID_COLUMN_GAP }}
-        contentContainerStyle={{
-          // Reserves the bar's resting height so the first row starts just below it (see the list's
-          // leading comment above), plus a little breathing room so content doesn't butt against the bar.
-          paddingTop: headerHeight + Spacing.three,
-          paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
-          paddingLeft: sidePad,
-          paddingRight: sidePad,
-        }}
-        renderItem={({ item }) => {
-          if (item.spacer) {
-            return <View style={styles.gridCell} />;
-          }
-          return (
-            // Plain View — the refinement dim now rides the list wrapper (listDimStyle), so no
-            // Reanimated Animated.View per cell.
-            <View style={styles.gridCell}>
-              <SeriesCard
-                entry={item}
-                bridge={currentBridge?.name ?? undefined}
-                bridgeId={bridgeId}
-                direct={directBridge}
-                originPage={page}
-                cohort={gridScope}
-                crossfading={switching}
-              />
-            </View>
-          );
-        }}
-        // No footer skeleton for infinite-scroll pagination (`loadingMore`) — it was
-        // unreliable on web (LegendList's web recycling/remeasure timing made it flicker
-        // or vanish before the next page landed) and, per feedback, more trouble than it
-        // was worth. Only the initial/scope-switch loading state still shows one.
-        ListFooterComponent={
+      {/* The grid's frame spans the full screen, from behind the topBar — its `paddingTop` reserves
+          the bar's resting height so content starts below it; as the bar slides away (see
+          `headerOffsetY` above) the content already sitting there is revealed, rather than the list
+          needing to relayout. Every list-level concern (recycling, the web scroll bridge, the
+          fling-jitter guard, spacers, cells) lives in SeriesGrid — see that file. */}
+      <SeriesGrid
+        items={gridItems}
+        scopeKey={gridScope}
+        listRef={listRef}
+        header={listHeader}
+        // No footer skeleton for infinite-scroll pagination (`loadingMore`) — it was unreliable on
+        // web (LegendList's web recycling/remeasure timing made it flicker or vanish before the next
+        // page landed) and, per feedback, more trouble than it was worth. Only the initial /
+        // scope-switch loading state still shows one.
+        footer={
           (gridLoading || (homeLoading && composedHome && terminalGridPreview)) && gridItems.length === 0 ? (
             <GridSkeleton numColumns={numColumns} rows={2} />
           ) : null
         }
-        onEndReachedThreshold={0.6}
-        // `loadMore` self-guards to the terminal-home and results/favorites modes (and no-ops
-        // in pure composed-home), so it's wired unconditionally — a conditional here otherwise
-        // killed infinite scroll for page-flagged home lists (example-bridge) and the favorites page.
+        paddingTop={headerHeight + Spacing.three}
+        paddingBottom={BottomTabInset + insets.bottom + Spacing.five}
+        bridge={currentBridge?.name ?? undefined}
+        bridgeId={bridgeId}
+        direct={directBridge}
+        originPage={page}
+        crossfading={switching}
+        sharedValues={sharedValues}
+        onScroll={onListScroll}
+        // `loadMore` self-guards to the terminal-home and results/favorites modes (and no-ops in pure
+        // composed-home), so it's wired unconditionally — a conditional here otherwise killed
+        // infinite scroll for page-flagged home lists and the favorites page.
         onEndReached={loadMore}
-        // Show the browser's native scrollbar on web (the list scrolls in its own
-        // overflow container); keep it hidden on native, where it's not idiomatic.
-        showsVerticalScrollIndicator={Platform.OS === 'web'}
-        // No native RefreshControl on any platform — pull-to-refresh is the custom overlay spinner
-        // (see `usePullToRefresh`), consistent everywhere. Android's edge-stretch glow is suppressed
-        // so it doesn't fight the custom pull; iOS keeps its bounce (that's what sources the pull
-        // there), and a release past the threshold triggers the refresh via onScrollEndDrag.
-        overScrollMode={Platform.OS === 'android' ? 'never' : undefined}
         onScrollEndDrag={pull.onScrollEndDrag}
+        // The pull-to-refresh content shift and the refinement dim both ride the list wrapper.
+        wrapperStyle={[pull.listStyle, listDimStyle]}
       />
-      </Animated.View>
       {topBar}
       <PullIndicator {...pull.indicator} top={headerHeight} />
     </ThemedView>
@@ -1043,16 +957,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.four,
     borderRadius: 999,
   },
-  // Full-width scroll host so the scrollbar sits at the window edge; the content is centred by the
-  // symmetric sidePad on contentContainerStyle instead (see the list's paddingLeft/Right).
-  list: {
-    flex: 1,
-  },
-  // Same as `list` — split out only because the web pull-to-refresh transform animates the
-  // wrapping Animated.View (see its comment), while this stays on the actual scroller beneath it.
-  listInner: {
-    flex: 1,
-  },
   // Cancels Spacing.four of the list's contentContainer side padding for header/footer blocks, whose
   // own children already self-pad by Spacing.four — so they line up with the grid cells.
   bleed: {
@@ -1063,16 +967,6 @@ const styles = StyleSheet.create({
   },
   cell: {
     flex: 1,
-  },
-  // Main-grid cell only (not the header's HomeGridBlock / skeleton rows, which space themselves):
-  // LegendList ignores contentContainerStyle `gap` vertically, so the inter-row gap lives here.
-  // Split top+bottom (4 + 12 = the same 16 between rows) rather than all-bottom: LegendList's web
-  // row container is `contain: paint`, so a card flush to the row's top edge has its highlight
-  // ring's top stroke clipped — paddingTop reserves room for it.
-  gridCell: {
-    flex: 1,
-    paddingTop: Spacing.one,
-    paddingBottom: Spacing.three - Spacing.one,
   },
   // Desktop search pill: takes the middle of the selector row (flex), capped so it reads as a
   // search bar, with a right margin reserving space for the desktop tab-icon nav (app-tabs).
