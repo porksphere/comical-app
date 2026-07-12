@@ -1,9 +1,8 @@
-import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, { interpolateColor, useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -13,9 +12,9 @@ import { filterValueToApi } from '@/components/filters/filter-types';
 import { GridSkeleton } from '@/components/grid-skeleton';
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
 import { PullIndicator } from '@/components/pull-indicator';
+import { SeriesGrid } from '@/components/series-grid';
 import { RetryBlock } from '@/components/retry-block';
 import { SearchField } from '@/components/search-field';
-import { estimatedCardHeight, SeriesCard } from '@/components/series-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxTopLevelWidth, Spacing } from '@/constants/theme';
@@ -24,19 +23,17 @@ import { fetchBrowseScope, queryKeys, type BrowseScope } from '@/data/queries';
 import { subscribeSearchIntent, takeSearchIntent } from '@/data/search-intent';
 import { useSelectedBridge } from '@/data/selected-bridge';
 import { useDataSource, useMockActive } from '@/data/source';
-import type { GridPage, SeriesEntry } from '@/data/types';
+import type { GridPage } from '@/data/types';
 import { friendlyError } from '@/lib/friendly-error';
 import { useBridgeFilters } from '@/hooks/use-bridge-filters';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
-import { GRID_COLUMN_GAP, padWithSpacers, useGridLayout } from '@/hooks/use-grid-layout';
+import { useGridLayout } from '@/hooks/use-grid-layout';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
 import { useRevealDim } from '@/hooks/use-reveal-dim';
 import { useSlidingBar } from '@/hooks/use-sliding-bar';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight } from '@/lib/haptics';
-
-type GridItem = SeriesEntry & { spacer?: boolean };
 
 // Stable, never-fetched key for the results infinite query while it's disabled (no active search).
 const DISABLED_RESULTS_KEY = ['browseGrid', 'disabled', 'search'] as const;
@@ -233,16 +230,12 @@ export default function SearchScreen() {
       ? friendlyError(resultsQuery.error, "Couldn't load results. Try again.")
       : null;
 
-  const { numColumns, sidePad, cardWidth } = useGridLayout();
-  const gridData = useMemo<GridItem[]>(
-    () => padWithSpacers<GridItem>(gridItems, numColumns, (id) => ({ id, title: '', cover: '', spacer: true })),
-    [gridItems, numColumns],
-  );
+  // Column count for the loading skeleton below; the grid itself derives its own layout.
+  const { numColumns } = useGridLayout();
 
-  // Cohort string for SeriesCard recycle-safety (a scope change must reset the recycled card's cover),
-  // and the list key's empty↔populated boundary guards LegendList's web reset-during-render bug.
+  // Identifies the current search. SeriesGrid folds it into the list key and the cards' recycle
+  // cohort, so a new search resets recycled card state rather than flashing the previous result's cover.
   const scopeKey = scope ? `${bridgeId}|${query}|${committedSort?.key ?? ''}|${JSON.stringify(committedFilters ?? {})}` : 'blank';
-  const gridKey = `${numColumns}|${gridData.length > 0 ? 'full' : 'empty'}`;
 
   // ── Sliding filter bar ─────────────────────────────────────────────────────
   // The filter bar sits just below the (fixed) search bar and slides up out of view as the results
@@ -285,7 +278,7 @@ export default function SearchScreen() {
   // Empty-state body shown when the grid has no items: a retry on error, a first-load skeleton, or
   // "no results". The blank landing (no query/filter yet) shows nothing. Folded into the list header
   // to match the Browse/Library grids.
-  const showEmpty = gridData.length === 0 && (bridgesLoaded || bridges.length > 0);
+  const showEmpty = gridItems.length === 0 && (bridgesLoaded || bridges.length > 0);
   const emptyBody = !showEmpty ? null : gridError ? (
     <RetryBlock message={gridError} onRetry={() => resultsQuery.refetch()} />
   ) : !scope ? null : resultsQuery.isLoading ? (
@@ -359,68 +352,25 @@ export default function SearchScreen() {
         </View>
       ) : (
         <View style={styles.listHost}>
-          {/* Wrapping rather than animating AnimatedLegendList's own `style` — LegendList's style prop
-              isn't typed for a Reanimated animated style the way Animated.View's is. Shifts the grid
-              down to open the gap the spinner sits in. */}
           {ready && (
-            <Animated.View style={[styles.list, pull.listStyle, listDimStyle]}>
-            <AnimatedLegendList
-              ref={listRef}
-              key={gridKey}
-              style={styles.list}
+            <SeriesGrid
+              items={gridItems}
+              scopeKey={scopeKey}
+              listRef={listRef}
+              header={emptyBody}
+              // Reserve the filter bar's height so the first row starts below it, plus a little gap.
+              paddingTop={filtersBarH + Spacing.three}
+              paddingBottom={insets.bottom + Spacing.five}
+              bridge={currentBridge?.name ?? undefined}
+              bridgeId={bridgeId}
+              direct={directBridge}
               sharedValues={sharedValues}
-              // Web only: forces scrollEventThrottle:1 so onScroll/onEndReached advance during the
-              // gesture, not only on release. On native it just saturates the JS thread each frame
-              // during a fling — the UI-thread `scrollY` drives the sliding bar regardless. (Same
-              // reasoning as the Browse list.)
-              renderScrollComponent={
-                Platform.OS === 'web' ? (scrollProps) => <Animated.ScrollView {...scrollProps} /> : undefined
-              }
               onScroll={onListScroll}
-              data={gridData}
-              estimatedItemSize={estimatedCardHeight(cardWidth)}
-              // Rough `estimatedItemSize` means measured rows differ from it; LegendList's default
-              // maintain-visible-content-position would retro-correct the offset and cause a
-              // fling bounce/jitter. Turn it off so positions settle once measured. (Same as Browse.)
-              maintainVisibleContentPosition={{ data: false, size: false }}
-              keyExtractor={(item) => String(item.id)}
-              numColumns={numColumns}
-              recycleItems
-              ListHeaderComponent={emptyBody}
-              columnWrapperStyle={numColumns > 1 ? { gap: GRID_COLUMN_GAP } : undefined}
-              contentContainerStyle={{
-                // Reserve the filter bar's height so the first row starts below it, plus a little gap.
-                paddingTop: filtersBarH + Spacing.three,
-                paddingBottom: insets.bottom + Spacing.five,
-                paddingLeft: sidePad,
-                paddingRight: sidePad,
-              }}
-              renderItem={({ item }) =>
-                item.spacer ? (
-                  <View style={styles.gridCell} />
-                ) : (
-                  // Plain View — the re-search dim now rides the list wrapper (listDimStyle above),
-                  // so no Reanimated Animated.View per result cell.
-                  <View style={styles.gridCell}>
-                    <SeriesCard
-                      entry={item}
-                      bridge={currentBridge?.name ?? undefined}
-                      bridgeId={bridgeId}
-                      direct={directBridge}
-                      cohort={scopeKey}
-                    />
-                  </View>
-                )
-              }
-              onEndReachedThreshold={0.6}
               onEndReached={loadMore}
-              showsVerticalScrollIndicator={Platform.OS === 'web'}
-              // Android's edge glow would fight the custom pull; iOS keeps its bounce (that's what
-              // sources the pull there), and a release past the threshold fires via onScrollEndDrag.
-              overScrollMode={Platform.OS === 'android' ? 'never' : undefined}
               onScrollEndDrag={pull.onScrollEndDrag}
+              // The pull-to-refresh content shift and the re-search dim both ride the list wrapper.
+              wrapperStyle={[pull.listStyle, listDimStyle]}
             />
-            </Animated.View>
           )}
           {ready && filterBar}
           {/* Settles just below the filter bar, in the gap the pull opens. */}
