@@ -77,6 +77,9 @@ const FOLLOW_TAU = 0.13; // seconds to close ~63% of the remaining distance
 // to. 1:1 with the panel's own edge sounded principled and felt frantic — the range is only a couple
 // of hundred pixels, so a normal flick crossed all of it instantly.
 const DRAG_GAIN = 0.5;
+// How far into the morph the cover's clip band has fully opened (see coverClipStyle). Early — the band
+// only has a job while the cover is still near the card.
+const CLIP_OPEN_AT = 0.35;
 
 // The routes that show the bottom tab bar (a pushed screen — series, search — covers it). Used to
 // decide whether the bottom of the screen is chrome the cover has to slide under.
@@ -468,22 +471,39 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   //
   // A column that already fits has an empty range, so EVERY drag on it is an overscroll — i.e. it's
   // simply drag-to-dismiss, which is what you'd want there anyway. No special case needed.
-  // The follower. Every frame, close a time-proportional fraction of the gap between where the panel is
-  // and where the finger (or the release's chosen end) wants it. That single line is the whole "it
-  // should lerp behind the scroll, not match it 1:1" — and because it keeps running after the finger
-  // lifts, it doubles as the settle: no separate release animation to tune or keep in sync.
-  useFrameCallback((frame) => {
-    const dt = (frame.timeSincePreviousFrame ?? 16) / 1000;
-    const gap = expandTarget.value - expand.value;
-    if (Math.abs(gap) < 0.0005) {
-      expand.value = expandTarget.value;
-      return;
-    }
-    expand.value += gap * (1 - Math.exp(-dt / FOLLOW_TAU));
-  });
-
   const panStartExpand = useSharedValue(0);
   const overscroll = useSharedValue(0); // px dragged past an end; sign follows the drag direction
+  /**
+   * Where the DISMISS pull wants the morph to be, and whether the follower currently owns `progress`.
+   *
+   * The dismiss drag used to move `progress` directly — the one thing left welded to the finger — so
+   * the cover flew back to the card in a dead straight line while everything else eased. It trails now
+   * too, through the same follower.
+   *
+   * The flag exists because `progress` has two masters: this, and the open/close springs. The follower
+   * must hand it back the instant the finger lifts, or it would fight `withSpring` for it.
+   */
+  const progressTarget = useSharedValue(1);
+  const progressFollows = useSharedValue(false);
+
+  // The follower. Every frame, close a time-proportional fraction of the gap between where a thing IS
+  // and where the finger wants it. That single line is the whole "it should lerp behind the scroll, not
+  // match it 1:1" — and because it keeps running after the finger lifts, it doubles as the settle: no
+  // separate release animation to tune or keep in sync.
+  useFrameCallback((frame) => {
+    const dt = (frame.timeSincePreviousFrame ?? 16) / 1000;
+    const k = 1 - Math.exp(-dt / FOLLOW_TAU);
+
+    const gap = expandTarget.value - expand.value;
+    if (Math.abs(gap) < 0.0005) expand.value = expandTarget.value;
+    else expand.value += gap * k;
+
+    if (progressFollows.value) {
+      const pGap = progressTarget.value - progress.value;
+      if (Math.abs(pGap) < 0.0005) progress.value = progressTarget.value;
+      else progress.value += pGap * k;
+    }
+  });
 
 
   const pan = useMemo(
@@ -495,6 +515,9 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
         .failOffsetX([-16, 16])
         .onStart(() => {
           cancelAnimation(progress);
+          // Take `progress` off the springs and hand it to the follower for the duration of the drag.
+          progressFollows.value = true;
+          progressTarget.value = progress.value;
           // The pan drives the TARGET, never `expand` itself — the follower owns that. Start from where
           // the panel actually IS, not from the target, so grabbing it mid-settle picks it up where you
           // can see it rather than snapping to where it was headed.
@@ -520,7 +543,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
             const over = range > 0 ? ((raw - 1) * range) / DRAG_GAIN : Math.max(0, e.translationY);
             expandTarget.value = 1;
             overscroll.value = over;
-            progress.value = 1 - Math.min(1, over / DISMISS_DRAG);
+            progressTarget.value = 1 - Math.min(1, over / DISMISS_DRAG);
             return;
           }
 
@@ -530,19 +553,21 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
             // rubber-bands: resisted, capped, and eased back on release.
             expandTarget.value = Math.max(-RUBBER_LIMIT, raw * RUBBER_RESIST);
             overscroll.value = 0;
-            progress.value = 1;
+            progressTarget.value = 1;
             return;
           }
 
           expandTarget.value = raw;
           overscroll.value = 0;
-          progress.value = 1;
+          progressTarget.value = 1;
         })
         .onEnd((e) => {
           // Only a DOWNWARD pull dismisses (overscroll is only ever set by that branch above), either
           // by distance or by a flick that's still heading that way.
           const past = overscroll.value > DISMISS_RELEASE_PX;
           const flicked = overscroll.value > 0 && e.velocityY > DISMISS_RELEASE_VELOCITY;
+          // Hand `progress` back to the springs before either branch touches it.
+          progressFollows.value = false;
           if (past || flicked) {
             runOnJS(dismiss)();
             return;
@@ -563,7 +588,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
             expandTarget.value = projected >= 0.5 ? 1 : 0;
           }
         }),
-    [dismiss, dragRange, expand, expandTarget, overscroll, panStartExpand, progress],
+    [dismiss, dragRange, expand, expandTarget, overscroll, panStartExpand, progress, progressFollows, progressTarget],
   );
 
   // Tap the backdrop to dismiss. A GESTURE, not a Pressable: the root pan and a Pressable are two
@@ -615,7 +640,13 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     return {
     transform: [
       { translateX: interpolate(progress.value, [0, 1], [coverFrom.x.value, toX]) },
-      { translateY: interpolate(progress.value, [0, 1], [coverFrom.y.value, toY]) - chromeTop },
+      {
+        // Minus the clip's LIVE origin: the cover is laid out inside the band, and the band now moves
+        // (see coverClipStyle), so a fixed offset here would slide the cover as the band opened.
+        translateY:
+          interpolate(progress.value, [0, 1], [coverFrom.y.value, toY]) -
+          interpolate(progress.value, [0, CLIP_OPEN_AT, 1], [chromeTop, 0, 0]),
+      },
       { scale: interpolate(progress.value, [0, 1], [coverFrom.scale.value, scale]) },
     ],
     shadowOpacity: progress.value * 0.28,
@@ -623,6 +654,18 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   });
   // Counter-scale the radius so the cover's visual corner stays a constant 10px — at BOTH ends now,
   // since the resting cover is no longer at scale 1 but at the panel's scale.
+  // The clip band OPENS as the cover lifts. It exists so the cover emerges from UNDER the bars — which
+  // only matters while it's still down on the card. Left as a permanent boundary it also clipped the
+  // RESTING cover, which the panel can push right up against the top bar once the menu is fully out and
+  // the panel has ridden up to make room. So the band widens to the whole screen over the first part of
+  // the morph: under the chrome where that reads as depth, unclipped once it's a thing sitting on top of
+  // everything. (Raising the cover's z-order can't fix this — z-order is a total order, and the backdrop
+  // has to cover the bars while the cover has to cover the backdrop.)
+  const coverClipStyle = useAnimatedStyle(() => {
+    const top = interpolate(progress.value, [0, CLIP_OPEN_AT, 1], [chromeTop, 0, 0]);
+    const bottom = interpolate(progress.value, [0, CLIP_OPEN_AT, 1], [chromeBottom, winH, winH]);
+    return { top, height: bottom - top };
+  });
   const coverRadiusStyle = useAnimatedStyle(() => {
     const scale = minS.value + expand.value * (maxS.value - minS.value);
     const live = interpolate(progress.value, [0, 1], [coverFrom.scale.value, scale]);
@@ -771,7 +814,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
 
       {/* The cover — morphs out of the card, on top of the (fading-in) panel, clipped to the band
           between the bars so it emerges from under the chrome instead of over it (see "Chrome band"). */}
-      <View pointerEvents="none" style={[styles.coverClip, { top: chromeTop, height: chromeBottom - chromeTop }]}>
+      <Animated.View pointerEvents="none" style={[styles.coverClip, coverClipStyle]}>
         <Animated.View pointerEvents="none" style={[styles.coverLayer, { width: COVER_W, height: coverH }, coverStyle]}>
           <Animated.View style={[styles.coverInner, coverRadiusStyle]}>
             {entry.cover ? (
@@ -779,7 +822,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
             ) : null}
           </Animated.View>
         </Animated.View>
-      </View>
+      </Animated.View>
 
       {/* The actions menu — a frosted (blurred) panel. It is never dragged: its position is DERIVED
           from the panel's live height (see menuStyle), so it tracks the panel's bottom edge as the pan
