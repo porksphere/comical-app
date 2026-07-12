@@ -59,7 +59,8 @@
       ],
       "./plugins/with-kotlin-version.js",
       "./plugins/with-comical-ios-sources.js",
-      "./plugins/with-devclient-variant.js"
+      "./plugins/with-devclient-variant.js",
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true,

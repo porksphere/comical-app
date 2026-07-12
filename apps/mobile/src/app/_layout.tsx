@@ -30,6 +30,7 @@ import { ErrorBoundary } from '@/components/error-boundary';
 import { OverlayProvider } from '@/components/overlay/overlay';
 import { SeriesCardContextMenuHost } from '@/components/series-card-context-menu';
 import { startEmbeddedRuntime } from '@/data/embedded/startup';
+import { PROFILING_ENABLED } from '@/lib/profiling';
 import { persister, PERSIST_BUSTER, PERSIST_MAX_AGE_MS, queryClient, shouldDehydrateQuery } from '@/data/query-client';
 import { ThemeSchemeProvider, useActiveColorScheme } from '@/hooks/use-theme';
 /* eslint-enable import/first */
@@ -38,12 +39,12 @@ import { ThemeSchemeProvider, useActiveColorScheme } from '@/hooks/use-theme';
 // (native only; a no-op on web and until the native module is linked — the app stays remote).
 startEmbeddedRuntime();
 
-// DevProfiler is DEV-only tooling; require it behind `__DEV__` so its module (and the
-// react-native-release-profiler dependency it pulls in) is stripped from production
-// bundles. It renders nothing unless the Settings → Developer "JS profiler button"
-// toggle is on.
+// DevProfiler is profiling-only tooling; require it behind `PROFILING_ENABLED` (dev, or a CI
+// profiling-release build) so its module — and the react-native-release-profiler dependency it
+// pulls in — is dead-code-stripped from the real production bundle. It renders nothing unless the
+// Settings → Developer "JS profiler button" toggle is on.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const DevProfiler = __DEV__ ? require('@/components/dev-profiler').DevProfiler : null;
+const DevProfiler = PROFILING_ENABLED ? require('@/components/dev-profiler').DevProfiler : null;
 
 function RootLayout() {
   return (

@@ -9,12 +9,18 @@
 // drops it from the native build. So: linked in the dev-client build, excluded
 // everywhere else. (Local `expo run:ios` without the flag also excludes it,
 // which is fine — profiling is done via the CI dev-client build.)
+// Linked in the dev-client shell (COMICAL_DEVCLIENT=1) AND in the special "profiling release" build
+// (COMICAL_PROFILING=1) — the latter is a Release binary that carries the profiler so we can capture
+// a Hermes trace with the dev-mode instrumentation gone. Excluded from the public ios-latest /
+// production app, where neither flag is set.
 const devClient = process.env.COMICAL_DEVCLIENT === '1';
+const profiling = process.env.COMICAL_PROFILING === '1';
 
 module.exports = {
-  dependencies: devClient
-    ? {}
-    : {
-        'react-native-release-profiler': { platforms: { ios: null, android: null } },
-      },
+  dependencies:
+    devClient || profiling
+      ? {}
+      : {
+          'react-native-release-profiler': { platforms: { ios: null, android: null } },
+        },
 };

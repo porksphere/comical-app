@@ -28,6 +28,16 @@ on:
         type: boolean
         default: false
         required: false
+      profiling:
+        # When true, links the react-native-release-profiler native pod
+        # (COMICAL_PROFILING=1 → react-native.config.js) AND bakes
+        # EXPO_PUBLIC_COMICAL_PROFILING=1 into the JS bundle so PROFILING_ENABLED
+        # is true — i.e. a normal Release binary that carries the on-device
+        # profiler. Only build-ios-profiling.yml passes this.
+        description: Build a Release binary that includes the on-device Hermes profiler.
+        type: boolean
+        default: false
+        required: false
     secrets:
       SENTRY_AUTH_TOKEN:
         # Optional: without it, the Sentry build-phase script below no-ops
@@ -63,6 +73,11 @@ jobs:
       # react-native-release-profiler native module) see it. Empty for every
       # non-dev-client build, so that module never ships in ios-latest/production.
       COMICAL_DEVCLIENT: ${{ inputs.dev_client && '1' || '' }}
+      # Profiling-release build: link the profiler pod (react-native.config.js) AND bake the JS flag
+      # (PROFILING_ENABLED, src/lib/profiling.ts) so the profiler is present in an otherwise-normal
+      # Release binary. Empty for every other build, so it never ships in ios-latest/production.
+      COMICAL_PROFILING: ${{ inputs.profiling && '1' || '' }}
+      EXPO_PUBLIC_COMICAL_PROFILING: ${{ inputs.profiling && '1' || '' }}
     steps:
       - uses: actions/checkout@v4
         with:
