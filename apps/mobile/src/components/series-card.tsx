@@ -431,71 +431,69 @@ export function SeriesCard({
   // The card's cover + trailing content, parameterized by the shrink-illusion API. Rendered plainly
   // (no-op API) when Lightweight cards is on, or wrapped in <CoverShrink> (which supplies real
   // animated styles) when off — so the shrink hooks are only paid for when actually animating.
-  const renderCardBody = (shrink: ShrinkApi) => (
-    <>
-      <View style={[styles.coverBox, { aspectRatio: coverAspect }]} onLayout={shrink.onCoverLayout}>
-        <View style={styles.coverClip}>
-          {/* The picture layer: scaled by `pictureStyle` to fake the shrink illusion. Badges/rank/
-              ring below are siblings, NOT inside this layer, so they never get stretched. */}
-          <Animated.View
-            style={
-              shrink.pictureStyle
-                ? [StyleSheet.absoluteFill, styles.picture, shrink.pictureStyle]
-                : [StyleSheet.absoluteFill, styles.picture]
-            }>
-            {delayPassed && (
-              <Image
-                source={{ uri: entry.cover }}
-                style={StyleSheet.absoluteFill}
-                contentFit="cover"
-                cachePolicy="memory-disk"
-                transition={lightCards ? 0 : 90}
-                // Recycled lists reuse this <Image> instance for a different entry; without a
-                // recyclingKey expo-image keeps painting the PREVIOUS cover until the new one decodes.
-                recyclingKey={entry.id}
-                onLoad={(e) => {
-                  resolvedCoverIds.add(entry.id);
-                  const src = e.source;
-                  if (src?.width && src?.height) {
-                    const nextAspect = clampThumbAspect(src.width / src.height);
-                    resolvedCoverAspects.set(entry.id, nextAspect);
-                    lastResolvedCoverAspect = nextAspect;
-                    // Smooth the aspect settle when the shape changes; no-op when Lightweight is on.
-                    shrink.runShrink?.(coverAspect, nextAspect);
-                    setCoverAspect(nextAspect);
-                  }
-                  setLoaded(true);
-                  setMaskStale(false);
-                }}
-              />
-            )}
-            {!coverReady && maskStale && (
-              <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.backgroundElement }]} />
-            )}
-            {!coverReady && <Skeleton style={StyleSheet.absoluteFill} />}
-          </Animated.View>
-          {entry.badges?.map((b, i) => <CardBadge key={i} badge={b} />)}
-          {entry.unread != null && <UnreadBadge count={entry.unread} />}
-          {rank != null && (
-            <View style={styles.rank}>
-              <ThemedText style={styles.rankText}>{rank}</ThemedText>
-            </View>
-          )}
-          {/* Native held cue: a subtle scrim over the cover while pressed (web uses the ring below). */}
-          {active && !isWeb && <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.heldScrim]} />}
-        </View>
-        {/* Highlight ring hugs the cover edge — web-only hover/active highlight. */}
-        {active && isWeb && <View style={[styles.ring, { pointerEvents: 'none' }]} />}
-      </View>
+  const renderCardBody = (shrink: ShrinkApi) => {
+    // The picture layer (image + skeleton/mask). Only the shrink illusion needs it wrapped in a
+    // scalable Animated.View; the lightweight (non-animated) path renders these straight into the
+    // clip box, dropping both a host view AND a Reanimated wrapper per card in the common case.
+    const pictureInner = (
+      <>
+        {delayPassed && (
+          <Image
+            source={{ uri: entry.cover }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            transition={lightCards ? 0 : 90}
+            // Recycled lists reuse this <Image> instance for a different entry; without a
+            // recyclingKey expo-image keeps painting the PREVIOUS cover until the new one decodes.
+            recyclingKey={entry.id}
+            onLoad={(e) => {
+              resolvedCoverIds.add(entry.id);
+              const src = e.source;
+              if (src?.width && src?.height) {
+                const nextAspect = clampThumbAspect(src.width / src.height);
+                resolvedCoverAspects.set(entry.id, nextAspect);
+                lastResolvedCoverAspect = nextAspect;
+                // Smooth the aspect settle when the shape changes; no-op when Lightweight is on.
+                shrink.runShrink?.(coverAspect, nextAspect);
+                // Only relayout when the real shape differs meaningfully from the seeded guess.
+                // Covers cluster by shape, so the rolling seed is usually within epsilon — skipping
+                // this avoids a Fabric commit per cover during scroll (the dominant completeRoot cost).
+                if (Math.abs(nextAspect - coverAspect) > 0.02) setCoverAspect(nextAspect);
+              }
+              // Light path: the clip's own grey backing IS the placeholder, and expo-image paints the
+              // decoded cover over it natively — so no `loaded` state flip (hence no per-cover commit)
+              // is needed just to hide a skeleton. Non-light shows the pulsing Skeleton, which must be
+              // hidden via state. Either way, an active stale-swap mask (rare) still needs clearing.
+              if (!lightCards) setLoaded(true);
+              if (maskStale) setMaskStale(false);
+            }}
+          />
+        )}
+        {!coverReady && maskStale && (
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.backgroundElement }]} />
+        )}
+        {/* Non-light shows a pulsing skeleton while loading; the light path relies on the clip's grey
+            backing (above) so a loaded cover reveals natively with no commit. */}
+        {!coverReady && !lightCards && <Skeleton style={StyleSheet.absoluteFill} />}
+      </>
+    );
 
-      <Animated.View style={shrink.trailingStyle ? [styles.trailingGroup, shrink.trailingStyle] : styles.trailingGroup}>
-        <View style={styles.titleWrap}>
-          <ThemedText type="small" numberOfLines={MAX_TITLE_LINES} style={[styles.title, titleSize]}>
-            {entry.title}
-          </ThemedText>
-          {/* Off-screen full-height copy measured to detect clamping — WEB ONLY (only drives the hover
-              peek popover; on native it was a wasted per-card text layout + setTruncated re-render). */}
-          {isWeb && (
+    // Title + sub + bottom filler. On native the title needs no wrapper — the relative-positioned
+    // `titleWrap` exists only for web's measured-clamp copy + in-card peek popover (both web-only),
+    // so bare-rendering it drops another host view per card on the platform that scrolls these grids.
+    const titleText = (
+      <ThemedText type="small" numberOfLines={MAX_TITLE_LINES} style={[styles.title, titleSize]}>
+        {entry.title}
+      </ThemedText>
+    );
+    const trailingInner = (
+      <>
+        {isWeb ? (
+          <View style={styles.titleWrap}>
+            {titleText}
+            {/* Off-screen full-height copy measured to detect clamping — WEB ONLY (only drives the
+                hover peek popover; on native it was a wasted per-card text layout + re-render). */}
             <ThemedText
               type="small"
               style={[styles.title, titleSize, styles.measure]}
@@ -504,10 +502,12 @@ export function SeriesCard({
               }>
               {entry.title}
             </ThemedText>
-          )}
-          {/* Grid-only in-card popover (rails render it at the rail level). */}
-          {!onPeekChange && showPeek && <TitlePeek title={entry.title} />}
-        </View>
+            {/* Grid-only in-card popover (rails render it at the rail level). */}
+            {!onPeekChange && showPeek && <TitlePeek title={entry.title} />}
+          </View>
+        ) : (
+          titleText
+        )}
         {/* Secondary line (author, latest chapter, …) — bridge-supplied, absent for many. */}
         {entry.sub ? (
           <ThemedText
@@ -523,9 +523,47 @@ export function SeriesCard({
         ) : null}
         {/* Bottom filler — reserves the height a shorter-than-2:3 cover leaves unused (see fillFactor). */}
         {fillFactor > 0.001 && <View style={[styles.coverFill, { aspectRatio: 1 / fillFactor }]} />}
-      </Animated.View>
-    </>
-  );
+      </>
+    );
+
+    return (
+      <>
+        <View style={[styles.coverBox, { aspectRatio: coverAspect }]} onLayout={shrink.onCoverLayout}>
+          <View style={styles.coverClip}>
+            {/* Picture layer scaled by `pictureStyle` to fake the shrink illusion; badges/rank/ring
+                are siblings so they never get stretched. Lightweight path (no scaling) skips the
+                wrapper and renders the image/skeleton straight into the clip. */}
+            {shrink.pictureStyle ? (
+              <Animated.View style={[StyleSheet.absoluteFill, styles.picture, shrink.pictureStyle]}>
+                {pictureInner}
+              </Animated.View>
+            ) : (
+              pictureInner
+            )}
+            {entry.badges?.map((b, i) => <CardBadge key={i} badge={b} />)}
+            {entry.unread != null && <UnreadBadge count={entry.unread} />}
+            {rank != null && (
+              <View style={styles.rank}>
+                <ThemedText style={styles.rankText}>{rank}</ThemedText>
+              </View>
+            )}
+            {/* Native held cue: a subtle scrim over the cover while pressed (web uses the ring below). */}
+            {active && !isWeb && <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.heldScrim]} />}
+          </View>
+          {/* Highlight ring hugs the cover edge — web-only hover/active highlight. */}
+          {active && isWeb && <View style={[styles.ring, { pointerEvents: 'none' }]} />}
+        </View>
+
+        {/* Trailing group is an Animated.View only when the shrink illusion drives its translateY;
+            otherwise a plain View, so lightweight cards carry no Reanimated wrapper here either. */}
+        {shrink.trailingStyle ? (
+          <Animated.View style={[styles.trailingGroup, shrink.trailingStyle]}>{trailingInner}</Animated.View>
+        ) : (
+          <View style={styles.trailingGroup}>{trailingInner}</View>
+        )}
+      </>
+    );
+  };
 
   return (
     <SeriesCardMenu
