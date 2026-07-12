@@ -87,9 +87,9 @@ const MENU_ROWS = 3;
 const DEBUG_EXTRA_MENU_ROWS = __DEV__ ? 8 : 0;
 
 // ── Pan / resize ─────────────────────────────────────────────────────────────
-// The panel never shrinks below this, however tall the menu gets — a preview with no preview in it is
-// worse than a menu you have to scroll to.
-const MIN_PANEL_H = 120;
+// The panel never scales below this, however long the menu gets — a preview shrunk to a postage stamp
+// is worse than a menu you have to swipe for.
+const MIN_PANEL_SCALE = 0.45;
 // Drag past either end of the panel's resize range and the popup starts CLOSING with the finger: this
 // is how far you'd have to pull to take it all the way back onto the card (progress 1 → 0). It reuses
 // the open morph, so a drag-dismiss IS the shared-element animation running backwards under your
@@ -258,40 +258,54 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
 
   // ── The resize range ──────────────────────────────────────────────────────
   // The panel and the menu are one column, and it doesn't always fit: a rich preview plus a long menu
-  // easily overruns the band between the bars. Rather than shrink the preview to nothing (or let the
-  // menu run off the bottom where it can't be reached), the panel gets a RANGE of heights and the pan
-  // gesture picks a point in it:
+  // easily overruns the band between the bars, and the menu is what loses — it runs off the bottom
+  // where it can't be reached. So the panel is SCALED, and the pan picks a point in the scale range:
   //
-  //   expand 0  →  panel gives up exactly enough height for the whole menu to sit below it
-  //   expand 1  →  panel takes everything it can (its natural height, capped by the band); the menu
-  //                is pushed below the fold, where a downward swipe brings it back
+  //   expand 1 (the default) → the panel is as large as it can be: full size, or as much of it as the
+  //                            band allows. The menu may be below the fold; swipe to bring it up.
+  //   expand 0               → the panel is scaled down just enough for the whole menu to fit below it.
   //
-  // If the column already fits, the range is empty and the pan has nothing to resize — every drag is
-  // then an overscroll, i.e. a drag-to-dismiss. Which is the behaviour you'd want anyway.
+  // The whole panel scales — cover, title, tags, rail — rather than the panel keeping its size and
+  // clipping its contents. It reads as the preview zooming out to make room, which is the point: you
+  // are still looking at the same thing, just smaller, rather than at a cropped piece of it.
+  //
+  // If the column already fits at full size, the range is empty and the pan has nothing to resize —
+  // every drag is then an overscroll, i.e. a drag-to-dismiss. Which is the behaviour you'd want anyway.
   const available = bottomLimit - topLimit;
-  const maxPanelH = Math.min(naturalPanelH, available);
-  const fitPanelH = available - GAP - menuH; // panel height that leaves the menu fully visible
-  const collapsedPanelH = Math.max(MIN_PANEL_H, Math.min(maxPanelH, fitPanelH));
-  const expandRange = Math.max(0, maxPanelH - collapsedPanelH);
-  const expandable = expandRange > 1;
+  // Can't be bigger than 1:1, and can't be taller than the band.
+  const maxScale = Math.min(1, available / naturalPanelH);
+  // The scale at which the menu fits underneath. Floored, so a very long menu can't shrink the preview
+  // into a postage stamp — past that point the menu simply overflows and you swipe for it.
+  const fitScale = (available - GAP - menuH) / naturalPanelH;
+  const minScale = clamp(fitScale, MIN_PANEL_SCALE, maxScale);
+  const scaleRange = Math.max(0, maxScale - minScale);
+  // Drag distance that spans the whole range — i.e. how far the panel's bottom edge (and the menu with
+  // it) travels between the two ends. Makes the drag 1:1 with what it's moving.
+  const dragRange = naturalPanelH * scaleRange;
+  const expandable = dragRange > 1;
 
-  // Placement: a column that fits keeps sitting near the card it came from; one that doesn't is pinned
-  // to the top of the band, so its growth has somewhere to go.
-  const groupH = collapsedPanelH + GAP + menuH;
+  // Placement: a column that fits keeps sitting near the card it came from; one that has to scale is
+  // pinned to the top of the band, so it grows downward into the space.
+  const groupH = naturalPanelH * minScale + GAP + menuH;
   const panelTop = expandable ? topLimit : clamp(rect.y, topLimit, bottomLimit - groupH);
 
   // Shared-element FLIP for the COVER only: it travels from the pressed card's cover (scaled to the
-  // card's width) to its resting SLOT — a top corner of the panel's top row. Same width/height at rest
-  // (both use coverAspect), and the radius is counter-scaled so the visual corner stays a constant 10px.
+  // card's width) to its resting SLOT — a top corner of the panel's top row. The radius is
+  // counter-scaled so the visual corner stays a constant 10px however scaled the cover is.
   //
   // The slot goes on whichever side (left/right) is nearer the pressed card, so the morph travels the
   // shortest distance — a card near the right edge lifts into a right-anchored cover instead of flying
   // across the panel.
-  const leftSlotX = panelLeft + PANEL_PAD;
-  const rightSlotX = panelLeft + panelW - PANEL_PAD - COVER_W;
-  const coverOnRight = Math.abs(rect.x - rightSlotX) < Math.abs(rect.x - leftSlotX);
-  const coverSlotX = coverOnRight ? rightSlotX : leftSlotX;
-  const coverSlotY = panelTop + PANEL_PAD;
+  //
+  // The slot is now given in the PANEL'S OWN coordinates, not the screen's: the panel scales (about its
+  // top-left), so the slot's real position is `panelTop/Left + local * scale` and its real size is
+  // `COVER_W * scale`. The flying cover has to land on that — a cover that ignored the panel's scale
+  // would come to rest floating over a smaller preview.
+  const leftSlotLocalX = PANEL_PAD;
+  const rightSlotLocalX = panelW - PANEL_PAD - COVER_W;
+  const coverOnRight = Math.abs(rect.x - (panelLeft + rightSlotLocalX)) < Math.abs(rect.x - (panelLeft + leftSlotLocalX));
+  const coverSlotLocalX = coverOnRight ? rightSlotLocalX : leftSlotLocalX;
+  const coverSlotLocalY = PANEL_PAD;
   const fromScale = rect.width / COVER_W;
 
   // ── Live geometry ─────────────────────────────────────────────────────────
@@ -309,15 +323,21 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // written straight (same gate as `resize`), so opening is still a clean single motion.
   const panelPos = { x: useSharedValue(panelLeft), y: useSharedValue(panelTop) };
   const menuPos = { x: useSharedValue(menuLeft) };
-  const coverTo = { x: useSharedValue(coverSlotX), y: useSharedValue(coverSlotY) };
+  // No `coverTo` pair: the cover's resting slot isn't a fixed point any more, it's wherever the panel's
+  // top corner currently is AT the panel's current scale — so it's derived in the worklet instead.
   const coverFrom = { x: useSharedValue(rect.x), y: useSharedValue(rect.y), scale: useSharedValue(fromScale) };
-  // The panel's height range, as shared values so the pan can interpolate between them on the UI
-  // thread — and so a LATE content change springs the panel (and the menu tracking it) instead of
-  // resizing it out from under the finger.
-  const collapsedH = useSharedValue(collapsedPanelH);
-  const maxH = useSharedValue(maxPanelH);
-  /** Where in the range we are: 0 = menu fully visible, 1 = panel at its full height. Driven by pan. */
-  const expand = useSharedValue(0);
+  // The panel's scale range + its natural height, as shared values so the pan can interpolate between
+  // them on the UI thread — and so a LATE content change springs the panel (and the menu tracking it)
+  // instead of resizing it out from under the finger.
+  const minS = useSharedValue(minScale);
+  const maxS = useSharedValue(maxScale);
+  const naturalH = useSharedValue(naturalPanelH);
+  /**
+   * Where in the range we are: 1 = the panel as large as it can be, 0 = scaled down far enough for the
+   * whole menu to sit below it. Starts at 1 — the popup opens showing you as much of the preview as it
+   * can, because that's what you long-pressed for; the menu is one swipe away.
+   */
+  const expand = useSharedValue(1);
 
   // Compared against the last TARGET written, not `sv.value` — that reads the animating value, so a
   // re-render mid-spring would look like a change and restart the spring (killing its momentum).
@@ -332,10 +352,9 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     put('panelX', panelPos.x, panelLeft);
     put('panelY', panelPos.y, panelTop);
     put('menuX', menuPos.x, menuLeft);
-    put('collapsedH', collapsedH, collapsedPanelH);
-    put('maxH', maxH, maxPanelH);
-    put('coverToX', coverTo.x, coverSlotX);
-    put('coverToY', coverTo.y, coverSlotY);
+    put('minScale', minS, minScale);
+    put('maxScale', maxS, maxScale);
+    put('naturalH', naturalH, naturalPanelH);
     put('coverFromX', coverFrom.x, rect.x);
     put('coverFromY', coverFrom.y, rect.y);
     put('coverFromScale', coverFrom.scale, fromScale);
@@ -349,9 +368,10 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // ── The pan ───────────────────────────────────────────────────────────────
   // One vertical drag, anywhere on the screen, doing two things depending on where it is in the range:
   //
-  //   inside the range   → RESIZE the panel (drag up to grow it, down to shrink it). The menu isn't
-  //                        dragged; it just tracks the panel's bottom edge, so it slides into view as
-  //                        the panel gives up height and slides out as the panel takes it back.
+  //   inside the range   → SCALE the panel. The column follows the finger like a scroll: drag UP and
+  //                        the panel scales down so the menu below rises into view; drag DOWN and it
+  //                        scales back up over the menu. The menu is never dragged — it just tracks the
+  //                        panel's (scaled) bottom edge.
   //   past either end    → DISMISS. The overscroll feeds `progress` directly, so the popup morphs back
   //                        toward the card under your thumb — the open animation, played backwards by
   //                        your finger rather than by a spring. Let go past a threshold (or with a
@@ -377,14 +397,16 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
           overscroll.value = 0;
         })
         .onUpdate((e) => {
-          // Drag UP grows the panel, so expand moves opposite to translationY.
-          const range = expandRange;
-          const raw = range > 0 ? panStartExpand.value + -e.translationY / range : panStartExpand.value;
+          // The column moves WITH the finger, like a scroll: drag UP and the panel shrinks so the menu
+          // below rises into view; drag DOWN and the panel grows back over it. (The first cut had this
+          // backwards — it grew on an upward drag, which reads as the content fighting your thumb.)
+          const range = dragRange;
+          const raw = range > 0 ? panStartExpand.value + e.translationY / range : panStartExpand.value;
           const clamped = Math.min(1, Math.max(0, raw));
           expand.value = clamped;
           // Whatever the drag couldn't spend on resizing is overscroll — including ALL of it when
           // there's no range to spend it on.
-          const over = range > 0 ? (raw - clamped) * range : -e.translationY;
+          const over = range > 0 ? (raw - clamped) * range : e.translationY;
           overscroll.value = over;
           progress.value = 1 - Math.min(1, Math.abs(over) / DISMISS_DRAG);
         })
@@ -403,15 +425,15 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
           // decelerating into its range like a scroll would.
           progress.value = withSpring(1, MORPH_SPRING);
           overscroll.value = 0;
-          if (expandRange > 0) {
+          if (dragRange > 0) {
             expand.value = withDecay({
-              velocity: -e.velocityY / expandRange,
+              velocity: e.velocityY / dragRange,
               clamp: [0, 1],
               deceleration: 0.994,
             });
           }
         }),
-    [dismiss, expand, expandRange, overscroll, panStartExpand, progress],
+    [dismiss, dragRange, expand, overscroll, panStartExpand, progress],
   );
 
   // Tap the backdrop to dismiss. A GESTURE, not a Pressable: the root pan and a Pressable are two
@@ -440,50 +462,57 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const backdropTintStyle = useAnimatedStyle(() => ({
     opacity: interpolate(progress.value, [0, 0.2, 1], [0, 0, BACKDROP_TINT_OPACITY]),
   }));
-  // The panel background + content just FADE in at their final position (no movement of their own —
-  // the transform only carries the panel's live position).
-  const panelStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(progress.value, [0, 0.4, 1], [0, 0, 1]),
-    transform: [{ translateX: panelPos.x.value }, { translateY: panelPos.y.value }],
-  }));
-  // The panel's HEIGHT is now driven, not measured: it's a point in the resize range (see `expand`).
-  // Its content is laid out at natural height inside and simply clipped by `overflow: hidden`, so
-  // growing the panel reveals more of the preview rather than reflowing it — no relayout per frame.
-  const panelSizeStyle = useAnimatedStyle(() => ({
-    height: collapsedH.value + expand.value * (maxH.value - collapsedH.value),
-  }));
+  // The panel fades in at its position, and SCALES about its top-left corner — the whole preview,
+  // cover and text and rail together, zooming out to make room for the menu rather than being cropped.
+  // Scaling is transform-only, so resizing costs no layout at all.
+  const panelStyle = useAnimatedStyle(() => {
+    const scale = minS.value + expand.value * (maxS.value - minS.value);
+    return {
+      opacity: interpolate(progress.value, [0, 0.4, 1], [0, 0, 1]),
+      transform: [{ translateX: panelPos.x.value }, { translateY: panelPos.y.value }, { scale }],
+    };
+  });
   // The cover morphs from the card; stays opaque (the source card is hidden behind it). Both ends of
   // the FLIP are live, so a corrected card rect or a shifted slot bends the path instead of cutting it.
   // Y is offset by the clip band's origin, since the cover is laid out inside it (see `coverClip`).
-  const coverStyle = useAnimatedStyle(() => ({
+  const coverStyle = useAnimatedStyle(() => {
+    // The slot, in screen coords, at the panel's live scale (the panel scales about its own top-left).
+    const scale = minS.value + expand.value * (maxS.value - minS.value);
+    const toX = panelPos.x.value + coverSlotLocalX * scale;
+    const toY = panelPos.y.value + coverSlotLocalY * scale;
+    return {
     transform: [
-      { translateX: interpolate(progress.value, [0, 1], [coverFrom.x.value, coverTo.x.value]) },
-      { translateY: interpolate(progress.value, [0, 1], [coverFrom.y.value, coverTo.y.value]) - chromeTop },
-      { scale: interpolate(progress.value, [0, 1], [coverFrom.scale.value, 1]) },
+      { translateX: interpolate(progress.value, [0, 1], [coverFrom.x.value, toX]) },
+      { translateY: interpolate(progress.value, [0, 1], [coverFrom.y.value, toY]) - chromeTop },
+      { scale: interpolate(progress.value, [0, 1], [coverFrom.scale.value, scale]) },
     ],
     shadowOpacity: progress.value * 0.28,
-  }));
-  const coverRadiusStyle = useAnimatedStyle(() => {
-    const s = coverFrom.scale.value;
-    return { borderRadius: 10 / (s + (1 - s) * progress.value) };
+    };
   });
-  // The menu isn't dragged — it TRACKS the panel's bottom edge. Its position is derived from the same
-  // range the panel's height is, so resizing the panel slides the menu in lockstep with no second
-  // animation to keep in sync (that's the whole trick: one value, two consumers).
-  const menuStyle = useAnimatedStyle(() => ({
-    opacity: progress.value,
-    transform: [
-      { translateX: menuPos.x.value },
-      {
-        translateY:
-          panelPos.y.value +
-          (collapsedH.value + expand.value * (maxH.value - collapsedH.value)) +
-          GAP +
-          interpolate(progress.value, [0, 1], [-10, 0]),
-      },
-      { scale: interpolate(progress.value, [0, 1], [0.9, 1]) },
-    ],
-  }));
+  // Counter-scale the radius so the cover's visual corner stays a constant 10px — at BOTH ends now,
+  // since the resting cover is no longer at scale 1 but at the panel's scale.
+  const coverRadiusStyle = useAnimatedStyle(() => {
+    const scale = minS.value + expand.value * (maxS.value - minS.value);
+    const live = interpolate(progress.value, [0, 1], [coverFrom.scale.value, scale]);
+    return { borderRadius: 10 / Math.max(0.01, live) };
+  });
+  // The menu isn't dragged and isn't scaled — it TRACKS the panel's scaled bottom edge. Its position
+  // is derived from the same value the panel's scale is, so resizing slides the menu in lockstep with
+  // no second animation to keep in sync (that's the whole trick: one value, two consumers).
+  const menuStyle = useAnimatedStyle(() => {
+    const scale = minS.value + expand.value * (maxS.value - minS.value);
+    return {
+      opacity: progress.value,
+      transform: [
+        { translateX: menuPos.x.value },
+        {
+          translateY:
+            panelPos.y.value + naturalH.value * scale + GAP + interpolate(progress.value, [0, 1], [-10, 0]),
+        },
+        { scale: interpolate(progress.value, [0, 1], [0.9, 1]) },
+      ],
+    };
+  });
 
   const metaLine = buildMetaLine(detail.data?.meta, detail.data?.chapterCount, direct);
 
@@ -547,10 +576,10 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       <Animated.View
         pointerEvents="box-none"
         style={[styles.panelWrap, { width: panelW }, panelStyle]}>
-        <Animated.View style={[styles.panel, { backgroundColor: theme.backgroundPanel }, panelSizeStyle]}>
-          {/* The content lays out at its NATURAL height and is clipped by the panel — that's what lets
-              the panel's height be dragged without reflowing anything. Measured here (not on the panel,
-              whose height we drive) so the resize range knows how tall the preview actually wants to be. */}
+        <Animated.View style={[styles.panel, { backgroundColor: theme.backgroundPanel }]}>
+          {/* Measured so the scale range knows how tall the preview actually wants to be — the panel is
+              never squeezed, only SCALED, so this natural height is what the whole range is derived from
+              (and what the menu's tracked position is computed against). */}
           <View style={styles.panelContent} onLayout={(e) => setContentH(e.nativeEvent.layout.height)}>
           <View style={[styles.topRow, coverOnRight && styles.topRowReverse]}>
             <View style={[styles.coverSlot, { width: COVER_W, height: coverH }]} />
@@ -829,6 +858,10 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     top: 0,
+    // Scale about the TOP-LEFT: the panel is pinned there, grows/shrinks downward and rightward from
+    // it, and the cover's resting slot is computed in the same frame of reference (panelTop/Left +
+    // local * scale). A centre origin would drift both.
+    transformOrigin: '0% 0%',
     borderRadius: 16,
     shadowColor: '#000000',
     shadowOpacity: 0.22,
@@ -837,8 +870,8 @@ const styles = StyleSheet.create({
     elevation: 12,
   },
   panelContent: {
-    // The preview at its natural height, inside a panel whose height is DRAGGED (see panelSizeStyle).
-    // The panel clips it, so growing the panel reveals more of this rather than reflowing it.
+    // The preview at its natural size. The panel is SCALED as a whole (see panelStyle), never
+    // squeezed, so this never reflows — the resize costs no layout at all.
     gap: Spacing.three,
   },
   panel: {
