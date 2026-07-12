@@ -35,7 +35,7 @@ import { useSelectedBridge } from '@/data/selected-bridge';
 import { isRailLayout, useDataSource, useMockActive } from '@/data/source';
 import type { BridgeList, GridPage, HomeGridSection, SeriesEntry } from '@/data/types';
 import { friendlyError } from '@/lib/friendly-error';
-import { useGridLayout } from '@/hooks/use-grid-layout';
+import { GRID_COLUMN_GAP, padWithSpacers, useGridLayout } from '@/hooks/use-grid-layout';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
 import { useSlidingBar } from '@/hooks/use-sliding-bar';
@@ -43,12 +43,6 @@ import { useNativePullToRefresh } from '@/hooks/use-native-pull-to-refresh';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
 import { useTouchPullToRefresh } from '@/hooks/use-touch-pull-to-refresh';
-
-// The reference's mobile grid uses a tighter inter-card gap than its row gap
-// (`.grid { gap: 1rem 0.6rem }`, i.e. ~9.6px columns vs 16px rows) — Spacing.two
-// (8px) is the closest token to that column gap. Shared so the main grid and
-// HomeGridBlock's non-terminal sections can't drift apart from each other.
-const GRID_COLUMN_GAP = Spacing.two;
 
 // Minimum time pull-to-refresh's spinner stays visible once triggered — see the
 // `refreshStartedAtRef` comment below.
@@ -518,17 +512,10 @@ export default function BrowseScreen() {
   // Responsive grid geometry (column count, centering pad, card size) — shared with the Search grid.
   const { numColumns, sidePad, railViewport, cardWidth } = useGridLayout();
 
-  const gridData = useMemo<GridItem[]>(() => {
-    const remainder = gridItems.length % numColumns;
-    if (remainder === 0) return gridItems;
-    const spacers: GridItem[] = Array.from({ length: numColumns - remainder }, (_, i) => ({
-      id: `spacer-${i}`,
-      title: '',
-      cover: '',
-      spacer: true,
-    }));
-    return [...gridItems, ...spacers];
-  }, [gridItems, numColumns]);
+  const gridData = useMemo<GridItem[]>(
+    () => padWithSpacers<GridItem>(gridItems, numColumns, (id) => ({ id, title: '', cover: '', spacer: true })),
+    [gridItems, numColumns],
+  );
 
   // A scope switch no longer remounts the list: keepPreviousData keeps the grid populated across
   // switches (see the grid queries above), so the filter bar in the header stays mounted — no flash.
