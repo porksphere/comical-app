@@ -388,3 +388,29 @@ off-screen rails unmount (the Netflix-home pattern).
 
 **Decision gate:** first confirm a composed-home *enter/mount* actually lags at a realistic rail
 count. Skip if homes are only ~3–5 rails.
+
+## Perf: release-jank investigation plan (A–D)
+
+A **release** build was confirmed janky (2026-07) — so this is real, not dev-mode overhead. All the
+dev-profile wins (`8efaf7f`→`7f83bbb`) shipped; remaining plan, in order:
+
+- **A. Get a release profile (DO FIRST).** `react-native-release-profiler` works in release. Link
+  its pod into a release build, expose start/stop behind the Settings toggle instead of `__DEV__`,
+  and — release has no Metro to receive the upload — have `stopProfiling(true)` save the trace to
+  device Files and share it out (OS share sheet). One capture of the janky moment ranks B/C/D:
+  Fabric commit vs image decode vs bridge marshaling. **In progress.**
+- **B. If it's the embedded bridge/fetch.** Scraping runs off-thread in the native engine
+  (JSC/QuickJS), BUT the `@comical/host-server` router, the cross-engine proxy marshaling (JSON in/out),
+  and result processing (`JSON.parse` + React-Query normalize/dehydrate) all run **on the Hermes JS
+  thread**. So a big payload landing stalls the render thread. Manifests at **fetch boundaries**
+  (loadMore mid-scroll, screen open, bridge/page switch), NOT pure scroll. Precedent: the ~400ms
+  dehydrate stall `shouldDehydrateQuery` fixed. Fixes: defer result-processing via
+  `InteractionManager.runAfterInteractions`; shrink payloads / defer heavy fields (tags, description)
+  to the detail fetch; smaller pages; move marshaling `JSON.parse` off-thread if the native module allows.
+- **C. If it's rendering (Fabric persistent commit).** Tune LegendList `drawDistance` down (smaller
+  render window = fewer rows committed per step); virtualize composed-home rails (only if *enter*-lag —
+  see section above); keep trimming the card's host-view count.
+- **D. If it's image decode.** Ensure bridges serve **thumbnail-sized** covers, not full-res
+  (downsample at source / via expo-image); limit concurrent decodes. Many full-res decodes during a
+  fast fling is a classic RN scroll killer. (Cover-size audit of the API-based bridge in progress —
+  it passes covers through from the source un-resized, so cover size = whatever the source stores.)
