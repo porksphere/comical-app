@@ -9,6 +9,7 @@ import Animated, {
   interpolate,
   runOnJS,
   useAnimatedProps,
+  useAnimatedReaction,
   useAnimatedStyle,
   useFrameCallback,
   useSharedValue,
@@ -77,9 +78,11 @@ const FOLLOW_TAU = 0.13; // seconds to close ~63% of the remaining distance
 // to. 1:1 with the panel's own edge sounded principled and felt frantic — the range is only a couple
 // of hundred pixels, so a normal flick crossed all of it instantly.
 const DRAG_GAIN = 0.5;
-// How far into the morph the cover's clip band has fully opened (see coverClipStyle). Early — the band
-// only has a job while the cover is still near the card.
-const CLIP_OPEN_AT = 0.35;
+// How far into the morph the cover stops being clipped to the chrome band. Early: the band exists to
+// hide the cover while it's lifting out from under the bars, and by a quarter of the way up it has
+// cleared them. Late enough that the switch is invisible, early enough that the RESTING cover — which
+// can sit right over the top bar once the panel rides up to make room for the menu — is never cut.
+const CLIP_UNTIL = 0.25;
 
 // The routes that show the bottom tab bar (a pushed screen — series, search — covers it). Used to
 // decide whether the bottom of the screen is chrome the cover has to slide under.
@@ -640,13 +643,9 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     return {
     transform: [
       { translateX: interpolate(progress.value, [0, 1], [coverFrom.x.value, toX]) },
-      {
-        // Minus the clip's LIVE origin: the cover is laid out inside the band, and the band now moves
-        // (see coverClipStyle), so a fixed offset here would slide the cover as the band opened.
-        translateY:
-          interpolate(progress.value, [0, 1], [coverFrom.y.value, toY]) -
-          interpolate(progress.value, [0, CLIP_OPEN_AT, 1], [chromeTop, 0, 0]),
-      },
+      // Minus the band's origin: the cover is laid out inside it. A CONSTANT — the band's geometry
+      // never changes now; only whether it clips (see `clipping`), which costs the cover nothing.
+      { translateY: interpolate(progress.value, [0, 1], [coverFrom.y.value, toY]) - chromeTop },
       { scale: interpolate(progress.value, [0, 1], [coverFrom.scale.value, scale]) },
     ],
     shadowOpacity: progress.value * 0.28,
@@ -654,18 +653,35 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   });
   // Counter-scale the radius so the cover's visual corner stays a constant 10px — at BOTH ends now,
   // since the resting cover is no longer at scale 1 but at the panel's scale.
-  // The clip band OPENS as the cover lifts. It exists so the cover emerges from UNDER the bars — which
-  // only matters while it's still down on the card. Left as a permanent boundary it also clipped the
-  // RESTING cover, which the panel can push right up against the top bar once the menu is fully out and
-  // the panel has ridden up to make room. So the band widens to the whole screen over the first part of
-  // the morph: under the chrome where that reads as depth, unclipped once it's a thing sitting on top of
-  // everything. (Raising the cover's z-order can't fix this — z-order is a total order, and the backdrop
-  // has to cover the bars while the cover has to cover the backdrop.)
-  const coverClipStyle = useAnimatedStyle(() => {
-    const top = interpolate(progress.value, [0, CLIP_OPEN_AT, 1], [chromeTop, 0, 0]);
-    const bottom = interpolate(progress.value, [0, CLIP_OPEN_AT, 1], [chromeBottom, winH, winH]);
-    return { top, height: bottom - top };
-  });
+  // Whether the band is CLIPPING right now. Binary, and it should be: the cover is either poking out of
+  // the chrome or it isn't. It starts clipped (the cover lifts out from under the bars, which is the
+  // whole point of the band) and stops the moment the cover is entirely inside it — at which instant
+  // switching the clip off is provably invisible, because there is nothing left to clip.
+  //
+  // The band's GEOMETRY never changes; only `overflow` does. That's what makes this cheap: the previous
+  // version interpolated the band's top/height, which are LAYOUT props, so it ran a layout pass every
+  // frame of the morph. It also means the cover's offset into the band is a constant, so there's no
+  // one-frame disagreement between the band moving and the cover compensating for it.
+  //
+  // (There is no z-order to swap here, which is the other thing you'd reach for: the bars live deep
+  // inside the navigator and this is a root overlay, so the cover is ALREADY above them at every
+  // moment. The clip is the only thing that can make it read as underneath.)
+  // The test is the PHASE of the morph, not the cover's position — which is the trap here. "Clip
+  // whenever the cover pokes out of the band" sounds right and is exactly wrong: once the menu is out
+  // and the panel has ridden up, the cover legitimately sits over the top bar, and a position test says
+  // "outside the band → clip it", cutting off the very thing we're trying to stop cutting off.
+  //
+  // The band's job is only ever to hide the cover while it's still emerging FROM THE CARD, under the
+  // chrome the card itself scrolls under. That's the first moments of the lift and nothing else. So:
+  // clipped early, free after. Reversed on the way back down, so it slides under the bars again as it
+  // returns to the card.
+  const [clipping, setClipping] = useState(true);
+  useAnimatedReaction(
+    () => progress.value < CLIP_UNTIL,
+    (isEarly, wasEarly) => {
+      if (isEarly !== wasEarly) runOnJS(setClipping)(isEarly);
+    },
+  );
   const coverRadiusStyle = useAnimatedStyle(() => {
     const scale = minS.value + expand.value * (maxS.value - minS.value);
     const live = interpolate(progress.value, [0, 1], [coverFrom.scale.value, scale]);
@@ -814,7 +830,12 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
 
       {/* The cover — morphs out of the card, on top of the (fading-in) panel, clipped to the band
           between the bars so it emerges from under the chrome instead of over it (see "Chrome band"). */}
-      <Animated.View pointerEvents="none" style={[styles.coverClip, coverClipStyle]}>
+      <View
+        pointerEvents="none"
+        style={[
+          styles.coverClip,
+          { top: chromeTop, height: chromeBottom - chromeTop, overflow: clipping ? 'hidden' : 'visible' },
+        ]}>
         <Animated.View pointerEvents="none" style={[styles.coverLayer, { width: COVER_W, height: coverH }, coverStyle]}>
           <Animated.View style={[styles.coverInner, coverRadiusStyle]}>
             {entry.cover ? (
@@ -822,7 +843,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
             ) : null}
           </Animated.View>
         </Animated.View>
-      </Animated.View>
+      </View>
 
       {/* The actions menu — a frosted (blurred) panel. It is never dragged: its position is DERIVED
           from the panel's live height (see menuStyle), so it tracks the panel's bottom edge as the pan
@@ -1091,10 +1112,10 @@ const styles = StyleSheet.create({
   // Full-bleed horizontally; vertically it spans only the gap between the bars, and clips the cover to
   // it. Transparent and non-interactive — it exists purely as the clip boundary.
   coverClip: {
+    // Geometry fixed; `overflow` is toggled per-render (see `clipping`), never animated.
     position: 'absolute',
     left: 0,
     right: 0,
-    overflow: 'hidden',
   },
   coverLayer: {
     position: 'absolute',
