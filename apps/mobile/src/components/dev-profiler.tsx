@@ -1,6 +1,7 @@
+import Constants from "expo-constants";
+import * as FileSystem from "expo-file-system/legacy";
 import { useState } from "react";
 import { NativeModules, Pressable, Text, View } from "react-native";
-import * as FileSystem from "expo-file-system/legacy";
 
 import { useDevProfilerEnabled } from "@/lib/dev-profiler-flag";
 
@@ -13,12 +14,27 @@ import { useDevProfilerEnabled } from "@/lib/dev-profiler-flag";
  * uploads the raw Hermes trace to the dev PC (profile-server.ts). Mounted from
  * app/_layout.tsx behind `__DEV__`. Temporary tooling; safe to delete.
  */
-// Derive the dev-PC host from where Metro served the JS bundle — never hardcode a
-// LAN IP. profile-server.ts listens on :8099 on that same machine.
+// POST the trace to Metro itself — its own host+port — at the /_devprofile route added in
+// metro.config.js. Riding Metro's port means it works on a Public-network dev machine where
+// the firewall only opens Metro's port (a separate :8099 server gets blocked).
+//
+// Host source is `Constants.expoConfig.hostUri` — the LAN "host:port" the dev client actually
+// connected to (e.g. "192.168.1.239:8081"). `NativeModules.SourceCode.scriptURL` is unreliable
+// here: under the New Architecture dev client it comes back empty, collapsing to "localhost",
+// which is the *phone itself* → "could not connect". Never hardcode a LAN IP.
 function uploadUrl(): string {
+  const c = Constants as any;
+  const hostUri: string =
+    Constants.expoConfig?.hostUri ||
+    c.expoGoConfig?.debuggerHost ||
+    c.manifest2?.extra?.expoClient?.hostUri ||
+    "";
+  const hostPort = hostUri.split("/")[0]; // strip any trailing path
+  if (hostPort) return `http://${hostPort}/_devprofile`;
+  // last-ditch fallback (rarely reached): the scriptURL origin.
   const scriptURL: string = NativeModules.SourceCode?.scriptURL ?? "";
-  const origin = scriptURL.match(/^https?:\/\/[^/:]+/)?.[0] ?? "http://localhost";
-  return `${origin}:8099/upload`;
+  const base = scriptURL.match(/^https?:\/\/[^/]+/)?.[0] ?? "http://localhost:8081";
+  return `${base}/_devprofile`;
 }
 
 // Lazy so an app shell built *before* this native module was added doesn't crash
@@ -59,15 +75,17 @@ export function DevProfiler() {
     // stop → the lib writes the trace to a file and returns its path → read → upload
     setRec(false);
     setMsg("saving…");
+    const dest = uploadUrl();
     try {
       const path = await prof.stopProfiling(false);
-      const url = path.startsWith("file://") ? path : "file://" + path;
-      const data = await FileSystem.readAsStringAsync(url);
-      setMsg(`uploading ${data.length}b…`);
-      const r = await fetch(uploadUrl(), { method: "POST", body: data });
+      const fileUrl = path.startsWith("file://") ? path : "file://" + path;
+      const data = await FileSystem.readAsStringAsync(fileUrl);
+      setMsg(`→ ${dest} (${data.length}b)…`);
+      const r = await fetch(dest, { method: "POST", body: data });
       setMsg(`uploaded ${data.length}b → HTTP ${r.status}`);
     } catch (e: any) {
-      setMsg("err: " + String(e?.message || e));
+      // Show the exact destination + error so a failing upload is diagnosable on-device.
+      setMsg(`err → ${dest} : ${String(e?.message || e)}`);
     }
   }
 

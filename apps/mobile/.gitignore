@@ -41,3 +41,6 @@ example
 # generated native folders
 /ios
 /android
+
+# dev-only Hermes profiler upload sink (metro.config.js middleware)
+.devprofile/
