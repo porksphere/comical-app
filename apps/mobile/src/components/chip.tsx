@@ -58,14 +58,18 @@ export function Chip({
 }
 
 /**
- * React key for a chip.
+ * React key for a chip — the INDEX, not the label.
  *
- * NOT the label alone: bridges do return the same tag (or genre) twice within one group, and two
- * siblings keyed by the same string is a duplicate-key error — which is what this fixes. The index is
- * the chip's real identity anyway (a group's `tagIds`/`tagQueries` are index-parallel to its `tags`,
- * so position, not text, is what a chip means), and these rows never reorder or splice — they're
- * rebuilt whole from one series' data — so an index-based key is stable. Label included only to keep
- * the key legible in devtools.
+ * A source can carry two DISTINCT tags that share a display label: identical text, different entries
+ * in the group's `tagIds` (verified against live data — one group had the same label at two indices,
+ * each with its own id). Keyed by label, those are two siblings on one key: a duplicate-key error.
+ * That's the bug this fixes.
+ *
+ * So do NOT "fix" this by de-duplicating tags by label — they are not duplicates. Collapsing them
+ * would silently drop a real, separately-filterable tag along with its id. The index is the chip's
+ * true identity: `tagIds`/`tagQueries` are index-parallel to `tags`, so a chip means its POSITION,
+ * not its text. Safe as a key because these rows never reorder or splice — they're rebuilt whole from
+ * one series' payload. The label is folded in only to keep the key legible in devtools.
  */
 const chipKey = (label: string, index: number) => `${index}:${label}`;
 
