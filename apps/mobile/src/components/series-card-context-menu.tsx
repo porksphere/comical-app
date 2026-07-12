@@ -157,11 +157,9 @@ const RUBBER_RESIST = 0.35; // how much of the extra pull actually moves anythin
 const RUBBER_LIMIT = 0.1; // and how far it can go, in range units
 // How far ahead a fling is projected when deciding which end of the range to spring to.
 const FLING_PROJECTION = 0.12; // seconds
-// Where the expanded panel sits in the band: the fraction of the LEFTOVER space that goes ABOVE it.
-// 0.5 would centre it; 1/3 sits it high — a third of the slack above, two thirds below — which leaves
-// the room below for the menu that's hiding down there, and keeps the preview clear of the thumb
-// that's about to swipe up for it.
-const EXPANDED_BIAS = 1 / 3;
+// How many menu rows must be on screen when the popup opens. Below this it stops reading as a menu —
+// you'd long-press a card in the bottom row and get a preview with its actions hidden under the fold.
+const MIN_VISIBLE_ROWS = 4;
 // Blur strengths (0–100). The backdrop ramps in a bit after the cover pops.
 const BACKDROP_BLUR = 28;
 const MENU_BLUR = 55;
@@ -365,10 +363,8 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // meant that at full size the panel and menu were jammed against the top edge with all the slack
   // dumped below — the popup looked shoved up out of the way rather than presented.
   //
-  //   expanded  → the panel sits HIGH in the band — only a third of the leftover space goes above it
-  //               (see EXPANDED_BIAS), so it rides about two thirds up rather than dead centre. The
-  //               space that buys below is where the menu it's hiding lives, and where the thumb that
-  //               swipes up for it comes from.
+  //   expanded  → the panel lands where the COVER BARELY HAS TO MOVE — see below. Not a fixed
+  //               fraction of the screen: the preview should appear where the card already was.
   //   collapsed → the panel rides up only as far as it has to for the group (panel + gap + menu) to
   //               land exactly on the bottom limit — i.e. the menu is fully visible and nothing is
   //               wasted, but the panel is no higher than it needs to be.
@@ -377,11 +373,34 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // it, which is what makes the resize read as one movement rather than a scale plus a jump.
   const panelHAtMax = naturalPanelH * maxScale;
   const panelHAtMin = naturalPanelH * minScale;
-  const topAtMax = clamp(
-    topLimit + (available - panelHAtMax) * EXPANDED_BIAS,
-    topLimit,
-    bottomLimit - panelHAtMax,
-  );
+  // Where the panel WANTS to open: exactly where the cover it's growing out of already is. Put the
+  // panel's cover slot on the card's cover and the shared-element morph has no vertical distance to
+  // travel at all — the preview simply blooms in place. Anything else is movement for its own sake, and
+  // a fixed fraction of the screen (which this used to be) guarantees it: a card at the bottom of the
+  // grid had its cover thrown halfway up the screen just to satisfy the fraction.
+  // (PANEL_PAD is the cover slot's offset inside the panel — `coverSlotLocalY` below, which is declared
+  // with the rest of the FLIP. Scaled, because the slot moves with the panel.)
+  const idealTop = rect.y - PANEL_PAD * maxScale;
+
+  // Two things it isn't allowed to want, and they pull in opposite directions:
+  //
+  //   near the TOP    → the panel must still open FULLY SIZED, so it can't start above the band (it
+  //                     would be cut off by the chrome, and there's nowhere for it to grow).
+  //   near the BOTTOM → enough of the menu must be visible to read as a menu (MIN_VISIBLE_ROWS), or a
+  //                     card in the last row opens a popup whose actions are all below the fold.
+  //
+  // So: aim for zero movement, then clamp into the window those two leave. The clamp is the only thing
+  // that ever moves the cover, and only as far as it must.
+  // Never demand more rows than the menu HAS — the real menu is three, so a flat "show 4" would
+  // over-constrain it and shove every popup upward to make room for a row that doesn't exist.
+  const wantRows = Math.min(MIN_VISIBLE_ROWS, menuRowCount);
+  const minMenuVisibleH =
+    MENU_PAD_V * 2 + ROW_HEIGHT * wantRows + StyleSheet.hairlineWidth * (wantRows - 1);
+  const lowestTop = bottomLimit - panelHAtMax - GAP - minMenuVisibleH;
+  // If the two constraints can't both hold (a tall panel and a long menu on a short screen), FULLY
+  // SIZED wins: an undersized preview is a worse popup than a menu you have to swipe up for — and the
+  // swipe is right there.
+  const topAtMax = lowestTop > topLimit ? clamp(idealTop, topLimit, lowestTop) : topLimit;
   // Deliberately NOT clamped to `topLimit`: a menu so long that it can't fit even with the panel at its
   // minimum scale (the floor exists so the preview never becomes a postage stamp) would otherwise leave
   // its last rows below the bottom edge with no swipe left to reach them — the collapsed end IS the end

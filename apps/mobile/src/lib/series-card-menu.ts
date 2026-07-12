@@ -83,8 +83,10 @@ export const holdY = makeMutable(0);
  * Latching, not a live test: once you've reached, small jitter mustn't disarm you mid-pick.
  */
 export const holdArmed = makeMutable(false);
-/** How far the held finger must travel before it starts selecting anything (px). */
-export const HOLD_ARM_DISTANCE = 16;
+/** How far the held finger must travel before it starts selecting anything (px). Deliberately well
+ *  past a touch-slop: this is the line between "resting on the card" and "reaching for a row", and
+ *  it's cheap to be generous — you're going to travel a long way to the row you actually want. */
+export const HOLD_ARM_DISTANCE = 32;
 /** Index of the menu row the held finger is currently over, or -1. Written by the popup. */
 export const hoveredRow = makeMutable(-1);
 
