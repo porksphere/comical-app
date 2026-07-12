@@ -47,11 +47,26 @@ export function clampThumbAspect(ratio?: number | null): number {
  * forcing a slot before it exists would reflow the row.
  */
 export function pageSlotAspect(thumbs: readonly ({ kind: string; w?: number; h?: number } | null)[]): number {
-  let min: number | null = null;
+  // The MOST COMMON shape, not the tallest. Taking the tallest looked safer (nothing gets cropped)
+  // but is worthless in practice: one odd page in a gallery — and real galleries have one — dragged
+  // the slot back to 2:3 and put the gap back under every OTHER tile. The typical tile is the one
+  // worth fitting exactly; the odd one out is cropped to fill, which is what the tile does anyway
+  // (see PageThumb — the picture covers its box).
+  const counts = new Map<number, number>();
   for (const t of thumbs) {
     if (t?.kind !== 'sprite' || !t.w || !t.h) continue;
     const a = clampThumbAspect(t.w / t.h);
-    if (min === null || a < min) min = a;
+    counts.set(a, (counts.get(a) ?? 0) + 1);
   }
-  return min ?? DEFAULT_THUMB_ASPECT;
+  let best: number | null = null;
+  let bestCount = 0;
+  for (const [aspect, count] of counts) {
+    // Ties go to the TALLER tile (smaller aspect) — it crops less of a wide neighbour than the
+    // reverse, and keeps the grid closer to the 2:3 the rest of the app is built around.
+    if (count > bestCount || (count === bestCount && best !== null && aspect < best)) {
+      best = aspect;
+      bestCount = count;
+    }
+  }
+  return best ?? DEFAULT_THUMB_ASPECT;
 }

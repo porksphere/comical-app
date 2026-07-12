@@ -866,9 +866,14 @@ export function PageThumb({
   );
   const aspectRatio = resolved?.kind === 'sprite' ? clampThumbAspect(resolved.w / resolved.h) : imageAspect;
   const ready = delayPassed && loaded;
-  // Rail (`slotHeight`) mode fills a fixed height, so the pixel width the sprite crop must scale to
-  // is derived from that height and the aspect — not the `width` prop (which is the grid cell width).
-  const spriteWidth = slotHeight != null ? slotHeight * aspectRatio : width;
+  // The tile's BOX shape. In the grid it is the slot's shape, so the tile always fills its slot
+  // exactly and the picture inside crops to cover it — a box sized to the image's own aspect is what
+  // left a strip of background under every tile. In the rail there is no slot: the box takes the
+  // image's real aspect and the width follows, so nothing is ever cropped there.
+  const boxAspect = slotHeight != null ? aspectRatio : slotAspect;
+  // The box in PIXELS — what the sprite crop must cover.
+  const boxWidth = slotHeight != null ? slotHeight * aspectRatio : width;
+  const boxHeight = slotHeight != null ? slotHeight : width / slotAspect;
 
   // The picture layer's scaleY: eases from its old apparent size down to 1 (its
   // real, already-committed size) as `shrinkProgressSV` runs 0 -> 1 — same
@@ -889,7 +894,7 @@ export function PageThumb({
       onHoverIn={onHoverIn}
       onHoverOut={onHoverOut}>
       <View
-        style={[styles.thumbBox, { aspectRatio }]}
+        style={[styles.thumbBox, { aspectRatio: boxAspect }]}
         onLayout={(layoutEvent) => {
           thumbWidthSV.value = layoutEvent.nativeEvent.layout.width;
         }}>
@@ -915,13 +920,16 @@ export function PageThumb({
                     const nextAspect = clampThumbAspect(src.width / src.height);
                     resolvedThumbAspects.set(delayKey, nextAspect);
                     lastResolvedThumbAspect = nextAspect;
-                    // Same FLIP kick-off as SeriesCard: only animate when there's
-                    // an actual shape change and the box's pixel width is already
-                    // known (from onLayout above).
-                    const boxWidth = thumbWidthSV.value;
-                    if (boxWidth > 0 && nextAspect !== imageAspect) {
-                      const oldHeight = boxWidth / imageAspect;
-                      const newHeight = boxWidth / nextAspect;
+                    // Same FLIP kick-off as SeriesCard: only animate when there's an actual shape
+                    // change and the box's pixel width is already known (from onLayout above).
+                    //
+                    // Rail only. In the GRID the box is the slot's shape and no longer resizes when
+                    // the real aspect lands, so there's nothing to smooth — running the shrink there
+                    // would scale a picture that already fits, squashing it for no reason.
+                    const measuredWidth = thumbWidthSV.value;
+                    if (slotHeight != null && measuredWidth > 0 && nextAspect !== imageAspect) {
+                      const oldHeight = measuredWidth / imageAspect;
+                      const newHeight = measuredWidth / nextAspect;
                       shrinkFromScaleSV.value = newHeight > 0 ? oldHeight / newHeight : 1;
                       shrinkProgressSV.value = 0;
                       shrinkProgressSV.value = withTiming(1, {
@@ -944,7 +952,8 @@ export function PageThumb({
             {delayPassed && resolved?.kind === 'sprite' && (
               <SpriteCrop
                 thumb={resolved}
-                width={spriteWidth}
+                width={boxWidth}
+                height={boxHeight}
                 onLoad={() => {
                   resolvedThumbIds.add(delayKey);
                   setLoaded(true);
@@ -992,11 +1001,14 @@ export function PageThumb({
 function SpriteCrop({
   thumb,
   width,
+  height,
   onLoad,
   onError,
 }: {
   thumb: SpriteThumb;
+  /** The box to fill, in px. The crop COVERS it (see `scale`), so the tile never falls short of it. */
   width: number;
+  height: number;
   onLoad?: () => void;
   onError?: (message: string) => void;
 }) {
@@ -1004,7 +1016,16 @@ function SpriteCrop({
   // shared by many tiles is fetched once, on demand, instead of once per tile up front. `null` until
   // resolved; the parent tile shows its skeleton (no `onLoad` yet) in the meantime.
   const sheet = useResolvedThumbUrl(thumb.sheetUrl, onError);
-  const scale = width / thumb.w;
+  // COVER the box (the larger of the two scales), rather than matching its width and letting the
+  // height land where it may. Width-only scaling meant a tile whose shape didn't match its slot came
+  // up short and left a strip of background beneath it — the grey line under every thumbnail. The
+  // excess now overflows and is clipped instead, which is what a cover-fit thumbnail does everywhere
+  // else in the app.
+  const scale = Math.max(width / thumb.w, height / thumb.h);
+  // Centre the crop horizontally when it's wider than the box (so a fill trims both edges evenly
+  // rather than lopping off the right), but keep it TOP-aligned vertically — the top of a page is
+  // the part worth showing.
+  const overflowX = thumb.w * scale - width;
   if (!sheet) return null;
   return (
     <Image
@@ -1013,7 +1034,7 @@ function SpriteCrop({
         position: 'absolute',
         width: thumb.sheetWidth * scale,
         height: thumb.sheetHeight * scale,
-        left: -thumb.x * scale,
+        left: -thumb.x * scale - overflowX / 2,
         top: -thumb.y * scale,
       }}
       contentFit="cover"
