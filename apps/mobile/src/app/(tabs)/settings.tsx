@@ -25,6 +25,7 @@ import { BarBlur } from '@/components/bar-blur';
 import { RetryBlock } from '@/components/retry-block';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedSwitch } from '@/components/themed-switch';
+import { devProfiler$, useDevProfilerEnabled } from '@/lib/dev-profiler-flag';
 import { lightCards$, useLightCards } from '@/lib/perf-flags';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -549,12 +550,18 @@ function DeveloperSection() {
   const theme = useTheme();
   const [mockEnabled, setMockEnabled] = useMockDataToggle();
   const [apiBase] = useApiBase();
+  const profilerOn = useDevProfilerEnabled();
   return (
     <SettingsSection title="Developer" icon={<DeveloperIcon color={theme.textSecondary} size={14} />}>
       <SettingsRow
         label="Use mock data"
         description="Browse/Series/Reader render generated sample content instead of calling the API."
         right={<ThemedSwitch value={mockEnabled} onValueChange={setMockEnabled} />}
+      />
+      <SettingsRow
+        label="JS profiler button"
+        description="Shows a floating on-device Hermes profiler that captures a JS sampling profile and uploads it to the dev server."
+        right={<ThemedSwitch value={profilerOn} onValueChange={(v) => devProfiler$.enabled.set(v)} />}
       />
       <SettingsRow label="Server" description={apiBase} descriptionSelectable />
     </SettingsSection>

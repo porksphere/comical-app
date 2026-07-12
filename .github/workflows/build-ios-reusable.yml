@@ -58,6 +58,11 @@ jobs:
     env:
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
       CCACHE_DIR: ${{ github.workspace }}/.ccache
+      # Job-wide so BOTH `expo prebuild` (with-devclient-variant's .dev bundle id)
+      # and `pod install` (react-native.config.js, which gates the dev-only
+      # react-native-release-profiler native module) see it. Empty for every
+      # non-dev-client build, so that module never ships in ios-latest/production.
+      COMICAL_DEVCLIENT: ${{ inputs.dev_client && '1' || '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -134,10 +139,8 @@ jobs:
       - name: Generate native iOS project (CNG)
         run: bunx expo prebuild --platform ios --no-install
         working-directory: apps/mobile
-        # COMICAL_DEVCLIENT=1 makes the with-devclient-variant plugin apply the
-        # coexisting `.dev` bundle id (dev-client builds only); empty otherwise.
-        env:
-          COMICAL_DEVCLIENT: ${{ inputs.dev_client && '1' || '' }}
+        # COMICAL_DEVCLIENT is set job-wide (see the job `env:` above) so both this
+        # prebuild and the pod install below see it.
 
       - name: Install CocoaPods
         run: pod install
