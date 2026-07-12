@@ -298,18 +298,17 @@ function SeriesBody({
 
   // Resume point + the push that opens it — shared with the card long-press menu's Read row, so the
   // two can't resume at different places (see useStartReading).
+  // Read no longer waits on the deferred chapter list: with no resume point it hands the reader an
+  // unspecified chapter and the reader picks the first one itself, so the button is live immediately.
   const {
     label: readingLabel,
     resume: resumeEntry,
-    disabled: readDisabled,
     start: startReading,
   } = useStartReading({
     bridgeId,
     seriesId: series.id,
     title: series.title,
     direct,
-    chapters,
-    chaptersLoading: listLoading,
     readLabel,
   });
   // The play glyph leads a RESUME (and the bare "Read" fallback); a bridge's own readLabel is shown
@@ -317,13 +316,11 @@ function SeriesBody({
   const primaryLabel = !resumeEntry && readLabel ? readLabel : `▶  ${readingLabel}`;
 
   // Cover image + optional chapter-count badge — shared between layouts. Tapping
-  // it starts reading, same as the primary Read button (disabled in lockstep so a
-  // chaptered series can't jump into the reader before its chapter list lands).
+  // it starts reading, same as the primary Read button.
   const coverEl = (
     <Pressable
       style={isLarge ? styles.coverWrapLarge : styles.coverWrap}
       onPress={startReading}
-      disabled={readDisabled}
       accessibilityRole="button"
       accessibilityLabel={primaryLabel}>
       <Image
@@ -377,7 +374,6 @@ function SeriesBody({
       <ActionButton
         label={primaryLabel}
         variant="primary"
-        disabled={readDisabled}
         onPress={startReading}
       />
       <ActionButton label={inLibrary ? '✓  In Library' : '＋  Library'} onPress={toggleLibrary} />
