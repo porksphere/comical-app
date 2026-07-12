@@ -232,7 +232,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    gap: Spacing.four,
+    // Spacing BETWEEN sections (SettingsSection no longer carries a top margin — see settings-row).
+    gap: Spacing.five,
     paddingHorizontal: Spacing.four,
     width: '100%',
     maxWidth: MaxContentWidth,
