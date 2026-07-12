@@ -159,7 +159,7 @@ function GeneralSection() {
       )}
       <SettingsRow
         label="Lightweight cards"
-        description="Drops the cover shrink animation and cross-fade for smoother scrolling."
+        description="Drops the shrink animation and cross-fade from covers and page thumbnails for smoother scrolling."
         right={<ThemedSwitch value={lightCards} onValueChange={(v) => lightCards$.light.set(v)} />}
       />
     </SettingsSection>
