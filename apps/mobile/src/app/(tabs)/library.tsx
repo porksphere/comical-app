@@ -13,7 +13,7 @@ import { SeriesGrid, type SeriesGridItem } from '@/components/series-grid';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, Spacing } from '@/constants/theme';
+import { BarContentGap, BottomTabInset, Spacing } from '@/constants/theme';
 import { type LibrarySort } from '@/data/api';
 import { libraryQuery } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
@@ -148,7 +148,7 @@ export default function LibraryScreen() {
         scopeKey={`${query}|${sort}`}
         listRef={listRef}
         header={listHeader}
-        paddingTop={headerHeight}
+        paddingTop={headerHeight + BarContentGap}
         paddingBottom={BottomTabInset + insets.bottom + Spacing.five}
         onScroll={onScroll}
       />
@@ -207,7 +207,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   controls: {
-    paddingTop: Spacing.three,
+    // No leading padding: the grid's own `BarContentGap` is the bar->content gap now (it used to be
+    // paid here instead, which is why adding the shared gap on top would have double-padded it).
     paddingBottom: Spacing.three,
     gap: Spacing.three,
   },

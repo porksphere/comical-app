@@ -10,7 +10,7 @@ import { HistoryRow } from '@/components/history-row';
 import { RetryBlock } from '@/components/retry-block';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { historyQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type HistoryEntry } from '@/data/types';
@@ -118,7 +118,7 @@ export default function HistoryScreen() {
   return (
     <ThemedView style={styles.container}>
       {emptyBody ? (
-        <View style={[styles.centeredColumn, { paddingTop: headerHeight }]}>
+        <View style={[styles.centeredColumn, { paddingTop: headerHeight + BarContentGap }]}>
           <View style={styles.centerFill}>{emptyBody}</View>
         </View>
       ) : (
@@ -130,7 +130,7 @@ export default function HistoryScreen() {
           keyExtractor={(h) => `${h.bridgeId}:${h.seriesId}`}
           recycleItems={false}
           contentContainerStyle={{
-            paddingTop: headerHeight + Spacing.two,
+            paddingTop: headerHeight + BarContentGap,
             paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
             paddingLeft: sidePad,
             paddingRight: sidePad,

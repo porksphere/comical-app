@@ -29,7 +29,7 @@ import { devProfiler$, useDevProfilerEnabled } from '@/lib/dev-profiler-flag';
 import { lightCards$, useLightCards } from '@/lib/perf-flags';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { useApiBase, type BridgeSummary } from '@/data/api';
 import { applyEmbeddedMode, isEmbeddedRuntimeAvailable, useEmbeddedEnabled } from '@/data/embedded';
 import { bumpDataEpoch } from '@/data/data-epoch';
@@ -92,7 +92,7 @@ export default function SettingsScreen() {
         scrollEventThrottle={16}
         contentContainerStyle={[
           styles.content,
-          { paddingTop: headerHeight, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
+          { paddingTop: headerHeight + BarContentGap, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
         ]}>
         <GeneralSection />
         <BridgesSection />
