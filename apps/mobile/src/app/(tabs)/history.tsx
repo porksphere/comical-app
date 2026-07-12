@@ -130,6 +130,9 @@ export default function HistoryScreen() {
           keyExtractor={(h) => `${h.bridgeId}:${h.seriesId}`}
           recycleItems={false}
           contentContainerStyle={{
+            // Fill the viewport even with few rows, so the empty space below them is still part of
+            // the scroller and a drag can be started there (see SeriesGrid's note).
+            flexGrow: 1,
             paddingTop: headerHeight + BarContentGap,
             paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
             paddingLeft: sidePad,
