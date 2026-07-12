@@ -123,9 +123,10 @@ const RUBBER_LIMIT = 0.06; // and how far it can go, in range units
 // How far ahead a fling is projected when deciding which end of the range to spring to.
 const FLING_PROJECTION = 0.12; // seconds
 // Where the expanded panel sits in the band: the fraction of the LEFTOVER space that goes ABOVE it.
-// 0.5 would centre it; 2/3 drops it lower, which reads better (nearer the thumb, and the space it
-// leaves below is where the menu lives).
-const EXPANDED_BIAS = 2 / 3;
+// 0.5 would centre it; 1/3 sits it high — a third of the slack above, two thirds below — which leaves
+// the room below for the menu that's hiding down there, and keeps the preview clear of the thumb
+// that's about to swipe up for it.
+const EXPANDED_BIAS = 1 / 3;
 // Blur strengths (0–100). The backdrop ramps in a bit after the cover pops.
 const BACKDROP_BLUR = 28;
 const MENU_BLUR = 55;
@@ -323,9 +324,10 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // meant that at full size the panel and menu were jammed against the top edge with all the slack
   // dumped below — the popup looked shoved up out of the way rather than presented.
   //
-  //   expanded  → the panel sits LOW in the band — most of the leftover space goes above it (see
-  //               EXPANDED_BIAS), so it lands about two thirds down rather than dead centre. It's
-  //               nearer the thumb, and it leaves the room it needs below for the menu it's hiding.
+  //   expanded  → the panel sits HIGH in the band — only a third of the leftover space goes above it
+  //               (see EXPANDED_BIAS), so it rides about two thirds up rather than dead centre. The
+  //               space that buys below is where the menu it's hiding lives, and where the thumb that
+  //               swipes up for it comes from.
   //   collapsed → the panel rides up only as far as it has to for the group (panel + gap + menu) to
   //               land exactly on the bottom limit — i.e. the menu is fully visible and nothing is
   //               wasted, but the panel is no higher than it needs to be.
