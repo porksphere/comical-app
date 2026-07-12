@@ -57,6 +57,18 @@ export function Chip({
   );
 }
 
+/**
+ * React key for a chip.
+ *
+ * NOT the label alone: bridges do return the same tag (or genre) twice within one group, and two
+ * siblings keyed by the same string is a duplicate-key error — which is what this fixes. The index is
+ * the chip's real identity anyway (a group's `tagIds`/`tagQueries` are index-parallel to its `tags`,
+ * so position, not text, is what a chip means), and these rows never reorder or splice — they're
+ * rebuilt whole from one series' data — so an index-based key is stable. Label included only to keep
+ * the key legible in devtools.
+ */
+const chipKey = (label: string, index: number) => `${index}:${label}`;
+
 /** Wraps a tappable chip (an actionable tag, or the "+N more" expander) with
  *  press + hover feedback — a plain `Chip` has none, since most chips are
  *  static. One instance per chip so each gets its own `useHovered` (chips are
@@ -114,8 +126,8 @@ export function ChipRow({
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={[styles.hChips, contentInset != null && { paddingLeft: contentInset }]}>
-        {labels.map((l) => (
-          <Chip key={l} label={l} accent={accent} />
+        {labels.map((l, i) => (
+          <Chip key={chipKey(l, i)} label={l} accent={accent} />
         ))}
       </ScrollView>
     );
@@ -124,8 +136,8 @@ export function ChipRow({
   const shown = collapsible ? labels.slice(0, maxVisible) : labels;
   return (
     <View style={styles.row}>
-      {shown.map((l) => (
-        <Chip key={l} label={l} accent={accent} />
+      {shown.map((l, i) => (
+        <Chip key={chipKey(l, i)} label={l} accent={accent} />
       ))}
       {collapsible && (
         <PressableChip
@@ -162,9 +174,15 @@ export function TagGroupRow({
   const chip = (t: string, i: number) => {
     const actionable = !!onTagPress && !!(group.tagQueries?.[i] || group.tagIds?.[i]);
     return actionable ? (
-      <PressableChip key={t} onPress={() => onTagPress!(i)} accessibilityLabel={`Search ${t}`} label={t} accent />
+      <PressableChip
+        key={chipKey(t, i)}
+        onPress={() => onTagPress!(i)}
+        accessibilityLabel={`Search ${t}`}
+        label={t}
+        accent
+      />
     ) : (
-      <Chip key={t} label={t} accent />
+      <Chip key={chipKey(t, i)} label={t} accent />
     );
   };
   if (horizontal) {
@@ -184,14 +202,7 @@ export function TagGroupRow({
       <ThemedText style={[styles.groupLabel, { color: theme.textSecondary }]}>
         {group.label.toUpperCase()}
       </ThemedText>
-      {shown.map((t, i) => {
-        const actionable = !!onTagPress && !!(group.tagQueries?.[i] || group.tagIds?.[i]);
-        return actionable ? (
-          <PressableChip key={t} onPress={() => onTagPress!(i)} accessibilityLabel={`Search ${t}`} label={t} accent />
-        ) : (
-          <Chip key={t} label={t} accent />
-        );
-      })}
+      {shown.map(chip)}
       {collapsible && (
         <PressableChip
           onPress={() => setExpanded(true)}

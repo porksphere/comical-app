@@ -337,8 +337,15 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
             detail.data?.genres?.length || detail.data?.tagGroups?.length ? (
               <View style={styles.tags}>
                 {detail.data.genres?.length ? <ChipRow horizontal contentInset={PANEL_PAD} labels={detail.data.genres} /> : null}
-                {detail.data.tagGroups?.map((g) => (
-                  <TagGroupRow key={g.label} group={g} horizontal contentInset={PANEL_PAD} onTagPress={(i) => onTagPress(g, i)} />
+                {/* Keyed by index, not `g.label` — a bridge can repeat a group label (see chipKey). */}
+                {detail.data.tagGroups?.map((g, gi) => (
+                  <TagGroupRow
+                    key={`${gi}:${g.label}`}
+                    group={g}
+                    horizontal
+                    contentInset={PANEL_PAD}
+                    onTagPress={(i) => onTagPress(g, i)}
+                  />
                 ))}
               </View>
             ) : null
