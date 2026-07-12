@@ -14,14 +14,18 @@
  * off the same values (e.g. Browse's tab-bar auto-hide, a border/shadow that fades with scroll,
  * pull-to-refresh).
  */
-import { useCallback, useEffect, useMemo, type RefObject } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, type RefObject } from 'react';
 import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import {
+  runOnJS,
   useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
   type SharedValue,
 } from 'react-native-reanimated';
+
+import { setTopBarHidden } from '@/lib/top-bar-visibility';
 
 /** Minimal structural type for the list refs we reset — LegendList and FlatList both satisfy it. */
 type Scrollable = { scrollToOffset: (opts: { offset: number; animated?: boolean }) => void };
@@ -68,6 +72,33 @@ export function useSlidingBar(
   );
 
   const barStyle = useAnimatedStyle(() => ({ transform: [{ translateY: offset.value }] }));
+
+  // Mirror the slide to the JS thread for code that can't read a worklet's value at the moment it
+  // needs it — the root long-press overlay, which clips its flying cover to the chrome actually on
+  // screen and so must know how far this bar has scrolled away (see `top-bar-visibility`). Quantized
+  // to whole pixels, so it's one cheap hop per pixel of movement and nothing at all once the bar is
+  // parked at either end. Nothing re-renders off it.
+  const hiddenPx = useRef(0);
+  const publishHidden = useCallback((px: number) => {
+    hiddenPx.current = px;
+    setTopBarHidden(px);
+  }, []);
+  useAnimatedReaction(
+    () => Math.round(-offset.value),
+    (px, prev) => {
+      if (px !== prev) runOnJS(publishHidden)(px);
+    },
+    [publishHidden],
+  );
+  // Only the FOCUSED screen's bar is the one on screen. Republish this bar's slide when it takes
+  // focus, and clear it on blur — a screen with a static top bar (the tab title bars) never reports,
+  // so without the reset Browse's slid-away bar would still be clipping covers over on Library.
+  useFocusEffect(
+    useCallback(() => {
+      setTopBarHidden(hiddenPx.current);
+      return () => setTopBarHidden(0);
+    }, []),
+  );
 
   const resetKey = opts?.resetKey;
   const listRef = opts?.listRef;
