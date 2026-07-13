@@ -1,14 +1,13 @@
 import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import type { LegendListRef } from '@legendapp/list/react-native';
 import type { ReactElement, RefObject } from 'react';
-import { useMemo } from 'react';
 import { Platform, StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import Animated, { type SharedValue } from 'react-native-reanimated';
 
 import { estimatedCardHeight, SeriesCard } from '@/components/series-card';
 import { BottomTabInset, Spacing } from '@/constants/theme';
 import type { SeriesEntry } from '@/data/types';
-import { GRID_COLUMN_GAP, padWithSpacers, useGridLayout } from '@/hooks/use-grid-layout';
+import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
 
 // A cell reserves the inter-row space itself (LegendList ignores vertical `gap` — items are absolutely
 // positioned). Split top/bottom rather than all-bottom because LegendList's web row container is
@@ -19,14 +18,15 @@ const CELL_PAD_BOTTOM = Spacing.three - Spacing.one;
 const CELL_ROW_GAP = CELL_PAD_TOP + CELL_PAD_BOTTOM;
 
 /**
- * A cell in a series grid. `spacer` cells pad a short final row so real cards keep their column
- * width. The bridge fields are per-item OVERRIDES of the grid-level `bridge`/`bridgeId`/`direct`
- * props: a single-bridge grid (Browse, Search) leaves them unset and passes the grid-level ones,
- * while a cross-bridge grid (the Library, whose entries come from many bridges) carries them on each
- * item. One rule — item wins if present — so there's no per-screen branch inside the cell.
+ * A cell in a series grid. Every item is a REAL series — the grid never injects placeholder entries
+ * into its data.
+ *
+ * The bridge fields are per-item OVERRIDES of the grid-level `bridge`/`bridgeId`/`direct` props: a
+ * single-bridge grid (Browse, Search) leaves them unset and passes the grid-level ones, while a
+ * cross-bridge grid (the Library, whose entries come from many bridges) carries them on each item.
+ * One rule — item wins if present — so there's no per-screen branch inside the cell.
  */
 export type SeriesGridItem = SeriesEntry & {
-  spacer?: boolean;
   bridge?: string;
   bridgeId?: string;
   direct?: boolean;
@@ -110,17 +110,12 @@ export function SeriesGrid({
   // title hugging it are unchanged.
   const cellHeight = estimatedCardHeight(cardWidth) + CELL_ROW_GAP;
 
-  const data = useMemo(
-    () => padWithSpacers<SeriesGridItem>(items, numColumns, (id) => ({ id, title: '', cover: '', spacer: true })),
-    [items, numColumns],
-  );
-
   // LegendList's web build resets its render state *during* render on an empty→non-empty data swap
   // after it has held data ("Cannot update a component while rendering a different component"). Fold
   // the empty↔populated boundary into the key so a 0→N fill is always a FRESH mount's initial render,
   // which skips that path. `numColumns` is in the key because a different column count is a different
   // grid layout, and `scopeKey` so a scope change (a scroll-to-top moment anyway) remounts cleanly.
-  const listKey = `${numColumns}|${scopeKey}|${data.length > 0 ? 'full' : 'empty'}`;
+  const listKey = `${numColumns}|${scopeKey}|${items.length > 0 ? 'full' : 'empty'}`;
 
   return (
     <Animated.View style={[styles.list, wrapperStyle]}>
@@ -147,7 +142,7 @@ export function SeriesGrid({
         // Plain (JS-thread) onScroll alongside `sharedValues` — callers use it to keep a sliding bar's
         // `maxScrollY` in sync, and to drive the tab-bar auto-hide.
         onScroll={onScroll}
-        data={data}
+        data={items}
         // EXACT, not a hint: every cell is pinned to `cellHeight` below, so this matches every measured
         // row and LegendList never re-anchors or re-measures on scroll (see `cellHeight`).
         estimatedItemSize={cellHeight}
@@ -184,23 +179,25 @@ export function SeriesGrid({
           paddingLeft: sidePad,
           paddingRight: sidePad,
         }}
-        renderItem={({ item }) =>
-          item.spacer ? (
-            <View style={[styles.cell, { height: cellHeight }]} />
-          ) : (
-            <View style={[styles.cell, { height: cellHeight }]}>
-              <SeriesCard
-                entry={item}
-                bridge={item.bridge ?? bridge}
-                bridgeId={item.bridgeId ?? bridgeId}
-                direct={item.direct ?? direct}
-                originPage={originPage}
-                cohort={scopeKey}
-                crossfading={crossfading}
-              />
-            </View>
-          )
-        }
+        renderItem={({ item }) => (
+          // Both dimensions are FIXED — see `cellHeight` above, and `cardWidth` (from useGridLayout,
+          // the same number the column count was derived from). The width is what lets a short final
+          // row simply end: with an elastic `flex: 1` cell, a last row holding one of three columns
+          // stretched that card across the whole row, which is why this grid used to append invisible
+          // "spacer" items to pad the row out. Fake entries in a keyed, virtualized list are a bad
+          // trade for a layout fix — they leak into the item type, the key space, and renderItem.
+          <View style={[styles.cell, { width: cardWidth, height: cellHeight }]}>
+            <SeriesCard
+              entry={item}
+              bridge={item.bridge ?? bridge}
+              bridgeId={item.bridgeId ?? bridgeId}
+              direct={item.direct ?? direct}
+              originPage={originPage}
+              cohort={scopeKey}
+              crossfading={crossfading}
+            />
+          </View>
+        )}
         onEndReachedThreshold={0.6}
         onEndReached={onEndReached}
         // Show the browser's native scrollbar on web (the list scrolls in its own overflow container);
@@ -222,7 +219,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   cell: {
-    flex: 1,
+    // NO `flex: 1` — the cell is pinned to `cardWidth` at the call site. See the note in renderItem:
+    // an elastic cell is what forced the old spacer-item hack.
     // Inter-row spacing (see CELL_PAD_TOP/BOTTOM above, shared with the fixed cellHeight so they can't
     // drift). `justifyContent: flex-start` so a card shorter than the fixed cell top-aligns, leaving
     // any extra space at the BOTTOM (below the title) — the cover + title-hugging stay put.

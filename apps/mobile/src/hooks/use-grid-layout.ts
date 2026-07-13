@@ -45,14 +45,3 @@ export function useGridLayout(): GridLayout {
 
   return { numColumns, sidePad, railViewport, gridContentWidth, cardWidth, hydrated, width };
 }
-
-/**
- * Pad a grid item list with invisible trailing spacers so a short last row
- * doesn't stretch its cards. `make` builds a spacer item from a unique id.
- */
-export function padWithSpacers<T>(items: T[], numColumns: number, make: (id: string) => T): T[] {
-  const remainder = items.length % numColumns;
-  if (remainder === 0) return items;
-  const spacers = Array.from({ length: numColumns - remainder }, (_, i) => make(`spacer-${i}`));
-  return [...items, ...spacers];
-}
