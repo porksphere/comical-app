@@ -130,8 +130,10 @@ const MENU_PAD_V = Spacing.one;
 const MENU_ROWS = 3;
 // DEV ONLY: pad the menu out with dummy rows, to exercise the case the pan gesture exists for — a
 // group too tall for the screen, where the panel has to give up height for the menu to be reachable.
-// Set to 0 to see the real menu. Never on in a release build.
-const DEBUG_EXTRA_MENU_ROWS = __DEV__ ? 8 : 0;
+// Raise it to test the resize/scroll behaviour; leave it at 0 otherwise, because a fake 11-row menu
+// doesn't just look wrong, it DISTORTS the layout: the "keep N rows visible" floor then forces the
+// panel high up the screen on every card, which is not how the real three-row menu behaves.
+const DEBUG_EXTRA_MENU_ROWS = 0;
 
 // ── Pan / resize ─────────────────────────────────────────────────────────────
 // The panel never scales below this, however long the menu gets — a preview shrunk to a postage stamp
@@ -295,22 +297,22 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const topLimit = chromeTop + EDGE_PAD;
   const bottomLimit = chromeBottom - EDGE_PAD;
 
+  // The PANEL still opens against the left edge — it's near enough the full width of a phone that
+  // centring it would move it by a few pixels and buy nothing.
   const panelW = Math.min(winW - EDGE_PAD * 2, PANEL_MAX_WIDTH);
-  // The popup ALWAYS opens against the left edge — panel and menu both — rather than centring itself on
-  // whichever card you pressed. It used to drift horizontally with the card, so the same three actions
-  // landed under a different part of your thumb every time; a fixed edge is what makes the muscle
-  // memory work. The cover still flies from the card it came from, so nothing is lost in the morph.
   const panelLeft = EDGE_PAD;
 
   const menuW = Math.min(MENU_WIDTH, winW - EDGE_PAD * 2);
   const menuRowCount = MENU_ROWS + DEBUG_EXTRA_MENU_ROWS;
   const rowCount = menuRowCount;
-  const menuH = ROW_HEIGHT * menuRowCount + StyleSheet.hairlineWidth * (menuRowCount - 1) + MENU_PAD_V * 2;
-  // Always on the LEFT, flush with the panel's own left edge — not centred under the pressed card. The
-  // menu used to slide left/right depending on which card you happened to long-press, so the same three
-  // actions landed under a different part of your thumb every time. A fixed edge means the muscle
-  // memory works: the rows are always in the same place.
-  const menuLeft = panelLeft;
+  const menuH = ROW_HEIGHT * menuRowCount + MENU_PAD_V * 2;
+  // The MENU centres on the card you pressed — as close to it as the screen edges allow. It's much
+  // narrower than the panel, so where it sits actually matters: it lands under the thumb that's already
+  // there, which is the same reasoning as the placement above (the popup appears where you're looking,
+  // not where the layout finds convenient). Clamped, so a card at either edge still gets a menu fully
+  // on screen rather than one hanging off it.
+  const cardCenterX = rect.x + rect.width / 2;
+  const menuLeft = clamp(cardCenterX - menuW / 2, EDGE_PAD, winW - menuW - EDGE_PAD);
 
   const coverH = COVER_W / clampThumbAspect(coverAspect ?? DEFAULT_THUMB_ASPECT);
 
@@ -394,8 +396,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // Never demand more rows than the menu HAS — the real menu is three, so a flat "show 4" would
   // over-constrain it and shove every popup upward to make room for a row that doesn't exist.
   const wantRows = Math.min(MIN_VISIBLE_ROWS, menuRowCount);
-  const minMenuVisibleH =
-    MENU_PAD_V * 2 + ROW_HEIGHT * wantRows + StyleSheet.hairlineWidth * (wantRows - 1);
+  const minMenuVisibleH = MENU_PAD_V * 2 + ROW_HEIGHT * wantRows;
   const lowestTop = bottomLimit - panelHAtMax - GAP - minMenuVisibleH;
   // If the two constraints can't both hold (a tall panel and a long menu on a short screen), FULLY
   // SIZED wins: an undersized preview is a worse popup than a menu you have to swipe up for — and the
@@ -855,7 +856,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       const menuTop = top + naturalH.value * scale + GAP;
       const local = holdY.value - menuTop - MENU_PAD_V;
       if (local < 0) return -1;
-      const index = Math.floor(local / (ROW_HEIGHT + StyleSheet.hairlineWidth));
+      const index = Math.floor(local / ROW_HEIGHT);
       return index >= 0 && index < rowCount ? index : -1;
     },
     (row, prev) => {
@@ -972,10 +973,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       <Animated.View style={[styles.menuWrap, { width: menuW }, menuStyle]}>
         <BlurView tint={menuTint} intensity={MENU_BLUR} experimentalBlurMethod={ANDROID_BLUR} style={[styles.menu, { borderColor: theme.backgroundSelected }]}>
           {rows.map((row, i) => (
-            <View key={i}>
-              {i > 0 && <View style={[styles.separator, { backgroundColor: theme.backgroundSelected }]} />}
-              <MenuRow {...row} index={i} />
-            </View>
+            <MenuRow key={i} {...row} index={i} />
           ))}
         </BlurView>
       </Animated.View>
@@ -1136,7 +1134,7 @@ function MenuRow({
       style={({ pressed }) => [styles.row, pressed && { backgroundColor: theme.backgroundSelected }]}>
       <Animated.View
         pointerEvents="none"
-        style={[StyleSheet.absoluteFill, { backgroundColor: theme.backgroundSelected }, highlight]}
+        style={[styles.rowBubble, { backgroundColor: theme.backgroundSelected }, highlight]}
       />
       <ThemedText style={[styles.rowLabel, primary && styles.rowLabelPrimary, { color }]} numberOfLines={1}>
         {label}
@@ -1305,6 +1303,17 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
   },
+  // The selection bubble: inset from the row's edges and generously rounded, so it reads as a pill
+  // sitting on the menu rather than a full-bleed band lighting up. Inset, because a bubble that touched
+  // the menu's own rounded edge would look like a rendering artefact rather than a shape.
+  rowBubble: {
+    position: 'absolute',
+    top: 2,
+    bottom: 2,
+    left: Spacing.one,
+    right: Spacing.one,
+    borderRadius: 10,
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1320,9 +1329,5 @@ const styles = StyleSheet.create({
   // Read leads and is bold — that is the ONLY way it's marked as primary. No colour. See MenuRow.
   rowLabelPrimary: {
     fontWeight: '600',
-  },
-  separator: {
-    height: StyleSheet.hairlineWidth,
-    marginLeft: Spacing.four,
   },
 });
