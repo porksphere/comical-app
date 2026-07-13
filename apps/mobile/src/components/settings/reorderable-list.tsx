@@ -17,10 +17,11 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PullIndicator } from '@/components/pull-indicator';
-import { SettingsRowHeight } from '@/constants/theme';
+import { SettingsGutter, SettingsRowHeight } from '@/constants/theme';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
+import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight } from '@/lib/haptics';
 
 import type { ReorderableListProps } from './reorderable-list.types';
@@ -130,11 +131,12 @@ export function ReorderableList<T>({ data, keyOf, renderRow, onReorder, refresh 
         alwaysBounceVertical
         contentContainerStyle={[contentPadding, styles.grow]}>
         <Animated.View style={[styles.grow, { minHeight: contentHeight }, pull.listStyle]}>
-          {data.map((item) => (
+          {data.map((item, i) => (
             <DragRow
               key={keyOf(item)}
               id={keyOf(item)}
               count={count}
+              divider={i < count - 1}
               scrollRef={scrollRef}
               scrollY={scrollY}
               svTop={svTop}
@@ -158,6 +160,7 @@ export function ReorderableList<T>({ data, keyOf, renderRow, onReorder, refresh 
 function DragRow({
   id,
   count,
+  divider,
   scrollRef,
   scrollY,
   svTop,
@@ -172,6 +175,7 @@ function DragRow({
 }: {
   id: string;
   count: number;
+  divider: boolean;
   scrollRef: AnimatedRef<Animated.ScrollView>;
   scrollY: SharedValue<number>;
   svTop: SharedValue<number>;
@@ -184,6 +188,7 @@ function DragRow({
   onCommit: (order: string[]) => void;
   children: React.ReactNode;
 }) {
+  const theme = useTheme();
   const pan = Gesture.Pan()
     // Long-press to lift, so a plain vertical drag still scrolls and a quick horizontal is the swipe.
     .activateAfterLongPress(200)
@@ -229,6 +234,8 @@ function DragRow({
   return (
     <Animated.View style={[styles.rowAbs, style]}>
       <GestureDetector gesture={pan}>{children}</GestureDetector>
+      {/* The same hairline SettingsSection draws between rows (left at the gutter, off the right). */}
+      {divider && <View style={[styles.divider, { backgroundColor: theme.hairline }]} pointerEvents="none" />}
     </Animated.View>
   );
 }
@@ -245,5 +252,12 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: ROW,
+  },
+  divider: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: -SettingsGutter,
+    height: StyleSheet.hairlineWidth,
   },
 });
