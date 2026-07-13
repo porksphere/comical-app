@@ -300,6 +300,19 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
   const topLimit = chromeTop + EDGE_PAD;
   const bottomLimit = chromeBottom - EDGE_PAD;
+  // The MENU gets a lower floor than the panel does, and this distinction matters more than it looks.
+  //
+  // `bottomLimit` stops above the tab bar, because the PANEL is chrome-aware: it's the preview, and it
+  // reads better kept off the bars (and the cover, which lives inside it, must stay clear of them —
+  // see the clip band). But the menu isn't the preview. It's rendered ABOVE everything, including the
+  // bars, so a row sitting over the tab bar is perfectly visible and perfectly tappable.
+  //
+  // Measuring the menu against the panel's floor was costing real movement: with the bars showing, it
+  // insisted 4 rows fit into a box ~90px shorter than the space the menu actually has, and paid for
+  // that by dragging the whole popup — cover and all — up the screen. Which is exactly why the symptom
+  // only appeared with the grid scrolled to the TOP: scroll down, the bars hide, `chromeBottom` becomes
+  // the screen bottom, and the two floors coincide.
+  const menuBottomLimit = winH - insets.bottom - EDGE_PAD;
 
   // The PANEL still opens against the left edge — it's near enough the full width of a phone that
   // centring it would move it by a few pixels and buy nothing.
@@ -356,7 +369,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const maxScale = Math.min(1, available / naturalPanelH);
   // The scale at which the menu fits underneath. Floored, so a very long menu can't shrink the preview
   // into a postage stamp — past that point the menu simply overflows and you swipe for it.
-  const fitScale = (available - GAP - menuH) / naturalPanelH;
+  const fitScale = (menuBottomLimit - topLimit - GAP - menuH) / naturalPanelH;
   const minScale = clamp(fitScale, MIN_PANEL_SCALE, maxScale);
   const scaleRange = Math.max(0, maxScale - minScale);
 
@@ -402,15 +415,15 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // allows — never to the top of the screen.
   const wantRows = Math.min(MIN_VISIBLE_ROWS, menuRowCount);
   const minMenuVisibleH = MENU_PAD_V * 2 + ROW_HEIGHT * wantRows;
-  const lowestForPanel = bottomLimit - panelHAtMax; // (1)
-  const lowestForMenu = lowestForPanel - GAP - minMenuVisibleH; // (2)
+  const lowestForPanel = bottomLimit - panelHAtMax; // (1) — the PANEL stays inside the chrome band
+  const lowestForMenu = menuBottomLimit - minMenuVisibleH - GAP - panelHAtMax; // (2) — the MENU may float over the bars
   const lowestTop = lowestForMenu > topLimit ? lowestForMenu : Math.max(topLimit, lowestForPanel);
   const topAtMax = clamp(idealTop, topLimit, lowestTop);
 
   // Where a swipe takes it: far enough up (and small enough) for the whole menu to sit below the panel.
   // Not clamped to the band's top — a menu too long to fit even at MIN_PANEL_SCALE would otherwise
   // leave its last rows unreachable, and the collapsed end IS the end of the range.
-  const topAtMin = Math.min(bottomLimit - (panelHAtMin + GAP + menuH), bottomLimit - panelHAtMin);
+  const topAtMin = Math.min(menuBottomLimit - (panelHAtMin + GAP + menuH), bottomLimit - panelHAtMin);
 
   // The popup is swipeable if there is anywhere for it to GO — and that's now two different things: it
   // can scale down, and it can travel up. Either one moves the menu into view, so either one counts.
@@ -425,6 +438,37 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const restingTop = topAtMax;
   const panelTopMin = expandable ? topAtMin : restingTop;
   const panelTopMax = expandable ? topAtMax : restingTop;
+
+  // TEMPORARY (dev only): every input and every decision the anchor is made from, so a "weird case"
+  // can be read off the log instead of guessed at. `menuRowsAtAnchor` is the invariant actually being
+  // met — if that's below `wantRows`, the constraint was unsatisfiable and we fell back to keeping the
+  // panel on screen. `coverTravel` is what we're minimising: 0 means the cover didn't move at all.
+  if (__DEV__) {
+    const menuTopAtAnchor = panelTopMax + panelHAtMax + GAP;
+    let menuRowsAtAnchor = 0;
+    for (let i = 0; i < menuRowCount; i++) {
+      if (menuTopAtAnchor + MENU_PAD_V + (i + 1) * ROW_HEIGHT <= menuBottomLimit) menuRowsAtAnchor++;
+    }
+    console.log(
+      '[POPUP-PLACE]',
+      JSON.stringify({
+        card: { y: Math.round(rect.y), h: Math.round(rect.height) },
+        chrome: { top: Math.round(chromeTop), bottom: Math.round(chromeBottom) },
+        band: { top: Math.round(topLimit), bottom: Math.round(bottomLimit), menuBottom: Math.round(menuBottomLimit) },
+        panel: { natural: Math.round(naturalPanelH), atMax: Math.round(panelHAtMax), maxScale: +maxScale.toFixed(2) },
+        menu: { rows: menuRowCount, h: Math.round(menuH) },
+        wanted: Math.round(idealTop),
+        floors: { panelOnScreen: Math.round(lowestForPanel), menuVisible: Math.round(lowestForMenu), used: Math.round(lowestTop) },
+        anchor: Math.round(panelTopMax),
+        collapsedTo: Math.round(panelTopMin),
+        expandable,
+        // The two things that must be true, and the thing we're minimising:
+        menuRowsAtAnchor,
+        wantRows,
+        coverTravel: Math.round(panelTopMax + PANEL_PAD * maxScale - rect.y),
+      }),
+    );
+  }
 
 
   // Shared-element FLIP for the COVER only: it travels from the pressed card's cover (scaled to the
