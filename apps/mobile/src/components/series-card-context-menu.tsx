@@ -359,10 +359,6 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const fitScale = (available - GAP - menuH) / naturalPanelH;
   const minScale = clamp(fitScale, MIN_PANEL_SCALE, maxScale);
   const scaleRange = Math.max(0, maxScale - minScale);
-  // Drag distance that spans the whole range — i.e. how far the panel's bottom edge (and the menu with
-  // it) travels between the two ends. Makes the drag 1:1 with what it's moving.
-  const dragRange = naturalPanelH * scaleRange;
-  const expandable = dragRange > 1;
 
   // ── Placement ─────────────────────────────────────────────────────────────
   // The panel's TOP is part of the range too, not a fixed anchor. Pinning it to the top of the band
@@ -388,47 +384,38 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // with the rest of the FLIP. Scaled, because the slot moves with the panel.)
   const idealTop = rect.y - PANEL_PAD * maxScale;
 
-  // Two things it isn't allowed to want:
+  // ONE hard limit, and only one: the panel opens fully sized and fully on screen. That's it.
   //
-  //   near the TOP    → the panel must open FULLY SIZED, so it can't start above the band (the chrome
-  //                     would cut it and there'd be nowhere for it to grow). A HARD limit.
-  //   near the BOTTOM → the panel must at least be ON SCREEN, and preferably with enough of the menu
-  //                     below it to read as a menu (MIN_VISIBLE_ROWS).
+  // The menu does NOT get a say in where the popup opens. It used to — a "keep MIN_VISIBLE_ROWS on
+  // screen" floor — and that floor is what kept dragging the popup up the screen: with the real
+  // three-row menu, min(4, 3) is the WHOLE menu, so the floor was quietly demanding that the entire
+  // menu fit below the preview, and paying for it with the one thing that actually matters, which is
+  // where the cover ends up. The cover's position is the thing you're looking at. The menu is one swipe
+  // away.
   //
-  // So: aim for zero movement, then move it the LEAST amount those limits allow. Which is the whole
-  // point — the clamp is the only thing that ever moves the cover.
-  //
-  // Never demand more rows than the menu HAS: a flat "show 4" against a three-row menu would shove
-  // every popup upward to make room for a row that doesn't exist.
-  const wantRows = Math.min(MIN_VISIBLE_ROWS, menuRowCount);
-  const minMenuVisibleH = MENU_PAD_V * 2 + ROW_HEIGHT * wantRows;
-  // The panel itself must stay on screen — this one can't be negotiated away.
-  const lowestForPanel = bottomLimit - panelHAtMax;
-  // And we'd LIKE this much of the menu under it.
-  const lowestForMenu = lowestForPanel - GAP - minMenuVisibleH;
-  //
-  // When those two conflict — a tall preview and a long menu leave no room for both — MINIMAL MOVEMENT
-  // WINS, and the menu is the thing that gives (it's one swipe away; the cover's position is not).
-  //
-  // This is the bug that made the popup "always open at the top once the grid was scrolled": the old
-  // code fell back to `topLimit` when the menu floor was unsatisfiable — the worst possible answer for
-  // movement, throwing the card's position away entirely. And whether it fell back depended on the
-  // space available, which CHANGES ON SCROLL as the bars hide. Hence: fine at the top of the list,
-  // pinned to the top of the screen once you'd scrolled. It was never about scrolling.
-  const lowestTop = lowestForMenu > topLimit ? lowestForMenu : Math.max(topLimit, lowestForPanel);
+  // So: aim at zero movement, and move only as far as keeping the panel on screen forces.
+  const lowestTop = Math.max(topLimit, bottomLimit - panelHAtMax);
   const topAtMax = clamp(idealTop, topLimit, lowestTop);
-  // Deliberately NOT clamped to `topLimit`: a menu so long that it can't fit even with the panel at its
-  // minimum scale (the floor exists so the preview never becomes a postage stamp) would otherwise leave
-  // its last rows below the bottom edge with no swipe left to reach them — the collapsed end IS the end
-  // of the range. Letting the panel ride above the band instead keeps every row reachable, which
-  // matters more than the panel staying tidily inside it at the one extreme where the two conflict.
+
+  // Where a swipe takes it: far enough up (and small enough) for the whole menu to sit below the panel.
+  // Not clamped to the band's top — a menu too long to fit even at MIN_PANEL_SCALE would otherwise
+  // leave its last rows unreachable, and the collapsed end IS the end of the range.
   const topAtMin = Math.min(bottomLimit - (panelHAtMin + GAP + menuH), bottomLimit - panelHAtMin);
-  // A column that already fits keeps sitting near the card it came from — nothing to resize, nothing to
-  // reposition.
-  const groupH = panelHAtMin + GAP + menuH;
-  const restingTop = clamp(rect.y, topLimit, bottomLimit - groupH);
+
+  // The popup is swipeable if there is anywhere for it to GO — and that's now two different things: it
+  // can scale down, and it can travel up. Either one moves the menu into view, so either one counts.
+  // (Before, only scaling counted, so a popup that fitted at full size had no resize at all — which
+  // meant its menu had to be placed on screen at open, which is what forced the popup upward. Letting
+  // it TRAVEL is what buys the freedom to open where the card is.)
+  const topTravel = Math.max(0, topAtMax - topAtMin);
+  const dragRange = naturalPanelH * scaleRange + topTravel;
+  const expandable = dragRange > 1;
+
+  // A popup with nowhere to go just sits where the card is, clamped on screen.
+  const restingTop = topAtMax;
   const panelTopMin = expandable ? topAtMin : restingTop;
   const panelTopMax = expandable ? topAtMax : restingTop;
+
 
   // Shared-element FLIP for the COVER only: it travels from the pressed card's cover (scaled to the
   // card's width) to its resting SLOT — a top corner of the panel's top row. The radius is
