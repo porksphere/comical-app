@@ -1,40 +1,53 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
-import { PlusIcon } from '@/components/icons/ui-icons';
+import { CheckIcon, GripIcon, PlusIcon } from '@/components/icons/ui-icons';
 import { useKeyboardAvoidingInput, useOverlay } from '@/components/overlay/overlay';
-import { RefreshableSettingsScroll } from '@/components/settings/refreshable-settings-scroll';
+import { ReorderableList } from '@/components/settings/reorderable-list';
 import { RetryBlock } from '@/components/retry-block';
-import { SettingsSection } from '@/components/settings/settings-row';
 import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
 import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar, TopBarButton } from '@/components/top-bar';
 import { Spacing } from '@/constants/theme';
+import type { SavedRegistry } from '@/data/api';
+import { applyOrder, setRegistryOrder, useRegistryOrder } from '@/data/list-order';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
+import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { friendlyError } from '@/lib/friendly-error';
+
+const IS_WEB = Platform.OS === 'web';
 
 export default function RegistriesScreen() {
   const ds = useDataSource();
   const router = useRouter();
   const theme = useTheme();
+  const contentPadding = useSettingsScrollPadding();
   const queryClient = useQueryClient();
   const { open } = useOverlay();
+  // Web-only reorder mode (▲/▼). Native reorders in place via long-press drag.
+  const [editing, setEditing] = useState(false);
 
   const { data: registries, error, isLoading, refetch } = useQuery({
     queryKey: queryKeys.registries(),
     queryFn: ({ signal }) => ds.getRegistries(signal),
   });
 
-  // Refresh each registry's operator label. `getRegistries` (the list) never fetches indexes, so a
-  // relabelled registry wouldn't show its new name on its own. Browsing each registry fetches its
-  // index, which reconciles the saved `displayName` server-side (see RegistryManager.fetchAndCache);
-  // we then re-read the list. Per-registry so it also covers registries with nothing installed.
+  // Registries are keyed by url; apply the saved order the same way bridges/trackers do.
+  const order = useRegistryOrder();
+  const ordered = Array.isArray(registries) ? applyOrder(registries, order, (r) => r.url) : registries;
+  const canReorder = Array.isArray(ordered) && ordered.length >= 2;
+
+  // Refresh each registry's operator label (the pull-to-refresh handler). `getRegistries` (the list)
+  // never fetches indexes, so a relabelled registry wouldn't show its new name on its own. Browsing
+  // each registry fetches its index, which reconciles the saved `displayName` server-side (see
+  // RegistryManager.fetchAndCache); we then re-read the list. Per-registry so it also covers
+  // registries with nothing installed.
   const reconcileLabels = useCallback(async () => {
     const regs = registries ?? [];
     if (regs.length > 0) {
@@ -53,56 +66,71 @@ export default function RegistriesScreen() {
     void reconcileLabels();
   }, [registries, reconcileLabels]);
 
+  const renderRow = (r: SavedRegistry) => (
+    <SwipeableSettingsRow
+      key={r.url}
+      // Operator-set label (e.g. "SFW") shown next to the derived owner/repo name, so one publisher's
+      // several registries are distinguishable. Falls back to just the name.
+      label={r.displayName ? `${r.displayName} — ${r.name}` : r.name}
+      description={r.url}
+      onPress={() => router.push({ pathname: '/registry-browse', params: { url: r.url } })}
+      actionLabel="Remove"
+      onAction={() => open(() => <RemoveRegistryConfirm url={r.url} />)}
+    />
+  );
+
   return (
     <ThemedView style={styles.container}>
       <TopBar
         title="Registries"
         right={
           // `null` = this server has no registry support at all, so there's nothing to add to.
-          registries !== null && (
-            <TopBarButton
-              icon={<PlusIcon color={theme.text} size={22} />}
-              label="Add registry"
-              onPress={() => open(() => <AddRegistryForm />)}
-            />
-          )
+          registries !== null &&
+          (editing ? (
+            <TopBarButton icon={<CheckIcon color={theme.text} size={22} />} label="Done reordering" onPress={() => setEditing(false)} />
+          ) : (
+            <View style={styles.topActions}>
+              {/* Reorder button only on web (native reorders in place — long-press a row). */}
+              {IS_WEB && canReorder && (
+                <TopBarButton icon={<GripIcon color={theme.text} size={22} />} label="Reorder registries" onPress={() => setEditing(true)} />
+              )}
+              <TopBarButton icon={<PlusIcon color={theme.text} size={22} />} label="Add registry" onPress={() => open(() => <AddRegistryForm />)} />
+            </View>
+          ))
         }
       />
-      <RefreshableSettingsScroll refresh={reconcileLabels}>
-        {isLoading ? (
-          <ActivityIndicator />
-        ) : error ? (
+      {error ? (
+        <View style={[styles.stateHost, contentPadding]}>
           <RetryBlock message={friendlyError(error, 'Failed to load registries. Try again.')} onRetry={() => refetch()} />
-        ) : registries === null ? (
-          <View style={styles.empty}>
-            <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
-              Registries are not available on this server.
-            </ThemedText>
-          </View>
-        ) : registries && registries.length === 0 ? (
-          <View style={styles.empty}>
-            <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
-              No registries added yet. A registry is a catalog that bridges and trackers are installed from — add one
-              with the + above.
-            </ThemedText>
-          </View>
-        ) : (
-          <SettingsSection>
-            {(registries ?? []).map((r) => (
-              <SwipeableSettingsRow
-                key={r.url}
-                // Operator-set label (e.g. "SFW") shown next to the derived owner/repo name, so one
-                // publisher's several registries are distinguishable. Falls back to just the name.
-                label={r.displayName ? `${r.displayName} — ${r.name}` : r.name}
-                description={r.url}
-                onPress={() => router.push({ pathname: '/registry-browse', params: { url: r.url } })}
-                actionLabel="Remove"
-                onAction={() => open(() => <RemoveRegistryConfirm url={r.url} />)}
-              />
-            ))}
-          </SettingsSection>
-        )}
-      </RefreshableSettingsScroll>
+        </View>
+      ) : isLoading || ordered === undefined ? (
+        <View style={[styles.stateHost, contentPadding]}>
+          <ActivityIndicator />
+        </View>
+      ) : ordered === null ? (
+        <View style={[styles.stateHost, styles.empty, contentPadding]}>
+          <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
+            Registries are not available on this server.
+          </ThemedText>
+        </View>
+      ) : ordered.length === 0 ? (
+        <View style={[styles.stateHost, styles.empty, contentPadding]}>
+          <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
+            No registries added yet. A registry is a catalog that bridges and trackers are installed from — add one with
+            the + above.
+          </ThemedText>
+        </View>
+      ) : (
+        <ReorderableList
+          data={ordered}
+          keyOf={(r) => r.url}
+          renderRow={renderRow}
+          label={(r) => (r.displayName ? `${r.displayName} — ${r.name}` : r.name)}
+          onReorder={(urls) => setRegistryOrder(urls)}
+          editing={editing}
+          refresh={reconcileLabels}
+        />
+      )}
     </ThemedView>
   );
 }
@@ -214,6 +242,15 @@ function AddRegistryForm() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  topActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  stateHost: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   empty: {
     alignItems: 'center',

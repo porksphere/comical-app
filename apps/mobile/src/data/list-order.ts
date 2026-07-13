@@ -13,6 +13,8 @@ import { persisted$ } from '@/lib/observable';
 
 const bridgeOrder$ = persisted$<string[]>('comical:bridgeOrder', []);
 const trackerOrder$ = persisted$<string[]>('comical:trackerOrder', []);
+// Registries are keyed by their url (not an id), but the order model is identical.
+const registryOrder$ = persisted$<string[]>('comical:registryOrder', []);
 
 /**
  * Return `items` sorted by the saved `order` (an id list). Items whose id is in `order` come first,
@@ -47,4 +49,11 @@ export function useTrackerOrder(): string[] {
 }
 export function setTrackerOrder(ids: string[]): void {
   trackerOrder$.set(ids);
+}
+
+export function useRegistryOrder(): string[] {
+  return use$(registryOrder$);
+}
+export function setRegistryOrder(urls: string[]): void {
+  registryOrder$.set(urls);
 }
