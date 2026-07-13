@@ -528,7 +528,7 @@ const delay = (ms: number): Promise<void> =>
   mockActive ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
 
 // Perf spike fixture: a synthetic bridge whose composed Home has a LOT of rails, so the
-// rail-virtualization work (HomeFeed) can be stress-profiled on demand — a real bridge home is only
+// rail-virtualization work (ContentFeed) can be stress-profiled on demand — a real bridge home is only
 // ~3–5 rails, which may not lag at all. Reachable via the __DEV__ "Use mock data" toggle. See
 // `RAIL_STRESS_COUNT` / `mockGetHomeSections`.
 export const RAIL_STRESS_BRIDGE_ID = 'rail-stress';
@@ -563,7 +563,7 @@ export async function mockGetBridgeLists(_bridgeId: string): Promise<BridgeList[
 }
 
 /** Perf spike: a composed Home with `RAIL_STRESS_COUNT` rails (cycling the three kinds with distinct
- *  ids/titles), so the many-rails-at-once mount cost — and whether HomeFeed's virtualization actually
+ *  ids/titles), so the many-rails-at-once mount cost — and whether ContentFeed's virtualization actually
  *  helps — is measurable. Keeps the usual terminal grid so infinite scroll past the rails is exercised. */
 function mockRailStressSections(bridgeId: string): RailSection[] {
   const kinds: RailSection['kind'][] = ['hero', 'ranked', 'regular'];

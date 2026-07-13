@@ -90,7 +90,7 @@ function gridCardWidth(viewport: number, gap: number): number {
 export const SECTION_HEAD_HEIGHT = 32;
 
 /**
- * Reserved vertical height of a whole `Rail` row (heading + strip/grid), used by `HomeFeed`'s
+ * Reserved vertical height of a whole `Rail` row (heading + strip/grid), used by `ContentFeed`'s
  * `getEstimatedItemSize` so the vertical list can place an unmounted rail without measuring it. Shares
  * the exact same card-width + `estimatedCardHeight` math the `Rail` itself lays out with, so the two
  * can't drift (the same discipline `series-grid.tsx`'s `cellHeight` follows). An estimate — rails are
@@ -110,7 +110,7 @@ export function railStripHeight(kind: RailSection['kind'], viewportWidth: number
 }
 
 /** Whole rail row INCLUDING its own heading — for callers where the rail renders its own head (a
- *  self-headed `RailSkeleton`, or series.tsx's related rail). HomeFeed's loaded rails are headless (a
+ *  self-headed `RailSkeleton`, or series.tsx's related rail). ContentFeed's loaded rails are headless (a
  *  shared `sectionHead` row precedes them), so it sizes those with `railStripHeight` instead. */
 export function railRowHeight(kind: RailSection['kind'], viewportWidth: number, wide: boolean): number {
   return SECTION_HEAD_HEIGHT + Spacing.two + railStripHeight(kind, viewportWidth, wide);
@@ -139,7 +139,7 @@ export function Rail({
   /** Current viewport width, threaded from the screen. */
   viewportWidth: number;
   onSeeAll?: (section: RailSection) => void;
-  /** Suppress the rail's own `SectionHead` — HomeFeed renders it as a separate shared `sectionHead`
+  /** Suppress the rail's own `SectionHead` — ContentFeed renders it as a separate shared `sectionHead`
    *  row above the strip, so the strip alone is the rail item. Default (undefined) keeps the head, so
    *  standalone callers (series.tsx's related rail) are unchanged. */
   headless?: boolean;

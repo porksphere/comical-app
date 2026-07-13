@@ -2,7 +2,7 @@
  * Flat, typed row model for the composed-Home surface, so the whole Home (rails + non-terminal grid
  * blocks + the terminal "Browse all" grid) can render as the `data` of ONE vertical LegendList and be
  * virtualized — off-screen rails actually unmount, instead of every rail being mounted at once inside a
- * never-virtualized `ListHeaderComponent` (the old shape). See `components/home-feed.tsx`.
+ * never-virtualized `ListHeaderComponent` (the old shape). See `components/content-feed.tsx`.
  *
  * The order below mirrors exactly what the old `listHeader` rendered top-to-bottom:
  *   rails → non-terminal grid blocks → terminal section head → terminal grid rows
@@ -10,7 +10,7 @@
  */
 import type { BridgeList, HomeGridSection, RailSection, SeriesEntry } from '@/data/types';
 
-export type HomeRow =
+export type ContentRow =
   // Shared heading row for EVERY section (rail, non-terminal grid block, terminal grid). Carries the
   // "See all" target when the section can be drilled into (rails can; grid blocks / terminal can't).
   | { type: 'sectionHead'; key: string; title: string; seeAll?: { listId: string; title: string } }
@@ -28,7 +28,7 @@ export type HomeRow =
 /** LegendList row-type tag, so recycled views are pooled per kind (a rail never recycles into a grid
  *  row). Every heading — rail, block, terminal — now shares ONE `sectionHead` pool. Skeleton variants
  *  stay self-headed and share their real body's pool (same shape, brief lifetime). */
-export function homeRowType(row: HomeRow): string {
+export function contentRowType(row: ContentRow): string {
   switch (row.type) {
     case 'railSkeleton':
       return 'rail';
@@ -46,7 +46,7 @@ function chunk<T>(arr: T[], size: number): T[][] {
 }
 
 /**
- * Build the flat `HomeRow[]` for the composed Home. Called with either the loaded data or (while
+ * Build the flat `ContentRow[]` for the composed Home. Called with either the loaded data or (while
  * `loading`) the `lists`-derived previews — mirroring `getHomeSections`'s own rail/grid partition so
  * the skeleton shape matches the real one. The terminal-grid loading skeleton stays a list FOOTER
  * (like `SeriesGrid`), so it isn't produced here.
@@ -63,7 +63,7 @@ export function buildHomeRows(args: {
   railListsPreview: BridgeList[];
   nonTerminalGridListsPreview: BridgeList[];
   terminalGridPreview: BridgeList | null;
-}): HomeRow[] {
+}): ContentRow[] {
   const {
     loading,
     numColumns,
@@ -76,7 +76,7 @@ export function buildHomeRows(args: {
     terminalGridPreview,
   } = args;
 
-  const rows: HomeRow[] = [];
+  const rows: ContentRow[] = [];
 
   if (loading) {
     // Rails: one skeleton per known rail list (real title, unknown cards), falling back to a generic

@@ -19,7 +19,7 @@ import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
  * matching the reference's `attachLoadMore` for every grid list but the last.
  *
  * Self-contained (owns its `useInfiniteQuery`) so it can be dropped in as one
- * virtualized row of `HomeFeed` and unmount when scrolled off — its expanded
+ * virtualized row of `ContentFeed` and unmount when scrolled off — its expanded
  * "Load more" pages survive the unmount because they live in the react-query
  * cache (keyed `browseGrid(homeGrid, listId)`), re-seeded from `initialData` on
  * remount.
@@ -38,7 +38,7 @@ export function HomeGridBlock({
   direct: boolean;
   /** Same column count as the main grid, so cards read at one consistent size. */
   numColumns: number;
-  /** Suppress the block's own `SectionHead` — HomeFeed renders it as a separate shared `sectionHead`
+  /** Suppress the block's own `SectionHead` — ContentFeed renders it as a separate shared `sectionHead`
    *  row above the block. Default keeps the head so the component stays usable standalone. */
   headless?: boolean;
 }) {
@@ -86,7 +86,7 @@ export function HomeGridBlock({
 
   return (
     // When headless, drop the block's own top padding too — the shared sectionHead row above it
-    // already supplies the heading→body gap (see HomeFeed's HEADING_GAP).
+    // already supplies the heading→body gap (see ContentFeed's HEADING_GAP).
     <View style={[styles.homeGridBlock, headless && styles.homeGridBlockHeadless]}>
       {!headless && <SectionHead title={section.title} />}
       <View style={styles.homeGridRows}>

@@ -18,7 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BarSurface } from '@/components/bar-surface';
 import { BridgeThumb } from '@/components/bridge-thumb';
 import { GridSkeleton } from '@/components/grid-skeleton';
-import { HomeFeed } from '@/components/home-feed';
+import { ContentFeed } from '@/components/content-feed';
 import { SearchIcon } from '@/components/icons/ui-icons';
 import { RetryBlock } from '@/components/retry-block';
 import { SeriesGrid } from '@/components/series-grid';
@@ -28,7 +28,7 @@ import { ThemedView } from '@/components/themed-view';
 import { PullIndicator } from '@/components/pull-indicator';
 import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { pageOptions } from '@/data/api';
-import { buildHomeRows } from '@/data/home-rows';
+import { buildHomeRows } from '@/data/content-rows';
 import { useDedupedPages } from '@/data/grid-pages';
 import { fetchBrowseScope, homeSectionsQuery, queryKeys, type BrowseScope } from '@/data/queries';
 import { useSelectedBridge } from '@/data/selected-bridge';
@@ -477,7 +477,7 @@ export default function BrowseScreen() {
   // Both open the pushed Search screen (search field in its own top bar, filters + results below).
   const isLargeScreen = useIsLargeScreen();
   const openSearch = () => router.push('/search');
-  // Column count for the terminal-grid row chunking + skeletons (buildHomeRows). HomeFeed/SeriesGrid
+  // Column count for the terminal-grid row chunking + skeletons (buildHomeRows). ContentFeed/SeriesGrid
   // derive their own full layout (incl. the rail viewport) from the same hook, so nothing can disagree.
   const { numColumns } = useGridLayout();
   // Logical scope string — drives ONLY the header/scroll reset effect below (not the list key), so
@@ -598,7 +598,7 @@ export default function BrowseScreen() {
 
   // Header for the flat results/favorites/page grid (SeriesGrid only): the "See all" back banner +
   // any results error. The composed Home's rails, non-terminal grid blocks, and terminal grid are no
-  // longer header children — they're virtualized rows of HomeFeed (see `homeRows`), so off-screen
+  // longer header children — they're virtualized rows of ContentFeed (see `homeRows`), so off-screen
   // rails actually unmount instead of all being live at once in a never-virtualized header.
   const resultsHeader = (
     // Bleed out the list's contentContainer horizontal padding — controls self-pad Spacing.four.
@@ -608,7 +608,7 @@ export default function BrowseScreen() {
     </View>
   );
 
-  // The composed Home flattened into a typed row list for HomeFeed's virtualization. Same rail/grid
+  // The composed Home flattened into a typed row list for ContentFeed's virtualization. Same rail/grid
   // partition (and loading-skeleton shape) the old listHeader rendered inline, just as data. Only built
   // for the composed-Home surface; homeError shows a retry in the header instead (rows empty).
   const homeRows = useMemo(
@@ -680,14 +680,14 @@ export default function BrowseScreen() {
       {...pull.touchHandlers}>
       {/* The list frame spans the full screen, from behind the topBar — its `paddingTop` reserves the
           bar's resting height so content starts below it; as the bar slides away the content already
-          sitting there is revealed. Composed Home renders through HomeFeed (rails + terminal grid all
+          sitting there is revealed. Composed Home renders through ContentFeed (rails + terminal grid all
           virtualized rows); every OTHER surface (results / favorites / page-flagged list) is a flat
           uniform grid and stays on SeriesGrid, unchanged. The two only swap on a page/See-all
           navigation — a page/bridge swap is hidden by the opacity-0 crossfade; a See-all/exit is the
           lighter within-surface transition (a brief remount + skeleton, acceptable for a drill-down).
-          `!inResults` ⟺ composed Home with no See-all, so it's the HomeFeed gate. */}
+          `!inResults` ⟺ composed Home with no See-all, so it's the ContentFeed gate. */}
       {!inResults ? (
-        <HomeFeed
+        <ContentFeed
           rows={homeRows}
           scopeKey={gridScope}
           listRef={listRef}
