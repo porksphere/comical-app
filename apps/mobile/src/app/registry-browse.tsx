@@ -5,11 +5,11 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'reac
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { RetryBlock } from '@/components/retry-block';
-import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
+import { SettingsRow, SettingsSection, SettingsTopGap } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar, useTopBarInset } from '@/components/top-bar';
-import { BarContentGap, BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import type { AvailableBridge, AvailableTracker } from '@/data/api';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { queryKeys } from '@/data/queries';
@@ -51,7 +51,7 @@ export default function RegistryBrowseScreen() {
         contentContainerStyle={[
           styles.content,
           // The TopBar is an absolute overlay, so the content pads past it (and scrolls under its frost).
-          { paddingTop: topBarInset + BarContentGap, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
+          { paddingTop: topBarInset + SettingsTopGap, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
         ]}>
         <ThemedText type="small" themeColor="textSecondary">
           {url}

@@ -1,11 +1,11 @@
 import { ScrollView, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
+import { SettingsRow, SettingsSection, SettingsTopGap } from '@/components/settings/settings-row';
 import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar, useTopBarInset } from '@/components/top-bar';
-import { BarContentGap, BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useApiBase } from '@/data/api';
 import { useMockDataToggle } from '@/data/source';
 import { devProfiler$, useDevProfilerEnabled } from '@/lib/dev-profiler-flag';
@@ -27,7 +27,7 @@ export default function DeveloperSettingsScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.content,
-          { paddingTop: topBarInset + BarContentGap, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
+          { paddingTop: topBarInset + SettingsTopGap, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
         ]}>
         <SettingsSection title="Developer">
           <SettingsRow

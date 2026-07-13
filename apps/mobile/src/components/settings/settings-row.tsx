@@ -3,7 +3,7 @@ import { Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { ChevronRightIcon } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { RowHeight, Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight } from '@/lib/haptics';
@@ -20,6 +20,14 @@ import { hapticImpactLight } from '@/lib/haptics';
  */
 export const SettingsGutter = Spacing.four;
 
+/**
+ * Gap between a settings screen's top bar and its first row — deliberately much tighter than the
+ * `BarContentGap` the content tabs use. A settings list is a list: it should begin immediately
+ * under the bar, not float a header's worth of empty space below it. Browse/Library/History keep
+ * the larger gap, where the first thing under the bar is artwork rather than a row.
+ */
+export const SettingsTopGap = Spacing.two;
+
 /** A titled group of settings — the Settings screens' section shape. The title sits above a
  *  full-width list of rows separated by hairline dividers.
  *
@@ -30,13 +38,16 @@ export const SettingsGutter = Spacing.four;
  *
  *  `icon` is an optional leading glyph next to the title, for scanability on the top-level
  *  Settings screen where several sections sit in a row (especially on wide desktop layouts,
- *  where a plain text-only heading reads sparse). */
+ *  where a plain text-only heading reads sparse).
+ *
+ *  `title` is optional: a screen whose whole content IS the list (Bridges, Registries) doesn't need
+ *  a header restating the screen's own name, so it renders the list alone. */
 export function SettingsSection({
   title,
   icon,
   children,
 }: {
-  title: string;
+  title?: string;
   icon?: ReactNode;
   children: ReactNode;
 }) {
@@ -44,12 +55,14 @@ export function SettingsSection({
   const items = Children.toArray(children).filter(Boolean);
   return (
     <View style={styles.sectionWrap}>
-      <View style={styles.sectionHeader}>
-        {icon}
-        <ThemedText type="smallBold" themeColor="textSecondary" style={styles.sectionTitle}>
-          {title}
-        </ThemedText>
-      </View>
+      {title && (
+        <View style={styles.sectionHeader}>
+          {icon}
+          <ThemedText type="smallBold" themeColor="textSecondary" style={styles.sectionTitle}>
+            {title}
+          </ThemedText>
+        </View>
+      )}
       <View style={styles.section}>
         {items.map((item, i) => (
           <Fragment key={i}>
@@ -79,6 +92,7 @@ export function SettingsRow({
   descriptionColor,
   descriptionSelectable,
   escapeGutter = true,
+  leading,
   right,
   onPress,
   onHoverIn,
@@ -86,6 +100,8 @@ export function SettingsRow({
 }: {
   label: string;
   description?: string;
+  /** Optional glyph/artwork before the label (a bridge's icon). See `RowIcon`. */
+  leading?: ReactNode;
   /** Overrides the description's color (e.g. an amber/blue status hint) — defaults to `textSecondary`. */
   descriptionColor?: string;
   /** Lets the description text be selected/copied (e.g. a server URL) — off by default. */
@@ -112,6 +128,7 @@ export function SettingsRow({
         onPress && styles.rowPressable,
         highlighted && Platform.OS !== 'android' && { backgroundColor: theme.backgroundSelected },
       ]}>
+      {leading}
       <View style={styles.rowText}>
         <ThemedText type="small">{label}</ThemedText>
         {description && (
@@ -176,8 +193,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: Spacing.three,
-    minHeight: 48,
-    paddingVertical: Spacing.two,
+    minHeight: RowHeight,
+    paddingVertical: Spacing.one,
     // The row keeps its text at the gutter while its background spans the full width (see
     // `rowEscape`), so the highlight has no rounded corners to preserve — it's edge to edge.
     paddingHorizontal: SettingsGutter,

@@ -16,8 +16,8 @@ import {
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { SettingsGutter } from '@/components/settings/settings-row';
-import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { SettingsGutter, SettingsTopGap } from '@/components/settings/settings-row';
+import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw } from '@/data/source';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
@@ -57,7 +57,7 @@ export default function SettingsScreen() {
           styles.content,
           // flexGrow: fill the viewport even when the list is short, so the space below it is still
           // draggable (see SeriesGrid's note).
-          { flexGrow: 1, paddingTop: headerHeight + BarContentGap, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
+          { flexGrow: 1, paddingTop: headerHeight + SettingsTopGap, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
         ]}>
         <View style={styles.list}>
           <CategoryRow
@@ -223,8 +223,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.three,
-    minHeight: 64,
-    paddingVertical: Spacing.three,
+    minHeight: 56,
+    paddingVertical: Spacing.two,
     // Text sits at the gutter; the background and press/hover highlight run to the screen's edge.
     // Same trick as `SettingsRow` — see `SettingsGutter`.
     paddingHorizontal: SettingsGutter,

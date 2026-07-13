@@ -3,16 +3,17 @@ import { useRouter } from 'expo-router';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { PlusIcon } from '@/components/icons/ui-icons';
+import { BridgesIcon, PlusIcon } from '@/components/icons/ui-icons';
 import { useOverlay } from '@/components/overlay/overlay';
 import { RetryBlock } from '@/components/retry-block';
 import { useBrowseRegistry } from '@/components/settings/browse-registry';
-import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
+import { RowIcon } from '@/components/settings/row-icon';
+import { SettingsRow, SettingsSection, SettingsTopGap } from '@/components/settings/settings-row';
 import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar, TopBarButton, useTopBarInset } from '@/components/top-bar';
-import { BarContentGap, BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import type { BridgeSummary } from '@/data/api';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { queryKeys } from '@/data/queries';
@@ -62,7 +63,7 @@ export default function BridgesScreen() {
         contentContainerStyle={[
           styles.content,
           // The TopBar is an absolute overlay, so the content pads past it (and scrolls under its frost).
-          { paddingTop: topBarInset + BarContentGap, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
+          { paddingTop: topBarInset + SettingsTopGap, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
         ]}>
         {isError ? (
           <RetryBlock message={friendlyError(error, 'Failed to load bridges. Try again.')} onRetry={() => refetch()} />
@@ -86,7 +87,7 @@ export default function BridgesScreen() {
             )}
           </View>
         ) : (
-          <SettingsSection title="Installed">
+          <SettingsSection>
             {visible.map((b) => {
               const status = bridgeStatus(b);
               const openBridge = () =>
@@ -99,6 +100,7 @@ export default function BridgesScreen() {
                   },
                 });
               const statusColor = status && (status.tone === 'warn' ? theme.badgeWarn : theme.badgeInfo);
+              const icon = <RowIcon uri={b.info.iconUrl} fallback={(color, size) => <BridgesIcon color={color} size={size} />} />;
               // Only registry-installed bridges can be uninstalled — one that's built into the
               // server has nothing to remove (this is the same `source` gate bridge-settings.tsx
               // puts on its own uninstall row), so it gets a plain non-swipeable row.
@@ -108,6 +110,7 @@ export default function BridgesScreen() {
                   label={b.info.name}
                   description={status?.text}
                   descriptionColor={statusColor}
+                  leading={icon}
                   onPress={openBridge}
                   actionLabel="Uninstall"
                   onAction={() => open(() => <UninstallBridgeConfirm bridge={b} />)}
@@ -118,6 +121,7 @@ export default function BridgesScreen() {
                   label={b.info.name}
                   description={status?.text}
                   descriptionColor={statusColor}
+                  leading={icon}
                   onPress={openBridge}
                 />
               );
