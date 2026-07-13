@@ -66,7 +66,7 @@ export function SeriesGrid({
   onScrollEndDrag,
   wrapperStyle,
 }: {
-  /** Unpadded entries — spacers are added here, so callers never build them. */
+  /** The series to show. Exactly what gets rendered — the grid adds nothing to it. */
   items: SeriesGridItem[];
   /** Identifies the current scope (bridge/page/query/sort/…). Feeds the list `key` and the cards'
    *  recycle `cohort`, so a scope change resets recycled card state instead of flashing the previous

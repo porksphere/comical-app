@@ -140,7 +140,7 @@ export default function LibraryScreen() {
   return (
     <ThemedView style={styles.container}>
       {/* The same grid Browse and Search render — every list-level concern (recycling, the web scroll
-          bridge, the fling-jitter guard, spacers, cells, layout) lives in SeriesGrid, so the Library
+          bridge, the fling-jitter guard, cells, layout) lives in SeriesGrid, so the Library
           inherits all of it and configures none of it. `scopeKey` carries query/sort, which is what
           remounts the list on a search/sort switch (a scroll-to-top moment) and resets recycled cards. */}
       <SeriesGrid

@@ -1,8 +1,8 @@
 /**
- * Shared responsive grid geometry for the series-card grids (Browse + Search):
+ * Shared responsive grid geometry for the series-card grids (Browse, Search, Library):
  * the column count, the symmetric side padding that centres content to
- * `MaxTopLevelWidth`, and the per-card width hint. Extracted from the Browse
- * screen so the Search page lays cards out identically.
+ * `MaxTopLevelWidth`, and the exact per-card width. Extracted from the Browse
+ * screen so every grid lays cards out identically.
  *
  * Hydration-safe on WEB only (see `useHydrated`): the static export prerenders with
  * no viewport (width 0), so on web we hold the mobile column count / a 390px rail
@@ -25,7 +25,8 @@ export type GridLayout = {
   sidePad: number;
   /** Hydration-safe viewport width for rails (mobile fallback before mount). */
   railViewport: number;
-  gridContentWidth: number;
+  /** EXACT width of one card, not a hint — `SeriesGrid` pins its cells to this. It's the whole reason
+   *  a short final row can just end: an elastic cell would stretch to fill the row instead. */
   cardWidth: number;
   hydrated: boolean;
   width: number;
@@ -40,8 +41,9 @@ export function useGridLayout(): GridLayout {
   // padding; header/footer blocks bleed Spacing.four of this back out (see the Browse list).
   const sidePad = Math.max(0, (width - MaxTopLevelWidth) / 2) + Spacing.four;
   const railViewport = hydrated ? width : 390;
+  // Not returned: it exists only to derive `cardWidth`, and nothing outside this hook ever wanted it.
   const gridContentWidth = width - sidePad * 2;
   const cardWidth = (gridContentWidth - (numColumns - 1) * GRID_COLUMN_GAP) / numColumns;
 
-  return { numColumns, sidePad, railViewport, gridContentWidth, cardWidth, hydrated, width };
+  return { numColumns, sidePad, railViewport, cardWidth, hydrated, width };
 }

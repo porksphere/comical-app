@@ -725,7 +725,7 @@ export default function BrowseScreen() {
           the bar's resting height so content starts below it; as the bar slides away (see
           `headerOffsetY` above) the content already sitting there is revealed, rather than the list
           needing to relayout. Every list-level concern (recycling, the web scroll bridge, the
-          fling-jitter guard, spacers, cells) lives in SeriesGrid — see that file. */}
+          fling-jitter guard, cells) lives in SeriesGrid — see that file. */}
       <SeriesGrid
         items={gridItems}
         scopeKey={gridScope}
@@ -782,6 +782,7 @@ function HomeGridBlock({
   /** Same column count as the main grid, so cards read at one consistent size. */
   numColumns: number;
 }) {
+  const { cardWidth } = useGridLayout();
   const ds = useDataSource();
   const mock = useMockActive();
   const queryClient = useQueryClient();
@@ -817,9 +818,9 @@ function HomeGridBlock({
     void query.fetchNextPage();
   };
 
-  // Chunk into fixed-column rows, matching the main FlatList grid's own
-  // `numColumns` + `flex: 1` cell layout exactly (same `row`/`cell` styles) so
-  // cards read at the same size everywhere, not a separately-sized wrap grid.
+  // Chunk into fixed-column rows, matching the main grid's own `numColumns` + `cardWidth` cell
+  // layout exactly (same `row`/`cell` styles) so cards read at the same size everywhere, not a
+  // separately-sized wrap grid.
   const rows: SeriesEntry[][] = [];
   for (let i = 0; i < items.length; i += numColumns) rows.push(items.slice(i, i + numColumns));
 
@@ -830,15 +831,12 @@ function HomeGridBlock({
         {rows.map((row, r) => (
           <View key={r} style={[styles.row, styles.gridRow]}>
             {row.map((item) => (
-              <View key={item.id} style={styles.cell}>
+              // Pinned to `cardWidth`, like SeriesGrid's cells. A short last row just ends — this
+              // block used to append invisible spacer views to stop a `flex: 1` cell stretching.
+              <View key={item.id} style={[styles.cell, { width: cardWidth }]}>
                 <SeriesCard entry={item} bridge={bridge} bridgeId={bridgeId} direct={direct} />
               </View>
             ))}
-            {/* Pad the last row with invisible spacers so short rows don't stretch. */}
-            {row.length < numColumns &&
-              Array.from({ length: numColumns - row.length }).map((_, i) => (
-                <View key={`spacer-${i}`} style={styles.cell} />
-              ))}
           </View>
         ))}
       </View>
@@ -956,9 +954,9 @@ const styles = StyleSheet.create({
   row: {
     paddingHorizontal: Spacing.four,
   },
-  cell: {
-    flex: 1,
-  },
+  // NO `flex: 1` — pinned to `cardWidth` at the call site, so a short last row ends rather than
+  // stretching its cards (which is what the old spacer views existed to prevent).
+  cell: {},
   // Desktop search pill: takes the middle of the selector row (flex), capped so it reads as a
   // search bar, with a right margin reserving space for the desktop tab-icon nav (app-tabs).
   searchPillWrap: {
