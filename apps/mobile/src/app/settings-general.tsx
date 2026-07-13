@@ -11,12 +11,12 @@ import {
   useKeyboardAvoidingInput,
   useOverlay,
 } from '@/components/overlay/overlay';
-import { SettingsGutter, SettingsRow, SettingsSection } from '@/components/settings/settings-row';
+import { SettingsGutter, SettingsRow, SettingsSection, SettingsTopGap } from '@/components/settings/settings-row';
 import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar, useTopBarInset } from '@/components/top-bar';
-import { BarContentGap, BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useApiBase } from '@/data/api';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { applyEmbeddedMode, isEmbeddedRuntimeAvailable, useEmbeddedEnabled } from '@/data/embedded';
@@ -93,22 +93,19 @@ export default function GeneralSettingsScreen() {
         contentContainerStyle={[
           styles.content,
           // The TopBar is an absolute overlay, so the content pads past it (and scrolls under its frost).
-          { paddingTop: topBarInset + BarContentGap, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
+          { paddingTop: topBarInset + SettingsTopGap, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
         ]}>
-        <SettingsSection title="Appearance">
+        {/* One unheadered list. "APPEARANCE" over a row already called Appearance, and "CONTENT"
+            over one called NSFW content, said nothing the row didn't — every row here carries its
+            own title and a line explaining it. */}
+        <SettingsSection>
           <AppearanceRow preference={themePref} onChange={setThemePref} />
           <SettingsRow
             label="Lightweight cards"
             description="Drops the shrink animation and cross-fade from covers and page thumbnails for smoother scrolling."
             right={<ThemedSwitch value={lightCards} onValueChange={(v) => lightCards$.light.set(v)} />}
           />
-        </SettingsSection>
-
-        <SettingsSection title="Content">
           <NsfwModeRow mode={nsfwMode} onChange={setNsfwMode} />
-        </SettingsSection>
-
-        <SettingsSection title="Where bridges run">
           {embeddedAvailable && (
             <SettingsRow
               label="Run bridges on this device"

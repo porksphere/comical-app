@@ -7,13 +7,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PlusIcon } from '@/components/icons/ui-icons';
 import { useKeyboardAvoidingInput, useOverlay } from '@/components/overlay/overlay';
 import { RetryBlock } from '@/components/retry-block';
-import { SettingsSection } from '@/components/settings/settings-row';
+import { SettingsSection, SettingsTopGap } from '@/components/settings/settings-row';
 import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
 import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar, TopBarButton, useTopBarInset } from '@/components/top-bar';
-import { BarContentGap, BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
 import { useTheme } from '@/hooks/use-theme';
@@ -51,7 +51,7 @@ export default function RegistriesScreen() {
         contentContainerStyle={[
           styles.content,
           // The TopBar is an absolute overlay, so the content pads past it (and scrolls under its frost).
-          { paddingTop: topBarInset + BarContentGap, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
+          { paddingTop: topBarInset + SettingsTopGap, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
         ]}>
         {isLoading ? (
           <ActivityIndicator />
@@ -71,7 +71,7 @@ export default function RegistriesScreen() {
             </ThemedText>
           </View>
         ) : (
-          <SettingsSection title="Added">
+          <SettingsSection>
             {(registries ?? []).map((r) => (
               <SwipeableSettingsRow
                 key={r.url}
