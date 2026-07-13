@@ -71,7 +71,7 @@ export default function RegistriesScreen() {
             </ThemedText>
           </View>
         ) : (
-          <SettingsSection title="Added" bleed>
+          <SettingsSection title="Added">
             {(registries ?? []).map((r) => (
               <SwipeableSettingsRow
                 key={r.url}

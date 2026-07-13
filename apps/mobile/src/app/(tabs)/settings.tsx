@@ -16,6 +16,7 @@ import {
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { SettingsGutter } from '@/components/settings/settings-row';
 import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw } from '@/data/source';
@@ -58,7 +59,7 @@ export default function SettingsScreen() {
           // draggable (see SeriesGrid's note).
           { flexGrow: 1, paddingTop: headerHeight + BarContentGap, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
         ]}>
-        <ThemedView type="backgroundElement" style={[styles.card, { borderColor: theme.hairline }]}>
+        <View style={styles.list}>
           <CategoryRow
             icon={<GeneralSettingsIcon color={theme.textSecondary} size={22} />}
             title="General"
@@ -107,7 +108,7 @@ export default function SettingsScreen() {
               />
             </>
           )}
-        </ThemedView>
+        </View>
       </ScrollView>
 
       <TabTitleBar title="Settings" />
@@ -210,17 +211,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    paddingHorizontal: Spacing.four,
+    paddingHorizontal: SettingsGutter,
     width: '100%',
     maxWidth: MaxTopLevelWidth,
     alignSelf: 'center',
   },
-  card: {
-    borderRadius: Spacing.three,
-    borderWidth: StyleSheet.hairlineWidth,
-    // The rows run edge to edge (their own padding), so their press/hover highlight reaches the
-    // card's sides — clipped here to its rounded corners.
-    overflow: 'hidden',
+  list: {
     width: '100%',
   },
   row: {
@@ -229,7 +225,10 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
     minHeight: 64,
     paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.three,
+    // Text sits at the gutter; the background and press/hover highlight run to the screen's edge.
+    // Same trick as `SettingsRow` — see `SettingsGutter`.
+    paddingHorizontal: SettingsGutter,
+    marginHorizontal: -SettingsGutter,
     cursor: 'pointer',
   },
   icon: {
@@ -242,5 +241,7 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: StyleSheet.hairlineWidth,
+    // Starts under the row's icon, runs off the right edge.
+    marginRight: -SettingsGutter,
   },
 });

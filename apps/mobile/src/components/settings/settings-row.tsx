@@ -3,35 +3,41 @@ import { Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { ChevronRightIcon } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight } from '@/lib/haptics';
 
-/** A titled group of `SettingsRow`s — the Settings screen's section shape. The
- *  title sits above a bordered card holding the rows, with a hairline divider
- *  between each row (inset to align under the row's label) instead of a plain
- *  gap — this is how both iOS Settings (inset-grouped table) and Android's
- *  Material 3 Settings (rounded surface list) lay out a group of settings
- *  today, so it reads as one native-feeling list on both platforms rather
- *  than a stack of separate cards.
+/**
+ * The horizontal gutter every settings screen pads its scroll content by. Rows cancel it out with a
+ * negative margin (see `SettingsRow`) so their background, press highlight, and swipe-revealed
+ * delete pane all run to the screen's edge, while their TEXT still lines up with everything else at
+ * this inset. Anything in a section that isn't a row (save buttons, field editors, chips) just keeps
+ * the gutter it inherits.
+ *
+ * This is the one coupling to be careful about: a screen that pads its content by something other
+ * than `Spacing.four` will have its rows overhang or fall short by the difference.
+ */
+export const SettingsGutter = Spacing.four;
+
+/** A titled group of settings — the Settings screens' section shape. The title sits above a
+ *  full-width list of rows separated by hairline dividers.
+ *
+ *  There is deliberately no card here: rows run edge to edge, the way X, iOS Settings' grouped
+ *  lists on a phone, and Android's Material 3 Settings all present a settings list. The old
+ *  rounded, bordered card floating inside the screen's padding read as a widget sitting ON the
+ *  screen rather than as the screen itself.
+ *
  *  `icon` is an optional leading glyph next to the title, for scanability on the top-level
  *  Settings screen where several sections sit in a row (especially on wide desktop layouts,
- *  where a plain text-only heading reads sparse).
- *  `bleed` drops the card's horizontal padding (the rows re-add it themselves via `SettingsRow`'s
- *  `inset={false}`) and clips to the border radius — what a list of `SwipeableSettingsRow`s needs,
- *  so the red delete pane revealed behind a row runs to the card's edge and is cut by its rounded
- *  corners instead of floating inside the padding. */
+ *  where a plain text-only heading reads sparse). */
 export function SettingsSection({
   title,
   icon,
-  bleed,
   children,
 }: {
   title: string;
   icon?: ReactNode;
-  bleed?: boolean;
   children: ReactNode;
 }) {
   const theme = useTheme();
@@ -44,14 +50,16 @@ export function SettingsSection({
           {title}
         </ThemedText>
       </View>
-      <ThemedView type="backgroundElement" style={[styles.section, bleed && styles.sectionBleed, { borderColor: theme.hairline }]}>
+      <View style={styles.section}>
         {items.map((item, i) => (
           <Fragment key={i}>
             {item}
+            {/* Starts at the gutter (under the row's text) and runs off the right edge — the
+                standard inset-divider look, which reads as a list rather than a stack of slabs. */}
             {i < items.length - 1 && <View style={[styles.divider, { backgroundColor: theme.hairline }]} />}
           </Fragment>
         ))}
-      </ThemedView>
+      </View>
     </View>
   );
 }
@@ -70,7 +78,7 @@ export function SettingsRow({
   description,
   descriptionColor,
   descriptionSelectable,
-  inset = true,
+  escapeGutter = true,
   right,
   onPress,
   onHoverIn,
@@ -82,9 +90,10 @@ export function SettingsRow({
   descriptionColor?: string;
   /** Lets the description text be selected/copied (e.g. a server URL) — off by default. */
   descriptionSelectable?: boolean;
-  /** Set false inside a `bleed` section: the row carries the horizontal padding the card gave up,
-   *  so it still lines up with a normal section's rows while its press highlight runs full-bleed. */
-  inset?: boolean;
+  /** Set false when an ancestor has ALREADY cancelled the screen's gutter (the swipeable wrapper
+   *  does, so its delete pane can reach the edge). The row then only pads, and doesn't also pull
+   *  itself a second `SettingsGutter` further out. */
+  escapeGutter?: boolean;
   right?: ReactNode;
   onPress?: () => void;
   /** Web only: mirrors of the row's own hover state, so a caller rendering something hover-dependent
@@ -99,7 +108,7 @@ export function SettingsRow({
     <View
       style={[
         styles.row,
-        !inset && styles.rowBleed,
+        escapeGutter && styles.rowEscape,
         onPress && styles.rowPressable,
         highlighted && Platform.OS !== 'android' && { backgroundColor: theme.backgroundSelected },
       ]}>
@@ -145,21 +154,12 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   section: {
-    padding: Spacing.three,
-    borderRadius: Spacing.three,
-    borderWidth: StyleSheet.hairlineWidth,
     width: '100%',
-  },
-  sectionBleed: {
-    paddingHorizontal: 0,
-    // Clips the swipe-revealed delete pane to the card's rounded corners.
-    overflow: 'hidden',
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
-    paddingHorizontal: Spacing.two,
     marginBottom: Spacing.two,
   },
   sectionTitle: {
@@ -168,6 +168,8 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: StyleSheet.hairlineWidth,
+    // Left edge stays at the gutter (aligned under the row's text); the right runs off-screen.
+    marginRight: -SettingsGutter,
   },
   row: {
     flexDirection: 'row',
@@ -176,13 +178,12 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
     minHeight: 48,
     paddingVertical: Spacing.two,
-    borderRadius: Spacing.two,
+    // The row keeps its text at the gutter while its background spans the full width (see
+    // `rowEscape`), so the highlight has no rounded corners to preserve — it's edge to edge.
+    paddingHorizontal: SettingsGutter,
   },
-  rowBleed: {
-    paddingHorizontal: Spacing.three,
-    // Full-bleed rows can't keep a rounded highlight — it would leave uncovered corners against
-    // the card edge, and the swipe pane it slides over is square.
-    borderRadius: 0,
+  rowEscape: {
+    marginHorizontal: -SettingsGutter,
   },
   rowPressable: {
     cursor: 'pointer',

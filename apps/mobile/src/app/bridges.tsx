@@ -86,7 +86,7 @@ export default function BridgesScreen() {
             )}
           </View>
         ) : (
-          <SettingsSection title="Installed" bleed>
+          <SettingsSection title="Installed">
             {visible.map((b) => {
               const status = bridgeStatus(b);
               const openBridge = () =>
@@ -118,7 +118,6 @@ export default function BridgesScreen() {
                   label={b.info.name}
                   description={status?.text}
                   descriptionColor={statusColor}
-                  inset={false}
                   onPress={openBridge}
                 />
               );
