@@ -176,3 +176,39 @@ export const TopBarHeight = RowHeight + BarVerticalPad * 2;
 /** Taller top-bar height used on desktop (≥768px) only. Must stay >= TopBarHeight
  *  so the same "control + padding" floor holds on desktop too. */
 export const DesktopTopBarHeight = 64;
+
+// ─── Settings screens ────────────────────────────────────────────────────────────
+// The three numbers every settings screen is built from. They live here, with the other layout
+// tokens, rather than in the components that happen to use them — a screen shouldn't have to import
+// a React component module just to read a measurement.
+
+/**
+ * The horizontal gutter every settings screen pads its scroll content by. Rows cancel it out with an
+ * equal negative margin (`SettingsRow`'s `escapeGutter`) so their background, press highlight, and
+ * swipe-revealed delete pane all run to the screen's edge, while their TEXT still lines up at this
+ * inset. Anything in a section that isn't a row (save buttons, field editors, chips) simply keeps the
+ * gutter it inherits.
+ *
+ * The one coupling to watch: a settings screen that pads its content by something OTHER than this
+ * will have its rows overhang or fall short by the difference. `useSettingsScrollPadding` is what
+ * keeps them honest.
+ */
+export const SettingsGutter = Spacing.four;
+
+/**
+ * The height of EVERY settings row, on every settings screen. Fixed, not a minimum: descriptions are
+ * clamped to one line (see `SettingsRow`) precisely so a row can't outgrow its neighbours. Before
+ * this, height depended on whether a description happened to wrap — the landing's rows ran 82px, a
+ * registry row (a wrapping URL) 70px, and a bridge row with no status line only 44px, so no two lists
+ * lined up.
+ */
+export const SettingsRowHeight = 52;
+
+/**
+ * Gap between a settings screen's top bar and its first row. Zero on purpose — a settings list is a
+ * list, and should begin flush under the bar; the row's own padding is all the separation it needs.
+ * The content tabs keep `BarContentGap` instead, where the first thing under the bar is artwork.
+ *
+ * Named rather than inlined so the intent survives: this is a deliberate zero, not an oversight.
+ */
+export const SettingsTopGap = 0;

@@ -11,8 +11,8 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { TrashIcon } from '@/components/icons/ui-icons';
-import { SettingsGutter, SettingsRow } from '@/components/settings/settings-row';
-import { Spacing } from '@/constants/theme';
+import { SettingsRow } from '@/components/settings/settings-row';
+import { SettingsGutter, Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight } from '@/lib/haptics';

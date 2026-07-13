@@ -3,7 +3,7 @@ import { Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { ChevronRightIcon } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { SettingsGutter, SettingsRowHeight, Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight } from '@/lib/haptics';
@@ -18,27 +18,36 @@ import { hapticImpactLight } from '@/lib/haptics';
  * This is the one coupling to be careful about: a screen that pads its content by something other
  * than `Spacing.four` will have its rows overhang or fall short by the difference.
  */
-export const SettingsGutter = Spacing.four;
-
 /**
- * Gap between a settings screen's top bar and its first row. Zero on purpose: a settings list is a
- * list, and it should begin flush under the bar — the row's own vertical padding is all the
- * breathing room it needs. The content tabs keep `BarContentGap`, where the first thing under the
- * bar is artwork rather than a row.
+ * The frame every settings row is cut from: fixed height, the gutter escape that lets its background
+ * reach the screen's edge while its text stays inset, and the text column beside it.
  *
- * Kept as a named constant rather than dropped entirely so the intent survives: this is a
- * deliberate zero, not an oversight.
+ * Exported because two rows in the app CAN'T be a `SettingsRow` — the Appearance and NSFW pickers in
+ * `settings-general` need their own ref on the Pressable for `useAnchoredOverlay` to anchor to, and
+ * the landing screen's category rows carry a leading icon and a count. They were each re-declaring
+ * this geometry by hand, which is exactly how a list ends up with one row 8px taller than the rest.
+ * Spread these instead.
  */
-export const SettingsTopGap = 0;
-
-/**
- * The height of EVERY settings row, on every settings screen. Fixed rather than
- * content-dependent: descriptions are clamped to a single line (see `SettingsRow`) precisely so
- * that one row can't stand taller than its neighbours. Before this, a row's height depended on
- * whether its description happened to wrap — the registry list (a wrapping URL) ran 70px, the
- * landing's rows 82px, and a bridge row with no status line only 44px, so no two lists lined up.
- */
-export const SettingsRowHeight = 52;
+export const settingsRowFrame = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.three,
+    height: SettingsRowHeight,
+    paddingVertical: Spacing.one,
+    // Text sits at the gutter; the background and press/hover highlight run to the screen's edge.
+    paddingHorizontal: SettingsGutter,
+  },
+  /** Cancels the screen's gutter. Omit when an ancestor has already done it (the swipe wrapper has). */
+  escape: {
+    marginHorizontal: -SettingsGutter,
+  },
+  text: {
+    flex: 1,
+    gap: Spacing.half,
+  },
+});
 
 /** A titled group of settings — the Settings screens' section shape. The title sits above a
  *  full-width list of rows separated by hairline dividers.
@@ -135,13 +144,13 @@ export function SettingsRow({
   const content = (highlighted?: boolean) => (
     <View
       style={[
-        styles.row,
-        escapeGutter && styles.rowEscape,
+        settingsRowFrame.row,
+        escapeGutter && settingsRowFrame.escape,
         onPress && styles.rowPressable,
         highlighted && Platform.OS !== 'android' && { backgroundColor: theme.backgroundSelected },
       ]}>
       {leading}
-      <View style={styles.rowText}>
+      <View style={settingsRowFrame.text}>
         <ThemedText type="small" numberOfLines={1}>
           {label}
         </ThemedText>
@@ -208,25 +217,7 @@ const styles = StyleSheet.create({
     // Left edge stays at the gutter (aligned under the row's text); the right runs off-screen.
     marginRight: -SettingsGutter,
   },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: Spacing.three,
-    height: SettingsRowHeight,
-    paddingVertical: Spacing.one,
-    // The row keeps its text at the gutter while its background spans the full width (see
-    // `rowEscape`), so the highlight has no rounded corners to preserve — it's edge to edge.
-    paddingHorizontal: SettingsGutter,
-  },
-  rowEscape: {
-    marginHorizontal: -SettingsGutter,
-  },
   rowPressable: {
     cursor: 'pointer',
-  },
-  rowText: {
-    flex: 1,
-    gap: Spacing.half,
   },
 });
