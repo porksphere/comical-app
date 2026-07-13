@@ -505,12 +505,14 @@ const COLLAPSED_ROWS = 4;
  * virtualizing past it (both its web and native builds share this core), which capped the grid
  * at the first lazily-fetched page. So a page whose thumbnail isn't inlined yet is still a real
  * `page` cell carrying a `null` thumb — the absence lives *inside* the descriptor, not as the
- * cell itself. `spacer` cells pad a short last row so its tiles keep their column width.
+ * cell itself.
+ *
+ * Every cell is a real page. There used to be a `spacer` variant padding out a short last row, which
+ * a `flex: 1` cell needed or it would stretch its tiles across the row — the cell is pinned to
+ * `tileW` now, so a short row simply ends. Given the null-entry footgun above, putting synthetic
+ * entries in this particular `data` array was a fight not worth having.
  */
-type PageCell =
-  | { kind: "page"; pageIndex: number; thumb: PageThumbSource | null }
-  | { kind: "spacer" };
-const SPACER_CELL: PageCell = { kind: "spacer" };
+type PageCell = { kind: 'page'; pageIndex: number; thumb: PageThumbSource | null };
 
 /**
  * The direct-series page-thumbnail grid — and the series screen's own scroll
@@ -580,21 +582,14 @@ export function PageThumbList({
   // this gate exists. A series with nothing below the grid has nothing to
   // protect, so just render the full (already-virtualized) list directly.
   const collapsed = !expanded && !!footer && thumbs.length > collapsedCount;
-  // Collapsed shows the first few rows (so the rails stay reachable); expanded
-  // shows all, virtualized. Pad the last (short) row with spacers so its tiles
-  // keep their column width instead of the flex cell stretching them — same
-  // pattern as the browse grid. Empty while loading (the header shows the page
-  // skeleton instead).
+  // Collapsed shows the first few rows (so the rails stay reachable); expanded shows all,
+  // virtualized. Empty while loading (the header shows the page skeleton instead).
   const base = loading ? [] : collapsed ? thumbs.slice(0, collapsedCount) : thumbs;
-  const data = useMemo<PageCell[]>(() => {
+  const data = useMemo<PageCell[]>(
     // `base` is sliced from index 0 (collapsed or not), so its position IS the page index.
-    const cells: PageCell[] = base.map((thumb, pageIndex) => ({ kind: "page", pageIndex, thumb }));
-    const remainder = cells.length % cols;
-    if (cells.length > 0 && remainder !== 0) {
-      cells.push(...Array.from({ length: cols - remainder }, () => SPACER_CELL));
-    }
-    return cells;
-  }, [base, cols]);
+    () => base.map((thumb, pageIndex) => ({ kind: 'page', pageIndex, thumb })),
+    [base],
+  );
 
   return (
     <LegendList
@@ -667,28 +662,26 @@ export function PageThumbList({
           {footer ? <View style={styles.pageFooterRails}>{footer}</View> : null}
         </View>
       }
-      renderItem={({ item }) =>
-        item.kind === 'spacer' ? (
-          <View style={styles.pageCell} />
-        ) : (
-          <View style={styles.pageCell}>
-            <PageThumb
-              thumb={item.thumb}
-              index={item.pageIndex}
-              seed={seed}
-              bridgeId={bridgeId}
-              page={item.pageIndex + 1}
-              width={tileW}
-              onPress={() =>
-                router.push({
-                  pathname: '/reader',
-                  params: { seed, title, direct: '1', start: String(item.pageIndex), ...(bridgeId ? { bridgeId } : {}) },
-                })
-              }
-            />
-          </View>
-        )
-      }
+      renderItem={({ item }) => (
+        // Pinned to `tileW` — the same width the tile inside it is drawn at. An elastic cell is what
+        // made a short final row stretch, which is why this grid used to pad `data` with spacers.
+        <View style={[styles.pageCell, { width: tileW }]}>
+          <PageThumb
+            thumb={item.thumb}
+            index={item.pageIndex}
+            seed={seed}
+            bridgeId={bridgeId}
+            page={item.pageIndex + 1}
+            width={tileW}
+            onPress={() =>
+              router.push({
+                pathname: '/reader',
+                params: { seed, title, direct: '1', start: String(item.pageIndex), ...(bridgeId ? { bridgeId } : {}) },
+              })
+            }
+          />
+        </View>
+      )}
     />
   );
 }
@@ -1200,10 +1193,10 @@ const styles = StyleSheet.create({
   pageFooterRails: {
     marginHorizontal: -Spacing.four,
   },
-  // A grid cell: fills its column; the paddingBottom is the inter-row gap
-  // (LegendList's columnWrapperStyle only supplies the column gap).
+  // A grid cell. NO `flex: 1` — it's pinned to `tileW` at the call site, so a short last row ends
+  // instead of stretching. The paddingBottom is the inter-row gap (LegendList's columnWrapperStyle
+  // only supplies the column gap).
   pageCell: {
-    flex: 1,
     paddingBottom: Spacing.two,
   },
   head: {
