@@ -125,16 +125,7 @@ export function buildHomeRows(args: {
   }
   if (terminalGridSection) {
     rows.push({ type: 'sectionHead', key: 'head:terminal', title: terminalGridSection.title });
-    rows.push(...gridRowsFromCards(gridItems, numColumns));
+    chunk(gridItems, numColumns).forEach((items, i) => rows.push({ type: 'gridRow', key: `grow:${i}`, items }));
   }
   return rows;
-}
-
-/**
- * Chunk a flat list of cards into `gridRow` rows — the building block for any flat cross-bridge grid
- * rendered through ContentFeed (e.g. the Library). `keyPrefix` namespaces the row keys so a builder
- * that emits more than one grid can keep them distinct.
- */
-export function gridRowsFromCards(cards: FeedCardEntry[], numColumns: number, keyPrefix = 'grow'): ContentRow[] {
-  return chunk(cards, numColumns).map((items, i) => ({ type: 'gridRow', key: `${keyPrefix}:${i}`, items }));
 }

@@ -9,13 +9,12 @@ import { RetryBlock } from '@/components/retry-block';
 import { SearchField } from '@/components/search-field';
 import { Selector } from '@/components/selector';
 import { TabTitleBar } from '@/components/tab-title-bar';
-import { ContentFeed } from '@/components/content-feed';
+import { SeriesGrid, type SeriesGridItem } from '@/components/series-grid';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BarContentGap, BottomTabInset, Spacing } from '@/constants/theme';
 import { type LibrarySort } from '@/data/api';
-import { gridRowsFromCards, type FeedCardEntry } from '@/data/content-rows';
 import { libraryQuery } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import type { Bridge, LibraryItem } from '@/data/types';
@@ -36,10 +35,10 @@ const SORT_LABELS: Record<LibrarySort, string> = {
 const SORT_ORDER: LibrarySort[] = ['added', 'lastRead', 'title', 'unread'];
 const labelToSort = (label: string): LibrarySort => SORT_ORDER.find((s) => SORT_LABELS[s] === label) ?? 'added';
 
-// The Library is a CROSS-BRIDGE grid: unlike Browse/Search (one bridge for the whole grid), each entry
-// carries its own bridge. `FeedCardEntry` models that — its per-card bridge fields override the
-// feed-level ones — so ContentFeed renders it with no Library-specific cell or item type needed.
-type GridItem = FeedCardEntry;
+// The Library is a CROSS-BRIDGE grid: unlike Browse/Search (one bridge for the whole grid), each
+// entry carries its own bridge. `SeriesGridItem` already models that — the per-item bridge fields
+// override the grid-level ones — so no Library-specific cell or item type is needed.
+type GridItem = SeriesGridItem;
 
 export default function LibraryScreen() {
   const ds = useDataSource();
@@ -85,10 +84,6 @@ export default function LibraryScreen() {
 
   // Held empty until `ready` so the tab switch isn't blocked mounting the grid.
   const listData = ready ? cards : [];
-  // Library is a flat grid, so its ContentFeed rows are just the cards chunked into gridRow rows (no
-  // rails/headings today) — but it's now on the same composite list Browse's home uses, so adding a
-  // section (e.g. a "Continue reading" rail) later is just emitting more ContentRow types here.
-  const rows = useMemo(() => gridRowsFromCards(listData, numColumns), [listData, numColumns]);
 
   const listHeader = (
     <View style={styles.controls}>
@@ -144,13 +139,12 @@ export default function LibraryScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      {/* Rendered through ContentFeed — the same composite list Browse's home uses — over a flat set of
-          `gridRow` rows whose cards each carry their own bridge (cross-bridge). Every list-level concern
-          (recycling, the web scroll bridge, cells, layout) lives in RecyclerList underneath, so the
-          Library inherits all of it and configures none of it. `scopeKey` carries query/sort, which
+      {/* The same grid Browse and Search render — every list-level concern (recycling, the web scroll
+          bridge, the fling-jitter guard, cells, layout) lives in SeriesGrid, so the Library
+          inherits all of it and configures none of it. `scopeKey` carries query/sort, which is what
           remounts the list on a search/sort switch (a scroll-to-top moment) and resets recycled cards. */}
-      <ContentFeed
-        rows={rows}
+      <SeriesGrid
+        items={listData}
         scopeKey={`${query}|${sort}`}
         listRef={listRef}
         header={listHeader}
@@ -216,9 +210,6 @@ const styles = StyleSheet.create({
     // No leading padding: the grid's own `BarContentGap` is the bar->content gap now (it used to be
     // paid here instead, which is why adding the shared gap on top would have double-padded it).
     paddingBottom: Spacing.three,
-    // Self-pad the horizontal inset: ContentFeed's content container is centering-only (unlike
-    // SeriesGrid's sidePad), so header content supplies its own Spacing.four to line up with the cards.
-    paddingHorizontal: Spacing.four,
     gap: Spacing.three,
   },
   controlsRow: {
