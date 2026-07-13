@@ -406,6 +406,20 @@ off-screen rails unmount (the Netflix-home pattern).
 **Decision gate:** first confirm a composed-home *enter/mount* actually lags at a realistic rail
 count. Skip if homes are only ~3–5 rails.
 
+### SPIKED on branch `spike/virtualize-home-rails` (2026-07-13, commit 69deefe)
+Full-fidelity build of the fix above: a new `components/home-feed.tsx` (`AnimatedLegendList`,
+`numColumns=1`) renders a flat `HomeRow[]` (`data/home-rows.ts`: rail / gridBlock / terminalHead /
+gridRow + skeletons) built by `buildHomeRows` in `index.tsx`, which now branches
+`!inResults ? <HomeFeed> : <SeriesGrid>`. `HomeGridBlock` was extracted to its own file (kept its
+own `useInfiniteQuery` "Load more" — pages survive unmount via the query cache). `rail.tsx` exports
+`railRowHeight()`/`SECTION_HEAD_HEIGHT` for `getFixedItemSize`. A "Rail Stress (Demo)" mock bridge
+(18 rails) was added to profile against. Builds clean (typecheck: no new errors; web export OK).
+**Still un-measured** — needs a browser/on-device run to (1) confirm off-screen rails unmount,
+(2) profile enter/mount stress-home before vs. after, (3) check the two risks: the rail title-peek /
+iOS long-press lift not being clipped by the virtualized item container, and the See-all↔exit
+transition (now a HomeFeed↔SeriesGrid remount, not crossfaded — brief skeleton flash). Decide
+merge-or-drop from that measurement.
+
 ## Perf: release-jank investigation plan (A–D)
 
 A **release** build was confirmed janky (2026-07) — so this is real, not dev-mode overhead. All the
