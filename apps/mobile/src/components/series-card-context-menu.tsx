@@ -384,17 +384,27 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // with the rest of the FLIP. Scaled, because the slot moves with the panel.)
   const idealTop = rect.y - PANEL_PAD * maxScale;
 
-  // ONE hard limit, and only one: the panel opens fully sized and fully on screen. That's it.
+  // The open ANCHOR has to satisfy both invariants; within what they leave, it moves as little as it
+  // possibly can. In priority order:
   //
-  // The menu does NOT get a say in where the popup opens. It used to — a "keep MIN_VISIBLE_ROWS on
-  // screen" floor — and that floor is what kept dragging the popup up the screen: with the real
-  // three-row menu, min(4, 3) is the WHOLE menu, so the floor was quietly demanding that the entire
-  // menu fit below the preview, and paying for it with the one thing that actually matters, which is
-  // where the cover ends up. The cover's position is the thing you're looking at. The menu is one swipe
-  // away.
+  //   1. HARD  the panel opens fully sized and fully on screen. Non-negotiable — an undersized or
+  //            clipped preview isn't a preview.
+  //   2. HARD  at least MIN_VISIBLE_ROWS of the menu are on screen AT THE ANCHOR. A popup whose actions
+  //            are all below the fold doesn't read as a menu, however swipeable it is.
+  //   3. THEN  minimise the cover's movement: aim it at exactly where the card's cover already is.
   //
-  // So: aim at zero movement, and move only as far as keeping the panel on screen forces.
-  const lowestTop = Math.max(topLimit, bottomLimit - panelHAtMax);
+  // The clamp is the only thing that ever moves the cover, and it moves it the least the two invariants
+  // allow. What it must NOT do is what it did before: when (2) couldn't be met at all, it pinned the
+  // panel to `topLimit` — the top of the screen — throwing the card's position away entirely rather
+  // than getting as close as it could. That's the bug that made the popup "open at the top once the
+  // grid was scrolled": whether (2) was satisfiable depends on the space available, and the bars hiding
+  // on scroll changes it. When (2) is impossible, fall back to (1) and stay as near the card as that
+  // allows — never to the top of the screen.
+  const wantRows = Math.min(MIN_VISIBLE_ROWS, menuRowCount);
+  const minMenuVisibleH = MENU_PAD_V * 2 + ROW_HEIGHT * wantRows;
+  const lowestForPanel = bottomLimit - panelHAtMax; // (1)
+  const lowestForMenu = lowestForPanel - GAP - minMenuVisibleH; // (2)
+  const lowestTop = lowestForMenu > topLimit ? lowestForMenu : Math.max(topLimit, lowestForPanel);
   const topAtMax = clamp(idealTop, topLimit, lowestTop);
 
   // Where a swipe takes it: far enough up (and small enough) for the whole menu to sit below the panel.
