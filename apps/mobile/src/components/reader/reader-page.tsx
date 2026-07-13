@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { WarnIcon } from '@/components/icons/reader-icons';
+import { useImageProgress } from '@/components/reader/image-progress';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
@@ -16,6 +17,11 @@ import { logDiagnostic } from '@/lib/diagnostics';
 // then fall back to a placeholder with a manual Retry tap.
 //  - fit "contain": fills a fixed full-screen box (Paged mode).
 //  - fit "width": fills the width; height derives from the image aspect (Webtoon).
+//
+// While the skeleton is up it also reports what's actually happening: the download percentage
+// (see `image-progress.ts` — bytes come from expo-image on native, from an XHR on web) and, once
+// a load has failed, which retry we're on. Big pages on a slow source otherwise show a shimmer
+// with no way to tell "downloading" from "stuck".
 
 const DEFAULT_ASPECT = 2 / 3; // width / height before the image reports its size
 const RETRY_DELAYS_MS = [1000, 2000, 4000];
@@ -135,8 +141,36 @@ export function ReaderPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uri, attempt]);
 
+  // Byte-level download progress for the resolved URL. On web this also *is* the fetch (it hands
+  // back an object URL), so `source` — not `resolvedUri` — is what the <Image> renders, and a
+  // failure it detects has to feed the same backoff an <Image> onError would.
+  const { source, percent, error: fetchError, imageProps } = useImageProgress(resolvedUri, attempt);
+
+  const reportedRef = useRef(-1);
+  useEffect(() => {
+    // Guard per attempt: handleError bumps `attempt`, which re-arms the hook — without this, a
+    // still-set error from the previous attempt would re-enter and burn the retries instantly.
+    if (fetchError && reportedRef.current !== attempt) {
+      reportedRef.current = attempt;
+      handleError({ error: fetchError });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchError, attempt]);
+
   const ready = delayPassed && loaded;
   const box: StyleProp<ViewStyle> = fit === 'contain' ? { width, height } : { width, aspectRatio: aspect };
+
+  // What the skeleton says while it's up. Nothing at all in the common case (a page that loads
+  // promptly on the first try shouldn't flash a "0%"), a percentage once bytes are moving, and the
+  // retry count the moment a load has actually failed — that's when the user starts wondering.
+  const totalTries = RETRY_DELAYS_MS.length + 1;
+  const status = retrying
+    ? `Retrying… ${attempt + 1}/${RETRY_DELAYS_MS.length}`
+    : percent !== null
+      ? `${percent}%${attempt > 0 ? ` · try ${attempt + 1}/${totalTries}` : ''}`
+      : attempt > 0
+        ? `Try ${attempt + 1}/${totalTries}`
+        : null;
 
   if (failed) {
     return (
@@ -152,6 +186,7 @@ export function ReaderPage({
         accessibilityLabel="Retry loading page">
         <WarnIcon color="rgba(255,255,255,0.5)" size={28} />
         <ThemedText style={styles.failedText}>Page {page}</ThemedText>
+        <ThemedText style={styles.failedSubtext}>Gave up after {totalTries} tries</ThemedText>
         <View style={styles.retryChip}>
           <ThemedText style={styles.retryChipText}>Retry</ThemedText>
         </View>
@@ -161,10 +196,10 @@ export function ReaderPage({
 
   return (
     <View style={[styles.box, box]}>
-      {delayPassed && !retrying && resolvedUri && (
+      {delayPassed && !retrying && source && (
         <Image
           key={attempt}
-          source={{ uri: resolvedUri }}
+          source={{ uri: source }}
           style={StyleSheet.absoluteFill}
           contentFit={fit === 'contain' ? 'contain' : 'cover'}
           cachePolicy="memory-disk"
@@ -179,9 +214,15 @@ export function ReaderPage({
             }
           }}
           onError={handleError}
+          {...imageProps}
         />
       )}
       {!ready && <Skeleton style={StyleSheet.absoluteFill} />}
+      {!ready && status && (
+        <View style={styles.status} pointerEvents="none">
+          <ThemedText style={styles.statusText}>{status}</ThemedText>
+        </View>
+      )}
     </View>
   );
 }
@@ -198,6 +239,26 @@ const styles = StyleSheet.create({
   },
   failedText: {
     color: 'rgba(255,255,255,0.5)',
+  },
+  failedSubtext: {
+    color: 'rgba(255,255,255,0.35)',
+    fontSize: 12,
+  },
+  // Centred on the skeleton, and centred on the *box* rather than laid out in it, so it can't
+  // affect the page's measured height (webtoon mode derives row heights from that).
+  status: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Same treatment as the failed screen's "Page N" line — no pill/backdrop, just the text.
+  statusText: {
+    color: 'rgba(255,255,255,0.5)',
+    fontVariant: ['tabular-nums'], // a ticking percentage shouldn't jitter its own width
   },
   retryChip: {
     backgroundColor: 'rgba(255,255,255,0.18)',
