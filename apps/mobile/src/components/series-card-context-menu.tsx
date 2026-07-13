@@ -57,9 +57,17 @@ import { getTabBarProgress } from '@/lib/tab-bar-visibility';
 import { getTopBarHidden } from '@/lib/top-bar-visibility';
 
 const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
-/** The tick as the held finger moves between rows — what gives the iOS menu its detents. */
+/**
+ * The tick as the held finger crosses from one row to the next — what gives the menu its detents, so
+ * dragging down it feels like clicking through positions rather than sweeping over a hover state.
+ *
+ * A LIGHT IMPACT, not `selectionAsync`. Selection feedback is the textbook choice here and it was the
+ * first one — but it's the faintest thing the Taptic Engine does, and under a thumb already pressing
+ * hard into the glass (which is what a hold IS) it's simply not felt. A light impact is unmistakable
+ * and still small enough to fire on every row without becoming a rattle.
+ */
 function selectionTick(): void {
-  void Haptics.selectionAsync();
+  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 }
 // Every motion in this popup is a spring, and they're all tuned around the same two numbers, because
 // those are the two things you actually feel:
@@ -180,21 +188,23 @@ const MIN_VISIBLE_ROWS = 4;
 // Blur strengths (0–100). The backdrop ramps in a bit after the cover pops.
 const BACKDROP_BLUR = 28;
 const MENU_BLUR = 55;
-// A blur alone is only half of a frosted surface, and on a light theme the missing half showed: what
-// this menu blurs is the DIMMED BACKDROP behind it, so it faithfully sampled a black scrim and came
-// back a murky grey — a dark menu in a light app.
+// ── The material ─────────────────────────────────────────────────────────────
+// A frosted surface is two things: a blur, and a translucent tint OF THE SURFACE over it. The tint is
+// what says what the menu is MADE of; the blur is what lets the colour behind bleed through it. Both,
+// or it isn't a material — a blur alone just shows you the backdrop, and a tint alone is a slab.
 //
-// The other half is a translucent tint OF THE SURFACE laid over the blur (which is what a real iOS
-// material is). It re-establishes what the menu is made of — the panel colour — while the blur keeps
-// showing enough of the cover behind it to stay a material rather than a slab.
-//
-// The two schemes are NOT symmetrical, and can't be. Everything behind the menu is dimmed by the
-// scrim, so translucency always drags it toward black — which the dark menu is happy to be (it lets
-// the cover glow through, and that's the material doing its job), and the light menu can't afford at
-// all. So light is tinted almost solid: it's the panel's own colour with only a whisper of what's
-// behind, which is the same thing the panel next to it is doing. Anything lighter reads as grey.
-const MENU_FILL = { light: 'rgba(247,247,249,0.93)', dark: 'rgba(23,24,27,0.62)' } as const;
-const BACKDROP_TINT_OPACITY = 0.15;
+// And the whole thing rests on WHAT'S BEHIND IT. That's the trap this hit: a menu can only be as light
+// as the thing it blurs, and the backdrop dimmed to black on every theme, so the light menu sampled a
+// black scrim and came back grey. Tinting it opaque hid that, at the cost of the blur — the menu
+// stopped being glass. The actual fix is one level down: the SCRIM follows the theme too. A light
+// theme washes the page out lighter (which is what iOS does — the page goes pale, not dark), so the
+// menu has something light to blur, and the covers behind it bleed their colour through it as glass
+// should. Dark dims to black as before.
+const BACKDROP_TINT = { light: '#ffffff', dark: '#000000' } as const;
+const BACKDROP_TINT_OPACITY = { light: 0.45, dark: 0.15 } as const;
+// Both stay properly translucent now. Light is the heavier of the two only because it also has to hold
+// its own against the panel beside it, which is opaque.
+const MENU_FILL = { light: 'rgba(255,255,255,0.55)', dark: 'rgba(23,24,27,0.62)' } as const;
 // Android's blur is the experimental Dimezis path; a no-op elsewhere.
 const ANDROID_BLUR = Platform.OS === 'android' ? ('dimezisBlurView' as const) : undefined;
 
@@ -710,8 +720,9 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const backdropBlurProps = useAnimatedProps(() => ({
     intensity: interpolate(progress.value, [0, 0.3, 1], [0, 0, BACKDROP_BLUR]),
   }));
+  const scrimOpacity = BACKDROP_TINT_OPACITY[menuTint];
   const backdropTintStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(progress.value, [0, 0.2, 1], [0, 0, BACKDROP_TINT_OPACITY]),
+    opacity: interpolate(progress.value, [0, 0.2, 1], [0, 0, scrimOpacity]),
   }));
   // The panel fades in at its position, and SCALES about its top-left corner — the whole preview,
   // cover and text and rail together, zooming out to make room for the menu rather than being cropped.
@@ -1006,8 +1017,10 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
         {/* Blurred, tap-to-dismiss backdrop. */}
         <GestureDetector gesture={tapDismiss}>
           <View style={StyleSheet.absoluteFill}>
-            <AnimatedBlurView tint="dark" experimentalBlurMethod={ANDROID_BLUR} animatedProps={backdropBlurProps} style={StyleSheet.absoluteFill} />
-            <Animated.View style={[StyleSheet.absoluteFill, styles.backdropTint, backdropTintStyle]} />
+            <AnimatedBlurView tint={menuTint} experimentalBlurMethod={ANDROID_BLUR} animatedProps={backdropBlurProps} style={StyleSheet.absoluteFill} />
+            <Animated.View
+              style={[StyleSheet.absoluteFill, { backgroundColor: BACKDROP_TINT[menuTint] }, backdropTintStyle]}
+            />
           </View>
         </GestureDetector>
 
@@ -1291,9 +1304,6 @@ function MenuRow({
 }
 
 const styles = StyleSheet.create({
-  backdropTint: {
-    backgroundColor: '#000000',
-  },
   // The panel, cover and menu are all laid out at the overlay's origin and placed by an animated
   // translate (see "Live geometry") — never by `left`/`top`, which can't animate a late correction.
   panelWrap: {
