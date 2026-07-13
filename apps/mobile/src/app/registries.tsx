@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { PlusIcon } from '@/components/icons/ui-icons';
 import { useKeyboardAvoidingInput, useOverlay } from '@/components/overlay/overlay';
+import { RefreshableSettingsScroll } from '@/components/settings/refreshable-settings-scroll';
 import { RetryBlock } from '@/components/retry-block';
 import { SettingsSection } from '@/components/settings/settings-row';
 import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
@@ -12,24 +13,45 @@ import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar, TopBarButton } from '@/components/top-bar';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
-import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { friendlyError } from '@/lib/friendly-error';
 
 export default function RegistriesScreen() {
   const ds = useDataSource();
   const router = useRouter();
-  const contentPadding = useSettingsScrollPadding();
   const theme = useTheme();
+  const queryClient = useQueryClient();
   const { open } = useOverlay();
 
   const { data: registries, error, isLoading, refetch } = useQuery({
     queryKey: queryKeys.registries(),
     queryFn: ({ signal }) => ds.getRegistries(signal),
   });
+
+  // Refresh each registry's operator label. `getRegistries` (the list) never fetches indexes, so a
+  // relabelled registry wouldn't show its new name on its own. Browsing each registry fetches its
+  // index, which reconciles the saved `displayName` server-side (see RegistryManager.fetchAndCache);
+  // we then re-read the list. Per-registry so it also covers registries with nothing installed.
+  const reconcileLabels = useCallback(async () => {
+    const regs = registries ?? [];
+    if (regs.length > 0) {
+      await Promise.allSettled(regs.map((r) => ds.browseRegistryBridges(r.url)));
+    }
+    await queryClient.invalidateQueries({ queryKey: queryKeys.registries() });
+  }, [registries, ds, queryClient]);
+
+  // The nicety: nudge the labels fresh once when the screen first has registries, in the background
+  // (no spinner) — so a relabelled registry surfaces without the user pulling to refresh or drilling
+  // in. Once per mount (the ref guard), and the server memoizes each index, so re-opens are cheap.
+  const nudged = useRef(false);
+  useEffect(() => {
+    if (nudged.current || !registries || registries.length === 0) return;
+    nudged.current = true;
+    void reconcileLabels();
+  }, [registries, reconcileLabels]);
 
   return (
     <ThemedView style={styles.container}>
@@ -46,8 +68,7 @@ export default function RegistriesScreen() {
           )
         }
       />
-      <ScrollView
-        contentContainerStyle={[styles.content, contentPadding]}>
+      <RefreshableSettingsScroll refresh={reconcileLabels}>
         {isLoading ? (
           <ActivityIndicator />
         ) : error ? (
@@ -81,7 +102,7 @@ export default function RegistriesScreen() {
             ))}
           </SettingsSection>
         )}
-      </ScrollView>
+      </RefreshableSettingsScroll>
     </ThemedView>
   );
 }
@@ -193,13 +214,6 @@ function AddRegistryForm() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  content: {
-    // Spacing BETWEEN sections (SettingsSection no longer carries a top margin — see settings-row).
-    gap: Spacing.five,
-    width: '100%',
-    maxWidth: MaxContentWidth,
-    alignSelf: 'center',
   },
   empty: {
     alignItems: 'center',

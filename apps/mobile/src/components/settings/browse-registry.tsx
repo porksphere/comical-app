@@ -75,7 +75,9 @@ function RegistryPicker() {
             style={styles.pressableCursor}>
             <ThemedView type="backgroundElement" style={styles.pickerRow}>
               <View style={styles.rowText}>
-                <ThemedText type="smallBold">{r.name}</ThemedText>
+                {/* Operator label (e.g. "SFW") next to the derived name — otherwise two registries
+                    from the same repo (same `name`) are indistinguishable here. */}
+                <ThemedText type="smallBold">{r.displayName ? `${r.displayName} — ${r.name}` : r.name}</ThemedText>
                 <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
                   {r.url}
                 </ThemedText>
