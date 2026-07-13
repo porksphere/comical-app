@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { TopBar, useTopBarInset } from '@/components/top-bar';
-import { SettingsTopGap } from '@/components/settings/settings-row';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { TopBar } from '@/components/top-bar';
+
+import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { clearDiagnostics, getDiagnostics, subscribeDiagnostics, type DiagnosticEntry } from '@/lib/diagnostics';
 
@@ -19,8 +19,7 @@ function formatEntry(e: DiagnosticEntry): string {
 }
 
 export default function DiagnosticsScreen() {
-  const insets = useSafeAreaInsets();
-  const topBarInset = useTopBarInset();
+  const contentPadding = useSettingsScrollPadding();
   const theme = useTheme();
   const [entries, setEntries] = useState<DiagnosticEntry[]>(getDiagnostics());
 
@@ -35,11 +34,7 @@ export default function DiagnosticsScreen() {
     <ThemedView style={styles.container}>
       <TopBar title="Diagnostics" />
       <ScrollView
-        contentContainerStyle={[
-          styles.content,
-          // The TopBar is an absolute overlay, so the content pads past it (and scrolls under its frost).
-          { paddingTop: topBarInset + SettingsTopGap, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
-        ]}>
+        contentContainerStyle={[styles.content, contentPadding]}>
         <ThemedText type="small" themeColor="textSecondary">
           Failures that would otherwise be invisible — bridge scrapes, writes (favorites, settings),
           and asset loads (page images, thumbnails) — newest first. Nothing here is sent anywhere
@@ -101,7 +96,6 @@ const styles = StyleSheet.create({
   },
   content: {
     gap: Spacing.four,
-    paddingHorizontal: Spacing.four,
     width: '100%',
     maxWidth: MaxContentWidth,
     alignSelf: 'center',

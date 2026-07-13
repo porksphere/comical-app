@@ -2,14 +2,14 @@ import { parseBridgeId } from '@comical/contract';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { RetryBlock } from '@/components/retry-block';
-import { SettingsRow, SettingsSection, SettingsTopGap } from '@/components/settings/settings-row';
+import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { TopBar, useTopBarInset } from '@/components/top-bar';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { TopBar } from '@/components/top-bar';
+import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import type { AvailableBridge, AvailableTracker } from '@/data/api';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { queryKeys } from '@/data/queries';
@@ -18,8 +18,7 @@ import { useDataSource } from '@/data/source';
 export default function RegistryBrowseScreen() {
   const { url } = useLocalSearchParams<{ url?: string }>();
   const ds = useDataSource();
-  const insets = useSafeAreaInsets();
-  const topBarInset = useTopBarInset();
+  const contentPadding = useSettingsScrollPadding();
   const queryClient = useQueryClient();
 
   const bridgesQuery = useQuery({
@@ -48,11 +47,7 @@ export default function RegistryBrowseScreen() {
     <ThemedView style={styles.container}>
       <TopBar title="Browse registry" />
       <ScrollView
-        contentContainerStyle={[
-          styles.content,
-          // The TopBar is an absolute overlay, so the content pads past it (and scrolls under its frost).
-          { paddingTop: topBarInset + SettingsTopGap, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
-        ]}>
+        contentContainerStyle={[styles.content, contentPadding]}>
         <ThemedText type="small" themeColor="textSecondary">
           {url}
         </ThemedText>
@@ -232,7 +227,6 @@ const styles = StyleSheet.create({
   content: {
     // Spacing BETWEEN sections (SettingsSection no longer carries a top margin — see settings-row).
     gap: Spacing.five,
-    paddingHorizontal: Spacing.four,
     width: '100%',
     maxWidth: MaxContentWidth,
     alignSelf: 'center',

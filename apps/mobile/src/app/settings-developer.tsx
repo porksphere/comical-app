@@ -1,11 +1,11 @@
 import { ScrollView, StyleSheet } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { SettingsRow, SettingsSection, SettingsTopGap } from '@/components/settings/settings-row';
+import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedView } from '@/components/themed-view';
-import { TopBar, useTopBarInset } from '@/components/top-bar';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { TopBar } from '@/components/top-bar';
+import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useApiBase } from '@/data/api';
 import { useMockDataToggle } from '@/data/source';
 import { devProfiler$, useDevProfilerEnabled } from '@/lib/dev-profiler-flag';
@@ -15,8 +15,7 @@ import { devProfiler$, useDevProfilerEnabled } from '@/lib/dev-profiler-flag';
  *  `PROFILING_ENABLED`; the route itself stays registered unconditionally, since a route that exists
  *  but is unreachable costs nothing while a conditional <Stack.Screen> would just be noise. */
 export default function DeveloperSettingsScreen() {
-  const insets = useSafeAreaInsets();
-  const topBarInset = useTopBarInset();
+  const contentPadding = useSettingsScrollPadding();
   const [mockEnabled, setMockEnabled] = useMockDataToggle();
   const [apiBase] = useApiBase();
   const profilerOn = useDevProfilerEnabled();
@@ -25,10 +24,7 @@ export default function DeveloperSettingsScreen() {
     <ThemedView style={styles.container}>
       <TopBar title="Developer" />
       <ScrollView
-        contentContainerStyle={[
-          styles.content,
-          { paddingTop: topBarInset + SettingsTopGap, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
-        ]}>
+        contentContainerStyle={[styles.content, contentPadding]}>
         <SettingsSection>
           <SettingsRow
             label="Use mock data"
@@ -53,7 +49,6 @@ const styles = StyleSheet.create({
   },
   content: {
     gap: Spacing.five,
-    paddingHorizontal: Spacing.four,
     width: '100%',
     maxWidth: MaxContentWidth,
     alignSelf: 'center',

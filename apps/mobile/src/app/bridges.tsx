@@ -1,23 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BridgesIcon, PlusIcon } from '@/components/icons/ui-icons';
 import { useOverlay } from '@/components/overlay/overlay';
 import { RetryBlock } from '@/components/retry-block';
 import { useBrowseRegistry } from '@/components/settings/browse-registry';
 import { RowIcon } from '@/components/settings/row-icon';
-import { SettingsRow, SettingsSection, SettingsTopGap } from '@/components/settings/settings-row';
+import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { TopBar, TopBarButton, useTopBarInset } from '@/components/top-bar';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { TopBar, TopBarButton } from '@/components/top-bar';
+import { MaxContentWidth, Spacing } from '@/constants/theme';
 import type { BridgeSummary } from '@/data/api';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw } from '@/data/source';
+import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { friendlyError } from '@/lib/friendly-error';
 
@@ -36,8 +36,7 @@ export default function BridgesScreen() {
   const ds = useDataSource();
   const router = useRouter();
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
-  const topBarInset = useTopBarInset();
+  const contentPadding = useSettingsScrollPadding();
   const hideNsfw = useHideNsfw();
   const { open } = useOverlay();
   const browseRegistry = useBrowseRegistry();
@@ -60,11 +59,7 @@ export default function BridgesScreen() {
         }
       />
       <ScrollView
-        contentContainerStyle={[
-          styles.content,
-          // The TopBar is an absolute overlay, so the content pads past it (and scrolls under its frost).
-          { paddingTop: topBarInset + SettingsTopGap, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
-        ]}>
+        contentContainerStyle={[styles.content, contentPadding]}>
         {isError ? (
           <RetryBlock message={friendlyError(error, 'Failed to load bridges. Try again.')} onRetry={() => refetch()} />
         ) : !visible ? (
@@ -184,7 +179,6 @@ const styles = StyleSheet.create({
   content: {
     // Spacing BETWEEN sections (SettingsSection no longer carries a top margin — see settings-row).
     gap: Spacing.five,
-    paddingHorizontal: Spacing.four,
     width: '100%',
     maxWidth: MaxContentWidth,
     alignSelf: 'center',

@@ -2,19 +2,19 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BridgeMetaInfo, BridgePrefsToggles, GenreExclusionsControl, TagExclusionsControl } from '@/components/settings/bridge-extras';
 import { SettingFieldEditor } from '@/components/settings/setting-field';
-import { SettingsSection, SettingsTopGap } from '@/components/settings/settings-row';
+import { SettingsSection } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { TopBar, useTopBarInset } from '@/components/top-bar';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { TopBar } from '@/components/top-bar';
+import { MaxContentWidth, Spacing } from '@/constants/theme';
 import type { SettingValue } from '@/data/api';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
+import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 
 export default function BridgeSettingsScreen() {
@@ -25,8 +25,7 @@ export default function BridgeSettingsScreen() {
   }>();
   const ds = useDataSource();
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
-  const topBarInset = useTopBarInset();
+  const contentPadding = useSettingsScrollPadding();
   const router = useRouter();
   const queryClient = useQueryClient();
 
@@ -107,11 +106,7 @@ export default function BridgeSettingsScreen() {
     <ThemedView style={styles.container}>
       <TopBar title={data?.info.name ?? 'Bridge settings'} />
       <ScrollView
-        contentContainerStyle={[
-          styles.content,
-          // The TopBar is an absolute overlay, so the content pads past it (and scrolls under its frost).
-          { paddingTop: topBarInset + SettingsTopGap, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
-        ]}>
+        contentContainerStyle={[styles.content, contentPadding]}>
         {isLoading ? (
           <ActivityIndicator />
         ) : error ? (
@@ -234,7 +229,6 @@ const styles = StyleSheet.create({
   content: {
     // Spacing BETWEEN sections (SettingsSection no longer carries a top margin — see settings-row).
     gap: Spacing.five,
-    paddingHorizontal: Spacing.four,
     width: '100%',
     maxWidth: MaxContentWidth,
     alignSelf: 'center',

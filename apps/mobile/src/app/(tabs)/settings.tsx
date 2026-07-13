@@ -2,7 +2,6 @@ import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { type ReactNode, useRef } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   BridgesIcon,
@@ -13,16 +12,17 @@ import {
   RegistriesIcon,
   TrackersIcon,
 } from '@/components/icons/ui-icons';
+import { settingsRowFrame } from '@/components/settings/settings-row';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { SettingsGutter, SettingsRowHeight, SettingsTopGap } from '@/components/settings/settings-row';
-import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
+
+import { MaxTopLevelWidth, SettingsGutter } from '@/constants/theme';
+import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw } from '@/data/source';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useHovered } from '@/hooks/use-hovered';
-import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
 import { PROFILING_ENABLED } from '@/lib/profiling';
@@ -36,14 +36,12 @@ import { hapticImpactLight } from '@/lib/haptics';
  * its detail page and removed a registry from a text button wedged into a row.
  */
 export default function SettingsScreen() {
-  const insets = useSafeAreaInsets();
   const router = useRouter();
   const theme = useTheme();
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTopOnReselect('settings', scrollRef);
   const { onScroll } = useHideTabBarOnScroll();
-  const barHeight = useTopBarHeight();
-  const headerHeight = insets.top + barHeight;
+  const contentPadding = useSettingsScrollPadding();
 
   const counts = useCategoryCounts();
 
@@ -55,9 +53,10 @@ export default function SettingsScreen() {
         scrollEventThrottle={16}
         contentContainerStyle={[
           styles.content,
+          contentPadding,
           // flexGrow: fill the viewport even when the list is short, so the space below it is still
           // draggable (see SeriesGrid's note).
-          { flexGrow: 1, paddingTop: headerHeight + SettingsTopGap, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
+          styles.fill,
         ]}>
         <View style={styles.list}>
           {/* Descriptions are kept short enough to land on ONE line — every settings row in the app
@@ -182,11 +181,13 @@ function CategoryRow({
       {({ pressed }) => (
         <View
           style={[
+            settingsRowFrame.row,
+            settingsRowFrame.escape,
             styles.row,
             (pressed || hovered) && Platform.OS !== 'android' && { backgroundColor: theme.backgroundSelected },
           ]}>
           <View style={styles.icon}>{icon}</View>
-          <View style={styles.rowText}>
+          <View style={settingsRowFrame.text}>
             <ThemedText type="small" numberOfLines={1}>
               {title}
             </ThemedText>
@@ -216,34 +217,27 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    paddingHorizontal: SettingsGutter,
+    // Horizontal padding comes from `useSettingsScrollPadding` — see `SettingsGutter`.
     width: '100%',
     maxWidth: MaxTopLevelWidth,
     alignSelf: 'center',
   },
+  fill: {
+    flexGrow: 1,
+  },
   list: {
     width: '100%',
   },
+  // Only what a category row adds ON TOP of `settingsRowFrame.row` (which it spreads): a pointer
+  // cursor, and no `justifyContent` — its icon/text/count/chevron lay out left to right rather than
+  // pushing a single control to the far end.
   row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.three,
-    // The same height as every other settings row in the app — see `SettingsRowHeight`.
-    height: SettingsRowHeight,
-    paddingVertical: Spacing.one,
-    // Text sits at the gutter; the background and press/hover highlight run to the screen's edge.
-    // Same trick as `SettingsRow` — see `SettingsGutter`.
-    paddingHorizontal: SettingsGutter,
-    marginHorizontal: -SettingsGutter,
+    justifyContent: 'flex-start',
     cursor: 'pointer',
   },
   icon: {
     width: 24,
     alignItems: 'center',
-  },
-  rowText: {
-    flex: 1,
-    gap: Spacing.half,
   },
   divider: {
     height: StyleSheet.hairlineWidth,

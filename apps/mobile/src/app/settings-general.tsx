@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChevronRightIcon } from '@/components/icons/ui-icons';
 import {
@@ -11,12 +10,13 @@ import {
   useKeyboardAvoidingInput,
   useOverlay,
 } from '@/components/overlay/overlay';
-import { SettingsGutter, SettingsRow, SettingsRowHeight, SettingsSection, SettingsTopGap } from '@/components/settings/settings-row';
+import { settingsRowFrame, SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { TopBar, useTopBarInset } from '@/components/top-bar';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { TopBar } from '@/components/top-bar';
+import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useApiBase } from '@/data/api';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { applyEmbeddedMode, isEmbeddedRuntimeAvailable, useEmbeddedEnabled } from '@/data/embedded';
@@ -57,8 +57,7 @@ function themePreferenceSummary(pref: ThemePreference): string {
 }
 
 export default function GeneralSettingsScreen() {
-  const insets = useSafeAreaInsets();
-  const topBarInset = useTopBarInset();
+  const contentPadding = useSettingsScrollPadding();
   const [nsfwMode, setNsfwMode] = useNsfwMode();
   const [themePref, setThemePref] = useThemePreference();
   const [onDevice, setOnDevice] = useEmbeddedEnabled();
@@ -90,11 +89,7 @@ export default function GeneralSettingsScreen() {
     <ThemedView style={styles.container}>
       <TopBar title="General" />
       <ScrollView
-        contentContainerStyle={[
-          styles.content,
-          // The TopBar is an absolute overlay, so the content pads past it (and scrolls under its frost).
-          { paddingTop: topBarInset + SettingsTopGap, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
-        ]}>
+        contentContainerStyle={[styles.content, contentPadding]}>
         {/* One unheadered list. "APPEARANCE" over a row already called Appearance, and "CONTENT"
             over one called NSFW content, said nothing the row didn't — every row here carries its
             own title and a line explaining it. */}
@@ -198,8 +193,8 @@ function AppearanceRow({ preference, onChange }: { preference: ThemePreference; 
       onHoverOut={onHoverOut}
       android_ripple={{ color: theme.backgroundSelected }}
       style={styles.pressableCursor}>
-      <View style={[styles.row, hovered && { backgroundColor: theme.backgroundSelected }]}>
-        <View style={styles.rowText}>
+      <View style={[settingsRowFrame.row, settingsRowFrame.escape, hovered && { backgroundColor: theme.backgroundSelected }]}>
+        <View style={settingsRowFrame.text}>
           <ThemedText type="small" numberOfLines={1}>
             Appearance
           </ThemedText>
@@ -241,7 +236,7 @@ function AppearancePicker({ preference, onChange }: { preference: ThemePreferenc
             android_ripple={{ color: theme.backgroundSelected }}
             style={styles.pressableCursor}>
             <ThemedView type="backgroundElement" style={styles.pickerRow}>
-              <View style={styles.rowText}>
+              <View style={settingsRowFrame.text}>
                 <ThemedText type="smallBold">{opt.label}</ThemedText>
                 <ThemedText type="small" themeColor="textSecondary">
                   {opt.description}
@@ -275,8 +270,8 @@ function NsfwModeRow({ mode, onChange }: { mode: NsfwMode; onChange: (mode: Nsfw
       onHoverOut={onHoverOut}
       android_ripple={{ color: theme.backgroundSelected }}
       style={styles.pressableCursor}>
-      <View style={[styles.row, hovered && { backgroundColor: theme.backgroundSelected }]}>
-        <View style={styles.rowText}>
+      <View style={[settingsRowFrame.row, settingsRowFrame.escape, hovered && { backgroundColor: theme.backgroundSelected }]}>
+        <View style={settingsRowFrame.text}>
           <ThemedText type="small" numberOfLines={1}>
             NSFW content
           </ThemedText>
@@ -317,7 +312,7 @@ function NsfwModePicker({ mode, onChange }: { mode: NsfwMode; onChange: (mode: N
             android_ripple={{ color: theme.backgroundSelected }}
             style={styles.pressableCursor}>
             <ThemedView type="backgroundElement" style={styles.pickerRow}>
-              <View style={styles.rowText}>
+              <View style={settingsRowFrame.text}>
                 <ThemedText type="smallBold">{opt.label}</ThemedText>
                 <ThemedText type="small" themeColor="textSecondary">
                   {opt.description}
@@ -339,31 +334,12 @@ const styles = StyleSheet.create({
   content: {
     // Spacing BETWEEN sections (SettingsSection no longer carries a top margin — see settings-row).
     gap: Spacing.five,
-    paddingHorizontal: Spacing.four,
     width: '100%',
     maxWidth: MaxContentWidth,
     alignSelf: 'center',
   },
   pressableCursor: {
     cursor: 'pointer',
-  },
-  // Mirrors `SettingsRow`'s geometry by hand — these two rows can't BE a SettingsRow, because
-  // `useAnchoredOverlay` needs its own ref on the Pressable to anchor the picker to. Keep the
-  // gutter escape in sync with it (see `SettingsGutter`) or their hover highlight stops short of
-  // the screen edge while every other row's reaches it.
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: Spacing.three,
-    height: SettingsRowHeight,
-    paddingVertical: Spacing.one,
-    paddingHorizontal: SettingsGutter,
-    marginHorizontal: -SettingsGutter,
-  },
-  rowText: {
-    flex: 1,
-    gap: Spacing.half,
   },
   rowValue: {
     flexDirection: 'row',
