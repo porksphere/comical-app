@@ -22,6 +22,7 @@ import { observable } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
 import { useQuery } from '@tanstack/react-query';
 
+import { applyOrder, useBridgeOrder } from '@/data/list-order';
 import { queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw } from '@/data/source';
 import type { Bridge } from '@/data/types';
@@ -93,9 +94,13 @@ export function useSelectedBridge(): SelectedBridge {
   // resolves.
   const bridgesLoaded = bridgesQuery.isFetched;
 
+  // Apply the user's saved order before filtering, so the selector lists bridges in the same order
+  // the Bridges page does (the order array spans all bridges; hidden ones just filter out after).
+  const order = useBridgeOrder();
+  const orderedBridges = useMemo(() => applyOrder(bridges, order, (b) => b.id), [bridges, order]);
   const visibleBridges = useMemo(
-    () => (hideNsfw ? bridges.filter((b) => !b.nsfw) : bridges),
-    [bridges, hideNsfw],
+    () => (hideNsfw ? orderedBridges.filter((b) => !b.nsfw) : orderedBridges),
+    [orderedBridges, hideNsfw],
   );
   // Falls back to the first visible bridge whenever the sticky selection isn't among the
   // currently-visible ones (initial load, or hidden by Hide NSFW) — derived at render instead of
