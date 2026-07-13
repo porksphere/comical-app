@@ -237,4 +237,8 @@ export type BridgeList = {
   layout?: 'carousel' | 'grid' | 'ranked' | 'hero';
   /** Whether a query can be scoped to this list (routes search through it instead of `/search`). */
   searchable?: boolean;
+  /** The bridge's own "surface this list prominently on a home screen" flag (contract's
+   *  `SeriesList.featured`). The synthetic "Comical" aggregate home uses it to pick each bridge's one
+   *  representative rail; falls back to the bridge's first rail when unset. */
+  featured?: boolean;
 };

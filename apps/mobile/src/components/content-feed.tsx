@@ -1,4 +1,5 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
+import { useRouter } from 'expo-router';
 import type { ReactElement, RefObject } from 'react';
 import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import type Animated from 'react-native-reanimated';
@@ -10,7 +11,7 @@ import { Rail, RailSkeleton, SECTION_HEAD_HEIGHT, SectionHead, railRowHeight, ra
 import { RecyclerList } from '@/components/recycler-list';
 import { estimatedCardHeight, SeriesCard } from '@/components/series-card';
 import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
-import { contentRowType, type ContentRow } from '@/data/content-rows';
+import { contentRowType, type ContentRow, type SeeAllTarget } from '@/data/content-rows';
 import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
 import { useIsLargeScreen } from '@/hooks/use-responsive';
 
@@ -25,6 +26,18 @@ const CELL_ROW_GAP = CELL_PAD_TOP + CELL_PAD_BOTTOM;
 const SECTION_GAP = Spacing.two;
 const HEADING_GAP = Spacing.two;
 const SECTION_HEAD_ROW_HEIGHT = SECTION_HEAD_HEIGHT + SECTION_GAP + HEADING_GAP;
+
+/** A rail's See-all target → `/results` route params (expo-router params are strings). Omits absent
+ *  fields; `direct` becomes '1' only when true; `listId` (home rail) or `query` (search rail) picks
+ *  the drill kind on the results page. */
+function seeAllParams(t: SeeAllTarget): Record<string, string> {
+  const p: Record<string, string> = { title: t.title, bridgeId: t.bridgeId };
+  if (t.bridge) p.bridge = t.bridge;
+  if (t.direct) p.direct = '1';
+  if (t.listId) p.listId = t.listId;
+  if (t.query != null) p.query = t.query;
+  return p;
+}
 
 /**
  * THE heterogeneous content feed: rails, non-terminal grid blocks, section headings, and the terminal
@@ -52,7 +65,6 @@ export function ContentFeed({
   direct,
   originPage,
   crossfading,
-  onSeeAll,
   sharedValues,
   onScroll,
   onEndReached,
@@ -74,7 +86,6 @@ export function ContentFeed({
   direct?: boolean;
   originPage?: string;
   crossfading?: boolean;
-  onSeeAll?: (target: { listId: string; title: string }) => void;
   sharedValues?: { scrollOffset: SharedValue<number> };
   onScroll?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   onEndReached?: () => void;
@@ -83,6 +94,7 @@ export function ContentFeed({
 }) {
   const { numColumns, cardWidth, railViewport, width } = useGridLayout();
   const wide = useIsLargeScreen();
+  const router = useRouter();
 
   const cellHeight = estimatedCardHeight(cardWidth) + CELL_ROW_GAP;
 
@@ -155,7 +167,13 @@ export function ContentFeed({
               <View style={styles.sectionHead}>
                 <SectionHead
                   title={item.title}
-                  onSeeAll={item.seeAll ? () => onSeeAll?.(item.seeAll!) : undefined}
+                  // Every rail's "See all" pushes the shared /results page for that one bridge (a list
+                  // drill or a search drill — see SeeAllTarget). Back returns here cleanly.
+                  onSeeAll={
+                    item.seeAll
+                      ? () => router.push({ pathname: '/results', params: seeAllParams(item.seeAll!) })
+                      : undefined
+                  }
                 />
               </View>
             );

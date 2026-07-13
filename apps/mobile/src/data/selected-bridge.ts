@@ -35,6 +35,15 @@ export const selectedBridge$ = observable<string | null>(null);
  *  Takes a bridge **id** (see the module header). */
 export const setSelectedBridge = (id: string) => selectedBridge$.set(id);
 
+/** Id of the synthetic "Comical" aggregate bridge that fans out over every real installed bridge
+ *  (cross-bridge home + search). It is NOT a real registry bridge — it's injected into
+ *  `visibleBridges` below and branched on wherever a bridge id drives a fetch (Browse home, Search).
+ *  Always present (when there's ≥1 real bridge) and first, so it's also the default landing bridge. */
+export const COMICAL_BRIDGE_ID = 'comical';
+const COMICAL_BRIDGE: Bridge = { id: COMICAL_BRIDGE_ID, name: 'Comical', nsfw: false, capabilities: [] };
+/** Whether a selected bridge id is the synthetic aggregate. */
+export const isComicalBridge = (bridgeId: string | undefined): boolean => bridgeId === COMICAL_BRIDGE_ID;
+
 /**
  * The reactive selected-bridge name.
  *
@@ -98,10 +107,13 @@ export function useSelectedBridge(): SelectedBridge {
   // the Bridges page does (the order array spans all bridges; hidden ones just filter out after).
   const order = useBridgeOrder();
   const orderedBridges = useMemo(() => applyOrder(bridges, order, (b) => b.id), [bridges, order]);
-  const visibleBridges = useMemo(
-    () => (hideNsfw ? orderedBridges.filter((b) => !b.nsfw) : orderedBridges),
-    [orderedBridges, hideNsfw],
-  );
+  const visibleBridges = useMemo(() => {
+    const real = hideNsfw ? orderedBridges.filter((b) => !b.nsfw) : orderedBridges;
+    // Prepend the synthetic aggregate bridge — always first (so it's the default landing bridge too),
+    // but only when there's at least one real bridge to aggregate. Kept out of raw `bridges` so the
+    // no-bridges empty state (which checks raw `bridges.length`) still fires with zero real bridges.
+    return real.length > 0 ? [COMICAL_BRIDGE, ...real] : real;
+  }, [orderedBridges, hideNsfw]);
   // Falls back to the first visible bridge whenever the sticky selection isn't among the
   // currently-visible ones (initial load, or hidden by Hide NSFW) — derived at render instead of
   // synced via an effect, so toggling Hide NSFW back off restores the original selection.

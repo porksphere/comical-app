@@ -225,7 +225,9 @@ function toActivityEntry(a: api.ApiActivityItem): ActivityEntry {
   };
 }
 
-const railKindFor = (layout: BridgeList['layout']): RailKind =>
+/** Exported for `fetchBridgeFeaturedRail` (queries.ts), which builds a single rail for the Comical
+ *  aggregate home and needs the same layout→kind mapping `getHomeSections` uses. */
+export const railKindFor = (layout: BridgeList['layout']): RailKind =>
   layout === 'hero' ? 'hero' : layout === 'ranked' ? 'ranked' : 'regular';
 /** Exported so the Home screen can shape its loading skeleton (rail rows vs. grid blocks) to match
  *  a bridge's actual section layout before content resolves — see `getHomeSections` below, which

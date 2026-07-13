@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FilterBar, SortControl } from '@/components/filters/filter-demo';
 import { resolveMetaIntent, resolveTagIntent, type MetaIntent, type TagIntent } from '@/components/filters/filter-intents';
 import { filterValueToApi } from '@/components/filters/filter-types';
+import { ContentFeed } from '@/components/content-feed';
 import { GridSkeleton } from '@/components/grid-skeleton';
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
 import { BarSurface } from '@/components/bar-surface';
@@ -22,11 +23,12 @@ import { BarContentGap, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { useDedupedPages } from '@/data/grid-pages';
 import { fetchBrowseScope, queryKeys, type BrowseScope } from '@/data/queries';
 import { subscribeSearchIntent, takeSearchIntent } from '@/data/search-intent';
-import { useSelectedBridge } from '@/data/selected-bridge';
+import { COMICAL_BRIDGE_ID, isComicalBridge, useSelectedBridge } from '@/data/selected-bridge';
 import { useDataSource, useMockActive } from '@/data/source';
-import type { GridPage } from '@/data/types';
+import type { Bridge, GridPage } from '@/data/types';
 import { friendlyError } from '@/lib/friendly-error';
 import { useBridgeFilters } from '@/hooks/use-bridge-filters';
+import { useCrossBridgeRails } from '@/hooks/use-cross-bridge-rails';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useGridLayout } from '@/hooks/use-grid-layout';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
@@ -38,6 +40,8 @@ import { hapticImpactLight } from '@/lib/haptics';
 
 // Stable, never-fetched key for the results infinite query while it's disabled (no active search).
 const DISABLED_RESULTS_KEY = ['browseGrid', 'disabled', 'search'] as const;
+// Stable empty array so `useCrossBridgeRails` runs zero queries in single-bridge mode.
+const NO_BRIDGES: Bridge[] = [];
 
 // Peak opacity of the top bar's drop shadow at the mid-point of the filter bar's slide.
 const SHADOW_PEAK_OPACITY = 0.16;
@@ -70,8 +74,23 @@ export default function SearchScreen() {
   // once this bridge's filter defs settle (below), mirroring the old Browse focus-effect flow.
   const [initialIntent] = useState(() => takeSearchIntent());
 
-  const { currentBridge, bridgeId, directBridge, setBridge, bridgesError, bridgesLoaded, bridges, refetchBridges } =
-    useSelectedBridge();
+  const {
+    currentBridge,
+    bridgeId,
+    directBridge,
+    setBridge,
+    bridgesError,
+    bridgesLoaded,
+    bridges,
+    visibleBridges,
+    refetchBridges,
+  } = useSelectedBridge();
+
+  // Cross-bridge mode: when the synthetic "Comical" bridge is selected, search fans out over every
+  // real bridge and shows one rail of results per bridge (no filters/sort — Comical has no capabilities,
+  // so useBridgeFilters below yields empty defs and the filter bar auto-hides).
+  const isComical = isComicalBridge(bridgeId);
+  const realBridges = useMemo(() => visibleBridges.filter((b) => b.id !== COMICAL_BRIDGE_ID), [visibleBridges]);
 
   // Point Search at the intent's bridge (may differ from the Browse-selected one) on mount.
   useEffect(() => {
@@ -81,6 +100,9 @@ export default function SearchScreen() {
   }, []);
 
   const [query, setQuery] = useState(initialIntent?.kind === 'query' ? initialIntent.query : '');
+
+  // The cross-bridge search rows (one rail per bridge). Runs zero queries in single-bridge mode.
+  const comicalSearch = useCrossBridgeRails(isComical ? realBridges : NO_BRIDGES, { mode: 'search', query });
 
   const {
     filterDefs,
@@ -210,7 +232,8 @@ export default function SearchScreen() {
   const resultsQuery = useInfiniteQuery({
     queryKey: scope ? queryKeys.browseGrid(mock, bridgeId ?? '', scope) : DISABLED_RESULTS_KEY,
     queryFn: ({ pageParam, signal }) => fetchBrowseScope(ds, bridgeId ?? '', scope!, pageParam, signal),
-    enabled: !!scope,
+    // Comical has no single-bridge results — its rows come from the cross-bridge fan-out instead.
+    enabled: !!scope && !isComical,
     initialPageParam: 1,
     getNextPageParam,
     placeholderData: keepPreviousData,
@@ -354,27 +377,51 @@ export default function SearchScreen() {
         </View>
       ) : (
         <View style={styles.listHost}>
-          {ready && (
-            <SeriesGrid
-              items={gridItems}
-              scopeKey={scopeKey}
-              listRef={listRef}
-              header={emptyBody}
-              // The top bar OVERLAYS the list (so results scroll under its frost), so reserve it as
-              // well as the filter bar beneath it, plus a little breathing room.
-              paddingTop={topBarTotal + filtersBarH + BarContentGap}
-              paddingBottom={insets.bottom + Spacing.five}
-              bridge={currentBridge?.name ?? undefined}
-              bridgeId={bridgeId}
-              direct={directBridge}
-              sharedValues={sharedValues}
-              onScroll={onListScroll}
-              onEndReached={loadMore}
-              onScrollEndDrag={pull.onScrollEndDrag}
-              // The pull-to-refresh content shift and the re-search dim both ride the list wrapper.
-              wrapperStyle={[pull.listStyle, listDimStyle]}
-            />
-          )}
+          {ready &&
+            (isComical ? (
+              // Cross-bridge: one rail of results per bridge (each rail carries its own bridge so its
+              // cards open the right bridge). No filters, no single-bridge pagination — page 1 per rail;
+              // a rail's "See all" (ContentFeed → /results) is where you infinite-scroll one bridge.
+              <ContentFeed
+                rows={comicalSearch.rows}
+                scopeKey={query || 'blank'}
+                listRef={listRef}
+                header={
+                  query.trim() && comicalSearch.rows.length === 0 && !comicalSearch.anyLoading ? (
+                    <View style={styles.hint}>
+                      <ThemedText type="small" themeColor="textSecondary" style={styles.hintText}>
+                        No results
+                      </ThemedText>
+                    </View>
+                  ) : null
+                }
+                paddingTop={topBarTotal + filtersBarH + BarContentGap}
+                paddingBottom={insets.bottom + Spacing.five}
+                sharedValues={sharedValues}
+                onScroll={onListScroll}
+                wrapperStyle={pull.listStyle}
+              />
+            ) : (
+              <SeriesGrid
+                items={gridItems}
+                scopeKey={scopeKey}
+                listRef={listRef}
+                header={emptyBody}
+                // The top bar OVERLAYS the list (so results scroll under its frost), so reserve it as
+                // well as the filter bar beneath it, plus a little breathing room.
+                paddingTop={topBarTotal + filtersBarH + BarContentGap}
+                paddingBottom={insets.bottom + Spacing.five}
+                bridge={currentBridge?.name ?? undefined}
+                bridgeId={bridgeId}
+                direct={directBridge}
+                sharedValues={sharedValues}
+                onScroll={onListScroll}
+                onEndReached={loadMore}
+                onScrollEndDrag={pull.onScrollEndDrag}
+                // The pull-to-refresh content shift and the re-search dim both ride the list wrapper.
+                wrapperStyle={[pull.listStyle, listDimStyle]}
+              />
+            ))}
           {ready && filterBar}
           {/* Settles just below the bars, in the gap the pull opens. */}
           <PullIndicator {...pull.indicator} top={topBarTotal + filtersBarH} />

@@ -23,10 +23,25 @@ export type BridgeScope = { bridge?: string; bridgeId?: string; direct?: boolean
  *  unchanged. */
 export type FeedCardEntry = SeriesEntry & BridgeScope;
 
+/**
+ * Where a rail's "See all" drills to — a pushed `/results` page scoped to ONE bridge. Either a LIST
+ * drill (`listId`, a home rail → infinite-scroll that list) or a SEARCH drill (`query`, a cross-bridge
+ * search rail → infinite-scroll that bridge's search). Carries the bridge identity so the pushed page
+ * fetches + navigates against the right real bridge even from the aggregate "Comical" feed.
+ */
+export type SeeAllTarget = {
+  title: string;
+  bridgeId: string;
+  bridge?: string;
+  direct?: boolean;
+  listId?: string;
+  query?: string;
+};
+
 export type ContentRow =
   // Shared heading row for EVERY section (rail, non-terminal grid block, terminal grid). Carries the
   // "See all" target when the section can be drilled into (rails can; grid blocks / terminal can't).
-  | { type: 'sectionHead'; key: string; title: string; seeAll?: { listId: string; title: string } }
+  | { type: 'sectionHead'; key: string; title: string; seeAll?: SeeAllTarget }
   // A rail (hero/ranked/regular) — strip only; its heading is the preceding `sectionHead` row. A whole
   // rail belongs to one bridge, so its override (if any) is section-level.
   | ({ type: 'rail'; key: string; section: RailSection } & BridgeScope)
@@ -69,6 +84,10 @@ function chunk<T>(arr: T[], size: number): T[][] {
 export function buildHomeRows(args: {
   loading: boolean;
   numColumns: number;
+  // Bridge identity for the rails' "See all" targets (the pushed /results page is per-bridge).
+  bridgeId: string;
+  bridge?: string;
+  direct?: boolean;
   // Loaded data
   sections: RailSection[];
   nonTerminalGridSections: HomeGridSection[];
@@ -82,6 +101,9 @@ export function buildHomeRows(args: {
   const {
     loading,
     numColumns,
+    bridgeId,
+    bridge,
+    direct,
     sections,
     nonTerminalGridSections,
     terminalGridSection,
@@ -116,7 +138,12 @@ export function buildHomeRows(args: {
 
   // Loaded: a shared `sectionHead` row precedes every section's (headless) body.
   for (const s of sections) {
-    rows.push({ type: 'sectionHead', key: `head:${s.id}`, title: s.title, seeAll: { listId: s.id, title: s.title } });
+    rows.push({
+      type: 'sectionHead',
+      key: `head:${s.id}`,
+      title: s.title,
+      seeAll: { title: s.title, bridgeId, bridge, direct, listId: s.id },
+    });
     rows.push({ type: 'rail', key: `rail:${s.id}`, section: s });
   }
   for (const gs of nonTerminalGridSections) {
@@ -126,6 +153,58 @@ export function buildHomeRows(args: {
   if (terminalGridSection) {
     rows.push({ type: 'sectionHead', key: 'head:terminal', title: terminalGridSection.title });
     chunk(gridItems, numColumns).forEach((items, i) => rows.push({ type: 'gridRow', key: `grow:${i}`, items }));
+  }
+  return rows;
+}
+
+/** One bridge's contribution to a cross-bridge feed (the "Comical" home or a cross-bridge search):
+ *  a rail titled with the bridge name, once loaded. `loading` → a skeleton row; a null/empty
+ *  `section` → the bridge is skipped (contributed nothing). `drill` is the rail's "See all" target
+ *  discriminator — a home rail drills into `listId`, a search rail into `query`. */
+export type CrossBridgeRailInput = {
+  bridgeId: string;
+  bridgeName: string;
+  direct: boolean;
+  loading: boolean;
+  section: RailSection | null;
+  drill: { listId?: string; query?: string };
+};
+
+/**
+ * Build `ContentRow[]` for a cross-bridge feed — one rail per bridge, in the given order. Each bridge
+ * yields `[sectionHead(title = bridge name, seeAll), rail(section, per-rail BridgeScope)]` once loaded,
+ * a `railSkeleton` while loading, or nothing when it has no results. The rail's `BridgeScope`
+ * (bridgeId/bridge/direct) is what makes its cards open the correct real bridge from the aggregate feed.
+ */
+export function buildCrossBridgeRows(inputs: CrossBridgeRailInput[]): ContentRow[] {
+  const rows: ContentRow[] = [];
+  for (const b of inputs) {
+    if (b.loading) {
+      rows.push({ type: 'railSkeleton', key: `railsk:${b.bridgeId}`, title: b.bridgeName });
+      continue;
+    }
+    if (!b.section || b.section.items.length === 0) continue;
+    rows.push({
+      type: 'sectionHead',
+      key: `head:${b.bridgeId}`,
+      title: b.bridgeName,
+      seeAll: {
+        title: b.bridgeName,
+        bridgeId: b.bridgeId,
+        bridge: b.bridgeName,
+        direct: b.direct,
+        listId: b.drill.listId,
+        query: b.drill.query,
+      },
+    });
+    rows.push({
+      type: 'rail',
+      key: `rail:${b.bridgeId}`,
+      section: b.section,
+      bridgeId: b.bridgeId,
+      bridge: b.bridgeName,
+      direct: b.direct,
+    });
   }
   return rows;
 }

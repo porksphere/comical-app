@@ -13,7 +13,7 @@
 import { keepPreviousData, type UseQueryOptions } from '@tanstack/react-query';
 
 import type { LibrarySort } from './api';
-import type { DataSource, QueryOpts } from './source';
+import { isRailLayout, railKindFor, type DataSource, type QueryOpts } from './source';
 import type {
   ActivityEntry,
   GridPage,
@@ -75,6 +75,9 @@ export const queryKeys = {
   activityCount: (mock: boolean) => ['activityCount', mock] as const,
   // The composed Home surface (rails + grid sections) for a bridge.
   homeSections: (mock: boolean, bridgeId: string) => ['homeSections', mock, bridgeId] as const,
+  // One representative rail for a bridge (its `featured`/first rail list, page 1) — the building
+  // block of the synthetic "Comical" aggregate home.
+  bridgeFeaturedRail: (mock: boolean, bridgeId: string) => ['bridgeFeaturedRail', mock, bridgeId] as const,
   // Per-bridge browse metadata (the Page selector's lists, and the filter/sort definitions).
   bridgeLists: (mock: boolean, bridgeId: string) => ['bridgeLists', mock, bridgeId] as const,
   bridgeFilters: (mock: boolean, bridgeId: string) => ['bridgeFilters', mock, bridgeId] as const,
@@ -130,6 +133,29 @@ export function fetchBrowseScope(
     case 'search':
       return ds.search(bridgeId, scope.query, page, scope.opts, signal);
   }
+}
+
+/**
+ * One representative rail for a bridge — the building block of the synthetic "Comical" aggregate home.
+ * Picks the bridge's `featured` rail-layout list (the contract's "surface prominently on home" flag),
+ * else its first rail-layout home list, else its first home list; then fetches that list's page 1.
+ * Returns `null` when the bridge has no non-page list with items. `ds`-polymorphic (works for real,
+ * mock, and the on-device runtime with no per-source change).
+ */
+export async function fetchBridgeFeaturedRail(
+  ds: DataSource,
+  bridgeId: string,
+  signal?: AbortSignal,
+): Promise<RailSection | null> {
+  const home = (await ds.getBridgeLists(bridgeId, signal)).filter((l) => !l.page);
+  const pick =
+    home.find((l) => l.featured && isRailLayout(l.layout)) ??
+    home.find((l) => isRailLayout(l.layout)) ??
+    home[0];
+  if (!pick) return null;
+  const page = await ds.getGridPage(bridgeId, pick.id, 1, undefined, signal);
+  if (page.items.length === 0) return null;
+  return { id: pick.id, title: pick.name, kind: railKindFor(pick.layout), items: page.items };
 }
 
 // The builders return a widened `UseQueryOptions` (queryKey typed as the general
