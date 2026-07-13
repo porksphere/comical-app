@@ -15,6 +15,7 @@ import {
   SlidersHorizontal,
   Star,
   Terminal,
+  Trash2,
   X,
 } from 'lucide-react-native';
 
@@ -47,3 +48,5 @@ export const TrackersIcon = ({ color, size = 16 }: IconProps) => <Compass color=
 export const RegistriesIcon = ({ color, size = 16 }: IconProps) => <Database color={color} size={size} />;
 export const DeveloperIcon = ({ color, size = 16 }: IconProps) => <Terminal color={color} size={size} />;
 export const DiagnosticsIcon = ({ color, size = 16 }: IconProps) => <Bug color={color} size={size} />;
+// Destructive action — the swipe-to-delete pane and its web hover affordance (see settings/swipeable-row).
+export const TrashIcon = ({ color, size = 16 }: IconProps) => <Trash2 color={color} size={size} />;

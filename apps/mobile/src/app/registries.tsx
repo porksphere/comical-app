@@ -4,17 +4,20 @@ import { useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { PlusIcon } from '@/components/icons/ui-icons';
 import { useKeyboardAvoidingInput, useOverlay } from '@/components/overlay/overlay';
 import { RetryBlock } from '@/components/retry-block';
-import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
+import { SettingsSection } from '@/components/settings/settings-row';
+import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
 import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { TopBar, useTopBarInset } from '@/components/top-bar';
+import { TopBar, TopBarButton, useTopBarInset } from '@/components/top-bar';
 import { BarContentGap, BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
 import { useTheme } from '@/hooks/use-theme';
+import { friendlyError } from '@/lib/friendly-error';
 
 export default function RegistriesScreen() {
   const ds = useDataSource();
@@ -22,7 +25,6 @@ export default function RegistriesScreen() {
   const insets = useSafeAreaInsets();
   const topBarInset = useTopBarInset();
   const theme = useTheme();
-  const queryClient = useQueryClient();
   const { open } = useOverlay();
 
   const { data: registries, error, isLoading, refetch } = useQuery({
@@ -30,101 +32,21 @@ export default function RegistriesScreen() {
     queryFn: ({ signal }) => ds.getRegistries(signal),
   });
 
-  const removeRegistry = (url: string) => {
-    open(() => <RemoveRegistryConfirm url={url} />);
-  };
-
-  function RemoveRegistryConfirm({ url }: { url: string }) {
-    const { closeTop } = useOverlay();
-    const removeMutation = useMutation({
-      mutationFn: () => ds.removeRegistry(url),
-      onSuccess: async () => {
-        await queryClient.invalidateQueries({ queryKey: queryKeys.registries()});
-        closeTop();
-      },
-    });
-    const removing = removeMutation.isPending;
-    const doRemove = () => removeMutation.mutate();
-    return (
-      <View style={styles.confirmBody}>
-        <ThemedText type="subtitle">Remove registry?</ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
-          {url}
-        </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
-          Bridges/trackers already installed from it keep working, but you won&apos;t see updates.
-        </ThemedText>
-        <View style={styles.confirmActions}>
-          <Pressable onPress={closeTop} style={styles.confirmBtn}>
-            <ThemedText type="smallBold">Cancel</ThemedText>
-          </Pressable>
-          <Pressable onPress={doRemove} disabled={removing} style={styles.confirmBtn}>
-            <ThemedText type="smallBold" style={{ color: theme.danger }}>
-              {removing ? 'Removing…' : 'Remove'}
-            </ThemedText>
-          </Pressable>
-        </View>
-      </View>
-    );
-  }
-
-  function AddRegistryForm() {
-    const { closeTop } = useOverlay();
-    const keyboardAvoiding = useKeyboardAvoidingInput();
-    const inputRef = useRef<TextInput>(null);
-    const [url, setUrl] = useState('');
-    const [requireSignature, setRequireSignature] = useState(false);
-    const addMutation = useMutation({
-      mutationFn: () => ds.addRegistry(url.trim(), requireSignature),
-      onSuccess: async () => {
-        await queryClient.invalidateQueries({ queryKey: queryKeys.registries()});
-        closeTop();
-      },
-    });
-    const adding = addMutation.isPending;
-    const addError = addMutation.isError ? (addMutation.error as Error).message || 'Failed to add registry' : null;
-    const doAdd = () => {
-      if (url.trim()) addMutation.mutate();
-    };
-    return (
-      <View style={styles.confirmBody}>
-        <ThemedText type="subtitle">Add registry</ThemedText>
-        <TextInput
-          ref={inputRef}
-          value={url}
-          onChangeText={setUrl}
-          onFocus={() => keyboardAvoiding.onFocus(inputRef.current)}
-          onBlur={keyboardAvoiding.onBlur}
-          placeholder="https://example.com/registry"
-          placeholderTextColor={theme.textSecondary}
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="url"
-          style={[styles.input, { color: theme.text, borderColor: theme.backgroundSelected }]}
-        />
-        <View style={styles.switchRow}>
-          <ThemedText type="small">Require signature</ThemedText>
-          <ThemedSwitch value={requireSignature} onValueChange={setRequireSignature} />
-        </View>
-        {addError && (
-          <ThemedText type="small" style={{ color: theme.danger }}>
-            {addError}
-          </ThemedText>
-        )}
-        <Pressable onPress={doAdd} disabled={adding || !url.trim()}>
-          <ThemedView style={[styles.saveBtn, { backgroundColor: theme.accent }, (adding || !url.trim()) && styles.saveBtnDisabled]}>
-            <ThemedText type="smallBold" style={{ color: theme.accentOn }}>
-              {adding ? 'Adding…' : 'Add'}
-            </ThemedText>
-          </ThemedView>
-        </Pressable>
-      </View>
-    );
-  }
-
   return (
     <ThemedView style={styles.container}>
-      <TopBar title="Registries" />
+      <TopBar
+        title="Registries"
+        right={
+          // `null` = this server has no registry support at all, so there's nothing to add to.
+          registries !== null && (
+            <TopBarButton
+              icon={<PlusIcon color={theme.text} size={22} />}
+              label="Add registry"
+              onPress={() => open(() => <AddRegistryForm />)}
+            />
+          )
+        }
+      />
       <ScrollView
         contentContainerStyle={[
           styles.content,
@@ -134,47 +56,140 @@ export default function RegistriesScreen() {
         {isLoading ? (
           <ActivityIndicator />
         ) : error ? (
-          <RetryBlock message={(error as Error).message || 'Failed to load registries'} onRetry={() => refetch()} />
+          <RetryBlock message={friendlyError(error, 'Failed to load registries. Try again.')} onRetry={() => refetch()} />
+        ) : registries === null ? (
+          <View style={styles.empty}>
+            <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
+              Registries are not available on this server.
+            </ThemedText>
+          </View>
+        ) : registries && registries.length === 0 ? (
+          <View style={styles.empty}>
+            <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
+              No registries added yet. A registry is a catalog that bridges and trackers are installed from — add one
+              with the + above.
+            </ThemedText>
+          </View>
         ) : (
-          <SettingsSection title="Registries">
-            {registries === null ? (
-              <ThemedText type="small" themeColor="textSecondary">
-                Registries are not available on this server.
-              </ThemedText>
-            ) : registries && registries.length === 0 ? (
-              <ThemedText type="small" themeColor="textSecondary">
-                No registries added yet.
-              </ThemedText>
-            ) : (
-              registries?.map((r) => (
-                <SettingsRow
-                  key={r.url}
-                  label={r.name}
-                  description={r.url}
-                  onPress={() => router.push({ pathname: '/registry-browse', params: { url: r.url } })}
-                  right={
-                    <Pressable onPress={() => removeRegistry(r.url)} hitSlop={8}>
-                      <ThemedText type="small" style={{ color: theme.danger }}>
-                        Remove
-                      </ThemedText>
-                    </Pressable>
-                  }
-                />
-              ))
-            )}
+          <SettingsSection title="Added" bleed>
+            {(registries ?? []).map((r) => (
+              <SwipeableSettingsRow
+                key={r.url}
+                label={r.name}
+                description={r.url}
+                onPress={() => router.push({ pathname: '/registry-browse', params: { url: r.url } })}
+                actionLabel="Remove"
+                onAction={() => open(() => <RemoveRegistryConfirm url={r.url} />)}
+              />
+            ))}
           </SettingsSection>
-        )}
-        {registries !== null && (
-          <Pressable onPress={() => open(() => <AddRegistryForm />)}>
-            <ThemedView style={[styles.saveBtn, { backgroundColor: theme.accent }]}>
-              <ThemedText type="smallBold" style={{ color: theme.accentOn }}>
-                Add registry
-              </ThemedText>
-            </ThemedView>
-          </Pressable>
         )}
       </ScrollView>
     </ThemedView>
+  );
+}
+
+function RemoveRegistryConfirm({ url }: { url: string }) {
+  const ds = useDataSource();
+  const theme = useTheme();
+  const queryClient = useQueryClient();
+  const { closeTop } = useOverlay();
+
+  const removeMutation = useMutation({
+    mutationFn: () => ds.removeRegistry(url),
+    onSuccess: async () => {
+      // Narrow invalidate, unlike an uninstall: removing a registry doesn't touch the bridges
+      // already installed from it, only where updates would come from.
+      await queryClient.invalidateQueries({ queryKey: queryKeys.registries() });
+      closeTop();
+    },
+  });
+  const error = removeMutation.isError ? friendlyError(removeMutation.error, 'Failed to remove registry') : null;
+
+  return (
+    <View style={styles.confirmBody}>
+      <ThemedText type="subtitle">Remove registry?</ThemedText>
+      <ThemedText type="small" themeColor="textSecondary">
+        {url}
+      </ThemedText>
+      <ThemedText type="small" themeColor="textSecondary">
+        Bridges/trackers already installed from it keep working, but you won&apos;t see updates.
+      </ThemedText>
+      {error && (
+        <ThemedText type="small" style={{ color: theme.danger }}>
+          {error}
+        </ThemedText>
+      )}
+      <View style={styles.confirmActions}>
+        <Pressable onPress={closeTop} style={styles.confirmBtn}>
+          <ThemedText type="smallBold">Cancel</ThemedText>
+        </Pressable>
+        <Pressable onPress={() => removeMutation.mutate()} disabled={removeMutation.isPending} style={styles.confirmBtn}>
+          <ThemedText type="smallBold" style={{ color: theme.danger }}>
+            {removeMutation.isPending ? 'Removing…' : 'Remove'}
+          </ThemedText>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function AddRegistryForm() {
+  const ds = useDataSource();
+  const theme = useTheme();
+  const queryClient = useQueryClient();
+  const { closeTop } = useOverlay();
+  const keyboardAvoiding = useKeyboardAvoidingInput();
+  const inputRef = useRef<TextInput>(null);
+  const [url, setUrl] = useState('');
+  const [requireSignature, setRequireSignature] = useState(false);
+
+  const addMutation = useMutation({
+    mutationFn: () => ds.addRegistry(url.trim(), requireSignature),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.registries() });
+      closeTop();
+    },
+  });
+  const adding = addMutation.isPending;
+  const addError = addMutation.isError ? friendlyError(addMutation.error, 'Failed to add registry') : null;
+  const doAdd = () => {
+    if (url.trim()) addMutation.mutate();
+  };
+
+  return (
+    <View style={styles.confirmBody}>
+      <ThemedText type="subtitle">Add registry</ThemedText>
+      <TextInput
+        ref={inputRef}
+        value={url}
+        onChangeText={setUrl}
+        onFocus={() => keyboardAvoiding.onFocus(inputRef.current)}
+        onBlur={keyboardAvoiding.onBlur}
+        placeholder="https://example.com/registry"
+        placeholderTextColor={theme.textSecondary}
+        autoCapitalize="none"
+        autoCorrect={false}
+        keyboardType="url"
+        style={[styles.input, { color: theme.text, borderColor: theme.backgroundSelected }]}
+      />
+      <View style={styles.switchRow}>
+        <ThemedText type="small">Require signature</ThemedText>
+        <ThemedSwitch value={requireSignature} onValueChange={setRequireSignature} />
+      </View>
+      {addError && (
+        <ThemedText type="small" style={{ color: theme.danger }}>
+          {addError}
+        </ThemedText>
+      )}
+      <Pressable onPress={doAdd} disabled={adding || !url.trim()}>
+        <ThemedView style={[styles.saveBtn, { backgroundColor: theme.accent }, (adding || !url.trim()) && styles.saveBtnDisabled]}>
+          <ThemedText type="smallBold" style={{ color: theme.accentOn }}>
+            {adding ? 'Adding…' : 'Add'}
+          </ThemedText>
+        </ThemedView>
+      </Pressable>
+    </View>
   );
 }
 
@@ -189,6 +204,14 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: MaxContentWidth,
     alignSelf: 'center',
+  },
+  empty: {
+    alignItems: 'center',
+    gap: Spacing.four,
+    paddingVertical: Spacing.five,
+  },
+  emptyText: {
+    textAlign: 'center',
   },
   input: {
     borderWidth: 1,

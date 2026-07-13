@@ -98,7 +98,12 @@ function RootNavigation() {
           {/* Full-screen page reader; its own dark chrome, fade in/out. */}
           <Stack.Screen name="reader" options={{ headerShown: false, animation: 'fade' }} />
           {/* These render their own <TopBar> (matching series.tsx), so the native
-              stack header is hidden here too. */}
+              stack header is hidden here too. The Settings tab is only a table of
+              contents — every category below is a screen it pushes. */}
+          <Stack.Screen name="settings-general" options={{ headerShown: false }} />
+          <Stack.Screen name="settings-developer" options={{ headerShown: false }} />
+          <Stack.Screen name="bridges" options={{ headerShown: false }} />
+          <Stack.Screen name="trackers" options={{ headerShown: false }} />
           <Stack.Screen name="bridge-settings" options={{ headerShown: false }} />
           <Stack.Screen name="tracker-settings" options={{ headerShown: false }} />
           <Stack.Screen name="registries" options={{ headerShown: false }} />

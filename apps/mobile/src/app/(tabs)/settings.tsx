@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { type ReactNode, useRef } from 'react';
+import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
@@ -13,77 +13,39 @@ import {
   RegistriesIcon,
   TrackersIcon,
 } from '@/components/icons/ui-icons';
-import {
-  MeasuredHeader,
-  OptionList,
-  OverlayHeading,
-  useAnchoredOverlay,
-  useKeyboardAvoidingInput,
-  useOverlay,
-} from '@/components/overlay/overlay';
 import { TabTitleBar } from '@/components/tab-title-bar';
-import { RetryBlock } from '@/components/retry-block';
-import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
-import { ThemedSwitch } from '@/components/themed-switch';
-import { devProfiler$, useDevProfilerEnabled } from '@/lib/dev-profiler-flag';
-import { lightCards$, useLightCards } from '@/lib/perf-flags';
-import { PROFILING_ENABLED } from '@/lib/profiling';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
-import { useApiBase, type BridgeSummary } from '@/data/api';
-import { applyEmbeddedMode, isEmbeddedRuntimeAvailable, useEmbeddedEnabled } from '@/data/embedded';
-import { bumpDataEpoch } from '@/data/data-epoch';
-import { queryClient } from '@/data/query-client';
 import { queryKeys } from '@/data/queries';
-import { useDataSource, useHideNsfw, useMockDataToggle, useNsfwMode, type NsfwMode } from '@/data/source';
+import { useDataSource, useHideNsfw } from '@/data/source';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useHovered } from '@/hooks/use-hovered';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
-import { useTheme, useThemePreference, type ThemePreference } from '@/hooks/use-theme';
-import { friendlyError } from '@/lib/friendly-error';
-import { hapticImpactLight, hapticSelection } from '@/lib/haptics';
+import { useTheme } from '@/hooks/use-theme';
+import { PROFILING_ENABLED } from '@/lib/profiling';
+import { hapticImpactLight } from '@/lib/haptics';
 
-const NSFW_MODE_OPTIONS: { value: NsfwMode; label: string; description: string }[] = [
-  { value: 'off', label: 'Off', description: 'NSFW-flagged bridges stay hidden everywhere in the app.' },
-  { value: 'on', label: 'On', description: 'NSFW-flagged bridges stay visible until you turn this off again.' },
-  {
-    value: 'until-background',
-    label: 'On until app is closed',
-    description: 'NSFW-flagged bridges are visible now, but hidden again as soon as you leave or minimize the app.',
-  },
-  {
-    value: 'until-restart',
-    label: 'On until app restarts',
-    description: 'NSFW-flagged bridges are visible now, and stay that way while switching apps — hidden again the next time Comical is relaunched.',
-  },
-];
-
-function nsfwModeSummary(mode: NsfwMode): string {
-  return NSFW_MODE_OPTIONS.find((o) => o.value === mode)?.label ?? 'Off';
-}
-
-const THEME_OPTIONS: { value: ThemePreference; label: string; description: string }[] = [
-  { value: 'system', label: 'System', description: 'Follow the device’s light or dark setting.' },
-  { value: 'light', label: 'Light', description: 'Always use the light theme.' },
-  { value: 'dark', label: 'Dark', description: 'Always use the dark theme.' },
-];
-
-function themePreferenceSummary(pref: ThemePreference): string {
-  return THEME_OPTIONS.find((o) => o.value === pref)?.label ?? 'System';
-}
-
+/**
+ * The Settings landing screen is a table of contents, nothing more: every category owns its own
+ * pushed screen, where ALL of that category's management lives (installing and uninstalling bridges
+ * on `/bridges`, adding and removing registries on `/registries`, and so on). It used to inline
+ * every section here, which meant management was scattered — you uninstalled a bridge from inside
+ * its detail page and removed a registry from a text button wedged into a row.
+ */
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const theme = useTheme();
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTopOnReselect('settings', scrollRef);
   const { onScroll } = useHideTabBarOnScroll();
   const barHeight = useTopBarHeight();
-  // The title band shows at every width now, like History/Activity/Library — so the content reserves
-  // the real bar height on mobile too (it used to fake a shorter inset there, since the band was
-  // desktop-only).
   const headerHeight = insets.top + barHeight;
+
+  const counts = useCategoryCounts();
+
   return (
     <ThemedView style={styles.container}>
       <ScrollView
@@ -92,16 +54,60 @@ export default function SettingsScreen() {
         scrollEventThrottle={16}
         contentContainerStyle={[
           styles.content,
-          // flexGrow: fill the viewport even when the sections are short, so the space below them is
-          // still draggable (see SeriesGrid's note).
+          // flexGrow: fill the viewport even when the list is short, so the space below it is still
+          // draggable (see SeriesGrid's note).
           { flexGrow: 1, paddingTop: headerHeight + BarContentGap, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
         ]}>
-        <GeneralSection />
-        <BridgesSection />
-        <TrackersSection />
-        <RegistriesSection />
-        <DiagnosticsSection />
-        {PROFILING_ENABLED && <DeveloperSection />}
+        <ThemedView type="backgroundElement" style={[styles.card, { borderColor: theme.hairline }]}>
+          <CategoryRow
+            icon={<GeneralSettingsIcon color={theme.textSecondary} size={22} />}
+            title="General"
+            description="Appearance, content visibility, and where bridges run."
+            onPress={() => router.push('/settings-general')}
+          />
+          <Divider />
+          <CategoryRow
+            icon={<BridgesIcon color={theme.textSecondary} size={22} />}
+            title="Bridges"
+            description="The sources Comical reads from. Install, configure, and remove them."
+            value={counts.bridges}
+            onPress={() => router.push('/bridges')}
+          />
+          <Divider />
+          <CategoryRow
+            icon={<TrackersIcon color={theme.textSecondary} size={22} />}
+            title="Trackers"
+            description="Sync your reading progress to an external service."
+            value={counts.trackers}
+            onPress={() => router.push('/trackers')}
+          />
+          <Divider />
+          <CategoryRow
+            icon={<RegistriesIcon color={theme.textSecondary} size={22} />}
+            title="Registries"
+            description="The catalogs bridges and trackers are installed from."
+            value={counts.registries}
+            onPress={() => router.push('/registries')}
+          />
+          <Divider />
+          <CategoryRow
+            icon={<DiagnosticsIcon color={theme.textSecondary} size={22} />}
+            title="Diagnostics"
+            description="Page and thumbnail load failures, kept on this device only."
+            onPress={() => router.push('/diagnostics')}
+          />
+          {PROFILING_ENABLED && (
+            <>
+              <Divider />
+              <CategoryRow
+                icon={<DeveloperIcon color={theme.textSecondary} size={22} />}
+                title="Developer"
+                description="Mock data, the JS profiler, and the server this build talks to."
+                onPress={() => router.push('/settings-developer')}
+              />
+            </>
+          )}
+        </ThemedView>
       </ScrollView>
 
       <TabTitleBar title="Settings" />
@@ -109,451 +115,94 @@ export default function SettingsScreen() {
   );
 }
 
-function GeneralSection() {
-  const theme = useTheme();
-  const [nsfwMode, setNsfwMode] = useNsfwMode();
-  const [themePref, setThemePref] = useThemePreference();
-  const [onDevice, setOnDevice] = useEmbeddedEnabled();
-  const [apiBase, setApiBaseOverride] = useApiBase();
-  const lightCards = useLightCards();
-  const { open } = useOverlay();
-  // The on-device runtime is only offered where a native bridge engine exists (iOS/Android with the
-  // native module built) — never on web, which always uses a remote server.
-  const embeddedAvailable = isEmbeddedRuntimeAvailable();
-  // Whether the app is actually running embedded right now (not just the user's stored preference —
-  // see getResolvedModeSync in embedded/preference.ts). The remote-server row is meaningless while
-  // this is true, so it's hidden rather than just disabled.
-  const embeddedActive = onDevice && embeddedAvailable;
-
-  const toggleOnDevice = (enabled: boolean) => {
-    setOnDevice(enabled);
-    applyEmbeddedMode(enabled); // swap api.ts's transport (embedded ⇄ remote)
-    queryClient.clear(); // embedded and remote caches must not mix (mirrors PERSIST_BUSTER)
-    bumpDataEpoch(); // refetch useDataSource-backed screens against the swapped transport
-  };
-
-  const saveApiBase = (url: string | null) => {
-    setApiBaseOverride(url);
-    queryClient.clear(); // a different server's cached data can't be trusted (mirrors PERSIST_BUSTER)
-    bumpDataEpoch(); // refetch useDataSource-backed screens against the new server
-  };
-
-  return (
-    <SettingsSection title="General" icon={<GeneralSettingsIcon color={theme.textSecondary} size={14} />}>
-      <AppearanceRow preference={themePref} onChange={setThemePref} />
-      <NsfwModeRow mode={nsfwMode} onChange={setNsfwMode} />
-      {embeddedAvailable && (
-        <SettingsRow
-          label="Run bridges on this device"
-          description="Fetch and read entirely on-device, with no external server. Turn off to use a remote Comical server."
-          right={<ThemedSwitch value={onDevice} onValueChange={toggleOnDevice} />}
-        />
-      )}
-      {!embeddedActive && (
-        <SettingsRow
-          label="Remote server"
-          description={apiBase}
-          descriptionSelectable
-          onPress={() => open(() => <RemoteServerForm currentUrl={apiBase} onSave={saveApiBase} />)}
-        />
-      )}
-      <SettingsRow
-        label="Lightweight cards"
-        description="Drops the shrink animation and cross-fade from covers and page thumbnails for smoother scrolling."
-        right={<ThemedSwitch value={lightCards} onValueChange={(v) => lightCards$.light.set(v)} />}
-      />
-    </SettingsSection>
-  );
-}
-
-/** Sheet/popover form for editing the remote-server override (see `RemoteServerForm`'s trigger row
- *  in `GeneralSection`) — mirrors `AddRegistryForm`'s text-input-plus-save shape in `registries.tsx`. */
-function RemoteServerForm({ currentUrl, onSave }: { currentUrl: string; onSave: (url: string | null) => void }) {
-  const theme = useTheme();
-  const { closeTop } = useOverlay();
-  const keyboardAvoiding = useKeyboardAvoidingInput();
-  const inputRef = useRef<TextInput>(null);
-  const [url, setUrl] = useState(currentUrl);
-
-  return (
-    <View style={styles.confirmBody}>
-      <OverlayHeading>Remote server</OverlayHeading>
-      <ThemedText type="small" themeColor="textSecondary">
-        The Comical server this app talks to when not running bridges on this device.
-      </ThemedText>
-      <TextInput
-        ref={inputRef}
-        value={url}
-        onChangeText={setUrl}
-        onFocus={() => keyboardAvoiding.onFocus(inputRef.current)}
-        onBlur={keyboardAvoiding.onBlur}
-        placeholder="http://localhost:3100"
-        placeholderTextColor={theme.textSecondary}
-        autoCapitalize="none"
-        autoCorrect={false}
-        keyboardType="url"
-        style={[styles.input, { color: theme.text, borderColor: theme.backgroundSelected }]}
-      />
-      <View style={styles.confirmActions}>
-        <Pressable
-          onPress={() => {
-            onSave(null);
-            closeTop();
-          }}
-          style={styles.confirmBtn}>
-          <ThemedText type="smallBold">Reset to default</ThemedText>
-        </Pressable>
-        <Pressable
-          onPress={() => {
-            onSave(url);
-            closeTop();
-          }}
-          disabled={!url.trim()}
-          style={styles.confirmBtn}>
-          <ThemedText type="smallBold" style={{ color: theme.accent }}>
-            Save
-          </ThemedText>
-        </Pressable>
-      </View>
-    </View>
-  );
-}
-
-/** Row + anchored picker for the 3-way appearance preference (System/Light/Dark),
- *  mirroring `NsfwModeRow` below — a picker rather than a switch since it's a
- *  three-way choice (see `useThemePreference` in `hooks/use-theme.ts`). */
-function AppearanceRow({ preference, onChange }: { preference: ThemePreference; onChange: (pref: ThemePreference) => void }) {
-  const theme = useTheme();
-  const { ref, openAt } = useAnchoredOverlay();
-  const { hovered, onHoverIn, onHoverOut } = useHovered();
-  return (
-    <Pressable
-      ref={ref}
-      onPress={() => {
-        hapticImpactLight();
-        openAt(() => <AppearancePicker preference={preference} onChange={onChange} />);
-      }}
-      onHoverIn={onHoverIn}
-      onHoverOut={onHoverOut}
-      android_ripple={{ color: theme.backgroundSelected }}
-      style={styles.pressableCursor}>
-      <View style={[styles.row, hovered && { backgroundColor: theme.backgroundSelected }]}>
-        <View style={styles.rowText}>
-          <ThemedText type="small">Appearance</ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            {THEME_OPTIONS.find((o) => o.value === preference)?.description}
-          </ThemedText>
-        </View>
-        <View style={styles.rowValue}>
-          <ThemedText type="small" themeColor="textSecondary">
-            {themePreferenceSummary(preference)}
-          </ThemedText>
-          <ChevronRightIcon color={theme.textSecondary} size={18} />
-        </View>
-      </View>
-    </Pressable>
-  );
-}
-
-function AppearancePicker({ preference, onChange }: { preference: ThemePreference; onChange: (pref: ThemePreference) => void }) {
-  const { closeTop } = useOverlay();
-  const theme = useTheme();
-  return (
-    <View style={styles.pickerBody}>
-      <MeasuredHeader>
-        <OverlayHeading>Appearance</OverlayHeading>
-      </MeasuredHeader>
-      <OptionList>
-        {THEME_OPTIONS.map((opt) => (
-          <Pressable
-            key={opt.value}
-            onPress={() => {
-              hapticSelection();
-              onChange(opt.value);
-              closeTop();
-            }}
-            android_ripple={{ color: theme.backgroundSelected }}
-            style={styles.pressableCursor}>
-            <ThemedView type="backgroundElement" style={styles.pickerRow}>
-              <View style={styles.rowText}>
-                <ThemedText type="smallBold">{opt.label}</ThemedText>
-                <ThemedText type="small" themeColor="textSecondary">
-                  {opt.description}
-                </ThemedText>
-              </View>
-              <View style={[styles.check, opt.value === preference && { borderColor: theme.accent, backgroundColor: theme.accent }]} />
-            </ThemedView>
-          </Pressable>
-        ))}
-      </OptionList>
-    </View>
-  );
-}
-
-/** Row + anchored picker for the 4-way NSFW mode (mirrors `EnumField`'s pattern in
- *  `setting-field.tsx`), rather than a plain switch — "on" isn't a single durable
- *  state here, it can also be a temporary override that expires on backgrounding
- *  or on the next app restart (see `useNsfwMode` in `data/source.ts`). */
-function NsfwModeRow({ mode, onChange }: { mode: NsfwMode; onChange: (mode: NsfwMode) => void }) {
-  const theme = useTheme();
-  const { ref, openAt } = useAnchoredOverlay();
-  const { hovered, onHoverIn, onHoverOut } = useHovered();
-  return (
-    <Pressable
-      ref={ref}
-      onPress={() => {
-        hapticImpactLight();
-        openAt(() => <NsfwModePicker mode={mode} onChange={onChange} />);
-      }}
-      onHoverIn={onHoverIn}
-      onHoverOut={onHoverOut}
-      android_ripple={{ color: theme.backgroundSelected }}
-      style={styles.pressableCursor}>
-      <View style={[styles.row, hovered && { backgroundColor: theme.backgroundSelected }]}>
-        <View style={styles.rowText}>
-          <ThemedText type="small">NSFW content</ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            {NSFW_MODE_OPTIONS.find((o) => o.value === mode)?.description}
-          </ThemedText>
-        </View>
-        <View style={styles.rowValue}>
-          <ThemedText type="small" themeColor="textSecondary">
-            {nsfwModeSummary(mode)}
-          </ThemedText>
-          <ChevronRightIcon color={theme.textSecondary} size={18} />
-        </View>
-      </View>
-    </Pressable>
-  );
-}
-
-function NsfwModePicker({ mode, onChange }: { mode: NsfwMode; onChange: (mode: NsfwMode) => void }) {
-  const { closeTop } = useOverlay();
-  const theme = useTheme();
-  return (
-    <View style={styles.pickerBody}>
-      <MeasuredHeader>
-        <OverlayHeading>NSFW content</OverlayHeading>
-      </MeasuredHeader>
-      <OptionList>
-        {NSFW_MODE_OPTIONS.map((opt) => (
-          <Pressable
-            key={opt.value}
-            onPress={() => {
-              hapticSelection();
-              onChange(opt.value);
-              closeTop();
-            }}
-            android_ripple={{ color: theme.backgroundSelected }}
-            style={styles.pressableCursor}>
-            <ThemedView type="backgroundElement" style={styles.pickerRow}>
-              <View style={styles.rowText}>
-                <ThemedText type="smallBold">{opt.label}</ThemedText>
-                <ThemedText type="small" themeColor="textSecondary">
-                  {opt.description}
-                </ThemedText>
-              </View>
-              <View style={[styles.check, opt.value === mode && { borderColor: theme.accent, backgroundColor: theme.accent }]} />
-            </ThemedView>
-          </Pressable>
-        ))}
-      </OptionList>
-    </View>
-  );
-}
-
-/** One-line status for a bridge row: discontinuation and available updates take precedence over the
- *  "needs setup" hint, so the user sees the most actionable state at a glance. `tone` picks the
- *  status color (amber for something needing attention, blue for an informational update) so the
- *  more urgent states are visually distinct instead of blending into the secondary-text color. */
-function bridgeStatus(b: BridgeSummary): { text: string; tone: 'warn' | 'info' } | undefined {
-  if (b.discontinued) return { text: 'No longer offered by its registry', tone: 'warn' };
-  if (b.availableVersion) return { text: `Update available — v${b.availableVersion}`, tone: 'info' };
-  if (!b.configured) return { text: 'Needs setup', tone: 'warn' };
-  return undefined;
-}
-
-function BridgesSection() {
+/** The trailing count on the Bridges/Trackers/Registries rows. These read the SAME query keys their
+ *  screens do, so the numbers are served from cache (no extra fetch) and drop immediately when
+ *  something is uninstalled or removed. `undefined` while loading, or where the server has no
+ *  tracker/registry support at all — the row just shows no count then, rather than a lying "0". */
+function useCategoryCounts() {
   const ds = useDataSource();
-  const router = useRouter();
-  const theme = useTheme();
   const hideNsfw = useHideNsfw();
 
-  // react-query, explicitly invalidated by install/update/uninstall (registry-browse.tsx,
-  // bridge-settings.tsx) — not a plain effect keyed on `ds`, since this section is very often
-  // mounted-but-unfocused in the background while the user installs/uninstalls elsewhere.
-  const bridgesQuery = useQuery({
+  const { data: bridges } = useQuery({
     queryKey: queryKeys.bridgeSummaries(),
     queryFn: ({ signal }) => ds.getBridgeSummaries(signal),
   });
-  const bridges = bridgesQuery.data ?? null;
-  const error = bridgesQuery.isError ? (bridgesQuery.error as Error).message || 'Failed to load bridges' : null;
-
-  const visible = bridges && hideNsfw ? bridges.filter((b) => !b.info.nsfw) : bridges;
-
-  return (
-    <SettingsSection title="Bridges" icon={<BridgesIcon color={theme.textSecondary} size={14} />}>
-      {error ? (
-        <RetryBlock message={error} onRetry={() => bridgesQuery.refetch()} />
-      ) : !visible ? (
-        <ThemedText type="small" themeColor="textSecondary">
-          Loading…
-        </ThemedText>
-      ) : visible.length === 0 ? (
-        <ThemedText type="small" themeColor="textSecondary">
-          {bridges!.length === 0 ? 'No bridges installed.' : 'No bridges to show — NSFW-flagged bridges are hidden.'}
-        </ThemedText>
-      ) : (
-        visible.map((b) => {
-          const status = bridgeStatus(b);
-          return (
-            <SettingsRow
-              key={b.info.id}
-              label={b.info.name}
-              description={status?.text}
-              descriptionColor={status && (status.tone === 'warn' ? theme.badgeWarn : theme.badgeInfo)}
-              onPress={() =>
-                router.push({
-                  pathname: '/bridge-settings',
-                  params: {
-                    bridgeId: b.info.id,
-                    source: b.source,
-                    ...(b.availableVersion ? { availableVersion: b.availableVersion } : {}),
-                  },
-                })
-              }
-            />
-          );
-        })
-      )}
-    </SettingsSection>
-  );
-}
-
-function TrackersSection() {
-  const ds = useDataSource();
-  const router = useRouter();
-  const theme = useTheme();
-  // Through react-query for consistency + free retry/staleness. `data === undefined` = still loading;
-  // `null` = this server has no tracker support (an expected state, not an error).
-  const { data: trackers, isError, error, refetch } = useQuery({
+  const { data: trackers } = useQuery({
     queryKey: queryKeys.trackers(),
     queryFn: ({ signal }) => ds.getTrackers(signal),
   });
-
-  return (
-    <SettingsSection title="Trackers" icon={<TrackersIcon color={theme.textSecondary} size={14} />}>
-      {isError ? (
-        <RetryBlock message={friendlyError(error, 'Failed to load trackers. Try again.')} onRetry={() => refetch()} />
-      ) : trackers === undefined ? (
-        <ThemedText type="small" themeColor="textSecondary">
-          Loading…
-        </ThemedText>
-      ) : trackers === null ? (
-        <ThemedText type="small" themeColor="textSecondary">
-          Trackers are not available on this server.
-        </ThemedText>
-      ) : trackers.length === 0 ? (
-        <ThemedText type="small" themeColor="textSecondary">
-          No trackers installed.
-        </ThemedText>
-      ) : (
-        trackers.map((t) => (
-          <SettingsRow
-            key={t.info.id}
-            label={t.info.name}
-            description={t.configured ? undefined : 'Needs setup'}
-            descriptionColor={t.configured ? undefined : theme.badgeWarn}
-            onPress={() => router.push({ pathname: '/tracker-settings', params: { trackerId: t.info.id } })}
-          />
-        ))
-      )}
-    </SettingsSection>
-  );
-}
-
-function RegistriesSection() {
-  const ds = useDataSource();
-  const router = useRouter();
-  const theme = useTheme();
-  // Shares the ['registries'] cache with registries.tsx / add-registry.tsx, so adding or removing a
-  // registry there refreshes this section too — the old manual effect only re-ran on its own reload
-  // counter and missed those invalidations. `undefined` = loading; `null` = no registry support.
-  const { data: registries, isError, error, refetch } = useQuery({
+  const { data: registries } = useQuery({
     queryKey: queryKeys.registries(),
     queryFn: ({ signal }) => ds.getRegistries(signal),
   });
 
+  // Matches the filter the Bridges screen applies, so the count can't disagree with the list.
+  const visibleBridges = bridges && hideNsfw ? bridges.filter((b) => !b.info.nsfw) : bridges;
+
+  return {
+    bridges: visibleBridges ? String(visibleBridges.length) : undefined,
+    trackers: trackers ? String(trackers.length) : undefined,
+    registries: registries ? String(registries.length) : undefined,
+  };
+}
+
+/** A top-level Settings entry: leading glyph, title over a one-line explanation of what lives
+ *  behind it, an optional count, and a chevron. Taller and more explanatory than a `SettingsRow` —
+ *  this is a table of contents, and the description is what makes it scannable without tapping in. */
+function CategoryRow({
+  icon,
+  title,
+  description,
+  value,
+  onPress,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+  value?: string;
+  onPress: () => void;
+}) {
+  const theme = useTheme();
+  const { hovered, onHoverIn, onHoverOut } = useHovered();
   return (
-    <SettingsSection title="Registries" icon={<RegistriesIcon color={theme.textSecondary} size={14} />}>
-      {isError ? (
-        <RetryBlock message={friendlyError(error, 'Failed to load registries. Try again.')} onRetry={() => refetch()} />
-      ) : registries === undefined ? (
-        <ThemedText type="small" themeColor="textSecondary">
-          Loading…
-        </ThemedText>
-      ) : registries === null ? (
-        <ThemedText type="small" themeColor="textSecondary">
-          Registries are not available on this server.
-        </ThemedText>
-      ) : (
-        <>
-          {registries.map((r) => (
-            <SettingsRow
-              key={r.url}
-              label={r.name}
-              description={r.url}
-              onPress={() => router.push({ pathname: '/registry-browse', params: { url: r.url } })}
-            />
-          ))}
-          <SettingsRow label="Manage registries" onPress={() => router.push('/registries')} />
-        </>
+    <Pressable
+      onPress={() => {
+        hapticImpactLight();
+        onPress();
+      }}
+      onHoverIn={onHoverIn}
+      onHoverOut={onHoverOut}
+      android_ripple={{ color: theme.backgroundSelected }}
+      accessibilityRole="button"
+      accessibilityLabel={title}>
+      {({ pressed }) => (
+        <View
+          style={[
+            styles.row,
+            (pressed || hovered) && Platform.OS !== 'android' && { backgroundColor: theme.backgroundSelected },
+          ]}>
+          <View style={styles.icon}>{icon}</View>
+          <View style={styles.rowText}>
+            <ThemedText type="default">{title}</ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              {description}
+            </ThemedText>
+          </View>
+          {value !== undefined && (
+            <ThemedText type="small" themeColor="textSecondary">
+              {value}
+            </ThemedText>
+          )}
+          <ChevronRightIcon color={theme.textSecondary} size={18} />
+        </View>
       )}
-    </SettingsSection>
+    </Pressable>
   );
 }
 
-/** A visible-in-every-build log of asset-load failures (page images, thumbnails) that would
- *  otherwise fail silently with no way to inspect them off a device attached to Metro. Kept
- *  outside `DeveloperSection` (which is `__DEV__`-only) since it's meant to be usable in a real
- *  build too. */
-function DiagnosticsSection() {
+function Divider() {
   const theme = useTheme();
-  const router = useRouter();
-  return (
-    <SettingsSection title="Diagnostics" icon={<DiagnosticsIcon color={theme.textSecondary} size={14} />}>
-      <SettingsRow
-        label="Failure log"
-        description="Page/thumbnail load failures, kept on-device only"
-        onPress={() => router.push('/diagnostics')}
-      />
-    </SettingsSection>
-  );
-}
-
-/** Dev-build-only: lets local development iterate against mock data without a
- *  running backend, and shows which server real requests target. Stripped from
- *  real production builds by the `__DEV__` check above. */
-function DeveloperSection() {
-  const theme = useTheme();
-  const [mockEnabled, setMockEnabled] = useMockDataToggle();
-  const [apiBase] = useApiBase();
-  const profilerOn = useDevProfilerEnabled();
-  return (
-    <SettingsSection title="Developer" icon={<DeveloperIcon color={theme.textSecondary} size={14} />}>
-      <SettingsRow
-        label="Use mock data"
-        description="Browse/Series/Reader render generated sample content instead of calling the API."
-        right={<ThemedSwitch value={mockEnabled} onValueChange={setMockEnabled} />}
-      />
-      <SettingsRow
-        label="JS profiler button"
-        description="Shows a floating on-device Hermes profiler that captures a JS sampling profile and uploads it to the dev server."
-        right={<ThemedSwitch value={profilerOn} onValueChange={(v) => devProfiler$.enabled.set(v)} />}
-      />
-      <SettingsRow label="Server" description={apiBase} descriptionSelectable />
-    </SettingsSection>
-  );
+  return <View style={[styles.divider, { backgroundColor: theme.hairline }]} />;
 }
 
 const styles = StyleSheet.create({
@@ -561,72 +210,37 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    // Spacing BETWEEN sections (SettingsSection no longer carries a top margin — see settings-row).
-    gap: Spacing.five,
     paddingHorizontal: Spacing.four,
     width: '100%',
     maxWidth: MaxTopLevelWidth,
     alignSelf: 'center',
   },
-  pressableCursor: {
-    cursor: 'pointer',
+  card: {
+    borderRadius: Spacing.three,
+    borderWidth: StyleSheet.hairlineWidth,
+    // The rows run edge to edge (their own padding), so their press/hover highlight reaches the
+    // card's sides — clipped here to its rounded corners.
+    overflow: 'hidden',
+    width: '100%',
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     gap: Spacing.three,
-    minHeight: 48,
-    paddingVertical: Spacing.two,
-    borderRadius: Spacing.two,
+    minHeight: 64,
+    paddingVertical: Spacing.three,
+    paddingHorizontal: Spacing.three,
+    cursor: 'pointer',
+  },
+  icon: {
+    width: 24,
+    alignItems: 'center',
   },
   rowText: {
     flex: 1,
     gap: Spacing.half,
   },
-  rowValue: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.one,
-  },
-  // No `flex: 1` (see `sheetBody` in overlay.tsx for why) — this just hugs
-  // its `MeasuredHeader`/`OptionList` content, both of which already size
-  // themselves to a real number.
-  pickerBody: {
-    gap: Spacing.three,
-  },
-  confirmBody: {
-    gap: Spacing.three,
-  },
-  confirmActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: Spacing.five,
-  },
-  confirmBtn: {
-    paddingVertical: Spacing.two,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: Spacing.three,
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.three,
-    fontSize: 16,
-  },
-  pickerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: Spacing.three,
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.three,
-  },
-  check: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 2,
-    borderColor: 'rgba(128,128,128,0.5)',
+  divider: {
+    height: StyleSheet.hairlineWidth,
   },
 });
