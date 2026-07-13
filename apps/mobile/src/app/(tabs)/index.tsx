@@ -74,6 +74,7 @@ export default function BrowseScreen() {
     currentBridge,
     bridgeId,
     bridgeThumbnails,
+    bridgeLabels,
     directBridge,
     bridgesError,
     bridgesLoaded,
@@ -434,7 +435,7 @@ export default function BrowseScreen() {
   // at opacity 0 so the swap is never seen, then fade the new bridge in. A no-op re-tap (or before
   // any bridge resolves) just commits immediately — nothing to dissolve.
   const selectBridge = (b: string) => {
-    if (!currentBridge || b === currentBridge.name) {
+    if (!currentBridge || b === currentBridge.id) {
       setSeeAll(null);
       setBridge(b);
       return;
@@ -529,11 +530,12 @@ export default function BrowseScreen() {
         ) : null}
         <Selector
           title="Bridge"
-          value={currentBridge?.name ?? ''}
-          options={visibleBridges.map((b) => b.name)}
+          value={currentBridge?.id ?? ''}
+          options={visibleBridges.map((b) => b.id)}
           onChange={selectBridge}
           size="subtitle"
           thumbnails={bridgeThumbnails}
+          labels={bridgeLabels}
         />
         <Selector title="Page" value={page} options={pages} onChange={selectPage} size="subtitle" />
         {isLargeScreen ? (

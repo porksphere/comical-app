@@ -401,7 +401,7 @@ function SeriesBody({
   // mount (see search.tsx) and applies it against the intent's bridge.
   const onTagPress = (group: TagGroup, index: number) => {
     if (!bridgeId) return;
-    const intent = tagSearchIntent(group, index, { bridgeName: series.bridge });
+    const intent = tagSearchIntent(group, index, { bridgeId });
     if (!intent) return;
     setSearchIntent(intent);
     router.push('/search');
@@ -412,7 +412,7 @@ function SeriesBody({
   // the bridge has no such filter.
   const onMetaPress = (metaKey: 'author' | 'artist' | 'type', value: string) => {
     if (!bridgeId) return;
-    setSearchIntent({ bridgeName: series.bridge, kind: 'meta', metaKey, value });
+    setSearchIntent({ bridgeId, kind: 'meta', metaKey, value });
     router.push('/search');
   };
 

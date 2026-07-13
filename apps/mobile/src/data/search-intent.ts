@@ -18,7 +18,9 @@
 import type { TagGroup } from '@/data/mock';
 
 export type SearchIntent = {
-  bridgeName: string;
+  /** The **id** of the bridge this intent targets — Search selects it (ids are unique; two
+   *  same-named bridges stay distinct). */
+  bridgeId: string;
 } & (
   | { kind: 'query'; query: string }
   | { kind: 'tag'; filterKey: string; tagId: string; label: string }
@@ -34,7 +36,7 @@ export type SearchIntent = {
 export function tagSearchIntent(
   group: TagGroup,
   index: number,
-  base: { bridgeName: string },
+  base: { bridgeId: string },
 ): SearchIntent | null {
   const query = group.tagQueries?.[index];
   const tagId = group.tagIds?.[index];
