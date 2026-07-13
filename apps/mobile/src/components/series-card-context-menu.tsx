@@ -14,6 +14,7 @@ import Animated, {
   useFrameCallback,
   useSharedValue,
   withSpring,
+  withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -125,6 +126,19 @@ const PANEL_HEIGHT_ESTIMATE = 190;
 const MENU_WIDTH = 240;
 const ROW_HEIGHT = 48;
 const MENU_PAD_V = Spacing.one;
+// The selection highlight — one shape and one strength, whether you slid a held finger onto the row or
+// just pressed it. Deliberately faint: it sits on a blurred panel, so `backgroundSelected` at full
+// strength read as a solid slab of colour rather than a highlight. It only has to say WHICH row.
+const HIGHLIGHT_OPACITY = 0.5;
+// The highlight SLIDES between rows rather than blinking from one to the next — with a hold you're
+// dragging a selection along the menu, and a moving object under the thumb reads as the thing you're
+// moving. Snappy (it must arrive before the finger has moved on) but not instant.
+const HOVER_SPRING = { damping: 20, stiffness: 340, mass: 0.6 } as const;
+const HOVER_FADE = { duration: 110 } as const;
+// How long a press ON THE MENU must be held before it becomes a peek (see `menuHold`). Shorter than the
+// card's 350ms: the popup is already open and your finger is already on the thing you're choosing from,
+// so there's far less to disambiguate — only a tap and a resize drag, and both are quick by nature.
+const MENU_HOLD_MS = 220;
 // Read + Add to Library + Favorite. Keep in step with the rows rendered below — the menu's height is
 // computed from this (it's what the panel's resize range budgets for), not measured.
 const MENU_ROWS = 3;
@@ -891,6 +905,83 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     },
   );
 
+  // ── The highlight itself ──────────────────────────────────────────────────
+  // ONE bubble for the whole menu, not one per row: it TRAVELS to the hovered row. Per-row bubbles
+  // could only blink on and off, and a selection you're dragging along the menu should move with your
+  // thumb, not teleport ahead of it. The rows are a uniform height, so where it goes is arithmetic —
+  // no per-row measurement, exactly as with the hit-test above.
+  //
+  // Arriving from nothing is a FADE, not a slide: the finger enters the menu at whatever row it enters
+  // at, and having the bubble skate up from row 0 to meet it would be inventing a movement that didn't
+  // happen. So it only slides between rows once it's already showing.
+  const hoverY = useSharedValue(0);
+  const hoverOn = useSharedValue(0);
+  useAnimatedReaction(
+    () => hoveredRow.value,
+    (row, prev) => {
+      if (row === prev) return;
+      if (row < 0) {
+        hoverOn.value = withTiming(0, HOVER_FADE);
+        return;
+      }
+      const y = MENU_PAD_V + row * ROW_HEIGHT;
+      if (prev == null || prev < 0) {
+        hoverY.value = y; // appear where the finger is
+        hoverOn.value = withTiming(1, HOVER_FADE);
+      } else {
+        hoverY.value = withSpring(y, HOVER_SPRING);
+      }
+    },
+  );
+  const hoverStyle = useAnimatedStyle(() => ({
+    opacity: hoverOn.value * HIGHLIGHT_OPACITY,
+    transform: [{ translateY: hoverY.value }],
+  }));
+
+  // ── Peek, started ON the menu ─────────────────────────────────────────────
+  // The peek above rides the ORIGINAL long-press — the finger that opened the popup, still down. But
+  // that's one specific way in, and it expires the moment you let go: after that the menu was taps only,
+  // and pressing a row and sliding did nothing. So the same behaviour is offered a second way in — hold
+  // a row, then slide — which is the same gesture, just begun later.
+  //
+  // A Pan-after-long-press, exactly as on the card, and for exactly the same reason: it keeps the finger
+  // afterwards, so the hold flows into the slide without a release in between. The delay is what keeps
+  // it out of everyone else's way — a quick tap is still a tap, and a quick drag still belongs to the
+  // resize pan on the root (which this cancels when it activates, being the deeper handler).
+  //
+  // ARMED IMMEDIATELY, unlike the card's. The arming distance exists because a hold that BEGAN on a card
+  // is a hold on nothing in particular — it must not commit whatever row happens to land under a
+  // motionless thumb. A hold that began on a ROW is already a deliberate choice of that row; requiring
+  // you to then reach for it would be asking twice.
+  const menuHold = useMemo(
+    () =>
+      Gesture.Pan()
+        .activateAfterLongPress(MENU_HOLD_MS)
+        .onStart((e) => {
+          holdActive.value = true;
+          holdArmed.value = true;
+          holdX.value = e.absoluteX;
+          holdY.value = e.absoluteY;
+        })
+        .onUpdate((e) => {
+          holdX.value = e.absoluteX;
+          holdY.value = e.absoluteY;
+        })
+        .onEnd(() => {
+          const row = hoveredRow.value;
+          holdActive.value = false;
+          holdArmed.value = false;
+          hoveredRow.value = -1;
+          if (row >= 0) runOnJS(commitHoveredRow)(row);
+        })
+        .onFinalize(() => {
+          holdActive.value = false;
+          holdArmed.value = false;
+          hoveredRow.value = -1;
+        }),
+    [],
+  );
+
   return (
     // The pan lives on the ROOT, so the resize/dismiss drag works anywhere on the screen — over the
     // backdrop, the panel, or the menu — which is the point of it. It only claims a gesture once the
@@ -993,13 +1084,20 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       {/* The actions menu — a frosted (blurred) panel. It is never dragged: its position is DERIVED
           from the panel's live height (see menuStyle), so it tracks the panel's bottom edge as the pan
           resizes it, and eases with it when late content changes the panel's natural height. */}
-      <Animated.View style={[styles.menuWrap, { width: menuW }, menuStyle]}>
-        <BlurView tint={menuTint} intensity={MENU_BLUR} experimentalBlurMethod={ANDROID_BLUR} style={[styles.menu, { borderColor: theme.backgroundSelected }]}>
-          {rows.map((row, i) => (
-            <MenuRow key={i} {...row} index={i} />
-          ))}
-        </BlurView>
-      </Animated.View>
+      <GestureDetector gesture={menuHold}>
+        <Animated.View style={[styles.menuWrap, { width: menuW }, menuStyle]}>
+          <BlurView tint={menuTint} intensity={MENU_BLUR} experimentalBlurMethod={ANDROID_BLUR} style={[styles.menu, { borderColor: theme.backgroundSelected }]}>
+            {/* The travelling selection bubble, under the rows so their labels stay on top of it. */}
+            <Animated.View
+              pointerEvents="none"
+              style={[styles.hoverBubble, { backgroundColor: theme.backgroundSelected }, hoverStyle]}
+            />
+            {rows.map((row, i) => (
+              <MenuRow key={i} {...row} index={i} />
+            ))}
+          </BlurView>
+        </Animated.View>
+      </GestureDetector>
       </View>
     </GestureDetector>
   );
@@ -1143,28 +1241,28 @@ function MenuRow({
   index: number;
 }) {
   const theme = useTheme();
-  // ONE highlight shape, whichever way you selected the row: sliding a held finger onto it (the peek),
-  // or just tapping it. They used to differ — the hold drew the rounded bubble while a plain press drew
-  // a full-bleed band across the row — which reads as two different components rather than one.
-  const [pressed, setPressed] = useState(false);
-  const highlight = useAnimatedStyle(() => ({ opacity: hoveredRow.value === index ? 1 : 0 }));
   const color = loading ? theme.textSecondary : theme.text;
   // An off toggle's glyph sits back a little, so the on-state (solid glyph, full contrast) reads as
   // a change without needing a colour of its own.
   const iconColor = loading ? theme.textSecondary : primary || active ? color : theme.textSecondary;
+  // A row has NO highlight of its own. Pressing it just says which row is selected, on the same channel
+  // the held finger writes — so the one travelling bubble draws a press and a peek alike. There is
+  // literally nothing left that could look different between them.
+  //
+  // While a hold owns the selection, the press must keep its hands off it: activating the hold cancels
+  // the touch responder, which fires `onPressOut`, which would otherwise clear the very row the hold
+  // just picked (and blink the bubble at the exact moment the hold takes over).
   return (
     <Pressable
       onPress={loading ? undefined : onPress}
       disabled={loading}
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
+      onPressIn={() => {
+        if (!holdActive.value) hoveredRow.value = index;
+      }}
+      onPressOut={() => {
+        if (!holdActive.value) hoveredRow.value = -1;
+      }}
       style={styles.row}>
-      <Animated.View
-        pointerEvents="none"
-        // The pressed style comes LAST so it wins over the (animated) hold highlight — a press and a
-        // hold can't be true at once anyway, but the order makes that explicit.
-        style={[styles.rowBubble, { backgroundColor: theme.backgroundSelected }, highlight, pressed && styles.rowBubbleOn]}
-      />
       <ThemedText style={[styles.rowLabel, primary && styles.rowLabelPrimary, { color }]} numberOfLines={1}>
         {label}
       </ThemedText>
@@ -1335,15 +1433,16 @@ const styles = StyleSheet.create({
   // The selection bubble: inset from the row's edges and generously rounded, so it reads as a pill
   // sitting on the menu rather than a full-bleed band lighting up. Inset, because a bubble that touched
   // the menu's own rounded edge would look like a rendering artefact rather than a shape.
-  rowBubbleOn: {
-    opacity: 1,
-  },
-  rowBubble: {
+  //
+  // ONE of these for the entire menu — it's positioned by transform onto whichever row is selected (see
+  // `hoverStyle`), which is what lets it slide between them. Its `top` is 0 because that translate IS
+  // its position; the +2/-4 is the inset that makes it a pill rather than a band.
+  hoverBubble: {
     position: 'absolute',
-    top: 2,
-    bottom: 2,
     left: Spacing.one,
     right: Spacing.one,
+    top: 2,
+    height: ROW_HEIGHT - 4,
     borderRadius: 10,
   },
   row: {
