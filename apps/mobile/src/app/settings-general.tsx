@@ -11,7 +11,7 @@ import {
   useKeyboardAvoidingInput,
   useOverlay,
 } from '@/components/overlay/overlay';
-import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
+import { SettingsGutter, SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -341,6 +341,10 @@ const styles = StyleSheet.create({
   pressableCursor: {
     cursor: 'pointer',
   },
+  // Mirrors `SettingsRow`'s geometry by hand — these two rows can't BE a SettingsRow, because
+  // `useAnchoredOverlay` needs its own ref on the Pressable to anchor the picker to. Keep the
+  // gutter escape in sync with it (see `SettingsGutter`) or their hover highlight stops short of
+  // the screen edge while every other row's reaches it.
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -348,7 +352,8 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
     minHeight: 48,
     paddingVertical: Spacing.two,
-    borderRadius: Spacing.two,
+    paddingHorizontal: SettingsGutter,
+    marginHorizontal: -SettingsGutter,
   },
   rowText: {
     flex: 1,

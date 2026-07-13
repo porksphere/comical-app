@@ -3,7 +3,7 @@ import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeabl
 import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 
 import { TrashIcon } from '@/components/icons/ui-icons';
-import { SettingsRow } from '@/components/settings/settings-row';
+import { SettingsGutter, SettingsRow } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
@@ -60,9 +60,13 @@ function SwipeRow({ label, description, descriptionColor, onPress, actionLabel =
       friction={2}
       rightThreshold={ACTION_WIDTH / 2}
       overshootRight={false}
+      // The swipe CONTAINER cancels the screen's gutter (rather than the row inside it), so the
+      // delete pane it reveals runs all the way to the screen's edge. The row therefore only pads —
+      // it must not pull itself out a second time. See `SettingsGutter`.
+      containerStyle={styles.swipeContainer}
       // The row slides OVER the action pane, so it needs an opaque background of its own — the pane
       // is rendered behind it and would otherwise show through the row's transparent body.
-      childrenContainerStyle={{ backgroundColor: theme.backgroundElement }}
+      childrenContainerStyle={{ backgroundColor: theme.background }}
       onSwipeableWillOpen={hapticImpactLight}
       renderRightActions={(_progress, translation) => (
         <DeleteAction translation={translation} label={actionLabel} onPress={onAction} />
@@ -71,7 +75,7 @@ function SwipeRow({ label, description, descriptionColor, onPress, actionLabel =
         label={label}
         description={description}
         descriptionColor={descriptionColor}
-        inset={false}
+        escapeGutter={false}
         onPress={onPress}
       />
     </ReanimatedSwipeable>
@@ -118,7 +122,7 @@ function HoverDeleteRow({ label, description, descriptionColor, onPress, actionL
           label={label}
           description={description}
           descriptionColor={descriptionColor}
-          inset={false}
+          escapeGutter={false}
           onPress={onPress}
           onHoverIn={onHoverIn}
           onHoverOut={onHoverOut}
@@ -140,6 +144,9 @@ function HoverDeleteRow({ label, description, descriptionColor, onPress, actionL
 }
 
 const styles = StyleSheet.create({
+  swipeContainer: {
+    marginHorizontal: -SettingsGutter,
+  },
   actionPane: {
     width: ACTION_WIDTH,
   },
@@ -153,6 +160,10 @@ const styles = StyleSheet.create({
   webRow: {
     flexDirection: 'row',
     alignItems: 'stretch',
+    // Cancels the screen's gutter for the same reason the native swipe container does: the row's
+    // hover highlight should reach the screen's edge, and the trash lane should sit in the margin
+    // rather than inside the text column.
+    marginHorizontal: -SettingsGutter,
   },
   webRowBody: {
     flex: 1,
@@ -162,8 +173,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     // A fixed lane, so the trash occupies the same space whether or not it's currently shown and
     // the row's text never reflows as it fades in.
-    width: 44,
-    paddingRight: Spacing.three,
+    width: SettingsGutter + 20,
+    paddingRight: SettingsGutter,
     cursor: 'pointer',
     transitionProperty: 'opacity',
     transitionDuration: '120ms',
