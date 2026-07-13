@@ -25,9 +25,10 @@ const OPEN_X = SettingsGutter + PILL_WIDTH + PILL_GAP;
 /** Corner radius the row's trailing edge grows to as it opens into a slot. */
 const SLOT_RADIUS = 14;
 
-/** Snappy rather than floaty — it should arrive, not glide. Slightly under-damped so the pill has a
- *  little life on the way in, which is the part that made the old linear tracking feel dead. */
-const SPRING = { damping: 18, stiffness: 260, mass: 0.6 } as const;
+/** Tuned for a visible trail: soft enough that the row lags a little behind the finger and has to
+ *  catch up, stiff and damped enough that it still arrives promptly and doesn't wobble past the
+ *  open position. Raising `stiffness` collapses the lag back toward 1:1 tracking. */
+const SPRING = { damping: 22, stiffness: 200, mass: 0.7 } as const;
 
 // Constant for the process, so the branch in `SwipeableSettingsRow` is stable and each platform
 // only ever renders one of the two implementations below — their hooks never interleave.
@@ -75,7 +76,8 @@ export function SwipeableSettingsRow(props: Props) {
 
 function SwipeRow({ label, description, descriptionColor, leading, onPress, actionLabel = 'Delete', onAction }: Props) {
   const theme = useTheme();
-  const tx = useSharedValue(0);
+  // Where the row is BEING DRAGGED to — set straight from the finger, with no smoothing.
+  const target = useSharedValue(0);
   // Whether the row is resting open. A shared value rather than a ref: the pan worklet needs it on
   // the UI thread, the tap handler reads it on the JS thread, and — unlike a ref — the compiler
   // permits closing over it in the gesture callbacks (react-hooks/refs).
@@ -89,14 +91,14 @@ function SwipeRow({ label, description, descriptionColor, leading, onPress, acti
   function close() {
     isOpen.value = false;
     releaseOpenRow(token);
-    tx.value = withSpring(0, SPRING);
+    target.value = 0;
   }
 
   function open() {
     claimOpenRow(token, close); // closes whichever row was open before this one
     isOpen.value = true;
     hapticImpactLight();
-    tx.value = withSpring(-OPEN_X, SPRING);
+    target.value = -OPEN_X;
   }
 
   const pan = Gesture.Pan()
@@ -108,16 +110,24 @@ function SwipeRow({ label, description, descriptionColor, leading, onPress, acti
       'worklet';
       const from = isOpen.value ? -OPEN_X : 0;
       // Clamp: there's nothing to reveal past the pill, and nothing to the row's left at all.
-      tx.value = Math.min(0, Math.max(-OPEN_X, from + e.translationX));
+      target.value = Math.min(0, Math.max(-OPEN_X, from + e.translationX));
     })
     .onEnd((e) => {
       'worklet';
       // Velocity, not just position — a quick flick should open even if it barely travelled, which
       // is most of what makes this feel responsive rather than draggy.
-      const shouldOpen = tx.value < -OPEN_X / 2 || e.velocityX < -500;
+      const shouldOpen = target.value < -OPEN_X / 2 || e.velocityX < -500;
       if (shouldOpen) runOnJS(open)();
       else runOnJS(close)();
     });
+
+  /**
+   * What the row actually DRAWS at — a spring chasing `target`, never `target` itself. Because the
+   * spring is re-evaluated against a moving target every frame, the row trails the finger slightly
+   * while you drag and settles after you let go, instead of being welded to the touch point. That
+   * lag IS the effect: 1:1 tracking is what made the old version feel linear and lifeless.
+   */
+  const tx = useDerivedValue(() => withSpring(target.value, SPRING));
 
   /** 0 closed → 1 fully open. Everything visual hangs off this. */
   const progress = useDerivedValue(() => -tx.value / OPEN_X);
@@ -156,7 +166,10 @@ function SwipeRow({ label, description, descriptionColor, leading, onPress, acti
       </Animated.View>
 
       <GestureDetector gesture={pan}>
-        <Animated.View style={rowStyle}>
+        {/* `overflow: hidden` so the row's press/hover highlight — a plain square fill on the child
+            below — is CLIPPED to the rounded slot as it opens. Without it the highlight keeps its
+            square corners and visibly pokes out past the row it's meant to be filling. */}
+        <Animated.View style={[styles.rowClip, rowStyle]}>
           <SettingsRow
             label={label}
             description={description}
@@ -211,6 +224,9 @@ function HoverDeleteRow({ label, description, descriptionColor, leading, onPress
 }
 
 const styles = StyleSheet.create({
+  rowClip: {
+    overflow: 'hidden',
+  },
   swipeContainer: {
     // Cancels the screen's gutter so the row (and the slot it opens into) reaches the screen's edge.
     marginHorizontal: -SettingsGutter,

@@ -75,7 +75,9 @@ export default function RegistriesScreen() {
             {(registries ?? []).map((r) => (
               <SwipeableSettingsRow
                 key={r.url}
-                label={r.name}
+                // Operator-set label (e.g. "SFW") shown next to the derived owner/repo name, so one
+                // publisher's several registries are distinguishable. Falls back to just the name.
+                label={r.displayName ? `${r.displayName} — ${r.name}` : r.name}
                 description={r.url}
                 onPress={() => router.push({ pathname: '/registry-browse', params: { url: r.url } })}
                 actionLabel="Remove"

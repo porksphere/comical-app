@@ -16,7 +16,7 @@ import {
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { SettingsGutter, SettingsTopGap } from '@/components/settings/settings-row';
+import { SettingsGutter, SettingsRowHeight, SettingsTopGap } from '@/components/settings/settings-row';
 import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw } from '@/data/source';
@@ -60,17 +60,20 @@ export default function SettingsScreen() {
           { flexGrow: 1, paddingTop: headerHeight + SettingsTopGap, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
         ]}>
         <View style={styles.list}>
+          {/* Descriptions are kept short enough to land on ONE line — every settings row in the app
+              is exactly `SettingsRowHeight` tall, and a description that wraps is what used to make
+              these rows stand 30px taller than the ones they lead to. */}
           <CategoryRow
             icon={<GeneralSettingsIcon color={theme.textSecondary} size={22} />}
             title="General"
-            description="Appearance, content visibility, and where bridges run."
+            description="Appearance, content, and where bridges run."
             onPress={() => router.push('/settings-general')}
           />
           <Divider />
           <CategoryRow
             icon={<BridgesIcon color={theme.textSecondary} size={22} />}
             title="Bridges"
-            description="The sources Comical reads from. Install, configure, and remove them."
+            description="The sources Comical reads from."
             value={counts.bridges}
             onPress={() => router.push('/bridges')}
           />
@@ -78,7 +81,7 @@ export default function SettingsScreen() {
           <CategoryRow
             icon={<TrackersIcon color={theme.textSecondary} size={22} />}
             title="Trackers"
-            description="Sync your reading progress to an external service."
+            description="Sync your progress to another service."
             value={counts.trackers}
             onPress={() => router.push('/trackers')}
           />
@@ -86,7 +89,7 @@ export default function SettingsScreen() {
           <CategoryRow
             icon={<RegistriesIcon color={theme.textSecondary} size={22} />}
             title="Registries"
-            description="The catalogs bridges and trackers are installed from."
+            description="Where bridges and trackers come from."
             value={counts.registries}
             onPress={() => router.push('/registries')}
           />
@@ -94,7 +97,7 @@ export default function SettingsScreen() {
           <CategoryRow
             icon={<DiagnosticsIcon color={theme.textSecondary} size={22} />}
             title="Diagnostics"
-            description="Page and thumbnail load failures, kept on this device only."
+            description="Page and thumbnail load failures."
             onPress={() => router.push('/diagnostics')}
           />
           {PROFILING_ENABLED && (
@@ -103,7 +106,7 @@ export default function SettingsScreen() {
               <CategoryRow
                 icon={<DeveloperIcon color={theme.textSecondary} size={22} />}
                 title="Developer"
-                description="Mock data, the JS profiler, and the server this build talks to."
+                description="Mock data, profiler, and server."
                 onPress={() => router.push('/settings-developer')}
               />
             </>
@@ -184,8 +187,10 @@ function CategoryRow({
           ]}>
           <View style={styles.icon}>{icon}</View>
           <View style={styles.rowText}>
-            <ThemedText type="default">{title}</ThemedText>
-            <ThemedText type="small" themeColor="textSecondary">
+            <ThemedText type="small" numberOfLines={1}>
+              {title}
+            </ThemedText>
+            <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
               {description}
             </ThemedText>
           </View>
@@ -223,8 +228,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.three,
-    minHeight: 56,
-    paddingVertical: Spacing.two,
+    // The same height as every other settings row in the app — see `SettingsRowHeight`.
+    height: SettingsRowHeight,
+    paddingVertical: Spacing.one,
     // Text sits at the gutter; the background and press/hover highlight run to the screen's edge.
     // Same trick as `SettingsRow` — see `SettingsGutter`.
     paddingHorizontal: SettingsGutter,
