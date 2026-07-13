@@ -10,20 +10,35 @@
  */
 import type { BridgeList, HomeGridSection, RailSection, SeriesEntry } from '@/data/types';
 
+/**
+ * Optional per-row/-card bridge identity. A single-bridge feed (Browse's home) omits these and the
+ * ContentFeed-level `bridge`/`bridgeId`/`direct` props apply to everything; a cross-bridge feed (e.g. a
+ * future Library, whose cards come from many bridges) carries its own here. Same "own value wins when
+ * present, else fall back to the feed-level prop" rule as SeriesGrid's `SeriesGridItem`.
+ */
+export type BridgeScope = { bridge?: string; bridgeId?: string; direct?: boolean };
+
+/** A terminal-grid card that may override the feed-level bridge identity (cross-bridge grids carry
+ *  their own bridge per card). A plain `SeriesEntry` is assignable, so single-bridge builders are
+ *  unchanged. */
+export type FeedCardEntry = SeriesEntry & BridgeScope;
+
 export type ContentRow =
   // Shared heading row for EVERY section (rail, non-terminal grid block, terminal grid). Carries the
   // "See all" target when the section can be drilled into (rails can; grid blocks / terminal can't).
   | { type: 'sectionHead'; key: string; title: string; seeAll?: { listId: string; title: string } }
-  // A rail (hero/ranked/regular) — strip only; its heading is the preceding `sectionHead` row.
-  | { type: 'rail'; key: string; section: RailSection }
+  // A rail (hero/ranked/regular) — strip only; its heading is the preceding `sectionHead` row. A whole
+  // rail belongs to one bridge, so its override (if any) is section-level.
+  | ({ type: 'rail'; key: string; section: RailSection } & BridgeScope)
   // Loading placeholder for a rail — SELF-headed (keeps its own real/skeleton title inline).
   | { type: 'railSkeleton'; key: string; title?: string }
   // A non-terminal grid section BODY (own "Load more") — heading is the preceding `sectionHead` row.
-  | { type: 'gridBlock'; key: string; section: HomeGridSection }
+  | ({ type: 'gridBlock'; key: string; section: HomeGridSection } & BridgeScope)
   // Loading placeholder for a non-terminal grid block — self-headed.
   | { type: 'gridBlockSkeleton'; key: string; title: string; rows: number }
-  // One row of up to `numColumns` terminal-grid cards (the infinite-scroll body).
-  | { type: 'gridRow'; key: string; items: SeriesEntry[] };
+  // One row of up to `numColumns` terminal-grid cards (the infinite-scroll body). Each card may carry
+  // its own bridge (cross-bridge grid).
+  | { type: 'gridRow'; key: string; items: FeedCardEntry[] };
 
 /** LegendList row-type tag, so recycled views are pooled per kind (a rail never recycles into a grid
  *  row). Every heading — rail, block, terminal — now shares ONE `sectionHead` pool. Skeleton variants

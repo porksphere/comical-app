@@ -166,9 +166,9 @@ export function ContentFeed({
                 section={item.section}
                 viewportWidth={railViewport}
                 headless
-                bridge={bridge}
-                bridgeId={bridgeId}
-                direct={direct}
+                bridge={item.bridge ?? bridge}
+                bridgeId={item.bridgeId ?? bridgeId}
+                direct={item.direct ?? direct}
               />
             );
           case 'railSkeleton':
@@ -176,10 +176,10 @@ export function ContentFeed({
           case 'gridBlock':
             return (
               <HomeGridBlock
-                bridgeId={bridgeId}
+                bridgeId={item.bridgeId ?? bridgeId}
                 section={item.section}
-                bridge={bridge}
-                direct={!!direct}
+                bridge={item.bridge ?? bridge}
+                direct={!!(item.direct ?? direct)}
                 numColumns={numColumns}
                 headless
               />
@@ -204,13 +204,17 @@ export function ContentFeed({
               <View style={[styles.row, styles.gridRow]}>
                 {item.items.map((entry) => (
                   // Both dims fixed — cardWidth (from useGridLayout) + cellHeight — so a short final row
-                  // just ends, matching series-grid.tsx's cell exactly.
-                  <View key={entry.id} style={[styles.cell, { width: cardWidth, height: cellHeight }]}>
+                  // just ends, matching series-grid.tsx's cell exactly. Bridge-scope the key (like
+                  // SeriesGrid's keyExtractor) so a cross-bridge row can't collide on a shared seriesId.
+                  <View
+                    key={entry.bridgeId ? `${entry.bridgeId}:${entry.id}` : entry.id}
+                    style={[styles.cell, { width: cardWidth, height: cellHeight }]}>
+
                     <SeriesCard
                       entry={entry}
-                      bridge={bridge}
-                      bridgeId={bridgeId}
-                      direct={direct}
+                      bridge={entry.bridge ?? bridge}
+                      bridgeId={entry.bridgeId ?? bridgeId}
+                      direct={entry.direct ?? direct}
                       originPage={originPage}
                       cohort={scopeKey}
                       crossfading={crossfading}
