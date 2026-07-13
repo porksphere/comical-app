@@ -71,21 +71,6 @@ export function SeriesCardMenu({ enabled, bridgeId, bridge, entry, direct, cover
         onClose,
       });
       anchorRef.current?.measureInWindow?.((x, y, width, height) => {
-        // TEMPORARY (dev only): the card's measured rect is what the popup's whole placement is derived
-        // from, so if it's wrong, everything downstream is. `measuredY` should track `fingerY` — if it
-        // drifts far from it (or is 0, or is huge), the measurement is the bug, not the placement.
-        if (__DEV__) {
-          console.log(
-            '[CARD-RECT]',
-            JSON.stringify({
-              fingerY: Math.round(absoluteY),
-              measuredY: Math.round(y),
-              measuredX: Math.round(x),
-              w: Math.round(width),
-              h: Math.round(height),
-            }),
-          );
-        }
         if (width > 0 && height > 0) {
           openSeriesCardMenu({ entry, bridgeId, bridge, direct, coverAspect, rect: { x, y, width, height }, onClose });
         }

@@ -131,13 +131,10 @@ const MENU_ROWS = 3;
 // DEV ONLY: pad the menu out with dummy rows, to exercise the case the pan gesture exists for — a
 // group too tall for the screen, where the panel has to give up height for the menu to be reachable.
 //
-// It DISTORTS THE LAYOUT while it's on, and that isn't a bug in either the rows or the placement: an
-// 11-row menu plus a full-size preview genuinely doesn't fit anywhere except near the top of the
-// screen, once you also insist that MIN_VISIBLE_ROWS of the menu stay on screen. So while this is
-// non-zero, expect every popup to sit high — that's the invariant doing its job, not the placement
-// failing. (This is what "the popup is always at the top once I've scrolled" turned out to be.)
-// The real three-row menu never comes close to that constraint.
-const DEBUG_EXTRA_MENU_ROWS = __DEV__ ? 8 : 0;
+// Leave it at 0. While it's non-zero it DISTORTS THE LAYOUT — an 11-row menu plus a full-size preview
+// doesn't fit anywhere but the top of the screen once MIN_VISIBLE_ROWS of it must also be on screen —
+// so the popup will sit high and that is the invariant working, not the placement failing.
+const DEBUG_EXTRA_MENU_ROWS = 0;
 
 // ── Pan / resize ─────────────────────────────────────────────────────────────
 // The panel never scales below this, however long the menu gets — a preview shrunk to a postage stamp
@@ -439,36 +436,6 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const panelTopMin = expandable ? topAtMin : restingTop;
   const panelTopMax = expandable ? topAtMax : restingTop;
 
-  // TEMPORARY (dev only): every input and every decision the anchor is made from, so a "weird case"
-  // can be read off the log instead of guessed at. `menuRowsAtAnchor` is the invariant actually being
-  // met — if that's below `wantRows`, the constraint was unsatisfiable and we fell back to keeping the
-  // panel on screen. `coverTravel` is what we're minimising: 0 means the cover didn't move at all.
-  if (__DEV__) {
-    const menuTopAtAnchor = panelTopMax + panelHAtMax + GAP;
-    let menuRowsAtAnchor = 0;
-    for (let i = 0; i < menuRowCount; i++) {
-      if (menuTopAtAnchor + MENU_PAD_V + (i + 1) * ROW_HEIGHT <= menuBottomLimit) menuRowsAtAnchor++;
-    }
-    console.log(
-      '[POPUP-PLACE]',
-      JSON.stringify({
-        card: { y: Math.round(rect.y), h: Math.round(rect.height) },
-        chrome: { top: Math.round(chromeTop), bottom: Math.round(chromeBottom) },
-        band: { top: Math.round(topLimit), bottom: Math.round(bottomLimit), menuBottom: Math.round(menuBottomLimit) },
-        panel: { natural: Math.round(naturalPanelH), atMax: Math.round(panelHAtMax), maxScale: +maxScale.toFixed(2) },
-        menu: { rows: menuRowCount, h: Math.round(menuH) },
-        wanted: Math.round(idealTop),
-        floors: { panelOnScreen: Math.round(lowestForPanel), menuVisible: Math.round(lowestForMenu), used: Math.round(lowestTop) },
-        anchor: Math.round(panelTopMax),
-        collapsedTo: Math.round(panelTopMin),
-        expandable,
-        // The two things that must be true, and the thing we're minimising:
-        menuRowsAtAnchor,
-        wantRows,
-        coverTravel: Math.round(panelTopMax + PANEL_PAD * maxScale - rect.y),
-      }),
-    );
-  }
 
 
   // Shared-element FLIP for the COVER only: it travels from the pressed card's cover (scaled to the
@@ -1176,8 +1143,10 @@ function MenuRow({
   index: number;
 }) {
   const theme = useTheme();
-  // Lit up while the still-held finger is over this row. Opacity, not a background swap: it animates on
-  // the UI thread with no re-render, and there is one of these per row.
+  // ONE highlight shape, whichever way you selected the row: sliding a held finger onto it (the peek),
+  // or just tapping it. They used to differ — the hold drew the rounded bubble while a plain press drew
+  // a full-bleed band across the row — which reads as two different components rather than one.
+  const [pressed, setPressed] = useState(false);
   const highlight = useAnimatedStyle(() => ({ opacity: hoveredRow.value === index ? 1 : 0 }));
   const color = loading ? theme.textSecondary : theme.text;
   // An off toggle's glyph sits back a little, so the on-state (solid glyph, full contrast) reads as
@@ -1187,10 +1156,14 @@ function MenuRow({
     <Pressable
       onPress={loading ? undefined : onPress}
       disabled={loading}
-      style={({ pressed }) => [styles.row, pressed && { backgroundColor: theme.backgroundSelected }]}>
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      style={styles.row}>
       <Animated.View
         pointerEvents="none"
-        style={[styles.rowBubble, { backgroundColor: theme.backgroundSelected }, highlight]}
+        // The pressed style comes LAST so it wins over the (animated) hold highlight — a press and a
+        // hold can't be true at once anyway, but the order makes that explicit.
+        style={[styles.rowBubble, { backgroundColor: theme.backgroundSelected }, highlight, pressed && styles.rowBubbleOn]}
       />
       <ThemedText style={[styles.rowLabel, primary && styles.rowLabelPrimary, { color }]} numberOfLines={1}>
         {label}
@@ -1362,6 +1335,9 @@ const styles = StyleSheet.create({
   // The selection bubble: inset from the row's edges and generously rounded, so it reads as a pill
   // sitting on the menu rather than a full-bleed band lighting up. Inset, because a bubble that touched
   // the menu's own rounded edge would look like a rendering artefact rather than a shape.
+  rowBubbleOn: {
+    opacity: 1,
+  },
   rowBubble: {
     position: 'absolute',
     top: 2,
