@@ -6,11 +6,10 @@ import Animated, { type SharedValue } from 'react-native-reanimated';
 
 import { HomeGridBlock } from '@/components/home-grid-block';
 import { SkeletonCard } from '@/components/grid-skeleton';
-import { Rail, RailSkeleton, SECTION_HEAD_HEIGHT, SectionHead, railRowHeight } from '@/components/rail';
+import { Rail, RailSkeleton, SECTION_HEAD_HEIGHT, SectionHead, railRowHeight, railStripHeight } from '@/components/rail';
 import { estimatedCardHeight, SeriesCard } from '@/components/series-card';
 import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { homeRowType, type HomeRow } from '@/data/home-rows';
-import type { RailSection } from '@/data/types';
 import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
 import { useIsLargeScreen } from '@/hooks/use-responsive';
 
@@ -19,8 +18,12 @@ import { useIsLargeScreen } from '@/hooks/use-responsive';
 const CELL_PAD_TOP = Spacing.one;
 const CELL_PAD_BOTTOM = Spacing.three - Spacing.one;
 const CELL_ROW_GAP = CELL_PAD_TOP + CELL_PAD_BOTTOM;
-// The terminal section head's own vertical padding (was styles.browseAllHead in index.tsx).
-const TERMINAL_HEAD_HEIGHT = SECTION_HEAD_HEIGHT + Spacing.two * 2;
+// The two knobs for the composed-home vertical rhythm, now that EVERY heading is a shared standalone
+// `sectionHead` row: SECTION_GAP separates one section from the previous (the head's top pad),
+// HEADING_GAP is the gap from a heading to its own body (the head's bottom pad). Tune here in one place.
+const SECTION_GAP = Spacing.two;
+const HEADING_GAP = Spacing.two;
+const SECTION_HEAD_ROW_HEIGHT = SECTION_HEAD_HEIGHT + SECTION_GAP + HEADING_GAP;
 
 /**
  * THE composed-Home surface as ONE virtualized vertical list. Every rail, non-terminal grid block, the
@@ -71,7 +74,7 @@ export function HomeFeed({
   direct?: boolean;
   originPage?: string;
   crossfading?: boolean;
-  onSeeAll?: (section: RailSection) => void;
+  onSeeAll?: (target: { listId: string; title: string }) => void;
   sharedValues?: { scrollOffset: SharedValue<number> };
   onScroll?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   onEndReached?: () => void;
@@ -101,11 +104,13 @@ export function HomeFeed({
     switch (row.type) {
       case 'gridRow':
         return cellHeight;
-      case 'terminalHead':
-        return TERMINAL_HEAD_HEIGHT;
+      case 'sectionHead':
+        return SECTION_HEAD_ROW_HEIGHT;
       case 'rail':
-        return railRowHeight(row.section.kind, railViewport, wide);
+        // Strip only — the heading is its own preceding `sectionHead` row now.
+        return railStripHeight(row.section.kind, railViewport, wide);
       case 'railSkeleton':
+        // Self-headed (still renders its own title), so it's the whole head+strip height.
         return railRowHeight('regular', railViewport, wide);
       default:
         return undefined; // gridBlock / gridBlockSkeleton — measured
@@ -166,13 +171,22 @@ export function HomeFeed({
         }}
         renderItem={({ item }) => {
           switch (item.type) {
+            case 'sectionHead':
+              return (
+                <View style={styles.sectionHead}>
+                  <SectionHead
+                    title={item.title}
+                    onSeeAll={item.seeAll ? () => onSeeAll?.(item.seeAll!) : undefined}
+                  />
+                </View>
+              );
             case 'rail':
               return (
                 <Rail
                   key={item.section.id}
                   section={item.section}
                   viewportWidth={railViewport}
-                  onSeeAll={onSeeAll}
+                  headless
                   bridge={bridge}
                   bridgeId={bridgeId}
                   direct={direct}
@@ -188,6 +202,7 @@ export function HomeFeed({
                   bridge={bridge}
                   direct={!!direct}
                   numColumns={numColumns}
+                  headless
                 />
               );
             case 'gridBlockSkeleton':
@@ -203,12 +218,6 @@ export function HomeFeed({
                       </View>
                     ))}
                   </View>
-                </View>
-              );
-            case 'terminalHead':
-              return (
-                <View style={styles.terminalHead}>
-                  <SectionHead title={item.title} />
                 </View>
               );
             case 'gridRow':
@@ -262,9 +271,9 @@ const styles = StyleSheet.create({
     paddingTop: CELL_PAD_TOP,
     paddingBottom: CELL_PAD_BOTTOM,
   },
-  terminalHead: {
-    paddingTop: Spacing.two,
-    paddingBottom: Spacing.two,
+  sectionHead: {
+    paddingTop: SECTION_GAP,
+    paddingBottom: HEADING_GAP,
   },
   // Non-terminal grid skeleton block (mirrors HomeGridBlock's own layout).
   homeGridBlock: {

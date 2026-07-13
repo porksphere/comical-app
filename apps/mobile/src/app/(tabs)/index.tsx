@@ -702,7 +702,7 @@ export default function BrowseScreen() {
           direct={directBridge}
           originPage={page}
           crossfading={switching}
-          onSeeAll={(sec) => setSeeAll({ listId: sec.id, title: sec.title })}
+          onSeeAll={(target) => setSeeAll(target)}
           sharedValues={sharedValues}
           onScroll={onListScroll}
           // Drives terminalQuery.fetchNextPage — `loadMore` self-guards to the terminal-home mode.

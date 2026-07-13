@@ -30,6 +30,7 @@ export function HomeGridBlock({
   bridge,
   direct,
   numColumns,
+  headless,
 }: {
   bridgeId?: string;
   section: HomeGridSection;
@@ -37,6 +38,9 @@ export function HomeGridBlock({
   direct: boolean;
   /** Same column count as the main grid, so cards read at one consistent size. */
   numColumns: number;
+  /** Suppress the block's own `SectionHead` — HomeFeed renders it as a separate shared `sectionHead`
+   *  row above the block. Default keeps the head so the component stays usable standalone. */
+  headless?: boolean;
 }) {
   const { cardWidth } = useGridLayout();
   const ds = useDataSource();
@@ -81,8 +85,10 @@ export function HomeGridBlock({
   for (let i = 0; i < items.length; i += numColumns) rows.push(items.slice(i, i + numColumns));
 
   return (
-    <View style={styles.homeGridBlock}>
-      <SectionHead title={section.title} />
+    // When headless, drop the block's own top padding too — the shared sectionHead row above it
+    // already supplies the heading→body gap (see HomeFeed's HEADING_GAP).
+    <View style={[styles.homeGridBlock, headless && styles.homeGridBlockHeadless]}>
+      {!headless && <SectionHead title={section.title} />}
       <View style={styles.homeGridRows}>
         {rows.map((row, r) => (
           <View key={r} style={[styles.row, styles.gridRow]}>
@@ -111,6 +117,9 @@ const styles = StyleSheet.create({
   homeGridBlock: {
     paddingTop: Spacing.two,
     gap: Spacing.three,
+  },
+  homeGridBlockHeadless: {
+    paddingTop: 0,
   },
   homeGridRows: {
     gap: Spacing.three,

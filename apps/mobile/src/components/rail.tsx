@@ -96,18 +96,24 @@ export const SECTION_HEAD_HEIGHT = 32;
  * can't drift (the same discipline `series-grid.tsx`'s `cellHeight` follows). An estimate — rails are
  * few and each reserves its own `minHeight` internally, so small drift only nudges the scroll anchor.
  */
-export function railRowHeight(kind: RailSection['kind'], viewportWidth: number, wide: boolean): number {
+export function railStripHeight(kind: RailSection['kind'], viewportWidth: number, wide: boolean): number {
   const stripGap = stripGapFor(viewportWidth);
   const cardWidth = wide ? gridCardWidth(viewportWidth, stripGap) : cardWidthFor(kind, viewportWidth);
-  const head = SECTION_HEAD_HEIGHT + Spacing.two; // head + the section's head→body gap
   if (wide) {
     // Static GRID_ROWS×GRID_COLUMNS grid: rows of `estimatedCardHeight` cards + inter-row gaps + the
     // grid wrapper's own `Spacing.one` vertical padding (styles.grid).
     const cardH = estimatedCardHeight(cardWidth);
-    return head + Spacing.one * 2 + GRID_ROWS * cardH + (GRID_ROWS - 1) * stripGap;
+    return Spacing.one * 2 + GRID_ROWS * cardH + (GRID_ROWS - 1) * stripGap;
   }
   // Horizontal strip: one row of cards at the reserved strip height (mirrors `stripMinHeight` below).
-  return head + estimatedCardHeight(cardWidth) + STRIP_PAD_V * 2;
+  return estimatedCardHeight(cardWidth) + STRIP_PAD_V * 2;
+}
+
+/** Whole rail row INCLUDING its own heading — for callers where the rail renders its own head (a
+ *  self-headed `RailSkeleton`, or series.tsx's related rail). HomeFeed's loaded rails are headless (a
+ *  shared `sectionHead` row precedes them), so it sizes those with `railStripHeight` instead. */
+export function railRowHeight(kind: RailSection['kind'], viewportWidth: number, wide: boolean): number {
+  return SECTION_HEAD_HEIGHT + Spacing.two + railStripHeight(kind, viewportWidth, wide);
 }
 
 // Per-rail resting card index, remembered for the session so a rail that unmounts and remounts —
@@ -124,6 +130,7 @@ export function Rail({
   section,
   viewportWidth,
   onSeeAll,
+  headless,
   bridge,
   bridgeId,
   direct,
@@ -132,6 +139,10 @@ export function Rail({
   /** Current viewport width, threaded from the screen. */
   viewportWidth: number;
   onSeeAll?: (section: RailSection) => void;
+  /** Suppress the rail's own `SectionHead` — HomeFeed renders it as a separate shared `sectionHead`
+   *  row above the strip, so the strip alone is the rail item. Default (undefined) keeps the head, so
+   *  standalone callers (series.tsx's related rail) are unchanged. */
+  headless?: boolean;
   /** Originating bridge name + whether it serves direct series — passed to each
    *  card so the series detail opens with the right header / page-grid view. */
   bridge?: string;
@@ -298,7 +309,7 @@ export function Rail({
 
   return (
     <View style={[styles.section, peekIndex != null && styles.sectionPeeking]}>
-      <SectionHead title={section.title} onSeeAll={onSeeAll ? () => onSeeAll(section) : undefined} />
+      {!headless && <SectionHead title={section.title} onSeeAll={onSeeAll ? () => onSeeAll(section) : undefined} />}
       {wide ? (
         <View style={[styles.grid, { paddingHorizontal: STRIP_PAD, gap: stripGap }]}>
           {gridRows.map((row, r) => (

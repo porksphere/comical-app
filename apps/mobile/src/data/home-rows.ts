@@ -11,19 +11,23 @@
 import type { BridgeList, HomeGridSection, RailSection, SeriesEntry } from '@/data/types';
 
 export type HomeRow =
-  // A rail (hero/ranked/regular) — its own internal horizontal list, unchanged.
+  // Shared heading row for EVERY section (rail, non-terminal grid block, terminal grid). Carries the
+  // "See all" target when the section can be drilled into (rails can; grid blocks / terminal can't).
+  | { type: 'sectionHead'; key: string; title: string; seeAll?: { listId: string; title: string } }
+  // A rail (hero/ranked/regular) — strip only; its heading is the preceding `sectionHead` row.
   | { type: 'rail'; key: string; section: RailSection }
+  // Loading placeholder for a rail — SELF-headed (keeps its own real/skeleton title inline).
   | { type: 'railSkeleton'; key: string; title?: string }
-  // A non-terminal grid section: self-contained block with its own "Load more".
+  // A non-terminal grid section BODY (own "Load more") — heading is the preceding `sectionHead` row.
   | { type: 'gridBlock'; key: string; section: HomeGridSection }
+  // Loading placeholder for a non-terminal grid block — self-headed.
   | { type: 'gridBlockSkeleton'; key: string; title: string; rows: number }
-  // The terminal section's heading, above the infinite-scroll grid rows.
-  | { type: 'terminalHead'; key: string; title: string }
   // One row of up to `numColumns` terminal-grid cards (the infinite-scroll body).
   | { type: 'gridRow'; key: string; items: SeriesEntry[] };
 
 /** LegendList row-type tag, so recycled views are pooled per kind (a rail never recycles into a grid
- *  row). Skeleton variants share their real counterpart's pool — same shape, brief lifetime. */
+ *  row). Every heading — rail, block, terminal — now shares ONE `sectionHead` pool. Skeleton variants
+ *  stay self-headed and share their real body's pool (same shape, brief lifetime). */
 export function homeRowType(row: HomeRow): string {
   switch (row.type) {
     case 'railSkeleton':
@@ -90,15 +94,22 @@ export function buildHomeRows(args: {
       rows.push({ type: 'gridBlockSkeleton', key: `blocksk:${l.id}`, title: l.name, rows: 2 });
     }
     if (terminalGridPreview) {
-      rows.push({ type: 'terminalHead', key: 'termhead', title: terminalGridPreview.name });
+      rows.push({ type: 'sectionHead', key: 'head:terminal', title: terminalGridPreview.name });
     }
     return rows;
   }
 
-  for (const s of sections) rows.push({ type: 'rail', key: `rail:${s.id}`, section: s });
-  for (const gs of nonTerminalGridSections) rows.push({ type: 'gridBlock', key: `block:${gs.id}`, section: gs });
+  // Loaded: a shared `sectionHead` row precedes every section's (headless) body.
+  for (const s of sections) {
+    rows.push({ type: 'sectionHead', key: `head:${s.id}`, title: s.title, seeAll: { listId: s.id, title: s.title } });
+    rows.push({ type: 'rail', key: `rail:${s.id}`, section: s });
+  }
+  for (const gs of nonTerminalGridSections) {
+    rows.push({ type: 'sectionHead', key: `head:${gs.id}`, title: gs.title });
+    rows.push({ type: 'gridBlock', key: `block:${gs.id}`, section: gs });
+  }
   if (terminalGridSection) {
-    rows.push({ type: 'terminalHead', key: 'termhead', title: terminalGridSection.title });
+    rows.push({ type: 'sectionHead', key: 'head:terminal', title: terminalGridSection.title });
     chunk(gridItems, numColumns).forEach((items, i) => rows.push({ type: 'gridRow', key: `grow:${i}`, items }));
   }
   return rows;
