@@ -302,6 +302,17 @@ export function Rail({
           // instances as the strip scrolls instead of remounting each heavy card.
           recycleItems
           estimatedItemSize={cardWidth + stripGap}
+          // Every card's box is a KNOWN fixed width (card pinned to `cardWidth`, plus the stripItem's
+          // symmetric stripHalfGap padding = stripGap), so declare it as fixed rather than merely
+          // estimated. With only `estimatedItemSize`, LegendList still measures each card on cold mount
+          // and switches to the running AVERAGE of measured sizes — so a sub-px measure/average drift
+          // recomputed positions, which on iOS became a visible sideways slide the instant the
+          // container opacity flipped on (readyToRender). `getFixedItemSize` stores the size as known
+          // before any measurement, makes onItemLayout a no-op when it matches, and skips the average
+          // entirely (react-native.mjs getKnownOrFixedSize / onItemLayout early-return / no averageSizes
+          // for fixed items) — so the strip lays out at its final spacing on frame one. The value is the
+          // same cardWidth+stripGap the peek geometry already assumes, so the two can't disagree.
+          getFixedItemSize={() => cardWidth + stripGap}
           // Give LegendList the strip's size on the very first render. Without it, its
           // `initialScrollLength` defaults to 0 (`react-native.web.js`: estimatedListSize ?? {width:0}),
           // so a cold-mounting rail lays every card out as if the container were zero-width — all
