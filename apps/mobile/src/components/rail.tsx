@@ -84,6 +84,32 @@ function gridCardWidth(viewport: number, gap: number): number {
   return Math.floor((containerWidth - (GRID_COLUMNS - 1) * gap) / GRID_COLUMNS);
 }
 
+// Approximate rendered height of a `SectionHead`: the subtitle line (30px wide / 25px compact — see
+// `headTitleWide`/`headTitleCompact`) rounded up to cover the "See all" pill's own box. A rail's
+// `styles.section` puts a `Spacing.two` gap between the head and the strip/grid below it.
+export const SECTION_HEAD_HEIGHT = 32;
+
+/**
+ * Reserved vertical height of a whole `Rail` row (heading + strip/grid), used by `HomeFeed`'s
+ * `getEstimatedItemSize` so the vertical list can place an unmounted rail without measuring it. Shares
+ * the exact same card-width + `estimatedCardHeight` math the `Rail` itself lays out with, so the two
+ * can't drift (the same discipline `series-grid.tsx`'s `cellHeight` follows). An estimate — rails are
+ * few and each reserves its own `minHeight` internally, so small drift only nudges the scroll anchor.
+ */
+export function railRowHeight(kind: RailSection['kind'], viewportWidth: number, wide: boolean): number {
+  const stripGap = stripGapFor(viewportWidth);
+  const cardWidth = wide ? gridCardWidth(viewportWidth, stripGap) : cardWidthFor(kind, viewportWidth);
+  const head = SECTION_HEAD_HEIGHT + Spacing.two; // head + the section's head→body gap
+  if (wide) {
+    // Static GRID_ROWS×GRID_COLUMNS grid: rows of `estimatedCardHeight` cards + inter-row gaps + the
+    // grid wrapper's own `Spacing.one` vertical padding (styles.grid).
+    const cardH = estimatedCardHeight(cardWidth);
+    return head + Spacing.one * 2 + GRID_ROWS * cardH + (GRID_ROWS - 1) * stripGap;
+  }
+  // Horizontal strip: one row of cards at the reserved strip height (mirrors `stripMinHeight` below).
+  return head + estimatedCardHeight(cardWidth) + STRIP_PAD_V * 2;
+}
+
 export function Rail({
   section,
   viewportWidth,

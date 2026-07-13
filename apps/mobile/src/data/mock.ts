@@ -527,8 +527,15 @@ const slugify = (name: string) => name.toLowerCase();
 const delay = (ms: number): Promise<void> =>
   mockActive ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
 
+// Perf spike fixture: a synthetic bridge whose composed Home has a LOT of rails, so the
+// rail-virtualization work (HomeFeed) can be stress-profiled on demand — a real bridge home is only
+// ~3–5 rails, which may not lag at all. Reachable via the __DEV__ "Use mock data" toggle. See
+// `RAIL_STRESS_COUNT` / `mockGetHomeSections`.
+export const RAIL_STRESS_BRIDGE_ID = 'rail-stress';
+const RAIL_STRESS_COUNT = 18;
+
 export async function mockGetBridges(): Promise<Bridge[]> {
-  return MOCK_BRIDGE_NAMES.map((name) => ({
+  const bridges: Bridge[] = MOCK_BRIDGE_NAMES.map((name) => ({
     id: slugify(name),
     name,
     nsfw: false,
@@ -537,6 +544,14 @@ export async function mockGetBridges(): Promise<Bridge[]> {
       : ['lists', 'search', 'filters', 'sort'],
     thumbnail: `https://picsum.photos/seed/bridge-${slugify(name)}/100/100`,
   }));
+  bridges.push({
+    id: RAIL_STRESS_BRIDGE_ID,
+    name: 'Rail Stress (Demo)',
+    nsfw: false,
+    capabilities: ['lists', 'search', 'filters', 'sort'],
+    thumbnail: `https://picsum.photos/seed/bridge-rail-stress/100/100`,
+  });
+  return bridges;
 }
 
 export async function mockGetBridgeLists(_bridgeId: string): Promise<BridgeList[]> {
@@ -545,6 +560,22 @@ export async function mockGetBridgeLists(_bridgeId: string): Promise<BridgeList[
     { id: 'popular', name: 'Popular', page: true },
     { id: 'favorites', name: 'Favorites', page: true },
   ];
+}
+
+/** Perf spike: a composed Home with `RAIL_STRESS_COUNT` rails (cycling the three kinds with distinct
+ *  ids/titles), so the many-rails-at-once mount cost — and whether HomeFeed's virtualization actually
+ *  helps — is measurable. Keeps the usual terminal grid so infinite scroll past the rails is exercised. */
+function mockRailStressSections(bridgeId: string): RailSection[] {
+  const kinds: RailSection['kind'][] = ['hero', 'ranked', 'regular'];
+  return Array.from({ length: RAIL_STRESS_COUNT }, (_, i) => {
+    const kind = kinds[i % kinds.length];
+    return {
+      id: `stress-${i}`,
+      title: `Stress rail ${i + 1}`,
+      kind,
+      items: items(`stress-${i}`, 20, { badges: true, unread: true, sub: true, bridgeId }),
+    };
+  });
 }
 
 export async function mockGetHomeSections(
@@ -556,7 +587,8 @@ export async function mockGetHomeSections(
   // Two grid sections so the non-terminal "Load more" / terminal infinite-scroll
   // split (see types.ts's HomeGridSection doc) is exercisable in mock mode too.
   return {
-    sections: mockHomeSections('home', bridgeId),
+    sections:
+      bridgeId === RAIL_STRESS_BRIDGE_ID ? mockRailStressSections(bridgeId) : mockHomeSections('home', bridgeId),
     gridSections: [
       { id: 'staff-picks', title: 'Staff Picks', items: mockGrid('staff-picks', 12, bridgeId), hasNextPage: true },
       { id: 'home', title: 'Browse all', items: mockGrid('home', 24, bridgeId), hasNextPage: true },
