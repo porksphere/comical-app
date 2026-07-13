@@ -130,10 +130,14 @@ const MENU_PAD_V = Spacing.one;
 const MENU_ROWS = 3;
 // DEV ONLY: pad the menu out with dummy rows, to exercise the case the pan gesture exists for — a
 // group too tall for the screen, where the panel has to give up height for the menu to be reachable.
-// Raise it to test the resize/scroll behaviour; leave it at 0 otherwise, because a fake 11-row menu
-// doesn't just look wrong, it DISTORTS the layout: the "keep N rows visible" floor then forces the
-// panel high up the screen on every card, which is not how the real three-row menu behaves.
-const DEBUG_EXTRA_MENU_ROWS = 0;
+//
+// It DISTORTS THE LAYOUT while it's on, and that isn't a bug in either the rows or the placement: an
+// 11-row menu plus a full-size preview genuinely doesn't fit anywhere except near the top of the
+// screen, once you also insist that MIN_VISIBLE_ROWS of the menu stay on screen. So while this is
+// non-zero, expect every popup to sit high — that's the invariant doing its job, not the placement
+// failing. (This is what "the popup is always at the top once I've scrolled" turned out to be.)
+// The real three-row menu never comes close to that constraint.
+const DEBUG_EXTRA_MENU_ROWS = __DEV__ ? 8 : 0;
 
 // ── Pan / resize ─────────────────────────────────────────────────────────────
 // The panel never scales below this, however long the menu gets — a preview shrunk to a postage stamp
