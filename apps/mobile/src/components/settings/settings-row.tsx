@@ -18,14 +18,20 @@ import { hapticImpactLight } from '@/lib/haptics';
  *  than a stack of separate cards.
  *  `icon` is an optional leading glyph next to the title, for scanability on the top-level
  *  Settings screen where several sections sit in a row (especially on wide desktop layouts,
- *  where a plain text-only heading reads sparse). */
+ *  where a plain text-only heading reads sparse).
+ *  `bleed` drops the card's horizontal padding (the rows re-add it themselves via `SettingsRow`'s
+ *  `inset={false}`) and clips to the border radius — what a list of `SwipeableSettingsRow`s needs,
+ *  so the red delete pane revealed behind a row runs to the card's edge and is cut by its rounded
+ *  corners instead of floating inside the padding. */
 export function SettingsSection({
   title,
   icon,
+  bleed,
   children,
 }: {
   title: string;
   icon?: ReactNode;
+  bleed?: boolean;
   children: ReactNode;
 }) {
   const theme = useTheme();
@@ -38,7 +44,7 @@ export function SettingsSection({
           {title}
         </ThemedText>
       </View>
-      <ThemedView type="backgroundElement" style={[styles.section, { borderColor: theme.hairline }]}>
+      <ThemedView type="backgroundElement" style={[styles.section, bleed && styles.sectionBleed, { borderColor: theme.hairline }]}>
         {items.map((item, i) => (
           <Fragment key={i}>
             {item}
@@ -64,8 +70,11 @@ export function SettingsRow({
   description,
   descriptionColor,
   descriptionSelectable,
+  inset = true,
   right,
   onPress,
+  onHoverIn,
+  onHoverOut,
 }: {
   label: string;
   description?: string;
@@ -73,15 +82,24 @@ export function SettingsRow({
   descriptionColor?: string;
   /** Lets the description text be selected/copied (e.g. a server URL) — off by default. */
   descriptionSelectable?: boolean;
+  /** Set false inside a `bleed` section: the row carries the horizontal padding the card gave up,
+   *  so it still lines up with a normal section's rows while its press highlight runs full-bleed. */
+  inset?: boolean;
   right?: ReactNode;
   onPress?: () => void;
+  /** Web only: mirrors of the row's own hover state, so a caller rendering something hover-dependent
+   *  in `right` (the trash in `SwipeableSettingsRow`) can react to hovering ANYWHERE on the row —
+   *  not just the few pixels of the control itself. */
+  onHoverIn?: () => void;
+  onHoverOut?: () => void;
 }) {
   const theme = useTheme();
-  const { hovered, onHoverIn, onHoverOut } = useHovered();
+  const { hovered, onHoverIn: markHovered, onHoverOut: markUnhovered } = useHovered();
   const content = (highlighted?: boolean) => (
     <View
       style={[
         styles.row,
+        !inset && styles.rowBleed,
         onPress && styles.rowPressable,
         highlighted && Platform.OS !== 'android' && { backgroundColor: theme.backgroundSelected },
       ]}>
@@ -103,8 +121,14 @@ export function SettingsRow({
         hapticImpactLight();
         onPress();
       }}
-      onHoverIn={onHoverIn}
-      onHoverOut={onHoverOut}
+      onHoverIn={() => {
+        markHovered();
+        onHoverIn?.();
+      }}
+      onHoverOut={() => {
+        markUnhovered();
+        onHoverOut?.();
+      }}
       android_ripple={{ color: theme.backgroundSelected }}
       accessibilityRole="button"
       accessibilityLabel={label}>
@@ -125,6 +149,11 @@ const styles = StyleSheet.create({
     borderRadius: Spacing.three,
     borderWidth: StyleSheet.hairlineWidth,
     width: '100%',
+  },
+  sectionBleed: {
+    paddingHorizontal: 0,
+    // Clips the swipe-revealed delete pane to the card's rounded corners.
+    overflow: 'hidden',
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -148,6 +177,12 @@ const styles = StyleSheet.create({
     minHeight: 48,
     paddingVertical: Spacing.two,
     borderRadius: Spacing.two,
+  },
+  rowBleed: {
+    paddingHorizontal: Spacing.three,
+    // Full-bleed rows can't keep a rounded highlight — it would leave uncovered corners against
+    // the card edge, and the swipe pane it slides over is square.
+    borderRadius: 0,
   },
   rowPressable: {
     cursor: 'pointer',

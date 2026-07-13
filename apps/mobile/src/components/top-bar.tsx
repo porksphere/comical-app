@@ -1,5 +1,6 @@
 import { useRouter } from 'expo-router';
-import { Pressable, StyleSheet } from 'react-native';
+import { type ReactNode } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BarSurface } from '@/components/bar-surface';
@@ -19,7 +20,7 @@ import { hapticImpactLight } from '@/lib/haptics';
  * Pair with `<Stack.Screen name="..." options={{ headerShown: false }} />` in
  * `_layout.tsx` and use `useTopBarInset()` to pad the screen's own content.
  */
-export function TopBar({ title, onBack }: { title: string; onBack?: () => void }) {
+export function TopBar({ title, onBack, right }: { title: string; onBack?: () => void; right?: ReactNode }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -41,7 +42,30 @@ export function TopBar({ title, onBack }: { title: string; onBack?: () => void }
       <ThemedText type="smallBold" numberOfLines={1} style={styles.title}>
         {title}
       </ThemedText>
+      {/* Trailing action (e.g. the "+" that adds a registry / installs a bridge). Absolute, like the
+          back button, so it can't push the centered title off-center. */}
+      {right && <View style={[styles.rightAction, { height: barHeight }]}>{right}</View>}
     </BarSurface>
+  );
+}
+
+/** A borderless icon button sized for `TopBar`'s `right` slot (the "+" on the Bridges/Trackers/
+ *  Registries screens). Matches the back button's hit area and ripple. */
+export function TopBarButton({ icon, label, onPress }: { icon: ReactNode; label: string; onPress: () => void }) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      onPress={() => {
+        hapticImpactLight();
+        onPress();
+      }}
+      hitSlop={12}
+      android_ripple={{ color: theme.backgroundSelected, borderless: true }}
+      style={styles.barButton}
+      accessibilityRole="button"
+      accessibilityLabel={label}>
+      {icon}
+    </Pressable>
   );
 }
 
@@ -78,6 +102,16 @@ const styles = StyleSheet.create({
     left: Spacing.three,
     bottom: 0,
     justifyContent: 'center',
+  },
+  rightAction: {
+    position: 'absolute',
+    right: Spacing.three,
+    bottom: 0,
+    justifyContent: 'center',
+  },
+  barButton: {
+    padding: Spacing.one,
+    cursor: 'pointer',
   },
   title: {
     maxWidth: '70%',
