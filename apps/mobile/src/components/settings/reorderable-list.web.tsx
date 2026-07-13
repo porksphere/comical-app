@@ -11,9 +11,9 @@ import { useTheme } from '@/hooks/use-theme';
 import type { ReorderableListProps } from './reorderable-list.types';
 
 /**
- * Web reorder is a lightweight mode, not in-place drag: `react-native-reanimated-dnd` has no web
- * support, and mouse-dragging a row isn't worth it (see `SwipeableSettingsRow`'s web split). Normal
- * state renders the page's real rows; `editing` collapses them to `label` + ▲/▼ buttons.
+ * Web reorder is a lightweight mode, not in-place drag: mouse-dragging a row isn't worth it (see
+ * `SwipeableSettingsRow`'s web split), and our native long-press drag (`reorderable-list.tsx`) is
+ * touch-only. Normal state renders the page's real rows; `editing` collapses them to `label` + ▲/▼.
  */
 export function ReorderableList<T>({ data, keyOf, renderRow, label, leading, onReorder, editing }: ReorderableListProps<T>) {
   const theme = useTheme();
