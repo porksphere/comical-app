@@ -2,28 +2,27 @@ import { useCallback } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Sortable, SortableItem, type SortableRenderItemProps } from 'react-native-reanimated-dnd';
 
-import { GripIcon } from '@/components/icons/ui-icons';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
-import { useTheme } from '@/hooks/use-theme';
 
 import type { ReorderableListProps } from './reorderable-list.types';
 
 /**
- * Native reorder: long-press drag powered by `react-native-reanimated-dnd`'s `<Sortable>` — it owns
- * the drag physics, live shift, and edge autoscroll (all on Reanimated 4 worklets), so we just map
- * the data to `{ id }` items and render each row with a grip handle. Web ships up/down buttons
- * instead (`reorderable-list.web.tsx`); the DnD library has no web support.
+ * Native in-place reorder: the live list itself is `react-native-reanimated-dnd`'s `<Sortable>`, so a
+ * ~200ms long-press on any row lifts it to drag — no separate "reorder mode". Each item is the page's
+ * real row (`renderRow`), rendered UNCHANGED inside a `SortableItem`, so a swipe-to-uninstall row
+ * keeps its exact gesture + animation; the library only adds the long-press drag on top (the two
+ * disambiguate: a quick horizontal move is the swipe, a 200ms hold is the drag). No
+ * `SortableItem.Handle` on purpose — a handle would disable the whole-row long-press.
+ *
+ * Dynamic heights are on because settings rows vary (a status line makes some taller). The Sortable
+ * owns its own scroll (needed for drag autoscroll), so the page renders this in place of its scroll.
  */
-const ROW_HEIGHT = 56;
+const ESTIMATED_ROW_HEIGHT = 56;
 
 /** Sortable requires each item to carry a string `id`; wrap the caller's items so any T works. */
 type Row<T> = { id: string; value: T };
 
-export function ReorderableList<T>({ data, keyOf, label, leading, onReorder }: ReorderableListProps<T>) {
-  const theme = useTheme();
+export function ReorderableList<T>({ data, keyOf, renderRow, onReorder }: ReorderableListProps<T>) {
   const contentPadding = useSettingsScrollPadding();
   const rows: Row<T>[] = data.map((v) => ({ id: keyOf(v), value: v }));
 
@@ -44,24 +43,22 @@ export function ReorderableList<T>({ data, keyOf, label, leading, onReorder }: R
       const { item, id, ...rest } = props;
       return (
         <SortableItem key={id} id={id} data={item} {...rest} onDrop={handleDrop}>
-          <ThemedView type="backgroundElement" style={styles.row}>
-            {leading?.(item.value)}
-            <ThemedText type="small" style={styles.label} numberOfLines={1}>
-              {label(item.value)}
-            </ThemedText>
-            <SortableItem.Handle style={styles.handle}>
-              <GripIcon color={theme.textSecondary} size={20} />
-            </SortableItem.Handle>
-          </ThemedView>
+          {renderRow(item.value)}
         </SortableItem>
       );
     },
-    [handleDrop, label, leading, theme.textSecondary],
+    [handleDrop, renderRow],
   );
 
   return (
     <View style={styles.host}>
-      <Sortable data={rows} renderItem={renderItem} itemHeight={ROW_HEIGHT} contentContainerStyle={contentPadding} />
+      <Sortable
+        data={rows}
+        renderItem={renderItem}
+        enableDynamicHeights
+        estimatedItemHeight={ESTIMATED_ROW_HEIGHT}
+        contentContainerStyle={contentPadding}
+      />
     </View>
   );
 }
@@ -69,19 +66,5 @@ export function ReorderableList<T>({ data, keyOf, label, leading, onReorder }: R
 const styles = StyleSheet.create({
   host: {
     flex: 1,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.three,
-    height: ROW_HEIGHT,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.three,
-  },
-  label: {
-    flex: 1,
-  },
-  handle: {
-    paddingHorizontal: Spacing.one,
   },
 });

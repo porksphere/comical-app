@@ -1,6 +1,7 @@
 import { Pressable, ScrollView, StyleSheet } from 'react-native';
 
 import { ArrowDownIcon, ArrowUpIcon } from '@/components/icons/ui-icons';
+import { SettingsSection } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
@@ -10,11 +11,11 @@ import { useTheme } from '@/hooks/use-theme';
 import type { ReorderableListProps } from './reorderable-list.types';
 
 /**
- * Web reorder: up/down move buttons, not drag. Per the app's gesture ethos (see `SwipeableSettingsRow`),
- * mouse-dragging a row isn't worth it — and the native drag library (`react-native-reanimated-dnd`)
- * has no web support, so web ships this simpler path entirely separately.
+ * Web reorder is a lightweight mode, not in-place drag: `react-native-reanimated-dnd` has no web
+ * support, and mouse-dragging a row isn't worth it (see `SwipeableSettingsRow`'s web split). Normal
+ * state renders the page's real rows; `editing` collapses them to `label` + ▲/▼ buttons.
  */
-export function ReorderableList<T>({ data, keyOf, label, leading, onReorder }: ReorderableListProps<T>) {
+export function ReorderableList<T>({ data, keyOf, renderRow, label, leading, onReorder, editing }: ReorderableListProps<T>) {
   const theme = useTheme();
   const contentPadding = useSettingsScrollPadding();
   const move = (from: number, to: number) => {
@@ -26,30 +27,34 @@ export function ReorderableList<T>({ data, keyOf, label, leading, onReorder }: R
   };
   return (
     <ScrollView contentContainerStyle={contentPadding} style={styles.host}>
-      {data.map((item, i) => (
-        <ThemedView key={keyOf(item)} type="backgroundElement" style={styles.row}>
-          {leading?.(item)}
-          <ThemedText type="small" style={styles.label} numberOfLines={1}>
-            {label(item)}
-          </ThemedText>
-          <Pressable
-            disabled={i === 0}
-            onPress={() => move(i, i - 1)}
-            style={[styles.moveBtn, i === 0 && styles.moveBtnOff]}
-            accessibilityRole="button"
-            accessibilityLabel={`Move ${label(item)} up`}>
-            <ArrowUpIcon color={theme.text} size={18} />
-          </Pressable>
-          <Pressable
-            disabled={i === data.length - 1}
-            onPress={() => move(i, i + 1)}
-            style={[styles.moveBtn, i === data.length - 1 && styles.moveBtnOff]}
-            accessibilityRole="button"
-            accessibilityLabel={`Move ${label(item)} down`}>
-            <ArrowDownIcon color={theme.text} size={18} />
-          </Pressable>
-        </ThemedView>
-      ))}
+      {editing ? (
+        data.map((item, i) => (
+          <ThemedView key={keyOf(item)} type="backgroundElement" style={styles.row}>
+            {leading?.(item)}
+            <ThemedText type="small" style={styles.label} numberOfLines={1}>
+              {label(item)}
+            </ThemedText>
+            <Pressable
+              disabled={i === 0}
+              onPress={() => move(i, i - 1)}
+              style={[styles.moveBtn, i === 0 && styles.moveBtnOff]}
+              accessibilityRole="button"
+              accessibilityLabel={`Move ${label(item)} up`}>
+              <ArrowUpIcon color={theme.text} size={18} />
+            </Pressable>
+            <Pressable
+              disabled={i === data.length - 1}
+              onPress={() => move(i, i + 1)}
+              style={[styles.moveBtn, i === data.length - 1 && styles.moveBtnOff]}
+              accessibilityRole="button"
+              accessibilityLabel={`Move ${label(item)} down`}>
+              <ArrowDownIcon color={theme.text} size={18} />
+            </Pressable>
+          </ThemedView>
+        ))
+      ) : (
+        <SettingsSection>{data.map((item) => renderRow(item))}</SettingsSection>
+      )}
     </ScrollView>
   );
 }
