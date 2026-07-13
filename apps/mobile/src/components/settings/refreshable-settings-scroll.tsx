@@ -40,8 +40,16 @@ export function RefreshableSettingsScroll({
     // Touch-driven pull (web + Android) is caught on the outer view so it works regardless of what's
     // under the finger; iOS sources its pull from the scroll bounce instead (touchHandlers is null).
     <View style={styles.host} {...pull.touchHandlers}>
-      <Animated.ScrollView onScroll={onScroll} scrollEventThrottle={16} onScrollEndDrag={pull.onScrollEndDrag} contentContainerStyle={contentPadding}>
-        {/* The list shift the pull opens rides this wrapper; the shared content layout lives here too. */}
+      <Animated.ScrollView
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        onScrollEndDrag={pull.onScrollEndDrag}
+        // Fill the viewport even when the list is short (flexGrow below) and always allow the iOS
+        // vertical bounce — so a pull anywhere on the page engages the refresh, not just over content.
+        alwaysBounceVertical
+        contentContainerStyle={[styles.contentContainer, contentPadding]}>
+        {/* The list shift the pull opens rides this wrapper; the shared content layout lives here too.
+            flexGrow makes it stretch to the full page height so the pull is reachable everywhere. */}
         <Animated.View style={[styles.content, pull.listStyle]}>{children}</Animated.View>
       </Animated.ScrollView>
       {/* Settles just below the top bar's resting bottom edge, in the gap the pull opens. */}
@@ -54,7 +62,13 @@ const styles = StyleSheet.create({
   host: {
     flex: 1,
   },
+  // At least fill the scroll viewport (so short lists are still full-height and pullable), while
+  // still growing past it when the content is taller than the screen.
+  contentContainer: {
+    flexGrow: 1,
+  },
   content: {
+    flexGrow: 1,
     // Spacing BETWEEN sections (SettingsSection carries no top margin — see settings-row).
     gap: Spacing.five,
     width: '100%',
