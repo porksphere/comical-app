@@ -24,4 +24,6 @@ export type ReorderableListProps<T> = {
   onReorder: (orderedKeys: string[]) => void;
   /** Web only: when true, show the ▲/▼ reorder mode instead of the normal rows. Ignored on native. */
   editing?: boolean;
+  /** Pull-to-refresh handler. Our own list owns the scroll, so it hosts the pull spinner itself. */
+  refresh?: () => Promise<unknown>;
 };
