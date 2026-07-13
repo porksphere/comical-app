@@ -1,3 +1,4 @@
+import { parseBridgeId } from '@comical/contract';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
@@ -98,6 +99,17 @@ export default function RegistryBrowseScreen() {
   );
 }
 
+/**
+ * Row subtitle for a browsable bridge/tracker: surfaces the id's **publisher scope** as provenance
+ * (`<publisher> · v0.1.3`) so two registries offering a same-named bridge are told apart at a glance.
+ * Unscoped (legacy) ids have no scope, so they read exactly as before — just the description/version.
+ */
+function entrySubtitle(id: string, version: string, description?: string): string {
+  const { scope } = parseBridgeId(id);
+  const base = description ?? `v${version}`;
+  return scope ? `${scope} · ${base}` : base;
+}
+
 function BridgeRow({ bridge, url, onDone }: { bridge: AvailableBridge; url: string; onDone: () => Promise<void> }) {
   const ds = useDataSource();
   // `onDone` (a refetch) is folded into each mutationFn so `isPending` stays true through the
@@ -126,7 +138,7 @@ function BridgeRow({ bridge, url, onDone }: { bridge: AvailableBridge; url: stri
     <View>
       <SettingsRow
         label={bridge.entry.name}
-        description={bridge.entry.description ?? `v${bridge.entry.version}`}
+        description={entrySubtitle(bridge.entry.id, bridge.entry.version, bridge.entry.description)}
         right={<InstallButton state={bridge} onInstall={install} onUpdate={update} busy={busy} />}
       />
       {error && (
@@ -164,7 +176,7 @@ function TrackerRow({ tracker, url, onDone }: { tracker: AvailableTracker; url: 
     <View>
       <SettingsRow
         label={tracker.entry.name}
-        description={tracker.entry.description ?? `v${tracker.entry.version}`}
+        description={entrySubtitle(tracker.entry.id, tracker.entry.version, tracker.entry.description)}
         right={<InstallButton state={tracker} onInstall={install} onUpdate={update} busy={busy} />}
       />
       {error && (
