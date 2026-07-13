@@ -29,7 +29,7 @@ export default function DeveloperSettingsScreen() {
           styles.content,
           { paddingTop: topBarInset + SettingsTopGap, paddingBottom: BottomTabInset + insets.bottom + Spacing.five },
         ]}>
-        <SettingsSection title="Developer">
+        <SettingsSection>
           <SettingsRow
             label="Use mock data"
             description="Browse/Series/Reader render generated sample content instead of calling the API."

@@ -11,7 +11,7 @@ import {
   useKeyboardAvoidingInput,
   useOverlay,
 } from '@/components/overlay/overlay';
-import { SettingsGutter, SettingsRow, SettingsSection, SettingsTopGap } from '@/components/settings/settings-row';
+import { SettingsGutter, SettingsRow, SettingsRowHeight, SettingsSection, SettingsTopGap } from '@/components/settings/settings-row';
 import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -102,14 +102,14 @@ export default function GeneralSettingsScreen() {
           <AppearanceRow preference={themePref} onChange={setThemePref} />
           <SettingsRow
             label="Lightweight cards"
-            description="Drops the shrink animation and cross-fade from covers and page thumbnails for smoother scrolling."
+            description="Drop cover animations for smoother scrolling."
             right={<ThemedSwitch value={lightCards} onValueChange={(v) => lightCards$.light.set(v)} />}
           />
           <NsfwModeRow mode={nsfwMode} onChange={setNsfwMode} />
           {embeddedAvailable && (
             <SettingsRow
               label="Run bridges on this device"
-              description="Fetch and read entirely on-device, with no external server. Turn off to use a remote Comical server."
+              description="Fetch and read on-device, with no server."
               right={<ThemedSwitch value={onDevice} onValueChange={toggleOnDevice} />}
             />
           )}
@@ -200,9 +200,14 @@ function AppearanceRow({ preference, onChange }: { preference: ThemePreference; 
       style={styles.pressableCursor}>
       <View style={[styles.row, hovered && { backgroundColor: theme.backgroundSelected }]}>
         <View style={styles.rowText}>
-          <ThemedText type="small">Appearance</ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            {THEME_OPTIONS.find((o) => o.value === preference)?.description}
+          <ThemedText type="small" numberOfLines={1}>
+            Appearance
+          </ThemedText>
+          {/* A short, STATIC line rather than the selected option's own description: the row is one
+              line tall now, and the current choice is already spelled out on the right. The long
+              per-option descriptions still show in the picker, where they have room. */}
+          <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
+            Light or dark theme.
           </ThemedText>
         </View>
         <View style={styles.rowValue}>
@@ -272,9 +277,13 @@ function NsfwModeRow({ mode, onChange }: { mode: NsfwMode; onChange: (mode: Nsfw
       style={styles.pressableCursor}>
       <View style={[styles.row, hovered && { backgroundColor: theme.backgroundSelected }]}>
         <View style={styles.rowText}>
-          <ThemedText type="small">NSFW content</ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            {NSFW_MODE_OPTIONS.find((o) => o.value === mode)?.description}
+          <ThemedText type="small" numberOfLines={1}>
+            NSFW content
+          </ThemedText>
+          {/* Static, for the same reason as Appearance above — and doubly so here, where the option
+              descriptions run to a sentence and a half. The mode itself is on the right. */}
+          <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
+            Whether NSFW-flagged bridges are visible.
           </ThemedText>
         </View>
         <View style={styles.rowValue}>
@@ -347,8 +356,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: Spacing.three,
-    minHeight: 48,
-    paddingVertical: Spacing.two,
+    height: SettingsRowHeight,
+    paddingVertical: Spacing.one,
     paddingHorizontal: SettingsGutter,
     marginHorizontal: -SettingsGutter,
   },

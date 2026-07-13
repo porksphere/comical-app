@@ -73,7 +73,7 @@ export default function TrackersScreen() {
             </ThemedText>
           </View>
         ) : (
-          <SettingsSection title="Installed">
+          <SettingsSection>
             {trackers.map((t) => (
               <SettingsRow
                 key={t.info.id}

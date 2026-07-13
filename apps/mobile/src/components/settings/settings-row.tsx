@@ -3,7 +3,7 @@ import { Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { ChevronRightIcon } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
-import { RowHeight, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight } from '@/lib/haptics';
@@ -21,12 +21,24 @@ import { hapticImpactLight } from '@/lib/haptics';
 export const SettingsGutter = Spacing.four;
 
 /**
- * Gap between a settings screen's top bar and its first row — deliberately much tighter than the
- * `BarContentGap` the content tabs use. A settings list is a list: it should begin immediately
- * under the bar, not float a header's worth of empty space below it. Browse/Library/History keep
- * the larger gap, where the first thing under the bar is artwork rather than a row.
+ * Gap between a settings screen's top bar and its first row. Zero on purpose: a settings list is a
+ * list, and it should begin flush under the bar — the row's own vertical padding is all the
+ * breathing room it needs. The content tabs keep `BarContentGap`, where the first thing under the
+ * bar is artwork rather than a row.
+ *
+ * Kept as a named constant rather than dropped entirely so the intent survives: this is a
+ * deliberate zero, not an oversight.
  */
-export const SettingsTopGap = Spacing.two;
+export const SettingsTopGap = 0;
+
+/**
+ * The height of EVERY settings row, on every settings screen. Fixed rather than
+ * content-dependent: descriptions are clamped to a single line (see `SettingsRow`) precisely so
+ * that one row can't stand taller than its neighbours. Before this, a row's height depended on
+ * whether its description happened to wrap — the registry list (a wrapping URL) ran 70px, the
+ * landing's rows 82px, and a bridge row with no status line only 44px, so no two lists lined up.
+ */
+export const SettingsRowHeight = 52;
 
 /** A titled group of settings — the Settings screens' section shape. The title sits above a
  *  full-width list of rows separated by hairline dividers.
@@ -130,9 +142,17 @@ export function SettingsRow({
       ]}>
       {leading}
       <View style={styles.rowText}>
-        <ThemedText type="small">{label}</ThemedText>
+        <ThemedText type="small" numberOfLines={1}>
+          {label}
+        </ThemedText>
         {description && (
-          <ThemedText type="small" selectable={descriptionSelectable} style={{ color: descriptionColor ?? theme.textSecondary }}>
+          // One line, always — this is what keeps every row the same height (see
+          // `SettingsRowHeight`). A description that needs two lines to land is too long for a row.
+          <ThemedText
+            type="small"
+            numberOfLines={1}
+            selectable={descriptionSelectable}
+            style={{ color: descriptionColor ?? theme.textSecondary }}>
             {description}
           </ThemedText>
         )}
@@ -193,7 +213,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: Spacing.three,
-    minHeight: RowHeight,
+    height: SettingsRowHeight,
     paddingVertical: Spacing.one,
     // The row keeps its text at the gutter while its background spans the full width (see
     // `rowEscape`), so the highlight has no rounded corners to preserve — it's edge to edge.
