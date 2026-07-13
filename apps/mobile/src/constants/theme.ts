@@ -201,8 +201,12 @@ export const SettingsGutter = Spacing.four;
  * this, height depended on whether a description happened to wrap — the landing's rows ran 82px, a
  * registry row (a wrapping URL) 70px, and a bridge row with no status line only 44px, so no two lists
  * lined up.
+ *
+ * Deliberately roomier than the two lines of text strictly need: at a snug 52 the list read as
+ * cramped, and a label-over-description row wants air around it. This is the one number to turn to
+ * retune the density of every settings screen at once.
  */
-export const SettingsRowHeight = 52;
+export const SettingsRowHeight = 64;
 
 /**
  * Gap between a settings screen's top bar and its first row. Zero on purpose — a settings list is a
