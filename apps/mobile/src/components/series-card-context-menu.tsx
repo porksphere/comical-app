@@ -61,13 +61,13 @@ const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
  * The tick as the held finger crosses from one row to the next — what gives the menu its detents, so
  * dragging down it feels like clicking through positions rather than sweeping over a hover state.
  *
- * A LIGHT IMPACT, not `selectionAsync`. Selection feedback is the textbook choice here and it was the
- * first one — but it's the faintest thing the Taptic Engine does, and under a thumb already pressing
- * hard into the glass (which is what a hold IS) it's simply not felt. A light impact is unmistakable
- * and still small enough to fire on every row without becoming a rattle.
+ * `selectionAsync`, the faintest thing the Taptic Engine does — and deliberately so. It fires on every
+ * row you cross, which is many times per drag, against the ONE medium impact that opens the popup. If
+ * the two were comparable in weight the drag would rattle and the open would stop being an event. The
+ * ticks are punctuation, not the sentence.
  */
 function selectionTick(): void {
-  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  void Haptics.selectionAsync();
 }
 // Every motion in this popup is a spring, and they're all tuned around the same two numbers, because
 // those are the two things you actually feel:
