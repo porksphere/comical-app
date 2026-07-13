@@ -1,20 +1,26 @@
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
 
-import { PlusIcon } from '@/components/icons/ui-icons';
+import { CheckIcon, GripIcon, PlusIcon } from '@/components/icons/ui-icons';
+import { ReorderableList } from '@/components/settings/reorderable-list';
 import { RetryBlock } from '@/components/retry-block';
 import { useBrowseRegistry } from '@/components/settings/browse-registry';
-import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
+import { SettingsRow } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar, TopBarButton } from '@/components/top-bar';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
+import type { TrackerSummary } from '@/data/api';
+import { applyOrder, setTrackerOrder, useTrackerOrder } from '@/data/list-order';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { friendlyError } from '@/lib/friendly-error';
+
+const IS_WEB = Platform.OS === 'web';
 
 /**
  * Unlike Bridges, these rows are NOT swipe-to-delete: `TrackerSummary` carries no `source` field
@@ -29,6 +35,8 @@ export default function TrackersScreen() {
   const theme = useTheme();
   const contentPadding = useSettingsScrollPadding();
   const browseRegistry = useBrowseRegistry();
+  // Web-only reorder mode (▲/▼). Native reorders in place via long-press drag.
+  const [editing, setEditing] = useState(false);
 
   // `data === undefined` = still loading; `null` = this server has no tracker support (an expected
   // state, not an error).
@@ -37,50 +45,74 @@ export default function TrackersScreen() {
     queryFn: ({ signal }) => ds.getTrackers(signal),
   });
 
+  // Apply the saved order. Trackers have no NSFW filter, so the whole list reorders directly.
+  const order = useTrackerOrder();
+  const ordered = Array.isArray(trackers) ? applyOrder(trackers, order, (t) => t.info.id) : trackers;
+  const canReorder = Array.isArray(ordered) && ordered.length >= 2;
+
+  const renderRow = (t: TrackerSummary) => (
+    <SettingsRow
+      key={t.info.id}
+      label={t.info.name}
+      description={t.configured ? undefined : 'Needs setup'}
+      descriptionColor={t.configured ? undefined : theme.badgeWarn}
+      onPress={() => router.push({ pathname: '/tracker-settings', params: { trackerId: t.info.id } })}
+    />
+  );
+
   return (
     <ThemedView style={styles.container}>
       <TopBar
         title="Trackers"
         right={
-          browseRegistry &&
-          trackers !== null && (
-            <TopBarButton icon={<PlusIcon color={theme.text} size={22} />} label="Install a tracker" onPress={browseRegistry} />
-          )
+          trackers !== null &&
+          (editing ? (
+            <TopBarButton icon={<CheckIcon color={theme.text} size={22} />} label="Done reordering" onPress={() => setEditing(false)} />
+          ) : (
+            <View style={styles.topActions}>
+              {/* Reorder button only on web (native reorders in place — long-press a row). */}
+              {IS_WEB && canReorder && (
+                <TopBarButton icon={<GripIcon color={theme.text} size={22} />} label="Reorder trackers" onPress={() => setEditing(true)} />
+              )}
+              {browseRegistry && (
+                <TopBarButton icon={<PlusIcon color={theme.text} size={22} />} label="Install a tracker" onPress={browseRegistry} />
+              )}
+            </View>
+          ))
         }
       />
-      <ScrollView
-        contentContainerStyle={[styles.content, contentPadding]}>
-        {isError ? (
+      {isError ? (
+        <View style={[styles.stateHost, contentPadding]}>
           <RetryBlock message={friendlyError(error, 'Failed to load trackers. Try again.')} onRetry={() => refetch()} />
-        ) : trackers === undefined ? (
+        </View>
+      ) : ordered === undefined ? (
+        <View style={[styles.stateHost, contentPadding]}>
           <ActivityIndicator />
-        ) : trackers === null ? (
-          <View style={styles.empty}>
-            <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
-              Trackers are not available on this server.
-            </ThemedText>
-          </View>
-        ) : trackers.length === 0 ? (
-          <View style={styles.empty}>
-            <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
-              No trackers installed. Trackers sync your reading progress to an external service — install one from a
-              registry to get started.
-            </ThemedText>
-          </View>
-        ) : (
-          <SettingsSection>
-            {trackers.map((t) => (
-              <SettingsRow
-                key={t.info.id}
-                label={t.info.name}
-                description={t.configured ? undefined : 'Needs setup'}
-                descriptionColor={t.configured ? undefined : theme.badgeWarn}
-                onPress={() => router.push({ pathname: '/tracker-settings', params: { trackerId: t.info.id } })}
-              />
-            ))}
-          </SettingsSection>
-        )}
-      </ScrollView>
+        </View>
+      ) : ordered === null ? (
+        <View style={[styles.stateHost, styles.empty, contentPadding]}>
+          <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
+            Trackers are not available on this server.
+          </ThemedText>
+        </View>
+      ) : ordered.length === 0 ? (
+        <View style={[styles.stateHost, styles.empty, contentPadding]}>
+          <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
+            No trackers installed. Trackers sync your reading progress to an external service — install one from a
+            registry to get started.
+          </ThemedText>
+        </View>
+      ) : (
+        <ReorderableList
+          data={ordered}
+          keyOf={(t) => t.info.id}
+          renderRow={renderRow}
+          label={(t) => t.info.name}
+          onReorder={(keys) => setTrackerOrder(keys)}
+          editing={editing}
+          refresh={() => refetch()}
+        />
+      )}
     </ThemedView>
   );
 }
@@ -89,11 +121,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  content: {
-    gap: Spacing.five,
-    width: '100%',
-    maxWidth: MaxContentWidth,
-    alignSelf: 'center',
+  topActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  stateHost: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   empty: {
     alignItems: 'center',
