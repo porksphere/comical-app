@@ -17,23 +17,23 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BarSurface } from '@/components/bar-surface';
 import { BridgeThumb } from '@/components/bridge-thumb';
-import { GridSkeleton, SkeletonCard } from '@/components/grid-skeleton';
+import { GridSkeleton } from '@/components/grid-skeleton';
+import { ContentFeed } from '@/components/content-feed';
 import { SearchIcon } from '@/components/icons/ui-icons';
-import { Rail, RailSkeleton, SectionHead } from '@/components/rail';
 import { RetryBlock } from '@/components/retry-block';
 import { SeriesGrid } from '@/components/series-grid';
 import { BridgeThumbSize, Selector } from '@/components/selector';
-import { SeriesCard } from '@/components/series-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { PullIndicator } from '@/components/pull-indicator';
 import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { pageOptions } from '@/data/api';
+import { buildHomeRows } from '@/data/content-rows';
 import { useDedupedPages } from '@/data/grid-pages';
 import { fetchBrowseScope, homeSectionsQuery, queryKeys, type BrowseScope } from '@/data/queries';
 import { useSelectedBridge } from '@/data/selected-bridge';
 import { isRailLayout, useDataSource, useMockActive } from '@/data/source';
-import type { BridgeList, GridPage, HomeGridSection, SeriesEntry } from '@/data/types';
+import type { BridgeList, GridPage } from '@/data/types';
 import { friendlyError } from '@/lib/friendly-error';
 import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
@@ -169,7 +169,11 @@ export default function BrowseScreen() {
   // Only the LAST grid section infinite-scrolls; earlier ones get "Load more" —
   // see HomeGridSection's doc in types.ts.
   const terminalGridSection = gridSections.at(-1) ?? null;
-  const nonTerminalGridSections = gridSections.length > 1 ? gridSections.slice(0, -1) : [];
+  // Memoized so a fresh `[]`/slice each render doesn't churn the `homeRows` memo that depends on it.
+  const nonTerminalGridSections = useMemo(
+    () => (gridSections.length > 1 ? gridSections.slice(0, -1) : []),
+    [gridSections],
+  );
 
   // ── Home skeleton shape, derived from `lists` (already fetched, layout included) ──────────
   // `lists` resolves before `getHomeSections`'s per-list content fetch, so while `homeLoading`
@@ -184,7 +188,10 @@ export default function BrowseScreen() {
     [homeListsPreview],
   );
   const terminalGridPreview = gridListsPreview.at(-1) ?? null;
-  const nonTerminalGridListsPreview = gridListsPreview.length > 1 ? gridListsPreview.slice(0, -1) : [];
+  const nonTerminalGridListsPreview = useMemo(
+    () => (gridListsPreview.length > 1 ? gridListsPreview.slice(0, -1) : []),
+    [gridListsPreview],
+  );
 
   // The active "See all" rail drill-down, if any. Free-text search + filters now live on the pushed
   // Search screen (`app/search.tsx`), so Browse no longer holds a query/filter scope of its own.
@@ -470,9 +477,9 @@ export default function BrowseScreen() {
   // Both open the pushed Search screen (search field in its own top bar, filters + results below).
   const isLargeScreen = useIsLargeScreen();
   const openSearch = () => router.push('/search');
-  // Column count for the home rails/skeletons, and the rail viewport. The main grid derives its own
-  // layout from the same hook (see SeriesGrid), so the two can't disagree.
-  const { numColumns, railViewport } = useGridLayout();
+  // Column count for the terminal-grid row chunking + skeletons (buildHomeRows). ContentFeed/SeriesGrid
+  // derive their own full layout (incl. the rail viewport) from the same hook, so nothing can disagree.
+  const { numColumns } = useGridLayout();
   // Logical scope string — drives ONLY the header/scroll reset effect below (not the list key), so
   // the collapsing top bar snaps back and the persisted list scrolls to top on a real scope change.
   const gridScope = [
@@ -589,101 +596,51 @@ export default function BrowseScreen() {
     </View>
   ) : null;
 
-  // The list header holds the controls, and — on home — the rails, any
-  // non-terminal grid sections (their own "Load more"), and the terminal
-  // section's heading. The main grid (results, favorites, or home's terminal
-  // section) then renders beneath it, so everything scrolls as one surface.
-  const listHeader = (
-    // Bleed out the list's new contentContainer horizontal padding: every header child
-    // (controls, rails, section heads) already self-pads by Spacing.four, so this keeps them at a
-    // single inset instead of doubling. See the contentContainerStyle note on the list.
+  // Header for the flat results/favorites/page grid (SeriesGrid only): the "See all" back banner +
+  // any results error. The composed Home's rails, non-terminal grid blocks, and terminal grid are no
+  // longer header children — they're virtualized rows of ContentFeed (see `homeRows`), so off-screen
+  // rails actually unmount instead of all being live at once in a never-virtualized header.
+  const resultsHeader = (
+    // Bleed out the list's contentContainer horizontal padding — controls self-pad Spacing.four.
     <View style={styles.bleed}>
       {controls}
-      {!inResults && composedHome && (
-        <>
-          {homeError ? (
-            <RetryBlock message={homeError} onRetry={() => homeQuery.refetch()} />
-          ) : homeLoading ? (
-            <>
-              <View style={styles.rails}>
-                {/* Falls back to a generic pair when `lists` hasn't resolved any home
-                    sections at all (shouldn't normally happen — `composedHome` implies
-                    at least one — but avoids a blank flash if it ever does). */}
-                {railListsPreview.length > 0 || gridListsPreview.length > 0 ? (
-                  railListsPreview.map((l) => <RailSkeleton key={l.id} viewportWidth={railViewport} title={l.name} />)
-                ) : (
-                  <>
-                    <RailSkeleton viewportWidth={railViewport} />
-                    <RailSkeleton viewportWidth={railViewport} />
-                  </>
-                )}
-              </View>
-              {nonTerminalGridListsPreview.map((l) => (
-                // Mirrors HomeGridBlock's own row layout (`styles.row` + `styles.gridRow`) rather than
-                // reusing `GridSkeleton` here — that component's `skelFooter` wrapper carries its own
-                // bleed margin for its usual job as a *sibling* of this bled header (the main list's
-                // ListFooterComponent, see below); nesting it inside the header would double it up.
-                <View key={l.id} style={styles.homeGridBlock}>
-                  <SectionHead title={l.name} />
-                  <View style={styles.homeGridRows}>
-                    {Array.from({ length: 2 }).map((_, r) => (
-                      <View key={r} style={[styles.row, styles.gridRow]}>
-                        {Array.from({ length: numColumns }).map((_, c) => (
-                          <SkeletonCard key={c} />
-                        ))}
-                      </View>
-                    ))}
-                  </View>
-                </View>
-              ))}
-            </>
-          ) : (
-            // The whole home (this block included) is dissolved as one by the bridge-switch crossfade
-            // on the list wrapper — see `homeXfade` — so the rails need no opacity treatment of their
-            // own here; they only ever placeholder-swap on a bridge change, which the crossfade owns.
-            <View>
-              <View style={styles.rails}>
-                {sections.map((s) => (
-                  <Rail
-                    key={s.id}
-                    section={s}
-                    viewportWidth={railViewport}
-                    onSeeAll={(sec) => setSeeAll({ listId: sec.id, title: sec.title })}
-                    bridge={currentBridge?.name ?? undefined}
-                    bridgeId={bridgeId}
-                    direct={directBridge}
-                  />
-                ))}
-              </View>
-              {nonTerminalGridSections.map((gs) => (
-                <HomeGridBlock
-                  key={gs.id}
-                  bridgeId={bridgeId}
-                  section={gs}
-                  bridge={currentBridge?.name ?? undefined}
-                  direct={directBridge}
-                  numColumns={numColumns}
-                />
-              ))}
-            </View>
-          )}
-          {terminalGridSection ? (
-            <View style={styles.browseAllHead}>
-              <SectionHead title={terminalGridSection.title} />
-            </View>
-          ) : (
-            homeLoading &&
-            terminalGridPreview && (
-              <View style={styles.browseAllHead}>
-                <SectionHead title={terminalGridPreview.name} />
-              </View>
-            )
-          )}
-        </>
-      )}
       {gridError && <RetryBlock message={gridError} onRetry={() => resultsQuery.refetch()} />}
     </View>
   );
+
+  // The composed Home flattened into a typed row list for ContentFeed's virtualization. Same rail/grid
+  // partition (and loading-skeleton shape) the old listHeader rendered inline, just as data. Only built
+  // for the composed-Home surface; homeError shows a retry in the header instead (rows empty).
+  const homeRows = useMemo(
+    () =>
+      inResults || homeError
+        ? []
+        : buildHomeRows({
+            loading: homeLoading,
+            numColumns,
+            sections,
+            nonTerminalGridSections,
+            terminalGridSection,
+            gridItems,
+            railListsPreview,
+            nonTerminalGridListsPreview,
+            terminalGridPreview,
+          }),
+    [
+      inResults,
+      homeError,
+      homeLoading,
+      numColumns,
+      sections,
+      nonTerminalGridSections,
+      terminalGridSection,
+      gridItems,
+      railListsPreview,
+      nonTerminalGridListsPreview,
+      terminalGridPreview,
+    ],
+  );
+  const homeHeader = homeError ? <RetryBlock message={homeError} onRetry={() => homeQuery.refetch()} /> : null;
 
   if (bridgesError && bridges.length === 0) {
     return (
@@ -721,133 +678,67 @@ export default function BrowseScreen() {
       // than needing LegendList to forward them from wherever the touch actually started) works
       // regardless of what's under the finger. Empty on iOS, which sources its pull from the bounce.
       {...pull.touchHandlers}>
-      {/* The grid's frame spans the full screen, from behind the topBar — its `paddingTop` reserves
-          the bar's resting height so content starts below it; as the bar slides away (see
-          `headerOffsetY` above) the content already sitting there is revealed, rather than the list
-          needing to relayout. Every list-level concern (recycling, the web scroll bridge, the
-          fling-jitter guard, cells) lives in SeriesGrid — see that file. */}
-      <SeriesGrid
-        items={gridItems}
-        scopeKey={gridScope}
-        listRef={listRef}
-        header={listHeader}
-        // No footer skeleton for infinite-scroll pagination (`loadingMore`) — it was unreliable on
-        // web (LegendList's web recycling/remeasure timing made it flicker or vanish before the next
-        // page landed) and, per feedback, more trouble than it was worth. Only the initial /
-        // scope-switch loading state still shows one.
-        footer={
-          (gridLoading || (homeLoading && composedHome && terminalGridPreview)) && gridItems.length === 0 ? (
-            <GridSkeleton numColumns={numColumns} rows={2} />
-          ) : null
-        }
-        paddingTop={headerHeight + BarContentGap}
-        paddingBottom={BottomTabInset + insets.bottom + Spacing.five}
-        bridge={currentBridge?.name ?? undefined}
-        bridgeId={bridgeId}
-        direct={directBridge}
-        originPage={page}
-        crossfading={switching}
-        sharedValues={sharedValues}
-        onScroll={onListScroll}
-        // `loadMore` self-guards to the terminal-home and results/favorites modes (and no-ops in pure
-        // composed-home), so it's wired unconditionally — a conditional here otherwise killed
-        // infinite scroll for page-flagged home lists and the favorites page.
-        onEndReached={loadMore}
-        onScrollEndDrag={pull.onScrollEndDrag}
-        // The pull-to-refresh content shift and the refinement dim both ride the list wrapper.
-        wrapperStyle={[pull.listStyle, listDimStyle]}
-      />
+      {/* The list frame spans the full screen, from behind the topBar — its `paddingTop` reserves the
+          bar's resting height so content starts below it; as the bar slides away the content already
+          sitting there is revealed. Composed Home renders through ContentFeed (rails + terminal grid all
+          virtualized rows); every OTHER surface (results / favorites / page-flagged list) is a flat
+          uniform grid and stays on SeriesGrid, unchanged. The two only swap on a page/See-all
+          navigation — a page/bridge swap is hidden by the opacity-0 crossfade; a See-all/exit is the
+          lighter within-surface transition (a brief remount + skeleton, acceptable for a drill-down).
+          `!inResults` ⟺ composed Home with no See-all, so it's the ContentFeed gate. */}
+      {!inResults ? (
+        <ContentFeed
+          rows={homeRows}
+          scopeKey={gridScope}
+          listRef={listRef}
+          header={homeHeader}
+          // Terminal-grid first-load skeleton (footer). During homeLoading the terminal rows aren't
+          // built yet; this fills that gap the way GridSkeleton did for the old shared list.
+          terminalLoading={homeLoading && !!terminalGridPreview}
+          paddingTop={headerHeight + BarContentGap}
+          paddingBottom={BottomTabInset + insets.bottom + Spacing.five}
+          bridge={currentBridge?.name ?? undefined}
+          bridgeId={bridgeId}
+          direct={directBridge}
+          originPage={page}
+          crossfading={switching}
+          onSeeAll={(target) => setSeeAll(target)}
+          sharedValues={sharedValues}
+          onScroll={onListScroll}
+          // Drives terminalQuery.fetchNextPage — `loadMore` self-guards to the terminal-home mode.
+          onEndReached={loadMore}
+          onScrollEndDrag={pull.onScrollEndDrag}
+          // The pull-to-refresh content shift and the refinement dim both ride the list wrapper.
+          wrapperStyle={[pull.listStyle, listDimStyle]}
+        />
+      ) : (
+        <SeriesGrid
+          items={gridItems}
+          scopeKey={gridScope}
+          listRef={listRef}
+          header={resultsHeader}
+          // No footer skeleton for infinite-scroll pagination (`loadingMore`) — unreliable on web. Only
+          // the initial / scope-switch loading state still shows one.
+          footer={gridLoading && gridItems.length === 0 ? <GridSkeleton numColumns={numColumns} rows={2} /> : null}
+          paddingTop={headerHeight + BarContentGap}
+          paddingBottom={BottomTabInset + insets.bottom + Spacing.five}
+          bridge={currentBridge?.name ?? undefined}
+          bridgeId={bridgeId}
+          direct={directBridge}
+          originPage={page}
+          crossfading={switching}
+          sharedValues={sharedValues}
+          onScroll={onListScroll}
+          // `loadMore` self-guards to results/favorites modes, so it's wired unconditionally.
+          onEndReached={loadMore}
+          onScrollEndDrag={pull.onScrollEndDrag}
+          // The pull-to-refresh content shift and the refinement dim both ride the list wrapper.
+          wrapperStyle={[pull.listStyle, listDimStyle]}
+        />
+      )}
       {topBar}
       <PullIndicator {...pull.indicator} top={headerHeight} />
     </ThemedView>
-  );
-}
-
-/**
- * A non-terminal home grid section: its own heading, grid, and "Load more"
- * button — independent pagination from the main FlatList's infinite scroll,
- * matching the reference's `attachLoadMore` for every grid list but the last.
- */
-function HomeGridBlock({
-  bridgeId,
-  section,
-  bridge,
-  direct,
-  numColumns,
-}: {
-  bridgeId?: string;
-  section: HomeGridSection;
-  bridge?: string;
-  direct: boolean;
-  /** Same column count as the main grid, so cards read at one consistent size. */
-  numColumns: number;
-}) {
-  const { cardWidth } = useGridLayout();
-  const ds = useDataSource();
-  const mock = useMockActive();
-  const queryClient = useQueryClient();
-  // Same infinite-query pipeline as the main grid (`homeGrid` scope keyed on this section's list
-  // id). Page 1 is seeded from the section itself via `initialData`, so no extra request fires on
-  // Home; "Load more" pulls pages 2+.
-  const query = useInfiniteQuery({
-    queryKey: queryKeys.browseGrid(mock, bridgeId ?? '', { kind: 'homeGrid', listId: section.id }),
-    queryFn: ({ pageParam, signal }) =>
-      fetchBrowseScope(ds, bridgeId ?? '', { kind: 'homeGrid', listId: section.id }, pageParam, signal),
-    enabled: !!bridgeId,
-    initialPageParam: 1,
-    getNextPageParam: (last: GridPage, _all: GridPage[], lastParam: number) =>
-      last.hasNextPage ? lastParam + 1 : undefined,
-    initialData: { pages: [{ items: section.items, hasNextPage: section.hasNextPage }], pageParams: [1] },
-  });
-  // When the underlying section changes (a Home refetch / pull-to-refresh brought fresh page-1
-  // content), reset this block's cache to that fresh page 1 — matching the old reset-on-prop-change,
-  // discarding any expanded "Load more" pages so the block never shows stale content after a refresh.
-  useEffect(() => {
-    queryClient.setQueryData(queryKeys.browseGrid(mock, bridgeId ?? '', { kind: 'homeGrid', listId: section.id }), {
-      pages: [{ items: section.items, hasNextPage: section.hasNextPage }],
-      pageParams: [1],
-    });
-  }, [section, mock, bridgeId, queryClient]);
-
-  const flat = useDedupedPages(query.data);
-  const items = query.data ? flat : section.items;
-  const hasNextPage = !!query.hasNextPage;
-  const loading = query.isFetchingNextPage;
-  const loadMore = () => {
-    if (!query.hasNextPage || query.isFetchingNextPage || !bridgeId) return;
-    void query.fetchNextPage();
-  };
-
-  // Chunk into fixed-column rows, matching the main grid's own `numColumns` + `cardWidth` cell
-  // layout exactly (same `row`/`cell` styles) so cards read at the same size everywhere, not a
-  // separately-sized wrap grid.
-  const rows: SeriesEntry[][] = [];
-  for (let i = 0; i < items.length; i += numColumns) rows.push(items.slice(i, i + numColumns));
-
-  return (
-    <View style={styles.homeGridBlock}>
-      <SectionHead title={section.title} />
-      <View style={styles.homeGridRows}>
-        {rows.map((row, r) => (
-          <View key={r} style={[styles.row, styles.gridRow]}>
-            {row.map((item) => (
-              // Pinned to `cardWidth`, like SeriesGrid's cells. A short last row just ends — this
-              // block used to append invisible spacer views to stop a `flex: 1` cell stretching.
-              <View key={item.id} style={[styles.cell, { width: cardWidth }]}>
-                <SeriesCard entry={item} bridge={bridge} bridgeId={bridgeId} direct={direct} />
-              </View>
-            ))}
-          </View>
-        ))}
-      </View>
-      {hasNextPage && (
-        <Pressable onPress={loadMore} disabled={loading} style={styles.loadMoreButton}>
-          <ThemedView type="backgroundElement" style={styles.loadMoreInner}>
-            <ThemedText type="smallBold">{loading ? 'Loading…' : 'Load more'}</ThemedText>
-          </ThemedView>
-        </Pressable>
-      )}
-    </View>
   );
 }
 

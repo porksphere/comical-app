@@ -84,10 +84,53 @@ function gridCardWidth(viewport: number, gap: number): number {
   return Math.floor((containerWidth - (GRID_COLUMNS - 1) * gap) / GRID_COLUMNS);
 }
 
+// Approximate rendered height of a `SectionHead`: the subtitle line (30px wide / 25px compact — see
+// `headTitleWide`/`headTitleCompact`) rounded up to cover the "See all" pill's own box. A rail's
+// `styles.section` puts a `Spacing.two` gap between the head and the strip/grid below it.
+export const SECTION_HEAD_HEIGHT = 32;
+
+/**
+ * Reserved vertical height of a whole `Rail` row (heading + strip/grid), used by `ContentFeed`'s
+ * `getEstimatedItemSize` so the vertical list can place an unmounted rail without measuring it. Shares
+ * the exact same card-width + `estimatedCardHeight` math the `Rail` itself lays out with, so the two
+ * can't drift (the same discipline `series-grid.tsx`'s `cellHeight` follows). An estimate — rails are
+ * few and each reserves its own `minHeight` internally, so small drift only nudges the scroll anchor.
+ */
+export function railStripHeight(kind: RailSection['kind'], viewportWidth: number, wide: boolean): number {
+  const stripGap = stripGapFor(viewportWidth);
+  const cardWidth = wide ? gridCardWidth(viewportWidth, stripGap) : cardWidthFor(kind, viewportWidth);
+  if (wide) {
+    // Static GRID_ROWS×GRID_COLUMNS grid: rows of `estimatedCardHeight` cards + inter-row gaps + the
+    // grid wrapper's own `Spacing.one` vertical padding (styles.grid).
+    const cardH = estimatedCardHeight(cardWidth);
+    return Spacing.one * 2 + GRID_ROWS * cardH + (GRID_ROWS - 1) * stripGap;
+  }
+  // Horizontal strip: one row of cards at the reserved strip height (mirrors `stripMinHeight` below).
+  return estimatedCardHeight(cardWidth) + STRIP_PAD_V * 2;
+}
+
+/** Whole rail row INCLUDING its own heading — for callers where the rail renders its own head (a
+ *  self-headed `RailSkeleton`, or series.tsx's related rail). ContentFeed's loaded rails are headless (a
+ *  shared `sectionHead` row precedes them), so it sizes those with `railStripHeight` instead. */
+export function railRowHeight(kind: RailSection['kind'], viewportWidth: number, wide: boolean): number {
+  return SECTION_HEAD_HEIGHT + Spacing.two + railStripHeight(kind, viewportWidth, wide);
+}
+
+// Per-rail resting card index, remembered for the session so a rail that unmounts and remounts —
+// which happens on a rail-heavy home once rails outnumber LegendList's per-type container pool and
+// begin recycling — comes back on the card it was left on instead of snapping to the start. An int
+// (the settled card index), NOT a float offset, because the strip snaps to whole-card boundaries
+// (`snapToInterval` below), so the index is the exact, compact source of truth. Keyed by bridge +
+// section so a same-named section on another bridge can't restore a stale position. In-memory only:
+// transient UI state, not worth persisting across launches.
+const railRestIndex = new Map<string, number>();
+const railRestKey = (bridgeId: string | undefined, sectionId: string) => `${bridgeId ?? ''}:${sectionId}`;
+
 export function Rail({
   section,
   viewportWidth,
   onSeeAll,
+  headless,
   bridge,
   bridgeId,
   direct,
@@ -96,6 +139,10 @@ export function Rail({
   /** Current viewport width, threaded from the screen. */
   viewportWidth: number;
   onSeeAll?: (section: RailSection) => void;
+  /** Suppress the rail's own `SectionHead` — ContentFeed renders it as a separate shared `sectionHead`
+   *  row above the strip, so the strip alone is the rail item. Default (undefined) keeps the head, so
+   *  standalone callers (series.tsx's related rail) are unchanged. */
+  headless?: boolean;
   /** Originating bridge name + whether it serves direct series — passed to each
    *  card so the series detail opens with the right header / page-grid view. */
   bridge?: string;
@@ -113,6 +160,10 @@ export function Rail({
   // card sat flush against its box's left edge, so the ring's left stroke was cut off.
   const stripHalfGap = stripGap / 2;
   const cardWidth = wide ? gridCardWidth(viewportWidth, stripGap) : cardWidthFor(section.kind, viewportWidth);
+  // One card's scroll "slot" (card width + inter-card gap). The strip snaps to multiples of this and
+  // the resting card index is derived from it, so it's the single value shared by getFixedItemSize,
+  // snapToInterval, and the rest-index persist/restore below — they can't disagree.
+  const itemSize = cardWidth + stripGap;
   const ranked = section.kind === 'ranked';
   // Reserve the strip's height up front (worst-case card: cover + a 3-line title + sub, plus the
   // stripItem's vertical padding) so a fresh horizontal LegendList — one that mounts cold on a
@@ -180,6 +231,10 @@ export function Rail({
     const endDrag = () => {
       down = false;
       node.style.cursor = 'grab';
+      // Remember the resting card index (see railRestIndex) so a recycle/remount restores it. Native
+      // does this from onMomentumScrollEnd; the web mouse-drag path has no momentum event, so persist
+      // here on release. (Native touch scrolling on web still fires onMomentumScrollEnd separately.)
+      if (dragged) railRestIndex.set(railRestKey(bridgeId, section.id), Math.max(0, Math.round(node.scrollLeft / itemSize)));
     };
     const onClickCapture = (e: MouseEvent) => {
       if (dragged) {
@@ -207,16 +262,16 @@ export function Rail({
       node.removeEventListener('dragstart', onDragStart);
       node.removeEventListener('click', onClickCapture, true);
     };
-  }, [wide]);
+  }, [wide, itemSize, bridgeId, section.id]);
 
-  // iOS-only mount-time reset: a LegendList horizontal strip can render already
-  // scrolled away from its start on iOS (an upstream recycling/positioning
-  // regression — legendapp/list#458, iOS-only, Android/web unaffected). This is a
-  // no-op once already at offset 0, so it costs nothing when the bug doesn't
-  // reproduce; it's just cheap insurance against a rail opening mid-list.
+  // Restore the rail's last resting card index on (re)mount — see `railRestIndex`. On a rail-heavy
+  // home this is what brings a recycled rail back to where the user left it. Defaulting to 0 also
+  // subsumes the old iOS-only workaround for a horizontal LegendList mounting already scrolled away
+  // (legendapp/list#458): scrolling to offset 0 is a harmless no-op on web/Android and the fix on iOS.
   useEffect(() => {
-    if (Platform.OS !== 'ios' || wide) return;
-    listRef.current?.scrollToOffset({ offset: 0, animated: false });
+    if (wide) return;
+    const idx = railRestIndex.get(railRestKey(bridgeId, section.id)) ?? 0;
+    listRef.current?.scrollToOffset({ offset: idx * itemSize, animated: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -254,7 +309,7 @@ export function Rail({
 
   return (
     <View style={[styles.section, peekIndex != null && styles.sectionPeeking]}>
-      <SectionHead title={section.title} onSeeAll={onSeeAll ? () => onSeeAll(section) : undefined} />
+      {!headless && <SectionHead title={section.title} onSeeAll={onSeeAll ? () => onSeeAll(section) : undefined} />}
       {wide ? (
         <View style={[styles.grid, { paddingHorizontal: STRIP_PAD, gap: stripGap }]}>
           {gridRows.map((row, r) => (
@@ -301,7 +356,7 @@ export function Rail({
           // Recycle-safe now (SeriesCard resets its per-item state on entry change), so reuse card
           // instances as the strip scrolls instead of remounting each heavy card.
           recycleItems
-          estimatedItemSize={cardWidth + stripGap}
+          estimatedItemSize={itemSize}
           // Every card's box is a KNOWN fixed width (card pinned to `cardWidth`, plus the stripItem's
           // symmetric stripHalfGap padding = stripGap), so declare it as fixed rather than merely
           // estimated. With only `estimatedItemSize`, LegendList still measures each card on cold mount
@@ -312,7 +367,7 @@ export function Rail({
           // entirely (react-native.mjs getKnownOrFixedSize / onItemLayout early-return / no averageSizes
           // for fixed items) — so the strip lays out at its final spacing on frame one. The value is the
           // same cardWidth+stripGap the peek geometry already assumes, so the two can't disagree.
-          getFixedItemSize={() => cardWidth + stripGap}
+          getFixedItemSize={() => itemSize}
           // Give LegendList the strip's size on the very first render. Without it, its
           // `initialScrollLength` defaults to 0 (`react-native.web.js`: estimatedListSize ?? {width:0}),
           // so a cold-mounting rail lays every card out as if the container were zero-width — all
@@ -322,6 +377,15 @@ export function Rail({
           // frame one. Width is the viewport the strip spans; height reuses the reserved strip height.
           estimatedListSize={{ width: viewportWidth, height: stripMinHeight }}
           showsHorizontalScrollIndicator={false}
+          // Settle on whole-card boundaries after a swipe: a long fling keeps its momentum and comes to
+          // rest on the nearest card near where it naturally stops (not a hard snap-back). `normal`
+          // deceleration keeps it gentle; leaving `disableIntervalMomentum` at its default (false) is
+          // what lets a fast swipe travel several cards before settling. The resting offset is always a
+          // multiple of `itemSize`, so the persisted rest index (onMomentumScrollEnd) is exact. Native
+          // honors these directly; react-native-web maps snapToInterval to CSS scroll-snap (best-effort).
+          snapToInterval={itemSize}
+          snapToAlignment="start"
+          decelerationRate="normal"
           // WEB ONLY (same rationale + native carve-out as Browse's main grid): without a
           // renderScrollComponent, @legendapp/list/reanimated's scroll bridge renders
           // Animated.ScrollView at whatever scrollEventThrottle LegendList's internals hardcode
@@ -346,6 +410,11 @@ export function Rail({
           onLayout={(e) => setStripTop(e.nativeEvent.layout.y)}
           onScrollBeginDrag={hidePeekForDrag}
           onMomentumScrollBegin={hidePeekForDrag}
+          // Persist the settled card index once the fling/snap comes to rest (see railRestIndex), so a
+          // recycle/remount on a rail-heavy home restores it. Offset is a multiple of itemSize here.
+          onMomentumScrollEnd={(e) =>
+            railRestIndex.set(railRestKey(bridgeId, section.id), Math.max(0, Math.round(e.nativeEvent.contentOffset.x / itemSize)))
+          }
           // Feeds scrollX on the UI thread; the lifted peek slides from it via transform (see
           // peekStyle), keeping the popover glued to its card with no JS round-trip.
           sharedValues={{ scrollOffset: scrollX }}
