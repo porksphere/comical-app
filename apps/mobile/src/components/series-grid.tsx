@@ -154,7 +154,13 @@ export function SeriesGrid({
         // Belt-and-suspenders: don't retro-correct the offset from size measurements (there shouldn't
         // be any now that rows are fixed) — a visible bounce/jitter while flinging otherwise.
         maintainVisibleContentPosition={{ data: false, size: false }}
-        keyExtractor={(item) => String(item.id)}
+        // A series is identified by its BRIDGE plus its id, never its id alone — the same identity
+        // history.tsx and activity.tsx key by. It matters here because the Library is a cross-bridge
+        // grid (see `SeriesGridItem`): two bridges can hand out the same `seriesId` for unrelated
+        // series, and keying on `id` alone hands LegendList duplicate keys the moment both are in the
+        // library. Browse/Search are single-bridge and leave `bridgeId` unset, so their keys are
+        // unchanged.
+        keyExtractor={(item) => (item.bridgeId ? `${item.bridgeId}:${item.id}` : String(item.id))}
         numColumns={numColumns}
         // Recycle card instances rather than remounting per reuse — SeriesCard is recycle-safe (it
         // resets its per-item state synchronously on entry change), so scrolling reuses cards instead
