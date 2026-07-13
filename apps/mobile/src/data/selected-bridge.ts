@@ -2,10 +2,14 @@
  * The Browse-selected bridge — shared between the Browse tab and the pushed
  * Search screen so search inherits whichever bridge Browse is currently on.
  *
- * Only the selected bridge *name* is app state; everything else here is derived
+ * Only the selected bridge *id* is app state; everything else here is derived
  * from the react-query bridges cache (`queryKeys.bridges()`), so this stays a
- * thin Legend State observable over the name and re-derives the resolved bridge
+ * thin Legend State observable over the id and re-derives the resolved bridge
  * per screen — never a mirror of the server list (see AGENTS.md → State).
+ *
+ * Keyed by **id, not display name**: bridge ids are globally unique (publisher-scoped, e.g.
+ * `scope.name`), so two registries offering a same-named bridge stay distinct selections. The
+ * dropdown maps id → name for display (`bridgeLabels`); nothing user-facing shows the raw id.
  *
  * In-memory (`observable`, not `persisted$`): matches Browse's previous
  * `useState<string | null>(null)` default — the selection resets on relaunch and
@@ -26,8 +30,9 @@ import { friendlyError } from '@/lib/friendly-error';
 export const selectedBridge$ = observable<string | null>(null);
 
 /** Stable module-level setter — writing the shared observable never needs a closure over render
- *  state, so consumers (e.g. the Browse crossfade's deferred commit) get a fixed reference. */
-export const setSelectedBridge = (name: string) => selectedBridge$.set(name);
+ *  state, so consumers (e.g. the Browse crossfade's deferred commit) get a fixed reference.
+ *  Takes a bridge **id** (see the module header). */
+export const setSelectedBridge = (id: string) => selectedBridge$.set(id);
 
 /**
  * The reactive selected-bridge name.
@@ -40,21 +45,24 @@ export const setSelectedBridge = (name: string) => selectedBridge$.set(name);
  * it here — with nothing after it — keeps the caller's hook accounting correct, the same safe shape
  * `useHideNsfw` already uses.
  */
-function useSelectedBridgeName(): string | null {
+function useSelectedBridgeId(): string | null {
   return use$(selectedBridge$);
 }
 
 export type SelectedBridge = {
-  /** The raw selected bridge name, or null before the user has picked one. */
+  /** The raw selected bridge id, or null before the user has picked one. */
   bridge: string | null;
-  setBridge: (name: string) => void;
+  setBridge: (id: string) => void;
   bridges: Bridge[];
   visibleBridges: Bridge[];
   /** The resolved bridge for the current selection (falls back to the first
    *  visible bridge when the selection isn't among the visible ones). */
   currentBridge: Bridge | undefined;
   bridgeId: string | undefined;
+  /** Thumbnail URLs keyed by bridge **id** (the dropdown's option values are ids). */
   bridgeThumbnails: Record<string, string>;
+  /** Display names keyed by bridge **id** — maps the dropdown's id option values back to labels. */
+  bridgeLabels: Record<string, string>;
   directBridge: boolean;
   bridgesError: string | null;
   bridgesLoaded: boolean;
@@ -70,7 +78,7 @@ export type SelectedBridge = {
 export function useSelectedBridge(): SelectedBridge {
   const ds = useDataSource();
   const hideNsfw = useHideNsfw();
-  const bridge = useSelectedBridgeName();
+  const bridge = useSelectedBridgeId();
 
   const bridgesQuery = useQuery({
     queryKey: queryKeys.bridges(),
@@ -92,11 +100,16 @@ export function useSelectedBridge(): SelectedBridge {
   // Falls back to the first visible bridge whenever the sticky selection isn't among the
   // currently-visible ones (initial load, or hidden by Hide NSFW) — derived at render instead of
   // synced via an effect, so toggling Hide NSFW back off restores the original selection.
-  const currentBridge = visibleBridges.find((b) => b.name === bridge) ?? visibleBridges[0];
+  const currentBridge = visibleBridges.find((b) => b.id === bridge) ?? visibleBridges[0];
   const bridgeId = currentBridge?.id;
   const bridgeThumbnails = useMemo(() => {
     const map: Record<string, string> = {};
-    for (const b of visibleBridges) if (b.thumbnail) map[b.name] = b.thumbnail;
+    for (const b of visibleBridges) if (b.thumbnail) map[b.id] = b.thumbnail;
+    return map;
+  }, [visibleBridges]);
+  const bridgeLabels = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const b of visibleBridges) map[b.id] = b.name;
     return map;
   }, [visibleBridges]);
   const directBridge = currentBridge?.capabilities.includes('direct') ?? false;
@@ -111,6 +124,7 @@ export function useSelectedBridge(): SelectedBridge {
     currentBridge,
     bridgeId,
     bridgeThumbnails,
+    bridgeLabels,
     directBridge,
     bridgesError,
     bridgesLoaded,

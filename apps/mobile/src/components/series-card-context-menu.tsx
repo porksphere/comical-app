@@ -826,14 +826,14 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // so there's no remount to consume it on).
   const onTagPress = useCallback(
     (group: TagGroup, index: number) => {
-      const intent = tagSearchIntent(group, index, { bridgeName: bridge ?? '' });
+      const intent = tagSearchIntent(group, index, { bridgeId: bridgeId ?? '' });
       if (!intent) return;
       setSearchIntent(intent);
       req.onClose?.();
       closeSeriesCardMenu();
       if (pathname !== '/search') router.push('/search');
     },
-    [bridge, req, router, pathname],
+    [bridgeId, req, router, pathname],
   );
 
   // Tapping a page thumbnail opens the reader there. Close instantly (un-hide the card + drop the

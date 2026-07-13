@@ -26,14 +26,21 @@ type SelectorProps = {
   value: string;
   options: string[];
   onChange: (value: string) => void;
-  /** Optional thumbnail URLs keyed by option label, shown in the dropdown. */
+  /** Optional thumbnail URLs keyed by option value, shown in the dropdown. */
   thumbnails?: Record<string, string>;
+  /**
+   * Optional display text keyed by option value. When an option's `value` is an opaque, unique key
+   * (e.g. a bridge `id`) rather than something human-readable, this maps it to the label shown in the
+   * trigger + menu — letting two options that share a display name still be distinct values. Falls
+   * back to the value itself when absent.
+   */
+  labels?: Record<string, string>;
   /** Visual size of the trigger text. */
   size?: 'title' | 'subtitle' | 'small';
 };
 
 /** Tappable label that opens a single-select bottom-sheet menu (via the overlay system). */
-export function Selector({ title, value, options, onChange, thumbnails, size = 'title' }: SelectorProps) {
+export function Selector({ title, value, options, onChange, thumbnails, labels, size = 'title' }: SelectorProps) {
   const { ref, openAt } = useAnchoredOverlay();
   const compact = useIsCompact();
   const theme = useTheme();
@@ -45,7 +52,7 @@ export function Selector({ title, value, options, onChange, thumbnails, size = '
       style={[styles.trigger, hovered && { backgroundColor: theme.backgroundSelected }]}
       onPress={() =>
         openAt(() => (
-          <SelectMenu title={title} options={options} selected={value} onSelect={onChange} thumbnails={thumbnails} />
+          <SelectMenu title={title} options={options} selected={value} onSelect={onChange} thumbnails={thumbnails} labels={labels} />
         ))
       }>
       <ThemedText
@@ -55,7 +62,7 @@ export function Selector({ title, value, options, onChange, thumbnails, size = '
           styles.triggerLabel,
           size === 'subtitle' ? (compact ? styles.subtitleCompact : styles.subtitleWide) : null,
         ]}>
-        {value}
+        {labels?.[value] ?? value}
       </ThemedText>
       <ThemedText themeColor="textSecondary" style={size === 'title' ? styles.caretLg : styles.caretSm}>
         ▾
@@ -70,12 +77,14 @@ function SelectMenu({
   selected,
   onSelect,
   thumbnails,
+  labels,
 }: {
   title: string;
   options: string[];
   selected: string;
   onSelect: (value: string) => void;
   thumbnails?: Record<string, string>;
+  labels?: Record<string, string>;
 }) {
   const { closeTop } = useOverlay();
   const presentation = useOverlayPresentation();
@@ -94,7 +103,7 @@ function SelectMenu({
         {options.map((opt) => (
           <SelectRow
             key={opt}
-            label={opt}
+            label={labels?.[opt] ?? opt}
             selected={opt === selected}
             thumbnail={thumbnails ? (thumbnails[opt] ?? null) : undefined}
             onPress={() => {

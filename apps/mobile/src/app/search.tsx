@@ -75,7 +75,7 @@ export default function SearchScreen() {
 
   // Point Search at the intent's bridge (may differ from the Browse-selected one) on mount.
   useEffect(() => {
-    if (initialIntent) setBridge(initialIntent.bridgeName);
+    if (initialIntent) setBridge(initialIntent.bridgeId);
     // Once, on mount — `setBridge`/`initialIntent` are stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -137,7 +137,7 @@ export default function SearchScreen() {
         if (!focusedRef.current) return;
         const intent = takeSearchIntent();
         if (!intent) return;
-        setBridge(intent.bridgeName);
+        setBridge(intent.bridgeId);
         setFilterValues({});
         setSortValue(null);
         setQuery(intent.kind === 'query' ? intent.query : '');
