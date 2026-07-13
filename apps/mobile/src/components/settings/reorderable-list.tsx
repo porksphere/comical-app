@@ -1,26 +1,42 @@
 import { type ReactNode, useEffect } from 'react';
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { runOnJS, type SharedValue, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import Animated, {
+  type AnimatedRef,
+  measure,
+  runOnJS,
+  scrollTo,
+  type SharedValue,
+  useAnimatedRef,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useFrameCallback,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 
 import { ArrowDownIcon, ArrowUpIcon, GripIcon } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight } from '@/lib/haptics';
 
 /**
- * A reorderable list, following the app's platform-split gesture ethos (see `SwipeableSettingsRow`):
- * long-press-drag on iOS/Android, up/down buttons on web (mouse-drag isn't worth it). It renders a
- * simplified fixed-height row per item and emits the full new key order on every committed move; the
- * caller persists that (e.g. `setBridgeOrder`) and re-sorts its data, which flows back in as `data`.
+ * A self-contained reorderable scroll surface, following the app's platform-split gesture ethos (see
+ * `SwipeableSettingsRow`): long-press-drag on iOS/Android, up/down buttons on web (mouse-drag isn't
+ * worth it). It owns its own scroll view — necessary so the native path can autoscroll while a drag
+ * nears an edge — so a page renders it *instead of* its normal scroll while editing, not inside it.
  *
- * No autoscroll yet — the drag math assumes the list fits the viewport, which the bridge/tracker
- * lists do in practice. A long list would want an autoscroll pass added to the native path.
+ * Fixed-height rows keep the drag math a simple `round(y / ROW_HEIGHT)`. Emits the full new key
+ * order on every committed move; the caller persists it (e.g. `setBridgeOrder`) and re-sorts its
+ * data, which flows back in as `data`.
  */
 const ROW_HEIGHT = 52;
 const SPRING = { damping: 20, stiffness: 220, mass: 0.6 } as const;
+const EDGE = 72; // px from a viewport edge where autoscroll kicks in
+const MAX_STEP = 12; // max px/frame autoscroll speed
 const IS_WEB = Platform.OS === 'web';
 
 type ReorderableListProps<T> = {
@@ -39,6 +55,7 @@ export function ReorderableList<T>(props: ReorderableListProps<T>) {
 // ── Web: up / down move buttons ──────────────────────────────────────────────
 function UpDownList<T>({ data, keyOf, label, leading, onReorder }: ReorderableListProps<T>) {
   const theme = useTheme();
+  const contentPadding = useSettingsScrollPadding();
   const move = (from: number, to: number) => {
     if (to < 0 || to >= data.length) return;
     const keys = data.map(keyOf);
@@ -47,7 +64,7 @@ function UpDownList<T>({ data, keyOf, label, leading, onReorder }: ReorderableLi
     onReorder(keys);
   };
   return (
-    <View>
+    <ScrollView contentContainerStyle={contentPadding} style={styles.host}>
       {data.map((item, i) => (
         <ThemedView key={keyOf(item)} type="backgroundElement" style={styles.row}>
           {leading?.(item)}
@@ -72,18 +89,47 @@ function UpDownList<T>({ data, keyOf, label, leading, onReorder }: ReorderableLi
           </Pressable>
         </ThemedView>
       ))}
-    </View>
+    </ScrollView>
   );
 }
 
-// ── Native: long-press drag ──────────────────────────────────────────────────
+/** Move `key` to slot `target`, pushing whatever's there into `key`'s old slot. UI-thread worklet. */
+function moveTo(positions: SharedValue<Record<string, number>>, key: string, target: number, count: number): void {
+  'worklet';
+  const cur = positions.value[key] ?? 0;
+  const t = Math.min(count - 1, Math.max(0, target));
+  if (t === cur) return;
+  const next = { ...positions.value };
+  for (const k in next) {
+    if (next[k] === t) next[k] = cur;
+  }
+  next[key] = t;
+  positions.value = next;
+}
+
+// ── Native: long-press drag with edge autoscroll ─────────────────────────────
 function DragList<T>({ data, keyOf, label, leading, onReorder }: ReorderableListProps<T>) {
+  const contentPadding = useSettingsScrollPadding();
   const keys = data.map(keyOf);
+  const count = keys.length;
+
+  const scrollRef = useAnimatedRef<Animated.ScrollView>();
+  const scrollY = useSharedValue(0);
   const positions = useSharedValue<Record<string, number>>(Object.fromEntries(keys.map((k, i) => [k, i])));
   const draggingKey = useSharedValue<string | null>(null);
-  const dragY = useSharedValue(0);
+  const activeTop = useSharedValue(0); // content-Y of the dragged row's top
+  const grabOffset = useSharedValue(0); // finger offset within the grabbed row
+  const fingerVY = useSharedValue(0); // finger position within the viewport (for autoscroll edges)
+  const svTop = useSharedValue(0); // scroll view's screen top (measured on grab)
+  const svHeight = useSharedValue(0);
 
-  // Re-sync slots when the set/order of items changes (install/uninstall, or a committed reorder that
+  const contentHeight = count * ROW_HEIGHT + (contentPadding.paddingTop + contentPadding.paddingBottom);
+
+  const onScroll = useAnimatedScrollHandler((e) => {
+    scrollY.value = e.contentOffset.y;
+  });
+
+  // Re-sync slots when the item set/order changes (install/uninstall, or a committed reorder that
   // re-sorted `data`). Right after our own commit this is a no-op — data order already equals slots.
   const signature = keys.join(',');
   useEffect(() => {
@@ -91,40 +137,82 @@ function DragList<T>({ data, keyOf, label, leading, onReorder }: ReorderableList
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signature]);
 
+  // Autoscroll: while dragging and the finger is within EDGE of a viewport edge, scroll that way and
+  // keep the dragged row + its target slot tracking the finger as the content moves beneath it.
+  useFrameCallback(() => {
+    const key = draggingKey.value;
+    if (key === null) return;
+    const fvy = fingerVY.value;
+    let delta = 0;
+    if (fvy < EDGE) delta = -MAX_STEP * Math.min(1, (EDGE - fvy) / EDGE);
+    else if (fvy > svHeight.value - EDGE) delta = MAX_STEP * Math.min(1, (fvy - (svHeight.value - EDGE)) / EDGE);
+    if (delta === 0) return;
+    const maxScroll = Math.max(0, contentHeight - svHeight.value);
+    const next = Math.min(maxScroll, Math.max(0, scrollY.value + delta));
+    if (next === scrollY.value) return;
+    scrollTo(scrollRef, 0, next, false);
+    scrollY.value = next;
+    activeTop.value = fvy + next - grabOffset.value;
+    moveTo(positions, key, Math.round(activeTop.value / ROW_HEIGHT), count);
+  });
+
   return (
-    <View style={{ height: keys.length * ROW_HEIGHT }}>
+    <Animated.ScrollView
+      ref={scrollRef}
+      onScroll={onScroll}
+      scrollEventThrottle={16}
+      contentContainerStyle={[{ height: contentHeight }, { paddingTop: contentPadding.paddingTop, paddingHorizontal: contentPadding.paddingHorizontal }]}
+      style={styles.host}>
       {data.map((item) => (
         <DragRow
           key={keyOf(item)}
           itemKey={keyOf(item)}
-          count={keys.length}
+          count={count}
+          scrollRef={scrollRef}
+          scrollY={scrollY}
           positions={positions}
           draggingKey={draggingKey}
-          dragY={dragY}
+          activeTop={activeTop}
+          grabOffset={grabOffset}
+          fingerVY={fingerVY}
+          svTop={svTop}
+          svHeight={svHeight}
           label={label(item)}
           leading={leading?.(item)}
           onCommit={onReorder}
         />
       ))}
-    </View>
+    </Animated.ScrollView>
   );
 }
 
 function DragRow({
   itemKey,
   count,
+  scrollRef,
+  scrollY,
   positions,
   draggingKey,
-  dragY,
+  activeTop,
+  grabOffset,
+  fingerVY,
+  svTop,
+  svHeight,
   label,
   leading,
   onCommit,
 }: {
   itemKey: string;
   count: number;
+  scrollRef: AnimatedRef<Animated.ScrollView>;
+  scrollY: SharedValue<number>;
   positions: SharedValue<Record<string, number>>;
   draggingKey: SharedValue<string | null>;
-  dragY: SharedValue<number>;
+  activeTop: SharedValue<number>;
+  grabOffset: SharedValue<number>;
+  fingerVY: SharedValue<number>;
+  svTop: SharedValue<number>;
+  svHeight: SharedValue<number>;
   label: string;
   leading?: ReactNode;
   onCommit: (orderedKeys: string[]) => void;
@@ -132,29 +220,29 @@ function DragRow({
   const theme = useTheme();
 
   const pan = Gesture.Pan()
-    // Long-press to lift, so a normal vertical drag still scrolls the page; drag anywhere on the row.
+    // Long-press to lift, so a plain vertical drag still scrolls the list; drag anywhere on the row.
     .activateAfterLongPress(180)
-    .onStart(() => {
+    .onStart((e) => {
+      const m = measure(scrollRef);
+      if (m) {
+        svTop.value = m.pageY;
+        svHeight.value = m.height;
+      }
+      const fvy = e.absoluteY - svTop.value;
+      fingerVY.value = fvy;
+      const fingerContentY = fvy + scrollY.value;
+      grabOffset.value = fingerContentY - (positions.value[itemKey] ?? 0) * ROW_HEIGHT;
+      activeTop.value = fingerContentY - grabOffset.value;
       draggingKey.value = itemKey;
-      dragY.value = 0;
       runOnJS(hapticImpactLight)();
     })
     .onUpdate((e) => {
-      dragY.value = e.translationY;
-      const cur = positions.value[itemKey] ?? 0;
-      const target = Math.min(count - 1, Math.max(0, Math.round((cur * ROW_HEIGHT + e.translationY) / ROW_HEIGHT)));
-      if (target !== cur) {
-        // The item currently occupying `target` takes our old slot; we take `target`.
-        const next = { ...positions.value };
-        for (const k in next) {
-          if (next[k] === target) next[k] = cur;
-        }
-        next[itemKey] = target;
-        positions.value = next;
-      }
+      const fvy = e.absoluteY - svTop.value;
+      fingerVY.value = fvy;
+      activeTop.value = fvy + scrollY.value - grabOffset.value;
+      moveTo(positions, itemKey, Math.round(activeTop.value / ROW_HEIGHT), count);
     })
     .onEnd(() => {
-      dragY.value = 0;
       draggingKey.value = null;
       const ordered = Object.keys(positions.value).sort((a, b) => positions.value[a] - positions.value[b]);
       runOnJS(onCommit)(ordered);
@@ -162,14 +250,14 @@ function DragRow({
 
   const style = useAnimatedStyle(() => {
     const active = draggingKey.value === itemKey;
-    const base = (positions.value[itemKey] ?? 0) * ROW_HEIGHT;
+    const slot = positions.value[itemKey] ?? 0;
     return {
       transform: [
-        { translateY: active ? base + dragY.value : withSpring(base, SPRING) },
-        { scale: withSpring(active ? 1.02 : 1, SPRING) },
+        { translateY: active ? activeTop.value : withSpring(slot * ROW_HEIGHT, SPRING) },
+        { scale: withSpring(active ? 1.03 : 1, SPRING) },
       ],
       zIndex: active ? 10 : 0,
-      shadowOpacity: withSpring(active ? 0.18 : 0),
+      shadowOpacity: withSpring(active ? 0.2 : 0),
     };
   });
 
@@ -191,6 +279,9 @@ function DragRow({
 }
 
 const styles = StyleSheet.create({
+  host: {
+    flex: 1,
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -198,7 +289,6 @@ const styles = StyleSheet.create({
     height: ROW_HEIGHT,
     paddingHorizontal: Spacing.three,
     borderRadius: Spacing.three,
-    // Native drag rows are absolutely stacked; a shadow needs a colour to render on iOS.
     shadowColor: '#000',
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
@@ -221,5 +311,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: ROW_HEIGHT,
+    // Absolute rows sit inside the scroll's padding box; offset them past the top inset by hand,
+    // since `top`/translateY here are content coordinates measured from the padding box origin.
+    paddingHorizontal: 0,
   },
 });
