@@ -180,6 +180,20 @@ const MIN_VISIBLE_ROWS = 4;
 // Blur strengths (0–100). The backdrop ramps in a bit after the cover pops.
 const BACKDROP_BLUR = 28;
 const MENU_BLUR = 55;
+// A blur alone is only half of a frosted surface, and on a light theme the missing half showed: what
+// this menu blurs is the DIMMED BACKDROP behind it, so it faithfully sampled a black scrim and came
+// back a murky grey — a dark menu in a light app.
+//
+// The other half is a translucent tint OF THE SURFACE laid over the blur (which is what a real iOS
+// material is). It re-establishes what the menu is made of — the panel colour — while the blur keeps
+// showing enough of the cover behind it to stay a material rather than a slab.
+//
+// The two schemes are NOT symmetrical, and can't be. Everything behind the menu is dimmed by the
+// scrim, so translucency always drags it toward black — which the dark menu is happy to be (it lets
+// the cover glow through, and that's the material doing its job), and the light menu can't afford at
+// all. So light is tinted almost solid: it's the panel's own colour with only a whisper of what's
+// behind, which is the same thing the panel next to it is doing. Anything lighter reads as grey.
+const MENU_FILL = { light: 'rgba(247,247,249,0.93)', dark: 'rgba(23,24,27,0.62)' } as const;
 const BACKDROP_TINT_OPACITY = 0.15;
 // Android's blur is the experimental Dimezis path; a no-op elsewhere.
 const ANDROID_BLUR = Platform.OS === 'android' ? ('dimezisBlurView' as const) : undefined;
@@ -1087,6 +1101,11 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       <GestureDetector gesture={menuHold}>
         <Animated.View style={[styles.menuWrap, { width: menuW }, menuStyle]}>
           <BlurView tint={menuTint} intensity={MENU_BLUR} experimentalBlurMethod={ANDROID_BLUR} style={[styles.menu, { borderColor: theme.backgroundSelected }]}>
+            {/* The surface tint (see MENU_FILL) — its own layer INSIDE the blur, not a `backgroundColor`
+                on the BlurView, which every platform is free to own: expo-blur's web build applies its
+                own tint background last and silently drops whatever you passed. A child can't be
+                overridden. */}
+            <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: MENU_FILL[menuTint] }]} />
             {/* The travelling selection bubble, under the rows so their labels stay on top of it. */}
             <Animated.View
               pointerEvents="none"
