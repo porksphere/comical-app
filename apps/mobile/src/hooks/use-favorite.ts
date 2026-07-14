@@ -54,10 +54,13 @@ export function useFavorite(
     onError: (_e, _next, ctx) => {
       if (ctx) queryClient.setQueryData(key, ctx.prev ?? false);
     },
-    // Refresh the Browse favorites list so a toggle here shows up there. Since the grid migration
-    // it's a `browseGrid` `favorites` scope — a plain `['favorites', …]` key would match nothing.
+    // Refresh both favorites surfaces so a toggle here shows up: the single-bridge favorites grid
+    // (`browseGrid` `favorites` scope) and the consolidated Comical Favorites rail (its own
+    // `bridgeFavoritesRail` key — separate on purpose; see queries.ts).
     onSettled: () => {
-      if (bridgeId) void queryClient.invalidateQueries({ queryKey: queryKeys.browseGrid(mock, bridgeId, { kind: 'favorites' }) });
+      if (!bridgeId) return;
+      void queryClient.invalidateQueries({ queryKey: queryKeys.browseGrid(mock, bridgeId, { kind: 'favorites' }) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.bridgeFavoritesRail(mock, bridgeId) });
     },
   });
 
