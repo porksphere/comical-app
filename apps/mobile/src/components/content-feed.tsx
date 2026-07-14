@@ -9,6 +9,7 @@ import { HomeGridBlock } from '@/components/home-grid-block';
 import { SkeletonCard } from '@/components/grid-skeleton';
 import { Rail, RailSkeleton, SECTION_HEAD_HEIGHT, SectionHead, railRowHeight, railStripHeight } from '@/components/rail';
 import { RecyclerList } from '@/components/recycler-list';
+import { RetryBlock } from '@/components/retry-block';
 import { estimatedCardHeight, SeriesCard } from '@/components/series-card';
 import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { contentRowType, type ContentRow, type SeeAllTarget } from '@/data/content-rows';
@@ -191,6 +192,10 @@ export function ContentFeed({
             );
           case 'railSkeleton':
             return <RailSkeleton viewportWidth={railViewport} title={item.title} />;
+          case 'railError':
+            // Shared error element (self-pads horizontally), shown in a failed rail's slot below its
+            // sectionHead — so one bridge erroring in the aggregate feed offers a retry, not a gap.
+            return <RetryBlock message={item.message} onRetry={item.onRetry} />;
           case 'gridBlock':
             return (
               <HomeGridBlock

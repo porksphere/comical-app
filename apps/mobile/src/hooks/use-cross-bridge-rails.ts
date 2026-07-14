@@ -67,7 +67,16 @@ export function useCrossBridgeRails(
         section = items.length ? { id: b.id, title: b.name, kind: 'regular', items } : null;
         drill = { query };
       }
-      return { bridgeId: b.id, bridgeName: b.name, direct, loading: r.isLoading, section, drill };
+      return {
+        bridgeId: b.id,
+        bridgeName: b.name,
+        direct,
+        loading: r.isLoading,
+        error: r.isError,
+        onRetry: () => void r.refetch(),
+        section,
+        drill,
+      };
     });
     return { rows: buildCrossBridgeRows(inputs), anyLoading: results.some((r) => r.isLoading) };
   }, [active, bridges, results, params.mode, query]);

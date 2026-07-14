@@ -47,6 +47,9 @@ export type ContentRow =
   | ({ type: 'rail'; key: string; section: RailSection } & BridgeScope)
   // Loading placeholder for a rail — SELF-headed (keeps its own real/skeleton title inline).
   | { type: 'railSkeleton'; key: string; title?: string }
+  // A rail whose fetch FAILED — a shared RetryBlock in the rail's slot (below its sectionHead), so one
+  // bridge erroring in a cross-bridge feed shows an inline retry instead of silently vanishing.
+  | { type: 'railError'; key: string; message: string; onRetry: () => void }
   // A non-terminal grid section BODY (own "Load more") — heading is the preceding `sectionHead` row.
   | ({ type: 'gridBlock'; key: string; section: HomeGridSection } & BridgeScope)
   // Loading placeholder for a non-terminal grid block — self-headed.
@@ -166,6 +169,10 @@ export type CrossBridgeRailInput = {
   bridgeName: string;
   direct: boolean;
   loading: boolean;
+  /** The bridge's query failed — render a retry in its slot instead of a rail. */
+  error: boolean;
+  /** Refetch just this bridge's query (the railError's Retry). */
+  onRetry: () => void;
   section: RailSection | null;
   drill: { listId?: string; query?: string };
 };
@@ -181,6 +188,16 @@ export function buildCrossBridgeRows(inputs: CrossBridgeRailInput[]): ContentRow
   for (const b of inputs) {
     if (b.loading) {
       rows.push({ type: 'railSkeleton', key: `railsk:${b.bridgeId}`, title: b.bridgeName });
+      continue;
+    }
+    if (b.error) {
+      rows.push({ type: 'sectionHead', key: `head:${b.bridgeId}`, title: b.bridgeName });
+      rows.push({
+        type: 'railError',
+        key: `railerr:${b.bridgeId}`,
+        message: `Couldn't load ${b.bridgeName}.`,
+        onRetry: b.onRetry,
+      });
       continue;
     }
     if (!b.section || b.section.items.length === 0) continue;
