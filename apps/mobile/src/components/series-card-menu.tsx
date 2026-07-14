@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { type RefObject, useCallback, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View, type GestureResponderEvent } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS, useSharedValue } from 'react-native-reanimated';
@@ -41,10 +41,14 @@ export type SeriesCardMenuProps = {
   direct?: boolean;
   /** Cover aspect ratio, so the lifted preview matches the card's shape. */
   coverAspect?: number;
+  /** Measure THIS element for the lifted-preview rect instead of the wrapped content. For a row whose
+   *  tappable area is wide but whose "card" is a small thumbnail (History), point it at the thumbnail so
+   *  the preview lifts from there — otherwise the wide row rect makes the flying cover start huge. */
+  measureRef?: RefObject<View | null>;
   children: (api: { onLongPress?: (e: GestureResponderEvent) => void }) => React.ReactNode;
 };
 
-export function SeriesCardMenu({ enabled, bridgeId, bridge, entry, direct, coverAspect, children }: SeriesCardMenuProps) {
+export function SeriesCardMenu({ enabled, bridgeId, bridge, entry, direct, coverAspect, measureRef, children }: SeriesCardMenuProps) {
   const anchorRef = useRef<View>(null);
   // Where the hold began — the arming distance is measured from here (see `holdArmed`). Shared values,
   // because the gesture's worklets are the only thing that reads or writes them.
@@ -70,13 +74,15 @@ export function SeriesCardMenu({ enabled, bridgeId, bridge, entry, direct, cover
         rect: { x: absoluteX - 80, y: absoluteY - 110, width: 160, height: 220 },
         onClose,
       });
-      anchorRef.current?.measureInWindow?.((x, y, width, height) => {
+      // Prefer an explicit `measureRef` (e.g. History's thumbnail) so the preview lifts from a small
+      // portrait rect, not the wide row that wraps the gesture.
+      (measureRef?.current ?? anchorRef.current)?.measureInWindow?.((x, y, width, height) => {
         if (width > 0 && height > 0) {
           openSeriesCardMenu({ entry, bridgeId, bridge, direct, coverAspect, rect: { x, y, width, height }, onClose });
         }
       });
     },
-    [bridgeId, bridge, entry, direct, coverAspect],
+    [bridgeId, bridge, entry, direct, coverAspect, measureRef],
   );
 
   // A PAN that only activates after a hold — not a LongPress. The difference is the whole peek-and-

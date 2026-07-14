@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { type RefObject, useState } from 'react';
 import { Pressable, StyleSheet, View, type GestureResponderEvent } from 'react-native';
 
 import { MoreVerticalIcon } from '@/components/icons/ui-icons';
@@ -25,6 +25,8 @@ export type SeriesCardMenuProps = {
   entry: SeriesEntry;
   /** Cover aspect ratio, so the menu header shows the cover at its true shape. */
   coverAspect?: number;
+  /** Ignored on web (no lifted preview); matches the native variant's contract — see it. */
+  measureRef?: RefObject<View | null>;
   children: (api: { onLongPress?: (e: GestureResponderEvent) => void }) => React.ReactNode;
 };
 
