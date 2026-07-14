@@ -8,8 +8,11 @@ import {
   ChevronRight,
   Compass,
   Database,
+  Eye,
+  EyeOff,
   GripVertical,
   LayoutGrid,
+  Minus,
   MoreVertical,
   Pencil,
   Play,
@@ -34,6 +37,7 @@ export const SearchIcon = ({ color, size = 16 }: IconProps) => <Search color={co
 export const ClearIcon = ({ color, size = 16 }: IconProps) => <X color={color} size={size} />;
 export const PlayIcon = ({ color, size = 16 }: IconProps) => <Play color={color} size={size} fill={color} />;
 export const PlusIcon = ({ color, size = 16 }: IconProps) => <Plus color={color} size={size} />;
+export const MinusIcon = ({ color, size = 16 }: IconProps) => <Minus color={color} size={size} />;
 export const StarIcon = ({ color, size = 16, filled }: IconProps) => (
   <Star color={color} size={size} fill={filled ? color : 'none'} />
 );
@@ -56,5 +60,8 @@ export const DiagnosticsIcon = ({ color, size = 16 }: IconProps) => <Bug color={
 export const CustomPagesIcon = ({ color, size = 16 }: IconProps) => <LayoutGrid color={color} size={size} />;
 // Rename affordance (custom page editor's top bar).
 export const PencilIcon = ({ color, size = 16 }: IconProps) => <Pencil color={color} size={size} />;
+// Reveal / hide a masked secret field (settings text row).
+export const EyeIcon = ({ color, size = 16 }: IconProps) => <Eye color={color} size={size} />;
+export const EyeOffIcon = ({ color, size = 16 }: IconProps) => <EyeOff color={color} size={size} />;
 // Destructive action — the swipe-to-delete pane and its web hover affordance (see settings/swipeable-row).
 export const TrashIcon = ({ color, size = 16 }: IconProps) => <Trash2 color={color} size={size} />;

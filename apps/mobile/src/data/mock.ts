@@ -919,11 +919,18 @@ export async function mockGetBridgeSettings(bridgeId: string): Promise<BridgeSet
   };
   return {
     info,
-    settings: [],
-    values: {},
-    secretsSet: [],
-    missingRequired: [],
-    configured: true,
+    settings: [
+      { type: 'string', key: 'apiKey', label: 'API key', description: 'Your personal access token.', required: true, secret: true },
+      { type: 'string', key: 'username', label: 'Username', placeholder: 'you@example.com' },
+      { type: 'boolean', key: 'hd', label: 'High quality', description: 'Load full-resolution images.', default: true },
+      { type: 'number', key: 'perPage', label: 'Items per page', min: 10, max: 100, default: 20 },
+      { type: 'enum', key: 'lang', label: 'Language', options: [{ value: 'en', label: 'English' }, { value: 'ja', label: 'Japanese' }] },
+      { type: 'enum', key: 'tags', label: 'Default tags', multiple: true, options: [{ value: 'a', label: 'Action' }, { value: 'r', label: 'Romance' }, { value: 'c', label: 'Comedy' }] },
+    ],
+    values: { username: 'demo', hd: true, perPage: 20, lang: 'en', tags: ['a'] },
+    secretsSet: ['apiKey'],
+    missingRequired: ['apiKey'],
+    configured: false,
     excludedTags: [],
     excludedTagLabels: {},
   };
