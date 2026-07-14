@@ -1,4 +1,5 @@
 import { Image } from 'expo-image';
+import type { RefObject } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { MoreVerticalIcon } from '@/components/icons/ui-icons';
@@ -30,6 +31,7 @@ export function HistoryRow({
   onMore,
   actions,
   dimmed,
+  thumbRef,
 }: {
   thumbnailUrl?: string;
   title: string;
@@ -41,12 +43,14 @@ export function HistoryRow({
   actions: RowAction[];
   /** Render at reduced opacity (an already-read activity item). */
   dimmed?: boolean;
+  /** Ref on the thumbnail — the anchor for the long-press preview's lift (see SeriesCardMenu). */
+  thumbRef?: RefObject<View | null>;
 }) {
   const theme = useTheme();
   return (
     <View style={[styles.row, dimmed && styles.dimmed]}>
       <Pressable style={styles.main} onPress={onPress} accessibilityRole="button">
-        <View style={styles.thumbWrap}>
+        <View ref={thumbRef} collapsable={false} style={styles.thumbWrap}>
           {thumbnailUrl ? (
             <Image
               source={{ uri: thumbnailUrl }}

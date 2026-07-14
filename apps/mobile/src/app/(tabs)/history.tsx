@@ -13,7 +13,7 @@ import { SeriesCardMenu } from '@/components/series-card-menu';
 import { SwipeableRow } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BarContentGap, BottomTabInset, firstRowPaddingTop, MaxTopLevelWidth, Spacing, topLevelCenterInset } from '@/constants/theme';
+import { BarContentGap, BottomTabInset, listPaddingTop, MaxTopLevelWidth, Spacing, topLevelCenterInset } from '@/constants/theme';
 import { historyQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type HistoryEntry } from '@/data/types';
@@ -138,46 +138,24 @@ export default function HistoryScreen() {
             // Fill the viewport even with few rows, so the empty space below them is still part of
             // the scroller and a drag can be started there (see SeriesGrid's note).
             flexGrow: 1,
-            // Start flush under the top bar (like a settings list): the first row's own top padding
-            // (Spacing.two, matching HistoryRow's `paddingVertical`) is all the separation it needs.
-            paddingTop: firstRowPaddingTop(headerHeight, Spacing.two),
+            // Start flush under the top bar (like a settings list): the first row begins at the bar's
+            // bottom edge and its own top padding is all the separation it needs.
+            paddingTop: listPaddingTop(headerHeight),
             paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
             paddingLeft: sidePad,
             paddingRight: sidePad,
           }}
           ItemSeparatorComponent={() => <View style={[styles.sep, { backgroundColor: theme.hairline }]} />}
-          renderItem={({ item }) => {
-            // Tapping the entry resumes; the 3-dot opens the series page; a long-press (native) opens the
-            // shared series quick-actions popup (Browse/Library's); swipe-left reveals Delete.
-            const row = (
-              <HistoryRow
-                thumbnailUrl={item.thumbnailUrl}
-                title={item.title}
-                sub={historySub(item)}
-                onPress={() => resume(item)}
-                onMore={() => openDetail(item)}
-                actions={[]}
-              />
-            );
-            return (
-              <SwipeableRow
-                name={item.title}
-                actions={[{ label: 'Remove', icon: TrashIcon, destructive: true, onPress: () => removeMutation.mutate(item) }]}>
-                {Platform.OS === 'web' ? (
-                  row
-                ) : (
-                  <SeriesCardMenu
-                    enabled={!!item.bridgeId}
-                    bridgeId={item.bridgeId}
-                    bridge={nameOf(item.bridgeId)}
-                    entry={{ id: item.seriesId, title: item.title, cover: item.thumbnailUrl ?? '' }}
-                    direct={directOf(item.bridgeId)}>
-                    {() => row}
-                  </SeriesCardMenu>
-                )}
-              </SwipeableRow>
-            );
-          }}
+          renderItem={({ item }) => (
+            <HistoryItem
+              item={item}
+              onResume={() => resume(item)}
+              onOpenDetail={() => openDetail(item)}
+              onRemove={() => removeMutation.mutate(item)}
+              bridge={nameOf(item.bridgeId)}
+              direct={directOf(item.bridgeId)}
+            />
+          )}
           showsVerticalScrollIndicator={Platform.OS === 'web'}
           onScroll={onScroll}
         />
@@ -185,6 +163,59 @@ export default function HistoryScreen() {
 
       <TabTitleBar title="History" />
     </ThemedView>
+  );
+}
+
+/**
+ * One History entry. A component (not inline in `renderItem`) so it can own the thumbnail ref that the
+ * native long-press preview lifts FROM — passing the row's own (wide) rect makes the flying cover start
+ * huge, whereas the small portrait thumbnail rect matches Browse/Library. Tap resumes; 3-dot opens the
+ * series page; long-press (native) opens the shared quick-actions popup; swipe-left reveals Delete.
+ */
+function HistoryItem({
+  item,
+  onResume,
+  onOpenDetail,
+  onRemove,
+  bridge,
+  direct,
+}: {
+  item: HistoryEntry;
+  onResume: () => void;
+  onOpenDetail: () => void;
+  onRemove: () => void;
+  bridge: string;
+  direct: boolean;
+}) {
+  const thumbRef = useRef<View>(null);
+  const row = (
+    <HistoryRow
+      thumbnailUrl={item.thumbnailUrl}
+      title={item.title}
+      sub={historySub(item)}
+      onPress={onResume}
+      onMore={onOpenDetail}
+      actions={[]}
+      thumbRef={thumbRef}
+    />
+  );
+  return (
+    <SwipeableRow name={item.title} actions={[{ label: 'Remove', icon: TrashIcon, destructive: true, onPress: onRemove }]}>
+      {Platform.OS === 'web' ? (
+        row
+      ) : (
+        <SeriesCardMenu
+          enabled={!!item.bridgeId}
+          bridgeId={item.bridgeId}
+          bridge={bridge}
+          entry={{ id: item.seriesId, title: item.title, cover: item.thumbnailUrl ?? '' }}
+          direct={direct}
+          coverAspect={2 / 3}
+          measureRef={thumbRef}>
+          {() => row}
+        </SeriesCardMenu>
+      )}
+    </SwipeableRow>
   );
 }
 
