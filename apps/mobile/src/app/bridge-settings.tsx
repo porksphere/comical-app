@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import {
@@ -16,12 +16,33 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
-import type { SettingValue } from '@/data/api';
+import type { SettingDescriptor, SettingValue } from '@/data/api';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
+
+/** The PUT body for a settings save: every non-secret value (edited or existing, so the server gets a
+ *  full set) plus only the secrets the user actually changed (an untouched secret is omitted, which
+ *  the server's patch-by-key store reads as "keep the existing value"). */
+function buildSettingsBody(
+  settings: SettingDescriptor[],
+  values: Record<string, SettingValue>,
+  edits: Record<string, SettingValue>,
+): Record<string, SettingValue> {
+  const body: Record<string, SettingValue> = {};
+  for (const d of settings) {
+    const isSecret = d.type === 'string' && d.secret;
+    if (isSecret) {
+      if (d.key in edits) body[d.key] = edits[d.key];
+      continue;
+    }
+    if (d.key in edits) body[d.key] = edits[d.key];
+    else if (d.key in values) body[d.key] = values[d.key];
+  }
+  return body;
+}
 
 export default function BridgeSettingsScreen() {
   const { bridgeId, source, availableVersion } = useLocalSearchParams<{
@@ -49,30 +70,24 @@ export default function BridgeSettingsScreen() {
   const [edits, setEdits] = useState<Record<string, SettingValue>>({});
   const setField = (key: string, value: SettingValue) => setEdits((prev) => ({ ...prev, [key]: value }));
 
-  const saveMutation = useMutation({
-    mutationFn: (body: Record<string, SettingValue>) => ds.putBridgeSettings(bridgeId!, body),
-    onSuccess: async () => {
-      setEdits({});
-      await queryClient.invalidateQueries({ queryKey: queryKeys.bridgeSettings(bridgeId ?? '') });
-    },
+  // Auto-save on leave (no Save button): PUT any pending edits when the screen unmounts. A ref holds
+  // the latest values so the once-only unmount cleanup reads what's current, not what was set at mount.
+  const latest = useRef({ bridgeId, data, edits, ds, queryClient });
+  useEffect(() => {
+    latest.current = { bridgeId, data, edits, ds, queryClient };
   });
-  const saving = saveMutation.isPending;
-  const saved = saveMutation.isSuccess;
-  const saveError = saveMutation.isError ? (saveMutation.error as Error).message || 'Failed to save settings' : null;
-  const save = () => {
-    if (!bridgeId || !data) return;
-    const body: Record<string, SettingValue> = {};
-    for (const d of data.settings) {
-      const isSecret = d.type === 'string' && d.secret;
-      if (isSecret) {
-        if (d.key in edits) body[d.key] = edits[d.key];
-        continue;
-      }
-      if (d.key in edits) body[d.key] = edits[d.key];
-      else if (d.key in data.values) body[d.key] = data.values[d.key];
-    }
-    saveMutation.mutate(body);
-  };
+  useEffect(
+    () => () => {
+      const s = latest.current;
+      if (!s.bridgeId || !s.data || Object.keys(s.edits).length === 0) return;
+      const body = buildSettingsBody(s.data.settings, s.data.values, s.edits);
+      void s.ds
+        .putBridgeSettings(s.bridgeId, body)
+        .then(() => s.queryClient.invalidateQueries({ queryKey: queryKeys.bridgeSettings(s.bridgeId!) }))
+        .catch(() => {}); // best-effort; the screen is gone, and a bad value surfaces next time it's opened
+    },
+    [],
+  );
 
   const uninstallMutation = useMutation({
     mutationFn: () => ds.uninstallBridge(bridgeId!),
@@ -168,28 +183,9 @@ export default function BridgeSettingsScreen() {
                     key={d.key}
                     descriptor={d}
                     value={d.key in edits ? edits[d.key] : data.values[d.key]}
-                    secretSet={data.secretsSet.includes(d.key)}
                     onChange={(v) => setField(d.key, v)}
                   />
                 ))}
-
-                {saveError && (
-                  <ThemedText type="small" style={{ color: theme.danger }}>
-                    {saveError}
-                  </ThemedText>
-                )}
-                {saved && !saveError && (
-                  <ThemedText type="small" themeColor="textSecondary">
-                    Saved.
-                  </ThemedText>
-                )}
-                <Pressable onPress={save} disabled={saving}>
-                  <ThemedView style={[styles.saveBtn, { backgroundColor: theme.accent }, saving && styles.saveBtnDisabled]}>
-                    <ThemedText type="smallBold" style={{ color: theme.accentOn }}>
-                      {saving ? 'Saving…' : 'Save'}
-                    </ThemedText>
-                  </ThemedView>
-                </Pressable>
               </SettingsSection>
             )}
 
@@ -261,14 +257,6 @@ const styles = StyleSheet.create({
   },
   updateBannerText: {
     flex: 1,
-  },
-  saveBtn: {
-    alignItems: 'center',
-    paddingVertical: Spacing.three,
-    borderRadius: Spacing.three,
-  },
-  saveBtnDisabled: {
-    opacity: 0.6,
   },
   uninstallRow: {
     alignItems: 'center',

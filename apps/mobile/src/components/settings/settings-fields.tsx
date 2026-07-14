@@ -1,8 +1,8 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, type TextInputProps, View } from 'react-native';
 
 import { BridgeThumb } from '@/components/bridge-thumb';
-import { ChevronRightIcon } from '@/components/icons/ui-icons';
+import { ChevronRightIcon, EyeIcon, EyeOffIcon } from '@/components/icons/ui-icons';
 import { MeasuredHeader, OptionList, OverlayHeading, useAnchoredOverlay, useOverlay } from '@/components/overlay/overlay';
 import { BridgeThumbSize } from '@/components/selector';
 import { settingsRowFrame, SettingsRow } from '@/components/settings/settings-row';
@@ -41,6 +41,7 @@ export function SettingsSelectRow<T extends string>({
   options,
   onChange,
   heading,
+  placeholder,
 }: {
   label: string;
   /** Static one-line description under the label (the current value already shows on the right). */
@@ -50,6 +51,8 @@ export function SettingsSelectRow<T extends string>({
   onChange: (value: T) => void;
   /** Heading for the picker sheet. Defaults to `label`. */
   heading?: string;
+  /** Muted text shown on the right when `value` matches no option (nothing chosen yet). */
+  placeholder?: string;
 }) {
   const theme = useTheme();
   const { ref, openAt } = useAnchoredOverlay();
@@ -79,7 +82,7 @@ export function SettingsSelectRow<T extends string>({
         </View>
         <View style={styles.rowValue}>
           <ThemedText type="small" themeColor="textSecondary" numberOfLines={1} style={styles.valueLabel}>
-            {current?.label ?? value}
+            {current?.label ?? (value || placeholder || '')}
           </ThemedText>
           <ChevronRightIcon color={theme.textSecondary} size={18} />
         </View>
@@ -154,6 +157,8 @@ export function SettingsTextRow({
   onChange,
   keyboardType,
   autoCapitalize,
+  autoCorrect,
+  secureTextEntry,
 }: {
   label: string;
   description?: string;
@@ -162,8 +167,12 @@ export function SettingsTextRow({
   onChange: (value: string) => void;
   keyboardType?: TextInputProps['keyboardType'];
   autoCapitalize?: TextInputProps['autoCapitalize'];
+  autoCorrect?: boolean;
+  /** Mask the value (a secret / password). A reveal (eye) button is shown to toggle visibility. */
+  secureTextEntry?: boolean;
 }) {
   const theme = useTheme();
+  const [revealed, setRevealed] = useState(false);
   return (
     <View style={[settingsRowFrame.row, settingsRowFrame.escape]}>
       <View style={styles.textRowLabel}>
@@ -176,16 +185,35 @@ export function SettingsTextRow({
           </ThemedText>
         )}
       </View>
-      <TextInput
-        value={value}
-        onChangeText={onChange}
-        placeholder={placeholder}
-        placeholderTextColor={theme.textSecondary}
-        keyboardType={keyboardType}
-        autoCapitalize={autoCapitalize}
-        returnKeyType="done"
-        style={[styles.textRowInput, { color: theme.text }]}
-      />
+      <View style={styles.textRowRight}>
+        <TextInput
+          value={value}
+          onChangeText={onChange}
+          placeholder={placeholder}
+          placeholderTextColor={theme.textSecondary}
+          keyboardType={keyboardType}
+          autoCapitalize={autoCapitalize}
+          autoCorrect={autoCorrect}
+          // Masked while not revealed. `secureTextEntry` also disables autofill/suggestions on native.
+          secureTextEntry={secureTextEntry && !revealed}
+          returnKeyType="done"
+          style={[styles.textRowInput, { color: theme.text }]}
+        />
+        {secureTextEntry && (
+          <Pressable
+            onPress={() => setRevealed((r) => !r)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={revealed ? 'Hide' : 'Show'}
+            style={styles.revealBtn}>
+            {revealed ? (
+              <EyeOffIcon color={theme.textSecondary} size={18} />
+            ) : (
+              <EyeIcon color={theme.textSecondary} size={18} />
+            )}
+          </Pressable>
+        )}
+      </View>
     </View>
   );
 }
@@ -237,12 +265,23 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     gap: Spacing.half,
   },
+  // Holds the input (and, for secrets, the reveal button) in the row's value column.
+  textRowRight: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
   textRowInput: {
     flex: 1,
     minWidth: 0,
     textAlign: 'right',
     fontSize: 16,
     paddingVertical: 0,
+  },
+  revealBtn: {
+    cursor: 'pointer',
   },
   // No `flex: 1` (see `sheetBody` in overlay.tsx) — hugs its MeasuredHeader/OptionList content.
   pickerBody: {
