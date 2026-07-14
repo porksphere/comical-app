@@ -118,13 +118,19 @@ export default function BrowseScreen() {
   // (matches the old effect, which only re-picked on a bridge switch).
   const pageInitedForRef = useRef<string | null>(null);
   useEffect(() => {
+    // Comical only has a Home surface — force it, clearing any stale page carried from the previous
+    // bridge (a no-op re-render when already Home). Also fixes the Page selector showing a dead label.
+    if (isComical) {
+      setPage('home');
+      return;
+    }
     if (!bridgeId || !listsSettled) return;
     if (pageInitedForRef.current === bridgeId) return;
     pageInitedForRef.current = bridgeId;
     const hasHomeList = lists.some((l) => !l.page || l.id === 'home');
     const firstPage = lists.find((l) => l.page);
     setPage(hasHomeList || !firstPage ? 'home' : firstPage.name.toLowerCase());
-  }, [bridgeId, listsSettled, lists]);
+  }, [isComical, bridgeId, listsSettled, lists]);
 
   const pages = useMemo(
     () => (currentBridge ? pageOptions(lists, currentBridge.capabilities) : ['home']),
@@ -137,7 +143,11 @@ export default function BrowseScreen() {
   const homeList = useMemo(() => lists.find((l) => l.id === 'home' && l.page), [lists]);
   // The built-in composed Home surface (rails + grid from non-`page` lists) — only when no page-list
   // backs the Home tab. Every "is this Home?" decision below keys off this, not a bare page === 'home'.
-  const composedHome = page === 'home' && !homeList;
+  // Comical is ALWAYS its composed (cross-bridge) home regardless of the `page` state — otherwise a
+  // stale `page` carried over from the previous bridge (e.g. "Popular") would flip this false, route
+  // Comical through the SeriesGrid branch, and strand its disabled results query as a permanent
+  // placeholder → `gridUpdating` stuck true → the reveal dim never clears (a stuck crossfade).
+  const composedHome = isComical || (page === 'home' && !homeList);
   // The list backing the current page: a `page: true` list picked in the selector (e.g. "Popular"),
   // or the home-backing list above when the Home tab is showing the bridge's front page.
   const selectedList = useMemo(
