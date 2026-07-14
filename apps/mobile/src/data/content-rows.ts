@@ -206,7 +206,9 @@ export function buildCrossBridgeRows(inputs: CrossBridgeRailInput[]): ContentRow
       key: `head:${b.bridgeId}`,
       title: b.bridgeName,
       seeAll: {
-        title: b.bridgeName,
+        // The results page shows "{bridge} › {title}", so `title` is the section label — the search
+        // query for a search rail, else the featured list's name for a home rail.
+        title: b.drill.query ?? b.section?.title ?? b.bridgeName,
         bridgeId: b.bridgeId,
         bridge: b.bridgeName,
         direct: b.direct,

@@ -1,27 +1,23 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useRef } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { BarSurface } from '@/components/bar-surface';
 import { GridSkeleton } from '@/components/grid-skeleton';
-import { ChevronLeftIcon } from '@/components/icons/chevron-left';
 import { RetryBlock } from '@/components/retry-block';
 import { SeriesGrid } from '@/components/series-grid';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BarContentGap, MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { TopBar, useTopBarInset } from '@/components/top-bar';
+import { BarContentGap, Spacing } from '@/constants/theme';
 import { useDedupedPages } from '@/data/grid-pages';
 import { fetchBrowseScope, queryKeys, type BrowseScope } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import type { GridPage } from '@/data/types';
 import { friendlyError } from '@/lib/friendly-error';
-import { hapticImpactLight } from '@/lib/haptics';
 import { useGridLayout } from '@/hooks/use-grid-layout';
-import { useTopBarHeight } from '@/hooks/use-responsive';
-import { useTheme } from '@/hooks/use-theme';
 
 const getNextPageParam = (last: GridPage, _all: GridPage[], lastParam: number) =>
   last.hasNextPage ? lastParam + 1 : undefined;
@@ -29,17 +25,16 @@ const getNextPageParam = (last: GridPage, _all: GridPage[], lastParam: number) =
 /**
  * A rail's "See all" destination — a single bridge's infinite-scroll results, with NO search bar.
  * Pushed from any `ContentFeed` rail (Browse home rails, the Comical aggregate, and cross-bridge
- * search rails). Params (all strings — expo-router): `bridgeId`, `title` (the header), `bridge`?
- * (name), `direct`? ('1'), and EITHER `listId` (a list drill → that list's items) OR `query`
- * (a search drill → that bridge's search). Back returns cleanly to wherever it was pushed from.
+ * search rails). Uses the shared `TopBar` like every other pushed screen; the title is a breadcrumb
+ * "{bridge} › {title}" (e.g. "Example › Featured"). Params (all strings — expo-router): `bridgeId`,
+ * `title`, `bridge`? (name), `direct`? ('1'), and EITHER `listId` (a list drill → that list's items)
+ * OR `query` (a search drill → that bridge's search). Back returns cleanly.
  */
 export default function ResultsScreen() {
   const ds = useDataSource();
   const mock = useMockActive();
-  const theme = useTheme();
-  const router = useRouter();
   const insets = useSafeAreaInsets();
-  const barHeight = useTopBarHeight();
+  const topBarInset = useTopBarInset();
   const listRef = useRef<LegendListRef>(null);
   const { numColumns } = useGridLayout();
 
@@ -52,8 +47,9 @@ export default function ResultsScreen() {
     query?: string;
   }>();
   const bridgeId = params.bridgeId;
-  const title = params.title ?? '';
   const direct = params.direct === '1';
+  // Breadcrumb: "{bridge} › {section}" — the bridge, then the rail/list/query it drilled into.
+  const headerTitle = params.bridge ? `${params.bridge}  ›  ${params.title ?? ''}` : (params.title ?? '');
 
   // A search drill (query set) vs a list drill (listId set). `seeAll` is the page-only list scope,
   // matching a Browse rail's "See all" semantics.
@@ -78,14 +74,9 @@ export default function ResultsScreen() {
       ? friendlyError(resultsQuery.error, "Couldn't load results. Try again.")
       : null;
 
-  const topBarTotal = insets.top + barHeight;
   const loadMore = () => {
     if (!resultsQuery.hasNextPage || resultsQuery.isFetchingNextPage) return;
     void resultsQuery.fetchNextPage();
-  };
-  const goBack = () => {
-    hapticImpactLight();
-    router.back();
   };
 
   // Loading / error / empty, folded into the list header like the other grids.
@@ -104,66 +95,26 @@ export default function ResultsScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      {/* Fixed top bar: back + the rail's title. No search field, no filters — this is a read-only
-          drill-down into one bridge's results. The grid scrolls under the frosted bar. */}
-      <BarSurface style={styles.topBar}>
-        <View style={[styles.topBarRow, { height: barHeight }]}>
-          <Pressable
-            onPress={goBack}
-            hitSlop={12}
-            android_ripple={{ color: theme.backgroundSelected, borderless: true }}
-            accessibilityRole="button"
-            accessibilityLabel="Go back"
-            style={styles.backButton}>
-            <ChevronLeftIcon color={theme.text} />
-          </Pressable>
-          <ThemedText type="subtitle" numberOfLines={1} style={styles.title}>
-            {title}
-          </ThemedText>
-        </View>
-      </BarSurface>
-
       <SeriesGrid
         items={gridItems}
         scopeKey={`${bridgeId}|${params.listId ?? params.query ?? ''}`}
         listRef={listRef}
         header={emptyBody}
-        paddingTop={topBarTotal + BarContentGap}
+        // The TopBar overlays the list, so reserve its height (content scrolls under its frost).
+        paddingTop={topBarInset + BarContentGap}
         paddingBottom={insets.bottom + Spacing.five}
         bridge={params.bridge}
         bridgeId={bridgeId}
         direct={direct}
         onEndReached={loadMore}
       />
+      <TopBar title={headerTitle} />
     </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-  },
-  topBar: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 20,
-  },
-  topBarRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    paddingHorizontal: Spacing.three,
-    width: '100%',
-    maxWidth: MaxTopLevelWidth,
-    alignSelf: 'center',
-  },
-  backButton: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  title: {
     flex: 1,
   },
   hint: {
