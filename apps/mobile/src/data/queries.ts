@@ -78,6 +78,12 @@ export const queryKeys = {
   // One representative rail for a bridge (its `featured`/first rail list, page 1) — the building
   // block of the synthetic "Comical" aggregate home.
   bridgeFeaturedRail: (mock: boolean, bridgeId: string) => ['bridgeFeaturedRail', mock, bridgeId] as const,
+  // Page 1 of a bridge's account favorites, for the consolidated Comical Favorites page's rail. A
+  // SEPARATE key from `browseGrid({kind:'favorites'})` ON PURPOSE (same reasoning as `customSectionPage`
+  // below): that key is owned by the single-bridge favorites INFINITE grid, and this plain page-1
+  // query must not share its cache entry — the shapes differ (`GridPage` vs react-query `InfiniteData`),
+  // and an infinite query reading a plain `GridPage` reads `data.pages.length` off `undefined` → crash.
+  bridgeFavoritesRail: (mock: boolean, bridgeId: string) => ['bridgeFavoritesRail', mock, bridgeId] as const,
   // Page 1 of a specific bridge list, for a user-composed custom page's section (rail items, or the
   // grid block's seed). A SEPARATE key from `browseGrid({kind:'homeGrid'})` on purpose — that one is
   // owned by the infinite-scroll grid queries, and a plain (non-infinite) query must not share their

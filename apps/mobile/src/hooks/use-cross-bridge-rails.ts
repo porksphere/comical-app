@@ -42,8 +42,10 @@ export function useCrossBridgeRails(
       }
       if (params.mode === 'favorites') {
         return {
-          // Same key/call as a single-bridge favorites grid, so the two warm each other.
-          queryKey: queryKeys.browseGrid(mock, b.id, { kind: 'favorites' as const }),
+          // A DEDICATED key — NOT `browseGrid({kind:'favorites'})`. That key is owned by the single-bridge
+          // favorites INFINITE grid; this is a plain page-1 query, and sharing the entry would let the
+          // infinite query read a plain `GridPage` and crash on `data.pages.length` (see queries.ts).
+          queryKey: queryKeys.bridgeFavoritesRail(mock, b.id),
           queryFn: ({ signal }: { signal: AbortSignal }) =>
             fetchBrowseScope(ds, b.id, { kind: 'favorites' }, 1, signal),
         };
