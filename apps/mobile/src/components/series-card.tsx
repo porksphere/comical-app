@@ -431,7 +431,7 @@ export function SeriesCard({
   // The card's cover + trailing content, parameterized by the shrink-illusion API. Rendered plainly
   // (no-op API) when Lightweight cards is on, or wrapped in <CoverShrink> (which supplies real
   // animated styles) when off — so the shrink hooks are only paid for when actually animating.
-  const renderCardBody = (shrink: ShrinkApi) => {
+  const renderCardBody = (shrink: ShrinkApi, coverHidden: boolean) => {
     // The picture layer (image + skeleton/mask). Only the shrink illusion needs it wrapped in a
     // scalable Animated.View; the lightweight (non-animated) path renders these straight into the
     // clip box, dropping both a host view AND a Reanimated wrapper per card in the common case.
@@ -557,14 +557,18 @@ export function SeriesCard({
         {isWeb ? (
           // Web keeps a non-clipping `coverBox` around the clipping `coverClip` so the active hover
           // ring (negative insets) can extend past the clip without being cut off.
-          <View style={[styles.coverBox, { aspectRatio: coverAspect }]} onLayout={shrink.onCoverLayout}>
+          <View style={[styles.coverBox, { aspectRatio: coverAspect }, coverHidden && styles.coverHidden]} onLayout={shrink.onCoverLayout}>
             <View style={styles.coverClip}>{coverContents}</View>
             {active && <View style={[styles.ring, { pointerEvents: 'none' }]} />}
           </View>
         ) : (
           // Native has no ring, so the box IS the clip — one fewer host view means one fewer Fabric
           // clone up the ancestor chain on every commit, on the platform that scrolls these grids.
-          <View style={[styles.coverBoxClip, { aspectRatio: coverAspect }]} onLayout={shrink.onCoverLayout}>
+          // `coverHidden` blanks just the cover while THIS card's long-press menu is open (its lifted
+          // preview is a copy) — the title below stays visible under the dim.
+          <View
+            style={[styles.coverBoxClip, { aspectRatio: coverAspect }, coverHidden && styles.coverHidden]}
+            onLayout={shrink.onCoverLayout}>
             {coverContents}
           </View>
         )}
@@ -588,7 +592,7 @@ export function SeriesCard({
       entry={entry}
       direct={direct}
       coverAspect={coverAspect}>
-      {({ onLongPress }) => {
+      {({ onLongPress, hidden }) => {
         // Built LAZILY (only when actually navigating) — NOT per render. This object plus its
         // encodeURIComponent/.replace string churn was allocated for every card on every render, so a
         // scroll that recycles many cards produced steady garbage → GC pauses (a top cost in the
@@ -652,9 +656,9 @@ export function SeriesCard({
             {/* Shrink illusion only when Lightweight is off: wrap in CoverShrink (owns the reanimated
                 hooks + supplies real animated styles); otherwise render plainly with a no-op API. */}
             {lightCards ? (
-              renderCardBody(NOOP_SHRINK)
+              renderCardBody(NOOP_SHRINK, hidden)
             ) : (
-              <CoverShrink entryId={entry.id}>{renderCardBody}</CoverShrink>
+              <CoverShrink entryId={entry.id}>{(shrink) => renderCardBody(shrink, hidden)}</CoverShrink>
             )}
           </Pressable>
         );
@@ -754,6 +758,11 @@ const styles = StyleSheet.create({
   hiddenCover: {
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // Blanks just the cover while this card's long-press menu is open — its lifted preview is a copy, so
+  // showing the source cover too would double it. Layout is preserved; only the cover goes invisible.
+  coverHidden: {
+    opacity: 0,
   },
   trailingGroup: {
     // Replaces the spacing `card`'s own `gap` used to provide between the cover

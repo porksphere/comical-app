@@ -32,6 +32,7 @@ export function HistoryRow({
   actions,
   dimmed,
   thumbRef,
+  coverHidden,
 }: {
   thumbnailUrl?: string;
   title: string;
@@ -45,12 +46,14 @@ export function HistoryRow({
   dimmed?: boolean;
   /** Ref on the thumbnail — the anchor for the long-press preview's lift (see SeriesCardMenu). */
   thumbRef?: RefObject<View | null>;
+  /** Blank just the thumbnail while this row's long-press menu is open (its lifted preview is a copy). */
+  coverHidden?: boolean;
 }) {
   const theme = useTheme();
   return (
     <View style={[styles.row, dimmed && styles.dimmed]}>
       <Pressable style={styles.main} onPress={onPress} accessibilityRole="button">
-        <View ref={thumbRef} collapsable={false} style={styles.thumbWrap}>
+        <View ref={thumbRef} collapsable={false} style={[styles.thumbWrap, coverHidden && styles.thumbHidden]}>
           {thumbnailUrl ? (
             <Image
               source={{ uri: thumbnailUrl }}
@@ -111,9 +114,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.three,
     paddingVertical: Spacing.two,
+    // Own the horizontal gutter (rather than the list padding it) so the row itself spans the full
+    // content width — the swipe-to-delete then reaches the screen edge instead of being cut off inside
+    // a side inset. The list only pads the centring inset (web); see history/activity.
+    paddingHorizontal: Spacing.four,
   },
   dimmed: {
     opacity: 0.55,
+  },
+  thumbHidden: {
+    opacity: 0,
   },
   main: {
     flex: 1,
