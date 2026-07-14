@@ -13,7 +13,7 @@ import { SeriesCardMenu } from '@/components/series-card-menu';
 import { SwipeableRow } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { BarContentGap, BottomTabInset, firstRowPaddingTop, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { historyQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type HistoryEntry } from '@/data/types';
@@ -138,10 +138,9 @@ export default function HistoryScreen() {
             // Fill the viewport even with few rows, so the empty space below them is still part of
             // the scroller and a drag can be started there (see SeriesGrid's note).
             flexGrow: 1,
-            // Align the FIRST entry's content to the standard content line (top bar + gap): the row's
-            // own vertical padding (Spacing.two) would otherwise push it that much lower than the bar
-            // dictates, so subtract it here.
-            paddingTop: headerHeight + BarContentGap - Spacing.two,
+            // Start flush under the top bar (like a settings list): the first row's own top padding
+            // (Spacing.two, matching HistoryRow's `paddingVertical`) is all the separation it needs.
+            paddingTop: firstRowPaddingTop(headerHeight, Spacing.two),
             paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
             paddingLeft: sidePad,
             paddingRight: sidePad,
@@ -189,12 +188,12 @@ export default function HistoryScreen() {
   );
 }
 
-/** Build the row's secondary line: `chapter · page X / N · when`, omitting absent parts. */
+/** Build the row's secondary line: `chapter · X / N · when`, omitting absent parts. */
 function historySub(h: HistoryEntry): string {
   const isDirect = h.chapterId === DIRECT_CHAPTER_ID;
   const chapter = !isDirect && h.chapterName ? h.chapterName : '';
   const page =
-    h.lastPage !== undefined ? (h.pageCount ? `page ${h.lastPage + 1} / ${h.pageCount}` : `page ${h.lastPage + 1}`) : '';
+    h.lastPage !== undefined ? (h.pageCount ? `${h.lastPage + 1} / ${h.pageCount}` : `${h.lastPage + 1}`) : '';
   return [chapter, page, relTime(h.lastReadAt)].filter(Boolean).join('  ·  ');
 }
 

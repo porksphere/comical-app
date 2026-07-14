@@ -216,3 +216,17 @@ export const SettingsRowHeight = 64;
  * Named rather than inlined so the intent survives: this is a deliberate zero, not an oversight.
  */
 export const SettingsTopGap = 0;
+
+/**
+ * The `paddingTop` a scrolling list should use so its FIRST row's CONTENT lands exactly `gap` below the
+ * top bar's bottom edge (default: flush against it), by cancelling out the row's OWN intrinsic top
+ * padding. A recurring papercut: a row with vertical padding pushes its first item that much lower than
+ * the bar dictates, so the top looks too gappy. Pass `headerHeight` (= safe-area top + bar height) and
+ * the row's own top padding; optionally a deliberate `gap` (e.g. `BarContentGap` where the first thing
+ * is artwork and wants air).
+ *
+ *   paddingTop: firstRowPaddingTop(headerHeight, ROW_PAD_TOP)                 // first item flush under the bar
+ *   paddingTop: firstRowPaddingTop(headerHeight, ROW_PAD_TOP, BarContentGap)  // … with the standard gap
+ */
+export const firstRowPaddingTop = (headerHeight: number, rowPaddingTop: number, gap = 0): number =>
+  Math.max(0, headerHeight + gap - rowPaddingTop);
