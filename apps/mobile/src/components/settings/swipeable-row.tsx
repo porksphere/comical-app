@@ -1,5 +1,5 @@
 import { type ComponentType, type ReactNode, useState } from 'react';
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   interpolateColor,
@@ -66,6 +66,13 @@ const IS_WEB = Platform.OS === 'web';
 // hover events ever, so hover-revealed actions would be permanently invisible there — those clients
 // get them shown outright instead.
 const CAN_HOVER = IS_WEB && typeof window !== 'undefined' && !!window.matchMedia?.('(hover: hover)').matches;
+
+// react-native-web maps these onto the underlying div so the action's opacity change eases; they
+// aren't part of RN's ViewStyle, hence the cast (mirrors app-tabs.tsx's FADE_TRANSITION). Web only.
+const WEB_ACTION_TRANSITION = {
+  transitionProperty: 'opacity',
+  transitionDuration: '120ms',
+} as unknown as ViewStyle;
 
 /** One trailing swipe/hover action. The `icon` is a glyph component from `@/components/icons/ui-icons`
  *  (they all take `{ color, size }`). `destructive` paints the action in the danger colour (a delete);
@@ -352,6 +359,7 @@ function HoverActionsRow({ name, actions, edgeInset, children }: RowImplProps) {
             onPress={a.onPress}
             style={[
               styles.webAction,
+              WEB_ACTION_TRANSITION,
               isEdge ? { width: edgeInset + 34, paddingRight: edgeInset } : { width: 34 },
               CAN_HOVER && !hovered && styles.webActionIdle,
             ]}
@@ -407,8 +415,6 @@ const styles = StyleSheet.create({
     // A fixed lane, so the action occupies the same space whether or not it's currently shown and the
     // row's content never reflows as it fades in. The edge lane also pads out to the screen inset.
     cursor: 'pointer',
-    transitionProperty: 'opacity',
-    transitionDuration: '120ms',
   },
   webActionIdle: {
     opacity: 0,

@@ -45,12 +45,12 @@ export function ProgressPill({
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
     const subShow = Keyboard.addListener(showEvent, (e) => {
-      keyboardHeight.value = withTiming(Math.max(0, e.endCoordinates.height - insets.bottom), {
+      keyboardHeight.set(withTiming(Math.max(0, e.endCoordinates.height - insets.bottom), {
         duration: e.duration || 220,
-      });
+      }));
     });
     const subHide = Keyboard.addListener(hideEvent, (e) => {
-      keyboardHeight.value = withTiming(0, { duration: e.duration || 220 });
+      keyboardHeight.set(withTiming(0, { duration: e.duration || 220 }));
     });
     return () => {
       subShow.remove();
@@ -68,7 +68,7 @@ export function ProgressPill({
     if (!vv) return;
     const baseline = window.innerHeight;
     const onResize = () => {
-      keyboardHeight.value = withTiming(Math.max(0, baseline - vv.height - vv.offsetTop), { duration: 150 });
+      keyboardHeight.set(withTiming(Math.max(0, baseline - vv.height - vv.offsetTop), { duration: 150 }));
     };
     onResize();
     vv.addEventListener('resize', onResize);
@@ -76,7 +76,7 @@ export function ProgressPill({
     return () => {
       vv.removeEventListener('resize', onResize);
       vv.removeEventListener('scroll', onResize);
-      keyboardHeight.value = withTiming(0, { duration: 150 });
+      keyboardHeight.set(withTiming(0, { duration: 150 }));
     };
   }, [editing, keyboardHeight]);
 

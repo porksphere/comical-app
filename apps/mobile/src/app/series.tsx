@@ -89,8 +89,6 @@ function MetaCell({
 
 export default function SeriesScreen() {
   const ds = useDataSource();
-  const router = useRouter();
-  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const topBarInset = useTopBarInset();
   const { width } = useWindowDimensions();
