@@ -9,6 +9,7 @@ import { TrashIcon } from '@/components/icons/ui-icons';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { HistoryRow } from '@/components/history-row';
 import { RetryBlock } from '@/components/retry-block';
+import { SeriesCardMenu } from '@/components/series-card-menu';
 import { SwipeableRow } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -146,20 +147,38 @@ export default function HistoryScreen() {
             paddingRight: sidePad,
           }}
           ItemSeparatorComponent={() => <View style={[styles.sep, { backgroundColor: theme.hairline }]} />}
-          renderItem={({ item }) => (
-            // Swipe left to reveal Delete (removing the old inline Remove button); Resume stays a button.
-            <SwipeableRow
-              name={item.title}
-              actions={[{ label: 'Remove', icon: TrashIcon, destructive: true, onPress: () => removeMutation.mutate(item) }]}>
+          renderItem={({ item }) => {
+            // Tapping the entry resumes; the 3-dot opens the series page; a long-press (native) opens the
+            // shared series quick-actions popup (Browse/Library's); swipe-left reveals Delete.
+            const row = (
               <HistoryRow
                 thumbnailUrl={item.thumbnailUrl}
                 title={item.title}
                 sub={historySub(item)}
-                onOpen={() => openDetail(item)}
-                actions={[{ label: 'Resume', onPress: () => resume(item) }]}
+                onPress={() => resume(item)}
+                onMore={() => openDetail(item)}
+                actions={[]}
               />
-            </SwipeableRow>
-          )}
+            );
+            return (
+              <SwipeableRow
+                name={item.title}
+                actions={[{ label: 'Remove', icon: TrashIcon, destructive: true, onPress: () => removeMutation.mutate(item) }]}>
+                {Platform.OS === 'web' ? (
+                  row
+                ) : (
+                  <SeriesCardMenu
+                    enabled={!!item.bridgeId}
+                    bridgeId={item.bridgeId}
+                    bridge={nameOf(item.bridgeId)}
+                    entry={{ id: item.seriesId, title: item.title, cover: item.thumbnailUrl ?? '' }}
+                    direct={directOf(item.bridgeId)}>
+                    {() => row}
+                  </SeriesCardMenu>
+                )}
+              </SwipeableRow>
+            );
+          }}
           showsVerticalScrollIndicator={Platform.OS === 'web'}
           onScroll={onScroll}
         />
