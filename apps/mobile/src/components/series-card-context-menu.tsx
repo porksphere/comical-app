@@ -119,6 +119,10 @@ const PANEL_MAX_WIDTH = 360; // cap the panel width on wide screens
 const PANEL_PAD = Spacing.three;
 const COVER_W = 118; // cover width inside the panel
 const REST_COVER_RADIUS = 10; // the preview cover's resting VISUAL corner radius (also the default start)
+// How long the open morph waits for the lifted cover's bitmap before starting anyway. The cover is
+// virtually always in the memory cache (its card is on-screen), so onLoad fires within a frame or two
+// and this ceiling is never reached; it's only a safety valve so a decode failure can't hang the open.
+const COVER_DECODE_WAIT_MS = 180;
 const RAIL_THUMB_W = 64; // nominal fallback width (unused in slot mode: PageThumb sizes to slotHeight)
 const RAIL_THUMB_H = 180; // the rail's fixed tile height; each tile's width follows its own page aspect
 const RAIL_GAP = Spacing.two;
@@ -287,10 +291,28 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     ...(entry.cover ? { thumbnailUrl: entry.cover } : {}),
   }));
 
-  useEffect(() => {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  // Start the open morph, once. Deferred until the lifted cover's bitmap is decoded (see `openMorph`
+  // below) so it never flies out blank for a frame or two — expo-image decodes async even on a cache
+  // hit when a fresh <Image> view mounts, and starting the spring on that same frame let the couple-
+  // frame decode happen mid-flight. Now it happens while the cover rests (invisibly) on the hidden card.
+  const openedRef = useRef(false);
+  const openMorph = useCallback(() => {
+    if (openedRef.current) return;
+    openedRef.current = true;
     progress.value = withSpring(1, MORPH_SPRING);
   }, [progress]);
+
+  useEffect(() => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); // fire immediately — the press must feel instant
+    // Nothing to wait for without a cover; otherwise the cover's onLoad drives the open, with this as a
+    // fallback so a missing/failed decode still opens the menu.
+    if (!entry.cover) {
+      openMorph();
+      return;
+    }
+    const t = setTimeout(openMorph, COVER_DECODE_WAIT_MS);
+    return () => clearTimeout(t);
+  }, [entry.cover, openMorph]);
 
   // The source card stays hidden until the morph-back has fully settled, then un-hides in one go. If
   // it un-hid partway, the spring's overshoot would carry the flying cover PAST the card and briefly
@@ -1109,7 +1131,16 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
         <Animated.View pointerEvents="none" style={[styles.coverLayer, { width: COVER_W, height: coverH }, coverStyle]}>
           <Animated.View style={[styles.coverInner, coverRadiusStyle]}>
             {entry.cover ? (
-              <Image source={{ uri: entry.cover }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" />
+              <Image
+                source={{ uri: entry.cover }}
+                style={StyleSheet.absoluteFill}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+                // Hold the morph until the bitmap is on screen (see `openMorph`); on error, open anyway
+                // rather than wait out the fallback.
+                onLoad={openMorph}
+                onError={openMorph}
+              />
             ) : null}
           </Animated.View>
         </Animated.View>
