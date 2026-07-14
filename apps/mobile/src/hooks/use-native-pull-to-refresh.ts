@@ -5,7 +5,6 @@ import {
   useDerivedValue,
   useSharedValue,
   withSpring,
-  withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
 import { hapticImpactLight } from '@/lib/haptics';
@@ -64,12 +63,12 @@ export function useNativePullToRefresh(scrollY: SharedValue<number>, onRefresh: 
     (y) => {
       if (holding.value) return;
       const over = y < 0 ? -y : 0;
-      pullY.value = over > PULL_MAX ? PULL_MAX : over;
+      pullY.set(over > PULL_MAX ? PULL_MAX : over);
       const nowArmed = over >= PULL_THRESHOLD;
       // Tap the moment the pull first crosses the trigger line — the signature "you've pulled far
       // enough" feedback the native control gives. Fire only on the false→true edge, not every frame.
       if (nowArmed && !armed.value) runOnJS(hapticImpactLight)();
-      armed.value = nowArmed;
+      armed.set(nowArmed);
     },
   );
 
@@ -80,22 +79,22 @@ export function useNativePullToRefresh(scrollY: SharedValue<number>, onRefresh: 
 
   useEffect(() => {
     if (holding.value && !refreshing) {
-      holdOffset.value = withSpring(0, SETTLE_SPRING, (finished) => {
+      holdOffset.set(withSpring(0, SETTLE_SPRING, (finished) => {
         // Stay in hold mode until the spring-back lands, so listTranslateY eases to 0 rather than
         // snapping there; only then release so the next pull starts clean.
-        if (finished) holding.value = false;
-      });
-      pullY.value = withSpring(0, SETTLE_SPRING);
+        if (finished) holding.set(false);
+      }));
+      pullY.set(withSpring(0, SETTLE_SPRING));
     }
   }, [refreshing, holding, holdOffset, pullY]);
 
   const onScrollEndDrag = useCallback(() => {
     if (!armed.value || holding.value) return;
-    holding.value = true;
+    holding.set(true);
     // Start the hold at the actual release distance, then ease to the resting threshold — the same
     // snap web does — while `listTranslateY` counteracts the native recoil to keep it smooth.
-    holdOffset.value = scrollY.value < 0 ? -scrollY.value : 0;
-    holdOffset.value = withSpring(PULL_THRESHOLD, SETTLE_SPRING);
+    holdOffset.set(scrollY.value < 0 ? -scrollY.value : 0);
+    holdOffset.set(withSpring(PULL_THRESHOLD, SETTLE_SPRING));
     onRefresh();
   }, [armed, holding, holdOffset, scrollY, onRefresh]);
 

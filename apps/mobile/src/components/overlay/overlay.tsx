@@ -302,7 +302,7 @@ export function OptionList({ children, fixed }: { children: ReactNode; fixed?: b
   const localOffset = useSharedValue(0);
   const offset = sheet?.scrollOffset ?? localOffset;
   const onScroll = useAnimatedScrollHandler((e) => {
-    offset.value = e.contentOffset.y;
+    offset.set(e.contentOffset.y);
   });
 
   const [needsScroll, setNeedsScroll] = useState(true);
@@ -506,7 +506,7 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
 
   const appProgress = useSharedValue(0);
   useEffect(() => {
-    appProgress.value = withSpring(depth > 0 ? 1 : 0, SPRING);
+    appProgress.set(withSpring(depth > 0 ? 1 : 0, SPRING));
   }, [depth, appProgress]);
 
   const appStyle = useAnimatedStyle(() =>
@@ -624,12 +624,12 @@ function OverlaySheet({
   });
   const reportFocus = useCallback(
     (bottomY: number) => {
-      focusedInputBottom.value = bottomY;
+      focusedInputBottom.set(bottomY);
     },
     [focusedInputBottom],
   );
   const reportBlur = useCallback(() => {
-    focusedInputBottom.value = -1;
+    focusedInputBottom.set(-1);
   }, [focusedInputBottom]);
   const sheetKeyboard = useMemo<SheetKeyboard>(
     () => ({ reportFocus, reportBlur }),
@@ -660,30 +660,30 @@ function OverlaySheet({
   const [contentNeedsScroll, setContentNeedsScroll] = useState(false);
 
   const close = useCallback(() => {
-    translateY.value = withTiming(height, { duration: 240 }, (finished) => {
+    translateY.set(withTiming(height, { duration: 240 }, (finished) => {
       if (finished) runOnJS(onClosed)();
-    });
+    }));
   }, [height, onClosed, translateY]);
 
   // Mount: slide up + register the imperative close used by the backdrop.
   useEffect(() => {
-    translateY.value = withSpring(0, SPRING);
+    translateY.set(withSpring(0, SPRING));
     register(id, close);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    depthSV.value = withSpring(depthFromTop, SPRING);
+    depthSV.set(withSpring(depthFromTop, SPRING));
   }, [depthFromTop, depthSV]);
 
   const dismissOrSnapBack = (translation: number, velocity: number) => {
     'worklet';
     if (translation > 120 || velocity > 900) {
-      translateY.value = withTiming(height, { duration: 220 }, (finished) => {
+      translateY.set(withTiming(height, { duration: 220 }, (finished) => {
         if (finished) runOnJS(onClosed)();
-      });
+      }));
     } else {
-      translateY.value = withSpring(0, SPRING);
+      translateY.set(withSpring(0, SPRING));
     }
   };
 
@@ -692,7 +692,7 @@ function OverlaySheet({
   const handlePan = Gesture.Pan()
     .enabled(isTop)
     .onUpdate((e) => {
-      translateY.value = Math.max(0, e.translationY);
+      translateY.set(Math.max(0, e.translationY));
     })
     .onEnd((e) => {
       dismissOrSnapBack(e.translationY, e.velocityY);
@@ -707,28 +707,28 @@ function OverlaySheet({
     .activeOffsetY(12)
     .simultaneousWithExternalGesture(scrollRef)
     .onBegin(() => {
-      dragging.value = false;
+      dragging.set(false);
     })
     .onUpdate((e) => {
       if (!dragging.value) {
         if (scrollOffset.value <= 0 && e.translationY > 0) {
-          dragging.value = true;
-          dragBaseline.value = e.translationY;
+          dragging.set(true);
+          dragBaseline.set(e.translationY);
         } else {
           return;
         }
       }
       // Reversed back into scrollable content — hand control back to the list.
       if (scrollOffset.value > 0) {
-        dragging.value = false;
-        translateY.value = 0;
+        dragging.set(false);
+        translateY.set(0);
         return;
       }
-      translateY.value = Math.max(0, e.translationY - dragBaseline.value);
+      translateY.set(Math.max(0, e.translationY - dragBaseline.value));
     })
     .onEnd((e) => {
       const moved = dragging.value;
-      dragging.value = false;
+      dragging.set(false);
       if (moved) dismissOrSnapBack(translateY.value, e.velocityY);
     });
 
@@ -769,7 +769,7 @@ function OverlaySheet({
             sheet's own content padding, not this outer container. */}
         <ThemedView
           type="backgroundPanel"
-          onLayout={(e) => { sheetHeightSV.value = e.nativeEvent.layout.height; }}
+          onLayout={(e) => { sheetHeightSV.set(e.nativeEvent.layout.height); }}
           style={[
             styles.sheet,
             {
@@ -832,9 +832,9 @@ function OverlayPopover({
   const entered = useRef(false);
 
   const close = useCallback(() => {
-    progress.value = withTiming(0, { duration: 120 }, (finished) => {
+    progress.set(withTiming(0, { duration: 120 }, (finished) => {
       if (finished) runOnJS(onClosed)();
-    });
+    }));
   }, [onClosed, progress]);
 
   useEffect(() => {
@@ -847,7 +847,7 @@ function OverlayPopover({
   useEffect(() => {
     if (card && !entered.current) {
       entered.current = true;
-      progress.value = withTiming(1, { duration: 140 });
+      progress.set(withTiming(1, { duration: 140 }));
     }
   }, [card, progress]);
 

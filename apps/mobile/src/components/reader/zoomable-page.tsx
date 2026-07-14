@@ -108,7 +108,7 @@ export function ZoomablePage({
     (w: number, h: number) => {
       if (w <= 0) return;
       const ch = width * (h / w);
-      contentHeight.value = ch;
+      contentHeight.set(ch);
       setOverflowsVertically(ch > height + 1);
     },
     [width, height, contentHeight],
@@ -123,11 +123,11 @@ export function ZoomablePage({
   );
 
   const reset = useCallback(() => {
-    scale.value = 1;
-    tx.value = 0;
-    ty.value = 0;
-    savedTx.value = 0;
-    savedTy.value = 0;
+    scale.set(1);
+    tx.set(0);
+    ty.set(0);
+    savedTx.set(0);
+    savedTy.set(0);
     reportZoom(false);
   }, [scale, tx, ty, savedTx, savedTy, reportZoom]);
 
@@ -140,8 +140,8 @@ export function ZoomablePage({
   // Same for content-pan: a page left behind always comes back scrolled to the top.
   useEffect(() => {
     if (!active) {
-      contentTy.value = 0;
-      savedContentTy.value = 0;
+      contentTy.set(0);
+      savedContentTy.set(0);
     }
   }, [active, contentTy, savedContentTy]);
 
@@ -155,11 +155,11 @@ export function ZoomablePage({
   const pinch = Gesture.Pinch()
     .enabled(pinchEnabled)
     .onStart((e) => {
-      focalStartX.value = e.focalX;
-      focalStartY.value = e.focalY;
-      baseScale.value = scale.value;
-      baseTx.value = tx.value;
-      baseTy.value = ty.value;
+      focalStartX.set(e.focalX);
+      focalStartY.set(e.focalY);
+      baseScale.set(scale.value);
+      baseTx.set(tx.value);
+      baseTy.set(ty.value);
     })
     .onUpdate((e) => {
       const cx = width / 2;
@@ -169,22 +169,22 @@ export function ZoomablePage({
       const anchorY = (focalStartY.value - cy - baseTy.value) / baseScale.value;
       const limitX = ((nextScale - 1) * width) / 2;
       const limitY = ((nextScale - 1) * height) / 2;
-      tx.value = clamp(e.focalX - cx - nextScale * anchorX, -limitX, limitX);
-      ty.value = clamp(e.focalY - cy - nextScale * anchorY, -limitY, limitY);
-      scale.value = nextScale;
+      tx.set(clamp(e.focalX - cx - nextScale * anchorX, -limitX, limitX));
+      ty.set(clamp(e.focalY - cy - nextScale * anchorY, -limitY, limitY));
+      scale.set(nextScale);
     })
     .onEnd(() => {
       if (scale.value <= ZOOM_EPSILON) {
-        scale.value = withTiming(1);
-        tx.value = withTiming(0);
-        ty.value = withTiming(0);
-        savedTx.value = 0;
-        savedTy.value = 0;
+        scale.set(withTiming(1));
+        tx.set(withTiming(0));
+        ty.set(withTiming(0));
+        savedTx.set(0);
+        savedTy.set(0);
         runOnJS(reportZoom)(false);
         return;
       }
-      savedTx.value = tx.value;
-      savedTy.value = ty.value;
+      savedTx.set(tx.value);
+      savedTy.set(ty.value);
       runOnJS(reportZoom)(true);
     });
 
@@ -192,18 +192,18 @@ export function ZoomablePage({
   const pan = Gesture.Pan()
     .enabled(zoomed)
     .onStart(() => {
-      savedTx.value = tx.value;
-      savedTy.value = ty.value;
+      savedTx.set(tx.value);
+      savedTy.set(ty.value);
     })
     .onUpdate((e) => {
       const limitX = ((scale.value - 1) * width) / 2;
       const limitY = ((scale.value - 1) * height) / 2;
-      tx.value = clamp(savedTx.value + e.translationX, -limitX, limitX);
-      ty.value = clamp(savedTy.value + e.translationY, -limitY, limitY);
+      tx.set(clamp(savedTx.value + e.translationX, -limitX, limitX));
+      ty.set(clamp(savedTy.value + e.translationY, -limitY, limitY));
     })
     .onEnd(() => {
-      savedTx.value = tx.value;
-      savedTy.value = ty.value;
+      savedTx.set(tx.value);
+      savedTy.set(ty.value);
     });
 
   // One-finger vertical scroll of an overflowing fit-width page. A deadzone
@@ -216,15 +216,15 @@ export function ZoomablePage({
     .activeOffsetY([-10, 10])
     .failOffsetX([-15, 15])
     .onStart(() => {
-      savedContentTy.value = contentTy.value;
+      savedContentTy.set(contentTy.value);
       runOnJS(setContentPanning)(true);
     })
     .onUpdate((e) => {
       const maxOffset = Math.max(0, contentHeight.value - height);
-      contentTy.value = clamp(savedContentTy.value + e.translationY, -maxOffset, 0);
+      contentTy.set(clamp(savedContentTy.value + e.translationY, -maxOffset, 0));
     })
     .onEnd(() => {
-      savedContentTy.value = contentTy.value;
+      savedContentTy.set(contentTy.value);
       runOnJS(setContentPanning)(false);
     });
 

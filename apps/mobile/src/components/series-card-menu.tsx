@@ -107,43 +107,43 @@ export function SeriesCardMenu({ enabled, bridgeId, bridge, entry, direct, cover
         .activateAfterLongPress(350)
         .enabled(enabled && !!bridgeId)
         .onStart((e) => {
-          holdActive.value = true;
+          holdActive.set(true);
           // Dormant until the finger travels — see `holdArmed`. A hold you never moved selects nothing,
           // so opening the menu just to look at it and letting go can't run an action by accident.
-          holdArmed.value = false;
-          holdOriginX.value = e.absoluteX;
-          holdOriginY.value = e.absoluteY;
-          holdX.value = e.absoluteX;
-          holdY.value = e.absoluteY;
-          hoveredRow.value = -1;
+          holdArmed.set(false);
+          holdOriginX.set(e.absoluteX);
+          holdOriginY.set(e.absoluteY);
+          holdX.set(e.absoluteX);
+          holdY.set(e.absoluteY);
+          hoveredRow.set(-1);
           runOnJS(openMenuAt)(e.absoluteX, e.absoluteY);
         })
         .onUpdate((e) => {
           // Keep reporting while the finger is still down; the popup hit-tests its rows against this.
-          holdX.value = e.absoluteX;
-          holdY.value = e.absoluteY;
+          holdX.set(e.absoluteX);
+          holdY.set(e.absoluteY);
           if (!holdArmed.value) {
             const dx = e.absoluteX - holdOriginX.value;
             const dy = e.absoluteY - holdOriginY.value;
             // Latches on: past this point jitter can't disarm you mid-pick.
-            if (Math.hypot(dx, dy) > HOLD_ARM_DISTANCE) holdArmed.value = true;
+            if (Math.hypot(dx, dy) > HOLD_ARM_DISTANCE) holdArmed.set(true);
           }
         })
         .onEnd(() => {
           // Lift = commit whatever the finger was over. Nothing under it (you never moved, or you slid
           // off) simply leaves the menu open, which is what the iOS one does.
           const row = hoveredRow.value;
-          holdActive.value = false;
-          holdArmed.value = false;
-          hoveredRow.value = -1;
+          holdActive.set(false);
+          holdArmed.set(false);
+          hoveredRow.set(-1);
           if (row >= 0) runOnJS(commitHoveredRow)(row);
         })
         .onFinalize(() => {
           // Cancelled rather than ended (an interrupting touch, a navigation): drop the hold, don't
           // run anything.
-          holdActive.value = false;
-          holdArmed.value = false;
-          hoveredRow.value = -1;
+          holdActive.set(false);
+          holdArmed.set(false);
+          hoveredRow.set(-1);
         }),
     [enabled, bridgeId, openMenuAt, holdOriginX, holdOriginY],
   );

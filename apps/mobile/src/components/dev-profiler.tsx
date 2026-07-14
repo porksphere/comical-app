@@ -40,6 +40,10 @@ function loadProfiler(): {
   stopProfiling: (saveInDownloads?: boolean, fileName?: string) => Promise<string>;
 } | null {
   try {
+    // Intentionally a lazy require (not a static import): the module may be
+    // absent from an app shell built before it was added, and we swallow that
+    // below instead of crashing at load.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     return require("react-native-release-profiler");
   } catch {
     return null;

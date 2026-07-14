@@ -66,7 +66,7 @@ function reorderTo(order: SharedValue<string[]>, id: string, topY: number, count
   const next = [...arr];
   next.splice(cur, 1);
   next.splice(target, 0, id);
-  order.value = next;
+  order.set(next);
 }
 
 export function ReorderableList<T>({ data, keyOf, renderRow, onReorder, refresh }: ReorderableListProps<T>) {
@@ -91,12 +91,12 @@ export function ReorderableList<T>({ data, keyOf, renderRow, onReorder, refresh 
   // Re-sync order when the item set/order changes. A no-op right after our own commit.
   const signature = data.map(keyOf).join(',');
   useEffect(() => {
-    order.value = signature.length ? signature.split(',') : [];
+    order.set(signature.length ? signature.split(',') : []);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signature]);
 
   const onScroll = useAnimatedScrollHandler((e) => {
-    scrollY.value = e.contentOffset.y;
+    scrollY.set(e.contentOffset.y);
   });
 
   // Autoscroll while dragging near an edge, keeping the row + its target tracking the finger.
@@ -111,8 +111,8 @@ export function ReorderableList<T>({ data, keyOf, renderRow, onReorder, refresh 
     const next = Math.min(maxScroll, Math.max(0, scrollY.value + delta));
     if (next === scrollY.value) return;
     scrollTo(scrollRef, 0, next, false);
-    scrollY.value = next;
-    activeTop.value = fvy + next - grabOffset.value;
+    scrollY.set(next);
+    activeTop.set(fvy + next - grabOffset.value);
     reorderTo(order, activeId.value, activeTop.value, count);
   });
 
@@ -195,25 +195,25 @@ function DragRow({
     .onStart((e) => {
       const m = measure(scrollRef);
       if (m) {
-        svTop.value = m.pageY;
-        svHeight.value = m.height;
+        svTop.set(m.pageY);
+        svHeight.set(m.height);
       }
       const fvy = e.absoluteY - svTop.value;
-      fingerVY.value = fvy;
+      fingerVY.set(fvy);
       const fingerContentY = fvy + scrollY.value;
-      grabOffset.value = fingerContentY - slotY(order.value, id);
-      activeTop.value = fingerContentY - grabOffset.value;
-      activeId.value = id;
+      grabOffset.set(fingerContentY - slotY(order.value, id));
+      activeTop.set(fingerContentY - grabOffset.value);
+      activeId.set(id);
       runOnJS(hapticImpactLight)();
     })
     .onUpdate((e) => {
       const fvy = e.absoluteY - svTop.value;
-      fingerVY.value = fvy;
-      activeTop.value = fvy + scrollY.value - grabOffset.value;
+      fingerVY.set(fvy);
+      activeTop.set(fvy + scrollY.value - grabOffset.value);
       reorderTo(order, id, activeTop.value, count);
     })
     .onEnd(() => {
-      activeId.value = null;
+      activeId.set(null);
       runOnJS(onCommit)(order.value);
     });
 

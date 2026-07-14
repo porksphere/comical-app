@@ -243,7 +243,7 @@ export function SeriesCardContextMenuHost() {
 }
 
 function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
-  const { entry, bridgeId, bridge, direct, coverAspect, rect } = req;
+  const { entry, bridgeId, direct, coverAspect, rect } = req;
   // The VISUAL corner radius the preview starts at (matches the source it lifts from); it morphs to the
   // resting radius (REST_COVER_RADIUS) as it opens. Defaults to that resting radius (a card cover).
   const startRadius = req.startRadius ?? REST_COVER_RADIUS;
@@ -299,7 +299,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const openMorph = useCallback(() => {
     if (openedRef.current) return;
     openedRef.current = true;
-    progress.value = withSpring(1, MORPH_SPRING);
+    progress.set(withSpring(1, MORPH_SPRING));
   }, [progress]);
 
   useEffect(() => {
@@ -327,9 +327,9 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const dismiss = useCallback(() => {
     // The open spring, reversed and quickened (see CLOSE_SPRING) — the cover morphs back onto the card
     // the same bouncy way it came out, just without the long tail that kept the list locked.
-    progress.value = withSpring(0, CLOSE_SPRING, (finished) => {
+    progress.set(withSpring(0, CLOSE_SPRING, (finished) => {
       if (finished) runOnJS(finishClose)();
-    });
+    }));
   }, [progress, finishClose]);
 
   useEffect(() => {
@@ -570,7 +570,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       if (targets.current[key] === v) return;
       const first = targets.current[key] === undefined;
       targets.current[key] = v;
-      sv.value = resizeReady && !first ? withSpring(v, MORPH_SPRING) : v;
+      sv.set(resizeReady && !first ? withSpring(v, MORPH_SPRING) : v);
     };
     put('panelX', panelPos.x, panelLeft);
     put('topMin', topMin, panelTopMin);
@@ -627,13 +627,13 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     const k = 1 - Math.exp(-dt / FOLLOW_TAU);
 
     const gap = expandTarget.value - expand.value;
-    if (Math.abs(gap) < 0.0005) expand.value = expandTarget.value;
-    else expand.value += gap * k;
+    if (Math.abs(gap) < 0.0005) expand.set(expandTarget.value);
+    else expand.set(expand.value + gap * k);
 
     if (progressFollows.value) {
       const pGap = progressTarget.value - progress.value;
-      if (Math.abs(pGap) < 0.0005) progress.value = progressTarget.value;
-      else progress.value += pGap * k;
+      if (Math.abs(pGap) < 0.0005) progress.set(progressTarget.value);
+      else progress.set(progress.value + pGap * k);
     }
   });
 
@@ -648,14 +648,14 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
         .onStart(() => {
           cancelAnimation(progress);
           // Take `progress` off the springs and hand it to the follower for the duration of the drag.
-          progressFollows.value = true;
-          progressTarget.value = progress.value;
+          progressFollows.set(true);
+          progressTarget.set(progress.value);
           // The pan drives the TARGET, never `expand` itself — the follower owns that. Start from where
           // the panel actually IS, not from the target, so grabbing it mid-settle picks it up where you
           // can see it rather than snapping to where it was headed.
-          panStartExpand.value = expand.value;
-          expandTarget.value = expand.value;
-          overscroll.value = 0;
+          panStartExpand.set(expand.value);
+          expandTarget.set(expand.value);
+          overscroll.set(0);
         })
         .onUpdate((e) => {
           // The column moves WITH the finger, like a scroll: drag UP and the panel shrinks so the menu
@@ -673,9 +673,9 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
             // the open animation running backwards under your thumb. This one DOES track the finger 1:1
             // — a dismiss you're performing yourself should answer immediately.
             const over = range > 0 ? ((raw - 1) * range) / DRAG_GAIN : Math.max(0, e.translationY);
-            expandTarget.value = 1;
-            overscroll.value = over;
-            progressTarget.value = 1 - Math.min(1, over / DISMISS_DRAG);
+            expandTarget.set(1);
+            overscroll.set(over);
+            progressTarget.set(1 - Math.min(1, over / DISMISS_DRAG));
             return;
           }
 
@@ -683,15 +683,15 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
             // Past the bottom of the range — this direction does NOT dismiss. Dragging up is how you
             // reach the menu, and reaching for the menu should never throw the popup away. It just
             // rubber-bands: resisted, capped, and eased back on release.
-            expandTarget.value = Math.max(-RUBBER_LIMIT, raw * RUBBER_RESIST);
-            overscroll.value = 0;
-            progressTarget.value = 1;
+            expandTarget.set(Math.max(-RUBBER_LIMIT, raw * RUBBER_RESIST));
+            overscroll.set(0);
+            progressTarget.set(1);
             return;
           }
 
-          expandTarget.value = raw;
-          overscroll.value = 0;
-          progressTarget.value = 1;
+          expandTarget.set(raw);
+          overscroll.set(0);
+          progressTarget.set(1);
         })
         .onEnd((e) => {
           // Only a DOWNWARD pull dismisses (overscroll is only ever set by that branch above), either
@@ -699,14 +699,14 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
           const past = overscroll.value > DISMISS_RELEASE_PX;
           const flicked = overscroll.value > 0 && e.velocityY > DISMISS_RELEASE_VELOCITY;
           // Hand `progress` back to the springs before either branch touches it.
-          progressFollows.value = false;
+          progressFollows.set(false);
           if (past || flicked) {
             runOnJS(dismiss)();
             return;
           }
 
-          progress.value = withSpring(1, MORPH_SPRING);
-          overscroll.value = 0;
+          progress.set(withSpring(1, MORPH_SPRING));
+          overscroll.set(0);
           if (dragRange > 0) {
             // Pick the end the flick was heading for and just point the TARGET at it — the follower
             // eases the panel over, with the same lag it had under the finger. There is no separate
@@ -717,7 +717,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
             // deliberately lagging behind it. Judge the flick by what the user did, not by how far the
             // panel had managed to follow them by the time they let go.
             const projected = expandTarget.value + velocity * FLING_PROJECTION;
-            expandTarget.value = projected >= 0.5 ? 1 : 0;
+            expandTarget.set(projected >= 0.5 ? 1 : 0);
           }
         }),
     [dismiss, dragRange, expand, expandTarget, overscroll, panStartExpand, progress, progressFollows, progressTarget],
@@ -954,7 +954,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     },
     (row, prev) => {
       if (row === prev) return;
-      hoveredRow.value = row;
+      hoveredRow.set(row);
       // The little tick as the selection moves between rows — the thing that makes the iOS one feel
       // like it has detents rather than being a hover state.
       if (row >= 0) runOnJS(selectionTick)();
@@ -977,15 +977,15 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     (row, prev) => {
       if (row === prev) return;
       if (row < 0) {
-        hoverOn.value = withTiming(0, HOVER_FADE);
+        hoverOn.set(withTiming(0, HOVER_FADE));
         return;
       }
       const y = MENU_PAD_V + row * ROW_HEIGHT;
       if (prev == null || prev < 0) {
-        hoverY.value = y; // appear where the finger is
-        hoverOn.value = withTiming(1, HOVER_FADE);
+        hoverY.set(y); // appear where the finger is
+        hoverOn.set(withTiming(1, HOVER_FADE));
       } else {
-        hoverY.value = withSpring(y, HOVER_SPRING);
+        hoverY.set(withSpring(y, HOVER_SPRING));
       }
     },
   );
@@ -1014,26 +1014,26 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       Gesture.Pan()
         .activateAfterLongPress(MENU_HOLD_MS)
         .onStart((e) => {
-          holdActive.value = true;
-          holdArmed.value = true;
-          holdX.value = e.absoluteX;
-          holdY.value = e.absoluteY;
+          holdActive.set(true);
+          holdArmed.set(true);
+          holdX.set(e.absoluteX);
+          holdY.set(e.absoluteY);
         })
         .onUpdate((e) => {
-          holdX.value = e.absoluteX;
-          holdY.value = e.absoluteY;
+          holdX.set(e.absoluteX);
+          holdY.set(e.absoluteY);
         })
         .onEnd(() => {
           const row = hoveredRow.value;
-          holdActive.value = false;
-          holdArmed.value = false;
-          hoveredRow.value = -1;
+          holdActive.set(false);
+          holdArmed.set(false);
+          hoveredRow.set(-1);
           if (row >= 0) runOnJS(commitHoveredRow)(row);
         })
         .onFinalize(() => {
-          holdActive.value = false;
-          holdArmed.value = false;
-          hoveredRow.value = -1;
+          holdActive.set(false);
+          holdArmed.set(false);
+          hoveredRow.set(-1);
         }),
     [],
   );
@@ -1333,10 +1333,10 @@ function MenuRow({
       onPress={inert ? undefined : onPress}
       disabled={inert}
       onPressIn={() => {
-        if (!holdActive.value) hoveredRow.value = index;
+        if (!holdActive.value) hoveredRow.set(index);
       }}
       onPressOut={() => {
-        if (!holdActive.value) hoveredRow.value = -1;
+        if (!holdActive.value) hoveredRow.set(-1);
       }}
       style={styles.row}>
       <ThemedText style={[styles.rowLabel, primary && styles.rowLabelPrimary, { color }]} numberOfLines={1}>
