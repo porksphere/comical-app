@@ -15,8 +15,14 @@ export function useComicalExcludedIds(): Record<string, boolean> {
   return use$(excludedFromComicalHome$);
 }
 
-/** Reactive `[excluded, setExcluded]` for one bridge — for its settings toggle. */
+/** Reactive `[excluded, setExcluded]` for one bridge — for its settings toggle. Writes REPLACE the
+ *  whole record (new reference) so `use$` subscribers on another screen (the Comical home's
+ *  `useComicalExcludedIds`) re-render and re-filter immediately — a nested `store$[key].set()` can
+ *  leave the root snapshot's identity unchanged, so the home's `useMemo` wouldn't recompute. */
 export function useComicalExcluded(bridgeId: string): readonly [boolean, (excluded: boolean) => void] {
   const map = use$(excludedFromComicalHome$);
-  return [!!map[bridgeId], (excluded: boolean) => excludedFromComicalHome$[bridgeId].set(excluded)] as const;
+  return [
+    !!map[bridgeId],
+    (excluded: boolean) => excludedFromComicalHome$.set({ ...excludedFromComicalHome$.peek(), [bridgeId]: excluded }),
+  ] as const;
 }

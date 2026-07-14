@@ -356,6 +356,9 @@ export function Rail({
           // Recycle-safe now (SeriesCard resets its per-item state on entry change), so reuse card
           // instances as the strip scrolls instead of remounting each heavy card.
           recycleItems
+          // Tighter horizontal mount window than the default 250 — each card loads a cover image, so
+          // don't preload a large run of off-screen cards (esp. on the Comical home's many rails).
+          drawDistance={100}
           estimatedItemSize={itemSize}
           // Every card's box is a KNOWN fixed width (card pinned to `cardWidth`, plus the stripItem's
           // symmetric stripHalfGap padding = stripGap), so declare it as fixed rather than merely

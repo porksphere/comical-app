@@ -151,6 +151,9 @@ export function ContentFeed({
       getFixedItemSize={getFixedItemSize}
       estimatedItemSize={cellHeight}
       numColumns={1}
+      // Rails eagerly load their cover images the moment they mount, so keep a tighter mount window
+      // than the default 250 — fewer off-screen rails alive at once = fewer simultaneous image loads.
+      drawDistance={120}
       header={header}
       footer={footer}
       paddingTop={paddingTop}
