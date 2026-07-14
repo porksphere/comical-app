@@ -244,7 +244,7 @@ function SeriesBody({
   // Favorite state + optimistic toggle — shared hook so the Series screen and the reader's settings
   // panel stay in lockstep (see useFavorite). `favorited` is null while loading (button disabled),
   // false on an unsupported/errored check (the star stays unfilled).
-  const { favorited, toggle: toggleFavorite } = useFavorite(bridgeId, series.id);
+  const { favorited, toggle: toggleFavorite, available: favoritesAvailable } = useFavorite(bridgeId, series.id);
 
   // Related-series rails: the main query leaves `relatedGroups` unset and flags
   // `relatedGroupsDeferred` when the bridge only serves them via a separate,
@@ -384,7 +384,9 @@ function SeriesBody({
       <ActionButton
         label={favorited ? '★  Favorited' : '☆  Favorite'}
         onPress={toggleFavorite}
-        disabled={favorited === null}
+        // Greyed when the bridge's favorites need a login the user hasn't set (see useFavorite) — as
+        // well as while the initial status check loads.
+        disabled={!favoritesAvailable || favorited === null}
       />
       {series.newCount != null && <NewBadge count={series.newCount} />}
     </View>

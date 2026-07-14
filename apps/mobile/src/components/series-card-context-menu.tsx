@@ -285,7 +285,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // or they never show and the panel opens condensed then jumps when the real detail lands.
   const detailLoaded = !!detail.data && !detail.isPlaceholderData;
 
-  const { favorited, toggle: toggleFavorite } = useFavorite(bridgeId, entry.id);
+  const { favorited, toggle: toggleFavorite, available: favoritesAvailable } = useFavorite(bridgeId, entry.id);
   const { inLibrary, toggle: toggleLibrary } = useLibrary(bridgeId, entry.id, () => ({
     title: entry.title,
     ...(entry.cover ? { thumbnailUrl: entry.cover } : {}),
@@ -906,6 +906,8 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       Icon: StarIcon,
       iconFilled: !!favorited,
       loading: favorited === null,
+      // Greyed + inert when this bridge's favorites need a login that isn't set (see useFavorite).
+      disabled: !favoritesAvailable,
       active: !!favorited,
       onPress: () => act(toggleFavorite),
     },
@@ -922,7 +924,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // What a lift runs. Registered rather than passed, because the finger that lifts belongs to the
   // CARD's gesture, which knows nothing about this component (see lib/series-card-menu).
   useEffect(() => {
-    setMenuRowActions(rows.map((r) => (r.loading ? () => {} : r.onPress)));
+    setMenuRowActions(rows.map((r) => (r.loading || r.disabled ? () => {} : r.onPress)));
   });
 
   // ── Peek and commit ───────────────────────────────────────────────────────
@@ -1291,6 +1293,8 @@ export type MenuRowSpec = {
   /** Fill the glyph rather than tint it — how an "on" toggle reads (see above). */
   iconFilled?: boolean;
   loading: boolean;
+  /** Unavailable (e.g. favorites need a login that isn't set) — greyed + inert, like loading but final. */
+  disabled?: boolean;
   active?: boolean;
   /** The menu's one real action (Read): bold and leading. NOT coloured — see above. */
   primary?: boolean;
@@ -1302,6 +1306,7 @@ function MenuRow({
   Icon,
   iconFilled,
   loading,
+  disabled,
   active,
   primary,
   index,
@@ -1311,10 +1316,11 @@ function MenuRow({
   index: number;
 }) {
   const theme = useTheme();
-  const color = loading ? theme.textSecondary : theme.text;
+  const inert = loading || !!disabled;
+  const color = inert ? theme.textSecondary : theme.text;
   // An off toggle's glyph sits back a little, so the on-state (solid glyph, full contrast) reads as
   // a change without needing a colour of its own.
-  const iconColor = loading ? theme.textSecondary : primary || active ? color : theme.textSecondary;
+  const iconColor = inert ? theme.textSecondary : primary || active ? color : theme.textSecondary;
   // A row has NO highlight of its own. Pressing it just says which row is selected, on the same channel
   // the held finger writes — so the one travelling bubble draws a press and a peek alike. There is
   // literally nothing left that could look different between them.
@@ -1324,8 +1330,8 @@ function MenuRow({
   // just picked (and blink the bubble at the exact moment the hold takes over).
   return (
     <Pressable
-      onPress={loading ? undefined : onPress}
-      disabled={loading}
+      onPress={inert ? undefined : onPress}
+      disabled={inert}
       onPressIn={() => {
         if (!holdActive.value) hoveredRow.value = index;
       }}

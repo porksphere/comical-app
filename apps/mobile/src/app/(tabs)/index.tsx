@@ -33,6 +33,7 @@ import { useComicalExcludedIds } from '@/data/comical-home';
 import { useCustomPages } from '@/data/custom-pages';
 import { useCrossBridgeRails } from '@/hooks/use-cross-bridge-rails';
 import { useCustomPageRows } from '@/hooks/use-custom-page-rows';
+import { useFavoritesAvailability } from '@/hooks/use-favorites-available';
 import { useDedupedPages } from '@/data/grid-pages';
 import { fetchBrowseScope, homeSectionsQuery, queryKeys, type BrowseScope } from '@/data/queries';
 import { COMICAL_BRIDGE_ID, COMICAL_ICON, isComicalBridge, useSelectedBridge } from '@/data/selected-bridge';
@@ -104,6 +105,14 @@ export default function BrowseScreen() {
   // User-composed custom pages surface in Comical's Page selector alongside the built-in "Home" (the
   // featured aggregate). `activeCustomPage`/`customPageRows` are resolved below, once `page` exists.
   const customPages = useCustomPages();
+  // The consolidated "Favorites" page: one rail per Comical-included bridge whose account favorites are
+  // usable (favorites-capable AND logged in — see useFavoritesAvailability). A bridge with no login set
+  // is simply absent, so its rail never appears. `favoritesRows`/`activeFavoritesPage` resolve below.
+  const { isAvailable: favoritesAvailable } = useFavoritesAvailability();
+  const comicalFavoritesBridges = useMemo(
+    () => comicalRailBridges.filter((b) => favoritesAvailable(b.id)),
+    [comicalRailBridges, favoritesAvailable],
+  );
 
   // ── Lists (drives the Page selector) ──────────────────────────────────────
   // Fetched via react-query, keyed by bridge, so `lists` is DERIVED from the cache rather than
@@ -136,6 +145,12 @@ export default function BrowseScreen() {
   );
   const customPageRows = useCustomPageRows(activeCustomPage);
 
+  // The consolidated Favorites page is active when Comical is selected and it's the chosen page. Its
+  // rails fan out over `comicalFavoritesBridges` (the logged-in, favorites-capable bridges); NO_BRIDGES
+  // otherwise, so the hook runs zero queries when the page isn't showing.
+  const activeFavoritesPage = isComical && page === 'favorites';
+  const favoritesRows = useCrossBridgeRails(activeFavoritesPage ? comicalFavoritesBridges : NO_BRIDGES, { mode: 'favorites' });
+
   // Default landing page for a bridge, applied once its lists settle: a bridge whose lists are ALL
   // page-flagged (no composed Home) opens on its first page instead of a blank Home; anything with a
   // home-eligible (or home-backing) list opens on Home. Ref-guarded to once per bridge so a later
@@ -147,7 +162,12 @@ export default function BrowseScreen() {
     // valid selection (Home, or a still-existing custom page id) but clear any stale page carried from
     // the previous bridge — otherwise a page like "Popular" would strand the selector on a dead label.
     if (isComical) {
-      setPage((prev) => (prev === 'home' || customPages.some((p) => p.id === prev) ? prev : 'home'));
+      setPage((prev) => {
+        if (prev === 'home') return prev;
+        // Favorites survives only while at least one bridge qualifies (else it's not in the selector).
+        if (prev === 'favorites') return comicalFavoritesBridges.length > 0 ? prev : 'home';
+        return customPages.some((p) => p.id === prev) ? prev : 'home';
+      });
       return;
     }
     if (!bridgeId || !listsSettled) return;
@@ -156,24 +176,25 @@ export default function BrowseScreen() {
     const hasHomeList = lists.some((l) => !l.page || l.id === 'home');
     const firstPage = lists.find((l) => l.page);
     setPage(hasHomeList || !firstPage ? 'home' : firstPage.name.toLowerCase());
-  }, [isComical, customPages, bridgeId, listsSettled, lists]);
+  }, [isComical, customPages, comicalFavoritesBridges, bridgeId, listsSettled, lists]);
 
-  // Comical: "home" (featured aggregate) + each custom page id. Real bridge: its pageOptions.
+  // Comical: "home" (featured aggregate), then "Favorites" (only when a bridge qualifies), then each
+  // custom page id. Real bridge: its pageOptions — with favorites gated on the login being set.
   const pages = useMemo(
     () =>
       isComical
-        ? ['home', ...customPages.map((p) => p.id)]
+        ? ['home', ...(comicalFavoritesBridges.length > 0 ? ['favorites'] : []), ...customPages.map((p) => p.id)]
         : currentBridge
-          ? pageOptions(lists, currentBridge.capabilities)
+          ? pageOptions(lists, currentBridge.capabilities, favoritesAvailable(bridgeId))
           : ['home'],
-    [isComical, customPages, lists, currentBridge],
+    [isComical, comicalFavoritesBridges, customPages, lists, currentBridge, favoritesAvailable, bridgeId],
   );
   // The Page selector's option values for Comical are opaque page ids — map them back to display
-  // names (and the built-in 'home' → "Home"). Undefined for a real bridge (its option values are
-  // already the human-readable page names).
+  // names (and the built-in 'home' → "Home", 'favorites' → "Favorites"). Undefined for a real bridge
+  // (its option values are already the human-readable page names).
   const pageLabels = useMemo(() => {
     if (!isComical) return undefined;
-    const map: Record<string, string> = { home: 'Home' };
+    const map: Record<string, string> = { home: 'Home', favorites: 'Favorites' };
     for (const p of customPages) map[p.id] = p.name;
     return map;
   }, [isComical, customPages]);
@@ -195,7 +216,10 @@ export default function BrowseScreen() {
     () => (page === 'home' ? homeList : lists.find((l) => l.page && l.name.toLowerCase() === page)),
     [lists, page, homeList],
   );
-  const isFavoritesPage = page === 'favorites';
+  // The per-BRIDGE favorites page (a real bridge's account favorites as a flat results grid). Comical's
+  // 'favorites' is the CONSOLIDATED page instead (`activeFavoritesPage`), rendered as rails — so exclude
+  // Comical here, or its composed surface would be mistaken for a single-bridge favorites results grid.
+  const isFavoritesPage = !isComical && page === 'favorites';
 
   // Search + filters now live on the pushed Search screen (`app/search.tsx`), reachable from this
   // screen's top bar. Browse itself is pure discovery: bridge/page selectors, rails, home grid,
@@ -416,11 +440,13 @@ export default function BrowseScreen() {
   const gridActive = showResultsGrid || isHomeTerminal;
   const homeReady = isComical
     ? // Comical reveals as soon as it has ROWS (skeleton rows count — they fill in progressively), or
-      // once the active surface has settled with none. A custom page keys off its OWN hook; the
-      // built-in featured home keys off the cross-bridge fan-out.
-      activeCustomPage
-      ? customPageRows.rows.length > 0 || !customPageRows.anyLoading
-      : comicalRails.rows.length > 0 || !comicalRails.anyLoading
+      // once the active surface has settled with none. Each Comical surface keys off its OWN hook:
+      // Favorites and custom pages off theirs, the built-in featured home off the cross-bridge fan-out.
+      activeFavoritesPage
+      ? favoritesRows.rows.length > 0 || !favoritesRows.anyLoading
+      : activeCustomPage
+        ? customPageRows.rows.length > 0 || !customPageRows.anyLoading
+        : comicalRails.rows.length > 0 || !comicalRails.anyLoading
     : !!homeError ||
       !!gridError ||
       ((gridActive ? !gridUpdating : true) && (composedHome ? !homeUpdating : true));
@@ -499,7 +525,13 @@ export default function BrowseScreen() {
   const refreshCurrentView = () => {
     const jobs: Promise<unknown>[] = [];
     if (isComical) {
-      jobs.push(activeCustomPage ? customPageRows.refetch() : comicalRails.refetch());
+      jobs.push(
+        activeFavoritesPage
+          ? favoritesRows.refetch()
+          : activeCustomPage
+            ? customPageRows.refetch()
+            : comicalRails.refetch(),
+      );
     } else if (inResults) {
       if (resultsScope) jobs.push(resultsQuery.refetch());
     } else {
@@ -663,10 +695,12 @@ export default function BrowseScreen() {
   const homeRows = useMemo(
     () =>
       isComical
-        ? // A custom page renders its own composed rows; "Home" is the featured cross-bridge aggregate.
-          activeCustomPage
-          ? customPageRows.rows
-          : comicalRails.rows
+        ? // Favorites and custom pages render their own composed rows; "Home" is the featured aggregate.
+          activeFavoritesPage
+          ? favoritesRows.rows
+          : activeCustomPage
+            ? customPageRows.rows
+            : comicalRails.rows
         : inResults || homeError
           ? []
           : buildHomeRows({
@@ -685,6 +719,8 @@ export default function BrowseScreen() {
             }),
     [
       isComical,
+      activeFavoritesPage,
+      favoritesRows.rows,
       activeCustomPage,
       customPageRows.rows,
       comicalRails.rows,

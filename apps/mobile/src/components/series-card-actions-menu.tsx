@@ -31,7 +31,7 @@ export function SeriesActionsMenu({
   coverAspect?: number;
 }) {
   const { closeTop } = useOverlay();
-  const { favorited, toggle: toggleFavorite } = useFavorite(bridgeId, entry.id);
+  const { favorited, toggle: toggleFavorite, available: favoritesAvailable } = useFavorite(bridgeId, entry.id);
   const { inLibrary, toggle: toggleLibrary } = useLibrary(bridgeId, entry.id, () => ({
     title: entry.title,
     ...(entry.cover ? { thumbnailUrl: entry.cover } : {}),
@@ -54,6 +54,8 @@ export function SeriesActionsMenu({
           label={favorited ? 'Unfavorite' : 'Favorite'}
           Icon={StarIcon}
           loading={favorited === null}
+          // Greyed + inert when this bridge's favorites need a login that isn't set (see useFavorite).
+          disabled={!favoritesAvailable}
           active={!!favorited}
           onPress={() => {
             toggleFavorite();
@@ -94,6 +96,7 @@ function ActionRow({
   label,
   Icon,
   loading,
+  disabled,
   active,
   onPress,
 }: {
@@ -101,22 +104,25 @@ function ActionRow({
   Icon: (props: IconProps) => React.ReactElement;
   /** Status still resolving — row is dimmed and inert. */
   loading: boolean;
+  /** Unavailable (e.g. favorites need a login that isn't set) — dimmed and inert, but not "loading". */
+  disabled?: boolean;
   /** Currently favorited / in library — tints the row with the accent and shows a trailing dot. */
   active: boolean;
   onPress: () => void;
 }) {
   const theme = useTheme();
   const [hovered, setHovered] = useState(false);
-  const color = loading ? theme.textSecondary : active ? theme.accent : theme.text;
+  const inert = loading || !!disabled;
+  const color = inert ? theme.textSecondary : active ? theme.accent : theme.text;
   return (
     <Pressable
-      onPress={loading ? undefined : onPress}
-      disabled={loading}
+      onPress={inert ? undefined : onPress}
+      disabled={inert}
       onPointerEnter={() => setHovered(true)}
       onPointerLeave={() => setHovered(false)}>
       <ThemedView
         type="backgroundElement"
-        style={[styles.row, hovered && !loading && { backgroundColor: theme.backgroundSelected }, loading && styles.rowLoading]}>
+        style={[styles.row, hovered && !inert && { backgroundColor: theme.backgroundSelected }, inert && styles.rowLoading]}>
         <Icon color={color} size={18} />
         <ThemedText style={[styles.rowLabel, { color }]} numberOfLines={1}>
           {label}
