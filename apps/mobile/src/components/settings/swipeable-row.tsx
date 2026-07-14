@@ -31,6 +31,11 @@ const MAX_ROW_ACTIONS = 3;
  *  open position. Raising `stiffness` collapses the lag back toward 1:1 tracking. */
 const SPRING = { damping: 22, stiffness: 200, mass: 0.7 } as const;
 
+/** How much of the finger's over-drag past the captured detent the row actually follows. Low = the
+ *  drag feels sticky/notched: the row barely moves within a detent, then gives way at the midpoint
+ *  (the centre-ish of a button) where it snaps to the next pill and a haptic ticks. */
+const DETENT_RESIST = 0.35;
+
 // Constant for the process, so the branch in `SwipeableSettingsRow` is stable and each platform
 // only ever renders one of the two implementations below — their hooks never interleave.
 const IS_WEB = Platform.OS === 'web';
@@ -118,9 +123,9 @@ function SwipeRow({ label, description, descriptionColor, leading, onPress, acti
   // Which detent the row is resting at: 0 = closed, k = k action pills revealed. The swipe stops one
   // pill at a time, so this is an index, not a boolean. Read on the JS thread by the tap handler.
   const restIndex = useSharedValue(0);
-  // How many pills are fully revealed at the CURRENT drag position — compared frame to frame so a
-  // haptic ticks exactly as each new pill clears the edge (in either direction).
-  const crossLevel = useSharedValue(0);
+  // Which detent the finger is currently "captured" at DURING a drag — it flips as the finger crosses
+  // the midpoint between detents, which is both the resistance release point and the haptic tick.
+  const captured = useSharedValue(0);
   // Stable per-row identity for `swipe-row-registry`. Lazy state, not a ref, for the same reason.
   const [token] = useState(() => ({}));
 
@@ -136,7 +141,7 @@ function SwipeRow({ label, description, descriptionColor, leading, onPress, acti
   // closures, and the compiler memoizes what's worth memoizing.
   function close() {
     restIndex.value = 0;
-    crossLevel.value = 0;
+    captured.value = 0;
     releaseOpenRow(token);
     target.value = 0;
   }
@@ -155,47 +160,39 @@ function SwipeRow({ label, description, descriptionColor, leading, onPress, acti
     .failOffsetY([-12, 12])
     .onBegin(() => {
       'worklet';
-      // Track haptics from wherever the row is currently resting, so resuming a drag from an already
-      // open detent doesn't fire a spurious tick on the first frame.
-      crossLevel.value = restIndex.value;
+      // Capture from wherever the row is currently resting, so resuming a drag from an already-open
+      // detent doesn't fire a spurious tick on the first frame.
+      captured.value = restIndex.value;
     })
     .onUpdate((e) => {
       'worklet';
       const from = -detents[restIndex.value];
-      // Clamp: nothing to reveal past the last pill, and nothing to the row's left at all.
-      const t = Math.min(0, Math.max(-openX, from + e.translationX));
-      target.value = t;
-      // Count pills fully revealed at this position and tick a haptic whenever it changes — so you
-      // feel every pill clear (or re-cover) as you drag through the detents.
-      const absX = -t;
-      let level = 0;
-      for (let k = 1; k < detents.length; k++) if (absX + 0.5 >= detents[k]) level = k;
-      if (level !== crossLevel.value) {
-        crossLevel.value = level;
+      // The finger's raw absolute position (before resistance), clamped to the openable range.
+      const absRaw = -Math.min(0, Math.max(-openX, from + e.translationX));
+      // Flip the captured detent as the finger crosses the MIDPOINT between detents — the centre-ish
+      // of a button, where the resistance gives way. Tick a haptic on each flip (either direction).
+      let cap = captured.value;
+      while (cap < detents.length - 1 && absRaw > (detents[cap] + detents[cap + 1]) / 2) cap += 1;
+      while (cap > 0 && absRaw < (detents[cap - 1] + detents[cap]) / 2) cap -= 1;
+      if (cap !== captured.value) {
+        captured.value = cap;
         runOnJS(hapticImpactLight)();
       }
+      // Resisted position: sit at the captured detent, following only a FRACTION of the finger's
+      // excursion beyond it — so a drag within a detent is sticky, then releases past the midpoint.
+      const resisted = detents[cap] + DETENT_RESIST * (absRaw - detents[cap]);
+      target.value = -Math.min(openX, Math.max(0, resisted));
     })
     .onEnd((e) => {
       'worklet';
-      const absX = -target.value;
-      // Snap to the NEAREST detent by position …
-      let idx = 0;
-      let best = 1e9;
-      for (let k = 0; k < detents.length; k++) {
-        const d = absX - detents[k];
-        const dist = d < 0 ? -d : d;
-        if (dist < best) {
-          best = dist;
-          idx = k;
-        }
-      }
-      // … then let a firm flick carry it one more stop in the fling direction, so a quick swipe still
-      // advances (or dismisses) rather than snapping back to where it was released.
+      // Rest at the captured detent (its midpoints already decided which pill count we're nearest),
+      // letting a firm flick carry it one more stop in the fling direction.
+      let idx = captured.value;
       if (e.velocityX < -500 && idx < detents.length - 1) idx += 1;
       else if (e.velocityX > 500 && idx > 0) idx -= 1;
       target.value = -detents[idx];
       restIndex.value = idx;
-      crossLevel.value = idx;
+      captured.value = idx;
       runOnJS(settle)(idx);
     });
 
