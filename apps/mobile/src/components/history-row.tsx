@@ -1,38 +1,43 @@
 import { Image } from 'expo-image';
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { MoreVerticalIcon } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-/** A single action on a row (Resume / Remove / Read …). */
+/** A single action on a row (Read / Read again …). */
 export type RowAction = {
   label: string;
   onPress: () => void;
-  /** Muted styling for a secondary/destructive action (e.g. Remove). */
+  /** Muted styling for a secondary action. */
   ghost?: boolean;
 };
 
 /**
- * A horizontal list row shared by the History and Activity tabs: a small cover
- * thumbnail, a two-line title + secondary line, and a trailing group of compact
- * action buttons. Tapping the thumbnail/body opens the series (`onOpen`). Mirrors
- * comical-web's `.history-item` rows so both feeds read the same on every
- * platform.
+ * A horizontal list row shared by the History and Activity tabs: a small cover thumbnail, a two-line
+ * title + secondary line, and a trailing group of compact controls. Tapping the thumbnail/body runs
+ * `onPress` (History resumes; Activity opens the series). Optional trailing text `actions` (Activity's
+ * "Read") and/or a 3-dot `onMore` button (History's "open the series page"). Mirrors comical-web's
+ * `.history-item` rows so both feeds read the same on every platform.
  */
 export function HistoryRow({
   thumbnailUrl,
   title,
   sub,
-  onOpen,
+  onPress,
+  onMore,
   actions,
   dimmed,
 }: {
   thumbnailUrl?: string;
   title: string;
   sub?: string;
-  onOpen: () => void;
+  /** Tapping the thumbnail/body. */
+  onPress: () => void;
+  /** When set, a trailing 3-dot button (e.g. History → open the series page). */
+  onMore?: () => void;
   actions: RowAction[];
   /** Render at reduced opacity (an already-read activity item). */
   dimmed?: boolean;
@@ -40,7 +45,7 @@ export function HistoryRow({
   const theme = useTheme();
   return (
     <View style={[styles.row, dimmed && styles.dimmed]}>
-      <Pressable style={styles.main} onPress={onOpen} accessibilityRole="button">
+      <Pressable style={styles.main} onPress={onPress} accessibilityRole="button">
         <View style={styles.thumbWrap}>
           {thumbnailUrl ? (
             <Image
@@ -79,6 +84,16 @@ export function HistoryRow({
             </ThemedView>
           </Pressable>
         ))}
+        {onMore && (
+          <Pressable
+            onPress={onMore}
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel="Open series"
+            style={({ pressed }) => [styles.moreBtn, pressed && styles.pressed]}>
+            <MoreVerticalIcon color={theme.textSecondary} size={20} />
+          </Pressable>
+        )}
       </View>
     </View>
   );
@@ -142,5 +157,10 @@ const styles = StyleSheet.create({
   },
   btnLabel: {
     fontWeight: '600',
+  },
+  moreBtn: {
+    padding: Spacing.one,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

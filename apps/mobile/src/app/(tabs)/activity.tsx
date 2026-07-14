@@ -168,7 +168,7 @@ export default function ActivityScreen() {
               title={item.title}
               sub={activitySub(item)}
               dimmed={item.read}
-              onOpen={() => openDetail(item)}
+              onPress={() => openDetail(item)}
               actions={[{ label: item.read ? 'Read again' : 'Read', onPress: () => read(item) }]}
             />
           )}
