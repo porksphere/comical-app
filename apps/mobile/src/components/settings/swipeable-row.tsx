@@ -58,8 +58,8 @@ function createDetentHaptic() {
   };
 }
 
-// Constant for the process, so the branch in `SwipeableSettingsRow` is stable and each platform
-// only ever renders one of the two implementations below — their hooks never interleave.
+// Constant for the process, so the platform branch is stable and each platform only ever renders one
+// of the two implementations below — their hooks never interleave.
 const IS_WEB = Platform.OS === 'web';
 
 // Whether this web client has a hovering pointer at all. A touchscreen laptop/tablet on web fires no
@@ -81,69 +81,105 @@ export type SwipeRowAction = {
   destructive?: boolean;
 };
 
-type Props = {
-  label: string;
-  description?: string;
-  descriptionColor?: string;
-  leading?: ReactNode;
-  /** Tapping the row body (e.g. opening the item's detail page). */
-  onPress?: () => void;
-  /**
-   * The trailing actions, laid out left→right — so the LAST one sits at the screen edge (the natural
-   * primary/destructive slot). At least one; at most `MAX_ROW_ACTIONS` (extra are dropped with a
-   * dev-build error). A row with no destructive/secondary actions should just be a plain `SettingsRow`.
-   */
-  actions: SwipeRowAction[];
-};
-
 /** Clamp to what fits, and shout in a dev build when a caller over- (or under-) fills the row — a
  *  `console.error` surfaces in the Metro logs and the RN LogBox, without crashing a release build. */
-function clampActions(actions: SwipeRowAction[], rowLabel: string): SwipeRowAction[] {
+function clampActions(actions: SwipeRowAction[], rowName: string): SwipeRowAction[] {
   if (__DEV__) {
     if (actions.length === 0) {
-      console.error(
-        `SwipeableSettingsRow ("${rowLabel}") was given no actions. A swipeable row needs at least one; use a plain SettingsRow if it has none.`,
-      );
+      console.error(`SwipeableRow ("${rowName}") was given no actions. A swipeable row needs at least one.`);
     } else if (actions.length > MAX_ROW_ACTIONS) {
       console.error(
-        `SwipeableSettingsRow ("${rowLabel}") was given ${actions.length} actions, but at most ${MAX_ROW_ACTIONS} fit a row. Dropping the last ${actions.length - MAX_ROW_ACTIONS}.`,
+        `SwipeableRow ("${rowName}") was given ${actions.length} actions, but at most ${MAX_ROW_ACTIONS} fit a row. Dropping the last ${actions.length - MAX_ROW_ACTIONS}.`,
       );
     }
   }
   return actions.length > MAX_ROW_ACTIONS ? actions.slice(0, MAX_ROW_ACTIONS) : actions;
 }
 
+type SwipeableRowProps = {
+  /** Accessible name of the row — used in each action's a11y label ("{action} {name}") and dev warnings. */
+  name: string;
+  /**
+   * The trailing actions, laid out left→right — so the LAST one sits at the edge (the natural
+   * primary/destructive slot). At least one; at most `MAX_ROW_ACTIONS` (extra are dropped with a
+   * dev-build error).
+   */
+  actions: SwipeRowAction[];
+  /** Horizontal inset (px) the row escapes so its pills reach past a container's padding to the screen
+   *  edge. Settings screens pass `SettingsGutter`; a plain centred list (e.g. History) leaves it 0. */
+  edgeInset?: number;
+  /** The row's own content (rendered as the swipeable surface / hover body). */
+  children: ReactNode;
+};
+
 /**
- * A `SettingsRow` whose actions are reached by swiping. Dragging left slides the row away; its
- * trailing edge rounds into a slot as it goes, and the action pills are uncovered beneath it — the
+ * Wraps arbitrary row `children` with trailing actions reached by swiping. Dragging left slides the
+ * row away; its trailing edge rounds into a slot, and the action pills are uncovered beneath it — the
  * iOS Notes shape. A swipe alone never commits anything: you then tap a pill (a destructive pill's
- * handler should still confirm).
+ * handler should still confirm), and tapping the open row itself closes it.
  *
- * Generic over its `actions` (up to `MAX_ROW_ACTIONS`): a delete, a rename, an edit — any mix. The
- * last action sits at the screen edge. The swipe is DETENTED — it reveals one pill at a time, with a
- * haptic tick as each clears, and rests at whichever pill count you release on (so a two-action row
- * can rest showing just the edge action, or both). Hand-rolled on a pan gesture rather than gesture-handler's
- * `ReanimatedSwipeable`, which only hands the drag progress to the ACTION it renders — the row itself
- * can't see it, so there'd be no way to round the row's corners in step with the drag.
+ * The swipe is DETENTED — it reveals one pill at a time, with a haptic tick as each clears, and rests
+ * at whichever pill count you release on. Hand-rolled on a pan gesture (rather than gesture-handler's
+ * `ReanimatedSwipeable`, which only hands the drag progress to the ACTION it renders, so the row
+ * itself couldn't round its corners in step with the drag).
  *
- * Android gets the same rest-open behavior rather than Material's fling-to-dismiss: dismissal there
- * is only safe paired with an undo snackbar, and this app has no snackbar system.
- *
- * On web there is no swipe at all — dragging a row with a mouse is not something anyone would try.
- * The row instead reveals the action buttons on hover (and shows them unconditionally on a touch
- * screen, which never hovers).
+ * Android gets the same rest-open behavior rather than Material's fling-to-dismiss (dismissal there is
+ * only safe with an undo snackbar, which this app has none of). On web there is no swipe — the actions
+ * reveal as buttons on hover (and show unconditionally on a touch screen, which never hovers).
  */
-export function SwipeableSettingsRow({ actions, ...rest }: Props) {
-  const shown = clampActions(actions, rest.label);
-  return IS_WEB ? <HoverActionsRow {...rest} actions={shown} /> : <SwipeRow {...rest} actions={shown} />;
+export function SwipeableRow({ name, actions, edgeInset = 0, children }: SwipeableRowProps) {
+  const shown = clampActions(actions, name);
+  return IS_WEB ? (
+    <HoverActionsRow name={name} actions={shown} edgeInset={edgeInset}>
+      {children}
+    </HoverActionsRow>
+  ) : (
+    <SwipeRow name={name} actions={shown} edgeInset={edgeInset}>
+      {children}
+    </SwipeRow>
+  );
 }
 
-function SwipeRow({ label, description, descriptionColor, leading, onPress, actions }: Props) {
+/** A `SettingsRow` with trailing swipe/hover actions — the settings-screen flavour of `SwipeableRow`
+ *  (escapes the settings gutter so pills reach the screen edge). Existing settings callers use this. */
+export function SwipeableSettingsRow({
+  label,
+  description,
+  descriptionColor,
+  leading,
+  onPress,
+  actions,
+}: {
+  label: string;
+  description?: string;
+  descriptionColor?: string;
+  leading?: ReactNode;
+  /** Tapping the row body (e.g. opening the item's detail page). Suppressed while the row is open. */
+  onPress?: () => void;
+  actions: SwipeRowAction[];
+}) {
+  return (
+    <SwipeableRow name={label} actions={actions} edgeInset={SettingsGutter}>
+      <SettingsRow
+        label={label}
+        description={description}
+        descriptionColor={descriptionColor}
+        leading={leading}
+        escapeGutter={false}
+        onPress={onPress}
+      />
+    </SwipeableRow>
+  );
+}
+
+type RowImplProps = { name: string; actions: SwipeRowAction[]; edgeInset: number; children: ReactNode };
+
+function SwipeRow({ name, actions, edgeInset, children }: RowImplProps) {
   const theme = useTheme();
   // Where the row is BEING DRAGGED to — set straight from the finger, with no smoothing.
   const target = useSharedValue(0);
   // Which detent the row is resting at: 0 = closed, k = k action pills revealed. The swipe stops one
-  // pill at a time, so this is an index, not a boolean. Read on the JS thread by the tap handler.
+  // pill at a time, so this is an index, not a boolean.
   const restIndex = useSharedValue(0);
   // Which detent the finger is currently "captured" at DURING a drag — it flips as the finger crosses
   // the midpoint between detents, which is both the resistance release point and the haptic tick.
@@ -153,12 +189,15 @@ function SwipeRow({ label, description, descriptionColor, leading, onPress, acti
   // Detent haptic (one per row). Every midpoint crossing calls it via runOnJS; it spaces bunched taps
   // out to MIN_HAPTIC_MS apart so a fast swipe lands as distinct taps rather than one buzz.
   const [tickHaptic] = useState(createDetentHaptic);
+  // JS mirror of "is the row open", so a tap-catching overlay can cover the content while open (a tap
+  // then closes it instead of triggering the content's own press) without the content knowing.
+  const [open, setOpen] = useState(false);
 
   const pillCount = Math.max(1, actions.length);
   // Rest positions along the drag: detents[0] = 0 (closed), detents[k] = far enough to reveal k pills;
   // detents[pillCount] is fully open. A plain number array, captured into the worklets by value.
   const detents: number[] = [0];
-  for (let k = 1; k <= pillCount; k++) detents.push(SettingsGutter + k * (PILL_WIDTH + PILL_GAP));
+  for (let k = 1; k <= pillCount; k++) detents.push(edgeInset + k * (PILL_WIDTH + PILL_GAP));
   const openX = detents[pillCount];
 
   // Deliberately NOT useCallback: a shared value listed in a hook's dependency array may not then be
@@ -169,11 +208,13 @@ function SwipeRow({ label, description, descriptionColor, leading, onPress, acti
     captured.value = 0;
     releaseOpenRow(token);
     target.value = 0;
+    setOpen(false);
   }
 
-  // After a drag settles on a detent (JS thread): keep the "only one row open at a time" registry in
-  // sync — an open row registers its own close, a closed one releases.
+  // After a drag settles on a detent (JS thread): reflect open-ness for the overlay, and keep the
+  // "only one row open at a time" registry in sync — an open row registers its own close.
   function settle(index: number) {
+    setOpen(index > 0);
     if (index > 0) claimOpenRow(token, close);
     else releaseOpenRow(token);
   }
@@ -225,8 +266,7 @@ function SwipeRow({ label, description, descriptionColor, leading, onPress, acti
   /**
    * What the row actually DRAWS at — a spring chasing `target`, never `target` itself. Because the
    * spring is re-evaluated against a moving target every frame, the row trails the finger slightly
-   * while you drag and settles after you let go, instead of being welded to the touch point. That
-   * lag IS the effect: 1:1 tracking is what made the old version feel linear and lifeless.
+   * while you drag and settles after you let go, instead of being welded to the touch point.
    */
   const tx = useDerivedValue(() => withSpring(target.value, SPRING));
 
@@ -238,20 +278,17 @@ function SwipeRow({ label, description, descriptionColor, leading, onPress, acti
     transform: [{ translateX: tx.value }],
     borderTopRightRadius: liftProgress.value * SLOT_RADIUS,
     borderBottomRightRadius: liftProgress.value * SLOT_RADIUS,
-    // At rest the row is indistinguishable from the page (an edge-to-edge list, not a card); as it
-    // opens it lifts onto the elevated surface, which is what makes the rounded slot legible.
+    // At rest the row is indistinguishable from the page; as it opens it lifts onto the elevated
+    // surface, which is what makes the rounded slot legible.
     backgroundColor: interpolateColor(liftProgress.value, [0, 1], [theme.background, theme.backgroundElement]),
   }));
 
   return (
-    <View style={styles.swipeContainer}>
-      {/* Notes puts a caption under its pills, but our rows are half the height of a Notes row —
-          there is no room for one without the pill shrinking to a dot. The glyph plus the
-          accessibility label carry it. Actions lay out left→right, so the last sits at the edge.
-          Solid pills, uncovered by the sliding row (no fade) — that's what makes a one-pill rest
-          detent read as fully revealed rather than half-faded. */}
+    <View style={[styles.swipeContainer, { marginHorizontal: -edgeInset }]}>
+      {/* Solid pills, uncovered by the sliding row (no fade) — that's what makes a one-pill rest read
+          as fully revealed. Actions lay out left→right, so the last sits at the edge. */}
       <View
-        style={[styles.pillSlot, { width: pillCount * PILL_WIDTH + (pillCount - 1) * PILL_GAP }]}
+        style={[styles.pillSlot, { right: edgeInset, width: pillCount * PILL_WIDTH + (pillCount - 1) * PILL_GAP }]}
         pointerEvents="box-none">
         {actions.map((a) => {
           const Icon = a.icon;
@@ -265,7 +302,7 @@ function SwipeRow({ label, description, descriptionColor, leading, onPress, acti
               }}
               style={[styles.pill, { backgroundColor: a.destructive ? theme.danger : theme.accent }]}
               accessibilityRole="button"
-              accessibilityLabel={`${a.label} ${label}`}>
+              accessibilityLabel={`${a.label} ${name}`}>
               <Icon color={theme.accentOn} size={20} />
             </Pressable>
           );
@@ -273,63 +310,53 @@ function SwipeRow({ label, description, descriptionColor, leading, onPress, acti
       </View>
 
       <GestureDetector gesture={pan}>
-        {/* `overflow: hidden` so the row's press/hover highlight — a plain square fill on the child
-            below — is CLIPPED to the rounded slot as it opens. Without it the highlight keeps its
-            square corners and visibly pokes out past the row it's meant to be filling. */}
+        {/* `overflow: hidden` so the content's press highlight is CLIPPED to the rounded slot as it
+            opens, instead of poking square corners past the row. */}
         <Animated.View style={[styles.rowClip, rowStyle]}>
-          <SettingsRow
-            label={label}
-            description={description}
-            descriptionColor={descriptionColor}
-            leading={leading}
-            escapeGutter={false}
-            // A tap on an open row closes it instead of navigating — the same rule iOS lists use, and
-            // without it the tap that "cancels" a swipe would silently push a screen.
-            onPress={onPress && (() => (restIndex.value > 0 ? close() : onPress()))}
-          />
+          {children}
+          {/* While open, a transparent overlay catches taps so the row closes instead of the content's
+              own handlers firing — the same rule iOS lists use. Absent while closed, so content taps
+              (and a fresh swipe) pass straight through. */}
+          {open && (
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPress={close}
+              accessibilityRole="button"
+              accessibilityLabel={`Close ${name}`}
+            />
+          )}
         </Animated.View>
       </GestureDetector>
     </View>
   );
 }
 
-function HoverActionsRow({ label, description, descriptionColor, leading, onPress, actions }: Props) {
+function HoverActionsRow({ name, actions, edgeInset, children }: RowImplProps) {
   const theme = useTheme();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
-  // Each action is a SIBLING of the row, not something inside its `right` slot: react-native-web
+  // Hover the WHOLE row (body + action lanes) via pointer enter/leave on the outer element — reliably
+  // fires for the entire subtree, unlike an `onHoverIn` on a wrapper the inner row's own Pressable
+  // would swallow. Each action is a SIBLING of the content (not nested inside it): react-native-web
   // renders an accessibilityRole="button" Pressable as a real <button>, and a <button> inside a
-  // <button> is invalid HTML — React rejects it, and the two click targets overlap. So each action
-  // gets its own lane to the row's right, which is also exactly where the pills sit on native. Every
-  // lane feeds the same `hovered`, so crossing from the row onto an action doesn't hide the set.
+  // <button> is invalid HTML, so the actions get their own lanes to the row's right.
   const lastIndex = actions.length - 1;
   return (
-    <View style={styles.webRow}>
-      <View style={styles.webRowBody}>
-        <SettingsRow
-          label={label}
-          description={description}
-          descriptionColor={descriptionColor}
-          leading={leading}
-          escapeGutter={false}
-          onPress={onPress}
-          onHoverIn={onHoverIn}
-          onHoverOut={onHoverOut}
-        />
-      </View>
+    <View style={[styles.webRow, { marginHorizontal: -edgeInset }]} onPointerEnter={onHoverIn} onPointerLeave={onHoverOut}>
+      <View style={styles.webRowBody}>{children}</View>
       {actions.map((a, i) => {
         const Icon = a.icon;
+        const isEdge = i === lastIndex;
         return (
           <Pressable
             key={a.key ?? a.label}
             onPress={a.onPress}
-            onHoverIn={onHoverIn}
-            onHoverOut={onHoverOut}
-            // The trailing (edge) lane carries the gutter padding so it lines up with the screen edge;
-            // inner lanes just sit beside it. Faded out until the pointer is over the row — pointer-less
-            // clients (a touchscreen on web fires no hover events at all) keep it visible (see CAN_HOVER).
-            style={[i === lastIndex ? styles.webEdgeAction : styles.webAction, CAN_HOVER && !hovered && styles.webActionIdle]}
+            style={[
+              styles.webAction,
+              isEdge ? { width: edgeInset + 34, paddingRight: edgeInset } : { width: 34 },
+              CAN_HOVER && !hovered && styles.webActionIdle,
+            ]}
             accessibilityRole="button"
-            accessibilityLabel={`${a.label} ${label}`}>
+            accessibilityLabel={`${a.label} ${name}`}>
             <Icon color={a.destructive ? theme.danger : theme.accent} size={18} />
           </Pressable>
         );
@@ -343,20 +370,15 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   swipeContainer: {
-    // Cancels the screen's gutter so the row (and the slot it opens into) reaches the screen's edge.
-    marginHorizontal: -SettingsGutter,
     // The row slides out under its own left edge; without this it would paint over the neighbouring
-    // rows as it goes.
+    // rows as it goes. (`marginHorizontal` is set inline from `edgeInset`.)
     overflow: 'hidden',
     justifyContent: 'center',
   },
   pillSlot: {
     position: 'absolute',
-    right: SettingsGutter,
-    // Stretched to the row's height (which varies — a row with a status line is taller), so the
-    // pills fill it minus a hair of breathing room. Pinning a fixed pill height instead would leave
-    // them floating off-centre on the taller rows. Laid out as a row so multiple pills sit
-    // side-by-side; `width` is set inline from the pill count.
+    // Stretched to the row's height (which varies), so the pills fill it minus a hair of breathing
+    // room. Laid out as a row so multiple pills sit side-by-side; `right`/`width` are set inline.
     top: Spacing.one,
     bottom: Spacing.one,
     flexDirection: 'row',
@@ -373,31 +395,17 @@ const styles = StyleSheet.create({
   webRow: {
     flexDirection: 'row',
     alignItems: 'stretch',
-    // Cancels the screen's gutter for the same reason the native swipe container does: the row's
-    // hover highlight should reach the screen's edge, and the action lanes should sit in the margin
-    // rather than inside the text column.
-    marginHorizontal: -SettingsGutter,
+    // `marginHorizontal` is set inline from `edgeInset` — same reason as the native container.
   },
   webRowBody: {
     flex: 1,
+    minWidth: 0,
   },
-  webEdgeAction: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    // A fixed lane, so the action occupies the same space whether or not it's currently shown and
-    // the row's text never reflows as it fades in. The edge lane also pads out to the screen gutter.
-    width: SettingsGutter + 20,
-    paddingRight: SettingsGutter,
-    cursor: 'pointer',
-    transitionProperty: 'opacity',
-    transitionDuration: '120ms',
-  },
-  // An inner action lane, left of the edge one. No gutter padding — only the trailing lane reaches
-  // the screen edge; these just sit beside it.
   webAction: {
     justifyContent: 'center',
     alignItems: 'center',
-    width: 34,
+    // A fixed lane, so the action occupies the same space whether or not it's currently shown and the
+    // row's content never reflows as it fades in. The edge lane also pads out to the screen inset.
     cursor: 'pointer',
     transitionProperty: 'opacity',
     transitionDuration: '120ms',
