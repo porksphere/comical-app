@@ -10,7 +10,7 @@ import { HistoryRow } from '@/components/history-row';
 import { RetryBlock } from '@/components/retry-block';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing, topLevelCenterInset } from '@/constants/theme';
 import { activityQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import type { ActivityEntry } from '@/data/types';
@@ -65,7 +65,7 @@ export default function ActivityScreen() {
   // Center the rows in a full-width scroller (scrollbar at the window edge) via symmetric side
   // padding — LegendList drops paddingHorizontal / ignores alignSelf on its content container, so
   // explicit paddingLeft/Right is the reliable lever. See library.tsx.
-  const sidePad = Math.max(0, (width - MaxTopLevelWidth) / 2) + Spacing.four;
+  const sidePad = topLevelCenterInset(width) + Spacing.four;
 
   const openDetail = (a: ActivityEntry) =>
     router.push({
