@@ -9,15 +9,20 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
-import { addSection, updateSection, useCustomPage, type CustomLayout } from '@/data/custom-pages';
+import { addSection, layoutLabel, updateSection, useCustomPage, type CustomLayout } from '@/data/custom-pages';
 import { queryKeys } from '@/data/queries';
-import { useDataSource, useMockActive } from '@/data/source';
+import { LIST_LAYOUTS, useDataSource, useMockActive } from '@/data/source';
 import type { BridgeList } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 
-const LAYOUT_LABELS: Record<CustomLayout, string> = { rail: 'Rail', grid: 'Grid' };
+// Content-type options + labels, both derived from the contract's layout list (LIST_LAYOUTS) — a
+// layout added to the contract shows up here automatically. `grid` renders as a vertical grid;
+// everything else as a rail (see railKindFor).
+const LAYOUT_OPTIONS = LIST_LAYOUTS as readonly string[];
+const LAYOUT_LABELS: Record<string, string> = Object.fromEntries(LAYOUT_OPTIONS.map((l) => [l, layoutLabel(l)]));
+const DEFAULT_LAYOUT: CustomLayout = LAYOUT_OPTIONS.includes('carousel') ? 'carousel' : (LAYOUT_OPTIONS[0] as CustomLayout);
 
 /**
  * Add/edit one custom-page section on its own pushed screen (rather than an overlay), styled with the
@@ -49,7 +54,10 @@ export default function CustomSectionEditorScreen() {
 
   const [bridgeId, setBridgeId] = useState(section?.bridgeId ?? '');
   const [listId, setListId] = useState(section?.listId ?? '');
-  const [layout, setLayout] = useState<CustomLayout>(section?.layout ?? 'rail');
+  // Normalise a legacy/absent layout (the old 'rail' value, or a new section) to a valid content type.
+  const [layout, setLayout] = useState<CustomLayout>(
+    section && LAYOUT_OPTIONS.includes(section.layout) ? section.layout : DEFAULT_LAYOUT,
+  );
   const [name, setName] = useState(section?.name ?? '');
 
   // Derive (don't effect-sync) the effective bridge: for a NEW section the state starts '' and falls
@@ -133,7 +141,7 @@ export default function CustomSectionEditorScreen() {
               <Selector
                 title="Layout"
                 value={layout}
-                options={['rail', 'grid']}
+                options={LAYOUT_OPTIONS as string[]}
                 labels={LAYOUT_LABELS}
                 onChange={(v) => setLayout(v as CustomLayout)}
                 size="small"

@@ -95,7 +95,9 @@ export function useCustomPageRows(
         key: s.id,
         layout: s.layout,
         title,
-        railKind: railKindFor(list?.layout),
+        // The rail's STYLE follows the section's chosen content type (carousel/ranked/hero → the
+        // matching kind), not the underlying list's own layout hint — that's what the picker controls.
+        railKind: railKindFor(s.layout),
         bridgeId: s.bridgeId,
         bridgeName,
         direct: bridge?.capabilities.includes('direct') ?? false,

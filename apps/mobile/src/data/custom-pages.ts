@@ -17,10 +17,27 @@
 import { use$ } from '@legendapp/state/react';
 
 import { persisted$ } from '@/lib/observable';
+import type { BridgeList } from '@/data/types';
 
-/** How a custom section is rendered. App-local — NOT the bridge list's own `layout`
- *  (`carousel|grid|ranked|hero`); a `rail` is a horizontal strip, a `grid` an infinite-scroll block. */
-export type CustomLayout = 'rail' | 'grid';
+/** How a custom section is rendered — the bridge contract's own list-layout hints (so the choices
+ *  track the contract: see `LIST_LAYOUTS` in `data/source.ts`). `grid` is a vertical infinite-scroll
+ *  block; every other value (`carousel`/`ranked`/`hero`, and any future one) is a horizontal rail,
+ *  its style decided by `railKindFor`. Legacy stored `'rail'` values still render as a plain rail. */
+export type CustomLayout = NonNullable<BridgeList['layout']>;
+
+const LAYOUT_LABELS: Record<string, string> = {
+  carousel: 'Carousel',
+  grid: 'Grid',
+  ranked: 'Ranked',
+  hero: 'Hero',
+  rail: 'Rail', // legacy value from before the richer content types
+};
+
+/** User-facing label for a layout, capitalising any value the map doesn't name — so a layout added
+ *  to the contract still shows a sensible label with no code change. */
+export function layoutLabel(layout: string): string {
+  return LAYOUT_LABELS[layout] ?? layout.charAt(0).toUpperCase() + layout.slice(1);
+}
 
 export type CustomSection = {
   id: string;

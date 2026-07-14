@@ -13,10 +13,10 @@ import { Spacing } from '@/constants/theme';
 import { NamePromptForm } from '@/app/custom-pages';
 import {
   deleteSection,
-  renamePage,
+  layoutLabel,
   reorderSections,
+  updateSection,
   useCustomPage,
-  type CustomLayout,
   type CustomSection,
 } from '@/data/custom-pages';
 import { useBridgeMap } from '@/hooks/use-bridges';
@@ -25,14 +25,13 @@ import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 
 const IS_WEB = Platform.OS === 'web';
-const LAYOUT_LABELS: Record<CustomLayout, string> = { rail: 'Rail', grid: 'Grid' };
 
 /**
  * Editor for ONE custom page's sections: a reorderable list where each row pins a bridge's list as a
  * rail or grid. Section titles resolve dynamically (a section with no explicit name shows the live
  * bridge-list name — see `useBridgeListsResolver`). Tapping a section (or the + button) opens the
- * section editor on its own pushed screen (`/custom-section-editor`); the top bar renames the page.
- * Same list/row chrome as `custom-pages.tsx` / `registries.tsx`.
+ * section editor on its own pushed screen (`/custom-section-editor`); a section is renamed or deleted
+ * from its own swipe actions. Same list/row chrome as `custom-pages.tsx` / `registries.tsx`.
  */
 export default function CustomPageEditorScreen() {
   const { pageId } = useLocalSearchParams<{ pageId?: string }>();
@@ -73,9 +72,25 @@ export default function CustomPageEditorScreen() {
     <SwipeableSettingsRow
       key={s.id}
       label={titleOf(s)}
-      description={`${nameOf(s.bridgeId)} · ${LAYOUT_LABELS[s.layout]}`}
+      description={`${nameOf(s.bridgeId)} · ${layoutLabel(s.layout)}`}
       onPress={() => openSection(s.id)}
-      actions={[{ label: 'Delete', icon: TrashIcon, destructive: true, onPress: () => deleteSection(page.id, s.id) }]}
+      actions={[
+        {
+          label: 'Rename',
+          icon: PencilIcon,
+          onPress: () =>
+            open(() => (
+              <NamePromptForm
+                title="Rename section"
+                placeholder={titleOf(s)}
+                submitLabel="Rename"
+                initialValue={s.name ?? ''}
+                onSubmit={(name) => updateSection(page.id, s.id, { name })}
+              />
+            )),
+        },
+        { label: 'Delete', icon: TrashIcon, destructive: true, onPress: () => deleteSection(page.id, s.id) },
+      ]}
     />
   );
 
@@ -99,21 +114,6 @@ export default function CustomPageEditorScreen() {
                   onPress={() => setEditing(true)}
                 />
               )}
-              <TopBarButton
-                icon={<PencilIcon color={theme.text} size={22} />}
-                label="Rename page"
-                onPress={() =>
-                  open(() => (
-                    <NamePromptForm
-                      title="Rename page"
-                      placeholder="Page name"
-                      submitLabel="Rename"
-                      initialValue={page.name}
-                      onSubmit={(name) => renamePage(page.id, name)}
-                    />
-                  ))
-                }
-              />
               <TopBarButton
                 icon={<PlusIcon color={theme.text} size={22} />}
                 label="Add section"
