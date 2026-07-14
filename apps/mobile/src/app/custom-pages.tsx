@@ -39,6 +39,19 @@ export default function CustomPagesScreen() {
       label={p.name}
       description={`${p.sections.length} ${p.sections.length === 1 ? 'section' : 'sections'}`}
       onPress={() => router.push({ pathname: '/custom-page-editor', params: { pageId: p.id } })}
+      secondary={{
+        label: 'Rename',
+        onPress: () =>
+          open(() => (
+            <NamePromptForm
+              title="Rename page"
+              placeholder="Page name"
+              submitLabel="Rename"
+              initialValue={p.name}
+              onSubmit={(name) => renamePage(p.id, name)}
+            />
+          )),
+      }}
       actionLabel="Delete"
       onAction={() => open(() => <DeletePageConfirm pageId={p.id} name={p.name} />)}
     />
