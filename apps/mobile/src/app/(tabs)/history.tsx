@@ -216,6 +216,7 @@ function HistoryItem({
           entry={{ id: item.seriesId, title: item.title, cover: item.thumbnailUrl ?? '' }}
           direct={direct}
           coverAspect={2 / 3}
+          startRadius={6} // matches HistoryRow's thumbnail corner
           measureRef={thumbRef}>
           {({ hidden }) => renderRow(hidden)}
         </SeriesCardMenu>

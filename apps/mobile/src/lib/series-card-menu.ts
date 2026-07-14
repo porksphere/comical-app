@@ -17,6 +17,10 @@ export type SeriesCardMenuRequest = {
   direct?: boolean;
   /** The cover's real (capped) aspect ratio, so the lifted preview matches the card's shape. */
   coverAspect?: number;
+  /** The VISUAL corner radius the lifted preview STARTS at, so it matches the source it lifts from (a
+   *  card cover is 10; a smaller thumbnail like History's is 6). It morphs to the resting radius (10)
+   *  as the preview opens. Defaults to 10. */
+  startRadius?: number;
   rect: CardRect;
   /** Called when the menu finishes closing — the source card uses it to un-hide itself (it hides
    *  while the menu is open so it doesn't show behind the lifted preview). */

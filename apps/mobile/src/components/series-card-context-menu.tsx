@@ -118,6 +118,7 @@ const GAP = 12; // between the preview panel and the menu
 const PANEL_MAX_WIDTH = 360; // cap the panel width on wide screens
 const PANEL_PAD = Spacing.three;
 const COVER_W = 118; // cover width inside the panel
+const REST_COVER_RADIUS = 10; // the preview cover's resting VISUAL corner radius (also the default start)
 const RAIL_THUMB_W = 64; // nominal fallback width (unused in slot mode: PageThumb sizes to slotHeight)
 const RAIL_THUMB_H = 180; // the rail's fixed tile height; each tile's width follows its own page aspect
 const RAIL_GAP = Spacing.two;
@@ -239,6 +240,9 @@ export function SeriesCardContextMenuHost() {
 
 function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const { entry, bridgeId, bridge, direct, coverAspect, rect } = req;
+  // The VISUAL corner radius the preview starts at (matches the source it lifts from); it morphs to the
+  // resting radius (REST_COVER_RADIUS) as it opens. Defaults to that resting radius (a card cover).
+  const startRadius = req.startRadius ?? REST_COVER_RADIUS;
   const { width: winW, height: winH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
@@ -789,7 +793,10 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const coverRadiusStyle = useAnimatedStyle(() => {
     const scale = minS.value + expand.value * (maxS.value - minS.value);
     const live = interpolate(progress.value, [0, 1], [coverFrom.scale.value, scale]);
-    return { borderRadius: 10 / Math.max(0.01, live) };
+    // The VISUAL corner morphs from the source's radius to the resting radius over the open, then is
+    // counter-scaled by the live scale so that visual radius is what lands on screen.
+    const visualRadius = interpolate(progress.value, [0, 1], [startRadius, REST_COVER_RADIUS]);
+    return { borderRadius: visualRadius / Math.max(0.01, live) };
   });
   // The menu isn't dragged and isn't scaled — it TRACKS the panel's scaled bottom edge. Its position
   // is derived from the same value the panel's scale is, so resizing slides the menu in lockstep with
