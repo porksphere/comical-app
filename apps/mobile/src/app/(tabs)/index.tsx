@@ -420,7 +420,9 @@ export default function BrowseScreen() {
   // ref — so this closure can freely change identity every render as the query objects do.
   const refreshCurrentView = () => {
     const jobs: Promise<unknown>[] = [];
-    if (inResults) {
+    if (isComical) {
+      jobs.push(comicalRails.refetch());
+    } else if (inResults) {
       if (resultsScope) jobs.push(resultsQuery.refetch());
     } else {
       jobs.push(homeQuery.refetch());
@@ -613,6 +615,8 @@ export default function BrowseScreen() {
   );
   const homeHeader = homeError ? <RetryBlock message={homeError} onRetry={() => homeQuery.refetch()} /> : null;
 
+  // Bridges FAILED to load and we have none cached — a retry, NOT the onboarding page below. This is
+  // checked first so a failed load can never fall through to the "no bridges" onboarding.
   if (bridgesError && bridges.length === 0) {
     return (
       <ThemedView style={[styles.container, styles.centerFill]}>
@@ -621,7 +625,9 @@ export default function BrowseScreen() {
     );
   }
 
-  if (bridgesLoaded && bridges.length === 0) {
+  // No bridges installed — a SUCCESSFUL empty load (explicitly not an error). The "add a registry"
+  // onboarding: the logo + Manage registries button. Failed loads show the retry above instead.
+  if (bridgesLoaded && !bridgesError && bridges.length === 0) {
     return (
       <ThemedView style={[styles.container, styles.centerFill]}>
         <View style={styles.noBridges}>

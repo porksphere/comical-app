@@ -10,7 +10,7 @@
  * `bridges` MUST be the REAL bridges (the caller excludes `COMICAL_BRIDGE_ID`). Each rail carries its
  * own `BridgeScope`, so its cards navigate to the correct real bridge from the aggregate feed.
  */
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useQueries } from '@tanstack/react-query';
 
 import { buildCrossBridgeRows, type ContentRow, type CrossBridgeRailInput } from '@/data/content-rows';
@@ -23,7 +23,7 @@ type CrossBridgeMode = { mode: 'home' } | { mode: 'search'; query: string };
 export function useCrossBridgeRails(
   bridges: Bridge[],
   params: CrossBridgeMode,
-): { rows: ContentRow[]; anyLoading: boolean } {
+): { rows: ContentRow[]; anyLoading: boolean; refetch: () => Promise<void> } {
   const ds = useDataSource();
   const mock = useMockActive();
   const query = params.mode === 'search' ? params.query.trim() : '';
@@ -46,7 +46,13 @@ export function useCrossBridgeRails(
     ),
   });
 
-  return useMemo(() => {
+  // Refetch every per-bridge query — drives pull-to-refresh on the Comical surfaces. `results` is a new
+  // array each render, so this closure is too; callers (usePullToRefresh) hold it in a ref, so that's fine.
+  const refetch = useCallback(async () => {
+    await Promise.all(results.map((r) => r.refetch()));
+  }, [results]);
+
+  const { rows, anyLoading } = useMemo(() => {
     if (!active) return { rows: [] as ContentRow[], anyLoading: false };
     const inputs: CrossBridgeRailInput[] = bridges.map((b, i) => {
       const r = results[i];
@@ -65,4 +71,6 @@ export function useCrossBridgeRails(
     });
     return { rows: buildCrossBridgeRows(inputs), anyLoading: results.some((r) => r.isLoading) };
   }, [active, bridges, results, params.mode, query]);
+
+  return { rows, anyLoading, refetch };
 }

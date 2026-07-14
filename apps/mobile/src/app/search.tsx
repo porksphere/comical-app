@@ -290,7 +290,9 @@ export default function SearchScreen() {
   // shift) lives in the shared hook — same one the Browse grid uses. Refetches the CURRENT search;
   // guarded on `scope` because the blank landing has nothing to refresh, and refetching a disabled
   // query would resolve instantly and just flash the spinner.
-  const pull = usePullToRefresh(scrollY, () => (scope ? resultsQuery.refetch() : Promise.resolve()));
+  const pull = usePullToRefresh(scrollY, () =>
+    isComical ? comicalSearch.refetch() : scope ? resultsQuery.refetch() : Promise.resolve(),
+  );
 
   const loadMore = () => {
     if (!scope || !resultsQuery.hasNextPage || resultsQuery.isFetchingNextPage) return;
@@ -399,6 +401,7 @@ export default function SearchScreen() {
                 paddingBottom={insets.bottom + Spacing.five}
                 sharedValues={sharedValues}
                 onScroll={onListScroll}
+                onScrollEndDrag={pull.onScrollEndDrag}
                 wrapperStyle={pull.listStyle}
               />
             ) : (
