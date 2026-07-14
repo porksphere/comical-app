@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, TextInput, type TextInputProps, View } from 'react-native';
 
 import { BridgeThumb } from '@/components/bridge-thumb';
 import { ChevronRightIcon } from '@/components/icons/ui-icons';
@@ -140,6 +140,56 @@ function SelectPicker<T extends string>({
   );
 }
 
+/**
+ * A string settings row: label on the left, an inline right-aligned text field on the right. Edits
+ * apply live via `onChange` (there's no separate save step), matching how the enum/toggle rows commit
+ * immediately. `placeholder` shows (muted) when the value is empty — a good spot for an inherited /
+ * default value the blank field falls back to.
+ */
+export function SettingsTextRow({
+  label,
+  description,
+  value,
+  placeholder,
+  onChange,
+  keyboardType,
+  autoCapitalize,
+}: {
+  label: string;
+  description?: string;
+  value: string;
+  placeholder?: string;
+  onChange: (value: string) => void;
+  keyboardType?: TextInputProps['keyboardType'];
+  autoCapitalize?: TextInputProps['autoCapitalize'];
+}) {
+  const theme = useTheme();
+  return (
+    <View style={[settingsRowFrame.row, settingsRowFrame.escape]}>
+      <View style={styles.textRowLabel}>
+        <ThemedText type="small" numberOfLines={1}>
+          {label}
+        </ThemedText>
+        {description && (
+          <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
+            {description}
+          </ThemedText>
+        )}
+      </View>
+      <TextInput
+        value={value}
+        onChangeText={onChange}
+        placeholder={placeholder}
+        placeholderTextColor={theme.textSecondary}
+        keyboardType={keyboardType}
+        autoCapitalize={autoCapitalize}
+        returnKeyType="done"
+        style={[styles.textRowInput, { color: theme.text }]}
+      />
+    </View>
+  );
+}
+
 /** A boolean settings row: label (+ optional one-line description) with a `ThemedSwitch` on the right.
  *  A thin, named wrapper over `SettingsRow` so every toggle in the app is spelled the same way. */
 export function SettingsToggleRow({
@@ -180,6 +230,19 @@ const styles = StyleSheet.create({
   valueLabel: {
     flexShrink: 1,
     minWidth: 0,
+  },
+  // String row: label hugs its content on the left (shrinking if long); the input fills the rest and
+  // right-aligns, so the field reads like the value column of the select/toggle rows.
+  textRowLabel: {
+    flexShrink: 1,
+    gap: Spacing.half,
+  },
+  textRowInput: {
+    flex: 1,
+    minWidth: 0,
+    textAlign: 'right',
+    fontSize: 16,
+    paddingVertical: 0,
   },
   // No `flex: 1` (see `sheetBody` in overlay.tsx) — hugs its MeasuredHeader/OptionList content.
   pickerBody: {

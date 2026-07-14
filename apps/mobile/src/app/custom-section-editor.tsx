@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ScrollView, StyleSheet, View } from 'react-native';
 
-import { SettingsSelectRow, type SettingsOption } from '@/components/settings/settings-fields';
+import { SettingsSelectRow, SettingsTextRow, type SettingsOption } from '@/components/settings/settings-fields';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -11,10 +11,9 @@ import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { addSection, layoutLabel, updateSection, useCustomPage, type CustomLayout } from '@/data/custom-pages';
 import { queryKeys } from '@/data/queries';
-import { LIST_LAYOUTS, useDataSource, useMockActive } from '@/data/source';
+import { LIST_LAYOUTS, useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
-import { useTheme } from '@/hooks/use-theme';
 
 // Content-type options, derived from the contract's layout list (LIST_LAYOUTS) — a layout added to the
 // contract shows up here automatically. `grid` renders as a vertical grid; everything else as a rail.
@@ -23,26 +22,26 @@ const LAYOUT_SELECT_OPTIONS: SettingsOption<CustomLayout>[] = LAYOUT_OPTIONS.map
 const DEFAULT_LAYOUT: CustomLayout = LAYOUT_OPTIONS.includes('carousel') ? 'carousel' : LAYOUT_OPTIONS[0];
 
 /**
- * Add/edit one custom-page section on its own pushed screen (rather than an overlay), styled with the
- * app's standard settings rows: a Bridge / List / Layout `SettingsSelectRow` each, plus an optional
- * name field. Blank name → the live bridge-list name is inherited. Params: `pageId` (required) and
- * `sectionId` (present when editing an existing section).
+ * Add/edit one custom-page section on its own pushed screen, styled with the app's standard settings
+ * rows: Bridge / List / Layout `SettingsSelectRow`s and a `SettingsTextRow` for the optional name.
+ * There's no save button — the section is committed when you leave the screen (a new section is only
+ * created if a bridge and list are set). Params: `pageId` (required) and `sectionId` (when editing).
  */
 export default function CustomSectionEditorScreen() {
   const { pageId, sectionId } = useLocalSearchParams<{ pageId?: string; sectionId?: string }>();
-  const router = useRouter();
-  const theme = useTheme();
   const contentPadding = useSettingsScrollPadding();
   const ds = useDataSource();
   const mock = useMockActive();
-  const nameInputRef = useRef<TextInput>(null);
+  const hideNsfw = useHideNsfw();
 
   const page = useCustomPage(pageId);
   const section = page?.sections.find((s) => s.id === sectionId);
   const editing = !!section;
 
   const { byId } = useBridgeMap();
-  const bridges = useMemo(() => [...byId.values()], [byId]);
+  // Respect the Hide-NSFW setting, like the Browse bridge selector does — NSFW-flagged bridges don't
+  // appear as section sources while it's on.
+  const bridges = useMemo(() => [...byId.values()].filter((b) => !hideNsfw || !b.nsfw), [byId, hideNsfw]);
   // Reserve the thumbnail slot for every bridge (empty string → the label-initial fallback) so the
   // rows in the picker stay aligned whether or not a given bridge has an icon.
   const bridgeOptions = useMemo<SettingsOption<string>[]>(
@@ -75,15 +74,23 @@ export default function CustomSectionEditorScreen() {
   // falls back to that bridge's first list once its lists load.
   const effectiveListId = lists?.some((l) => l.id === listId) ? listId : (lists?.[0]?.id ?? '');
 
-  const canSave = !!effectiveBridgeId && !!effectiveListId;
-  const save = () => {
-    if (!canSave || !pageId) return;
-    const trimmed = name.trim();
-    const fields = { bridgeId: effectiveBridgeId, listId: effectiveListId, layout, name: trimmed ? trimmed : null };
-    if (section) updateSection(pageId, section.id, fields);
-    else addSection(pageId, fields);
-    router.back();
-  };
+  // Commit on leave (no save button). A ref holds the latest values so the unmount cleanup — which
+  // runs once, with no reactive deps — reads what's current rather than what was set at mount. The ref
+  // is kept fresh from an effect (updating it during render is disallowed).
+  const latest = useRef({ pageId, sectionId: section?.id, bridgeId: '', listId: '', layout, name });
+  useEffect(() => {
+    latest.current = { pageId, sectionId: section?.id, bridgeId: effectiveBridgeId, listId: effectiveListId, layout, name };
+  });
+  useEffect(
+    () => () => {
+      const d = latest.current;
+      if (!d.pageId || !d.bridgeId || !d.listId) return; // nothing valid to commit (e.g. a cancelled add)
+      const fields = { bridgeId: d.bridgeId, listId: d.listId, layout: d.layout, name: d.name.trim() ? d.name.trim() : null };
+      if (d.sectionId) updateSection(d.pageId, d.sectionId, fields);
+      else addSection(d.pageId, fields);
+    },
+    [],
+  );
 
   if (!pageId || !page) {
     return (
@@ -125,32 +132,14 @@ export default function CustomSectionEditorScreen() {
             />
           )}
           <SettingsSelectRow label="Layout" value={layout} options={LAYOUT_SELECT_OPTIONS} onChange={setLayout} />
-        </SettingsSection>
-
-        <View style={styles.nameField}>
-          <ThemedText type="smallBold" themeColor="textSecondary" style={styles.nameHeader}>
-            Name (optional)
-          </ThemedText>
-          <TextInput
-            ref={nameInputRef}
+          <SettingsTextRow
+            label="Name"
+            description="Blank inherits the list name"
             value={name}
-            onChangeText={setName}
+            onChange={setName}
             placeholder={lists?.find((l) => l.id === effectiveListId)?.name ?? 'List name'}
-            placeholderTextColor={theme.textSecondary}
-            style={[styles.input, { color: theme.text, borderColor: theme.backgroundSelected }]}
           />
-          <ThemedText type="small" themeColor="textSecondary">
-            Leave blank to use the list&apos;s own name (updates automatically if the bridge renames it).
-          </ThemedText>
-        </View>
-
-        <Pressable onPress={save} disabled={!canSave}>
-          <ThemedView style={[styles.saveBtn, { backgroundColor: theme.accent }, !canSave && styles.saveBtnDisabled]}>
-            <ThemedText type="smallBold" style={{ color: theme.accentOn }}>
-              {editing ? 'Save' : 'Add section'}
-            </ThemedText>
-          </ThemedView>
-        </Pressable>
+        </SettingsSection>
       </ScrollView>
     </ThemedView>
   );
@@ -170,27 +159,5 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  nameField: {
-    gap: Spacing.two,
-  },
-  nameHeader: {
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: Spacing.three,
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.three,
-    fontSize: 16,
-  },
-  saveBtn: {
-    alignItems: 'center',
-    paddingVertical: Spacing.three,
-    borderRadius: Spacing.three,
-  },
-  saveBtnDisabled: {
-    opacity: 0.6,
   },
 });
