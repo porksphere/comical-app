@@ -655,35 +655,33 @@ export default function BrowseScreen() {
   );
   const homeHeader = homeError ? <RetryBlock message={homeError} onRetry={() => homeQuery.refetch()} /> : null;
 
-  // Bridges FAILED to load and we have none cached — a retry, NOT the onboarding page below. This is
-  // checked first so a failed load can never fall through to the "no bridges" onboarding.
+  // No REAL bridges installed (a successful empty load — not an error). Comical is still shown (it's
+  // always present), so instead of a full-screen takeover we render the "add a registry" onboarding as
+  // the Comical home body, beneath the Comical selector bar. A failed load shows the retry instead.
+  const noBridges = bridgesLoaded && !bridgesError && bridges.length === 0;
+  const onboardingBody = (
+    <View style={styles.noBridges}>
+      <Image style={styles.noBridgesIcon} source={require('@/assets/images/comical-logo.png')} />
+      <ThemedText type="subtitle" style={styles.noBridgesTitle}>
+        Comical
+      </ThemedText>
+      <ThemedText type="small" themeColor="textSecondary" style={styles.noBridgesDetail}>
+        Add a registry to install bridges and start browsing series.
+      </ThemedText>
+      <Pressable onPress={() => router.push('/registries')} hitSlop={8}>
+        <ThemedText type="smallBold" style={{ color: theme.accent }}>
+          Manage registries
+        </ThemedText>
+      </Pressable>
+    </View>
+  );
+
+  // Bridges FAILED to load and we have none cached — a full-screen retry (Comical can't aggregate
+  // anything, and there's no selector to show yet).
   if (bridgesError && bridges.length === 0) {
     return (
       <ThemedView style={[styles.container, styles.centerFill]}>
         <RetryBlock message={bridgesError} onRetry={refetchBridges} />
-      </ThemedView>
-    );
-  }
-
-  // No bridges installed — a SUCCESSFUL empty load (explicitly not an error). The "add a registry"
-  // onboarding: the logo + Manage registries button. Failed loads show the retry above instead.
-  if (bridgesLoaded && !bridgesError && bridges.length === 0) {
-    return (
-      <ThemedView style={[styles.container, styles.centerFill]}>
-        <View style={styles.noBridges}>
-          <Image style={styles.noBridgesIcon} source={require('@/assets/images/comical-logo.png')} />
-          <ThemedText type="subtitle" style={styles.noBridgesTitle}>
-            Comical
-          </ThemedText>
-          <ThemedText type="small" themeColor="textSecondary" style={styles.noBridgesDetail}>
-            Add a registry to install bridges and start browsing series.
-          </ThemedText>
-          <Pressable onPress={() => router.push('/registries')} hitSlop={8}>
-            <ThemedText type="smallBold" style={{ color: theme.accent }}>
-              Manage registries
-            </ThemedText>
-          </Pressable>
-        </View>
       </ThemedView>
     );
   }
@@ -703,7 +701,10 @@ export default function BrowseScreen() {
           navigation — a page/bridge swap is hidden by the opacity-0 crossfade; a See-all/exit is the
           lighter within-surface transition (a brief remount + skeleton, acceptable for a drill-down).
           `!inResults` ⟺ composed Home with no See-all, so it's the ContentFeed gate. */}
-      {!inResults ? (
+      {noBridges ? (
+        // No real bridges to aggregate — the "add a registry" onboarding, below the Comical bar.
+        <View style={[styles.container, styles.centerFill, { paddingTop: headerHeight }]}>{onboardingBody}</View>
+      ) : !inResults ? (
         <ContentFeed
           rows={homeRows}
           scopeKey={gridScope}

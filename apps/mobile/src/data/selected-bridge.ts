@@ -114,10 +114,12 @@ export function useSelectedBridge(): SelectedBridge {
   const orderedBridges = useMemo(() => applyOrder(bridges, order, (b) => b.id), [bridges, order]);
   const visibleBridges = useMemo(() => {
     const real = hideNsfw ? orderedBridges.filter((b) => !b.nsfw) : orderedBridges;
-    // Prepend the synthetic aggregate bridge — always first (so it's the default landing bridge too),
-    // but only when there's at least one real bridge to aggregate. Kept out of raw `bridges` so the
-    // no-bridges empty state (which checks raw `bridges.length`) still fires with zero real bridges.
-    return real.length > 0 ? [COMICAL_BRIDGE, ...real] : real;
+    // ALWAYS prepend the synthetic aggregate bridge — first (so it's the default landing bridge too),
+    // unconditionally, even with zero real bridges: it's a permanent front door, and a load-time
+    // flicker of an empty `real` must never make it vanish. Kept out of raw `bridges`, so the
+    // no-bridges onboarding (which checks raw `bridges.length`) still triggers when there's nothing
+    // to aggregate — the Comical selector then sits above that onboarding (see index.tsx).
+    return [COMICAL_BRIDGE, ...real];
   }, [orderedBridges, hideNsfw]);
   // Falls back to the first visible bridge whenever the sticky selection isn't among the
   // currently-visible ones (initial load, or hidden by Hide NSFW) — derived at render instead of
