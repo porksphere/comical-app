@@ -37,21 +37,24 @@ const SPRING = { damping: 22, stiffness: 200, mass: 0.7 } as const;
 const DETENT_RESIST = 0.35;
 
 /** Minimum gap between detent haptics. A very fast swipe crosses several midpoints within a few
- *  milliseconds, firing back-to-back taps the Taptic engine coalesces into one mushy buzz; ignoring
- *  crossings that land within this window of the last tick keeps each felt tap cleanly separated. */
-const MIN_HAPTIC_MS = 60;
+ *  milliseconds; fired back-to-back the Taptic engine coalesces them into one mushy buzz. We SPACE
+ *  them out to at least this far apart (delaying, not dropping) so each detent is felt as its own tap. */
+const MIN_HAPTIC_MS = 70;
 
-/** A per-row throttled detent haptic: drops a tap landing within `MIN_HAPTIC_MS` of the previous one.
- *  Module-level (not in the component) so the `Date.now()` read stays out of render — the compiler
- *  flags impure calls like that inside a component. Created once per row via a lazy `useState`. */
+/** A per-row detent haptic that guarantees `MIN_HAPTIC_MS` between taps by DELAYING bunched ones onto
+ *  the next free slot — so a fast swipe's near-simultaneous crossings still land as distinct taps
+ *  rather than one buzz. Deferral is capped so frantic back-and-forth can't queue taps far into the
+ *  future. Module-level (not in the component) so the `Date.now()` read stays out of render — the
+ *  compiler flags impure calls there. Created once per row via a lazy `useState`. */
 function createDetentHaptic() {
-  let last = 0;
+  let nextAt = 0; // earliest time (ms) the next tap may fire
   return () => {
     const now = Date.now();
-    if (now - last >= MIN_HAPTIC_MS) {
-      last = now;
-      hapticImpactLight();
-    }
+    const at = Math.max(now, Math.min(nextAt, now + MIN_HAPTIC_MS * 3));
+    nextAt = at + MIN_HAPTIC_MS;
+    const delay = at - now;
+    if (delay <= 0) hapticImpactLight();
+    else setTimeout(hapticImpactLight, delay);
   };
 }
 
@@ -147,8 +150,8 @@ function SwipeRow({ label, description, descriptionColor, leading, onPress, acti
   const captured = useSharedValue(0);
   // Stable per-row identity for `swipe-row-registry`. Lazy state, not a ref, for the same reason.
   const [token] = useState(() => ({}));
-  // Throttled detent haptic (one per row). Every midpoint crossing calls it via runOnJS; taps landing
-  // too close together on a fast swipe are dropped so the ones you feel stay distinct — not one buzz.
+  // Detent haptic (one per row). Every midpoint crossing calls it via runOnJS; it spaces bunched taps
+  // out to MIN_HAPTIC_MS apart so a fast swipe lands as distinct taps rather than one buzz.
   const [tickHaptic] = useState(createDetentHaptic);
 
   const pillCount = Math.max(1, actions.length);
