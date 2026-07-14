@@ -8,7 +8,7 @@
  *   rails → non-terminal grid blocks → terminal section head → terminal grid rows
  * (or, while loading, their skeleton equivalents derived from the bridge's `lists` metadata).
  */
-import type { BridgeList, HomeGridSection, RailSection, SeriesEntry } from '@/data/types';
+import type { BridgeList, HomeGridSection, RailKind, RailSection, SeriesEntry } from '@/data/types';
 
 /**
  * Optional per-row/-card bridge identity. A single-bridge feed (Browse's home) omits these and the
@@ -224,6 +224,88 @@ export function buildCrossBridgeRows(inputs: CrossBridgeRailInput[]): ContentRow
       bridge: b.bridgeName,
       direct: b.direct,
     });
+  }
+  return rows;
+}
+
+/**
+ * One section of a user-composed custom page (see `data/custom-pages.ts`): a single bridge's list,
+ * rendered as a rail (horizontal strip + "See all") or a grid (infinite-scroll `HomeGridBlock`).
+ * `title` is already RESOLVED by the caller (`section.name ?? live list name ?? bridge name`), so a
+ * bridge renaming a list re-titles this automatically. Keyed by the SECTION id (not the list id):
+ * one custom page may pin the same list twice, so keys must be per-section-instance unique.
+ */
+export type CustomPageSectionInput = {
+  /** Stable per-section id (custom section id) — feeds the row keys. */
+  key: string;
+  layout: 'rail' | 'grid';
+  /** Resolved display title (`section.name ?? live list name ?? bridge name`). */
+  title: string;
+  /** Rail presentation kind, from the live list's `layout` (via `railKindFor`). */
+  railKind: RailKind;
+  bridgeId: string;
+  bridgeName: string;
+  direct: boolean;
+  listId: string;
+  loading: boolean;
+  error: boolean;
+  onRetry: () => void;
+  items: SeriesEntry[];
+  hasNextPage: boolean;
+};
+
+/**
+ * Build `ContentRow[]` for a custom page — in section order. A rail section yields
+ * `[sectionHead(+seeAll), rail]`; a grid section yields `[sectionHead, gridBlock]` (no seeAll — grid
+ * blocks paginate in place). Loading → a skeleton; error → a retry in the section's slot; a loaded
+ * section with no items is skipped. Each row carries the section's `BridgeScope` so its cards open
+ * the correct real bridge from the aggregate "Comical" feed.
+ */
+export function buildCustomPageRows(inputs: CustomPageSectionInput[]): ContentRow[] {
+  const rows: ContentRow[] = [];
+  for (const s of inputs) {
+    if (s.loading) {
+      if (s.layout === 'grid') rows.push({ type: 'gridBlockSkeleton', key: `blocksk:${s.key}`, title: s.title, rows: 2 });
+      else rows.push({ type: 'railSkeleton', key: `railsk:${s.key}`, title: s.title });
+      continue;
+    }
+    if (s.error) {
+      rows.push({ type: 'sectionHead', key: `head:${s.key}`, title: s.title });
+      rows.push({
+        type: 'railError',
+        key: `err:${s.key}`,
+        message: `Couldn't load ${s.title}.`,
+        onRetry: s.onRetry,
+      });
+      continue;
+    }
+    if (s.items.length === 0) continue;
+    if (s.layout === 'grid') {
+      rows.push({ type: 'sectionHead', key: `head:${s.key}`, title: s.title });
+      rows.push({
+        type: 'gridBlock',
+        key: `block:${s.key}`,
+        section: { id: s.listId, title: s.title, items: s.items, hasNextPage: s.hasNextPage },
+        bridgeId: s.bridgeId,
+        bridge: s.bridgeName,
+        direct: s.direct,
+      });
+    } else {
+      rows.push({
+        type: 'sectionHead',
+        key: `head:${s.key}`,
+        title: s.title,
+        seeAll: { title: s.title, bridgeId: s.bridgeId, bridge: s.bridgeName, direct: s.direct, listId: s.listId },
+      });
+      rows.push({
+        type: 'rail',
+        key: `rail:${s.key}`,
+        section: { id: s.listId, title: s.title, kind: s.railKind, items: s.items },
+        bridgeId: s.bridgeId,
+        bridge: s.bridgeName,
+        direct: s.direct,
+      });
+    }
   }
   return rows;
 }

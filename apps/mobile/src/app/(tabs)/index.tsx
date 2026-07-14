@@ -30,7 +30,9 @@ import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing } from '@/cons
 import { pageOptions } from '@/data/api';
 import { buildHomeRows } from '@/data/content-rows';
 import { useComicalExcludedIds } from '@/data/comical-home';
+import { useCustomPages } from '@/data/custom-pages';
 import { useCrossBridgeRails } from '@/hooks/use-cross-bridge-rails';
+import { useCustomPageRows } from '@/hooks/use-custom-page-rows';
 import { useDedupedPages } from '@/data/grid-pages';
 import { fetchBrowseScope, homeSectionsQuery, queryKeys, type BrowseScope } from '@/data/queries';
 import { COMICAL_BRIDGE_ID, COMICAL_ICON, isComicalBridge, useSelectedBridge } from '@/data/selected-bridge';
@@ -96,6 +98,9 @@ export default function BrowseScreen() {
     [realBridges, comicalExcluded],
   );
   const comicalRails = useCrossBridgeRails(isComical ? comicalRailBridges : NO_BRIDGES, { mode: 'home' });
+  // User-composed custom pages surface in Comical's Page selector alongside the built-in "Home" (the
+  // featured aggregate). `activeCustomPage`/`customPageRows` are resolved below, once `page` exists.
+  const customPages = useCustomPages();
 
   // ── Lists (drives the Page selector) ──────────────────────────────────────
   // Fetched via react-query, keyed by bridge, so `lists` is DERIVED from the cache rather than
@@ -119,6 +124,15 @@ export default function BrowseScreen() {
     !!bridgeId && (bridgeListsQuery.isSuccess || bridgeListsQuery.isError) && !bridgeListsQuery.isPlaceholderData;
   const [page, setPage] = useState('home');
 
+  // The active custom page: Comical selected AND the page state is a custom page id (not 'home').
+  // Undefined otherwise, which makes `useCustomPageRows` run zero queries and the home fall back to
+  // the featured aggregate (`comicalRails`).
+  const activeCustomPage = useMemo(
+    () => (isComical && page !== 'home' ? customPages.find((p) => p.id === page) : undefined),
+    [isComical, page, customPages],
+  );
+  const customPageRows = useCustomPageRows(activeCustomPage);
+
   // Default landing page for a bridge, applied once its lists settle: a bridge whose lists are ALL
   // page-flagged (no composed Home) opens on its first page instead of a blank Home; anything with a
   // home-eligible (or home-backing) list opens on Home. Ref-guarded to once per bridge so a later
@@ -126,10 +140,11 @@ export default function BrowseScreen() {
   // (matches the old effect, which only re-picked on a bridge switch).
   const pageInitedForRef = useRef<string | null>(null);
   useEffect(() => {
-    // Comical only has a Home surface — force it, clearing any stale page carried from the previous
-    // bridge (a no-op re-render when already Home). Also fixes the Page selector showing a dead label.
+    // Comical's Page selector is "Home" (the featured aggregate) plus the user's custom pages. Keep a
+    // valid selection (Home, or a still-existing custom page id) but clear any stale page carried from
+    // the previous bridge — otherwise a page like "Popular" would strand the selector on a dead label.
     if (isComical) {
-      setPage('home');
+      setPage((prev) => (prev === 'home' || customPages.some((p) => p.id === prev) ? prev : 'home'));
       return;
     }
     if (!bridgeId || !listsSettled) return;
@@ -138,12 +153,27 @@ export default function BrowseScreen() {
     const hasHomeList = lists.some((l) => !l.page || l.id === 'home');
     const firstPage = lists.find((l) => l.page);
     setPage(hasHomeList || !firstPage ? 'home' : firstPage.name.toLowerCase());
-  }, [isComical, bridgeId, listsSettled, lists]);
+  }, [isComical, customPages, bridgeId, listsSettled, lists]);
 
+  // Comical: "home" (featured aggregate) + each custom page id. Real bridge: its pageOptions.
   const pages = useMemo(
-    () => (currentBridge ? pageOptions(lists, currentBridge.capabilities) : ['home']),
-    [lists, currentBridge],
+    () =>
+      isComical
+        ? ['home', ...customPages.map((p) => p.id)]
+        : currentBridge
+          ? pageOptions(lists, currentBridge.capabilities)
+          : ['home'],
+    [isComical, customPages, lists, currentBridge],
   );
+  // The Page selector's option values for Comical are opaque page ids — map them back to display
+  // names (and the built-in 'home' → "Home"). Undefined for a real bridge (its option values are
+  // already the human-readable page names).
+  const pageLabels = useMemo(() => {
+    if (!isComical) return undefined;
+    const map: Record<string, string> = { home: 'Home' };
+    for (const p of customPages) map[p.id] = p.name;
+    return map;
+  }, [isComical, customPages]);
   // A `page: true` list with id "home" IS the Home tab's content (the bridge's front page): it
   // replaces the composed rails/grid Home entirely. Mirrors comical-web's selectHomeTab("home")
   // special case (app.ts) — without it the Home tab falls through to getHomeSections, which excludes
@@ -383,8 +413,11 @@ export default function BrowseScreen() {
   const gridActive = showResultsGrid || isHomeTerminal;
   const homeReady = isComical
     ? // Comical reveals as soon as it has ROWS (skeleton rows count — they fill in progressively), or
-      // once the whole fan-out has settled with none (empty aggregate).
-      comicalRails.rows.length > 0 || !comicalRails.anyLoading
+      // once the active surface has settled with none. A custom page keys off its OWN hook; the
+      // built-in featured home keys off the cross-bridge fan-out.
+      activeCustomPage
+      ? customPageRows.rows.length > 0 || !customPageRows.anyLoading
+      : comicalRails.rows.length > 0 || !comicalRails.anyLoading
     : !!homeError ||
       !!gridError ||
       ((gridActive ? !gridUpdating : true) && (composedHome ? !homeUpdating : true));
@@ -463,7 +496,7 @@ export default function BrowseScreen() {
   const refreshCurrentView = () => {
     const jobs: Promise<unknown>[] = [];
     if (isComical) {
-      jobs.push(comicalRails.refetch());
+      jobs.push(activeCustomPage ? customPageRows.refetch() : comicalRails.refetch());
     } else if (inResults) {
       if (resultsScope) jobs.push(resultsQuery.refetch());
     } else {
@@ -575,7 +608,7 @@ export default function BrowseScreen() {
           thumbnails={bridgeThumbnails}
           labels={bridgeLabels}
         />
-        <Selector title="Page" value={page} options={pages} onChange={selectPage} size="subtitle" />
+        <Selector title="Page" value={page} options={pages} onChange={selectPage} size="subtitle" labels={pageLabels} />
         {isLargeScreen ? (
           // Desktop: an always-visible search pill in the middle of the bar. Pressing it opens the
           // (blank) Search screen — real typing happens there. `searchPillWrap`'s right margin
@@ -625,7 +658,10 @@ export default function BrowseScreen() {
   const homeRows = useMemo(
     () =>
       isComical
-        ? comicalRails.rows
+        ? // A custom page renders its own composed rows; "Home" is the featured cross-bridge aggregate.
+          activeCustomPage
+          ? customPageRows.rows
+          : comicalRails.rows
         : inResults || homeError
           ? []
           : buildHomeRows({
@@ -644,6 +680,8 @@ export default function BrowseScreen() {
             }),
     [
       isComical,
+      activeCustomPage,
+      customPageRows.rows,
       comicalRails.rows,
       inResults,
       homeError,
