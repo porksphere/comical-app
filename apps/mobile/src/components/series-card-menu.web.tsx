@@ -27,6 +27,8 @@ export type SeriesCardMenuProps = {
   coverAspect?: number;
   /** Ignored on web (no lifted preview); matches the native variant's contract — see it. */
   measureRef?: RefObject<View | null>;
+  /** Ignored on web (no lifted preview to give a starting radius) — matches the native contract. */
+  startRadius?: number;
   /** Always false on web (no lifted preview, so nothing to hide) — matches the native contract. */
   children: (api: { onLongPress?: (e: GestureResponderEvent) => void; hidden: boolean }) => React.ReactNode;
 };
