@@ -88,12 +88,14 @@ function clampActions(actions: SwipeRowAction[], rowLabel: string): SwipeRowActi
 
 /**
  * A `SettingsRow` whose actions are reached by swiping. Dragging left slides the row away; its
- * trailing edge rounds into a slot as it goes, and one or more rounded pills spring in beside it —
- * the iOS Notes shape. A swipe alone never commits anything: you then tap a pill (a destructive
- * pill's handler should still confirm).
+ * trailing edge rounds into a slot as it goes, and the action pills are uncovered beneath it — the
+ * iOS Notes shape. A swipe alone never commits anything: you then tap a pill (a destructive pill's
+ * handler should still confirm).
  *
  * Generic over its `actions` (up to `MAX_ROW_ACTIONS`): a delete, a rename, an edit — any mix. The
- * last action sits at the screen edge. Hand-rolled on a pan gesture rather than gesture-handler's
+ * last action sits at the screen edge. The swipe is DETENTED — it reveals one pill at a time, with a
+ * haptic tick as each clears, and rests at whichever pill count you release on (so a two-action row
+ * can rest showing just the edge action, or both). Hand-rolled on a pan gesture rather than gesture-handler's
  * `ReanimatedSwipeable`, which only hands the drag progress to the ACTION it renders — the row itself
  * can't see it, so there'd be no way to round the row's corners in step with the drag.
  *
@@ -113,32 +115,37 @@ function SwipeRow({ label, description, descriptionColor, leading, onPress, acti
   const theme = useTheme();
   // Where the row is BEING DRAGGED to — set straight from the finger, with no smoothing.
   const target = useSharedValue(0);
-  // Whether the row is resting open. A shared value rather than a ref: the pan worklet needs it on
-  // the UI thread, the tap handler reads it on the JS thread, and — unlike a ref — the compiler
-  // permits closing over it in the gesture callbacks (react-hooks/refs).
-  const isOpen = useSharedValue(false);
+  // Which detent the row is resting at: 0 = closed, k = k action pills revealed. The swipe stops one
+  // pill at a time, so this is an index, not a boolean. Read on the JS thread by the tap handler.
+  const restIndex = useSharedValue(0);
+  // How many pills are fully revealed at the CURRENT drag position — compared frame to frame so a
+  // haptic ticks exactly as each new pill clears the edge (in either direction).
+  const crossLevel = useSharedValue(0);
   // Stable per-row identity for `swipe-row-registry`. Lazy state, not a ref, for the same reason.
   const [token] = useState(() => ({}));
 
-  // The row must slide far enough for every pill to clear the edge, so the open distance grows with
-  // the action count.
   const pillCount = Math.max(1, actions.length);
-  const openX = SettingsGutter + pillCount * (PILL_WIDTH + PILL_GAP);
+  // Rest positions along the drag: detents[0] = 0 (closed), detents[k] = far enough to reveal k pills;
+  // detents[pillCount] is fully open. A plain number array, captured into the worklets by value.
+  const detents: number[] = [0];
+  for (let k = 1; k <= pillCount; k++) detents.push(SettingsGutter + k * (PILL_WIDTH + PILL_GAP));
+  const openX = detents[pillCount];
 
   // Deliberately NOT useCallback: a shared value listed in a hook's dependency array may not then be
   // mutated (react-hooks/immutability, which the React Compiler enforces here). These are cheap
   // closures, and the compiler memoizes what's worth memoizing.
   function close() {
-    isOpen.value = false;
+    restIndex.value = 0;
+    crossLevel.value = 0;
     releaseOpenRow(token);
     target.value = 0;
   }
 
-  function open() {
-    claimOpenRow(token, close); // closes whichever row was open before this one
-    isOpen.value = true;
-    hapticImpactLight();
-    target.value = -openX;
+  // After a drag settles on a detent (JS thread): keep the "only one row open at a time" registry in
+  // sync — an open row registers its own close, a closed one releases.
+  function settle(index: number) {
+    if (index > 0) claimOpenRow(token, close);
+    else releaseOpenRow(token);
   }
 
   const pan = Gesture.Pan()
@@ -146,19 +153,50 @@ function SwipeRow({ label, description, descriptionColor, leading, onPress, acti
     // belongs to the ScrollView.
     .activeOffsetX([-12, 12])
     .failOffsetY([-12, 12])
+    .onBegin(() => {
+      'worklet';
+      // Track haptics from wherever the row is currently resting, so resuming a drag from an already
+      // open detent doesn't fire a spurious tick on the first frame.
+      crossLevel.value = restIndex.value;
+    })
     .onUpdate((e) => {
       'worklet';
-      const from = isOpen.value ? -openX : 0;
-      // Clamp: there's nothing to reveal past the pills, and nothing to the row's left at all.
-      target.value = Math.min(0, Math.max(-openX, from + e.translationX));
+      const from = -detents[restIndex.value];
+      // Clamp: nothing to reveal past the last pill, and nothing to the row's left at all.
+      const t = Math.min(0, Math.max(-openX, from + e.translationX));
+      target.value = t;
+      // Count pills fully revealed at this position and tick a haptic whenever it changes — so you
+      // feel every pill clear (or re-cover) as you drag through the detents.
+      const absX = -t;
+      let level = 0;
+      for (let k = 1; k < detents.length; k++) if (absX + 0.5 >= detents[k]) level = k;
+      if (level !== crossLevel.value) {
+        crossLevel.value = level;
+        runOnJS(hapticImpactLight)();
+      }
     })
     .onEnd((e) => {
       'worklet';
-      // Velocity, not just position — a quick flick should open even if it barely travelled, which
-      // is most of what makes this feel responsive rather than draggy.
-      const shouldOpen = target.value < -openX / 2 || e.velocityX < -500;
-      if (shouldOpen) runOnJS(open)();
-      else runOnJS(close)();
+      const absX = -target.value;
+      // Snap to the NEAREST detent by position …
+      let idx = 0;
+      let best = 1e9;
+      for (let k = 0; k < detents.length; k++) {
+        const d = absX - detents[k];
+        const dist = d < 0 ? -d : d;
+        if (dist < best) {
+          best = dist;
+          idx = k;
+        }
+      }
+      // … then let a firm flick carry it one more stop in the fling direction, so a quick swipe still
+      // advances (or dismisses) rather than snapping back to where it was released.
+      if (e.velocityX < -500 && idx < detents.length - 1) idx += 1;
+      else if (e.velocityX > 500 && idx > 0) idx -= 1;
+      target.value = -detents[idx];
+      restIndex.value = idx;
+      crossLevel.value = idx;
+      runOnJS(settle)(idx);
     });
 
   /**
@@ -169,30 +207,28 @@ function SwipeRow({ label, description, descriptionColor, leading, onPress, acti
    */
   const tx = useDerivedValue(() => withSpring(target.value, SPRING));
 
-  /** 0 closed → 1 fully open. Everything visual hangs off this. */
-  const progress = useDerivedValue(() => -tx.value / openX);
+  // The row's lift onto the slot (rounded corner + elevated bg) reaches full by the FIRST detent —
+  // once it's open at all it reads as lifted, not half-lifted at a one-pill rest.
+  const liftProgress = useDerivedValue(() => Math.min(1, -tx.value / detents[1]));
 
   const rowStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: tx.value }],
-    borderTopRightRadius: progress.value * SLOT_RADIUS,
-    borderBottomRightRadius: progress.value * SLOT_RADIUS,
+    borderTopRightRadius: liftProgress.value * SLOT_RADIUS,
+    borderBottomRightRadius: liftProgress.value * SLOT_RADIUS,
     // At rest the row is indistinguishable from the page (an edge-to-edge list, not a card); as it
     // opens it lifts onto the elevated surface, which is what makes the rounded slot legible.
-    backgroundColor: interpolateColor(progress.value, [0, 1], [theme.background, theme.backgroundElement]),
-  }));
-
-  const pillStyle = useAnimatedStyle(() => ({
-    opacity: progress.value,
-    transform: [{ scale: 0.7 + progress.value * 0.3 }],
+    backgroundColor: interpolateColor(liftProgress.value, [0, 1], [theme.background, theme.backgroundElement]),
   }));
 
   return (
     <View style={styles.swipeContainer}>
       {/* Notes puts a caption under its pills, but our rows are half the height of a Notes row —
           there is no room for one without the pill shrinking to a dot. The glyph plus the
-          accessibility label carry it. Actions lay out left→right, so the last sits at the edge. */}
-      <Animated.View
-        style={[styles.pillSlot, { width: pillCount * PILL_WIDTH + (pillCount - 1) * PILL_GAP }, pillStyle]}
+          accessibility label carry it. Actions lay out left→right, so the last sits at the edge.
+          Solid pills, uncovered by the sliding row (no fade) — that's what makes a one-pill rest
+          detent read as fully revealed rather than half-faded. */}
+      <View
+        style={[styles.pillSlot, { width: pillCount * PILL_WIDTH + (pillCount - 1) * PILL_GAP }]}
         pointerEvents="box-none">
         {actions.map((a) => {
           const Icon = a.icon;
@@ -211,7 +247,7 @@ function SwipeRow({ label, description, descriptionColor, leading, onPress, acti
             </Pressable>
           );
         })}
-      </Animated.View>
+      </View>
 
       <GestureDetector gesture={pan}>
         {/* `overflow: hidden` so the row's press/hover highlight — a plain square fill on the child
@@ -226,7 +262,7 @@ function SwipeRow({ label, description, descriptionColor, leading, onPress, acti
             escapeGutter={false}
             // A tap on an open row closes it instead of navigating — the same rule iOS lists use, and
             // without it the tap that "cancels" a swipe would silently push a screen.
-            onPress={onPress && (() => (isOpen.value ? close() : onPress()))}
+            onPress={onPress && (() => (restIndex.value > 0 ? close() : onPress()))}
           />
         </Animated.View>
       </GestureDetector>
