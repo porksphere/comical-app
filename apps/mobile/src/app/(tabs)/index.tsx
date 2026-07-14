@@ -29,11 +29,13 @@ import { PullIndicator } from '@/components/pull-indicator';
 import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { pageOptions } from '@/data/api';
 import { buildHomeRows } from '@/data/content-rows';
+import { useComicalExcludedIds } from '@/data/comical-home';
+import { useCrossBridgeRails } from '@/hooks/use-cross-bridge-rails';
 import { useDedupedPages } from '@/data/grid-pages';
 import { fetchBrowseScope, homeSectionsQuery, queryKeys, type BrowseScope } from '@/data/queries';
-import { useSelectedBridge } from '@/data/selected-bridge';
+import { COMICAL_BRIDGE_ID, COMICAL_ICON, isComicalBridge, useSelectedBridge } from '@/data/selected-bridge';
 import { isRailLayout, useDataSource, useMockActive } from '@/data/source';
-import type { BridgeList, GridPage } from '@/data/types';
+import type { Bridge, BridgeList, GridPage } from '@/data/types';
 import { friendlyError } from '@/lib/friendly-error';
 import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
@@ -44,14 +46,13 @@ import { useRevealDim } from '@/hooks/use-reveal-dim';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
 
-/** A drilled-into rail: its list id (for pagination) + display title. */
-type SeeAll = { listId: string; title: string } | null;
-
 // Stable, never-fetched keys for the two grid infinite queries while they're disabled (no active
 // scope) — hooks must be called unconditionally, so a disabled query still needs a queryKey; these
 // can't collide with a real `browseGrid` key (which always carries mock/bridgeId/scope).
 const DISABLED_RESULTS_KEY = ['browseGrid', 'disabled', 'results'] as const;
 const DISABLED_TERMINAL_KEY = ['browseGrid', 'disabled', 'terminal'] as const;
+// Stable empty array so `useCrossBridgeRails` runs zero queries when Comical isn't selected.
+const NO_BRIDGES: Bridge[] = [];
 
 export default function BrowseScreen() {
   const ds = useDataSource();
@@ -81,6 +82,21 @@ export default function BrowseScreen() {
     refetchBridges,
   } = useSelectedBridge();
 
+  // ── Comical aggregate bridge ──────────────────────────────────────────────
+  // When the synthetic "Comical" bridge is selected, the home is a cross-bridge fan-out (one rail per
+  // real bridge) instead of the normal single-bridge composed home. The lists/home/terminal queries
+  // below all gate off for it (`!isComical`), and ContentFeed is fed `comicalRails.rows` directly.
+  const isComical = isComicalBridge(bridgeId);
+  const realBridges = useMemo(() => visibleBridges.filter((b) => b.id !== COMICAL_BRIDGE_ID), [visibleBridges]);
+  // Drop bridges the user excluded from the Comical home (per-bridge setting). Cross-bridge SEARCH is
+  // unaffected — this only trims the home rails.
+  const comicalExcluded = useComicalExcludedIds();
+  const comicalRailBridges = useMemo(
+    () => realBridges.filter((b) => !comicalExcluded[b.id]),
+    [realBridges, comicalExcluded],
+  );
+  const comicalRails = useCrossBridgeRails(isComical ? comicalRailBridges : NO_BRIDGES, { mode: 'home' });
+
   // ── Lists (drives the Page selector) ──────────────────────────────────────
   // Fetched via react-query, keyed by bridge, so `lists` is DERIVED from the cache rather than
   // effect-synced into local state: switching back to a bridge reuses its cached lists instantly,
@@ -91,7 +107,8 @@ export default function BrowseScreen() {
   const bridgeListsQuery = useQuery({
     queryKey: queryKeys.bridgeLists(mock, bridgeId ?? ''),
     queryFn: ({ signal }) => ds.getBridgeLists(bridgeId!, signal),
-    enabled: !!bridgeId,
+    // Comical is synthetic — it has no lists endpoint; its home fans out over real bridges instead.
+    enabled: !!bridgeId && !isComical,
     placeholderData: keepPreviousData,
   });
   const lists = useMemo<BridgeList[]>(() => bridgeListsQuery.data ?? [], [bridgeListsQuery.data]);
@@ -109,13 +126,19 @@ export default function BrowseScreen() {
   // (matches the old effect, which only re-picked on a bridge switch).
   const pageInitedForRef = useRef<string | null>(null);
   useEffect(() => {
+    // Comical only has a Home surface — force it, clearing any stale page carried from the previous
+    // bridge (a no-op re-render when already Home). Also fixes the Page selector showing a dead label.
+    if (isComical) {
+      setPage('home');
+      return;
+    }
     if (!bridgeId || !listsSettled) return;
     if (pageInitedForRef.current === bridgeId) return;
     pageInitedForRef.current = bridgeId;
     const hasHomeList = lists.some((l) => !l.page || l.id === 'home');
     const firstPage = lists.find((l) => l.page);
     setPage(hasHomeList || !firstPage ? 'home' : firstPage.name.toLowerCase());
-  }, [bridgeId, listsSettled, lists]);
+  }, [isComical, bridgeId, listsSettled, lists]);
 
   const pages = useMemo(
     () => (currentBridge ? pageOptions(lists, currentBridge.capabilities) : ['home']),
@@ -128,7 +151,11 @@ export default function BrowseScreen() {
   const homeList = useMemo(() => lists.find((l) => l.id === 'home' && l.page), [lists]);
   // The built-in composed Home surface (rails + grid from non-`page` lists) — only when no page-list
   // backs the Home tab. Every "is this Home?" decision below keys off this, not a bare page === 'home'.
-  const composedHome = page === 'home' && !homeList;
+  // Comical is ALWAYS its composed (cross-bridge) home regardless of the `page` state — otherwise a
+  // stale `page` carried over from the previous bridge (e.g. "Popular") would flip this false, route
+  // Comical through the SeriesGrid branch, and strand its disabled results query as a permanent
+  // placeholder → `gridUpdating` stuck true → the reveal dim never clears (a stuck crossfade).
+  const composedHome = isComical || (page === 'home' && !homeList);
   // The list backing the current page: a `page: true` list picked in the selector (e.g. "Popular"),
   // or the home-backing list above when the Home tab is showing the bridge's front page.
   const selectedList = useMemo(
@@ -149,8 +176,15 @@ export default function BrowseScreen() {
   // (`listsSettled`) so stale/empty lists can't make `composedHome` briefly true and fire a
   // spurious fetch for a page-only bridge.
   const homeQuery = useQuery(homeSectionsQuery(ds, mock, bridgeId ?? '', composedHome && listsSettled));
-  const sections = useMemo(() => homeQuery.data?.sections ?? [], [homeQuery.data]);
-  const gridSections = useMemo(() => homeQuery.data?.gridSections ?? [], [homeQuery.data]);
+  // Force EMPTY for Comical: its home comes from `comicalRails`, not `homeQuery`. homeQuery is disabled
+  // for Comical, but under keepPreviousData it still holds the PREVIOUS bridge's sections — which would
+  // otherwise leave `terminalGridSection` non-null → `isHomeTerminal` true → `gridActive` true → the
+  // reveal dim stuck on (the crossfade "fade sticking around"). See the crossfade block.
+  const sections = useMemo(() => (isComical ? [] : (homeQuery.data?.sections ?? [])), [isComical, homeQuery.data]);
+  const gridSections = useMemo(
+    () => (isComical ? [] : (homeQuery.data?.gridSections ?? [])),
+    [isComical, homeQuery.data],
+  );
   // Surface a Retry when the CURRENT bridge's Home failed and we have no real data for it — either
   // a dataless first load (`!data`) or a failed switch where keepPreviousData is still showing the
   // PREVIOUS bridge's Home as a placeholder (`isPlaceholderData`); without the placeholder check a
@@ -193,26 +227,15 @@ export default function BrowseScreen() {
     [gridListsPreview],
   );
 
-  // The active "See all" rail drill-down, if any. Free-text search + filters now live on the pushed
-  // Search screen (`app/search.tsx`), so Browse no longer holds a query/filter scope of its own.
-  const [seeAll, setSeeAll] = useState<SeeAll>(null);
-
-  // A rail's "See all", or picking a page-flagged sub-list (e.g. "Popular"/"Favorites"), drops to
-  // the flat results grid; plain composed Home shows the rails + grid surface.
-  const inResults = !!seeAll || !composedHome;
-  // The back banner is for a "See all" drill-down only — NOT for plain page-selector navigation
-  // (selecting "Popular" is a top-level page the Page selector already reflects).
-  const showBackBanner = !!seeAll;
-  // Where the back arrow returns to — Home if that's where we were, otherwise the selected page.
-  const backLabel =
-    page === 'home' ? 'Home' : (selectedList?.name ?? page.charAt(0).toUpperCase() + page.slice(1));
-  // Caption for the "See all" drill-down.
-  const resultsLabel = seeAll ? seeAll.title : '';
+  // A rail's "See all" now pushes the standalone `/results` page (see ContentFeed's sectionHead), so
+  // Browse no longer holds an inline drill-down scope. Only picking a page-flagged sub-list
+  // ("Popular"/"Favorites") drops to the flat results grid; plain composed Home shows the rails.
+  const inResults = !composedHome;
 
   // ── Grid derivations (which logical view the flat grid is showing) ─────────
   // These discriminators feed `resultsScope`/`terminalScope` below, which the infinite queries key
   // and fetch from.
-  const activeListId = seeAll ? seeAll.listId : !composedHome ? (selectedList?.id ?? null) : null;
+  const activeListId = !composedHome ? (selectedList?.id ?? null) : null;
   const showResultsGrid = inResults;
   // Home's terminal grid section (the last one in `gridSections`) shares the
   // SAME scrollable FlatList + infinite scroll as results mode, not the
@@ -230,12 +253,11 @@ export default function BrowseScreen() {
     // the grid populated meanwhile.
     if (isHomeTerminal || !showResultsGrid || !bridgeId || !listsSettled) return null;
     if (isFavoritesPage) return { kind: 'favorites' };
-    if (seeAll) return { kind: 'seeAll', listId: seeAll.listId };
     // A page-flagged list (e.g. "Popular") browsed unfiltered — refinement now happens on the
     // Search screen, so no `opts` here.
     if (activeListId) return { kind: 'list', listId: activeListId };
     return null;
-  }, [isHomeTerminal, showResultsGrid, bridgeId, listsSettled, isFavoritesPage, seeAll, activeListId]);
+  }, [isHomeTerminal, showResultsGrid, bridgeId, listsSettled, isFavoritesPage, activeListId]);
 
   const getNextPageParam = (last: GridPage, _all: GridPage[], lastParam: number) =>
     last.hasNextPage ? lastParam + 1 : undefined;
@@ -359,10 +381,13 @@ export default function BrowseScreen() {
   // would be stuck true forever and the crossfade would only reveal via the cap (a ~1.8s invisible
   // hold), even with the home cached. Guard it the same way `homeUpdating` is guarded below.
   const gridActive = showResultsGrid || isHomeTerminal;
-  const homeReady =
-    !!homeError ||
-    !!gridError ||
-    ((gridActive ? !gridUpdating : true) && (composedHome ? !homeUpdating : true));
+  const homeReady = isComical
+    ? // Comical reveals as soon as it has ROWS (skeleton rows count — they fill in progressively), or
+      // once the whole fan-out has settled with none (empty aggregate).
+      comicalRails.rows.length > 0 || !comicalRails.anyLoading
+    : !!homeError ||
+      !!gridError ||
+      ((gridActive ? !gridUpdating : true) && (composedHome ? !homeUpdating : true));
   useEffect(() => {
     // `committed` gates out the fade-out phase, when `homeReady` still reflects the outgoing bridge.
     if (!switching || !committed) return;
@@ -380,6 +405,23 @@ export default function BrowseScreen() {
     const t = setTimeout(revealNow, XFADE_MAX_WAIT_MS);
     return () => clearTimeout(t);
   }, [switching, committed, homeReady, homeXfade]);
+
+  // Watchdog: the reveal above only fires once `committed` flips (in the fade-out's completion
+  // callback). If that callback ever fails to fire — a cancelled/interrupted animation reporting
+  // finished:false, a rapid re-select, a web reanimated hiccup — `committed` never becomes true, the
+  // reveal effect returns early, and the home is stranded faded. This effect is NOT gated on
+  // `committed`, so it force-completes the crossfade after the max wait: apply any pending commit and
+  // fade back in. In normal operation the reveal clears `switching` in ~340ms, well before this fires.
+  useEffect(() => {
+    if (!switching) return;
+    const t = setTimeout(() => {
+      if (pendingCommitRef.current) runPendingCommit();
+      homeXfade.value = withTiming(1, { duration: XFADE_IN_MS, easing: Easing.out(Easing.quad) });
+      setSwitching(false);
+      setCommitted(false);
+    }, XFADE_MAX_WAIT_MS);
+    return () => clearTimeout(t);
+  }, [switching, homeXfade, runPendingCommit]);
 
   // ── Within-page grid dim (a "See all" / list-scope refinement) ────────────
   // The kept grid eases to a dim while the new scope loads, then back to full — "refreshing", not
@@ -420,7 +462,9 @@ export default function BrowseScreen() {
   // ref — so this closure can freely change identity every render as the query objects do.
   const refreshCurrentView = () => {
     const jobs: Promise<unknown>[] = [];
-    if (inResults) {
+    if (isComical) {
+      jobs.push(comicalRails.refetch());
+    } else if (inResults) {
       if (resultsScope) jobs.push(resultsQuery.refetch());
     } else {
       jobs.push(homeQuery.refetch());
@@ -429,44 +473,26 @@ export default function BrowseScreen() {
     return Promise.all(jobs);
   };
 
-  // Leave a "See all" drill-down and return to the page it was layered on — Home if that's where we
-  // were, or the selected page (e.g. "Popular") otherwise. `page` is deliberately left untouched so
-  // we land back where the user actually was.
-  const exitDrilldown = () => {
-    setSeeAll(null);
-  };
-
-  // Switching bridge or page is top-level navigation, so it drops any active "See all" drill-down
-  // and lands on that page's full rails+grid. A real bridge change runs through the deferred-commit
-  // crossfade (see the crossfade block): fade the whole home out, then commit (setBridge/setSeeAll)
+  // Switching bridge or page is top-level navigation. A real bridge change runs through the
+  // deferred-commit crossfade (see the crossfade block): fade the whole home out, commit (setBridge)
   // at opacity 0 so the swap is never seen, then fade the new bridge in. A no-op re-tap (or before
   // any bridge resolves) just commits immediately — nothing to dissolve.
   const selectBridge = (b: string) => {
     if (!currentBridge || b === currentBridge.id) {
-      setSeeAll(null);
       setBridge(b);
       return;
     }
-    beginCrossfade(() => {
-      setBridge(b);
-      setSeeAll(null);
-    });
+    beginCrossfade(() => setBridge(b));
   };
   // A page switch is a top-level navigation too — a home↔page-list↔favorites swap of the whole
   // surface — so it runs the SAME crossfade as a bridge change (fade out, commit setPage at opacity
-  // 0, fade the new page in) rather than the lighter grid dim. A no-op re-tap of the current page
-  // just commits immediately (nothing to dissolve): dropping any active "See all" drill-down in
-  // place, matching the bridge no-op branch.
+  // 0, fade the new page in) rather than the lighter grid dim. A no-op re-tap just commits immediately.
   const selectPage = (p: string) => {
     if (p === page) {
-      setSeeAll(null);
       setPage(p);
       return;
     }
-    beginCrossfade(() => {
-      setSeeAll(null);
-      setPage(p);
-    });
+    beginCrossfade(() => setPage(p));
   };
 
   // Shared with the series-detail bar so both stay the same height.
@@ -487,7 +513,6 @@ export default function BrowseScreen() {
     page,
     inResults ? 'r' : 'h',
     activeListId ?? '',
-    seeAll?.listId ?? '',
     isFavoritesPage ? 'fav' : '',
     isHomeTerminal ? 'term' : '',
   ].join('|');
@@ -532,7 +557,13 @@ export default function BrowseScreen() {
       <View style={[styles.selectorRow, { height: barHeight }]}>
         {currentBridge ? (
           <View style={[styles.bridgeThumb, { width: thumbSize, height: thumbSize }]}>
-            <BridgeThumb uri={currentBridge.thumbnail} label={currentBridge.name} size={thumbSize} fill />
+            <BridgeThumb
+              uri={currentBridge.thumbnail}
+              source={isComical ? COMICAL_ICON : undefined}
+              label={currentBridge.name}
+              size={thumbSize}
+              fill
+            />
           </View>
         ) : null}
         <Selector
@@ -579,58 +610,48 @@ export default function BrowseScreen() {
     </BarSurface>
   );
 
-  // Only the "See all" back banner remains in the list header (search + filters moved to the Search
-  // screen). Nothing renders on plain Home / page-flagged browsing, so the rails start at the top.
-  const controls = showBackBanner ? (
-    <View style={styles.controls}>
-      <View style={styles.resultsHead}>
-        <Pressable onPress={exitDrilldown} hitSlop={8}>
-          <ThemedText type="smallBold" style={{ color: theme.accent }}>
-            ← {backLabel}
-          </ThemedText>
-        </Pressable>
-        <ThemedText type="small" themeColor="textSecondary" numberOfLines={1} style={styles.resultsLabel}>
-          {resultsLabel}
-        </ThemedText>
-      </View>
+  // Header for the flat results/favorites/page grid (SeriesGrid only): just a results error, if any.
+  // A rail's "See all" now pushes the standalone /results page rather than an inline drill-down, so
+  // there's no back banner here. The composed Home's rails/grid are virtualized rows of ContentFeed.
+  const resultsHeader = gridError ? (
+    <View style={styles.bleed}>
+      <RetryBlock message={gridError} onRetry={() => resultsQuery.refetch()} />
     </View>
   ) : null;
-
-  // Header for the flat results/favorites/page grid (SeriesGrid only): the "See all" back banner +
-  // any results error. The composed Home's rails, non-terminal grid blocks, and terminal grid are no
-  // longer header children — they're virtualized rows of ContentFeed (see `homeRows`), so off-screen
-  // rails actually unmount instead of all being live at once in a never-virtualized header.
-  const resultsHeader = (
-    // Bleed out the list's contentContainer horizontal padding — controls self-pad Spacing.four.
-    <View style={styles.bleed}>
-      {controls}
-      {gridError && <RetryBlock message={gridError} onRetry={() => resultsQuery.refetch()} />}
-    </View>
-  );
 
   // The composed Home flattened into a typed row list for ContentFeed's virtualization. Same rail/grid
   // partition (and loading-skeleton shape) the old listHeader rendered inline, just as data. Only built
   // for the composed-Home surface; homeError shows a retry in the header instead (rows empty).
   const homeRows = useMemo(
     () =>
-      inResults || homeError
-        ? []
-        : buildHomeRows({
-            loading: homeLoading,
-            numColumns,
-            sections,
-            nonTerminalGridSections,
-            terminalGridSection,
-            gridItems,
-            railListsPreview,
-            nonTerminalGridListsPreview,
-            terminalGridPreview,
-          }),
+      isComical
+        ? comicalRails.rows
+        : inResults || homeError
+          ? []
+          : buildHomeRows({
+              loading: homeLoading,
+              numColumns,
+              bridgeId: bridgeId ?? '',
+              bridge: currentBridge?.name,
+              direct: directBridge,
+              sections,
+              nonTerminalGridSections,
+              terminalGridSection,
+              gridItems,
+              railListsPreview,
+              nonTerminalGridListsPreview,
+              terminalGridPreview,
+            }),
     [
+      isComical,
+      comicalRails.rows,
       inResults,
       homeError,
       homeLoading,
       numColumns,
+      bridgeId,
+      currentBridge?.name,
+      directBridge,
       sections,
       nonTerminalGridSections,
       terminalGridSection,
@@ -642,31 +663,33 @@ export default function BrowseScreen() {
   );
   const homeHeader = homeError ? <RetryBlock message={homeError} onRetry={() => homeQuery.refetch()} /> : null;
 
+  // No REAL bridges installed (a successful empty load — not an error). Comical is still shown (it's
+  // always present), so instead of a full-screen takeover we render the "add a registry" onboarding as
+  // the Comical home body, beneath the Comical selector bar. A failed load shows the retry instead.
+  const noBridges = bridgesLoaded && !bridgesError && bridges.length === 0;
+  const onboardingBody = (
+    <View style={styles.noBridges}>
+      <Image style={styles.noBridgesIcon} source={require('@/assets/images/comical-logo.png')} />
+      <ThemedText type="subtitle" style={styles.noBridgesTitle}>
+        Comical
+      </ThemedText>
+      <ThemedText type="small" themeColor="textSecondary" style={styles.noBridgesDetail}>
+        Add a registry to install bridges and start browsing series.
+      </ThemedText>
+      <Pressable onPress={() => router.push('/registries')} hitSlop={8}>
+        <ThemedText type="smallBold" style={{ color: theme.accent }}>
+          Manage registries
+        </ThemedText>
+      </Pressable>
+    </View>
+  );
+
+  // Bridges FAILED to load and we have none cached — a full-screen retry (Comical can't aggregate
+  // anything, and there's no selector to show yet).
   if (bridgesError && bridges.length === 0) {
     return (
       <ThemedView style={[styles.container, styles.centerFill]}>
         <RetryBlock message={bridgesError} onRetry={refetchBridges} />
-      </ThemedView>
-    );
-  }
-
-  if (bridgesLoaded && bridges.length === 0) {
-    return (
-      <ThemedView style={[styles.container, styles.centerFill]}>
-        <View style={styles.noBridges}>
-          <Image style={styles.noBridgesIcon} source={require('@/assets/images/comical-logo.png')} />
-          <ThemedText type="subtitle" style={styles.noBridgesTitle}>
-            Comical
-          </ThemedText>
-          <ThemedText type="small" themeColor="textSecondary" style={styles.noBridgesDetail}>
-            Add a registry to install bridges and start browsing series.
-          </ThemedText>
-          <Pressable onPress={() => router.push('/registries')} hitSlop={8}>
-            <ThemedText type="smallBold" style={{ color: theme.accent }}>
-              Manage registries
-            </ThemedText>
-          </Pressable>
-        </View>
       </ThemedView>
     );
   }
@@ -686,7 +709,10 @@ export default function BrowseScreen() {
           navigation — a page/bridge swap is hidden by the opacity-0 crossfade; a See-all/exit is the
           lighter within-surface transition (a brief remount + skeleton, acceptable for a drill-down).
           `!inResults` ⟺ composed Home with no See-all, so it's the ContentFeed gate. */}
-      {!inResults ? (
+      {noBridges ? (
+        // No real bridges to aggregate — the "add a registry" onboarding, below the Comical bar.
+        <View style={[styles.container, styles.centerFill, { paddingTop: headerHeight }]}>{onboardingBody}</View>
+      ) : !inResults ? (
         <ContentFeed
           rows={homeRows}
           scopeKey={gridScope}
@@ -697,12 +723,13 @@ export default function BrowseScreen() {
           terminalLoading={homeLoading && !!terminalGridPreview}
           paddingTop={headerHeight + BarContentGap}
           paddingBottom={BottomTabInset + insets.bottom + Spacing.five}
-          bridge={currentBridge?.name ?? undefined}
-          bridgeId={bridgeId}
-          direct={directBridge}
+          // Comical: no feed-level bridge — every rail carries its own BridgeScope so its cards open
+          // the correct real bridge. A single-bridge home passes its one bridge as the fallback.
+          bridge={isComical ? undefined : (currentBridge?.name ?? undefined)}
+          bridgeId={isComical ? undefined : bridgeId}
+          direct={isComical ? undefined : directBridge}
           originPage={page}
           crossfading={switching}
-          onSeeAll={(target) => setSeeAll(target)}
           sharedValues={sharedValues}
           onScroll={onListScroll}
           // Drives terminalQuery.fetchNextPage — `loadMore` self-guards to the terminal-home mode.
