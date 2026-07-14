@@ -28,6 +28,10 @@ type SelectorProps = {
   onChange: (value: string) => void;
   /** Optional thumbnail URLs keyed by option value, shown in the dropdown. */
   thumbnails?: Record<string, string>;
+  /** Optional LOCAL image modules (`require(...)`) keyed by option value — for a synthetic option
+   *  (e.g. Comical) whose art is a bundled asset rather than a remote URL. Takes precedence over
+   *  `thumbnails` for that option. */
+  sources?: Record<string, number>;
   /**
    * Optional display text keyed by option value. When an option's `value` is an opaque, unique key
    * (e.g. a bridge `id`) rather than something human-readable, this maps it to the label shown in the
@@ -40,7 +44,7 @@ type SelectorProps = {
 };
 
 /** Tappable label that opens a single-select bottom-sheet menu (via the overlay system). */
-export function Selector({ title, value, options, onChange, thumbnails, labels, size = 'title' }: SelectorProps) {
+export function Selector({ title, value, options, onChange, thumbnails, sources, labels, size = 'title' }: SelectorProps) {
   const { ref, openAt } = useAnchoredOverlay();
   const compact = useIsCompact();
   const theme = useTheme();
@@ -52,7 +56,15 @@ export function Selector({ title, value, options, onChange, thumbnails, labels, 
       style={[styles.trigger, hovered && { backgroundColor: theme.backgroundSelected }]}
       onPress={() =>
         openAt(() => (
-          <SelectMenu title={title} options={options} selected={value} onSelect={onChange} thumbnails={thumbnails} labels={labels} />
+          <SelectMenu
+            title={title}
+            options={options}
+            selected={value}
+            onSelect={onChange}
+            thumbnails={thumbnails}
+            sources={sources}
+            labels={labels}
+          />
         ))
       }>
       <ThemedText
@@ -77,6 +89,7 @@ function SelectMenu({
   selected,
   onSelect,
   thumbnails,
+  sources,
   labels,
 }: {
   title: string;
@@ -84,6 +97,7 @@ function SelectMenu({
   selected: string;
   onSelect: (value: string) => void;
   thumbnails?: Record<string, string>;
+  sources?: Record<string, number>;
   labels?: Record<string, string>;
 }) {
   const { closeTop } = useOverlay();
@@ -106,6 +120,7 @@ function SelectMenu({
             label={labels?.[opt] ?? opt}
             selected={opt === selected}
             thumbnail={thumbnails ? (thumbnails[opt] ?? null) : undefined}
+            source={sources?.[opt]}
             onPress={() => {
               onSelect(opt);
               closeTop();
@@ -121,6 +136,7 @@ function SelectRow({
   label,
   selected,
   thumbnail,
+  source,
   onPress,
 }: {
   label: string;
@@ -128,6 +144,8 @@ function SelectRow({
   /** `undefined` when the menu has no thumbnails at all; `null` for an option
    *  that just doesn't have one (still reserves the slot — see below). */
   thumbnail?: string | null;
+  /** A local image module for this option (e.g. Comical's bundled logo); takes precedence over `thumbnail`. */
+  source?: number;
   onPress: () => void;
 }) {
   const theme = useTheme();
@@ -143,9 +161,10 @@ function SelectRow({
             (as this used to) drops a child from the row, and `space-between`
             reflows the remaining two to fill the gap, pushing untitled rows'
             labels flush left while thumbnailed rows' labels sit shifted right. */}
-        {thumbnail !== undefined && (
+        {(thumbnail !== undefined || source !== undefined) && (
           <BridgeThumb
             key={thumbnail ?? label}
+            source={source}
             uri={thumbnail ?? undefined}
             label={label}
             size={BridgeThumbSize}
