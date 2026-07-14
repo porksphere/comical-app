@@ -9,7 +9,9 @@ import {
   Compass,
   Database,
   GripVertical,
+  LayoutGrid,
   MoreVertical,
+  Pencil,
   Play,
   Plus,
   Search,
@@ -50,5 +52,9 @@ export const TrackersIcon = ({ color, size = 16 }: IconProps) => <Compass color=
 export const RegistriesIcon = ({ color, size = 16 }: IconProps) => <Database color={color} size={size} />;
 export const DeveloperIcon = ({ color, size = 16 }: IconProps) => <Terminal color={color} size={size} />;
 export const DiagnosticsIcon = ({ color, size = 16 }: IconProps) => <Bug color={color} size={size} />;
+// Custom pages — the settings entry for composing your own Comical pages.
+export const CustomPagesIcon = ({ color, size = 16 }: IconProps) => <LayoutGrid color={color} size={size} />;
+// Rename affordance (custom page editor's top bar).
+export const PencilIcon = ({ color, size = 16 }: IconProps) => <Pencil color={color} size={size} />;
 // Destructive action — the swipe-to-delete pane and its web hover affordance (see settings/swipeable-row).
 export const TrashIcon = ({ color, size = 16 }: IconProps) => <Trash2 color={color} size={size} />;

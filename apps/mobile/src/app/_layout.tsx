@@ -108,6 +108,8 @@ function RootNavigation() {
           <Stack.Screen name="bridge-settings" options={{ headerShown: false }} />
           <Stack.Screen name="tracker-settings" options={{ headerShown: false }} />
           <Stack.Screen name="registries" options={{ headerShown: false }} />
+          <Stack.Screen name="custom-pages" options={{ headerShown: false }} />
+          <Stack.Screen name="custom-page-editor" options={{ headerShown: false }} />
           <Stack.Screen name="registry-browse" options={{ headerShown: false }} />
           <Stack.Screen name="add-registry" options={{ headerShown: false }} />
           <Stack.Screen name="diagnostics" options={{ headerShown: false }} />

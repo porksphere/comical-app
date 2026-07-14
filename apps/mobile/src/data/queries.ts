@@ -78,6 +78,12 @@ export const queryKeys = {
   // One representative rail for a bridge (its `featured`/first rail list, page 1) — the building
   // block of the synthetic "Comical" aggregate home.
   bridgeFeaturedRail: (mock: boolean, bridgeId: string) => ['bridgeFeaturedRail', mock, bridgeId] as const,
+  // Page 1 of a specific bridge list, for a user-composed custom page's section (rail items, or the
+  // grid block's seed). A SEPARATE key from `browseGrid({kind:'homeGrid'})` on purpose — that one is
+  // owned by the infinite-scroll grid queries, and a plain (non-infinite) query must not share their
+  // cache entry (incompatible data shapes). See `use-custom-page-rows.ts`.
+  customSectionPage: (mock: boolean, bridgeId: string, listId: string) =>
+    ['customSectionPage', mock, bridgeId, listId] as const,
   // Per-bridge browse metadata (the Page selector's lists, and the filter/sort definitions).
   bridgeLists: (mock: boolean, bridgeId: string) => ['bridgeLists', mock, bridgeId] as const,
   bridgeFilters: (mock: boolean, bridgeId: string) => ['bridgeFilters', mock, bridgeId] as const,

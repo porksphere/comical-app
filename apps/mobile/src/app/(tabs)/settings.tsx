@@ -6,6 +6,7 @@ import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import {
   BridgesIcon,
   ChevronRightIcon,
+  CustomPagesIcon,
   DeveloperIcon,
   DiagnosticsIcon,
   GeneralSettingsIcon,
@@ -19,6 +20,7 @@ import { ThemedView } from '@/components/themed-view';
 
 import { MaxTopLevelWidth, SettingsGutter } from '@/constants/theme';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
+import { useCustomPages } from '@/data/custom-pages';
 import { queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw } from '@/data/source';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
@@ -44,6 +46,7 @@ export default function SettingsScreen() {
   const contentPadding = useSettingsScrollPadding();
 
   const counts = useCategoryCounts();
+  const customPageCount = useCustomPages().length;
 
   return (
     <ThemedView style={styles.container}>
@@ -91,6 +94,14 @@ export default function SettingsScreen() {
             description="Where bridges and trackers come from."
             value={counts.registries}
             onPress={() => router.push('/registries')}
+          />
+          <Divider />
+          <CategoryRow
+            icon={<CustomPagesIcon color={theme.textSecondary} size={22} />}
+            title="Custom Pages"
+            description="Compose your own Comical pages from any bridge."
+            value={customPageCount ? String(customPageCount) : undefined}
+            onPress={() => router.push('/custom-pages')}
           />
           <Divider />
           <CategoryRow
