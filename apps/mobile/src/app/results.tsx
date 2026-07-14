@@ -45,19 +45,22 @@ export default function ResultsScreen() {
     direct?: string;
     listId?: string;
     query?: string;
+    favorites?: string;
   }>();
   const bridgeId = params.bridgeId;
   const direct = params.direct === '1';
   // Breadcrumb: "{bridge} › {section}" — the bridge, then the rail/list/query it drilled into.
   const headerTitle = params.bridge ? `${params.bridge}  ›  ${params.title ?? ''}` : (params.title ?? '');
 
-  // A search drill (query set) vs a list drill (listId set). `seeAll` is the page-only list scope,
-  // matching a Browse rail's "See all" semantics.
-  const scope: BrowseScope | null = params.query
-    ? { kind: 'search', query: params.query }
-    : params.listId
-      ? { kind: 'seeAll', listId: params.listId }
-      : null;
+  // The drill kind: favorites (the consolidated Favorites page's "See all"), a search drill (query
+  // set), or a list drill (listId set). `seeAll` matches a Browse rail's "See all" semantics.
+  const scope: BrowseScope | null = params.favorites === '1'
+    ? { kind: 'favorites' }
+    : params.query
+      ? { kind: 'search', query: params.query }
+      : params.listId
+        ? { kind: 'seeAll', listId: params.listId }
+        : null;
 
   const resultsQuery = useInfiniteQuery({
     queryKey: scope ? queryKeys.browseGrid(mock, bridgeId ?? '', scope) : ['browseGrid', 'disabled', 'results'],
@@ -97,7 +100,7 @@ export default function ResultsScreen() {
     <ThemedView style={styles.container}>
       <SeriesGrid
         items={gridItems}
-        scopeKey={`${bridgeId}|${params.listId ?? params.query ?? ''}`}
+        scopeKey={`${bridgeId}|${params.favorites === '1' ? 'favorites' : (params.listId ?? params.query ?? '')}`}
         listRef={listRef}
         header={emptyBody}
         // The TopBar overlays the list, so reserve its height (content scrolls under its frost).

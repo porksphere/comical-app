@@ -282,11 +282,16 @@ export function getBridgeLists(id: string, signal?: AbortSignal): Promise<Bridge
 /**
  * Page-selector labels for a bridge, matching the reference's `i8`: "home"
  * first, then each page-list (lowercased name), then "favorites" if supported.
+ *
+ * `favoritesAvailable` gates the favorites page on the user actually being able to use it: a bridge
+ * advertises the capability, but favorites need an account, so when the login isn't set (see
+ * `useFavoritesAvailability`) the page is hidden rather than opening onto an auth error. Defaults true
+ * so a caller that doesn't care about the gate gets the old behaviour.
  */
-export function pageOptions(lists: BridgeList[], capabilities: string[]): string[] {
+export function pageOptions(lists: BridgeList[], capabilities: string[], favoritesAvailable = true): string[] {
   const opts = ['home'];
   for (const l of lists) if (l.page && l.id !== 'home') opts.push(l.name.toLowerCase());
-  if (capabilities.includes('favorites')) opts.push('favorites');
+  if (capabilities.includes('favorites') && favoritesAvailable) opts.push('favorites');
   return opts;
 }
 

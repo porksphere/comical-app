@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { isFavoriteQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
+import { useFavoritesAvailability } from '@/hooks/use-favorites-available';
 
 /**
  * Per-series favorite state + optimistic toggle, shared by the Series screen and the reader's
@@ -11,6 +12,10 @@ import { useDataSource, useMockActive } from '@/data/source';
  * `favorited` is `null` while the initial check is still loading (toggle disabled); an errored or
  * unsupported check (a bridge without "favorites", or one needing auth) reads as `false` so the
  * star stays usable but empty rather than surfacing an error for a peripheral action.
+ *
+ * `available` is the gate (see `useFavoritesAvailability`): a bridge whose favorites need login the
+ * user hasn't provided. When false the status check is skipped and `toggle` is a no-op — callers grey
+ * the star out. It's false while the bridge summaries load, so the star greys until we KNOW it's usable.
  */
 export function useFavorite(
   bridgeId: string | undefined,
@@ -20,17 +25,20 @@ export function useFavorite(
   const ds = useDataSource();
   const mock = useMockActive();
   const queryClient = useQueryClient();
+  const { isAvailable } = useFavoritesAvailability();
+  const available = isAvailable(bridgeId);
   const key = queryKeys.isFavorite(mock, bridgeId ?? '', seriesId);
   // retry:false — an unsupported/unauthed check should read as "not favorited", not spin a retry.
   // `enabled` lets a caller defer the check until it's actually needed (e.g. a per-card context menu
   // only arms it once the user interacts with that card) so a full grid doesn't fan out into a
   // status check per cell; defaults to on, so the existing always-checking callers are unchanged.
+  // Gated on `available` too: no point scraping favorite status for a bridge you're not logged into.
   const { data, isError } = useQuery({
     ...isFavoriteQuery(ds, mock, bridgeId ?? '', seriesId),
     retry: false,
-    enabled: (options?.enabled ?? true) && !!bridgeId && !!seriesId,
+    enabled: (options?.enabled ?? true) && !!bridgeId && !!seriesId && available,
   });
-  const favorited = data ?? (isError ? false : null);
+  const favorited = available ? (data ?? (isError ? false : null)) : false;
 
   const mutation = useMutation({
     mutationFn: (next: boolean) => (next ? ds.addFavorite(bridgeId!, seriesId) : ds.removeFavorite(bridgeId!, seriesId)),
@@ -54,8 +62,8 @@ export function useFavorite(
   });
 
   const toggle = () => {
-    if (!bridgeId || favorited === null) return;
+    if (!available || !bridgeId || favorited === null) return;
     mutation.mutate(!favorited);
   };
-  return { favorited, toggle };
+  return { favorited, toggle, available };
 }

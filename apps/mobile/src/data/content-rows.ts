@@ -36,6 +36,9 @@ export type SeeAllTarget = {
   direct?: boolean;
   listId?: string;
   query?: string;
+  /** A favorites drill (the consolidated Comical Favorites page) — the `/results` grid opens the
+   *  bridge's `{ kind: 'favorites' }` scope. Distinct from a list/search drill. */
+  favorites?: boolean;
 };
 
 export type ContentRow =
@@ -174,7 +177,7 @@ export type CrossBridgeRailInput = {
   /** Refetch just this bridge's query (the railError's Retry). */
   onRetry: () => void;
   section: RailSection | null;
-  drill: { listId?: string; query?: string };
+  drill: { listId?: string; query?: string; favorites?: boolean };
 };
 
 /**
@@ -207,13 +210,14 @@ export function buildCrossBridgeRows(inputs: CrossBridgeRailInput[]): ContentRow
       title: b.bridgeName,
       seeAll: {
         // The results page shows "{bridge} › {title}", so `title` is the section label — the search
-        // query for a search rail, else the featured list's name for a home rail.
+        // query for a search rail, the section title (e.g. "Favorites") otherwise.
         title: b.drill.query ?? b.section?.title ?? b.bridgeName,
         bridgeId: b.bridgeId,
         bridge: b.bridgeName,
         direct: b.direct,
         listId: b.drill.listId,
         query: b.drill.query,
+        favorites: b.drill.favorites,
       },
     });
     rows.push({

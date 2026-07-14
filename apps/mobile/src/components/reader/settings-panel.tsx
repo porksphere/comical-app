@@ -208,15 +208,16 @@ function LibraryRow({
 function FavoriteRow({ bridgeId, seriesId }: { bridgeId: string; seriesId: string }) {
   // Shared hook (see useFavorite) — same cache key as the Series screen's star, so favoriting from
   // either place stays in sync.
-  const { favorited, toggle } = useFavorite(bridgeId, seriesId);
+  const { favorited, toggle, available } = useFavorite(bridgeId, seriesId);
 
   return (
     <View style={styles.seg}>
       <ThemedText style={styles.segLabel}>This series</ThemedText>
       <Pressable
         onPress={toggle}
-        style={[styles.opt, favorited && styles.optOn]}
-        disabled={favorited === null}>
+        style={[styles.opt, favorited && styles.optOn, !available && styles.optDisabled]}
+        // Greyed when this bridge's favorites need a login that isn't set (see useFavorite).
+        disabled={!available || favorited === null}>
         <ThemedText style={[styles.optText, favorited && styles.optTextOn]}>
           {favorited ? '★  Favorited' : '☆  Favorite'}
         </ThemedText>
@@ -295,6 +296,9 @@ const styles = StyleSheet.create({
   },
   optOn: {
     backgroundColor: '#3478F6',
+  },
+  optDisabled: {
+    opacity: 0.4,
   },
   optText: {
     color: 'rgba(255,255,255,0.8)',

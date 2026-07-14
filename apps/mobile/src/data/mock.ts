@@ -520,6 +520,12 @@ export function relativeTime(ts: number): string {
 
 const MOCK_BRIDGE_NAMES = ['Panelfox', 'Inkwell', 'Driftpage', 'Nightshelf', 'Coldspine'];
 const MOCK_DIRECT_BRIDGES = new Set(['Coldspine']);
+// Bridges whose backend supports account "favorites" (the capability real bridges advertise). A subset,
+// so the app exercises both favorites-capable and non-capable bridges.
+const MOCK_FAVORITES_BRIDGES = new Set(['Panelfox', 'Inkwell', 'Coldspine']);
+// Favorites-capable bridges the user hasn't logged into (a required secret still missing) — their star
+// greys out and they drop from the consolidated Favorites page, demonstrating the credential gate.
+const MOCK_LOGGED_OUT_BRIDGES = new Set(['Inkwell']);
 const slugify = (name: string) => name.toLowerCase();
 // Mock-mode only, like coverDelayMs: resolve immediately in real mode so even a stray call to a mock
 // data function outside mock mode can't add fake latency to a real page load (infinite scroll, series
@@ -539,9 +545,14 @@ export async function mockGetBridges(): Promise<Bridge[]> {
     id: slugify(name),
     name,
     nsfw: false,
-    capabilities: MOCK_DIRECT_BRIDGES.has(name)
-      ? ['lists', 'search', 'direct', 'filters', 'sort']
-      : ['lists', 'search', 'filters', 'sort'],
+    capabilities: [
+      'lists',
+      'search',
+      'filters',
+      'sort',
+      ...(MOCK_DIRECT_BRIDGES.has(name) ? ['direct'] : []),
+      ...(MOCK_FAVORITES_BRIDGES.has(name) ? ['favorites'] : []),
+    ],
     thumbnail: `https://picsum.photos/seed/bridge-${slugify(name)}/100/100`,
   }));
   bridges.push({
@@ -562,7 +573,8 @@ export async function mockGetBridgeLists(_bridgeId: string): Promise<BridgeList[
     { id: 'featured', name: 'Featured', page: false, layout: 'carousel', featured: true },
     { id: 'home', name: 'Home', page: false },
     { id: 'popular', name: 'Popular', page: true },
-    { id: 'favorites', name: 'Favorites', page: true },
+    // NB: no 'favorites' list — favorites is a CAPABILITY (see mockGetBridges), not a browse list, so
+    // it surfaces via pageOptions/the consolidated page exactly like a real bridge's account favorites.
   ];
 }
 
@@ -683,7 +695,9 @@ export async function mockGetTags(query: string): Promise<{ value: string; label
   }));
 }
 
-const mockFavorites = new Set<string>();
+// Seeded with a handful of series so the demo's favorites surfaces (the per-bridge Favorites page and
+// the consolidated Comical Favorites page) have content out of the box, not an empty grid.
+const mockFavorites = new Set<string>(['fav-1', 'fav-2', 'fav-3', 'fav-4', 'fav-5', 'fav-6']);
 
 export async function mockGetFavorites(page: number): Promise<GridPage> {
   if (page > 1) return { items: [], hasNextPage: false };
@@ -901,7 +915,18 @@ export async function mockCheckForUpdates(): Promise<void> {
 
 export async function mockGetBridgeSummaries(): Promise<BridgeSummary[]> {
   const bridges = await mockGetBridges();
-  return bridges.map((b) => ({ info: b, configured: true, missingRequired: [], source: 'local' }));
+  return bridges.map((b) => {
+    // A favorites-capable bridge the user hasn't logged into still has its required credential missing
+    // — so `missingRequired` is non-empty and the favorites gate (see useFavoritesAvailability) treats
+    // it as unavailable, greying its star and dropping it from the consolidated Favorites page.
+    const loggedOut = MOCK_LOGGED_OUT_BRIDGES.has(b.name);
+    return {
+      info: b,
+      configured: !loggedOut,
+      missingRequired: loggedOut ? ['apiKey'] : [],
+      source: 'local' as const,
+    };
+  });
 }
 
 export async function mockGetBridgeSettings(bridgeId: string): Promise<BridgeSettingsInfo> {

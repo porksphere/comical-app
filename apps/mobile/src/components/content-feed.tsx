@@ -29,14 +29,15 @@ const HEADING_GAP = Spacing.two;
 const SECTION_HEAD_ROW_HEIGHT = SECTION_HEAD_HEIGHT + SECTION_GAP + HEADING_GAP;
 
 /** A rail's See-all target → `/results` route params (expo-router params are strings). Omits absent
- *  fields; `direct` becomes '1' only when true; `listId` (home rail) or `query` (search rail) picks
- *  the drill kind on the results page. */
+ *  fields; `direct` becomes '1' only when true; `listId` (home rail), `query` (search rail), or
+ *  `favorites` ('1', the consolidated Favorites page) picks the drill kind on the results page. */
 function seeAllParams(t: SeeAllTarget): Record<string, string> {
   const p: Record<string, string> = { title: t.title, bridgeId: t.bridgeId };
   if (t.bridge) p.bridge = t.bridge;
   if (t.direct) p.direct = '1';
   if (t.listId) p.listId = t.listId;
   if (t.query != null) p.query = t.query;
+  if (t.favorites) p.favorites = '1';
   return p;
 }
 
