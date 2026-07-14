@@ -36,6 +36,25 @@ const SPRING = { damping: 22, stiffness: 200, mass: 0.7 } as const;
  *  (the centre-ish of a button) where it snaps to the next pill and a haptic ticks. */
 const DETENT_RESIST = 0.35;
 
+/** Minimum gap between detent haptics. A very fast swipe crosses several midpoints within a few
+ *  milliseconds, firing back-to-back taps the Taptic engine coalesces into one mushy buzz; ignoring
+ *  crossings that land within this window of the last tick keeps each felt tap cleanly separated. */
+const MIN_HAPTIC_MS = 60;
+
+/** A per-row throttled detent haptic: drops a tap landing within `MIN_HAPTIC_MS` of the previous one.
+ *  Module-level (not in the component) so the `Date.now()` read stays out of render — the compiler
+ *  flags impure calls like that inside a component. Created once per row via a lazy `useState`. */
+function createDetentHaptic() {
+  let last = 0;
+  return () => {
+    const now = Date.now();
+    if (now - last >= MIN_HAPTIC_MS) {
+      last = now;
+      hapticImpactLight();
+    }
+  };
+}
+
 // Constant for the process, so the branch in `SwipeableSettingsRow` is stable and each platform
 // only ever renders one of the two implementations below — their hooks never interleave.
 const IS_WEB = Platform.OS === 'web';
@@ -128,6 +147,9 @@ function SwipeRow({ label, description, descriptionColor, leading, onPress, acti
   const captured = useSharedValue(0);
   // Stable per-row identity for `swipe-row-registry`. Lazy state, not a ref, for the same reason.
   const [token] = useState(() => ({}));
+  // Throttled detent haptic (one per row). Every midpoint crossing calls it via runOnJS; taps landing
+  // too close together on a fast swipe are dropped so the ones you feel stay distinct — not one buzz.
+  const [tickHaptic] = useState(createDetentHaptic);
 
   const pillCount = Math.max(1, actions.length);
   // Rest positions along the drag: detents[0] = 0 (closed), detents[k] = far enough to reveal k pills;
@@ -176,7 +198,8 @@ function SwipeRow({ label, description, descriptionColor, leading, onPress, acti
       while (cap > 0 && absRaw < (detents[cap - 1] + detents[cap]) / 2) cap -= 1;
       if (cap !== captured.value) {
         captured.value = cap;
-        runOnJS(hapticImpactLight)();
+        // The JS-side `tickHaptic` throttles taps that land too close together (see its note).
+        runOnJS(tickHaptic)();
       }
       // Resisted position: sit at the captured detent, following only a FRACTION of the finger's
       // excursion beyond it — so a drag within a detent is sticky, then releases past the midpoint.
