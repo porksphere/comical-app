@@ -147,14 +147,16 @@ export async function fetchBridgeFeaturedRail(
   bridgeId: string,
   signal?: AbortSignal,
 ): Promise<RailSection | null> {
-  const home = (await ds.getBridgeLists(bridgeId, signal)).filter((l) => !l.page);
+  const lists = await ds.getBridgeLists(bridgeId, signal);
   const pick =
-    home.find((l) => l.featured && isRailLayout(l.layout)) ??
-    home.find((l) => isRailLayout(l.layout)) ??
-    home[0];
+    lists.find((l) => l.featured) ?? // the bridge's declared rail (any layout), if it marked one
+    lists.find((l) => !l.page && isRailLayout(l.layout)) ?? // else its first rail-layout home list
+    lists.find((l) => !l.page) ?? // else its first home section — a grid, shown here AS a rail
+    lists[0]; // else its first list of ANY kind (incl. a page / infinite grid), also shown as a rail
   if (!pick) return null;
   const page = await ds.getGridPage(bridgeId, pick.id, 1, undefined, signal);
   if (page.items.length === 0) return null;
+  // A grid/page list gets `kind: 'regular'` from railKindFor, so it renders as a normal horizontal rail.
   return { id: pick.id, title: pick.name, kind: railKindFor(pick.layout), items: page.items };
 }
 

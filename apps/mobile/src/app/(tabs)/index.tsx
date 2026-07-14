@@ -29,6 +29,7 @@ import { PullIndicator } from '@/components/pull-indicator';
 import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { pageOptions } from '@/data/api';
 import { buildHomeRows } from '@/data/content-rows';
+import { useComicalExcludedIds } from '@/data/comical-home';
 import { useCrossBridgeRails } from '@/hooks/use-cross-bridge-rails';
 import { useDedupedPages } from '@/data/grid-pages';
 import { fetchBrowseScope, homeSectionsQuery, queryKeys, type BrowseScope } from '@/data/queries';
@@ -87,7 +88,14 @@ export default function BrowseScreen() {
   // below all gate off for it (`!isComical`), and ContentFeed is fed `comicalRails.rows` directly.
   const isComical = isComicalBridge(bridgeId);
   const realBridges = useMemo(() => visibleBridges.filter((b) => b.id !== COMICAL_BRIDGE_ID), [visibleBridges]);
-  const comicalRails = useCrossBridgeRails(isComical ? realBridges : NO_BRIDGES, { mode: 'home' });
+  // Drop bridges the user excluded from the Comical home (per-bridge setting). Cross-bridge SEARCH is
+  // unaffected — this only trims the home rails.
+  const comicalExcluded = useComicalExcludedIds();
+  const comicalRailBridges = useMemo(
+    () => realBridges.filter((b) => !comicalExcluded[b.id]),
+    [realBridges, comicalExcluded],
+  );
+  const comicalRails = useCrossBridgeRails(isComical ? comicalRailBridges : NO_BRIDGES, { mode: 'home' });
 
   // ── Lists (drives the Page selector) ──────────────────────────────────────
   // Fetched via react-query, keyed by bridge, so `lists` is DERIVED from the cache rather than

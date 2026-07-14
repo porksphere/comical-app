@@ -3,7 +3,13 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
-import { BridgeMetaInfo, BridgePrefsToggles, GenreExclusionsControl, TagExclusionsControl } from '@/components/settings/bridge-extras';
+import {
+  BridgeMetaInfo,
+  BridgePrefsToggles,
+  ComicalHomeToggle,
+  GenreExclusionsControl,
+  TagExclusionsControl,
+} from '@/components/settings/bridge-extras';
 import { SettingFieldEditor } from '@/components/settings/setting-field';
 import { SettingsSection } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
@@ -196,6 +202,7 @@ export default function BridgeSettingsScreen() {
             )}
             {data.info.capabilities?.includes('exclude-genres') && <GenreExclusionsControl bridgeId={bridgeId!} />}
             <BridgePrefsToggles bridgeId={bridgeId!} />
+            <ComicalHomeToggle bridgeId={bridgeId!} />
 
             {source === 'registry' && (
               <>
