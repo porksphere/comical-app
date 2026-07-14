@@ -5,9 +5,11 @@ import { useCallback, useRef, useState } from 'react';
 import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { TrashIcon } from '@/components/icons/ui-icons';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { HistoryRow } from '@/components/history-row';
 import { RetryBlock } from '@/components/retry-block';
+import { SwipeableRow } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
@@ -135,23 +137,28 @@ export default function HistoryScreen() {
             // Fill the viewport even with few rows, so the empty space below them is still part of
             // the scroller and a drag can be started there (see SeriesGrid's note).
             flexGrow: 1,
-            paddingTop: headerHeight + BarContentGap,
+            // Align the FIRST entry's content to the standard content line (top bar + gap): the row's
+            // own vertical padding (Spacing.two) would otherwise push it that much lower than the bar
+            // dictates, so subtract it here.
+            paddingTop: headerHeight + BarContentGap - Spacing.two,
             paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
             paddingLeft: sidePad,
             paddingRight: sidePad,
           }}
           ItemSeparatorComponent={() => <View style={[styles.sep, { backgroundColor: theme.hairline }]} />}
           renderItem={({ item }) => (
-            <HistoryRow
-              thumbnailUrl={item.thumbnailUrl}
-              title={item.title}
-              sub={historySub(item)}
-              onOpen={() => openDetail(item)}
-              actions={[
-                { label: 'Resume', onPress: () => resume(item) },
-                { label: 'Remove', onPress: () => removeMutation.mutate(item), ghost: true },
-              ]}
-            />
+            // Swipe left to reveal Delete (removing the old inline Remove button); Resume stays a button.
+            <SwipeableRow
+              name={item.title}
+              actions={[{ label: 'Remove', icon: TrashIcon, destructive: true, onPress: () => removeMutation.mutate(item) }]}>
+              <HistoryRow
+                thumbnailUrl={item.thumbnailUrl}
+                title={item.title}
+                sub={historySub(item)}
+                onOpen={() => openDetail(item)}
+                actions={[{ label: 'Resume', onPress: () => resume(item) }]}
+              />
+            </SwipeableRow>
           )}
           showsVerticalScrollIndicator={Platform.OS === 'web'}
           onScroll={onScroll}
