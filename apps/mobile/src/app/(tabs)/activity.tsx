@@ -65,7 +65,8 @@ export default function ActivityScreen() {
   // Center the rows in a full-width scroller (scrollbar at the window edge) via symmetric side
   // padding — LegendList drops paddingHorizontal / ignores alignSelf on its content container, so
   // explicit paddingLeft/Right is the reliable lever. See library.tsx.
-  const sidePad = topLevelCenterInset(width) + Spacing.four;
+  // Only the centring inset (web) — the row owns its own horizontal gutter (see history-row).
+  const sidePad = topLevelCenterInset(width);
 
   const openDetail = (a: ActivityEntry) =>
     router.push({

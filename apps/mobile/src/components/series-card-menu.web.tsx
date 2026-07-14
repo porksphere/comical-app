@@ -27,7 +27,8 @@ export type SeriesCardMenuProps = {
   coverAspect?: number;
   /** Ignored on web (no lifted preview); matches the native variant's contract — see it. */
   measureRef?: RefObject<View | null>;
-  children: (api: { onLongPress?: (e: GestureResponderEvent) => void }) => React.ReactNode;
+  /** Always false on web (no lifted preview, so nothing to hide) — matches the native contract. */
+  children: (api: { onLongPress?: (e: GestureResponderEvent) => void; hidden: boolean }) => React.ReactNode;
 };
 
 export function SeriesCardMenu({ enabled, bridgeId, entry, coverAspect, children }: SeriesCardMenuProps) {
@@ -38,7 +39,7 @@ export function SeriesCardMenu({ enabled, bridgeId, entry, coverAspect, children
   // from under the cursor the moment you reach for it. Kept visible while the menu is open too.
   const [hovered, setHovered] = useState(false);
 
-  if (!enabled || !bridgeId) return <>{children({ onLongPress: undefined })}</>;
+  if (!enabled || !bridgeId) return <>{children({ onLongPress: undefined, hidden: false })}</>;
 
   const show = hovered || isOpen;
   return (
@@ -46,7 +47,7 @@ export function SeriesCardMenu({ enabled, bridgeId, entry, coverAspect, children
       style={styles.wrapper}
       onPointerEnter={() => setHovered(true)}
       onPointerLeave={() => setHovered(false)}>
-      {children({ onLongPress: undefined })}
+      {children({ onLongPress: undefined, hidden: false })}
       <Pressable
         ref={ref}
         // The button is a sibling layered above the card's <Link>, not a child of it, so a press

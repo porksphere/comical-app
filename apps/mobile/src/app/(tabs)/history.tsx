@@ -75,7 +75,9 @@ export default function HistoryScreen() {
   // Center the rows in a full-width scroller (scrollbar at the window edge) via symmetric side
   // padding — LegendList drops paddingHorizontal / ignores alignSelf on its content container, so
   // explicit paddingLeft/Right is the reliable lever. See library.tsx.
-  const sidePad = topLevelCenterInset(width) + Spacing.four;
+  // Only the centring inset (web) — the row owns its own horizontal gutter, so it spans the full
+  // content width and the swipe-to-delete reaches the edge instead of being cut off inside a side inset.
+  const sidePad = topLevelCenterInset(width);
 
   const openDetail = (h: HistoryEntry) =>
     router.push({
@@ -188,7 +190,9 @@ function HistoryItem({
   direct: boolean;
 }) {
   const thumbRef = useRef<View>(null);
-  const row = (
+  // `coverHidden` blanks just the thumbnail while the long-press menu is open (its lifted preview is a
+  // copy) — the row's text stays visible under the dim.
+  const renderRow = (coverHidden: boolean) => (
     <HistoryRow
       thumbnailUrl={item.thumbnailUrl}
       title={item.title}
@@ -197,12 +201,13 @@ function HistoryItem({
       onMore={onOpenDetail}
       actions={[]}
       thumbRef={thumbRef}
+      coverHidden={coverHidden}
     />
   );
   return (
     <SwipeableRow name={item.title} actions={[{ label: 'Remove', icon: TrashIcon, destructive: true, onPress: onRemove }]}>
       {Platform.OS === 'web' ? (
-        row
+        renderRow(false)
       ) : (
         <SeriesCardMenu
           enabled={!!item.bridgeId}
@@ -212,7 +217,7 @@ function HistoryItem({
           direct={direct}
           coverAspect={2 / 3}
           measureRef={thumbRef}>
-          {() => row}
+          {({ hidden }) => renderRow(hidden)}
         </SeriesCardMenu>
       )}
     </SwipeableRow>

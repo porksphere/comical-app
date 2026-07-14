@@ -1,5 +1,5 @@
 import { type RefObject, useCallback, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View, type GestureResponderEvent } from 'react-native';
+import { View, type GestureResponderEvent } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS, useSharedValue } from 'react-native-reanimated';
 
@@ -45,7 +45,9 @@ export type SeriesCardMenuProps = {
    *  tappable area is wide but whose "card" is a small thumbnail (History), point it at the thumbnail so
    *  the preview lifts from there — otherwise the wide row rect makes the flying cover start huge. */
   measureRef?: RefObject<View | null>;
-  children: (api: { onLongPress?: (e: GestureResponderEvent) => void }) => React.ReactNode;
+  /** `hidden` is true while THIS card's menu is open — the child should hide just its COVER/thumbnail
+   *  (so the lifted preview isn't doubled), NOT the whole item; the rest stays visible under the dim. */
+  children: (api: { onLongPress?: (e: GestureResponderEvent) => void; hidden: boolean }) => React.ReactNode;
 };
 
 export function SeriesCardMenu({ enabled, bridgeId, bridge, entry, direct, coverAspect, measureRef, children }: SeriesCardMenuProps) {
@@ -144,15 +146,12 @@ export function SeriesCardMenu({ enabled, bridgeId, bridge, entry, direct, cover
 
   return (
     <GestureDetector gesture={longPress}>
-      {/* collapsable={false} so the view stays measurable (for refining to the card's rect). Hidden
-          (opacity 0, layout preserved) while its menu is open. */}
-      <View ref={anchorRef} collapsable={false} style={hidden ? styles.hidden : undefined}>
-        {children({ onLongPress: undefined })}
+      {/* collapsable={false} so the view stays measurable (for refining to the card's rect). We DON'T
+          hide the whole wrapper any more — the child hides just its cover via the `hidden` flag, so the
+          rest of the item (title, and a History row's text) stays put under the dim. */}
+      <View ref={anchorRef} collapsable={false}>
+        {children({ onLongPress: undefined, hidden })}
       </View>
     </GestureDetector>
   );
 }
-
-const styles = StyleSheet.create({
-  hidden: { opacity: 0 },
-});
