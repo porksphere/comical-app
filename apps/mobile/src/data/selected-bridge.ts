@@ -18,8 +18,6 @@
  */
 import { useCallback, useMemo } from 'react';
 
-import { Image as RNImage } from 'react-native';
-
 import { observable } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
 import { useQuery } from '@tanstack/react-query';
@@ -42,15 +40,12 @@ export const setSelectedBridge = (id: string) => selectedBridge$.set(id);
  *  `visibleBridges` below and branched on wherever a bridge id drives a fetch (Browse home, Search).
  *  Always present (when there's ≥1 real bridge) and first, so it's also the default landing bridge. */
 export const COMICAL_BRIDGE_ID = 'comical';
-const COMICAL_BRIDGE: Bridge = {
-  id: COMICAL_BRIDGE_ID,
-  name: 'Comical',
-  nsfw: false,
-  capabilities: [],
-  // The app's own logo as this synthetic bridge's thumbnail (resolved to a URI so it flows through
-  // `bridgeThumbnails`/`BridgeThumb` like any real bridge's remote thumbnail).
-  thumbnail: RNImage.resolveAssetSource(require('@/assets/images/comical-logo.png')).uri,
-};
+const COMICAL_BRIDGE: Bridge = { id: COMICAL_BRIDGE_ID, name: 'Comical', nsfw: false, capabilities: [] };
+/** The app logo as a local image module — passed directly to `BridgeThumb`'s `source` for the Comical
+ *  bridge (the way index.tsx already renders it). Not resolved to a URI: react-native-web's `Image`
+ *  has no `resolveAssetSource`, and `expo-asset` isn't a dependency — a require module works on both. */
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+export const COMICAL_ICON = require('@/assets/images/comical-logo.png');
 /** Whether a selected bridge id is the synthetic aggregate. */
 export const isComicalBridge = (bridgeId: string | undefined): boolean => bridgeId === COMICAL_BRIDGE_ID;
 

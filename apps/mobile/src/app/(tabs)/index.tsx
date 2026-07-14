@@ -32,7 +32,7 @@ import { buildHomeRows } from '@/data/content-rows';
 import { useCrossBridgeRails } from '@/hooks/use-cross-bridge-rails';
 import { useDedupedPages } from '@/data/grid-pages';
 import { fetchBrowseScope, homeSectionsQuery, queryKeys, type BrowseScope } from '@/data/queries';
-import { COMICAL_BRIDGE_ID, isComicalBridge, useSelectedBridge } from '@/data/selected-bridge';
+import { COMICAL_BRIDGE_ID, COMICAL_ICON, isComicalBridge, useSelectedBridge } from '@/data/selected-bridge';
 import { isRailLayout, useDataSource, useMockActive } from '@/data/source';
 import type { Bridge, BridgeList, GridPage } from '@/data/types';
 import { friendlyError } from '@/lib/friendly-error';
@@ -168,8 +168,15 @@ export default function BrowseScreen() {
   // (`listsSettled`) so stale/empty lists can't make `composedHome` briefly true and fire a
   // spurious fetch for a page-only bridge.
   const homeQuery = useQuery(homeSectionsQuery(ds, mock, bridgeId ?? '', composedHome && listsSettled));
-  const sections = useMemo(() => homeQuery.data?.sections ?? [], [homeQuery.data]);
-  const gridSections = useMemo(() => homeQuery.data?.gridSections ?? [], [homeQuery.data]);
+  // Force EMPTY for Comical: its home comes from `comicalRails`, not `homeQuery`. homeQuery is disabled
+  // for Comical, but under keepPreviousData it still holds the PREVIOUS bridge's sections — which would
+  // otherwise leave `terminalGridSection` non-null → `isHomeTerminal` true → `gridActive` true → the
+  // reveal dim stuck on (the crossfade "fade sticking around"). See the crossfade block.
+  const sections = useMemo(() => (isComical ? [] : (homeQuery.data?.sections ?? [])), [isComical, homeQuery.data]);
+  const gridSections = useMemo(
+    () => (isComical ? [] : (homeQuery.data?.gridSections ?? [])),
+    [isComical, homeQuery.data],
+  );
   // Surface a Retry when the CURRENT bridge's Home failed and we have no real data for it — either
   // a dataless first load (`!data`) or a failed switch where keepPreviousData is still showing the
   // PREVIOUS bridge's Home as a placeholder (`isPlaceholderData`); without the placeholder check a
@@ -542,7 +549,13 @@ export default function BrowseScreen() {
       <View style={[styles.selectorRow, { height: barHeight }]}>
         {currentBridge ? (
           <View style={[styles.bridgeThumb, { width: thumbSize, height: thumbSize }]}>
-            <BridgeThumb uri={currentBridge.thumbnail} label={currentBridge.name} size={thumbSize} fill />
+            <BridgeThumb
+              uri={currentBridge.thumbnail}
+              source={isComical ? COMICAL_ICON : undefined}
+              label={currentBridge.name}
+              size={thumbSize}
+              fill
+            />
           </View>
         ) : null}
         <Selector

@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { useState } from 'react';
+import { useState, type ComponentProps } from 'react';
 import { ImageStyle, StyleProp, StyleSheet } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -21,12 +21,16 @@ import { ThemedView } from '@/components/themed-view';
  *  stretching to fill it. `size` still drives the fallback letter's scale. */
 export function BridgeThumb({
   uri,
+  source,
   label,
   size,
   fill,
   style,
 }: {
   uri?: string;
+  /** A local image module (a `require(...)`) — takes precedence over `uri`, for a synthetic bridge
+   *  (e.g. Comical) whose art is a bundled asset rather than a remote URL. */
+  source?: ComponentProps<typeof Image>['source'];
   label: string;
   size: number;
   fill?: boolean;
@@ -34,7 +38,8 @@ export function BridgeThumb({
 }) {
   const [failed, setFailed] = useState(false);
   const boxStyle = fill ? StyleSheet.absoluteFill : { width: size, height: size };
-  if (!uri || failed) {
+  const imgSource = source ?? (uri ? { uri } : undefined);
+  if (!imgSource || failed) {
     const letter = label.trim().charAt(0).toUpperCase() || '?';
     return (
       <ThemedView type="backgroundSelected" style={[boxStyle, styles.fallback, style]}>
@@ -42,7 +47,7 @@ export function BridgeThumb({
       </ThemedView>
     );
   }
-  return <Image source={{ uri }} style={[boxStyle, style]} onError={() => setFailed(true)} />;
+  return <Image source={imgSource} style={[boxStyle, style]} onError={() => setFailed(true)} />;
 }
 
 const styles = StyleSheet.create({
