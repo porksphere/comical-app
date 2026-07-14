@@ -10,7 +10,7 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 
-import { TrashIcon } from '@/components/icons/ui-icons';
+import { PencilIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { SettingsRow } from '@/components/settings/settings-row';
 import { SettingsGutter, Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
@@ -20,8 +20,6 @@ import { claimOpenRow, releaseOpenRow } from '@/lib/swipe-row-registry';
 
 const PILL_WIDTH = 60;
 const PILL_GAP = Spacing.two;
-/** How far the row slides: enough to clear the pill, the gap before it, and the screen's gutter. */
-const OPEN_X = SettingsGutter + PILL_WIDTH + PILL_GAP;
 /** Corner radius the row's trailing edge grows to as it opens into a slot. */
 const SLOT_RADIUS = 14;
 
@@ -51,6 +49,10 @@ type Props = {
   actionLabel?: string;
   /** Invoked when the user commits to the destructive action — open a confirm overlay here. */
   onAction: () => void;
+  /** Optional non-destructive secondary action, revealed as a SECOND bubble to the left of the
+   *  delete pill (e.g. "Rename"). Shown with a pencil glyph in the accent colour. Omit for a
+   *  delete-only row (the default, so existing callers are unchanged). */
+  secondary?: { label?: string; onPress: () => void };
 };
 
 /**
@@ -74,7 +76,7 @@ export function SwipeableSettingsRow(props: Props) {
   return IS_WEB ? <HoverDeleteRow {...props} /> : <SwipeRow {...props} />;
 }
 
-function SwipeRow({ label, description, descriptionColor, leading, onPress, actionLabel = 'Delete', onAction }: Props) {
+function SwipeRow({ label, description, descriptionColor, leading, onPress, actionLabel = 'Delete', onAction, secondary }: Props) {
   const theme = useTheme();
   // Where the row is BEING DRAGGED to — set straight from the finger, with no smoothing.
   const target = useSharedValue(0);
@@ -84,6 +86,11 @@ function SwipeRow({ label, description, descriptionColor, leading, onPress, acti
   const isOpen = useSharedValue(false);
   // Stable per-row identity for `swipe-row-registry`. Lazy state, not a ref, for the same reason.
   const [token] = useState(() => ({}));
+
+  // How many pills the swipe reveals: the delete pill, plus an optional secondary (e.g. Rename). The
+  // row must slide far enough for every pill to clear the edge, so the open distance grows with it.
+  const pillCount = secondary ? 2 : 1;
+  const openX = SettingsGutter + pillCount * (PILL_WIDTH + PILL_GAP);
 
   // Deliberately NOT useCallback: a shared value listed in a hook's dependency array may not then be
   // mutated (react-hooks/immutability, which the React Compiler enforces here). These are cheap
@@ -98,7 +105,7 @@ function SwipeRow({ label, description, descriptionColor, leading, onPress, acti
     claimOpenRow(token, close); // closes whichever row was open before this one
     isOpen.value = true;
     hapticImpactLight();
-    target.value = -OPEN_X;
+    target.value = -openX;
   }
 
   const pan = Gesture.Pan()
@@ -108,15 +115,15 @@ function SwipeRow({ label, description, descriptionColor, leading, onPress, acti
     .failOffsetY([-12, 12])
     .onUpdate((e) => {
       'worklet';
-      const from = isOpen.value ? -OPEN_X : 0;
-      // Clamp: there's nothing to reveal past the pill, and nothing to the row's left at all.
-      target.value = Math.min(0, Math.max(-OPEN_X, from + e.translationX));
+      const from = isOpen.value ? -openX : 0;
+      // Clamp: there's nothing to reveal past the pills, and nothing to the row's left at all.
+      target.value = Math.min(0, Math.max(-openX, from + e.translationX));
     })
     .onEnd((e) => {
       'worklet';
       // Velocity, not just position — a quick flick should open even if it barely travelled, which
       // is most of what makes this feel responsive rather than draggy.
-      const shouldOpen = target.value < -OPEN_X / 2 || e.velocityX < -500;
+      const shouldOpen = target.value < -openX / 2 || e.velocityX < -500;
       if (shouldOpen) runOnJS(open)();
       else runOnJS(close)();
     });
@@ -130,7 +137,7 @@ function SwipeRow({ label, description, descriptionColor, leading, onPress, acti
   const tx = useDerivedValue(() => withSpring(target.value, SPRING));
 
   /** 0 closed → 1 fully open. Everything visual hangs off this. */
-  const progress = useDerivedValue(() => -tx.value / OPEN_X);
+  const progress = useDerivedValue(() => -tx.value / openX);
 
   const rowStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: tx.value }],
@@ -150,8 +157,24 @@ function SwipeRow({ label, description, descriptionColor, leading, onPress, acti
     <View style={styles.swipeContainer}>
       {/* Notes puts a caption under its pills, but our rows are half the height of a Notes row —
           there is no room for one without the pill shrinking to a dot. The glyph plus the
-          accessibility label carry it. */}
-      <Animated.View style={[styles.pillSlot, pillStyle]} pointerEvents="box-none">
+          accessibility label carry it. The delete pill sits at the trailing edge; the secondary
+          (if any) to its left. */}
+      <Animated.View
+        style={[styles.pillSlot, { width: pillCount * PILL_WIDTH + (pillCount - 1) * PILL_GAP }, pillStyle]}
+        pointerEvents="box-none">
+        {secondary && (
+          <Pressable
+            onPress={() => {
+              hapticImpactLight();
+              close();
+              secondary.onPress();
+            }}
+            style={[styles.pill, { backgroundColor: theme.accent }]}
+            accessibilityRole="button"
+            accessibilityLabel={`${secondary.label ?? 'Rename'} ${label}`}>
+            <PencilIcon color={theme.accentOn} size={20} />
+          </Pressable>
+        )}
         <Pressable
           onPress={() => {
             hapticImpactLight();
@@ -186,7 +209,7 @@ function SwipeRow({ label, description, descriptionColor, leading, onPress, acti
   );
 }
 
-function HoverDeleteRow({ label, description, descriptionColor, leading, onPress, actionLabel = 'Delete', onAction }: Props) {
+function HoverDeleteRow({ label, description, descriptionColor, leading, onPress, actionLabel = 'Delete', onAction, secondary }: Props) {
   const theme = useTheme();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
   // The trash is a SIBLING of the row, not something inside its `right` slot: react-native-web
@@ -208,6 +231,17 @@ function HoverDeleteRow({ label, description, descriptionColor, leading, onPress
           onHoverOut={onHoverOut}
         />
       </View>
+      {secondary && (
+        <Pressable
+          onPress={secondary.onPress}
+          onHoverIn={onHoverIn}
+          onHoverOut={onHoverOut}
+          style={[styles.webAction, CAN_HOVER && !hovered && styles.webTrashIdle]}
+          accessibilityRole="button"
+          accessibilityLabel={`${secondary.label ?? 'Rename'} ${label}`}>
+          <PencilIcon color={theme.accent} size={18} />
+        </Pressable>
+      )}
       <Pressable
         onPress={onAction}
         onHoverIn={onHoverIn}
@@ -238,15 +272,18 @@ const styles = StyleSheet.create({
   pillSlot: {
     position: 'absolute',
     right: SettingsGutter,
-    // Stretched to the row's height (which varies — a row with a status line is taller), with the
-    // pill flexing to fill it minus a hair of breathing room. Pinning a fixed pill height instead
-    // would leave it floating off-centre on the taller rows.
+    // Stretched to the row's height (which varies — a row with a status line is taller), so the
+    // pills fill it minus a hair of breathing room. Pinning a fixed pill height instead would leave
+    // them floating off-centre on the taller rows. Laid out as a row so multiple pills sit
+    // side-by-side; `width` is set inline from the pill count.
     top: Spacing.one,
     bottom: Spacing.one,
-    width: PILL_WIDTH,
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: PILL_GAP,
   },
   pill: {
-    flex: 1,
+    width: PILL_WIDTH,
     borderRadius: SLOT_RADIUS,
     alignItems: 'center',
     justifyContent: 'center',
@@ -270,6 +307,16 @@ const styles = StyleSheet.create({
     // the row's text never reflows as it fades in.
     width: SettingsGutter + 20,
     paddingRight: SettingsGutter,
+    cursor: 'pointer',
+    transitionProperty: 'opacity',
+    transitionDuration: '120ms',
+  },
+  // The secondary (rename) lane, left of the trash. No gutter padding — only the trailing trash lane
+  // reaches the screen edge; this one just sits beside it.
+  webAction: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 34,
     cursor: 'pointer',
     transitionProperty: 'opacity',
     transitionDuration: '120ms',
