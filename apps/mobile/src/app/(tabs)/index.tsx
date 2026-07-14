@@ -391,6 +391,23 @@ export default function BrowseScreen() {
     return () => clearTimeout(t);
   }, [switching, committed, homeReady, homeXfade]);
 
+  // Watchdog: the reveal above only fires once `committed` flips (in the fade-out's completion
+  // callback). If that callback ever fails to fire — a cancelled/interrupted animation reporting
+  // finished:false, a rapid re-select, a web reanimated hiccup — `committed` never becomes true, the
+  // reveal effect returns early, and the home is stranded faded. This effect is NOT gated on
+  // `committed`, so it force-completes the crossfade after the max wait: apply any pending commit and
+  // fade back in. In normal operation the reveal clears `switching` in ~340ms, well before this fires.
+  useEffect(() => {
+    if (!switching) return;
+    const t = setTimeout(() => {
+      if (pendingCommitRef.current) runPendingCommit();
+      homeXfade.value = withTiming(1, { duration: XFADE_IN_MS, easing: Easing.out(Easing.quad) });
+      setSwitching(false);
+      setCommitted(false);
+    }, XFADE_MAX_WAIT_MS);
+    return () => clearTimeout(t);
+  }, [switching, homeXfade, runPendingCommit]);
+
   // ── Within-page grid dim (a "See all" / list-scope refinement) ────────────
   // The kept grid eases to a dim while the new scope loads, then back to full — "refreshing", not
   // "swapping" (see useRevealDim, shared with the Search grid so the two can't drift). Suppressed

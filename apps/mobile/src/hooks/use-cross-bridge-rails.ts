@@ -71,14 +71,18 @@ export function useCrossBridgeRails(
         bridgeId: b.id,
         bridgeName: b.name,
         direct,
-        loading: r.isLoading,
+        // `isPending` (no result yet), NOT `isLoading` (pending AND fetching) — on the very first
+        // render a fresh query is pending but not yet fetching, so isLoading is false there. Using
+        // isPending shows a skeleton from frame one, so the feed's rows are non-empty immediately (no
+        // empty→full remount flash, and the crossfade reveals a skeleton rather than a blank list).
+        loading: r.isPending,
         error: r.isError,
         onRetry: () => void r.refetch(),
         section,
         drill,
       };
     });
-    return { rows: buildCrossBridgeRows(inputs), anyLoading: results.some((r) => r.isLoading) };
+    return { rows: buildCrossBridgeRows(inputs), anyLoading: results.some((r) => r.isPending) };
   }, [active, bridges, results, params.mode, query]);
 
   return { rows, anyLoading, refetch };
