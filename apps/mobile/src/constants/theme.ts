@@ -154,6 +154,13 @@ export const MaxContentWidth = 800;
  *  1200px; margin: … auto }` so the whole app reads at one width. Tweak here to
  *  resize every top-level view at once. */
 export const MaxTopLevelWidth = 1200;
+/**
+ * How far a top-level view is inset on EACH side to centre it within `MaxTopLevelWidth` — WEB ONLY. On
+ * native (iOS/Android) a phone or tablet fills its own screen; there's no desktop margin to reclaim, so
+ * capping the content to 1200 there just leaves a weird border (most visible on an iPad). Native returns
+ * 0 (full device width). Callers add their own edge gutter (`Spacing.four`) on top of this. */
+export const topLevelCenterInset = (width: number): number =>
+  Platform.OS === 'web' ? Math.max(0, (width - MaxTopLevelWidth) / 2) : 0;
 /** Standard height of a tappable row — the filter bar's own controls
  *  (`CONTROL_HEIGHT` in filter-types.ts) and every selectable list row inside
  *  an overlay (genre/tag checkboxes, bridge/page picker rows, …), so a row

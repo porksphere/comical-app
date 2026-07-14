@@ -1,4 +1,4 @@
-import { StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 
 import { BarSurface } from '@/components/bar-surface';
 import { ThemedText } from '@/components/themed-text';
@@ -17,7 +17,8 @@ export function TabTitleBar({ title }: { title: string }) {
   const barHeight = useTopBarHeight();
   return (
     <BarSurface style={styles.topBar}>
-      <View style={[styles.titleRow, { height: barHeight }]}>
+      {/* Cap+centre only on web; native fills the width so the title aligns with the full-width grids. */}
+      <View style={[styles.titleRow, { height: barHeight, maxWidth: Platform.OS === 'web' ? MaxTopLevelWidth : undefined }]}>
         <ThemedText numberOfLines={1} style={styles.title}>
           {title}
         </ThemedText>
@@ -42,7 +43,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: Spacing.four,
     width: '100%',
-    maxWidth: MaxTopLevelWidth,
     alignSelf: 'center',
   },
   title: {

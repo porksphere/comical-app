@@ -13,7 +13,7 @@ import { SeriesCardMenu } from '@/components/series-card-menu';
 import { SwipeableRow } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BarContentGap, BottomTabInset, firstRowPaddingTop, MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { BarContentGap, BottomTabInset, firstRowPaddingTop, MaxTopLevelWidth, Spacing, topLevelCenterInset } from '@/constants/theme';
 import { historyQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type HistoryEntry } from '@/data/types';
@@ -75,7 +75,7 @@ export default function HistoryScreen() {
   // Center the rows in a full-width scroller (scrollbar at the window edge) via symmetric side
   // padding — LegendList drops paddingHorizontal / ignores alignSelf on its content container, so
   // explicit paddingLeft/Right is the reliable lever. See library.tsx.
-  const sidePad = Math.max(0, (width - MaxTopLevelWidth) / 2) + Spacing.four;
+  const sidePad = topLevelCenterInset(width) + Spacing.four;
 
   const openDetail = (h: HistoryEntry) =>
     router.push({

@@ -11,7 +11,7 @@ import { Rail, RailSkeleton, SECTION_HEAD_HEIGHT, SectionHead, railRowHeight, ra
 import { RecyclerList } from '@/components/recycler-list';
 import { RetryBlock } from '@/components/retry-block';
 import { estimatedCardHeight, SeriesCard } from '@/components/series-card';
-import { BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { BottomTabInset, Spacing, topLevelCenterInset } from '@/constants/theme';
 import { contentRowType, type ContentRow, type SeeAllTarget } from '@/data/content-rows';
 import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
 import { useIsLargeScreen } from '@/hooks/use-responsive';
@@ -104,7 +104,7 @@ export function ContentFeed({
   // STRIP_PAD, heads/blocks via their own paddingHorizontal, and the terminal `gridRow` via
   // `styles.row`). So the container carries ONLY the centering inset, and each row's own Spacing.four
   // lands its content at the same x as a results-grid cell.
-  const centerPad = Math.max(0, (width - MaxTopLevelWidth) / 2);
+  const centerPad = topLevelCenterInset(width);
 
   // Row-type sizing. gridRow is EXACT (cellHeight), so the many uniform terminal rows never re-measure.
   // Headings and rails are fixed upper-bound heights; non-terminal grid BLOCKS are variable (arbitrary

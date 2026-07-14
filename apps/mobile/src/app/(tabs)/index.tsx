@@ -3,7 +3,7 @@ import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient } from '@t
 import { Image } from 'expo-image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import {
   Easing,
   interpolateColor,
@@ -590,7 +590,8 @@ export default function BrowseScreen() {
     <BarSurface style={[styles.topBar, { height: headerHeight }, headerStyle, headerBorderStyle]}>
       {/* Inner row capped to the content width so the selectors line up with the
           grid below, while the bar background stays full-bleed. */}
-      <View style={[styles.selectorRow, { height: barHeight }]}>
+      {/* Cap+centre only on web; native fills the width so the bar aligns with the full-width grid. */}
+      <View style={[styles.selectorRow, { height: barHeight, maxWidth: Platform.OS === 'web' ? MaxTopLevelWidth : undefined }]}>
         {currentBridge ? (
           <View style={[styles.bridgeThumb, { width: thumbSize, height: thumbSize }]}>
             <BridgeThumb
