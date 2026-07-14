@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from 'react';
+import { type ComponentType, type ReactNode, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -10,7 +10,6 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 
-import { PencilIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { SettingsRow } from '@/components/settings/settings-row';
 import { SettingsGutter, Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
@@ -22,6 +21,10 @@ const PILL_WIDTH = 60;
 const PILL_GAP = Spacing.two;
 /** Corner radius the row's trailing edge grows to as it opens into a slot. */
 const SLOT_RADIUS = 14;
+/** How many action bubbles fit a row before they'd run past the screen / crowd the content. Beyond
+ *  this, extra actions are dropped (and a dev-build error is logged — see `clampActions`). Three
+ *  60px pills plus gaps and the gutter already reach ~230px, about as far as a phone row can give. */
+const MAX_ROW_ACTIONS = 3;
 
 /** Tuned for a visible trail: soft enough that the row lags a little behind the finger and has to
  *  catch up, stiff and damped enough that it still arrives promptly and doesn't wobble past the
@@ -33,10 +36,23 @@ const SPRING = { damping: 22, stiffness: 200, mass: 0.7 } as const;
 const IS_WEB = Platform.OS === 'web';
 
 // Whether this web client has a hovering pointer at all. A touchscreen laptop/tablet on web fires no
-// hover events ever, so a hover-revealed trash would be permanently invisible there — those clients
-// get it shown outright instead.
+// hover events ever, so hover-revealed actions would be permanently invisible there — those clients
+// get them shown outright instead.
 const CAN_HOVER = IS_WEB && typeof window !== 'undefined' && !!window.matchMedia?.('(hover: hover)').matches;
 
+/** One trailing swipe/hover action. The `icon` is a glyph component from `@/components/icons/ui-icons`
+ *  (they all take `{ color, size }`). `destructive` paints the action in the danger colour (a delete);
+ *  everything else gets the accent colour (rename, edit, …). */
+export type SwipeRowAction = {
+  /** Stable list key; defaults to `label`. Set it when two actions could share a label. */
+  key?: string;
+  /** Verb for the action, e.g. "Delete" / "Rename". Used as the a11y label (`"{label} {row}"`). */
+  label: string;
+  icon: ComponentType<{ color: string; size?: number }>;
+  onPress: () => void;
+  /** Danger-coloured (a delete) vs accent-coloured (the default). */
+  destructive?: boolean;
+};
 
 type Props = {
   label: string;
@@ -45,38 +61,55 @@ type Props = {
   leading?: ReactNode;
   /** Tapping the row body (e.g. opening the item's detail page). */
   onPress?: () => void;
-  /** Caption under the pill in the revealed action. */
-  actionLabel?: string;
-  /** Invoked when the user commits to the destructive action — open a confirm overlay here. */
-  onAction: () => void;
-  /** Optional non-destructive secondary action, revealed as a SECOND bubble to the left of the
-   *  delete pill (e.g. "Rename"). Shown with a pencil glyph in the accent colour. Omit for a
-   *  delete-only row (the default, so existing callers are unchanged). */
-  secondary?: { label?: string; onPress: () => void };
+  /**
+   * The trailing actions, laid out left→right — so the LAST one sits at the screen edge (the natural
+   * primary/destructive slot). At least one; at most `MAX_ROW_ACTIONS` (extra are dropped with a
+   * dev-build error). A row with no destructive/secondary actions should just be a plain `SettingsRow`.
+   */
+  actions: SwipeRowAction[];
 };
 
+/** Clamp to what fits, and shout in a dev build when a caller over- (or under-) fills the row — a
+ *  `console.error` surfaces in the Metro logs and the RN LogBox, without crashing a release build. */
+function clampActions(actions: SwipeRowAction[], rowLabel: string): SwipeRowAction[] {
+  if (__DEV__) {
+    if (actions.length === 0) {
+      console.error(
+        `SwipeableSettingsRow ("${rowLabel}") was given no actions. A swipeable row needs at least one; use a plain SettingsRow if it has none.`,
+      );
+    } else if (actions.length > MAX_ROW_ACTIONS) {
+      console.error(
+        `SwipeableSettingsRow ("${rowLabel}") was given ${actions.length} actions, but at most ${MAX_ROW_ACTIONS} fit a row. Dropping the last ${actions.length - MAX_ROW_ACTIONS}.`,
+      );
+    }
+  }
+  return actions.length > MAX_ROW_ACTIONS ? actions.slice(0, MAX_ROW_ACTIONS) : actions;
+}
+
 /**
- * A `SettingsRow` whose destructive action is reached by swiping. Dragging left slides the row
- * away; its trailing edge rounds into a slot as it goes, and a rounded red pill springs in beside
- * it — the iOS Notes shape. The swipe alone never destroys anything: you then tap the pill, and
- * `onAction` should still confirm.
+ * A `SettingsRow` whose actions are reached by swiping. Dragging left slides the row away; its
+ * trailing edge rounds into a slot as it goes, and one or more rounded pills spring in beside it —
+ * the iOS Notes shape. A swipe alone never commits anything: you then tap a pill (a destructive
+ * pill's handler should still confirm).
  *
- * Hand-rolled on a pan gesture rather than gesture-handler's `ReanimatedSwipeable`, which only hands
- * the drag progress to the ACTION it renders — the row itself can't see it, so there'd be no way to
- * round the row's corners in step with the drag.
+ * Generic over its `actions` (up to `MAX_ROW_ACTIONS`): a delete, a rename, an edit — any mix. The
+ * last action sits at the screen edge. Hand-rolled on a pan gesture rather than gesture-handler's
+ * `ReanimatedSwipeable`, which only hands the drag progress to the ACTION it renders — the row itself
+ * can't see it, so there'd be no way to round the row's corners in step with the drag.
  *
  * Android gets the same rest-open behavior rather than Material's fling-to-dismiss: dismissal there
  * is only safe paired with an undo snackbar, and this app has no snackbar system.
  *
  * On web there is no swipe at all — dragging a row with a mouse is not something anyone would try.
- * The row instead reveals a trash button on hover (and shows it unconditionally on a touch screen,
- * which never hovers).
+ * The row instead reveals the action buttons on hover (and shows them unconditionally on a touch
+ * screen, which never hovers).
  */
-export function SwipeableSettingsRow(props: Props) {
-  return IS_WEB ? <HoverDeleteRow {...props} /> : <SwipeRow {...props} />;
+export function SwipeableSettingsRow({ actions, ...rest }: Props) {
+  const shown = clampActions(actions, rest.label);
+  return IS_WEB ? <HoverActionsRow {...rest} actions={shown} /> : <SwipeRow {...rest} actions={shown} />;
 }
 
-function SwipeRow({ label, description, descriptionColor, leading, onPress, actionLabel = 'Delete', onAction, secondary }: Props) {
+function SwipeRow({ label, description, descriptionColor, leading, onPress, actions }: Props) {
   const theme = useTheme();
   // Where the row is BEING DRAGGED to — set straight from the finger, with no smoothing.
   const target = useSharedValue(0);
@@ -87,9 +120,9 @@ function SwipeRow({ label, description, descriptionColor, leading, onPress, acti
   // Stable per-row identity for `swipe-row-registry`. Lazy state, not a ref, for the same reason.
   const [token] = useState(() => ({}));
 
-  // How many pills the swipe reveals: the delete pill, plus an optional secondary (e.g. Rename). The
-  // row must slide far enough for every pill to clear the edge, so the open distance grows with it.
-  const pillCount = secondary ? 2 : 1;
+  // The row must slide far enough for every pill to clear the edge, so the open distance grows with
+  // the action count.
+  const pillCount = Math.max(1, actions.length);
   const openX = SettingsGutter + pillCount * (PILL_WIDTH + PILL_GAP);
 
   // Deliberately NOT useCallback: a shared value listed in a hook's dependency array may not then be
@@ -157,35 +190,27 @@ function SwipeRow({ label, description, descriptionColor, leading, onPress, acti
     <View style={styles.swipeContainer}>
       {/* Notes puts a caption under its pills, but our rows are half the height of a Notes row —
           there is no room for one without the pill shrinking to a dot. The glyph plus the
-          accessibility label carry it. The delete pill sits at the trailing edge; the secondary
-          (if any) to its left. */}
+          accessibility label carry it. Actions lay out left→right, so the last sits at the edge. */}
       <Animated.View
         style={[styles.pillSlot, { width: pillCount * PILL_WIDTH + (pillCount - 1) * PILL_GAP }, pillStyle]}
         pointerEvents="box-none">
-        {secondary && (
-          <Pressable
-            onPress={() => {
-              hapticImpactLight();
-              close();
-              secondary.onPress();
-            }}
-            style={[styles.pill, { backgroundColor: theme.accent }]}
-            accessibilityRole="button"
-            accessibilityLabel={`${secondary.label ?? 'Rename'} ${label}`}>
-            <PencilIcon color={theme.accentOn} size={20} />
-          </Pressable>
-        )}
-        <Pressable
-          onPress={() => {
-            hapticImpactLight();
-            close();
-            onAction();
-          }}
-          style={[styles.pill, { backgroundColor: theme.danger }]}
-          accessibilityRole="button"
-          accessibilityLabel={`${actionLabel} ${label}`}>
-          <TrashIcon color={theme.accentOn} size={20} />
-        </Pressable>
+        {actions.map((a) => {
+          const Icon = a.icon;
+          return (
+            <Pressable
+              key={a.key ?? a.label}
+              onPress={() => {
+                hapticImpactLight();
+                close();
+                a.onPress();
+              }}
+              style={[styles.pill, { backgroundColor: a.destructive ? theme.danger : theme.accent }]}
+              accessibilityRole="button"
+              accessibilityLabel={`${a.label} ${label}`}>
+              <Icon color={theme.accentOn} size={20} />
+            </Pressable>
+          );
+        })}
       </Animated.View>
 
       <GestureDetector gesture={pan}>
@@ -209,14 +234,15 @@ function SwipeRow({ label, description, descriptionColor, leading, onPress, acti
   );
 }
 
-function HoverDeleteRow({ label, description, descriptionColor, leading, onPress, actionLabel = 'Delete', onAction, secondary }: Props) {
+function HoverActionsRow({ label, description, descriptionColor, leading, onPress, actions }: Props) {
   const theme = useTheme();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
-  // The trash is a SIBLING of the row, not something inside its `right` slot: react-native-web
+  // Each action is a SIBLING of the row, not something inside its `right` slot: react-native-web
   // renders an accessibilityRole="button" Pressable as a real <button>, and a <button> inside a
-  // <button> is invalid HTML — React rejects it, and the two click targets overlap. So the trash
-  // gets its own lane to the row's right, which is also exactly where the pill sits on native.
-  // Both halves feed the same `hovered`, so crossing from the row onto the trash doesn't hide it.
+  // <button> is invalid HTML — React rejects it, and the two click targets overlap. So each action
+  // gets its own lane to the row's right, which is also exactly where the pills sit on native. Every
+  // lane feeds the same `hovered`, so crossing from the row onto an action doesn't hide the set.
+  const lastIndex = actions.length - 1;
   return (
     <View style={styles.webRow}>
       <View style={styles.webRowBody}>
@@ -231,28 +257,24 @@ function HoverDeleteRow({ label, description, descriptionColor, leading, onPress
           onHoverOut={onHoverOut}
         />
       </View>
-      {secondary && (
-        <Pressable
-          onPress={secondary.onPress}
-          onHoverIn={onHoverIn}
-          onHoverOut={onHoverOut}
-          style={[styles.webAction, CAN_HOVER && !hovered && styles.webTrashIdle]}
-          accessibilityRole="button"
-          accessibilityLabel={`${secondary.label ?? 'Rename'} ${label}`}>
-          <PencilIcon color={theme.accent} size={18} />
-        </Pressable>
-      )}
-      <Pressable
-        onPress={onAction}
-        onHoverIn={onHoverIn}
-        onHoverOut={onHoverOut}
-        // Faded out until the pointer is somewhere over the row. Pointer-less clients (a touchscreen
-        // on web fires no hover events at all) keep it visible — see CAN_HOVER.
-        style={[styles.webTrash, CAN_HOVER && !hovered && styles.webTrashIdle]}
-        accessibilityRole="button"
-        accessibilityLabel={`${actionLabel} ${label}`}>
-        <TrashIcon color={theme.danger} size={18} />
-      </Pressable>
+      {actions.map((a, i) => {
+        const Icon = a.icon;
+        return (
+          <Pressable
+            key={a.key ?? a.label}
+            onPress={a.onPress}
+            onHoverIn={onHoverIn}
+            onHoverOut={onHoverOut}
+            // The trailing (edge) lane carries the gutter padding so it lines up with the screen edge;
+            // inner lanes just sit beside it. Faded out until the pointer is over the row — pointer-less
+            // clients (a touchscreen on web fires no hover events at all) keep it visible (see CAN_HOVER).
+            style={[i === lastIndex ? styles.webEdgeAction : styles.webAction, CAN_HOVER && !hovered && styles.webActionIdle]}
+            accessibilityRole="button"
+            accessibilityLabel={`${a.label} ${label}`}>
+            <Icon color={a.destructive ? theme.danger : theme.accent} size={18} />
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
@@ -293,26 +315,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'stretch',
     // Cancels the screen's gutter for the same reason the native swipe container does: the row's
-    // hover highlight should reach the screen's edge, and the trash lane should sit in the margin
+    // hover highlight should reach the screen's edge, and the action lanes should sit in the margin
     // rather than inside the text column.
     marginHorizontal: -SettingsGutter,
   },
   webRowBody: {
     flex: 1,
   },
-  webTrash: {
+  webEdgeAction: {
     justifyContent: 'center',
     alignItems: 'center',
-    // A fixed lane, so the trash occupies the same space whether or not it's currently shown and
-    // the row's text never reflows as it fades in.
+    // A fixed lane, so the action occupies the same space whether or not it's currently shown and
+    // the row's text never reflows as it fades in. The edge lane also pads out to the screen gutter.
     width: SettingsGutter + 20,
     paddingRight: SettingsGutter,
     cursor: 'pointer',
     transitionProperty: 'opacity',
     transitionDuration: '120ms',
   },
-  // The secondary (rename) lane, left of the trash. No gutter padding — only the trailing trash lane
-  // reaches the screen edge; this one just sits beside it.
+  // An inner action lane, left of the edge one. No gutter padding — only the trailing lane reaches
+  // the screen edge; these just sit beside it.
   webAction: {
     justifyContent: 'center',
     alignItems: 'center',
@@ -321,7 +343,7 @@ const styles = StyleSheet.create({
     transitionProperty: 'opacity',
     transitionDuration: '120ms',
   },
-  webTrashIdle: {
+  webActionIdle: {
     opacity: 0,
   },
 });
