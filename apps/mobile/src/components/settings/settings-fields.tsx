@@ -173,6 +173,7 @@ export function SettingsTextRow({
 }) {
   const theme = useTheme();
   const [revealed, setRevealed] = useState(false);
+  const [focused, setFocused] = useState(false);
   return (
     <View style={[settingsRowFrame.row, settingsRowFrame.escape]}>
       <View style={styles.textRowLabel}>
@@ -189,7 +190,10 @@ export function SettingsTextRow({
         <TextInput
           value={value}
           onChangeText={onChange}
-          placeholder={placeholder}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          // Clear the placeholder while editing (it's just noise once you're typing); it returns on blur.
+          placeholder={focused ? '' : placeholder}
           placeholderTextColor={theme.textSecondary}
           keyboardType={keyboardType}
           autoCapitalize={autoCapitalize}
@@ -199,7 +203,8 @@ export function SettingsTextRow({
           returnKeyType="done"
           style={[styles.textRowInput, { color: theme.text }]}
         />
-        {secureTextEntry && (
+        {/* Reveal toggle only once there's something to reveal — an empty secret has nothing to show. */}
+        {secureTextEntry && value.length > 0 && (
           <Pressable
             onPress={() => setRevealed((r) => !r)}
             hitSlop={8}

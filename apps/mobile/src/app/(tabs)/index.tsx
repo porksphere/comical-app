@@ -55,6 +55,9 @@ const DISABLED_RESULTS_KEY = ['browseGrid', 'disabled', 'results'] as const;
 const DISABLED_TERMINAL_KEY = ['browseGrid', 'disabled', 'terminal'] as const;
 // Stable empty array so `useCrossBridgeRails` runs zero queries when Comical isn't selected.
 const NO_BRIDGES: Bridge[] = [];
+// The Comical bridge's icon is a bundled asset (not a remote URL), so the Bridge selector gets it as a
+// local `source` rather than through the URL-keyed `thumbnails` map (which only holds real bridges).
+const COMICAL_SOURCES: Record<string, number> = { [COMICAL_BRIDGE_ID]: COMICAL_ICON };
 
 export default function BrowseScreen() {
   const ds = useDataSource();
@@ -606,6 +609,7 @@ export default function BrowseScreen() {
           onChange={selectBridge}
           size="subtitle"
           thumbnails={bridgeThumbnails}
+          sources={COMICAL_SOURCES}
           labels={bridgeLabels}
         />
         <Selector title="Page" value={page} options={pages} onChange={selectPage} size="subtitle" labels={pageLabels} />
