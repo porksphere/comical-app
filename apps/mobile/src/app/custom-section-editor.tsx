@@ -3,7 +3,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
-import { Selector } from '@/components/selector';
+import { SettingsSelectRow, type SettingsOption } from '@/components/settings/settings-fields';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -12,23 +12,21 @@ import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { addSection, layoutLabel, updateSection, useCustomPage, type CustomLayout } from '@/data/custom-pages';
 import { queryKeys } from '@/data/queries';
 import { LIST_LAYOUTS, useDataSource, useMockActive } from '@/data/source';
-import type { BridgeList } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 
-// Content-type options + labels, both derived from the contract's layout list (LIST_LAYOUTS) — a
-// layout added to the contract shows up here automatically. `grid` renders as a vertical grid;
-// everything else as a rail (see railKindFor).
-const LAYOUT_OPTIONS = LIST_LAYOUTS as readonly string[];
-const LAYOUT_LABELS: Record<string, string> = Object.fromEntries(LAYOUT_OPTIONS.map((l) => [l, layoutLabel(l)]));
-const DEFAULT_LAYOUT: CustomLayout = LAYOUT_OPTIONS.includes('carousel') ? 'carousel' : (LAYOUT_OPTIONS[0] as CustomLayout);
+// Content-type options, derived from the contract's layout list (LIST_LAYOUTS) — a layout added to the
+// contract shows up here automatically. `grid` renders as a vertical grid; everything else as a rail.
+const LAYOUT_OPTIONS: readonly CustomLayout[] = LIST_LAYOUTS;
+const LAYOUT_SELECT_OPTIONS: SettingsOption<CustomLayout>[] = LAYOUT_OPTIONS.map((l) => ({ value: l, label: layoutLabel(l) }));
+const DEFAULT_LAYOUT: CustomLayout = LAYOUT_OPTIONS.includes('carousel') ? 'carousel' : LAYOUT_OPTIONS[0];
 
 /**
  * Add/edit one custom-page section on its own pushed screen (rather than an overlay), styled with the
- * app's settings rows: a Bridge / List / Layout picker row each (label left, inline `Selector` right),
- * plus an optional name field. Blank name → the live bridge-list name is inherited. Params: `pageId`
- * (required) and `sectionId` (present when editing an existing section).
+ * app's standard settings rows: a Bridge / List / Layout `SettingsSelectRow` each, plus an optional
+ * name field. Blank name → the live bridge-list name is inherited. Params: `pageId` (required) and
+ * `sectionId` (present when editing an existing section).
  */
 export default function CustomSectionEditorScreen() {
   const { pageId, sectionId } = useLocalSearchParams<{ pageId?: string; sectionId?: string }>();
@@ -45,12 +43,12 @@ export default function CustomSectionEditorScreen() {
 
   const { byId } = useBridgeMap();
   const bridges = useMemo(() => [...byId.values()], [byId]);
-  const bridgeLabels = useMemo(() => Object.fromEntries(bridges.map((b) => [b.id, b.name])), [bridges]);
-  const bridgeThumbs = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const b of bridges) if (b.thumbnail) map[b.id] = b.thumbnail;
-    return map;
-  }, [bridges]);
+  // Reserve the thumbnail slot for every bridge (empty string → the label-initial fallback) so the
+  // rows in the picker stay aligned whether or not a given bridge has an icon.
+  const bridgeOptions = useMemo<SettingsOption<string>[]>(
+    () => bridges.map((b) => ({ value: b.id, label: b.name, thumbnail: b.thumbnail ?? '' })),
+    [bridges],
+  );
 
   const [bridgeId, setBridgeId] = useState(section?.bridgeId ?? '');
   const [listId, setListId] = useState(section?.listId ?? '');
@@ -69,11 +67,10 @@ export default function CustomSectionEditorScreen() {
     queryFn: ({ signal }) => ds.getBridgeLists(effectiveBridgeId, signal),
     enabled: !!effectiveBridgeId,
   });
-  const listLabels = useMemo(
-    () => Object.fromEntries((lists ?? []).map((l: BridgeList) => [l.id, l.name])),
+  const listOptions = useMemo<SettingsOption<string>[]>(
+    () => (lists ?? []).map((l) => ({ value: l.id, label: l.name })),
     [lists],
   );
-  const listOptions = useMemo(() => (lists ?? []).map((l) => l.id), [lists]);
   // Same "derive, don't effect-sync" for the list: a bridge change resets `listId` to '', which then
   // falls back to that bridge's first list once its lists load.
   const effectiveListId = lists?.some((l) => l.id === listId) ? listId : (lists?.[0]?.id ?? '');
@@ -105,49 +102,29 @@ export default function CustomSectionEditorScreen() {
     <ThemedView style={styles.container}>
       <TopBar title={editing ? 'Edit section' : 'Add section'} />
       <ScrollView contentContainerStyle={[styles.content, contentPadding]}>
-        <SettingsSection title="Section">
-          <SettingsRow
+        <SettingsSection>
+          <SettingsSelectRow
             label="Bridge"
-            right={
-              <Selector
-                title="Bridge"
-                value={effectiveBridgeId}
-                options={bridges.map((b) => b.id)}
-                labels={bridgeLabels}
-                thumbnails={bridgeThumbs}
-                onChange={(id) => {
-                  setBridgeId(id);
-                  setListId(''); // reset — the old list won't exist on the new bridge (derived re-picks)
-                }}
-                size="small"
-              />
-            }
+            value={effectiveBridgeId}
+            options={bridgeOptions}
+            onChange={(id) => {
+              setBridgeId(id);
+              setListId(''); // reset — the old list won't exist on the new bridge (derived re-picks)
+            }}
           />
-          <SettingsRow
-            label="List"
-            right={
-              listOptions.length > 0 ? (
-                <Selector title="List" value={effectiveListId} options={listOptions} labels={listLabels} onChange={setListId} size="small" />
-              ) : (
+          {listOptions.length > 0 ? (
+            <SettingsSelectRow label="List" value={effectiveListId} options={listOptions} onChange={setListId} />
+          ) : (
+            <SettingsRow
+              label="List"
+              right={
                 <ThemedText type="small" themeColor="textSecondary">
                   {effectiveBridgeId ? 'Loading…' : '—'}
                 </ThemedText>
-              )
-            }
-          />
-          <SettingsRow
-            label="Layout"
-            right={
-              <Selector
-                title="Layout"
-                value={layout}
-                options={LAYOUT_OPTIONS as string[]}
-                labels={LAYOUT_LABELS}
-                onChange={(v) => setLayout(v as CustomLayout)}
-                size="small"
-              />
-            }
-          />
+              }
+            />
+          )}
+          <SettingsSelectRow label="Layout" value={layout} options={LAYOUT_SELECT_OPTIONS} onChange={setLayout} />
         </SettingsSection>
 
         <View style={styles.nameField}>
