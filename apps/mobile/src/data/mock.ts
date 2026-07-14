@@ -556,6 +556,10 @@ export async function mockGetBridges(): Promise<Bridge[]> {
 
 export async function mockGetBridgeLists(_bridgeId: string): Promise<BridgeList[]> {
   return [
+    // A `featured` rail-layout list so the synthetic "Comical" aggregate home has one representative
+    // rail per mock bridge to pull (via getBridgeFeaturedRail). Home-composition still comes from
+    // mockGetHomeSections, so this doesn't change the normal single-bridge mock home.
+    { id: 'featured', name: 'Featured', page: false, layout: 'carousel', featured: true },
     { id: 'home', name: 'Home', page: false },
     { id: 'popular', name: 'Popular', page: true },
     { id: 'favorites', name: 'Favorites', page: true },

@@ -35,6 +35,20 @@ export const selectedBridge$ = observable<string | null>(null);
  *  Takes a bridge **id** (see the module header). */
 export const setSelectedBridge = (id: string) => selectedBridge$.set(id);
 
+/** Id of the synthetic "Comical" aggregate bridge that fans out over every real installed bridge
+ *  (cross-bridge home + search). It is NOT a real registry bridge — it's injected into
+ *  `visibleBridges` below and branched on wherever a bridge id drives a fetch (Browse home, Search).
+ *  Always present (when there's ≥1 real bridge) and first, so it's also the default landing bridge. */
+export const COMICAL_BRIDGE_ID = 'comical';
+const COMICAL_BRIDGE: Bridge = { id: COMICAL_BRIDGE_ID, name: 'Comical', nsfw: false, capabilities: [] };
+/** The app logo as a local image module — passed directly to `BridgeThumb`'s `source` for the Comical
+ *  bridge (the way index.tsx already renders it). Not resolved to a URI: react-native-web's `Image`
+ *  has no `resolveAssetSource`, and `expo-asset` isn't a dependency — a require module works on both. */
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+export const COMICAL_ICON = require('@/assets/images/comical-logo.png');
+/** Whether a selected bridge id is the synthetic aggregate. */
+export const isComicalBridge = (bridgeId: string | undefined): boolean => bridgeId === COMICAL_BRIDGE_ID;
+
 /**
  * The reactive selected-bridge name.
  *
@@ -98,10 +112,15 @@ export function useSelectedBridge(): SelectedBridge {
   // the Bridges page does (the order array spans all bridges; hidden ones just filter out after).
   const order = useBridgeOrder();
   const orderedBridges = useMemo(() => applyOrder(bridges, order, (b) => b.id), [bridges, order]);
-  const visibleBridges = useMemo(
-    () => (hideNsfw ? orderedBridges.filter((b) => !b.nsfw) : orderedBridges),
-    [orderedBridges, hideNsfw],
-  );
+  const visibleBridges = useMemo(() => {
+    const real = hideNsfw ? orderedBridges.filter((b) => !b.nsfw) : orderedBridges;
+    // ALWAYS prepend the synthetic aggregate bridge — first (so it's the default landing bridge too),
+    // unconditionally, even with zero real bridges: it's a permanent front door, and a load-time
+    // flicker of an empty `real` must never make it vanish. Kept out of raw `bridges`, so the
+    // no-bridges onboarding (which checks raw `bridges.length`) still triggers when there's nothing
+    // to aggregate — the Comical selector then sits above that onboarding (see index.tsx).
+    return [COMICAL_BRIDGE, ...real];
+  }, [orderedBridges, hideNsfw]);
   // Falls back to the first visible bridge whenever the sticky selection isn't among the
   // currently-visible ones (initial load, or hidden by Hide NSFW) — derived at render instead of
   // synced via an effect, so toggling Hide NSFW back off restores the original selection.

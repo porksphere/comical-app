@@ -7,6 +7,7 @@ import { ChipRow } from '@/components/chip';
 import { ChevronRightIcon } from '@/components/icons/ui-icons';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedSwitch } from '@/components/themed-switch';
+import { useComicalExcluded } from '@/data/comical-home';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
@@ -334,6 +335,21 @@ export function BridgePrefsToggles({ bridgeId }: { bridgeId: string }) {
       <SettingsRow
         label="Don't track reading history for this bridge"
         right={<ThemedSwitch value={data.historyDisabled} onValueChange={(v) => set({ historyDisabled: v })} />}
+      />
+    </SettingsSection>
+  );
+}
+
+/** App-local toggle: whether this bridge contributes a rail to the synthetic "Comical" aggregate home
+ *  (cross-bridge search is unaffected). Persisted via `useComicalExcluded`. */
+export function ComicalHomeToggle({ bridgeId }: { bridgeId: string }) {
+  const [excluded, setExcluded] = useComicalExcluded(bridgeId);
+  return (
+    <SettingsSection title="Comical home">
+      <SettingsRow
+        label="Show on Comical home"
+        description="Include this bridge's rail in the cross-bridge home."
+        right={<ThemedSwitch value={!excluded} onValueChange={(show) => setExcluded(!show)} />}
       />
     </SettingsSection>
   );

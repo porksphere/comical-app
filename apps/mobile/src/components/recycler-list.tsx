@@ -26,6 +26,7 @@ export function RecyclerList<T>({
   numColumns = 1,
   columnWrapperStyle,
   recycleItems = true,
+  drawDistance,
   listRef,
   header,
   footer,
@@ -58,6 +59,10 @@ export function RecyclerList<T>({
   /** LegendList takes gap keys only here (column gap); the outer inset comes from `sidePad`. */
   columnWrapperStyle?: { gap?: number; rowGap?: number; columnGap?: number };
   recycleItems?: boolean;
+  /** How far beyond the viewport (px) to keep items mounted (LegendList default 250). Lower = fewer
+   *  off-screen items mounted at once — e.g. a rails feed, where each mounted rail eagerly loads its
+   *  cover images. */
+  drawDistance?: number;
   listRef?: RefObject<LegendListRef | null>;
   header?: ReactElement | null;
   footer?: ReactElement | null;
@@ -101,6 +106,7 @@ export function RecyclerList<T>({
         columnWrapperStyle={columnWrapperStyle}
         // Recycle card/row instances rather than remounting per reuse (renderers must be recycle-safe).
         recycleItems={recycleItems}
+        drawDistance={drawDistance}
         // Don't retro-correct offsets from size measurements — a visible bounce/jitter while flinging
         // otherwise. Fixed/known sizes make this safe.
         maintainVisibleContentPosition={{ data: false, size: false }}
