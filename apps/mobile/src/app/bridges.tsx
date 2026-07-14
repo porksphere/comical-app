@@ -3,7 +3,7 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from 'react-native';
 
-import { BridgesIcon, CheckIcon, GripIcon, PlusIcon } from '@/components/icons/ui-icons';
+import { BridgesIcon, CheckIcon, GripIcon, PlusIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { useOverlay } from '@/components/overlay/overlay';
 import { ReorderableList } from '@/components/settings/reorderable-list';
 import { RetryBlock } from '@/components/retry-block';
@@ -90,8 +90,7 @@ export default function BridgesScreen() {
         descriptionColor={statusColor}
         leading={icon}
         onPress={openBridge}
-        actionLabel="Uninstall"
-        onAction={() => open(() => <UninstallBridgeConfirm bridge={b} />)}
+        actions={[{ label: 'Uninstall', icon: TrashIcon, destructive: true, onPress: () => open(() => <UninstallBridgeConfirm bridge={b} />) }]}
       />
     ) : (
       <SettingsRow key={b.info.id} label={b.info.name} description={status?.text} descriptionColor={statusColor} leading={icon} onPress={openBridge} />

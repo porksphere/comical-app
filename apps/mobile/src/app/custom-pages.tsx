@@ -2,7 +2,7 @@ import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
-import { CheckIcon, GripIcon, PlusIcon } from '@/components/icons/ui-icons';
+import { CheckIcon, GripIcon, PencilIcon, PlusIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { useKeyboardAvoidingInput, useOverlay } from '@/components/overlay/overlay';
 import { ReorderableList } from '@/components/settings/reorderable-list';
 import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
@@ -39,21 +39,28 @@ export default function CustomPagesScreen() {
       label={p.name}
       description={`${p.sections.length} ${p.sections.length === 1 ? 'section' : 'sections'}`}
       onPress={() => router.push({ pathname: '/custom-page-editor', params: { pageId: p.id } })}
-      secondary={{
-        label: 'Rename',
-        onPress: () =>
-          open(() => (
-            <NamePromptForm
-              title="Rename page"
-              placeholder="Page name"
-              submitLabel="Rename"
-              initialValue={p.name}
-              onSubmit={(name) => renamePage(p.id, name)}
-            />
-          )),
-      }}
-      actionLabel="Delete"
-      onAction={() => open(() => <DeletePageConfirm pageId={p.id} name={p.name} />)}
+      actions={[
+        {
+          label: 'Rename',
+          icon: PencilIcon,
+          onPress: () =>
+            open(() => (
+              <NamePromptForm
+                title="Rename page"
+                placeholder="Page name"
+                submitLabel="Rename"
+                initialValue={p.name}
+                onSubmit={(name) => renamePage(p.id, name)}
+              />
+            )),
+        },
+        {
+          label: 'Delete',
+          icon: TrashIcon,
+          destructive: true,
+          onPress: () => open(() => <DeletePageConfirm pageId={p.id} name={p.name} />),
+        },
+      ]}
     />
   );
 

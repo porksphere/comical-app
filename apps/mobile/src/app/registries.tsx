@@ -3,7 +3,7 @@ import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
-import { CheckIcon, GripIcon, PlusIcon } from '@/components/icons/ui-icons';
+import { CheckIcon, GripIcon, PlusIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { useKeyboardAvoidingInput, useOverlay } from '@/components/overlay/overlay';
 import { ReorderableList } from '@/components/settings/reorderable-list';
 import { RetryBlock } from '@/components/retry-block';
@@ -74,8 +74,7 @@ export default function RegistriesScreen() {
       label={r.displayName ? `${r.displayName} — ${r.name}` : r.name}
       description={r.url}
       onPress={() => router.push({ pathname: '/registry-browse', params: { url: r.url } })}
-      actionLabel="Remove"
-      onAction={() => open(() => <RemoveRegistryConfirm url={r.url} />)}
+      actions={[{ label: 'Remove', icon: TrashIcon, destructive: true, onPress: () => open(() => <RemoveRegistryConfirm url={r.url} />) }]}
     />
   );
 

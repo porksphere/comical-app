@@ -2,7 +2,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 
-import { CheckIcon, GripIcon, PencilIcon, PlusIcon } from '@/components/icons/ui-icons';
+import { CheckIcon, GripIcon, PencilIcon, PlusIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { useOverlay } from '@/components/overlay/overlay';
 import { ReorderableList } from '@/components/settings/reorderable-list';
 import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
@@ -75,8 +75,7 @@ export default function CustomPageEditorScreen() {
       label={titleOf(s)}
       description={`${nameOf(s.bridgeId)} · ${LAYOUT_LABELS[s.layout]}`}
       onPress={() => openSection(s.id)}
-      actionLabel="Delete"
-      onAction={() => deleteSection(page.id, s.id)}
+      actions={[{ label: 'Delete', icon: TrashIcon, destructive: true, onPress: () => deleteSection(page.id, s.id) }]}
     />
   );
 
