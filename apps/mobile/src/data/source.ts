@@ -17,6 +17,8 @@ import { useMemo } from 'react';
 import { use$ } from '@legendapp/state/react';
 import { useDataEpoch } from './data-epoch';
 
+import { seriesListSchema } from '@comical/contract';
+
 import { logDiagnostic } from '@/lib/diagnostics';
 import { firstChapterInReadingOrder } from '@/lib/chapter-order';
 import { persisted$ } from '@/lib/observable';
@@ -229,6 +231,13 @@ function toActivityEntry(a: api.ApiActivityItem): ActivityEntry {
  *  aggregate home and needs the same layout→kind mapping `getHomeSections` uses. */
 export const railKindFor = (layout: BridgeList['layout']): RailKind =>
   layout === 'hero' ? 'hero' : layout === 'ranked' ? 'ranked' : 'regular';
+
+/**
+ * Every list-layout hint the bridge contract defines — read straight from the contract's schema, so
+ * a layout added to the contract flows through here (and into the custom-page section editor's
+ * content-type picker) automatically, with no hand-kept list to drift. Order matches the schema.
+ */
+export const LIST_LAYOUTS = seriesListSchema.shape.layout.unwrap().options;
 /** Exported so the Home screen can shape its loading skeleton (rail rows vs. grid blocks) to match
  *  a bridge's actual section layout before content resolves — see `getHomeSections` below, which
  *  partitions on this same predicate once items are in hand. */

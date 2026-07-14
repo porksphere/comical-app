@@ -238,10 +238,12 @@ export function buildCrossBridgeRows(inputs: CrossBridgeRailInput[]): ContentRow
 export type CustomPageSectionInput = {
   /** Stable per-section id (custom section id) — feeds the row keys. */
   key: string;
-  layout: 'rail' | 'grid';
+  /** The section's chosen content type (contract layout). `grid` → an infinite-scroll grid block;
+   *  anything else → a rail. Legacy `'rail'` still lands on the rail branch. */
+  layout: NonNullable<BridgeList['layout']> | 'rail';
   /** Resolved display title (`section.name ?? live list name ?? bridge name`). */
   title: string;
-  /** Rail presentation kind, from the live list's `layout` (via `railKindFor`). */
+  /** Rail presentation kind, from the section's chosen layout (via `railKindFor`). */
   railKind: RailKind;
   bridgeId: string;
   bridgeName: string;
