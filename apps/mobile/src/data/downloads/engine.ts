@@ -30,6 +30,7 @@ import {
 import { queryClient } from '../query-client';
 import { queryKeys } from '../queries';
 import { storePage, uriFor } from './blob-store';
+import { DIRECT_DOWNLOAD_CHAPTER_ID } from './constants';
 import { getDownloadPrefsSync } from './prefs';
 import { noteChapterDownloaded } from './index-cache';
 import { chapterProgressKey, clearChapterProgress, setChapterProgress } from './state';
@@ -41,9 +42,10 @@ const PAGE_CONCURRENCY = 3;
 export interface EnqueueChapterInput {
   bridgeId: string;
   seriesId: string;
+  /** The chapter id. Ignored (replaced by the reserved direct id) when `direct` is set. */
   chapterId: string;
-  /** A direct (chapterless) series uses `getSeriesPages`; the reader models this as a boolean, not a
-   *  sentinel chapter id. */
+  /** A direct (chapterless) series uses `getSeriesPages` and is filed under the reserved direct
+   *  chapter id; the reader models this as a boolean, not a sentinel chapter id. */
   direct?: boolean;
   title: string;
   thumbnailUrl?: string;
@@ -64,6 +66,7 @@ function invalidateDownloads(bridgeId: string, seriesId: string): void {
  * Safe to call for an already-downloaded chapter — the core keeps completed pages.
  */
 export async function enqueueChapter(input: EnqueueChapterInput): Promise<void> {
+  const chapterId = input.direct ? DIRECT_DOWNLOAD_CHAPTER_ID : input.chapterId;
   const pages = input.direct
     ? await getSeriesPages(input.bridgeId, input.seriesId)
     : await getChapterPages(input.bridgeId, input.seriesId, input.chapterId);
@@ -79,8 +82,8 @@ export async function enqueueChapter(input: EnqueueChapterInput): Promise<void> 
       .sort((a, b) => a.index - b.index)
       .map((p) => ({ index: p.index, sourceUrl: p.imageUrl, ...(p.headers && { headers: p.headers }) })),
   };
-  const chapter = await dlEnqueueChapter(input.bridgeId, input.seriesId, input.chapterId, body);
-  setChapterProgress(chapterProgressKey(input.bridgeId, input.seriesId, input.chapterId), {
+  const chapter = await dlEnqueueChapter(input.bridgeId, input.seriesId, chapterId, body);
+  setChapterProgress(chapterProgressKey(input.bridgeId, input.seriesId, chapterId), {
     state: chapter.state,
     done: 0,
     total: chapter.pageCount,

@@ -24,6 +24,8 @@ import { firstChapterInReadingOrder } from '@/lib/chapter-order';
 import { persisted$ } from '@/lib/observable';
 import * as api from './api';
 import * as mock from './mock';
+import { DIRECT_DOWNLOAD_CHAPTER_ID } from './downloads/constants';
+import { localChapterPages } from './downloads/index-cache';
 import type {
   ActivityEntry,
   Bridge,
@@ -473,20 +475,40 @@ const realDataSource: DataSource = {
   },
 
   async getChapterPages(bridgeId, seriesId, chapterId, signal) {
-    const pages = await api.getChapterPages(bridgeId, seriesId, chapterId, signal);
-    return [...pages].sort((a, b) => a.index - b.index).map((p) => p.imageUrl);
+    // Offline serving: a fully-downloaded chapter serves its local `file://` pages directly — instant,
+    // works with the network off, and each URI (absolute) passes straight through `resolveAssetSource`
+    // untouched. On a bridge/network error, fall back to the downloaded copy if we have one.
+    const local = localChapterPages(bridgeId, seriesId, chapterId);
+    if (local) return local;
+    try {
+      const pages = await api.getChapterPages(bridgeId, seriesId, chapterId, signal);
+      return [...pages].sort((a, b) => a.index - b.index).map((p) => p.imageUrl);
+    } catch (e) {
+      const fallback = localChapterPages(bridgeId, seriesId, chapterId);
+      if (fallback) return fallback;
+      throw e;
+    }
   },
 
   async getDirectPages(bridgeId, seriesId, signal) {
-    const pages = await api.getSeriesPages(bridgeId, seriesId, signal);
-    // Return the raw (possibly server-relative) page paths WITHOUT resolving them here. Some bridges
-    // make each `imageUrl` a lazy resolve-route that costs a rate-limited network round-trip; resolving
-    // all of them up front (Promise.all over the whole gallery) fires hundreds of parallel requests
-    // that overflow the bridge's queue and hit its per-call timeout (BridgeTimeoutError). ReaderPage
-    // resolves each lazily via resolveAssetSourceCached as it scrolls into the render window, so only
-    // visible pages pay that cost. Absolute URLs pass straight through, so bridges that already return
-    // direct CDN URLs behave exactly as before.
-    return [...pages].sort((a, b) => a.index - b.index).map((p) => p.imageUrl);
+    // Offline serving for a direct (chapterless) series — filed under the reserved direct chapter id.
+    const local = localChapterPages(bridgeId, seriesId, DIRECT_DOWNLOAD_CHAPTER_ID);
+    if (local) return local;
+    try {
+      const pages = await api.getSeriesPages(bridgeId, seriesId, signal);
+      // Return the raw (possibly server-relative) page paths WITHOUT resolving them here. Some bridges
+      // make each `imageUrl` a lazy resolve-route that costs a rate-limited network round-trip; resolving
+      // all of them up front (Promise.all over the whole gallery) fires hundreds of parallel requests
+      // that overflow the bridge's queue and hit its per-call timeout (BridgeTimeoutError). ReaderPage
+      // resolves each lazily via resolveAssetSourceCached as it scrolls into the render window, so only
+      // visible pages pay that cost. Absolute URLs pass straight through, so bridges that already return
+      // direct CDN URLs behave exactly as before.
+      return [...pages].sort((a, b) => a.index - b.index).map((p) => p.imageUrl);
+    } catch (e) {
+      const fallback = localChapterPages(bridgeId, seriesId, DIRECT_DOWNLOAD_CHAPTER_ID);
+      if (fallback) return fallback;
+      throw e;
+    }
   },
 
   async getPageThumb(bridgeId, seriesId, pageIndex, signal) {
