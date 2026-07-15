@@ -119,6 +119,13 @@ export const queryKeys = {
   registryBridges: (url: string) => ['registryBridges', url] as const,
   registryTrackers: (url: string) => ['registryTrackers', url] as const,
 
+  // ─── Downloads (device-local offline manifest) ─────────────────────────────
+  // Downloads are device data, not source content, so these carry no `mock`. Both are prefixed
+  // `['downloads']` so the engine can refresh the whole surface with one invalidation.
+  downloadsUsage: () => ['downloads', 'usage'] as const,
+  seriesDownloads: (bridgeId: string, seriesId: string) =>
+    ['downloads', 'series', bridgeId, seriesId] as const,
+
   // Invalidation target that prefix-matches the library grid (`['library', mock, q, sort]`), so
   // invalidating this refreshes the Library tab regardless of its current search/sort.
   libraryList: (mock: boolean) => ['library', mock] as const,

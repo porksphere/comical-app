@@ -477,6 +477,111 @@ export function getPageThumb(
   );
 }
 
+// ─── Downloads (offline manifest) ───────────────────────────────────────────────
+//
+// These drive the optional `/downloads*` endpoints the reused router mounts when a Downloads service
+// is present (on-device via host-rn's embedded runtime; on a remote server if it enables the module).
+// They manage only the MANIFEST — which chapters/pages are downloaded, their state and byte sizes; the
+// image bytes are written to the filesystem app-side (`downloads/blob-store.ts`) and this device serves
+// them to `<Image>` via the offline `resolveAssetSource` intercept. Types are erased at build.
+
+import type { DownloadedChapter, DownloadedPage, DownloadedSeries, DownloadPrefs, StorageUsage } from '@comical/downloads';
+
+/** The body posted to enqueue a chapter: the series snapshot + chapter meta + the raw page list. */
+export interface DlEnqueueChapterBody {
+  title: string;
+  thumbnailUrl?: string;
+  author?: string;
+  chapterName?: string;
+  number?: number;
+  languageCode?: string;
+  pages: { index: number; sourceUrl: string; headers?: Record<string, string> }[];
+}
+
+const dlBase = (bridgeId: string, seriesId: string) =>
+  `/downloads/entries/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}`;
+
+/** GET /downloads → the storage-usage tree (total bytes + series → chapters). */
+export function dlStorageUsage(signal?: AbortSignal): Promise<StorageUsage> {
+  return fetchJson('/downloads', signal);
+}
+
+/** GET /downloads/pending → chapters still needing bytes (the engine's work queue). */
+export function dlPendingChapters(signal?: AbortSignal): Promise<DownloadedChapter[]> {
+  return fetchJson('/downloads/pending', signal);
+}
+
+/** GET /downloads/prefs → download preferences (wifiOnly / background). */
+export function dlGetPrefs(signal?: AbortSignal): Promise<DownloadPrefs> {
+  return fetchJson('/downloads/prefs', signal);
+}
+
+/** PUT /downloads/prefs → update preferences (partial merge server-side). */
+export function dlSetPrefs(prefs: Partial<DownloadPrefs>): Promise<DownloadPrefs> {
+  return fetchPut('/downloads/prefs', prefs);
+}
+
+/** GET one series' manifest (snapshot + chapters), or null when nothing is downloaded for it. */
+export function dlGetSeries(
+  bridgeId: string,
+  seriesId: string,
+  signal?: AbortSignal,
+): Promise<{ series: DownloadedSeries; chapters: DownloadedChapter[] } | null> {
+  return fetchJsonOptional(dlBase(bridgeId, seriesId), signal);
+}
+
+/** POST enqueue a chapter for download. */
+export function dlEnqueueChapter(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+  body: DlEnqueueChapterBody,
+): Promise<DownloadedChapter> {
+  return fetchPost(`${dlBase(bridgeId, seriesId)}/chapters/${encodeURIComponent(chapterId)}`, body);
+}
+
+/** POST record one downloaded page's on-disk file + byte size. */
+export function dlRecordPage(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+  index: number,
+  file: string,
+  bytes: number,
+): Promise<DownloadedChapter> {
+  return fetchPost(`${dlBase(bridgeId, seriesId)}/chapters/${encodeURIComponent(chapterId)}/pages/${index}`, { file, bytes });
+}
+
+/** GET the ordered manifest page list for a chapter (the offline page-LIST fallback). */
+export function dlManifestPages(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+  signal?: AbortSignal,
+): Promise<DownloadedPage[]> {
+  return fetchJson(`${dlBase(bridgeId, seriesId)}/chapters/${encodeURIComponent(chapterId)}/pages`, signal);
+}
+
+/** POST re-queue the missing pages of a partial/failed chapter (resumable retry). */
+export function dlRequeue(bridgeId: string, seriesId: string, chapterId: string): Promise<DownloadedPage[]> {
+  return fetchPost(`${dlBase(bridgeId, seriesId)}/chapters/${encodeURIComponent(chapterId)}/requeue`, {});
+}
+
+/** DELETE one chapter → the blob `files` to remove. */
+export function dlDeleteChapter(bridgeId: string, seriesId: string, chapterId: string): Promise<{ files: string[] }> {
+  return fetchDelete(`${dlBase(bridgeId, seriesId)}/chapters/${encodeURIComponent(chapterId)}`);
+}
+
+/** DELETE one series → the blob `files` to remove. */
+export function dlDeleteSeries(bridgeId: string, seriesId: string): Promise<{ files: string[] }> {
+  return fetchDelete(dlBase(bridgeId, seriesId));
+}
+
+/** DELETE everything → all blob `files` to remove. */
+export function dlDeleteAll(): Promise<{ files: string[] }> {
+  return fetchDelete('/downloads');
+}
+
 // ─── Settings + registries ────────────────────────────────────────────────────
 //
 // `SettingDescriptor`/`SettingOption`/`SettingValue` come from `@comical/contract` (see header).
@@ -625,6 +730,16 @@ async function fetchPost<T>(path: string, body: unknown, signal?: AbortSignal): 
     body: JSON.stringify(body),
     signal,
   });
+  if (!res.ok) {
+    const responseBody = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(responseBody.error ?? `${res.status} ${res.statusText}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+/** DELETE returning a JSON body (the downloads delete routes hand back the blob `files` to remove). */
+async function fetchDelete<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const res = await transport(path, { method: 'DELETE', signal });
   if (!res.ok) {
     const responseBody = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(responseBody.error ?? `${res.status} ${res.statusText}`);
