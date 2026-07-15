@@ -9,7 +9,6 @@
  * absent). Deletions cascade in the core (`Downloads.delete*` returns the blob paths), then this
  * removes those bytes from the filesystem and prunes the offline index.
  */
-import { use$ } from '@legendapp/state/react';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
@@ -27,7 +26,7 @@ import { applyBackgroundDownloads } from '@/data/downloads/background';
 import { removeAllBlobs, removeBlobs } from '@/data/downloads/blob-store';
 import { formatBytes } from '@/data/downloads/format';
 import { clearDownloadIndex, forgetChapter, forgetSeries } from '@/data/downloads/index-cache';
-import { downloadPrefs$ } from '@/data/downloads/prefs';
+import { downloadPrefs$, useDownloadPrefs } from '@/data/downloads/prefs';
 import { queryClient } from '@/data/query-client';
 import { queryKeys } from '@/data/queries';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
@@ -42,8 +41,7 @@ function refresh(): void {
 
 export default function DownloadsScreen() {
   const contentPadding = useSettingsScrollPadding();
-  const wifiOnly = use$(downloadPrefs$.wifiOnly);
-  const background = use$(downloadPrefs$.background);
+  const { wifiOnly, background } = useDownloadPrefs();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const { data: usage = EMPTY_USAGE } = useQuery({
