@@ -23,6 +23,7 @@ import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { dlDeleteAll, dlDeleteChapter, dlDeleteSeries, dlStorageUsage } from '@/data/api';
+import { applyBackgroundDownloads } from '@/data/downloads/background';
 import { removeAllBlobs, removeBlobs } from '@/data/downloads/blob-store';
 import { formatBytes } from '@/data/downloads/format';
 import { clearDownloadIndex, forgetChapter, forgetSeries } from '@/data/downloads/index-cache';
@@ -42,6 +43,7 @@ function refresh(): void {
 export default function DownloadsScreen() {
   const contentPadding = useSettingsScrollPadding();
   const wifiOnly = use$(downloadPrefs$.wifiOnly);
+  const background = use$(downloadPrefs$.background);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const { data: usage = EMPTY_USAGE } = useQuery({
@@ -90,6 +92,15 @@ export default function DownloadsScreen() {
             description="Hold downloads until you're on Wi-Fi."
             value={wifiOnly}
             onChange={(v) => downloadPrefs$.wifiOnly.set(v)}
+          />
+          <SettingsToggleRow
+            label="Download in background"
+            description="Continue in OS-granted windows after leaving the app."
+            value={background}
+            onChange={(v) => {
+              downloadPrefs$.background.set(v);
+              applyBackgroundDownloads(v);
+            }}
           />
         </SettingsSection>
 
