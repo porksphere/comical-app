@@ -11,6 +11,7 @@
  *   comical:lib:reading-log        → { [entryKey]: HistoryItem }
  *   comical:lib:bridge-prefs       → { [bridgeId]: BridgePrefs }
  *   comical:lib:activity           → { [activityKey]: ActivityItem }
+ *   comical:lib:chapters:<key>     → KnownChapter[]
  *   comical:lib:progress:<key>     → { [chapterId]: ChapterProgress }
  *
  * Single-user, local scale: read/parse/write per operation (no in-memory cache), which keeps it
@@ -24,6 +25,7 @@ import {
   type BridgePrefs,
   type ChapterProgress,
   type HistoryItem,
+  type KnownChapter,
   type LibraryEntry,
   type LibraryList,
   type LibraryStore,
@@ -39,6 +41,7 @@ const TRACKER_LINKS = `${NS}:tracker-links`;
 const READING_LOG = `${NS}:reading-log`;
 const BRIDGE_PREFS = `${NS}:bridge-prefs`;
 const ACTIVITY = `${NS}:activity`;
+const chaptersKey = (key: string) => `${NS}:chapters:${encodeURIComponent(key)}`;
 const progressKey = (key: string) => `${NS}:progress:${encodeURIComponent(key)}`;
 
 async function read<T>(storageKey: string, fallback: T): Promise<T> {
@@ -79,6 +82,20 @@ export class AsyncStorageLibraryStore implements LibraryStore {
       delete all[key];
       await write(ENTRIES, all);
     }
+  }
+
+  // ── Known chapters ─────────────────────────────────────────────────────────
+  // Their own key per series, like progress. Keeping them inside the entries blob meant every entry
+  // write — including the resume-cache touch on each page turn — rewrote every chapter of every
+  // series in the library. See `LibraryStore.listChapters`.
+  async listChapters(key: string): Promise<KnownChapter[]> {
+    return read<KnownChapter[]>(chaptersKey(key), []);
+  }
+  async putChapters(key: string, chapters: KnownChapter[]): Promise<void> {
+    await write(chaptersKey(key), chapters);
+  }
+  async deleteChaptersForEntry(key: string): Promise<void> {
+    await AsyncStorage.removeItem(chaptersKey(key));
   }
 
   // ── Progress ───────────────────────────────────────────────────────────────

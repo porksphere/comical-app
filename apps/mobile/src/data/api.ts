@@ -34,6 +34,7 @@
 import { use$ } from '@legendapp/state/react';
 
 import { getResolvedModeSync } from './embedded/preference';
+import { bearerFor, normalizeServerUrl } from './server-session';
 import type { Bridge, BridgeList } from './types';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { migrateLegacyKey, persisted$ } from '@/lib/observable';
@@ -93,7 +94,7 @@ export function getApiBase(): string {
  *  value — the query-cache side of a server switch stays with the caller, keeping the local
  *  preference and the TanStack Query cache cleanly separated. */
 export function setApiBaseOverride(url: string | null): void {
-  const trimmed = url?.trim().replace(/\/+$/, '') || null;
+  const trimmed = (url && normalizeServerUrl(url)) || null;
   serverOverride$.set({ url: trimmed });
 }
 
@@ -205,8 +206,18 @@ export function invalidateAssetSource(url: string): void {
  */
 export type Transport = (path: string, init?: RequestInit) => Promise<Response>;
 
-/** The default transport: plain HTTP against `getApiBase()`. */
-export const remoteTransport: Transport = (path, init) => fetch(`${getApiBase()}${path}`, init);
+/** The default transport: plain HTTP against `getApiBase()`, carrying the signed-in session token
+ *  (if any) as `Authorization: Bearer`. A public hub now gates the whole API behind login, so the
+ *  token is what lets browse work there; `bearerFor` returns '' unless this device is signed in to the
+ *  exact server the request is going to, so the token is never sent to a different host. */
+export const remoteTransport: Transport = (path, init) => {
+  const base = getApiBase();
+  const token = bearerFor(base);
+  if (!token) return fetch(`${base}${path}`, init);
+  const headers = new Headers(init?.headers);
+  headers.set('Authorization', `Bearer ${token}`);
+  return fetch(`${base}${path}`, { ...init, headers });
+};
 
 let transport: Transport = remoteTransport;
 

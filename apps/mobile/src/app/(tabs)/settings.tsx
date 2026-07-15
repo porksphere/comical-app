@@ -11,6 +11,7 @@ import {
   DiagnosticsIcon,
   GeneralSettingsIcon,
   RegistriesIcon,
+  SyncIcon,
   TrackersIcon,
 } from '@/components/icons/ui-icons';
 import { settingsRowFrame } from '@/components/settings/settings-row';
@@ -70,6 +71,13 @@ export default function SettingsScreen() {
             title="General"
             description="Appearance, content, and where bridges run."
             onPress={() => router.push('/settings-general')}
+          />
+          <Divider />
+          <CategoryRow
+            icon={<SyncIcon color={theme.textSecondary} size={22} />}
+            title="Sync"
+            description="Keep your library and progress across devices."
+            onPress={() => router.push('/settings-sync')}
           />
           <Divider />
           <CategoryRow

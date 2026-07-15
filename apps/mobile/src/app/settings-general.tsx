@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { OverlayHeading, useKeyboardAvoidingInput, useOverlay } from '@/components/overlay/overlay';
+import { ServerLoginForm } from '@/components/settings/server-login-form';
 import { SettingsSelectRow, SettingsToggleRow, type SettingsOption } from '@/components/settings/settings-fields';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
@@ -10,6 +11,7 @@ import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useApiBase } from '@/data/api';
+import { isSignedIn, logoutFromServer, useServerSession } from '@/data/server-session';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { applyEmbeddedMode, isEmbeddedRuntimeAvailable, useEmbeddedEnabled } from '@/data/embedded';
 import { queryClient } from '@/data/query-client';
@@ -44,8 +46,12 @@ export default function GeneralSettingsScreen() {
   const [themePref, setThemePref] = useThemePreference();
   const [onDevice, setOnDevice] = useEmbeddedEnabled();
   const [apiBase, setApiBaseOverride] = useApiBase();
+  const session = useServerSession();
   const lightCards = useLightCards();
   const { open } = useOverlay();
+  // Signed in to *this* server specifically — the token only counts against the URL it was minted for
+  // (the user may have edited the server URL since). Both values are stored trailing-slash-normalized.
+  const signedInHere = isSignedIn(session) && session.url === apiBase;
   // The on-device runtime is only offered where a native bridge engine exists (iOS/Android with the
   // native module built) — never on web, which always uses a remote server.
   const embeddedAvailable = isEmbeddedRuntimeAvailable();
@@ -65,6 +71,23 @@ export default function GeneralSettingsScreen() {
     setApiBaseOverride(url);
     queryClient.clear(); // a different server's cached data can't be trusted (mirrors PERSIST_BUSTER)
     bumpDataEpoch(); // refetch useDataSource-backed screens against the new server
+  };
+
+  const signIn = () =>
+    open(() => (
+      <ServerLoginForm
+        url={apiBase}
+        onSignedIn={() => {
+          queryClient.clear(); // now-authenticated requests may return data the anonymous ones couldn't
+          bumpDataEpoch();
+        }}
+      />
+    ));
+
+  const signOut = () => {
+    void logoutFromServer(); // best-effort server-side revoke, then forget locally
+    queryClient.clear();
+    bumpDataEpoch();
   };
 
   return (
@@ -109,6 +132,17 @@ export default function GeneralSettingsScreen() {
               description={apiBase}
               descriptionSelectable
               onPress={() => open(() => <RemoteServerForm currentUrl={apiBase} onSave={saveApiBase} />)}
+            />
+          )}
+          {!embeddedActive && (
+            <SettingsRow
+              label="Account"
+              description={
+                signedInHere
+                  ? `Signed in as ${session.username} — tap to sign out`
+                  : 'Sign in if this server requires an account'
+              }
+              onPress={signedInHere ? signOut : signIn}
             />
           )}
         </SettingsSection>

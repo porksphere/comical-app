@@ -25,10 +25,13 @@ import {
 } from '@comical/host-rn';
 import { createRouter } from '@comical/host-server/router';
 import { downloadBundle, fetchIndex } from '@comical/registry/fetcher';
+import type { LibraryStore } from '@comical/library';
 import comicalRuntime from '../../../modules/comical-runtime';
 import { setTransport } from '../api';
+import { logDiagnostic } from '@/lib/diagnostics';
 import { bumpDataEpoch } from '../data-epoch';
 import { queryClient } from '../query-client';
+import { syncController } from '../sync/controller';
 import { fileSystemBundleCache } from './bundle-cache';
 import { AsyncStorageLibraryStore } from './library-store';
 import { getResolvedModeSync } from './preference';
@@ -36,7 +39,7 @@ import { installedStore, savedRegistryStore } from './stores';
 import { asyncStorageSettings } from './settings-store';
 
 /** The fixed pieces host-rn needs; the stores supply the (user-managed) registries + installs. */
-function bootstrapConfig(): EmbeddedBootstrapConfig {
+function bootstrapConfig(libraryStore: LibraryStore): EmbeddedBootstrapConfig {
   return {
     createRouter: createRouter as unknown as CreateRouter,
     fetcher: { fetchIndex, downloadBundle },
@@ -47,7 +50,7 @@ function bootstrapConfig(): EmbeddedBootstrapConfig {
     // On-device library persistence — mounts the router's `/library*` endpoints in embedded mode so
     // Library/History/Activity (and add-to-library + read progress) work with no server. See
     // `library-store.ts`; the same endpoints the remote `comical-web` server already exposes.
-    libraryStore: new AsyncStorageLibraryStore(),
+    libraryStore,
     // Persist verified bundles to disk so cold starts don't re-download + re-verify every bridge.
     cache: fileSystemBundleCache,
     // An install/update/uninstall (or add/remove registry) changes what the runtime serves — refetch
@@ -55,6 +58,16 @@ function bootstrapConfig(): EmbeddedBootstrapConfig {
     onRegistryChange: () => {
       bumpDataEpoch();
       queryClient.invalidateQueries();
+    },
+    // A bridge that won't download/validate/init is skipped from the list rather than wedging it;
+    // surface why in the in-app diagnostics (Settings → Diagnostics) so a stale/404'd bridge is
+    // debuggable instead of silently missing.
+    onBridgeLoadError: (bridgeId, error) => {
+      logDiagnostic(
+        'bridge-load',
+        `Bridge "${bridgeId}" failed to load and was skipped: ${error instanceof Error ? error.message : String(error)}`,
+        { context: bridgeId },
+      );
     },
   };
 }
@@ -68,6 +81,24 @@ export function startEmbeddedRuntime(): void {
   setNativeBridgeRuntime(comicalRuntime);
   // Bridge bundle verification (@comical/registry verify.ts) needs WebCrypto, absent in Hermes.
   installWebCryptoShim();
-  configureEmbeddedRuntime(bootstrapConfig());
+  void bootstrapEmbedded();
+}
+
+/**
+ * Async tail: attach the cross-device-sync controller (which wraps the library store with
+ * write-through capture) BEFORE the router is configured, so live edits are captured, then start
+ * syncing if it's already configured. Falls back to the raw store if attach fails, so the runtime
+ * always comes up. Fire-and-forget — the app's screens already handle "runtime not yet ready".
+ */
+async function bootstrapEmbedded(): Promise<void> {
+  const rawLibrary = new AsyncStorageLibraryStore();
+  let libraryStore: LibraryStore = rawLibrary;
+  try {
+    libraryStore = await syncController.attach(rawLibrary, savedRegistryStore, installedStore, asyncStorageSettings);
+  } catch {
+    // Sync attach failed — run with the unwrapped store; the app is unaffected.
+  }
+  configureEmbeddedRuntime(bootstrapConfig(libraryStore));
   applyEmbeddedMode(getResolvedModeSync() === 'embedded');
+  void syncController.refresh(); // starts the loop iff sync is configured; no-op otherwise
 }

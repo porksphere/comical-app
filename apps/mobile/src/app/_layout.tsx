@@ -102,6 +102,7 @@ function RootNavigation() {
               stack header is hidden here too. The Settings tab is only a table of
               contents — every category below is a screen it pushes. */}
           <Stack.Screen name="settings-general" options={{ headerShown: false }} />
+          <Stack.Screen name="settings-sync" options={{ headerShown: false }} />
           <Stack.Screen name="settings-developer" options={{ headerShown: false }} />
           <Stack.Screen name="bridges" options={{ headerShown: false }} />
           <Stack.Screen name="trackers" options={{ headerShown: false }} />
