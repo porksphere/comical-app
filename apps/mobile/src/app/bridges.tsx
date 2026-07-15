@@ -103,15 +103,15 @@ export default function BridgesScreen() {
         title="Bridges"
         right={
           editing ? (
-            <TopBarButton icon={<CheckIcon color={theme.text} size={22} />} label="Done reordering" onPress={() => setEditing(false)} />
+            <TopBarButton testID="bridges.done" icon={<CheckIcon color={theme.text} size={22} />} label="Done reordering" onPress={() => setEditing(false)} />
           ) : (
             <View style={styles.topActions}>
               {/* Reorder button only on web (native reorders in place — long-press a row). */}
               {IS_WEB && canReorder && (
-                <TopBarButton icon={<GripIcon color={theme.text} size={22} />} label="Reorder bridges" onPress={() => setEditing(true)} />
+                <TopBarButton testID="bridges.reorder" icon={<GripIcon color={theme.text} size={22} />} label="Reorder bridges" onPress={() => setEditing(true)} />
               )}
               {browseRegistry && (
-                <TopBarButton icon={<PlusIcon color={theme.text} size={22} />} label="Install a bridge" onPress={browseRegistry} />
+                <TopBarButton testID="bridges.add" icon={<PlusIcon color={theme.text} size={22} />} label="Install a bridge" onPress={browseRegistry} />
               )}
             </View>
           )
@@ -133,7 +133,7 @@ export default function BridgesScreen() {
               : 'No bridges to show — NSFW-flagged bridges are hidden.'}
           </ThemedText>
           {bridges!.length === 0 && (
-            <Pressable onPress={() => router.push('/registries')}>
+            <Pressable testID="bridges.browse-registries" onPress={() => router.push('/registries')}>
               <ThemedView style={[styles.cta, { backgroundColor: theme.accent }]}>
                 <ThemedText type="smallBold" style={{ color: theme.accentOn }}>
                   Browse registries
@@ -191,10 +191,10 @@ function UninstallBridgeConfirm({ bridge }: { bridge: BridgeSummary }) {
         </ThemedText>
       )}
       <View style={styles.confirmActions}>
-        <Pressable onPress={closeTop} style={styles.confirmBtn}>
+        <Pressable testID="bridges.uninstall.cancel" onPress={closeTop} style={styles.confirmBtn}>
           <ThemedText type="smallBold">Cancel</ThemedText>
         </Pressable>
-        <Pressable onPress={() => uninstall.mutate()} disabled={uninstall.isPending} style={styles.confirmBtn}>
+        <Pressable testID="bridges.uninstall.confirm" onPress={() => uninstall.mutate()} disabled={uninstall.isPending} style={styles.confirmBtn}>
           <ThemedText type="smallBold" style={{ color: theme.danger }}>
             {uninstall.isPending ? 'Uninstalling…' : 'Uninstall'}
           </ThemedText>

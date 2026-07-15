@@ -16,6 +16,7 @@ export function ActionButton({
   caret,
   onPress,
   disabled,
+  testID,
 }: {
   label: string;
   variant?: 'primary' | 'default';
@@ -24,12 +25,15 @@ export function ActionButton({
   onPress?: () => void;
   /** Dim and ignore presses (e.g. Read while a chaptered series' list still loads). */
   disabled?: boolean;
+  /** Automation selector — required so every action button is reachable (see src/lib/test-id.ts). */
+  testID: string;
 }) {
   const theme = useTheme();
   const primary = variant === 'primary';
   const { hovered, onHoverIn, onHoverOut } = useHovered();
   return (
     <Pressable
+      testID={testID}
       onPress={disabled ? undefined : onPress}
       disabled={disabled}
       onHoverIn={onHoverIn}

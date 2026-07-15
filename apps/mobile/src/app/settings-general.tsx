@@ -134,6 +134,7 @@ function RemoteServerForm({ currentUrl, onSave }: { currentUrl: string; onSave: 
       </ThemedText>
       <TextInput
         ref={inputRef}
+        testID="settings.general.remote-server.input"
         value={url}
         onChangeText={setUrl}
         onFocus={() => keyboardAvoiding.onFocus(inputRef.current)}
@@ -147,6 +148,7 @@ function RemoteServerForm({ currentUrl, onSave }: { currentUrl: string; onSave: 
       />
       <View style={styles.confirmActions}>
         <Pressable
+          testID="settings.general.remote-server.reset"
           onPress={() => {
             onSave(null);
             closeTop();
@@ -155,6 +157,7 @@ function RemoteServerForm({ currentUrl, onSave }: { currentUrl: string; onSave: 
           <ThemedText type="smallBold">Reset to default</ThemedText>
         </Pressable>
         <Pressable
+          testID="settings.general.remote-server.save"
           onPress={() => {
             onSave(url);
             closeTop();

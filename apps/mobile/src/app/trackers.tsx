@@ -67,15 +67,15 @@ export default function TrackersScreen() {
         right={
           trackers !== null &&
           (editing ? (
-            <TopBarButton icon={<CheckIcon color={theme.text} size={22} />} label="Done reordering" onPress={() => setEditing(false)} />
+            <TopBarButton testID="trackers.done" icon={<CheckIcon color={theme.text} size={22} />} label="Done reordering" onPress={() => setEditing(false)} />
           ) : (
             <View style={styles.topActions}>
               {/* Reorder button only on web (native reorders in place — long-press a row). */}
               {IS_WEB && canReorder && (
-                <TopBarButton icon={<GripIcon color={theme.text} size={22} />} label="Reorder trackers" onPress={() => setEditing(true)} />
+                <TopBarButton testID="trackers.reorder" icon={<GripIcon color={theme.text} size={22} />} label="Reorder trackers" onPress={() => setEditing(true)} />
               )}
               {browseRegistry && (
-                <TopBarButton icon={<PlusIcon color={theme.text} size={22} />} label="Install a tracker" onPress={browseRegistry} />
+                <TopBarButton testID="trackers.install" icon={<PlusIcon color={theme.text} size={22} />} label="Install a tracker" onPress={browseRegistry} />
               )}
             </View>
           ))

@@ -11,6 +11,7 @@ import type { SettingDescriptor, SettingValue } from '@/data/api';
 import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight, hapticSelection } from '@/lib/haptics';
+import { testId } from '@/lib/test-id';
 
 type FieldProps<D extends SettingDescriptor> = {
   descriptor: D;
@@ -106,6 +107,7 @@ function StepperRow({
   const min = descriptor.min!;
   const max = descriptor.max!;
   const n = value ?? descriptor.default ?? min;
+  const base = testId('settings.stepper', fieldLabel(descriptor));
   return (
     <View style={[settingsRowFrame.row, settingsRowFrame.escape]}>
       <View style={settingsRowFrame.text}>
@@ -119,20 +121,21 @@ function StepperRow({
         )}
       </View>
       <View style={styles.stepper}>
-        <StepperButton icon="minus" disabled={n <= min} onPress={() => onChange(Math.max(min, n - 1))} />
+        <StepperButton icon="minus" testID={testId(base, 'decrement')} disabled={n <= min} onPress={() => onChange(Math.max(min, n - 1))} />
         <ThemedText type="smallBold" style={styles.stepperValue}>
           {n}
         </ThemedText>
-        <StepperButton icon="plus" disabled={n >= max} onPress={() => onChange(Math.min(max, n + 1))} />
+        <StepperButton icon="plus" testID={testId(base, 'increment')} disabled={n >= max} onPress={() => onChange(Math.min(max, n + 1))} />
       </View>
     </View>
   );
 }
 
-function StepperButton({ icon, onPress, disabled }: { icon: 'minus' | 'plus'; onPress: () => void; disabled?: boolean }) {
+function StepperButton({ icon, onPress, disabled, testID }: { icon: 'minus' | 'plus'; onPress: () => void; disabled?: boolean; testID: string }) {
   const theme = useTheme();
   return (
     <Pressable
+      testID={testID}
       onPress={() => {
         hapticSelection();
         onPress();
@@ -162,6 +165,7 @@ function MultiEnumRow({
   const { ref, openAt } = useAnchoredOverlay();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
   const selected = Array.isArray(value) ? value : [];
+  const base = testId('settings.multi', fieldLabel(descriptor));
   const summary =
     selected.length === 0
       ? 'None selected'
@@ -171,10 +175,11 @@ function MultiEnumRow({
           .join(', ');
   return (
     <Pressable
+      testID={base}
       ref={ref}
       onPress={() => {
         hapticImpactLight();
-        openAt(() => <EnumPicker descriptor={descriptor} value={value} onChange={onChange} />);
+        openAt(() => <EnumPicker descriptor={descriptor} value={value} onChange={onChange} testID={base} />);
       }}
       onHoverIn={onHoverIn}
       onHoverOut={onHoverOut}
@@ -206,10 +211,12 @@ function EnumPicker({
   descriptor,
   value,
   onChange,
+  testID,
 }: {
   descriptor: Extract<SettingDescriptor, { type: 'enum' }>;
   value: SettingValue | undefined;
   onChange: (v: SettingValue) => void;
+  testID: string;
 }) {
   const { closeTop } = useOverlay();
   const selected = Array.isArray(value) ? value : [];
@@ -223,11 +230,17 @@ function EnumPicker({
       </MeasuredHeader>
       <OptionList>
         {descriptor.options.map((opt) => (
-          <EnumOption key={opt.value} label={opt.label} on={selected.includes(opt.value)} onPress={() => toggle(opt.value)} />
+          <EnumOption
+            key={opt.value}
+            testID={testId(testID, 'option', opt.value)}
+            label={opt.label}
+            on={selected.includes(opt.value)}
+            onPress={() => toggle(opt.value)}
+          />
         ))}
         {/* A "Done" affordance isn't needed — dismissing the sheet commits; the toggles are live. */}
         {selected.length > 0 && (
-          <Pressable onPress={closeTop} style={styles.pressableCursor}>
+          <Pressable testID={testId(testID, 'done')} onPress={closeTop} style={styles.pressableCursor}>
             <ThemedView type="backgroundElement" style={styles.row}>
               <ThemedText type="smallBold" style={{ color: '#3478F6' }}>
                 Done
@@ -240,11 +253,12 @@ function EnumPicker({
   );
 }
 
-function EnumOption({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
+function EnumOption({ label, on, onPress, testID }: { label: string; on: boolean; onPress: () => void; testID: string }) {
   const theme = useTheme();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
   return (
     <Pressable
+      testID={testID}
       onPress={() => {
         hapticSelection();
         onPress();

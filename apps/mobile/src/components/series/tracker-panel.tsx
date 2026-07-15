@@ -11,6 +11,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { testId } from '@/lib/test-id';
 import {
   mockTrackerSearch,
   relativeTime,
@@ -30,6 +31,7 @@ export function TrackerButton({ seriesId, initialLinks }: { seriesId: string; in
   const { open } = useOverlay();
   return (
     <ActionButton
+      testID="series.action.trackers"
       label="Trackers"
       caret
       onPress={() => open(() => <TrackerMenu seriesId={seriesId} initialLinks={initialLinks} />)}
@@ -109,7 +111,7 @@ function TrackerMenu({ initialLinks }: { seriesId: string; initialLinks: Tracker
         )}
 
         {!linking && links.length < TRACKER_SERVICES.length && (
-          <Pressable onPress={() => setLinking(true)}>
+          <Pressable testID="series.tracker.link-toggle" onPress={() => setLinking(true)}>
             <ThemedView type="backgroundElement" style={styles.linkToggle}>
               <ThemedText type="small" style={{ color: theme.accent }}>
                 + Link tracker
@@ -179,16 +181,16 @@ function TrackerRow({
         </ThemedText>
       </View>
       <View style={styles.rowActs}>
-        <RowButton label="Sync" onPress={onSync} disabled={busy} />
-        <RowButton label="Unlink" onPress={onUnlink} disabled={busy} />
+        <RowButton testID={testId('series.tracker', link.trackerId, 'sync')} label="Sync" onPress={onSync} disabled={busy} />
+        <RowButton testID={testId('series.tracker', link.trackerId, 'unlink')} label="Unlink" onPress={onUnlink} disabled={busy} />
       </View>
     </ThemedView>
   );
 }
 
-function RowButton({ label, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) {
+function RowButton({ label, onPress, disabled, testID }: { label: string; onPress: () => void; disabled?: boolean; testID: string }) {
   return (
-    <Pressable onPress={onPress} disabled={disabled} hitSlop={6} style={disabled && styles.rowBtnDisabled}>
+    <Pressable testID={testID} onPress={onPress} disabled={disabled} hitSlop={6} style={disabled && styles.rowBtnDisabled}>
       <ThemedView type="backgroundSelected" style={styles.rowBtn}>
         <ThemedText type="small" style={styles.rowBtnText}>
           {label}
@@ -226,6 +228,7 @@ function LinkTrackerForm({
         {available.map((s) => (
           <Pressable
             key={s.id}
+            testID={testId('series.tracker.service', s.id)}
             onPress={() => {
               setTrackerId(s.id);
               setResults(null);
@@ -246,6 +249,7 @@ function LinkTrackerForm({
         style={[styles.search, { borderColor: focused ? theme.accent : 'transparent' }]}>
         <SearchIcon color={theme.textSecondary} size={14} />
         <TextInput
+          testID="series.tracker.search"
           ref={inputRef}
           value={query}
           onChangeText={(t) => {
@@ -270,6 +274,7 @@ function LinkTrackerForm({
         />
         {query.length > 0 && (
           <Pressable
+            testID="series.tracker.search-clear"
             onPress={() => {
               setQuery('');
               setResults(null);
@@ -289,7 +294,7 @@ function LinkTrackerForm({
             </ThemedText>
           ) : (
             results.map((r) => (
-              <Pressable key={r.externalId} onPress={() => onLink(trackerId, r)}>
+              <Pressable key={r.externalId} testID={testId('series.tracker.result', r.externalId)} onPress={() => onLink(trackerId, r)}>
                 <ThemedView type="backgroundElement" style={styles.resultRow}>
                   <Image source={{ uri: r.thumbnail }} style={styles.resultThumb} />
                   <View style={styles.resultText}>

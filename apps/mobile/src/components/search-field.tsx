@@ -24,6 +24,7 @@ export function SearchField({
   onClear,
   placeholder = 'Search…',
   autoFocus = false,
+  testID,
 }: {
   value: string;
   onSubmit: (q: string) => void;
@@ -31,6 +32,8 @@ export function SearchField({
   placeholder?: string;
   /** Focus the field (and raise the keyboard) on mount — used by the Search screen. */
   autoFocus?: boolean;
+  /** Automation selector for the input; the clear button derives `${testID}.clear` (see src/lib/test-id.ts). */
+  testID: string;
 }) {
   const theme = useTheme();
   const inputRef = useRef<TextInput>(null);
@@ -74,6 +77,7 @@ export function SearchField({
       style={[styles.search, { borderColor: focused ? theme.accent : 'transparent' }]}>
       <SearchIcon color={theme.textSecondary} size={16} />
       <TextInput
+        testID={`${testID}.input`}
         ref={inputRef}
         value={text}
         onChangeText={setText}
@@ -89,6 +93,7 @@ export function SearchField({
       />
       {text.length > 0 && (
         <Pressable
+          testID={`${testID}.clear`}
           onPress={() => {
             setText('');
             onClear();

@@ -15,6 +15,7 @@ import { useIsCompact } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { useLightCards } from '@/lib/perf-flags';
+import { testId } from '@/lib/test-id';
 
 // Shared cover card used by both the browse grid and the rails. `size` picks the
 // fixed rail widths; `grid` fills its parent slot (the grid controls columns).
@@ -634,6 +635,7 @@ export function SeriesCard({
         });
         const pressable = (
           <Pressable
+            testID={testId('series-card', entry.id)}
             // Flat single style object: as the `asChild` of <Link> (web), the Pressable is cloned by
             // expo-router's <Slot>, which rejects array styles.
             style={StyleSheet.flatten([
@@ -665,6 +667,7 @@ export function SeriesCard({
         // Web keeps the real anchor (asChild clones it onto the Pressable); native renders the
         // Pressable directly and pushes imperatively on press.
         return isWeb ? (
+          // eslint-disable-next-line comical/require-test-id -- asChild: clones onto the Pressable, which carries the testID.
           <Link push href={buildHref()} asChild>
             {pressable}
           </Link>

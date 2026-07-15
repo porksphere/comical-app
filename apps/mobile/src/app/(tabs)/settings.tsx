@@ -66,6 +66,7 @@ export default function SettingsScreen() {
               is exactly `SettingsRowHeight` tall, and a description that wraps is what used to make
               these rows stand 30px taller than the ones they lead to. */}
           <CategoryRow
+            testID="settings.category.general"
             icon={<GeneralSettingsIcon color={theme.textSecondary} size={22} />}
             title="General"
             description="Appearance, content, and where bridges run."
@@ -73,6 +74,7 @@ export default function SettingsScreen() {
           />
           <Divider />
           <CategoryRow
+            testID="settings.category.bridges"
             icon={<BridgesIcon color={theme.textSecondary} size={22} />}
             title="Bridges"
             description="The sources Comical reads from."
@@ -81,6 +83,7 @@ export default function SettingsScreen() {
           />
           <Divider />
           <CategoryRow
+            testID="settings.category.trackers"
             icon={<TrackersIcon color={theme.textSecondary} size={22} />}
             title="Trackers"
             description="Sync your progress to another service."
@@ -89,6 +92,7 @@ export default function SettingsScreen() {
           />
           <Divider />
           <CategoryRow
+            testID="settings.category.registries"
             icon={<RegistriesIcon color={theme.textSecondary} size={22} />}
             title="Registries"
             description="Where bridges and trackers come from."
@@ -97,6 +101,7 @@ export default function SettingsScreen() {
           />
           <Divider />
           <CategoryRow
+            testID="settings.category.custom-pages"
             icon={<CustomPagesIcon color={theme.textSecondary} size={22} />}
             title="Custom Pages"
             description="Compose your own Comical pages from any bridge."
@@ -105,6 +110,7 @@ export default function SettingsScreen() {
           />
           <Divider />
           <CategoryRow
+            testID="settings.category.diagnostics"
             icon={<DiagnosticsIcon color={theme.textSecondary} size={22} />}
             title="Diagnostics"
             description="Page and thumbnail load failures."
@@ -114,6 +120,7 @@ export default function SettingsScreen() {
             <>
               <Divider />
               <CategoryRow
+                testID="settings.category.developer"
                 icon={<DeveloperIcon color={theme.textSecondary} size={22} />}
                 title="Developer"
                 description="Mock data, profiler, and server."
@@ -169,17 +176,20 @@ function CategoryRow({
   description,
   value,
   onPress,
+  testID,
 }: {
   icon: ReactNode;
   title: string;
   description: string;
   value?: string;
   onPress: () => void;
+  testID: string;
 }) {
   const theme = useTheme();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
   return (
     <Pressable
+      testID={testID}
       onPress={() => {
         hapticImpactLight();
         onPress();

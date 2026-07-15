@@ -70,7 +70,7 @@ export default function TrackerSettingsScreen() {
             <ThemedText type="small" themeColor="textSecondary" style={styles.centerText}>
               {(error as Error).message || 'Failed to load tracker settings'}
             </ThemedText>
-            <Pressable onPress={() => refetch()}>
+            <Pressable testID="settings.tracker.retry" onPress={() => refetch()}>
               <ThemedText type="smallBold" style={{ color: theme.accent }}>
                 Retry
               </ThemedText>
@@ -104,7 +104,7 @@ export default function TrackerSettingsScreen() {
                     Saved.
                   </ThemedText>
                 )}
-                <Pressable onPress={save} disabled={saving}>
+                <Pressable testID="settings.tracker.save" onPress={save} disabled={saving}>
                   <ThemedView style={[styles.saveBtn, { backgroundColor: theme.accent }, saving && styles.saveBtnDisabled]}>
                     <ThemedText type="smallBold" style={{ color: theme.accentOn }}>
                       {saving ? 'Saving…' : 'Save'}

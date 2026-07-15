@@ -41,6 +41,7 @@ export function SeriesActionsMenu({
       <MenuHeader title={entry.title} cover={entry.cover} coverAspect={coverAspect} />
       <OptionList>
         <ActionRow
+          testID="series.card-menu.library"
           label={inLibrary ? 'Remove from Library' : 'Add to Library'}
           Icon={inLibrary ? CheckIcon : PlusIcon}
           loading={inLibrary === null}
@@ -51,6 +52,7 @@ export function SeriesActionsMenu({
           }}
         />
         <ActionRow
+          testID="series.card-menu.favorite"
           label={favorited ? 'Unfavorite' : 'Favorite'}
           Icon={StarIcon}
           loading={favorited === null}
@@ -99,6 +101,7 @@ function ActionRow({
   disabled,
   active,
   onPress,
+  testID,
 }: {
   label: string;
   Icon: (props: IconProps) => React.ReactElement;
@@ -109,6 +112,8 @@ function ActionRow({
   /** Currently favorited / in library — tints the row with the accent and shows a trailing dot. */
   active: boolean;
   onPress: () => void;
+  /** Automation selector — required so every action row is reachable (see src/lib/test-id.ts). */
+  testID: string;
 }) {
   const theme = useTheme();
   const [hovered, setHovered] = useState(false);
@@ -116,6 +121,7 @@ function ActionRow({
   const color = inert ? theme.textSecondary : active ? theme.accent : theme.text;
   return (
     <Pressable
+      testID={testID}
       onPress={inert ? undefined : onPress}
       disabled={inert}
       onPointerEnter={() => setHovered(true)}

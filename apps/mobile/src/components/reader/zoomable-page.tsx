@@ -60,9 +60,9 @@ function TapZones({
 }) {
   return (
     <View style={[StyleSheet.absoluteFill, styles.zones, { pointerEvents: zoomed || suspended ? 'none' : 'auto' }]}>
-      <Pressable style={styles.side} onPress={onLeft} />
-      <Pressable style={styles.center} onPress={onToggleChrome} />
-      <Pressable style={styles.side} onPress={onRight} />
+      <Pressable testID="reader.control.prev" style={styles.side} onPress={onLeft} />
+      <Pressable testID="reader.control.toggle-chrome" style={styles.center} onPress={onToggleChrome} />
+      <Pressable testID="reader.control.next" style={styles.side} onPress={onRight} />
     </View>
   );
 }

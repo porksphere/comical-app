@@ -287,6 +287,7 @@ function TabButton({
     return (
       <Pressable
         {...props}
+        testID={`tab.${routeName}`}
         onPress={handlePress}
         // Touching/hovering the (possibly faded) bar reveals it before the press
         // resolves, so a tap is never "lost" to an invisible target.
@@ -306,6 +307,7 @@ function TabButton({
     <Pressable
       {...props}
       {...handlers}
+      testID={`tab.${routeName}`}
       onPress={handlePress}
       accessibilityLabel={typeof children === 'string' ? children : undefined}
       style={({ pressed }) => [

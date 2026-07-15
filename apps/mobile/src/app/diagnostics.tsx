@@ -42,12 +42,12 @@ export default function DiagnosticsScreen() {
         </ThemedText>
 
         <View style={styles.actions}>
-          <Pressable onPress={shareLog} disabled={entries.length === 0} style={[styles.actionBtn, { borderColor: theme.hairline }]}>
+          <Pressable testID="diagnostics.share" onPress={shareLog} disabled={entries.length === 0} style={[styles.actionBtn, { borderColor: theme.hairline }]}>
             <ThemedText type="smallBold" style={entries.length === 0 && { color: theme.textSecondary }}>
               Share
             </ThemedText>
           </Pressable>
-          <Pressable onPress={clearDiagnostics} disabled={entries.length === 0} style={[styles.actionBtn, { borderColor: theme.hairline }]}>
+          <Pressable testID="diagnostics.clear" onPress={clearDiagnostics} disabled={entries.length === 0} style={[styles.actionBtn, { borderColor: theme.hairline }]}>
             <ThemedText type="smallBold" style={entries.length === 0 ? { color: theme.textSecondary } : { color: theme.danger }}>
               Clear
             </ThemedText>

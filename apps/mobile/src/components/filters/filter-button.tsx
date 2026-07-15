@@ -7,6 +7,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
+import { testId } from '@/lib/test-id';
 
 import { FilterEditor } from './filter-editors';
 import {
@@ -98,6 +99,7 @@ function OverlayFilterRow({
   const chips = summarize(def, value);
   return (
     <Pressable
+      testID={testId('filter', def.id)}
       ref={ref}
       {...handlers}
       onPress={() =>
@@ -134,7 +136,7 @@ function ToggleFilterRow({
   const theme = useTheme();
   const on = !!value;
   return (
-    <Pressable {...handlers} onPress={() => onChange(def.id, !on)}>
+    <Pressable testID={testId('filter', def.id)} {...handlers} onPress={() => onChange(def.id, !on)}>
       <ThemedView
         type="backgroundElement"
         style={[
@@ -173,6 +175,7 @@ function StringFilterRow({
       style={[styles.row, { borderColor: focused ? theme.accent : 'transparent' }]}>
       <ShrinkToFitLabel>{def.label}</ShrinkToFitLabel>
       <TextInput
+        testID={testId('filter', def.id)}
         ref={inputRef}
         value={text}
         onChangeText={(t) => {
@@ -248,6 +251,7 @@ function NumberFilterRow({
 
   return (
     <Pressable
+      testID={testId('filter', def.id)}
       {...handlers}
       onPressIn={() => {
         wasFocusedRef.current = inputRef.current?.isFocused() ?? false;
@@ -266,6 +270,7 @@ function NumberFilterRow({
         <View style={styles.summary} />
         <View style={styles.valuePill}>
           <TextInput
+            testID={testId('filter', def.id, 'input')}
             ref={inputRef}
             value={text}
             onChangeText={setText}

@@ -10,6 +10,7 @@ import { Spacing } from '@/constants/theme';
 import { invalidateAssetSource, resolveAssetSourceCached } from '@/data/api';
 import { coverDelayMs } from '@/data/mock';
 import { logDiagnostic } from '@/lib/diagnostics';
+import { testId } from '@/lib/test-id';
 
 // One page image. Reuses the cover/thumbnail loading treatment: hold the image
 // behind a simulated network delay and shimmer a skeleton until it's both
@@ -175,6 +176,7 @@ export function ReaderPage({
   if (failed) {
     return (
       <Pressable
+        testID={testId('reader.page.retry', page)}
         onPress={(e) => {
           // Web-only ancestors (the webtoon scroller's chrome-toggle onClick)
           // would otherwise also fire from this same tap via DOM bubbling.

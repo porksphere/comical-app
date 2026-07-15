@@ -351,6 +351,7 @@ export default function SearchScreen() {
       <BarSurface style={[styles.topBar, topBarShadowStyle]}>
         <View style={[styles.topBarRow, { height: barHeight }]}>
           <Pressable
+            testID="search.back"
             onPress={goBack}
             hitSlop={12}
             android_ripple={{ color: theme.backgroundSelected, borderless: true }}
@@ -361,6 +362,7 @@ export default function SearchScreen() {
           </Pressable>
           <View style={styles.searchWrap}>
             <SearchField
+              testID="search.field"
               value={query}
               onSubmit={(q) => setQuery(q.trim())}
               onClear={() => setQuery('')}

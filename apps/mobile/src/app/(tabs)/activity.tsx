@@ -95,6 +95,7 @@ export default function ActivityScreen() {
 
   const syncButton = (
     <Pressable
+      testID="activity.check-updates"
       onPress={() => syncMutation.mutate()}
       disabled={syncMutation.isPending}
       accessibilityRole="button"

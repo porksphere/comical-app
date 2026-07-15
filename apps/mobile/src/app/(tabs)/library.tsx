@@ -90,6 +90,7 @@ export default function LibraryScreen() {
       <View style={styles.controlsRow}>
         <View style={styles.searchWrap}>
           <SearchField
+            testID="library.search"
             value={query}
             onSubmit={(q) => setQuery(q.trim())}
             onClear={() => setQuery('')}
@@ -97,6 +98,7 @@ export default function LibraryScreen() {
           />
         </View>
         <Selector
+          testID="library.sort"
           title="Sort by"
           value={SORT_LABELS[sort]}
           options={SORT_ORDER.map((s) => SORT_LABELS[s])}

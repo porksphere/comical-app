@@ -1,0 +1,51 @@
+name: Checks
+
+# The mandatory testID gate. Fails a PR (or a branch push) when any interactive element in the mobile
+# app is missing a `testID` — the selector UI automation (Appium/Detox/Maestro/Playwright) relies on
+# across iOS/Android/web. Enforced by the custom ESLint rule `comical/require-test-id`; see
+# apps/mobile/eslint-rules/require-test-id.js and apps/mobile/src/lib/test-id.ts.
+#
+# This job runs ONLY the testID gate (`bun run lint:testids`), not the full `expo lint`/`tsc`, on
+# purpose: the repo currently carries unrelated pre-existing lint/type debt (the React Compiler
+# `react-hooks/*` rules, and `@comical/*` types that only resolve once the on-device-runtime submodule
+# is checked out and built). Gating on those here would make this red for reasons unrelated to
+# testIDs. The rule is purely syntactic, so it needs neither the submodule nor a build step — keeping
+# this check fast and reliable.
+
+on:
+  pull_request:
+    paths:
+      - 'apps/mobile/**'
+      - '.github/workflows/checks.yml'
+  push:
+    branches:
+      - '**'
+    paths:
+      - 'apps/mobile/**'
+      - '.github/workflows/checks.yml'
+
+permissions:
+  contents: read
+
+# Only the latest commit on a branch/PR needs checking; cancel superseded runs.
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  testids:
+    name: Mandatory testIDs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Enforce testIDs on interactive elements
+        working-directory: apps/mobile
+        run: bun run lint:testids

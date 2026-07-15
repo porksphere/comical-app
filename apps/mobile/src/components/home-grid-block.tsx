@@ -12,6 +12,7 @@ import { useDedupedPages } from '@/data/grid-pages';
 import { useDataSource, useMockActive } from '@/data/source';
 import type { GridPage, HomeGridSection, SeriesEntry } from '@/data/types';
 import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
+import { testId } from '@/lib/test-id';
 
 /**
  * A non-terminal home grid section: its own heading, grid, and "Load more"
@@ -103,7 +104,11 @@ export function HomeGridBlock({
         ))}
       </View>
       {hasNextPage && (
-        <Pressable onPress={loadMore} disabled={loading} style={styles.loadMoreButton}>
+        <Pressable
+          testID={testId('browse.grid-block', section.id, 'load-more')}
+          onPress={loadMore}
+          disabled={loading}
+          style={styles.loadMoreButton}>
           <ThemedView type="backgroundElement" style={styles.loadMoreInner}>
             <ThemedText type="smallBold">{loading ? 'Loading…' : 'Load more'}</ThemedText>
           </ThemedView>
