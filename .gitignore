@@ -83,3 +83,6 @@ npm-debug.*
 
 # Local env
 .env*.local
+
+# cross-device-sync dev-server persistence
+sync-data/

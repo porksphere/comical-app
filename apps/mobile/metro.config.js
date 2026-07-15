@@ -47,6 +47,9 @@ config.resolver.extraNodeModules = {
   // on-device store); Node-free. Never imported on web (startup.web.ts is a no-op).
   '@comical/runtime': path.resolve(comicalRoot, 'packages/runtime'),
   '@comical/contract': path.resolve(comicalRoot, 'packages/contract'),
+  // The cross-device sync contract + CRDT merge, shared with the hub so both compute the same
+  // merge. Pure and dependency-free (bar zod), so it bundles on Hermes like the rest.
+  '@comical/sync': path.resolve(comicalRoot, 'packages/sync'),
 };
 
 // DEV-ONLY: on-device Hermes profiler upload sink (see src/components/dev-profiler.tsx).

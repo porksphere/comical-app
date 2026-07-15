@@ -45,6 +45,9 @@
       ],
       "@comical/registry/url": [
         "../../external/comical/packages/registry/src/url.ts"
+      ],
+      "@comical/sync": [
+        "../../external/comical/packages/sync/src/index.ts"
       ]
     }
   },
