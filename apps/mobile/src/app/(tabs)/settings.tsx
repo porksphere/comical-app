@@ -9,6 +9,7 @@ import {
   CustomPagesIcon,
   DeveloperIcon,
   DiagnosticsIcon,
+  DownloadsIcon,
   GeneralSettingsIcon,
   RegistriesIcon,
   TrackersIcon,
@@ -20,6 +21,7 @@ import { ThemedView } from '@/components/themed-view';
 
 import { MaxTopLevelWidth, SettingsGutter } from '@/constants/theme';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
+import { dlStorageUsage } from '@/data/api';
 import { useCustomPages } from '@/data/custom-pages';
 import { queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw } from '@/data/source';
@@ -110,6 +112,15 @@ export default function SettingsScreen() {
           />
           <Divider />
           <CategoryRow
+            testID="settings.category.downloads"
+            icon={<DownloadsIcon color={theme.textSecondary} size={22} />}
+            title="Downloads"
+            description="Chapters kept on this device for offline reading."
+            value={counts.downloads}
+            onPress={() => router.push('/downloads')}
+          />
+          <Divider />
+          <CategoryRow
             testID="settings.category.diagnostics"
             icon={<DiagnosticsIcon color={theme.textSecondary} size={22} />}
             title="Diagnostics"
@@ -156,6 +167,11 @@ function useCategoryCounts() {
     queryKey: queryKeys.registries(),
     queryFn: ({ signal }) => ds.getRegistries(signal),
   });
+  const { data: downloads } = useQuery({
+    queryKey: queryKeys.downloadsUsage(),
+    // Device-local downloads; a backend without the module yields an empty tree, not an error.
+    queryFn: () => dlStorageUsage().catch(() => null),
+  });
 
   // Matches the filter the Bridges screen applies, so the count can't disagree with the list.
   const visibleBridges = bridges && hideNsfw ? bridges.filter((b) => !b.info.nsfw) : bridges;
@@ -164,6 +180,7 @@ function useCategoryCounts() {
     bridges: visibleBridges ? String(visibleBridges.length) : undefined,
     trackers: trackers ? String(trackers.length) : undefined,
     registries: registries ? String(registries.length) : undefined,
+    downloads: downloads && downloads.seriesCount > 0 ? String(downloads.seriesCount) : undefined,
   };
 }
 

@@ -9,6 +9,7 @@ import { ChipRow, TagGroupRow } from '@/components/chip';
 import { Rail, RailSkeleton } from '@/components/rail';
 import { RetryBlock } from '@/components/retry-block';
 import { ActionButton, NewBadge } from '@/components/series/action-button';
+import { SeriesDownloadButton } from '@/components/series/download-button';
 import { ChaptersSection, PageThumbList } from '@/components/series/chapters-section';
 import { TrackerButton } from '@/components/series/tracker-panel';
 import { Skeleton } from '@/components/skeleton';
@@ -383,6 +384,16 @@ function SeriesBody({
         onPress={startReading}
       />
       <ActionButton testID="series.action.library" label={inLibrary ? '✓  In Library' : '＋  Library'} onPress={toggleLibrary} />
+      {bridgeId && (
+        <SeriesDownloadButton
+          bridgeId={bridgeId}
+          seriesId={series.id}
+          direct={direct}
+          title={series.title}
+          cover={series.cover}
+          {...(chapters !== undefined && { chapters })}
+        />
+      )}
       {series.hasSources && <ActionButton testID="series.action.sources" label="Sources" caret />}
       {series.hasTrackers && <TrackerButton seriesId={series.id} initialLinks={series.trackers ?? []} />}
       <ActionButton
