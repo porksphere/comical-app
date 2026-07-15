@@ -29,6 +29,7 @@ import comicalRuntime from '../../../modules/comical-runtime';
 import { setTransport } from '../api';
 import { bumpDataEpoch } from '../data-epoch';
 import { queryClient } from '../query-client';
+import { AsyncStorageDownloadsStore } from '../downloads/async-store';
 import { fileSystemBundleCache } from './bundle-cache';
 import { AsyncStorageLibraryStore } from './library-store';
 import { getResolvedModeSync } from './preference';
@@ -48,6 +49,10 @@ function bootstrapConfig(): EmbeddedBootstrapConfig {
     // Library/History/Activity (and add-to-library + read progress) work with no server. See
     // `library-store.ts`; the same endpoints the remote `comical-web` server already exposes.
     libraryStore: new AsyncStorageLibraryStore(),
+    // On-device downloads persistence — mounts the router's `/downloads*` endpoints in embedded mode
+    // so the offline-download manifest (enqueue / record / storage / delete) works with no server. The
+    // image bytes themselves live on the filesystem via `blob-store.ts`; this store holds the manifest.
+    downloadsStore: new AsyncStorageDownloadsStore(),
     // Persist verified bundles to disk so cold starts don't re-download + re-verify every bridge.
     cache: fileSystemBundleCache,
     // An install/update/uninstall (or add/remove registry) changes what the runtime serves — refetch
