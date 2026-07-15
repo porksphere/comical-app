@@ -1,0 +1,12 @@
+{
+  "name": "sync-eval",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Phase-0 spike: hand-rolled CRDT-lite vs TinyBase MergeableStore for cross-device sync. Isolated from the app; safe to delete.",
+  "scripts": {
+    "eval": "bun run src/run.ts"
+  },
+  "dependencies": {
+    "tinybase": "^9.1.0"
+  }
+}
