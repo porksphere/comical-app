@@ -52,6 +52,7 @@ export function SeriesCardMenu({ enabled, bridgeId, entry, coverAspect, children
       {children({ onLongPress: undefined, hidden: false })}
       <Pressable
         ref={ref}
+        testID="series.card-menu.trigger"
         // The button is a sibling layered above the card's <Link>, not a child of it, so a press
         // here opens the menu without also triggering navigation; stopPropagation is defensive.
         onPress={(e) => {

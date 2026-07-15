@@ -130,6 +130,7 @@ export function ProgressPill({
       {editing ? (
         <View style={styles.pill}>
           <TextInput
+            testID="reader.progress-pill.input"
             autoFocus
             selectTextOnFocus
             keyboardType="number-pad"
@@ -142,12 +143,12 @@ export function ProgressPill({
             style={styles.input}
           />
           <ThemedText style={styles.text}>/ {total}</ThemedText>
-          <Pressable onPress={submit} hitSlop={8} style={styles.go}>
+          <Pressable testID="reader.progress-pill.go" onPress={submit} hitSlop={8} style={styles.go}>
             <ThemedText style={styles.goText}>Go</ThemedText>
           </Pressable>
         </View>
       ) : (
-        <Pressable style={styles.pill} onPress={startEditing}>
+        <Pressable testID="reader.progress-pill" style={styles.pill} onPress={startEditing}>
           <ThemedText style={styles.text}>
             {current + 1} / {total}
           </ThemedText>

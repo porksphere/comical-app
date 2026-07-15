@@ -28,6 +28,7 @@ export function TopBar({ title, onBack, right }: { title: string; onBack?: () =>
   return (
     <BarSurface style={[styles.topBar, { height: insets.top + barHeight }]}>
       <Pressable
+        testID="top-bar.back"
         onPress={() => {
           hapticImpactLight();
           (onBack ?? (() => router.back()))();
@@ -51,10 +52,22 @@ export function TopBar({ title, onBack, right }: { title: string; onBack?: () =>
 
 /** A borderless icon button sized for `TopBar`'s `right` slot (the "+" on the Bridges/Trackers/
  *  Registries screens). Matches the back button's hit area and ripple. */
-export function TopBarButton({ icon, label, onPress }: { icon: ReactNode; label: string; onPress: () => void }) {
+export function TopBarButton({
+  icon,
+  label,
+  onPress,
+  testID,
+}: {
+  icon: ReactNode;
+  label: string;
+  onPress: () => void;
+  /** Automation selector — required so every top-bar action is reachable (see src/lib/test-id.ts). */
+  testID: string;
+}) {
   const theme = useTheme();
   return (
     <Pressable
+      testID={testID}
       onPress={() => {
         hapticImpactLight();
         onPress();

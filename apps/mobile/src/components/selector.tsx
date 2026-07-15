@@ -15,6 +15,7 @@ import { RowHeight, Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
 import { useIsCompact } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
+import { testId } from '@/lib/test-id';
 
 /** Size of the bridge thumbnail shown in the dropdown rows — also reused by the
  *  browse top bar so the two read at the same size. */
@@ -41,16 +42,19 @@ type SelectorProps = {
   labels?: Record<string, string>;
   /** Visual size of the trigger text. */
   size?: 'title' | 'subtitle' | 'small';
+  /** Automation selector for the trigger; each option derives `${testID}.option.<value>` (see src/lib/test-id.ts). */
+  testID: string;
 };
 
 /** Tappable label that opens a single-select bottom-sheet menu (via the overlay system). */
-export function Selector({ title, value, options, onChange, thumbnails, sources, labels, size = 'title' }: SelectorProps) {
+export function Selector({ title, value, options, onChange, thumbnails, sources, labels, size = 'title', testID }: SelectorProps) {
   const { ref, openAt } = useAnchoredOverlay();
   const compact = useIsCompact();
   const theme = useTheme();
   const { hovered, handlers } = useHover();
   return (
     <Pressable
+      testID={testID}
       ref={ref}
       {...handlers}
       style={[styles.trigger, hovered && { backgroundColor: theme.backgroundSelected }]}
@@ -64,6 +68,7 @@ export function Selector({ title, value, options, onChange, thumbnails, sources,
             thumbnails={thumbnails}
             sources={sources}
             labels={labels}
+            testID={testID}
           />
         ))
       }>
@@ -91,6 +96,7 @@ function SelectMenu({
   thumbnails,
   sources,
   labels,
+  testID,
 }: {
   title: string;
   options: string[];
@@ -99,6 +105,7 @@ function SelectMenu({
   thumbnails?: Record<string, string>;
   sources?: Record<string, number>;
   labels?: Record<string, string>;
+  testID: string;
 }) {
   const { closeTop } = useOverlay();
   const presentation = useOverlayPresentation();
@@ -117,6 +124,7 @@ function SelectMenu({
         {options.map((opt) => (
           <SelectRow
             key={opt}
+            testID={testId(testID, 'option', opt)}
             label={labels?.[opt] ?? opt}
             selected={opt === selected}
             thumbnail={thumbnails ? (thumbnails[opt] ?? null) : undefined}
@@ -138,6 +146,7 @@ function SelectRow({
   thumbnail,
   source,
   onPress,
+  testID,
 }: {
   label: string;
   selected: boolean;
@@ -147,11 +156,12 @@ function SelectRow({
   /** A local image module for this option (e.g. Comical's bundled logo); takes precedence over `thumbnail`. */
   source?: number;
   onPress: () => void;
+  testID: string;
 }) {
   const theme = useTheme();
   const { hovered, handlers } = useHover();
   return (
-    <Pressable onPress={onPress} {...handlers}>
+    <Pressable testID={testID} onPress={onPress} {...handlers}>
       <ThemedView
         type="backgroundElement"
         style={[styles.row, hovered && { backgroundColor: theme.backgroundSelected }]}>

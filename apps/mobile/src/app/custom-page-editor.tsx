@@ -101,6 +101,7 @@ export default function CustomPageEditorScreen() {
         right={
           editing ? (
             <TopBarButton
+              testID="custom-page-editor.done"
               icon={<CheckIcon color={theme.text} size={22} />}
               label="Done reordering"
               onPress={() => setEditing(false)}
@@ -109,12 +110,14 @@ export default function CustomPageEditorScreen() {
             <View style={styles.topActions}>
               {IS_WEB && canReorder && (
                 <TopBarButton
+                  testID="custom-page-editor.reorder"
                   icon={<GripIcon color={theme.text} size={22} />}
                   label="Reorder sections"
                   onPress={() => setEditing(true)}
                 />
               )}
               <TopBarButton
+                testID="custom-page-editor.add-section"
                 icon={<PlusIcon color={theme.text} size={22} />}
                 label="Add section"
                 onPress={() => openSection()}

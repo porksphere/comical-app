@@ -71,6 +71,7 @@ export default function CustomPagesScreen() {
         right={
           editing ? (
             <TopBarButton
+              testID="custom-pages.done"
               icon={<CheckIcon color={theme.text} size={22} />}
               label="Done reordering"
               onPress={() => setEditing(false)}
@@ -79,12 +80,14 @@ export default function CustomPagesScreen() {
             <View style={styles.topActions}>
               {IS_WEB && canReorder && (
                 <TopBarButton
+                  testID="custom-pages.reorder"
                   icon={<GripIcon color={theme.text} size={22} />}
                   label="Reorder pages"
                   onPress={() => setEditing(true)}
                 />
               )}
               <TopBarButton
+                testID="custom-pages.add"
                 icon={<PlusIcon color={theme.text} size={22} />}
                 label="Add page"
                 onPress={() =>
@@ -133,10 +136,11 @@ function DeletePageConfirm({ pageId, name }: { pageId: string; name: string }) {
         “{name}” and its sections will be removed. This can&apos;t be undone.
       </ThemedText>
       <View style={styles.confirmActions}>
-        <Pressable onPress={closeTop} style={styles.confirmBtn}>
+        <Pressable testID="custom-pages.delete.cancel" onPress={closeTop} style={styles.confirmBtn}>
           <ThemedText type="smallBold">Cancel</ThemedText>
         </Pressable>
         <Pressable
+          testID="custom-pages.delete.confirm"
           onPress={() => {
             deletePage(pageId);
             closeTop();
@@ -186,6 +190,7 @@ export function NamePromptForm({
     <View style={styles.confirmBody}>
       <ThemedText type="subtitle">{title}</ThemedText>
       <TextInput
+        testID="custom-pages.name-input"
         ref={inputRef}
         value={name}
         onChangeText={setName}
@@ -198,7 +203,7 @@ export function NamePromptForm({
         autoFocus
         style={[styles.input, { color: theme.text, borderColor: theme.backgroundSelected }]}
       />
-      <Pressable onPress={submit} disabled={!trimmed}>
+      <Pressable testID="custom-pages.name-submit" onPress={submit} disabled={!trimmed}>
         <ThemedView style={[styles.saveBtn, { backgroundColor: theme.accent }, !trimmed && styles.saveBtnDisabled]}>
           <ThemedText type="smallBold" style={{ color: theme.accentOn }}>
             {submitLabel}

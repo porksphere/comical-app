@@ -7,6 +7,7 @@ import { useHovered } from '@/hooks/use-hovered';
 import { useIsLargeScreen } from '@/hooks/use-responsive';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { tagPaletteFor, type TagColor } from '@/lib/tag-colors';
+import { testId } from '@/lib/test-id';
 import type { TagGroup } from '@/data/mock';
 
 // Genre / tag chips and a labeled tag-group row. Mirrors `.chip` / `.tag-group`
@@ -91,16 +92,20 @@ function PressableChip({
   color,
   onPress,
   accessibilityLabel,
+  testID,
 }: {
   label: string;
   accent?: boolean;
   color?: TagColor;
   onPress: () => void;
   accessibilityLabel: string;
+  /** Automation selector (see src/lib/test-id.ts). */
+  testID: string;
 }) {
   const { hovered, onHoverIn, onHoverOut } = useHovered();
   return (
     <Pressable
+      testID={testID}
       onPress={onPress}
       onHoverIn={onHoverIn}
       onHoverOut={onHoverOut}
@@ -128,6 +133,8 @@ function groupChips(
     return actionable ? (
       <PressableChip
         key={key}
+        // Prefer the bridge's stable tag id/query over the display label (two tags can share a label).
+        testID={testId('series.tag', group.tagIds?.[i] ?? group.tagQueries?.[i] ?? t)}
         onPress={() => onTagPress!(i)}
         accessibilityLabel={`Search ${t}`}
         label={t}
@@ -221,6 +228,7 @@ export function ChipRow({
       ))}
       {collapsible && (
         <PressableChip
+          testID="chip-row.show-all"
           onPress={() => setExpanded(true)}
           accessibilityLabel="Show all"
           label={`+${labels.length - maxVisible} more`}
@@ -265,6 +273,7 @@ export function TagGroupRow({
       {groupChips(shown, color, '', onTagPress)}
       {collapsible && (
         <PressableChip
+          testID={testId('tag-group', group.label, 'show-all')}
           onPress={() => setExpanded(true)}
           accessibilityLabel="Show all"
           label={`+${group.tags.length - maxVisible} more`}

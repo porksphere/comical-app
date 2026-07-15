@@ -9,6 +9,7 @@ import { hapticSelection } from '@/lib/haptics';
 export function ThemedSwitch({ onValueChange, style, ...props }: SwitchProps) {
   const theme = useTheme();
   return (
+    // eslint-disable-next-line comical/require-test-id -- transparent forwarder: testID flows through {...props}; callers (e.g. SettingsToggleRow) pass it.
     <Switch
       trackColor={{ false: theme.backgroundSelected, true: theme.accent }}
       thumbColor={theme.accentOn}

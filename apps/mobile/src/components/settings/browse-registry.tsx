@@ -10,6 +10,7 @@ import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticSelection } from '@/lib/haptics';
+import { testId } from '@/lib/test-id';
 
 /**
  * The "install something new" entry point shared by the Bridges and Trackers screens: bridges and
@@ -66,6 +67,7 @@ function RegistryPicker() {
         {(registries ?? []).map((r) => (
           <Pressable
             key={r.url}
+            testID={testId('settings.registry-picker', r.url)}
             onPress={() => {
               hapticSelection();
               closeTop();

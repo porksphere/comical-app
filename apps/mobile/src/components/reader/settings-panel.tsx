@@ -17,6 +17,7 @@ import {
   type ReaderDirection,
   type ReaderSettings,
 } from '@/hooks/use-reader-settings';
+import { testId } from '@/lib/test-id';
 
 /** Gear button (bottom-right) that opens reader settings in the app's shared
  *  overlay system — a near-full-width bottom sheet on mobile/narrow web, an
@@ -50,6 +51,7 @@ export function SettingsControl({
       pointerEvents={visible ? 'box-none' : 'none'}
       style={[styles.wrap, { bottom: insets.bottom + Spacing.two }, style]}>
       <Pressable
+        testID="reader.settings.open"
         ref={ref}
         onPress={() =>
           openAt(() => (
@@ -96,6 +98,7 @@ function SettingsContent({
       <DirectionRow settings={settings} set={set} />
       <Segment
         label="Page fit"
+        testIdPrefix="reader.settings.page-fit"
         value={settings.pageFit}
         options={[
           ['fit-page', 'Fit page'],
@@ -110,6 +113,7 @@ function SettingsContent({
       )}
       <Segment
         label="Preload ahead"
+        testIdPrefix="reader.settings.preload-ahead"
         value={String(settings.prefetchAhead)}
         options={[1, 2, 3, 4, 6, 8].map((n) => [String(n), String(n)] as [string, string])}
         onChange={(v) => set({ prefetchAhead: Number(v) as PrefetchAhead })}
@@ -151,7 +155,11 @@ function DirectionRow({
         {DIRECTION_OPTIONS.map(({ value: v, label, Icon }) => {
           const on = value === v;
           return (
-            <Pressable key={v} onPress={() => onChange(v)} style={[styles.opt, styles.optIcon, on && styles.optOn]}>
+            <Pressable
+              key={v}
+              testID={testId('reader.settings.direction', v)}
+              onPress={() => onChange(v)}
+              style={[styles.opt, styles.optIcon, on && styles.optOn]}>
               <Icon color={on ? '#fff' : 'rgba(255,255,255,0.8)'} size={18} />
               <ThemedText style={[styles.optText, on && styles.optTextOn]}>{label}</ThemedText>
             </Pressable>
@@ -191,6 +199,7 @@ function LibraryRow({
     <View style={styles.seg}>
       <ThemedText style={styles.segLabel}>This series</ThemedText>
       <Pressable
+        testID="reader.settings.library"
         onPress={toggle}
         style={[styles.opt, inLibrary && styles.optOn]}
         disabled={inLibrary === null}>
@@ -214,6 +223,7 @@ function FavoriteRow({ bridgeId, seriesId }: { bridgeId: string; seriesId: strin
     <View style={styles.seg}>
       <ThemedText style={styles.segLabel}>This series</ThemedText>
       <Pressable
+        testID="reader.settings.favorite"
         onPress={toggle}
         style={[styles.opt, favorited && styles.optOn, !available && styles.optDisabled]}
         // Greyed when this bridge's favorites need a login that isn't set (see useFavorite).
@@ -231,11 +241,13 @@ function Segment({
   value,
   options,
   onChange,
+  testIdPrefix,
 }: {
   label: string;
   value: string;
   options: [string, string][];
   onChange: (value: string) => void;
+  testIdPrefix: string;
 }) {
   return (
     <View style={styles.seg}>
@@ -244,7 +256,11 @@ function Segment({
         {options.map(([v, l]) => {
           const on = value === v;
           return (
-            <Pressable key={v} onPress={() => onChange(v)} style={[styles.opt, on && styles.optOn]}>
+            <Pressable
+              key={v}
+              testID={testId(testIdPrefix, v)}
+              onPress={() => onChange(v)}
+              style={[styles.opt, on && styles.optOn]}>
               <ThemedText style={[styles.optText, on && styles.optTextOn]}>{l}</ThemedText>
             </Pressable>
           );

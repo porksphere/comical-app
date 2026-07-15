@@ -7,14 +7,20 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { testId } from '@/lib/test-id';
 
-export function Collapsible({ children, title }: PropsWithChildren & { title: string }) {
+export function Collapsible({
+  children,
+  title,
+  testID,
+}: PropsWithChildren & { title: string; testID?: string }) {
   const [isOpen, setIsOpen] = useState(false);
   const theme = useTheme();
 
   return (
     <ThemedView>
       <Pressable
+        testID={testID ?? testId('collapsible', title)}
         style={({ pressed }) => [styles.heading, pressed && styles.pressedHeading]}
         onPress={() => setIsOpen((value) => !value)}>
         <ThemedView type="backgroundElement" style={styles.button}>

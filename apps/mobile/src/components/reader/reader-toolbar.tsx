@@ -32,6 +32,7 @@ export function ReaderToolbar({
       />
       <View style={[styles.bar, { paddingTop: insets.top + Spacing.two }]}>
         <Pressable
+          testID="reader.toolbar.back"
           onPress={onBack}
           hitSlop={12}
           style={styles.back}

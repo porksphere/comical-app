@@ -7,6 +7,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
+import { testId } from '@/lib/test-id';
 
 import { FilterButton } from './filter-button';
 import { CheckIcon, FiltersIcon, SortIcon } from './filter-icons';
@@ -139,6 +140,7 @@ function SortButton({
   const { hovered, handlers } = useHover();
   return (
     <Pressable
+      testID="filter.sort"
       ref={ref}
       {...handlers}
       onPress={() => openAt(render)}
@@ -165,6 +167,7 @@ function OverflowChip({ count, render }: { count: number; render: () => ReactNod
   const { hovered, handlers } = useHover();
   return (
     <Pressable
+      testID="filter.overflow"
       ref={ref}
       {...handlers}
       onPress={() => openAt(render)}
@@ -226,6 +229,7 @@ function OptionMenu({
       {options.map((opt) => (
         <SelectRow
           key={opt}
+          testID={testId('filter.sort.option', opt)}
           label={opt}
           selected={selected === opt}
           onPress={() => {
@@ -269,13 +273,15 @@ function SelectRow({
   label,
   selected,
   onPress,
+  testID,
 }: {
   label: string;
   selected: boolean;
   onPress: () => void;
+  testID?: string;
 }) {
   return (
-    <Pressable onPress={onPress}>
+    <Pressable testID={testID} onPress={onPress}>
       <ThemedView type="backgroundElement" style={styles.row}>
         <ThemedText>{label}</ThemedText>
         <View style={[styles.dot, selected && styles.dotSelected]} />
@@ -289,7 +295,12 @@ function SelectRow({
 function ConfirmButton({ onPress }: { onPress: () => void }) {
   const theme = useTheme();
   return (
-    <Pressable onPress={onPress} hitSlop={8} accessibilityRole="button" accessibilityLabel="Show results">
+    <Pressable
+      testID="filter.confirm"
+      onPress={onPress}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel="Show results">
       <View style={[styles.confirm, { backgroundColor: theme.accent }]}>
         <CheckIcon color={theme.accentOn} size={20} />
       </View>

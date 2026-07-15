@@ -84,7 +84,7 @@ export default function AddRegistryScreen() {
               This registry is added from inside the app, not the web preview. If nothing happens
               below, you may not have Comical installed yet.
             </ThemedText>
-            <Pressable onPress={openInApp}>
+            <Pressable testID="add-registry.open-in-app" onPress={openInApp}>
               <ThemedView style={[styles.saveBtn, { backgroundColor: theme.accent }]}>
                 <ThemedText type="smallBold" style={{ color: theme.accentOn }}>
                   Open in Comical app
@@ -104,10 +104,10 @@ export default function AddRegistryScreen() {
               </ThemedText>
             )}
             <View style={styles.actions}>
-              <Pressable onPress={cancel} disabled={adding} style={styles.actionBtn}>
+              <Pressable testID="add-registry.cancel" onPress={cancel} disabled={adding} style={styles.actionBtn}>
                 <ThemedText type="smallBold">Cancel</ThemedText>
               </Pressable>
-              <Pressable onPress={add} disabled={adding}>
+              <Pressable testID="add-registry.confirm" onPress={add} disabled={adding}>
                 <ThemedView style={[styles.saveBtn, { backgroundColor: theme.accent }, adding && styles.saveBtnDisabled]}>
                   <ThemedText type="smallBold" style={{ color: theme.accentOn }}>
                     {adding ? 'Adding…' : 'Add registry'}

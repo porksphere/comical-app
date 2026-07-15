@@ -13,6 +13,7 @@ import {
 
 import { ReaderPage } from '@/components/reader/reader-page';
 import type { PageFit } from '@/hooks/use-reader-settings';
+import { testId } from '@/lib/test-id';
 
 export type WebtoonReaderHandle = { goToPage: (index: number) => void };
 
@@ -207,6 +208,7 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
           width={width}
           onRowLayout={onRowLayout}
           onToggleChrome={onToggleChrome}
+          testID={testId('reader.page.tap', index + 1)}
         />
       )}
     />
@@ -222,18 +224,20 @@ function WebtoonRow({
   width,
   onRowLayout,
   onToggleChrome,
+  testID,
 }: {
   uri: string;
   index: number;
   width: number;
   onRowLayout: (index: number, height: number) => void;
   onToggleChrome: () => void;
+  testID: string;
 }) {
   const [failed, setFailed] = useState(false);
   return (
     <View onLayout={(e: LayoutChangeEvent) => onRowLayout(index, e.nativeEvent.layout.height)}>
       <ReaderPage uri={uri} page={index + 1} fit="width" width={width} onFailedChange={setFailed} />
-      {!failed && <Pressable style={StyleSheet.absoluteFill} onPress={onToggleChrome} />}
+      {!failed && <Pressable testID={testID} style={StyleSheet.absoluteFill} onPress={onToggleChrome} />}
     </View>
   );
 }
@@ -294,7 +298,14 @@ const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPage
       onEndReachedThreshold={0.05}
       onEndReached={onEndReached}
       renderItem={({ item, index }) => (
-        <WebtoonPagedRow uri={item} index={index} width={width} height={height} onToggleChrome={onToggleChrome} />
+        <WebtoonPagedRow
+          uri={item}
+          index={index}
+          width={width}
+          height={height}
+          onToggleChrome={onToggleChrome}
+          testID={testId('reader.page.tap', index + 1)}
+        />
       )}
     />
   );
@@ -308,18 +319,20 @@ function WebtoonPagedRow({
   width,
   height,
   onToggleChrome,
+  testID,
 }: {
   uri: string;
   index: number;
   width: number;
   height: number;
   onToggleChrome: () => void;
+  testID: string;
 }) {
   const [failed, setFailed] = useState(false);
   return (
     <View style={{ width, height }}>
       <ReaderPage uri={uri} page={index + 1} fit="contain" width={width} height={height} onFailedChange={setFailed} />
-      {!failed && <Pressable style={StyleSheet.absoluteFill} onPress={onToggleChrome} />}
+      {!failed && <Pressable testID={testID} style={StyleSheet.absoluteFill} onPress={onToggleChrome} />}
     </View>
   );
 }
@@ -330,7 +343,7 @@ function WebtoonPagedRow({
  *  next chapter. */
 function ChapterSentinel({ name, onPress }: { name: string; onPress?: () => void }) {
   return (
-    <Pressable style={styles.sentinel} onPress={onPress}>
+    <Pressable testID="reader.chapter-sentinel" style={styles.sentinel} onPress={onPress}>
       <Text style={styles.sentinelText} numberOfLines={2}>
         Next: {name} →
       </Text>

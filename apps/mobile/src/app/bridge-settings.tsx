@@ -135,7 +135,7 @@ export default function BridgeSettingsScreen() {
             <ThemedText type="small" themeColor="textSecondary" style={styles.centerText}>
               {(error as Error).message || 'Failed to load bridge settings'}
             </ThemedText>
-            <Pressable onPress={() => refetch()}>
+            <Pressable testID="settings.bridge.retry" onPress={() => refetch()}>
               <ThemedText type="smallBold" style={{ color: theme.accent }}>
                 Retry
               </ThemedText>
@@ -148,7 +148,7 @@ export default function BridgeSettingsScreen() {
                 <ThemedText type="small" style={styles.updateBannerText}>
                   Update available — v{availableVersion}
                 </ThemedText>
-                <Pressable onPress={performUpdate} disabled={updating} hitSlop={8}>
+                <Pressable testID="settings.bridge.update" onPress={performUpdate} disabled={updating} hitSlop={8}>
                   <ThemedText type="smallBold" style={{ color: theme.accent }}>
                     {updating ? 'Updating…' : 'Update'}
                   </ThemedText>
@@ -207,7 +207,7 @@ export default function BridgeSettingsScreen() {
                     {uninstallError}
                   </ThemedText>
                 )}
-                <Pressable onPress={uninstall} disabled={uninstalling} style={styles.uninstallRow}>
+                <Pressable testID="settings.bridge.uninstall" onPress={uninstall} disabled={uninstalling} style={styles.uninstallRow}>
                   {uninstalling ? (
                     <ActivityIndicator size="small" />
                   ) : (
