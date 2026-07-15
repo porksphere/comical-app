@@ -7,6 +7,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
+import { testId } from '@/lib/test-id';
 
 import type { ReorderableListProps } from './reorderable-list.types';
 
@@ -35,6 +36,7 @@ export function ReorderableList<T>({ data, keyOf, renderRow, label, leading, onR
               {label(item)}
             </ThemedText>
             <Pressable
+              testID={testId('reorder', label(item), 'up')}
               disabled={i === 0}
               onPress={() => move(i, i - 1)}
               style={[styles.moveBtn, i === 0 && styles.moveBtnOff]}
@@ -43,6 +45,7 @@ export function ReorderableList<T>({ data, keyOf, renderRow, label, leading, onR
               <ArrowUpIcon color={theme.text} size={18} />
             </Pressable>
             <Pressable
+              testID={testId('reorder', label(item), 'down')}
               disabled={i === data.length - 1}
               onPress={() => move(i, i + 1)}
               style={[styles.moveBtn, i === data.length - 1 && styles.moveBtnOff]}

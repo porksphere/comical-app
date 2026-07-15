@@ -13,7 +13,7 @@ export function RetryBlock({ message, onRetry }: { message: string; onRetry: () 
       <ThemedText type="small" themeColor="textSecondary" style={styles.message}>
         {message}
       </ThemedText>
-      <Pressable onPress={onRetry} hitSlop={8}>
+      <Pressable testID="retry.button" onPress={onRetry} hitSlop={8}>
         <ThemedText type="smallBold" style={{ color: theme.accent }}>
           Retry
         </ThemedText>

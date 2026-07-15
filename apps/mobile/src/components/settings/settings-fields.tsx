@@ -13,6 +13,7 @@ import { Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight, hapticSelection } from '@/lib/haptics';
+import { testId } from '@/lib/test-id';
 
 /**
  * The two standard settings CONTROL rows, factored out of `settings-general`'s Appearance/NSFW rows so
@@ -58,12 +59,14 @@ export function SettingsSelectRow<T extends string>({
   const { ref, openAt } = useAnchoredOverlay();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
   const current = options.find((o) => o.value === value);
+  const base = testId('settings.select', label);
   return (
     <Pressable
+      testID={base}
       ref={ref}
       onPress={() => {
         hapticImpactLight();
-        openAt(() => <SelectPicker heading={heading ?? label} value={value} options={options} onChange={onChange} />);
+        openAt(() => <SelectPicker heading={heading ?? label} value={value} options={options} onChange={onChange} testID={base} />);
       }}
       onHoverIn={onHoverIn}
       onHoverOut={onHoverOut}
@@ -96,11 +99,13 @@ function SelectPicker<T extends string>({
   value,
   options,
   onChange,
+  testID,
 }: {
   heading: string;
   value: T;
   options: readonly SettingsOption<T>[];
   onChange: (value: T) => void;
+  testID: string;
 }) {
   const { closeTop } = useOverlay();
   const theme = useTheme();
@@ -113,6 +118,7 @@ function SelectPicker<T extends string>({
         {options.map((opt) => (
           <Pressable
             key={opt.value}
+            testID={testId(testID, 'option', opt.value)}
             onPress={() => {
               hapticSelection();
               onChange(opt.value);
@@ -174,6 +180,7 @@ export function SettingsTextRow({
   const theme = useTheme();
   const [revealed, setRevealed] = useState(false);
   const [focused, setFocused] = useState(false);
+  const base = testId('settings.text', label);
   return (
     <View style={[settingsRowFrame.row, settingsRowFrame.escape]}>
       <View style={styles.textRowLabel}>
@@ -188,6 +195,7 @@ export function SettingsTextRow({
       </View>
       <View style={styles.textRowRight}>
         <TextInput
+          testID={testId(base, 'input')}
           value={value}
           onChangeText={onChange}
           onFocus={() => setFocused(true)}
@@ -206,6 +214,7 @@ export function SettingsTextRow({
         {/* Reveal toggle only once there's something to reveal — an empty secret has nothing to show. */}
         {secureTextEntry && value.length > 0 && (
           <Pressable
+            testID={testId(base, 'reveal')}
             onPress={() => setRevealed((r) => !r)}
             hitSlop={8}
             accessibilityRole="button"
@@ -243,7 +252,7 @@ export function SettingsToggleRow({
     <SettingsRow
       label={label}
       description={description}
-      right={right ?? <ThemedSwitch value={value} onValueChange={onChange} />}
+      right={right ?? <ThemedSwitch testID={testId('settings.toggle', label)} value={value} onValueChange={onChange} />}
     />
   );
 }

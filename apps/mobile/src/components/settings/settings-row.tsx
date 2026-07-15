@@ -7,6 +7,7 @@ import { SettingsGutter, SettingsRowHeight, Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight } from '@/lib/haptics';
+import { testId } from '@/lib/test-id';
 
 /**
  * The horizontal gutter every settings screen pads its scroll content by. Rows cancel it out with a
@@ -118,6 +119,7 @@ export function SettingsRow({
   onPress,
   onHoverIn,
   onHoverOut,
+  testID,
 }: {
   label: string;
   description?: string;
@@ -138,11 +140,18 @@ export function SettingsRow({
    *  not just the few pixels of the control itself. */
   onHoverIn?: () => void;
   onHoverOut?: () => void;
+  /** Automation selector for the row. Defaults to `settings.row.<label>`; pass an explicit id when two
+   *  rows would otherwise collide on their label (see src/lib/test-id.ts). */
+  testID?: string;
 }) {
   const theme = useTheme();
   const { hovered, onHoverIn: markHovered, onHoverOut: markUnhovered } = useHovered();
-  const content = (highlighted?: boolean) => (
+  const rowTestID = testID ?? testId('settings.row', label);
+  // On a pressable row the id lives on the Pressable; on a static row it lives on the root View — never
+  // both, so a locator resolves to exactly one node.
+  const content = (highlighted?: boolean, rootTestID?: string) => (
     <View
+      testID={rootTestID}
       style={[
         settingsRowFrame.row,
         escapeGutter && settingsRowFrame.escape,
@@ -169,9 +178,10 @@ export function SettingsRow({
       {right ?? (onPress && <ChevronRightIcon color={theme.textSecondary} size={18} />)}
     </View>
   );
-  if (!onPress) return content();
+  if (!onPress) return content(undefined, rowTestID);
   return (
     <Pressable
+      testID={rowTestID}
       onPress={() => {
         hapticImpactLight();
         onPress();

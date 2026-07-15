@@ -12,6 +12,7 @@ import { useHovered } from '@/hooks/use-hovered';
 import { useIsCompact, useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import type { RailSection, SeriesEntry } from '@/data/types';
+import { testId } from '@/lib/test-id';
 
 // Card cover aspect is 2:3, so a card of width W has a cover of height W·3/2;
 // the title sits a card-gap below it. Used to place the lifted peek popover.
@@ -309,7 +310,13 @@ export function Rail({
 
   return (
     <View style={[styles.section, peekIndex != null && styles.sectionPeeking]}>
-      {!headless && <SectionHead title={section.title} onSeeAll={onSeeAll ? () => onSeeAll(section) : undefined} />}
+      {!headless && (
+        <SectionHead
+          title={section.title}
+          onSeeAll={onSeeAll ? () => onSeeAll(section) : undefined}
+          testID={testId('browse.rail.see-all', section.id)}
+        />
+      )}
       {wide ? (
         <View style={[styles.grid, { paddingHorizontal: STRIP_PAD, gap: stripGap }]}>
           {gridRows.map((row, r) => (
@@ -492,7 +499,7 @@ export function RailSkeleton({ viewportWidth, title }: { viewportWidth: number; 
   );
 }
 
-export function SectionHead({ title, onSeeAll }: { title: string; onSeeAll?: () => void }) {
+export function SectionHead({ title, onSeeAll, testID }: { title: string; onSeeAll?: () => void; testID?: string }) {
   const theme = useTheme();
   // Match the reference's `.section-head h3`: 1.2rem mobile / 1.5rem desktop.
   const compact = useIsCompact();
@@ -507,6 +514,7 @@ export function SectionHead({ title, onSeeAll }: { title: string; onSeeAll?: () 
       </ThemedText>
       {onSeeAll && (
         <Pressable
+          testID={testID}
           onPress={onSeeAll}
           onHoverIn={onHoverIn}
           onHoverOut={onHoverOut}

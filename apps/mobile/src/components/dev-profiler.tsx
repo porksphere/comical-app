@@ -112,6 +112,7 @@ export function DevProfiler() {
       style={{ position: "absolute", right: 10, bottom: 110, zIndex: 99999, alignItems: "flex-end" }}
     >
       <Pressable
+        testID="dev-profiler.toggle"
         onPress={toggle}
         style={{
           backgroundColor: rec ? "#cc2222" : "#208AEF",

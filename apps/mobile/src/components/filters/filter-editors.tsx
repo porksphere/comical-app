@@ -16,6 +16,7 @@ import { queryKeys } from '@/data/queries';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
+import { testId } from '@/lib/test-id';
 
 import {
   CONTROL_HEIGHT,
@@ -91,18 +92,24 @@ function MultiEditor({
       )}
       <OptionList>
         {def.options.map((opt) => (
-          <MultiRow key={opt.value} label={opt.label} checked={selected.includes(opt.value)} onPress={() => toggle(opt.value)} />
+          <MultiRow
+            key={opt.value}
+            testID={testId('filter', def.id, 'option', opt.value)}
+            label={opt.label}
+            checked={selected.includes(opt.value)}
+            onPress={() => toggle(opt.value)}
+          />
         ))}
       </OptionList>
     </View>
   );
 }
 
-function MultiRow({ label, checked, onPress }: { label: string; checked: boolean; onPress: () => void }) {
+function MultiRow({ label, checked, onPress, testID }: { label: string; checked: boolean; onPress: () => void; testID?: string }) {
   const theme = useTheme();
   const { hovered, handlers } = useHover();
   return (
-    <Pressable onPress={onPress} {...handlers}>
+    <Pressable testID={testID} onPress={onPress} {...handlers}>
       <ThemedView type="backgroundElement" style={[styles.row, hovered && { backgroundColor: theme.backgroundSelected }]}>
         <ThemedText>{label}</ThemedText>
         <View style={[styles.check, checked && styles.checkOn]} />
@@ -141,7 +148,13 @@ function TriEditor({
       </MeasuredHeader>
       <OptionList>
         {options.map((opt) => (
-          <TriRow key={opt.value} label={opt.label} state={tri[opt.value]} onPress={() => press(opt.value)} />
+          <TriRow
+            key={opt.value}
+            testID={testId('filter', def.id, 'option', opt.value)}
+            label={opt.label}
+            state={tri[opt.value]}
+            onPress={() => press(opt.value)}
+          />
         ))}
       </OptionList>
     </View>
@@ -227,6 +240,7 @@ function TagSearchEditor({
             {selected.map(({ value, tone }) => (
               <TagChip
                 key={value}
+                testID={testId('filter', def.id, 'remove', value)}
                 label={labelFor(def.options ?? knownOptions, value, def.labelHints)}
                 tone={tone}
                 onRemove={() => remove(value)}
@@ -237,6 +251,7 @@ function TagSearchEditor({
           <OverlayHeading>{def.label}</OverlayHeading>
         )}
         <TextInput
+          testID={testId('filter', def.id, 'search')}
           ref={inputRef}
           value={query}
           onChangeText={setQuery}
@@ -252,7 +267,13 @@ function TagSearchEditor({
       </MeasuredHeader>
       <OptionList fixed>
         {filtered.map((opt) => (
-          <TriRow key={opt.value} label={opt.label} state={tri[opt.value]} onPress={() => press(opt.value)} />
+          <TriRow
+            key={opt.value}
+            testID={testId('filter', def.id, 'option', opt.value)}
+            label={opt.label}
+            state={tri[opt.value]}
+            onPress={() => press(opt.value)}
+          />
         ))}
         {filtered.length === 0 && (
           <ThemedText type="small" themeColor="textSecondary">
@@ -268,16 +289,18 @@ function TriRow({
   label,
   state,
   onPress,
+  testID,
 }: {
   label: string;
   state: TriValue | undefined;
   onPress: () => void;
+  testID?: string;
 }) {
   const theme = useTheme();
   const { hovered, handlers } = useHover();
   const color = state === 'include' ? INCLUDE : state === 'exclude' ? EXCLUDE : undefined;
   return (
-    <Pressable onPress={onPress} {...handlers}>
+    <Pressable testID={testID} onPress={onPress} {...handlers}>
       <ThemedView
         type="backgroundElement"
         style={[styles.row, hovered && { backgroundColor: theme.backgroundSelected }]}>
@@ -301,10 +324,12 @@ function TagChip({
   label,
   tone,
   onRemove,
+  testID,
 }: {
   label: string;
   tone: TriValue;
   onRemove: () => void;
+  testID?: string;
 }) {
   const c = tone === 'include' ? INCLUDE_CHIP : EXCLUDE_CHIP;
   return (
@@ -312,7 +337,7 @@ function TagChip({
       <Text style={[styles.tagChipText, { color: c.text }]} numberOfLines={1}>
         {label}
       </Text>
-      <Pressable onPress={onRemove} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Remove ${label}`}>
+      <Pressable testID={testID} onPress={onRemove} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Remove ${label}`}>
         <Text style={[styles.tagChipRemove, { color: c.text }]}>×</Text>
       </Pressable>
     </View>

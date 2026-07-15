@@ -636,6 +636,7 @@ export default function BrowseScreen() {
           </View>
         ) : null}
         <Selector
+          testID="browse.bridge-selector"
           title="Bridge"
           value={currentBridge?.id ?? ''}
           options={visibleBridges.map((b) => b.id)}
@@ -645,13 +646,14 @@ export default function BrowseScreen() {
           sources={COMICAL_SOURCES}
           labels={bridgeLabels}
         />
-        <Selector title="Page" value={page} options={pages} onChange={selectPage} size="subtitle" labels={pageLabels} />
+        <Selector testID="browse.page-selector" title="Page" value={page} options={pages} onChange={selectPage} size="subtitle" labels={pageLabels} />
         {isLargeScreen ? (
           // Desktop: an always-visible search pill in the middle of the bar. Pressing it opens the
           // (blank) Search screen — real typing happens there. `searchPillWrap`'s right margin
           // reserves room for the desktop tab-icon nav overlaid at the row's right edge (app-tabs).
           <View style={styles.searchPillWrap}>
             <Pressable
+              testID="browse.search-pill"
               onPress={openSearch}
               accessibilityRole="button"
               accessibilityLabel="Search"
@@ -668,6 +670,7 @@ export default function BrowseScreen() {
           // Mobile: just the lucide search icon, pushed to the trailing edge, until you're on the
           // Search screen (where the real field appears in its top bar).
           <Pressable
+            testID="browse.search-icon"
             onPress={openSearch}
             hitSlop={8}
             accessibilityRole="button"
@@ -755,7 +758,7 @@ export default function BrowseScreen() {
       <ThemedText type="small" themeColor="textSecondary" style={styles.noBridgesDetail}>
         Add a registry to install bridges and start browsing series.
       </ThemedText>
-      <Pressable onPress={() => router.push('/registries')} hitSlop={8}>
+      <Pressable testID="browse.manage-registries" onPress={() => router.push('/registries')} hitSlop={8}>
         <ThemedText type="smallBold" style={{ color: theme.accent }}>
           Manage registries
         </ThemedText>

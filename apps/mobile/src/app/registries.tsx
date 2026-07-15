@@ -86,14 +86,14 @@ export default function RegistriesScreen() {
           // `null` = this server has no registry support at all, so there's nothing to add to.
           registries !== null &&
           (editing ? (
-            <TopBarButton icon={<CheckIcon color={theme.text} size={22} />} label="Done reordering" onPress={() => setEditing(false)} />
+            <TopBarButton testID="registries.done" icon={<CheckIcon color={theme.text} size={22} />} label="Done reordering" onPress={() => setEditing(false)} />
           ) : (
             <View style={styles.topActions}>
               {/* Reorder button only on web (native reorders in place — long-press a row). */}
               {IS_WEB && canReorder && (
-                <TopBarButton icon={<GripIcon color={theme.text} size={22} />} label="Reorder registries" onPress={() => setEditing(true)} />
+                <TopBarButton testID="registries.reorder" icon={<GripIcon color={theme.text} size={22} />} label="Reorder registries" onPress={() => setEditing(true)} />
               )}
-              <TopBarButton icon={<PlusIcon color={theme.text} size={22} />} label="Add registry" onPress={() => open(() => <AddRegistryForm />)} />
+              <TopBarButton testID="registries.add" icon={<PlusIcon color={theme.text} size={22} />} label="Add registry" onPress={() => open(() => <AddRegistryForm />)} />
             </View>
           ))
         }
@@ -166,10 +166,10 @@ function RemoveRegistryConfirm({ url }: { url: string }) {
         </ThemedText>
       )}
       <View style={styles.confirmActions}>
-        <Pressable onPress={closeTop} style={styles.confirmBtn}>
+        <Pressable testID="registries.remove.cancel" onPress={closeTop} style={styles.confirmBtn}>
           <ThemedText type="smallBold">Cancel</ThemedText>
         </Pressable>
-        <Pressable onPress={() => removeMutation.mutate()} disabled={removeMutation.isPending} style={styles.confirmBtn}>
+        <Pressable testID="registries.remove.confirm" onPress={() => removeMutation.mutate()} disabled={removeMutation.isPending} style={styles.confirmBtn}>
           <ThemedText type="smallBold" style={{ color: theme.danger }}>
             {removeMutation.isPending ? 'Removing…' : 'Remove'}
           </ThemedText>
@@ -206,6 +206,7 @@ function AddRegistryForm() {
     <View style={styles.confirmBody}>
       <ThemedText type="subtitle">Add registry</ThemedText>
       <TextInput
+        testID="registries.add.url-input"
         ref={inputRef}
         value={url}
         onChangeText={setUrl}
@@ -227,7 +228,7 @@ function AddRegistryForm() {
           {addError}
         </ThemedText>
       )}
-      <Pressable onPress={doAdd} disabled={adding || !url.trim()}>
+      <Pressable testID="registries.add.submit" onPress={doAdd} disabled={adding || !url.trim()}>
         <ThemedView style={[styles.saveBtn, { backgroundColor: theme.accent }, (adding || !url.trim()) && styles.saveBtnDisabled]}>
           <ThemedText type="smallBold" style={{ color: theme.accentOn }}>
             {adding ? 'Adding…' : 'Add'}

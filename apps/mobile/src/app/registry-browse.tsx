@@ -14,6 +14,7 @@ import type { AvailableBridge, AvailableTracker } from '@/data/api';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
+import { testId } from '@/lib/test-id';
 
 export default function RegistryBrowseScreen() {
   const { url } = useLocalSearchParams<{ url?: string }>();
@@ -134,7 +135,7 @@ function BridgeRow({ bridge, url, onDone }: { bridge: AvailableBridge; url: stri
       <SettingsRow
         label={bridge.entry.name}
         description={entrySubtitle(bridge.entry.id, bridge.entry.version, bridge.entry.description)}
-        right={<InstallButton state={bridge} onInstall={install} onUpdate={update} busy={busy} />}
+        right={<InstallButton state={bridge} onInstall={install} onUpdate={update} busy={busy} testID={testId('registry-browse.bridge', bridge.entry.id)} />}
       />
       {error && (
         <ThemedText type="small" themeColor="danger" style={styles.rowError}>
@@ -172,7 +173,7 @@ function TrackerRow({ tracker, url, onDone }: { tracker: AvailableTracker; url: 
       <SettingsRow
         label={tracker.entry.name}
         description={entrySubtitle(tracker.entry.id, tracker.entry.version, tracker.entry.description)}
-        right={<InstallButton state={tracker} onInstall={install} onUpdate={update} busy={busy} />}
+        right={<InstallButton state={tracker} onInstall={install} onUpdate={update} busy={busy} testID={testId('registry-browse.tracker', tracker.entry.id)} />}
       />
       {error && (
         <ThemedText type="small" themeColor="danger" style={styles.rowError}>
@@ -188,16 +189,18 @@ function InstallButton({
   onInstall,
   onUpdate,
   busy,
+  testID,
 }: {
   state: { installedVersion: string | null; updateAvailable: boolean };
   onInstall: () => void;
   onUpdate: () => void;
   busy: boolean;
+  testID: string;
 }) {
   if (busy) return <ActivityIndicator size="small" />;
   if (state.installedVersion && state.updateAvailable) {
     return (
-      <Pressable onPress={onUpdate} hitSlop={8}>
+      <Pressable testID={`${testID}.update`} onPress={onUpdate} hitSlop={8}>
         <View style={styles.actionBtn}>
           <ThemedText type="smallBold">Update</ThemedText>
         </View>
@@ -212,7 +215,7 @@ function InstallButton({
     );
   }
   return (
-    <Pressable onPress={onInstall} hitSlop={8}>
+    <Pressable testID={`${testID}.install`} onPress={onInstall} hitSlop={8}>
       <View style={styles.actionBtn}>
         <ThemedText type="smallBold">Install</ThemedText>
       </View>

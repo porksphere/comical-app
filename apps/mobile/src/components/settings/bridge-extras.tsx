@@ -18,6 +18,7 @@ import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight, hapticSelection } from '@/lib/haptics';
+import { testId } from '@/lib/test-id';
 
 /** Capabilities + self-reported facts from `GET /bridges/{id}`'s `info` — everything the bridge
  *  declares about itself (version, contract version, languages, content rating, rate limit),
@@ -131,7 +132,7 @@ export function TagExclusionsControl({
       {tags.length > 0 && (
         <View style={styles.tagRow}>
           {tags.map((t) => (
-            <Pressable key={t.id} onPress={() => removeTag(t.id)} hitSlop={4}>
+            <Pressable key={t.id} testID={testId('settings.bridge.excluded-tag', t.id)} onPress={() => removeTag(t.id)} hitSlop={4}>
               <View style={[styles.tagChip, { borderColor: theme.chipBorder }]}>
                 <ThemedText style={{ color: theme.chipText }} numberOfLines={1}>
                   {t.label}
@@ -143,6 +144,7 @@ export function TagExclusionsControl({
         </View>
       )}
       <TextInput
+        testID="settings.bridge.excluded-tags.input"
         value={query}
         onChangeText={setQuery}
         onSubmitEditing={() => addTag(query, query)}
@@ -155,14 +157,14 @@ export function TagExclusionsControl({
       {visibleSuggestions.length > 0 && (
         <View style={[styles.suggestions, { borderColor: theme.hairline }]}>
           {visibleSuggestions.slice(0, 6).map((s) => (
-            <Pressable key={s.value} onPress={() => addTag(s.value, s.label)} style={styles.suggestionRow}>
+            <Pressable key={s.value} testID={testId('settings.bridge.tag-suggestion', s.value)} onPress={() => addTag(s.value, s.label)} style={styles.suggestionRow}>
               <ThemedText type="small">{s.label}</ThemedText>
             </Pressable>
           ))}
         </View>
       )}
       {dirty && (
-        <Pressable onPress={save} disabled={saving}>
+        <Pressable testID="settings.bridge.excluded-tags.save" onPress={save} disabled={saving}>
           <ThemedView style={[styles.saveBtn, { backgroundColor: theme.accent }, saving && styles.saveBtnDisabled]}>
             <ThemedText type="smallBold" style={{ color: theme.accentOn }}>
               {saving ? 'Saving…' : 'Save excluded tags'}
@@ -209,7 +211,7 @@ export function GenreExclusionsControl({ bridgeId }: { bridgeId: string }) {
         <ThemedText type="small" themeColor="textSecondary">
           {(error as Error)?.message || 'Failed to load genres'}
         </ThemedText>
-        <Pressable onPress={() => refetch()}>
+        <Pressable testID="settings.bridge.excluded-genres.retry" onPress={() => refetch()}>
           <ThemedText type="smallBold">Retry</ThemedText>
         </Pressable>
       </SettingsSection>
@@ -225,6 +227,7 @@ export function GenreExclusionsControl({ bridgeId }: { bridgeId: string }) {
       </ThemedText>
       <Pressable
         ref={ref}
+        testID="settings.bridge.excluded-genres.edit"
         disabled={saving}
         onHoverIn={onHoverIn}
         onHoverOut={onHoverOut}
@@ -277,18 +280,27 @@ function GenrePicker({
       <OptionList>
         {available.map((opt) => {
           const on = selected.includes(opt.id);
-          return <GenreOption key={opt.id} label={opt.label} on={on} onPress={() => toggle(opt.id)} />;
+          return (
+            <GenreOption
+              key={opt.id}
+              testID={testId('settings.bridge.genre-option', opt.id)}
+              label={opt.label}
+              on={on}
+              onPress={() => toggle(opt.id)}
+            />
+          );
         })}
       </OptionList>
     </View>
   );
 }
 
-function GenreOption({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
+function GenreOption({ testID, label, on, onPress }: { testID: string; label: string; on: boolean; onPress: () => void }) {
   const theme = useTheme();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
   return (
     <Pressable
+      testID={testID}
       onPress={() => {
         hapticSelection();
         onPress();

@@ -16,6 +16,7 @@ import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight } from '@/lib/haptics';
 import { claimOpenRow, releaseOpenRow } from '@/lib/swipe-row-registry';
+import { testId } from '@/lib/test-id';
 
 const PILL_WIDTH = 60;
 const PILL_GAP = Spacing.two;
@@ -302,6 +303,7 @@ function SwipeRow({ name, actions, edgeInset, children }: RowImplProps) {
           return (
             <Pressable
               key={a.key ?? a.label}
+              testID={testId('swipe-action', name, a.key ?? a.label)}
               onPress={() => {
                 hapticImpactLight();
                 close();
@@ -326,6 +328,7 @@ function SwipeRow({ name, actions, edgeInset, children }: RowImplProps) {
               (and a fresh swipe) pass straight through. */}
           {open && (
             <Pressable
+              testID={testId('swipe-close', name)}
               style={StyleSheet.absoluteFill}
               onPress={close}
               accessibilityRole="button"
@@ -356,6 +359,7 @@ function HoverActionsRow({ name, actions, edgeInset, children }: RowImplProps) {
         return (
           <Pressable
             key={a.key ?? a.label}
+            testID={testId('swipe-action', name, a.key ?? a.label)}
             onPress={a.onPress}
             style={[
               styles.webAction,

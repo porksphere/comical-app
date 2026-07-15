@@ -21,6 +21,7 @@ import { relatedGroupsQuery, seriesDetailQuery, seriesListQuery } from '@/data/q
 import { useDataSource, useMockActive } from '@/data/source';
 import { resetPreferredGroup } from '@/lib/preferred-group';
 import { tagPaletteFor } from '@/lib/tag-colors';
+import { testId } from '@/lib/test-id';
 import { type SeriesDetail, type TagGroup } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
@@ -62,15 +63,18 @@ function MetaCell({
   onPress,
   metaLabel,
   value,
+  testID,
 }: {
   onPress: () => void;
   metaLabel: string;
   value: string;
+  testID: string;
 }) {
   const theme = useTheme();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
   return (
     <Pressable
+      testID={testID}
       onPress={onPress}
       onHoverIn={onHoverIn}
       onHoverOut={onHoverOut}
@@ -319,6 +323,7 @@ function SeriesBody({
   // it starts reading, same as the primary Read button.
   const coverEl = (
     <Pressable
+      testID="series.cover"
       style={isLarge ? styles.coverWrapLarge : styles.coverWrap}
       onPress={startReading}
       accessibilityRole="button"
@@ -372,14 +377,16 @@ function SeriesBody({
   const actionsEl = (
     <View style={[styles.actions, !isLarge && { width: actionsWidth }]}>
       <ActionButton
+        testID="series.action.read"
         label={primaryLabel}
         variant="primary"
         onPress={startReading}
       />
-      <ActionButton label={inLibrary ? '✓  In Library' : '＋  Library'} onPress={toggleLibrary} />
-      {series.hasSources && <ActionButton label="Sources" caret />}
+      <ActionButton testID="series.action.library" label={inLibrary ? '✓  In Library' : '＋  Library'} onPress={toggleLibrary} />
+      {series.hasSources && <ActionButton testID="series.action.sources" label="Sources" caret />}
       {series.hasTrackers && <TrackerButton seriesId={series.id} initialLinks={series.trackers ?? []} />}
       <ActionButton
+        testID="series.action.favorite"
         label={favorited ? '★  Favorited' : '☆  Favorite'}
         onPress={toggleFavorite}
         // Greyed when the bridge's favorites need a login the user hasn't set (see useFavorite) — as
@@ -457,6 +464,7 @@ function SeriesBody({
             return metaKey && bridgeId ? (
               <MetaCell
                 key={m.label}
+                testID={testId('series.meta', m.label)}
                 onPress={() => onMetaPress(metaKey, m.value)}
                 metaLabel={m.label}
                 value={m.value}

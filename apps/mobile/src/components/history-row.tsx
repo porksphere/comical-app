@@ -7,6 +7,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { testId } from '@/lib/test-id';
 
 /** A single action on a row (Read / Read again …). */
 export type RowAction = {
@@ -33,6 +34,7 @@ export function HistoryRow({
   dimmed,
   thumbRef,
   coverHidden,
+  testID,
 }: {
   thumbnailUrl?: string;
   title: string;
@@ -48,11 +50,15 @@ export function HistoryRow({
   thumbRef?: RefObject<View | null>;
   /** Blank just the thumbnail while this row's long-press menu is open (its lifted preview is a copy). */
   coverHidden?: boolean;
+  /** Automation selector for the row. Defaults to `history-row.<title>`; the trailing controls derive
+   *  from it (see src/lib/test-id.ts). Pass an explicit id when two rows could share a title. */
+  testID?: string;
 }) {
   const theme = useTheme();
+  const base = testID ?? testId('history-row', title);
   return (
     <View style={[styles.row, dimmed && styles.dimmed]}>
-      <Pressable style={styles.main} onPress={onPress} accessibilityRole="button">
+      <Pressable testID={base} style={styles.main} onPress={onPress} accessibilityRole="button">
         <View ref={thumbRef} collapsable={false} style={[styles.thumbWrap, coverHidden && styles.thumbHidden]}>
           {thumbnailUrl ? (
             <Image
@@ -81,6 +87,7 @@ export function HistoryRow({
         {actions.map((a) => (
           <Pressable
             key={a.label}
+            testID={testId(base, a.label)}
             onPress={a.onPress}
             accessibilityRole="button"
             style={({ pressed }) => [styles.btn, pressed && styles.pressed]}>
@@ -93,6 +100,7 @@ export function HistoryRow({
         ))}
         {onMore && (
           <Pressable
+            testID={testId(base, 'more')}
             onPress={onMore}
             hitSlop={6}
             accessibilityRole="button"

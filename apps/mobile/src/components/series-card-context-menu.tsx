@@ -40,6 +40,7 @@ import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
 import { useStartReading } from '@/hooks/use-start-reading';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
+import { testId } from '@/lib/test-id';
 import {
   closeSeriesCardMenu,
   commitHoveredRow,
@@ -888,6 +889,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       Icon: PlayIcon,
       primary: true,
       loading: false,
+      testID: 'series.card-menu.read',
       onPress: () => {
         req.onClose?.(); // un-hide the card and drop the overlay — the reader is about to cover it
         closeSeriesCardMenu();
@@ -899,6 +901,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       Icon: inLibrary ? CheckIcon : PlusIcon,
       loading: inLibrary === null,
       active: !!inLibrary,
+      testID: 'series.card-menu.library',
       onPress: () => act(toggleLibrary),
     },
     {
@@ -909,6 +912,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       // Greyed + inert when this bridge's favorites need a login that isn't set (see useFavorite).
       disabled: !favoritesAvailable,
       active: !!favorited,
+      testID: 'series.card-menu.favorite',
       onPress: () => act(toggleFavorite),
     },
     // DEV ONLY: dummy rows so the menu is long enough to overrun the screen, which is the only state
@@ -917,6 +921,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       label: `Placeholder action ${i + 1}`,
       Icon: PlusIcon,
       loading: false,
+      testID: testId('series.card-menu.placeholder', i + 1),
       onPress: dismiss,
     })),
   ];
@@ -1299,6 +1304,8 @@ export type MenuRowSpec = {
   /** The menu's one real action (Read): bold and leading. NOT coloured — see above. */
   primary?: boolean;
   onPress: () => void;
+  /** Automation selector — required so every menu row is reachable (see src/lib/test-id.ts). */
+  testID: string;
 };
 
 function MenuRow({
@@ -1311,6 +1318,7 @@ function MenuRow({
   primary,
   index,
   onPress,
+  testID,
 }: MenuRowSpec & {
   /** This row's position, which is what the held finger is hit-tested into (see "Peek and commit"). */
   index: number;
@@ -1330,6 +1338,7 @@ function MenuRow({
   // just picked (and blink the bubble at the exact moment the hold takes over).
   return (
     <Pressable
+      testID={testID}
       onPress={inert ? undefined : onPress}
       disabled={inert}
       onPressIn={() => {

@@ -32,6 +32,7 @@ import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/
 import { groupChapters, pickVersion, type ChapterGroup } from '@/lib/chapter-order';
 import { setPreferredGroup, usePreferredGroup } from '@/lib/preferred-group';
 import { logDiagnostic } from '@/lib/diagnostics';
+import { testId } from '@/lib/test-id';
 
 // The series chapters block: tab filter (Overview / All / Read / Unread) + sort
 // toggle (oldest/newest) over the chapter rows, with a "Show all" teaser on the
@@ -151,7 +152,7 @@ function Segmented<T extends string>({
   onChange,
   itemStyle,
 }: {
-  options: { id: T; render: (active: boolean) => ReactNode; accessibilityLabel?: string }[];
+  options: { id: T; render: (active: boolean) => ReactNode; accessibilityLabel?: string; testID: string }[];
   active: T;
   onChange: (id: T) => void;
   itemStyle?: StyleProp<ViewStyle>;
@@ -188,6 +189,7 @@ function Segmented<T extends string>({
       {options.map((opt) => (
         <SegmentButton
           key={opt.id}
+          testID={opt.testID}
           active={opt.id === active}
           itemStyle={itemStyle}
           accessibilityLabel={opt.accessibilityLabel}
@@ -207,6 +209,7 @@ function SegmentButton({
   active,
   itemStyle,
   accessibilityLabel,
+  testID,
   onPress,
   onLayout,
   children,
@@ -214,6 +217,7 @@ function SegmentButton({
   active: boolean;
   itemStyle?: StyleProp<ViewStyle>;
   accessibilityLabel?: string;
+  testID: string;
   onPress: () => void;
   onLayout: (x: number, width: number) => void;
   children: ReactNode;
@@ -222,6 +226,7 @@ function SegmentButton({
   const { hovered, onHoverIn, onHoverOut } = useHovered();
   return (
     <Pressable
+      testID={testID}
       onPress={onPress}
       onHoverIn={onHoverIn}
       onHoverOut={onHoverOut}
@@ -247,6 +252,7 @@ function VersionRow({ v, active, onPress }: { v: Chapter; active: boolean; onPre
   const { hovered, onHoverIn, onHoverOut } = useHovered();
   return (
     <Pressable
+      testID={testId('series.chapter.version', v.id)}
       onPress={onPress}
       onHoverIn={onHoverIn}
       onHoverOut={onHoverOut}
@@ -350,6 +356,7 @@ function ChapterList({
             options={TABS.map((t) => ({
               id: t.id,
               accessibilityLabel: t.label,
+              testID: testId('series.chapters.tab', t.id),
               render: (active) => (
                 <ThemedText
                   type="small"
@@ -369,6 +376,7 @@ function ChapterList({
             options={SORT_OPTIONS.map((s) => ({
               id: s.id,
               accessibilityLabel: s.label,
+              testID: testId('series.chapters.sort', s.id),
               render: (active) => (
                 <s.Icon color={active ? theme.accentOn : theme.textSecondary} size={16} />
               ),
@@ -385,6 +393,7 @@ function ChapterList({
 
         {collapsible && (
           <Pressable
+            testID="series.chapters.expand-middle"
             onPress={() => setMiddleExpanded(true)}
             onHoverIn={expandMiddleHover.onHoverIn}
             onHoverOut={expandMiddleHover.onHoverOut}
@@ -447,6 +456,7 @@ function ChapterRow({
   return (
     <View>
       <Pressable
+        testID={testId('series.chapter', group.key)}
         onPress={() => onOpen(def)}
         onHoverIn={rowHover.onHoverIn}
         onHoverOut={rowHover.onHoverOut}
@@ -467,6 +477,7 @@ function ChapterRow({
           </ThemedText>
           {multi && (
             <Pressable
+              testID={testId('series.chapter', group.key, 'versions')}
               onPress={() => setExpanded((v) => !v)}
               onHoverIn={versionsHover.onHoverIn}
               onHoverOut={versionsHover.onHoverOut}
@@ -639,6 +650,7 @@ export function PageThumbList({
             <View style={[styles.moreOverlay, { height: fadeHeight, marginTop: -fadeHeight, pointerEvents: 'box-none' }]}>
               <GradientFade color={theme.background} />
               <Pressable
+                testID="series.pages.show-all"
                 onPress={() => setExpanded(true)}
                 onHoverIn={showMoreHover.onHoverIn}
                 onHoverOut={showMoreHover.onHoverOut}
@@ -984,6 +996,7 @@ export function PageThumb({
     // corners clipped. The `width` prop is only a FIRST-FRAME estimate for the crop — `onLayout`
     // below replaces it with the box's real size (see boxWidth/boxHeight).
     <Pressable
+      testID={testId('series.page', seed, page)}
       style={slotHeight != null ? { height: slotHeight, aspectRatio } : styles.thumbShell}
       onPress={onPress}
       onHoverIn={onHoverIn}
