@@ -36,13 +36,13 @@ const EMPTY_USAGE: StorageUsage = { totalBytes: 0, seriesCount: 0, chapterCount:
 
 const GB = 1024 * 1024 * 1024;
 /** Max image-cache size, as byte-count strings (0 = unlimited) for the select row. The native cache
- *  LRU-evicts to stay under whichever cap is chosen. */
+ *  LRU-evicts to stay under whichever cap is chosen (see the row's own description). */
 const CACHE_MAX_OPTIONS: SettingsOption<string>[] = [
-  { value: '0', label: 'Unlimited', description: 'No cap — the cache can grow freely.' },
-  { value: String(0.5 * GB), label: '512 MB', description: 'Evict least-recently-used images past this.' },
-  { value: String(GB), label: '1 GB', description: 'Evict least-recently-used images past this.' },
-  { value: String(2 * GB), label: '2 GB', description: 'Evict least-recently-used images past this.' },
-  { value: String(4 * GB), label: '4 GB', description: 'Evict least-recently-used images past this.' },
+  { value: '0', label: 'Unlimited' },
+  { value: String(0.5 * GB), label: '512 MB' },
+  { value: String(GB), label: '1 GB' },
+  { value: String(2 * GB), label: '2 GB' },
+  { value: String(4 * GB), label: '4 GB' },
 ];
 
 export default function StorageScreen() {
@@ -85,12 +85,7 @@ export default function StorageScreen() {
       <ScrollView contentContainerStyle={[styles.content, contentPadding]}>
         <SettingsSection>
           <View style={styles.summary}>
-            <View style={styles.summaryText}>
-              <ThemedText type="title">{comicalTotal === null ? '…' : formatBytes(comicalTotal)}</ThemedText>
-              <ThemedText type="small" themeColor="textSecondary">
-                used by Comical on this device
-              </ThemedText>
-            </View>
+            <ThemedText type="title">{comicalTotal === null ? '…' : formatBytes(comicalTotal)}</ThemedText>
             <DiskSpaceBar downloadsBytes={dlDiskSize ?? 0} cacheBytes={cacheSize ?? 0} />
           </View>
         </SettingsSection>
@@ -150,9 +145,6 @@ const styles = StyleSheet.create({
   },
   summary: {
     paddingVertical: Spacing.three,
-    gap: Spacing.three,
-  },
-  summaryText: {
-    gap: Spacing.one,
+    gap: Spacing.two,
   },
 });
