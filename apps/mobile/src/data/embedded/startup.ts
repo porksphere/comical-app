@@ -37,7 +37,7 @@ import { getDownloadPrefsSync } from '../downloads/prefs';
 import { fileSystemBundleCache } from './bundle-cache';
 import { AsyncStorageLibraryStore } from './library-store';
 import { getResolvedModeSync } from './preference';
-import { enforceCacheLimit } from '../image-cache';
+import { applyImageCacheConfig } from '../image-cache';
 import { installedStore, savedRegistryStore } from './stores';
 import { asyncStorageSettings } from './settings-store';
 
@@ -84,8 +84,8 @@ export function startEmbeddedRuntime(): void {
   void hydrateDownloadIndex().then(() => resumePendingDownloads());
   // Auto-resume when connectivity/Wi-Fi returns (not just on next launch).
   installNetworkAutoResume();
-  // Enforce the user's image-cache size cap (clears expo-image's disk cache if it grew past it).
-  void enforceCacheLimit();
+  // Apply the user's image-cache size cap — the native layer LRU-evicts to stay under it.
+  applyImageCacheConfig();
   // Re-arm the background drain task if the user enabled it.
   applyBackgroundDownloads(getDownloadPrefsSync().background);
 }

@@ -18,17 +18,18 @@ import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { downloadsDiskUsage } from '@/data/downloads/blob-store';
 import { formatBytes } from '@/data/downloads/format';
-import { cacheDiskUsage, cachePrefs$, clearImageCache, useCachePrefs } from '@/data/image-cache';
+import { applyImageCacheConfig, cacheDiskUsage, cachePrefs$, clearImageCache, useCachePrefs } from '@/data/image-cache';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 
 const GB = 1024 * 1024 * 1024;
-/** Max image-cache size, as byte-count strings (0 = unlimited) for the select row. */
+/** Max image-cache size, as byte-count strings (0 = unlimited) for the select row. The native cache
+ *  LRU-evicts to stay under whichever cap is chosen. */
 const CACHE_MAX_OPTIONS: SettingsOption<string>[] = [
-  { value: '0', label: 'Unlimited', description: 'Never auto-clear cached images.' },
-  { value: String(0.5 * GB), label: '512 MB', description: 'Clear the image cache on launch if it exceeds this.' },
-  { value: String(GB), label: '1 GB', description: 'Clear the image cache on launch if it exceeds this.' },
-  { value: String(2 * GB), label: '2 GB', description: 'Clear the image cache on launch if it exceeds this.' },
-  { value: String(4 * GB), label: '4 GB', description: 'Clear the image cache on launch if it exceeds this.' },
+  { value: '0', label: 'Unlimited', description: 'No cap — the cache can grow freely.' },
+  { value: String(0.5 * GB), label: '512 MB', description: 'Evict least-recently-used images past this.' },
+  { value: String(GB), label: '1 GB', description: 'Evict least-recently-used images past this.' },
+  { value: String(2 * GB), label: '2 GB', description: 'Evict least-recently-used images past this.' },
+  { value: String(4 * GB), label: '4 GB', description: 'Evict least-recently-used images past this.' },
 ];
 
 export default function StorageScreen() {
@@ -69,10 +70,13 @@ export default function StorageScreen() {
           />
           <SettingsSelectRow
             label="Max image cache"
-            description="Cleared on launch if it grows past this."
+            description="Least-recently-used images are evicted to stay under this."
             value={String(cacheMax)}
             options={CACHE_MAX_OPTIONS}
-            onChange={(v) => cachePrefs$.maxBytes.set(Number(v))}
+            onChange={(v) => {
+              cachePrefs$.maxBytes.set(Number(v));
+              applyImageCacheConfig(); // hand the new cap to the native cache immediately
+            }}
             placeholder="Unlimited"
           />
         </SettingsSection>

@@ -1,9 +1,10 @@
 /**
  * Image (and general reclaimable) cache management. The app disk-caches every cover, thumbnail, and
- * READ page image via expo-image (`cachePolicy="memory-disk"`), with no size cap — so heavy
- * browsing/reading grows it into the GBs. This exposes its size, a clear action, and a user max that's
- * enforced by clearing when exceeded (expo-image / SDWebImage has no JS API for a true LRU size cap,
- * so the honest cap is "clear when over"). Distinct from downloads, which are durable under Documents.
+ * READ page image via expo-image (`cachePolicy="memory-disk"`), which defaults to NO size cap — so
+ * heavy browsing/reading grows it into the GBs. `Image.configureCache({ maxDiskSize })` hands the
+ * user's cap straight to the native layer (SDWebImage on iOS, Glide on Android), which then evicts
+ * least-recently-used images automatically to stay under it — a real LRU cap, not a clear-when-over
+ * hack. Distinct from downloads, which are durable under Documents.
  *
  * The size probe measures `Paths.cache` (the app's Caches dir, where expo-image stores its disk cache)
  * — native only; on web it reports 0.
@@ -54,8 +55,14 @@ export async function clearImageCache(): Promise<void> {
   }
 }
 
-/** If a max is set and the cache is over it, clear the image cache. Called at startup. */
-export async function enforceCacheLimit(): Promise<void> {
-  const max = getCacheMaxSync();
-  if (max > 0 && cacheDiskUsage() > max) await clearImageCache();
+/**
+ * Push the user's max onto expo-image's native cache (`maxDiskSize` in bytes; 0 = unlimited). The
+ * native layer LRU-evicts to stay under it. Call at startup and whenever the setting changes.
+ */
+export function applyImageCacheConfig(): void {
+  try {
+    Image.configureCache({ maxDiskSize: getCacheMaxSync() });
+  } catch {
+    // web / older native — no-op (the size cap simply isn't enforced there)
+  }
 }
