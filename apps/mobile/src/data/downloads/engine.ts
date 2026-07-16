@@ -216,6 +216,7 @@ export async function enqueueChapter(input: EnqueueChapterInput): Promise<void> 
     state: chapter.state,
     done: 0,
     total: chapter.pageCount,
+    bytes: 0,
   });
   invalidateDownloads(input.bridgeId, input.seriesId);
   void drain();
@@ -285,6 +286,9 @@ async function downloadChapter(bridgeId: string, seriesId: string, chapterId: st
   const total = manifest.length;
   const outstanding = manifest.filter((p) => p.state !== 'complete');
   let done = total - outstanding.length;
+  // Bytes already on disk (from a prior/resumed run) — the live size grows from here, page by page,
+  // so a resumed chapter shows its true footprint immediately instead of counting up from 0.
+  let bytes = manifest.reduce((sum, p) => sum + (p.state === 'complete' ? p.bytes : 0), 0);
 
   if (outstanding.length === 0) {
     // Already complete — make sure the offline index knows about it, then clear progress.
@@ -293,7 +297,7 @@ async function downloadChapter(bridgeId: string, seriesId: string, chapterId: st
     return false;
   }
 
-  setChapterProgress(key, { state: 'downloading', done, total });
+  setChapterProgress(key, { state: 'downloading', done, total, bytes });
 
   let landed = false;
   const queue = [...outstanding];
@@ -310,12 +314,13 @@ async function downloadChapter(bridgeId: string, seriesId: string, chapterId: st
         if (isCancelled(bridgeId, seriesId, chapterId)) return;
         try {
           const resolved = await resolveAssetSourceCached(page.sourceUrl);
-          const { relPath, bytes } = await storePage(bridgeId, seriesId, chapterId, page.index, resolved, page.headers);
-          await dlRecordPage(bridgeId, seriesId, chapterId, page.index, relPath, bytes);
+          const { relPath, bytes: pageBytes } = await storePage(bridgeId, seriesId, chapterId, page.index, resolved, page.headers);
+          await dlRecordPage(bridgeId, seriesId, chapterId, page.index, relPath, pageBytes);
           stored = true;
           landed = true;
           done += 1;
-          setChapterProgress(key, { state: 'downloading', done, total });
+          bytes += pageBytes;
+          setChapterProgress(key, { state: 'downloading', done, total, bytes });
         } catch {
           if (attempt === 0) invalidateAssetSource(page.sourceUrl); // bust a stale resolution, retry
         }
@@ -346,7 +351,7 @@ async function downloadChapter(bridgeId: string, seriesId: string, chapterId: st
     noteChapterDownloaded(bridgeId, seriesId, chapterId, [...after].sort((a, b) => a.index - b.index).map((p) => uriFor(p.file)));
     clearChapterProgress(key);
   } else {
-    setChapterProgress(key, { state: landed ? 'downloading' : 'failed', done, total });
+    setChapterProgress(key, { state: landed ? 'downloading' : 'failed', done, total, bytes });
   }
   invalidateDownloads(bridgeId, seriesId);
   return landed;

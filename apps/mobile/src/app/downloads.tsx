@@ -26,15 +26,15 @@ import { CumulativeDownloadRadial } from '@/components/downloads/cumulative-radi
 import { DownloadStatusIndicator } from '@/components/downloads/download-status-indicator';
 import { ChevronRightIcon, ClearIcon, PauseIcon, PlayIcon, RetryIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { SettingsToggleRow } from '@/components/settings/settings-fields';
-import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
+import { SettingsSection } from '@/components/settings/settings-row';
 import { SwipeableSettingsRow, type SwipeRowAction } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, SettingsGutter, SettingsRowHeight, Spacing } from '@/constants/theme';
-import { dlDeleteAll, dlDeleteChapter, dlDeleteSeries, dlStorageUsage } from '@/data/api';
+import { dlDeleteChapter, dlDeleteSeries, dlStorageUsage } from '@/data/api';
 import { applyBackgroundDownloads } from '@/data/downloads/background';
-import { removeAllBlobs, removeBlobs } from '@/data/downloads/blob-store';
+import { removeBlobs } from '@/data/downloads/blob-store';
 import {
   bySortValue,
   chapterSortValue,
@@ -52,7 +52,7 @@ import {
   resumeSeriesDownload,
   retryChapter,
 } from '@/data/downloads/engine';
-import { clearDownloadIndex, forgetChapter, forgetSeries } from '@/data/downloads/index-cache';
+import { forgetChapter, forgetSeries } from '@/data/downloads/index-cache';
 import { formatBytes } from '@/data/downloads/format';
 import { downloadPrefs$, useDownloadPrefs } from '@/data/downloads/prefs';
 import { chapterProgressKey, useLiveDownloadProgress } from '@/data/downloads/state';
@@ -140,6 +140,12 @@ export default function DownloadsScreen() {
     setPendingScroll(focus);
   }, [focus]);
 
+  // Opening this screen nudges the queue to drain — a safety net so a download that didn't resume at
+  // boot (or was held back) starts moving while you're watching it, rather than sitting idle.
+  useEffect(() => {
+    kickDownloads();
+  }, []);
+
   const toggle = (key: string) =>
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -158,12 +164,6 @@ export default function DownloadsScreen() {
     const { files } = await dlDeleteChapter(s.bridgeId, s.seriesId, chapterId);
     removeBlobs(files);
     forgetChapter(s.bridgeId, s.seriesId, chapterId);
-    refresh();
-  };
-  const deleteAll = async () => {
-    await dlDeleteAll();
-    removeAllBlobs();
-    clearDownloadIndex();
     refresh();
   };
   // Retrying a whole series re-queues each of its failed chapters.
@@ -239,31 +239,23 @@ export default function DownloadsScreen() {
     </View>
   );
 
-  const footer =
-    rows.length > 0 ? (
-      <View style={styles.footer}>
-        <SettingsSection>
-          <SettingsRow
-            label="Delete all downloads"
-            description="Remove every downloaded chapter from this device."
-            descriptionColor="danger"
-            onPress={() => void deleteAll()}
-          />
-        </SettingsSection>
-      </View>
-    ) : null;
-
   const renderItem = ({ item }: { item: DlRow }) => {
     if (item.kind === 'series') {
       const { s } = item;
       const open = expanded.has(item.key);
       const state = deriveSeriesState(s.chapters, live);
       const frac = seriesFraction(s.chapters, live);
+      // Sum live bytes where the engine is working a chapter, else the manifest's — so the series
+      // total grows page by page during a download instead of settling only at the end.
+      const sBytes = s.chapters.reduce((sum, c) => {
+        const l = live[chapterProgressKey(c.bridgeId, c.seriesId, c.chapterId)];
+        return sum + (l && l.total > 0 ? l.bytes : c.bytes);
+      }, 0);
       return (
         <SwipeableSettingsRow
           label={s.title}
           labelBold
-          description={`${s.chapterCount} chapter${s.chapterCount === 1 ? '' : 's'} · ${formatBytes(s.bytes)}`}
+          description={`${s.chapterCount} chapter${s.chapterCount === 1 ? '' : 's'} · ${formatBytes(sBytes)}`}
           leading={
             state === 'complete' ? undefined : (
               <DownloadStatusIndicator
@@ -293,14 +285,18 @@ export default function DownloadsScreen() {
     // Radial AND the "X/Y" count both read the same done value — the live per-page count while the
     // engine is working this chapter, else the manifest's — so they can never disagree.
     const liveStatus = live[chapterProgressKey(c.bridgeId, c.seriesId, c.chapterId)];
-    const shownDone = liveStatus && liveStatus.total > 0 ? liveStatus.done : c.completedPages;
+    const hasLive = !!liveStatus && liveStatus.total > 0;
+    const shownDone = hasLive ? liveStatus.done : c.completedPages;
+    // Live bytes while the engine is working it (the manifest's `bytes` only settles at chapter end),
+    // else the manifest's — so the size ticks up page by page instead of sitting at 0 B.
+    const shownBytes = hasLive ? liveStatus.bytes : c.bytes;
     const cFrac = c.pageCount > 0 ? shownDone / c.pageCount : 0;
     // Real-time state (live overlay) — the manifest state lags at queued mid-download.
     const cState = displayChapterState(c, live);
     return (
       <SwipeableSettingsRow
         label={c.chapterName ?? (c.number !== undefined ? `Chapter ${c.number}` : c.chapterId)}
-        description={chapterDescription(c, cState, shownDone)}
+        description={chapterDescription(c, cState, shownDone, shownBytes)}
         contentInset={Spacing.five}
         leading={
           cState === 'complete' ? undefined : (
@@ -337,7 +333,6 @@ export default function DownloadsScreen() {
         estimatedItemSize={SettingsRowHeight}
         renderItem={renderItem}
         ListHeaderComponent={header}
-        ListFooterComponent={footer}
         ListEmptyComponent={
           <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
             No downloads yet. Open a series and tap Download to keep chapters for offline reading.
@@ -368,8 +363,8 @@ function FoldoutChevron({ open }: { open: boolean }) {
   );
 }
 
-function chapterDescription(c: DlChapter, state: DownloadState, shownDone: number): string {
-  const size = `${c.pageCount} page${c.pageCount === 1 ? '' : 's'} · ${formatBytes(c.bytes)}`;
+function chapterDescription(c: DlChapter, state: DownloadState, shownDone: number, shownBytes: number): string {
+  const size = `${c.pageCount} page${c.pageCount === 1 ? '' : 's'} · ${formatBytes(shownBytes)}`;
   if (state === 'complete') return size;
   const label = state === 'downloading' ? `${shownDone}/${c.pageCount}` : state;
   return `${size} · ${label}`;
@@ -385,9 +380,6 @@ const styles = StyleSheet.create({
   header: {
     // Space between the preferences and the first series row (was the ScrollView's inter-section gap).
     paddingBottom: Spacing.five,
-  },
-  footer: {
-    paddingTop: Spacing.five,
   },
   radial: {
     alignItems: 'center',

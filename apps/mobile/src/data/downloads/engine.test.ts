@@ -119,7 +119,7 @@ describe('engine live progress', () => {
     gated = true;
     const p = drain();
     await untilGate(); // frozen on page 0's resolve
-    expect(progress[key('b', 's', 'c1')]).toEqual({ state: 'downloading', done: 0, total: 3 });
+    expect(progress[key('b', 's', 'c1')]).toEqual({ state: 'downloading', done: 0, total: 3, bytes: 0 });
 
     await pauseSeries('b', 's'); // user taps the series Pause
     releaseNext?.(); // let the worker unwind

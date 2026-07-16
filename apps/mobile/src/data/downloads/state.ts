@@ -17,6 +17,9 @@ export interface ChapterDownloadStatus {
   done: number;
   /** Total pages in the chapter. */
   total: number;
+  /** Bytes on disk so far — the manifest's `bytes` only settles at chapter end, so the UI reads this
+   *  live value to show a size ticking up during the download instead of a frozen 0 B. */
+  bytes: number;
 }
 
 /** Keyed by `chapterProgressKey(bridgeId, seriesId, chapterId)`. */
