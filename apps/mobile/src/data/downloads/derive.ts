@@ -37,14 +37,15 @@ export function isInProgress(state: DownloadState): boolean {
 }
 
 /**
- * Sort value for a download unit: [group, tiebreak] compared ascending. Not-yet-complete units come
- * first (group 0), in queue order (earliest enqueued first); completed units follow (group 1), most
- * recently downloaded first. Applied to both series (via their earliest-pending / latest-completed
- * chapter) and individual chapters.
+ * Chapter sort value: [group, tiebreak] compared ascending. Finished chapters come FIRST (group 0),
+ * in sequential **chapter-number** order — so a downloaded series reads top-to-bottom like its chapter
+ * list (not scrambled by download-completion time or by name text). The still-downloading/queued/
+ * failed chapters follow (group 1), in queue order (earliest enqueued first). Chapters without a
+ * decimal number fall to the end of their group.
  */
 export function chapterSortValue(c: DownloadedChapter): [number, number] {
-  if (c.state !== 'complete') return [0, c.addedAt];
-  return [1, -(c.completedAt ?? c.addedAt)];
+  if (c.state === 'complete') return [0, c.number ?? Number.MAX_SAFE_INTEGER];
+  return [1, c.addedAt];
 }
 
 export function seriesSortValue(chapters: DownloadedChapter[]): [number, number] {
