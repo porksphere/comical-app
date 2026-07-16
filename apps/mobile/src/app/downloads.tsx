@@ -32,6 +32,7 @@ import {
   bySortValue,
   chapterSortValue,
   deriveSeriesState,
+  displayChapterState,
   overallProgress,
   seriesFraction,
   seriesSortValue,
@@ -227,7 +228,7 @@ export default function DownloadsScreen() {
             {orderedSeries.map((s) => {
               const key = seriesKey(s);
               const open = expanded.has(key);
-              const state = deriveSeriesState(s.chapters);
+              const state = deriveSeriesState(s.chapters, live);
               const frac = seriesFraction(s.chapters, live);
               const chapters = [...s.chapters].sort((a, b) => bySortValue(chapterSortValue(a), chapterSortValue(b)));
               return (
@@ -267,15 +268,17 @@ export default function DownloadsScreen() {
                       const liveStatus = live[chapterProgressKey(c.bridgeId, c.seriesId, c.chapterId)];
                       const shownDone = liveStatus && liveStatus.total > 0 ? liveStatus.done : c.completedPages;
                       const cFrac = c.pageCount > 0 ? shownDone / c.pageCount : 0;
+                      // Real-time state (live overlay) — the manifest state lags at queued mid-download.
+                      const cState = displayChapterState(c, live);
                       return (
                         <SwipeableSettingsRow
                           key={c.chapterId}
                           label={c.chapterName ?? (c.number !== undefined ? `Chapter ${c.number}` : c.chapterId)}
-                          description={chapterDescription(c, shownDone)}
+                          description={chapterDescription(c, cState, shownDone)}
                           leading={
-                            c.state === 'complete' ? undefined : (
+                            cState === 'complete' ? undefined : (
                               <DownloadStatusIndicator
-                                state={c.state}
+                                state={cState}
                                 fraction={cFrac}
                                 size={20}
                                 onPause={() => void pauseChapter(c.bridgeId, c.seriesId, c.chapterId)}
@@ -284,7 +287,7 @@ export default function DownloadsScreen() {
                               />
                             )
                           }
-                          actions={chapterActions(c.state, {
+                          actions={chapterActions(cState, {
                             onPause: () => void pauseChapter(c.bridgeId, c.seriesId, c.chapterId),
                             onResume: () => void resumeChapterDownload(c.bridgeId, c.seriesId, c.chapterId),
                             onRetry: () => void retryChapter(c.bridgeId, c.seriesId, c.chapterId),
@@ -329,10 +332,10 @@ function Chevron({ open }: { open: boolean }) {
   );
 }
 
-function chapterDescription(c: StorageUsageSeries['chapters'][number], shownDone: number): string {
+function chapterDescription(c: StorageUsageSeries['chapters'][number], state: DownloadState, shownDone: number): string {
   const size = `${c.pageCount} page${c.pageCount === 1 ? '' : 's'} · ${formatBytes(c.bytes)}`;
-  if (c.state === 'complete') return size;
-  const label = c.state === 'downloading' ? `${shownDone}/${c.pageCount}` : c.state;
+  if (state === 'complete') return size;
+  const label = state === 'downloading' ? `${shownDone}/${c.pageCount}` : state;
   return `${size} · ${label}`;
 }
 

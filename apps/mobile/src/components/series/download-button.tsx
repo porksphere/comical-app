@@ -47,7 +47,7 @@ export function SeriesDownloadButton({
   });
 
   const downloaded = data?.chapters ?? [];
-  const state = downloaded.length > 0 ? deriveSeriesState(downloaded) : undefined;
+  const state = downloaded.length > 0 ? deriveSeriesState(downloaded, live) : undefined;
   const inProgress = state !== undefined && state !== 'complete';
   const isComplete = state === 'complete';
   const frac = seriesFraction(downloaded, live);

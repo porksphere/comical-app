@@ -8,15 +8,27 @@ import type { DownloadedChapter, DownloadState, StorageUsageSeries } from '@comi
 import { chapterProgressKey, type ChapterDownloadStatus } from './state';
 
 /**
- * A series' single rolled-up state. `paused` only when EVERY not-yet-complete chapter is paused (so
- * the row offers Resume); otherwise the most action-worthy active state wins.
+ * The state to DISPLAY for a chapter. The manifest's `state` only refreshes at chapter completion, so
+ * mid-download it lags at `queued`/`downloading`; the live progress store carries the real-time state
+ * (the engine sets it to `downloading` the moment it picks the chapter up), so prefer it when present.
+ * Falls back to the manifest for chapters the engine isn't actively working (queued/paused/complete).
  */
-export function deriveSeriesState(chapters: DownloadedChapter[]): DownloadState {
-  const nonComplete = chapters.filter((c) => c.state !== 'complete');
+export function displayChapterState(c: DownloadedChapter, live: Record<string, ChapterDownloadStatus>): DownloadState {
+  return live[chapterProgressKey(c.bridgeId, c.seriesId, c.chapterId)]?.state ?? c.state;
+}
+
+/**
+ * A series' single rolled-up state, from its chapters' DISPLAY states (see `displayChapterState`).
+ * `paused` only when EVERY not-yet-complete chapter is paused (so the row offers Resume); otherwise
+ * the most action-worthy active state wins.
+ */
+export function deriveSeriesState(chapters: DownloadedChapter[], live: Record<string, ChapterDownloadStatus>): DownloadState {
+  const states = chapters.map((c) => displayChapterState(c, live));
+  const nonComplete = states.filter((s) => s !== 'complete');
   if (nonComplete.length === 0) return 'complete';
-  if (nonComplete.every((c) => c.state === 'paused')) return 'paused';
-  if (nonComplete.some((c) => c.state === 'downloading')) return 'downloading';
-  if (nonComplete.some((c) => c.state === 'failed')) return 'failed';
+  if (nonComplete.every((s) => s === 'paused')) return 'paused';
+  if (nonComplete.some((s) => s === 'downloading')) return 'downloading';
+  if (nonComplete.some((s) => s === 'failed')) return 'failed';
   return 'queued';
 }
 
