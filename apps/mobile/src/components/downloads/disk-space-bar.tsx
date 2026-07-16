@@ -1,9 +1,10 @@
 /**
- * A slim animated bar showing how much of the device's storage the downloads occupy. Three adjacent
- * segments make Comical's share unmistakable, laid out like a device storage meter: a muted segment
- * for **other used** space on the left, the accent **Comical downloads** segment in the middle, and
- * the empty remainder for **free** on the right. On web (no real total-disk figure — see `disk.ts`)
- * the bar is hidden and only the downloaded size is shown.
+ * A slim animated bar showing how much of the device's storage Comical occupies, laid out like a
+ * device storage meter: a muted **other used** segment on the left, then Comical's own two segments —
+ * the solid-accent **downloads** (durable, kept for offline) and the translucent-accent **cache**
+ * (reclaimable images) — and the empty remainder for **free** on the right. The solid vs. translucent
+ * accent reads as "kept" vs. "reclaimable" at a glance. On web (no real total-disk figure — see
+ * `disk.ts`) the track is hidden and only the byte breakdown is shown.
  */
 import { useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -15,38 +16,43 @@ import { readDiskInfo } from '@/data/downloads/disk';
 import { formatBytes } from '@/data/downloads/format';
 import { useTheme } from '@/hooks/use-theme';
 
-export function DiskSpaceBar({ downloadsBytes }: { downloadsBytes: number }) {
+export function DiskSpaceBar({ downloadsBytes, cacheBytes = 0 }: { downloadsBytes: number; cacheBytes?: number }) {
   const theme = useTheme();
   const disk = readDiskInfo();
 
-  const downloadsFrac = disk.usable && disk.total > 0 ? Math.min(1, downloadsBytes / disk.total) : 0;
+  const frac = (b: number) => (disk.usable && disk.total > 0 ? Math.min(1, b / disk.total) : 0);
+  const downloadsFrac = frac(downloadsBytes);
+  const cacheFrac = frac(cacheBytes);
   const usedFrac = disk.usable && disk.total > 0 ? Math.min(1, (disk.total - disk.available) / disk.total) : 0;
-  const otherFrac = Math.max(0, usedFrac - downloadsFrac); // space used by everything else
+  const otherFrac = Math.max(0, usedFrac - downloadsFrac - cacheFrac); // space used by everything else
 
-  // Animate Comical's accent segment from 0 to its share on mount / when it changes.
-  const fill = useSharedValue(0);
+  // Animate Comical's two segments from 0 to their share on mount / when they change.
+  const dl = useSharedValue(0);
+  const ca = useSharedValue(0);
   useEffect(() => {
-    fill.value = withTiming(downloadsFrac, { duration: 650 });
-  }, [downloadsFrac, fill]);
-  const dlStyle = useAnimatedStyle(() => ({ width: `${fill.value * 100}%` }));
-
-  const pct = downloadsFrac > 0 && downloadsFrac < 0.001 ? '<0.1' : (downloadsFrac * 100).toFixed(1);
+    dl.value = withTiming(downloadsFrac, { duration: 650 });
+    ca.value = withTiming(cacheFrac, { duration: 650 });
+  }, [downloadsFrac, cacheFrac, dl, ca]);
+  const dlStyle = useAnimatedStyle(() => ({ width: `${dl.value * 100}%` }));
+  const caStyle = useAnimatedStyle(() => ({ width: `${ca.value * 100}%` }));
 
   return (
     <View style={styles.wrap}>
       {disk.usable && (
         <View style={[styles.track, { backgroundColor: theme.backgroundElement }]}>
           {/* Other apps' usage on the left … */}
-          <View style={[styles.seg, { width: `${otherFrac * 100}%`, backgroundColor: theme.textSecondary, opacity: 0.35 }]} />
-          {/* … Comical's downloads in the middle — the standout accent segment … */}
+          <View style={[styles.seg, { width: `${otherFrac * 100}%`, backgroundColor: theme.textSecondary, opacity: 0.3 }]} />
+          {/* … Comical's durable downloads — the standout solid accent … */}
           <Animated.View style={[styles.seg, dlStyle, { backgroundColor: theme.accent }]} />
+          {/* … its reclaimable image cache — a lighter accent, reading as "can be freed" … */}
+          <Animated.View style={[styles.seg, caStyle, { backgroundColor: theme.accent, opacity: 0.45 }]} />
           {/* … and free space is the empty remainder on the right. */}
         </View>
       )}
       <ThemedText type="small" themeColor="textSecondary">
         {disk.usable
-          ? `${formatBytes(downloadsBytes)} · ${pct}% of ${formatBytes(disk.total)} · ${formatBytes(disk.available)} free`
-          : `${formatBytes(downloadsBytes)} downloaded`}
+          ? `${formatBytes(downloadsBytes)} downloads · ${formatBytes(cacheBytes)} cache · ${formatBytes(disk.available)} free`
+          : `${formatBytes(downloadsBytes)} downloads · ${formatBytes(cacheBytes)} cache`}
       </ThemedText>
     </View>
   );

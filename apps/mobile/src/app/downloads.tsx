@@ -15,7 +15,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { CumulativeDownloadRadial } from '@/components/downloads/cumulative-radial';
-import { DiskSpaceBar } from '@/components/downloads/disk-space-bar';
 import { DownloadStatusIndicator } from '@/components/downloads/download-status-indicator';
 import { ChevronDownIcon, ChevronRightIcon, ClearIcon, PauseIcon, PlayIcon, RetryIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { SettingsToggleRow } from '@/components/settings/settings-fields';
@@ -187,21 +186,13 @@ export default function DownloadsScreen() {
       <TopBar title="Downloads" />
       <ScrollView ref={scrollRef} contentContainerStyle={[styles.content, contentPadding]}>
         <SettingsSection>
-          <View style={styles.summary}>
-            <View style={styles.summaryHead}>
-              {overall.inProgress && (
-                <CumulativeDownloadRadial fraction={overall.fraction} size={56} showLabel />
-              )}
-              <View style={styles.summaryText}>
-                <ThemedText type="title">{formatBytes(usage.totalBytes)}</ThemedText>
-                <ThemedText type="small" themeColor="textSecondary">
-                  {usage.seriesCount} series · {usage.chapterCount} chapter{usage.chapterCount === 1 ? '' : 's'} ·{' '}
-                  {usage.pageCount} page{usage.pageCount === 1 ? '' : 's'}
-                </ThemedText>
-              </View>
+          {/* Cumulative progress across every series, shown while anything is in flight. The storage
+              breakdown + device-space bar live on the Storage screen — this page is management. */}
+          {overall.inProgress && (
+            <View style={styles.radial}>
+              <CumulativeDownloadRadial fraction={overall.fraction} size={64} showLabel />
             </View>
-            <DiskSpaceBar downloadsBytes={usage.totalBytes} />
-          </View>
+          )}
           <SettingsToggleRow
             label="Download over Wi-Fi only"
             description="Hold downloads until you're on Wi-Fi."
@@ -349,19 +340,9 @@ const styles = StyleSheet.create({
     maxWidth: MaxContentWidth,
     alignSelf: 'center',
   },
-  summary: {
-    paddingVertical: Spacing.three,
-    gap: Spacing.three,
-  },
-  summaryHead: {
-    flexDirection: 'row',
+  radial: {
     alignItems: 'center',
-    gap: Spacing.three,
-  },
-  summaryText: {
-    flex: 1,
-    minWidth: 0,
-    gap: Spacing.one,
+    paddingVertical: Spacing.three,
   },
   list: {
     width: '100%',
