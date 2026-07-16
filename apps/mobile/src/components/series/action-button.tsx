@@ -1,3 +1,4 @@
+import { type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -14,6 +15,7 @@ export function ActionButton({
   label,
   variant = 'default',
   caret,
+  leading,
   onPress,
   disabled,
   testID,
@@ -22,6 +24,8 @@ export function ActionButton({
   variant?: 'primary' | 'default';
   /** Show a trailing ▾ (Sources / Trackers menus). */
   caret?: boolean;
+  /** Optional glyph before the label (e.g. a download progress radial). */
+  leading?: ReactNode;
   onPress?: () => void;
   /** Dim and ignore presses (e.g. Read while a chaptered series' list still loads). */
   disabled?: boolean;
@@ -50,10 +54,11 @@ export function ActionButton({
           // chapter-tab strip, so hover reads consistently across the screen.
           !primary && hovered && { backgroundColor: theme.backgroundSelected },
         ]}>
+        {leading}
         <ThemedText
           type="smallBold"
           numberOfLines={1}
-          style={primary ? { color: theme.accentOn } : undefined}>
+          style={[primary ? { color: theme.accentOn } : undefined, leading ? styles.labelWithLeading : undefined]}>
           {label}
           {caret ? '  ▾' : ''}
         </ThemedText>
@@ -88,8 +93,12 @@ const styles = StyleSheet.create({
   fill: {
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.three,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  labelWithLeading: {
+    marginLeft: Spacing.two,
   },
   newBadge: {
     alignSelf: 'flex-start',

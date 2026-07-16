@@ -1,18 +1,22 @@
 /**
- * The series-screen "Download" action: enqueues every chapter (or the single page set of a direct
- * series) for offline reading, and reflects how much is already downloaded. Fire-and-forget — the
- * engine (`data/downloads/engine.ts`) drains the queue; this button just kicks it and reads the
- * manifest for its label.
+ * The series-screen "Download" action. Three modes driven by the download manifest:
+ *  - nothing downloaded → "Download", enqueues every chapter (or a direct series' page set).
+ *  - in progress → a progress radial + status; tapping opens the Downloads screen focused on this
+ *    series (expanded + scrolled into view) so the user can watch/cancel it.
+ *  - fully downloaded → "Downloaded"; tapping opens the Downloads screen focused here to manage it.
  *
  * Downloads are device data, so it reads the `/downloads` manifest through `api.ts` (not the data
- * source). A backend without the downloads module yields `null` and the button simply reads "Download"
- * and no-ops usefully (the enqueue then fails quietly) — mirroring how the app degrades elsewhere.
+ * source). A backend without the module yields `null` and it falls back to the plain "Download".
  */
 import { useQuery } from '@tanstack/react-query';
+import { useRouter } from 'expo-router';
 
+import { DownloadRadial } from '@/components/downloads/download-radial';
 import { ActionButton } from '@/components/series/action-button';
 import { dlGetSeries } from '@/data/api';
+import { deriveSeriesState, seriesFraction } from '@/data/downloads/derive';
 import { enqueueChapter } from '@/data/downloads/engine';
+import { useLiveDownloadProgress } from '@/data/downloads/state';
 import { queryKeys } from '@/data/queries';
 import type { Chapter } from '@/data/types';
 
@@ -34,28 +38,26 @@ export function SeriesDownloadButton({
   /** The series' chapters (undefined while the list still loads); unused for a direct series. */
   chapters?: Chapter[];
 }) {
+  const router = useRouter();
+  const live = useLiveDownloadProgress();
+
   const { data } = useQuery({
     queryKey: queryKeys.seriesDownloads(bridgeId, seriesId),
     queryFn: () => dlGetSeries(bridgeId, seriesId).catch(() => null),
   });
 
   const downloaded = data?.chapters ?? [];
-  const completeCount = downloaded.filter((c) => c.state === 'complete').length;
-  const pending = downloaded.some((c) => c.state !== 'complete');
-  const total = direct ? 1 : (chapters?.length ?? 0);
+  const state = downloaded.length > 0 ? deriveSeriesState(downloaded) : undefined;
+  const inProgress = state !== undefined && state !== 'complete';
+  const isComplete = state === 'complete';
+  const frac = seriesFraction(downloaded, live);
 
   // A chaptered series needs its chapter list loaded before we can enqueue; a direct one doesn't.
   const ready = direct || (chapters !== undefined && chapters.length > 0);
 
-  const label = pending
-    ? '⤓  Downloading…'
-    : total > 0 && completeCount >= total
-      ? '✓  Downloaded'
-      : completeCount > 0
-        ? `⤓  ${completeCount}/${total}`
-        : '⤓  Download';
+  const openDownloads = () => router.push(`/downloads?focus=${encodeURIComponent(`${bridgeId}:${seriesId}`)}`);
 
-  const onPress = () => {
+  const enqueueAll = () => {
     const snapshot = { bridgeId, seriesId, title, ...(cover && { thumbnailUrl: cover }), ...(author && { author }) };
     if (direct) {
       void enqueueChapter({ ...snapshot, chapterId: seriesId, direct: true });
@@ -71,12 +73,23 @@ export function SeriesDownloadButton({
     }
   };
 
-  return (
-    <ActionButton
-      testID="series.action.download"
-      label={label}
-      onPress={onPress}
-      disabled={!ready || pending}
-    />
-  );
+  if (inProgress) {
+    const completeCount = downloaded.filter((c) => c.state === 'complete').length;
+    const label =
+      state === 'paused' ? 'Paused' : state === 'failed' ? 'Retrying…' : `Downloading ${completeCount}/${downloaded.length}`;
+    return (
+      <ActionButton
+        testID="series.action.download"
+        label={label}
+        leading={<DownloadRadial fraction={frac} state={state} size={16} strokeWidth={2} />}
+        onPress={openDownloads}
+      />
+    );
+  }
+
+  if (isComplete) {
+    return <ActionButton testID="series.action.download" label="✓  Downloaded" onPress={openDownloads} />;
+  }
+
+  return <ActionButton testID="series.action.download" label="⤓  Download" onPress={enqueueAll} disabled={!ready} />;
 }
