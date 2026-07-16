@@ -120,8 +120,9 @@ describe('engine progress via the manifest query cache', () => {
     seed('c1', 3);
     seedUsage('c1', 3);
     await drain(); // ungated: runs to completion
-    // Patched once per landed page: 1 → 2 → 3, so the list re-renders each page (not just at the end).
-    expect(usageProgress).toEqual([1, 2, 3]);
+    // 0 on pickup (flips to 'downloading' before the first byte — keeps the series indicator from
+    // dipping to 'queued' between chapters), then 1 → 2 → 3 as each page lands.
+    expect(usageProgress).toEqual([0, 1, 2, 3]);
     const ch = usage!.bySeries[0].chapters[0];
     expect(ch.state).toBe('complete');
     expect(ch.bytes).toBe(300); // 3 pages × 100 bytes
@@ -134,7 +135,7 @@ describe('engine progress via the manifest query cache', () => {
     gated = true;
     const p = drain();
     await untilGate(); // frozen on page 0's resolve
-    expect(usageProgress).toEqual([]); // nothing landed yet
+    expect(usageProgress).toEqual([0]); // picked up (downloading@0), but no page has landed yet
 
     await pauseSeries('b', 's'); // user taps the series Pause
     releaseNext?.(); // let the worker unwind

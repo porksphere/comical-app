@@ -335,6 +335,12 @@ async function downloadChapter(bridgeId: string, seriesId: string, chapterId: st
     return false;
   }
 
+  // Flip it to 'downloading' the moment the engine picks it up (before the first byte). Without this
+  // the chapter stays 'queued' until its first page lands a network fetch later — so at the hand-off
+  // from one chapter to the next, the SERIES indicator would dip to 'queued' for that gap. Marking it
+  // on pickup keeps the series continuously 'downloading' across chapters.
+  patchProgressCaches(bridgeId, seriesId, chapterId, done, bytes, 'downloading');
+
   let landed = false;
   const queue = [...outstanding];
   async function worker(): Promise<void> {
