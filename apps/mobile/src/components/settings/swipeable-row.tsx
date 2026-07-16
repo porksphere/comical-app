@@ -1,4 +1,4 @@
-import { type ComponentType, type ReactNode, useState } from 'react';
+import { type ComponentType, type ReactNode, useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -227,6 +227,23 @@ function SwipeRow({ name, actions, edgeInset, children }: RowImplProps) {
     else releaseOpenRow(token);
   }
 
+  // If the action set changes while the row is open, its gesture state (rest/captured detent, slid
+  // position) references the OLD pill layout — a live status change (a download finishing drops the
+  // Pause pill and re-sorts the row) would leave it slid to a stale detent and index past the shorter
+  // detents array. Snap it closed whenever the pill count changes. (Shared values are stable refs, so
+  // they're intentionally kept out of the dep array — see the immutability note above.)
+  const prevPillCount = useRef(pillCount);
+  useEffect(() => {
+    if (prevPillCount.current === pillCount) return;
+    prevPillCount.current = pillCount;
+    restIndex.value = 0;
+    captured.value = 0;
+    target.value = 0;
+    releaseOpenRow(token);
+    setOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pillCount]);
+
   const pan = Gesture.Pan()
     // Only claim the gesture once it's clearly horizontal, so vertical scrolling of the list still
     // belongs to the ScrollView.
@@ -235,12 +252,13 @@ function SwipeRow({ name, actions, edgeInset, children }: RowImplProps) {
     .onBegin(() => {
       'worklet';
       // Capture from wherever the row is currently resting, so resuming a drag from an already-open
-      // detent doesn't fire a spurious tick on the first frame.
-      captured.value = restIndex.value;
+      // detent doesn't fire a spurious tick on the first frame. Clamp in case the action set just
+      // shrank (a stale rest index would point past the shorter detents array).
+      captured.value = Math.min(restIndex.value, detents.length - 1);
     })
     .onUpdate((e) => {
       'worklet';
-      const from = -detents[restIndex.value];
+      const from = -detents[Math.min(restIndex.value, detents.length - 1)];
       // The finger's raw absolute position (before resistance), clamped to the openable range.
       const absRaw = -Math.min(0, Math.max(-openX, from + e.translationX));
       // Flip the captured detent as the finger crosses the MIDPOINT between detents — the centre-ish
