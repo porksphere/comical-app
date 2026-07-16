@@ -40,7 +40,7 @@ import { storePage, uriFor } from './blob-store';
 import { DIRECT_DOWNLOAD_CHAPTER_ID } from './constants';
 import { getDownloadPrefsSync } from './prefs';
 import { noteChapterDownloaded } from './index-cache';
-import { chapterProgressKey, clearChapterProgress, setChapterProgress } from './state';
+import { chapterProgressKey, clearChapterProgress, clearSeriesProgress, setChapterProgress } from './state';
 
 /**
  * Pages are downloaded ONE AT A TIME (sequentially). Fetching several at once hammered sources hard
@@ -118,6 +118,9 @@ export async function pauseSeries(bridgeId: string, seriesId: string): Promise<v
   } catch {
     /* best-effort */
   }
+  // Drop the live 'downloading' overlay for the in-flight chapter too — otherwise the display would
+  // keep showing it downloading (live overrides the manifest's now-'paused' state).
+  clearSeriesProgress(bridgeId, seriesId);
   invalidateDownloads(bridgeId, seriesId);
 }
 
@@ -327,6 +330,14 @@ async function downloadChapter(bridgeId: string, seriesId: string, chapterId: st
     }
   }
   await Promise.all(Array.from({ length: Math.min(PAGE_CONCURRENCY, queue.length) }, () => worker()));
+
+  // Paused/cancelled mid-download: don't re-assert 'downloading' (the manifest is now 'paused' and the
+  // pause path cleared the overlay) — just drop any live progress so the paused state shows.
+  if (isCancelled(bridgeId, seriesId, chapterId)) {
+    clearChapterProgress(key);
+    invalidateDownloads(bridgeId, seriesId);
+    return landed;
+  }
 
   // Re-read to settle the chapter's rolled-up state.
   const after = await dlManifestPages(bridgeId, seriesId, chapterId);
