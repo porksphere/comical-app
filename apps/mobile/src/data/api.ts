@@ -567,6 +567,26 @@ export function dlRequeue(bridgeId: string, seriesId: string, chapterId: string)
   return fetchPost(`${dlBase(bridgeId, seriesId)}/chapters/${encodeURIComponent(chapterId)}/requeue`, {});
 }
 
+/** POST pause (cancel) a chapter — stops draining, keeps downloaded pages. */
+export function dlPauseChapter(bridgeId: string, seriesId: string, chapterId: string): Promise<DownloadedChapter> {
+  return fetchPost(`${dlBase(bridgeId, seriesId)}/chapters/${encodeURIComponent(chapterId)}/pause`, {});
+}
+
+/** POST resume a paused chapter — back to queued. */
+export function dlResumeChapter(bridgeId: string, seriesId: string, chapterId: string): Promise<DownloadedChapter> {
+  return fetchPost(`${dlBase(bridgeId, seriesId)}/chapters/${encodeURIComponent(chapterId)}/resume`, {});
+}
+
+/** POST pause (cancel) every not-yet-complete chapter of a series. */
+export function dlPauseSeries(bridgeId: string, seriesId: string): Promise<{ ok: true }> {
+  return fetchPost(`${dlBase(bridgeId, seriesId)}/pause`, {});
+}
+
+/** POST resume every paused chapter of a series. */
+export function dlResumeSeries(bridgeId: string, seriesId: string): Promise<{ ok: true }> {
+  return fetchPost(`${dlBase(bridgeId, seriesId)}/resume`, {});
+}
+
 /** DELETE one chapter → the blob `files` to remove. */
 export function dlDeleteChapter(bridgeId: string, seriesId: string, chapterId: string): Promise<{ files: string[] }> {
   return fetchDelete(`${dlBase(bridgeId, seriesId)}/chapters/${encodeURIComponent(chapterId)}`);

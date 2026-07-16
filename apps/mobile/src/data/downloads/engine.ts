@@ -20,8 +20,12 @@ import * as Network from 'expo-network';
 import {
   dlEnqueueChapter,
   dlManifestPages,
+  dlPauseChapter,
+  dlPauseSeries,
   dlPendingChapters,
   dlRecordPage,
+  dlResumeChapter,
+  dlResumeSeries,
   getChapterPages,
   getSeriesPages,
   resolveAssetSourceCached,
@@ -61,12 +65,86 @@ function invalidateDownloads(bridgeId: string, seriesId: string): void {
   void queryClient.invalidateQueries({ queryKey: queryKeys.seriesDownloads(bridgeId, seriesId) });
 }
 
+const seriesKeyOf = (bridgeId: string, seriesId: string) => `${bridgeId}:${seriesId}`;
+
+// Cancellation markers — the manifest is the source of truth (a cancelled chapter is `paused`
+// server-side and excluded from the pending queue), but a chapter the engine is downloading RIGHT NOW
+// is mid-loop, so these let its in-flight page workers bail promptly. Cleared by any re-activation
+// (enqueue/resume), so a stale flag can never block a later download.
+const cancelledChapters = new Set<string>();
+const cancelledSeries = new Set<string>();
+
+function isCancelled(bridgeId: string, seriesId: string, chapterId: string): boolean {
+  return (
+    cancelledSeries.has(seriesKeyOf(bridgeId, seriesId)) ||
+    cancelledChapters.has(chapterProgressKey(bridgeId, seriesId, chapterId))
+  );
+}
+
+function clearCancel(bridgeId: string, seriesId: string, chapterId?: string): void {
+  cancelledSeries.delete(seriesKeyOf(bridgeId, seriesId));
+  if (chapterId) cancelledChapters.delete(chapterProgressKey(bridgeId, seriesId, chapterId));
+  else {
+    const prefix = `${bridgeId}:${seriesId}:`;
+    for (const k of cancelledChapters) if (k.startsWith(prefix)) cancelledChapters.delete(k);
+  }
+}
+
+/** Cancel one in-flight/queued chapter: pause it server-side and abort any in-flight page workers. */
+export async function cancelChapter(bridgeId: string, seriesId: string, chapterId: string): Promise<void> {
+  cancelledChapters.add(chapterProgressKey(bridgeId, seriesId, chapterId));
+  try {
+    await dlPauseChapter(bridgeId, seriesId, chapterId);
+  } catch {
+    /* best-effort */
+  }
+  clearChapterProgress(chapterProgressKey(bridgeId, seriesId, chapterId));
+  invalidateDownloads(bridgeId, seriesId);
+}
+
+/** Cancel a whole series: pause every not-yet-complete chapter and abort the one in flight. */
+export async function cancelSeries(bridgeId: string, seriesId: string): Promise<void> {
+  cancelledSeries.add(seriesKeyOf(bridgeId, seriesId));
+  try {
+    await dlPauseSeries(bridgeId, seriesId);
+  } catch {
+    /* best-effort */
+  }
+  invalidateDownloads(bridgeId, seriesId);
+}
+
+/** Resume one paused chapter and kick the drain. */
+export async function resumeChapterDownload(bridgeId: string, seriesId: string, chapterId: string): Promise<void> {
+  clearCancel(bridgeId, seriesId, chapterId);
+  try {
+    await dlResumeChapter(bridgeId, seriesId, chapterId);
+  } catch {
+    /* best-effort */
+  }
+  invalidateDownloads(bridgeId, seriesId);
+  void drain();
+}
+
+/** Resume every paused chapter of a series and kick the drain. */
+export async function resumeSeriesDownload(bridgeId: string, seriesId: string): Promise<void> {
+  clearCancel(bridgeId, seriesId);
+  try {
+    await dlResumeSeries(bridgeId, seriesId);
+  } catch {
+    /* best-effort */
+  }
+  invalidateDownloads(bridgeId, seriesId);
+  void drain();
+}
+
 /**
  * Record the intent to download a chapter (fetches its page list and queues it), then start draining.
  * Safe to call for an already-downloaded chapter — the core keeps completed pages.
  */
 export async function enqueueChapter(input: EnqueueChapterInput): Promise<void> {
   const chapterId = input.direct ? DIRECT_DOWNLOAD_CHAPTER_ID : input.chapterId;
+  // Re-downloading clears any prior cancellation so a stale flag can't abort the fresh work.
+  clearCancel(input.bridgeId, input.seriesId, chapterId);
   const pages = input.direct
     ? await getSeriesPages(input.bridgeId, input.seriesId)
     : await getChapterPages(input.bridgeId, input.seriesId, input.chapterId);
@@ -137,6 +215,7 @@ export async function drain(): Promise<void> {
       let progressed = false;
       for (const chapter of pending) {
         if (stopRequested || !(await mayDownloadNow())) break;
+        if (isCancelled(chapter.bridgeId, chapter.seriesId, chapter.chapterId)) continue;
         const did = await downloadChapter(chapter.bridgeId, chapter.seriesId, chapter.chapterId);
         progressed = progressed || did;
       }
@@ -169,7 +248,7 @@ async function downloadChapter(bridgeId: string, seriesId: string, chapterId: st
   const queue = [...outstanding];
   async function worker(): Promise<void> {
     for (;;) {
-      if (stopRequested) return;
+      if (stopRequested || isCancelled(bridgeId, seriesId, chapterId)) return;
       const page = queue.shift();
       if (!page) return;
       try {
