@@ -1,14 +1,17 @@
 /**
- * A small circular progress ring for a download's state — shown on Downloads-screen rows and the
- * series Download button while a download is in progress. Callers should render it only when NOT
- * complete (a finished download shows no ring). Tone follows the state: accent while downloading,
- * muted while queued/paused, danger when failed. A paused ring carries a small centre bar so it reads
- * as "paused" at a glance.
+ * A small circular progress ring for a download. Shown while a download is in progress (a completed
+ * one shows no ring); tone follows the state (accent while downloading, muted otherwise, danger when
+ * failed). The progress arc is ANIMATED — it eases to each new value (reanimated `strokeDashoffset`)
+ * rather than jumping, so page-by-page progress reads as a smoothly growing ring.
  */
+import { useEffect } from 'react';
+import Animated, { useAnimatedProps, useSharedValue, withTiming } from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
 
 import { useTheme } from '@/hooks/use-theme';
 import type { DownloadState } from '@comical/downloads';
+
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 export function DownloadRadial({
   fraction,
@@ -28,22 +31,29 @@ export function DownloadRadial({
   const r = (size - strokeWidth) / 2;
   const cx = size / 2;
   const circumference = 2 * Math.PI * r;
-  const clamped = Math.max(0, Math.min(1, fraction));
-  const dash = clamped * circumference;
+
+  // Ease the arc to each new fraction. strokeDasharray is the full circumference; the animated
+  // strokeDashoffset hides the unfilled remainder (offset = circumference → empty, 0 → full).
+  const progress = useSharedValue(Math.max(0, Math.min(1, fraction)));
+  useEffect(() => {
+    progress.value = withTiming(Math.max(0, Math.min(1, fraction)), { duration: 400 });
+  }, [fraction, progress]);
+  const animatedProps = useAnimatedProps(() => ({ strokeDashoffset: circumference * (1 - progress.value) }));
 
   return (
     <Svg width={size} height={size}>
       {/* Track */}
       <Circle cx={cx} cy={cx} r={r} stroke={theme.hairline} strokeWidth={strokeWidth} fill="none" />
       {/* Progress arc, starting at 12 o'clock */}
-      <Circle
+      <AnimatedCircle
         cx={cx}
         cy={cx}
         r={r}
         stroke={color}
         strokeWidth={strokeWidth}
         fill="none"
-        strokeDasharray={`${dash} ${circumference}`}
+        strokeDasharray={circumference}
+        animatedProps={animatedProps}
         strokeLinecap="round"
         transform={`rotate(-90 ${cx} ${cx})`}
       />
