@@ -17,6 +17,7 @@
  * launch: `resumePendingDownloads()` simply calls `drain`.
  */
 import * as Network from 'expo-network';
+import type { DownloadedChapter, DownloadedSeries, StorageUsage } from '@comical/downloads';
 import {
   dlEnqueueChapter,
   dlFailPage,
@@ -40,7 +41,7 @@ import { storePage, uriFor } from './blob-store';
 import { DIRECT_DOWNLOAD_CHAPTER_ID } from './constants';
 import { getDownloadPrefsSync } from './prefs';
 import { noteChapterDownloaded } from './index-cache';
-import { chapterProgressKey, clearChapterProgress, clearSeriesProgress, setChapterProgress } from './state';
+import { chapterProgressKey } from './state';
 
 /**
  * Pages are downloaded ONE AT A TIME (sequentially). Fetching several at once hammered sources hard
@@ -71,6 +72,55 @@ export interface EnqueueChapterInput {
 function invalidateDownloads(bridgeId: string, seriesId: string): void {
   void queryClient.invalidateQueries({ queryKey: queryKeys.downloadsUsage() });
   void queryClient.invalidateQueries({ queryKey: queryKeys.seriesDownloads(bridgeId, seriesId) });
+}
+
+/**
+ * Patch the cached storage-usage tree in place as a chapter downloads, WITHOUT a refetch. The manifest
+ * query is otherwise only invalidated when a whole chapter finishes, so mid-download the screen had no
+ * reason to re-render — the per-page live-progress overlay is a Legend State store, and its re-render
+ * wasn't reaching the list reliably on the resume/reboot path. Driving progress through the TanStack
+ * Query cache (the app's server-state layer, whose useQuery subscription re-renders dependably) fixes
+ * that AND keeps the numbers accurate: the chapter's completed pages / bytes / state advance, and the
+ * series + total rollups follow. Cheap: a shallow immutable patch, no store round-trip.
+ */
+function patchProgressCaches(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+  completedPages: number,
+  bytes: number,
+  state: 'downloading' | 'complete',
+): void {
+  // The Downloads screen's storage-usage tree.
+  queryClient.setQueryData<StorageUsage>(queryKeys.downloadsUsage(), (old) => {
+    if (!old) return old;
+    let hit = false;
+    const bySeries = old.bySeries.map((se) => {
+      if (se.bridgeId !== bridgeId || se.seriesId !== seriesId) return se;
+      const chapters = se.chapters.map((c) => {
+        if (c.chapterId !== chapterId) return c;
+        hit = true;
+        return { ...c, completedPages, bytes, state };
+      });
+      return { ...se, chapters, bytes: chapters.reduce((n, c) => n + c.bytes, 0) };
+    });
+    if (!hit) return old; // chapter not in the cached tree (e.g. first page before the query populated)
+    return { ...old, bySeries, totalBytes: bySeries.reduce((n, se) => n + se.bytes, 0) };
+  });
+  // The series screen's own download detail (drives the series Download button / context menu).
+  queryClient.setQueryData<{ series: DownloadedSeries; chapters: DownloadedChapter[] } | null>(
+    queryKeys.seriesDownloads(bridgeId, seriesId),
+    (old) => {
+      if (!old) return old;
+      let hit = false;
+      const chapters = old.chapters.map((c) => {
+        if (c.chapterId !== chapterId) return c;
+        hit = true;
+        return { ...c, completedPages, bytes, state };
+      });
+      return hit ? { ...old, chapters } : old;
+    },
+  );
 }
 
 const seriesKeyOf = (bridgeId: string, seriesId: string) => `${bridgeId}:${seriesId}`;
@@ -106,7 +156,6 @@ export async function pauseChapter(bridgeId: string, seriesId: string, chapterId
   } catch {
     /* best-effort */
   }
-  clearChapterProgress(chapterProgressKey(bridgeId, seriesId, chapterId));
   invalidateDownloads(bridgeId, seriesId);
 }
 
@@ -118,9 +167,6 @@ export async function pauseSeries(bridgeId: string, seriesId: string): Promise<v
   } catch {
     /* best-effort */
   }
-  // Drop the live 'downloading' overlay for the in-flight chapter too — otherwise the display would
-  // keep showing it downloading (live overrides the manifest's now-'paused' state).
-  clearSeriesProgress(bridgeId, seriesId);
   invalidateDownloads(bridgeId, seriesId);
 }
 
@@ -211,13 +257,7 @@ export async function enqueueChapter(input: EnqueueChapterInput): Promise<void> 
       .sort((a, b) => a.index - b.index)
       .map((p) => ({ index: p.index, sourceUrl: p.imageUrl, ...(p.headers && { headers: p.headers }) })),
   };
-  const chapter = await dlEnqueueChapter(input.bridgeId, input.seriesId, chapterId, body);
-  setChapterProgress(chapterProgressKey(input.bridgeId, input.seriesId, chapterId), {
-    state: chapter.state,
-    done: 0,
-    total: chapter.pageCount,
-    bytes: 0,
-  });
+  await dlEnqueueChapter(input.bridgeId, input.seriesId, chapterId, body);
   invalidateDownloads(input.bridgeId, input.seriesId);
   void drain();
 }
@@ -281,23 +321,19 @@ export async function drain(): Promise<void> {
 
 /** Download one chapter's outstanding pages. Returns true if at least one page landed. */
 async function downloadChapter(bridgeId: string, seriesId: string, chapterId: string): Promise<boolean> {
-  const key = chapterProgressKey(bridgeId, seriesId, chapterId);
   const manifest = await dlManifestPages(bridgeId, seriesId, chapterId);
   const total = manifest.length;
   const outstanding = manifest.filter((p) => p.state !== 'complete');
   let done = total - outstanding.length;
-  // Bytes already on disk (from a prior/resumed run) — the live size grows from here, page by page,
-  // so a resumed chapter shows its true footprint immediately instead of counting up from 0.
+  // Bytes already on disk (from a prior/resumed run) — the size grows from here, page by page, so a
+  // resumed chapter shows its true footprint immediately instead of counting up from 0.
   let bytes = manifest.reduce((sum, p) => sum + (p.state === 'complete' ? p.bytes : 0), 0);
 
   if (outstanding.length === 0) {
-    // Already complete — make sure the offline index knows about it, then clear progress.
+    // Already complete — make sure the offline index knows about it.
     noteChapterDownloaded(bridgeId, seriesId, chapterId, [...manifest].sort((a, b) => a.index - b.index).map((p) => uriFor(p.file)));
-    clearChapterProgress(key);
     return false;
   }
-
-  setChapterProgress(key, { state: 'downloading', done, total, bytes });
 
   let landed = false;
   const queue = [...outstanding];
@@ -320,7 +356,8 @@ async function downloadChapter(bridgeId: string, seriesId: string, chapterId: st
           landed = true;
           done += 1;
           bytes += pageBytes;
-          setChapterProgress(key, { state: 'downloading', done, total, bytes });
+          // Advance the manifest query caches so the UI re-renders this page (see the fn's note).
+          patchProgressCaches(bridgeId, seriesId, chapterId, done, bytes, done === total ? 'complete' : 'downloading');
         } catch {
           if (attempt === 0) invalidateAssetSource(page.sourceUrl); // bust a stale resolution, retry
         }
@@ -336,22 +373,17 @@ async function downloadChapter(bridgeId: string, seriesId: string, chapterId: st
   }
   await Promise.all(Array.from({ length: Math.min(PAGE_CONCURRENCY, queue.length) }, () => worker()));
 
-  // Paused/cancelled mid-download: don't re-assert 'downloading' (the manifest is now 'paused' and the
-  // pause path cleared the overlay) — just drop any live progress so the paused state shows.
+  // Paused/cancelled mid-download: the manifest is now 'paused' server-side — refetch so the paused
+  // state shows (this overwrites the per-page 'downloading' patches in the cache).
   if (isCancelled(bridgeId, seriesId, chapterId)) {
-    clearChapterProgress(key);
     invalidateDownloads(bridgeId, seriesId);
     return landed;
   }
 
-  // Re-read to settle the chapter's rolled-up state.
+  // Re-read to settle the chapter's rolled-up state, and refetch so the caches hold server truth.
   const after = await dlManifestPages(bridgeId, seriesId, chapterId);
-  const complete = after.every((p) => p.state === 'complete');
-  if (complete) {
+  if (after.every((p) => p.state === 'complete')) {
     noteChapterDownloaded(bridgeId, seriesId, chapterId, [...after].sort((a, b) => a.index - b.index).map((p) => uriFor(p.file)));
-    clearChapterProgress(key);
-  } else {
-    setChapterProgress(key, { state: landed ? 'downloading' : 'failed', done, total, bytes });
   }
   invalidateDownloads(bridgeId, seriesId);
   return landed;

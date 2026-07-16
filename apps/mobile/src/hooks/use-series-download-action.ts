@@ -12,7 +12,6 @@ import { useRouter } from 'expo-router';
 
 import { deriveSeriesState } from '@/data/downloads/derive';
 import { enqueueChapter } from '@/data/downloads/engine';
-import { useLiveDownloadProgress } from '@/data/downloads/state';
 import { dlGetSeries } from '@/data/api';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
@@ -35,7 +34,6 @@ export function useSeriesDownloadAction(
 ): SeriesDownloadAction {
   const router = useRouter();
   const ds = useDataSource();
-  const live = useLiveDownloadProgress();
 
   const { data, isLoading } = useQuery({
     queryKey: queryKeys.seriesDownloads(bridgeId ?? '', seriesId),
@@ -43,8 +41,9 @@ export function useSeriesDownloadAction(
     enabled: enabled && !!bridgeId,
   });
 
+  // Manifest-driven (the engine patches this query per page — engine.ts), so the row stays in sync.
   const chapters = data?.chapters ?? [];
-  const state = chapters.length > 0 ? deriveSeriesState(chapters, live) : undefined;
+  const state = chapters.length > 0 ? deriveSeriesState(chapters) : undefined;
   const inProgress = state !== undefined && state !== 'complete';
   const label = inProgress ? 'Downloading' : state === 'complete' ? 'Downloaded' : 'Download';
 

@@ -2,29 +2,26 @@
  * Pure helpers deriving a series' rolled-up download state/progress from its chapters, plus the
  * queue-then-recency ordering the Downloads screen uses. Shared by the screen and the series Download
  * button so both agree on "is this in progress, and how far."
+ *
+ * These read the manifest directly. The engine patches the manifest query caches page-by-page (see
+ * engine.ts `patchProgressCaches`), so a chapter's `state` / `completedPages` / `bytes` advance as it
+ * downloads and these derivations re-render through the reliable TanStack Query subscription — no
+ * separate live-progress overlay needed.
  */
 import type { DownloadedChapter, DownloadState, StorageUsageSeries } from '@comical/downloads';
 
-import { chapterProgressKey, type ChapterDownloadStatus } from './state';
-
-/**
- * The state to DISPLAY for a chapter. The manifest's `state` only refreshes at chapter completion, so
- * mid-download it lags at `queued`/`downloading`; the live progress store carries the real-time state
- * (the engine sets it to `downloading` the moment it picks the chapter up), so prefer it when present.
- * Falls back to the manifest for chapters the engine isn't actively working (queued/paused/complete).
- */
-export function displayChapterState(c: DownloadedChapter, live: Record<string, ChapterDownloadStatus>): DownloadState {
-  return live[chapterProgressKey(c.bridgeId, c.seriesId, c.chapterId)]?.state ?? c.state;
+/** The state to DISPLAY for a chapter — straight from the (per-page-patched) manifest. */
+export function displayChapterState(c: DownloadedChapter): DownloadState {
+  return c.state;
 }
 
 /**
- * A series' single rolled-up state, from its chapters' DISPLAY states (see `displayChapterState`).
- * `paused` only when EVERY not-yet-complete chapter is paused (so the row offers Resume); otherwise
- * the most action-worthy active state wins.
+ * A series' single rolled-up state, from its chapters' states. `paused` only when EVERY not-yet-
+ * complete chapter is paused (so the row offers Resume); otherwise the most action-worthy active
+ * state wins.
  */
-export function deriveSeriesState(chapters: DownloadedChapter[], live: Record<string, ChapterDownloadStatus>): DownloadState {
-  const states = chapters.map((c) => displayChapterState(c, live));
-  const nonComplete = states.filter((s) => s !== 'complete');
+export function deriveSeriesState(chapters: DownloadedChapter[]): DownloadState {
+  const nonComplete = chapters.map((c) => c.state).filter((s) => s !== 'complete');
   if (nonComplete.length === 0) return 'complete';
   if (nonComplete.every((s) => s === 'paused')) return 'paused';
   if (nonComplete.some((s) => s === 'downloading')) return 'downloading';
@@ -32,14 +29,13 @@ export function deriveSeriesState(chapters: DownloadedChapter[], live: Record<st
   return 'queued';
 }
 
-/** Series progress [0,1] across all pages, overlaying live in-flight counts where the engine is active. */
-export function seriesFraction(chapters: DownloadedChapter[], live: Record<string, ChapterDownloadStatus>): number {
+/** Series progress [0,1] across all its pages. */
+export function seriesFraction(chapters: DownloadedChapter[]): number {
   let done = 0;
   let total = 0;
   for (const c of chapters) {
     total += c.pageCount;
-    const l = live[chapterProgressKey(c.bridgeId, c.seriesId, c.chapterId)];
-    done += l && l.total > 0 ? l.done : c.completedPages;
+    done += c.completedPages;
   }
   return total > 0 ? done / total : 0;
 }
@@ -74,21 +70,17 @@ export function bySortValue(a: [number, number], b: [number, number]): number {
 
 /**
  * Cumulative progress across EVERY downloaded series — the numerator/denominator for the big radial
- * on the Downloads page and the small one on the Settings row. Overlays live in-flight counts.
- * `inProgress` is true while anything isn't complete (the radials show only then).
+ * on the Downloads page and the small one on the Settings row. `inProgress` is true while anything
+ * isn't complete (the radials show only then).
  */
-export function overallProgress(
-  bySeries: StorageUsageSeries[],
-  live: Record<string, ChapterDownloadStatus>,
-): { fraction: number; inProgress: boolean } {
+export function overallProgress(bySeries: StorageUsageSeries[]): { fraction: number; inProgress: boolean } {
   let done = 0;
   let total = 0;
   let inProgress = false;
   for (const s of bySeries) {
     for (const c of s.chapters) {
       total += c.pageCount;
-      const l = live[chapterProgressKey(c.bridgeId, c.seriesId, c.chapterId)];
-      done += l && l.total > 0 ? l.done : c.completedPages;
+      done += c.completedPages;
       if (c.state !== 'complete') inProgress = true;
     }
   }

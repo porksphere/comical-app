@@ -1,28 +1,14 @@
 /**
- * Drives the real download engine with mocked IO to observe the live-progress state transitions —
- * the thing that couldn't be reproduced in a browser (expo-file-system is stubbed on web).
+ * Drives the real download engine with mocked IO to observe how it reports progress — the thing that
+ * couldn't be reproduced in a browser (expo-file-system is stubbed on web). The engine advances the
+ * manifest query CACHES page-by-page (`patchProgressCaches`), which is what re-renders the UI, so the
+ * test captures those cache patches.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
-// ── Captured live progress (mock of ./state) ─────────────────────────────────
-const progress: Record<string, { state: string; done: number; total: number } | null> = {};
-const log: string[] = []; // ordered "state:done" (or "clear") per setChapterProgress/clear
+// ── ./state: only the key helper survives (no more live-progress overlay) ────
 const key = (b: string, s: string, c: string) => `${b}:${s}:${c}`;
-mock.module('./state', () => ({
-  chapterProgressKey: key,
-  setChapterProgress: (k: string, status: { state: string; done: number; total: number }) => {
-    progress[k] = status;
-    log.push(`${status.state}:${status.done}`);
-  },
-  clearChapterProgress: (k: string) => {
-    progress[k] = null;
-    log.push('clear');
-  },
-  clearSeriesProgress: (b: string, s: string) => {
-    const prefix = `${b}:${s}:`;
-    for (const k of Object.keys(progress)) if (k.startsWith(prefix)) progress[k] = null;
-  },
-}));
+mock.module('./state', () => ({ chapterProgressKey: key }));
 
 // ── In-memory manifest backend (mock of ../api) ──────────────────────────────
 interface Pg { index: number; sourceUrl: string; state: string; file: string; bytes: number }
@@ -80,7 +66,24 @@ mock.module('./blob-store', () => ({
 }));
 mock.module('./index-cache', () => ({ noteChapterDownloaded: () => {} }));
 mock.module('./prefs', () => ({ getDownloadPrefsSync: () => ({ wifiOnly: false, background: false }) }));
-mock.module('../query-client', () => ({ queryClient: { invalidateQueries: () => {} } }));
+
+// ── Query cache (mock of ../query-client): apply per-page patches to a fake usage tree ───────────
+interface UsageChapter { chapterId: string; pageCount: number; bytes: number; completedPages: number; state: string }
+let usage: { totalBytes: number; bySeries: { bridgeId: string; seriesId: string; bytes: number; chapters: UsageChapter[] }[] } | null;
+/** completedPages of c1 recorded after each patch to the usage tree — the per-page progress the UI sees. */
+const usageProgress: number[] = [];
+mock.module('../query-client', () => ({
+  queryClient: {
+    invalidateQueries: () => {},
+    // queryKeys.downloadsUsage() -> ['d']; seriesDownloads() -> ['d','s'] (see ../queries mock).
+    setQueryData: (qk: unknown[], updater: unknown) => {
+      if (!Array.isArray(qk) || qk.length !== 1) return; // only track the usage-tree patches here
+      usage = typeof updater === 'function' ? (updater as (o: typeof usage) => typeof usage)(usage) : (updater as typeof usage);
+      const ch = usage?.bySeries?.[0]?.chapters?.find((c) => c.chapterId === 'c1');
+      if (ch) usageProgress.push(ch.completedPages);
+    },
+  },
+}));
 mock.module('../queries', () => ({ queryKeys: { downloadsUsage: () => ['d'], seriesDownloads: () => ['d', 's'] } }));
 mock.module('expo-network', () => ({
   getNetworkStateAsync: async () => ({ type: 'WIFI', isConnected: true }),
@@ -93,33 +96,45 @@ const { drain, pauseSeries } = await import('./engine');
 const seed = (ch: string, n: number) => {
   pagesByChapter[ch] = Array.from({ length: n }, (_, i) => ({ index: i, sourceUrl: `/i/${i}`, state: 'queued', file: '', bytes: 0 }));
 };
+/** Seed the cached usage tree so the engine's per-page patch has a chapter to advance. */
+const seedUsage = (ch: string, n: number) => {
+  usage = {
+    totalBytes: 0,
+    bySeries: [{ bridgeId: 'b', seriesId: 's', bytes: 0, chapters: [{ chapterId: ch, pageCount: n, bytes: 0, completedPages: 0, state: 'queued' }] }],
+  };
+};
 const tick = async (n = 30) => { for (let i = 0; i < n; i++) await Promise.resolve(); };
 const untilGate = async () => { for (let i = 0; i < 100 && !releaseNext; i++) await Promise.resolve(); };
 
 beforeEach(() => {
   for (const k of Object.keys(pagesByChapter)) delete pagesByChapter[k];
-  for (const k of Object.keys(progress)) delete progress[k];
-  log.length = 0;
+  usage = null;
+  usageProgress.length = 0;
   paused.clear();
   gated = false;
   releaseNext = null;
 });
 
-describe('engine live progress', () => {
-  test('reports downloading + per-page progress, then clears on complete (not queued→done)', async () => {
+describe('engine progress via the manifest query cache', () => {
+  test('advances completedPages + bytes page-by-page, then settles complete (not queued→done)', async () => {
     seed('c1', 3);
+    seedUsage('c1', 3);
     await drain(); // ungated: runs to completion
-    // The engine must have walked through downloading 0→1→2→3 then cleared — NOT jumped straight to done.
-    expect(log).toEqual(['downloading:0', 'downloading:1', 'downloading:2', 'downloading:3', 'clear']);
-    expect(progress[key('b', 's', 'c1')]).toBeNull();
+    // Patched once per landed page: 1 → 2 → 3, so the list re-renders each page (not just at the end).
+    expect(usageProgress).toEqual([1, 2, 3]);
+    const ch = usage!.bySeries[0].chapters[0];
+    expect(ch.state).toBe('complete');
+    expect(ch.bytes).toBe(300); // 3 pages × 100 bytes
+    expect(usage!.totalBytes).toBe(300);
   });
 
-  test('pauseSeries clears the in-flight chapter live progress (must not stay downloading)', async () => {
+  test('pausing a series aborts its in-flight chapter (progress stops before completion)', async () => {
     seed('c1', 3);
+    seedUsage('c1', 3);
     gated = true;
     const p = drain();
     await untilGate(); // frozen on page 0's resolve
-    expect(progress[key('b', 's', 'c1')]).toEqual({ state: 'downloading', done: 0, total: 3, bytes: 0 });
+    expect(usageProgress).toEqual([]); // nothing landed yet
 
     await pauseSeries('b', 's'); // user taps the series Pause
     releaseNext?.(); // let the worker unwind
@@ -127,6 +142,8 @@ describe('engine live progress', () => {
     await tick(50);
     await p;
 
-    expect(progress[key('b', 's', 'c1')]?.state).not.toBe('downloading');
+    // The chapter did NOT run to completion — the pause stopped it partway.
+    expect(pagesByChapter['c1'].filter((pg) => pg.state === 'complete').length).toBeLessThan(3);
+    expect(paused.has('c1')).toBe(true);
   });
 });

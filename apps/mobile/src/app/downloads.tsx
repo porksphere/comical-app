@@ -55,7 +55,6 @@ import {
 import { forgetChapter, forgetSeries } from '@/data/downloads/index-cache';
 import { formatBytes } from '@/data/downloads/format';
 import { downloadPrefs$, useDownloadPrefs } from '@/data/downloads/prefs';
-import { chapterProgressKey, useLiveDownloadProgress } from '@/data/downloads/state';
 import { queryClient } from '@/data/query-client';
 import { queryKeys } from '@/data/queries';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
@@ -116,7 +115,6 @@ export default function DownloadsScreen() {
   const { paddingTop, paddingBottom } = useSettingsScrollPadding();
   const { width } = useWindowDimensions();
   const { wifiOnly, background } = useDownloadPrefs();
-  const live = useLiveDownloadProgress();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   // Full-width scroller (scrollbar at the window edge); rows centered within the settings column via
@@ -205,7 +203,11 @@ export default function DownloadsScreen() {
     }
   }, [pendingScroll, rows]);
 
-  const overall = overallProgress(usage.bySeries, live);
+  // Progress is read from the manifest query, which the engine now patches page-by-page (see
+  // engine.ts `patchUsageProgress`) — so the list re-renders every page through the reliable useQuery
+  // subscription, rather than depending on the Legend State live overlay whose re-render didn't reach
+  // the list on the resume/reboot path.
+  const overall = overallProgress(usage.bySeries);
 
   const header = (
     <View style={styles.header}>
@@ -243,19 +245,13 @@ export default function DownloadsScreen() {
     if (item.kind === 'series') {
       const { s } = item;
       const open = expanded.has(item.key);
-      const state = deriveSeriesState(s.chapters, live);
-      const frac = seriesFraction(s.chapters, live);
-      // Sum live bytes where the engine is working a chapter, else the manifest's — so the series
-      // total grows page by page during a download instead of settling only at the end.
-      const sBytes = s.chapters.reduce((sum, c) => {
-        const l = live[chapterProgressKey(c.bridgeId, c.seriesId, c.chapterId)];
-        return sum + (l && l.total > 0 ? l.bytes : c.bytes);
-      }, 0);
+      const state = deriveSeriesState(s.chapters);
+      const frac = seriesFraction(s.chapters);
       return (
         <SwipeableSettingsRow
           label={s.title}
           labelBold
-          description={`${s.chapterCount} chapter${s.chapterCount === 1 ? '' : 's'} · ${formatBytes(sBytes)}`}
+          description={`${s.chapterCount} chapter${s.chapterCount === 1 ? '' : 's'} · ${formatBytes(s.bytes)}`}
           leading={
             state === 'complete' ? undefined : (
               <DownloadStatusIndicator
@@ -282,21 +278,14 @@ export default function DownloadsScreen() {
       );
     }
     const { s, c } = item;
-    // Radial AND the "X/Y" count both read the same done value — the live per-page count while the
-    // engine is working this chapter, else the manifest's — so they can never disagree.
-    const liveStatus = live[chapterProgressKey(c.bridgeId, c.seriesId, c.chapterId)];
-    const hasLive = !!liveStatus && liveStatus.total > 0;
-    const shownDone = hasLive ? liveStatus.done : c.completedPages;
-    // Live bytes while the engine is working it (the manifest's `bytes` only settles at chapter end),
-    // else the manifest's — so the size ticks up page by page instead of sitting at 0 B.
-    const shownBytes = hasLive ? liveStatus.bytes : c.bytes;
-    const cFrac = c.pageCount > 0 ? shownDone / c.pageCount : 0;
-    // Real-time state (live overlay) — the manifest state lags at queued mid-download.
-    const cState = displayChapterState(c, live);
+    // All read from the per-page-patched manifest: completed pages, bytes, and state advance together,
+    // so the radial, the "X/Y" count, and the size can never disagree and update every page.
+    const cState = displayChapterState(c);
+    const cFrac = c.pageCount > 0 ? c.completedPages / c.pageCount : 0;
     return (
       <SwipeableSettingsRow
         label={c.chapterName ?? (c.number !== undefined ? `Chapter ${c.number}` : c.chapterId)}
-        description={chapterDescription(c, cState, shownDone, shownBytes)}
+        description={chapterDescription(c, cState, c.completedPages, c.bytes)}
         contentInset={Spacing.five}
         leading={
           cState === 'complete' ? undefined : (

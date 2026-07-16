@@ -26,7 +26,6 @@ import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { dlStorageUsage } from '@/data/api';
 import { useCustomPages } from '@/data/custom-pages';
 import { overallProgress } from '@/data/downloads/derive';
-import { useLiveDownloadProgress } from '@/data/downloads/state';
 import { queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw } from '@/data/source';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
@@ -185,8 +184,9 @@ function useCategoryCounts() {
     // Device-local downloads; a backend without the module yields an empty tree, not an error.
     queryFn: () => dlStorageUsage().catch(() => null),
   });
-  const live = useLiveDownloadProgress();
-  const downloadsOverall = downloads ? overallProgress(downloads.bySeries, live) : null;
+  // Manifest-driven (the engine patches this query per page — see engine.ts), so the row's radial
+  // advances through the reliable useQuery subscription without the live-overlay re-render gap.
+  const downloadsOverall = downloads ? overallProgress(downloads.bySeries) : null;
 
   // Matches the filter the Bridges screen applies, so the count can't disagree with the list.
   const visibleBridges = bridges && hideNsfw ? bridges.filter((b) => !b.info.nsfw) : bridges;

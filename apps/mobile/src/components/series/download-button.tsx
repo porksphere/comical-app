@@ -16,7 +16,6 @@ import { ActionButton } from '@/components/series/action-button';
 import { dlGetSeries } from '@/data/api';
 import { deriveSeriesState, seriesFraction } from '@/data/downloads/derive';
 import { enqueueChapter } from '@/data/downloads/engine';
-import { useLiveDownloadProgress } from '@/data/downloads/state';
 import { queryKeys } from '@/data/queries';
 import type { Chapter } from '@/data/types';
 
@@ -39,18 +38,19 @@ export function SeriesDownloadButton({
   chapters?: Chapter[];
 }) {
   const router = useRouter();
-  const live = useLiveDownloadProgress();
 
   const { data } = useQuery({
     queryKey: queryKeys.seriesDownloads(bridgeId, seriesId),
     queryFn: () => dlGetSeries(bridgeId, seriesId).catch(() => null),
   });
 
+  // Progress comes from this query, which the engine patches page-by-page (engine.ts) — so the radial
+  // advances through the reliable useQuery subscription rather than the live overlay.
   const downloaded = data?.chapters ?? [];
-  const state = downloaded.length > 0 ? deriveSeriesState(downloaded, live) : undefined;
+  const state = downloaded.length > 0 ? deriveSeriesState(downloaded) : undefined;
   const inProgress = state !== undefined && state !== 'complete';
   const isComplete = state === 'complete';
-  const frac = seriesFraction(downloaded, live);
+  const frac = seriesFraction(downloaded);
 
   // A chaptered series needs its chapter list loaded before we can enqueue; a direct one doesn't.
   const ready = direct || (chapters !== undefined && chapters.length > 0);
