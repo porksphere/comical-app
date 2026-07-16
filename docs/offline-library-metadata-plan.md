@@ -119,10 +119,14 @@ GET /bridges/:id/series/:sid/chapters   missing/uninstalled, missing required se
   `RetryBlock` path simply stops triggering for them. Non-library series offline keep today's error.
 - When the payload carries `cached: true`, show a slim, non-blocking banner under the top bar:
   *"Offline — showing saved details"* (with a relative `cachedAt`, e.g. "updated 2 days ago").
-- Cover: the app's image cache (expo-image disk cache / server img-proxy) already retains covers in
-  practice; the entry's `thumbnailUrl` snapshot renders the header. **Guaranteed** offline cover
-  bytes (a `BlobStore`-backed cover cache, one small image per entry, both hosts) is a scoped
-  follow-up, not v1.
+- Cover: **implemented (was the v2 follow-up).** The host captures each library entry's cover bytes
+  once (on add / details write-through, from the entry snapshot's `thumbnailUrl`, fetched through
+  the same `PageFetcher` the download engine uses) into a covers `BlobStore`
+  (server: `{libraryDir}/covers`; device: `comical-covers` under Documents), records a `coverFile`
+  pointer on the cached detail doc, and serves it at `GET /library/entries/:b/:s/cover`. The offline
+  details fallback rewrites `thumbnailUrl` to that route; the app resolves it via
+  `resolveAssetSourceCached` (remote: apiBase URL; embedded: in-process data URI), so the hero
+  renders with the source unreachable. Entry deletion unlinks the blob.
 
 ### Downloaded-state indicators (per chapter)
 
@@ -146,9 +150,8 @@ GET /bridges/:id/series/:sid/chapters   missing/uninstalled, missing required se
 
 ## What this deliberately does not do
 
-- No new endpoints, no background metadata crawler, no re-fetching cadence — freshness rides
-  entirely on adds, browsing, and the existing chapter background sync.
-- No cover-byte store in v1 (follow-up above).
+- No background metadata crawler, no re-fetching cadence — freshness rides entirely on adds,
+  browsing, and the existing chapter background sync.
 - No per-chapter *download action* from the series page (indicators only, per the requirement);
   a long-press → "Download chapter" affordance is a natural later addition on the same data.
 

@@ -419,6 +419,12 @@ const realDataSource: DataSource = {
     if (offline.cached) {
       base.cached = true;
       if (offline.cachedAt !== undefined) base.cachedAt = offline.cachedAt;
+      // A captured cover arrives as the host's server-relative cover route — resolve it into
+      // something <Image> can load (remote: apiBase-prefixed URL; embedded: an in-process data URI).
+      // Best-effort: an unresolvable cover just leaves the hero on its normal fallback path.
+      if (base.cover.startsWith('/')) {
+        base.cover = await api.resolveAssetSourceCached(base.cover).catch(() => base.cover);
+      }
     }
     if (opts.direct) {
       // Static/known-from-info parts render right away; the grid streams in later.

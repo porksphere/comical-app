@@ -38,6 +38,7 @@ import { devicePageFetcher, onDevicePageRetry } from '../downloads/fetch-page';
 import { hydrateDownloadIndex } from '../downloads/index-cache';
 import { getDownloadPrefsSync } from '../downloads/prefs';
 import { fileSystemBundleCache } from './bundle-cache';
+import { expoCoversBlobStore } from './covers-store';
 import { AsyncStorageLibraryStore } from './library-store';
 import { getResolvedModeSync } from './preference';
 import { applyImageCacheConfig } from '../image-cache';
@@ -69,6 +70,9 @@ function bootstrapConfig(): EmbeddedBootstrapConfig {
       mayDownload: mayDownloadNow,
       onPageRetry: onDevicePageRetry,
     },
+    // Guaranteed-offline library covers: captured into this device store on library-add/browse and
+    // served back by the reused router at /library/entries/:b/:s/cover.
+    covers: { blobs: expoCoversBlobStore, fetchPage: devicePageFetcher },
     // Persist verified bundles to disk so cold starts don't re-download + re-verify every bridge.
     cache: fileSystemBundleCache,
     // An install/update/uninstall (or add/remove registry) changes what the runtime serves — refetch
