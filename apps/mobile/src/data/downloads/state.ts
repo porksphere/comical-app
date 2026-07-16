@@ -34,13 +34,27 @@ export function clearChapterProgress(key: string): void {
   downloadProgress$[key].delete();
 }
 
+/** Drop the live progress for every chapter of a series (its keys share the `bridge:series:` prefix). */
+export function clearSeriesProgress(bridgeId: string, seriesId: string): void {
+  const prefix = `${bridgeId}:${seriesId}:`;
+  for (const k of Object.keys(downloadProgress$.peek() ?? {})) {
+    if (k.startsWith(prefix)) downloadProgress$[k].delete();
+  }
+}
+
 /**
  * Reactively read the whole live-progress map. `use$` must be wrapped in a `use[A-Z]` hook so the
- * React Compiler treats it as a hook — see [[use-dollar-must-be-wrapped]]. Callers read this once and
- * index it per chapter, rather than subscribing a `use$` per row.
+ * React Compiler treats it as a hook — see [[use-dollar-must-be-wrapped]].
+ *
+ * Returns a FRESH object each render (the spread). Legend State mutates its value in place, so
+ * `use$(downloadProgress$)` hands back the SAME reference every time even after a change — and the
+ * React Compiler then memoizes derived values (deriveSeriesState / displayChapterState / fractions)
+ * on that stable reference and never recomputes them, so live progress never reaches the UI (the row
+ * looks stuck at 'queued' until the manifest query refetches on completion). A new reference per
+ * render breaks that memoization so the derivations re-run when progress changes.
  */
 export function useLiveDownloadProgress(): Record<string, ChapterDownloadStatus> {
-  return use$(downloadProgress$) ?? {};
+  return { ...(use$(downloadProgress$) ?? {}) };
 }
 
 /**
