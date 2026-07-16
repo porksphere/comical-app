@@ -52,6 +52,13 @@
       worth it — probably marginal now that the big source-side win landed (see A–D plan option D), but
       worth confirming on a fast fling through many cards. For a source whose only smaller variant is a
       square crop, downsampling its 2:3 variant app-side is the only remaining size lever.
+- [ ] Hunt down the spammy `[Reanimated] Reading from 'value' during component render` warning.
+      Something reads a shared value's `.value` (or `.get()`) on the JS render thread instead of in a
+      worklet/`useAnimatedStyle`/`useDerivedValue`. It floods the Metro logs and can cost frames.
+      Surfaced during the downloads work (2026-07); a likely suspect is one of the animated download
+      widgets (`download-radial.tsx` / `cumulative-radial.tsx` / `disk-space-bar.tsx` / the swipe row's
+      derived values) or a shared-value read in a render body. Reproduce with reanimated strict mode on,
+      trace the offending component from the (JS) stack, and move the read into a worklet.
 - [x] Infinite paging loading skeleton doesn't add skeleton entries to incomplete rows,
       it should ideally finish an incomplete row then add an additional row (the
       loaded grid already padded a short last row with invisible spacer cells so it
