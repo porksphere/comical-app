@@ -22,8 +22,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { useAnimatedStyle, useDerivedValue, withTiming } from 'react-native-reanimated';
 
-import { CumulativeDownloadRadial } from '@/components/downloads/cumulative-radial';
 import { DownloadStatusIndicator } from '@/components/downloads/download-status-indicator';
+import { SeriesStorageBar } from '@/components/downloads/series-storage-bar';
 import { ChevronRightIcon, ClearIcon, PauseIcon, PlayIcon, RetryIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { SettingsToggleRow } from '@/components/settings/settings-fields';
 import { SettingsSection } from '@/components/settings/settings-row';
@@ -40,7 +40,6 @@ import {
   chapterSortValue,
   deriveSeriesState,
   displayChapterState,
-  overallProgress,
   seriesFraction,
   seriesSortValue,
 } from '@/data/downloads/derive';
@@ -237,20 +236,16 @@ export default function DownloadsScreen() {
   }, [pendingScroll, rows]);
 
   // Progress is read from the manifest query, which the engine now patches page-by-page (see
-  // engine.ts `patchUsageProgress`) — so the list re-renders every page through the reliable useQuery
-  // subscription, rather than depending on the Legend State live overlay whose re-render didn't reach
-  // the list on the resume/reboot path.
-  const overall = overallProgress(usage.bySeries);
-
   const header = (
     <View style={styles.header}>
+      {/* Total downloaded + a per-series colour breakdown of that space (top 10 + "Other"). Replaces
+          the old cumulative progress radial — per-row radials already show in-flight progress. */}
+      {usage.seriesCount > 0 && (
+        <View style={styles.storage}>
+          <SeriesStorageBar bySeries={usage.bySeries} totalBytes={usage.totalBytes} />
+        </View>
+      )}
       <SettingsSection>
-        {/* Cumulative progress across every series, shown while anything is in flight. */}
-        {overall.inProgress && (
-          <View style={styles.radial}>
-            <CumulativeDownloadRadial fraction={overall.fraction} size={64} showLabel />
-          </View>
-        )}
         <SettingsToggleRow
           label="Download over Wi-Fi only"
           description="Hold downloads until you're on Wi-Fi."
@@ -411,9 +406,9 @@ const styles = StyleSheet.create({
     // Space between the preferences and the first series row (was the ScrollView's inter-section gap).
     paddingBottom: Spacing.five,
   },
-  radial: {
-    alignItems: 'center',
-    paddingVertical: Spacing.three,
+  storage: {
+    // Sits above the toggles; its own internal padding handles the rest.
+    paddingBottom: Spacing.four,
   },
   empty: {
     paddingHorizontal: Spacing.three,
