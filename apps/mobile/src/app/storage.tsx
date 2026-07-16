@@ -15,11 +15,12 @@
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ScrollView, StyleSheet } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { DiskSpaceBar } from '@/components/downloads/disk-space-bar';
 import { SettingsSelectRow, type SettingsOption } from '@/components/settings/settings-fields';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
+import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
@@ -74,12 +75,24 @@ export default function StorageScreen() {
     measure();
   };
 
+  // Comical's whole on-disk footprint (downloads + reclaimable cache) — the big number over the bar.
+  // `null` until at least one probe has run so we can show a placeholder rather than a premature 0.
+  const comicalTotal = cacheSize === null && dlDiskSize === null ? null : (cacheSize ?? 0) + (dlDiskSize ?? 0);
+
   return (
     <ThemedView style={styles.container}>
       <TopBar title="Storage" />
       <ScrollView contentContainerStyle={[styles.content, contentPadding]}>
         <SettingsSection>
-          <DiskSpaceBar downloadsBytes={dlDiskSize ?? 0} cacheBytes={cacheSize ?? 0} />
+          <View style={styles.summary}>
+            <View style={styles.summaryText}>
+              <ThemedText type="title">{comicalTotal === null ? '…' : formatBytes(comicalTotal)}</ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                used by Comical on this device
+              </ThemedText>
+            </View>
+            <DiskSpaceBar downloadsBytes={dlDiskSize ?? 0} cacheBytes={cacheSize ?? 0} />
+          </View>
         </SettingsSection>
 
         <SettingsSection title="Downloads">
@@ -134,5 +147,12 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: MaxContentWidth,
     alignSelf: 'center',
+  },
+  summary: {
+    paddingVertical: Spacing.three,
+    gap: Spacing.three,
+  },
+  summaryText: {
+    gap: Spacing.one,
   },
 });
