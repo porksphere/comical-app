@@ -253,17 +253,15 @@ export default function DownloadsScreen() {
           labelBold
           description={`${s.chapterCount} chapter${s.chapterCount === 1 ? '' : 's'} · ${formatBytes(s.bytes)}`}
           leading={
-            state === 'complete' ? undefined : (
-              <DownloadStatusIndicator
-                state={state}
-                fraction={frac}
-                size={22}
-                interactive={false}
-                onPause={() => void pauseSeries(s.bridgeId, s.seriesId)}
-                onResume={() => void resumeSeriesDownload(s.bridgeId, s.seriesId)}
-                onRetry={() => retrySeries(s)}
-              />
-            )
+            <DownloadStatusIndicator
+              state={state}
+              fraction={frac}
+              size={22}
+              interactive={false}
+              onPause={() => void pauseSeries(s.bridgeId, s.seriesId)}
+              onResume={() => void resumeSeriesDownload(s.bridgeId, s.seriesId)}
+              onRetry={() => retrySeries(s)}
+            />
           }
           right={<FoldoutChevron open={open} />}
           onPress={() => toggle(item.key)}
@@ -288,16 +286,14 @@ export default function DownloadsScreen() {
         description={chapterDescription(c, cState, c.completedPages, c.bytes)}
         contentInset={Spacing.five}
         leading={
-          cState === 'complete' ? undefined : (
-            <DownloadStatusIndicator
-              state={cState}
-              fraction={cFrac}
-              size={20}
-              onPause={() => void pauseChapter(c.bridgeId, c.seriesId, c.chapterId)}
-              onResume={() => void resumeChapterDownload(c.bridgeId, c.seriesId, c.chapterId)}
-              onRetry={() => void retryChapter(c.bridgeId, c.seriesId, c.chapterId)}
-            />
-          )
+          <DownloadStatusIndicator
+            state={cState}
+            fraction={cFrac}
+            size={20}
+            onPause={() => void pauseChapter(c.bridgeId, c.seriesId, c.chapterId)}
+            onResume={() => void resumeChapterDownload(c.bridgeId, c.seriesId, c.chapterId)}
+            onRetry={() => void retryChapter(c.bridgeId, c.seriesId, c.chapterId)}
+          />
         }
         actions={chapterActions(cState, {
           onPause: () => void pauseChapter(c.bridgeId, c.seriesId, c.chapterId),
@@ -318,7 +314,12 @@ export default function DownloadsScreen() {
         style={styles.list}
         data={rows}
         keyExtractor={(r) => r.key}
-        recycleItems={false}
+        // Recycle row views instead of mounting/unmounting a fresh gesture+reanimated swipe stack for
+        // every row that scrolls into view (the heavy part). `getItemType` pools series and chapter
+        // containers separately so a series view only ever recycles into another series (same shape),
+        // and the swipe row resets its gesture state on recycle via `useRecyclingEffect`.
+        recycleItems
+        getItemType={(r) => r.kind}
         estimatedItemSize={SettingsRowHeight}
         renderItem={renderItem}
         ListHeaderComponent={header}

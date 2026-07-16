@@ -5,8 +5,8 @@
  *   - downloading → the progress radial only (the ring is the progress),
  *   - queued      → the clock icon only,
  *   - paused      → the pause icon only,
- *   - failed      → the alert icon only.
- * (A completed download shows no indicator — the row shows a chevron instead.)
+ *   - failed      → the alert icon only,
+ *   - complete    → the downloaded (check) icon only.
  *
  * `DownloadStatusIndicator` wraps that visual in a Pressable for the manual action — pause an
  * in-flight/queued download, resume a paused one, retry a failed one — on chapter rows. On series rows
@@ -17,7 +17,7 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { DownloadRadial } from '@/components/downloads/download-radial';
-import { FailedIcon, PauseIcon, QueuedIcon } from '@/components/icons/ui-icons';
+import { DownloadedIcon, FailedIcon, PauseIcon, QueuedIcon } from '@/components/icons/ui-icons';
 import { useTheme } from '@/hooks/use-theme';
 import type { DownloadState } from '@comical/downloads';
 
@@ -40,7 +40,7 @@ export function DownloadStateVisual({
   if (state === 'failed') return <FailedIcon color={theme.danger} size={size} />;
   if (state === 'paused') return <PauseIcon color={theme.textSecondary} size={size} />;
   if (state === 'queued') return <QueuedIcon color={theme.textSecondary} size={size} />;
-  return null; // complete — no indicator
+  return <DownloadedIcon color={theme.textSecondary} size={size} />; // complete — kept offline
 }
 
 export function DownloadStatusIndicator({
@@ -67,7 +67,8 @@ export function DownloadStatusIndicator({
     </View>
   );
 
-  if (!interactive) return visual;
+  // No action for a completed download — render the check as a plain (non-pressable) marker.
+  if (!interactive || state === 'complete') return visual;
 
   const { onPress, label } =
     state === 'failed'

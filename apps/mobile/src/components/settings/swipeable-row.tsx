@@ -1,4 +1,5 @@
-import { type ComponentType, type ReactNode, useEffect, useRef, useState } from 'react';
+import { useRecyclingEffect } from '@legendapp/list/react-native';
+import { type ComponentType, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -238,6 +239,21 @@ function SwipeRow({ name, actions, edgeInset, children }: RowImplProps) {
     else releaseOpenRow(token);
   }
 
+  // Reset the gesture state when LegendList RECYCLES this view onto a different item — otherwise a row
+  // left slid open could reappear open under whatever item recycles into it. No-op outside a LegendList
+  // (useRecyclingEffect early-returns with no container). Must be a STABLE callback so it fires only on
+  // a real recycle, never on a re-render (which would force-close a row mid-swipe). Shared values are
+  // stable refs, deliberately kept out of the deps (see the immutability note above).
+  const resetForRecycle = useCallback(() => {
+    restIndex.value = 0;
+    captured.value = 0;
+    target.value = 0;
+    releaseOpenRow(token);
+    setOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+  useRecyclingEffect(resetForRecycle);
+
   // If the action set changes while the row is open, its gesture state (rest/captured detent, slid
   // position) references the OLD pill layout — a live status change (a download finishing drops the
   // Pause pill and re-sorts the row) would leave it slid to a stale detent and index past the shorter
@@ -373,6 +389,8 @@ function SwipeRow({ name, actions, edgeInset, children }: RowImplProps) {
 function HoverActionsRow({ name, actions, edgeInset, children }: RowImplProps) {
   const theme = useTheme();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
+  // Drop any lingering hover when LegendList recycles this row onto a different item (no-op elsewhere).
+  useRecyclingEffect(useCallback(() => onHoverOut(), [onHoverOut]));
   // Hover the WHOLE row (body + action lanes) via pointer enter/leave on the outer element — reliably
   // fires for the entire subtree, unlike an `onHoverIn` on a wrapper the inner row's own Pressable
   // would swallow. Each action is a SIBLING of the content (not nested inside it): react-native-web
