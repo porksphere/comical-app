@@ -64,16 +64,59 @@ import type { DownloadState, StorageUsage, StorageUsageSeries } from '@comical/d
 const EMPTY_USAGE: StorageUsage = { totalBytes: 0, seriesCount: 0, chapterCount: 0, pageCount: 0, bySeries: [] };
 
 type DlChapter = StorageUsageSeries['chapters'][number];
-/** One flattened list row: a series header, or a chapter nested under one (only for expanded series). */
+/**
+ * One flattened list row. `open` lives on the series row (not read from `expanded` in render) so that a
+ * row's object changes ONLY when its own data or open-state changes — that stable identity lets
+ * LegendList (and the compiler-memoized renderItem) skip re-rendering unchanged rows when one entry
+ * updates. Chapters carry no parent `s`: their handlers key off the chapter's own bridge/series ids, so
+ * a series-level rollup change doesn't churn every chapter row. See `buildRows`.
+ */
 type DlRow =
-  | { kind: 'series'; key: string; s: StorageUsageSeries }
-  | { kind: 'chapter'; key: string; s: StorageUsageSeries; c: DlChapter };
+  | { kind: 'series'; key: string; s: StorageUsageSeries; open: boolean }
+  | { kind: 'chapter'; key: string; c: DlChapter };
 
 function refresh(): void {
   void queryClient.invalidateQueries({ queryKey: queryKeys.downloadsUsage() });
 }
 
 const seriesKey = (s: { bridgeId: string; seriesId: string }) => `${s.bridgeId}:${s.seriesId}`;
+
+/**
+ * Flatten the storage tree into the virtualized list — each series (queue-first, then most-recent),
+ * followed by its chapters (finished-first, then queue order) while it's expanded — REUSING each row's
+ * object from `cache` when its inputs are unchanged. A series row is reused while its `s` snapshot and
+ * open-state are identical; a chapter row while its `c` snapshot is identical. So when one entry ticks,
+ * only that row (and its series' rollup) gets a fresh object — every other row keeps its reference and
+ * LegendList leaves it untouched. `cache` is pruned to the rows still present.
+ */
+function buildRows(bySeries: StorageUsageSeries[], expanded: Set<string>, cache: Map<string, DlRow>): DlRow[] {
+  const ordered = [...bySeries].sort((a, b) => bySortValue(seriesSortValue(a.chapters), seriesSortValue(b.chapters)));
+  const rows: DlRow[] = [];
+  const live = new Set<string>();
+  for (const s of ordered) {
+    const key = seriesKey(s);
+    live.add(key);
+    const open = expanded.has(key);
+    const prev = cache.get(key);
+    const row: DlRow =
+      prev && prev.kind === 'series' && prev.s === s && prev.open === open ? prev : { kind: 'series', key, s, open };
+    cache.set(key, row);
+    rows.push(row);
+    if (open) {
+      const chapters = [...s.chapters].sort((a, b) => bySortValue(chapterSortValue(a), chapterSortValue(b)));
+      for (const c of chapters) {
+        const ckey = `${key}:${c.chapterId}`;
+        live.add(ckey);
+        const cprev = cache.get(ckey);
+        const crow: DlRow = cprev && cprev.kind === 'chapter' && cprev.c === c ? cprev : { kind: 'chapter', key: ckey, c };
+        cache.set(ckey, crow);
+        rows.push(crow);
+      }
+    }
+  }
+  for (const k of cache.keys()) if (!live.has(k)) cache.delete(k);
+  return rows;
+}
 
 interface RowHandlers {
   onPause: () => void;
@@ -126,6 +169,9 @@ export default function DownloadsScreen() {
   const { focus } = useLocalSearchParams<{ focus?: string }>();
   const listRef = useRef<LegendListRef>(null);
   const [pendingScroll, setPendingScroll] = useState<string | null>(null);
+  // Caches flattened row objects across renders so an unchanged row keeps the SAME reference — the
+  // basis for LegendList skipping its re-render (see `buildRows` / the `DlRow` note).
+  const rowCache = useRef<Map<string, DlRow>>(new Map());
 
   const { data: usage = EMPTY_USAGE } = useQuery({
     queryKey: queryKeys.downloadsUsage(),
@@ -158,10 +204,10 @@ export default function DownloadsScreen() {
     forgetSeries(s.bridgeId, s.seriesId);
     refresh();
   };
-  const deleteChapter = async (s: StorageUsageSeries, chapterId: string) => {
-    const { files } = await dlDeleteChapter(s.bridgeId, s.seriesId, chapterId);
+  const deleteChapter = async (bridgeId: string, seriesId: string, chapterId: string) => {
+    const { files } = await dlDeleteChapter(bridgeId, seriesId, chapterId);
     removeBlobs(files);
-    forgetChapter(s.bridgeId, s.seriesId, chapterId);
+    forgetChapter(bridgeId, seriesId, chapterId);
     refresh();
   };
   // Retrying a whole series re-queues each of its failed chapters.
@@ -174,24 +220,11 @@ export default function DownloadsScreen() {
   const cancelSeriesInflight = async (s: StorageUsageSeries) => {
     await pauseSeries(s.bridgeId, s.seriesId);
     for (const c of s.chapters) {
-      if (c.state !== 'complete') await deleteChapter(s, c.chapterId);
+      if (c.state !== 'complete') await deleteChapter(c.bridgeId, c.seriesId, c.chapterId);
     }
   };
 
-  // Flatten to one virtualized list: each series (queue-first, then most-recent — see derive.ts),
-  // followed by its chapters (finished-first, then queue order) only while it's expanded.
-  const ordered = [...usage.bySeries].sort((a, b) =>
-    bySortValue(seriesSortValue(a.chapters), seriesSortValue(b.chapters)),
-  );
-  const rows: DlRow[] = [];
-  for (const s of ordered) {
-    const key = seriesKey(s);
-    rows.push({ kind: 'series', key, s });
-    if (expanded.has(key)) {
-      const chapters = [...s.chapters].sort((a, b) => bySortValue(chapterSortValue(a), chapterSortValue(b)));
-      for (const c of chapters) rows.push({ kind: 'chapter', key: `${key}:${c.chapterId}`, s, c });
-    }
-  }
+  const rows = buildRows(usage.bySeries, expanded, rowCache.current);
 
   // Once the focused series is in the flattened rows (after its expand lands), bring it into view.
   useEffect(() => {
@@ -243,8 +276,7 @@ export default function DownloadsScreen() {
 
   const renderItem = ({ item }: { item: DlRow }) => {
     if (item.kind === 'series') {
-      const { s } = item;
-      const open = expanded.has(item.key);
+      const { s, open } = item;
       const state = deriveSeriesState(s.chapters);
       const frac = seriesFraction(s.chapters);
       return (
@@ -276,7 +308,7 @@ export default function DownloadsScreen() {
         />
       );
     }
-    const { s, c } = item;
+    const { c } = item;
     // All read from the per-page-patched manifest: completed pages, bytes, and state advance together,
     // so the radial, the "X/Y" count, and the size can never disagree and update every page.
     const cState = displayChapterState(c);
@@ -301,8 +333,8 @@ export default function DownloadsScreen() {
           onPause: () => void pauseChapter(c.bridgeId, c.seriesId, c.chapterId),
           onResume: () => void resumeChapterDownload(c.bridgeId, c.seriesId, c.chapterId),
           onRetry: () => void retryChapter(c.bridgeId, c.seriesId, c.chapterId),
-          onCancel: () => void deleteChapter(s, c.chapterId),
-          onDelete: () => void deleteChapter(s, c.chapterId),
+          onCancel: () => void deleteChapter(c.bridgeId, c.seriesId, c.chapterId),
+          onDelete: () => void deleteChapter(c.bridgeId, c.seriesId, c.chapterId),
         })}
       />
     );
