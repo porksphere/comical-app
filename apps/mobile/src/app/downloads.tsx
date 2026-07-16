@@ -10,10 +10,11 @@
  * row at once. Series rows are bold with an animated foldout chevron; chapter rows are indented under
  * their parent. Recycling is off — each swipe row keeps its own gesture state.
  *
- * Downloads are device data (not source content), so this reads the `/downloads` manifest directly
- * through `api.ts`; a backend without the module yields an empty tree. Deletions cascade in the core
- * (`Downloads.delete*` returns the blob paths), then this removes those bytes and prunes the offline
- * index; cancel/resume go through the engine so an in-flight chapter aborts promptly.
+ * This reads the `/downloads` storage tree through `api.ts`; a backend without the module yields an
+ * empty tree. Mutations (delete/cancel/resume) go to the HOST's download engine — embedded or remote
+ * server — which owns the blobs and aborts in-flight work; this screen only prunes the offline index
+ * and refetches. The Wi-Fi/background toggles are device policies for the embedded engine, so they
+ * only render in embedded mode (a remote server paces its own downloads).
  */
 import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
@@ -34,7 +35,7 @@ import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, SettingsGutter, SettingsRowHeight, Spacing } from '@/constants/theme';
 import { dlDeleteChapter, dlDeleteSeries, dlStorageUsage } from '@/data/api';
 import { applyBackgroundDownloads } from '@/data/downloads/background';
-import { removeBlobs } from '@/data/downloads/blob-store';
+import { getResolvedModeSync } from '@/data/embedded/preference';
 import {
   bySortValue,
   chapterSortValue,
@@ -197,15 +198,15 @@ export default function DownloadsScreen() {
       return next;
     });
 
+  // The host's engine unlinks the blobs itself (its delete routes return `files: []`); this side
+  // only drops the sync offline-index entries and refetches.
   const deleteSeries = async (s: StorageUsageSeries) => {
-    const { files } = await dlDeleteSeries(s.bridgeId, s.seriesId);
-    removeBlobs(files);
+    await dlDeleteSeries(s.bridgeId, s.seriesId);
     forgetSeries(s.bridgeId, s.seriesId);
     refresh();
   };
   const deleteChapter = async (bridgeId: string, seriesId: string, chapterId: string) => {
-    const { files } = await dlDeleteChapter(bridgeId, seriesId, chapterId);
-    removeBlobs(files);
+    await dlDeleteChapter(bridgeId, seriesId, chapterId);
     forgetChapter(bridgeId, seriesId, chapterId);
     refresh();
   };
@@ -245,27 +246,31 @@ export default function DownloadsScreen() {
           <SeriesStorageBar bySeries={usage.bySeries} totalBytes={usage.totalBytes} />
         </View>
       )}
-      <SettingsSection>
-        <SettingsToggleRow
-          label="Download over Wi-Fi only"
-          description="Hold downloads until you're on Wi-Fi."
-          value={wifiOnly}
-          onChange={(v) => {
-            downloadPrefs$.wifiOnly.set(v);
-            // Turning the gate off (or changing it) should resume held-back downloads right away.
-            kickDownloads();
-          }}
-        />
-        <SettingsToggleRow
-          label="Download in background"
-          description="Continue in OS-granted windows after leaving the app."
-          value={background}
-          onChange={(v) => {
-            downloadPrefs$.background.set(v);
-            applyBackgroundDownloads(v);
-          }}
-        />
-      </SettingsSection>
+      {/* Wi-Fi/background gate the DEVICE engine — meaningless when a remote server owns the
+          downloads (it paces itself), so the section only renders in embedded mode. */}
+      {getResolvedModeSync() === 'embedded' && (
+        <SettingsSection>
+          <SettingsToggleRow
+            label="Download over Wi-Fi only"
+            description="Hold downloads until you're on Wi-Fi."
+            value={wifiOnly}
+            onChange={(v) => {
+              downloadPrefs$.wifiOnly.set(v);
+              // Turning the gate off (or changing it) should resume held-back downloads right away.
+              kickDownloads();
+            }}
+          />
+          <SettingsToggleRow
+            label="Download in background"
+            description="Continue in OS-granted windows after leaving the app."
+            value={background}
+            onChange={(v) => {
+              downloadPrefs$.background.set(v);
+              applyBackgroundDownloads(v);
+            }}
+          />
+        </SettingsSection>
+      )}
     </View>
   );
 

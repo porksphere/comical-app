@@ -1,32 +1,21 @@
 /**
- * Durable on-disk store for downloaded page bytes. The `Downloads` manifest (in `@comical/downloads`,
- * persisted via the on-device store) records only *which* pages are downloaded and their relative
- * `file` path; the actual image bytes live here on the filesystem.
+ * Durable on-disk store for downloaded page bytes — the device `BlobStore` behind the shared
+ * `@comical/downloads` engine (which runs in-process via `@comical/host-rn` in embedded mode). The
+ * manifest records only *which* pages are downloaded and their relative `file` path; the actual image
+ * bytes live here on the filesystem.
  *
- * Layout: `Paths.document/comical-downloads/<bridge>/<series>/<chapter>/<index>.<ext>`. Unlike
+ * Layout: `Paths.document/comical-downloads/<relPath>` where `<relPath>` follows the shared
+ * convention in `@comical/downloads`' `paths.ts` (`<bridge>/<series>/<chapter>/<index>.<ext>`,
+ * sanitized) — one layout across every host, so existing manifests keep resolving. Unlike
  * `bundle-cache.ts` (which uses `Paths.cache`, reclaimable by the OS), downloads must be **durable**,
  * so they live under `Paths.document`. The manifest stores the **relative** path (not an absolute
  * `file://`), because on iOS the document directory's absolute container path can change across app
  * updates — we reconstruct the absolute URI from `Paths.document` at read time (`uriFor`).
- *
- * Two write paths, both fed by the engine after it resolves a page: a `data:` URI (embedded mode
- * proxies bytes inline) is written base64-decoded; an http(s) URL is downloaded directly (with the
- * page's fetch headers). Operations are best-effort/guarded so a filesystem hiccup fails one page,
- * never the app.
  */
 import { Directory, File, Paths } from 'expo-file-system';
+import type { BlobStore } from '@comical/downloads';
 
 const ROOT = 'comical-downloads';
-
-/** Filesystem-safe path segment. Bridge/series/chapter ids can contain arbitrary characters. */
-function sanitize(s: string): string {
-  return s.replace(/[^a-zA-Z0-9_-]/g, '_');
-}
-
-/** The relative manifest path for a page: `<bridge>/<series>/<chapter>/<index>.<ext>`. */
-export function relPathFor(bridgeId: string, seriesId: string, chapterId: string, index: number, ext: string): string {
-  return `${sanitize(bridgeId)}/${sanitize(seriesId)}/${sanitize(chapterId)}/${index}.${ext}`;
-}
 
 /** The `File` for a stored relative path, rooted at the (current) document directory. */
 function fileFor(relPath: string): File {
@@ -47,68 +36,27 @@ function prepared(relPath: string): File {
   return file;
 }
 
-/** Guess a file extension from a data-URI media type or a URL, defaulting to `img`. */
-export function extFor(resolved: string): string {
-  const mime = resolved.startsWith('data:') ? resolved.slice(5, resolved.indexOf(';')) : '';
-  if (mime.includes('jpeg') || mime.includes('jpg')) return 'jpg';
-  if (mime.includes('png')) return 'png';
-  if (mime.includes('webp')) return 'webp';
-  if (mime.includes('gif')) return 'gif';
-  if (mime.includes('avif')) return 'avif';
-  const m = resolved.split('?')[0]?.match(/\.([a-zA-Z0-9]{1,5})$/);
-  return m?.[1]?.toLowerCase() ?? 'img';
-}
-
-export interface BlobWriteResult {
-  /** The relative path stored in the manifest. */
-  relPath: string;
-  /** On-disk size in bytes. */
-  bytes: number;
-}
-
-/** Write a `data:...;base64,<b64>` URI's bytes to disk. */
-function writeDataUri(relPath: string, dataUri: string): BlobWriteResult {
-  const comma = dataUri.indexOf(',');
-  const base64 = comma >= 0 ? dataUri.slice(comma + 1) : dataUri;
-  const file = prepared(relPath);
-  file.write(base64, { encoding: 'base64' });
-  return { relPath, bytes: file.size ?? 0 };
-}
-
 /**
- * Fetch an http(s) URL's bytes and write them to the EXACT `relPath` (sending the page's referer/auth
- * headers). Deliberately not `File.downloadFileAsync`: that can write to a filename derived from the
- * response headers rather than the destination we hand it, so the manifest would record `relPath` but
- * the bytes would land elsewhere — orphaning them (never deleted, and unreadable offline). Writing the
- * fetched bytes ourselves guarantees the file is exactly where the manifest says it is.
+ * The device `BlobStore` the embedded download engine writes through. `write` lands the fetched
+ * bytes at EXACTLY the manifest's `relPath` (never a name derived from response headers), so the
+ * file is always where the manifest says it is; `remove`/`removeAll` back the engine's deletion
+ * cascade. No `read` — the reader consumes blobs by `file://` URI (`uriFor`), never through a route.
  */
-async function writeFromUrl(relPath: string, url: string, headers?: Record<string, string>): Promise<BlobWriteResult> {
-  const res = await fetch(url, headers ? { headers } : undefined);
-  if (!res.ok) throw new Error(`download failed: ${res.status}`);
-  const bytes = new Uint8Array(await res.arrayBuffer());
-  const file = prepared(relPath);
-  file.write(bytes);
-  return { relPath, bytes: file.size ?? bytes.byteLength };
-}
+export const expoBlobStore: BlobStore = {
+  async write(relPath, data) {
+    const file = prepared(relPath);
+    file.write(data);
+    return { bytes: file.size ?? data.byteLength };
+  },
+  async remove(relPaths) {
+    removeBlobs(relPaths);
+  },
+  async removeAll() {
+    removeAllBlobs();
+  },
+};
 
-/**
- * Store one resolved page. `resolved` is what `resolveAssetSource` returned — either a `data:` URI
- * (bytes inline) or an http(s) URL to fetch. Returns the manifest `file`/`bytes`.
- */
-export async function storePage(
-  bridgeId: string,
-  seriesId: string,
-  chapterId: string,
-  index: number,
-  resolved: string,
-  headers?: Record<string, string>,
-): Promise<BlobWriteResult> {
-  const relPath = relPathFor(bridgeId, seriesId, chapterId, index, extFor(resolved));
-  if (resolved.startsWith('data:')) return writeDataUri(relPath, resolved);
-  return writeFromUrl(relPath, resolved, headers);
-}
-
-/** Remove stored blobs by their relative paths (best-effort). Prunes now-empty chapter dirs. */
+/** Remove stored blobs by their relative paths (best-effort). */
 export function removeBlobs(relPaths: string[]): void {
   for (const relPath of relPaths) {
     try {

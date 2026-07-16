@@ -31,7 +31,10 @@ import { bumpDataEpoch } from '../data-epoch';
 import { queryClient } from '../query-client';
 import { AsyncStorageDownloadsStore } from '../downloads/async-store';
 import { applyBackgroundDownloads } from '../downloads/background';
-import { installNetworkAutoResume, resumePendingDownloads } from '../downloads/engine';
+import { expoBlobStore } from '../downloads/blob-store';
+import { installNetworkAutoResume, mayDownloadNow, resumePendingDownloads } from '../downloads/engine';
+import { installDownloadProgress } from '../downloads/events';
+import { devicePageFetcher, onDevicePageRetry } from '../downloads/fetch-page';
 import { hydrateDownloadIndex } from '../downloads/index-cache';
 import { getDownloadPrefsSync } from '../downloads/prefs';
 import { fileSystemBundleCache } from './bundle-cache';
@@ -55,9 +58,17 @@ function bootstrapConfig(): EmbeddedBootstrapConfig {
     // `library-store.ts`; the same endpoints the remote `comical-web` server already exposes.
     libraryStore: new AsyncStorageLibraryStore(),
     // On-device downloads persistence — mounts the router's `/downloads*` endpoints in embedded mode
-    // so the offline-download manifest (enqueue / record / storage / delete) works with no server. The
-    // image bytes themselves live on the filesystem via `blob-store.ts`; this store holds the manifest.
+    // so the offline-download manifest (enqueue / record / storage / delete) works with no server.
     downloadsStore: new AsyncStorageDownloadsStore(),
+    // Device seams for the shared download engine (which host-rn runs in-process behind the router):
+    // bytes land on this device's filesystem, pages resolve through the reader's own asset resolver,
+    // and the Wi-Fi-only policy gates the drain. See `getEmbeddedDownloadEngine()` for the lifecycle.
+    downloadsEngine: {
+      blobs: expoBlobStore,
+      fetchPage: devicePageFetcher,
+      mayDownload: mayDownloadNow,
+      onPageRetry: onDevicePageRetry,
+    },
     // Persist verified bundles to disk so cold starts don't re-download + re-verify every bridge.
     cache: fileSystemBundleCache,
     // An install/update/uninstall (or add/remove registry) changes what the runtime serves — refetch
@@ -82,6 +93,8 @@ export function startEmbeddedRuntime(): void {
   applyEmbeddedMode(getResolvedModeSync() === 'embedded');
   // Warm the sync offline index from the manifest, then resume any downloads interrupted last session.
   void hydrateDownloadIndex().then(() => resumePendingDownloads());
+  // Pipe live download progress for the resolved mode (embedded engine subscription / remote SSE).
+  installDownloadProgress();
   // Auto-resume when connectivity/Wi-Fi returns (not just on next launch).
   installNetworkAutoResume();
   // Apply the user's image-cache size cap — the native layer LRU-evicts to stay under it.

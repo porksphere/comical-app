@@ -11,6 +11,8 @@ import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useApiBase } from '@/data/api';
 import { bumpDataEpoch } from '@/data/data-epoch';
+import { installDownloadProgress } from '@/data/downloads/events';
+import { hydrateDownloadIndex } from '@/data/downloads/index-cache';
 import { applyEmbeddedMode, isEmbeddedRuntimeAvailable, useEmbeddedEnabled } from '@/data/embedded';
 import { queryClient } from '@/data/query-client';
 import { useNsfwMode, type NsfwMode } from '@/data/source';
@@ -59,12 +61,16 @@ export default function GeneralSettingsScreen() {
     applyEmbeddedMode(enabled); // swap api.ts's transport (embedded ⇄ remote)
     queryClient.clear(); // embedded and remote caches must not mix (mirrors PERSIST_BUSTER)
     bumpDataEpoch(); // refetch useDataSource-backed screens against the swapped transport
+    installDownloadProgress(); // re-pipe progress (embedded engine subscription ⇄ remote SSE)
+    void hydrateDownloadIndex(); // the mode changes what a "local page" is (file:// ⇄ server /file)
   };
 
   const saveApiBase = (url: string | null) => {
     setApiBaseOverride(url);
     queryClient.clear(); // a different server's cached data can't be trusted (mirrors PERSIST_BUSTER)
     bumpDataEpoch(); // refetch useDataSource-backed screens against the new server
+    installDownloadProgress(); // the SSE stream targets the new server
+    void hydrateDownloadIndex(); // remote /file URLs embed the server base — rebuild them
   };
 
   return (

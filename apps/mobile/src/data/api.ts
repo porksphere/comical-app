@@ -481,13 +481,15 @@ export function getPageThumb(
 //
 // These drive the optional `/downloads*` endpoints the reused router mounts when a Downloads service
 // is present (on-device via host-rn's embedded runtime; on a remote server if it enables the module).
-// They manage only the MANIFEST — which chapters/pages are downloaded, their state and byte sizes; the
-// image bytes are written to the filesystem app-side (`downloads/blob-store.ts`) and this device serves
-// them to `<Image>` via the offline `resolveAssetSource` intercept. Types are erased at build.
+// The bytes are owned by whichever HOST runs the download engine: embedded mode writes them to this
+// device's filesystem (`downloads/blob-store.ts`, served to `<Image>` as `file://` URIs), remote mode
+// stores them server-side (served back via `/downloads/.../pages/:i/file`). Types are erased at build.
 
 import type { DownloadedChapter, DownloadedPage, DownloadedSeries, DownloadPrefs, StorageUsage } from '@comical/downloads';
 
-/** The body posted to enqueue a chapter: the series snapshot + chapter meta + the raw page list. */
+/** The body posted to enqueue a chapter: the series snapshot + chapter meta. `pages` is optional —
+ *  an engine-backed host (embedded or a current server) resolves the page list via its own bridge;
+ *  supplying it explicitly is the manifest-only back-compat path. */
 export interface DlEnqueueChapterBody {
   title: string;
   thumbnailUrl?: string;
@@ -495,7 +497,7 @@ export interface DlEnqueueChapterBody {
   chapterName?: string;
   number?: number;
   languageCode?: string;
-  pages: { index: number; sourceUrl: string; headers?: Record<string, string> }[];
+  pages?: { index: number; sourceUrl: string; headers?: Record<string, string> }[];
 }
 
 const dlBase = (bridgeId: string, seriesId: string) =>
