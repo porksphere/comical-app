@@ -12,6 +12,8 @@
  *   comical:lib:bridge-prefs       → { [bridgeId]: BridgePrefs }
  *   comical:lib:activity           → { [activityKey]: ActivityItem }
  *   comical:lib:progress:<key>     → { [chapterId]: ChapterProgress }
+ *   comical:lib:detail:<key>       → CachedSeriesDetail   (offline series page)
+ *   comical:lib:chapters:<key>     → CachedChapters       (offline chapter list)
  *
  * Single-user, local scale: read/parse/write per operation (no in-memory cache), which keeps it
  * trivially correct — the library is small and writes are infrequent (a read or an add/remove).
@@ -22,6 +24,8 @@ import {
   activityKey,
   type ActivityItem,
   type BridgePrefs,
+  type CachedChapters,
+  type CachedSeriesDetail,
   type ChapterProgress,
   type HistoryItem,
   type LibraryEntry,
@@ -40,6 +44,8 @@ const READING_LOG = `${NS}:reading-log`;
 const BRIDGE_PREFS = `${NS}:bridge-prefs`;
 const ACTIVITY = `${NS}:activity`;
 const progressKey = (key: string) => `${NS}:progress:${encodeURIComponent(key)}`;
+const detailKey = (key: string) => `${NS}:detail:${encodeURIComponent(key)}`;
+const cachedChaptersKey = (key: string) => `${NS}:chapters:${encodeURIComponent(key)}`;
 
 async function read<T>(storageKey: string, fallback: T): Promise<T> {
   const raw = await AsyncStorage.getItem(storageKey);
@@ -79,6 +85,27 @@ export class AsyncStorageLibraryStore implements LibraryStore {
       delete all[key];
       await write(ENTRIES, all);
     }
+  }
+
+  // ── Offline metadata cache ───────────────────────────────────────────────────
+  // One doc per entry (chapter lists are bulky), read lazily on series-page open — never bulk-read.
+  async getSeriesDetail(key: string): Promise<CachedSeriesDetail | undefined> {
+    return read<CachedSeriesDetail | undefined>(detailKey(key), undefined);
+  }
+  async putSeriesDetail(key: string, detail: CachedSeriesDetail): Promise<void> {
+    await write(detailKey(key), detail);
+  }
+  async deleteSeriesDetail(key: string): Promise<void> {
+    await AsyncStorage.removeItem(detailKey(key));
+  }
+  async getCachedChapters(key: string): Promise<CachedChapters | undefined> {
+    return read<CachedChapters | undefined>(cachedChaptersKey(key), undefined);
+  }
+  async putCachedChapters(key: string, doc: CachedChapters): Promise<void> {
+    await write(cachedChaptersKey(key), doc);
+  }
+  async deleteCachedChapters(key: string): Promise<void> {
+    await AsyncStorage.removeItem(cachedChaptersKey(key));
   }
 
   // ── Progress ───────────────────────────────────────────────────────────────

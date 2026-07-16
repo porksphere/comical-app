@@ -413,6 +413,13 @@ const realDataSource: DataSource = {
       relatedGroupsDeferred: !info.relatedSeriesGroups,
       listDeferred: true,
     };
+    // The host flags a response served from the library's offline metadata cache with additive
+    // fields on the SeriesInfo shape — carry them through so the page can show the affordance.
+    const offline = info as { cached?: boolean; cachedAt?: number };
+    if (offline.cached) {
+      base.cached = true;
+      if (offline.cachedAt !== undefined) base.cachedAt = offline.cachedAt;
+    }
     if (opts.direct) {
       // Static/known-from-info parts render right away; the grid streams in later.
       base.readLabel = '▶  Read';
