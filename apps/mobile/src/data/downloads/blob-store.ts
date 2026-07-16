@@ -54,6 +54,9 @@ export const expoBlobStore: BlobStore = {
   async removeAll() {
     removeAllBlobs();
   },
+  async usage() {
+    return downloadsDiskUsage();
+  },
 };
 
 /** Remove stored blobs by their relative paths (best-effort). */

@@ -27,6 +27,7 @@ import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { dlStorageUsage } from '@/data/api';
 import { downloadsDiskUsage } from '@/data/downloads/blob-store';
 import { formatBytes } from '@/data/downloads/format';
+import { getResolvedModeSync } from '@/data/embedded/preference';
 import { queryKeys } from '@/data/queries';
 import { applyImageCacheConfig, cacheDiskUsage, cachePrefs$, clearImageCache, useCachePrefs } from '@/data/image-cache';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
@@ -49,6 +50,7 @@ export default function StorageScreen() {
   const contentPadding = useSettingsScrollPadding();
   const router = useRouter();
   const cacheMax = useCachePrefs().maxBytes;
+  const embedded = getResolvedModeSync() === 'embedded';
 
   // Downloads footprint + counts from the manifest (cross-platform); a backend without the module
   // yields an empty tree, not an error.
@@ -91,12 +93,16 @@ export default function StorageScreen() {
         </SettingsSection>
 
         <SettingsSection title="Downloads">
+          {/* Totals come from whichever HOST owns the bytes. Embedded: the manifest rollup, shown
+              beside the bar's actual-disk number so a gap surfaces orphaned blobs. Remote: the
+              server's true blob-root size (`diskBytes`), labeled as such — none of it occupies this
+              device, which is why the device bar above excludes it. */}
           <SettingsRow
             label="Downloaded content"
             description={
               usage.seriesCount === 0
                 ? 'Nothing downloaded yet.'
-                : `${formatBytes(usage.totalBytes)} · ${usage.seriesCount} series · ${usage.chapterCount} chapter${usage.chapterCount === 1 ? '' : 's'} · ${usage.pageCount} page${usage.pageCount === 1 ? '' : 's'}`
+                : `${embedded ? formatBytes(usage.totalBytes) : `${formatBytes(usage.diskBytes ?? usage.totalBytes)} on the server`} · ${usage.seriesCount} series · ${usage.chapterCount} chapter${usage.chapterCount === 1 ? '' : 's'} · ${usage.pageCount} page${usage.pageCount === 1 ? '' : 's'}`
             }
           />
           <SettingsRow
