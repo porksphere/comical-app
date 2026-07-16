@@ -31,7 +31,7 @@ import { bumpDataEpoch } from '../data-epoch';
 import { queryClient } from '../query-client';
 import { AsyncStorageDownloadsStore } from '../downloads/async-store';
 import { applyBackgroundDownloads } from '../downloads/background';
-import { resumePendingDownloads } from '../downloads/engine';
+import { installNetworkAutoResume, resumePendingDownloads } from '../downloads/engine';
 import { hydrateDownloadIndex } from '../downloads/index-cache';
 import { getDownloadPrefsSync } from '../downloads/prefs';
 import { fileSystemBundleCache } from './bundle-cache';
@@ -81,6 +81,8 @@ export function startEmbeddedRuntime(): void {
   applyEmbeddedMode(getResolvedModeSync() === 'embedded');
   // Warm the sync offline index from the manifest, then resume any downloads interrupted last session.
   void hydrateDownloadIndex().then(() => resumePendingDownloads());
+  // Auto-resume when connectivity/Wi-Fi returns (not just on next launch).
+  installNetworkAutoResume();
   // Re-arm the background drain task if the user enabled it.
   applyBackgroundDownloads(getDownloadPrefsSync().background);
 }
