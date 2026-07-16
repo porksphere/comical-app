@@ -75,11 +75,20 @@ function writeDataUri(relPath: string, dataUri: string): BlobWriteResult {
   return { relPath, bytes: file.size ?? 0 };
 }
 
-/** Download an http(s) URL's bytes to disk, sending the page's fetch headers (referer/auth). */
+/**
+ * Fetch an http(s) URL's bytes and write them to the EXACT `relPath` (sending the page's referer/auth
+ * headers). Deliberately not `File.downloadFileAsync`: that can write to a filename derived from the
+ * response headers rather than the destination we hand it, so the manifest would record `relPath` but
+ * the bytes would land elsewhere — orphaning them (never deleted, and unreadable offline). Writing the
+ * fetched bytes ourselves guarantees the file is exactly where the manifest says it is.
+ */
 async function writeFromUrl(relPath: string, url: string, headers?: Record<string, string>): Promise<BlobWriteResult> {
-  const dest = prepared(relPath);
-  const file = await File.downloadFileAsync(url, dest, headers ? { headers } : undefined);
-  return { relPath, bytes: file.size ?? 0 };
+  const res = await fetch(url, headers ? { headers } : undefined);
+  if (!res.ok) throw new Error(`download failed: ${res.status}`);
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  const file = prepared(relPath);
+  file.write(bytes);
+  return { relPath, bytes: file.size ?? bytes.byteLength };
 }
 
 /**
@@ -118,5 +127,18 @@ export function removeAllBlobs(): void {
     if (dir.exists) dir.delete();
   } catch {
     // best-effort
+  }
+}
+
+/**
+ * The ACTUAL bytes the downloads directory occupies on disk (durable, under Documents). Shown next to
+ * the manifest's rolled-up total so a gap surfaces any orphaned blobs. Returns 0 if unavailable (web).
+ */
+export function downloadsDiskUsage(): number {
+  try {
+    const dir = new Directory(Paths.document, ROOT);
+    return dir.exists ? (dir.size ?? 0) : 0;
+  } catch {
+    return 0;
   }
 }
