@@ -21,12 +21,17 @@ export function displayChapterState(c: DownloadedChapter): DownloadState {
  * state wins.
  */
 export function deriveSeriesState(chapters: DownloadedChapter[]): DownloadState {
-  const nonComplete = chapters.map((c) => c.state).filter((s) => s !== 'complete');
+  const states = chapters.map((c) => c.state);
+  const nonComplete = states.filter((s) => s !== 'complete');
   if (nonComplete.length === 0) return 'complete';
   if (nonComplete.every((s) => s === 'paused')) return 'paused';
   if (nonComplete.some((s) => s === 'downloading')) return 'downloading';
   if (nonComplete.some((s) => s === 'failed')) return 'failed';
-  return 'queued';
+  // All remaining are 'queued'. If the series has ALREADY started (any chapter complete), it's
+  // mid-download between chapters — report 'downloading' so the series indicator doesn't flash to
+  // 'queued' in the gap before the next chapter is picked up. A series with nothing complete yet is
+  // genuinely queued.
+  return states.some((s) => s === 'complete') ? 'downloading' : 'queued';
 }
 
 /** Series progress [0,1] across all its pages. */

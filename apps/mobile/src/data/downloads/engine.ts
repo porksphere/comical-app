@@ -308,8 +308,14 @@ export async function drain(): Promise<void> {
       for (const chapter of pending) {
         if (stopRequested || !(await mayDownloadNow())) break;
         if (isCancelled(chapter.bridgeId, chapter.seriesId, chapter.chapterId)) continue;
-        const did = await downloadChapter(chapter.bridgeId, chapter.seriesId, chapter.chapterId);
-        progressed = progressed || did;
+        try {
+          const did = await downloadChapter(chapter.bridgeId, chapter.seriesId, chapter.chapterId);
+          progressed = progressed || did;
+        } catch {
+          // The chapter vanished mid-drain — deleted/cancelled between being listed as pending and
+          // fetched here, so the manifest read throws "not downloaded". Skip it (the manifest is the
+          // source of truth) rather than let it crash the whole queue with an unhandled rejection.
+        }
       }
       // Nothing advanced this pass (every remaining page errors) — stop rather than spin.
       if (!progressed) break;

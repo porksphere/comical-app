@@ -14,6 +14,8 @@ mock.module('./state', () => ({ chapterProgressKey: key }));
 interface Pg { index: number; sourceUrl: string; state: string; file: string; bytes: number }
 const pagesByChapter: Record<string, Pg[]> = {};
 const paused = new Set<string>();
+/** Chapters whose manifest read throws "not downloaded" — as if deleted between listing + fetching. */
+const broken = new Set<string>();
 
 function chapterState(ch: string): string {
   if (paused.has(ch)) return 'paused';
@@ -34,7 +36,10 @@ mock.module('../api', () => ({
     Object.keys(pagesByChapter)
       .map((ch) => ({ bridgeId: 'b', seriesId: 's', chapterId: ch, state: chapterState(ch) }))
       .filter((c) => c.state !== 'complete' && c.state !== 'paused' && c.state !== 'failed'),
-  dlManifestPages: async (_b: string, _s: string, ch: string) => (pagesByChapter[ch] ?? []).map((p) => ({ ...p })),
+  dlManifestPages: async (_b: string, _s: string, ch: string) => {
+    if (broken.has(ch)) throw new Error(`chapter not downloaded: ${ch}`);
+    return (pagesByChapter[ch] ?? []).map((p) => ({ ...p }));
+  },
   dlRecordPage: async (_b: string, _s: string, ch: string, i: number, file: string, bytes: number) => {
     const pg = pagesByChapter[ch]?.find((p) => p.index === i);
     if (pg) Object.assign(pg, { state: 'complete', file, bytes });
@@ -91,7 +96,7 @@ mock.module('expo-network', () => ({
   addNetworkStateListener: () => ({ remove: () => {} }),
 }));
 
-const { drain, pauseSeries } = await import('./engine');
+const { drain, pauseSeries, resumeSeriesDownload } = await import('./engine');
 
 const seed = (ch: string, n: number) => {
   pagesByChapter[ch] = Array.from({ length: n }, (_, i) => ({ index: i, sourceUrl: `/i/${i}`, state: 'queued', file: '', bytes: 0 }));
@@ -106,13 +111,19 @@ const seedUsage = (ch: string, n: number) => {
 const tick = async (n = 30) => { for (let i = 0; i < n; i++) await Promise.resolve(); };
 const untilGate = async () => { for (let i = 0; i < 100 && !releaseNext; i++) await Promise.resolve(); };
 
-beforeEach(() => {
+beforeEach(async () => {
   for (const k of Object.keys(pagesByChapter)) delete pagesByChapter[k];
   usage = null;
   usageProgress.length = 0;
   paused.clear();
+  broken.clear();
   gated = false;
   releaseNext = null;
+  // The engine keeps module-level cancellation sets; a prior test's pause leaves series 's' cancelled,
+  // which would make the next test's chapters get skipped. Clear it through the public resume (a no-op
+  // drain here — the manifest is empty) so each test starts un-cancelled.
+  await resumeSeriesDownload('b', 's');
+  usageProgress.length = 0; // resume may have touched the cache; ignore that in the per-test log
 });
 
 describe('engine progress via the manifest query cache', () => {
@@ -146,5 +157,16 @@ describe('engine progress via the manifest query cache', () => {
     // The chapter did NOT run to completion — the pause stopped it partway.
     expect(pagesByChapter['c1'].filter((pg) => pg.state === 'complete').length).toBeLessThan(3);
     expect(paused.has('c1')).toBe(true);
+  });
+
+  test('a chapter that vanishes mid-drain (manifest throws) is skipped, not fatal', async () => {
+    seed('c1', 2); // the healthy chapter (its progress is what the cache mock tracks)
+    seedUsage('c1', 2);
+    seed('c2', 2); // deleted-out-from-under-us: still listed pending, but its manifest read throws
+    broken.add('c2');
+    await drain(); // must RESOLVE (no unhandled rejection) despite c2 throwing…
+    // …and the healthy chapter still downloads to completion.
+    expect(pagesByChapter['c1'].every((pg) => pg.state === 'complete')).toBe(true);
+    expect(usageProgress).toEqual([0, 1, 2]);
   });
 });
