@@ -12,6 +12,7 @@ import {
   DownloadsIcon,
   GeneralSettingsIcon,
   RegistriesIcon,
+  StorageIcon,
   TrackersIcon,
 } from '@/components/icons/ui-icons';
 import { CumulativeDownloadRadial } from '@/components/downloads/cumulative-radial';
@@ -122,6 +123,14 @@ export default function SettingsScreen() {
             value={counts.downloads}
             progress={counts.downloadsProgress}
             onPress={() => router.push('/downloads')}
+          />
+          <Divider />
+          <CategoryRow
+            testID="settings.category.storage"
+            icon={<StorageIcon color={theme.textSecondary} size={22} />}
+            title="Storage"
+            description="Image cache and downloaded content on this device."
+            onPress={() => router.push('/storage')}
           />
           <Divider />
           <CategoryRow

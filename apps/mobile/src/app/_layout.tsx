@@ -115,6 +115,7 @@ function RootNavigation() {
           <Stack.Screen name="add-registry" options={{ headerShown: false }} />
           <Stack.Screen name="diagnostics" options={{ headerShown: false }} />
           <Stack.Screen name="downloads" options={{ headerShown: false }} />
+          <Stack.Screen name="storage" options={{ headerShown: false }} />
         </Stack>
         <DemoBanner />
         {/* Root host for the native card long-press context menu (dim + lifted preview + menu). Only

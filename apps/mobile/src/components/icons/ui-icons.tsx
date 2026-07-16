@@ -12,6 +12,7 @@ import {
   Download,
   Eye,
   EyeOff,
+  HardDrive,
   Pause,
   RotateCcw,
   TriangleAlert,
@@ -64,6 +65,7 @@ export const DiagnosticsIcon = ({ color, size = 16 }: IconProps) => <Bug color={
 // Custom pages — the settings entry for composing your own Comical pages.
 export const CustomPagesIcon = ({ color, size = 16 }: IconProps) => <LayoutGrid color={color} size={size} />;
 export const DownloadsIcon = ({ color, size = 16 }: IconProps) => <Download color={color} size={size} />;
+export const StorageIcon = ({ color, size = 16 }: IconProps) => <HardDrive color={color} size={size} />;
 export const DownloadingIcon = ({ color, size = 16 }: IconProps) => <Download color={color} size={size} />;
 export const PauseIcon = ({ color, size = 16 }: IconProps) => <Pause color={color} size={size} fill={color} />;
 export const QueuedIcon = ({ color, size = 16 }: IconProps) => <Clock color={color} size={size} />;
