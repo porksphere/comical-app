@@ -152,16 +152,24 @@ export function SwipeableRow({ name, actions, edgeInset = 0, children }: Swipeab
  *  (escapes the settings gutter so pills reach the screen edge). Existing settings callers use this. */
 export function SwipeableSettingsRow({
   label,
+  labelBold,
   description,
   descriptionColor,
+  contentInset,
   leading,
+  right,
   onPress,
   actions,
 }: {
   label: string;
+  labelBold?: boolean;
   description?: string;
   descriptionColor?: string;
+  /** Indents the row's content under a parent (see `SettingsRow.contentInset`). */
+  contentInset?: number;
   leading?: ReactNode;
+  /** Trailing content on the row's right (overrides the auto chevron a pressable row would grow). */
+  right?: ReactNode;
   /** Tapping the row body (e.g. opening the item's detail page). Suppressed while the row is open. */
   onPress?: () => void;
   actions: SwipeRowAction[];
@@ -170,9 +178,12 @@ export function SwipeableSettingsRow({
     <SwipeableRow name={label} actions={actions} edgeInset={SettingsGutter}>
       <SettingsRow
         label={label}
+        labelBold={labelBold}
         description={description}
         descriptionColor={descriptionColor}
+        contentInset={contentInset}
         leading={leading}
+        right={right}
         escapeGutter={false}
         onPress={onPress}
       />

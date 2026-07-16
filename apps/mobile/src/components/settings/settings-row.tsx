@@ -110,10 +110,12 @@ export function SettingsSection({
  */
 export function SettingsRow({
   label,
+  labelBold,
   description,
   descriptionColor,
   descriptionSelectable,
   escapeGutter = true,
+  contentInset,
   leading,
   right,
   onPress,
@@ -122,7 +124,12 @@ export function SettingsRow({
   testID,
 }: {
   label: string;
+  /** Render the label in the bolder weight — used to make a parent row stand above its nested children. */
+  labelBold?: boolean;
   description?: string;
+  /** Extra left padding for the row's content (leading + text + chevron), indenting a NESTED row under
+   *  its parent while its background/press highlight still span the full width. */
+  contentInset?: number;
   /** Optional glyph/artwork before the label (a bridge's icon). See `RowIcon`. */
   leading?: ReactNode;
   /** Overrides the description's color (e.g. an amber/blue status hint) — defaults to `textSecondary`. */
@@ -156,11 +163,12 @@ export function SettingsRow({
         settingsRowFrame.row,
         escapeGutter && settingsRowFrame.escape,
         onPress && styles.rowPressable,
+        contentInset ? { paddingLeft: SettingsGutter + contentInset } : null,
         highlighted && Platform.OS !== 'android' && { backgroundColor: theme.backgroundSelected },
       ]}>
       {leading}
       <View style={settingsRowFrame.text}>
-        <ThemedText type="small" numberOfLines={1}>
+        <ThemedText type={labelBold ? 'smallBold' : 'small'} numberOfLines={1}>
           {label}
         </ThemedText>
         {description && (

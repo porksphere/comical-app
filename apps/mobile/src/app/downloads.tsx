@@ -1,29 +1,37 @@
 /**
- * The unified Downloads screen (a Settings sub-page): a device-storage bar, the download preferences,
- * and an expandable series → chapters breakdown — ordered queue-first then most-recent, each row
- * showing a progress radial while in flight and swipe/hover actions that match its state (Cancel an
- * in-flight download, Resume a cancelled one, Delete a finished one).
+ * The unified Downloads screen (a Settings sub-page): the download preferences and an expandable
+ * series → chapters breakdown — ordered queue-first then most-recent, each row showing a progress
+ * radial while in flight and swipe/hover actions that match its state (Cancel an in-flight download,
+ * Resume a paused one, Delete a finished one). The storage bar + size accounting live on the Storage
+ * screen; this page is management.
+ *
+ * The tree is **virtualized** (LegendList): the series + their expanded chapters are FLATTENED into one
+ * list so only on-screen rows mount — expanding a long series no longer mounts every chapter's swipe
+ * row at once. Series rows are bold with an animated foldout chevron; chapter rows are indented under
+ * their parent. Recycling is off — each swipe row keeps its own gesture state.
  *
  * Downloads are device data (not source content), so this reads the `/downloads` manifest directly
  * through `api.ts`; a backend without the module yields an empty tree. Deletions cascade in the core
  * (`Downloads.delete*` returns the blob paths), then this removes those bytes and prunes the offline
  * index; cancel/resume go through the engine so an in-flight chapter aborts promptly.
  */
+import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
+import Animated, { useAnimatedStyle, useDerivedValue, withTiming } from 'react-native-reanimated';
 
 import { CumulativeDownloadRadial } from '@/components/downloads/cumulative-radial';
 import { DownloadStatusIndicator } from '@/components/downloads/download-status-indicator';
-import { ChevronDownIcon, ChevronRightIcon, ClearIcon, PauseIcon, PlayIcon, RetryIcon, TrashIcon } from '@/components/icons/ui-icons';
+import { ChevronRightIcon, ClearIcon, PauseIcon, PlayIcon, RetryIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { SettingsToggleRow } from '@/components/settings/settings-fields';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { SwipeableSettingsRow, type SwipeRowAction } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { MaxContentWidth, SettingsGutter, SettingsRowHeight, Spacing } from '@/constants/theme';
 import { dlDeleteAll, dlDeleteChapter, dlDeleteSeries, dlStorageUsage } from '@/data/api';
 import { applyBackgroundDownloads } from '@/data/downloads/background';
 import { removeAllBlobs, removeBlobs } from '@/data/downloads/blob-store';
@@ -55,6 +63,12 @@ import { useTheme } from '@/hooks/use-theme';
 import type { DownloadState, StorageUsage, StorageUsageSeries } from '@comical/downloads';
 
 const EMPTY_USAGE: StorageUsage = { totalBytes: 0, seriesCount: 0, chapterCount: 0, pageCount: 0, bySeries: [] };
+
+type DlChapter = StorageUsageSeries['chapters'][number];
+/** One flattened list row: a series header, or a chapter nested under one (only for expanded series). */
+type DlRow =
+  | { kind: 'series'; key: string; s: StorageUsageSeries }
+  | { kind: 'chapter'; key: string; s: StorageUsageSeries; c: DlChapter };
 
 function refresh(): void {
   void queryClient.invalidateQueries({ queryKey: queryKeys.downloadsUsage() });
@@ -99,16 +113,20 @@ function chapterActions(state: DownloadState, h: RowHandlers): SwipeRowAction[] 
 }
 
 export default function DownloadsScreen() {
-  const contentPadding = useSettingsScrollPadding();
+  const { paddingTop, paddingBottom } = useSettingsScrollPadding();
+  const { width } = useWindowDimensions();
   const { wifiOnly, background } = useDownloadPrefs();
   const live = useLiveDownloadProgress();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
+  // Full-width scroller (scrollbar at the window edge); rows centered within the settings column via
+  // symmetric side padding — LegendList ignores maxWidth/alignSelf on its content container, so the
+  // centring has to be explicit. Rows escape `SettingsGutter` to reach the column's edge for their pills.
+  const sidePad = SettingsGutter + Math.max(0, (width - MaxContentWidth) / 2);
+
   // Deep-link / series-button focus: expand a series and scroll it into view.
   const { focus } = useLocalSearchParams<{ focus?: string }>();
-  const scrollRef = useRef<ScrollView>(null);
-  const listTop = useRef(0);
-  const rowY = useRef<Map<string, number>>(new Map());
+  const listRef = useRef<LegendListRef>(null);
   const [pendingScroll, setPendingScroll] = useState<string | null>(null);
 
   const { data: usage = EMPTY_USAGE } = useQuery({
@@ -121,18 +139,6 @@ export default function DownloadsScreen() {
     setExpanded((prev) => new Set(prev).add(focus));
     setPendingScroll(focus);
   }, [focus]);
-
-  const tryScroll = useCallback(() => {
-    if (!pendingScroll) return;
-    const y = rowY.current.get(pendingScroll);
-    if (y != null) {
-      scrollRef.current?.scrollTo({ y: Math.max(0, listTop.current + y - Spacing.three), animated: true });
-      setPendingScroll(null);
-    }
-  }, [pendingScroll]);
-  useEffect(() => {
-    tryScroll();
-  }, [tryScroll, usage]);
 
   const toggle = (key: string) =>
     setExpanded((prev) => {
@@ -174,156 +180,195 @@ export default function DownloadsScreen() {
     }
   };
 
-  // Queue-first, then most-recent (see derive.ts).
-  const orderedSeries = [...usage.bySeries].sort((a, b) =>
+  // Flatten to one virtualized list: each series (queue-first, then most-recent — see derive.ts),
+  // followed by its chapters (finished-first, then queue order) only while it's expanded.
+  const ordered = [...usage.bySeries].sort((a, b) =>
     bySortValue(seriesSortValue(a.chapters), seriesSortValue(b.chapters)),
   );
+  const rows: DlRow[] = [];
+  for (const s of ordered) {
+    const key = seriesKey(s);
+    rows.push({ kind: 'series', key, s });
+    if (expanded.has(key)) {
+      const chapters = [...s.chapters].sort((a, b) => bySortValue(chapterSortValue(a), chapterSortValue(b)));
+      for (const c of chapters) rows.push({ kind: 'chapter', key: `${key}:${c.chapterId}`, s, c });
+    }
+  }
+
+  // Once the focused series is in the flattened rows (after its expand lands), bring it into view.
+  useEffect(() => {
+    if (!pendingScroll) return;
+    const idx = rows.findIndex((r) => r.kind === 'series' && r.key === pendingScroll);
+    if (idx >= 0) {
+      listRef.current?.scrollToIndex({ index: idx, animated: true });
+      setPendingScroll(null);
+    }
+  }, [pendingScroll, rows]);
 
   const overall = overallProgress(usage.bySeries, live);
+
+  const header = (
+    <View style={styles.header}>
+      <SettingsSection>
+        {/* Cumulative progress across every series, shown while anything is in flight. */}
+        {overall.inProgress && (
+          <View style={styles.radial}>
+            <CumulativeDownloadRadial fraction={overall.fraction} size={64} showLabel />
+          </View>
+        )}
+        <SettingsToggleRow
+          label="Download over Wi-Fi only"
+          description="Hold downloads until you're on Wi-Fi."
+          value={wifiOnly}
+          onChange={(v) => {
+            downloadPrefs$.wifiOnly.set(v);
+            // Turning the gate off (or changing it) should resume held-back downloads right away.
+            kickDownloads();
+          }}
+        />
+        <SettingsToggleRow
+          label="Download in background"
+          description="Continue in OS-granted windows after leaving the app."
+          value={background}
+          onChange={(v) => {
+            downloadPrefs$.background.set(v);
+            applyBackgroundDownloads(v);
+          }}
+        />
+      </SettingsSection>
+    </View>
+  );
+
+  const footer =
+    rows.length > 0 ? (
+      <View style={styles.footer}>
+        <SettingsSection>
+          <SettingsRow
+            label="Delete all downloads"
+            description="Remove every downloaded chapter from this device."
+            descriptionColor="danger"
+            onPress={() => void deleteAll()}
+          />
+        </SettingsSection>
+      </View>
+    ) : null;
+
+  const renderItem = ({ item }: { item: DlRow }) => {
+    if (item.kind === 'series') {
+      const { s } = item;
+      const open = expanded.has(item.key);
+      const state = deriveSeriesState(s.chapters, live);
+      const frac = seriesFraction(s.chapters, live);
+      return (
+        <SwipeableSettingsRow
+          label={s.title}
+          labelBold
+          description={`${s.chapterCount} chapter${s.chapterCount === 1 ? '' : 's'} · ${formatBytes(s.bytes)}`}
+          leading={
+            state === 'complete' ? undefined : (
+              <DownloadStatusIndicator
+                state={state}
+                fraction={frac}
+                size={22}
+                interactive={false}
+                onPause={() => void pauseSeries(s.bridgeId, s.seriesId)}
+                onResume={() => void resumeSeriesDownload(s.bridgeId, s.seriesId)}
+                onRetry={() => retrySeries(s)}
+              />
+            )
+          }
+          right={<FoldoutChevron open={open} />}
+          onPress={() => toggle(item.key)}
+          actions={seriesActions(state, {
+            onPause: () => void pauseSeries(s.bridgeId, s.seriesId),
+            onResume: () => void resumeSeriesDownload(s.bridgeId, s.seriesId),
+            onRetry: () => retrySeries(s),
+            onCancel: () => void cancelSeriesInflight(s),
+            onDelete: () => void deleteSeries(s),
+          })}
+        />
+      );
+    }
+    const { s, c } = item;
+    // Radial AND the "X/Y" count both read the same done value — the live per-page count while the
+    // engine is working this chapter, else the manifest's — so they can never disagree.
+    const liveStatus = live[chapterProgressKey(c.bridgeId, c.seriesId, c.chapterId)];
+    const shownDone = liveStatus && liveStatus.total > 0 ? liveStatus.done : c.completedPages;
+    const cFrac = c.pageCount > 0 ? shownDone / c.pageCount : 0;
+    // Real-time state (live overlay) — the manifest state lags at queued mid-download.
+    const cState = displayChapterState(c, live);
+    return (
+      <SwipeableSettingsRow
+        label={c.chapterName ?? (c.number !== undefined ? `Chapter ${c.number}` : c.chapterId)}
+        description={chapterDescription(c, cState, shownDone)}
+        contentInset={Spacing.five}
+        leading={
+          cState === 'complete' ? undefined : (
+            <DownloadStatusIndicator
+              state={cState}
+              fraction={cFrac}
+              size={20}
+              onPause={() => void pauseChapter(c.bridgeId, c.seriesId, c.chapterId)}
+              onResume={() => void resumeChapterDownload(c.bridgeId, c.seriesId, c.chapterId)}
+              onRetry={() => void retryChapter(c.bridgeId, c.seriesId, c.chapterId)}
+            />
+          )
+        }
+        actions={chapterActions(cState, {
+          onPause: () => void pauseChapter(c.bridgeId, c.seriesId, c.chapterId),
+          onResume: () => void resumeChapterDownload(c.bridgeId, c.seriesId, c.chapterId),
+          onRetry: () => void retryChapter(c.bridgeId, c.seriesId, c.chapterId),
+          onCancel: () => void deleteChapter(s, c.chapterId),
+          onDelete: () => void deleteChapter(s, c.chapterId),
+        })}
+      />
+    );
+  };
 
   return (
     <ThemedView style={styles.container}>
       <TopBar title="Downloads" />
-      <ScrollView ref={scrollRef} contentContainerStyle={[styles.content, contentPadding]}>
-        <SettingsSection>
-          {/* Cumulative progress across every series, shown while anything is in flight. The storage
-              breakdown + device-space bar live on the Storage screen — this page is management. */}
-          {overall.inProgress && (
-            <View style={styles.radial}>
-              <CumulativeDownloadRadial fraction={overall.fraction} size={64} showLabel />
-            </View>
-          )}
-          <SettingsToggleRow
-            label="Download over Wi-Fi only"
-            description="Hold downloads until you're on Wi-Fi."
-            value={wifiOnly}
-            onChange={(v) => {
-              downloadPrefs$.wifiOnly.set(v);
-              // Turning the gate off (or changing it) should resume held-back downloads right away.
-              kickDownloads();
-            }}
-          />
-          <SettingsToggleRow
-            label="Download in background"
-            description="Continue in OS-granted windows after leaving the app."
-            value={background}
-            onChange={(v) => {
-              downloadPrefs$.background.set(v);
-              applyBackgroundDownloads(v);
-            }}
-          />
-        </SettingsSection>
-
-        {orderedSeries.length > 0 ? (
-          <View onLayout={(e) => (listTop.current = e.nativeEvent.layout.y)} style={styles.list}>
-            {orderedSeries.map((s) => {
-              const key = seriesKey(s);
-              const open = expanded.has(key);
-              const state = deriveSeriesState(s.chapters, live);
-              const frac = seriesFraction(s.chapters, live);
-              const chapters = [...s.chapters].sort((a, b) => bySortValue(chapterSortValue(a), chapterSortValue(b)));
-              return (
-                <View key={key} onLayout={(e) => rowY.current.set(key, e.nativeEvent.layout.y)}>
-                  <SwipeableSettingsRow
-                    label={s.title}
-                    description={`${s.chapterCount} chapter${s.chapterCount === 1 ? '' : 's'} · ${formatBytes(s.bytes)}`}
-                    leading={
-                      state === 'complete' ? (
-                        <Chevron open={open} />
-                      ) : (
-                        <DownloadStatusIndicator
-                          state={state}
-                          fraction={frac}
-                          size={22}
-                          interactive={false}
-                          onPause={() => void pauseSeries(s.bridgeId, s.seriesId)}
-                          onResume={() => void resumeSeriesDownload(s.bridgeId, s.seriesId)}
-                          onRetry={() => retrySeries(s)}
-                        />
-                      )
-                    }
-                    onPress={() => toggle(key)}
-                    actions={seriesActions(state, {
-                      onPause: () => void pauseSeries(s.bridgeId, s.seriesId),
-                      onResume: () => void resumeSeriesDownload(s.bridgeId, s.seriesId),
-                      onRetry: () => retrySeries(s),
-                      onCancel: () => void cancelSeriesInflight(s),
-                      onDelete: () => void deleteSeries(s),
-                    })}
-                  />
-                  {open &&
-                    chapters.map((c) => {
-                      // Radial AND the "X/Y" count both read the same done value — the live per-page
-                      // count while the engine is working this chapter, else the manifest's — so they
-                      // can never disagree (was: radial live/fresh vs. count manifest/stale).
-                      const liveStatus = live[chapterProgressKey(c.bridgeId, c.seriesId, c.chapterId)];
-                      const shownDone = liveStatus && liveStatus.total > 0 ? liveStatus.done : c.completedPages;
-                      const cFrac = c.pageCount > 0 ? shownDone / c.pageCount : 0;
-                      // Real-time state (live overlay) — the manifest state lags at queued mid-download.
-                      const cState = displayChapterState(c, live);
-                      return (
-                        <SwipeableSettingsRow
-                          key={c.chapterId}
-                          label={c.chapterName ?? (c.number !== undefined ? `Chapter ${c.number}` : c.chapterId)}
-                          description={chapterDescription(c, cState, shownDone)}
-                          leading={
-                            cState === 'complete' ? undefined : (
-                              <DownloadStatusIndicator
-                                state={cState}
-                                fraction={cFrac}
-                                size={20}
-                                onPause={() => void pauseChapter(c.bridgeId, c.seriesId, c.chapterId)}
-                                onResume={() => void resumeChapterDownload(c.bridgeId, c.seriesId, c.chapterId)}
-                                onRetry={() => void retryChapter(c.bridgeId, c.seriesId, c.chapterId)}
-                              />
-                            )
-                          }
-                          actions={chapterActions(cState, {
-                            onPause: () => void pauseChapter(c.bridgeId, c.seriesId, c.chapterId),
-                            onResume: () => void resumeChapterDownload(c.bridgeId, c.seriesId, c.chapterId),
-                            onRetry: () => void retryChapter(c.bridgeId, c.seriesId, c.chapterId),
-                            onCancel: () => void deleteChapter(s, c.chapterId),
-                            onDelete: () => void deleteChapter(s, c.chapterId),
-                          })}
-                        />
-                      );
-                    })}
-                </View>
-              );
-            })}
-          </View>
-        ) : (
+      <LegendList
+        ref={listRef}
+        style={styles.list}
+        data={rows}
+        keyExtractor={(r) => r.key}
+        recycleItems={false}
+        estimatedItemSize={SettingsRowHeight}
+        renderItem={renderItem}
+        ListHeaderComponent={header}
+        ListFooterComponent={footer}
+        ListEmptyComponent={
           <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
             No downloads yet. Open a series and tap Download to keep chapters for offline reading.
           </ThemedText>
-        )}
-
-        {orderedSeries.length > 0 && (
-          <SettingsSection>
-            <SettingsRow
-              label="Delete all downloads"
-              description="Remove every downloaded chapter from this device."
-              descriptionColor="danger"
-              onPress={() => void deleteAll()}
-            />
-          </SettingsSection>
-        )}
-      </ScrollView>
+        }
+        contentContainerStyle={{
+          flexGrow: 1,
+          paddingTop,
+          paddingBottom,
+          paddingLeft: sidePad,
+          paddingRight: sidePad,
+        }}
+        showsVerticalScrollIndicator={Platform.OS === 'web'}
+      />
     </ThemedView>
   );
 }
 
-/** Expand chevron for a completed series row (in-progress rows show the status indicator instead). */
-function Chevron({ open }: { open: boolean }) {
+/** The series row's trailing foldout arrow: a right chevron that rotates down as the series expands. */
+function FoldoutChevron({ open }: { open: boolean }) {
   const theme = useTheme();
-  return open ? (
-    <ChevronDownIcon color={theme.textSecondary} size={18} />
-  ) : (
-    <ChevronRightIcon color={theme.textSecondary} size={18} />
+  const p = useDerivedValue(() => withTiming(open ? 1 : 0, { duration: 180 }));
+  const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${p.value * 90}deg` }] }));
+  return (
+    <Animated.View style={style}>
+      <ChevronRightIcon color={theme.textSecondary} size={18} />
+    </Animated.View>
   );
 }
 
-function chapterDescription(c: StorageUsageSeries['chapters'][number], state: DownloadState, shownDone: number): string {
+function chapterDescription(c: DlChapter, state: DownloadState, shownDone: number): string {
   const size = `${c.pageCount} page${c.pageCount === 1 ? '' : 's'} · ${formatBytes(c.bytes)}`;
   if (state === 'complete') return size;
   const label = state === 'downloading' ? `${shownDone}/${c.pageCount}` : state;
@@ -334,18 +379,19 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  content: {
-    gap: Spacing.five,
-    width: '100%',
-    maxWidth: MaxContentWidth,
-    alignSelf: 'center',
+  list: {
+    flex: 1,
+  },
+  header: {
+    // Space between the preferences and the first series row (was the ScrollView's inter-section gap).
+    paddingBottom: Spacing.five,
+  },
+  footer: {
+    paddingTop: Spacing.five,
   },
   radial: {
     alignItems: 'center',
     paddingVertical: Spacing.three,
-  },
-  list: {
-    width: '100%',
   },
   empty: {
     paddingHorizontal: Spacing.three,
