@@ -249,6 +249,7 @@ export default function DownloadsScreen() {
       const frac = seriesFraction(s.chapters);
       return (
         <SwipeableSettingsRow
+          recycleKey={item.key}
           label={s.title}
           labelBold
           description={`${s.chapterCount} chapter${s.chapterCount === 1 ? '' : 's'} · ${formatBytes(s.bytes)}`}
@@ -282,6 +283,7 @@ export default function DownloadsScreen() {
     const cFrac = c.pageCount > 0 ? c.completedPages / c.pageCount : 0;
     return (
       <SwipeableSettingsRow
+        recycleKey={item.key}
         label={c.chapterName ?? (c.number !== undefined ? `Chapter ${c.number}` : c.chapterId)}
         description={chapterDescription(c, cState, c.completedPages, c.bytes)}
         contentInset={Spacing.five}

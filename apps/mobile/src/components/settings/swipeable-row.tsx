@@ -1,5 +1,4 @@
-import { useRecyclingEffect } from '@legendapp/list/react-native';
-import { type ComponentType, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { type ComponentType, type ReactNode, useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -117,6 +116,11 @@ type SwipeableRowProps = {
   /** Horizontal inset (px) the row escapes so its pills reach past a container's padding to the screen
    *  edge. Settings screens pass `SettingsGutter`; a plain centred list (e.g. History) leaves it 0. */
   edgeInset?: number;
+  /** In a RECYCLING list, the item's stable list key. When the container is reused for a different
+   *  item this changes, so the row snaps closed — WITHOUT it, a swiped-open row would inherit onto the
+   *  next item. It's the list key (not the item value), so a mere data UPDATE to the same item (e.g. a
+   *  download tick) leaves it unchanged and does NOT close an open swipe. Omit outside a recycling list. */
+  recycleKey?: string;
   /** The row's own content (rendered as the swipeable surface / hover body). */
   children: ReactNode;
 };
@@ -136,14 +140,14 @@ type SwipeableRowProps = {
  * only safe with an undo snackbar, which this app has none of). On web there is no swipe — the actions
  * reveal as buttons on hover (and show unconditionally on a touch screen, which never hovers).
  */
-export function SwipeableRow({ name, actions, edgeInset = 0, children }: SwipeableRowProps) {
+export function SwipeableRow({ name, actions, edgeInset = 0, recycleKey, children }: SwipeableRowProps) {
   const shown = clampActions(actions, name);
   return IS_WEB ? (
-    <HoverActionsRow name={name} actions={shown} edgeInset={edgeInset}>
+    <HoverActionsRow name={name} actions={shown} edgeInset={edgeInset} recycleKey={recycleKey}>
       {children}
     </HoverActionsRow>
   ) : (
-    <SwipeRow name={name} actions={shown} edgeInset={edgeInset}>
+    <SwipeRow name={name} actions={shown} edgeInset={edgeInset} recycleKey={recycleKey}>
       {children}
     </SwipeRow>
   );
@@ -161,6 +165,7 @@ export function SwipeableSettingsRow({
   right,
   onPress,
   actions,
+  recycleKey,
 }: {
   label: string;
   labelBold?: boolean;
@@ -174,9 +179,11 @@ export function SwipeableSettingsRow({
   /** Tapping the row body (e.g. opening the item's detail page). Suppressed while the row is open. */
   onPress?: () => void;
   actions: SwipeRowAction[];
+  /** The item's stable list key in a recycling list — see `SwipeableRow.recycleKey`. */
+  recycleKey?: string;
 }) {
   return (
-    <SwipeableRow name={label} actions={actions} edgeInset={SettingsGutter}>
+    <SwipeableRow name={label} actions={actions} edgeInset={SettingsGutter} recycleKey={recycleKey}>
       <SettingsRow
         label={label}
         labelBold={labelBold}
@@ -192,9 +199,9 @@ export function SwipeableSettingsRow({
   );
 }
 
-type RowImplProps = { name: string; actions: SwipeRowAction[]; edgeInset: number; children: ReactNode };
+type RowImplProps = { name: string; actions: SwipeRowAction[]; edgeInset: number; recycleKey?: string; children: ReactNode };
 
-function SwipeRow({ name, actions, edgeInset, children }: RowImplProps) {
+function SwipeRow({ name, actions, edgeInset, recycleKey, children }: RowImplProps) {
   const theme = useTheme();
   // Where the row is BEING DRAGGED to — set straight from the finger, with no smoothing.
   const target = useSharedValue(0);
@@ -239,20 +246,18 @@ function SwipeRow({ name, actions, edgeInset, children }: RowImplProps) {
     else releaseOpenRow(token);
   }
 
-  // Reset the gesture state when LegendList RECYCLES this view onto a different item — otherwise a row
-  // left slid open could reappear open under whatever item recycles into it. No-op outside a LegendList
-  // (useRecyclingEffect early-returns with no container). Must be a STABLE callback so it fires only on
-  // a real recycle, never on a re-render (which would force-close a row mid-swipe). Shared values are
-  // stable refs, deliberately kept out of the deps (see the immutability note above).
-  const resetForRecycle = useCallback(() => {
+  // When a recycling list reuses this view for a DIFFERENT item, `recycleKey` changes — snap the row
+  // closed so a swiped-open row can't inherit onto the next item. Keyed on the stable LIST KEY (not the
+  // item value), so a mere data update to the SAME item (a download tick) doesn't change it and leaves
+  // an open swipe alone. Fires once on mount too (a harmless no-op — the row is already closed).
+  useEffect(() => {
     restIndex.value = 0;
     captured.value = 0;
     target.value = 0;
     releaseOpenRow(token);
     setOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
-  useRecyclingEffect(resetForRecycle);
+  }, [recycleKey]);
 
   // If the action set changes while the row is open, its gesture state (rest/captured detent, slid
   // position) references the OLD pill layout — a live status change (a download finishing drops the
@@ -386,11 +391,14 @@ function SwipeRow({ name, actions, edgeInset, children }: RowImplProps) {
   );
 }
 
-function HoverActionsRow({ name, actions, edgeInset, children }: RowImplProps) {
+function HoverActionsRow({ name, actions, edgeInset, recycleKey, children }: RowImplProps) {
   const theme = useTheme();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
-  // Drop any lingering hover when LegendList recycles this row onto a different item (no-op elsewhere).
-  useRecyclingEffect(useCallback(() => onHoverOut(), [onHoverOut]));
+  // Drop any lingering hover when a recycling list reuses this row for a different item (see SwipeRow).
+  useEffect(() => {
+    onHoverOut();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recycleKey]);
   // Hover the WHOLE row (body + action lanes) via pointer enter/leave on the outer element — reliably
   // fires for the entire subtree, unlike an `onHoverIn` on a wrapper the inner row's own Pressable
   // would swallow. Each action is a SIBLING of the content (not nested inside it): react-native-web
