@@ -74,9 +74,8 @@ export function SeriesDownloadButton({
   };
 
   if (inProgress) {
-    const completeCount = downloaded.filter((c) => c.state === 'complete').length;
-    const label =
-      state === 'paused' ? 'Paused' : state === 'failed' ? 'Retrying…' : `Downloading ${completeCount}/${downloaded.length}`;
+    // Keep the label short — a per-chapter count overflows the button; the radial shows progress.
+    const label = state === 'paused' ? 'Paused' : state === 'failed' ? 'Failed' : 'Downloading';
     return (
       <ActionButton
         testID="series.action.download"
