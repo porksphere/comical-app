@@ -3,7 +3,7 @@
  * queue-then-recency ordering the Downloads screen uses. Shared by the screen and the series Download
  * button so both agree on "is this in progress, and how far."
  */
-import type { DownloadedChapter, DownloadState } from '@comical/downloads';
+import type { DownloadedChapter, DownloadState, StorageUsageSeries } from '@comical/downloads';
 
 import { chapterProgressKey, type ChapterDownloadStatus } from './state';
 
@@ -57,4 +57,27 @@ export function seriesSortValue(chapters: DownloadedChapter[]): [number, number]
 /** Ascending comparator over a `[group, tiebreak]` sort value. */
 export function bySortValue(a: [number, number], b: [number, number]): number {
   return a[0] - b[0] || a[1] - b[1];
+}
+
+/**
+ * Cumulative progress across EVERY downloaded series — the numerator/denominator for the big radial
+ * on the Downloads page and the small one on the Settings row. Overlays live in-flight counts.
+ * `inProgress` is true while anything isn't complete (the radials show only then).
+ */
+export function overallProgress(
+  bySeries: StorageUsageSeries[],
+  live: Record<string, ChapterDownloadStatus>,
+): { fraction: number; inProgress: boolean } {
+  let done = 0;
+  let total = 0;
+  let inProgress = false;
+  for (const s of bySeries) {
+    for (const c of s.chapters) {
+      total += c.pageCount;
+      const l = live[chapterProgressKey(c.bridgeId, c.seriesId, c.chapterId)];
+      done += l && l.total > 0 ? l.done : c.completedPages;
+      if (c.state !== 'complete') inProgress = true;
+    }
+  }
+  return { fraction: total > 0 ? done / total : 0, inProgress };
 }

@@ -5,7 +5,7 @@
  * muted while queued/paused, danger when failed. A paused ring carries a small centre bar so it reads
  * as "paused" at a glance.
  */
-import Svg, { Circle, Rect } from 'react-native-svg';
+import Svg, { Circle } from 'react-native-svg';
 
 import { useTheme } from '@/hooks/use-theme';
 import type { DownloadState } from '@comical/downloads';
@@ -47,13 +47,6 @@ export function DownloadRadial({
         strokeLinecap="round"
         transform={`rotate(-90 ${cx} ${cx})`}
       />
-      {/* Paused glyph — a small centred bar pair. */}
-      {state === 'paused' && (
-        <>
-          <Rect x={cx - 3} y={cx - 3.5} width={2} height={7} rx={1} fill={color} />
-          <Rect x={cx + 1} y={cx - 3.5} width={2} height={7} rx={1} fill={color} />
-        </>
-      )}
     </Svg>
   );
 }

@@ -14,9 +14,10 @@ import { useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
+import { CumulativeDownloadRadial } from '@/components/downloads/cumulative-radial';
 import { DiskSpaceBar } from '@/components/downloads/disk-space-bar';
-import { DownloadRadial } from '@/components/downloads/download-radial';
-import { ChevronDownIcon, ChevronRightIcon, ClearIcon, PlayIcon, TrashIcon } from '@/components/icons/ui-icons';
+import { DownloadStatusIndicator } from '@/components/downloads/download-status-indicator';
+import { ChevronDownIcon, ChevronRightIcon, ClearIcon, PlayIcon, RetryIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { SettingsToggleRow } from '@/components/settings/settings-fields';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { SwipeableSettingsRow, type SwipeRowAction } from '@/components/settings/swipeable-row';
@@ -31,14 +32,17 @@ import {
   bySortValue,
   chapterSortValue,
   deriveSeriesState,
+  overallProgress,
   seriesFraction,
   seriesSortValue,
 } from '@/data/downloads/derive';
 import {
   cancelChapter,
   cancelSeries,
+  kickDownloads,
   resumeChapterDownload,
   resumeSeriesDownload,
+  retryChapter,
 } from '@/data/downloads/engine';
 import { clearDownloadIndex, forgetChapter, forgetSeries } from '@/data/downloads/index-cache';
 import { formatBytes } from '@/data/downloads/format';
@@ -58,18 +62,27 @@ function refresh(): void {
 
 const seriesKey = (s: { bridgeId: string; seriesId: string }) => `${s.bridgeId}:${s.seriesId}`;
 
-/** The swipe/hover actions for a row given its state: Cancel in-flight, Resume paused, Delete done. */
-function rowActions(
-  state: DownloadState,
-  h: { onCancel: () => void; onResume: () => void; onDelete: () => void },
-): SwipeRowAction[] {
+interface RowHandlers {
+  onCancel: () => void;
+  onResume: () => void;
+  onRetry: () => void;
+  onDelete: () => void;
+}
+
+/** The swipe/hover actions for a row given its state. */
+function rowActions(state: DownloadState, h: RowHandlers): SwipeRowAction[] {
   if (state === 'complete') return [{ label: 'Delete', icon: TrashIcon, destructive: true, onPress: h.onDelete }];
   if (state === 'paused')
     return [
       { label: 'Resume', icon: PlayIcon, onPress: h.onResume },
       { label: 'Delete', icon: TrashIcon, destructive: true, onPress: h.onDelete },
     ];
-  // queued / downloading / failed → the in-flight download; offer Cancel, not Delete.
+  if (state === 'failed')
+    return [
+      { label: 'Retry', icon: RetryIcon, onPress: h.onRetry },
+      { label: 'Delete', icon: TrashIcon, destructive: true, onPress: h.onDelete },
+    ];
+  // queued / downloading → the in-flight download; offer Cancel, not Delete.
   return [{ label: 'Cancel', icon: ClearIcon, onPress: h.onCancel }];
 }
 
@@ -135,11 +148,17 @@ export default function DownloadsScreen() {
     clearDownloadIndex();
     refresh();
   };
+  // Retrying a whole series re-queues each of its failed chapters.
+  const retrySeries = (s: StorageUsageSeries) => {
+    for (const c of s.chapters) if (c.state === 'failed') void retryChapter(c.bridgeId, c.seriesId, c.chapterId);
+  };
 
   // Queue-first, then most-recent (see derive.ts).
   const orderedSeries = [...usage.bySeries].sort((a, b) =>
     bySortValue(seriesSortValue(a.chapters), seriesSortValue(b.chapters)),
   );
+
+  const overall = overallProgress(usage.bySeries, live);
 
   return (
     <ThemedView style={styles.container}>
@@ -147,18 +166,29 @@ export default function DownloadsScreen() {
       <ScrollView ref={scrollRef} contentContainerStyle={[styles.content, contentPadding]}>
         <SettingsSection>
           <View style={styles.summary}>
-            <ThemedText type="title">{formatBytes(usage.totalBytes)}</ThemedText>
-            <ThemedText type="small" themeColor="textSecondary">
-              {usage.seriesCount} series · {usage.chapterCount} chapter{usage.chapterCount === 1 ? '' : 's'} ·{' '}
-              {usage.pageCount} page{usage.pageCount === 1 ? '' : 's'}
-            </ThemedText>
+            <View style={styles.summaryHead}>
+              {overall.inProgress && (
+                <CumulativeDownloadRadial fraction={overall.fraction} size={56} showLabel />
+              )}
+              <View style={styles.summaryText}>
+                <ThemedText type="title">{formatBytes(usage.totalBytes)}</ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">
+                  {usage.seriesCount} series · {usage.chapterCount} chapter{usage.chapterCount === 1 ? '' : 's'} ·{' '}
+                  {usage.pageCount} page{usage.pageCount === 1 ? '' : 's'}
+                </ThemedText>
+              </View>
+            </View>
             <DiskSpaceBar downloadsBytes={usage.totalBytes} />
           </View>
           <SettingsToggleRow
             label="Download over Wi-Fi only"
             description="Hold downloads until you're on Wi-Fi."
             value={wifiOnly}
-            onChange={(v) => downloadPrefs$.wifiOnly.set(v)}
+            onChange={(v) => {
+              downloadPrefs$.wifiOnly.set(v);
+              // Turning the gate off (or changing it) should resume held-back downloads right away.
+              kickDownloads();
+            }}
           />
           <SettingsToggleRow
             label="Download in background"
@@ -185,12 +215,25 @@ export default function DownloadsScreen() {
                     label={s.title}
                     description={`${s.chapterCount} chapter${s.chapterCount === 1 ? '' : 's'} · ${formatBytes(s.bytes)}`}
                     leading={
-                      <RowLeading open={open} state={state} fraction={frac} />
+                      state === 'complete' ? (
+                        <Chevron open={open} />
+                      ) : (
+                        <DownloadStatusIndicator
+                          state={state}
+                          fraction={frac}
+                          size={22}
+                          interactive={false}
+                          onPause={() => void cancelSeries(s.bridgeId, s.seriesId)}
+                          onResume={() => void resumeSeriesDownload(s.bridgeId, s.seriesId)}
+                          onRetry={() => retrySeries(s)}
+                        />
+                      )
                     }
                     onPress={() => toggle(key)}
                     actions={rowActions(state, {
                       onCancel: () => void cancelSeries(s.bridgeId, s.seriesId),
                       onResume: () => void resumeSeriesDownload(s.bridgeId, s.seriesId),
+                      onRetry: () => retrySeries(s),
                       onDelete: () => void deleteSeries(s),
                     })}
                   />
@@ -204,12 +247,20 @@ export default function DownloadsScreen() {
                           description={chapterDescription(c)}
                           leading={
                             c.state === 'complete' ? undefined : (
-                              <DownloadRadial fraction={cFrac} state={c.state} size={18} />
+                              <DownloadStatusIndicator
+                                state={c.state}
+                                fraction={cFrac}
+                                size={20}
+                                onPause={() => void cancelChapter(c.bridgeId, c.seriesId, c.chapterId)}
+                                onResume={() => void resumeChapterDownload(c.bridgeId, c.seriesId, c.chapterId)}
+                                onRetry={() => void retryChapter(c.bridgeId, c.seriesId, c.chapterId)}
+                              />
                             )
                           }
                           actions={rowActions(c.state, {
                             onCancel: () => void cancelChapter(c.bridgeId, c.seriesId, c.chapterId),
                             onResume: () => void resumeChapterDownload(c.bridgeId, c.seriesId, c.chapterId),
+                            onRetry: () => void retryChapter(c.bridgeId, c.seriesId, c.chapterId),
                             onDelete: () => void deleteChapter(s, c.chapterId),
                           })}
                         />
@@ -240,10 +291,9 @@ export default function DownloadsScreen() {
   );
 }
 
-/** The series row's leading slot: a progress radial while downloading, else the expand chevron. */
-function RowLeading({ open, state, fraction }: { open: boolean; state: DownloadState; fraction: number }) {
+/** Expand chevron for a completed series row (in-progress rows show the status indicator instead). */
+function Chevron({ open }: { open: boolean }) {
   const theme = useTheme();
-  if (state !== 'complete') return <DownloadRadial fraction={fraction} state={state} size={20} />;
   return open ? (
     <ChevronDownIcon color={theme.textSecondary} size={18} />
   ) : (
@@ -270,6 +320,16 @@ const styles = StyleSheet.create({
   },
   summary: {
     paddingVertical: Spacing.three,
+    gap: Spacing.three,
+  },
+  summaryHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+  },
+  summaryText: {
+    flex: 1,
+    minWidth: 0,
     gap: Spacing.one,
   },
   list: {

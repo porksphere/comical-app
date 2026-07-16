@@ -7,10 +7,14 @@ import {
   ChevronDown,
   ChevronRight,
   Compass,
+  Clock,
   Database,
   Download,
   Eye,
   EyeOff,
+  Pause,
+  RotateCcw,
+  TriangleAlert,
   GripVertical,
   LayoutGrid,
   Minus,
@@ -60,6 +64,11 @@ export const DiagnosticsIcon = ({ color, size = 16 }: IconProps) => <Bug color={
 // Custom pages — the settings entry for composing your own Comical pages.
 export const CustomPagesIcon = ({ color, size = 16 }: IconProps) => <LayoutGrid color={color} size={size} />;
 export const DownloadsIcon = ({ color, size = 16 }: IconProps) => <Download color={color} size={size} />;
+export const DownloadingIcon = ({ color, size = 16 }: IconProps) => <Download color={color} size={size} />;
+export const PauseIcon = ({ color, size = 16 }: IconProps) => <Pause color={color} size={size} fill={color} />;
+export const QueuedIcon = ({ color, size = 16 }: IconProps) => <Clock color={color} size={size} />;
+export const FailedIcon = ({ color, size = 16 }: IconProps) => <TriangleAlert color={color} size={size} />;
+export const RetryIcon = ({ color, size = 16 }: IconProps) => <RotateCcw color={color} size={size} />;
 // Rename affordance (custom page editor's top bar).
 export const PencilIcon = ({ color, size = 16 }: IconProps) => <Pencil color={color} size={size} />;
 // Reveal / hide a masked secret field (settings text row).
