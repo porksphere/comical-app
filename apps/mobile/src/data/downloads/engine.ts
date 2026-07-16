@@ -98,8 +98,8 @@ function clearCancel(bridgeId: string, seriesId: string, chapterId?: string): vo
   }
 }
 
-/** Cancel one in-flight/queued chapter: pause it server-side and abort any in-flight page workers. */
-export async function cancelChapter(bridgeId: string, seriesId: string, chapterId: string): Promise<void> {
+/** Pause one in-flight/queued chapter (resumable): pause it server-side and abort in-flight workers. */
+export async function pauseChapter(bridgeId: string, seriesId: string, chapterId: string): Promise<void> {
   cancelledChapters.add(chapterProgressKey(bridgeId, seriesId, chapterId));
   try {
     await dlPauseChapter(bridgeId, seriesId, chapterId);
@@ -110,8 +110,8 @@ export async function cancelChapter(bridgeId: string, seriesId: string, chapterI
   invalidateDownloads(bridgeId, seriesId);
 }
 
-/** Cancel a whole series: pause every not-yet-complete chapter and abort the one in flight. */
-export async function cancelSeries(bridgeId: string, seriesId: string): Promise<void> {
+/** Pause a whole series (resumable): pause every not-yet-complete chapter and abort the one in flight. */
+export async function pauseSeries(bridgeId: string, seriesId: string): Promise<void> {
   cancelledSeries.add(seriesKeyOf(bridgeId, seriesId));
   try {
     await dlPauseSeries(bridgeId, seriesId);

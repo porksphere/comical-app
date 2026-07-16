@@ -17,7 +17,7 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { CumulativeDownloadRadial } from '@/components/downloads/cumulative-radial';
 import { DiskSpaceBar } from '@/components/downloads/disk-space-bar';
 import { DownloadStatusIndicator } from '@/components/downloads/download-status-indicator';
-import { ChevronDownIcon, ChevronRightIcon, ClearIcon, PlayIcon, RetryIcon, TrashIcon } from '@/components/icons/ui-icons';
+import { ChevronDownIcon, ChevronRightIcon, ClearIcon, PauseIcon, PlayIcon, RetryIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { SettingsToggleRow } from '@/components/settings/settings-fields';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { SwipeableSettingsRow, type SwipeRowAction } from '@/components/settings/swipeable-row';
@@ -37,9 +37,9 @@ import {
   seriesSortValue,
 } from '@/data/downloads/derive';
 import {
-  cancelChapter,
-  cancelSeries,
   kickDownloads,
+  pauseChapter,
+  pauseSeries,
   resumeChapterDownload,
   resumeSeriesDownload,
   retryChapter,
@@ -63,27 +63,39 @@ function refresh(): void {
 const seriesKey = (s: { bridgeId: string; seriesId: string }) => `${s.bridgeId}:${s.seriesId}`;
 
 interface RowHandlers {
-  onCancel: () => void;
+  onPause: () => void;
   onResume: () => void;
   onRetry: () => void;
+  /** Discard the in-flight download (series: drop the incomplete chapters; chapter: delete it). */
+  onCancel: () => void;
   onDelete: () => void;
 }
 
-/** The swipe/hover actions for a row given its state. */
-function rowActions(state: DownloadState, h: RowHandlers): SwipeRowAction[] {
-  if (state === 'complete') return [{ label: 'Delete', icon: TrashIcon, destructive: true, onPress: h.onDelete }];
-  if (state === 'paused')
-    return [
-      { label: 'Resume', icon: PlayIcon, onPress: h.onResume },
-      { label: 'Delete', icon: TrashIcon, destructive: true, onPress: h.onDelete },
-    ];
-  if (state === 'failed')
-    return [
-      { label: 'Retry', icon: RetryIcon, onPress: h.onRetry },
-      { label: 'Delete', icon: TrashIcon, destructive: true, onPress: h.onDelete },
-    ];
-  // queued / downloading → the in-flight download; offer Cancel, not Delete.
-  return [{ label: 'Cancel', icon: ClearIcon, onPress: h.onCancel }];
+// Actions are laid out left→right and the LAST one sits at the swipe edge (revealed FIRST). So the
+// primary action (Pause/Resume/Retry) goes LAST (nearest the edge), and the destructive one
+// (Cancel/Delete) goes FIRST (further to the left) — you reach Pause with a short swipe, the
+// destructive action only with a longer one.
+const PAUSE = (onPress: () => void): SwipeRowAction => ({ label: 'Pause', icon: PauseIcon, onPress });
+const RESUME = (onPress: () => void): SwipeRowAction => ({ label: 'Resume', icon: PlayIcon, onPress });
+const RETRY = (onPress: () => void): SwipeRowAction => ({ label: 'Retry', icon: RetryIcon, onPress });
+const CANCEL = (onPress: () => void): SwipeRowAction => ({ label: 'Cancel', icon: ClearIcon, destructive: true, onPress });
+const DELETE = (onPress: () => void): SwipeRowAction => ({ label: 'Delete', icon: TrashIcon, destructive: true, onPress });
+
+/** Series swipe actions: while downloading you get Pause + Cancel (Cancel discards the in-flight
+ *  downloads, after which the series is complete-only → Delete). */
+function seriesActions(state: DownloadState, h: RowHandlers): SwipeRowAction[] {
+  if (state === 'complete') return [DELETE(h.onDelete)];
+  if (state === 'paused') return [DELETE(h.onDelete), RESUME(h.onResume)];
+  if (state === 'failed') return [DELETE(h.onDelete), RETRY(h.onRetry)];
+  return [CANCEL(h.onCancel), PAUSE(h.onPause)]; // downloading / queued
+}
+
+/** Chapter swipe actions: a chapter is atomic, so its destructive action is always Delete. */
+function chapterActions(state: DownloadState, h: RowHandlers): SwipeRowAction[] {
+  if (state === 'complete') return [DELETE(h.onDelete)];
+  if (state === 'paused') return [DELETE(h.onDelete), RESUME(h.onResume)];
+  if (state === 'failed') return [DELETE(h.onDelete), RETRY(h.onRetry)];
+  return [DELETE(h.onDelete), PAUSE(h.onPause)]; // downloading / queued
 }
 
 export default function DownloadsScreen() {
@@ -151,6 +163,15 @@ export default function DownloadsScreen() {
   // Retrying a whole series re-queues each of its failed chapters.
   const retrySeries = (s: StorageUsageSeries) => {
     for (const c of s.chapters) if (c.state === 'failed') void retryChapter(c.bridgeId, c.seriesId, c.chapterId);
+  };
+  // Cancel a series' in-flight downloads: stop them, then discard the incomplete chapters (their
+  // partial bytes). Completed chapters are kept — so the series drops to complete-only (or is removed
+  // if nothing finished), and its swipe naturally becomes Delete.
+  const cancelSeriesInflight = async (s: StorageUsageSeries) => {
+    await pauseSeries(s.bridgeId, s.seriesId);
+    for (const c of s.chapters) {
+      if (c.state !== 'complete') await deleteChapter(s, c.chapterId);
+    }
   };
 
   // Queue-first, then most-recent (see derive.ts).
@@ -223,17 +244,18 @@ export default function DownloadsScreen() {
                           fraction={frac}
                           size={22}
                           interactive={false}
-                          onPause={() => void cancelSeries(s.bridgeId, s.seriesId)}
+                          onPause={() => void pauseSeries(s.bridgeId, s.seriesId)}
                           onResume={() => void resumeSeriesDownload(s.bridgeId, s.seriesId)}
                           onRetry={() => retrySeries(s)}
                         />
                       )
                     }
                     onPress={() => toggle(key)}
-                    actions={rowActions(state, {
-                      onCancel: () => void cancelSeries(s.bridgeId, s.seriesId),
+                    actions={seriesActions(state, {
+                      onPause: () => void pauseSeries(s.bridgeId, s.seriesId),
                       onResume: () => void resumeSeriesDownload(s.bridgeId, s.seriesId),
                       onRetry: () => retrySeries(s),
+                      onCancel: () => void cancelSeriesInflight(s),
                       onDelete: () => void deleteSeries(s),
                     })}
                   />
@@ -256,16 +278,17 @@ export default function DownloadsScreen() {
                                 state={c.state}
                                 fraction={cFrac}
                                 size={20}
-                                onPause={() => void cancelChapter(c.bridgeId, c.seriesId, c.chapterId)}
+                                onPause={() => void pauseChapter(c.bridgeId, c.seriesId, c.chapterId)}
                                 onResume={() => void resumeChapterDownload(c.bridgeId, c.seriesId, c.chapterId)}
                                 onRetry={() => void retryChapter(c.bridgeId, c.seriesId, c.chapterId)}
                               />
                             )
                           }
-                          actions={rowActions(c.state, {
-                            onCancel: () => void cancelChapter(c.bridgeId, c.seriesId, c.chapterId),
+                          actions={chapterActions(c.state, {
+                            onPause: () => void pauseChapter(c.bridgeId, c.seriesId, c.chapterId),
                             onResume: () => void resumeChapterDownload(c.bridgeId, c.seriesId, c.chapterId),
                             onRetry: () => void retryChapter(c.bridgeId, c.seriesId, c.chapterId),
+                            onCancel: () => void deleteChapter(s, c.chapterId),
                             onDelete: () => void deleteChapter(s, c.chapterId),
                           })}
                         />
