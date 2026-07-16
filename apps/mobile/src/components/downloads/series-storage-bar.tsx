@@ -6,6 +6,7 @@
  * sits above the download-management list, which should stay the focus). Distinct from the Storage
  * page's `DiskSpaceBar`, which splits DEVICE space into downloads vs. cache vs. free.
  */
+import { useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -13,6 +14,8 @@ import { Spacing } from '@/constants/theme';
 import { formatBytes } from '@/data/downloads/format';
 import { useTheme } from '@/hooks/use-theme';
 import type { StorageUsageSeries } from '@comical/downloads';
+
+const skey = (s: { bridgeId: string; seriesId: string }) => `${s.bridgeId}:${s.seriesId}`;
 
 /** How many series get their own colour/segment before the rest fold into "Other". */
 const MAX_SERIES = 10;
@@ -41,15 +44,29 @@ interface Segment {
 
 export function SeriesStorageBar({ bySeries, totalBytes }: { bySeries: StorageUsageSeries[]; totalBytes: number }) {
   const theme = useTheme();
+  const orderRef = useRef<string[]>([]); // stable segment/legend order (see below)
 
-  const sorted = bySeries.filter((s) => s.bytes > 0).sort((a, b) => b.bytes - a.bytes);
-  const segments: Segment[] = sorted
-    .slice(0, MAX_SERIES)
-    .map((s, i) => ({ key: `${s.bridgeId}:${s.seriesId}`, label: s.title, bytes: s.bytes, color: PALETTE[i % PALETTE.length] }));
-  const rest = sorted.slice(MAX_SERIES);
-  if (rest.length > 0) {
-    const bytes = rest.reduce((n, s) => n + s.bytes, 0);
-    segments.push({ key: '__other', label: `Other (${rest.length})`, bytes, color: theme.textSecondary });
+  const sized = bySeries.filter((s) => s.bytes > 0);
+  const byKey = new Map(sized.map((s) => [skey(s), s]));
+  const topKeys = [...sized].sort((a, b) => b.bytes - a.bytes).slice(0, MAX_SERIES).map(skey);
+  const topSet = new Set(topKeys);
+
+  // Keep a STABLE display order across renders: a downloading series' bytes tick every page, which — if
+  // we re-sorted each render — would reshuffle the segments/labels (and reassign colours) constantly.
+  // Instead hold the order fixed: retain prior positions for series still in the top set, and only
+  // append a newly-promoted one. So segment WIDTHS and sizes update in place while nothing jumps around.
+  const order = orderRef.current.filter((k) => topSet.has(k));
+  for (const k of topKeys) if (!order.includes(k)) order.push(k);
+  orderRef.current = order;
+
+  const segments: Segment[] = order.map((k, i) => {
+    const s = byKey.get(k)!;
+    return { key: k, label: s.title, bytes: s.bytes, color: PALETTE[i % PALETTE.length] };
+  });
+  const otherKeys = sized.filter((s) => !topSet.has(skey(s)));
+  if (otherKeys.length > 0) {
+    const bytes = otherKeys.reduce((n, s) => n + s.bytes, 0);
+    segments.push({ key: '__other', label: `Other (${otherKeys.length})`, bytes, color: theme.textSecondary });
   }
 
   // Guard the divisor; fall back to the summed segment bytes if the rollup total is somehow 0.
@@ -72,7 +89,7 @@ export function SeriesStorageBar({ bySeries, totalBytes }: { bySeries: StorageUs
             <ThemedText type="small" numberOfLines={1} style={styles.legendLabel}>
               {seg.label}
             </ThemedText>
-            <ThemedText type="small" themeColor="textSecondary">
+            <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
               {formatBytes(seg.bytes)}
             </ThemedText>
           </View>
@@ -95,24 +112,30 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     flexDirection: 'row',
   },
-  // A wrapping flow of compact chips — packs biggest→smallest, staying short on a phone.
+  // A FIXED two-column grid, not a content-width wrap: each item owns exactly half the width, so a
+  // size number changing (during a download) never re-flows or shuffles the other labels — it just
+  // updates in its own cell. `paddingRight` on each cell is the inter-column gap.
   legend: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    columnGap: Spacing.three,
     rowGap: Spacing.one,
   },
   legendItem: {
+    width: '50%',
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.one,
+    paddingRight: Spacing.two,
   },
   dot: {
     width: 8,
     height: 8,
     borderRadius: 4,
   },
+  // Absorbs the row's slack (and truncates a long title) so the trailing size sits at a stable spot and
+  // the label re-truncates in place rather than pushing anything.
   legendLabel: {
-    maxWidth: 130, // truncate long titles so a chip stays chip-sized
+    flex: 1,
+    minWidth: 0,
   },
 });

@@ -407,7 +407,9 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.five,
   },
   storage: {
-    // Sits above the toggles; its own internal padding handles the rest.
+    // A little breathing room over the big total (matching the Storage page), plus space below before
+    // the toggles. The bar component adds the rest of its own internal padding.
+    paddingTop: Spacing.two,
     paddingBottom: Spacing.four,
   },
   empty: {
