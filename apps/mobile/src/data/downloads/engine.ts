@@ -42,8 +42,13 @@ import { getDownloadPrefsSync } from './prefs';
 import { noteChapterDownloaded } from './index-cache';
 import { chapterProgressKey, clearChapterProgress, setChapterProgress } from './state';
 
-/** How many page bytes to fetch in parallel per chapter. */
-const PAGE_CONCURRENCY = 3;
+/**
+ * Pages are downloaded ONE AT A TIME (sequentially). Fetching several at once hammered sources hard
+ * enough to risk rate-limiting/blocking, and made progress lurch (three pages landing together), so we
+ * trade a little speed for a steady page-by-page advance and gentler request pacing. (Chapters are
+ * already processed one at a time by `drain`, so the whole pipeline is sequential.)
+ */
+const PAGE_CONCURRENCY = 1;
 
 /** A chapter to enqueue — the UI supplies the display snapshot + chapter identity it already has. */
 export interface EnqueueChapterInput {
@@ -158,6 +163,26 @@ export async function retryChapter(bridgeId: string, seriesId: string, chapterId
  */
 export function kickDownloads(): void {
   void drain();
+}
+
+let networkSub: ReturnType<typeof Network.addNetworkStateListener> | null = null;
+
+/**
+ * Auto-resume on connectivity changes: subscribe to network-state changes and kick the queue whenever
+ * the device (re)connects — so downloads held back while offline or on cellular (Wi-Fi-only) resume by
+ * themselves the moment Wi-Fi/connectivity returns, without the user reopening the Downloads screen.
+ * The drain re-checks `mayDownloadNow`, so a change that still isn't allowed is a cheap no-op. Called
+ * once at native startup (alongside the boot-time `resumePendingDownloads`).
+ */
+export function installNetworkAutoResume(): void {
+  if (networkSub) return;
+  try {
+    networkSub = Network.addNetworkStateListener((state) => {
+      if (state.isConnected !== false) void drain();
+    });
+  } catch {
+    // expo-network unavailable (e.g. web) — downloads still resume on app launch + explicit triggers.
+  }
 }
 
 /**

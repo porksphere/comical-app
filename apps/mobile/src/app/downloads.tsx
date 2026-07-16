@@ -47,7 +47,7 @@ import {
 import { clearDownloadIndex, forgetChapter, forgetSeries } from '@/data/downloads/index-cache';
 import { formatBytes } from '@/data/downloads/format';
 import { downloadPrefs$, useDownloadPrefs } from '@/data/downloads/prefs';
-import { chapterFraction, chapterProgressKey, useLiveDownloadProgress } from '@/data/downloads/state';
+import { chapterProgressKey, useLiveDownloadProgress } from '@/data/downloads/state';
 import { queryClient } from '@/data/query-client';
 import { queryKeys } from '@/data/queries';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
@@ -239,12 +239,17 @@ export default function DownloadsScreen() {
                   />
                   {open &&
                     chapters.map((c) => {
-                      const cFrac = chapterFraction(live[chapterProgressKey(c.bridgeId, c.seriesId, c.chapterId)], c.completedPages, c.pageCount);
+                      // Radial AND the "X/Y" count both read the same done value — the live per-page
+                      // count while the engine is working this chapter, else the manifest's — so they
+                      // can never disagree (was: radial live/fresh vs. count manifest/stale).
+                      const liveStatus = live[chapterProgressKey(c.bridgeId, c.seriesId, c.chapterId)];
+                      const shownDone = liveStatus && liveStatus.total > 0 ? liveStatus.done : c.completedPages;
+                      const cFrac = c.pageCount > 0 ? shownDone / c.pageCount : 0;
                       return (
                         <SwipeableSettingsRow
                           key={c.chapterId}
                           label={c.chapterName ?? (c.number !== undefined ? `Chapter ${c.number}` : c.chapterId)}
-                          description={chapterDescription(c)}
+                          description={chapterDescription(c, shownDone)}
                           leading={
                             c.state === 'complete' ? undefined : (
                               <DownloadStatusIndicator
@@ -301,10 +306,10 @@ function Chevron({ open }: { open: boolean }) {
   );
 }
 
-function chapterDescription(c: StorageUsageSeries['chapters'][number]): string {
+function chapterDescription(c: StorageUsageSeries['chapters'][number], shownDone: number): string {
   const size = `${c.pageCount} page${c.pageCount === 1 ? '' : 's'} · ${formatBytes(c.bytes)}`;
   if (c.state === 'complete') return size;
-  const label = c.state === 'downloading' ? `${c.completedPages}/${c.pageCount}` : c.state;
+  const label = c.state === 'downloading' ? `${shownDone}/${c.pageCount}` : c.state;
   return `${size} · ${label}`;
 }
 
