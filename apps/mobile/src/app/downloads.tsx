@@ -323,6 +323,12 @@ export default function DownloadsScreen() {
         recycleItems
         getItemType={(r) => r.kind}
         estimatedItemSize={SettingsRowHeight}
+        // Every row is exactly one settings-row tall, so declare it KNOWN — LegendList then skips
+        // measuring each row after render (the main source of this list's lag vs. the grid pages, which
+        // are fixed-size too). With sizes known, also stop retro-correcting scroll offset from
+        // measurements, which otherwise adds a flinging jitter. Mirrors `RecyclerList`.
+        getFixedItemSize={() => SettingsRowHeight}
+        maintainVisibleContentPosition={{ data: false, size: false }}
         renderItem={renderItem}
         ListHeaderComponent={header}
         ListEmptyComponent={
