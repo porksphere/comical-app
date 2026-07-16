@@ -1,15 +1,47 @@
 /**
- * The per-row download status control: a progress radial with the state's glyph in the centre
- * (download / queued-clock / pause / fail-triangle), tappable to perform the contextual manual action
- * — pause an in-flight or queued download, resume a paused one, retry a failed one. Used on both
- * series and chapter rows; a completed download shows no indicator (the row shows a chevron instead).
+ * The per-row download status control.
+ *
+ * The visual is EXCLUSIVE by state — never a ring with an icon on top:
+ *   - downloading → the progress radial only (the ring is the progress),
+ *   - queued      → the clock icon only,
+ *   - paused      → the pause icon only,
+ *   - failed      → the alert icon only.
+ * (A completed download shows no indicator — the row shows a chevron instead.)
+ *
+ * `DownloadStatusIndicator` wraps that visual in a Pressable for the manual action — pause an
+ * in-flight/queued download, resume a paused one, retry a failed one — on chapter rows. On series rows
+ * it's rendered non-interactive (the row is already pressable to expand — avoids a button-in-button on
+ * web); the series' actions stay on its swipe menu. The bare `DownloadStateVisual` is reused wherever
+ * only the glyph is wanted (e.g. the series Download button).
  */
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { DownloadRadial } from '@/components/downloads/download-radial';
-import { DownloadingIcon, FailedIcon, PauseIcon, QueuedIcon } from '@/components/icons/ui-icons';
+import { FailedIcon, PauseIcon, QueuedIcon } from '@/components/icons/ui-icons';
 import { useTheme } from '@/hooks/use-theme';
 import type { DownloadState } from '@comical/downloads';
+
+/** The exclusive state visual: a progress ring while downloading, else the state's icon. */
+export function DownloadStateVisual({
+  state,
+  fraction,
+  size = 22,
+  strokeWidth = 2.5,
+}: {
+  state: DownloadState;
+  fraction: number;
+  size?: number;
+  strokeWidth?: number;
+}) {
+  const theme = useTheme();
+  if (state === 'downloading') {
+    return <DownloadRadial fraction={fraction} state={state} size={size} strokeWidth={strokeWidth} />;
+  }
+  if (state === 'failed') return <FailedIcon color={theme.danger} size={size} />;
+  if (state === 'paused') return <PauseIcon color={theme.textSecondary} size={size} />;
+  if (state === 'queued') return <QueuedIcon color={theme.textSecondary} size={size} />;
+  return null; // complete — no indicator
+}
 
 export function DownloadStatusIndicator({
   state,
@@ -23,43 +55,19 @@ export function DownloadStatusIndicator({
   state: DownloadState;
   fraction: number;
   size?: number;
-  /**
-   * When true (chapter rows), the whole indicator is a button for the manual action. When false
-   * (series rows — whose ROW is already a Pressable to expand), it's rendered visual-only to avoid a
-   * button-inside-a-button (invalid on web); the series' pause/resume/retry stays on the swipe actions.
-   */
+  /** When false (series rows, whose ROW is already a button), render visual-only — no nested button. */
   interactive?: boolean;
   onPause: () => void;
   onResume: () => void;
   onRetry: () => void;
 }) {
-  const theme = useTheme();
-  const glyphSize = Math.round(size * 0.5);
-  const color = state === 'failed' ? theme.danger : state === 'downloading' ? theme.accent : theme.textSecondary;
-
-  const glyph =
-    state === 'failed' ? (
-      <FailedIcon color={color} size={glyphSize} />
-    ) : state === 'paused' ? (
-      <PauseIcon color={color} size={glyphSize} />
-    ) : state === 'queued' ? (
-      <QueuedIcon color={color} size={glyphSize} />
-    ) : (
-      <DownloadingIcon color={color} size={glyphSize} />
-    );
-
-  const inner = (
-    <>
-      <DownloadRadial fraction={fraction} state={state} size={size} />
-      <View style={styles.glyph} pointerEvents="none">
-        {glyph}
-      </View>
-    </>
+  const visual = (
+    <View style={[styles.wrap, { width: size, height: size }]}>
+      <DownloadStateVisual state={state} fraction={fraction} size={size} />
+    </View>
   );
 
-  if (!interactive) {
-    return <View style={[styles.wrap, { width: size, height: size }]}>{inner}</View>;
-  }
+  if (!interactive) return visual;
 
   const { onPress, label } =
     state === 'failed'
@@ -69,13 +77,8 @@ export function DownloadStatusIndicator({
         : { onPress: onPause, label: 'Pause download' };
 
   return (
-    <Pressable
-      onPress={onPress}
-      hitSlop={8}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      style={[styles.wrap, { width: size, height: size }]}>
-      {inner}
+    <Pressable onPress={onPress} hitSlop={8} accessibilityRole="button" accessibilityLabel={label} style={styles.wrap}>
+      {visual}
     </Pressable>
   );
 }
@@ -85,14 +88,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     cursor: 'pointer',
-  },
-  glyph: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 });

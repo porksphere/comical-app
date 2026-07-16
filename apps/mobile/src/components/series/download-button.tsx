@@ -11,7 +11,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 
-import { DownloadRadial } from '@/components/downloads/download-radial';
+import { DownloadStateVisual } from '@/components/downloads/download-status-indicator';
 import { ActionButton } from '@/components/series/action-button';
 import { dlGetSeries } from '@/data/api';
 import { deriveSeriesState, seriesFraction } from '@/data/downloads/derive';
@@ -80,7 +80,7 @@ export function SeriesDownloadButton({
       <ActionButton
         testID="series.action.download"
         label={label}
-        leading={<DownloadRadial fraction={frac} state={state} size={16} strokeWidth={2} />}
+        leading={<DownloadStateVisual state={state} fraction={frac} size={16} strokeWidth={2} />}
         onPress={openDownloads}
       />
     );
