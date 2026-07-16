@@ -552,6 +552,11 @@ export function dlRecordPage(
   return fetchPost(`${dlBase(bridgeId, seriesId)}/chapters/${encodeURIComponent(chapterId)}/pages/${index}`, { file, bytes });
 }
 
+/** POST mark one page failed (the client gave up fetching it) — surfaces the chapter as failed. */
+export function dlFailPage(bridgeId: string, seriesId: string, chapterId: string, index: number): Promise<DownloadedChapter> {
+  return fetchPost(`${dlBase(bridgeId, seriesId)}/chapters/${encodeURIComponent(chapterId)}/pages/${index}/fail`, {});
+}
+
 /** GET the ordered manifest page list for a chapter (the offline page-LIST fallback). */
 export function dlManifestPages(
   bridgeId: string,

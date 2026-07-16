@@ -19,15 +19,18 @@
 import * as Network from 'expo-network';
 import {
   dlEnqueueChapter,
+  dlFailPage,
   dlManifestPages,
   dlPauseChapter,
   dlPauseSeries,
   dlPendingChapters,
   dlRecordPage,
+  dlRequeue,
   dlResumeChapter,
   dlResumeSeries,
   getChapterPages,
   getSeriesPages,
+  invalidateAssetSource,
   resolveAssetSourceCached,
   type DlEnqueueChapterBody,
 } from '../api';
@@ -134,6 +137,26 @@ export async function resumeSeriesDownload(bridgeId: string, seriesId: string): 
     /* best-effort */
   }
   invalidateDownloads(bridgeId, seriesId);
+  void drain();
+}
+
+/** Retry a failed chapter — re-queue its non-complete (incl. failed) pages, then drain. */
+export async function retryChapter(bridgeId: string, seriesId: string, chapterId: string): Promise<void> {
+  clearCancel(bridgeId, seriesId, chapterId);
+  try {
+    await dlRequeue(bridgeId, seriesId, chapterId);
+  } catch {
+    /* best-effort */
+  }
+  invalidateDownloads(bridgeId, seriesId);
+  void drain();
+}
+
+/**
+ * Nudge the queue to (re)start draining — e.g. after the user turns off "Wi-Fi only" while on
+ * cellular, so held-back downloads resume immediately instead of waiting for the next trigger.
+ */
+export function kickDownloads(): void {
   void drain();
 }
 
@@ -251,15 +274,30 @@ async function downloadChapter(bridgeId: string, seriesId: string, chapterId: st
       if (stopRequested || isCancelled(bridgeId, seriesId, chapterId)) return;
       const page = queue.shift();
       if (!page) return;
-      try {
-        const resolved = await resolveAssetSourceCached(page.sourceUrl);
-        const { relPath, bytes } = await storePage(bridgeId, seriesId, chapterId, page.index, resolved, page.headers);
-        await dlRecordPage(bridgeId, seriesId, chapterId, page.index, relPath, bytes);
-        landed = true;
-        done += 1;
-        setChapterProgress(key, { state: 'downloading', done, total });
-      } catch {
-        // Leave the page not-complete; the chapter will surface as failed and can be re-queued.
+      // Try the page, retrying once (busting a stale resolve) before giving up on it. A page that
+      // still fails is marked failed so the chapter surfaces as `failed` (retryable), rather than
+      // silently stalling — the other pages keep going.
+      let stored = false;
+      for (let attempt = 0; attempt < 2 && !stored; attempt++) {
+        if (isCancelled(bridgeId, seriesId, chapterId)) return;
+        try {
+          const resolved = await resolveAssetSourceCached(page.sourceUrl);
+          const { relPath, bytes } = await storePage(bridgeId, seriesId, chapterId, page.index, resolved, page.headers);
+          await dlRecordPage(bridgeId, seriesId, chapterId, page.index, relPath, bytes);
+          stored = true;
+          landed = true;
+          done += 1;
+          setChapterProgress(key, { state: 'downloading', done, total });
+        } catch {
+          if (attempt === 0) invalidateAssetSource(page.sourceUrl); // bust a stale resolution, retry
+        }
+      }
+      if (!stored && !isCancelled(bridgeId, seriesId, chapterId)) {
+        try {
+          await dlFailPage(bridgeId, seriesId, chapterId, page.index);
+        } catch {
+          /* best-effort */
+        }
       }
     }
   }
