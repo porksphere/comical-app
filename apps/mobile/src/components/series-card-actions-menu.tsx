@@ -2,7 +2,7 @@ import { Image } from 'expo-image';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { CheckIcon, PlusIcon, StarIcon, type IconProps } from '@/components/icons/ui-icons';
+import { CheckIcon, DownloadsIcon, PlusIcon, StarIcon, type IconProps } from '@/components/icons/ui-icons';
 import { OptionList, useOverlay } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -10,6 +10,7 @@ import { RowHeight, Spacing } from '@/constants/theme';
 import type { SeriesEntry } from '@/data/types';
 import { useFavorite } from '@/hooks/use-favorite';
 import { useLibrary } from '@/hooks/use-library';
+import { useSeriesDownloadAction } from '@/hooks/use-series-download-action';
 import { useTheme } from '@/hooks/use-theme';
 import { clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 
@@ -24,10 +25,13 @@ import { clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 export function SeriesActionsMenu({
   bridgeId,
   entry,
+  direct,
   coverAspect,
 }: {
   bridgeId: string;
   entry: SeriesEntry;
+  /** Whether the bridge serves a direct (page-thumbnail) series — affects how a download is enqueued. */
+  direct?: boolean;
   coverAspect?: number;
 }) {
   const { closeTop } = useOverlay();
@@ -36,10 +40,29 @@ export function SeriesActionsMenu({
     title: entry.title,
     ...(entry.cover ? { thumbnailUrl: entry.cover } : {}),
   }));
+  // Lazy — this menu is mounted only while open, so the download-status query runs once, on open.
+  const download = useSeriesDownloadAction(
+    bridgeId,
+    entry.id,
+    !!direct,
+    { title: entry.title, ...(entry.cover ? { cover: entry.cover } : {}) },
+    true,
+  );
   return (
     <View style={styles.menu}>
       <MenuHeader title={entry.title} cover={entry.cover} coverAspect={coverAspect} />
       <OptionList>
+        <ActionRow
+          testID="series.card-menu.download"
+          label={download.label}
+          Icon={DownloadsIcon}
+          loading={download.loading}
+          active={download.active}
+          onPress={() => {
+            download.onPress();
+            closeTop();
+          }}
+        />
         <ActionRow
           testID="series.card-menu.library"
           label={inLibrary ? 'Remove from Library' : 'Add to Library'}

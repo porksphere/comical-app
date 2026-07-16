@@ -24,7 +24,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { NATIVE_HIDE_OFFSET } from '@/components/app-tabs';
 import { TagStrip } from '@/components/chip';
-import { CheckIcon, PlayIcon, PlusIcon, StarIcon, type IconProps } from '@/components/icons/ui-icons';
+import { CheckIcon, DownloadsIcon, PlayIcon, PlusIcon, StarIcon, type IconProps } from '@/components/icons/ui-icons';
 import { PageThumb } from '@/components/series/chapters-section';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
@@ -36,6 +36,7 @@ import { useDataSource, useMockActive } from '@/data/source';
 import type { PageThumbSource } from '@/data/types';
 import { useFavorite } from '@/hooks/use-favorite';
 import { useLibrary } from '@/hooks/use-library';
+import { useSeriesDownloadAction } from '@/hooks/use-series-download-action';
 import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
 import { useStartReading } from '@/hooks/use-start-reading';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
@@ -153,9 +154,9 @@ const HOVER_FADE = { duration: 110 } as const;
 // card's 350ms: the popup is already open and your finger is already on the thing you're choosing from,
 // so there's far less to disambiguate — only a tap and a resize drag, and both are quick by nature.
 const MENU_HOLD_MS = 220;
-// Read + Add to Library + Favorite. Keep in step with the rows rendered below — the menu's height is
-// computed from this (it's what the panel's resize range budgets for), not measured.
-const MENU_ROWS = 3;
+// Read + Add to Library + Favorite + Download. Keep in step with the rows rendered below — the menu's
+// height is computed from this (it's what the panel's resize range budgets for), not measured.
+const MENU_ROWS = 4;
 // DEV ONLY: pad the menu out with dummy rows, to exercise the case the pan gesture exists for — a
 // group too tall for the screen, where the panel has to give up height for the menu to be reachable.
 //
@@ -291,6 +292,15 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     title: entry.title,
     ...(entry.cover ? { thumbnailUrl: entry.cover } : {}),
   }));
+  // Lazy: this panel mounts only while the menu is open, so the download-status query runs once here,
+  // never per card in the grid.
+  const download = useSeriesDownloadAction(
+    bridgeId,
+    entry.id,
+    !!direct,
+    { title: entry.title, ...(entry.cover ? { cover: entry.cover } : {}) },
+    true,
+  );
 
   // Start the open morph, once. Deferred until the lifted cover's bitmap is decoded (see `openMorph`
   // below) so it never flies out blank for a frame or two — expo-image decodes async even on a cache
@@ -914,6 +924,14 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       active: !!favorited,
       testID: 'series.card-menu.favorite',
       onPress: () => act(toggleFavorite),
+    },
+    {
+      label: download.label,
+      Icon: DownloadsIcon,
+      loading: download.loading,
+      active: download.active,
+      testID: 'series.card-menu.download',
+      onPress: () => act(download.onPress),
     },
     // DEV ONLY: dummy rows so the menu is long enough to overrun the screen, which is the only state
     // the pan gesture exists for. See DEBUG_EXTRA_MENU_ROWS.
