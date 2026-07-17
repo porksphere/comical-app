@@ -5,13 +5,13 @@ import {
   Bug,
   Check,
   CircleCheck,
-  CircleEllipsis,
   ChevronDown,
   ChevronRight,
   Compass,
   Clock,
   Database,
   Download,
+  Ellipsis,
   Eye,
   EyeOff,
   HardDrive,
@@ -69,7 +69,8 @@ export const CustomPagesIcon = ({ color, size = 16 }: IconProps) => <LayoutGrid 
 export const DownloadsIcon = ({ color, size = 16 }: IconProps) => <Download color={color} size={size} />;
 export const StorageIcon = ({ color, size = 16 }: IconProps) => <HardDrive color={color} size={size} />;
 export const DownloadingIcon = ({ color, size = 16 }: IconProps) => <Download color={color} size={size} />;
-export const PauseIcon = ({ color, size = 16 }: IconProps) => <Pause color={color} size={size} fill={color} />;
+// Outline (not filled): filled bars read as a solid blob at small sizes.
+export const PauseIcon = ({ color, size = 16 }: IconProps) => <Pause color={color} size={size} />;
 export const QueuedIcon = ({ color, size = 16 }: IconProps) => <Clock color={color} size={size} />;
 export const FailedIcon = ({ color, size = 16 }: IconProps) => <TriangleAlert color={color} size={size} />;
 // Fully-downloaded (complete) marker — a filled check for a chapter/series kept offline.
@@ -84,5 +85,5 @@ export const EyeOffIcon = ({ color, size = 16 }: IconProps) => <EyeOff color={co
 export const TrashIcon = ({ color, size = 16 }: IconProps) => <Trash2 color={color} size={size} />;
 // Multi-select mode toggle (the per-series download screen's top-bar button) — a circled check.
 export const SelectModeIcon = ({ color, size = 16 }: IconProps) => <CircleCheck color={color} size={size} />;
-// The selection-staging menu trigger (circled ellipsis) — opens Select all / Select unread.
-export const SelectOptionsIcon = ({ color, size = 16 }: IconProps) => <CircleEllipsis color={color} size={size} />;
+// The selection-staging menu trigger (a bare three-dot ellipsis) — opens Select all / Select unread.
+export const SelectOptionsIcon = ({ color, size = 16 }: IconProps) => <Ellipsis color={color} size={size} />;

@@ -15,12 +15,24 @@
 import { LegendList } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Holdable } from '@/components/context-menu';
 import { DownloadStatusIndicator } from '@/components/downloads/download-status-indicator';
 import { seriesActions } from '@/components/downloads/row-actions';
 import { SeriesStorageBar } from '@/components/downloads/series-storage-bar';
+import { CheckIcon, ClearIcon, PauseIcon, PlayIcon, TrashIcon } from '@/components/icons/ui-icons';
+import {
+  PILL_HEIGHT,
+  SelectLead,
+  SelectOptionsTrigger,
+  SelectPillBar,
+  SelectToggle,
+  useSelectMode,
+} from '@/components/multi-select/select-mode';
+import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { SettingsToggleRow } from '@/components/settings/settings-fields';
 import { SettingsSection } from '@/components/settings/settings-row';
 import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
@@ -38,6 +50,8 @@ import { formatBytes } from '@/data/downloads/format';
 import { downloadPrefs$, useDownloadPrefs } from '@/data/downloads/prefs';
 import { queryClient } from '@/data/query-client';
 import { queryKeys } from '@/data/queries';
+import { hapticSelection } from '@/lib/haptics';
+import { testId } from '@/lib/test-id';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import type { StorageUsage, StorageUsageSeries } from '@comical/downloads';
@@ -83,6 +97,7 @@ export default function DownloadsScreen() {
   const { width } = useWindowDimensions();
   const { wifiOnly, background } = useDownloadPrefs();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   // Full-width scroller (scrollbar at the window edge); rows centered within the settings column via
   // symmetric side padding — LegendList ignores maxWidth/alignSelf on its content container, so the
@@ -91,8 +106,10 @@ export default function DownloadsScreen() {
   const theme = useTheme();
 
   // Caches row objects across renders so an unchanged row keeps the SAME reference — the basis for
-  // LegendList skipping its re-render (see `buildRows` / the `DlRow` note).
-  const rowCache = useRef<Map<string, DlRow>>(new Map());
+  // LegendList skipping its re-render (see `buildRows` / the `DlRow` note). A state-held Map
+  // (stable instance, populated during render's own computation) rather than a ref, which must not
+  // be read during render.
+  const [rowCache] = useState(() => new Map<string, DlRow>());
 
   const { data: usage = EMPTY_USAGE } = useQuery({
     queryKey: queryKeys.downloadsUsage(),
@@ -131,7 +148,46 @@ export default function DownloadsScreen() {
     }
   };
 
-  const rows = buildRows(usage.bySeries, rowCache.current);
+  const rows = buildRows(usage.bySeries, rowCache);
+
+  // ── Multi-select mode (the shared select-mode chrome) — bulk-manage SERIES here ──
+  const mode = useSelectMode();
+  const selecting = mode.selecting;
+  const allKeys = useMemo(() => rows.map((r) => r.key), [rows]);
+  const ms = useMultiSelect(allKeys);
+  const listExtra = useMemo(() => ({ selected: ms.selected, selecting }), [ms.selected, selecting]);
+  const toggleSelecting = () => {
+    if (selecting) ms.clear();
+    mode.toggle();
+  };
+  const allSelected = allKeys.length > 0 && ms.count === allKeys.length;
+  const stagingRows = [
+    {
+      label: allSelected ? 'Deselect all' : 'Select all',
+      Icon: allSelected ? ClearIcon : CheckIcon,
+      loading: false,
+      disabled: allKeys.length === 0,
+      onPress: allSelected ? ms.clear : ms.selectAll,
+      testID: testId('downloads.menu', 'all'),
+    },
+  ];
+
+  // Contextual bulk verbs over the selected SERIES (their rolled-up state decides applicability).
+  const picked = rows.filter((r) => ms.selected.has(r.key));
+  const stateOf = (s: StorageUsageSeries) => deriveSeriesState(s.chapters);
+  const toPause = picked.filter((r) => ['downloading', 'queued'].includes(stateOf(r.s)));
+  const toResume = picked.filter((r) => stateOf(r.s) === 'paused');
+  const pauseSelected = () => {
+    for (const r of toPause) void pauseSeries(r.s.bridgeId, r.s.seriesId);
+  };
+  const resumeSelected = () => {
+    for (const r of toResume) void resumeSeriesDownload(r.s.bridgeId, r.s.seriesId);
+  };
+  const deleteSelected = async () => {
+    for (const r of picked) await deleteSeries(r.s);
+    ms.clear();
+    mode.exit();
+  };
 
   const openSeries = (s: StorageUsageSeries) =>
     router.push({
@@ -189,31 +245,45 @@ export default function DownloadsScreen() {
     const frac = seriesFraction(s.chapters);
     return (
       <View>
-        <SwipeableSettingsRow
-          recycleKey={item.key}
-          label={s.title}
-          labelBold
-          description={`${s.chapterCount} chapter${s.chapterCount === 1 ? '' : 's'} · ${formatBytes(s.bytes)}`}
-          leading={
-            <DownloadStatusIndicator
-              state={state}
-              fraction={frac}
-              size={22}
-              interactive={false}
-              onPause={() => void pauseSeries(s.bridgeId, s.seriesId)}
-              onResume={() => void resumeSeriesDownload(s.bridgeId, s.seriesId)}
-              onRetry={() => retrySeries(s)}
+        <Holdable
+          enabled={selecting}
+          onHold={() => {
+            hapticSelection();
+            ms.rangeFill(item.key);
+          }}>
+          {({ onLongPress }) => (
+            <SwipeableSettingsRow
+              recycleKey={item.key}
+              swipeEnabled={!selecting}
+              label={s.title}
+              labelBold
+              description={`${s.chapterCount} chapter${s.chapterCount === 1 ? '' : 's'} · ${formatBytes(s.bytes)}`}
+              leading={
+                <>
+                  <SelectLead progress={mode.progress} selected={ms.selected.has(item.key)} edgeOffset={sidePad} />
+                  <DownloadStatusIndicator
+                    state={state}
+                    fraction={frac}
+                    size={22}
+                    interactive={false}
+                    onPause={() => void pauseSeries(s.bridgeId, s.seriesId)}
+                    onResume={() => void resumeSeriesDownload(s.bridgeId, s.seriesId)}
+                    onRetry={() => retrySeries(s)}
+                  />
+                </>
+              }
+              onPress={selecting ? () => ms.toggle(item.key) : () => openSeries(s)}
+              onLongPress={selecting ? onLongPress : undefined}
+              actions={seriesActions(state, {
+                onPause: () => void pauseSeries(s.bridgeId, s.seriesId),
+                onResume: () => void resumeSeriesDownload(s.bridgeId, s.seriesId),
+                onRetry: () => retrySeries(s),
+                onCancel: () => void cancelSeriesInflight(s),
+                onDelete: () => void deleteSeries(s),
+              })}
             />
-          }
-          onPress={() => openSeries(s)}
-          actions={seriesActions(state, {
-            onPause: () => void pauseSeries(s.bridgeId, s.seriesId),
-            onResume: () => void resumeSeriesDownload(s.bridgeId, s.seriesId),
-            onRetry: () => retrySeries(s),
-            onCancel: () => void cancelSeriesInflight(s),
-            onDelete: () => void deleteSeries(s),
-          })}
-        />
+          )}
+        </Holdable>
         {/* Every row except the last carries the standard inset hairline at its bottom edge —
             absolutely positioned so the row stays exactly `SettingsRowHeight` tall. */}
         {index < rows.length - 1 && (
@@ -225,7 +295,11 @@ export default function DownloadsScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <TopBar title="Downloads" />
+      <TopBar
+        title={selecting ? `${ms.count} selected` : 'Downloads'}
+        left={selecting ? <SelectOptionsTrigger rows={stagingRows} testID="downloads.select-options" /> : undefined}
+        right={<SelectToggle selecting={selecting} onToggle={toggleSelecting} testID="downloads.select-toggle" />}
+      />
       <LegendList
         style={styles.list}
         data={rows}
@@ -241,6 +315,9 @@ export default function DownloadsScreen() {
         // measurements, which otherwise adds a flinging jitter. Mirrors `RecyclerList`.
         getFixedItemSize={() => SettingsRowHeight}
         maintainVisibleContentPosition={{ data: false, size: false }}
+        // Selection lives OUTSIDE the row objects (identity-cached — see `buildRows`); this tells
+        // the list to repaint visible rows when the selection set or the mode changes.
+        extraData={listExtra}
         renderItem={renderItem}
         ListHeaderComponent={header}
         ListEmptyComponent={
@@ -251,12 +328,33 @@ export default function DownloadsScreen() {
         contentContainerStyle={{
           flexGrow: 1,
           paddingTop,
-          paddingBottom,
+          // Room for the floating pills while selecting, so the last rows can scroll clear of them.
+          paddingBottom: paddingBottom + (selecting ? PILL_HEIGHT + Spacing.six : 0),
           paddingLeft: sidePad,
           paddingRight: sidePad,
         }}
         showsVerticalScrollIndicator={Platform.OS === 'web'}
       />
+
+      {/* The floating contextual bulk verbs (shared select-mode chrome), over the selected SERIES. */}
+      {selecting && (
+        <SelectPillBar
+          left={sidePad}
+          right={sidePad}
+          bottom={Math.max(insets.bottom, Spacing.three)}
+          verbs={[
+            ...(toPause.length > 0
+              ? [{ key: 'pause', label: `Pause ${toPause.length} series`, Icon: PauseIcon, onPress: pauseSelected, testID: 'downloads.pause' }]
+              : []),
+            ...(toResume.length > 0
+              ? [{ key: 'resume', label: `Resume ${toResume.length} series`, Icon: PlayIcon, onPress: resumeSelected, testID: 'downloads.resume' }]
+              : []),
+            ...(picked.length > 0
+              ? [{ key: 'delete', label: `Delete ${picked.length} series`, Icon: TrashIcon, color: theme.danger, onPress: () => void deleteSelected(), testID: 'downloads.delete' }]
+              : []),
+          ]}
+        />
+      )}
     </ThemedView>
   );
 }
