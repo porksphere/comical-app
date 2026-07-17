@@ -18,7 +18,7 @@
 import { BlurView } from 'expo-blur';
 import type { ReactElement } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring, type SharedValue } from 'react-native-reanimated';
 import { useState } from 'react';
 
 import { openContextMenu } from '@/components/context-menu-host';
@@ -29,8 +29,10 @@ import { SelectCircle } from '@/components/multi-select/selectable-row';
 import { Spacing } from '@/constants/theme';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 
-/** How long the check circles take to slide in/out of the rows. */
-export const SELECT_ANIM_MS = 220;
+/** The circles' slide-in/out spring — deliberately WEIGHTY: a touch of mass and underdamping so
+ *  the circles arrive with momentum, push slightly past their slot, and settle (the row content
+ *  rides the same motion, since the slot width follows the same value). */
+export const SELECT_SPRING = { damping: 15, stiffness: 220, mass: 0.8 } as const;
 /** The leading slot the circles occupy when open: circle + the row's gap. */
 export const CIRCLE_SLOT = 20 + Spacing.three;
 /** The floating bulk-verb pills. A pill with ONE action renders as a full circle (width == height);
@@ -54,7 +56,7 @@ export function useSelectMode(initial = false): {
   const progress = useSharedValue(initial ? 1 : 0);
   const set = (next: boolean) => {
     setSelecting(next);
-    progress.value = withTiming(next ? 1 : 0, { duration: SELECT_ANIM_MS });
+    progress.value = withSpring(next ? 1 : 0, SELECT_SPRING);
   };
   return {
     selecting,
@@ -109,11 +111,13 @@ export function SelectLead({
   selected: boolean;
   edgeOffset: number;
 }) {
+  // The spring overshoots its targets — the slot briefly grows PAST its width (that's the weight:
+  // content gets nudged and settles back), but a below-zero rebound must not become negative width.
   const slot = useAnimatedStyle(() => ({
-    width: progress.value * CIRCLE_SLOT,
+    width: Math.max(0, progress.value) * CIRCLE_SLOT,
   }));
   const circle = useAnimatedStyle(() => ({
-    opacity: progress.value,
+    opacity: Math.min(1, Math.max(0, progress.value)),
     transform: [{ translateX: (progress.value - 1) * (CIRCLE_SLOT + edgeOffset) }],
   }));
   return (
