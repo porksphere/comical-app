@@ -1,5 +1,5 @@
 import { type ComponentType, type ReactNode, useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
+import { Platform, Pressable, StyleSheet, View, type GestureResponderEvent, type ViewStyle } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   interpolateColor,
@@ -121,6 +121,9 @@ type SwipeableRowProps = {
    *  next item. It's the list key (not the item value), so a mere data UPDATE to the same item (e.g. a
    *  download tick) leaves it unchanged and does NOT close an open swipe. Omit outside a recycling list. */
   recycleKey?: string;
+  /** Set false to suppress the actions entirely (no swipe gesture, no hover lanes) — e.g. while a
+   *  screen's multi-select mode owns row interaction. The row renders as plain content, same layout. */
+  swipeEnabled?: boolean;
   /** The row's own content (rendered as the swipeable surface / hover body). */
   children: ReactNode;
 };
@@ -140,7 +143,12 @@ type SwipeableRowProps = {
  * only safe with an undo snackbar, which this app has none of). On web there is no swipe — the actions
  * reveal as buttons on hover (and show unconditionally on a touch screen, which never hovers).
  */
-export function SwipeableRow({ name, actions, edgeInset = 0, recycleKey, children }: SwipeableRowProps) {
+export function SwipeableRow({ name, actions, edgeInset = 0, recycleKey, swipeEnabled = true, children }: SwipeableRowProps) {
+  // Disabled (or nothing to act on): plain content in the same escaped layout, no gesture/lanes.
+  // Checked BEFORE clampActions — an intentionally empty action set isn't the dev error it warns on.
+  if (!swipeEnabled || actions.length === 0) {
+    return <View style={{ marginHorizontal: -edgeInset }}>{children}</View>;
+  }
   const shown = clampActions(actions, name);
   return IS_WEB ? (
     <HoverActionsRow name={name} actions={shown} edgeInset={edgeInset} recycleKey={recycleKey}>
@@ -164,8 +172,11 @@ export function SwipeableSettingsRow({
   leading,
   right,
   onPress,
+  onLongPress,
   actions,
   recycleKey,
+  swipeEnabled,
+  testID,
 }: {
   label: string;
   labelBold?: boolean;
@@ -178,12 +189,23 @@ export function SwipeableSettingsRow({
   right?: ReactNode;
   /** Tapping the row body (e.g. opening the item's detail page). Suppressed while the row is open. */
   onPress?: () => void;
+  /** Long-press on a pressable row (see `SettingsRow.onLongPress`). */
+  onLongPress?: (e: GestureResponderEvent) => void;
   actions: SwipeRowAction[];
   /** The item's stable list key in a recycling list — see `SwipeableRow.recycleKey`. */
   recycleKey?: string;
+  /** See `SwipeableRow.swipeEnabled` — false renders the row without its actions. */
+  swipeEnabled?: boolean;
+  /** Automation selector forwarded to the inner row. */
+  testID?: string;
 }) {
   return (
-    <SwipeableRow name={label} actions={actions} edgeInset={SettingsGutter} recycleKey={recycleKey}>
+    <SwipeableRow
+      name={label}
+      actions={actions}
+      edgeInset={SettingsGutter}
+      recycleKey={recycleKey}
+      {...(swipeEnabled !== undefined ? { swipeEnabled } : {})}>
       <SettingsRow
         label={label}
         labelBold={labelBold}
@@ -194,6 +216,8 @@ export function SwipeableSettingsRow({
         right={right}
         escapeGutter={false}
         onPress={onPress}
+        onLongPress={onLongPress}
+        testID={testID}
       />
     </SwipeableRow>
   );

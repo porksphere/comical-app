@@ -1,5 +1,5 @@
 import { Children, Fragment, type ReactNode } from 'react';
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View, type GestureResponderEvent } from 'react-native';
 
 import { ChevronRightIcon } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
@@ -119,6 +119,7 @@ export function SettingsRow({
   leading,
   right,
   onPress,
+  onLongPress,
   onHoverIn,
   onHoverOut,
   testID,
@@ -142,6 +143,9 @@ export function SettingsRow({
   escapeGutter?: boolean;
   right?: ReactNode;
   onPress?: () => void;
+  /** Long-press on a pressable row (e.g. multi-select range-fill). Only fires when `onPress` is set.
+   *  Takes the press event so a `Holdable`'s web handler can be passed straight through. */
+  onLongPress?: (e: GestureResponderEvent) => void;
   /** Web only: mirrors of the row's own hover state, so a caller rendering something hover-dependent
    *  in `right` (the trash in `SwipeableSettingsRow`) can react to hovering ANYWHERE on the row —
    *  not just the few pixels of the control itself. */
@@ -194,6 +198,7 @@ export function SettingsRow({
         hapticImpactLight();
         onPress();
       }}
+      onLongPress={onLongPress}
       onHoverIn={() => {
         markHovered();
         onHoverIn?.();

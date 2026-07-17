@@ -19,6 +19,7 @@ import {
   TriangleAlert,
   GripVertical,
   LayoutGrid,
+  ListChecks,
   Minus,
   MoreVertical,
   Pencil,
@@ -81,3 +82,5 @@ export const EyeIcon = ({ color, size = 16 }: IconProps) => <Eye color={color} s
 export const EyeOffIcon = ({ color, size = 16 }: IconProps) => <EyeOff color={color} size={size} />;
 // Destructive action — the swipe-to-delete pane and its web hover affordance (see settings/swipeable-row).
 export const TrashIcon = ({ color, size = 16 }: IconProps) => <Trash2 color={color} size={size} />;
+// Multi-select mode toggle (the per-series download screen's top-bar button).
+export const SelectModeIcon = ({ color, size = 16 }: IconProps) => <ListChecks color={color} size={size} />;

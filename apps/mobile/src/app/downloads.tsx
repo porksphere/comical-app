@@ -1,14 +1,10 @@
 /**
- * The unified Downloads screen (a Settings sub-page): the download preferences and an expandable
- * series → chapters breakdown — ordered queue-first then most-recent, each row showing a progress
- * radial while in flight and swipe/hover actions that match its state (Cancel an in-flight download,
- * Resume a paused one, Delete a finished one). The storage bar + size accounting live on the Storage
+ * The Downloads screen (a Settings sub-page): the download preferences and the SERIES list — ordered
+ * queue-first then most-recent, each row showing a progress radial while in flight and swipe/hover
+ * actions that match its state (Cancel an in-flight download, Resume a paused one, Delete a finished
+ * one). Tapping a series opens its own download screen (`series-downloads.tsx`) with the chapter
+ * roster — there is no inline foldout anymore. The storage bar + size accounting live on the Storage
  * screen; this page is management.
- *
- * The tree is **virtualized** (LegendList): the series + their expanded chapters are FLATTENED into one
- * list so only on-screen rows mount — expanding a long series no longer mounts every chapter's swipe
- * row at once. Series rows are bold with an animated foldout chevron; chapter rows are indented under
- * their parent. Recycling is off — each swipe row keeps its own gesture state.
  *
  * This reads the `/downloads` storage tree through `api.ts`; a backend without the module yields an
  * empty tree. Mutations (delete/cancel/resume) go to the HOST's download engine — embedded or remote
@@ -16,19 +12,18 @@
  * and refetches. The Wi-Fi/background toggles are device policies for the embedded engine, so they
  * only render in embedded mode (a remote server paces its own downloads).
  */
-import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
+import { LegendList } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
-import { useLocalSearchParams } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'expo-router';
+import { useEffect, useRef } from 'react';
 import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
-import Animated, { useAnimatedStyle, useDerivedValue, withTiming } from 'react-native-reanimated';
 
 import { DownloadStatusIndicator } from '@/components/downloads/download-status-indicator';
+import { seriesActions } from '@/components/downloads/row-actions';
 import { SeriesStorageBar } from '@/components/downloads/series-storage-bar';
-import { ChevronRightIcon, ClearIcon, PauseIcon, PlayIcon, RetryIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { SettingsToggleRow } from '@/components/settings/settings-fields';
 import { SettingsSection } from '@/components/settings/settings-row';
-import { SwipeableSettingsRow, type SwipeRowAction } from '@/components/settings/swipeable-row';
+import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
@@ -36,22 +31,8 @@ import { MaxContentWidth, SettingsGutter, SettingsRowHeight, Spacing } from '@/c
 import { dlDeleteChapter, dlDeleteSeries, dlStorageUsage } from '@/data/api';
 import { applyBackgroundDownloads } from '@/data/downloads/background';
 import { getResolvedModeSync } from '@/data/embedded/preference';
-import {
-  bySortValue,
-  chapterSortValue,
-  deriveSeriesState,
-  displayChapterState,
-  seriesFraction,
-  seriesSortValue,
-} from '@/data/downloads/derive';
-import {
-  kickDownloads,
-  pauseChapter,
-  pauseSeries,
-  resumeChapterDownload,
-  resumeSeriesDownload,
-  retryChapter,
-} from '@/data/downloads/engine';
+import { bySortValue, deriveSeriesState, seriesFraction, seriesSortValue } from '@/data/downloads/derive';
+import { kickDownloads, pauseSeries, resumeSeriesDownload, retryChapter } from '@/data/downloads/engine';
 import { forgetChapter, forgetSeries } from '@/data/downloads/index-cache';
 import { formatBytes } from '@/data/downloads/format';
 import { downloadPrefs$, useDownloadPrefs } from '@/data/downloads/prefs';
@@ -59,21 +40,20 @@ import { queryClient } from '@/data/query-client';
 import { queryKeys } from '@/data/queries';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
-import type { DownloadState, StorageUsage, StorageUsageSeries } from '@comical/downloads';
+import type { StorageUsage, StorageUsageSeries } from '@comical/downloads';
 
 const EMPTY_USAGE: StorageUsage = { totalBytes: 0, seriesCount: 0, chapterCount: 0, pageCount: 0, bySeries: [] };
 
-type DlChapter = StorageUsageSeries['chapters'][number];
 /**
- * One flattened list row. `open` lives on the series row (not read from `expanded` in render) so that a
- * row's object changes ONLY when its own data or open-state changes — that stable identity lets
- * LegendList (and the compiler-memoized renderItem) skip re-rendering unchanged rows when one entry
- * updates. Chapters carry no parent `s`: their handlers key off the chapter's own bridge/series ids, so
- * a series-level rollup change doesn't churn every chapter row. See `buildRows`.
+ * One list row — a series. Row objects are REUSED from `cache` while their `s` snapshot is identical,
+ * so when one entry ticks only that row gets a fresh object — every other row keeps its reference and
+ * LegendList (and the compiler-memoized renderItem) skip re-rendering it. Tapping a row opens the
+ * per-series download screen (`/series-downloads`), which owns the chapter roster.
  */
-type DlRow =
-  | { kind: 'series'; key: string; s: StorageUsageSeries; open: boolean }
-  | { kind: 'chapter'; key: string; c: DlChapter };
+interface DlRow {
+  key: string;
+  s: StorageUsageSeries;
+}
 
 function refresh(): void {
   void queryClient.invalidateQueries({ queryKey: queryKeys.downloadsUsage() });
@@ -81,84 +61,28 @@ function refresh(): void {
 
 const seriesKey = (s: { bridgeId: string; seriesId: string }) => `${s.bridgeId}:${s.seriesId}`;
 
-/**
- * Flatten the storage tree into the virtualized list — each series (queue-first, then most-recent),
- * followed by its chapters (finished-first, then queue order) while it's expanded — REUSING each row's
- * object from `cache` when its inputs are unchanged. A series row is reused while its `s` snapshot and
- * open-state are identical; a chapter row while its `c` snapshot is identical. So when one entry ticks,
- * only that row (and its series' rollup) gets a fresh object — every other row keeps its reference and
- * LegendList leaves it untouched. `cache` is pruned to the rows still present.
- */
-function buildRows(bySeries: StorageUsageSeries[], expanded: Set<string>, cache: Map<string, DlRow>): DlRow[] {
+/** The series list, queue-first then most-recent, with per-row object identity kept via `cache`. */
+function buildRows(bySeries: StorageUsageSeries[], cache: Map<string, DlRow>): DlRow[] {
   const ordered = [...bySeries].sort((a, b) => bySortValue(seriesSortValue(a.chapters), seriesSortValue(b.chapters)));
   const rows: DlRow[] = [];
   const live = new Set<string>();
   for (const s of ordered) {
     const key = seriesKey(s);
     live.add(key);
-    const open = expanded.has(key);
     const prev = cache.get(key);
-    const row: DlRow =
-      prev && prev.kind === 'series' && prev.s === s && prev.open === open ? prev : { kind: 'series', key, s, open };
+    const row: DlRow = prev && prev.s === s ? prev : { key, s };
     cache.set(key, row);
     rows.push(row);
-    if (open) {
-      const chapters = [...s.chapters].sort((a, b) => bySortValue(chapterSortValue(a), chapterSortValue(b)));
-      for (const c of chapters) {
-        const ckey = `${key}:${c.chapterId}`;
-        live.add(ckey);
-        const cprev = cache.get(ckey);
-        const crow: DlRow = cprev && cprev.kind === 'chapter' && cprev.c === c ? cprev : { kind: 'chapter', key: ckey, c };
-        cache.set(ckey, crow);
-        rows.push(crow);
-      }
-    }
   }
   for (const k of cache.keys()) if (!live.has(k)) cache.delete(k);
   return rows;
-}
-
-interface RowHandlers {
-  onPause: () => void;
-  onResume: () => void;
-  onRetry: () => void;
-  /** Discard the in-flight download (series: drop the incomplete chapters; chapter: delete it). */
-  onCancel: () => void;
-  onDelete: () => void;
-}
-
-// Actions are laid out left→right and the LAST one sits at the swipe edge (revealed FIRST). So the
-// primary action (Pause/Resume/Retry) goes LAST (nearest the edge), and the destructive one
-// (Cancel/Delete) goes FIRST (further to the left) — you reach Pause with a short swipe, the
-// destructive action only with a longer one.
-const PAUSE = (onPress: () => void): SwipeRowAction => ({ label: 'Pause', icon: PauseIcon, onPress });
-const RESUME = (onPress: () => void): SwipeRowAction => ({ label: 'Resume', icon: PlayIcon, onPress });
-const RETRY = (onPress: () => void): SwipeRowAction => ({ label: 'Retry', icon: RetryIcon, onPress });
-const CANCEL = (onPress: () => void): SwipeRowAction => ({ label: 'Cancel', icon: ClearIcon, destructive: true, onPress });
-const DELETE = (onPress: () => void): SwipeRowAction => ({ label: 'Delete', icon: TrashIcon, destructive: true, onPress });
-
-/** Series swipe actions: while downloading you get Pause + Cancel (Cancel discards the in-flight
- *  downloads, after which the series is complete-only → Delete). */
-function seriesActions(state: DownloadState, h: RowHandlers): SwipeRowAction[] {
-  if (state === 'complete') return [DELETE(h.onDelete)];
-  if (state === 'paused') return [DELETE(h.onDelete), RESUME(h.onResume)];
-  if (state === 'failed') return [DELETE(h.onDelete), RETRY(h.onRetry)];
-  return [CANCEL(h.onCancel), PAUSE(h.onPause)]; // downloading / queued
-}
-
-/** Chapter swipe actions: a chapter is atomic, so its destructive action is always Delete. */
-function chapterActions(state: DownloadState, h: RowHandlers): SwipeRowAction[] {
-  if (state === 'complete') return [DELETE(h.onDelete)];
-  if (state === 'paused') return [DELETE(h.onDelete), RESUME(h.onResume)];
-  if (state === 'failed') return [DELETE(h.onDelete), RETRY(h.onRetry)];
-  return [DELETE(h.onDelete), PAUSE(h.onPause)]; // downloading / queued
 }
 
 export default function DownloadsScreen() {
   const { paddingTop, paddingBottom } = useSettingsScrollPadding();
   const { width } = useWindowDimensions();
   const { wifiOnly, background } = useDownloadPrefs();
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const router = useRouter();
 
   // Full-width scroller (scrollbar at the window edge); rows centered within the settings column via
   // symmetric side padding — LegendList ignores maxWidth/alignSelf on its content container, so the
@@ -166,12 +90,8 @@ export default function DownloadsScreen() {
   const sidePad = SettingsGutter + Math.max(0, (width - MaxContentWidth) / 2);
   const theme = useTheme();
 
-  // Deep-link / series-button focus: expand a series and scroll it into view.
-  const { focus } = useLocalSearchParams<{ focus?: string }>();
-  const listRef = useRef<LegendListRef>(null);
-  const [pendingScroll, setPendingScroll] = useState<string | null>(null);
-  // Caches flattened row objects across renders so an unchanged row keeps the SAME reference — the
-  // basis for LegendList skipping its re-render (see `buildRows` / the `DlRow` note).
+  // Caches row objects across renders so an unchanged row keeps the SAME reference — the basis for
+  // LegendList skipping its re-render (see `buildRows` / the `DlRow` note).
   const rowCache = useRef<Map<string, DlRow>>(new Map());
 
   const { data: usage = EMPTY_USAGE } = useQuery({
@@ -179,25 +99,11 @@ export default function DownloadsScreen() {
     queryFn: () => dlStorageUsage().catch(() => EMPTY_USAGE),
   });
 
-  useEffect(() => {
-    if (!focus) return;
-    setExpanded((prev) => new Set(prev).add(focus));
-    setPendingScroll(focus);
-  }, [focus]);
-
   // Opening this screen nudges the queue to drain — a safety net so a download that didn't resume at
   // boot (or was held back) starts moving while you're watching it, rather than sitting idle.
   useEffect(() => {
     kickDownloads();
   }, []);
-
-  const toggle = (key: string) =>
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
 
   // The host's engine unlinks the blobs itself (its delete routes return `files: []`); this side
   // only drops the sync offline-index entries and refetches.
@@ -225,17 +131,19 @@ export default function DownloadsScreen() {
     }
   };
 
-  const rows = buildRows(usage.bySeries, expanded, rowCache.current);
+  const rows = buildRows(usage.bySeries, rowCache.current);
 
-  // Once the focused series is in the flattened rows (after its expand lands), bring it into view.
-  useEffect(() => {
-    if (!pendingScroll) return;
-    const idx = rows.findIndex((r) => r.kind === 'series' && r.key === pendingScroll);
-    if (idx >= 0) {
-      listRef.current?.scrollToIndex({ index: idx, animated: true });
-      setPendingScroll(null);
-    }
-  }, [pendingScroll, rows]);
+  const openSeries = (s: StorageUsageSeries) =>
+    router.push({
+      pathname: '/series-downloads',
+      params: {
+        bridgeId: s.bridgeId,
+        id: s.seriesId,
+        title: s.title,
+        ...(s.thumbnailUrl ? { cover: s.thumbnailUrl } : {}),
+        ...(s.author ? { author: s.author } : {}),
+      },
+    });
 
   // Progress is read from the manifest query, which the engine now patches page-by-page (see
   const header = (
@@ -276,82 +184,41 @@ export default function DownloadsScreen() {
   );
 
   const renderItem = ({ item, index }: { item: DlRow; index: number }) => {
-    // Every row except the last carries the standard inset hairline at its bottom edge — absolutely
-    // positioned so the row stays exactly `SettingsRowHeight` tall (the list declares fixed sizes).
-    // Chapter dividers inset further left to match their indented content.
-    const divider = index < rows.length - 1 && (
-      <View
-        pointerEvents="none"
-        style={[styles.divider, item.kind === 'chapter' && styles.dividerChapter, { backgroundColor: theme.hairline }]}
-      />
-    );
-    if (item.kind === 'series') {
-      const { s, open } = item;
-      const state = deriveSeriesState(s.chapters);
-      const frac = seriesFraction(s.chapters);
-      return (
-        <View>
-          <SwipeableSettingsRow
-            recycleKey={item.key}
-            label={s.title}
-            labelBold
-            description={`${s.chapterCount} chapter${s.chapterCount === 1 ? '' : 's'} · ${formatBytes(s.bytes)}`}
-            leading={
-              <DownloadStatusIndicator
-                state={state}
-                fraction={frac}
-                size={22}
-                interactive={false}
-                onPause={() => void pauseSeries(s.bridgeId, s.seriesId)}
-                onResume={() => void resumeSeriesDownload(s.bridgeId, s.seriesId)}
-                onRetry={() => retrySeries(s)}
-              />
-            }
-            right={<FoldoutChevron open={open} />}
-            onPress={() => toggle(item.key)}
-            actions={seriesActions(state, {
-              onPause: () => void pauseSeries(s.bridgeId, s.seriesId),
-              onResume: () => void resumeSeriesDownload(s.bridgeId, s.seriesId),
-              onRetry: () => retrySeries(s),
-              onCancel: () => void cancelSeriesInflight(s),
-              onDelete: () => void deleteSeries(s),
-            })}
-          />
-          {divider}
-        </View>
-      );
-    }
-    const { c } = item;
-    // All read from the per-page-patched manifest: completed pages, bytes, and state advance together,
-    // so the radial, the "X/Y" count, and the size can never disagree and update every page.
-    const cState = displayChapterState(c);
-    const cFrac = c.pageCount > 0 ? c.completedPages / c.pageCount : 0;
+    const { s } = item;
+    const state = deriveSeriesState(s.chapters);
+    const frac = seriesFraction(s.chapters);
     return (
       <View>
         <SwipeableSettingsRow
           recycleKey={item.key}
-          label={c.chapterName ?? (c.number !== undefined ? `Chapter ${c.number}` : c.chapterId)}
-          description={chapterDescription(c, cState, c.completedPages, c.bytes)}
-          contentInset={Spacing.five}
+          label={s.title}
+          labelBold
+          description={`${s.chapterCount} chapter${s.chapterCount === 1 ? '' : 's'} · ${formatBytes(s.bytes)}`}
           leading={
             <DownloadStatusIndicator
-              state={cState}
-              fraction={cFrac}
-              size={20}
-              onPause={() => void pauseChapter(c.bridgeId, c.seriesId, c.chapterId)}
-              onResume={() => void resumeChapterDownload(c.bridgeId, c.seriesId, c.chapterId)}
-              onRetry={() => void retryChapter(c.bridgeId, c.seriesId, c.chapterId)}
+              state={state}
+              fraction={frac}
+              size={22}
+              interactive={false}
+              onPause={() => void pauseSeries(s.bridgeId, s.seriesId)}
+              onResume={() => void resumeSeriesDownload(s.bridgeId, s.seriesId)}
+              onRetry={() => retrySeries(s)}
             />
           }
-          actions={chapterActions(cState, {
-            onPause: () => void pauseChapter(c.bridgeId, c.seriesId, c.chapterId),
-            onResume: () => void resumeChapterDownload(c.bridgeId, c.seriesId, c.chapterId),
-            onRetry: () => void retryChapter(c.bridgeId, c.seriesId, c.chapterId),
-            onCancel: () => void deleteChapter(c.bridgeId, c.seriesId, c.chapterId),
-            onDelete: () => void deleteChapter(c.bridgeId, c.seriesId, c.chapterId),
+          onPress={() => openSeries(s)}
+          actions={seriesActions(state, {
+            onPause: () => void pauseSeries(s.bridgeId, s.seriesId),
+            onResume: () => void resumeSeriesDownload(s.bridgeId, s.seriesId),
+            onRetry: () => retrySeries(s),
+            onCancel: () => void cancelSeriesInflight(s),
+            onDelete: () => void deleteSeries(s),
           })}
         />
-        {divider}
+        {/* Every row except the last carries the standard inset hairline at its bottom edge —
+            absolutely positioned so the row stays exactly `SettingsRowHeight` tall. */}
+        {index < rows.length - 1 && (
+          <View pointerEvents="none" style={[styles.divider, { backgroundColor: theme.hairline }]} />
+        )}
       </View>
     );
   };
@@ -360,16 +227,13 @@ export default function DownloadsScreen() {
     <ThemedView style={styles.container}>
       <TopBar title="Downloads" />
       <LegendList
-        ref={listRef}
         style={styles.list}
         data={rows}
         keyExtractor={(r) => r.key}
         // Recycle row views instead of mounting/unmounting a fresh gesture+reanimated swipe stack for
-        // every row that scrolls into view (the heavy part). `getItemType` pools series and chapter
-        // containers separately so a series view only ever recycles into another series (same shape),
-        // and the swipe row resets its gesture state on recycle via `useRecyclingEffect`.
+        // every row that scrolls into view (the heavy part); the swipe row resets its gesture state on
+        // recycle via `recycleKey`.
         recycleItems
-        getItemType={(r) => r.kind}
         estimatedItemSize={SettingsRowHeight}
         // Every row is exactly one settings-row tall, so declare it KNOWN — LegendList then skips
         // measuring each row after render (the main source of this list's lag vs. the grid pages, which
@@ -397,27 +261,6 @@ export default function DownloadsScreen() {
   );
 }
 
-/** The series row's trailing foldout arrow: a right chevron that rotates down as the series expands. */
-function FoldoutChevron({ open }: { open: boolean }) {
-  const theme = useTheme();
-  const p = useDerivedValue(() => withTiming(open ? 1 : 0, { duration: 180 }));
-  const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${p.value * 90}deg` }] }));
-  return (
-    <Animated.View style={style}>
-      <ChevronRightIcon color={theme.textSecondary} size={18} />
-    </Animated.View>
-  );
-}
-
-function chapterDescription(c: DlChapter, state: DownloadState, shownDone: number, shownBytes: number): string {
-  // A lazily-enqueued chapter has no page list yet (it resolves when the engine picks it up) —
-  // "0 pages · 0 B · queued" would read as an error, so show just the state until the count lands.
-  if (c.pageCount === 0 && state !== 'complete') return state;
-  const size = `${c.pageCount} page${c.pageCount === 1 ? '' : 's'} · ${formatBytes(shownBytes)}`;
-  if (state === 'complete') return size;
-  const label = state === 'downloading' ? `${shownDone}/${c.pageCount}` : state;
-  return `${size} · ${label}`;
-}
 
 const styles = StyleSheet.create({
   container: {
@@ -449,9 +292,5 @@ const styles = StyleSheet.create({
     left: 0,
     right: -SettingsGutter,
     height: StyleSheet.hairlineWidth,
-  },
-  // Chapter rows indent their content `Spacing.five` further — their divider follows.
-  dividerChapter: {
-    left: Spacing.five,
   },
 });

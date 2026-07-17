@@ -116,7 +116,7 @@ function RootNavigation() {
           <Stack.Screen name="add-registry" options={{ headerShown: false }} />
           <Stack.Screen name="diagnostics" options={{ headerShown: false }} />
           <Stack.Screen name="downloads" options={{ headerShown: false }} />
-          <Stack.Screen name="download-select" options={{ headerShown: false }} />
+          <Stack.Screen name="series-downloads" options={{ headerShown: false }} />
           <Stack.Screen name="storage" options={{ headerShown: false }} />
         </Stack>
         <DemoBanner />

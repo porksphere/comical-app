@@ -48,9 +48,18 @@ export function useSeriesDownloadAction(
 
   const onPress = () => {
     if (!bridgeId) return;
-    // Already tracked → open the Downloads screen focused here to watch/manage it.
+    // Already tracked → the per-series download screen, to watch/manage it.
     if (state !== undefined) {
-      router.push(`/downloads?focus=${encodeURIComponent(`${bridgeId}:${seriesId}`)}`);
+      router.push({
+        pathname: '/series-downloads',
+        params: {
+          bridgeId,
+          id: seriesId,
+          title: snapshot.title,
+          all: '1',
+          ...(snapshot.cover ? { cover: snapshot.cover } : {}),
+        },
+      });
       return;
     }
     if (direct) {
@@ -64,13 +73,15 @@ export function useSeriesDownloadAction(
       });
       return;
     }
-    // Chaptered → the chapter-selection screen (fetches the chapter list itself).
+    // Chaptered → the per-series download screen in select mode (fetches the chapter list itself).
     router.push({
-      pathname: '/download-select',
+      pathname: '/series-downloads',
       params: {
         bridgeId,
         id: seriesId,
         title: snapshot.title,
+        all: '1',
+        select: '1',
         ...(snapshot.cover ? { cover: snapshot.cover } : {}),
       },
     });

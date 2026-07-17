@@ -23,6 +23,20 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
+/** The bare check circle — the multi-select mark itself, for rows that compose their own chrome
+ *  (e.g. the per-series download screen's animated leading slot). */
+export function SelectCircle({ selected, done }: { selected: boolean; done?: boolean }) {
+  const theme = useTheme();
+  const circle = done
+    ? { backgroundColor: theme.textSecondary, borderColor: theme.textSecondary }
+    : selected
+      ? { backgroundColor: theme.accent, borderColor: theme.accent }
+      : { borderColor: theme.textSecondary };
+  return (
+    <View style={[styles.circle, circle]}>{(selected || done) && <CheckIcon color={theme.accentOn} size={11} />}</View>
+  );
+}
+
 export function SelectableRow({
   selected,
   done,
@@ -47,16 +61,9 @@ export function SelectableRow({
   testID?: string;
 }) {
   const theme = useTheme();
-  const circle = done
-    ? { backgroundColor: theme.textSecondary, borderColor: theme.textSecondary }
-    : selected
-      ? { backgroundColor: theme.accent, borderColor: theme.accent }
-      : { borderColor: theme.textSecondary };
   const inner = (
     <>
-      <View style={[styles.circle, circle]}>
-        {(selected || done) && <CheckIcon color={theme.accentOn} size={11} />}
-      </View>
+      <SelectCircle selected={selected} done={done} />
       <View style={styles.content}>{children}</View>
       {trailing}
     </>

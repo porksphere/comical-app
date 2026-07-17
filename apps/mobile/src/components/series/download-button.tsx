@@ -62,18 +62,23 @@ export function SeriesDownloadButton({
   const totalGroups = groups?.length ?? 0;
   const partial = !direct && state === 'complete' && totalGroups > 0 && completeGroups < totalGroups;
 
-  const openDownloads = () => router.push(`/downloads?focus=${encodeURIComponent(`${bridgeId}:${seriesId}`)}`);
-  const openSelect = () =>
+  // Everything routes to the per-series download screen — with `select=1` when the intent is
+  // picking chapters to download, without it when it's watching/managing what's already there.
+  const openSeriesDownloads = (select: boolean) =>
     router.push({
-      pathname: '/download-select',
+      pathname: '/series-downloads',
       params: {
         bridgeId,
         id: seriesId,
         title,
+        all: '1',
+        ...(select ? { select: '1' } : {}),
         ...(cover ? { cover } : {}),
         ...(author ? { author } : {}),
       },
     });
+  const openDownloads = () => openSeriesDownloads(false);
+  const openSelect = () => openSeriesDownloads(true);
 
   let button;
   if (inProgress) {
