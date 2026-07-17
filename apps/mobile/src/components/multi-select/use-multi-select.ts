@@ -36,6 +36,10 @@ export interface MultiSelect<K> {
   /** Replace the selection with exactly `keys` — a deliberate, repeatable staged state (e.g.
    *  "Select unread"), not an additive merge. */
   selectOnly: (keys: readonly K[]) => void;
+  /** Replace the selection with an already-built Set, taking OWNERSHIP (no defensive copy) — the
+   *  drag-select hot path passes a freshly-cloned working set each frame, so a second copy here
+   *  would double the per-frame allocation. The caller must not mutate the set afterwards. */
+  selectSet: (set: ReadonlySet<K>) => void;
   invert: () => void;
   clear: () => void;
 }
@@ -78,6 +82,10 @@ export function useMultiSelect<K>(allKeys: readonly K[]): MultiSelect<K> {
     selectOnly: (keys) => {
       anchor.current = null;
       setSelected(new Set(keys));
+    },
+    selectSet: (set) => {
+      anchor.current = null;
+      setSelected(set);
     },
     invert: () => {
       anchor.current = null;

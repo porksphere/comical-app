@@ -168,6 +168,10 @@ export const DRAG_SELECT_SUPPORTED = Platform.OS !== 'web';
 const DRAG_EDGE_ZONE = 110;
 /** Max auto-scroll speed (px per 16ms tick), ramping linearly with proximity to the edge. */
 const DRAG_MAX_SPEED = 30;
+/** Min gap between drag-select haptics. A crossing fires a tick; auto-scroll crosses rows fast
+ *  enough to buzz continuously without this, and the Taptic engine coalesces bunched pulses into
+ *  mush anyway. Slower than a row-per-tick so normal drags still tick per row. */
+const DRAG_HAPTIC_MS = 45;
 
 interface DragState {
   snapshot: Set<string>;
@@ -177,8 +181,9 @@ interface DragState {
   startScrollY: number;
   lastTranslationY: number;
   lastAbsY: number;
-  lastLo: number;
-  lastHi: number;
+  /** The range end last applied (the anchor is the fixed other end). NaN = nothing applied yet. */
+  lastEff: number;
+  lastHapticAt: number;
   timer: ReturnType<typeof setInterval> | null;
 }
 
@@ -195,14 +200,15 @@ interface DragState {
 export function useDragSelect({
   keys,
   selected,
-  selectOnly,
+  selectSet,
   rowHeight,
   scrollRef,
   scrollYRef,
 }: {
   keys: readonly string[];
   selected: ReadonlySet<string>;
-  selectOnly: (keys: readonly string[]) => void;
+  /** Replaces the selection with an owned Set — the drag hands a freshly-built set each crossing. */
+  selectSet: (set: ReadonlySet<string>) => void;
   rowHeight: number;
   scrollRef: { current: { scrollToOffset(params: { offset: number; animated?: boolean }): void } | null };
   scrollYRef: { current: number };
@@ -210,9 +216,9 @@ export function useDragSelect({
   const { height: winH } = useWindowDimensions();
   const drag = useRef<DragState | null>(null);
   // Live screen state for the stable gesture handlers — refreshed post-render, read at event time.
-  const live = useRef({ keys, selected, selectOnly, rowHeight, winH });
+  const live = useRef({ keys, selected, selectSet, rowHeight, winH });
   useEffect(() => {
-    live.current = { keys, selected, selectOnly, rowHeight, winH };
+    live.current = { keys, selected, selectSet, rowHeight, winH };
   });
 
   // Stable per-row gestures (a state-held Map, populated during render's own computation).
@@ -223,13 +229,17 @@ export function useDragSelect({
     d.timer = null;
   };
 
-  /** Recompute the swept range and apply it over the snapshot (only on a range change). */
+  /**
+   * Apply the swept range [anchor…effIndex] over the pre-drag snapshot (only on a range change).
+   * Rebuilt from the snapshot each crossing — correct across an anchor cross (drag past the start
+   * row the other way), and cheap: set ops are O(1) and the ranges here are short. The haptic is
+   * time-throttled so a fast finger / auto-scroll doesn't fire a continuous buzz.
+   */
   const apply = (d: DragState, effIndex: number) => {
+    if (effIndex === d.lastEff) return;
+    d.lastEff = effIndex;
     const lo = Math.min(d.anchor, effIndex);
     const hi = Math.max(d.anchor, effIndex);
-    if (lo === d.lastLo && hi === d.lastHi) return;
-    d.lastLo = lo;
-    d.lastHi = hi;
     const next = new Set(d.snapshot);
     for (let i = lo; i <= hi; i++) {
       const k = live.current.keys[i];
@@ -237,8 +247,12 @@ export function useDragSelect({
       if (d.mode) next.add(k);
       else next.delete(k);
     }
-    live.current.selectOnly([...next]);
-    hapticSelection();
+    live.current.selectSet(next);
+    const now = Date.now();
+    if (now - d.lastHapticAt >= DRAG_HAPTIC_MS) {
+      d.lastHapticAt = now;
+      hapticSelection();
+    }
   };
 
   const effIndexNow = (d: DragState) => {
@@ -304,8 +318,8 @@ export function useDragSelect({
           startScrollY: scrollYRef.current,
           lastTranslationY: 0,
           lastAbsY: live.current.winH / 2,
-          lastLo: -1,
-          lastHi: -1,
+          lastEff: NaN,
+          lastHapticAt: 0,
           timer: null,
         };
         drag.current = d;

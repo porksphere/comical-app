@@ -230,7 +230,7 @@ export default function SeriesDownloadsScreen() {
   const dragSelect = useDragSelect({
     keys: allKeys,
     selected: ms.selected,
-    selectOnly: ms.selectOnly,
+    selectSet: ms.selectSet,
     rowHeight: SettingsRowHeight,
     scrollRef: listRef,
     scrollYRef,
@@ -439,6 +439,9 @@ export default function SeriesDownloadsScreen() {
         onScroll={(e) => {
           scrollYRef.current = e.nativeEvent.contentOffset.y;
         }}
+        // A ref write only (no setState → no re-render); 16ms keeps the drag-select scroll math
+        // tracking manual scrolling accurately without spamming.
+        scrollEventThrottle={16}
         style={styles.list}
         data={rows}
         keyExtractor={(r) => r.key}
