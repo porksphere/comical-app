@@ -11,7 +11,7 @@ on:
     inputs:
       configuration:
         # Xcode configuration. "Release" (default) is what every normal caller
-        # uses (ios-latest, per-PR, versioned releases). "Debug" is used ONLY by
+        # uses (ios-main, per-PR ios-pr, versioned ios-release). "Debug" is used ONLY by
         # build-ios-devclient.yml together with dev_client — a development-client
         # shell that loads JS from Metro (no embedded bundle needed; expo-dev-client
         # shows its launcher). This is NOT the reverted offline-dev-build hack —
@@ -33,10 +33,24 @@ on:
         # (COMICAL_PROFILING=1 → react-native.config.js) AND bakes
         # EXPO_PUBLIC_COMICAL_PROFILING=1 into the JS bundle so PROFILING_ENABLED
         # is true — i.e. a normal Release binary that carries the on-device
-        # profiler. Only build-ios-profiling.yml passes this.
+        # profiler. The rolling main (ios-main) and per-PR (ios-pr) channels pass
+        # this via build-ios.yml so every non-release build is profileable; the
+        # clean tagged-release channel (release.yml) does NOT, so the public IPA
+        # stays profiler-free.
         description: Build a Release binary that includes the on-device Hermes profiler.
         type: boolean
         default: false
+        required: false
+      version:
+        # Optional explicit version string. When empty (the rolling ios-main /
+        # ios-pr channels), the version is computed as `<app.json base>.<run
+        # number>` so every push yields a strictly higher, AltStore-valid value.
+        # release.yml passes the git tag (minus the leading `v`, e.g. "1.2.0") so
+        # a tagged build's IPA + its ios-release manifest carry the real release
+        # version instead of a run-number string.
+        description: Explicit version string to stamp (overrides the base.run_number default).
+        type: string
+        default: ''
         required: false
     secrets:
       SENTRY_AUTH_TOKEN:
@@ -71,11 +85,12 @@ jobs:
       # Job-wide so BOTH `expo prebuild` (with-devclient-variant's .dev bundle id)
       # and `pod install` (react-native.config.js, which gates the dev-only
       # react-native-release-profiler native module) see it. Empty for every
-      # non-dev-client build, so that module never ships in ios-latest/production.
+      # non-dev-client build, so that module never ships in the public release.
       COMICAL_DEVCLIENT: ${{ inputs.dev_client && '1' || '' }}
-      # Profiling-release build: link the profiler pod (react-native.config.js) AND bake the JS flag
+      # Profiling build: link the profiler pod (react-native.config.js) AND bake the JS flag
       # (PROFILING_ENABLED, src/lib/profiling.ts) so the profiler is present in an otherwise-normal
-      # Release binary. Empty for every other build, so it never ships in ios-latest/production.
+      # Release binary. build-ios.yml sets it for every ios-main + ios-pr build; empty for the clean
+      # tagged release (release.yml), so the profiler never ships in the public channel.
       COMICAL_PROFILING: ${{ inputs.profiling && '1' || '' }}
       EXPO_PUBLIC_COMICAL_PROFILING: ${{ inputs.profiling && '1' || '' }}
     steps:
@@ -161,11 +176,22 @@ jobs:
         run: pod install
         working-directory: apps/mobile/ios
 
-      - name: Compute full version (base + run number)
+      # Version precedence: an explicit `version` input (release.yml passes the
+      # git tag) wins; otherwise fall back to `<app.json base>.<run number>`,
+      # which the rolling ios-main / ios-pr channels use so every push is a
+      # strictly higher, AltStore-valid version.
+      - name: Compute full version (input override or base + run number)
         id: ver
+        env:
+          VERSION_INPUT: ${{ inputs.version }}
         run: |
-          BASE=$(node -p "require('./apps/mobile/app.json').expo.version")
-          echo "full=${BASE}.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          if [ -n "${VERSION_INPUT:-}" ]; then
+            echo "full=${VERSION_INPUT}" >> "$GITHUB_OUTPUT"
+          else
+            BASE=$(node -p "require('./apps/mobile/app.json').expo.version")
+            echo "full=${BASE}.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          fi
 
       # `expo prebuild` bakes a literal CFBundleShortVersionString into the
       # generated Info.plist, so passing MARKETING_VERSION to xcodebuild has no

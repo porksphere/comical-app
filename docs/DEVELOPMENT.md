@@ -87,11 +87,13 @@ silently never fires (0 hits/misses). With it, ~99.9% of compiles are cacheable:
   refreshes the rolling **`android-latest`** Release so the APK has a stable, public,
   unauthenticated direct-download URL.
 - **iOS** (`macos-26`): `expo prebuild` → `pod install` → `xcodebuild archive` with code
-  signing disabled → packaged into an **unsigned `.ipa`** artifact, published to the rolling
-  **`ios-latest`** Release.
-- **Versioned releases:** pushing a `v*` tag runs `release.yml`, which builds both binaries and
-  attaches them to an immutable `vX.Y.Z` Release. This does not disturb the rolling channels
-  (SideStore/AltStore keep tracking `ios-latest`).
+  signing disabled → packaged into an **unsigned `.ipa`** artifact. On push to main it's a
+  **profiling** build published to the rolling **`ios-main`** Release; on a PR it's published to
+  the aggregate **`ios-pr`** source (see "iOS distribution" below).
+- **Versioned releases:** pushing a `v*` tag runs `release.yml`, which builds both binaries
+  (iOS **clean** Release — no profiler) and attaches them to an immutable `vX.Y.Z` Release, then
+  refreshes the public **`ios-release`** SideStore source. This is the channel normal users
+  subscribe to; the rolling `ios-main`/`ios-pr` sources are for dev/perf testing.
 
 ### Web (same codebase, react-native-web)
 
@@ -114,44 +116,65 @@ There is **no paid Apple Developer account** in this setup. CI emits an *unsigne
 **SideStore** re-signs it on-device with your free Apple ID (7-day refresh, handled by
 SideStore).
 
-The iOS build publishes to a rolling **`ios-latest` GitHub Release**, which gives a stable,
-public, **direct-download** URL — the only thing SideStore/AltStore can actually fetch. (Do
-**not** point a sideloader at the `comical-ios-unsigned-ipa` *Actions artifact*: artifact
-downloads require a logged-in GitHub session, so an unauthenticated fetch returns an HTML
-login page, which the sideloader reports as `Encountered unknown tag html on line 1` /
-`isn't in the correct format`. Artifacts are also double-zipped.)
+Every channel publishes to a **GitHub Release**, which gives a stable, public, **direct-download**
+URL — the only thing SideStore/AltStore can actually fetch. (Do **not** point a sideloader at the
+`comical-ios-unsigned-ipa` *Actions artifact*: artifact downloads require a logged-in GitHub
+session, so an unauthenticated fetch returns an HTML login page, which the sideloader reports as
+`Encountered unknown tag html on line 1` / `isn't in the correct format`. Artifacts are also
+double-zipped.)
 
-See the [README](../README.md#-ios) for the end-user install links (source URL + direct IPA).
+### The four iOS channels (SideStore sources)
 
-### Dev / branch builds — one source, every PR
+| Channel | Source URL (`…/releases/download/<tag>/apps.json`) | Trigger | Build | Bundle id |
+|---------|-----------------------------------------------------|---------|-------|-----------|
+| **release** (public) | `ios-release` | `v*` tag (`release.yml`) | clean Release, **no profiler** | `com.porksphere.comical` |
+| **main** (perf testing) | `ios-main` | push to `main` (`build-ios.yml`) | **profiling** (Release + on-device Hermes profiler) | `com.porksphere.comical` |
+| **PR** (branch testing) | `ios-pr` | each open PR (`build-ios.yml`) | **profiling** | `com.porksphere.comical` |
+| **dev-client** (iterate over Metro) | `ios-devclient` | manual (`build-ios-devclient.yml`) | Debug + `expo-dev-client` | `com.porksphere.comical.dev` |
 
-For testing unmerged work on-device there's a **second, separate** SideStore/AltStore source
-that lists `main` **plus every open PR**, so you add it **once** and every branch shows up inside
-it — no adding a new source per branch. Add this URL in SideStore/AltStore → Sources → +:
+The first three share the **production bundle id**, so only one is installed at a time — switch
+lanes by picking a source/version in SideStore (a `main`/`pr`/`release` build replaces whichever is
+on the device). Only the dev-client uses a distinct `.dev` id and coexists. `main` and every PR are
+**profiling** builds on purpose (the app is marked "Comical (profiling)"), so any of them can be
+perf-tested on device without a special manual build; the clean **`ios-release`** channel carries no
+profiler and is what a normal user subscribes to (see the [README](../README.md#-ios)).
 
-> `https://github.com/porksphere/comical-app/releases/download/ios-dev/apps.json`
+### `ios-release` — the public channel (all tagged versions)
 
-It exposes a single **Comical (dev)** app whose version list is ordered **newest build first**
-(main and every open PR, `PR #<N>: <title>`, sorted by build/run number). SideStore/AltStore pick
-the installable "latest" by array order — not by comparing version numbers — so whatever you built
-most recently is `versions[0]` and installs with one tap; older builds sit below and are still
-selectable from SideStore's version list. It uses the **production bundle id**, so a dev build
-**replaces** the installed Comical (they don't coexist) — install `main`'s entry (or the public
-`ios-latest` source) to switch back. The public `ios-latest` source stays clean (main only), so
-normal users never get branch-build updates.
+`release.yml` (on a `v*` tag) builds both binaries, attaches them to an immutable `vX.Y.Z` Release,
+then refreshes the `ios-release` source. Because each `vX.Y.Z` Release is immutable and keeps its own
+IPA forever, this source lists the **full version history** and every entry stays installable — the
+build passes the tag (minus `v`) as the version override so the IPA's `CFBundleShortVersionString` and
+the manifest agree (AltStore rejects a mismatch). Produced by
+`.github/scripts/refresh-ios-release-source.sh`, which enumerates every `v*` Release, newest-first —
+stateless, so deleting a bad release self-heals the source on the next tag.
 
-These are **Release** builds — installable on-device to eyeball a PR's UI on real hardware, but with
-no dev menu / Perf Monitor. (An offline "dev build" from CI isn't practical: Expo intentionally
-skips embedding JS in debug builds, and a dev-mode bundle would be too slow to profile usefully
-anyway — do on-device profiling from a local `expo run:ios --device` build instead; see
-[PROFILING.md](PROFILING.md).)
+### `ios-main` / `ios-pr` — the rolling dev channels
 
-How it's produced (see `.github/workflows/build-ios.yml` + `.github/scripts/refresh-ios-dev-source.sh`):
+`ios-main` is a standalone source refreshed on every push to `main` (one rolling IPA). `ios-pr` is an
+**aggregate** listing every open PR, so you add it **once** and every branch shows up inside it — no
+adding a source per branch. Add either in SideStore/AltStore → Sources → +:
+
+> `https://github.com/porksphere/comical-app/releases/download/ios-main/apps.json`
+> `https://github.com/porksphere/comical-app/releases/download/ios-pr/apps.json`
+
+The `ios-pr` app's version list is ordered **newest build first** (`PR #<N>: <title>`, sorted by
+build/run number). SideStore/AltStore pick the installable "latest" by array order — not by comparing
+version numbers — so whatever you built most recently is `versions[0]` and installs with one tap;
+older builds sit below and are still selectable from SideStore's version list.
+
+Both are **Release** builds (carrying the profiler) — installable on-device to eyeball a PR's UI or
+capture a real release-mode Hermes trace, but with no Metro dev menu. (An offline "dev build" from CI
+isn't practical: Expo intentionally skips embedding JS in debug builds; use the dev-client channel
+below for a live-Metro loop, or a local `expo run:ios --device` build — see [PROFILING.md](PROFILING.md).)
+
+How the PR aggregate is produced (see `.github/workflows/build-ios.yml` +
+`.github/scripts/refresh-ios-pr-source.sh`):
 
 - Each PR build publishes its IPA to an `ios-pr-<N>` **prerelease** (just the IPA + a small
-  `meta.json`), and `main` drops the same `meta.json` on `ios-latest`.
-- A concurrency-locked `refresh-dev-source` job then regenerates `ios-dev/apps.json` from scratch
-  by enumerating those releases — stateless, so opening/closing PRs converge without races.
+  `meta.json`). `main` is **not** in this aggregate — it has its own `ios-main` source.
+- A concurrency-locked `refresh-dev-source` job then regenerates `ios-pr/apps.json` from scratch by
+  enumerating the `ios-pr-<N>` releases — stateless, so opening/closing PRs converge without races.
 - Closing/merging a PR deletes its `ios-pr-<N>` release; the next refresh drops it from the list.
 
 Android needs no equivalent — its per-PR `android-pr-<N>` prerelease already exposes a direct,

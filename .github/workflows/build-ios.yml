@@ -1,11 +1,14 @@
-name: Build iOS (rolling, SideStore/AltStore)
+name: Build iOS (rolling main + PR, SideStore/AltStore)
 
-# Rolling iOS channel. On every push to main it rebuilds the unsigned IPA and
-# refreshes the "ios-latest" Release, which hosts the IPA plus the
-# SideStore/AltStore source manifest (apps.json). That source URL is stable, so
-# AltStore keeps auto-updating as main moves. Versioned, archival releases with
-# BOTH the IPA and the Android APK are produced separately by release.yml on a
-# v* tag — this rolling channel is what AltStore subscribes to.
+# Rolling iOS DEV channels — every build here is a PROFILING build (Release +
+# on-device Hermes profiler) so any main/PR build can be perf-tested on device.
+# Two separate SideStore/AltStore sources come out of this workflow:
+#   - ios-main : refreshed on every push to main (hosts one rolling IPA + apps.json).
+#   - ios-pr   : an aggregate of every OPEN PR's build (refresh-ios-pr-source.sh),
+#                backed by per-PR ios-pr-<N> holding releases.
+# The clean, PROFILER-FREE, public channel is the tagged-release source
+# (ios-release), produced separately by release.yml on a v* tag — that's what a
+# normal user subscribes to.
 #
 # macOS runners consume Actions minutes ~10x faster than Linux, so only the
 # build runs on macOS; publishing runs on ubuntu.
@@ -34,7 +37,7 @@ on:
   # PR builds verify the branch compiles and produce a downloadable IPA artifact.
   # They read main's warm caches (see the reusable workflow) but never write
   # them, and the rolling `publish` job below is gated to main so a PR can't
-  # clobber the ios-latest channel.
+  # clobber the ios-main channel.
   pull_request:
     # `closed` is included so the cleanup job can tear down the per-PR release
     # when the PR is merged/closed; the build + publish-pr jobs skip that action.
@@ -62,7 +65,7 @@ concurrency:
 
 # contents: write — publish the IPA to a GitHub Release (a public, unauthenticated,
 #   raw direct-download URL that SideStore/AltStore can actually fetch).
-# pull-requests: read — refresh-ios-dev-source.sh calls `gh pr view` to check each
+# pull-requests: read — refresh-ios-pr-source.sh calls `gh pr view` to check each
 #   ios-pr-<N>'s state so it only lists OPEN PRs (self-heals merged squatters).
 permissions:
   contents: write
@@ -71,17 +74,20 @@ permissions:
 jobs:
   build:
     # On a PR this runs via the pull_request trigger; its IPA is published (by
-    # publish-pr) to the ios-dev SideStore source — a Release build, installable
-    # for on-device UI checks (no dev menu). On push to main it feeds the rolling
-    # ios-latest source. Skip the (expensive, macOS) build when a PR merely
-    # closes — cleanup-pr handles that event and needs no IPA.
+    # publish-pr) to the ios-pr aggregate SideStore source, installable for
+    # on-device UI checks. On push to main it feeds the rolling ios-main source.
+    # Both are PROFILING builds (Release + on-device profiler) — see profiling:true
+    # below — so any main/PR build can be perf-tested. Skip the (expensive, macOS)
+    # build when a PR merely closes — cleanup-pr handles that event and needs no IPA.
     if: github.event.action != 'closed'
     uses: ./.github/workflows/build-ios-reusable.yml
+    with:
+      profiling: true
     secrets: inherit
 
   publish:
     needs: build
-    # Rolling ios-latest channel is main-only; PR/branch builds stop at the
+    # Rolling ios-main channel is main-only; PR/branch builds stop at the
     # uploaded artifact so they can't overwrite the AltStore source.
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -98,22 +104,22 @@ jobs:
           name: ${{ needs.build.outputs.artifact }}
           path: ${{ runner.temp }}/ipa
 
-      # Publish the raw .ipa to a rolling "ios-latest" Release plus a
+      # Publish the raw .ipa to a rolling "ios-main" Release plus a
       # SideStore/AltStore source manifest. A Release asset has a stable,
       # public, unauthenticated, direct-download URL — so SideStore/AltStore
       # downloads a real IPA (not GitHub's HTML login page) and install works.
-      - name: Publish IPA + SideStore source to the ios-latest Release
+      - name: Publish IPA + SideStore source to the ios-main Release
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.build.outputs.version }}
         run: |
           set -euo pipefail
           IPA="$RUNNER_TEMP/ipa/comical-unsigned.ipa"
-          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/ios-latest"
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/ios-main"
           SIZE=$(stat -c%s "$IPA")
           DATE=$(date -u +%Y-%m-%d)
 
-          # The reusable build already stamped MARKETING_VERSION as base.run_number
+          # The reusable build already stamped the version as base.run_number
           # (e.g. 0.0.1.42) so both the IPA's CFBundleShortVersionString and this
           # manifest carry the same string — AltStore's version check passes and
           # every push to main yields a strictly higher version than the last.
@@ -123,12 +129,12 @@ jobs:
           cp apps/mobile/assets/images/icon.png "$RUNNER_TEMP/icon.png"
 
           # Patch notes (AltStore/SideStore "versionDescription") = commit history
-          # since the previously published build. The previous ios-latest release
+          # since the previously published build. The previous ios-main release
           # body carries a hidden "built-sha" marker with the commit it was built
           # from; list commits from there to HEAD. On the first run — or if that
           # commit isn't an ancestor of HEAD (e.g. after a rebase/force-push, or a
           # re-run on the same SHA) — fall back to the most recent commits.
-          PREV_SHA=$(gh release view ios-latest --repo "$GITHUB_REPOSITORY" \
+          PREV_SHA=$(gh release view ios-main --repo "$GITHUB_REPOSITORY" \
             --json body -q .body 2>/dev/null \
             | sed -n 's/.*built-sha: \([0-9a-f]\{40\}\).*/\1/p' | head -n1 || true)
 
@@ -147,7 +153,7 @@ jobs:
           # entry carries its own notes + download); older clients read the
           # legacy top-level `version`/`downloadURL`/`versionDescription`. We emit
           # BOTH, mirroring the single current build, so either parser works. The
-          # array holds only the latest build — the rolling ios-latest Release
+          # array holds only the latest build — the rolling ios-main Release
           # keeps just one IPA, so older versions' downloadURLs would 404.
           #
           # Assembled with jq so commit subjects (which may contain quotes, $,
@@ -160,13 +166,13 @@ jobs:
             --argjson size "$SIZE" \
             --arg icon "${BASE}/icon.png" \
             '{
-              name: "Comical",
-              identifier: "com.porksphere.comical.source",
+              name: "Comical (main)",
+              identifier: "com.porksphere.comical.source.main",
               apps: [{
-                name: "Comical",
+                name: "Comical (main)",
                 bundleIdentifier: "com.porksphere.comical",
                 developerName: "porksphere",
-                localizedDescription: "Comical — cross-platform comic reader. Unsigned build; re-signed on-device by SideStore/AltStore with your free Apple ID.",
+                localizedDescription: "Comical rolling main channel — a profiling build (Release + on-device Hermes profiler) so main can be perf-tested on device. Same bundle id as the release app, so it installs over it; subscribe to the tagged-release source for the clean, profiler-free public build. Unsigned; re-signed on-device by SideStore/AltStore with your free Apple ID.",
                 iconURL: $icon,
                 tintColor: "208AEF",
                 versions: [{
@@ -184,30 +190,17 @@ jobs:
               }]
             }' > "$RUNNER_TEMP/apps.json"
 
-          # meta.json fragment consumed by refresh-ios-dev-source.sh, which
-          # orders the aggregate ios-dev source newest-first. `sort` is the run
-          # number (same one baked into $FULL_VERSION) that it sorts on.
-          jq -n \
-            --arg version "$FULL_VERSION" \
-            --arg date "$DATE" \
-            --arg desc "main (${GITHUB_SHA:0:7})" \
-            --arg dl "${BASE}/comical-unsigned.ipa" \
-            --argjson size "$SIZE" \
-            --argjson sort "$GITHUB_RUN_NUMBER" \
-            '{version: $version, date: $date, localizedDescription: $desc,
-              downloadURL: $dl, size: $size, channel: "main", sort: $sort}' \
-            > "$RUNNER_TEMP/meta.json"
-
-          # Recreate the rolling tag/release so the URLs above stay stable.
-          gh release delete ios-latest --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
-          gh release create ios-latest \
+          # Recreate the rolling tag/release so the URLs above stay stable. The
+          # ios-main source is standalone (main only) — the ios-pr aggregate no
+          # longer folds main in — so no meta.json fragment is emitted here.
+          gh release delete ios-main --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          gh release create ios-main \
             "$IPA" \
             "$RUNNER_TEMP/apps.json" \
             "$RUNNER_TEMP/icon.png" \
-            "$RUNNER_TEMP/meta.json" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Comical iOS (latest unsigned IPA)" \
-            --notes "Unsigned IPA for SideStore/AltStore (re-signed on-device with your free Apple ID).
+            --title "Comical iOS main (rolling profiling IPA)" \
+            --notes "Unsigned profiling IPA (Release + on-device Hermes profiler) for SideStore/AltStore (re-signed on-device with your free Apple ID).
 
           **Install via source (recommended):** add this URL in SideStore/AltStore → Sources → +
           \`${BASE}/apps.json\`
@@ -219,11 +212,12 @@ jobs:
 
   # Per-PR IPA host. Each open PR gets an `ios-pr-<N>` prerelease holding just
   # the IPA + a `meta.json` fragment — NOT its own source. The refresh-dev-source
-  # job aggregates every open PR (plus main) into the single stable `ios-dev`
-  # source, so you add ONE source once instead of one per branch. The app keeps
-  # the production bundle id, so a dev build replaces Comical on device (pick a
-  # version in SideStore to switch). cleanup-pr deletes this release on close.
-  # Fork PRs get a read-only token and skip publishing (still built/verified).
+  # job aggregates every open PR into the single stable `ios-pr` source, so you
+  # add ONE source once instead of one per branch (main has its own ios-main
+  # source and is no longer folded in here). The app keeps the production bundle
+  # id, so a dev build replaces Comical on device (pick a version in SideStore to
+  # switch). cleanup-pr deletes this release on close. Fork PRs get a read-only
+  # token and skip publishing (still built/verified).
   publish-pr:
     needs: build
     # Same-repo PRs only: fork PRs get a read-only token (can't create Releases),
@@ -257,7 +251,7 @@ jobs:
           SIZE=$(stat -c%s "$IPA")
           DATE=$(date -u +%Y-%m-%d)
 
-          # meta.json fragment consumed by refresh-ios-dev-source.sh. `sort` is
+          # meta.json fragment consumed by refresh-ios-pr-source.sh. `sort` is
           # this run's number (same one baked into $VERSION) so PRs order newest
           # first in the aggregate source. localizedDescription = PR title; jq
           # JSON-escapes it safely (titles may contain quotes/$/backticks).
@@ -282,9 +276,9 @@ jobs:
             --target "$HEAD_SHA" \
             --prerelease \
             --title "Comical iOS — PR #${PR}" \
-            --notes "Unsigned IPA for PR #${PR}. Install via the shared dev source
-          (main + all open PRs) — add it once in SideStore/AltStore → Sources → +
-          \`https://github.com/${GITHUB_REPOSITORY}/releases/download/ios-dev/apps.json\`
+            --notes "Unsigned profiling IPA for PR #${PR}. Install via the shared PR source
+          (every open PR) — add it once in SideStore/AltStore → Sources → +
+          \`https://github.com/${GITHUB_REPOSITORY}/releases/download/ios-pr/apps.json\`
           then pick this PR's version. Or grab the IPA directly:
           \`${BASE}/comical-unsigned.ipa\`
 
@@ -301,25 +295,26 @@ jobs:
           PR: ${{ github.event.number }}
         run: gh release delete "ios-pr-${PR}" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
 
-  # Regenerate the single stable `ios-dev` source (main + every open PR, newest
-  # build first) after whichever of the jobs above ran. Enumerates the ios-latest /
-  # ios-pr-* releases and their meta.json fragments — stateless, so a close and
-  # an open converge. Concurrency-locked (no cancel) so overlapping runs from
-  # different PRs serialize instead of clobbering the source.
+  # Regenerate the single stable `ios-pr` source (every open PR, newest build
+  # first) after a PR publish or cleanup ran. Enumerates the ios-pr-* releases
+  # and their meta.json fragments — stateless, so a close and an open converge.
+  # main is NOT part of this aggregate (it has its own ios-main source), so this
+  # job no longer depends on the main `publish` job. Concurrency-locked (no
+  # cancel) so overlapping runs from different PRs serialize instead of
+  # clobbering the source.
   refresh-dev-source:
-    needs: [publish, publish-pr, cleanup-pr]
+    needs: [publish-pr, cleanup-pr]
     if: >-
       always()
-      && (needs.publish.result == 'success'
-          || needs.publish-pr.result == 'success'
+      && (needs.publish-pr.result == 'success'
           || needs.cleanup-pr.result == 'success')
     runs-on: ubuntu-latest
     concurrency:
-      group: ios-dev-source
+      group: ios-pr-source
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
-      - name: Rebuild ios-dev source
+      - name: Rebuild ios-pr source
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash .github/scripts/refresh-ios-dev-source.sh
+        run: bash .github/scripts/refresh-ios-pr-source.sh

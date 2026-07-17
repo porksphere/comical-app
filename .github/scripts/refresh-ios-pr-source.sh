@@ -1,22 +1,26 @@
 #!/usr/bin/env bash
-# Regenerates the single stable "ios-dev" SideStore/AltStore source: one app
-# (com.porksphere.comical) whose versions[] lists main + every open PR build,
-# ordered newest-first by run number. SideStore/AltStore pick the installable
-# "latest" by ARRAY ORDER (not version-string comparison), so whatever you built
-# most recently sits at versions[0] and installs with one tap — no digging into
+# Regenerates the single stable "ios-pr" SideStore/AltStore source: one app
+# (com.porksphere.comical) whose versions[] lists every OPEN PR build, ordered
+# newest-first by run number. SideStore/AltStore pick the installable "latest"
+# by ARRAY ORDER (not version-string comparison), so whatever you built most
+# recently sits at versions[0] and installs with one tap — no digging into
 # version history to find your branch.
 #
-# Rebuilt from scratch on every run by enumerating the ios-latest + ios-pr-*
-# releases and reading the meta.json fragment each publish leaves on its release,
-# so it is stateless and race-tolerant (the caller job is also concurrency-locked
-# as a backstop). Add the source once; branches appear/disappear inside it as
-# PRs open/close. Requires gh + jq (present on ubuntu runners) and a checkout of
-# the repo (for the icon). Same bundle id as the release app => a dev build
-# replaces Comical on device; pick a version to switch.
+# main is NOT in this aggregate — it has its own standalone ios-main source. This
+# source is purely the open-PR fan-out. Every build listed here is a PROFILING
+# build (Release + on-device Hermes profiler), same as ios-main.
+#
+# Rebuilt from scratch on every run by enumerating the ios-pr-* releases and
+# reading the meta.json fragment each publish leaves on its release, so it is
+# stateless and race-tolerant (the caller job is also concurrency-locked as a
+# backstop). Add the source once; branches appear/disappear inside it as PRs
+# open/close. Requires gh + jq (present on ubuntu runners) and a checkout of the
+# repo (for the icon). Same bundle id as the release app => a dev build replaces
+# Comical on device; pick a version to switch.
 set -euo pipefail
 
 REPO="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY not set}"
-TAG="ios-dev"
+TAG="ios-pr"
 WORK="$(mktemp -d)"
 METAS="$WORK/metas"
 mkdir -p "$METAS"
@@ -29,10 +33,6 @@ fetch_meta() {
   fi
 }
 
-# main's build (the jq below sorts everything by run number, so on-disk order
-# doesn't matter — the "00-" prefix is just for readable listings).
-fetch_meta "ios-latest" "00-main.json" || true
-
 # Every open PR. cleanup-pr normally deletes a PR's ios-pr-<N> release on close,
 # but that races with publish-pr: an in-flight build from a push made just before
 # the merge can recreate ios-pr-<N> *after* cleanup-pr deleted it, leaving a
@@ -40,6 +40,9 @@ fetch_meta "ios-latest" "00-main.json" || true
 # existence — check each PR's actual state and include only OPEN ones. Any release
 # whose PR is closed/merged (or gone) is orphaned: exclude it and delete it so the
 # source self-heals without hand-pruning.
+#
+# NOTE: the grep matches `ios-pr-<N>` (trailing dash) so the `ios-pr` source
+# release itself (this script's own output) is never enumerated as a PR.
 while IFS= read -r rel; do
   [ -n "$rel" ] || continue
   num="${rel#ios-pr-}"
@@ -69,45 +72,51 @@ done < <(gh release list --repo "$REPO" --limit 200 --json tagName -q '.[].tagNa
 shopt -s nullglob
 meta_files=("$METAS"/*.json)
 if [ ${#meta_files[@]} -eq 0 ]; then
-  echo "No build metadata found on any release; leaving $TAG untouched."
-  exit 0
+  # No open PRs => nothing to list. Publish an empty-versions source rather than
+  # leaving a stale one pointing at a since-deleted PR IPA.
+  echo "No open-PR build metadata found; publishing an empty ios-pr source."
 fi
 
-# versions[]: ALL builds (main + every open PR) newest-first by run number.
-# SideStore/AltStore treat versions[0] as the headline installable version (by
-# ARRAY ORDER, not version-string comparison), so the most recently built thing
-# — whichever branch/main you just pushed — lands on top and installs with one
-# tap. (This is a dev-only source; the public ios-latest source stays main-only.)
-VERSIONS="$(jq -s '
-  sort_by(.sort) | reverse
-  | map({version, date, localizedDescription, downloadURL, size})
-' "${meta_files[@]}")"
+# versions[]: every open PR build, newest-first by run number. SideStore/AltStore
+# treat versions[0] as the headline installable version (by ARRAY ORDER, not
+# version-string comparison), so the most recently built PR lands on top and
+# installs with one tap.
+if [ ${#meta_files[@]} -gt 0 ]; then
+  VERSIONS="$(jq -s '
+    sort_by(.sort) | reverse
+    | map({version, date, localizedDescription, downloadURL, size})
+  ' "${meta_files[@]}")"
+else
+  VERSIONS='[]'
+fi
 
 BASE="https://github.com/${REPO}/releases/download/${TAG}"
 cp apps/mobile/assets/images/icon.png "$WORK/icon.png"
 
 # Legacy top-level fields mirror versions[0] for older clients; modern
-# SideStore/AltStore read versions[].
+# SideStore/AltStore read versions[]. When there are no open PRs the top-level
+# fields are omitted (empty versions[]).
 jq -n \
   --arg icon "${BASE}/icon.png" \
   --argjson versions "$VERSIONS" \
   '{
-    name: "Comical (dev / branch builds)",
-    identifier: "com.porksphere.comical.source.dev",
-    apps: [{
-      name: "Comical (dev)",
+    name: "Comical (PR builds)",
+    identifier: "com.porksphere.comical.source.pr",
+    apps: [({
+      name: "Comical (PR)",
       bundleIdentifier: "com.porksphere.comical",
       developerName: "porksphere",
-      localizedDescription: "Comical dev channel — main plus every open PR build. Unsigned; re-signed on-device by SideStore/AltStore. Same bundle id as the release app, so a dev build replaces Comical; pick a version to switch.",
+      localizedDescription: "Comical PR channel — every open PR build (profiling: Release + on-device Hermes profiler). Unsigned; re-signed on-device by SideStore/AltStore. Same bundle id as the release app, so a PR build replaces Comical; pick a version to switch.",
       iconURL: $icon,
       tintColor: "208AEF",
-      versions: $versions,
+      versions: $versions
+    } + (if ($versions | length) > 0 then {
       version: ($versions[0].version),
       versionDate: ($versions[0].date),
       versionDescription: ($versions[0].localizedDescription),
       downloadURL: ($versions[0].downloadURL),
       size: ($versions[0].size)
-    }]
+    } else {} end))]
   }' > "$WORK/apps.json"
 
 # Ensure the stable release exists (create once), then clobber its assets in
@@ -115,14 +124,14 @@ jq -n \
 if ! gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
   gh release create "$TAG" \
     --repo "$REPO" \
-    --title "Comical iOS — dev source (main + PR builds)" \
-    --notes "Single SideStore/AltStore source listing main plus every open PR build.
+    --title "Comical iOS — PR source (every open PR build)" \
+    --notes "Single SideStore/AltStore source listing every open PR build (profiling).
 
 Add this URL once in SideStore/AltStore → Sources → +
 \`${BASE}/apps.json\`
 
-Then pick a version — **main is the top entry** — and install. Same bundle id as
-the release app, so a dev build replaces Comical on your device."
+Then pick a PR's version and install. Same bundle id as the release app, so a PR
+build replaces Comical on your device — reinstall main or a tagged release to switch back."
 fi
 
 gh release upload "$TAG" "$WORK/apps.json" "$WORK/icon.png" --repo "$REPO" --clobber
