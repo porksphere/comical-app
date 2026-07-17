@@ -99,7 +99,8 @@ export default function RegistriesScreen() {
   const removeSelected = async () => {
     const urls = allKeys.filter((u) => ms.selected.has(u));
     for (const url of urls) await ds.removeRegistry(url);
-    // Same narrow invalidate as the single-row remove (see RemoveRegistryConfirm).
+    // Narrow invalidate, unlike an uninstall: removing a registry doesn't touch the bridges
+    // already installed from it, only where updates would come from.
     await queryClient.invalidateQueries({ queryKey: queryKeys.registries() });
     ms.clear();
     mode.exit();
@@ -109,7 +110,24 @@ export default function RegistriesScreen() {
     openConfirm({
       message: `${ms.count === 1 ? 'This registry' : `These ${ms.count} registries`} will be removed. Bridges and trackers already installed keep working, but you won't see updates.`,
       confirmLabel: ms.count === 1 ? 'Remove Registry' : `Remove ${ms.count} Registries`,
-      onConfirm: () => void removeSelected(),
+      pendingLabel: 'Removing…',
+      errorFallback: 'Failed to remove registries',
+      onConfirm: removeSelected,
+    });
+  // The single-row (swipe action) confirm — same popup, plus the registry's identity as the detail
+  // line since the row is covered by the backdrop when this opens.
+  const confirmRemoveOne = (r: SavedRegistry) =>
+    openConfirm({
+      title: 'Remove registry?',
+      message: "Bridges and trackers already installed from it keep working, but you won't see updates.",
+      detail: r.url,
+      confirmLabel: 'Remove Registry',
+      pendingLabel: 'Removing…',
+      errorFallback: 'Failed to remove registry',
+      onConfirm: async () => {
+        await ds.removeRegistry(r.url);
+        await queryClient.invalidateQueries({ queryKey: queryKeys.registries() });
+      },
     });
 
   const renderRow = (r: SavedRegistry) => (
@@ -138,7 +156,7 @@ export default function RegistriesScreen() {
               : () => router.push({ pathname: '/registry-browse', params: { url: r.url } })
           }
           onLongPress={selecting ? onLongPress : undefined}
-          actions={[{ label: 'Remove', icon: TrashIcon, destructive: true, onPress: () => open(() => <RemoveRegistryConfirm url={r.url} />) }]}
+          actions={[{ label: 'Remove', icon: TrashIcon, destructive: true, onPress: () => confirmRemoveOne(r) }]}
         />
       )}
     </Holdable>
@@ -226,51 +244,6 @@ export default function RegistriesScreen() {
         />
       )}
     </ThemedView>
-  );
-}
-
-function RemoveRegistryConfirm({ url }: { url: string }) {
-  const ds = useDataSource();
-  const theme = useTheme();
-  const queryClient = useQueryClient();
-  const { closeTop } = useOverlay();
-
-  const removeMutation = useMutation({
-    mutationFn: () => ds.removeRegistry(url),
-    onSuccess: async () => {
-      // Narrow invalidate, unlike an uninstall: removing a registry doesn't touch the bridges
-      // already installed from it, only where updates would come from.
-      await queryClient.invalidateQueries({ queryKey: queryKeys.registries() });
-      closeTop();
-    },
-  });
-  const error = removeMutation.isError ? friendlyError(removeMutation.error, 'Failed to remove registry') : null;
-
-  return (
-    <View style={styles.confirmBody}>
-      <ThemedText type="subtitle">Remove registry?</ThemedText>
-      <ThemedText type="small" themeColor="textSecondary">
-        {url}
-      </ThemedText>
-      <ThemedText type="small" themeColor="textSecondary">
-        Bridges/trackers already installed from it keep working, but you won&apos;t see updates.
-      </ThemedText>
-      {error && (
-        <ThemedText type="small" style={{ color: theme.danger }}>
-          {error}
-        </ThemedText>
-      )}
-      <View style={styles.confirmActions}>
-        <Pressable testID="registries.remove.cancel" onPress={closeTop} style={styles.confirmBtn}>
-          <ThemedText type="smallBold">Cancel</ThemedText>
-        </Pressable>
-        <Pressable testID="registries.remove.confirm" onPress={() => removeMutation.mutate()} disabled={removeMutation.isPending} style={styles.confirmBtn}>
-          <ThemedText type="smallBold" style={{ color: theme.danger }}>
-            {removeMutation.isPending ? 'Removing…' : 'Remove'}
-          </ThemedText>
-        </Pressable>
-      </View>
-    </View>
   );
 }
 
@@ -377,13 +350,5 @@ const styles = StyleSheet.create({
   },
   confirmBody: {
     gap: Spacing.three,
-  },
-  confirmActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: Spacing.five,
-  },
-  confirmBtn: {
-    paddingVertical: Spacing.two,
   },
 });

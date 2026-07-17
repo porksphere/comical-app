@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from 'react-native';
@@ -9,7 +9,6 @@ import { Holdable } from '@/components/context-menu';
 import { BridgesIcon, CheckIcon, ClearIcon, GripIcon, PlusIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { SelectLead, SelectLeadGap, SelectPillBar, SelectToggle, useSelectMode } from '@/components/multi-select/select-mode';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
-import { useOverlay } from '@/components/overlay/overlay';
 import { ReorderableList } from '@/components/settings/reorderable-list';
 import { RetryBlock } from '@/components/retry-block';
 import { useBrowseRegistry } from '@/components/settings/browse-registry';
@@ -53,7 +52,6 @@ export default function BridgesScreen() {
   const contentPadding = useSettingsScrollPadding();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
-  const { open } = useOverlay();
   const browseRegistry = useBrowseRegistry();
 
   // Web-only reorder mode (▲/▼). Native reorders in place via long-press drag — no mode.
@@ -109,7 +107,8 @@ export default function BridgesScreen() {
     const ids = allKeys.filter((id) => ms.selected.has(id));
     for (const id of ids) await ds.uninstallBridge(id);
     bumpDataEpoch();
-    // Broad invalidate, same reasoning as the single-row uninstall (see UninstallBridgeConfirm).
+    // Broad invalidate — Browse's bridge selector and Library/History/Activity's bridge map are
+    // all react-query-backed and need to drop these bridges immediately, not just this list.
     await queryClient.invalidateQueries();
     ms.clear();
     mode.exit();
@@ -119,7 +118,25 @@ export default function BridgesScreen() {
     openConfirm({
       message: `${ms.count === 1 ? 'This bridge' : `These ${ms.count} bridges`} and their settings will be removed, and their series disappear from your library until installed again.`,
       confirmLabel: ms.count === 1 ? 'Uninstall Bridge' : `Uninstall ${ms.count} Bridges`,
-      onConfirm: () => void uninstallSelected(),
+      pendingLabel: 'Uninstalling…',
+      errorFallback: 'Failed to uninstall bridges',
+      onConfirm: uninstallSelected,
+    });
+  // The single-row (swipe action) confirm — same popup, with the bridge's name as the title since
+  // the row is covered by the backdrop when this opens.
+  const confirmUninstallOne = (b: BridgeSummary) =>
+    openConfirm({
+      title: `Uninstall ${b.info.name}?`,
+      message: 'Its settings are removed, and series from it disappear from your library until you install it again.',
+      confirmLabel: 'Uninstall Bridge',
+      pendingLabel: 'Uninstalling…',
+      errorFallback: 'Failed to uninstall bridge',
+      onConfirm: async () => {
+        await ds.uninstallBridge(b.info.id);
+        bumpDataEpoch();
+        // Broad invalidate, same reasoning as the bulk uninstall above.
+        await queryClient.invalidateQueries();
+      },
     });
 
   // The page's real row — full swipe-to-uninstall + tap. On native the reorder list wraps this
@@ -178,7 +195,7 @@ export default function BridgesScreen() {
             swipeEnabled={!selecting}
             onPress={selecting ? () => ms.toggle(key) : openBridge}
             onLongPress={selecting ? onLongPress : undefined}
-            actions={[{ label: 'Uninstall', icon: TrashIcon, destructive: true, onPress: () => open(() => <UninstallBridgeConfirm bridge={b} />) }]}
+            actions={[{ label: 'Uninstall', icon: TrashIcon, destructive: true, onPress: () => confirmUninstallOne(b) }]}
           />
         )}
       </Holdable>
@@ -277,50 +294,6 @@ export default function BridgesScreen() {
   );
 }
 
-function UninstallBridgeConfirm({ bridge }: { bridge: BridgeSummary }) {
-  const ds = useDataSource();
-  const theme = useTheme();
-  const queryClient = useQueryClient();
-  const { closeTop } = useOverlay();
-
-  const uninstall = useMutation({
-    mutationFn: () => ds.uninstallBridge(bridge.info.id),
-    onSuccess: async () => {
-      bumpDataEpoch();
-      // Broad invalidate — Browse's bridge selector and Library/History/Activity's bridge map are
-      // all react-query-backed and need to drop this bridge immediately, not just this list.
-      // (Same reasoning as bridge-settings.tsx's own uninstall.)
-      await queryClient.invalidateQueries();
-      closeTop();
-    },
-  });
-  const error = uninstall.isError ? friendlyError(uninstall.error, 'Failed to uninstall bridge') : null;
-
-  return (
-    <View style={styles.confirmBody}>
-      <ThemedText type="subtitle">Uninstall {bridge.info.name}?</ThemedText>
-      <ThemedText type="small" themeColor="textSecondary">
-        Its settings are removed, and series from it disappear from your library until you install it again.
-      </ThemedText>
-      {error && (
-        <ThemedText type="small" style={{ color: theme.danger }}>
-          {error}
-        </ThemedText>
-      )}
-      <View style={styles.confirmActions}>
-        <Pressable testID="bridges.uninstall.cancel" onPress={closeTop} style={styles.confirmBtn}>
-          <ThemedText type="smallBold">Cancel</ThemedText>
-        </Pressable>
-        <Pressable testID="bridges.uninstall.confirm" onPress={() => uninstall.mutate()} disabled={uninstall.isPending} style={styles.confirmBtn}>
-          <ThemedText type="smallBold" style={{ color: theme.danger }}>
-            {uninstall.isPending ? 'Uninstalling…' : 'Uninstall'}
-          </ThemedText>
-        </Pressable>
-      </View>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -347,16 +320,5 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.three,
     paddingHorizontal: Spacing.five,
     borderRadius: Spacing.three,
-  },
-  confirmBody: {
-    gap: Spacing.three,
-  },
-  confirmActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: Spacing.five,
-  },
-  confirmBtn: {
-    paddingVertical: Spacing.two,
   },
 });
