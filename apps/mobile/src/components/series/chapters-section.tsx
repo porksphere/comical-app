@@ -19,6 +19,7 @@ import type { DownloadedChapter, DownloadState } from '@comical/downloads';
 
 import { DownloadStateVisual } from '@/components/downloads/download-status-indicator';
 import { ArrowDownIcon, ArrowUpIcon } from '@/components/icons/ui-icons';
+import { MeasuredHeader, OptionList, OverlayHeading, useOverlay } from '@/components/overlay/overlay';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -26,7 +27,11 @@ import { BarContentGap, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { useLightCards } from '@/lib/perf-flags';
 import { useTheme } from '@/hooks/use-theme';
-import { dlGetSeries, resolveAssetSourceCached } from '@/data/api';
+import { dlDeleteChapter, dlGetSeries, resolveAssetSourceCached } from '@/data/api';
+import { enqueueChapters } from '@/data/downloads/engine';
+import { forgetChapter } from '@/data/downloads/index-cache';
+import { fromHere, selectableGroups, toEnqueue } from '@/data/downloads/select';
+import { queryClient } from '@/data/query-client';
 import { coverDelayMs, relativeTime } from '@/data/mock';
 import { queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
@@ -363,6 +368,23 @@ function ChapterList({
   const head = collapsible ? groups.slice(0, OVERVIEW_HEAD_COUNT) : groups;
   const tail = collapsible ? groups.slice(groups.length - OVERVIEW_TAIL_COUNT) : [];
 
+  // Long-press a row → the per-chapter download menu (download this / from here / delete).
+  const { open } = useOverlay();
+  const openChapterMenu = (g: ChapterGroup) => {
+    if (!bridgeId) return;
+    open(() => (
+      <ChapterDownloadMenu
+        bridgeId={bridgeId}
+        seriesId={seed}
+        title={title}
+        chapters={chapters}
+        manifest={dl?.chapters ?? []}
+        group={g}
+        preferredGroup={preferredGroup}
+      />
+    ));
+  };
+
   const row = (g: ChapterGroup) => {
     const dlState = groupDownloadState(g, dlByChapter);
     return (
@@ -371,6 +393,7 @@ function ChapterList({
         group={g}
         preferredGroup={preferredGroup}
         onOpen={openVersion}
+        onMenu={bridgeId ? openChapterMenu : undefined}
         dlState={dlState}
         // Offline, only a fully-downloaded chapter is readable — the rest dim and disable.
         dimmed={offline === true && dlState?.state !== 'complete'}
@@ -491,12 +514,15 @@ function ChapterRow({
   group,
   preferredGroup,
   onOpen,
+  onMenu,
   dlState,
   dimmed,
 }: {
   group: ChapterGroup;
   preferredGroup?: string;
   onOpen: (v: Chapter) => void;
+  /** Long-press: the per-chapter download menu (download this / from here / delete). */
+  onMenu?: (group: ChapterGroup) => void;
   /** Download indicator for this logical chapter (best state across versions), if any. */
   dlState?: { state: DownloadState; fraction: number } | null;
   /** Rendering offline and not downloaded — unreadable, so the row dims and its press disables. */
@@ -516,6 +542,7 @@ function ChapterRow({
       <Pressable
         testID={testId('series.chapter', group.key)}
         onPress={() => onOpen(def)}
+        onLongPress={onMenu ? () => onMenu(group) : undefined}
         disabled={dimmed}
         onHoverIn={rowHover.onHoverIn}
         onHoverOut={rowHover.onHoverOut}
@@ -567,6 +594,100 @@ function ChapterRow({
           ))}
         </View>
       )}
+    </View>
+  );
+}
+
+/**
+ * The long-press chapter menu: quick per-chapter download actions without leaving the list.
+ * "Download from here" is the one-gesture range answer (this chapter through the end of reading
+ * order, skipping anything already kept/queued); a fully-downloaded chapter offers Delete instead.
+ */
+function ChapterDownloadMenu({
+  bridgeId,
+  seriesId,
+  title,
+  chapters,
+  manifest,
+  group,
+  preferredGroup,
+}: {
+  bridgeId: string;
+  seriesId: string;
+  title: string;
+  chapters: Chapter[];
+  manifest: DownloadedChapter[];
+  group: ChapterGroup;
+  preferredGroup?: string;
+}) {
+  const { closeTop } = useOverlay();
+  const theme = useTheme();
+  const sel = selectableGroups(chapters, manifest);
+  const entry = sel.find((s) => s.group.key === group.key);
+  const span = fromHere(sel, pickVersion(group, preferredGroup).id);
+  const snap = { bridgeId, seriesId, title };
+  const completeIds = new Set(manifest.filter((c) => c.state === 'complete').map((c) => c.chapterId));
+  const downloadedVersions = group.versions.filter((v) => completeIds.has(v.id));
+
+  const deleteDownload = async () => {
+    for (const v of downloadedVersions) {
+      await dlDeleteChapter(bridgeId, seriesId, v.id).catch(() => {});
+      forgetChapter(bridgeId, seriesId, v.id);
+    }
+    void queryClient.invalidateQueries({ queryKey: queryKeys.downloadsUsage() });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.seriesDownloads(bridgeId, seriesId) });
+    closeTop();
+  };
+
+  const item = (id: string, label: string, description: string, onPress: (() => void) | undefined) => (
+    <Pressable
+      key={id}
+      testID={testId('series.chapter-menu', id)}
+      onPress={onPress}
+      disabled={!onPress}
+      style={!onPress && styles.menuDisabled}>
+      <ThemedView type="backgroundElement" style={[styles.menuRow, { borderColor: theme.hairline }]}>
+        <ThemedText type="smallBold" numberOfLines={1} style={styles.menuLabel}>
+          {label}
+        </ThemedText>
+        <ThemedText type="small" themeColor="textSecondary">
+          {description}
+        </ThemedText>
+      </ThemedView>
+    </Pressable>
+  );
+
+  return (
+    <View style={styles.menuBody}>
+      <MeasuredHeader>
+        <OverlayHeading>{group.name}</OverlayHeading>
+      </MeasuredHeader>
+      <OptionList>
+        {item(
+          'this',
+          'Download this chapter',
+          entry?.settled ? 'already saved' : '1 chapter',
+          entry && !entry.settled
+            ? () => {
+                enqueueChapters(snap, toEnqueue([group], preferredGroup));
+                closeTop();
+              }
+            : undefined,
+        )}
+        {item(
+          'from-here',
+          'Download from here',
+          span.length === 1 ? '1 chapter' : `${span.length} chapters`,
+          span.length > 0
+            ? () => {
+                enqueueChapters(snap, toEnqueue(span, preferredGroup));
+                closeTop();
+              }
+            : undefined,
+        )}
+        {downloadedVersions.length > 0 &&
+          item('delete', 'Delete download', 'free the space', () => void deleteDownload())}
+      </OptionList>
     </View>
   );
 }
@@ -1383,6 +1504,27 @@ const styles = StyleSheet.create({
   // Trailing per-chapter download indicator — sits between the name and the time.
   rowDownload: {
     marginRight: Spacing.one,
+  },
+  // The long-press chapter menu (ChapterDownloadMenu).
+  menuBody: {
+    gap: Spacing.three,
+  },
+  menuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    paddingVertical: Spacing.two + Spacing.one,
+    paddingHorizontal: Spacing.three,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: Spacing.one,
+  },
+  menuLabel: {
+    flex: 1,
+    minWidth: 0,
+  },
+  menuDisabled: {
+    opacity: 0.45,
   },
   // Offline + not downloaded: the chapter can't be read, so the whole row reads as unavailable.
   rowDimmed: {

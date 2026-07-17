@@ -3,18 +3,20 @@
  * shared by the native host and the web `SeriesActionsMenu`. The download-status query is gated on
  * `enabled` so it runs ONLY while a menu is actually open — never once per card in the grid (the whole
  * point of the lazy, open-only menu). Reports a label/active state for the row and an `onPress` that:
- *   - not downloaded → enqueues the whole series (a direct series' pages, or every chapter — fetched
- *     lazily on tap, not on open),
+ *   - not downloaded, chaptered → opens the download sheet (all / unread / next 10 / select — the
+ *     sheet fetches the chapter list lazily; see download-sheet.tsx),
+ *   - not downloaded, direct → enqueues the series' single page set immediately,
  *   - already downloading / downloaded → opens the Downloads screen focused on this series.
  */
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 
+import { useOverlay } from '@/components/overlay/overlay';
+import { DownloadSheet } from '@/components/series/download-sheet';
 import { deriveSeriesState } from '@/data/downloads/derive';
 import { enqueueChapter } from '@/data/downloads/engine';
 import { dlGetSeries } from '@/data/api';
 import { queryKeys } from '@/data/queries';
-import { useDataSource } from '@/data/source';
 
 export interface SeriesDownloadAction {
   label: string;
@@ -33,7 +35,7 @@ export function useSeriesDownloadAction(
   enabled: boolean,
 ): SeriesDownloadAction {
   const router = useRouter();
-  const ds = useDataSource();
+  const { open } = useOverlay();
 
   const { data, isLoading } = useQuery({
     queryKey: queryKeys.seriesDownloads(bridgeId ?? '', seriesId),
@@ -41,7 +43,7 @@ export function useSeriesDownloadAction(
     enabled: enabled && !!bridgeId,
   });
 
-  // Manifest-driven (the engine patches this query per page — engine.ts), so the row stays in sync.
+  // Manifest-driven (the events pipe patches this query per page), so the row stays in sync.
   const chapters = data?.chapters ?? [];
   const state = chapters.length > 0 ? deriveSeriesState(chapters) : undefined;
   const inProgress = state !== undefined && state !== 'complete';
@@ -54,25 +56,26 @@ export function useSeriesDownloadAction(
       router.push(`/downloads?focus=${encodeURIComponent(`${bridgeId}:${seriesId}`)}`);
       return;
     }
-    const snap = { bridgeId, seriesId, title: snapshot.title, ...(snapshot.cover ? { thumbnailUrl: snapshot.cover } : {}) };
     if (direct) {
-      void enqueueChapter({ ...snap, chapterId: seriesId, direct: true });
+      void enqueueChapter({
+        bridgeId,
+        seriesId,
+        chapterId: seriesId,
+        direct: true,
+        title: snapshot.title,
+        ...(snapshot.cover ? { thumbnailUrl: snapshot.cover } : {}),
+      });
       return;
     }
-    // Fetch the chapter list lazily (on tap, not on open) and enqueue each.
-    void ds
-      .getSeriesList(bridgeId, seriesId, false)
-      .then((list) => {
-        for (const c of list.chapters ?? []) {
-          void enqueueChapter({
-            ...snap,
-            chapterId: c.id,
-            chapterName: c.name,
-            ...(c.number !== undefined && { number: c.number }),
-          });
-        }
-      })
-      .catch(() => {});
+    // Chaptered → the selection sheet (stacks over the quick-actions menu; fetches chapters itself).
+    open(() => (
+      <DownloadSheet
+        bridgeId={bridgeId}
+        seriesId={seriesId}
+        title={snapshot.title}
+        {...(snapshot.cover ? { cover: snapshot.cover } : {})}
+      />
+    ));
   };
 
   return { label, active: state !== undefined, loading: isLoading && enabled, onPress };

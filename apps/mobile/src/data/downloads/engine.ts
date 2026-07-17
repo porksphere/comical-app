@@ -70,6 +70,22 @@ export async function enqueueChapter(input: EnqueueChapterInput): Promise<void> 
   invalidateDownloads(input.bridgeId, input.seriesId);
 }
 
+/** Enqueue many chapters of one series — the download sheet / chapter picker fan-out. */
+export function enqueueChapters(
+  series: { bridgeId: string; seriesId: string; title: string; thumbnailUrl?: string; author?: string },
+  chapters: { id: string; name: string; number?: number; languageCode?: string }[],
+): void {
+  for (const c of chapters) {
+    void enqueueChapter({
+      ...series,
+      chapterId: c.id,
+      chapterName: c.name,
+      ...(c.number !== undefined && { number: c.number }),
+      ...(c.languageCode !== undefined && { languageCode: c.languageCode }),
+    });
+  }
+}
+
 /** Pause one in-flight/queued chapter (resumable) — the host's engine aborts its workers promptly. */
 export async function pauseChapter(bridgeId: string, seriesId: string, chapterId: string): Promise<void> {
   try {
