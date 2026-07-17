@@ -12,10 +12,10 @@
  * and refetches. The Wi-Fi/background toggles are device policies for the embedded engine, so they
  * only render in embedded mode (a remote server paces its own downloads).
  */
-import { LegendList } from '@legendapp/list/react-native';
+import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -30,6 +30,7 @@ import {
   SelectOptionsTrigger,
   SelectPillBar,
   SelectToggle,
+  useDragSelect,
   useSelectMode,
 } from '@/components/multi-select/select-mode';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
@@ -160,6 +161,18 @@ export default function DownloadsScreen() {
     if (selecting) ms.clear();
     mode.toggle();
   };
+
+  // iOS-style circle drag-select (sweep the check rail; auto-scrolls near the edges).
+  const listRef = useRef<LegendListRef>(null);
+  const scrollYRef = useRef(0);
+  const dragSelect = useDragSelect({
+    keys: allKeys,
+    selected: ms.selected,
+    selectOnly: ms.selectOnly,
+    rowHeight: SettingsRowHeight,
+    scrollRef: listRef,
+    scrollYRef,
+  });
   const allSelected = allKeys.length > 0 && ms.count === allKeys.length;
   const stagingRows = [
     {
@@ -270,7 +283,12 @@ export default function DownloadsScreen() {
               description={`${s.chapterCount} chapter${s.chapterCount === 1 ? '' : 's'} · ${formatBytes(s.bytes)}`}
               leading={
                 <>
-                  <SelectLead progress={mode.progress} selected={ms.selected.has(item.key)} edgeOffset={sidePad} />
+                  <SelectLead
+                    progress={mode.progress}
+                    selected={ms.selected.has(item.key)}
+                    edgeOffset={sidePad}
+                    gesture={selecting ? dragSelect.gestureFor(index) : undefined}
+                  />
                   <DownloadStatusIndicator
                     state={state}
                     fraction={frac}
@@ -311,6 +329,10 @@ export default function DownloadsScreen() {
         right={<SelectToggle selecting={selecting} onToggle={toggleSelecting} testID="downloads.select-toggle" />}
       />
       <LegendList
+        ref={listRef}
+        onScroll={(e) => {
+          scrollYRef.current = e.nativeEvent.contentOffset.y;
+        }}
         style={styles.list}
         data={rows}
         keyExtractor={(r) => r.key}

@@ -17,10 +17,10 @@
  * selection's downloaded ones). Range-fill long-press works like every multi-select list (through
  * `Holdable` — a bare Pressable long-press doesn't fire inside iOS scroll views).
  */
-import { LegendList } from '@legendapp/list/react-native';
+import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -43,6 +43,7 @@ import {
   SelectOptionsTrigger,
   SelectPillBar,
   SelectToggle,
+  useDragSelect,
   useSelectMode,
 } from '@/components/multi-select/select-mode';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
@@ -222,6 +223,18 @@ export default function SeriesDownloadsScreen() {
     mode.toggle();
   };
 
+  // iOS-style circle drag-select (sweep the check rail; auto-scrolls near the edges).
+  const listRef = useRef<LegendListRef>(null);
+  const scrollYRef = useRef(0);
+  const dragSelect = useDragSelect({
+    keys: allKeys,
+    selected: ms.selected,
+    selectOnly: ms.selectOnly,
+    rowHeight: SettingsRowHeight,
+    scrollRef: listRef,
+    scrollYRef,
+  });
+
   // The series-page Download intent (`select=1`): once the chapter list lands, STAGE the default
   // pick — every unread chapter not already marked for download — so the button's most common
   // outcome is one tap away. Deferred a tick: this reacts to the list ARRIVING (async data).
@@ -345,7 +358,12 @@ export default function SeriesDownloadsScreen() {
             description={item.desc}
             leading={
               <>
-                <SelectLead progress={mode.progress} selected={ms.selected.has(item.key)} edgeOffset={sidePad} />
+                <SelectLead
+                  progress={mode.progress}
+                  selected={ms.selected.has(item.key)}
+                  edgeOffset={sidePad}
+                  gesture={selecting ? dragSelect.gestureFor(index) : undefined}
+                />
                 {item.c && cState ? (
                   <DownloadStatusIndicator
                     state={cState}
@@ -403,6 +421,10 @@ export default function SeriesDownloadsScreen() {
       />
 
       <LegendList
+        ref={listRef}
+        onScroll={(e) => {
+          scrollYRef.current = e.nativeEvent.contentOffset.y;
+        }}
         style={styles.list}
         data={rows}
         keyExtractor={(r) => r.key}
