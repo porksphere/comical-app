@@ -4,6 +4,12 @@
  * `LegendList` — a reused view can't carry a stale checkmark. `done` renders the settled variant
  * (checked-but-muted, non-interactive): "already have this", distinct from "selected to act on".
  *
+ * Two presentations:
+ *  - `card` (default) — the bordered, rounded overlay row (popover/sheet pickers).
+ *  - `list` — a flat full-bleed row at the settings-standard height/gutter, for whole screens whose
+ *    content IS the selectable list (the download-selection screen); the screen draws its own
+ *    hairline dividers between rows.
+ *
  * The range-fill long-press goes through the shared `Holdable` (a gesture-handler LongPress) — a
  * `Pressable`'s `onLongPress` doesn't fire reliably inside iOS scroll views.
  */
@@ -12,6 +18,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Holdable } from '@/components/context-menu';
 import { CheckIcon } from '@/components/icons/ui-icons';
+import { settingsRowFrame } from '@/components/settings/settings-row';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
@@ -22,6 +29,7 @@ export function SelectableRow({
   onToggle,
   onRangeFill,
   trailing,
+  variant = 'card',
   children,
   testID,
 }: {
@@ -33,6 +41,8 @@ export function SelectableRow({
   onRangeFill: () => void;
   /** Right-aligned slot (e.g. a download-state glyph). */
   trailing?: ReactNode;
+  /** `card` = bordered overlay row; `list` = flat settings-height row (see module docstring). */
+  variant?: 'card' | 'list';
   children: ReactNode;
   testID?: string;
 }) {
@@ -42,6 +52,15 @@ export function SelectableRow({
     : selected
       ? { backgroundColor: theme.accent, borderColor: theme.accent }
       : { borderColor: theme.textSecondary };
+  const inner = (
+    <>
+      <View style={[styles.circle, circle]}>
+        {(selected || done) && <CheckIcon color={theme.accentOn} size={11} />}
+      </View>
+      <View style={styles.content}>{children}</View>
+      {trailing}
+    </>
+  );
   return (
     <Holdable enabled={!done} onHold={() => onRangeFill()}>
       {({ onLongPress }) => (
@@ -50,14 +69,24 @@ export function SelectableRow({
           onPress={done ? undefined : onToggle}
           onLongPress={onLongPress}
           disabled={done}
+          android_ripple={variant === 'list' ? { color: theme.backgroundSelected } : undefined}
           style={done && styles.done}>
-          <ThemedView type="backgroundElement" style={[styles.row, { borderColor: theme.hairline }]}>
-            <View style={[styles.circle, circle]}>
-              {(selected || done) && <CheckIcon color={theme.accentOn} size={11} />}
-            </View>
-            <View style={styles.content}>{children}</View>
-            {trailing}
-          </ThemedView>
+          {({ pressed }) =>
+            variant === 'list' ? (
+              <View
+                style={[
+                  settingsRowFrame.row,
+                  settingsRowFrame.escape,
+                  pressed && { backgroundColor: theme.backgroundSelected },
+                ]}>
+                {inner}
+              </View>
+            ) : (
+              <ThemedView type="backgroundElement" style={[styles.row, { borderColor: theme.hairline }]}>
+                {inner}
+              </ThemedView>
+            )
+          }
         </Pressable>
       )}
     </Holdable>

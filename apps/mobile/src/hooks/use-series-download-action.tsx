@@ -3,16 +3,14 @@
  * shared by the native host and the web `SeriesActionsMenu`. The download-status query is gated on
  * `enabled` so it runs ONLY while a menu is actually open — never once per card in the grid (the whole
  * point of the lazy, open-only menu). Reports a label/active state for the row and an `onPress` that:
- *   - not downloaded, chaptered → opens the download sheet (all / unread / next 10 / select — the
- *     sheet fetches the chapter list lazily; see download-sheet.tsx),
+ *   - not downloaded, chaptered → opens the chapter-selection screen (`/download-select`, which
+ *     fetches the chapter list itself),
  *   - not downloaded, direct → enqueues the series' single page set immediately,
  *   - already downloading / downloaded → opens the Downloads screen focused on this series.
  */
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 
-import { useOverlay } from '@/components/overlay/overlay';
-import { DownloadSheet } from '@/components/series/download-sheet';
 import { deriveSeriesState } from '@/data/downloads/derive';
 import { enqueueChapter } from '@/data/downloads/engine';
 import { dlGetSeries } from '@/data/api';
@@ -35,7 +33,6 @@ export function useSeriesDownloadAction(
   enabled: boolean,
 ): SeriesDownloadAction {
   const router = useRouter();
-  const { open } = useOverlay();
 
   const { data, isLoading } = useQuery({
     queryKey: queryKeys.seriesDownloads(bridgeId ?? '', seriesId),
@@ -67,15 +64,16 @@ export function useSeriesDownloadAction(
       });
       return;
     }
-    // Chaptered → the selection sheet (stacks over the quick-actions menu; fetches chapters itself).
-    open(() => (
-      <DownloadSheet
-        bridgeId={bridgeId}
-        seriesId={seriesId}
-        title={snapshot.title}
-        {...(snapshot.cover ? { cover: snapshot.cover } : {})}
-      />
-    ));
+    // Chaptered → the chapter-selection screen (fetches the chapter list itself).
+    router.push({
+      pathname: '/download-select',
+      params: {
+        bridgeId,
+        id: seriesId,
+        title: snapshot.title,
+        ...(snapshot.cover ? { cover: snapshot.cover } : {}),
+      },
+    });
   };
 
   return { label, active: state !== undefined, loading: isLoading && enabled, onPress };

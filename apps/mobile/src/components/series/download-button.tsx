@@ -1,10 +1,11 @@
 /**
  * The series-screen "Download" action. States driven by the download manifest AND the full chapter
  * list (so a partial download never masquerades as complete):
- *  - nothing downloaded → "Download", opens the download sheet (all / unread / next 10 / select).
+ *  - nothing downloaded → "Download", opens the chapter-selection screen (`/download-select`).
  *  - in progress → a progress radial + status; tapping opens the Downloads screen focused on this
  *    series (expanded + scrolled into view) so the user can watch/cancel it.
- *  - partial (M of N logical chapters kept, nothing in flight) → "⤓ M / N", opens the sheet.
+ *  - partial (M of N logical chapters kept, nothing in flight) → "⤓ M / N", opens the selection
+ *    screen (settled chapters render checked-and-dimmed there).
  *  - every chapter downloaded → "Downloaded"; tapping opens the Downloads screen to manage it.
  * Direct (chapterless) series are a single unit and keep the instant two-state behavior.
  */
@@ -13,9 +14,7 @@ import { useRouter } from 'expo-router';
 import { View } from 'react-native';
 
 import { DownloadStateVisual } from '@/components/downloads/download-status-indicator';
-import { useAnchoredOverlay } from '@/components/overlay/overlay';
 import { ActionButton } from '@/components/series/action-button';
-import { DownloadSheet } from '@/components/series/download-sheet';
 import { dlGetSeries } from '@/data/api';
 import { deriveSeriesState, seriesFraction } from '@/data/downloads/derive';
 import { enqueueChapter } from '@/data/downloads/engine';
@@ -42,7 +41,6 @@ export function SeriesDownloadButton({
   chapters?: Chapter[];
 }) {
   const router = useRouter();
-  const { ref, openAt } = useAnchoredOverlay();
 
   const { data } = useQuery({
     queryKey: queryKeys.seriesDownloads(bridgeId, seriesId),
@@ -64,21 +62,18 @@ export function SeriesDownloadButton({
   const totalGroups = groups?.length ?? 0;
   const partial = !direct && state === 'complete' && totalGroups > 0 && completeGroups < totalGroups;
 
-  // A chaptered series needs its chapter list loaded before the sheet can offer anything.
-  const ready = direct || (chapters !== undefined && chapters.length > 0);
-
   const openDownloads = () => router.push(`/downloads?focus=${encodeURIComponent(`${bridgeId}:${seriesId}`)}`);
-  const openSheet = () =>
-    openAt(() => (
-      <DownloadSheet
-        bridgeId={bridgeId}
-        seriesId={seriesId}
-        title={title}
-        {...(cover !== undefined && { cover })}
-        {...(author !== undefined && { author })}
-        {...(chapters !== undefined && { chapters })}
-      />
-    ));
+  const openSelect = () =>
+    router.push({
+      pathname: '/download-select',
+      params: {
+        bridgeId,
+        id: seriesId,
+        title,
+        ...(cover ? { cover } : {}),
+        ...(author ? { author } : {}),
+      },
+    });
 
   let button;
   if (inProgress) {
@@ -96,12 +91,7 @@ export function SeriesDownloadButton({
     button = <ActionButton testID="series.action.download" label="✓  Downloaded" onPress={openDownloads} />;
   } else if (partial) {
     button = (
-      <ActionButton
-        testID="series.action.download"
-        label={`⤓  ${completeGroups} / ${totalGroups}`}
-        onPress={openSheet}
-        disabled={!ready}
-      />
+      <ActionButton testID="series.action.download" label={`⤓  ${completeGroups} / ${totalGroups}`} onPress={openSelect} />
     );
   } else if (direct) {
     // A direct series is one unit — no selection to offer; enqueue immediately as before.
@@ -115,15 +105,10 @@ export function SeriesDownloadButton({
         ...(cover && { thumbnailUrl: cover }),
         ...(author && { author }),
       });
-    button = <ActionButton testID="series.action.download" label="⤓  Download" onPress={enqueueDirect} disabled={!ready} />;
+    button = <ActionButton testID="series.action.download" label="⤓  Download" onPress={enqueueDirect} />;
   } else {
-    button = <ActionButton testID="series.action.download" label="⤓  Download" onPress={openSheet} disabled={!ready} />;
+    button = <ActionButton testID="series.action.download" label="⤓  Download" onPress={openSelect} />;
   }
 
-  // The wrapping View anchors the desktop popover to the button (see useAnchoredOverlay).
-  return (
-    <View ref={ref} collapsable={false}>
-      {button}
-    </View>
-  );
+  return <View collapsable={false}>{button}</View>;
 }

@@ -33,6 +33,9 @@ export interface MultiSelect<K> {
   /** Select the span between the last anchor and `key` (falls back to a toggle without one). */
   rangeFill: (key: K) => void;
   selectAll: () => void;
+  /** Replace the selection with exactly `keys` — a deliberate, repeatable staged state (e.g.
+   *  "Select unread"), not an additive merge. */
+  selectOnly: (keys: readonly K[]) => void;
   invert: () => void;
   clear: () => void;
 }
@@ -71,6 +74,10 @@ export function useMultiSelect<K>(allKeys: readonly K[]): MultiSelect<K> {
     selectAll: () => {
       anchor.current = null;
       setSelected(new Set(allKeys));
+    },
+    selectOnly: (keys) => {
+      anchor.current = null;
+      setSelected(new Set(keys));
     },
     invert: () => {
       anchor.current = null;
