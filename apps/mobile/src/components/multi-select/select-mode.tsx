@@ -237,8 +237,14 @@ export function useDragSelect({
 
   const effIndexNow = (d: DragState) => {
     const scrolled = scrollYRef.current - d.startScrollY;
-    const raw = d.anchor + Math.round((d.lastTranslationY + scrolled) / live.current.rowHeight);
-    return Math.min(live.current.keys.length - 1, Math.max(0, raw));
+    const rel = (d.lastTranslationY + scrolled) / live.current.rowHeight;
+    // INCLUSIVE quantization, biased toward the drag direction: the sweep runs from the row the
+    // finger STARTED on through the row it's currently over — a row counts as soon as the finger
+    // is meaningfully into it (~35% past the boundary from an assumed centre start; the bias also
+    // absorbs where within the circle the touch actually landed). A plain round() only flipped at
+    // the midpoint, which read as the row under the finger being left out.
+    const steps = rel >= 0 ? Math.floor(rel + 0.65) : Math.ceil(rel - 0.65);
+    return Math.min(live.current.keys.length - 1, Math.max(0, d.anchor + steps));
   };
 
   /** Auto-scroll speed for the finger's current screen position (0 outside the edge zones). */
