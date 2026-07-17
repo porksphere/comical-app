@@ -24,8 +24,9 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-/** Snappy but visibly springy — the tick should feel like it lands, not like a style swap. */
-const CHECK_SPRING = { damping: 14, stiffness: 320, mass: 0.6 } as const;
+/** Fast-rise spring: the fill reaches the tap within ~2 frames (the slow rise read as input lag),
+ *  with just enough underdamping left for a small landing pop. */
+const CHECK_SPRING = { damping: 16, stiffness: 640, mass: 0.4 } as const;
 
 /** The bare check circle — the multi-select mark itself, for rows that compose their own chrome
  *  (e.g. the per-series download screen's animated leading slot).

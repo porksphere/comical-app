@@ -19,6 +19,7 @@
  */
 import { LegendList } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
+import { BlurView } from 'expo-blur';
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
@@ -26,12 +27,12 @@ import Animated, { useAnimatedStyle, useSharedValue, withTiming, type SharedValu
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Holdable } from '@/components/context-menu';
+import { ANDROID_BLUR, MENU_FILL } from '@/components/context-menu-material';
 import { DownloadStatusIndicator } from '@/components/downloads/download-status-indicator';
 import { chapterActions } from '@/components/downloads/row-actions';
-import { DownloadingIcon, SelectModeIcon } from '@/components/icons/ui-icons';
+import { DownloadingIcon, DownloadsIcon, SelectModeIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { SelectCircle } from '@/components/multi-select/selectable-row';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
-import { ActionButton } from '@/components/series/action-button';
 import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -56,7 +57,7 @@ import { useDataSource, useMockActive } from '@/data/source';
 import { hapticSelection } from '@/lib/haptics';
 import { usePreferredGroup } from '@/lib/preferred-group';
 import { testId } from '@/lib/test-id';
-import { useTheme } from '@/hooks/use-theme';
+import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import type { ChapterGroup } from '@/lib/chapter-order';
 import type { DownloadedChapter, DownloadState } from '@comical/downloads';
 
@@ -64,6 +65,9 @@ import type { DownloadedChapter, DownloadState } from '@comical/downloads';
 const SELECT_ANIM_MS = 220;
 /** The leading slot the circles occupy when open: circle + the row's gap. */
 const CIRCLE_SLOT = 20 + Spacing.three;
+/** The floating bulk-verb pills (select mode). */
+const PILL_HEIGHT = 52;
+const PILL_BLUR = 40;
 
 /**
  * One chapter row: a manifest chapter, a not-yet-downloaded logical chapter, or both merged.
@@ -103,16 +107,26 @@ function bestManifest(versionIds: string[], manifest: DownloadedChapter[]): Down
 }
 
 /** The animated leading slot: the check circle SLIDES IN FROM THE SCREEN'S LEFT EDGE while the slot
- *  grows and pushes the row content right (no fade — the clip does the revealing, so the circle
- *  visibly arrives from the side rather than materialising in place). One shared value drives every
- *  row — recycled views stay in sync. */
-function SelectLead({ progress, selected }: { progress: SharedValue<number>; selected: boolean }) {
+ *  grows and pushes the row content right, fading up as it travels. The slot deliberately does NOT
+ *  clip — clipped, the circle only ever appeared from the slot's own edge (at the hairline), not the
+ *  screen's. `edgeOffset` is the slot's distance from the physical screen edge (the list's side
+ *  padding), so the ride starts truly off-screen. One shared value drives every row — recycled views
+ *  stay in sync. */
+function SelectLead({
+  progress,
+  selected,
+  edgeOffset,
+}: {
+  progress: SharedValue<number>;
+  selected: boolean;
+  edgeOffset: number;
+}) {
   const slot = useAnimatedStyle(() => ({
     width: progress.value * CIRCLE_SLOT,
   }));
-  // Starts a full gutter past the slot's left edge (i.e. at the physical screen edge) and rides in.
   const circle = useAnimatedStyle(() => ({
-    transform: [{ translateX: (progress.value - 1) * (CIRCLE_SLOT + SettingsGutter) }],
+    opacity: progress.value,
+    transform: [{ translateX: (progress.value - 1) * (CIRCLE_SLOT + edgeOffset) }],
   }));
   return (
     <Animated.View style={[styles.selectLead, slot]}>
@@ -125,6 +139,7 @@ function SelectLead({ progress, selected }: { progress: SharedValue<number>; sel
 
 export default function SeriesDownloadsScreen() {
   const theme = useTheme();
+  const scheme = useActiveColorScheme();
   const insets = useSafeAreaInsets();
   const topBarInset = useTopBarInset();
   const { width } = useWindowDimensions();
@@ -306,7 +321,7 @@ export default function SeriesDownloadsScreen() {
             description={item.desc}
             leading={
               <>
-                <SelectLead progress={selectProgress} selected={ms.selected.has(item.key)} />
+                <SelectLead progress={selectProgress} selected={ms.selected.has(item.key)} edgeOffset={sidePad} />
                 {item.c && cState ? (
                   <DownloadStatusIndicator
                     state={cState}
@@ -355,8 +370,18 @@ export default function SeriesDownloadsScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      {/* Select mode takes over the whole bar: the staging actions replace the back button, the
+          live count replaces the title, and the toggle (accent while on) is the way out. */}
       <TopBar
-        title={title}
+        title={selecting ? `${ms.count} selected` : title}
+        left={
+          selecting ? (
+            <>
+              {stripAction(allSelected ? 'Deselect all' : 'Select all', allSelected ? ms.clear : ms.selectAll, allKeys.length === 0, 'all')}
+              {showAll && stripAction('Select unread', () => ms.selectOnly(unreadKeys), unreadKeys.length === 0, 'unread')}
+            </>
+          ) : undefined
+        }
         right={
           <Pressable
             testID="series.dl.select-toggle"
@@ -368,21 +393,6 @@ export default function SeriesDownloadsScreen() {
           </Pressable>
         }
       />
-
-      {/* The selection strip appears with select mode — it acts ON the list, so it sits with it.
-          The TopBar is an absolute overlay, so the strip (the screen's first in-flow content while
-          selecting) pads past it; without the strip the LIST pads past it instead. */}
-      {selecting && (
-        <View style={[styles.strip, { paddingTop: topBarInset + Spacing.three, paddingLeft: sidePad, paddingRight: sidePad }]}>
-          <ThemedText type="smallBold" testID={testId('series.dl', 'count')}>
-            {ms.count} selected
-          </ThemedText>
-          <View style={styles.stripActions}>
-            {stripAction(allSelected ? 'Deselect all' : 'Select all', allSelected ? ms.clear : ms.selectAll, allKeys.length === 0, 'all')}
-            {showAll && stripAction('Select unread', () => ms.selectOnly(unreadKeys), unreadKeys.length === 0, 'unread')}
-          </View>
-        </View>
-      )}
 
       <LegendList
         style={styles.list}
@@ -403,43 +413,54 @@ export default function SeriesDownloadsScreen() {
         }
         contentContainerStyle={{
           flexGrow: 1,
-          paddingTop: selecting ? 0 : topBarInset + Spacing.two,
+          paddingTop: topBarInset + Spacing.two,
           paddingLeft: sidePad,
           paddingRight: sidePad,
-          paddingBottom: Spacing.three,
+          // Room for the floating pills, so the last rows can scroll clear of them.
+          paddingBottom: selecting ? PILL_HEIGHT + Spacing.six : Spacing.three,
         }}
         showsVerticalScrollIndicator={Platform.OS === 'web'}
       />
 
-      {/* Pinned bulk verbs, select mode only. */}
-      {selecting && (
+      {/* The floating bulk verbs — each shown only while the selection makes it VALID: frosted
+          icon pill(s) bottom-left, and the bigger accent Download pill bottom-right. */}
+      {selecting && (toDelete.length > 0 || toDownload.length > 0) && (
         <View
-          style={[
-            styles.footer,
-            {
-              borderTopColor: theme.hairline,
-              paddingLeft: sidePad,
-              paddingRight: sidePad,
-              paddingBottom: Math.max(insets.bottom, Spacing.three),
-            },
-          ]}>
-          <View style={styles.footerDelete}>
-            <ActionButton
-              testID="series.dl.delete"
-              label={toDelete.length > 0 ? `Delete ${toDelete.length}` : 'Delete'}
-              disabled={toDelete.length === 0}
-              onPress={() => void deleteSelected()}
-            />
-          </View>
-          <View style={styles.footerDownload}>
-            <ActionButton
-              testID="series.dl.download"
-              variant="primary"
-              label={toDownload.length > 0 ? `⤓  Download ${toDownload.length}` : '⤓  Download'}
-              disabled={toDownload.length === 0}
-              onPress={downloadSelected}
-            />
-          </View>
+          pointerEvents="box-none"
+          style={[styles.pills, { left: sidePad, right: sidePad, bottom: Math.max(insets.bottom, Spacing.three) }]}>
+          {toDelete.length > 0 ? (
+            <View style={styles.pillShadow}>
+              <BlurView tint={scheme} intensity={PILL_BLUR} experimentalBlurMethod={ANDROID_BLUR} style={styles.actionsPill}>
+                <View pointerEvents="none" style={[styles.pillFill, { backgroundColor: MENU_FILL[scheme] }]} />
+                <Pressable
+                  testID="series.dl.delete"
+                  onPress={() => void deleteSelected()}
+                  style={styles.pillButton}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Delete ${toDelete.length} chapters`}>
+                  <TrashIcon color={theme.danger} size={20} />
+                </Pressable>
+              </BlurView>
+            </View>
+          ) : (
+            <View />
+          )}
+          {toDownload.length > 0 && (
+            <View style={styles.pillShadow}>
+              <BlurView tint={scheme} intensity={PILL_BLUR} experimentalBlurMethod={ANDROID_BLUR} style={styles.downloadPill}>
+                {/* Translucent accent over the blur — blue, but the page still bleeds through. */}
+                <View pointerEvents="none" style={[styles.pillFill, { backgroundColor: `${theme.accent}D9` }]} />
+                <Pressable
+                  testID="series.dl.download"
+                  onPress={downloadSelected}
+                  style={styles.pillButtonWide}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Download ${toDownload.length} chapters`}>
+                  <DownloadsIcon color={theme.accentOn} size={22} />
+                </Pressable>
+              </BlurView>
+            </View>
+          )}
         </View>
       )}
     </ThemedView>
@@ -450,22 +471,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  strip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingBottom: Spacing.two,
-  },
-  stripActions: {
-    flexDirection: 'row',
-    gap: Spacing.three,
-  },
   list: {
     flex: 1,
   },
-  // The animated leading slot the circle slides into; clipped so it truly occupies zero width at rest.
+  // The animated leading slot the circle slides into. NOT clipped — the circle rides in from the
+  // physical screen edge, outside the slot's own bounds (its fade keeps it invisible at rest).
   selectLead: {
-    overflow: 'hidden',
     justifyContent: 'center',
   },
   undownloaded: {
@@ -486,16 +497,58 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.five,
     textAlign: 'center',
   },
-  footer: {
+  // The floating bulk-verb layer: pills at the two bottom corners, taps pass through between them.
+  pills: {
+    position: 'absolute',
     flexDirection: 'row',
-    gap: Spacing.two,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: Spacing.two,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.three,
   },
-  footerDelete: {
-    flex: 1,
+  // Shadow lives on an unclipped wrapper — the BlurView inside must clip to its radius.
+  pillShadow: {
+    borderRadius: PILL_HEIGHT / 2,
+    shadowColor: '#000000',
+    shadowOpacity: 0.22,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 8,
   },
-  footerDownload: {
-    flex: 2,
+  // The stretched frosted pill carrying the secondary action icons (Delete today).
+  actionsPill: {
+    height: PILL_HEIGHT,
+    borderRadius: PILL_HEIGHT / 2,
+    overflow: 'hidden',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.two,
+  },
+  // The bigger accent pill: the one primary verb, wider so it reads as such.
+  downloadPill: {
+    height: PILL_HEIGHT,
+    minWidth: 132,
+    borderRadius: PILL_HEIGHT / 2,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pillFill: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  pillButton: {
+    height: PILL_HEIGHT,
+    paddingHorizontal: Spacing.four,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pillButtonWide: {
+    height: PILL_HEIGHT,
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

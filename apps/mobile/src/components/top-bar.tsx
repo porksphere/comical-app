@@ -20,26 +20,42 @@ import { hapticImpactLight } from '@/lib/haptics';
  * Pair with `<Stack.Screen name="..." options={{ headerShown: false }} />` in
  * `_layout.tsx` and use `useTopBarInset()` to pad the screen's own content.
  */
-export function TopBar({ title, onBack, right }: { title: string; onBack?: () => void; right?: ReactNode }) {
+export function TopBar({
+  title,
+  onBack,
+  left,
+  right,
+}: {
+  title: string;
+  onBack?: () => void;
+  /** REPLACES the back button (e.g. a selection mode's staging actions). The screen must offer its
+   *  own way out of whatever state hides the back affordance. */
+  left?: ReactNode;
+  right?: ReactNode;
+}) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const barHeight = useTopBarHeight();
   return (
     <BarSurface style={[styles.topBar, { height: insets.top + barHeight }]}>
-      <Pressable
-        testID="top-bar.back"
-        onPress={() => {
-          hapticImpactLight();
-          (onBack ?? (() => router.back()))();
-        }}
-        hitSlop={12}
-        android_ripple={{ color: theme.backgroundSelected, borderless: true }}
-        style={[styles.backButton, { height: barHeight }]}
-        accessibilityRole="button"
-        accessibilityLabel="Go back">
-        <ChevronLeftIcon color={theme.text} />
-      </Pressable>
+      {left ? (
+        <View style={[styles.leftAction, { height: barHeight }]}>{left}</View>
+      ) : (
+        <Pressable
+          testID="top-bar.back"
+          onPress={() => {
+            hapticImpactLight();
+            (onBack ?? (() => router.back()))();
+          }}
+          hitSlop={12}
+          android_ripple={{ color: theme.backgroundSelected, borderless: true }}
+          style={[styles.backButton, { height: barHeight }]}
+          accessibilityRole="button"
+          accessibilityLabel="Go back">
+          <ChevronLeftIcon color={theme.text} />
+        </Pressable>
+      )}
       <ThemedText type="smallBold" numberOfLines={1} style={styles.title}>
         {title}
       </ThemedText>
@@ -115,6 +131,14 @@ const styles = StyleSheet.create({
     left: Spacing.three,
     bottom: 0,
     justifyContent: 'center',
+  },
+  leftAction: {
+    position: 'absolute',
+    left: Spacing.three,
+    bottom: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
   },
   rightAction: {
     position: 'absolute',
