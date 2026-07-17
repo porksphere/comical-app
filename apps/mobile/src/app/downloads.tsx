@@ -164,6 +164,7 @@ export default function DownloadsScreen() {
   // symmetric side padding — LegendList ignores maxWidth/alignSelf on its content container, so the
   // centring has to be explicit. Rows escape `SettingsGutter` to reach the column's edge for their pills.
   const sidePad = SettingsGutter + Math.max(0, (width - MaxContentWidth) / 2);
+  const theme = useTheme();
 
   // Deep-link / series-button focus: expand a series and scroll it into view.
   const { focus } = useLocalSearchParams<{ focus?: string }>();
@@ -274,38 +275,50 @@ export default function DownloadsScreen() {
     </View>
   );
 
-  const renderItem = ({ item }: { item: DlRow }) => {
+  const renderItem = ({ item, index }: { item: DlRow; index: number }) => {
+    // Every row except the last carries the standard inset hairline at its bottom edge — absolutely
+    // positioned so the row stays exactly `SettingsRowHeight` tall (the list declares fixed sizes).
+    // Chapter dividers inset further left to match their indented content.
+    const divider = index < rows.length - 1 && (
+      <View
+        pointerEvents="none"
+        style={[styles.divider, item.kind === 'chapter' && styles.dividerChapter, { backgroundColor: theme.hairline }]}
+      />
+    );
     if (item.kind === 'series') {
       const { s, open } = item;
       const state = deriveSeriesState(s.chapters);
       const frac = seriesFraction(s.chapters);
       return (
-        <SwipeableSettingsRow
-          recycleKey={item.key}
-          label={s.title}
-          labelBold
-          description={`${s.chapterCount} chapter${s.chapterCount === 1 ? '' : 's'} · ${formatBytes(s.bytes)}`}
-          leading={
-            <DownloadStatusIndicator
-              state={state}
-              fraction={frac}
-              size={22}
-              interactive={false}
-              onPause={() => void pauseSeries(s.bridgeId, s.seriesId)}
-              onResume={() => void resumeSeriesDownload(s.bridgeId, s.seriesId)}
-              onRetry={() => retrySeries(s)}
-            />
-          }
-          right={<FoldoutChevron open={open} />}
-          onPress={() => toggle(item.key)}
-          actions={seriesActions(state, {
-            onPause: () => void pauseSeries(s.bridgeId, s.seriesId),
-            onResume: () => void resumeSeriesDownload(s.bridgeId, s.seriesId),
-            onRetry: () => retrySeries(s),
-            onCancel: () => void cancelSeriesInflight(s),
-            onDelete: () => void deleteSeries(s),
-          })}
-        />
+        <View>
+          <SwipeableSettingsRow
+            recycleKey={item.key}
+            label={s.title}
+            labelBold
+            description={`${s.chapterCount} chapter${s.chapterCount === 1 ? '' : 's'} · ${formatBytes(s.bytes)}`}
+            leading={
+              <DownloadStatusIndicator
+                state={state}
+                fraction={frac}
+                size={22}
+                interactive={false}
+                onPause={() => void pauseSeries(s.bridgeId, s.seriesId)}
+                onResume={() => void resumeSeriesDownload(s.bridgeId, s.seriesId)}
+                onRetry={() => retrySeries(s)}
+              />
+            }
+            right={<FoldoutChevron open={open} />}
+            onPress={() => toggle(item.key)}
+            actions={seriesActions(state, {
+              onPause: () => void pauseSeries(s.bridgeId, s.seriesId),
+              onResume: () => void resumeSeriesDownload(s.bridgeId, s.seriesId),
+              onRetry: () => retrySeries(s),
+              onCancel: () => void cancelSeriesInflight(s),
+              onDelete: () => void deleteSeries(s),
+            })}
+          />
+          {divider}
+        </View>
       );
     }
     const { c } = item;
@@ -314,29 +327,32 @@ export default function DownloadsScreen() {
     const cState = displayChapterState(c);
     const cFrac = c.pageCount > 0 ? c.completedPages / c.pageCount : 0;
     return (
-      <SwipeableSettingsRow
-        recycleKey={item.key}
-        label={c.chapterName ?? (c.number !== undefined ? `Chapter ${c.number}` : c.chapterId)}
-        description={chapterDescription(c, cState, c.completedPages, c.bytes)}
-        contentInset={Spacing.five}
-        leading={
-          <DownloadStatusIndicator
-            state={cState}
-            fraction={cFrac}
-            size={20}
-            onPause={() => void pauseChapter(c.bridgeId, c.seriesId, c.chapterId)}
-            onResume={() => void resumeChapterDownload(c.bridgeId, c.seriesId, c.chapterId)}
-            onRetry={() => void retryChapter(c.bridgeId, c.seriesId, c.chapterId)}
-          />
-        }
-        actions={chapterActions(cState, {
-          onPause: () => void pauseChapter(c.bridgeId, c.seriesId, c.chapterId),
-          onResume: () => void resumeChapterDownload(c.bridgeId, c.seriesId, c.chapterId),
-          onRetry: () => void retryChapter(c.bridgeId, c.seriesId, c.chapterId),
-          onCancel: () => void deleteChapter(c.bridgeId, c.seriesId, c.chapterId),
-          onDelete: () => void deleteChapter(c.bridgeId, c.seriesId, c.chapterId),
-        })}
-      />
+      <View>
+        <SwipeableSettingsRow
+          recycleKey={item.key}
+          label={c.chapterName ?? (c.number !== undefined ? `Chapter ${c.number}` : c.chapterId)}
+          description={chapterDescription(c, cState, c.completedPages, c.bytes)}
+          contentInset={Spacing.five}
+          leading={
+            <DownloadStatusIndicator
+              state={cState}
+              fraction={cFrac}
+              size={20}
+              onPause={() => void pauseChapter(c.bridgeId, c.seriesId, c.chapterId)}
+              onResume={() => void resumeChapterDownload(c.bridgeId, c.seriesId, c.chapterId)}
+              onRetry={() => void retryChapter(c.bridgeId, c.seriesId, c.chapterId)}
+            />
+          }
+          actions={chapterActions(cState, {
+            onPause: () => void pauseChapter(c.bridgeId, c.seriesId, c.chapterId),
+            onResume: () => void resumeChapterDownload(c.bridgeId, c.seriesId, c.chapterId),
+            onRetry: () => void retryChapter(c.bridgeId, c.seriesId, c.chapterId),
+            onCancel: () => void deleteChapter(c.bridgeId, c.seriesId, c.chapterId),
+            onDelete: () => void deleteChapter(c.bridgeId, c.seriesId, c.chapterId),
+          })}
+        />
+        {divider}
+      </View>
     );
   };
 
@@ -420,5 +436,19 @@ const styles = StyleSheet.create({
   empty: {
     paddingHorizontal: Spacing.three,
     textAlign: 'center',
+  },
+  // The rows' bottom hairline (see `renderItem`): starts at the gutter (aligned under the row's text)
+  // and runs off the right edge to the row's own escaped extent — the same inset-divider look as
+  // `SettingsSection`. Absolute so it adds no height to the fixed-size rows.
+  divider: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: -SettingsGutter,
+    height: StyleSheet.hairlineWidth,
+  },
+  // Chapter rows indent their content `Spacing.five` further — their divider follows.
+  dividerChapter: {
+    left: Spacing.five,
   },
 });

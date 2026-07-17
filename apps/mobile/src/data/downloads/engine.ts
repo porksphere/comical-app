@@ -80,20 +80,45 @@ export async function enqueueChapter(input: EnqueueChapterInput): Promise<void> 
   invalidateDownloads(input.bridgeId, input.seriesId);
 }
 
-/** Enqueue many chapters of one series — the download sheet / chapter picker fan-out. */
+/**
+ * Enqueue many chapters of one series — the download sheet / chapter picker fan-out. PACED, not a
+ * stampede: each enqueue makes the host resolve that chapter's page list via the bridge, so firing
+ * 300 at once flooded the bridge's rate limiter and the manifest store simultaneously (the enqueue
+ * trickle visibly stalled). A few workers drain the list in order, and the queries invalidate once
+ * up front (the button flips to Downloading) — per-chapter refreshes ride the events pipe.
+ */
 export function enqueueChapters(
   series: { bridgeId: string; seriesId: string; title: string; thumbnailUrl?: string; author?: string },
   chapters: { id: string; name: string; number?: number; languageCode?: string }[],
 ): void {
-  for (const c of chapters) {
-    void enqueueChapter({
-      ...series,
-      chapterId: c.id,
-      chapterName: c.name,
-      ...(c.number !== undefined && { number: c.number }),
-      ...(c.languageCode !== undefined && { languageCode: c.languageCode }),
-    });
-  }
+  if (chapters.length === 0) return;
+  const CONCURRENCY = 3;
+  void (async () => {
+    let next = 0;
+    const worker = async () => {
+      for (;;) {
+        const c = chapters[next++];
+        if (!c) return;
+        try {
+          await dlEnqueueChapter(series.bridgeId, series.seriesId, c.id, {
+            title: series.title,
+            ...(series.thumbnailUrl !== undefined && { thumbnailUrl: series.thumbnailUrl }),
+            ...(series.author !== undefined && { author: series.author }),
+            chapterName: c.name,
+            ...(c.number !== undefined && { number: c.number }),
+            ...(c.languageCode !== undefined && { languageCode: c.languageCode }),
+          });
+        } catch (e) {
+          logDiagnostic('download-enqueue', (e as Error)?.message || String(e), {
+            context: `bridge=${series.bridgeId} series=${series.seriesId} chapter=${c.id}`,
+          });
+        }
+      }
+    };
+    invalidateDownloads(series.bridgeId, series.seriesId);
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, chapters.length) }, () => worker()));
+    invalidateDownloads(series.bridgeId, series.seriesId);
+  })();
 }
 
 /** Pause one in-flight/queued chapter (resumable) — the host's engine aborts its workers promptly. */

@@ -29,7 +29,7 @@ import comicalRuntime from '../../../modules/comical-runtime';
 import { setTransport } from '../api';
 import { bumpDataEpoch } from '../data-epoch';
 import { queryClient } from '../query-client';
-import { AsyncStorageDownloadsStore } from '../downloads/async-store';
+import { downloadsStore } from '../downloads/async-store';
 import { applyBackgroundDownloads } from '../downloads/background';
 import { expoBlobStore } from '../downloads/blob-store';
 import { installNetworkAutoResume, mayDownloadNow, resumePendingDownloads } from '../downloads/engine';
@@ -60,7 +60,8 @@ function bootstrapConfig(): EmbeddedBootstrapConfig {
     libraryStore: new AsyncStorageLibraryStore(),
     // On-device downloads persistence — mounts the router's `/downloads*` endpoints in embedded mode
     // so the offline-download manifest (enqueue / record / storage / delete) works with no server.
-    downloadsStore: new AsyncStorageDownloadsStore(),
+    // The SHARED instance (its doc cache makes a second copy incoherent — see async-store.ts).
+    downloadsStore,
     // Device seams for the shared download engine (which host-rn runs in-process behind the router):
     // bytes land on this device's filesystem, pages resolve through the reader's own asset resolver,
     // and the Wi-Fi-only policy gates the drain. See `getEmbeddedDownloadEngine()` for the lifecycle.

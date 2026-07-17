@@ -17,10 +17,8 @@
  */
 import { dlStorageUsage, getApiBase } from '../api';
 import { getResolvedModeSync } from '../embedded/preference';
-import { AsyncStorageDownloadsStore } from './async-store';
+import { downloadsStore as store } from './async-store';
 import { uriFor } from './blob-store';
-
-const store = new AsyncStorageDownloadsStore();
 
 /** `bridgeId:seriesId:chapterId`. */
 function key(bridgeId: string, seriesId: string, chapterId: string): string {

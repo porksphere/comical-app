@@ -74,13 +74,40 @@ function patchProgressCaches(
   );
 }
 
+// Invalidations are COALESCED on a trailing timer: a 300-chapter bulk enqueue emits one 'chapter'
+// event per landing chapter, and refetching the whole storage tree for each of them turned into a
+// continuous walk that starved everything else (the enqueue trickle stalling, the foldout lagging).
+// Progress still feels live — page events patch the caches directly — while the refetch-from-truth
+// happens at most ~3×/second.
+const INVALIDATE_COALESCE_MS = 350;
+const pendingSeries = new Map<string, [string, string]>();
+let pendingUsage = false;
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleFlush(): void {
+  if (flushTimer) return;
+  flushTimer = setTimeout(() => {
+    flushTimer = null;
+    if (pendingUsage) {
+      pendingUsage = false;
+      void queryClient.invalidateQueries({ queryKey: queryKeys.downloadsUsage() });
+    }
+    for (const [bridgeId, seriesId] of pendingSeries.values()) {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.seriesDownloads(bridgeId, seriesId) });
+    }
+    pendingSeries.clear();
+  }, INVALIDATE_COALESCE_MS);
+}
+
 function invalidate(bridgeId: string, seriesId: string): void {
-  void queryClient.invalidateQueries({ queryKey: queryKeys.downloadsUsage() });
-  void queryClient.invalidateQueries({ queryKey: queryKeys.seriesDownloads(bridgeId, seriesId) });
+  pendingUsage = true;
+  pendingSeries.set(`${bridgeId} ${seriesId}`, [bridgeId, seriesId]);
+  scheduleFlush();
 }
 
 function invalidateUsage(): void {
-  void queryClient.invalidateQueries({ queryKey: queryKeys.downloadsUsage() });
+  pendingUsage = true;
+  scheduleFlush();
 }
 
 // ── Event application (shared across embedded subscription / SSE / nothing) ─────
