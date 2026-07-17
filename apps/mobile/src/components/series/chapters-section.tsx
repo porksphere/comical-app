@@ -17,9 +17,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { DownloadedChapter, DownloadState } from '@comical/downloads';
 
+import { MenuActionRow, MenuHeader } from '@/components/context-menu';
 import { DownloadStateVisual } from '@/components/downloads/download-status-indicator';
-import { ArrowDownIcon, ArrowUpIcon } from '@/components/icons/ui-icons';
-import { MeasuredHeader, OptionList, OverlayHeading, useOverlay } from '@/components/overlay/overlay';
+import { ArrowDownIcon, ArrowUpIcon, DownloadsIcon, TrashIcon } from '@/components/icons/ui-icons';
+import { OptionList, useOverlay } from '@/components/overlay/overlay';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -33,6 +34,7 @@ import { forgetChapter } from '@/data/downloads/index-cache';
 import { fromHere, selectableGroups, toEnqueue } from '@/data/downloads/select';
 import { queryClient } from '@/data/query-client';
 import { coverDelayMs, relativeTime } from '@/data/mock';
+import { hapticImpactMedium } from '@/lib/haptics';
 import { queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import type { Chapter, PageThumbSource, SpriteThumb } from '@/data/types';
@@ -368,10 +370,12 @@ function ChapterList({
   const head = collapsible ? groups.slice(0, OVERVIEW_HEAD_COUNT) : groups;
   const tail = collapsible ? groups.slice(groups.length - OVERVIEW_TAIL_COUNT) : [];
 
-  // Long-press a row → the per-chapter download menu (download this / from here / delete).
+  // Long-press a row → the per-chapter download menu (download this / from here / delete). Same
+  // open thump as the series card's hold, so every long-press in the app answers alike.
   const { open } = useOverlay();
   const openChapterMenu = (g: ChapterGroup) => {
     if (!bridgeId) return;
+    hapticImpactMedium();
     open(() => (
       <ChapterDownloadMenu
         bridgeId={bridgeId}
@@ -601,7 +605,9 @@ function ChapterRow({
 /**
  * The long-press chapter menu: quick per-chapter download actions without leaving the list.
  * "Download from here" is the one-gesture range answer (this chapter through the end of reading
- * order, skipping anything already kept/queued); a fully-downloaded chapter offers Delete instead.
+ * order, skipping anything already kept/queued); a fully-downloaded chapter offers Delete too.
+ * Rendered with the shared context-menu chrome (`MenuHeader` + `MenuActionRow`), so it reads as the
+ * same kind of object as the series card's long-press menu.
  */
 function ChapterDownloadMenu({
   bridgeId,
@@ -621,7 +627,6 @@ function ChapterDownloadMenu({
   preferredGroup?: string;
 }) {
   const { closeTop } = useOverlay();
-  const theme = useTheme();
   const sel = selectableGroups(chapters, manifest);
   const entry = sel.find((s) => s.group.key === group.key);
   const span = fromHere(sel, pickVersion(group, preferredGroup).id);
@@ -639,54 +644,41 @@ function ChapterDownloadMenu({
     closeTop();
   };
 
-  const item = (id: string, label: string, description: string, onPress: (() => void) | undefined) => (
-    <Pressable
-      key={id}
-      testID={testId('series.chapter-menu', id)}
-      onPress={onPress}
-      disabled={!onPress}
-      style={!onPress && styles.menuDisabled}>
-      <ThemedView type="backgroundElement" style={[styles.menuRow, { borderColor: theme.hairline }]}>
-        <ThemedText type="smallBold" numberOfLines={1} style={styles.menuLabel}>
-          {label}
-        </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
-          {description}
-        </ThemedText>
-      </ThemedView>
-    </Pressable>
-  );
-
   return (
     <View style={styles.menuBody}>
-      <MeasuredHeader>
-        <OverlayHeading>{group.name}</OverlayHeading>
-      </MeasuredHeader>
+      <MenuHeader title={group.name} textOnly />
       <OptionList>
-        {item(
-          'this',
-          'Download this chapter',
-          entry?.settled ? 'already saved' : '1 chapter',
-          entry && !entry.settled
-            ? () => {
-                enqueueChapters(snap, toEnqueue([group], preferredGroup));
-                closeTop();
-              }
-            : undefined,
+        <MenuActionRow
+          testID={testId('series.chapter-menu', 'this')}
+          label="Download this chapter"
+          Icon={DownloadsIcon}
+          disabled={!entry || entry.settled}
+          detail={entry?.settled ? 'already saved' : '1 chapter'}
+          onPress={() => {
+            enqueueChapters(snap, toEnqueue([group], preferredGroup));
+            closeTop();
+          }}
+        />
+        <MenuActionRow
+          testID={testId('series.chapter-menu', 'from-here')}
+          label="Download from here"
+          Icon={ArrowDownIcon}
+          disabled={span.length === 0}
+          detail={span.length === 1 ? '1 chapter' : `${span.length} chapters`}
+          onPress={() => {
+            enqueueChapters(snap, toEnqueue(span, preferredGroup));
+            closeTop();
+          }}
+        />
+        {downloadedVersions.length > 0 && (
+          <MenuActionRow
+            testID={testId('series.chapter-menu', 'delete')}
+            label="Delete download"
+            Icon={TrashIcon}
+            detail="free the space"
+            onPress={() => void deleteDownload()}
+          />
         )}
-        {item(
-          'from-here',
-          'Download from here',
-          span.length === 1 ? '1 chapter' : `${span.length} chapters`,
-          span.length > 0
-            ? () => {
-                enqueueChapters(snap, toEnqueue(span, preferredGroup));
-                closeTop();
-              }
-            : undefined,
-        )}
-        {downloadedVersions.length > 0 &&
-          item('delete', 'Delete download', 'free the space', () => void deleteDownload())}
       </OptionList>
     </View>
   );
@@ -1508,23 +1500,6 @@ const styles = StyleSheet.create({
   // The long-press chapter menu (ChapterDownloadMenu).
   menuBody: {
     gap: Spacing.three,
-  },
-  menuRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    paddingVertical: Spacing.two + Spacing.one,
-    paddingHorizontal: Spacing.three,
-    borderRadius: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginBottom: Spacing.one,
-  },
-  menuLabel: {
-    flex: 1,
-    minWidth: 0,
-  },
-  menuDisabled: {
-    opacity: 0.45,
   },
   // Offline + not downloaded: the chapter can't be read, so the whole row reads as unavailable.
   rowDimmed: {
