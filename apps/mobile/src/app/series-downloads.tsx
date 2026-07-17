@@ -24,7 +24,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ConfirmDialog } from '@/components/confirm-dialog';
+import { openConfirm } from '@/components/confirm-popup';
 import { Holdable } from '@/components/context-menu';
 import { DownloadStatusIndicator } from '@/components/downloads/download-status-indicator';
 import { chapterActions, chapterCan } from '@/components/downloads/row-actions';
@@ -48,7 +48,6 @@ import {
   useSelectMode,
 } from '@/components/multi-select/select-mode';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
-import { useOverlay } from '@/components/overlay/overlay';
 import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -118,7 +117,6 @@ function bestManifest(versionIds: string[], manifest: DownloadedChapter[]): Down
 export default function SeriesDownloadsScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const { open } = useOverlay();
   // The standard settings-screen top inset (top bar + SettingsTopGap) — the same gap every
   // fixed-row-height list starts at, so this screen can't drift from the Downloads page's.
   const { paddingTop } = useSettingsScrollPadding();
@@ -308,23 +306,17 @@ export default function SeriesDownloadsScreen() {
   const deleteSelected = () => removeChapters(toDelete);
   const cancelSelected = () => removeChapters(toCancel);
   const confirmDeleteSelected = () =>
-    open(() => (
-      <ConfirmDialog
-        title={`Delete ${toDelete.length} chapter${toDelete.length === 1 ? '' : 's'}?`}
-        message="Their downloaded pages are removed from this device."
-        confirmLabel="Delete"
-        onConfirm={() => void deleteSelected()}
-      />
-    ));
+    openConfirm({
+      message: `${toDelete.length} chapter${toDelete.length === 1 ? '' : 's'} will be deleted from this device.`,
+      confirmLabel: toDelete.length === 1 ? 'Delete Chapter' : `Delete ${toDelete.length} Chapters`,
+      onConfirm: () => void deleteSelected(),
+    });
   const confirmDeleteChapter = (name: string, c: DownloadedChapter) =>
-    open(() => (
-      <ConfirmDialog
-        title={`Delete ${name}?`}
-        message="Its downloaded pages are removed from this device."
-        confirmLabel="Delete"
-        onConfirm={() => void deleteChapterRow(c)}
-      />
-    ));
+    openConfirm({
+      message: `"${name}" will be deleted from this device.`,
+      confirmLabel: 'Delete Chapter',
+      onConfirm: () => void deleteChapterRow(c),
+    });
 
   // Full-width scroller centered within the settings column (same treatment as the Downloads page).
   const sidePad = SettingsGutter + Math.max(0, (width - MaxContentWidth) / 2);

@@ -19,7 +19,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ConfirmDialog } from '@/components/confirm-dialog';
+import { openConfirm } from '@/components/confirm-popup';
 import { Holdable } from '@/components/context-menu';
 import { DownloadStatusIndicator } from '@/components/downloads/download-status-indicator';
 import { seriesActions, seriesCan } from '@/components/downloads/row-actions';
@@ -35,7 +35,6 @@ import {
   useSelectMode,
 } from '@/components/multi-select/select-mode';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
-import { useOverlay } from '@/components/overlay/overlay';
 import { SettingsToggleRow } from '@/components/settings/settings-fields';
 import { SettingsSection } from '@/components/settings/settings-row';
 import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
@@ -101,7 +100,6 @@ export default function DownloadsScreen() {
   const { wifiOnly, background } = useDownloadPrefs();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { open } = useOverlay();
 
   // Full-width scroller (scrollbar at the window edge); rows centered within the settings column via
   // symmetric side padding — LegendList ignores maxWidth/alignSelf on its content container, so the
@@ -215,23 +213,17 @@ export default function DownloadsScreen() {
     mode.exit();
   };
   const confirmDeleteSeries = (s: StorageUsageSeries) =>
-    open(() => (
-      <ConfirmDialog
-        title={`Delete ${s.title}?`}
-        message={`Removes its ${s.chapterCount} downloaded chapter${s.chapterCount === 1 ? '' : 's'} from this device.`}
-        confirmLabel="Delete"
-        onConfirm={() => void deleteSeries(s)}
-      />
-    ));
+    openConfirm({
+      message: `"${s.title}" and its ${s.chapterCount} downloaded chapter${s.chapterCount === 1 ? '' : 's'} will be deleted from this device.`,
+      confirmLabel: 'Delete Series',
+      onConfirm: () => void deleteSeries(s),
+    });
   const confirmDeleteSelected = () =>
-    open(() => (
-      <ConfirmDialog
-        title={`Delete ${toDelete.length} series?`}
-        message="Their downloaded chapters are removed from this device."
-        confirmLabel="Delete"
-        onConfirm={() => void deleteSelected()}
-      />
-    ));
+    openConfirm({
+      message: `${toDelete.length} series and their downloaded chapters will be deleted from this device.`,
+      confirmLabel: `Delete ${toDelete.length} Series`,
+      onConfirm: () => void deleteSelected(),
+    });
 
   const openSeries = (s: StorageUsageSeries) =>
     router.push({
