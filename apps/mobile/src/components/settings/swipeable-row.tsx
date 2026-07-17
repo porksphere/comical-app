@@ -316,14 +316,17 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled]);
 
+  // Disabling rides the HANDLERS (closure-captured `enabled`, re-diffed every render), not the
+  // recognizer's .enabled() config — RNGH doesn't reliably re-apply that to already-mounted
+  // recognizers, which left rows mounted during select mode with dead gestures after exiting.
   const pan = Gesture.Pan()
-    .enabled(enabled)
     // Only claim the gesture once it's clearly horizontal, so vertical scrolling of the list still
     // belongs to the ScrollView.
     .activeOffsetX([-12, 12])
     .failOffsetY([-12, 12])
     .onBegin(() => {
       'worklet';
+      if (!enabled) return;
       // Capture from wherever the row is currently resting, so resuming a drag from an already-open
       // detent doesn't fire a spurious tick on the first frame. Clamp in case the action set just
       // shrank (a stale rest index would point past the shorter detents array).
@@ -331,6 +334,7 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
     })
     .onUpdate((e) => {
       'worklet';
+      if (!enabled) return;
       const from = -detents[Math.min(restIndex.value, detents.length - 1)];
       // The finger's raw absolute position (before resistance), clamped to the openable range.
       const absRaw = -Math.min(0, Math.max(-openX, from + e.translationX));
@@ -351,6 +355,7 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
     })
     .onEnd((e) => {
       'worklet';
+      if (!enabled) return;
       // Rest at the captured detent (its midpoints already decided which pill count we're nearest),
       // letting a firm flick carry it one more stop in the fling direction.
       let idx = captured.value;

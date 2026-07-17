@@ -49,7 +49,7 @@ import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { TopBar, useTopBarInset } from '@/components/top-bar';
+import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, SettingsGutter, SettingsRowHeight, Spacing } from '@/constants/theme';
 import { dlDeleteChapter, dlGetSeries } from '@/data/api';
 import { bySortValue, chapterSortValue, displayChapterState } from '@/data/downloads/derive';
@@ -70,6 +70,7 @@ import { useDataSource, useMockActive } from '@/data/source';
 import { hapticSelection } from '@/lib/haptics';
 import { usePreferredGroup } from '@/lib/preferred-group';
 import { testId } from '@/lib/test-id';
+import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import type { ChapterGroup } from '@/lib/chapter-order';
 import type { DownloadedChapter, DownloadState } from '@comical/downloads';
@@ -114,7 +115,9 @@ function bestManifest(versionIds: string[], manifest: DownloadedChapter[]): Down
 export default function SeriesDownloadsScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const topBarInset = useTopBarInset();
+  // The standard settings-screen top inset (top bar + SettingsTopGap) — the same gap every
+  // fixed-row-height list starts at, so this screen can't drift from the Downloads page's.
+  const { paddingTop } = useSettingsScrollPadding();
   const { width } = useWindowDimensions();
   const ds = useDataSource();
   const mock = useMockActive();
@@ -218,6 +221,20 @@ export default function SeriesDownloadsScreen() {
     if (selecting) ms.clear();
     mode.toggle();
   };
+
+  // The series-page Download intent (`select=1`): once the chapter list lands, STAGE the default
+  // pick — every unread chapter not already marked for download — so the button's most common
+  // outcome is one tap away. Deferred a tick: this reacts to the list ARRIVING (async data).
+  const [preselectPending, setPreselectPending] = useState(params.select === '1');
+  useEffect(() => {
+    if (!preselectPending || !sel) return;
+    const t = setTimeout(() => {
+      if (unreadKeys.length > 0) ms.selectOnly(unreadKeys);
+      setPreselectPending(false);
+    }, 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preselectPending, sel]);
 
   // ── Bulk verbs (the floating pills, select mode only) ─────────────────────────
   // Each verb surfaces only while the selection makes it valid:
@@ -398,7 +415,7 @@ export default function SeriesDownloadsScreen() {
         }
         contentContainerStyle={{
           flexGrow: 1,
-          paddingTop: topBarInset + Spacing.two,
+          paddingTop,
           paddingLeft: sidePad,
           paddingRight: sidePad,
           // Room for the floating pills, so the last rows can scroll clear of them.

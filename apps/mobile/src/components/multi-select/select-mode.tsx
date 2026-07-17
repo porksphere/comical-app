@@ -18,7 +18,7 @@
 import { BlurView } from 'expo-blur';
 import type { ReactElement } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring, type SharedValue } from 'react-native-reanimated';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 import { useRef, useState } from 'react';
 
 import { openContextMenu } from '@/components/context-menu-host';
@@ -29,10 +29,10 @@ import { SelectCircle } from '@/components/multi-select/selectable-row';
 import { Spacing } from '@/constants/theme';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 
-/** The circles' slide-in/out spring — deliberately WEIGHTY: a touch of mass and underdamping so
- *  the circles arrive with momentum, push slightly past their slot, and settle (the row content
- *  rides the same motion, since the slot width follows the same value). */
-export const SELECT_SPRING = { damping: 15, stiffness: 220, mass: 0.8 } as const;
+/** The circles' slide-in/out: a quick, strongly-decelerating ease-out — smooth arrival (no spring
+ *  overshoot), but nowhere near linear: it launches fast and lands soft. */
+export const SELECT_ANIM_MS = 170;
+export const SELECT_EASING = Easing.bezier(0.22, 1, 0.36, 1);
 /** The leading slot the circles occupy when open: circle + the row's gap. */
 export const CIRCLE_SLOT = 20 + Spacing.three;
 /** The floating bulk-verb pills. A pill with ONE action renders as a full circle (width == height);
@@ -44,7 +44,7 @@ export const PILL_BLUR = 70;
  *  only says which surface it is. A hairline border defines the glass edge. */
 export const PILL_FILL = { light: 'rgba(255,255,255,0.18)', dark: 'rgba(28,30,34,0.22)' } as const;
 /** The primary (accent) pill's fill opacity, as a hex-alpha suffix on the theme accent. */
-export const PILL_ACCENT_ALPHA = '80';
+export const PILL_ACCENT_ALPHA = 'CC';
 
 /** The mode flag + the one shared progress value every row's `SelectLead` animates from. */
 export function useSelectMode(initial = false): {
@@ -57,7 +57,7 @@ export function useSelectMode(initial = false): {
   const progress = useSharedValue(initial ? 1 : 0);
   const set = (next: boolean) => {
     setSelecting(next);
-    progress.value = withSpring(next ? 1 : 0, SELECT_SPRING);
+    progress.value = withTiming(next ? 1 : 0, { duration: SELECT_ANIM_MS, easing: SELECT_EASING });
   };
   return {
     selecting,
@@ -120,8 +120,6 @@ export function SelectLead({
   selected: boolean;
   edgeOffset: number;
 }) {
-  // The spring overshoots its targets — the slot briefly grows PAST its width (that's the weight:
-  // content gets nudged and settles back), but a below-zero rebound must not become negative width.
   const slot = useAnimatedStyle(() => ({
     width: Math.max(0, progress.value) * CIRCLE_SLOT,
   }));

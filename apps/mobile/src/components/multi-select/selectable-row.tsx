@@ -15,7 +15,7 @@
  */
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import Animated, { interpolateColor, useAnimatedStyle, useDerivedValue, withSpring } from 'react-native-reanimated';
+import Animated, { interpolateColor, useAnimatedStyle, useDerivedValue, withTiming } from 'react-native-reanimated';
 
 import { Holdable } from '@/components/context-menu';
 import { CheckIcon } from '@/components/icons/ui-icons';
@@ -24,30 +24,27 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-/** Fast-rise spring: the fill reaches the tap within ~2 frames (the slow rise read as input lag),
- *  with just enough underdamping left for a small landing pop. */
-const CHECK_SPRING = { damping: 16, stiffness: 640, mass: 0.4 } as const;
+/** The tick's fade — quick enough to read as a direct response to the tap. */
+const CHECK_FADE_MS = 110;
 
 /** The bare check circle — the multi-select mark itself, for rows that compose their own chrome
  *  (e.g. the per-series download screen's animated leading slot).
  *
- *  Selecting ANIMATES: the fill disc (with its check) springs up from the circle's centre while the
- *  ring's colour follows, with a slight overshoot pop as it lands. Driven by a derived spring, so a
- *  freshly-mounted circle renders its state instantly (no mount animation — recycled list views
- *  would otherwise ripple while scrolling) and only a real toggle plays it. */
+ *  Selecting is a plain FADE: the fill disc (with its check) fades up over the ring while the
+ *  ring's colour follows — no scaling, so the fill always sits pixel-perfect inside its ring.
+ *  Driven by a derived timing, so a freshly-mounted circle renders its state instantly (no mount
+ *  animation — recycled list views would otherwise ripple while scrolling); only a real toggle
+ *  plays it. */
 export function SelectCircle({ selected, done }: { selected: boolean; done?: boolean }) {
   const theme = useTheme();
   const on = selected || !!done;
   const fillColor = done ? theme.textSecondary : theme.accent;
-  const p = useDerivedValue(() => withSpring(on ? 1 : 0, CHECK_SPRING));
+  const p = useDerivedValue(() => withTiming(on ? 1 : 0, { duration: CHECK_FADE_MS }));
   const ring = useAnimatedStyle(() => ({
-    borderColor: interpolateColor(Math.min(1, Math.max(0, p.value)), [0, 1], [theme.textSecondary, fillColor]),
-    // The spring's overshoot past 1 IS the pop — the ring briefly swells with it, then settles.
-    transform: [{ scale: 1 + Math.max(0, p.value - 1) * 0.6 }],
+    borderColor: interpolateColor(p.value, [0, 1], [theme.textSecondary, fillColor]),
   }));
   const fill = useAnimatedStyle(() => ({
-    opacity: Math.min(1, p.value),
-    transform: [{ scale: Math.max(0, p.value) }],
+    opacity: p.value,
   }));
   return (
     <Animated.View style={[styles.circle, ring]}>
