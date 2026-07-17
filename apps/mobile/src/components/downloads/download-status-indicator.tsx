@@ -78,7 +78,7 @@ export function DownloadStatusIndicator({
         : { onPress: onPause, label: 'Pause download' };
 
   return (
-    <Pressable onPress={onPress} hitSlop={8} accessibilityRole="button" accessibilityLabel={label} style={styles.wrap}>
+    <Pressable testID="download.status-action" onPress={onPress} hitSlop={8} accessibilityRole="button" accessibilityLabel={label} style={styles.wrap}>
       {visual}
     </Pressable>
   );
