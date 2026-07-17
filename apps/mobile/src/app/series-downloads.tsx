@@ -37,6 +37,8 @@ import {
   DownloadingIcon,
   DownloadsIcon,
   EyeIcon,
+  PauseIcon,
+  PlayIcon,
   SelectModeIcon,
   SelectOptionsIcon,
   TrashIcon,
@@ -77,8 +79,7 @@ const SELECT_ANIM_MS = 220;
 const CIRCLE_SLOT = 20 + Spacing.three;
 /** The floating bulk-verb pills (select mode). A pill with ONE action renders as a full circle
  *  (width == height); more actions stretch it horizontally into a pill. */
-const ACTION_PILL_HEIGHT = 44;
-const DOWNLOAD_PILL_HEIGHT = 50;
+const PILL_HEIGHT = 50;
 const PILL_BLUR = 40;
 
 /**
@@ -260,11 +261,15 @@ export default function SeriesDownloadsScreen() {
     if (!next) ms.clear();
   };
 
-  // ── Bulk verbs (the pinned footer, select mode only) ──────────────────────────
-  // Download: the selection's not-yet-kept chapters (failed ones count — re-enqueueing retries).
-  // Delete: the selection's downloaded/tracked chapters.
+  // ── Bulk verbs (the floating pills, select mode only) ─────────────────────────
+  // Each verb surfaces only while the selection makes it valid:
+  //  Download — not-yet-kept chapters (failed ones count: re-enqueueing retries).
+  //  Pause / Resume — in-flight (downloading/queued) / paused chapters.
+  //  Delete — anything downloaded/tracked.
   const picked = rows.filter((r) => ms.selected.has(r.key));
   const toDownload = picked.filter((r) => (r.group ? !r.c || r.c.state === 'failed' : r.c?.state === 'failed'));
+  const toPause = picked.filter((r) => r.c && (r.c.state === 'downloading' || r.c.state === 'queued'));
+  const toResume = picked.filter((r) => r.c?.state === 'paused');
   const toDelete = picked.filter((r) => r.c);
 
   const invalidate = () => {
@@ -285,6 +290,15 @@ export default function SeriesDownloadsScreen() {
       if (!r.group && r.c) void retryChapter(r.c.bridgeId, r.c.seriesId, r.c.chapterId);
     }
     toggleSelecting();
+  };
+
+  // Pause/resume KEEP the selection (unlike download/delete): they only flip state, and the natural
+  // follow-up ("pause these, now delete them") acts on the same chapters.
+  const pauseSelected = () => {
+    for (const r of toPause) void pauseChapter(r.c!.bridgeId, r.c!.seriesId, r.c!.chapterId);
+  };
+  const resumeSelected = () => {
+    for (const r of toResume) void resumeChapterDownload(r.c!.bridgeId, r.c!.seriesId, r.c!.chapterId);
   };
 
   const deleteSelected = async () => {
@@ -418,7 +432,7 @@ export default function SeriesDownloadsScreen() {
               hitSlop={10}
               accessibilityRole="button"
               accessibilityLabel="Selection options">
-              <SelectOptionsIcon color={theme.text} size={20} />
+              <SelectOptionsIcon color={theme.text} size={24} />
             </Pressable>
           ) : undefined
         }
@@ -429,7 +443,7 @@ export default function SeriesDownloadsScreen() {
             hitSlop={10}
             accessibilityRole="button"
             accessibilityLabel={selecting ? 'Exit selection' : 'Select chapters'}>
-            <SelectModeIcon color={selecting ? theme.accent : theme.text} size={20} />
+            <SelectModeIcon color={selecting ? theme.accent : theme.text} size={24} />
           </Pressable>
         }
       />
@@ -457,29 +471,51 @@ export default function SeriesDownloadsScreen() {
           paddingLeft: sidePad,
           paddingRight: sidePad,
           // Room for the floating pills, so the last rows can scroll clear of them.
-          paddingBottom: selecting ? DOWNLOAD_PILL_HEIGHT + Spacing.six : Spacing.three,
+          paddingBottom: selecting ? PILL_HEIGHT + Spacing.six : Spacing.three,
         }}
         showsVerticalScrollIndicator={Platform.OS === 'web'}
       />
 
       {/* The floating bulk verbs — each shown only while the selection makes it VALID: frosted
           icon pill(s) bottom-left, and the bigger accent Download pill bottom-right. */}
-      {selecting && (toDelete.length > 0 || toDownload.length > 0) && (
+      {selecting && (toDelete.length > 0 || toDownload.length > 0 || toPause.length > 0 || toResume.length > 0) && (
         <View
           pointerEvents="box-none"
           style={[styles.pills, { left: sidePad, right: sidePad, bottom: Math.max(insets.bottom, Spacing.three) }]}>
-          {toDelete.length > 0 ? (
+          {toDelete.length > 0 || toPause.length > 0 || toResume.length > 0 ? (
             <View style={styles.pillShadow}>
               <BlurView tint={scheme} intensity={PILL_BLUR} experimentalBlurMethod={ANDROID_BLUR} style={styles.actionsPill}>
                 <View pointerEvents="none" style={[styles.pillFill, { backgroundColor: MENU_FILL[scheme] }]} />
-                <Pressable
-                  testID="series.dl.delete"
-                  onPress={() => void deleteSelected()}
-                  style={styles.pillButton}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Delete ${toDelete.length} chapters`}>
-                  <TrashIcon color={theme.danger} size={20} />
-                </Pressable>
+                {toPause.length > 0 && (
+                  <Pressable
+                    testID="series.dl.pause"
+                    onPress={pauseSelected}
+                    style={styles.pillButton}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Pause ${toPause.length} chapters`}>
+                    <PauseIcon color={theme.text} size={20} />
+                  </Pressable>
+                )}
+                {toResume.length > 0 && (
+                  <Pressable
+                    testID="series.dl.resume"
+                    onPress={resumeSelected}
+                    style={styles.pillButton}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Resume ${toResume.length} chapters`}>
+                    <PlayIcon color={theme.text} size={20} />
+                  </Pressable>
+                )}
+                {toDelete.length > 0 && (
+                  <Pressable
+                    testID="series.dl.delete"
+                    onPress={() => void deleteSelected()}
+                    style={styles.pillButton}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Delete ${toDelete.length} chapters`}>
+                    <TrashIcon color={theme.danger} size={20} />
+                  </Pressable>
+                )}
               </BlurView>
             </View>
           ) : (
@@ -547,7 +583,7 @@ const styles = StyleSheet.create({
   },
   // Shadow lives on an unclipped wrapper — the BlurView inside must clip to its radius.
   pillShadow: {
-    borderRadius: DOWNLOAD_PILL_HEIGHT / 2,
+    borderRadius: PILL_HEIGHT / 2,
     shadowColor: '#000000',
     shadowOpacity: 0.22,
     shadowRadius: 12,
@@ -558,8 +594,8 @@ const styles = StyleSheet.create({
   // pill-height square, so ONE action renders as a full circle and additional icons stretch it
   // horizontally into a pill on their own — no per-count styling.
   actionsPill: {
-    height: ACTION_PILL_HEIGHT,
-    borderRadius: ACTION_PILL_HEIGHT / 2,
+    height: PILL_HEIGHT,
+    borderRadius: PILL_HEIGHT / 2,
     overflow: 'hidden',
     flexDirection: 'row',
     alignItems: 'center',
@@ -567,8 +603,8 @@ const styles = StyleSheet.create({
   // The bigger accent circle: the one primary verb (same rule — it would stretch if it ever
   // carried a second action).
   downloadPill: {
-    height: DOWNLOAD_PILL_HEIGHT,
-    borderRadius: DOWNLOAD_PILL_HEIGHT / 2,
+    height: PILL_HEIGHT,
+    borderRadius: PILL_HEIGHT / 2,
     overflow: 'hidden',
     flexDirection: 'row',
     alignItems: 'center',
@@ -581,14 +617,14 @@ const styles = StyleSheet.create({
     bottom: 0,
   },
   pillButton: {
-    width: ACTION_PILL_HEIGHT,
-    height: ACTION_PILL_HEIGHT,
+    width: PILL_HEIGHT,
+    height: PILL_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
   },
   pillButtonWide: {
-    width: DOWNLOAD_PILL_HEIGHT,
-    height: DOWNLOAD_PILL_HEIGHT,
+    width: PILL_HEIGHT,
+    height: PILL_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
   },
