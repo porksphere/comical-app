@@ -24,6 +24,10 @@ export type ReorderableListProps<T> = {
   onReorder: (orderedKeys: string[]) => void;
   /** Web only: when true, show the ▲/▼ reorder mode instead of the normal rows. Ignored on native. */
   editing?: boolean;
+  /** Native only: set false while another mode owns row interaction (a screen's multi-select mode),
+   *  so the ~200ms long-press drag doesn't lift rows out from under it. Defaults true. On web the
+   *  normal rows never drag, so it's ignored there. */
+  dragEnabled?: boolean;
   /** Pull-to-refresh handler. Our own list owns the scroll, so it hosts the pull spinner itself. */
   refresh?: () => Promise<unknown>;
 };

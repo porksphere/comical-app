@@ -69,7 +69,7 @@ function reorderTo(order: SharedValue<string[]>, id: string, topY: number, count
   order.set(next);
 }
 
-export function ReorderableList<T>({ data, keyOf, renderRow, onReorder, refresh }: ReorderableListProps<T>) {
+export function ReorderableList<T>({ data, keyOf, renderRow, onReorder, refresh, dragEnabled = true }: ReorderableListProps<T>) {
   const contentPadding = useSettingsScrollPadding();
   const insets = useSafeAreaInsets();
   const barHeight = useTopBarHeight();
@@ -137,6 +137,7 @@ export function ReorderableList<T>({ data, keyOf, renderRow, onReorder, refresh 
               id={keyOf(item)}
               count={count}
               divider={i < count - 1}
+              dragEnabled={dragEnabled}
               scrollRef={scrollRef}
               scrollY={scrollY}
               svTop={svTop}
@@ -161,6 +162,7 @@ function DragRow({
   id,
   count,
   divider,
+  dragEnabled,
   scrollRef,
   scrollY,
   svTop,
@@ -176,6 +178,7 @@ function DragRow({
   id: string;
   count: number;
   divider: boolean;
+  dragEnabled: boolean;
   scrollRef: AnimatedRef<Animated.ScrollView>;
   scrollY: SharedValue<number>;
   svTop: SharedValue<number>;
@@ -190,6 +193,9 @@ function DragRow({
 }) {
   const theme = useTheme();
   const pan = Gesture.Pan()
+    // Off while another mode (multi-select) owns row interaction — its own long-presses (range fill)
+    // must not lift rows. A fresh recognizer is built every render, so the flag re-applies cleanly.
+    .enabled(dragEnabled)
     // Long-press to lift, so a plain vertical drag still scrolls and a quick horizontal is the swipe.
     .activateAfterLongPress(200)
     .onStart((e) => {

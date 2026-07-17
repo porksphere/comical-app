@@ -992,7 +992,10 @@ export async function mockUninstallTracker(_trackerId: string): Promise<void> {}
 const mockRegistries: SavedRegistry[] = [];
 
 export async function mockGetRegistries(): Promise<SavedRegistry[]> {
-  return mockRegistries;
+  // A COPY, not the live array: add/remove mutate `mockRegistries` in place, so returning the same
+  // reference every fetch makes react-query (and React) see "unchanged" data — the Registries
+  // screen never re-rendered after an add.
+  return [...mockRegistries];
 }
 
 export async function mockAddRegistry(url: string, requireSignature?: boolean): Promise<void> {
