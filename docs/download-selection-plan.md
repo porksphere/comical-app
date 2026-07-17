@@ -52,15 +52,60 @@ manifest — each row shows its computed count and disables at zero:
 - **Download unread** — `M chapters` (unread and not yet downloaded)
 - **Next 10** — the next unread-undownloaded chapters in reading order from the reading position
   (fallback: after the highest downloaded chapter; fallback: from the start)
-- **Choose range…** — two number steppers (From / To, in reading order, prefilled with the first
-  undownloaded → last chapter). Enqueues the span, skipping already-complete chapters (idempotent
-  anyway — the core keeps completed pages).
+- **Select chapters…** — opens the multi-select chapter list (below): a recycled `LegendList` of
+  every chapter with checkboxes, tap-to-toggle, and long-press range fill. This is the power tool
+  that answers "30 through 50" and any non-contiguous pick, replacing the earlier steppers idea.
 
 While a download is in flight the sheet (reached via the Downloads screen or the partial button
 after it settles) is still the "add more" surface — enqueueing more chapters into a draining queue
 is already safe and ordered.
 
-## 3. Chapter-row long-press: the range gesture
+## 3. Multi-select — a new, reusable pattern
+
+This is the codebase's **first multi-select**, so the machinery is designed as a standalone,
+list-agnostic kit under `components/multi-select/` — the chapter picker is merely its first
+consumer. Future consumers with zero new machinery: Library batch actions (remove / move to list),
+Downloads screen batch delete, registry bulk install.
+
+### The kit
+
+- **`use-multi-select.ts`** — the selection store: `useMultiSelect<K>(allKeys)` returning
+  `{ selected: ReadonlySet<K>, count, toggle(k), selectAll(), clear(), invert(),
+  rangeFill(k) }`. `toggle` records the key as the **anchor**; `rangeFill(k)` (bound to long-press)
+  selects everything between the anchor and `k` in `allKeys` order — the standard manga-app
+  "tap 30, long-press 50" span gesture. Plain `useState<Set>` inside; no new state library.
+- **`selectable-row.tsx`** — the row chrome: a leading check circle (filled accent when selected,
+  hollow hairline when not) wrapping arbitrary row content, with `onPress → toggle` and
+  `onLongPress → rangeFill`. **Recycling-safe by construction**: selection is passed IN as a
+  `selected: boolean` prop derived from the Set — a row never holds selection in local state, so a
+  recycled view can never carry a stale checkmark (the same rule the swipe rows follow for gesture
+  state via `useRecyclingEffect`).
+- **`select-bar.tsx`** — the header strip: `N selected` + `All` / `Invert` / `Clear` text actions,
+  and a slot for the screen's primary CTA (here: **Download 21**, disabled at 0).
+
+### LegendList specifics (the part that must be right once)
+
+Same discipline as the Downloads screen list: `recycleItems` with `getItemType`, fixed row height
+via `getFixedItemSize`, and **stable row objects** — each item's object identity changes only when
+its own `selected` flag or data changes (the `buildRows`-style cache), so toggling one checkbox
+re-renders one row, not five hundred. Items are always non-null objects (the list ends at a bare
+`null`).
+
+### The chapter picker (first consumer)
+
+`components/series/chapter-select-sheet.tsx`: opened from the download sheet's **Select chapters…**,
+presented in the existing overlay (bottom sheet on phones, anchored popover on desktop) with the
+`LegendList` capped at ~70% viewport height. Rows show the chapter name, date, the existing
+download-state glyph (a complete chapter renders checked-and-dimmed — selectable but excluded from
+the CTA count; enqueueing it would be a harmless no-op anyway), and unread styling. The select bar's
+CTA reads **Download N** and fires the standard per-chapter enqueue loop.
+
+Risk to validate early: LegendList scroll inside the overlay's drag-to-dismiss sheet (gesture
+nesting). The overlay already hosts scrollable content, but if the two gestures fight on native,
+the fallback presentation is a dedicated route (like the Downloads screen) with identical contents —
+the kit doesn't care where it's mounted.
+
+## 4. Chapter-row long-press: the range gesture
 
 Long-press any chapter row → a small context menu:
 
@@ -73,7 +118,7 @@ per-chapter, as the queue drains (the indicators are live-patched). Long-press w
 web (the app's `Pressable`s support it); no multi-select mode is needed for v1 — contiguous ranges
 cover the stated cases, and a select-mode can layer on later without changing any of this.
 
-## 4. Resume / management stays where it is
+## 5. Resume / management stays where it is
 
 Pause/resume/retry/cancel of *enqueued* work remains the Downloads screen's job (per-chapter and
 per-series swipes, already engine-backed). "Resume the remaining 35" is not a pause/resume concept —
@@ -87,8 +132,10 @@ flight and space*.
   label change, tap → sheet.
 - New `components/series/download-sheet.tsx`: the option list; selection helpers (pure, unit-testable)
   in `data/downloads/select.ts` — `remaining(chapters, manifest)`, `unread(...)`, `nextN(...)`,
-  `range(chapters, fromNumber, toNumber)`; all return `Chapter[]` handed to the existing
-  `enqueueChapter` facade loop.
+  `fromHere(chapters, chapterId)`; all return `Chapter[]` handed to the existing `enqueueChapter`
+  facade loop.
+- New `components/multi-select/` kit (`use-multi-select.ts`, `selectable-row.tsx`, `select-bar.tsx`)
+  + `components/series/chapter-select-sheet.tsx` as its first consumer (see §3).
 - `chapters-section.tsx`: `onLongPress` on `ChapterRow` → context menu (overlay) with the two
   download actions; wired through the same helpers.
 - `use-series-download-action.ts` (card long-press): opens the sheet instead of enqueueing all.
@@ -101,6 +148,6 @@ flight and space*.
    single **Next 10** to start.
 2. Should **tap on a partial button** skip the sheet and directly "download remaining"? Proposal:
    no — sheet, since partial users are exactly the ones curating.
-3. Range picker granularity: steppers by reading-order position (robust against weird decimal
-   numbering) vs by chapter number (matches what users see). Proposal: position-based steppers that
-   *display* the chapter name/number at each end.
+3. Multi-select presentation: overlay sheet (consistent with every other picker) vs a dedicated
+   route (roomier for 1000-chapter series, no gesture nesting). Proposal: overlay first, fall back
+   to a route only if the nested-scroll gesture fights on native.
