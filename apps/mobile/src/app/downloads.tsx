@@ -299,6 +299,7 @@ export default function DownloadsScreen() {
                   <SelectLead
                     progress={mode.progress}
                     selected={ms.selected.has(item.key)}
+                    itemKey={item.key}
                     edgeOffset={sidePad}
                     gesture={selecting ? dragSelect.gestureFor(index) : undefined}
                   />

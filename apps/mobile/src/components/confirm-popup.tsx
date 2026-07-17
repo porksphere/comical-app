@@ -34,7 +34,7 @@ import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 
 const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
 const OPEN_SPRING = { damping: 18, stiffness: 320, mass: 0.7 } as const;
-const CARD_MAX_WIDTH = 340;
+const CARD_MAX_WIDTH = 270;
 
 export type ConfirmRequest = {
   /** The full-sentence explanation, e.g. "3 chapters will be deleted from this device." */
@@ -137,9 +137,7 @@ function HostPopup({ req }: { req: ConfirmRequest }) {
         <Animated.View style={[styles.cardShadow, cardStyle]}>
           <BlurView tint={scheme} intensity={MENU_BLUR} experimentalBlurMethod={ANDROID_BLUR} style={styles.card}>
             <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: MENU_FILL[scheme] }]} />
-            <ThemedText type="subtitle" style={styles.message}>
-              {req.message}
-            </ThemedText>
+            <ThemedText style={styles.message}>{req.message}</ThemedText>
             <Pressable
               testID="confirm.confirm"
               onPress={() => {
@@ -153,7 +151,7 @@ function HostPopup({ req }: { req: ConfirmRequest }) {
               ]}
               accessibilityRole="button"
               accessibilityLabel={req.confirmLabel}>
-              <ThemedText type="subtitle" style={{ color: theme.danger }}>
+              <ThemedText type="smallBold" style={{ color: theme.danger }}>
                 {req.confirmLabel}
               </ThemedText>
             </Pressable>
@@ -178,7 +176,7 @@ const styles = StyleSheet.create({
   cardShadow: {
     width: '100%',
     maxWidth: CARD_MAX_WIDTH,
-    borderRadius: 28,
+    borderRadius: 22,
     shadowColor: '#000000',
     shadowOpacity: 0.3,
     shadowRadius: 24,
@@ -186,10 +184,10 @@ const styles = StyleSheet.create({
     elevation: 12,
   },
   card: {
-    borderRadius: 28,
+    borderRadius: 22,
     overflow: 'hidden',
-    padding: Spacing.five,
-    gap: Spacing.five,
+    padding: Spacing.four,
+    gap: Spacing.four,
   },
   message: {
     textAlign: 'left',
@@ -197,7 +195,7 @@ const styles = StyleSheet.create({
   // A full pill: the radius always exceeds half the button's height, so the ends are semicircles.
   verb: {
     borderRadius: 999,
-    paddingVertical: Spacing.three + Spacing.one,
+    paddingVertical: Spacing.three,
     alignItems: 'center',
   },
   verbPressed: {

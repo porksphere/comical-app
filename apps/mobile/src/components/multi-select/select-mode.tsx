@@ -117,11 +117,17 @@ export function SelectLead({
   progress,
   selected,
   edgeOffset,
+  itemKey,
   gesture,
 }: {
   progress: SharedValue<number>;
   selected: boolean;
   edgeOffset: number;
+  /** The row's stable list key. In a RECYCLING list the circle is keyed by it, so a view reused
+   *  for a DIFFERENT row remounts the circle and renders its state instantly — without this,
+   *  recycled circles played their toggle animation (the check visibly drawing in) while
+   *  scrolling. */
+  itemKey: string;
   /** The drag-select pan for this row (`useDragSelect().gestureFor(index)`) — pass it only while
    *  select mode is on, so the collapsed slot never steals scrolls in normal mode. */
   gesture?: PanGesture;
@@ -136,7 +142,7 @@ export function SelectLead({
   const lead = (
     <Animated.View style={[styles.selectLead, slot]}>
       <Animated.View style={circle}>
-        <SelectCircle selected={selected} />
+        <SelectCircle key={itemKey} selected={selected} />
       </Animated.View>
     </Animated.View>
   );
