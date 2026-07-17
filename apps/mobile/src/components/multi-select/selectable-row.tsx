@@ -15,7 +15,7 @@
  */
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import Animated, { interpolateColor, useAnimatedStyle, useDerivedValue, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, interpolateColor, useAnimatedStyle, useDerivedValue, withDelay, withTiming } from 'react-native-reanimated';
 
 import { Holdable } from '@/components/context-menu';
 import { CheckIcon } from '@/components/icons/ui-icons';
@@ -24,27 +24,41 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-/** The tick's fade — quick enough to read as a direct response to the tap. */
-const CHECK_FADE_MS = 110;
+/** The fill/ring snap — near-instant, the direct response to the tap. */
+const FILL_MS = 60;
+/** The check draws in AFTER the fill lands: a beat later, and slower — a two-stage tick. */
+const CHECK_DELAY_MS = 40;
+const CHECK_MS = 170;
 
 /** The bare check circle — the multi-select mark itself, for rows that compose their own chrome
  *  (e.g. the per-series download screen's animated leading slot).
  *
- *  Selecting is a plain FADE: the fill disc (with its check) fades up over the ring while the
- *  ring's colour follows — no scaling, so the fill always sits pixel-perfect inside its ring.
- *  Driven by a derived timing, so a freshly-mounted circle renders its state instantly (no mount
- *  animation — recycled list views would otherwise ripple while scrolling); only a real toggle
- *  plays it. */
+ *  Selecting is a TWO-STAGE tick: the fill disc and ring colour snap in near-instantly (the tap's
+ *  direct response), then the check draws in a beat later and slower (a soft scale+fade). The fill
+ *  never scales, so it stays pixel-perfect inside its ring. Driven by derived timings, so a
+ *  freshly-mounted circle renders its state instantly (no mount animation — recycled list views
+ *  would otherwise ripple while scrolling); only a real toggle plays it. */
 export function SelectCircle({ selected, done }: { selected: boolean; done?: boolean }) {
   const theme = useTheme();
   const on = selected || !!done;
   const fillColor = done ? theme.textSecondary : theme.accent;
-  const p = useDerivedValue(() => withTiming(on ? 1 : 0, { duration: CHECK_FADE_MS }));
+  // Two stages: the fill + ring colour snap in near-instantly (the tap's direct response), then the
+  // check draws in a beat later and slower. Deselecting drops everything fast together.
+  const p = useDerivedValue(() => withTiming(on ? 1 : 0, { duration: FILL_MS }));
+  const check = useDerivedValue(() =>
+    on
+      ? withDelay(CHECK_DELAY_MS, withTiming(1, { duration: CHECK_MS, easing: Easing.out(Easing.cubic) }))
+      : withTiming(0, { duration: FILL_MS }),
+  );
   const ring = useAnimatedStyle(() => ({
     borderColor: interpolateColor(p.value, [0, 1], [theme.textSecondary, fillColor]),
   }));
   const fill = useAnimatedStyle(() => ({
     opacity: p.value,
+  }));
+  const checkStyle = useAnimatedStyle(() => ({
+    opacity: check.value,
+    transform: [{ scale: 0.4 + 0.6 * check.value }],
   }));
   // Ring and fill are SIBLING layers of one borderless box, both absolutely filling it — never a
   // child inside the ring's border box, whose 1.5px inset subpixel-snaps and reads as the disc
@@ -53,7 +67,9 @@ export function SelectCircle({ selected, done }: { selected: boolean; done?: boo
     <View style={styles.circleBox}>
       <Animated.View style={[styles.circleLayer, styles.circleRing, ring]} />
       <Animated.View style={[styles.circleLayer, { backgroundColor: fillColor }, fill]}>
-        <CheckIcon color={theme.accentOn} size={11} />
+        <Animated.View style={checkStyle}>
+          <CheckIcon color={theme.accentOn} size={11} />
+        </Animated.View>
       </Animated.View>
     </View>
   );

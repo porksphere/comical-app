@@ -161,7 +161,7 @@ export const DRAG_SELECT_SUPPORTED = Platform.OS !== 'web';
 /** How close to the screen's top/bottom (px) the finger must be before the list auto-scrolls. */
 const DRAG_EDGE_ZONE = 110;
 /** Max auto-scroll speed (px per 16ms tick), ramping linearly with proximity to the edge. */
-const DRAG_MAX_SPEED = 16;
+const DRAG_MAX_SPEED = 30;
 
 interface DragState {
   snapshot: Set<string>;
