@@ -27,6 +27,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { DemoBanner } from '@/components/demo-banner';
 import { ErrorBoundary } from '@/components/error-boundary';
+import { ContextMenuHost } from '@/components/context-menu-host';
 import { OverlayProvider } from '@/components/overlay/overlay';
 import { SeriesCardContextMenuHost } from '@/components/series-card-context-menu';
 import { startEmbeddedRuntime } from '@/data/embedded/startup';
@@ -121,6 +122,9 @@ function RootNavigation() {
         {/* Root host for the native card long-press context menu (dim + lifted preview + menu). Only
             renders while a card menu is open; any card opens it via openSeriesCardMenu. */}
         <SeriesCardContextMenuHost />
+        {/* Root host for the GENERIC hold menu — the card popup's menu system without its preview
+            panel (chapter rows use it). Only renders while open, via openContextMenu. */}
+        <ContextMenuHost />
         {/* DEV-only floating Hermes JS profiler; null in production (see require above),
             and hidden unless the Settings → Developer toggle is on. Temporary tooling. */}
         {DevProfiler ? <DevProfiler /> : null}

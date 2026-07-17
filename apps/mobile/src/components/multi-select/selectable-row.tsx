@@ -43,16 +43,23 @@ export function SelectableRow({
       ? { backgroundColor: theme.accent, borderColor: theme.accent }
       : { borderColor: theme.textSecondary };
   return (
-    <Holdable enabled={!done} onHold={onRangeFill}>
-      <Pressable testID={testID} onPress={done ? undefined : onToggle} disabled={done} style={done && styles.done}>
-        <ThemedView type="backgroundElement" style={[styles.row, { borderColor: theme.hairline }]}>
-          <View style={[styles.circle, circle]}>
-            {(selected || done) && <CheckIcon color={theme.accentOn} size={11} />}
-          </View>
-          <View style={styles.content}>{children}</View>
-          {trailing}
-        </ThemedView>
-      </Pressable>
+    <Holdable enabled={!done} onHold={() => onRangeFill()}>
+      {({ onLongPress }) => (
+        <Pressable
+          testID={testID}
+          onPress={done ? undefined : onToggle}
+          onLongPress={onLongPress}
+          disabled={done}
+          style={done && styles.done}>
+          <ThemedView type="backgroundElement" style={[styles.row, { borderColor: theme.hairline }]}>
+            <View style={[styles.circle, circle]}>
+              {(selected || done) && <CheckIcon color={theme.accentOn} size={11} />}
+            </View>
+            <View style={styles.content}>{children}</View>
+            {trailing}
+          </ThemedView>
+        </Pressable>
+      )}
     </Holdable>
   );
 }

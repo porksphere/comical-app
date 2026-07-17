@@ -4,7 +4,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
-import { Pressable, StyleSheet, useWindowDimensions, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Platform, Pressable, StyleSheet, useWindowDimensions, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, {
   Easing,
   LinearTransition,
@@ -17,10 +17,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { DownloadedChapter, DownloadState } from '@comical/downloads';
 
-import { Holdable, MenuActionRow, MenuHeader } from '@/components/context-menu';
+import { MenuActionRow, MenuHeader } from '@/components/context-menu';
+import { ContextMenuHold, openContextMenu } from '@/components/context-menu-host';
+import type { MenuRowSpec } from '@/components/context-menu-material';
 import { DownloadStateVisual } from '@/components/downloads/download-status-indicator';
 import { ArrowDownIcon, ArrowUpIcon, DownloadsIcon, TrashIcon } from '@/components/icons/ui-icons';
-import { OptionList, useOverlay } from '@/components/overlay/overlay';
+import { OptionList, useOverlay, type AnchorRect } from '@/components/overlay/overlay';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -370,23 +372,47 @@ function ChapterList({
   const head = collapsible ? groups.slice(0, OVERVIEW_HEAD_COUNT) : groups;
   const tail = collapsible ? groups.slice(groups.length - OVERVIEW_TAIL_COUNT) : [];
 
-  // Long-press a row → the per-chapter download menu (download this / from here / delete). Same
-  // open thump as the series card's hold, so every long-press in the app answers alike.
+  // Long-press a row → the per-chapter download menu. NATIVE: the generic hold-menu host — the
+  // series card popup's menu system (frosted point-anchored menu, peek-and-commit, open thump),
+  // generalized in context-menu-host.tsx. WEB: the overlay popover with the shared MenuActionRow
+  // chrome, matching how web series cards use the overlay for their 3-dot menu.
   const { open } = useOverlay();
-  const openChapterMenu = (g: ChapterGroup) => {
+  const manifest = useMemo(() => dl?.chapters ?? [], [dl]);
+  const openChapterMenu = (g: ChapterGroup, anchor?: AnchorRect) => {
     if (!bridgeId) return;
+    if (Platform.OS !== 'web' && anchor) {
+      openContextMenu({
+        title: g.name,
+        x: anchor.x,
+        y: anchor.y,
+        rows: chapterMenuRows({
+          bridgeId,
+          seriesId: seed,
+          title,
+          chapters,
+          manifest,
+          group: g,
+          preferredGroup,
+        }),
+      });
+      return;
+    }
     hapticImpactMedium();
-    open(() => (
-      <ChapterDownloadMenu
-        bridgeId={bridgeId}
-        seriesId={seed}
-        title={title}
-        chapters={chapters}
-        manifest={dl?.chapters ?? []}
-        group={g}
-        preferredGroup={preferredGroup}
-      />
-    ));
+    open(
+      () => (
+        <ChapterDownloadMenu
+          bridgeId={bridgeId}
+          seriesId={seed}
+          title={title}
+          chapters={chapters}
+          manifest={manifest}
+          group={g}
+          preferredGroup={preferredGroup}
+        />
+      ),
+      anchor ?? null,
+      { popover: !!anchor },
+    );
   };
 
   const row = (g: ChapterGroup) => {
@@ -526,7 +552,7 @@ function ChapterRow({
   preferredGroup?: string;
   onOpen: (v: Chapter) => void;
   /** Long-press: the per-chapter download menu (download this / from here / delete). */
-  onMenu?: (group: ChapterGroup) => void;
+  onMenu?: (group: ChapterGroup, anchor?: AnchorRect) => void;
   /** Download indicator for this logical chapter (best state across versions), if any. */
   dlState?: { state: DownloadState; fraction: number } | null;
   /** Rendering offline and not downloaded — unreadable, so the row dims and its press disables. */
@@ -542,11 +568,15 @@ function ChapterRow({
   const multi = group.versions.length > 1;
 
   return (
-    <Holdable enabled={!!onMenu && !dimmed} onHold={() => onMenu?.(group)}>
+    <ContextMenuHold
+      enabled={!!onMenu && !dimmed}
+      onOpen={(pt) => onMenu?.(group, { x: pt.x, y: pt.y, width: 0, height: 0 })}>
+      {({ onLongPress }) => (
     <View style={dimmed && styles.rowDimmed}>
       <Pressable
         testID={testId('series.chapter', group.key)}
         onPress={() => onOpen(def)}
+        onLongPress={onLongPress}
         disabled={dimmed}
         onHoverIn={rowHover.onHoverIn}
         onHoverOut={rowHover.onHoverOut}
@@ -599,8 +629,78 @@ function ChapterRow({
         </View>
       )}
     </View>
-    </Holdable>
+      )}
+    </ContextMenuHold>
   );
+}
+
+/** The chapter menu's actions + coverage, computed once and shared by both presentations (the
+ *  native hold menu's rows and the web overlay's). */
+function chapterMenuActions(args: {
+  bridgeId: string;
+  seriesId: string;
+  title: string;
+  chapters: Chapter[];
+  manifest: DownloadedChapter[];
+  group: ChapterGroup;
+  preferredGroup?: string;
+}) {
+  const { bridgeId, seriesId, title, chapters, manifest, group, preferredGroup } = args;
+  const sel = selectableGroups(chapters, manifest);
+  const entry = sel.find((s) => s.group.key === group.key);
+  const span = fromHere(sel, pickVersion(group, preferredGroup).id);
+  const snap = { bridgeId, seriesId, title };
+  const completeIds = new Set(manifest.filter((c) => c.state === 'complete').map((c) => c.chapterId));
+  const downloadedVersions = group.versions.filter((v) => completeIds.has(v.id));
+  return {
+    entry,
+    span,
+    downloadedVersions,
+    downloadThis: () => enqueueChapters(snap, toEnqueue([group], preferredGroup)),
+    downloadFromHere: () => enqueueChapters(snap, toEnqueue(span, preferredGroup)),
+    deleteDownload: async () => {
+      for (const v of downloadedVersions) {
+        await dlDeleteChapter(bridgeId, seriesId, v.id).catch(() => {});
+        forgetChapter(bridgeId, seriesId, v.id);
+      }
+      void queryClient.invalidateQueries({ queryKey: queryKeys.downloadsUsage() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.seriesDownloads(bridgeId, seriesId) });
+    },
+  };
+}
+
+/** The NATIVE hold menu's rows (`MenuRowSpec` — the series-popup menu system's row shape). Counts
+ *  ride in the labels; per the shared menu's rule, nothing is coloured. */
+function chapterMenuRows(args: Parameters<typeof chapterMenuActions>[0]): MenuRowSpec[] {
+  const { entry, span, downloadedVersions, downloadThis, downloadFromHere, deleteDownload } = chapterMenuActions(args);
+  const rows: MenuRowSpec[] = [
+    {
+      label: entry?.settled ? 'Already saved' : 'Download chapter',
+      Icon: DownloadsIcon,
+      loading: false,
+      disabled: !entry || entry.settled,
+      testID: testId('series.chapter-menu', 'this'),
+      onPress: downloadThis,
+    },
+    {
+      label: span.length > 0 ? `Download from here (${span.length})` : 'Download from here',
+      Icon: ArrowDownIcon,
+      loading: false,
+      disabled: span.length === 0,
+      testID: testId('series.chapter-menu', 'from-here'),
+      onPress: downloadFromHere,
+    },
+  ];
+  if (downloadedVersions.length > 0) {
+    rows.push({
+      label: 'Delete download',
+      Icon: TrashIcon,
+      loading: false,
+      testID: testId('series.chapter-menu', 'delete'),
+      onPress: () => void deleteDownload(),
+    });
+  }
+  return rows;
 }
 
 /**
@@ -608,7 +708,8 @@ function ChapterRow({
  * "Download from here" is the one-gesture range answer (this chapter through the end of reading
  * order, skipping anything already kept/queued); a fully-downloaded chapter offers Delete too.
  * Rendered with the shared context-menu chrome (`MenuHeader` + `MenuActionRow`), so it reads as the
- * same kind of object as the series card's long-press menu.
+ * same kind of object as the series card's long-press menu. WEB ONLY — native uses the hold-menu
+ * host (see `openChapterMenu`).
  */
 function ChapterDownloadMenu({
   bridgeId,
@@ -628,22 +729,15 @@ function ChapterDownloadMenu({
   preferredGroup?: string;
 }) {
   const { closeTop } = useOverlay();
-  const sel = selectableGroups(chapters, manifest);
-  const entry = sel.find((s) => s.group.key === group.key);
-  const span = fromHere(sel, pickVersion(group, preferredGroup).id);
-  const snap = { bridgeId, seriesId, title };
-  const completeIds = new Set(manifest.filter((c) => c.state === 'complete').map((c) => c.chapterId));
-  const downloadedVersions = group.versions.filter((v) => completeIds.has(v.id));
-
-  const deleteDownload = async () => {
-    for (const v of downloadedVersions) {
-      await dlDeleteChapter(bridgeId, seriesId, v.id).catch(() => {});
-      forgetChapter(bridgeId, seriesId, v.id);
-    }
-    void queryClient.invalidateQueries({ queryKey: queryKeys.downloadsUsage() });
-    void queryClient.invalidateQueries({ queryKey: queryKeys.seriesDownloads(bridgeId, seriesId) });
-    closeTop();
-  };
+  const { entry, span, downloadedVersions, downloadThis, downloadFromHere, deleteDownload } = chapterMenuActions({
+    bridgeId,
+    seriesId,
+    title,
+    chapters,
+    manifest,
+    group,
+    ...(preferredGroup !== undefined && { preferredGroup }),
+  });
 
   return (
     <View style={styles.menuBody}>
@@ -656,7 +750,7 @@ function ChapterDownloadMenu({
           disabled={!entry || entry.settled}
           detail={entry?.settled ? 'already saved' : '1 chapter'}
           onPress={() => {
-            enqueueChapters(snap, toEnqueue([group], preferredGroup));
+            downloadThis();
             closeTop();
           }}
         />
@@ -667,7 +761,7 @@ function ChapterDownloadMenu({
           disabled={span.length === 0}
           detail={span.length === 1 ? '1 chapter' : `${span.length} chapters`}
           onPress={() => {
-            enqueueChapters(snap, toEnqueue(span, preferredGroup));
+            downloadFromHere();
             closeTop();
           }}
         />
@@ -677,7 +771,10 @@ function ChapterDownloadMenu({
             label="Delete download"
             Icon={TrashIcon}
             detail="free the space"
-            onPress={() => void deleteDownload()}
+            onPress={() => {
+              void deleteDownload();
+              closeTop();
+            }}
           />
         )}
       </OptionList>
