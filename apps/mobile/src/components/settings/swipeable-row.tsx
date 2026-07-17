@@ -320,9 +320,13 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
   // recognizer's .enabled() config — RNGH doesn't reliably re-apply that to already-mounted
   // recognizers, which left rows mounted during select mode with dead gestures after exiting.
   const pan = Gesture.Pan()
-    // Only claim the gesture once it's clearly horizontal, so vertical scrolling of the list still
-    // belongs to the ScrollView.
-    .activeOffsetX([-12, 12])
+    // Activate ONLY on a leftward drag (the reveal direction). A rightward drag FAILS the gesture
+    // (failOffsetX) instead of claiming it, so a swipe from the screen's left edge cedes to the OS
+    // edge-swipe-back — rows at the edge used to swallow that navigation gesture. (An open row
+    // closes by tapping it or a pill, not by dragging back right.) Vertical movement fails too, so
+    // list scrolling still wins.
+    .activeOffsetX(-12)
+    .failOffsetX(12)
     .failOffsetY([-12, 12])
     .onBegin(() => {
       'worklet';

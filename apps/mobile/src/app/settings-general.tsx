@@ -11,8 +11,11 @@ import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useApiBase } from '@/data/api';
 import { bumpDataEpoch } from '@/data/data-epoch';
+import { applyBackgroundDownloads } from '@/data/downloads/background';
+import { kickDownloads } from '@/data/downloads/engine';
 import { installDownloadProgress } from '@/data/downloads/events';
 import { hydrateDownloadIndex } from '@/data/downloads/index-cache';
+import { downloadPrefs$, useDownloadPrefs } from '@/data/downloads/prefs';
 import { applyEmbeddedMode, isEmbeddedRuntimeAvailable, useEmbeddedEnabled } from '@/data/embedded';
 import { queryClient } from '@/data/query-client';
 import { useNsfwMode, type NsfwMode } from '@/data/source';
@@ -47,6 +50,7 @@ export default function GeneralSettingsScreen() {
   const [onDevice, setOnDevice] = useEmbeddedEnabled();
   const [apiBase, setApiBaseOverride] = useApiBase();
   const lightCards = useLightCards();
+  const { wifiOnly, background } = useDownloadPrefs();
   const { open } = useOverlay();
   // The on-device runtime is only offered where a native bridge engine exists (iOS/Android with the
   // native module built) — never on web, which always uses a remote server.
@@ -115,6 +119,32 @@ export default function GeneralSettingsScreen() {
               description={apiBase}
               descriptionSelectable
               onPress={() => open(() => <RemoteServerForm currentUrl={apiBase} onSave={saveApiBase} />)}
+            />
+          )}
+          {/* The download policies gate the DEVICE engine — meaningless when a remote server owns
+              the downloads (it paces itself), so they only appear while running on-device. They used
+              to live on the Downloads page but cluttered the queue. */}
+          {embeddedActive && (
+            <SettingsToggleRow
+              label="Download over Wi-Fi only"
+              description="Hold downloads until you're on Wi-Fi."
+              value={wifiOnly}
+              onChange={(v) => {
+                downloadPrefs$.wifiOnly.set(v);
+                // Turning the gate off (or changing it) should resume held-back downloads right away.
+                kickDownloads();
+              }}
+            />
+          )}
+          {embeddedActive && (
+            <SettingsToggleRow
+              label="Download in background"
+              description="Continue in OS-granted windows after leaving the app."
+              value={background}
+              onChange={(v) => {
+                downloadPrefs$.background.set(v);
+                applyBackgroundDownloads(v);
+              }}
             />
           )}
         </SettingsSection>

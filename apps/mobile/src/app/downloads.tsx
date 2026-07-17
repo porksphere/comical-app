@@ -9,8 +9,7 @@
  * This reads the `/downloads` storage tree through `api.ts`; a backend without the module yields an
  * empty tree. Mutations (delete/cancel/resume) go to the HOST's download engine — embedded or remote
  * server — which owns the blobs and aborts in-flight work; this screen only prunes the offline index
- * and refetches. The Wi-Fi/background toggles are device policies for the embedded engine, so they
- * only render in embedded mode (a remote server paces its own downloads).
+ * and refetches. The Wi-Fi-only / background download policies live in General settings now.
  */
 import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
@@ -34,21 +33,16 @@ import {
   useSelectMode,
 } from '@/components/multi-select/select-mode';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
-import { SettingsToggleRow } from '@/components/settings/settings-fields';
-import { SettingsSection } from '@/components/settings/settings-row';
 import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, SettingsGutter, SettingsRowHeight, Spacing } from '@/constants/theme';
 import { dlDeleteChapter, dlDeleteSeries, dlStorageUsage } from '@/data/api';
-import { applyBackgroundDownloads } from '@/data/downloads/background';
-import { getResolvedModeSync } from '@/data/embedded/preference';
 import { bySortValue, deriveSeriesState, seriesFraction, seriesSortValue } from '@/data/downloads/derive';
 import { kickDownloads, pauseSeries, resumeSeriesDownload, retryChapter } from '@/data/downloads/engine';
 import { forgetChapter, forgetSeries } from '@/data/downloads/index-cache';
 import { formatBytes } from '@/data/downloads/format';
-import { downloadPrefs$, useDownloadPrefs } from '@/data/downloads/prefs';
 import { queryClient } from '@/data/query-client';
 import { queryKeys } from '@/data/queries';
 import { hapticSelection } from '@/lib/haptics';
@@ -96,7 +90,6 @@ function buildRows(bySeries: StorageUsageSeries[], cache: Map<string, DlRow>): D
 export default function DownloadsScreen() {
   const { paddingTop, paddingBottom } = useSettingsScrollPadding();
   const { width } = useWindowDimensions();
-  const { wifiOnly, background } = useDownloadPrefs();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -236,41 +229,16 @@ export default function DownloadsScreen() {
       },
     });
 
-  // Progress is read from the manifest query, which the engine now patches page-by-page (see
+  // Total downloaded + a per-series colour breakdown of that space (top 10 + "Other"). Replaces the
+  // old cumulative progress radial — per-row radials already show in-flight progress. ALWAYS
+  // rendered (an empty track + "0 B" when nothing is downloaded): the page keeps a stable shape, and
+  // a fresh download grows the bar in place instead of popping a widget in. The Wi-Fi/background
+  // download policies moved to General settings (they cluttered the queue).
   const header = (
     <View style={styles.header}>
-      {/* Total downloaded + a per-series colour breakdown of that space (top 10 + "Other"). Replaces
-          the old cumulative progress radial — per-row radials already show in-flight progress.
-          ALWAYS rendered (an empty track + "0 B" when nothing is downloaded): the page keeps a
-          stable shape, and a fresh download grows the bar in place instead of popping a widget in. */}
       <View style={styles.storage}>
         <SeriesStorageBar bySeries={usage.bySeries} totalBytes={usage.totalBytes} />
       </View>
-      {/* Wi-Fi/background gate the DEVICE engine — meaningless when a remote server owns the
-          downloads (it paces itself), so the section only renders in embedded mode. */}
-      {getResolvedModeSync() === 'embedded' && (
-        <SettingsSection>
-          <SettingsToggleRow
-            label="Download over Wi-Fi only"
-            description="Hold downloads until you're on Wi-Fi."
-            value={wifiOnly}
-            onChange={(v) => {
-              downloadPrefs$.wifiOnly.set(v);
-              // Turning the gate off (or changing it) should resume held-back downloads right away.
-              kickDownloads();
-            }}
-          />
-          <SettingsToggleRow
-            label="Download in background"
-            description="Continue in OS-granted windows after leaving the app."
-            value={background}
-            onChange={(v) => {
-              downloadPrefs$.background.set(v);
-              applyBackgroundDownloads(v);
-            }}
-          />
-        </SettingsSection>
-      )}
     </View>
   );
 
