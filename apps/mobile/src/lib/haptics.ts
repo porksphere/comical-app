@@ -26,3 +26,15 @@ export function hapticImpactMedium() {
   if (Platform.OS === 'web') return webVibrate(12);
   void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 }
+
+/** Heavy impact — the top of a ramp (e.g. the last beat of a hold-to-arm countdown). */
+export function hapticImpactHeavy() {
+  if (Platform.OS === 'web') return webVibrate(20);
+  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+}
+
+/** Success notification — a state actually changed (e.g. a hold-to-arm gesture committing). */
+export function hapticNotifySuccess() {
+  if (Platform.OS === 'web') return webVibrate(30);
+  void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+}
