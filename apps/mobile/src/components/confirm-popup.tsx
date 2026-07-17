@@ -1,13 +1,19 @@
 /**
  * The destructive-action confirmation POPUP — the iOS Photos shape: a floating frosted card in the
- * screen's lower third carrying just the explanation and ONE danger verb; everywhere else is the
- * cancel (tap the backdrop to dismiss). Built from the same material as the hold menus (blur +
- * surface tint, the `plain` backdrop frost) and mounted once at the root (`ConfirmPopupHost` in
- * _layout.tsx); anything opens it via `openConfirm(...)`.
+ * screen's lower third carrying the explanation and ONE verb; everywhere else is the cancel (tap
+ * the backdrop to dismiss). Built from the same material as the hold menus (blur + surface tint,
+ * the `plain` backdrop frost) and mounted once at the root (`ConfirmPopupHost` in _layout.tsx);
+ * anything opens it via `openConfirm(...)`.
+ *
+ * The minimal request is `{ message, confirmLabel, onConfirm }` — the pure Photos shape. The rest
+ * is opt-in per call: a `title` heading and muted `detail` line for identity-heavy confirms
+ * (WHICH registry/bridge), a non-danger `tone`, and an ASYNC `onConfirm` — the popup then stays
+ * open with the verb reading `pendingLabel` until it settles, showing a rejection inline (via
+ * `friendlyError` + `errorFallback`) so the user can retry or cancel.
  */
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
-import { useEffect, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { BackHandler, Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
   interpolate,
@@ -31,17 +37,34 @@ import {
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
+import { friendlyError } from '@/lib/friendly-error';
 
 const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
 const OPEN_SPRING = { damping: 18, stiffness: 320, mass: 0.7 } as const;
 const CARD_MAX_WIDTH = 270;
 
 export type ConfirmRequest = {
+  /** Optional bold heading above the message, e.g. "Uninstall Tachiyomi?". Omit for the pure
+   *  message-only Photos shape. */
+  title?: string;
   /** The full-sentence explanation, e.g. "3 chapters will be deleted from this device." */
   message: string;
-  /** The danger verb-with-noun, e.g. "Delete Chapter". */
+  /** Optional muted secondary line under the message — the subject's identity (a URL, a path). */
+  detail?: string;
+  /** The verb-with-noun, e.g. "Delete Chapter". */
   confirmLabel: string;
-  onConfirm: () => void;
+  /** Verb tint: 'danger' (default) for destructive verbs; 'primary' (accent) for consequential-
+   *  but-safe confirmations that still deserve the popup. */
+  tone?: 'danger' | 'primary';
+  /** A SYNC handler dismisses immediately (fire-and-forget, the original behavior). An ASYNC
+   *  handler keeps the popup open — the verb reads `pendingLabel` and goes inert — until it
+   *  settles: resolving dismisses; rejecting shows the error inline and leaves the popup open so
+   *  the user can retry or cancel. */
+  onConfirm: () => void | Promise<void>;
+  /** Verb text while an async `onConfirm` runs, e.g. "Removing…". Defaults to `confirmLabel`. */
+  pendingLabel?: string;
+  /** Fallback for a rejection without a usable message (see `friendlyError`). */
+  errorFallback?: string;
 };
 
 // The currently-open confirmation — a plain module store read via useSyncExternalStore. NOT a
@@ -81,6 +104,10 @@ function HostPopup({ req }: { req: ConfirmRequest }) {
   const scheme = useActiveColorScheme();
   const insets = useSafeAreaInsets();
   const progress = useSharedValue(0);
+  // Async-confirm state: the verb goes inert with `pendingLabel` while `onConfirm` runs; a
+  // rejection lands here and keeps the popup open (retry or cancel).
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const dismiss = () => {
     progress.set(
@@ -89,7 +116,37 @@ function HostPopup({ req }: { req: ConfirmRequest }) {
       }),
     );
   };
-  const close = () => setConfirm(null);
+  // Only clear the slot if this request still owns it — with async confirms, a late dismiss (e.g.
+  // the settle after a backdrop cancel) must not clobber a NEWER popup that opened meanwhile.
+  const close = () => {
+    if (current === req) setConfirm(null);
+  };
+
+  const confirm = async () => {
+    if (pending) return;
+    setError(null);
+    let result: void | Promise<void>;
+    try {
+      result = req.onConfirm();
+    } catch (e) {
+      setError(friendlyError(e, req.errorFallback ?? 'Something went wrong'));
+      return;
+    }
+    if (!(result instanceof Promise)) {
+      // Sync handler: fire-and-forget, dismiss immediately — the original behavior.
+      dismiss();
+      return;
+    }
+    setPending(true);
+    try {
+      await result;
+      dismiss();
+    } catch (e) {
+      setError(friendlyError(e, req.errorFallback ?? 'Something went wrong'));
+    } finally {
+      setPending(false);
+    }
+  };
 
   useEffect(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -137,22 +194,37 @@ function HostPopup({ req }: { req: ConfirmRequest }) {
         <Animated.View style={[styles.cardShadow, cardStyle]}>
           <BlurView tint={scheme} intensity={MENU_BLUR} experimentalBlurMethod={ANDROID_BLUR} style={styles.card}>
             <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: MENU_FILL[scheme] }]} />
-            <ThemedText style={styles.message}>{req.message}</ThemedText>
+            {/* Text block: its own tighter gap, so title/message/detail read as one passage while
+                the card's larger gap separates the passage from the verb. */}
+            <View style={styles.body}>
+              {req.title && <ThemedText type="smallBold">{req.title}</ThemedText>}
+              <ThemedText style={styles.message}>{req.message}</ThemedText>
+              {req.detail && (
+                <ThemedText type="small" themeColor="textSecondary" style={styles.message}>
+                  {req.detail}
+                </ThemedText>
+              )}
+              {error && (
+                <ThemedText type="small" style={{ color: theme.danger }}>
+                  {error}
+                </ThemedText>
+              )}
+            </View>
             <Pressable
               testID="confirm.confirm"
-              onPress={() => {
-                req.onConfirm();
-                dismiss();
-              }}
+              onPress={() => void confirm()}
+              disabled={pending}
               style={({ pressed }) => [
                 styles.verb,
                 { backgroundColor: theme.backgroundSelected },
-                pressed && styles.verbPressed,
+                (pressed || pending) && styles.verbPressed,
               ]}
               accessibilityRole="button"
               accessibilityLabel={req.confirmLabel}>
-              <ThemedText type="smallBold" style={{ color: theme.danger }}>
-                {req.confirmLabel}
+              <ThemedText
+                type="smallBold"
+                style={{ color: req.tone === 'primary' ? theme.accent : theme.danger }}>
+                {pending ? (req.pendingLabel ?? req.confirmLabel) : req.confirmLabel}
               </ThemedText>
             </Pressable>
           </BlurView>
@@ -188,6 +260,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     padding: Spacing.four,
     gap: Spacing.four,
+  },
+  body: {
+    gap: Spacing.two,
   },
   message: {
     textAlign: 'left',
