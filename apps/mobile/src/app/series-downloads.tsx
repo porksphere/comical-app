@@ -19,7 +19,7 @@
  */
 import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -41,7 +41,6 @@ import {
 import {
   PILL_HEIGHT,
   SelectLead,
-  SelectOptionsTrigger,
   SelectPillBar,
   SelectToggle,
   useDragSelect,
@@ -153,9 +152,17 @@ export default function SeriesDownloadsScreen() {
   const { data: fetched } = useQuery(seriesListQuery(ds, mock, bridgeId, seriesId, false, showAll && !!seriesId));
   const chapters = fetched?.chapters;
 
+  const router = useRouter();
+
   // ── Multi-select mode (the shared select-mode chrome) ────────────────────────
-  const mode = useSelectMode(params.select === '1');
+  // `forcedSelect` = opened as the series' Download intent (`select=1`): select mode is on and
+  // CAN'T be turned off (the toggle is hidden — the back button is the way out). Downloading then
+  // closes the page IF the visit was purely "pick and download"; but if the user did any management
+  // (pause/resume/cancel/delete) first, the visit became a management session, so we stay put.
+  const forcedSelect = params.select === '1';
+  const mode = useSelectMode(forcedSelect);
   const selecting = mode.selecting;
+  const [didManage, setDidManage] = useState(false);
 
   // Opening this screen nudges the queue to drain — same safety net as the Downloads page.
   useEffect(() => {
@@ -267,6 +274,16 @@ export default function SeriesDownloadsScreen() {
     void queryClient.invalidateQueries({ queryKey: queryKeys.seriesDownloads(bridgeId, seriesId) });
   };
 
+  // After a bulk action settles: on the Downloads-page entry, leave select mode (the toggle owns
+  // it); on the forced series entry, stay in select mode (it can't be turned off) and just clear
+  // the acted-on selection so the user can keep managing.
+  const afterBulkAction = () => {
+    if (forcedSelect) ms.clear();
+    else toggleSelecting();
+  };
+  // Any of these makes the visit a "management session" (see `forcedSelect`).
+  const markManaged = () => setDidManage(true);
+
   const downloadSelected = () => {
     const groups = toDownload.filter((r) => r.group).map((r) => r.group!);
     if (groups.length > 0) {
@@ -279,15 +296,23 @@ export default function SeriesDownloadsScreen() {
     for (const r of toDownload) {
       if (!r.group && r.c) void retryChapter(r.c.bridgeId, r.c.seriesId, r.c.chapterId);
     }
-    toggleSelecting();
+    // A pure "pick and download" trip from a series ends by returning to that series; a trip where
+    // the user also managed downloads stays open (they're clearly here to manage).
+    if (forcedSelect && !didManage) {
+      router.back();
+      return;
+    }
+    afterBulkAction();
   };
 
   // Pause/resume KEEP the selection (unlike download/delete): they only flip state, and the natural
   // follow-up ("pause these, now delete them") acts on the same chapters.
   const pauseSelected = () => {
+    markManaged();
     for (const r of toPause) void pauseChapter(r.c!.bridgeId, r.c!.seriesId, r.c!.chapterId);
   };
   const resumeSelected = () => {
+    markManaged();
     for (const r of toResume) void resumeChapterDownload(r.c!.bridgeId, r.c!.seriesId, r.c!.chapterId);
   };
 
@@ -295,13 +320,14 @@ export default function SeriesDownloadsScreen() {
   // entries and downloaded bytes alike) — the split is PRESENTATION, mirroring the swipe actions:
   // an X for "never started", a trash can for "on disk".
   const removeChapters = async (targets: RosterRow[]) => {
+    markManaged();
     for (const r of targets) {
       const c = r.c!;
       await dlDeleteChapter(c.bridgeId, c.seriesId, c.chapterId).catch(() => {});
       forgetChapter(c.bridgeId, c.seriesId, c.chapterId);
     }
     invalidate();
-    toggleSelecting();
+    afterBulkAction();
   };
   const deleteSelected = () => removeChapters(toDelete);
   const cancelSelected = () => removeChapters(toCancel);
@@ -426,12 +452,12 @@ export default function SeriesDownloadsScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      {/* Select mode takes over the whole bar: the staging menu replaces the back button, the
-          live count replaces the title, and the toggle (accent while on) is the way out. */}
+      {/* The back button always shows (the staging "…" lives in the bottom-left pill now); select
+          mode just swaps the title for the live count. The mode toggle is hidden on the forced
+          series-download entry — there the back button is the only way out. */}
       <TopBar
         title={selecting ? `${ms.count} selected` : title}
-        left={selecting ? <SelectOptionsTrigger rows={stagingRows} testID="series.dl.select-options" /> : undefined}
-        right={<SelectToggle selecting={selecting} onToggle={toggleSelecting} testID="series.dl.select-toggle" />}
+        right={forcedSelect ? undefined : <SelectToggle selecting={selecting} onToggle={toggleSelecting} testID="series.dl.select-toggle" />}
       />
 
       <LegendList
@@ -469,12 +495,15 @@ export default function SeriesDownloadsScreen() {
         showsVerticalScrollIndicator={Platform.OS === 'web'}
       />
 
-      {/* The floating contextual bulk verbs (shared select-mode chrome). */}
+      {/* The floating select-mode chrome: staging "…" bottom-left, all valid verbs in ONE pill
+          bottom-right (download tinted blue, cancel/delete danger). */}
       {selecting && (
         <SelectPillBar
           left={sidePad}
           right={sidePad}
           bottom={Math.max(insets.bottom, Spacing.three)}
+          options={stagingRows}
+          optionsTestID="series.dl.select-options"
           verbs={[
             ...(toPause.length > 0
               ? [{ key: 'pause', label: `Pause ${toPause.length} chapters`, Icon: PauseIcon, onPress: pauseSelected, testID: 'series.dl.pause' }]
@@ -488,12 +517,10 @@ export default function SeriesDownloadsScreen() {
             ...(toDelete.length > 0
               ? [{ key: 'delete', label: `Delete ${toDelete.length} chapters`, Icon: TrashIcon, color: theme.danger, onPress: confirmDeleteSelected, testID: 'series.dl.delete' }]
               : []),
+            ...(toDownload.length > 0
+              ? [{ key: 'download', label: `Download ${toDownload.length} chapters`, Icon: DownloadsIcon, color: theme.accent, onPress: downloadSelected, testID: 'series.dl.download' }]
+              : []),
           ]}
-          primary={
-            toDownload.length > 0
-              ? { key: 'download', label: `Download ${toDownload.length} chapters`, Icon: DownloadsIcon, onPress: downloadSelected, testID: 'series.dl.download' }
-              : undefined
-          }
         />
       )}
     </ThemedView>

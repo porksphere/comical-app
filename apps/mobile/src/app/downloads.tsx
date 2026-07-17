@@ -28,7 +28,6 @@ import { CheckIcon, ClearIcon, PauseIcon, PlayIcon, TrashIcon } from '@/componen
 import {
   PILL_HEIGHT,
   SelectLead,
-  SelectOptionsTrigger,
   SelectPillBar,
   SelectToggle,
   useDragSelect,
@@ -339,7 +338,6 @@ export default function DownloadsScreen() {
     <ThemedView style={styles.container}>
       <TopBar
         title={selecting ? `${ms.count} selected` : 'Downloads'}
-        left={selecting ? <SelectOptionsTrigger rows={stagingRows} testID="downloads.select-options" /> : undefined}
         right={<SelectToggle selecting={selecting} onToggle={toggleSelecting} testID="downloads.select-toggle" />}
       />
       <LegendList
@@ -385,12 +383,15 @@ export default function DownloadsScreen() {
         showsVerticalScrollIndicator={Platform.OS === 'web'}
       />
 
-      {/* The floating contextual bulk verbs (shared select-mode chrome), over the selected SERIES. */}
+      {/* The floating select-mode chrome, over the selected SERIES: staging "…" bottom-left, all
+          valid verbs in ONE pill bottom-right. */}
       {selecting && (
         <SelectPillBar
           left={sidePad}
           right={sidePad}
           bottom={Math.max(insets.bottom, Spacing.three)}
+          options={stagingRows}
+          optionsTestID="downloads.select-options"
           verbs={[
             ...(toPause.length > 0
               ? [{ key: 'pause', label: `Pause ${toPause.length} series`, Icon: PauseIcon, onPress: pauseSelected, testID: 'downloads.pause' }]

@@ -4,14 +4,13 @@
  *
  *  - `useSelectMode()` — the mode flag plus the ONE shared progress value that animates every row's
  *    check circle in sync (and survives view recycling).
- *  - `SelectOptionsTrigger` — the top-bar-left three-dot trigger; opens the shared frosted context
- *    menu with the caller's staging rows (Select all / Select unread / …).
  *  - `SelectToggle` — the top-bar-right circled-check that enters/exits the mode (accent while on).
  *  - `SelectLead` — the animated leading slot rows render: the check circle rides in from the
  *    physical screen edge, fading up, pushing the row's content right.
- *  - `SelectPillBar` — the floating contextual bulk verbs: frosted icon pill bottom-left (it's a
- *    full circle with one verb and stretches into a pill with more), and the accent primary circle
- *    bottom-right. Callers pass only the verbs VALID for the current selection.
+ *  - `SelectPillBar` — the floating select-mode chrome: a bottom-left "…" staging button (opens the
+ *    frosted context menu with the caller's rows) and ONE combined actions pill bottom-right holding
+ *    every valid verb (a lone verb is a solid colour circle; several share the frosted glass with
+ *    per-icon colours). Callers pass only the verbs VALID for the current selection.
  *
  * Screens own their rows, selection semantics, and verb applicability; this module owns the look.
  */
@@ -69,26 +68,38 @@ export function useSelectMode(initial = false): {
   };
 }
 
-/** The top-bar-left staging trigger (a bare three-dot ellipsis): opens the shared frosted context
- *  menu ANCHORED under the button (fixed placement — a button menu shouldn't wander with where
- *  inside the button the finger landed, unlike a hold menu that floats at the press point). */
-export function SelectOptionsTrigger({ rows, testID }: { rows: MenuRowSpec[]; testID: string }) {
+/**
+ * The bottom-left staging button (a bare three-dot ellipsis on a frosted circle): opens the shared
+ * context menu ABOVE it (point placement, which flips above near the screen's bottom) with the
+ * caller's staging rows. Lives in `SelectPillBar`; kept a standalone piece so the bottom-left slot
+ * stays flexible — swap in a different trigger without touching the pill layout.
+ */
+function SelectOptionsButton({ rows, testID }: { rows: MenuRowSpec[]; testID: string }) {
   const theme = useTheme();
+  const scheme = useActiveColorScheme();
   const anchorRef = useRef<View>(null);
   return (
-    <View ref={anchorRef} collapsable={false}>
-      <Pressable
-        testID={testID}
-        onPress={() =>
-          anchorRef.current?.measureInWindow((x, y, _w, h) =>
-            openContextMenu({ anchor: 'fixed', x, y: y + h + Spacing.two, rows }),
-          )
-        }
-        hitSlop={10}
-        accessibilityRole="button"
-        accessibilityLabel="Selection options">
-        <SelectOptionsIcon color={theme.text} size={24} />
-      </Pressable>
+    <View ref={anchorRef} collapsable={false} style={styles.pillShadow}>
+      <BlurView
+        tint={scheme}
+        intensity={PILL_BLUR}
+        experimentalBlurMethod={ANDROID_BLUR}
+        style={[styles.pill, { borderColor: theme.backgroundSelected }]}>
+        <View pointerEvents="none" style={[styles.pillFill, { backgroundColor: PILL_FILL[scheme] }]} />
+        <Pressable
+          testID={testID}
+          onPress={() =>
+            anchorRef.current?.measureInWindow((x, y, w) =>
+              // Point placement centred on the button; near the bottom it flips ABOVE the button.
+              openContextMenu({ x: x + w / 2, y, rows }),
+            )
+          }
+          style={styles.pillButton}
+          accessibilityRole="button"
+          accessibilityLabel="Selection options">
+          <SelectOptionsIcon color={theme.text} size={22} />
+        </Pressable>
+      </BlurView>
     </View>
   );
 }
@@ -345,45 +356,76 @@ export function useDragSelect({
   return { gestureFor };
 }
 
-/** One contextual bulk verb. Pass only verbs VALID for the current selection — the bar renders
- *  exactly what it's given (nothing is disabled-but-visible). */
+/**
+ * One contextual bulk verb. Pass only verbs VALID for the current selection — the bar renders
+ * exactly what it's given (nothing is disabled-but-visible).
+ *
+ * `color` is the verb's ACCENT (blue for download, danger for delete). It drives two looks:
+ *  - when the verb is the pill's SOLE action, the whole pill takes this colour (translucent over
+ *    the blur) with a white icon — the "one prominent primary" look (a lone Download stays blue);
+ *  - when the pill holds several verbs, the pill is the frosted glass and this colour tints just the
+ *    ICON. Omit it and the icon renders in the default (white-ish) colour on the frosted pill.
+ */
 export interface SelectVerb {
   key: string;
   /** Accessible label, e.g. "Pause 3 chapters". */
   label: string;
   Icon: (props: IconProps) => ReactElement;
-  /** Icon colour override (danger for a delete); defaults to the theme text colour. */
+  /** The verb's accent — see the interface doc. Omit for the default icon colour. */
   color?: string;
   onPress: () => void;
   testID: string;
 }
 
 /**
- * The floating bulk-verb layer: the secondary verbs share one frosted pill at the bottom-left, the
- * `primary` verb gets the bigger accent circle at the bottom-right. Renders nothing without verbs.
+ * The floating bulk-verb layer: the bottom-left staging "…" button (when `options` given) and ONE
+ * combined actions pill at the bottom-right holding every valid verb. A single verb makes the pill
+ * a solid colour circle (its `color`, white icon); multiple verbs make it the frosted glass with
+ * per-icon colours. Renders nothing when there's neither a menu nor a verb.
  */
 export function SelectPillBar({
   verbs,
-  primary,
+  options,
+  optionsTestID = 'select.options',
   left,
   right,
   bottom,
 }: {
   verbs: SelectVerb[];
-  primary?: SelectVerb;
+  /** Staging-menu rows for the bottom-left "…" button (Select all / unread / …). */
+  options?: MenuRowSpec[];
+  optionsTestID?: string;
   left: number;
   right: number;
   bottom: number;
 }) {
   const theme = useTheme();
   const scheme = useActiveColorScheme();
-  if (verbs.length === 0 && !primary) return null;
+  const showOptions = !!options && options.length > 0;
+  if (verbs.length === 0 && !showOptions) return null;
+
+  // A lone verb colours the whole pill (translucent accent, white icon); several verbs share the
+  // frosted glass and tint only their own icons.
+  const solo = verbs.length === 1 ? verbs[0] : undefined;
+  const soloColored = solo?.color;
+
   return (
     <View pointerEvents="box-none" style={[styles.pills, { left, right, bottom }]}>
-      {verbs.length > 0 ? (
+      {showOptions ? <SelectOptionsButton rows={options} testID={optionsTestID} /> : <View />}
+      {verbs.length > 0 && (
         <View style={styles.pillShadow}>
-          <BlurView tint={scheme} intensity={PILL_BLUR} experimentalBlurMethod={ANDROID_BLUR} style={[styles.pill, { borderColor: theme.backgroundSelected }]}>
-            <View pointerEvents="none" style={[styles.pillFill, { backgroundColor: PILL_FILL[scheme] }]} />
+          <BlurView
+            tint={scheme}
+            intensity={PILL_BLUR}
+            experimentalBlurMethod={ANDROID_BLUR}
+            style={[styles.pill, { borderColor: theme.backgroundSelected }]}>
+            <View
+              pointerEvents="none"
+              style={[
+                styles.pillFill,
+                { backgroundColor: soloColored ? `${soloColored}${PILL_ACCENT_ALPHA}` : PILL_FILL[scheme] },
+              ]}
+            />
             {verbs.map((v) => (
               <Pressable
                 key={v.key}
@@ -392,27 +434,9 @@ export function SelectPillBar({
                 style={styles.pillButton}
                 accessibilityRole="button"
                 accessibilityLabel={v.label}>
-                <v.Icon color={v.color ?? theme.text} size={20} filled={false} />
+                <v.Icon color={soloColored ? theme.accentOn : (v.color ?? theme.text)} size={22} filled={false} />
               </Pressable>
             ))}
-          </BlurView>
-        </View>
-      ) : (
-        <View />
-      )}
-      {primary && (
-        <View style={styles.pillShadow}>
-          <BlurView tint={scheme} intensity={PILL_BLUR} experimentalBlurMethod={ANDROID_BLUR} style={[styles.pill, { borderColor: theme.backgroundSelected }]}>
-            {/* Translucent accent over the blur — reads blue while the page still bleeds through. */}
-            <View pointerEvents="none" style={[styles.pillFill, { backgroundColor: `${theme.accent}${PILL_ACCENT_ALPHA}` }]} />
-            <Pressable
-              testID={primary.testID}
-              onPress={primary.onPress}
-              style={styles.pillButton}
-              accessibilityRole="button"
-              accessibilityLabel={primary.label}>
-              <primary.Icon color={theme.accentOn} size={22} filled={false} />
-            </Pressable>
           </BlurView>
         </View>
       )}
