@@ -31,6 +31,7 @@ import { ConfirmPopupHost } from '@/components/confirm-popup';
 import { ContextMenuHost } from '@/components/context-menu-host';
 import { OverlayProvider } from '@/components/overlay/overlay';
 import { SeriesCardContextMenuHost } from '@/components/series-card-context-menu';
+import { ToastHost } from '@/components/toast';
 import { startEmbeddedRuntime } from '@/data/embedded/startup';
 import { PROFILING_ENABLED } from '@/lib/profiling';
 import { persister, PERSIST_BUSTER, PERSIST_MAX_AGE_MS, queryClient, shouldDehydrateQuery } from '@/data/query-client';
@@ -129,6 +130,8 @@ function RootNavigation() {
         <ContextMenuHost />
         {/* Root host for the destructive-action confirmation popup (openConfirm). */}
         <ConfirmPopupHost />
+        {/* Root host for the transient notice pill (showToast). */}
+        <ToastHost />
         {/* DEV-only floating Hermes JS profiler; null in production (see require above),
             and hidden unless the Settings → Developer toggle is on. Temporary tooling. */}
         {DevProfiler ? <DevProfiler /> : null}

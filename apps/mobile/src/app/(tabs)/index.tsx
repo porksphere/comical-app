@@ -26,8 +26,10 @@ import { BridgeThumbSize, Selector } from '@/components/selector';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { PullIndicator } from '@/components/pull-indicator';
+import { showToast } from '@/components/toast';
 import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { pageOptions } from '@/data/api';
+import { toggleNsfwUntilRestart } from '@/data/nsfw';
 import { buildHomeRows } from '@/data/content-rows';
 import { useComicalExcludedIds } from '@/data/comical-home';
 import { useCustomPages } from '@/data/custom-pages';
@@ -45,6 +47,7 @@ import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
 import { useSlidingBar } from '@/hooks/use-sliding-bar';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
+import { useRampedHold } from '@/hooks/use-ramped-hold';
 import { useRevealDim } from '@/hooks/use-reveal-dim';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
@@ -563,6 +566,20 @@ export default function BrowseScreen() {
     beginCrossfade(() => setPage(p));
   };
 
+  // Hold the bridge icon to flip the session-only NSFW override: three haptic beats ramp up while
+  // holding, then the flip commits (see useRampedHold) and a toast says what happened. A plain tap
+  // still does nothing — the icon stays a passive identity mark otherwise.
+  const nsfwHold = useRampedHold(() => {
+    const result = toggleNsfwUntilRestart();
+    showToast(
+      result === 'enabled'
+        ? 'NSFW enabled until the app is closed'
+        : result === 'reverted'
+          ? 'NSFW hidden again'
+          : 'NSFW is already enabled in Settings',
+    );
+  });
+
   // Shared with the series-detail bar so both stay the same height.
   const barHeight = useTopBarHeight();
   // Match the bridge dropdown's thumbnail size so the bar reads at the same scale.
@@ -625,7 +642,13 @@ export default function BrowseScreen() {
       {/* Cap+centre only on web; native fills the width so the bar aligns with the full-width grid. */}
       <View style={[styles.selectorRow, { height: barHeight, maxWidth: Platform.OS === 'web' ? MaxTopLevelWidth : undefined }]}>
         {currentBridge ? (
-          <View style={[styles.bridgeThumb, { width: thumbSize, height: thumbSize }]}>
+          <Pressable
+            testID="browse.nsfw-hold"
+            onPressIn={nsfwHold.onPressIn}
+            onPressOut={nsfwHold.onPressOut}
+            accessibilityRole="button"
+            accessibilityLabel="Hold to show NSFW content until the app is closed"
+            style={[styles.bridgeThumb, { width: thumbSize, height: thumbSize }]}>
             <BridgeThumb
               uri={currentBridge.thumbnail}
               source={isComical ? COMICAL_ICON : undefined}
@@ -633,7 +656,7 @@ export default function BrowseScreen() {
               size={thumbSize}
               fill
             />
-          </View>
+          </Pressable>
         ) : null}
         <Selector
           testID="browse.bridge-selector"

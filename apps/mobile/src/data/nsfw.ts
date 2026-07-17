@@ -61,6 +61,29 @@ export function useNsfwMode(): [NsfwMode, (mode: NsfwMode) => void] {
   return [use$(nsfwMode$), setNsfwMode];
 }
 
+/**
+ * Flip the SESSION-ONLY 'until-restart' override (the Browse bridge-icon hold gesture): hidden →
+ * shown for this process's lifetime; an active session override → back to the stored durable mode.
+ * Nothing durable is ever written. The return value says what happened, so the caller can toast it:
+ *  - 'enabled'          — NSFW now visible until the app is closed
+ *  - 'reverted'         — the session override was dropped; NSFW is hidden again
+ *  - 'already-visible'  — the DURABLE mode already shows NSFW ('on'), so there was nothing to flip
+ */
+export function toggleNsfwUntilRestart(): 'enabled' | 'reverted' | 'already-visible' {
+  const mode = nsfwMode$.peek();
+  if (mode === 'off') {
+    nsfwMode$.set('until-restart');
+    return 'enabled';
+  }
+  // A live session override ('until-restart' or 'until-background') drops back to the durable mode.
+  if (mode !== 'on') {
+    const durable = durableNsfw$.peek();
+    nsfwMode$.set(durable);
+    return durable === 'off' ? 'reverted' : 'already-visible';
+  }
+  return 'already-visible';
+}
+
 /** True whenever NSFW-flagged bridges/content should stay hidden — every screen
  *  that filters on NSFW (Browse, Library, History, Activity, the Settings
  *  bridge list) reads this instead of caring about the 4 underlying modes. */
