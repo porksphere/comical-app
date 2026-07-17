@@ -35,6 +35,8 @@ import {
   type TrackerLink,
 } from '@comical/library';
 
+import { serializeAsyncMethods } from '@/lib/serialize-methods';
+
 const NS = 'comical:lib';
 const ENTRIES = `${NS}:entries`;
 const LISTS = `${NS}:lists`;
@@ -76,6 +78,13 @@ function byteLength(s: string): number {
 }
 
 export class AsyncStorageLibraryStore implements LibraryStore {
+  constructor() {
+    // Every method is an async read-modify-write on a shared doc, and the router's write-throughs
+    // (detail cache + snapshot reconcile + chapter sync) run concurrently — serialize, or two
+    // interleaved writers silently drop records (see serialize-methods.ts / the downloads store).
+    serializeAsyncMethods(this);
+  }
+
   // ── Disk usage ──────────────────────────────────────────────────────────────
   /** Bytes this store's documents occupy in AsyncStorage (all `comical:lib:*` keys). Cover blobs
    *  live in the covers BlobStore and report separately (see /library/usage). */

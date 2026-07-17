@@ -26,6 +26,7 @@ import {
 } from '../api';
 import { queryClient } from '../query-client';
 import { queryKeys } from '../queries';
+import { logDiagnostic } from '@/lib/diagnostics';
 import { DIRECT_DOWNLOAD_CHAPTER_ID } from './constants';
 import { getDownloadPrefsSync } from './prefs';
 
@@ -66,7 +67,16 @@ export async function enqueueChapter(input: EnqueueChapterInput): Promise<void> 
     ...(input.number !== undefined && { number: input.number }),
     ...(input.languageCode !== undefined && { languageCode: input.languageCode }),
   };
-  await dlEnqueueChapter(input.bridgeId, input.seriesId, chapterId, body);
+  try {
+    await dlEnqueueChapter(input.bridgeId, input.seriesId, chapterId, body);
+  } catch (e) {
+    // Best-effort like every other mutation here: a failed enqueue (page resolution error, a
+    // pause/delete racing a bulk collection) must never become an unhandled rejection — callers
+    // fire-and-forget one call per chapter. Surface it in diagnostics instead.
+    logDiagnostic('download-enqueue', (e as Error)?.message || String(e), {
+      context: `bridge=${input.bridgeId} series=${input.seriesId} chapter=${chapterId}`,
+    });
+  }
   invalidateDownloads(input.bridgeId, input.seriesId);
 }
 
