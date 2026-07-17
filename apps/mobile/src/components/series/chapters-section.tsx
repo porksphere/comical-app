@@ -382,7 +382,8 @@ function ChapterList({
     if (!bridgeId) return;
     if (Platform.OS !== 'web' && anchor) {
       openContextMenu({
-        title: g.name,
+        // No title line — the pressed row is right there naming the chapter; rows only, like the
+        // series popup's own menu.
         x: anchor.x,
         y: anchor.y,
         rows: chapterMenuRows({
