@@ -27,7 +27,7 @@ const CELL_ROW_GAP = CELL_PAD_TOP + CELL_PAD_BOTTOM;
 // SECTION_GAP is deliberately tighter than HEADING_GAP: rail-to-rail spacing accumulates in the
 // many-rail aggregate/Comical home, where a larger gap read as too airy — so sections sit closer
 // together while each heading keeps its full breathing room above its own cards.
-const SECTION_GAP = Spacing.one;
+const SECTION_GAP = Spacing.half;
 const HEADING_GAP = Spacing.two;
 const SECTION_HEAD_ROW_HEIGHT = SECTION_HEAD_HEIGHT + SECTION_GAP + HEADING_GAP;
 
