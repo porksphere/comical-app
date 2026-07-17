@@ -1,5 +1,5 @@
 import { Children, Fragment, type ReactNode } from 'react';
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View, type GestureResponderEvent } from 'react-native';
 
 import { ChevronRightIcon } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
@@ -110,19 +110,27 @@ export function SettingsSection({
  */
 export function SettingsRow({
   label,
+  labelBold,
   description,
   descriptionColor,
   descriptionSelectable,
   escapeGutter = true,
+  contentInset,
   leading,
   right,
   onPress,
+  onLongPress,
   onHoverIn,
   onHoverOut,
   testID,
 }: {
   label: string;
+  /** Render the label in the bolder weight — used to make a parent row stand above its nested children. */
+  labelBold?: boolean;
   description?: string;
+  /** Extra left padding for the row's content (leading + text + chevron), indenting a NESTED row under
+   *  its parent while its background/press highlight still span the full width. */
+  contentInset?: number;
   /** Optional glyph/artwork before the label (a bridge's icon). See `RowIcon`. */
   leading?: ReactNode;
   /** Overrides the description's color (e.g. an amber/blue status hint) — defaults to `textSecondary`. */
@@ -135,6 +143,9 @@ export function SettingsRow({
   escapeGutter?: boolean;
   right?: ReactNode;
   onPress?: () => void;
+  /** Long-press on a pressable row (e.g. multi-select range-fill). Only fires when `onPress` is set.
+   *  Takes the press event so a `Holdable`'s web handler can be passed straight through. */
+  onLongPress?: (e: GestureResponderEvent) => void;
   /** Web only: mirrors of the row's own hover state, so a caller rendering something hover-dependent
    *  in `right` (the trash in `SwipeableSettingsRow`) can react to hovering ANYWHERE on the row —
    *  not just the few pixels of the control itself. */
@@ -156,11 +167,12 @@ export function SettingsRow({
         settingsRowFrame.row,
         escapeGutter && settingsRowFrame.escape,
         onPress && styles.rowPressable,
+        contentInset ? { paddingLeft: SettingsGutter + contentInset } : null,
         highlighted && Platform.OS !== 'android' && { backgroundColor: theme.backgroundSelected },
       ]}>
       {leading}
       <View style={settingsRowFrame.text}>
-        <ThemedText type="small" numberOfLines={1}>
+        <ThemedText type={labelBold ? 'smallBold' : 'small'} numberOfLines={1}>
           {label}
         </ThemedText>
         {description && (
@@ -186,6 +198,7 @@ export function SettingsRow({
         hapticImpactLight();
         onPress();
       }}
+      onLongPress={onLongPress}
       onHoverIn={() => {
         markHovered();
         onHoverIn?.();

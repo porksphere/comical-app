@@ -4,12 +4,20 @@ import {
   Blocks,
   Bug,
   Check,
+  CircleCheck,
   ChevronDown,
   ChevronRight,
   Compass,
+  Clock,
   Database,
+  Download,
+  Ellipsis,
   Eye,
   EyeOff,
+  HardDrive,
+  Pause,
+  RotateCcw,
+  TriangleAlert,
   GripVertical,
   LayoutGrid,
   Minus,
@@ -35,7 +43,11 @@ export type IconProps = {
 
 export const SearchIcon = ({ color, size = 16 }: IconProps) => <Search color={color} size={size} />;
 export const ClearIcon = ({ color, size = 16 }: IconProps) => <X color={color} size={size} />;
-export const PlayIcon = ({ color, size = 16 }: IconProps) => <Play color={color} size={size} fill={color} />;
+// Filled by default (the conventional read/da-capo triangle); pass `filled={false}` where a solid
+// glyph reads as a blob among outlines (the select-mode pill bar).
+export const PlayIcon = ({ color, size = 16, filled = true }: IconProps) => (
+  <Play color={color} size={size} fill={filled ? color : 'none'} />
+);
 export const PlusIcon = ({ color, size = 16 }: IconProps) => <Plus color={color} size={size} />;
 export const MinusIcon = ({ color, size = 16 }: IconProps) => <Minus color={color} size={size} />;
 export const StarIcon = ({ color, size = 16, filled }: IconProps) => (
@@ -58,6 +70,17 @@ export const DeveloperIcon = ({ color, size = 16 }: IconProps) => <Terminal colo
 export const DiagnosticsIcon = ({ color, size = 16 }: IconProps) => <Bug color={color} size={size} />;
 // Custom pages — the settings entry for composing your own Comical pages.
 export const CustomPagesIcon = ({ color, size = 16 }: IconProps) => <LayoutGrid color={color} size={size} />;
+export const DownloadsIcon = ({ color, size = 16 }: IconProps) => <Download color={color} size={size} />;
+export const StorageIcon = ({ color, size = 16 }: IconProps) => <HardDrive color={color} size={size} />;
+export const DownloadingIcon = ({ color, size = 16 }: IconProps) => <Download color={color} size={size} />;
+// Outline (not filled): filled bars read as a solid blob at small sizes.
+export const PauseIcon = ({ color, size = 16 }: IconProps) => <Pause color={color} size={size} />;
+export const QueuedIcon = ({ color, size = 16 }: IconProps) => <Clock color={color} size={size} />;
+export const FailedIcon = ({ color, size = 16 }: IconProps) => <TriangleAlert color={color} size={size} />;
+// Fully-downloaded (complete) marker — a bare check for a chapter/series kept offline (the circled
+// variant read too close to the multi-select circles beside it).
+export const DownloadedIcon = ({ color, size = 16 }: IconProps) => <Check color={color} size={size} />;
+export const RetryIcon = ({ color, size = 16 }: IconProps) => <RotateCcw color={color} size={size} />;
 // Rename affordance (custom page editor's top bar).
 export const PencilIcon = ({ color, size = 16 }: IconProps) => <Pencil color={color} size={size} />;
 // Reveal / hide a masked secret field (settings text row).
@@ -65,3 +88,7 @@ export const EyeIcon = ({ color, size = 16 }: IconProps) => <Eye color={color} s
 export const EyeOffIcon = ({ color, size = 16 }: IconProps) => <EyeOff color={color} size={size} />;
 // Destructive action — the swipe-to-delete pane and its web hover affordance (see settings/swipeable-row).
 export const TrashIcon = ({ color, size = 16 }: IconProps) => <Trash2 color={color} size={size} />;
+// Multi-select mode toggle (the per-series download screen's top-bar button) — a circled check.
+export const SelectModeIcon = ({ color, size = 16 }: IconProps) => <CircleCheck color={color} size={size} />;
+// The selection-staging menu trigger (a bare three-dot ellipsis) — opens Select all / Select unread.
+export const SelectOptionsIcon = ({ color, size = 16 }: IconProps) => <Ellipsis color={color} size={size} />;

@@ -9,10 +9,13 @@ import {
   CustomPagesIcon,
   DeveloperIcon,
   DiagnosticsIcon,
+  DownloadsIcon,
   GeneralSettingsIcon,
   RegistriesIcon,
+  StorageIcon,
   TrackersIcon,
 } from '@/components/icons/ui-icons';
+import { CumulativeDownloadRadial } from '@/components/downloads/cumulative-radial';
 import { settingsRowFrame } from '@/components/settings/settings-row';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { ThemedText } from '@/components/themed-text';
@@ -20,7 +23,9 @@ import { ThemedView } from '@/components/themed-view';
 
 import { MaxTopLevelWidth, SettingsGutter } from '@/constants/theme';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
+import { dlStorageUsage } from '@/data/api';
 import { useCustomPages } from '@/data/custom-pages';
+import { overallProgress } from '@/data/downloads/derive';
 import { queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw } from '@/data/source';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
@@ -110,6 +115,24 @@ export default function SettingsScreen() {
           />
           <Divider />
           <CategoryRow
+            testID="settings.category.downloads"
+            icon={<DownloadsIcon color={theme.textSecondary} size={22} />}
+            title="Downloads"
+            description="Chapters kept on this device for offline reading."
+            value={counts.downloads}
+            progress={counts.downloadsProgress}
+            onPress={() => router.push('/downloads')}
+          />
+          <Divider />
+          <CategoryRow
+            testID="settings.category.storage"
+            icon={<StorageIcon color={theme.textSecondary} size={22} />}
+            title="Storage"
+            description="Image cache and downloaded content on this device."
+            onPress={() => router.push('/storage')}
+          />
+          <Divider />
+          <CategoryRow
             testID="settings.category.diagnostics"
             icon={<DiagnosticsIcon color={theme.textSecondary} size={22} />}
             title="Diagnostics"
@@ -156,6 +179,14 @@ function useCategoryCounts() {
     queryKey: queryKeys.registries(),
     queryFn: ({ signal }) => ds.getRegistries(signal),
   });
+  const { data: downloads } = useQuery({
+    queryKey: queryKeys.downloadsUsage(),
+    // Device-local downloads; a backend without the module yields an empty tree, not an error.
+    queryFn: () => dlStorageUsage().catch(() => null),
+  });
+  // Manifest-driven (the engine patches this query per page — see engine.ts), so the row's radial
+  // advances through the reliable useQuery subscription without the live-overlay re-render gap.
+  const downloadsOverall = downloads ? overallProgress(downloads.bySeries) : null;
 
   // Matches the filter the Bridges screen applies, so the count can't disagree with the list.
   const visibleBridges = bridges && hideNsfw ? bridges.filter((b) => !b.info.nsfw) : bridges;
@@ -164,6 +195,9 @@ function useCategoryCounts() {
     bridges: visibleBridges ? String(visibleBridges.length) : undefined,
     trackers: trackers ? String(trackers.length) : undefined,
     registries: registries ? String(registries.length) : undefined,
+    downloads: downloads && downloads.seriesCount > 0 ? String(downloads.seriesCount) : undefined,
+    // Cumulative progress across all series, shown as a small radial while anything is downloading.
+    downloadsProgress: downloadsOverall?.inProgress ? downloadsOverall.fraction : undefined,
   };
 }
 
@@ -175,6 +209,7 @@ function CategoryRow({
   title,
   description,
   value,
+  progress,
   onPress,
   testID,
 }: {
@@ -182,6 +217,8 @@ function CategoryRow({
   title: string;
   description: string;
   value?: string;
+  /** Cumulative download progress [0,1] — renders a small radial before the chevron while in flight. */
+  progress?: number;
   onPress: () => void;
   testID: string;
 }) {
@@ -221,6 +258,7 @@ function CategoryRow({
               {value}
             </ThemedText>
           )}
+          {progress !== undefined && <CumulativeDownloadRadial fraction={progress} size={20} strokeWidth={2.5} />}
           <ChevronRightIcon color={theme.textSecondary} size={18} />
         </View>
       )}

@@ -19,3 +19,10 @@ export function hapticImpactLight() {
   if (Platform.OS === 'web') return webVibrate(8);
   void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 }
+
+/** Medium impact for a hold paying off — a long-press opening a context menu (matches the series
+ *  card menu's open thump, so every hold in the app answers with the same weight). */
+export function hapticImpactMedium() {
+  if (Platform.OS === 'web') return webVibrate(12);
+  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+}

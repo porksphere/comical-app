@@ -29,9 +29,19 @@ import comicalRuntime from '../../../modules/comical-runtime';
 import { setTransport } from '../api';
 import { bumpDataEpoch } from '../data-epoch';
 import { queryClient } from '../query-client';
+import { downloadsStore } from '../downloads/async-store';
+import { applyBackgroundDownloads } from '../downloads/background';
+import { expoBlobStore } from '../downloads/blob-store';
+import { installNetworkAutoResume, mayDownloadNow, resumePendingDownloads } from '../downloads/engine';
+import { installDownloadProgress } from '../downloads/events';
+import { devicePageFetcher, onDevicePageRetry } from '../downloads/fetch-page';
+import { hydrateDownloadIndex } from '../downloads/index-cache';
+import { getDownloadPrefsSync } from '../downloads/prefs';
 import { fileSystemBundleCache } from './bundle-cache';
+import { expoCoversBlobStore } from './covers-store';
 import { AsyncStorageLibraryStore } from './library-store';
 import { getResolvedModeSync } from './preference';
+import { applyImageCacheConfig } from '../image-cache';
 import { installedStore, savedRegistryStore } from './stores';
 import { asyncStorageSettings } from './settings-store';
 
@@ -48,6 +58,22 @@ function bootstrapConfig(): EmbeddedBootstrapConfig {
     // Library/History/Activity (and add-to-library + read progress) work with no server. See
     // `library-store.ts`; the same endpoints the remote `comical-web` server already exposes.
     libraryStore: new AsyncStorageLibraryStore(),
+    // On-device downloads persistence — mounts the router's `/downloads*` endpoints in embedded mode
+    // so the offline-download manifest (enqueue / record / storage / delete) works with no server.
+    // The SHARED instance (its doc cache makes a second copy incoherent — see async-store.ts).
+    downloadsStore,
+    // Device seams for the shared download engine (which host-rn runs in-process behind the router):
+    // bytes land on this device's filesystem, pages resolve through the reader's own asset resolver,
+    // and the Wi-Fi-only policy gates the drain. See `getEmbeddedDownloadEngine()` for the lifecycle.
+    downloadsEngine: {
+      blobs: expoBlobStore,
+      fetchPage: devicePageFetcher,
+      mayDownload: mayDownloadNow,
+      onPageRetry: onDevicePageRetry,
+    },
+    // Guaranteed-offline library covers: captured into this device store on library-add/browse and
+    // served back by the reused router at /library/entries/:b/:s/cover.
+    covers: { blobs: expoCoversBlobStore, fetchPage: devicePageFetcher },
     // Persist verified bundles to disk so cold starts don't re-download + re-verify every bridge.
     cache: fileSystemBundleCache,
     // An install/update/uninstall (or add/remove registry) changes what the runtime serves — refetch
@@ -70,4 +96,14 @@ export function startEmbeddedRuntime(): void {
   installWebCryptoShim();
   configureEmbeddedRuntime(bootstrapConfig());
   applyEmbeddedMode(getResolvedModeSync() === 'embedded');
+  // Warm the sync offline index from the manifest, then resume any downloads interrupted last session.
+  void hydrateDownloadIndex().then(() => resumePendingDownloads());
+  // Pipe live download progress for the resolved mode (embedded engine subscription / remote SSE).
+  installDownloadProgress();
+  // Auto-resume when connectivity/Wi-Fi returns (not just on next launch).
+  installNetworkAutoResume();
+  // Apply the user's image-cache size cap — the native layer LRU-evicts to stay under it.
+  applyImageCacheConfig();
+  // Re-arm the background drain task if the user enabled it.
+  applyBackgroundDownloads(getDownloadPrefsSync().background);
 }

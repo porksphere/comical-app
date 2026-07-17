@@ -9,6 +9,7 @@ import { ChipRow, TagGroupRow } from '@/components/chip';
 import { Rail, RailSkeleton } from '@/components/rail';
 import { RetryBlock } from '@/components/retry-block';
 import { ActionButton, NewBadge } from '@/components/series/action-button';
+import { SeriesDownloadButton } from '@/components/series/download-button';
 import { ChaptersSection, PageThumbList } from '@/components/series/chapters-section';
 import { TrackerButton } from '@/components/series/tracker-panel';
 import { Skeleton } from '@/components/skeleton';
@@ -16,6 +17,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar, useTopBarInset } from '@/components/top-bar';
 import { BarContentGap, MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { relativeTime } from '@/data/mock';
 import { setSearchIntent, tagSearchIntent } from '@/data/search-intent';
 import { relatedGroupsQuery, seriesDetailQuery, seriesListQuery } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
@@ -176,6 +178,11 @@ export default function SeriesScreen() {
   return (
     <ThemedView style={styles.container}>
       <TopBar title={topBarTitle} />
+
+      {/* Served from the library's offline metadata cache — a floating, non-blocking pill under the
+          top bar. Derived from the payload itself (never a connectivity probe): a live refetch
+          replaces the cached payload and the pill disappears with it. */}
+      {series?.cached && <OfflineDetailsPill cachedAt={series.cachedAt} topBarInset={topBarInset} />}
 
       {error ? (
         scrollFallback(<RetryBlock message={error} onRetry={retry} />)
@@ -383,6 +390,16 @@ function SeriesBody({
         onPress={startReading}
       />
       <ActionButton testID="series.action.library" label={inLibrary ? '✓  In Library' : '＋  Library'} onPress={toggleLibrary} />
+      {bridgeId && (
+        <SeriesDownloadButton
+          bridgeId={bridgeId}
+          seriesId={series.id}
+          direct={direct}
+          title={series.title}
+          cover={series.cover}
+          {...(chapters !== undefined && { chapters })}
+        />
+      )}
       {series.hasSources && <ActionButton testID="series.action.sources" label="Sources" caret />}
       {series.hasTrackers && <TrackerButton seriesId={series.id} initialLinks={series.trackers ?? []} />}
       <ActionButton
@@ -494,6 +511,7 @@ function SeriesBody({
           seed={series.id}
           title={series.title}
           bridgeId={bridgeId}
+          offline={series.cached === true}
         />
       )}
     </>
@@ -683,9 +701,36 @@ function SeriesSkeleton({
   );
 }
 
+/** Floating "saved details" pill shown when the host answered from the offline metadata cache. */
+function OfflineDetailsPill({ cachedAt, topBarInset }: { cachedAt?: number; topBarInset: number }) {
+  const theme = useTheme();
+  return (
+    <View pointerEvents="none" style={[styles.offlinePillWrap, { top: topBarInset + Spacing.two }]}>
+      <ThemedView type="backgroundElement" style={[styles.offlinePill, { borderColor: theme.hairline }]}>
+        <ThemedText type="small" themeColor="textSecondary">
+          Offline — showing saved details{cachedAt ? ` · updated ${relativeTime(cachedAt)}` : ''}
+        </ThemedText>
+      </ThemedView>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  offlinePillWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    alignItems: 'center',
+  },
+  offlinePill: {
+    paddingVertical: Spacing.one,
+    paddingHorizontal: Spacing.three,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   scroll: {
     paddingTop: Spacing.four,

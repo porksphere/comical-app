@@ -43,6 +43,9 @@ config.resolver.extraNodeModules = {
   '@comical/registry': path.resolve(comicalRoot, 'packages/registry'),
   '@comical/core': path.resolve(comicalRoot, 'packages/core'),
   '@comical/library': path.resolve(comicalRoot, 'packages/library'),
+  // The offline-downloads manifest domain — bundled on native by host-rn's embedded downloads
+  // wiring (Downloads over the on-device store); Node-free. Never imported on web.
+  '@comical/downloads': path.resolve(comicalRoot, 'packages/downloads'),
   // Bundled on native by host-rn's embedded library wiring (Library + ComicalRuntime over the
   // on-device store); Node-free. Never imported on web (startup.web.ts is a no-op).
   '@comical/runtime': path.resolve(comicalRoot, 'packages/runtime'),

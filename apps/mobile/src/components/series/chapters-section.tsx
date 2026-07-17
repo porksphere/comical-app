@@ -4,7 +4,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
-import { Pressable, StyleSheet, useWindowDimensions, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Platform, Pressable, StyleSheet, useWindowDimensions, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, {
   Easing,
   LinearTransition,
@@ -15,7 +15,14 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ArrowDownIcon, ArrowUpIcon } from '@/components/icons/ui-icons';
+import type { DownloadedChapter, DownloadState } from '@comical/downloads';
+
+import { MenuActionRow, MenuHeader } from '@/components/context-menu';
+import { ContextMenuHold, openContextMenu } from '@/components/context-menu-host';
+import type { MenuRowSpec } from '@/components/context-menu-material';
+import { DownloadStateVisual } from '@/components/downloads/download-status-indicator';
+import { ArrowDownIcon, ArrowUpIcon, DownloadsIcon, TrashIcon } from '@/components/icons/ui-icons';
+import { OptionList, useOverlay, type AnchorRect } from '@/components/overlay/overlay';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -23,8 +30,13 @@ import { BarContentGap, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { useLightCards } from '@/lib/perf-flags';
 import { useTheme } from '@/hooks/use-theme';
-import { resolveAssetSourceCached } from '@/data/api';
+import { dlDeleteChapter, dlGetSeries, resolveAssetSourceCached } from '@/data/api';
+import { enqueueChapters } from '@/data/downloads/engine';
+import { forgetChapter } from '@/data/downloads/index-cache';
+import { fromHere, selectableGroups, toEnqueue } from '@/data/downloads/select';
+import { queryClient } from '@/data/query-client';
 import { coverDelayMs, relativeTime } from '@/data/mock';
+import { hapticImpactMedium } from '@/lib/haptics';
 import { queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import type { Chapter, PageThumbSource, SpriteThumb } from '@/data/types';
@@ -68,6 +80,7 @@ export function ChaptersSection({
   seed,
   title,
   bridgeId,
+  offline,
 }: {
   chapters?: Chapter[];
   /** The deferred chapter list is still fetching (see series.tsx + getSeriesList)
@@ -78,13 +91,16 @@ export function ChaptersSection({
   title: string;
   /** Originating bridge's stable id, carried to the reader for real API calls. */
   bridgeId?: string;
+  /** The page is rendering from the offline metadata cache — chapters that aren't downloaded can't
+   *  be read, so they dim and disable while downloaded ones stay fully readable. */
+  offline?: boolean;
 }) {
   // Direct-series page thumbnails are no longer rendered here — they're the
   // series screen's own virtualized scroller (see `PageThumbList`); this section
   // is just the chaptered-series list now.
   if (loading) return <ChapterListSkeleton />;
   return chapters?.length ? (
-    <ChapterList chapters={chapters} seed={seed} title={title} bridgeId={bridgeId} />
+    <ChapterList chapters={chapters} seed={seed} title={title} bridgeId={bridgeId} offline={offline} />
   ) : null;
 }
 
@@ -284,11 +300,13 @@ function ChapterList({
   seed,
   title,
   bridgeId,
+  offline,
 }: {
   chapters: Chapter[];
   seed: string;
   title: string;
   bridgeId?: string;
+  offline?: boolean;
 }) {
   const theme = useTheme();
   const router = useRouter();
@@ -297,6 +315,19 @@ function ChapterList({
   // Overview-only: reveal the collapsed middle portion inline.
   const [middleExpanded, setMiddleExpanded] = useState(false);
   const expandMiddleHover = useHovered();
+
+  // Per-chapter download state for the trailing indicators. Same query key the series Download
+  // button subscribes to, so it's already fetched on this page AND live-patched page-by-page by the
+  // download events pipe — a downloading chapter's radial advances in place.
+  const { data: dl } = useQuery({
+    queryKey: queryKeys.seriesDownloads(bridgeId ?? '', seed),
+    queryFn: () => dlGetSeries(bridgeId ?? '', seed).catch(() => null),
+    enabled: !!bridgeId,
+  });
+  const dlByChapter = useMemo(
+    () => new Map((dl?.chapters ?? []).map((c) => [c.chapterId, c])),
+    [dl],
+  );
 
   // The scanlation group the user last opened — controls which version each logical
   // chapter defaults to, so the list keeps showing the source they're reading.
@@ -341,9 +372,65 @@ function ChapterList({
   const head = collapsible ? groups.slice(0, OVERVIEW_HEAD_COUNT) : groups;
   const tail = collapsible ? groups.slice(groups.length - OVERVIEW_TAIL_COUNT) : [];
 
-  const row = (g: ChapterGroup) => (
-    <ChapterRow key={g.key} group={g} preferredGroup={preferredGroup} onOpen={openVersion} />
-  );
+  // Long-press a row → the per-chapter download menu. NATIVE: the generic hold-menu host — the
+  // series card popup's menu system (frosted point-anchored menu, peek-and-commit, open thump),
+  // generalized in context-menu-host.tsx. WEB: the overlay popover with the shared MenuActionRow
+  // chrome, matching how web series cards use the overlay for their 3-dot menu.
+  const { open } = useOverlay();
+  const manifest = useMemo(() => dl?.chapters ?? [], [dl]);
+  const openChapterMenu = (g: ChapterGroup, anchor?: AnchorRect) => {
+    if (!bridgeId) return;
+    if (Platform.OS !== 'web' && anchor) {
+      openContextMenu({
+        // No title line — the pressed row is right there naming the chapter; rows only, like the
+        // series popup's own menu.
+        x: anchor.x,
+        y: anchor.y,
+        rows: chapterMenuRows({
+          bridgeId,
+          seriesId: seed,
+          title,
+          chapters,
+          manifest,
+          group: g,
+          preferredGroup,
+        }),
+      });
+      return;
+    }
+    hapticImpactMedium();
+    open(
+      () => (
+        <ChapterDownloadMenu
+          bridgeId={bridgeId}
+          seriesId={seed}
+          title={title}
+          chapters={chapters}
+          manifest={manifest}
+          group={g}
+          preferredGroup={preferredGroup}
+        />
+      ),
+      anchor ?? null,
+      { popover: !!anchor },
+    );
+  };
+
+  const row = (g: ChapterGroup) => {
+    const dlState = groupDownloadState(g, dlByChapter);
+    return (
+      <ChapterRow
+        key={g.key}
+        group={g}
+        preferredGroup={preferredGroup}
+        onOpen={openVersion}
+        onMenu={bridgeId ? openChapterMenu : undefined}
+        dlState={dlState}
+        // Offline, only a fully-downloaded chapter is readable — the rest dim and disable.
+        dimmed={offline === true && dlState?.state !== 'complete'}
+      />
+    );
+  };
 
   return (
     <View style={styles.section}>
@@ -420,6 +507,25 @@ function ChapterList({
   );
 }
 
+/**
+ * The download state a logical chapter row shows: the BEST state across its scanlator/language
+ * versions (any complete copy means the chapter is readable offline), with the in-flight fraction
+ * for a downloading one. Null when no version has any download record — clean rows stay clean.
+ */
+function groupDownloadState(
+  g: ChapterGroup,
+  byId: Map<string, DownloadedChapter>,
+): { state: DownloadState; fraction: number } | null {
+  const rank: Record<DownloadState, number> = { complete: 4, downloading: 3, queued: 2, paused: 1, failed: 0 };
+  let best: DownloadedChapter | undefined;
+  for (const v of g.versions) {
+    const d = byId.get(v.id);
+    if (d && (!best || rank[d.state] > rank[best.state])) best = d;
+  }
+  if (!best) return null;
+  return { state: best.state, fraction: best.pageCount > 0 ? best.completedPages / best.pageCount : 0 };
+}
+
 /** A short label for one scanlator/language version of a chapter, e.g.
  *  "MangaDweebs · EN · 18p". Falls back to the display name if it carries no
  *  group/language/page metadata. */
@@ -439,10 +545,19 @@ function ChapterRow({
   group,
   preferredGroup,
   onOpen,
+  onMenu,
+  dlState,
+  dimmed,
 }: {
   group: ChapterGroup;
   preferredGroup?: string;
   onOpen: (v: Chapter) => void;
+  /** Long-press: the per-chapter download menu (download this / from here / delete). */
+  onMenu?: (group: ChapterGroup, anchor?: AnchorRect) => void;
+  /** Download indicator for this logical chapter (best state across versions), if any. */
+  dlState?: { state: DownloadState; fraction: number } | null;
+  /** Rendering offline and not downloaded — unreadable, so the row dims and its press disables. */
+  dimmed?: boolean;
 }) {
   const theme = useTheme();
   const [expanded, setExpanded] = useState(false);
@@ -454,10 +569,16 @@ function ChapterRow({
   const multi = group.versions.length > 1;
 
   return (
-    <View>
+    <ContextMenuHold
+      enabled={!!onMenu && !dimmed}
+      onOpen={(pt) => onMenu?.(group, { x: pt.x, y: pt.y, width: 0, height: 0 })}>
+      {({ onLongPress }) => (
+    <View style={dimmed && styles.rowDimmed}>
       <Pressable
         testID={testId('series.chapter', group.key)}
         onPress={() => onOpen(def)}
+        onLongPress={onLongPress}
+        disabled={dimmed}
         onHoverIn={rowHover.onHoverIn}
         onHoverOut={rowHover.onHoverOut}
         style={({ pressed }) => pressed && styles.rowPressed}>
@@ -475,6 +596,11 @@ function ChapterRow({
             style={[styles.rowName, read && { color: theme.textSecondary }]}>
             {group.name}
           </ThemedText>
+          {dlState && (
+            <View style={styles.rowDownload} testID={testId('series.chapter', group.key, 'download-state')}>
+              <DownloadStateVisual state={dlState.state} fraction={dlState.fraction} size={14} strokeWidth={2} />
+            </View>
+          )}
           {multi && (
             <Pressable
               testID={testId('series.chapter', group.key, 'versions')}
@@ -503,6 +629,156 @@ function ChapterRow({
           ))}
         </View>
       )}
+    </View>
+      )}
+    </ContextMenuHold>
+  );
+}
+
+/** The chapter menu's actions + coverage, computed once and shared by both presentations (the
+ *  native hold menu's rows and the web overlay's). */
+function chapterMenuActions(args: {
+  bridgeId: string;
+  seriesId: string;
+  title: string;
+  chapters: Chapter[];
+  manifest: DownloadedChapter[];
+  group: ChapterGroup;
+  preferredGroup?: string;
+}) {
+  const { bridgeId, seriesId, title, chapters, manifest, group, preferredGroup } = args;
+  const sel = selectableGroups(chapters, manifest);
+  const entry = sel.find((s) => s.group.key === group.key);
+  const span = fromHere(sel, pickVersion(group, preferredGroup).id);
+  const snap = { bridgeId, seriesId, title };
+  const completeIds = new Set(manifest.filter((c) => c.state === 'complete').map((c) => c.chapterId));
+  const downloadedVersions = group.versions.filter((v) => completeIds.has(v.id));
+  return {
+    entry,
+    span,
+    downloadedVersions,
+    downloadThis: () => enqueueChapters(snap, toEnqueue([group], preferredGroup)),
+    downloadFromHere: () => enqueueChapters(snap, toEnqueue(span, preferredGroup)),
+    deleteDownload: async () => {
+      for (const v of downloadedVersions) {
+        await dlDeleteChapter(bridgeId, seriesId, v.id).catch(() => {});
+        forgetChapter(bridgeId, seriesId, v.id);
+      }
+      void queryClient.invalidateQueries({ queryKey: queryKeys.downloadsUsage() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.seriesDownloads(bridgeId, seriesId) });
+    },
+  };
+}
+
+/** The NATIVE hold menu's rows (`MenuRowSpec` — the series-popup menu system's row shape). Counts
+ *  ride in the labels; per the shared menu's rule, nothing is coloured. */
+function chapterMenuRows(args: Parameters<typeof chapterMenuActions>[0]): MenuRowSpec[] {
+  const { entry, span, downloadedVersions, downloadThis, downloadFromHere, deleteDownload } = chapterMenuActions(args);
+  const rows: MenuRowSpec[] = [
+    {
+      label: entry?.settled ? 'Already saved' : 'Download chapter',
+      Icon: DownloadsIcon,
+      loading: false,
+      disabled: !entry || entry.settled,
+      testID: testId('series.chapter-menu', 'this'),
+      onPress: downloadThis,
+    },
+    {
+      label: span.length > 0 ? `Download from here (${span.length})` : 'Download from here',
+      Icon: ArrowDownIcon,
+      loading: false,
+      disabled: span.length === 0,
+      testID: testId('series.chapter-menu', 'from-here'),
+      onPress: downloadFromHere,
+    },
+  ];
+  if (downloadedVersions.length > 0) {
+    rows.push({
+      label: 'Delete download',
+      Icon: TrashIcon,
+      loading: false,
+      testID: testId('series.chapter-menu', 'delete'),
+      onPress: () => void deleteDownload(),
+    });
+  }
+  return rows;
+}
+
+/**
+ * The long-press chapter menu: quick per-chapter download actions without leaving the list.
+ * "Download from here" is the one-gesture range answer (this chapter through the end of reading
+ * order, skipping anything already kept/queued); a fully-downloaded chapter offers Delete too.
+ * Rendered with the shared context-menu chrome (`MenuHeader` + `MenuActionRow`), so it reads as the
+ * same kind of object as the series card's long-press menu. WEB ONLY — native uses the hold-menu
+ * host (see `openChapterMenu`).
+ */
+function ChapterDownloadMenu({
+  bridgeId,
+  seriesId,
+  title,
+  chapters,
+  manifest,
+  group,
+  preferredGroup,
+}: {
+  bridgeId: string;
+  seriesId: string;
+  title: string;
+  chapters: Chapter[];
+  manifest: DownloadedChapter[];
+  group: ChapterGroup;
+  preferredGroup?: string;
+}) {
+  const { closeTop } = useOverlay();
+  const { entry, span, downloadedVersions, downloadThis, downloadFromHere, deleteDownload } = chapterMenuActions({
+    bridgeId,
+    seriesId,
+    title,
+    chapters,
+    manifest,
+    group,
+    ...(preferredGroup !== undefined && { preferredGroup }),
+  });
+
+  return (
+    <View style={styles.menuBody}>
+      <MenuHeader title={group.name} textOnly />
+      <OptionList>
+        <MenuActionRow
+          testID={testId('series.chapter-menu', 'this')}
+          label="Download this chapter"
+          Icon={DownloadsIcon}
+          disabled={!entry || entry.settled}
+          detail={entry?.settled ? 'already saved' : '1 chapter'}
+          onPress={() => {
+            downloadThis();
+            closeTop();
+          }}
+        />
+        <MenuActionRow
+          testID={testId('series.chapter-menu', 'from-here')}
+          label="Download from here"
+          Icon={ArrowDownIcon}
+          disabled={span.length === 0}
+          detail={span.length === 1 ? '1 chapter' : `${span.length} chapters`}
+          onPress={() => {
+            downloadFromHere();
+            closeTop();
+          }}
+        />
+        {downloadedVersions.length > 0 && (
+          <MenuActionRow
+            testID={testId('series.chapter-menu', 'delete')}
+            label="Delete download"
+            Icon={TrashIcon}
+            detail="free the space"
+            onPress={() => {
+              void deleteDownload();
+              closeTop();
+            }}
+          />
+        )}
+      </OptionList>
     </View>
   );
 }
@@ -1315,6 +1591,18 @@ const styles = StyleSheet.create({
   },
   rowTime: {
     fontSize: 12,
+  },
+  // Trailing per-chapter download indicator — sits between the name and the time.
+  rowDownload: {
+    marginRight: Spacing.one,
+  },
+  // The long-press chapter menu (ChapterDownloadMenu).
+  menuBody: {
+    gap: Spacing.three,
+  },
+  // Offline + not downloaded: the chapter can't be read, so the whole row reads as unavailable.
+  rowDimmed: {
+    opacity: 0.4,
   },
   // The "N versions ▾" toggle inside a row — sits between the name and the time.
   versionsBtn: {

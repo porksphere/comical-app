@@ -46,8 +46,11 @@ export type AnchorRect = { x: number; y: number; width: number; height: number }
 
 type OverlayApi = {
   /** Returns the id assigned to the opened item — compare against `topId` to
-   *  tell whether that specific overlay is still the (single) topmost one. */
-  open: (render: () => ReactNode, anchor?: AnchorRect | null) => number;
+   *  tell whether that specific overlay is still the (single) topmost one.
+   *  `opts.popover` forces the anchored-popover presentation even on phones
+   *  (context menus float at the press point instead of rising as a sheet);
+   *  it needs an `anchor` to mean anything. */
+  open: (render: () => ReactNode, anchor?: AnchorRect | null, opts?: { popover?: boolean }) => number;
   closeTop: () => void;
   /** Id of the topmost open item, or null when the stack is empty. */
   topId: number | null;
@@ -435,7 +438,7 @@ const listStyles = StyleSheet.create({
 // whenever a second overlay opens on top), needlessly re-rendering overlays
 // that aren't even changing. Keeping the same `ReactNode` reference across
 // renders lets React bail out of re-rendering that subtree entirely.
-type Item = { id: number; node: ReactNode; anchor?: AnchorRect | null };
+type Item = { id: number; node: ReactNode; anchor?: AnchorRect | null; popover?: boolean };
 
 const SPRING = { damping: 22, stiffness: 240, mass: 0.7 } as const;
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -453,9 +456,9 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
     itemsRef.current = items;
   }, [items]);
 
-  const open = useCallback((render: () => ReactNode, anchor?: AnchorRect | null) => {
+  const open = useCallback((render: () => ReactNode, anchor?: AnchorRect | null, opts?: { popover?: boolean }) => {
     const id = idRef.current++;
-    setItems((prev) => [...prev, { id, node: render(), anchor }]);
+    setItems((prev) => [...prev, { id, node: render(), anchor, ...(opts?.popover ? { popover: true } : {}) }]);
     return id;
   }, []);
 
@@ -504,10 +507,23 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
     return () => document.removeEventListener('mousedown', handler, true);
   }, [isWebPopover, depth, closeTop]);
 
+  // Whether an item presents as a popover (desktop with an anchor, or explicitly forced — a phone
+  // context menu). Only SHEETS push the app back and dim heavily; a floating context menu gets a
+  // light dim with no scale, so it reads as a popup over the page rather than a modal takeover.
+  const isPopoverItem = useCallback(
+    (it: Item) => !!it.anchor && (isLargeScreen || !!it.popover),
+    [isLargeScreen],
+  );
+  const sheetDepth = items.filter((it) => !isPopoverItem(it)).length;
+
   const appProgress = useSharedValue(0);
+  const anyProgress = useSharedValue(0);
   useEffect(() => {
-    appProgress.set(withSpring(depth > 0 ? 1 : 0, SPRING));
-  }, [depth, appProgress]);
+    appProgress.set(withSpring(sheetDepth > 0 ? 1 : 0, SPRING));
+  }, [sheetDepth, appProgress]);
+  useEffect(() => {
+    anyProgress.set(withSpring(depth > 0 ? 1 : 0, SPRING));
+  }, [depth, anyProgress]);
 
   const appStyle = useAnimatedStyle(() =>
     isLargeScreen
@@ -518,7 +534,12 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
         },
   );
   const backdropStyle = useAnimatedStyle(() => ({
-    opacity: isLargeScreen ? 0 : interpolate(appProgress.value, [0, 1], [0, 0.5]),
+    opacity: isLargeScreen
+      ? 0
+      : Math.max(
+          interpolate(appProgress.value, [0, 1], [0, 0.5]),
+          interpolate(anyProgress.value, [0, 1], [0, 0.18]),
+        ),
   }));
 
   // The app scales down + rounds its corners while any overlay is open (below),
@@ -543,7 +564,7 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
         />
 
         {items.map((it, i) =>
-          isLargeScreen && it.anchor ? (
+          isPopoverItem(it) && it.anchor ? (
             <OverlayPopover
               key={it.id}
               id={it.id}
