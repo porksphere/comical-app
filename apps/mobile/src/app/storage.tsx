@@ -1,13 +1,15 @@
 /**
- * Storage — a Settings sub-page for on-device space. A device-storage bar up top shows Comical's
- * whole footprint at a glance (durable downloads + reclaimable image cache as distinct segments),
- * then two sections break it down: the **downloads** (durable, with a link to manage them) and the
- * **image cache** (reclaimable — size + clear + a max the native layer LRU-evicts against).
+ * Storage — a Settings sub-page for Comical's storage footprint. The shared `StorageBreakdownBar`
+ * (the same labeled colour-key widget the Downloads page uses per-series) splits it into three
+ * segments: **downloads** and **library** from whichever HOST owns them (this device when embedded,
+ * the remote server otherwise — labeled "(server)"), and the **image cache**, always this device's.
+ * Sections below break each down: downloads (durable, with a link to manage them) and the image
+ * cache (reclaimable — size + clear + a max the native layer LRU-evicts against).
  *
  * The image cache is the usual space hog: the app disk-caches every cover, thumbnail, and READ page
- * via expo-image, so heavy reading grows it into the GBs independent of downloads. The cache size is
- * the ACTUAL bytes on disk (a synchronous directory walk), measured after paint with a "measuring…"
- * placeholder; downloads counts come from the manifest. Native only — on web the disk probes report 0.
+ * via expo-image, so heavy reading grows it into the GBs independent of downloads. Its size is the
+ * ACTUAL bytes of the whole Caches dir (a synchronous walk, so bridge-bundle cache rides along),
+ * measured after paint. Native only for the cache/free-space probes — on web they report 0.
  *
  * The cumulative download-progress radial lives on the Downloads screen, not here — this page is about
  * space occupied, not work in flight.
@@ -17,15 +19,15 @@ import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
-import { DiskSpaceBar } from '@/components/downloads/disk-space-bar';
+import { StorageBreakdownBar, STORAGE_PALETTE } from '@/components/downloads/storage-breakdown-bar';
 import { SettingsSelectRow, type SettingsOption } from '@/components/settings/settings-fields';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
-import { dlStorageUsage } from '@/data/api';
-import { downloadsDiskUsage } from '@/data/downloads/blob-store';
+import { dlStorageUsage, libraryUsage } from '@/data/api';
+import { readDiskInfo } from '@/data/downloads/disk';
 import { formatBytes } from '@/data/downloads/format';
 import { getResolvedModeSync } from '@/data/embedded/preference';
 import { queryKeys } from '@/data/queries';
@@ -53,18 +55,21 @@ export default function StorageScreen() {
   const embedded = getResolvedModeSync() === 'embedded';
 
   // Downloads footprint + counts from the manifest (cross-platform); a backend without the module
-  // yields an empty tree, not an error.
+  // yields an empty tree, not an error. `diskBytes` is the owning host's true blob size.
   const { data: usage = EMPTY_USAGE } = useQuery({
     queryKey: queryKeys.downloadsUsage(),
     queryFn: () => dlStorageUsage().catch(() => EMPTY_USAGE),
   });
+  // The library's footprint on the same host (store docs + captured covers); null without the module.
+  const { data: libUsage = null } = useQuery({
+    queryKey: queryKeys.libraryUsage(),
+    queryFn: () => libraryUsage().catch(() => null),
+  });
 
-  // True on-disk bytes for the storage bar (native only; 0 on web where the probes can't read disk).
+  // True on-disk cache bytes (native only; 0 on web where the probe can't read disk).
   const [cacheSize, setCacheSize] = useState<number | null>(null);
-  const [dlDiskSize, setDlDiskSize] = useState<number | null>(null);
   const measure = useCallback(() => {
     setCacheSize(cacheDiskUsage());
-    setDlDiskSize(downloadsDiskUsage());
   }, []);
   // Measure after paint — the directory walk is synchronous and can be chunky on a large cache.
   useEffect(() => {
@@ -77,9 +82,18 @@ export default function StorageScreen() {
     measure();
   };
 
-  // Comical's whole on-disk footprint (downloads + reclaimable cache) — the big number over the bar.
-  // `null` until at least one probe has run so we can show a placeholder rather than a premature 0.
-  const comicalTotal = cacheSize === null && dlDiskSize === null ? null : (cacheSize ?? 0) + (dlDiskSize ?? 0);
+  // The breakdown segments: downloads and library come from whichever HOST owns them (this device
+  // when embedded, the server when remote — labeled as such), the image cache is always this
+  // device's. Fixed palette positions so the colours never shuffle as numbers tick.
+  const hostSuffix = embedded ? '' : ' (server)';
+  const downloadsBytes = usage.diskBytes ?? usage.totalBytes;
+  const libraryBytes = libUsage?.diskBytes ?? 0;
+  const segments = [
+    { key: 'downloads', label: `Downloads${hostSuffix}`, bytes: downloadsBytes, color: STORAGE_PALETTE[0] },
+    { key: 'library', label: `Library${hostSuffix}`, bytes: libraryBytes, color: STORAGE_PALETTE[4] },
+    { key: 'cache', label: 'Image cache', bytes: cacheSize ?? 0, color: STORAGE_PALETTE[3] },
+  ];
+  const disk = readDiskInfo();
 
   return (
     <ThemedView style={styles.container}>
@@ -87,8 +101,12 @@ export default function StorageScreen() {
       <ScrollView contentContainerStyle={[styles.content, contentPadding]}>
         <SettingsSection>
           <View style={styles.summary}>
-            <ThemedText type="title">{comicalTotal === null ? '…' : formatBytes(comicalTotal)}</ThemedText>
-            <DiskSpaceBar downloadsBytes={dlDiskSize ?? 0} cacheBytes={cacheSize ?? 0} />
+            <StorageBreakdownBar segments={segments} totalBytes={downloadsBytes + libraryBytes + (cacheSize ?? 0)} />
+            {disk.usable && (
+              <ThemedText type="small" themeColor="textSecondary">
+                {formatBytes(disk.available)} free on this device
+              </ThemedText>
+            )}
           </View>
         </SettingsSection>
 

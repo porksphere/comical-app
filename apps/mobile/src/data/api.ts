@@ -940,6 +940,12 @@ export function getActivityCount(signal?: AbortSignal): Promise<{ unread: number
   return fetchJson('/library/activity/count', signal);
 }
 
+/** GET /library/usage → the bytes the library occupies on the active host (store docs + captured
+ *  cover blobs). Null when the host has no library module. */
+export function libraryUsage(signal?: AbortSignal): Promise<{ diskBytes: number } | null> {
+  return fetchJsonOptional('/library/usage', signal);
+}
+
 /** POST /library/sync → scan the library for new chapters (the "Check for updates" action). */
 export function runBackgroundSync(signal?: AbortSignal): Promise<unknown> {
   return fetchPost('/library/sync', {}, signal);

@@ -125,6 +125,8 @@ export const queryKeys = {
   downloadsUsage: () => ['downloads', 'usage'] as const,
   seriesDownloads: (bridgeId: string, seriesId: string) =>
     ['downloads', 'series', bridgeId, seriesId] as const,
+  /** The library's host-side storage footprint (the Storage screen's breakdown segment). */
+  libraryUsage: () => ['libraryUsage'] as const,
 
   // Invalidation target that prefix-matches the library grid (`['library', mock, q, sort]`), so
   // invalidating this refreshes the Library tab regardless of its current search/sort.

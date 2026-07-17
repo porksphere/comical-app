@@ -1,17 +1,13 @@
 /**
- * The Downloads page storage breakdown: a big total-downloaded figure over a single segmented bar that
- * shows how that space splits ACROSS series — each series a distinct colour, sized to its share — with
- * a compact colour key beneath. Only the largest `MAX_SERIES` get their own segment/colour; everything
- * smaller is folded into one muted "Other" segment so the bar and key stay readable and compact (this
- * sits above the download-management list, which should stay the focus). Distinct from the Storage
- * page's `DiskSpaceBar`, which splits DEVICE space into downloads vs. cache vs. free.
+ * The Downloads page storage breakdown: the shared `StorageBreakdownBar` fed per-series segments —
+ * each series a distinct colour, sized to its share. Only the largest `MAX_SERIES` get their own
+ * segment/colour; everything smaller is folded into one muted "Other" segment so the bar and key
+ * stay readable and compact (this sits above the download-management list, which should stay the
+ * focus).
  */
 import { useRef } from 'react';
-import { StyleSheet, View } from 'react-native';
 
-import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
-import { formatBytes } from '@/data/downloads/format';
+import { StorageBreakdownBar, STORAGE_PALETTE, type StorageSegment } from '@/components/downloads/storage-breakdown-bar';
 import { useTheme } from '@/hooks/use-theme';
 import type { StorageUsageSeries } from '@comical/downloads';
 
@@ -19,28 +15,6 @@ const skey = (s: { bridgeId: string; seriesId: string }) => `${s.bridgeId}:${s.s
 
 /** How many series get their own colour/segment before the rest fold into "Other". */
 const MAX_SERIES = 10;
-
-/** A fixed data-viz palette — distinct hues that read on both light and dark backgrounds. Assigned to
- *  the largest series first, so the bar runs biggest→smallest left→right. */
-const PALETTE = [
-  '#3B82F6', // blue
-  '#EF4444', // red
-  '#10B981', // green
-  '#F59E0B', // amber
-  '#8B5CF6', // violet
-  '#EC4899', // pink
-  '#14B8A6', // teal
-  '#F97316', // orange
-  '#6366F1', // indigo
-  '#84CC16', // lime
-];
-
-interface Segment {
-  key: string;
-  label: string;
-  bytes: number;
-  color: string;
-}
 
 export function SeriesStorageBar({ bySeries, totalBytes }: { bySeries: StorageUsageSeries[]; totalBytes: number }) {
   const theme = useTheme();
@@ -59,9 +33,9 @@ export function SeriesStorageBar({ bySeries, totalBytes }: { bySeries: StorageUs
   for (const k of topKeys) if (!order.includes(k)) order.push(k);
   orderRef.current = order;
 
-  const segments: Segment[] = order.map((k, i) => {
+  const segments: StorageSegment[] = order.map((k, i) => {
     const s = byKey.get(k)!;
-    return { key: k, label: s.title, bytes: s.bytes, color: PALETTE[i % PALETTE.length] };
+    return { key: k, label: s.title, bytes: s.bytes, color: STORAGE_PALETTE[i % STORAGE_PALETTE.length] };
   });
   const otherKeys = sized.filter((s) => !topSet.has(skey(s)));
   if (otherKeys.length > 0) {
@@ -69,73 +43,5 @@ export function SeriesStorageBar({ bySeries, totalBytes }: { bySeries: StorageUs
     segments.push({ key: '__other', label: `Other (${otherKeys.length})`, bytes, color: theme.textSecondary });
   }
 
-  // Guard the divisor; fall back to the summed segment bytes if the rollup total is somehow 0.
-  const total = totalBytes || segments.reduce((n, s) => n + s.bytes, 0) || 1;
-
-  return (
-    <View style={styles.wrap}>
-      <ThemedText type="title">{formatBytes(totalBytes)}</ThemedText>
-
-      <View style={[styles.track, { backgroundColor: theme.backgroundElement }]}>
-        {segments.map((seg) => (
-          <View key={seg.key} style={{ width: `${(seg.bytes / total) * 100}%`, backgroundColor: seg.color }} />
-        ))}
-      </View>
-
-      <View style={styles.legend}>
-        {segments.map((seg) => (
-          <View key={seg.key} style={styles.legendItem}>
-            <View style={[styles.dot, { backgroundColor: seg.color }]} />
-            <ThemedText type="small" numberOfLines={1} style={styles.legendLabel}>
-              {seg.label}
-            </ThemedText>
-            <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
-              {formatBytes(seg.bytes)}
-            </ThemedText>
-          </View>
-        ))}
-      </View>
-    </View>
-  );
+  return <StorageBreakdownBar segments={segments} totalBytes={totalBytes} />;
 }
-
-const BAR_HEIGHT = 10;
-
-const styles = StyleSheet.create({
-  wrap: {
-    gap: Spacing.two,
-    paddingVertical: Spacing.two,
-  },
-  track: {
-    height: BAR_HEIGHT,
-    borderRadius: BAR_HEIGHT / 2,
-    overflow: 'hidden',
-    flexDirection: 'row',
-  },
-  // A FIXED two-column grid, not a content-width wrap: each item owns exactly half the width, so a
-  // size number changing (during a download) never re-flows or shuffles the other labels — it just
-  // updates in its own cell. `paddingRight` on each cell is the inter-column gap.
-  legend: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    rowGap: Spacing.one,
-  },
-  legendItem: {
-    width: '50%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.one,
-    paddingRight: Spacing.two,
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  // Absorbs the row's slack (and truncates a long title) so the trailing size sits at a stable spot and
-  // the label re-truncates in place rather than pushing anything.
-  legendLabel: {
-    flex: 1,
-    minWidth: 0,
-  },
-});

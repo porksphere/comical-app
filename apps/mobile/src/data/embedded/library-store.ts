@@ -66,7 +66,32 @@ async function readRecord<T>(storageKey: string): Promise<Record<string, T>> {
   return read<Record<string, T>>(storageKey, {});
 }
 
+/** UTF-8 byte length; Hermes builds without TextEncoder fall back to the (close) UTF-16 length. */
+function byteLength(s: string): number {
+  try {
+    return new TextEncoder().encode(s).length;
+  } catch {
+    return s.length;
+  }
+}
+
 export class AsyncStorageLibraryStore implements LibraryStore {
+  // ── Disk usage ──────────────────────────────────────────────────────────────
+  /** Bytes this store's documents occupy in AsyncStorage (all `comical:lib:*` keys). Cover blobs
+   *  live in the covers BlobStore and report separately (see /library/usage). */
+  async diskUsage(): Promise<number> {
+    try {
+      const keys = (await AsyncStorage.getAllKeys()).filter((k) => k.startsWith(`${NS}:`));
+      if (keys.length === 0) return 0;
+      const pairs = await AsyncStorage.multiGet(keys);
+      let total = 0;
+      for (const [k, v] of pairs) total += byteLength(k) + (v ? byteLength(v) : 0);
+      return total;
+    } catch {
+      return 0;
+    }
+  }
+
   // ── Entries ────────────────────────────────────────────────────────────────
   async listEntries(): Promise<LibraryEntry[]> {
     return Object.values(await readRecord<LibraryEntry>(ENTRIES));
