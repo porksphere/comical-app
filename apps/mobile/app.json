@@ -60,7 +60,8 @@
       "./plugins/with-kotlin-version.js",
       "./plugins/with-comical-ios-sources.js",
       "./plugins/with-devclient-variant.js",
-      "expo-sharing"
+      "expo-sharing",
+      "expo-background-task"
     ],
     "experiments": {
       "typedRoutes": true,

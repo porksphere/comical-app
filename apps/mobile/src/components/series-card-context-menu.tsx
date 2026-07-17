@@ -3,7 +3,7 @@ import { Image } from 'expo-image';
 import { usePathname, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BackHandler, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { BackHandler, Platform, StyleSheet, View, useWindowDimensions } from 'react-native';
 import Animated, {
   cancelAnimation,
   interpolate,
@@ -24,7 +24,22 @@ import { useQuery } from '@tanstack/react-query';
 
 import { NATIVE_HIDE_OFFSET } from '@/components/app-tabs';
 import { TagStrip } from '@/components/chip';
-import { CheckIcon, PlayIcon, PlusIcon, StarIcon, type IconProps } from '@/components/icons/ui-icons';
+import {
+  ANDROID_BLUR,
+  BACKDROP_BLUR,
+  BACKDROP_TINT,
+  BACKDROP_TINT_OPACITY,
+  HIGHLIGHT_OPACITY,
+  HOVER_FADE,
+  HOVER_SPRING,
+  MENU_PAD_V,
+  MENU_ROW_HEIGHT as ROW_HEIGHT,
+  MENU_WIDTH,
+  MenuSurface,
+  menuStyles,
+  type MenuRowSpec,
+} from '@/components/context-menu-material';
+import { CheckIcon, DownloadsIcon, PlayIcon, PlusIcon, StarIcon } from '@/components/icons/ui-icons';
 import { PageThumb } from '@/components/series/chapters-section';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
@@ -36,6 +51,7 @@ import { useDataSource, useMockActive } from '@/data/source';
 import type { PageThumbSource } from '@/data/types';
 import { useFavorite } from '@/hooks/use-favorite';
 import { useLibrary } from '@/hooks/use-library';
+import { useSeriesDownloadAction } from '@/hooks/use-series-download-action';
 import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
 import { useStartReading } from '@/hooks/use-start-reading';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
@@ -137,25 +153,16 @@ const DESC_LINES = 3;
 const DESC_H = DESC_LINES * SMALL_LINE_H;
 // Rough panel height before it's measured, so the menu is roughly placed on frame one.
 const PANEL_HEIGHT_ESTIMATE = 190;
-const MENU_WIDTH = 240;
-const ROW_HEIGHT = 48;
-const MENU_PAD_V = Spacing.one;
-// The selection highlight — one shape and one strength, whether you slid a held finger onto the row or
-// just pressed it. Deliberately faint: it sits on a blurred panel, so `backgroundSelected` at full
-// strength read as a solid slab of colour rather than a highlight. It only has to say WHICH row.
-const HIGHLIGHT_OPACITY = 0.5;
-// The highlight SLIDES between rows rather than blinking from one to the next — with a hold you're
-// dragging a selection along the menu, and a moving object under the thumb reads as the thing you're
-// moving. Snappy (it must arrive before the finger has moved on) but not instant.
-const HOVER_SPRING = { damping: 20, stiffness: 340, mass: 0.6 } as const;
-const HOVER_FADE = { duration: 110 } as const;
+// MENU_WIDTH / ROW_HEIGHT / MENU_PAD_V / the highlight + hover constants live in
+// `context-menu-material.tsx` now (imported above) — shared with the generic ContextMenuHost so the
+// two hold menus render the exact same object.
 // How long a press ON THE MENU must be held before it becomes a peek (see `menuHold`). Shorter than the
 // card's 350ms: the popup is already open and your finger is already on the thing you're choosing from,
 // so there's far less to disambiguate — only a tap and a resize drag, and both are quick by nature.
 const MENU_HOLD_MS = 220;
-// Read + Add to Library + Favorite. Keep in step with the rows rendered below — the menu's height is
-// computed from this (it's what the panel's resize range budgets for), not measured.
-const MENU_ROWS = 3;
+// Read + Add to Library + Favorite + Download. Keep in step with the rows rendered below — the menu's
+// height is computed from this (it's what the panel's resize range budgets for), not measured.
+const MENU_ROWS = 4;
 // DEV ONLY: pad the menu out with dummy rows, to exercise the case the pan gesture exists for — a
 // group too tall for the screen, where the panel has to give up height for the menu to be reachable.
 //
@@ -191,28 +198,9 @@ const FLING_PROJECTION = 0.12; // seconds
 // How many menu rows must be on screen when the popup opens. Below this it stops reading as a menu —
 // you'd long-press a card in the bottom row and get a preview with its actions hidden under the fold.
 const MIN_VISIBLE_ROWS = 4;
-// Blur strengths (0–100). The backdrop ramps in a bit after the cover pops.
-const BACKDROP_BLUR = 28;
-const MENU_BLUR = 55;
-// ── The material ─────────────────────────────────────────────────────────────
-// A frosted surface is two things: a blur, and a translucent tint OF THE SURFACE over it. The tint is
-// what says what the menu is MADE of; the blur is what lets the colour behind bleed through it. Both,
-// or it isn't a material — a blur alone just shows you the backdrop, and a tint alone is a slab.
-//
-// And the whole thing rests on WHAT'S BEHIND IT. That's the trap this hit: a menu can only be as light
-// as the thing it blurs, and the backdrop dimmed to black on every theme, so the light menu sampled a
-// black scrim and came back grey. Tinting it opaque hid that, at the cost of the blur — the menu
-// stopped being glass. The actual fix is one level down: the SCRIM follows the theme too. A light
-// theme washes the page out lighter (which is what iOS does — the page goes pale, not dark), so the
-// menu has something light to blur, and the covers behind it bleed their colour through it as glass
-// should. Dark dims to black as before.
-const BACKDROP_TINT = { light: '#ffffff', dark: '#000000' } as const;
-const BACKDROP_TINT_OPACITY = { light: 0.45, dark: 0.15 } as const;
-// Both stay properly translucent now. Light is the heavier of the two only because it also has to hold
-// its own against the panel beside it, which is opaque.
-const MENU_FILL = { light: 'rgba(255,255,255,0.55)', dark: 'rgba(23,24,27,0.62)' } as const;
-// Android's blur is the experimental Dimezis path; a no-op elsewhere.
-const ANDROID_BLUR = Platform.OS === 'android' ? ('dimezisBlurView' as const) : undefined;
+// The backdrop/menu material (blur strengths, theme-following scrim tints, the menu's surface fill)
+// lives in `context-menu-material.tsx` — see its docstring for the full "what makes a frosted
+// surface" and "the scrim follows the theme" reasoning, which was written here first.
 
 /**
  * Root-mounted host for the native card context menu (the iOS / X hold-down): a dimmed backdrop, a
@@ -291,6 +279,15 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     title: entry.title,
     ...(entry.cover ? { thumbnailUrl: entry.cover } : {}),
   }));
+  // Lazy: this panel mounts only while the menu is open, so the download-status query runs once here,
+  // never per card in the grid.
+  const download = useSeriesDownloadAction(
+    bridgeId,
+    entry.id,
+    !!direct,
+    { title: entry.title, ...(entry.cover ? { cover: entry.cover } : {}) },
+    true,
+  );
 
   // Start the open morph, once. Deferred until the lifted cover's bitmap is decoded (see `openMorph`
   // below) so it never flies out blank for a frame or two — expo-image decodes async even on a cache
@@ -745,7 +742,8 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   );
 
   const backdropBlurProps = useAnimatedProps(() => ({
-    intensity: interpolate(progress.value, [0, 0.3, 1], [0, 0, BACKDROP_BLUR]),
+    // The card popup lifts a preview — the heavy frost mode sets it off against the page.
+    intensity: interpolate(progress.value, [0, 0.3, 1], [0, 0, BACKDROP_BLUR.preview]),
   }));
   const scrimOpacity = BACKDROP_TINT_OPACITY[menuTint];
   const backdropTintStyle = useAnimatedStyle(() => ({
@@ -914,6 +912,14 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       active: !!favorited,
       testID: 'series.card-menu.favorite',
       onPress: () => act(toggleFavorite),
+    },
+    {
+      label: download.label,
+      Icon: DownloadsIcon,
+      loading: download.loading,
+      active: download.active,
+      testID: 'series.card-menu.download',
+      onPress: () => act(download.onPress),
     },
     // DEV ONLY: dummy rows so the menu is long enough to overrun the screen, which is the only state
     // the pan gesture exists for. See DEBUG_EXTRA_MENU_ROWS.
@@ -1153,26 +1159,13 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
         </Animated.View>
       </View>
 
-      {/* The actions menu — a frosted (blurred) panel. It is never dragged: its position is DERIVED
-          from the panel's live height (see menuStyle), so it tracks the panel's bottom edge as the pan
-          resizes it, and eases with it when late content changes the panel's natural height. */}
+      {/* The actions menu — the shared frosted surface (context-menu-material.tsx). It is never
+          dragged: its position is DERIVED from the panel's live height (see menuStyle), so it tracks
+          the panel's bottom edge as the pan resizes it, and eases with it when late content changes
+          the panel's natural height. */}
       <GestureDetector gesture={menuHold}>
-        <Animated.View style={[styles.menuWrap, { width: menuW }, menuStyle]}>
-          <BlurView tint={menuTint} intensity={MENU_BLUR} experimentalBlurMethod={ANDROID_BLUR} style={[styles.menu, { borderColor: theme.backgroundSelected }]}>
-            {/* The surface tint (see MENU_FILL) — its own layer INSIDE the blur, not a `backgroundColor`
-                on the BlurView, which every platform is free to own: expo-blur's web build applies its
-                own tint background last and silently drops whatever you passed. A child can't be
-                overridden. */}
-            <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: MENU_FILL[menuTint] }]} />
-            {/* The travelling selection bubble, under the rows so their labels stay on top of it. */}
-            <Animated.View
-              pointerEvents="none"
-              style={[styles.hoverBubble, { backgroundColor: theme.backgroundSelected }, hoverStyle]}
-            />
-            {rows.map((row, i) => (
-              <MenuRow key={i} {...row} index={i} />
-            ))}
-          </BlurView>
+        <Animated.View style={[menuStyles.menuWrap, { width: menuW }, menuStyle]}>
+          <MenuSurface tint={menuTint} rows={rows} channel={{ holdActive, hoveredRow }} hoverStyle={hoverStyle} />
         </Animated.View>
       </GestureDetector>
       </View>
@@ -1276,85 +1269,8 @@ function RailSkeleton() {
   );
 }
 
-/**
- * One row of the actions menu.
- *
- * ⚠️ NO `theme.accent` (BLUE) IN THIS MENU — not on the state toggles, and NOT on the Read row.
- * Do not "promote" the primary action by tinting it blue; that has now been done twice and reverted
- * twice. The blue chip/label look is disliked here, full stop. If a row needs to stand out, use
- * WEIGHT and POSITION (Read is bold and it leads), never hue.
- *
- * So nothing in this menu is coloured:
- *   • Read is bold, first, and carries a solid play glyph — that's what makes it primary.
- *   • The toggles keep the plain label colour whether on or off, and say which they are through the
- *     glyph alone: a checkmark once in the library, a filled star once favourited.
- *
- * The original sin was `accent` carrying two meanings at once — "this is tappable" AND "this is on" —
- * which made "in Library" shout louder than the thing you actually opened the menu to do.
- */
-export type MenuRowSpec = {
-  label: string;
-  Icon: (props: IconProps) => React.ReactElement;
-  /** Fill the glyph rather than tint it — how an "on" toggle reads (see above). */
-  iconFilled?: boolean;
-  loading: boolean;
-  /** Unavailable (e.g. favorites need a login that isn't set) — greyed + inert, like loading but final. */
-  disabled?: boolean;
-  active?: boolean;
-  /** The menu's one real action (Read): bold and leading. NOT coloured — see above. */
-  primary?: boolean;
-  onPress: () => void;
-  /** Automation selector — required so every menu row is reachable (see src/lib/test-id.ts). */
-  testID: string;
-};
-
-function MenuRow({
-  label,
-  Icon,
-  iconFilled,
-  loading,
-  disabled,
-  active,
-  primary,
-  index,
-  onPress,
-  testID,
-}: MenuRowSpec & {
-  /** This row's position, which is what the held finger is hit-tested into (see "Peek and commit"). */
-  index: number;
-}) {
-  const theme = useTheme();
-  const inert = loading || !!disabled;
-  const color = inert ? theme.textSecondary : theme.text;
-  // An off toggle's glyph sits back a little, so the on-state (solid glyph, full contrast) reads as
-  // a change without needing a colour of its own.
-  const iconColor = inert ? theme.textSecondary : primary || active ? color : theme.textSecondary;
-  // A row has NO highlight of its own. Pressing it just says which row is selected, on the same channel
-  // the held finger writes — so the one travelling bubble draws a press and a peek alike. There is
-  // literally nothing left that could look different between them.
-  //
-  // While a hold owns the selection, the press must keep its hands off it: activating the hold cancels
-  // the touch responder, which fires `onPressOut`, which would otherwise clear the very row the hold
-  // just picked (and blink the bubble at the exact moment the hold takes over).
-  return (
-    <Pressable
-      testID={testID}
-      onPress={inert ? undefined : onPress}
-      disabled={inert}
-      onPressIn={() => {
-        if (!holdActive.value) hoveredRow.set(index);
-      }}
-      onPressOut={() => {
-        if (!holdActive.value) hoveredRow.set(-1);
-      }}
-      style={styles.row}>
-      <ThemedText style={[styles.rowLabel, primary && styles.rowLabelPrimary, { color }]} numberOfLines={1}>
-        {label}
-      </ThemedText>
-      <Icon color={iconColor} size={19} filled={iconFilled} />
-    </Pressable>
-  );
-}
+// `MenuRowSpec` / `MenuRow` (and the "NO theme.accent IN THIS MENU" rule that governs them) moved to
+// `context-menu-material.tsx`, shared with the generic ContextMenuHost.
 
 const styles = StyleSheet.create({
   // The panel, cover and menu are all laid out at the overlay's origin and placed by an animated
@@ -1495,52 +1411,5 @@ const styles = StyleSheet.create({
     width: RAIL_SKELETON_W,
     borderRadius: 8,
   },
-  menuWrap: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    borderRadius: 14,
-    shadowColor: '#000000',
-    shadowOpacity: 0.28,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 10,
-  },
-  menu: {
-    borderRadius: 14,
-    paddingVertical: MENU_PAD_V,
-    overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  // The selection bubble: inset from the row's edges and generously rounded, so it reads as a pill
-  // sitting on the menu rather than a full-bleed band lighting up. Inset, because a bubble that touched
-  // the menu's own rounded edge would look like a rendering artefact rather than a shape.
-  //
-  // ONE of these for the entire menu — it's positioned by transform onto whichever row is selected (see
-  // `hoverStyle`), which is what lets it slide between them. Its `top` is 0 because that translate IS
-  // its position; the +2/-4 is the inset that makes it a pill rather than a band.
-  hoverBubble: {
-    position: 'absolute',
-    left: Spacing.one,
-    right: Spacing.one,
-    top: 2,
-    height: ROW_HEIGHT - 4,
-    borderRadius: 10,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    height: ROW_HEIGHT,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.three,
-  },
-  rowLabel: {
-    flex: 1,
-    fontSize: 16,
-  },
-  // Read leads and is bold — that is the ONLY way it's marked as primary. No colour. See MenuRow.
-  rowLabelPrimary: {
-    fontWeight: '600',
-  },
+  // menuWrap / menu / hoverBubble / row styles live in `context-menu-material.tsx` (menuStyles).
 });

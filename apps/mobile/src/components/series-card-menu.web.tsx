@@ -23,6 +23,8 @@ export type SeriesCardMenuProps = {
   enabled: boolean;
   bridgeId?: string;
   entry: SeriesEntry;
+  /** Whether the bridge serves a direct (page-thumbnail) series — threaded to the download action. */
+  direct?: boolean;
   /** Cover aspect ratio, so the menu header shows the cover at its true shape. */
   coverAspect?: number;
   /** Ignored on web (no lifted preview); matches the native variant's contract — see it. */
@@ -33,7 +35,7 @@ export type SeriesCardMenuProps = {
   children: (api: { onLongPress?: (e: GestureResponderEvent) => void; hidden: boolean }) => React.ReactNode;
 };
 
-export function SeriesCardMenu({ enabled, bridgeId, entry, coverAspect, children }: SeriesCardMenuProps) {
+export function SeriesCardMenu({ enabled, bridgeId, entry, direct, coverAspect, children }: SeriesCardMenuProps) {
   const theme = useTheme();
   const { ref, openAt, isOpen } = useAnchoredOverlay();
   // Track hover on the wrapper (not the card or the button individually): moving the pointer from
@@ -57,7 +59,7 @@ export function SeriesCardMenu({ enabled, bridgeId, entry, coverAspect, children
         // here opens the menu without also triggering navigation; stopPropagation is defensive.
         onPress={(e) => {
           e?.stopPropagation?.();
-          openAt(() => <SeriesActionsMenu bridgeId={bridgeId} entry={entry} coverAspect={coverAspect} />);
+          openAt(() => <SeriesActionsMenu bridgeId={bridgeId} entry={entry} direct={direct} coverAspect={coverAspect} />);
         }}
         // Kept mounted (so the overlay anchor `ref` stays measurable) but only shown/interactive
         // while hovered or open — fading via opacity avoids any layout shift on the card.

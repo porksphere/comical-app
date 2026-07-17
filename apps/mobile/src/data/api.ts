@@ -477,6 +477,154 @@ export function getPageThumb(
   );
 }
 
+// ─── Downloads (offline manifest) ───────────────────────────────────────────────
+//
+// These drive the optional `/downloads*` endpoints the reused router mounts when a Downloads service
+// is present (on-device via host-rn's embedded runtime; on a remote server if it enables the module).
+// The bytes are owned by whichever HOST runs the download engine: embedded mode writes them to this
+// device's filesystem (`downloads/blob-store.ts`, served to `<Image>` as `file://` URIs), remote mode
+// stores them server-side (served back via `/downloads/.../pages/:i/file`). Types are erased at build.
+
+import type { DownloadedChapter, DownloadedPage, DownloadedSeries, DownloadPrefs, StorageUsage } from '@comical/downloads';
+
+/** The body posted to enqueue a chapter: the series snapshot + chapter meta. `pages` is optional —
+ *  an engine-backed host (embedded or a current server) resolves the page list via its own bridge;
+ *  supplying it explicitly is the manifest-only back-compat path. */
+export interface DlEnqueueChapterBody {
+  title: string;
+  thumbnailUrl?: string;
+  author?: string;
+  chapterName?: string;
+  number?: number;
+  languageCode?: string;
+  pages?: { index: number; sourceUrl: string; headers?: Record<string, string> }[];
+}
+
+const dlBase = (bridgeId: string, seriesId: string) =>
+  `/downloads/entries/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}`;
+
+/** GET /downloads → the storage-usage tree (total bytes + series → chapters). */
+export function dlStorageUsage(signal?: AbortSignal): Promise<StorageUsage> {
+  return fetchJson('/downloads', signal);
+}
+
+/** GET /downloads/pending → chapters still needing bytes (the engine's work queue). */
+export function dlPendingChapters(signal?: AbortSignal): Promise<DownloadedChapter[]> {
+  return fetchJson('/downloads/pending', signal);
+}
+
+/** GET /downloads/prefs → download preferences (wifiOnly / background). */
+export function dlGetPrefs(signal?: AbortSignal): Promise<DownloadPrefs> {
+  return fetchJson('/downloads/prefs', signal);
+}
+
+/** PUT /downloads/prefs → update preferences (partial merge server-side). */
+export function dlSetPrefs(prefs: Partial<DownloadPrefs>): Promise<DownloadPrefs> {
+  return fetchPut('/downloads/prefs', prefs);
+}
+
+/** GET one series' manifest (snapshot + chapters), or null when nothing is downloaded for it. */
+export function dlGetSeries(
+  bridgeId: string,
+  seriesId: string,
+  signal?: AbortSignal,
+): Promise<{ series: DownloadedSeries; chapters: DownloadedChapter[] } | null> {
+  return fetchJsonOptional(dlBase(bridgeId, seriesId), signal);
+}
+
+/** POST enqueue a chapter for download. */
+export function dlEnqueueChapter(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+  body: DlEnqueueChapterBody,
+): Promise<DownloadedChapter> {
+  return fetchPost(`${dlBase(bridgeId, seriesId)}/chapters/${encodeURIComponent(chapterId)}`, body);
+}
+
+/** POST bulk-enqueue many chapters of one series in a single request. The host records the whole
+ *  queue as instant manifest writes (page lists resolve lazily at download time), so a 300-chapter
+ *  "download all" lands atomically — closing the app mid-request can no longer strand the tail. */
+export function dlEnqueueChapters(
+  bridgeId: string,
+  seriesId: string,
+  body: {
+    title: string;
+    thumbnailUrl?: string;
+    author?: string;
+    chapters: { chapterId: string; chapterName?: string; number?: number; languageCode?: string }[];
+  },
+): Promise<{ chapters: DownloadedChapter[] }> {
+  return fetchPost(`${dlBase(bridgeId, seriesId)}/chapters`, body);
+}
+
+/** POST record one downloaded page's on-disk file + byte size. */
+export function dlRecordPage(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+  index: number,
+  file: string,
+  bytes: number,
+): Promise<DownloadedChapter> {
+  return fetchPost(`${dlBase(bridgeId, seriesId)}/chapters/${encodeURIComponent(chapterId)}/pages/${index}`, { file, bytes });
+}
+
+/** POST mark one page failed (the client gave up fetching it) — surfaces the chapter as failed. */
+export function dlFailPage(bridgeId: string, seriesId: string, chapterId: string, index: number): Promise<DownloadedChapter> {
+  return fetchPost(`${dlBase(bridgeId, seriesId)}/chapters/${encodeURIComponent(chapterId)}/pages/${index}/fail`, {});
+}
+
+/** GET the ordered manifest page list for a chapter (the offline page-LIST fallback). */
+export function dlManifestPages(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+  signal?: AbortSignal,
+): Promise<DownloadedPage[]> {
+  return fetchJson(`${dlBase(bridgeId, seriesId)}/chapters/${encodeURIComponent(chapterId)}/pages`, signal);
+}
+
+/** POST re-queue the missing pages of a partial/failed chapter (resumable retry). */
+export function dlRequeue(bridgeId: string, seriesId: string, chapterId: string): Promise<DownloadedPage[]> {
+  return fetchPost(`${dlBase(bridgeId, seriesId)}/chapters/${encodeURIComponent(chapterId)}/requeue`, {});
+}
+
+/** POST pause (cancel) a chapter — stops draining, keeps downloaded pages. */
+export function dlPauseChapter(bridgeId: string, seriesId: string, chapterId: string): Promise<DownloadedChapter> {
+  return fetchPost(`${dlBase(bridgeId, seriesId)}/chapters/${encodeURIComponent(chapterId)}/pause`, {});
+}
+
+/** POST resume a paused chapter — back to queued. */
+export function dlResumeChapter(bridgeId: string, seriesId: string, chapterId: string): Promise<DownloadedChapter> {
+  return fetchPost(`${dlBase(bridgeId, seriesId)}/chapters/${encodeURIComponent(chapterId)}/resume`, {});
+}
+
+/** POST pause (cancel) every not-yet-complete chapter of a series. */
+export function dlPauseSeries(bridgeId: string, seriesId: string): Promise<{ ok: true }> {
+  return fetchPost(`${dlBase(bridgeId, seriesId)}/pause`, {});
+}
+
+/** POST resume every paused chapter of a series. */
+export function dlResumeSeries(bridgeId: string, seriesId: string): Promise<{ ok: true }> {
+  return fetchPost(`${dlBase(bridgeId, seriesId)}/resume`, {});
+}
+
+/** DELETE one chapter → the blob `files` to remove. */
+export function dlDeleteChapter(bridgeId: string, seriesId: string, chapterId: string): Promise<{ files: string[] }> {
+  return fetchDelete(`${dlBase(bridgeId, seriesId)}/chapters/${encodeURIComponent(chapterId)}`);
+}
+
+/** DELETE one series → the blob `files` to remove. */
+export function dlDeleteSeries(bridgeId: string, seriesId: string): Promise<{ files: string[] }> {
+  return fetchDelete(dlBase(bridgeId, seriesId));
+}
+
+/** DELETE everything → all blob `files` to remove. */
+export function dlDeleteAll(): Promise<{ files: string[] }> {
+  return fetchDelete('/downloads');
+}
+
 // ─── Settings + registries ────────────────────────────────────────────────────
 //
 // `SettingDescriptor`/`SettingOption`/`SettingValue` come from `@comical/contract` (see header).
@@ -625,6 +773,16 @@ async function fetchPost<T>(path: string, body: unknown, signal?: AbortSignal): 
     body: JSON.stringify(body),
     signal,
   });
+  if (!res.ok) {
+    const responseBody = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(responseBody.error ?? `${res.status} ${res.statusText}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+/** DELETE returning a JSON body (the downloads delete routes hand back the blob `files` to remove). */
+async function fetchDelete<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const res = await transport(path, { method: 'DELETE', signal });
   if (!res.ok) {
     const responseBody = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(responseBody.error ?? `${res.status} ${res.statusText}`);
@@ -796,6 +954,12 @@ export function getActivity(signal?: AbortSignal): Promise<ApiActivityItem[]> {
 /** GET /library/activity/count → unread new-chapter count (for a tab badge). */
 export function getActivityCount(signal?: AbortSignal): Promise<{ unread: number }> {
   return fetchJson('/library/activity/count', signal);
+}
+
+/** GET /library/usage → the bytes the library occupies on the active host (store docs + captured
+ *  cover blobs). Null when the host has no library module. */
+export function libraryUsage(signal?: AbortSignal): Promise<{ diskBytes: number } | null> {
+  return fetchJsonOptional('/library/usage', signal);
 }
 
 /** POST /library/sync → scan the library for new chapters (the "Check for updates" action). */

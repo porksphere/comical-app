@@ -136,6 +136,12 @@ export type SeriesDetail = SeriesEntry & {
    *  streams the list into its section with a skeleton — the chapter/page LIST
    *  request is the ~200ms bottleneck, so it must not block the body render. */
   listDeferred?: boolean;
+  /** True when the host served this from the library's offline metadata cache (the bridge couldn't
+   *  answer — device/server offline from the source, or the bridge uninstalled). The series page
+   *  shows a "saved details" affordance and dims chapters that aren't downloaded. */
+  cached?: boolean;
+  /** When the cached detail was captured (epoch ms) — shown as "updated X ago". */
+  cachedAt?: number;
 };
 
 /** Result of the deferred `getSeriesList` fetch: the chapter list (chaptered) OR

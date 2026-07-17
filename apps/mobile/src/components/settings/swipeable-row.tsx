@@ -1,5 +1,5 @@
-import { type ComponentType, type ReactNode, useState } from 'react';
-import { Platform, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
+import { type ComponentType, type ReactNode, useEffect, useRef, useState } from 'react';
+import { Platform, Pressable, StyleSheet, View, type GestureResponderEvent, type ViewStyle } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   interpolateColor,
@@ -116,6 +116,14 @@ type SwipeableRowProps = {
   /** Horizontal inset (px) the row escapes so its pills reach past a container's padding to the screen
    *  edge. Settings screens pass `SettingsGutter`; a plain centred list (e.g. History) leaves it 0. */
   edgeInset?: number;
+  /** In a RECYCLING list, the item's stable list key. When the container is reused for a different
+   *  item this changes, so the row snaps closed — WITHOUT it, a swiped-open row would inherit onto the
+   *  next item. It's the list key (not the item value), so a mere data UPDATE to the same item (e.g. a
+   *  download tick) leaves it unchanged and does NOT close an open swipe. Omit outside a recycling list. */
+  recycleKey?: string;
+  /** Set false to suppress the actions entirely (no swipe gesture, no hover lanes) — e.g. while a
+   *  screen's multi-select mode owns row interaction. The row renders as plain content, same layout. */
+  swipeEnabled?: boolean;
   /** The row's own content (rendered as the swipeable surface / hover body). */
   children: ReactNode;
 };
@@ -135,14 +143,23 @@ type SwipeableRowProps = {
  * only safe with an undo snackbar, which this app has none of). On web there is no swipe — the actions
  * reveal as buttons on hover (and show unconditionally on a touch screen, which never hovers).
  */
-export function SwipeableRow({ name, actions, edgeInset = 0, children }: SwipeableRowProps) {
+export function SwipeableRow({ name, actions, edgeInset = 0, recycleKey, swipeEnabled = true, children }: SwipeableRowProps) {
+  // Nothing to act on: plain content in the same escaped layout, no gesture/lanes. Checked BEFORE
+  // clampActions — an intentionally empty action set isn't the dev error it warns on. A DISABLED
+  // row (`swipeEnabled: false`) deliberately does NOT take this branch: swapping between the
+  // gesture tree and a plain view remounts every visible row's gesture+reanimated stack at once,
+  // which made entering a big list's select mode visibly stall — the row stays mounted and its
+  // gesture is switched off instead.
+  if (actions.length === 0) {
+    return <View style={{ marginHorizontal: -edgeInset }}>{children}</View>;
+  }
   const shown = clampActions(actions, name);
   return IS_WEB ? (
-    <HoverActionsRow name={name} actions={shown} edgeInset={edgeInset}>
+    <HoverActionsRow name={name} actions={shown} edgeInset={edgeInset} recycleKey={recycleKey} enabled={swipeEnabled}>
       {children}
     </HoverActionsRow>
   ) : (
-    <SwipeRow name={name} actions={shown} edgeInset={edgeInset}>
+    <SwipeRow name={name} actions={shown} edgeInset={edgeInset} recycleKey={recycleKey} enabled={swipeEnabled}>
       {children}
     </SwipeRow>
   );
@@ -152,37 +169,67 @@ export function SwipeableRow({ name, actions, edgeInset = 0, children }: Swipeab
  *  (escapes the settings gutter so pills reach the screen edge). Existing settings callers use this. */
 export function SwipeableSettingsRow({
   label,
+  labelBold,
   description,
   descriptionColor,
+  contentInset,
   leading,
+  right,
   onPress,
+  onLongPress,
   actions,
+  recycleKey,
+  swipeEnabled,
+  testID,
 }: {
   label: string;
+  labelBold?: boolean;
   description?: string;
   descriptionColor?: string;
+  /** Indents the row's content under a parent (see `SettingsRow.contentInset`). */
+  contentInset?: number;
   leading?: ReactNode;
+  /** Trailing content on the row's right (overrides the auto chevron a pressable row would grow). */
+  right?: ReactNode;
   /** Tapping the row body (e.g. opening the item's detail page). Suppressed while the row is open. */
   onPress?: () => void;
+  /** Long-press on a pressable row (see `SettingsRow.onLongPress`). */
+  onLongPress?: (e: GestureResponderEvent) => void;
   actions: SwipeRowAction[];
+  /** The item's stable list key in a recycling list — see `SwipeableRow.recycleKey`. */
+  recycleKey?: string;
+  /** See `SwipeableRow.swipeEnabled` — false renders the row without its actions. */
+  swipeEnabled?: boolean;
+  /** Automation selector forwarded to the inner row. */
+  testID?: string;
 }) {
   return (
-    <SwipeableRow name={label} actions={actions} edgeInset={SettingsGutter}>
+    <SwipeableRow
+      name={label}
+      actions={actions}
+      edgeInset={SettingsGutter}
+      recycleKey={recycleKey}
+      {...(swipeEnabled !== undefined ? { swipeEnabled } : {})}>
       <SettingsRow
         label={label}
+        labelBold={labelBold}
         description={description}
         descriptionColor={descriptionColor}
+        contentInset={contentInset}
         leading={leading}
+        right={right}
         escapeGutter={false}
         onPress={onPress}
+        onLongPress={onLongPress}
+        testID={testID}
       />
     </SwipeableRow>
   );
 }
 
-type RowImplProps = { name: string; actions: SwipeRowAction[]; edgeInset: number; children: ReactNode };
+type RowImplProps = { name: string; actions: SwipeRowAction[]; edgeInset: number; recycleKey?: string; enabled: boolean; children: ReactNode };
 
-function SwipeRow({ name, actions, edgeInset, children }: RowImplProps) {
+function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: RowImplProps) {
   const theme = useTheme();
   // Where the row is BEING DRAGGED to — set straight from the finger, with no smoothing.
   const target = useSharedValue(0);
@@ -227,20 +274,66 @@ function SwipeRow({ name, actions, edgeInset, children }: RowImplProps) {
     else releaseOpenRow(token);
   }
 
+  // When a recycling list reuses this view for a DIFFERENT item, `recycleKey` changes — snap the row
+  // closed so a swiped-open row can't inherit onto the next item. Keyed on the stable LIST KEY (not the
+  // item value), so a mere data update to the SAME item (a download tick) doesn't change it and leaves
+  // an open swipe alone. Fires once on mount too (a harmless no-op — the row is already closed).
+  useEffect(() => {
+    restIndex.value = 0;
+    captured.value = 0;
+    target.value = 0;
+    releaseOpenRow(token);
+    setOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recycleKey]);
+
+  // If the action set changes while the row is open, its gesture state (rest/captured detent, slid
+  // position) references the OLD pill layout — a live status change (a download finishing drops the
+  // Pause pill and re-sorts the row) would leave it slid to a stale detent and index past the shorter
+  // detents array. Snap it closed whenever the pill count changes. (Shared values are stable refs, so
+  // they're intentionally kept out of the dep array — see the immutability note above.)
+  const prevPillCount = useRef(pillCount);
+  useEffect(() => {
+    if (prevPillCount.current === pillCount) return;
+    prevPillCount.current = pillCount;
+    restIndex.value = 0;
+    captured.value = 0;
+    target.value = 0;
+    releaseOpenRow(token);
+    setOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pillCount]);
+
+  // Disabled (e.g. the screen's select mode owns row interaction): snap closed so a swiped-open row
+  // can't linger under the selection UI. The gesture below is switched off via `.enabled()`.
+  useEffect(() => {
+    if (enabled) return;
+    restIndex.value = 0;
+    captured.value = 0;
+    target.value = 0;
+    releaseOpenRow(token);
+    setOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled]);
+
+  // Disabling rides the HANDLERS (closure-captured `enabled`, re-diffed every render), not the
+  // recognizer's .enabled() config — RNGH doesn't reliably re-apply that to already-mounted
+  // recognizers, which left rows mounted during select mode with dead gestures after exiting.
   const pan = Gesture.Pan()
-    // Only claim the gesture once it's clearly horizontal, so vertical scrolling of the list still
-    // belongs to the ScrollView.
-    .activeOffsetX([-12, 12])
+    // Vertical movement fails the pan so list scrolling still wins.
     .failOffsetY([-12, 12])
     .onBegin(() => {
       'worklet';
+      if (!enabled) return;
       // Capture from wherever the row is currently resting, so resuming a drag from an already-open
-      // detent doesn't fire a spurious tick on the first frame.
-      captured.value = restIndex.value;
+      // detent doesn't fire a spurious tick on the first frame. Clamp in case the action set just
+      // shrank (a stale rest index would point past the shorter detents array).
+      captured.value = Math.min(restIndex.value, detents.length - 1);
     })
     .onUpdate((e) => {
       'worklet';
-      const from = -detents[restIndex.value];
+      if (!enabled) return;
+      const from = -detents[Math.min(restIndex.value, detents.length - 1)];
       // The finger's raw absolute position (before resistance), clamped to the openable range.
       const absRaw = -Math.min(0, Math.max(-openX, from + e.translationX));
       // Flip the captured detent as the finger crosses the MIDPOINT between detents — the centre-ish
@@ -260,6 +353,7 @@ function SwipeRow({ name, actions, edgeInset, children }: RowImplProps) {
     })
     .onEnd((e) => {
       'worklet';
+      if (!enabled) return;
       // Rest at the captured detent (its midpoints already decided which pill count we're nearest),
       // letting a firm flick carry it one more stop in the fling direction.
       let idx = captured.value;
@@ -270,6 +364,13 @@ function SwipeRow({ name, actions, edgeInset, children }: RowImplProps) {
       captured.value = idx;
       runOnJS(settle)(idx);
     });
+
+  // Directional activation, by open-state (RNGH builders mutate in place; a fresh `Gesture.Pan()`
+  // each render means no stale config carries over). CLOSED: reveal on a LEFT drag only, and FAIL a
+  // right drag so a swipe from the screen's left edge cedes to the OS edge-swipe-back instead of
+  // being swallowed by the row. OPEN: allow a right drag too, so you can swipe the row back closed.
+  if (open) pan.activeOffsetX([-12, 12]);
+  else pan.activeOffsetX(-12).failOffsetX(12);
 
   /**
    * What the row actually DRAWS at — a spring chasing `target`, never `target` itself. Because the
@@ -341,9 +442,14 @@ function SwipeRow({ name, actions, edgeInset, children }: RowImplProps) {
   );
 }
 
-function HoverActionsRow({ name, actions, edgeInset, children }: RowImplProps) {
+function HoverActionsRow({ name, actions, edgeInset, recycleKey, enabled, children }: RowImplProps) {
   const theme = useTheme();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
+  // Drop any lingering hover when a recycling list reuses this row for a different item (see SwipeRow).
+  useEffect(() => {
+    onHoverOut();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recycleKey]);
   // Hover the WHOLE row (body + action lanes) via pointer enter/leave on the outer element — reliably
   // fires for the entire subtree, unlike an `onHoverIn` on a wrapper the inner row's own Pressable
   // would swallow. Each action is a SIBLING of the content (not nested inside it): react-native-web
@@ -353,7 +459,9 @@ function HoverActionsRow({ name, actions, edgeInset, children }: RowImplProps) {
   return (
     <View style={[styles.webRow, { marginHorizontal: -edgeInset }]} onPointerEnter={onHoverIn} onPointerLeave={onHoverOut}>
       <View style={styles.webRowBody}>{children}</View>
-      {actions.map((a, i) => {
+      {/* Disabled (select mode): the body stays, the lanes go — no actions to hover. */}
+      {enabled &&
+        actions.map((a, i) => {
         const Icon = a.icon;
         const isEdge = i === lastIndex;
         return (
@@ -372,7 +480,7 @@ function HoverActionsRow({ name, actions, edgeInset, children }: RowImplProps) {
             <Icon color={a.destructive ? theme.danger : theme.accent} size={18} />
           </Pressable>
         );
-      })}
+        })}
     </View>
   );
 }

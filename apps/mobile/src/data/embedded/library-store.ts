@@ -12,6 +12,8 @@
  *   comical:lib:bridge-prefs       → { [bridgeId]: BridgePrefs }
  *   comical:lib:activity           → { [activityKey]: ActivityItem }
  *   comical:lib:progress:<key>     → { [chapterId]: ChapterProgress }
+ *   comical:lib:detail:<key>       → CachedSeriesDetail   (offline series page)
+ *   comical:lib:chapters:<key>     → CachedChapters       (offline chapter list)
  *
  * Single-user, local scale: read/parse/write per operation (no in-memory cache), which keeps it
  * trivially correct — the library is small and writes are infrequent (a read or an add/remove).
@@ -22,6 +24,8 @@ import {
   activityKey,
   type ActivityItem,
   type BridgePrefs,
+  type CachedChapters,
+  type CachedSeriesDetail,
   type ChapterProgress,
   type HistoryItem,
   type LibraryEntry,
@@ -30,6 +34,8 @@ import {
   type SeriesGroup,
   type TrackerLink,
 } from '@comical/library';
+
+import { serializeAsyncMethods } from '@/lib/serialize-methods';
 
 const NS = 'comical:lib';
 const ENTRIES = `${NS}:entries`;
@@ -40,6 +46,8 @@ const READING_LOG = `${NS}:reading-log`;
 const BRIDGE_PREFS = `${NS}:bridge-prefs`;
 const ACTIVITY = `${NS}:activity`;
 const progressKey = (key: string) => `${NS}:progress:${encodeURIComponent(key)}`;
+const detailKey = (key: string) => `${NS}:detail:${encodeURIComponent(key)}`;
+const cachedChaptersKey = (key: string) => `${NS}:chapters:${encodeURIComponent(key)}`;
 
 async function read<T>(storageKey: string, fallback: T): Promise<T> {
   const raw = await AsyncStorage.getItem(storageKey);
@@ -60,7 +68,39 @@ async function readRecord<T>(storageKey: string): Promise<Record<string, T>> {
   return read<Record<string, T>>(storageKey, {});
 }
 
+/** UTF-8 byte length; Hermes builds without TextEncoder fall back to the (close) UTF-16 length. */
+function byteLength(s: string): number {
+  try {
+    return new TextEncoder().encode(s).length;
+  } catch {
+    return s.length;
+  }
+}
+
 export class AsyncStorageLibraryStore implements LibraryStore {
+  constructor() {
+    // Every method is an async read-modify-write on a shared doc, and the router's write-throughs
+    // (detail cache + snapshot reconcile + chapter sync) run concurrently — serialize, or two
+    // interleaved writers silently drop records (see serialize-methods.ts / the downloads store).
+    serializeAsyncMethods(this);
+  }
+
+  // ── Disk usage ──────────────────────────────────────────────────────────────
+  /** Bytes this store's documents occupy in AsyncStorage (all `comical:lib:*` keys). Cover blobs
+   *  live in the covers BlobStore and report separately (see /library/usage). */
+  async diskUsage(): Promise<number> {
+    try {
+      const keys = (await AsyncStorage.getAllKeys()).filter((k) => k.startsWith(`${NS}:`));
+      if (keys.length === 0) return 0;
+      const pairs = await AsyncStorage.multiGet(keys);
+      let total = 0;
+      for (const [k, v] of pairs) total += byteLength(k) + (v ? byteLength(v) : 0);
+      return total;
+    } catch {
+      return 0;
+    }
+  }
+
   // ── Entries ────────────────────────────────────────────────────────────────
   async listEntries(): Promise<LibraryEntry[]> {
     return Object.values(await readRecord<LibraryEntry>(ENTRIES));
@@ -79,6 +119,27 @@ export class AsyncStorageLibraryStore implements LibraryStore {
       delete all[key];
       await write(ENTRIES, all);
     }
+  }
+
+  // ── Offline metadata cache ───────────────────────────────────────────────────
+  // One doc per entry (chapter lists are bulky), read lazily on series-page open — never bulk-read.
+  async getSeriesDetail(key: string): Promise<CachedSeriesDetail | undefined> {
+    return read<CachedSeriesDetail | undefined>(detailKey(key), undefined);
+  }
+  async putSeriesDetail(key: string, detail: CachedSeriesDetail): Promise<void> {
+    await write(detailKey(key), detail);
+  }
+  async deleteSeriesDetail(key: string): Promise<void> {
+    await AsyncStorage.removeItem(detailKey(key));
+  }
+  async getCachedChapters(key: string): Promise<CachedChapters | undefined> {
+    return read<CachedChapters | undefined>(cachedChaptersKey(key), undefined);
+  }
+  async putCachedChapters(key: string, doc: CachedChapters): Promise<void> {
+    await write(cachedChaptersKey(key), doc);
+  }
+  async deleteCachedChapters(key: string): Promise<void> {
+    await AsyncStorage.removeItem(cachedChaptersKey(key));
   }
 
   // ── Progress ───────────────────────────────────────────────────────────────
