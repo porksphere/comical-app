@@ -46,12 +46,16 @@ export function SelectCircle({ selected, done }: { selected: boolean; done?: boo
   const fill = useAnimatedStyle(() => ({
     opacity: p.value,
   }));
+  // Ring and fill are SIBLING layers of one borderless box, both absolutely filling it — never a
+  // child inside the ring's border box, whose 1.5px inset subpixel-snaps and reads as the disc
+  // sitting slightly down-and-right of the ring.
   return (
-    <Animated.View style={[styles.circle, ring]}>
-      <Animated.View style={[styles.circleFill, { backgroundColor: fillColor }, fill]}>
+    <View style={styles.circleBox}>
+      <Animated.View style={[styles.circleLayer, styles.circleRing, ring]} />
+      <Animated.View style={[styles.circleLayer, { backgroundColor: fillColor }, fill]}>
         <CheckIcon color={theme.accentOn} size={11} />
       </Animated.View>
-    </Animated.View>
+    </View>
   );
 }
 
@@ -128,17 +132,12 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: StyleSheet.hairlineWidth,
   },
-  circle: {
+  circleBox: {
     width: 20,
     height: 20,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
   },
-  // The disc that springs up from the centre on selection, carrying the check with it.
-  circleFill: {
+  // One 20px layer — the ring and the fill both use it, so they can't disagree about geometry.
+  circleLayer: {
     position: 'absolute',
     top: 0,
     left: 0,
@@ -147,6 +146,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  circleRing: {
+    borderWidth: 1.5,
   },
   content: {
     flex: 1,
