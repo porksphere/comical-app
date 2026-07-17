@@ -5,6 +5,7 @@ import {
   Bug,
   Check,
   CircleCheck,
+  CircleEllipsis,
   ChevronDown,
   ChevronRight,
   Compass,
@@ -83,3 +84,5 @@ export const EyeOffIcon = ({ color, size = 16 }: IconProps) => <EyeOff color={co
 export const TrashIcon = ({ color, size = 16 }: IconProps) => <Trash2 color={color} size={size} />;
 // Multi-select mode toggle (the per-series download screen's top-bar button) — a circled check.
 export const SelectModeIcon = ({ color, size = 16 }: IconProps) => <CircleCheck color={color} size={size} />;
+// The selection-staging menu trigger (circled ellipsis) — opens Select all / Select unread.
+export const SelectOptionsIcon = ({ color, size = 16 }: IconProps) => <CircleEllipsis color={color} size={size} />;

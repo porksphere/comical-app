@@ -27,10 +27,20 @@ import Animated, { useAnimatedStyle, useSharedValue, withTiming, type SharedValu
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Holdable } from '@/components/context-menu';
+import { openContextMenu } from '@/components/context-menu-host';
 import { ANDROID_BLUR, MENU_FILL } from '@/components/context-menu-material';
 import { DownloadStatusIndicator } from '@/components/downloads/download-status-indicator';
 import { chapterActions } from '@/components/downloads/row-actions';
-import { DownloadingIcon, DownloadsIcon, SelectModeIcon, TrashIcon } from '@/components/icons/ui-icons';
+import {
+  CheckIcon,
+  ClearIcon,
+  DownloadingIcon,
+  DownloadsIcon,
+  EyeIcon,
+  SelectModeIcon,
+  SelectOptionsIcon,
+  TrashIcon,
+} from '@/components/icons/ui-icons';
 import { SelectCircle } from '@/components/multi-select/selectable-row';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
@@ -65,8 +75,10 @@ import type { DownloadedChapter, DownloadState } from '@comical/downloads';
 const SELECT_ANIM_MS = 220;
 /** The leading slot the circles occupy when open: circle + the row's gap. */
 const CIRCLE_SLOT = 20 + Spacing.three;
-/** The floating bulk-verb pills (select mode). */
-const PILL_HEIGHT = 52;
+/** The floating bulk-verb pills (select mode). A pill with ONE action renders as a full circle
+ *  (width == height); more actions stretch it horizontally into a pill. */
+const ACTION_PILL_HEIGHT = 44;
+const DOWNLOAD_PILL_HEIGHT = 50;
 const PILL_BLUR = 40;
 
 /**
@@ -289,13 +301,37 @@ export default function SeriesDownloadsScreen() {
   const sidePad = SettingsGutter + Math.max(0, (width - MaxContentWidth) / 2);
 
   const allSelected = allKeys.length > 0 && ms.count === allKeys.length;
-  const stripAction = (label: string, onPress: () => void, disabled: boolean, id: string) => (
-    <Pressable key={id} testID={testId('series.dl', id)} onPress={disabled ? undefined : onPress} hitSlop={6} disabled={disabled}>
-      <ThemedText type="small" style={{ color: disabled ? theme.textSecondary : theme.accent }}>
-        {label}
-      </ThemedText>
-    </Pressable>
-  );
+
+  // The staging menu (top-left, replacing the back button in select mode): one circled-ellipsis
+  // trigger opening the shared frosted context menu with the staging verbs.
+  const openSelectOptions = (x: number, y: number) => {
+    openContextMenu({
+      x,
+      y,
+      rows: [
+        {
+          label: allSelected ? 'Deselect all' : 'Select all',
+          Icon: allSelected ? ClearIcon : CheckIcon,
+          loading: false,
+          disabled: allKeys.length === 0,
+          onPress: allSelected ? ms.clear : ms.selectAll,
+          testID: testId('series.dl.menu', 'all'),
+        },
+        ...(showAll
+          ? [
+              {
+                label: 'Select unread',
+                Icon: EyeIcon,
+                loading: false,
+                disabled: unreadKeys.length === 0,
+                onPress: () => ms.selectOnly(unreadKeys),
+                testID: testId('series.dl.menu', 'unread'),
+              },
+            ]
+          : []),
+      ],
+    });
+  };
 
   const deleteChapterRow = async (c: DownloadedChapter) => {
     await dlDeleteChapter(c.bridgeId, c.seriesId, c.chapterId).catch(() => {});
@@ -370,16 +406,20 @@ export default function SeriesDownloadsScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      {/* Select mode takes over the whole bar: the staging actions replace the back button, the
+      {/* Select mode takes over the whole bar: the staging menu replaces the back button, the
           live count replaces the title, and the toggle (accent while on) is the way out. */}
       <TopBar
         title={selecting ? `${ms.count} selected` : title}
         left={
           selecting ? (
-            <>
-              {stripAction(allSelected ? 'Deselect all' : 'Select all', allSelected ? ms.clear : ms.selectAll, allKeys.length === 0, 'all')}
-              {showAll && stripAction('Select unread', () => ms.selectOnly(unreadKeys), unreadKeys.length === 0, 'unread')}
-            </>
+            <Pressable
+              testID="series.dl.select-options"
+              onPress={(e) => openSelectOptions(e.nativeEvent.pageX, e.nativeEvent.pageY)}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel="Selection options">
+              <SelectOptionsIcon color={theme.text} size={20} />
+            </Pressable>
           ) : undefined
         }
         right={
@@ -417,7 +457,7 @@ export default function SeriesDownloadsScreen() {
           paddingLeft: sidePad,
           paddingRight: sidePad,
           // Room for the floating pills, so the last rows can scroll clear of them.
-          paddingBottom: selecting ? PILL_HEIGHT + Spacing.six : Spacing.three,
+          paddingBottom: selecting ? DOWNLOAD_PILL_HEIGHT + Spacing.six : Spacing.three,
         }}
         showsVerticalScrollIndicator={Platform.OS === 'web'}
       />
@@ -507,30 +547,31 @@ const styles = StyleSheet.create({
   },
   // Shadow lives on an unclipped wrapper — the BlurView inside must clip to its radius.
   pillShadow: {
-    borderRadius: PILL_HEIGHT / 2,
+    borderRadius: DOWNLOAD_PILL_HEIGHT / 2,
     shadowColor: '#000000',
     shadowOpacity: 0.22,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 6 },
     elevation: 8,
   },
-  // The stretched frosted pill carrying the secondary action icons (Delete today).
+  // The frosted secondary-actions surface (Delete today). Each icon button is exactly one
+  // pill-height square, so ONE action renders as a full circle and additional icons stretch it
+  // horizontally into a pill on their own — no per-count styling.
   actionsPill: {
-    height: PILL_HEIGHT,
-    borderRadius: PILL_HEIGHT / 2,
+    height: ACTION_PILL_HEIGHT,
+    borderRadius: ACTION_PILL_HEIGHT / 2,
     overflow: 'hidden',
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: Spacing.two,
   },
-  // The bigger accent pill: the one primary verb, wider so it reads as such.
+  // The bigger accent circle: the one primary verb (same rule — it would stretch if it ever
+  // carried a second action).
   downloadPill: {
-    height: PILL_HEIGHT,
-    minWidth: 132,
-    borderRadius: PILL_HEIGHT / 2,
+    height: DOWNLOAD_PILL_HEIGHT,
+    borderRadius: DOWNLOAD_PILL_HEIGHT / 2,
     overflow: 'hidden',
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
   },
   pillFill: {
     position: 'absolute',
@@ -540,14 +581,14 @@ const styles = StyleSheet.create({
     bottom: 0,
   },
   pillButton: {
-    height: PILL_HEIGHT,
-    paddingHorizontal: Spacing.four,
+    width: ACTION_PILL_HEIGHT,
+    height: ACTION_PILL_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
   },
   pillButtonWide: {
-    height: PILL_HEIGHT,
-    alignSelf: 'stretch',
+    width: DOWNLOAD_PILL_HEIGHT,
+    height: DOWNLOAD_PILL_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
   },
