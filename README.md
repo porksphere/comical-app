@@ -20,10 +20,12 @@ which re-sign the app on-device with your own Apple ID (auto-refreshed every 7 d
 - **Add as a source** (recommended — you get update notifications): in SideStore/AltStore →
   **Sources → +**, add:
   ```
-  https://github.com/porksphere/comical-app/releases/download/ios-latest/apps.json
+  https://github.com/porksphere/comical-app/releases/download/ios-release/apps.json
   ```
-- **Or install the IPA directly:** open
-  [comical-unsigned.ipa](https://github.com/porksphere/comical-app/releases/download/ios-latest/comical-unsigned.ipa)
+  This is the public release channel — every tagged version, newest first, all permanently
+  installable.
+- **Or install the IPA directly:** grab `comical-unsigned.ipa` from the
+  [latest release](https://github.com/porksphere/comical-app/releases/latest).
 
 ### 🤖 Android
 

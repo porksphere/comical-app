@@ -7,10 +7,13 @@ name: Release (iOS IPA + Android APK)
 # builds the unsigned iOS IPA and the Android APK from the same reusable steps as
 # the rolling channels, then attaches both to an immutable vX.Y.Z GitHub Release.
 #
-# AltStore note: this does NOT change the AltStore source. AltStore subscribes to
-# the rolling ios-latest channel (maintained by build-ios.yml), whose apps.json
-# lives at a stable URL. These versioned IPAs are permanent, direct-downloadable
-# assets for manual install / archival; AltStore keeps working untouched.
+# This is the clean, PROFILER-FREE, public iOS channel. Besides the immutable
+# vX.Y.Z Release (both binaries), it maintains a rolling `ios-release`
+# SideStore/AltStore source whose versions[] lists every tag newest-first, each
+# pointing at that tag's PERMANENT IPA asset (so full version history stays
+# installable — unlike the rolling ios-main/ios-pr sources that keep one IPA).
+# `ios-release` is what a normal user subscribes to; the profiling ios-main /
+# ios-pr sources (build-ios.yml) are for dev/perf testing.
 
 on:
   push:
@@ -26,25 +29,45 @@ permissions:
   contents: write
 
 jobs:
-  ios:
-    uses: ./.github/workflows/build-ios-reusable.yml
-    secrets: inherit
-
-  android:
-    uses: ./.github/workflows/build-android-reusable.yml
-    secrets: inherit
-
-  release:
-    needs: [ios, android]
+  # Fail fast on a non-tag run (before the expensive macOS build) and derive the
+  # release version from the tag: v1.2.0 -> 1.2.0. Passed to the iOS build so the
+  # IPA's CFBundleShortVersionString and the ios-release manifest both carry the
+  # real release version (AltStore rejects a mismatch), instead of the run-number
+  # string the rolling channels use.
+  prep:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
     steps:
-      - name: Guard — must run from a v* tag
+      - name: Guard — must run from a v* tag, derive version
+        id: v
         run: |
           set -euo pipefail
           if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
             echo "::error::release.yml must be run from a v* tag (got ref_type=${GITHUB_REF_TYPE}, ref=${GITHUB_REF_NAME}). Tag a commit and push the tag, or in the Run workflow dialog pick a tag under 'Use workflow from'."
             exit 1
           fi
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+  ios:
+    needs: prep
+    uses: ./.github/workflows/build-ios-reusable.yml
+    with:
+      version: ${{ needs.prep.outputs.version }}
+    secrets: inherit
+
+  android:
+    needs: prep
+    uses: ./.github/workflows/build-android-reusable.yml
+    secrets: inherit
+
+  release:
+    needs: [prep, ios, android]
+    runs-on: ubuntu-latest
+    steps:
+      # Needed for the ios-release source refresh below (reads the app icon) and
+      # to have the scripts dir on disk.
+      - uses: actions/checkout@v4
 
       - name: Download iOS IPA
         uses: actions/download-artifact@v4
@@ -67,7 +90,7 @@ jobs:
           IPA="$RUNNER_TEMP/ipa/comical-unsigned.ipa"
           APK="$RUNNER_TEMP/apk/comical-android.apk"
           DL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
-          IOS_LATEST="https://github.com/${GITHUB_REPOSITORY}/releases/download/ios-latest/apps.json"
+          IOS_RELEASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/ios-release/apps.json"
 
           gh release create "$TAG" \
             "$IPA" \
@@ -82,5 +105,14 @@ jobs:
           **Android (APK):**
           \`${DL}/comical-android.apk\`
 
-          **AltStore users:** keep your existing source — it tracks the rolling channel and updates automatically:
-          \`${IOS_LATEST}\`"
+          **AltStore users:** keep your existing source — the public release channel tracks every tag and updates automatically:
+          \`${IOS_RELEASE}\`"
+
+      # Refresh the rolling ios-release SideStore/AltStore source AFTER the tag's
+      # Release (and its IPA asset) exists, so the manifest's per-version download
+      # URLs resolve. Enumerates every v* Release, newest-first — stateless, so
+      # deleting a bad release self-heals the source on the next tag.
+      - name: Refresh ios-release SideStore source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/refresh-ios-release-source.sh

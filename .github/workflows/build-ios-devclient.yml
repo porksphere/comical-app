@@ -11,8 +11,9 @@ name: Build iOS dev-client (Windows iterative dev)
 # need a fresh run of this workflow. See docs/PROFILING.md → "Iterative Expo dev
 # from Windows".
 #
-# Kept separate from build-ios.yml on purpose: the per-PR / ios-latest builds
-# stay plain Release. This is the only thing that builds Debug.
+# Kept separate from build-ios.yml on purpose: the ios-main / per-PR ios-pr builds
+# are profiling Release and the tagged ios-release build is clean Release — this is
+# the only thing that builds Debug.
 
 on:
   # Manual only. Pick the branch/tag to build from in the "Run workflow" dialog
@@ -56,7 +57,7 @@ jobs:
         run: |
           set -euo pipefail
           # The reusable build always names the artifact comical-unsigned.ipa;
-          # rename so the dev-client asset URL is unambiguous alongside ios-latest.
+          # rename so the dev-client asset URL is unambiguous alongside ios-main.
           mv "$RUNNER_TEMP/ipa/comical-unsigned.ipa" "$RUNNER_TEMP/ipa/comical-devclient.ipa"
           IPA="$RUNNER_TEMP/ipa/comical-devclient.ipa"
           BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/ios-devclient"

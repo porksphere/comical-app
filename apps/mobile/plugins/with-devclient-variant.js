@@ -4,10 +4,10 @@
  *
  * Activated only when `COMICAL_DEVCLIENT=1` is set at prebuild time — which the
  * dedicated `build-ios-devclient.yml` CI job sets, and nothing else does. So for
- * every normal build (main's ios-latest Release, per-PR Release, versioned
- * releases, local `expo run`) this plugin is a **no-op** and the app keeps its
- * production id. When active it suffixes the iOS bundle id / Android package with
- * `.dev` and appends " (dev)" to the display name.
+ * every other build (main's ios-main profiling Release, per-PR ios-pr Release,
+ * versioned ios-release, local `expo run`) this plugin is a **no-op** and the app
+ * keeps its production id. When active it suffixes the iOS bundle id / Android
+ * package with `.dev` and appends " (dev)" to the display name.
  *
  * Why a distinct id: the dev-client build is a debug shell that loads JS from a
  * Metro server over your LAN (the Windows iterative-dev loop — see
@@ -44,9 +44,10 @@ function applyDevClientVariant(config, enabled) {
 
 // The profiling-release variant: a normal Release binary that carries the on-device profiler. It
 // keeps the PRODUCTION bundle id so it installs OVER the normal app (same slot — profile, then
-// reinstall ios-latest to revert; no extra app against SideStore's free-account limit). Only the
-// display name is marked " (profiling)" so you can tell which build is on the phone. Activated by
-// COMICAL_PROFILING=1 (build-ios-profiling.yml only).
+// reinstall a tagged release to revert; no extra app against SideStore's free-account limit). Only
+// the display name is marked " (profiling)" so you can tell a profiling build (ios-main / ios-pr)
+// apart from a clean tagged release on the phone. Activated by COMICAL_PROFILING=1 (build-ios.yml
+// sets it for every rolling main + PR build).
 function applyProfilingVariant(config, enabled) {
   if (!enabled) return config;
   return { ...config, name: config.name ? `${config.name} (profiling)` : config.name };
