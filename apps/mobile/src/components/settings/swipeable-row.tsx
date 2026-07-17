@@ -320,13 +320,7 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
   // recognizer's .enabled() config — RNGH doesn't reliably re-apply that to already-mounted
   // recognizers, which left rows mounted during select mode with dead gestures after exiting.
   const pan = Gesture.Pan()
-    // Activate ONLY on a leftward drag (the reveal direction). A rightward drag FAILS the gesture
-    // (failOffsetX) instead of claiming it, so a swipe from the screen's left edge cedes to the OS
-    // edge-swipe-back — rows at the edge used to swallow that navigation gesture. (An open row
-    // closes by tapping it or a pill, not by dragging back right.) Vertical movement fails too, so
-    // list scrolling still wins.
-    .activeOffsetX(-12)
-    .failOffsetX(12)
+    // Vertical movement fails the pan so list scrolling still wins.
     .failOffsetY([-12, 12])
     .onBegin(() => {
       'worklet';
@@ -370,6 +364,13 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
       captured.value = idx;
       runOnJS(settle)(idx);
     });
+
+  // Directional activation, by open-state (RNGH builders mutate in place; a fresh `Gesture.Pan()`
+  // each render means no stale config carries over). CLOSED: reveal on a LEFT drag only, and FAIL a
+  // right drag so a swipe from the screen's left edge cedes to the OS edge-swipe-back instead of
+  // being swallowed by the row. OPEN: allow a right drag too, so you can swipe the row back closed.
+  if (open) pan.activeOffsetX([-12, 12]);
+  else pan.activeOffsetX(-12).failOffsetX(12);
 
   /**
    * What the row actually DRAWS at — a spring chasing `target`, never `target` itself. Because the
