@@ -65,7 +65,12 @@ const SELECT_ANIM_MS = 220;
 /** The leading slot the circles occupy when open: circle + the row's gap. */
 const CIRCLE_SLOT = 20 + Spacing.three;
 
-/** One chapter row: a manifest chapter, a not-yet-downloaded logical chapter, or both merged. */
+/**
+ * One chapter row: a manifest chapter, a not-yet-downloaded logical chapter, or both merged.
+ * Selection deliberately is NOT a field — rows keep a stable object identity across selection taps
+ * AND download ticks (see the identity cache below), and `renderItem` reads the live selection set
+ * directly (LegendList repaints visible rows via `extraData`).
+ */
 interface RosterRow {
   key: string;
   name: string;
@@ -75,7 +80,6 @@ interface RosterRow {
   /** The logical chapter (series entry only) — the identity a fresh enqueue downloads. */
   group?: ChapterGroup;
   unread: boolean;
-  selected: boolean;
 }
 
 function chapterDescription(c: DownloadedChapter, state: DownloadState): string {
@@ -98,16 +102,23 @@ function bestManifest(versionIds: string[], manifest: DownloadedChapter[]): Down
   return best;
 }
 
-/** The animated leading slot: the check circle slides in (and pushes the row content right) as the
- *  screen's select progress opens. One shared value drives every row — recycled views stay in sync. */
+/** The animated leading slot: the check circle SLIDES IN FROM THE SCREEN'S LEFT EDGE while the slot
+ *  grows and pushes the row content right (no fade — the clip does the revealing, so the circle
+ *  visibly arrives from the side rather than materialising in place). One shared value drives every
+ *  row — recycled views stay in sync. */
 function SelectLead({ progress, selected }: { progress: SharedValue<number>; selected: boolean }) {
-  const style = useAnimatedStyle(() => ({
+  const slot = useAnimatedStyle(() => ({
     width: progress.value * CIRCLE_SLOT,
-    opacity: progress.value,
+  }));
+  // Starts a full gutter past the slot's left edge (i.e. at the physical screen edge) and rides in.
+  const circle = useAnimatedStyle(() => ({
+    transform: [{ translateX: (progress.value - 1) * (CIRCLE_SLOT + SettingsGutter) }],
   }));
   return (
-    <Animated.View style={[styles.selectLead, style]}>
-      <SelectCircle selected={selected} />
+    <Animated.View style={[styles.selectLead, slot]}>
+      <Animated.View style={circle}>
+        <SelectCircle selected={selected} />
+      </Animated.View>
     </Animated.View>
   );
 }
@@ -165,38 +176,55 @@ export default function SeriesDownloadsScreen() {
     () => (showAll && chapters ? selectableGroups(chapters, manifest) : undefined),
     [showAll, chapters, manifest],
   );
-  const baseRows: Omit<RosterRow, 'selected'>[] = useMemo(() => {
+  // Row objects are REUSED from `rowCache` while their rendered content is unchanged: a page event
+  // patches ONE chapter object in the manifest (the query cache patch keeps every other chapter's
+  // identity), so only the ticking chapter's row gets a fresh object. Without this, every progress
+  // tick rebuilt all N row objects and LegendList re-rendered every visible row several times a
+  // second — which made the select-mode animation stutter during an active download. A state-held
+  // Map (stable instance, populated during the memo's own computation) rather than a ref, which
+  // must not be read during render.
+  const [rowCache] = useState(() => new Map<string, RosterRow>());
+  const rows: RosterRow[] = useMemo(() => {
+    const reuse = (next: RosterRow): RosterRow => {
+      const prev = rowCache.get(next.key);
+      const keep =
+        prev && prev.c === next.c && prev.desc === next.desc && prev.name === next.name && prev.unread === next.unread;
+      const row = keep ? prev : next;
+      rowCache.set(next.key, row);
+      return row;
+    };
     if (sel) {
       return sel.map((s) => {
         const c = bestManifest(s.group.versions.map((v) => v.id), manifest);
-        return {
+        return reuse({
           key: s.group.key,
           name: s.group.name,
           desc: c ? chapterDescription(c, displayChapterState(c)) : relativeTime(s.group.versions[0]?.date ?? 0),
           ...(c ? { c } : {}),
           group: s.group,
           unread: s.unread,
-        };
+        });
       });
     }
     return [...manifest]
       .sort((a, b) => bySortValue(chapterSortValue(a), chapterSortValue(b)))
-      .map((c) => ({
-        key: c.chapterId,
-        name: c.chapterName ?? (c.number !== undefined ? `Chapter ${c.number}` : c.chapterId),
-        desc: chapterDescription(c, displayChapterState(c)),
-        c,
-        unread: false,
-      }));
-  }, [sel, manifest]);
+      .map((c) =>
+        reuse({
+          key: c.chapterId,
+          name: c.chapterName ?? (c.number !== undefined ? `Chapter ${c.number}` : c.chapterId),
+          desc: chapterDescription(c, displayChapterState(c)),
+          c,
+          unread: false,
+        }),
+      );
+  }, [sel, manifest, rowCache]);
 
-  const allKeys = useMemo(() => baseRows.map((r) => r.key), [baseRows]);
-  const unreadKeys = useMemo(() => baseRows.filter((r) => r.unread && !r.c).map((r) => r.key), [baseRows]);
+  const allKeys = useMemo(() => rows.map((r) => r.key), [rows]);
+  const unreadKeys = useMemo(() => rows.filter((r) => r.unread && !r.c).map((r) => r.key), [rows]);
   const ms = useMultiSelect(allKeys);
-  const rows: RosterRow[] = useMemo(
-    () => baseRows.map((r) => ({ ...r, selected: ms.selected.has(r.key) })),
-    [baseRows, ms.selected],
-  );
+  // Stable until the selection set or mode actually changes — an inline literal would change
+  // identity every render and make the list repaint all rows on every download tick.
+  const listExtra = useMemo(() => ({ selected: ms.selected, selecting }), [ms.selected, selecting]);
 
   const toggleSelecting = () => {
     const next = !selecting;
@@ -208,7 +236,7 @@ export default function SeriesDownloadsScreen() {
   // ── Bulk verbs (the pinned footer, select mode only) ──────────────────────────
   // Download: the selection's not-yet-kept chapters (failed ones count — re-enqueueing retries).
   // Delete: the selection's downloaded/tracked chapters.
-  const picked = rows.filter((r) => r.selected);
+  const picked = rows.filter((r) => ms.selected.has(r.key));
   const toDownload = picked.filter((r) => (r.group ? !r.c || r.c.state === 'failed' : r.c?.state === 'failed'));
   const toDelete = picked.filter((r) => r.c);
 
@@ -278,7 +306,7 @@ export default function SeriesDownloadsScreen() {
             description={item.desc}
             leading={
               <>
-                <SelectLead progress={selectProgress} selected={item.selected} />
+                <SelectLead progress={selectProgress} selected={ms.selected.has(item.key)} />
                 {item.c && cState ? (
                   <DownloadStatusIndicator
                     state={cState}
@@ -364,6 +392,9 @@ export default function SeriesDownloadsScreen() {
         estimatedItemSize={SettingsRowHeight}
         getFixedItemSize={() => SettingsRowHeight}
         maintainVisibleContentPosition={{ data: false, size: false }}
+        // Selection lives OUTSIDE the row objects (identity-cached — see `rows`); this tells the
+        // list to repaint visible rows when the selection set or the mode changes.
+        extraData={listExtra}
         renderItem={renderItem}
         ListEmptyComponent={
           <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>

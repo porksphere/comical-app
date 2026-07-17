@@ -15,6 +15,7 @@
  */
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
+import Animated, { interpolateColor, useAnimatedStyle, useDerivedValue, withSpring } from 'react-native-reanimated';
 
 import { Holdable } from '@/components/context-menu';
 import { CheckIcon } from '@/components/icons/ui-icons';
@@ -23,17 +24,36 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
+/** Snappy but visibly springy — the tick should feel like it lands, not like a style swap. */
+const CHECK_SPRING = { damping: 14, stiffness: 320, mass: 0.6 } as const;
+
 /** The bare check circle — the multi-select mark itself, for rows that compose their own chrome
- *  (e.g. the per-series download screen's animated leading slot). */
+ *  (e.g. the per-series download screen's animated leading slot).
+ *
+ *  Selecting ANIMATES: the fill disc (with its check) springs up from the circle's centre while the
+ *  ring's colour follows, with a slight overshoot pop as it lands. Driven by a derived spring, so a
+ *  freshly-mounted circle renders its state instantly (no mount animation — recycled list views
+ *  would otherwise ripple while scrolling) and only a real toggle plays it. */
 export function SelectCircle({ selected, done }: { selected: boolean; done?: boolean }) {
   const theme = useTheme();
-  const circle = done
-    ? { backgroundColor: theme.textSecondary, borderColor: theme.textSecondary }
-    : selected
-      ? { backgroundColor: theme.accent, borderColor: theme.accent }
-      : { borderColor: theme.textSecondary };
+  const on = selected || !!done;
+  const fillColor = done ? theme.textSecondary : theme.accent;
+  const p = useDerivedValue(() => withSpring(on ? 1 : 0, CHECK_SPRING));
+  const ring = useAnimatedStyle(() => ({
+    borderColor: interpolateColor(Math.min(1, Math.max(0, p.value)), [0, 1], [theme.textSecondary, fillColor]),
+    // The spring's overshoot past 1 IS the pop — the ring briefly swells with it, then settles.
+    transform: [{ scale: 1 + Math.max(0, p.value - 1) * 0.6 }],
+  }));
+  const fill = useAnimatedStyle(() => ({
+    opacity: Math.min(1, p.value),
+    transform: [{ scale: Math.max(0, p.value) }],
+  }));
   return (
-    <View style={[styles.circle, circle]}>{(selected || done) && <CheckIcon color={theme.accentOn} size={11} />}</View>
+    <Animated.View style={[styles.circle, ring]}>
+      <Animated.View style={[styles.circleFill, { backgroundColor: fillColor }, fill]}>
+        <CheckIcon color={theme.accentOn} size={11} />
+      </Animated.View>
+    </Animated.View>
   );
 }
 
@@ -115,6 +135,18 @@ const styles = StyleSheet.create({
     height: 20,
     borderRadius: 10,
     borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  // The disc that springs up from the centre on selection, carrying the check with it.
+  circleFill: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
