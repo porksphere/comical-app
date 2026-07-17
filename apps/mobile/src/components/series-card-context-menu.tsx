@@ -742,7 +742,8 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   );
 
   const backdropBlurProps = useAnimatedProps(() => ({
-    intensity: interpolate(progress.value, [0, 0.3, 1], [0, 0, BACKDROP_BLUR]),
+    // The card popup lifts a preview — the heavy frost mode sets it off against the page.
+    intensity: interpolate(progress.value, [0, 0.3, 1], [0, 0, BACKDROP_BLUR.preview]),
   }));
   const scrimOpacity = BACKDROP_TINT_OPACITY[menuTint];
   const backdropTintStyle = useAnimatedStyle(() => ({

@@ -19,13 +19,28 @@ import { useTheme } from '@/hooks/use-theme';
 
 export const MENU_WIDTH = 240;
 export const MENU_ROW_HEIGHT = 48;
-export const MENU_PAD_V = Spacing.one;
+/** The selection bubble's inset from the menu's side edges. */
+export const BUBBLE_INSET_H = Spacing.one;
+/** The bubble's breathing room within its own row (above and below), so adjacent rows'
+ *  selections don't visually touch. */
+export const BUBBLE_INSET_V = 2;
+/** The surface's vertical padding is DERIVED so that a first/last row's selection bubble sits the
+ *  same distance from the menu's top/bottom edge as it does from the sides:
+ *  MENU_PAD_V + BUBBLE_INSET_V == BUBBLE_INSET_H. */
+export const MENU_PAD_V = BUBBLE_INSET_H - BUBBLE_INSET_V;
 /** Optional slim title line above the rows (the generic host's header; the card popup has none —
  *  its preview panel carries the identity). */
 export const MENU_TITLE_HEIGHT = 32;
 export const EDGE_PAD = 12;
-// Blur strengths (0–100).
-export const BACKDROP_BLUR = 28;
+/**
+ * Backdrop blur strengths (0–100) — a clear TWO-MODE configuration, keyed by whether the menu
+ * lifts a content preview:
+ *  - `preview` — the series-card popup: the heavy frost separates the lifted card from the page.
+ *  - `plain`   — rows-only menus (chapter long-press, the generic host's default): lighter, so the
+ *    page stays legible behind a menu that has no preview to showcase.
+ */
+export const BACKDROP_BLUR = { preview: 28, plain: 14 } as const;
+export type BackdropBlurMode = keyof typeof BACKDROP_BLUR;
 export const MENU_BLUR = 55;
 // The scrim follows the theme: light washes the page out pale (what iOS does) so the light menu has
 // something light to blur; dark dims to black.
@@ -190,13 +205,14 @@ export const menuStyles = StyleSheet.create({
   },
   // The selection bubble: inset from the row's edges and generously rounded, so it reads as a pill
   // sitting on the menu rather than a full-bleed band. ONE for the entire menu — positioned by
-  // transform onto whichever row is selected; its `top` is 0 because that translate IS its position.
+  // transform onto whichever row is selected (`top` is the within-row inset; the translate does the
+  // rest). Insets come from the shared constants so the edge gaps stay equal (see MENU_PAD_V).
   hoverBubble: {
     position: 'absolute',
-    left: Spacing.one,
-    right: Spacing.one,
-    top: 2,
-    height: MENU_ROW_HEIGHT - 4,
+    left: BUBBLE_INSET_H,
+    right: BUBBLE_INSET_H,
+    top: BUBBLE_INSET_V,
+    height: MENU_ROW_HEIGHT - BUBBLE_INSET_V * 2,
     borderRadius: 10,
   },
   titleRow: {

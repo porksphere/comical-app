@@ -42,6 +42,7 @@ import {
   BACKDROP_BLUR,
   BACKDROP_TINT,
   BACKDROP_TINT_OPACITY,
+  type BackdropBlurMode,
   EDGE_PAD,
   HIGHLIGHT_OPACITY,
   HOVER_FADE,
@@ -69,6 +70,9 @@ export type ContextMenuRequest = {
   /** The press point (window coords) the menu floats at. */
   x: number;
   y: number;
+  /** Backdrop frost strength — defaults to `plain` (lighter): this host shows rows only, no lifted
+   *  preview to set off against the page. See `BACKDROP_BLUR` in context-menu-material. */
+  backdrop?: BackdropBlurMode;
 };
 
 /** The currently-open generic hold menu, or null (in-memory local UI state, per the app's split). */
@@ -297,8 +301,9 @@ function HostMenu({ req }: { req: ContextMenuRequest }) {
     transform: [{ translateY: hoverY.value }],
   }));
 
+  const blurTarget = BACKDROP_BLUR[req.backdrop ?? 'plain'];
   const backdropBlurProps = useAnimatedProps(() => ({
-    intensity: interpolate(progress.value, [0, 0.3, 1], [0, 0, BACKDROP_BLUR]),
+    intensity: interpolate(progress.value, [0, 0.3, 1], [0, 0, blurTarget]),
   }));
   const scrimOpacity = BACKDROP_TINT_OPACITY[tint];
   const backdropTintStyle = useAnimatedStyle(() => ({
