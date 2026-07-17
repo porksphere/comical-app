@@ -17,7 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { DownloadedChapter, DownloadState } from '@comical/downloads';
 
-import { MenuActionRow, MenuHeader } from '@/components/context-menu';
+import { Holdable, MenuActionRow, MenuHeader } from '@/components/context-menu';
 import { DownloadStateVisual } from '@/components/downloads/download-status-indicator';
 import { ArrowDownIcon, ArrowUpIcon, DownloadsIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { OptionList, useOverlay } from '@/components/overlay/overlay';
@@ -542,11 +542,11 @@ function ChapterRow({
   const multi = group.versions.length > 1;
 
   return (
+    <Holdable enabled={!!onMenu && !dimmed} onHold={() => onMenu?.(group)}>
     <View style={dimmed && styles.rowDimmed}>
       <Pressable
         testID={testId('series.chapter', group.key)}
         onPress={() => onOpen(def)}
-        onLongPress={onMenu ? () => onMenu(group) : undefined}
         disabled={dimmed}
         onHoverIn={rowHover.onHoverIn}
         onHoverOut={rowHover.onHoverOut}
@@ -599,6 +599,7 @@ function ChapterRow({
         </View>
       )}
     </View>
+    </Holdable>
   );
 }
 

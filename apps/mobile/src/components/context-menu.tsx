@@ -11,8 +11,9 @@
  *    dimmed-inert for `loading`/`disabled`, optional muted `detail` (e.g. "12 chapters").
  */
 import { Image } from 'expo-image';
-import { useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
 import type { IconProps } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
@@ -20,6 +21,35 @@ import { ThemedView } from '@/components/themed-view';
 import { RowHeight, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
+
+/**
+ * The shared hold-to-open behavior: a gesture-handler `LongPress` around arbitrary content. NOT a
+ * `Pressable`'s `onLongPress` — inside a scrolling list on iOS that doesn't fire reliably (the touch
+ * is routed to the scroll view; see series-card-menu.tsx, which learned this first). The GH gesture
+ * recognizes the hold at the native layer and coexists with the child's own tap: a quick tap still
+ * presses, and any finger travel before the hold elapses cancels it, so scrolling never opens menus.
+ */
+export function Holdable({
+  enabled = true,
+  onHold,
+  children,
+}: {
+  enabled?: boolean;
+  onHold: () => void;
+  children: ReactNode;
+}) {
+  // `runOnJS(true)`: the handler is a plain JS callback, so no worklet/ref plumbing. A changed
+  // handler re-configures the recognizer in place (GestureDetector diffs), which is cheap.
+  const gesture = useMemo(
+    () => Gesture.LongPress().minDuration(350).runOnJS(true).enabled(enabled).onStart(onHold),
+    [enabled, onHold],
+  );
+  return (
+    <GestureDetector gesture={gesture}>
+      <View collapsable={false}>{children}</View>
+    </GestureDetector>
+  );
+}
 
 /** Cover thumbnail + full (unclamped) title. Omit `cover` AND pass `textOnly` for cover-less
  *  subjects (a chapter, a list) — the thumb column disappears instead of showing a placeholder. */

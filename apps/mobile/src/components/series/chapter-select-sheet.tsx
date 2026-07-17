@@ -28,6 +28,7 @@ import { selectableGroups, toEnqueue } from '@/data/downloads/select';
 import { relativeTime } from '@/data/mock';
 import { queryKeys } from '@/data/queries';
 import type { Chapter } from '@/data/types';
+import { hapticSelection } from '@/lib/haptics';
 import { usePreferredGroup } from '@/lib/preferred-group';
 import { testId } from '@/lib/test-id';
 import type { DownloadedChapter, DownloadState } from '@comical/downloads';
@@ -129,7 +130,10 @@ export function ChapterSelectSheet({
         selected={item.selected}
         done={item.done}
         onToggle={() => ms.toggle(item.key)}
-        onRangeFill={() => ms.rangeFill(item.key)}
+        onRangeFill={() => {
+          hapticSelection(); // the hold paid off — tick like every other selection
+          ms.rangeFill(item.key);
+        }}
         trailing={item.state ? <DownloadStateVisual state={item.state} fraction={item.fraction} size={14} strokeWidth={2} /> : undefined}>
         <View style={styles.rowInner}>
           <ThemedText type="small" numberOfLines={1} style={styles.rowName}>
