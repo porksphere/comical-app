@@ -43,7 +43,11 @@ export type IconProps = {
 
 export const SearchIcon = ({ color, size = 16 }: IconProps) => <Search color={color} size={size} />;
 export const ClearIcon = ({ color, size = 16 }: IconProps) => <X color={color} size={size} />;
-export const PlayIcon = ({ color, size = 16 }: IconProps) => <Play color={color} size={size} fill={color} />;
+// Filled by default (the conventional read/da-capo triangle); pass `filled={false}` where a solid
+// glyph reads as a blob among outlines (the select-mode pill bar).
+export const PlayIcon = ({ color, size = 16, filled = true }: IconProps) => (
+  <Play color={color} size={size} fill={filled ? color : 'none'} />
+);
 export const PlusIcon = ({ color, size = 16 }: IconProps) => <Plus color={color} size={size} />;
 export const MinusIcon = ({ color, size = 16 }: IconProps) => <Minus color={color} size={size} />;
 export const StarIcon = ({ color, size = 16, filled }: IconProps) => (

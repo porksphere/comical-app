@@ -144,18 +144,22 @@ type SwipeableRowProps = {
  * reveal as buttons on hover (and show unconditionally on a touch screen, which never hovers).
  */
 export function SwipeableRow({ name, actions, edgeInset = 0, recycleKey, swipeEnabled = true, children }: SwipeableRowProps) {
-  // Disabled (or nothing to act on): plain content in the same escaped layout, no gesture/lanes.
-  // Checked BEFORE clampActions — an intentionally empty action set isn't the dev error it warns on.
-  if (!swipeEnabled || actions.length === 0) {
+  // Nothing to act on: plain content in the same escaped layout, no gesture/lanes. Checked BEFORE
+  // clampActions — an intentionally empty action set isn't the dev error it warns on. A DISABLED
+  // row (`swipeEnabled: false`) deliberately does NOT take this branch: swapping between the
+  // gesture tree and a plain view remounts every visible row's gesture+reanimated stack at once,
+  // which made entering a big list's select mode visibly stall — the row stays mounted and its
+  // gesture is switched off instead.
+  if (actions.length === 0) {
     return <View style={{ marginHorizontal: -edgeInset }}>{children}</View>;
   }
   const shown = clampActions(actions, name);
   return IS_WEB ? (
-    <HoverActionsRow name={name} actions={shown} edgeInset={edgeInset} recycleKey={recycleKey}>
+    <HoverActionsRow name={name} actions={shown} edgeInset={edgeInset} recycleKey={recycleKey} enabled={swipeEnabled}>
       {children}
     </HoverActionsRow>
   ) : (
-    <SwipeRow name={name} actions={shown} edgeInset={edgeInset} recycleKey={recycleKey}>
+    <SwipeRow name={name} actions={shown} edgeInset={edgeInset} recycleKey={recycleKey} enabled={swipeEnabled}>
       {children}
     </SwipeRow>
   );
@@ -223,9 +227,9 @@ export function SwipeableSettingsRow({
   );
 }
 
-type RowImplProps = { name: string; actions: SwipeRowAction[]; edgeInset: number; recycleKey?: string; children: ReactNode };
+type RowImplProps = { name: string; actions: SwipeRowAction[]; edgeInset: number; recycleKey?: string; enabled: boolean; children: ReactNode };
 
-function SwipeRow({ name, actions, edgeInset, recycleKey, children }: RowImplProps) {
+function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: RowImplProps) {
   const theme = useTheme();
   // Where the row is BEING DRAGGED to — set straight from the finger, with no smoothing.
   const target = useSharedValue(0);
@@ -300,7 +304,20 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, children }: RowImplPro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pillCount]);
 
+  // Disabled (e.g. the screen's select mode owns row interaction): snap closed so a swiped-open row
+  // can't linger under the selection UI. The gesture below is switched off via `.enabled()`.
+  useEffect(() => {
+    if (enabled) return;
+    restIndex.value = 0;
+    captured.value = 0;
+    target.value = 0;
+    releaseOpenRow(token);
+    setOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled]);
+
   const pan = Gesture.Pan()
+    .enabled(enabled)
     // Only claim the gesture once it's clearly horizontal, so vertical scrolling of the list still
     // belongs to the ScrollView.
     .activeOffsetX([-12, 12])
@@ -415,7 +432,7 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, children }: RowImplPro
   );
 }
 
-function HoverActionsRow({ name, actions, edgeInset, recycleKey, children }: RowImplProps) {
+function HoverActionsRow({ name, actions, edgeInset, recycleKey, enabled, children }: RowImplProps) {
   const theme = useTheme();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
   // Drop any lingering hover when a recycling list reuses this row for a different item (see SwipeRow).
@@ -432,7 +449,9 @@ function HoverActionsRow({ name, actions, edgeInset, recycleKey, children }: Row
   return (
     <View style={[styles.webRow, { marginHorizontal: -edgeInset }]} onPointerEnter={onHoverIn} onPointerLeave={onHoverOut}>
       <View style={styles.webRowBody}>{children}</View>
-      {actions.map((a, i) => {
+      {/* Disabled (select mode): the body stays, the lanes go — no actions to hover. */}
+      {enabled &&
+        actions.map((a, i) => {
         const Icon = a.icon;
         const isEdge = i === lastIndex;
         return (
@@ -451,7 +470,7 @@ function HoverActionsRow({ name, actions, edgeInset, recycleKey, children }: Row
             <Icon color={a.destructive ? theme.danger : theme.accent} size={18} />
           </Pressable>
         );
-      })}
+        })}
     </View>
   );
 }

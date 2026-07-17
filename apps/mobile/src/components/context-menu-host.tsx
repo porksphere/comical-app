@@ -67,9 +67,17 @@ export type ContextMenuRequest = {
   /** Slim muted title line above the rows (e.g. the chapter name). */
   title?: string;
   rows: MenuRowSpec[];
-  /** The press point (window coords) the menu floats at. */
+  /** The press point (window coords) the menu floats at — or, with `anchor: 'fixed'`, the exact
+   *  TOP-LEFT corner the menu hangs from. */
   x: number;
   y: number;
+  /**
+   * Placement mode. `point` (default) floats the menu centred at the press point with the
+   * above/below flip — the hold-menu behavior. `fixed` pins the menu's top-left to (x, y) exactly
+   * (clamped on-screen): for BUTTON-opened menus (the multi-select "…" trigger), which should hang
+   * from the button like a dropdown rather than wander with where inside it the finger landed.
+   */
+  anchor?: 'point' | 'fixed';
   /** Backdrop frost strength — defaults to `plain` (lighter): this host shows rows only, no lifted
    *  preview to set off against the page. See `BACKDROP_BLUR` in context-menu-material. */
   backdrop?: BackdropBlurMode;
@@ -208,16 +216,24 @@ function HostMenu({ req }: { req: ContextMenuRequest }) {
   const tint = scheme === 'dark' ? 'dark' : 'light';
   const progress = useSharedValue(0);
 
-  // ── Placement: float at the press point, clamped on screen, flipped above when out of room ──
+  // ── Placement ──
+  //  point (default): float centred at the press point, clamped on screen, flipped above when out
+  //  of room — the hold-menu behavior.
+  //  fixed: pin the top-left to (x, y) exactly, clamped on screen — the button-dropdown behavior.
+  const fixed = req.anchor === 'fixed';
   const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
   const headerH = req.title !== undefined ? MENU_TITLE_HEIGHT : 0;
   const menuW = Math.min(MENU_WIDTH, winW - EDGE_PAD * 2);
   const menuH = MENU_PAD_V * 2 + headerH + MENU_ROW_HEIGHT * req.rows.length;
-  const left = clamp(req.x - menuW / 2, EDGE_PAD, winW - menuW - EDGE_PAD);
-  const below = req.y + GAP + menuH <= winH - insets.bottom - EDGE_PAD;
-  const top = below
-    ? req.y + GAP
-    : Math.max(insets.top + EDGE_PAD, req.y - GAP - menuH);
+  const left = fixed
+    ? clamp(req.x, EDGE_PAD, winW - menuW - EDGE_PAD)
+    : clamp(req.x - menuW / 2, EDGE_PAD, winW - menuW - EDGE_PAD);
+  const below = fixed || req.y + GAP + menuH <= winH - insets.bottom - EDGE_PAD;
+  const top = fixed
+    ? clamp(req.y, insets.top + EDGE_PAD, winH - insets.bottom - EDGE_PAD - menuH)
+    : below
+      ? req.y + GAP
+      : Math.max(insets.top + EDGE_PAD, req.y - GAP - menuH);
 
   const dismiss = useCallback(() => {
     progress.set(
@@ -228,14 +244,15 @@ function HostMenu({ req }: { req: ContextMenuRequest }) {
   }, [progress]);
 
   useEffect(() => {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); // the hold pays off — same thump as the card popup
+    // The hold pays off with the card popup's medium thump; a plain button tap gets a light tick.
+    void Haptics.impactAsync(fixed ? Haptics.ImpactFeedbackStyle.Light : Haptics.ImpactFeedbackStyle.Medium);
     progress.set(withSpring(1, OPEN_SPRING));
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       dismiss();
       return true;
     });
     return () => sub.remove();
-  }, [progress, dismiss]);
+  }, [progress, dismiss, fixed]);
 
   // Every row action also dismisses the menu — for a plain press AND a lift-commit alike.
   const rows = useMemo(

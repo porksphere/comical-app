@@ -19,7 +19,7 @@ import { BlurView } from 'expo-blur';
 import type { ReactElement } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, type SharedValue } from 'react-native-reanimated';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { openContextMenu } from '@/components/context-menu-host';
 import { ANDROID_BLUR, type MenuRowSpec } from '@/components/context-menu-material';
@@ -38,12 +38,13 @@ export const CIRCLE_SLOT = 20 + Spacing.three;
 /** The floating bulk-verb pills. A pill with ONE action renders as a full circle (width == height);
  *  more actions stretch it horizontally into a pill. */
 export const PILL_HEIGHT = 50;
-export const PILL_BLUR = 55;
-/** The pills' surface tints — deliberately much lighter than the menu material's, so the pills read
- *  as glass over the list rather than solid chips (the blur does the legibility work). */
-export const PILL_FILL = { light: 'rgba(255,255,255,0.30)', dark: 'rgba(28,30,34,0.30)' } as const;
+export const PILL_BLUR = 70;
+/** The pills' surface tints — deliberately FAR lighter than the menu material's, so the pills read
+ *  as glass over the list rather than solid chips: the blur does all the legibility work, the tint
+ *  only says which surface it is. A hairline border defines the glass edge. */
+export const PILL_FILL = { light: 'rgba(255,255,255,0.18)', dark: 'rgba(28,30,34,0.22)' } as const;
 /** The primary (accent) pill's fill opacity, as a hex-alpha suffix on the theme accent. */
-export const PILL_ACCENT_ALPHA = '99';
+export const PILL_ACCENT_ALPHA = '80';
 
 /** The mode flag + the one shared progress value every row's `SelectLead` animates from. */
 export function useSelectMode(initial = false): {
@@ -67,18 +68,26 @@ export function useSelectMode(initial = false): {
 }
 
 /** The top-bar-left staging trigger (a bare three-dot ellipsis): opens the shared frosted context
- *  menu at the press point with the caller's staging rows. */
+ *  menu ANCHORED under the button (fixed placement — a button menu shouldn't wander with where
+ *  inside the button the finger landed, unlike a hold menu that floats at the press point). */
 export function SelectOptionsTrigger({ rows, testID }: { rows: MenuRowSpec[]; testID: string }) {
   const theme = useTheme();
+  const anchorRef = useRef<View>(null);
   return (
-    <Pressable
-      testID={testID}
-      onPress={(e) => openContextMenu({ x: e.nativeEvent.pageX, y: e.nativeEvent.pageY, rows })}
-      hitSlop={10}
-      accessibilityRole="button"
-      accessibilityLabel="Selection options">
-      <SelectOptionsIcon color={theme.text} size={24} />
-    </Pressable>
+    <View ref={anchorRef} collapsable={false}>
+      <Pressable
+        testID={testID}
+        onPress={() =>
+          anchorRef.current?.measureInWindow((x, y, _w, h) =>
+            openContextMenu({ anchor: 'fixed', x, y: y + h + Spacing.two, rows }),
+          )
+        }
+        hitSlop={10}
+        accessibilityRole="button"
+        accessibilityLabel="Selection options">
+        <SelectOptionsIcon color={theme.text} size={24} />
+      </Pressable>
+    </View>
   );
 }
 
@@ -166,7 +175,7 @@ export function SelectPillBar({
     <View pointerEvents="box-none" style={[styles.pills, { left, right, bottom }]}>
       {verbs.length > 0 ? (
         <View style={styles.pillShadow}>
-          <BlurView tint={scheme} intensity={PILL_BLUR} experimentalBlurMethod={ANDROID_BLUR} style={styles.pill}>
+          <BlurView tint={scheme} intensity={PILL_BLUR} experimentalBlurMethod={ANDROID_BLUR} style={[styles.pill, { borderColor: theme.backgroundSelected }]}>
             <View pointerEvents="none" style={[styles.pillFill, { backgroundColor: PILL_FILL[scheme] }]} />
             {verbs.map((v) => (
               <Pressable
@@ -176,7 +185,7 @@ export function SelectPillBar({
                 style={styles.pillButton}
                 accessibilityRole="button"
                 accessibilityLabel={v.label}>
-                <v.Icon color={v.color ?? theme.text} size={20} />
+                <v.Icon color={v.color ?? theme.text} size={20} filled={false} />
               </Pressable>
             ))}
           </BlurView>
@@ -186,7 +195,7 @@ export function SelectPillBar({
       )}
       {primary && (
         <View style={styles.pillShadow}>
-          <BlurView tint={scheme} intensity={PILL_BLUR} experimentalBlurMethod={ANDROID_BLUR} style={styles.pill}>
+          <BlurView tint={scheme} intensity={PILL_BLUR} experimentalBlurMethod={ANDROID_BLUR} style={[styles.pill, { borderColor: theme.backgroundSelected }]}>
             {/* Translucent accent over the blur — reads blue while the page still bleeds through. */}
             <View pointerEvents="none" style={[styles.pillFill, { backgroundColor: `${theme.accent}${PILL_ACCENT_ALPHA}` }]} />
             <Pressable
@@ -195,7 +204,7 @@ export function SelectPillBar({
               style={styles.pillButton}
               accessibilityRole="button"
               accessibilityLabel={primary.label}>
-              <primary.Icon color={theme.accentOn} size={22} />
+              <primary.Icon color={theme.accentOn} size={22} filled={false} />
             </Pressable>
           </BlurView>
         </View>
@@ -235,6 +244,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     flexDirection: 'row',
     alignItems: 'center',
+    // The glass edge — same treatment as the menu surface.
+    borderWidth: StyleSheet.hairlineWidth,
   },
   pillFill: {
     position: 'absolute',
