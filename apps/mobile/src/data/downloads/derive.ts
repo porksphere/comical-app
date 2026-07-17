@@ -34,15 +34,26 @@ export function deriveSeriesState(chapters: DownloadedChapter[]): DownloadState 
   return states.some((s) => s === 'complete') ? 'downloading' : 'queued';
 }
 
-/** Series progress [0,1] across all its pages. */
+/**
+ * One chapter's progress [0,1]. A lazily-enqueued chapter has NO page list yet (`pageCount` 0 until
+ * the engine resolves it at pickup) — it counts as 0, never as absent.
+ */
+export function chapterFraction(c: DownloadedChapter): number {
+  if (c.state === 'complete') return 1;
+  return c.pageCount > 0 ? c.completedPages / c.pageCount : 0;
+}
+
+/**
+ * Series progress [0,1], CHAPTER-weighted (each chapter contributes an equal share). Page-weighted
+ * summing broke under lazy enqueues: unresolved chapters contribute 0 pages to the denominator, so
+ * a 300-chapter queue's progress tracked whichever single chapter had resolved — jumping around as
+ * counts landed. Equal shares also match how people read a series bar ("15 of 50 chapters done").
+ */
 export function seriesFraction(chapters: DownloadedChapter[]): number {
-  let done = 0;
-  let total = 0;
-  for (const c of chapters) {
-    total += c.pageCount;
-    done += c.completedPages;
-  }
-  return total > 0 ? done / total : 0;
+  if (chapters.length === 0) return 0;
+  let sum = 0;
+  for (const c of chapters) sum += chapterFraction(c);
+  return sum / chapters.length;
 }
 
 export function isInProgress(state: DownloadState): boolean {
@@ -79,15 +90,17 @@ export function bySortValue(a: [number, number], b: [number, number]): number {
  * isn't complete (the radials show only then).
  */
 export function overallProgress(bySeries: StorageUsageSeries[]): { fraction: number; inProgress: boolean } {
-  let done = 0;
-  let total = 0;
+  // Chapter-weighted for the same reason as `seriesFraction`: unresolved (lazily-enqueued) chapters
+  // have no page count yet and must still weigh in as pending work.
+  let sum = 0;
+  let count = 0;
   let inProgress = false;
   for (const s of bySeries) {
     for (const c of s.chapters) {
-      total += c.pageCount;
-      done += c.completedPages;
+      sum += chapterFraction(c);
+      count += 1;
       if (c.state !== 'complete') inProgress = true;
     }
   }
-  return { fraction: total > 0 ? done / total : 0, inProgress };
+  return { fraction: count > 0 ? sum / count : 0, inProgress };
 }
