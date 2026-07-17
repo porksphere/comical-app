@@ -77,8 +77,9 @@ export const DownloadingIcon = ({ color, size = 16 }: IconProps) => <Download co
 export const PauseIcon = ({ color, size = 16 }: IconProps) => <Pause color={color} size={size} />;
 export const QueuedIcon = ({ color, size = 16 }: IconProps) => <Clock color={color} size={size} />;
 export const FailedIcon = ({ color, size = 16 }: IconProps) => <TriangleAlert color={color} size={size} />;
-// Fully-downloaded (complete) marker — a filled check for a chapter/series kept offline.
-export const DownloadedIcon = ({ color, size = 16 }: IconProps) => <CircleCheck color={color} size={size} />;
+// Fully-downloaded (complete) marker — a bare check for a chapter/series kept offline (the circled
+// variant read too close to the multi-select circles beside it).
+export const DownloadedIcon = ({ color, size = 16 }: IconProps) => <Check color={color} size={size} />;
 export const RetryIcon = ({ color, size = 16 }: IconProps) => <RotateCcw color={color} size={size} />;
 // Rename affordance (custom page editor's top bar).
 export const PencilIcon = ({ color, size = 16 }: IconProps) => <Pencil color={color} size={size} />;
