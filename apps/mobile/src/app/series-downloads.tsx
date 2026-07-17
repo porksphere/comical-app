@@ -26,7 +26,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Holdable } from '@/components/context-menu';
 import { DownloadStatusIndicator } from '@/components/downloads/download-status-indicator';
-import { chapterActions } from '@/components/downloads/row-actions';
+import { chapterActions, chapterCan } from '@/components/downloads/row-actions';
 import {
   CheckIcon,
   ClearIcon,
@@ -237,15 +237,16 @@ export default function SeriesDownloadsScreen() {
   }, [preselectPending, sel]);
 
   // ── Bulk verbs (the floating pills, select mode only) ─────────────────────────
-  // Each verb surfaces only while the selection makes it valid:
-  //  Download — not-yet-kept chapters (failed ones count: re-enqueueing retries).
-  //  Pause / Resume — in-flight (downloading/queued) / paused chapters.
-  //  Delete — anything downloaded/tracked.
+  // Each verb surfaces only while the selection makes it valid, using the SAME per-state rules as
+  // the rows' swipe actions (`chapterCan` — see row-actions.tsx): Delete only for settled chapters
+  // (complete/paused/failed — an actively downloading one must be paused first), Cancel for queued
+  // ones, Pause/Resume for in-flight/paused. Download stays the enqueue verb.
   const picked = rows.filter((r) => ms.selected.has(r.key));
   const toDownload = picked.filter((r) => (r.group ? !r.c || r.c.state === 'failed' : r.c?.state === 'failed'));
-  const toPause = picked.filter((r) => r.c && (r.c.state === 'downloading' || r.c.state === 'queued'));
-  const toResume = picked.filter((r) => r.c?.state === 'paused');
-  const toDelete = picked.filter((r) => r.c);
+  const toPause = picked.filter((r) => r.c && chapterCan.pause(r.c.state));
+  const toResume = picked.filter((r) => r.c && chapterCan.resume(r.c.state));
+  const toCancel = picked.filter((r) => r.c && chapterCan.cancel(r.c.state));
+  const toDelete = picked.filter((r) => r.c && chapterCan.delete(r.c.state));
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.downloadsUsage() });
@@ -276,8 +277,11 @@ export default function SeriesDownloadsScreen() {
     for (const r of toResume) void resumeChapterDownload(r.c!.bridgeId, r.c!.seriesId, r.c!.chapterId);
   };
 
-  const deleteSelected = async () => {
-    for (const r of toDelete) {
+  // Delete and Cancel are the same removal under the hood (the manifest cascade drops queued
+  // entries and downloaded bytes alike) — the split is PRESENTATION, mirroring the swipe actions:
+  // an X for "never started", a trash can for "on disk".
+  const removeChapters = async (targets: RosterRow[]) => {
+    for (const r of targets) {
       const c = r.c!;
       await dlDeleteChapter(c.bridgeId, c.seriesId, c.chapterId).catch(() => {});
       forgetChapter(c.bridgeId, c.seriesId, c.chapterId);
@@ -285,6 +289,8 @@ export default function SeriesDownloadsScreen() {
     invalidate();
     toggleSelecting();
   };
+  const deleteSelected = () => removeChapters(toDelete);
+  const cancelSelected = () => removeChapters(toCancel);
 
   // Full-width scroller centered within the settings column (same treatment as the Downloads page).
   const sidePad = SettingsGutter + Math.max(0, (width - MaxContentWidth) / 2);
@@ -436,6 +442,9 @@ export default function SeriesDownloadsScreen() {
               : []),
             ...(toResume.length > 0
               ? [{ key: 'resume', label: `Resume ${toResume.length} chapters`, Icon: PlayIcon, onPress: resumeSelected, testID: 'series.dl.resume' }]
+              : []),
+            ...(toCancel.length > 0
+              ? [{ key: 'cancel', label: `Cancel ${toCancel.length} queued chapters`, Icon: ClearIcon, color: theme.danger, onPress: () => void cancelSelected(), testID: 'series.dl.cancel' }]
               : []),
             ...(toDelete.length > 0
               ? [{ key: 'delete', label: `Delete ${toDelete.length} chapters`, Icon: TrashIcon, color: theme.danger, onPress: () => void deleteSelected(), testID: 'series.dl.delete' }]

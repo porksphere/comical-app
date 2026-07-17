@@ -21,7 +21,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Holdable } from '@/components/context-menu';
 import { DownloadStatusIndicator } from '@/components/downloads/download-status-indicator';
-import { seriesActions } from '@/components/downloads/row-actions';
+import { seriesActions, seriesCan } from '@/components/downloads/row-actions';
 import { SeriesStorageBar } from '@/components/downloads/series-storage-bar';
 import { CheckIcon, ClearIcon, PauseIcon, PlayIcon, TrashIcon } from '@/components/icons/ui-icons';
 import {
@@ -172,19 +172,29 @@ export default function DownloadsScreen() {
     },
   ];
 
-  // Contextual bulk verbs over the selected SERIES (their rolled-up state decides applicability).
+  // Contextual bulk verbs over the selected SERIES — the SAME per-state rules as the rows' swipe
+  // actions (`seriesCan`, row-actions.tsx): Delete only for settled series (complete/paused/failed),
+  // Cancel for in-flight ones (discards their incomplete chapters, keeps the finished),
+  // Pause/Resume for in-flight/paused.
   const picked = rows.filter((r) => ms.selected.has(r.key));
   const stateOf = (s: StorageUsageSeries) => deriveSeriesState(s.chapters);
-  const toPause = picked.filter((r) => ['downloading', 'queued'].includes(stateOf(r.s)));
-  const toResume = picked.filter((r) => stateOf(r.s) === 'paused');
+  const toPause = picked.filter((r) => seriesCan.pause(stateOf(r.s)));
+  const toResume = picked.filter((r) => seriesCan.resume(stateOf(r.s)));
+  const toCancel = picked.filter((r) => seriesCan.cancel(stateOf(r.s)));
+  const toDelete = picked.filter((r) => seriesCan.delete(stateOf(r.s)));
   const pauseSelected = () => {
     for (const r of toPause) void pauseSeries(r.s.bridgeId, r.s.seriesId);
   };
   const resumeSelected = () => {
     for (const r of toResume) void resumeSeriesDownload(r.s.bridgeId, r.s.seriesId);
   };
+  const cancelSelected = async () => {
+    for (const r of toCancel) await cancelSeriesInflight(r.s);
+    ms.clear();
+    mode.exit();
+  };
   const deleteSelected = async () => {
-    for (const r of picked) await deleteSeries(r.s);
+    for (const r of toDelete) await deleteSeries(r.s);
     ms.clear();
     mode.exit();
   };
@@ -349,8 +359,11 @@ export default function DownloadsScreen() {
             ...(toResume.length > 0
               ? [{ key: 'resume', label: `Resume ${toResume.length} series`, Icon: PlayIcon, onPress: resumeSelected, testID: 'downloads.resume' }]
               : []),
-            ...(picked.length > 0
-              ? [{ key: 'delete', label: `Delete ${picked.length} series`, Icon: TrashIcon, color: theme.danger, onPress: () => void deleteSelected(), testID: 'downloads.delete' }]
+            ...(toCancel.length > 0
+              ? [{ key: 'cancel', label: `Cancel ${toCancel.length} in-flight series`, Icon: ClearIcon, color: theme.danger, onPress: () => void cancelSelected(), testID: 'downloads.cancel' }]
+              : []),
+            ...(toDelete.length > 0
+              ? [{ key: 'delete', label: `Delete ${toDelete.length} series`, Icon: TrashIcon, color: theme.danger, onPress: () => void deleteSelected(), testID: 'downloads.delete' }]
               : []),
           ]}
         />
