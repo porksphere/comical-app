@@ -542,6 +542,22 @@ export function dlEnqueueChapter(
   return fetchPost(`${dlBase(bridgeId, seriesId)}/chapters/${encodeURIComponent(chapterId)}`, body);
 }
 
+/** POST bulk-enqueue many chapters of one series in a single request. The host records the whole
+ *  queue as instant manifest writes (page lists resolve lazily at download time), so a 300-chapter
+ *  "download all" lands atomically — closing the app mid-request can no longer strand the tail. */
+export function dlEnqueueChapters(
+  bridgeId: string,
+  seriesId: string,
+  body: {
+    title: string;
+    thumbnailUrl?: string;
+    author?: string;
+    chapters: { chapterId: string; chapterName?: string; number?: number; languageCode?: string }[];
+  },
+): Promise<{ chapters: DownloadedChapter[] }> {
+  return fetchPost(`${dlBase(bridgeId, seriesId)}/chapters`, body);
+}
+
 /** POST record one downloaded page's on-disk file + byte size. */
 export function dlRecordPage(
   bridgeId: string,

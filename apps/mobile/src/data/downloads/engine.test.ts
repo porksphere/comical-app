@@ -10,11 +10,16 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 const enqueued: { bridgeId: string; seriesId: string; chapterId: string; body: unknown }[] = [];
+const bulkEnqueued: { bridgeId: string; seriesId: string; body: unknown }[] = [];
 
 mock.module('../api', () => ({
   dlEnqueueChapter: async (bridgeId: string, seriesId: string, chapterId: string, body: unknown) => {
     enqueued.push({ bridgeId, seriesId, chapterId, body });
     return {};
+  },
+  dlEnqueueChapters: async (bridgeId: string, seriesId: string, body: unknown) => {
+    bulkEnqueued.push({ bridgeId, seriesId, body });
+    return { chapters: [] };
   },
   dlPauseChapter: async () => ({}),
   dlPauseSeries: async () => ({}),
@@ -55,11 +60,12 @@ mock.module('./index-cache', () => ({
   localChapterPages: () => undefined,
 }));
 
-const { enqueueChapter } = await import('./engine');
+const { enqueueChapter, enqueueChapters } = await import('./engine');
 const { parseSseFrame } = await import('./events');
 
 beforeEach(() => {
   enqueued.length = 0;
+  bulkEnqueued.length = 0;
 });
 
 describe('enqueueChapter (facade)', () => {
@@ -74,6 +80,35 @@ describe('enqueueChapter (facade)', () => {
   test('a direct series files under the reserved sentinel chapter id', async () => {
     await enqueueChapter({ bridgeId: 'b', seriesId: 's', chapterId: 'ignored', direct: true, title: 'T' });
     expect(enqueued[0]!.chapterId).toBe('__direct__');
+  });
+});
+
+describe('enqueueChapters (bulk facade)', () => {
+  test('lands the whole selection in ONE bulk request (no per-chapter posts)', async () => {
+    enqueueChapters(
+      { bridgeId: 'b', seriesId: 's', title: 'T', author: 'A' },
+      [
+        { id: 'c1', name: 'One', number: 1 },
+        { id: 'c2', name: 'Two', number: 2, languageCode: 'en' },
+      ],
+    );
+    await new Promise((r) => setTimeout(r, 0)); // the facade fires-and-forgets
+    expect(enqueued).toHaveLength(0);
+    expect(bulkEnqueued).toHaveLength(1);
+    expect(bulkEnqueued[0]!.body).toEqual({
+      title: 'T',
+      author: 'A',
+      chapters: [
+        { chapterId: 'c1', chapterName: 'One', number: 1 },
+        { chapterId: 'c2', chapterName: 'Two', number: 2, languageCode: 'en' },
+      ],
+    });
+  });
+
+  test('an empty selection is a no-op', async () => {
+    enqueueChapters({ bridgeId: 'b', seriesId: 's', title: 'T' }, []);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(bulkEnqueued).toHaveLength(0);
   });
 });
 

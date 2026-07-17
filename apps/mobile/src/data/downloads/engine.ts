@@ -17,6 +17,7 @@ import * as Network from 'expo-network';
 import { getEmbeddedDownloadEngine } from '@comical/host-rn';
 import {
   dlEnqueueChapter,
+  dlEnqueueChapters,
   dlPauseChapter,
   dlPauseSeries,
   dlRequeue,
@@ -81,42 +82,34 @@ export async function enqueueChapter(input: EnqueueChapterInput): Promise<void> 
 }
 
 /**
- * Enqueue many chapters of one series — the download sheet / chapter picker fan-out. PACED, not a
- * stampede: each enqueue makes the host resolve that chapter's page list via the bridge, so firing
- * 300 at once flooded the bridge's rate limiter and the manifest store simultaneously (the enqueue
- * trickle visibly stalled). A few workers drain the list in order, and the queries invalidate once
- * up front (the button flips to Downloading) — per-chapter refreshes ride the events pipe.
+ * Enqueue many chapters of one series — the download sheet / chapter picker fan-out. ONE bulk
+ * request: the host records the whole queue as instant manifest writes (each chapter's page list
+ * resolves lazily when the engine picks it up), so a 300-chapter "download all" lands in one
+ * round-trip and closing the app mid-collection can no longer strand the un-POSTed tail.
  */
 export function enqueueChapters(
   series: { bridgeId: string; seriesId: string; title: string; thumbnailUrl?: string; author?: string },
   chapters: { id: string; name: string; number?: number; languageCode?: string }[],
 ): void {
   if (chapters.length === 0) return;
-  const CONCURRENCY = 3;
   void (async () => {
-    let next = 0;
-    const worker = async () => {
-      for (;;) {
-        const c = chapters[next++];
-        if (!c) return;
-        try {
-          await dlEnqueueChapter(series.bridgeId, series.seriesId, c.id, {
-            title: series.title,
-            ...(series.thumbnailUrl !== undefined && { thumbnailUrl: series.thumbnailUrl }),
-            ...(series.author !== undefined && { author: series.author }),
-            chapterName: c.name,
-            ...(c.number !== undefined && { number: c.number }),
-            ...(c.languageCode !== undefined && { languageCode: c.languageCode }),
-          });
-        } catch (e) {
-          logDiagnostic('download-enqueue', (e as Error)?.message || String(e), {
-            context: `bridge=${series.bridgeId} series=${series.seriesId} chapter=${c.id}`,
-          });
-        }
-      }
-    };
-    invalidateDownloads(series.bridgeId, series.seriesId);
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, chapters.length) }, () => worker()));
+    try {
+      await dlEnqueueChapters(series.bridgeId, series.seriesId, {
+        title: series.title,
+        ...(series.thumbnailUrl !== undefined && { thumbnailUrl: series.thumbnailUrl }),
+        ...(series.author !== undefined && { author: series.author }),
+        chapters: chapters.map((c) => ({
+          chapterId: c.id,
+          chapterName: c.name,
+          ...(c.number !== undefined && { number: c.number }),
+          ...(c.languageCode !== undefined && { languageCode: c.languageCode }),
+        })),
+      });
+    } catch (e) {
+      logDiagnostic('download-enqueue', (e as Error)?.message || String(e), {
+        context: `bulk bridge=${series.bridgeId} series=${series.seriesId} chapters=${chapters.length}`,
+      });
+    }
     invalidateDownloads(series.bridgeId, series.seriesId);
   })();
 }

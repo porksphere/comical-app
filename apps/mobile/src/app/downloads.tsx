@@ -410,6 +410,9 @@ function FoldoutChevron({ open }: { open: boolean }) {
 }
 
 function chapterDescription(c: DlChapter, state: DownloadState, shownDone: number, shownBytes: number): string {
+  // A lazily-enqueued chapter has no page list yet (it resolves when the engine picks it up) —
+  // "0 pages · 0 B · queued" would read as an error, so show just the state until the count lands.
+  if (c.pageCount === 0 && state !== 'complete') return state;
   const size = `${c.pageCount} page${c.pageCount === 1 ? '' : 's'} · ${formatBytes(shownBytes)}`;
   if (state === 'complete') return size;
   const label = state === 'downloading' ? `${shownDone}/${c.pageCount}` : state;
