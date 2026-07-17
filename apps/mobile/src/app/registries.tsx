@@ -1,9 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { CheckIcon, GripIcon, PlusIcon, TrashIcon } from '@/components/icons/ui-icons';
+import { openConfirm } from '@/components/confirm-popup';
+import { Holdable } from '@/components/context-menu';
+import { CheckIcon, ClearIcon, GripIcon, PlusIcon, TrashIcon } from '@/components/icons/ui-icons';
+import { SelectLead, SelectPillBar, SelectToggle, useSelectMode } from '@/components/multi-select/select-mode';
+import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { useKeyboardAvoidingInput, useOverlay } from '@/components/overlay/overlay';
 import { ReorderableList } from '@/components/settings/reorderable-list';
 import { RetryBlock } from '@/components/retry-block';
@@ -11,8 +16,9 @@ import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
 import { ThemedSwitch } from '@/components/themed-switch';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { showToast } from '@/components/toast';
 import { TopBar, TopBarButton } from '@/components/top-bar';
-import { Spacing } from '@/constants/theme';
+import { SettingsGutter, Spacing } from '@/constants/theme';
 import type { SavedRegistry } from '@/data/api';
 import { applyOrder, setRegistryOrder, useRegistryOrder } from '@/data/list-order';
 import { queryKeys } from '@/data/queries';
@@ -20,6 +26,8 @@ import { useDataSource } from '@/data/source';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { friendlyError } from '@/lib/friendly-error';
+import { hapticSelection } from '@/lib/haptics';
+import { testId } from '@/lib/test-id';
 
 const IS_WEB = Platform.OS === 'web';
 
@@ -28,6 +36,7 @@ export default function RegistriesScreen() {
   const router = useRouter();
   const theme = useTheme();
   const contentPadding = useSettingsScrollPadding();
+  const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const { open } = useOverlay();
   // Web-only reorder mode (▲/▼). Native reorders in place via long-press drag.
@@ -66,33 +75,93 @@ export default function RegistriesScreen() {
     void reconcileLabels();
   }, [registries, reconcileLabels]);
 
+  // ── Multi-select mode (the shared select-mode chrome) — bulk-remove registries ──
+  const mode = useSelectMode();
+  const selecting = mode.selecting;
+  const allKeys = useMemo(() => (Array.isArray(ordered) ? ordered.map((r) => r.url) : []), [ordered]);
+  const ms = useMultiSelect(allKeys);
+  const toggleSelecting = () => {
+    if (selecting) ms.clear();
+    mode.toggle();
+  };
+  const allSelected = allKeys.length > 0 && ms.count === allKeys.length;
+  const stagingRows = [
+    {
+      label: allSelected ? 'Deselect all' : 'Select all',
+      Icon: allSelected ? ClearIcon : CheckIcon,
+      loading: false,
+      disabled: allKeys.length === 0,
+      onPress: allSelected ? ms.clear : ms.selectAll,
+      testID: testId('registries.menu', 'all'),
+    },
+  ];
+
+  const removeSelected = async () => {
+    const urls = allKeys.filter((u) => ms.selected.has(u));
+    for (const url of urls) await ds.removeRegistry(url);
+    // Same narrow invalidate as the single-row remove (see RemoveRegistryConfirm).
+    await queryClient.invalidateQueries({ queryKey: queryKeys.registries() });
+    ms.clear();
+    mode.exit();
+    showToast(urls.length === 1 ? 'Registry removed' : `${urls.length} registries removed`);
+  };
+  const confirmRemoveSelected = () =>
+    openConfirm({
+      message: `${ms.count === 1 ? 'This registry' : `These ${ms.count} registries`} will be removed. Bridges and trackers already installed keep working, but you won't see updates.`,
+      confirmLabel: ms.count === 1 ? 'Remove Registry' : `Remove ${ms.count} Registries`,
+      onConfirm: () => void removeSelected(),
+    });
+
   const renderRow = (r: SavedRegistry) => (
-    <SwipeableSettingsRow
+    // In select mode the row toggles (tap) / range-fills (hold, via the shared Holdable) instead of
+    // opening the registry, and its swipe action is parked. Same pattern as the Downloads screen.
+    <Holdable
       key={r.url}
-      // Operator-set label (e.g. "SFW") shown next to the derived owner/repo name, so one publisher's
-      // several registries are distinguishable. Falls back to just the name.
-      label={r.displayName ? `${r.displayName} — ${r.name}` : r.name}
-      description={r.url}
-      onPress={() => router.push({ pathname: '/registry-browse', params: { url: r.url } })}
-      actions={[{ label: 'Remove', icon: TrashIcon, destructive: true, onPress: () => open(() => <RemoveRegistryConfirm url={r.url} />) }]}
-    />
+      enabled={selecting}
+      onHold={() => {
+        hapticSelection();
+        ms.rangeFill(r.url);
+      }}>
+      {({ onLongPress }) => (
+        <SwipeableSettingsRow
+          // Operator-set label (e.g. "SFW") shown next to the derived owner/repo name, so one publisher's
+          // several registries are distinguishable. Falls back to just the name.
+          label={r.displayName ? `${r.displayName} — ${r.name}` : r.name}
+          description={r.url}
+          swipeEnabled={!selecting}
+          leading={
+            <SelectLead progress={mode.progress} selected={ms.isSelected(r.url)} itemKey={r.url} edgeOffset={SettingsGutter} />
+          }
+          onPress={
+            selecting
+              ? () => ms.toggle(r.url)
+              : () => router.push({ pathname: '/registry-browse', params: { url: r.url } })
+          }
+          onLongPress={selecting ? onLongPress : undefined}
+          actions={[{ label: 'Remove', icon: TrashIcon, destructive: true, onPress: () => open(() => <RemoveRegistryConfirm url={r.url} />) }]}
+        />
+      )}
+    </Holdable>
   );
 
   return (
     <ThemedView style={styles.container}>
       <TopBar
-        title="Registries"
+        title={selecting ? `${ms.count} selected` : 'Registries'}
         right={
           // `null` = this server has no registry support at all, so there's nothing to add to.
           registries !== null &&
           (editing ? (
             <TopBarButton testID="registries.done" icon={<CheckIcon color={theme.text} size={22} />} label="Done reordering" onPress={() => setEditing(false)} />
+          ) : selecting ? (
+            <SelectToggle selecting onToggle={toggleSelecting} testID="registries.select-toggle" />
           ) : (
             <View style={styles.topActions}>
               {/* Reorder button only on web (native reorders in place — long-press a row). */}
               {IS_WEB && canReorder && (
                 <TopBarButton testID="registries.reorder" icon={<GripIcon color={theme.text} size={22} />} label="Reorder registries" onPress={() => setEditing(true)} />
               )}
+              {allKeys.length > 0 && <SelectToggle selecting={false} onToggle={toggleSelecting} testID="registries.select-toggle" />}
               <TopBarButton testID="registries.add" icon={<PlusIcon color={theme.text} size={22} />} label="Add registry" onPress={() => open(() => <AddRegistryForm />)} />
             </View>
           ))
@@ -127,7 +196,33 @@ export default function RegistriesScreen() {
           label={(r) => (r.displayName ? `${r.displayName} — ${r.name}` : r.name)}
           onReorder={(urls) => setRegistryOrder(urls)}
           editing={editing}
+          dragEnabled={!selecting}
           refresh={reconcileLabels}
+        />
+      )}
+
+      {/* The floating select-mode chrome: staging "…" bottom-left, the Remove verb bottom-right. */}
+      {selecting && (
+        <SelectPillBar
+          left={SettingsGutter}
+          right={SettingsGutter}
+          bottom={Math.max(insets.bottom, Spacing.three)}
+          options={stagingRows}
+          optionsTestID="registries.select-options"
+          verbs={
+            ms.count > 0
+              ? [
+                  {
+                    key: 'remove',
+                    label: `Remove ${ms.count} registries`,
+                    Icon: TrashIcon,
+                    color: theme.danger,
+                    onPress: confirmRemoveSelected,
+                    testID: 'registries.remove-selected',
+                  },
+                ]
+              : []
+          }
         />
       )}
     </ThemedView>

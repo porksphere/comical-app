@@ -160,6 +160,16 @@ export function SelectLead({
   return gesture && DRAG_SELECT_SUPPORTED ? <GestureDetector gesture={gesture}>{lead}</GestureDetector> : lead;
 }
 
+/** The animated leading slot for a row that is IN the list but NOT selectable (e.g. a server-built
+ *  bridge among registry-installed ones): grows/collapses in sync with its siblings' `SelectLead`
+ *  so every row's content shifts together in select mode, but never shows a circle. */
+export function SelectLeadGap({ progress }: { progress: SharedValue<number> }) {
+  const slot = useAnimatedStyle(() => ({
+    width: Math.max(0, progress.value) * CIRCLE_SLOT,
+  }));
+  return <Animated.View style={slot} />;
+}
+
 // ── iOS-style drag-select ─────────────────────────────────────────────────────────
 // Start a drag ON a row's check circle and sweep vertically: every row the finger passes flips to
 // the anchor row's new state; retreating back over rows restores what they were before the drag
