@@ -6,6 +6,7 @@
  * downloads / library / cache split.
  */
 import { StyleSheet, View } from 'react-native';
+import Animated, { useAnimatedStyle, useDerivedValue, withTiming } from 'react-native-reanimated';
 
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
@@ -33,6 +34,13 @@ export interface StorageSegment {
   color: string;
 }
 
+/** One segment of the bar, its width share animated so live byte ticks read as smooth growth. */
+function BarSegment({ fraction, color }: { fraction: number; color: string }) {
+  const w = useDerivedValue(() => withTiming(fraction, { duration: 350 }));
+  const style = useAnimatedStyle(() => ({ width: `${w.value * 100}%` }));
+  return <Animated.View style={[style, { backgroundColor: color }]} />;
+}
+
 export function StorageBreakdownBar({ segments, totalBytes }: { segments: StorageSegment[]; totalBytes: number }) {
   const theme = useTheme();
   // Guard the divisor; fall back to the summed segment bytes if the rollup total is somehow 0.
@@ -44,7 +52,7 @@ export function StorageBreakdownBar({ segments, totalBytes }: { segments: Storag
 
       <View style={[styles.track, { backgroundColor: theme.backgroundElement }]}>
         {segments.map((seg) => (
-          <View key={seg.key} style={{ width: `${(seg.bytes / total) * 100}%`, backgroundColor: seg.color }} />
+          <BarSegment key={seg.key} fraction={seg.bytes / total} color={seg.color} />
         ))}
       </View>
 

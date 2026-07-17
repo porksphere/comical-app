@@ -241,12 +241,12 @@ export default function DownloadsScreen() {
   const header = (
     <View style={styles.header}>
       {/* Total downloaded + a per-series colour breakdown of that space (top 10 + "Other"). Replaces
-          the old cumulative progress radial — per-row radials already show in-flight progress. */}
-      {usage.seriesCount > 0 && (
-        <View style={styles.storage}>
-          <SeriesStorageBar bySeries={usage.bySeries} totalBytes={usage.totalBytes} />
-        </View>
-      )}
+          the old cumulative progress radial — per-row radials already show in-flight progress.
+          ALWAYS rendered (an empty track + "0 B" when nothing is downloaded): the page keeps a
+          stable shape, and a fresh download grows the bar in place instead of popping a widget in. */}
+      <View style={styles.storage}>
+        <SeriesStorageBar bySeries={usage.bySeries} totalBytes={usage.totalBytes} />
+      </View>
       {/* Wi-Fi/background gate the DEVICE engine — meaningless when a remote server owns the
           downloads (it paces itself), so the section only renders in embedded mode. */}
       {getResolvedModeSync() === 'embedded' && (

@@ -41,7 +41,18 @@ function patchProgressCaches(
   completedPages: number,
   bytes: number,
   state: 'downloading' | 'complete',
+  /** The chapter's page total, when the event knows it. A lazily-enqueued chapter enters the cache
+   *  with `pageCount: 0` (its list resolves at pickup) — patching the resolved count here gives the
+   *  progress radial its denominator without waiting for a refetch. Never patched DOWN to 0. */
+  pageCount?: number,
 ): void {
+  const patch = (c: DownloadedChapter) => ({
+    ...c,
+    completedPages,
+    bytes,
+    state,
+    ...(pageCount ? { pageCount } : {}),
+  });
   // The Downloads screen's storage-usage tree.
   queryClient.setQueryData<StorageUsage>(queryKeys.downloadsUsage(), (old) => {
     if (!old) return old;
@@ -51,7 +62,7 @@ function patchProgressCaches(
       const chapters = se.chapters.map((c) => {
         if (c.chapterId !== chapterId) return c;
         hit = true;
-        return { ...c, completedPages, bytes, state };
+        return patch(c);
       });
       return { ...se, chapters, bytes: chapters.reduce((n, c) => n + c.bytes, 0) };
     });
@@ -67,7 +78,7 @@ function patchProgressCaches(
       const chapters = old.chapters.map((c) => {
         if (c.chapterId !== chapterId) return c;
         hit = true;
-        return { ...c, completedPages, bytes, state };
+        return patch(c);
       });
       return hit ? { ...old, chapters } : old;
     },
@@ -122,6 +133,7 @@ function apply(e: DownloadEngineEvent): void {
         e.completedPages,
         e.bytes,
         e.state === 'complete' ? 'complete' : 'downloading',
+        e.pageCount,
       );
       break;
     case 'chapter': {
@@ -129,7 +141,7 @@ function apply(e: DownloadEngineEvent): void {
       if (c.state === 'downloading') {
         // Picked up by the engine — mark it downloading before the first byte so a series indicator
         // never dips back to 'queued' at the hand-off between chapters.
-        patchProgressCaches(c.bridgeId, c.seriesId, c.chapterId, c.completedPages, c.bytes, 'downloading');
+        patchProgressCaches(c.bridgeId, c.seriesId, c.chapterId, c.completedPages, c.bytes, 'downloading', c.pageCount);
         break;
       }
       if (c.state === 'complete') void refreshChapterIndex(c.bridgeId, c.seriesId, c.chapterId, c.pageCount);
