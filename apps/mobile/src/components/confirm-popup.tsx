@@ -194,8 +194,9 @@ const styles = StyleSheet.create({
   message: {
     textAlign: 'left',
   },
+  // A full pill: the radius always exceeds half the button's height, so the ends are semicircles.
   verb: {
-    borderRadius: 18,
+    borderRadius: 999,
     paddingVertical: Spacing.three + Spacing.one,
     alignItems: 'center',
   },
