@@ -45,10 +45,10 @@ export function GridSkeleton({ numColumns, rows }: { numColumns: number; rows: n
 const styles = StyleSheet.create({
   gridCell: {
     flex: 1,
-    // Mirrors series-grid.tsx's CELL_PAD_TOP/BOTTOM (2px top, none below) so the skeleton reads at
-    // the same row rhythm as the cards that replace it.
+    // Mirrors series-grid.tsx's CELL_PAD_TOP/BOTTOM (2px each) so the skeleton reads at the same
+    // row rhythm as the cards that replace it.
     paddingTop: Spacing.half,
-    paddingBottom: 0,
+    paddingBottom: Spacing.half,
   },
   skelFooter: {
     // No top padding: the list's content gap already separates the footer from the last row.
