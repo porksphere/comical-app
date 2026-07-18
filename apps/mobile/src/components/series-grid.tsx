@@ -108,7 +108,6 @@ export function SeriesGrid({
       // EXACT, not a hint: every cell is pinned to `cellHeight` below, so this matches every measured row.
       estimatedItemSize={cellHeight}
       numColumns={numColumns}
-      columnWrapperStyle={numColumns > 1 ? { gap: GRID_COLUMN_GAP } : undefined}
       header={header}
       footer={footer}
       paddingTop={paddingTop}
@@ -119,10 +118,22 @@ export function SeriesGrid({
       onEndReached={onEndReached}
       onScrollEndDrag={onScrollEndDrag}
       wrapperStyle={wrapperStyle}
-      renderItem={({ item }) => (
+      renderItem={({ item, index }) => (
         // Both dimensions are FIXED — cellHeight above, and cardWidth (from useGridLayout). The width is
         // what lets a short final row simply end instead of stretching its cards across the row.
-        <View style={[styles.cell, { width: cardWidth, height: cellHeight }]}>
+        //
+        // The marginLeft is the COLUMN-GAP correction. LegendList slots each column into a plain
+        // `contentWidth / n` band and left-aligns the cell in it (a `columnWrapperStyle` gap is inert
+        // — the old prop did nothing), which squeezed the visual gap to `gap·(n−1)/n` (~5.3px) and
+        // dumped the remainder as slack on the row's right edge — the Library read tighter than the
+        // Browse feed's hand-laid rows. Column k sits `k·gap/n` right of its slot start, which lands
+        // every card at exactly `k·(cardWidth+gap)`: true `GRID_COLUMN_GAP` gaps, flush right edge,
+        // identical to ContentFeed's terminal grid.
+        <View
+          style={[
+            styles.cell,
+            { width: cardWidth, height: cellHeight, marginLeft: (index % numColumns) * (GRID_COLUMN_GAP / numColumns) },
+          ]}>
           <SeriesCard
             entry={item}
             bridge={item.bridge ?? bridge}
