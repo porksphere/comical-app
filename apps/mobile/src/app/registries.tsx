@@ -64,6 +64,8 @@ export default function RegistriesScreen() {
       await Promise.allSettled(regs.map((r) => ds.browseRegistryBridges(r.url)));
     }
     await queryClient.invalidateQueries({ queryKey: queryKeys.registries() });
+    // The fresh indexes may have surfaced new bridge/tracker versions — refresh the tab pip too.
+    await queryClient.invalidateQueries({ queryKey: queryKeys.registryUpdateCount() });
   }, [registries, ds, queryClient]);
 
   // The nicety: nudge the labels fresh once when the screen first has registries, in the background
@@ -101,8 +103,10 @@ export default function RegistriesScreen() {
     const urls = allKeys.filter((u) => ms.selected.has(u));
     for (const url of urls) await ds.removeRegistry(url);
     // Narrow invalidate, unlike an uninstall: removing a registry doesn't touch the bridges
-    // already installed from it, only where updates would come from.
+    // already installed from it, only where updates would come from — which is why the
+    // update-count pip must refresh alongside the list.
     await queryClient.invalidateQueries({ queryKey: queryKeys.registries() });
+    await queryClient.invalidateQueries({ queryKey: queryKeys.registryUpdateCount() });
     ms.clear();
     mode.exit();
     showToast(urls.length === 1 ? 'Registry removed' : `${urls.length} registries removed`);
@@ -128,6 +132,7 @@ export default function RegistriesScreen() {
       onConfirm: async () => {
         await ds.removeRegistry(r.url);
         await queryClient.invalidateQueries({ queryKey: queryKeys.registries() });
+        await queryClient.invalidateQueries({ queryKey: queryKeys.registryUpdateCount() });
       },
     });
 
@@ -274,6 +279,7 @@ function AddRegistryForm() {
     mutationFn: () => ds.addRegistry(url.trim(), requireSignature),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.registries() });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.registryUpdateCount() });
       closeTop();
     },
   });

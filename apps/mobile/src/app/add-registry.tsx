@@ -42,6 +42,7 @@ export default function AddRegistryScreen() {
     mutationFn: () => ds.addRegistry(url!, false),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.registries() });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.registryUpdateCount() });
       router.replace({ pathname: '/registry-browse', params: { url: url! } });
     },
   });

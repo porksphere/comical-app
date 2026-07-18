@@ -133,6 +133,8 @@ export const queryKeys = {
   registries: () => ['registries'] as const,
   registryBridges: (url: string) => ['registryBridges', url] as const,
   registryTrackers: (url: string) => ['registryTrackers', url] as const,
+  // One combined count of available bridge + tracker updates, behind the Settings tab pip.
+  registryUpdateCount: () => ['registryUpdateCount'] as const,
 
   // ─── Downloads (device-local offline manifest) ─────────────────────────────
   // Downloads are device data, not source content, so these carry no `mock`. Both are prefixed

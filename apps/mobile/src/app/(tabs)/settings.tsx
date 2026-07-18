@@ -68,14 +68,10 @@ export default function SettingsScreen() {
           styles.fill,
         ]}>
         <View style={styles.list}>
-          {/* Descriptions are kept short enough to land on ONE line — every settings row in the app
-              is exactly `SettingsRowHeight` tall, and a description that wraps is what used to make
-              these rows stand 30px taller than the ones they lead to. */}
           <CategoryRow
             testID="settings.category.general"
             icon={<GeneralSettingsIcon color={theme.textSecondary} size={22} />}
             title="General"
-            description="Appearance, content, and where bridges run."
             onPress={() => router.push('/settings-general')}
           />
           <Divider />
@@ -83,7 +79,6 @@ export default function SettingsScreen() {
             testID="settings.category.notifications"
             icon={<NotificationsIcon color={theme.textSecondary} size={22} />}
             title="Notifications"
-            description="New-chapter checks, alerts, and badges."
             onPress={() => router.push('/settings-notifications')}
           />
           <Divider />
@@ -91,7 +86,6 @@ export default function SettingsScreen() {
             testID="settings.category.bridges"
             icon={<BridgesIcon color={theme.textSecondary} size={22} />}
             title="Bridges"
-            description="The sources Comical reads from."
             value={counts.bridges}
             onPress={() => router.push('/bridges')}
           />
@@ -100,7 +94,6 @@ export default function SettingsScreen() {
             testID="settings.category.trackers"
             icon={<TrackersIcon color={theme.textSecondary} size={22} />}
             title="Trackers"
-            description="Sync your progress to another service."
             value={counts.trackers}
             onPress={() => router.push('/trackers')}
           />
@@ -109,7 +102,6 @@ export default function SettingsScreen() {
             testID="settings.category.registries"
             icon={<RegistriesIcon color={theme.textSecondary} size={22} />}
             title="Registries"
-            description="Where bridges and trackers come from."
             value={counts.registries}
             onPress={() => router.push('/registries')}
           />
@@ -118,7 +110,6 @@ export default function SettingsScreen() {
             testID="settings.category.custom-pages"
             icon={<CustomPagesIcon color={theme.textSecondary} size={22} />}
             title="Custom Pages"
-            description="Compose your own Comical pages from any bridge."
             value={customPageCount ? String(customPageCount) : undefined}
             onPress={() => router.push('/custom-pages')}
           />
@@ -127,7 +118,6 @@ export default function SettingsScreen() {
             testID="settings.category.downloads"
             icon={<DownloadsIcon color={theme.textSecondary} size={22} />}
             title="Downloads"
-            description="Chapters kept on this device for offline reading."
             value={counts.downloads}
             progress={counts.downloadsProgress}
             onPress={() => router.push('/downloads')}
@@ -137,7 +127,6 @@ export default function SettingsScreen() {
             testID="settings.category.storage"
             icon={<StorageIcon color={theme.textSecondary} size={22} />}
             title="Storage"
-            description="Image cache and downloaded content on this device."
             onPress={() => router.push('/storage')}
           />
           <Divider />
@@ -145,7 +134,6 @@ export default function SettingsScreen() {
             testID="settings.category.diagnostics"
             icon={<DiagnosticsIcon color={theme.textSecondary} size={22} />}
             title="Diagnostics"
-            description="Page and thumbnail load failures."
             onPress={() => router.push('/diagnostics')}
           />
           {PROFILING_ENABLED && (
@@ -155,7 +143,6 @@ export default function SettingsScreen() {
                 testID="settings.category.developer"
                 icon={<DeveloperIcon color={theme.textSecondary} size={22} />}
                 title="Developer"
-                description="Mock data, profiler, and server."
                 onPress={() => router.push('/settings-developer')}
               />
             </>
@@ -210,13 +197,11 @@ function useCategoryCounts() {
   };
 }
 
-/** A top-level Settings entry: leading glyph, title over a one-line explanation of what lives
- *  behind it, an optional count, and a chevron. Taller and more explanatory than a `SettingsRow` —
- *  this is a table of contents, and the description is what makes it scannable without tapping in. */
+/** A top-level Settings entry: leading glyph, title, an optional count, and a chevron. The titles
+ *  alone carry the table of contents — the per-category explanation lives on the pushed screen. */
 function CategoryRow({
   icon,
   title,
-  description,
   value,
   progress,
   onPress,
@@ -224,7 +209,6 @@ function CategoryRow({
 }: {
   icon: ReactNode;
   title: string;
-  description: string;
   value?: string;
   /** Cumulative download progress [0,1] — renders a small radial before the chevron while in flight. */
   progress?: number;
@@ -257,9 +241,6 @@ function CategoryRow({
           <View style={settingsRowFrame.text}>
             <ThemedText type="small" numberOfLines={1}>
               {title}
-            </ThemedText>
-            <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
-              {description}
             </ThemedText>
           </View>
           {value !== undefined && (
