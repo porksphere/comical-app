@@ -18,13 +18,16 @@ import { hapticImpactLight } from '@/lib/haptics';
 import { claimOpenRow, releaseOpenRow } from '@/lib/swipe-row-registry';
 import { testId } from '@/lib/test-id';
 
-const PILL_WIDTH = 60;
+/** The action bubbles are perfect CIRCLES: this is their diameter (and so also their layout width in
+ *  the detent math). Sized to sit inside a settings row (64) with breathing room, and centred in the
+ *  slot rather than stretched to it, so a taller row still gets circles. */
+const PILL_WIDTH = 52;
 const PILL_GAP = Spacing.two;
 /** Corner radius the row's trailing edge grows to as it opens into a slot. */
 const SLOT_RADIUS = 14;
 /** How many action bubbles fit a row before they'd run past the screen / crowd the content. Beyond
  *  this, extra actions are dropped (and a dev-build error is logged — see `clampActions`). Three
- *  60px pills plus gaps and the gutter already reach ~230px, about as far as a phone row can give. */
+ *  circles plus gaps and the gutter already reach ~200px, about as far as a phone row can give. */
 const MAX_ROW_ACTIONS = 3;
 
 /** Tuned for a visible trail: soft enough that the row lags a little behind the finger and has to
@@ -244,6 +247,12 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
   // Detent haptic (one per row). Every midpoint crossing calls it via runOnJS; it spaces bunched taps
   // out to MIN_HAPTIC_MS apart so a fast swipe lands as distinct taps rather than one buzz.
   const [tickHaptic] = useState(createDetentHaptic);
+  // The all-or-nothing settle (see onEnd) sweeps the detents the finger didn't reach — play their
+  // ticks through the SAME queue, so the auto-open clicks through the remaining pills exactly as a
+  // full drag would have (MIN_HAPTIC_MS apart, not one mushy buzz).
+  function tickMany(n: number) {
+    for (let i = 0; i < n; i++) tickHaptic();
+  }
   // JS mirror of "is the row open", so a tap-catching overlay can cover the content while open (a tap
   // then closes it instead of triggering the content's own press) without the content knowing.
   const [open, setOpen] = useState(false);
@@ -362,6 +371,11 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
       let idx = captured.value >= 1 ? openIdx : 0;
       if (e.velocityX < -500) idx = openIdx;
       else if (e.velocityX > 500) idx = 0;
+      // The settle crosses every detent between the captured one and the rest — their ticks still
+      // play (queued MIN_HAPTIC_MS apart), so the sprung-open row clicks through its pills the same
+      // way the finger dragging all the way would have.
+      const swept = Math.abs(idx - captured.value);
+      if (swept > 0) runOnJS(tickMany)(swept);
       target.value = -detents[idx];
       restIndex.value = idx;
       captured.value = idx;
@@ -500,18 +514,20 @@ const styles = StyleSheet.create({
   },
   pillSlot: {
     position: 'absolute',
-    // Stretched to the row's height (which varies), so the pills fill it minus a hair of breathing
-    // room. Laid out as a row so multiple pills sit side-by-side; `right`/`width` are set inline.
-    top: Spacing.one,
-    bottom: Spacing.one,
+    // Spans the row's height with the circles CENTRED in it (not stretched) — what keeps them
+    // perfect circles whatever the row's height. Laid out as a row so multiple circles sit
+    // side-by-side; `right`/`width` are set inline.
+    top: 0,
+    bottom: 0,
     flexDirection: 'row',
-    alignItems: 'stretch',
+    alignItems: 'center',
     gap: PILL_GAP,
   },
   pill: {
+    // A perfect circle (width == height, radius past half of both) — the select-mode pill bar's
+    // solo-verb circle, at row scale.
     width: PILL_WIDTH,
-    // A full capsule (radius > half the pill's height), matching the floating select-mode pills —
-    // deliberately rounder than the row's own slot corner (SLOT_RADIUS).
+    height: PILL_WIDTH,
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',

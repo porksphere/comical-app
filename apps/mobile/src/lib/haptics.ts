@@ -13,6 +13,12 @@ export function hapticSelection() {
   void Haptics.selectionAsync();
 }
 
+/** Soft impact — the faintest single beat, for the bottom of a ramp. */
+export function hapticImpactSoft() {
+  if (Platform.OS === 'web') return webVibrate(4);
+  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
+}
+
 /** Light impact for a primary tap — opening a row, pressing back, crossing the pull-to-refresh
  *  threshold. */
 export function hapticImpactLight() {
@@ -27,14 +33,10 @@ export function hapticImpactMedium() {
   void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 }
 
-/** Heavy impact — the top of a ramp (e.g. the last beat of a hold-to-arm countdown). */
+/** Heavy impact — the ONE strong beat a ramp lands on (a hold-to-arm gesture committing). A single
+ *  clean thump: deliberately an impact, not `notificationAsync(Success)`, whose multi-pulse pattern
+ *  read as a weird double-buzz at the top of the ramp. */
 export function hapticImpactHeavy() {
   if (Platform.OS === 'web') return webVibrate(20);
   void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-}
-
-/** Success notification — a state actually changed (e.g. a hold-to-arm gesture committing). */
-export function hapticNotifySuccess() {
-  if (Platform.OS === 'web') return webVibrate(30);
-  void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 }

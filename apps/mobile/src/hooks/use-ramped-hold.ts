@@ -1,9 +1,11 @@
 /**
  * A hold-to-arm gesture: press and KEEP holding, and three haptic beats ramp up in intensity
- * (light → medium → heavy) as a countdown; keep holding through all three and the hold ARMS —
- * `onArm` fires once, with a success haptic. Releasing (or the press being cancelled) at any point
- * before that aborts silently. Deliberate friction for a consequential toggle a plain tap
- * shouldn't flip (e.g. the Browse bridge icon's session NSFW override).
+ * (soft → light → medium) as a countdown; keep holding through all three and the hold ARMS —
+ * `onArm` fires once, on the ramp's ONE strong closing beat. The felt shape is
+ * "bip. bip.. bip… BIP": three escalating small beats, then a single heavy thump as the commit.
+ * Releasing (or the press being cancelled) at any point before that aborts silently. Deliberate
+ * friction for a consequential toggle a plain tap shouldn't flip (e.g. the Browse bridge icon's
+ * session NSFW override).
  *
  * Returns `onPressIn`/`onPressOut` to spread onto a `Pressable`. Timer-driven off the press
  * events, so it works anywhere a Pressable does — including web, where RNGH long-press gestures
@@ -12,11 +14,11 @@
  */
 import { useEffect, useRef } from 'react';
 
-import { hapticImpactHeavy, hapticImpactLight, hapticImpactMedium, hapticNotifySuccess } from '@/lib/haptics';
+import { hapticImpactHeavy, hapticImpactLight, hapticImpactMedium, hapticImpactSoft } from '@/lib/haptics';
 
 /** The countdown beats (ms into the hold), each a step up in intensity. */
 const RAMP_MS = [250, 500, 750] as const;
-/** When the hold arms — a distinct beat after the heavy tick, so the commit reads as its own event. */
+/** When the hold arms — the ramp's closing heavy beat, distinct from the countdown ticks. */
 const ARM_MS = 950;
 
 export function useRampedHold(onArm: () => void): {
@@ -41,12 +43,14 @@ export function useRampedHold(onArm: () => void): {
   return {
     onPressIn: () => {
       clear();
-      const beats = [hapticImpactLight, hapticImpactMedium, hapticImpactHeavy];
+      const beats = [hapticImpactSoft, hapticImpactLight, hapticImpactMedium];
       timers.current = beats.map((beat, i) => setTimeout(beat, RAMP_MS[i]));
       timers.current.push(
         setTimeout(() => {
           clear();
-          hapticNotifySuccess();
+          // The BIP: one clean heavy impact, not a multi-pulse notification (which read as a
+          // weird stuttered buzz at the top of the ramp).
+          hapticImpactHeavy();
           armRef.current();
         }, ARM_MS),
       );
