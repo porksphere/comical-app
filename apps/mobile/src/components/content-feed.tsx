@@ -20,7 +20,7 @@ import { useIsLargeScreen } from '@/hooks/use-responsive';
 // Terminal-grid cell inter-row spacing — mirrors series-grid.tsx's CELL_PAD_TOP/BOTTOM so a home
 // terminal row reads at the exact same height as a results-grid cell (and matches the fixed cellHeight).
 const CELL_PAD_TOP = Spacing.half;
-const CELL_PAD_BOTTOM = 0;
+const CELL_PAD_BOTTOM = Spacing.half;
 const CELL_ROW_GAP = CELL_PAD_TOP + CELL_PAD_BOTTOM;
 // The two knobs for the vertical rhythm now that EVERY heading is a shared standalone `sectionHead`
 // row: SECTION_GAP separates one section from the previous (the head's top pad), HEADING_GAP is the gap

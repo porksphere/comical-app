@@ -14,11 +14,11 @@ import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
 // positioned). Split top/bottom rather than all-bottom because LegendList's web row container is
 // `contain: paint`, which would clip a card's hover-lift if it were flush to the row's top edge. These
 // feed both `styles.cell`'s padding AND the fixed `cellHeight` below, so the two never drift.
-// Deliberately TIGHT (2px total, down from the original 16): the cards' own title/author block
-// already gives each row visual separation, so the old gap read as dead air. The remaining 2px all
-// sit on TOP (the web hover-lift clip guard — see above); the bottom pad is gone entirely.
+// Deliberately TIGHT (4px total, down from the original 16): the cards' own title/author block
+// already gives each row visual separation, so the old gap read as dead air. Split evenly — the
+// top half doubles as the web hover-lift clip guard (see above).
 const CELL_PAD_TOP = Spacing.half;
-const CELL_PAD_BOTTOM = 0;
+const CELL_PAD_BOTTOM = Spacing.half;
 const CELL_ROW_GAP = CELL_PAD_TOP + CELL_PAD_BOTTOM;
 
 /**
