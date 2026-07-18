@@ -46,7 +46,9 @@ export const expoBlobStore: BlobStore = {
   async write(relPath, data) {
     const file = prepared(relPath);
     file.write(data);
-    return { bytes: file.size ?? data.byteLength };
+    // Trust the length we just wrote rather than stat-ing the file back: a raw byte write lands exactly
+    // `data.byteLength` on disk, and `File.size` is a native stat we were paying on every page.
+    return { bytes: data.byteLength };
   },
   async remove(relPaths) {
     removeBlobs(relPaths);

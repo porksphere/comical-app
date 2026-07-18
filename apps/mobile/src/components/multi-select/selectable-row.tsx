@@ -42,6 +42,11 @@ export function SelectCircle({ selected, done }: { selected: boolean; done?: boo
   const theme = useTheme();
   const on = selected || !!done;
   const fillColor = done ? theme.textSecondary : theme.accent;
+  // Hoist the ring's off-colour to a local STRING before the worklet. Referencing `theme.textSecondary`
+  // *inside* the worklet makes Reanimated capture the whole `theme` object into the shareable closure
+  // and deep-clone it (per row, per toggle) — a measurable chunk of select-mode jank. The worklet now
+  // closes over two strings instead.
+  const ringOffColor = theme.textSecondary;
   // Two stages: the fill + ring colour snap in near-instantly (the tap's direct response), then the
   // check draws in a beat later and slower. Deselecting drops everything fast together.
   const p = useDerivedValue(() => withTiming(on ? 1 : 0, { duration: FILL_MS }));
@@ -51,7 +56,7 @@ export function SelectCircle({ selected, done }: { selected: boolean; done?: boo
       : withTiming(0, { duration: FILL_MS }),
   );
   const ring = useAnimatedStyle(() => ({
-    borderColor: interpolateColor(p.value, [0, 1], [theme.textSecondary, fillColor]),
+    borderColor: interpolateColor(p.value, [0, 1], [ringOffColor, fillColor]),
   }));
   const fill = useAnimatedStyle(() => ({
     opacity: p.value,
