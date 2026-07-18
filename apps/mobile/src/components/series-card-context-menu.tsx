@@ -112,11 +112,12 @@ const MORPH_SPRING = { damping: 16, stiffness: 170, mass: 0.8 } as const;
 // stiffness are raised TOGETHER, which keeps the damping ratio (the size of the overshoot — the
 // springy part) while doubling the decay rate, and decay is what actually sets how long it lingers.
 const CLOSE_SPRING = { damping: 28, stiffness: 660, mass: 0.7 } as const;
-// The submenu's pop-out. It blooms in place at the row you just tapped (nothing travels), so it can
-// be lighter than the MORPH — but it must NOT feel snappier than a normal context menu opening. Tuned
-// to the same speed family as the generic hold-menu's OPEN_SPRING (context-menu-host.tsx): it was
-// noticeably faster than every other menu open, which read as a different, cheaper object.
-const SUBMENU_SPRING = { damping: 20, stiffness: 300, mass: 0.7 } as const;
+// The submenu's unfold (see submenuOuterStyle/submenuClipStyle) — used for both open and collapse so
+// the reveal reads the same in and out. Deliberately UNHURRIED and barely springy: a fast, bouncy
+// version made the header-reveal feel flicky rather than like a panel opening. Expressed as
+// duration + dampingRatio (not stiffness/mass) because that's exactly the two things being tuned here
+// — how long it takes, and how little it overshoots (0.85 ≈ a whisper of settle, no visible bounce).
+const SUBMENU_SPRING = { duration: 480, dampingRatio: 0.85 } as const;
 // ── How the resize FOLLOWS the finger ────────────────────────────────────────
 // The panel does NOT track your thumb 1:1. The pan writes a TARGET and the panel chases it with a
 // time-based lerp, so it always runs a little behind and eases into place — including while your
@@ -734,7 +735,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   }, []);
   const collapseSubmenu = useCallback(() => {
     submenuProgress.set(
-      withSpring(0, CLOSE_SPRING, (finished) => {
+      withSpring(0, SUBMENU_SPRING, (finished) => {
         if (finished) runOnJS(clearSubmenu)();
       }),
     );
@@ -767,6 +768,11 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   }));
   const submenuClipStyle = useAnimatedStyle(() => ({
     height: interpolate(submenuProgress.value, [0, 1], [submenuCollapsedH, submenuFullH]),
+  }));
+  // The header chevron starts where the parent row's does (pointing RIGHT) and rotates 90° to point
+  // DOWN as the submenu unfolds — and back on collapse. Reads as the same glyph turning, not swapping.
+  const submenuChevronStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${interpolate(submenuProgress.value, [0, 1], [0, 90])}deg` }],
   }));
 
   const pan = useMemo(
@@ -1257,8 +1263,8 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // the submenu is up, THIS reaction hit-tests that finger into the submenu's rows and writes the same
   // `hoveredRow`, so the hold flows seamlessly from the parent rows into the child ones. Geometry is
   // the same arithmetic as the parent menu (no measurement), offset past the submenu's header + divider
-  // and its on-screen anchor. Assumes the (short) row area isn't scrolled — the same assumption the
-  // parent menu makes; a long, scrolled list falls back to tapping, which still works.
+  // and its on-screen anchor, and now scroll-aware (it adds the reported scroll offset and only fires
+  // while the finger is within the visible row viewport).
   const submenuAnchorTop = submenuGeom?.anchorTop ?? 0;
   const submenuRowCount = openSubmenuSpec?.rows.length ?? 0;
   const submenuListH = submenuGeom?.listH ?? 0;
@@ -1457,6 +1463,15 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
           ) : null}
           </View>
         </Animated.View>
+        {/* While a submenu is open, a tap anywhere on the preview card — including the thumbnail, whose
+            morphing layer sits above this but is pointerEvents="none", so the tap falls through to here
+            — collapses the submenu, the same one-level-back as tapping the faded parent menu. Only
+            mounted while the submenu is up, so the panel's tags / page rail stay interactive otherwise. */}
+        {submenuOpen && (
+          <GestureDetector gesture={tapCollapse}>
+            <View style={StyleSheet.absoluteFill} />
+          </GestureDetector>
+        )}
       </Animated.View>
 
       {/* The cover — morphs out of the card, on top of the (fading-in) panel, clipped to the band
@@ -1521,6 +1536,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
                   channel={{ holdActive, hoveredRow }}
                   hoverStyle={submenuHoverStyle}
                   scrollY={submenuScrollY}
+                  chevronStyle={submenuChevronStyle}
                 />
               </Animated.View>
             </Animated.View>

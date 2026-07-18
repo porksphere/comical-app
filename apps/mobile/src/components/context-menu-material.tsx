@@ -12,7 +12,7 @@ import { BlurView } from 'expo-blur';
 import { Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { useAnimatedScrollHandler, type AnimatedStyle, type SharedValue } from 'react-native-reanimated';
 
-import { CheckIcon, ChevronDownIcon, type IconProps } from '@/components/icons/ui-icons';
+import { CheckIcon, ChevronRightIcon, type IconProps } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
@@ -173,6 +173,7 @@ export function SubmenuSurface({
   channel,
   hoverStyle,
   scrollY,
+  chevronStyle,
 }: {
   tint: 'light' | 'dark';
   spec: SubmenuSpec;
@@ -188,6 +189,9 @@ export function SubmenuSurface({
   /** The host reads the list's scroll offset back (to hit-test the held finger into a SCROLLED row) —
    *  written here from the scroll handler. */
   scrollY: SharedValue<number>;
+  /** Rotation for the header chevron — the host drives it from the open progress so the chevron starts
+   *  in the parent row's RIGHT-pointing state and rotates 90° down as the submenu unfolds (and back). */
+  chevronStyle: StyleProp<AnimatedStyle<ViewStyle>>;
 }) {
   const theme = useTheme();
   const scrolls = spec.rows.length * MENU_ROW_HEIGHT > listHeight;
@@ -212,7 +216,11 @@ export function SubmenuSurface({
         <ThemedText style={[menuStyles.rowLabel, menuStyles.rowLabelPrimary, { color: theme.text }]} numberOfLines={1}>
           {spec.label}
         </ThemedText>
-        <ChevronDownIcon color={theme.text} size={19} />
+        {/* The parent row's RIGHT chevron, rotated to point DOWN as the submenu opens (see chevronStyle)
+            — so the glyph reads as the same one turning, not a different icon appearing. */}
+        <Animated.View style={chevronStyle}>
+          <ChevronRightIcon color={theme.text} size={19} />
+        </Animated.View>
       </Pressable>
       <View style={[menuStyles.submenuDivider, { backgroundColor: theme.backgroundSelected }]} />
       <Animated.ScrollView
