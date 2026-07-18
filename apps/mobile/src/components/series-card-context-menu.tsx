@@ -111,9 +111,11 @@ const MORPH_SPRING = { damping: 16, stiffness: 170, mass: 0.8 } as const;
 // stiffness are raised TOGETHER, which keeps the damping ratio (the size of the overshoot — the
 // springy part) while doubling the decay rate, and decay is what actually sets how long it lingers.
 const CLOSE_SPRING = { damping: 28, stiffness: 660, mass: 0.7 } as const;
-// The submenu's pop-out. Quicker than the MORPH (nothing travels — it blooms in place at the row you
-// just tapped) but the same damping ratio family, so it reads as part of the same object.
-const SUBMENU_SPRING = { damping: 24, stiffness: 460, mass: 0.7 } as const;
+// The submenu's pop-out. It blooms in place at the row you just tapped (nothing travels), so it can
+// be lighter than the MORPH — but it must NOT feel snappier than a normal context menu opening. Tuned
+// to the same speed family as the generic hold-menu's OPEN_SPRING (context-menu-host.tsx): it was
+// noticeably faster than every other menu open, which read as a different, cheaper object.
+const SUBMENU_SPRING = { damping: 20, stiffness: 300, mass: 0.7 } as const;
 // ── How the resize FOLLOWS the finger ────────────────────────────────────────
 // The panel does NOT track your thumb 1:1. The pan writes a TARGET and the panel chases it with a
 // time-based lerp, so it always runs a little behind and eases into place — including while your
@@ -718,14 +720,16 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     );
   }, [submenuProgress, clearSubmenu]);
 
-  // The parent stack, pushed back while the submenu is up: the menu recedes hardest (it's what the
-  // submenu covers), the preview dims more gently — depth, not disappearance.
+  // The parent stack, pushed back while the submenu is up: the menu recedes (it's what the submenu
+  // covers), the preview dims more gently — depth, not disappearance. Kept DELIBERATELY subtle: an
+  // earlier, heavier fade (menu → 0.5, preview → 0.7) washed the parent out so far it read as gone
+  // rather than behind. The parent must stay clearly legible — you tap it to come back.
   const parentMenuPushStyle = useAnimatedStyle(() => ({
-    opacity: 1 - 0.5 * submenuProgress.value,
+    opacity: 1 - 0.22 * submenuProgress.value,
     transform: [{ scale: 1 - 0.06 * submenuProgress.value }],
   }));
   const parentDimStyle = useAnimatedStyle(() => ({
-    opacity: 1 - 0.3 * submenuProgress.value,
+    opacity: 1 - 0.12 * submenuProgress.value,
   }));
   const submenuStyle = useAnimatedStyle(() => ({
     opacity: submenuProgress.value,
@@ -841,6 +845,20 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
           if (success) runOnJS(dismiss)();
         }),
     [dismiss],
+  );
+
+  // Tapping the pushed-back PARENT menu closes only the submenu (iOS Files' behaviour), NOT the whole
+  // popup — that's what tapping the empty backdrop does (tapDismiss above). A dedicated catcher over
+  // the parent surface while the submenu is up, so a tap on the faded rows collapses back one level
+  // instead of falling through to the backdrop and dismissing everything.
+  const tapCollapse = useMemo(
+    () =>
+      Gesture.Tap()
+        .maxDistance(10)
+        .onEnd((_e, success) => {
+          if (success) runOnJS(collapseSubmenu)();
+        }),
+    [collapseSubmenu],
   );
 
   const backdropBlurProps = useAnimatedProps(() => ({
@@ -1330,6 +1348,15 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
           <Animated.View pointerEvents={submenuOpen ? 'none' : 'auto'} style={parentMenuPushStyle}>
             <MenuSurface tint={menuTint} rows={rows} channel={{ holdActive, hoveredRow }} hoverStyle={hoverStyle} />
           </Animated.View>
+          {/* Tap-catcher over the pushed-back parent while the submenu is up: a tap on the faded rows
+              collapses the submenu (see tapCollapse) rather than falling through to the backdrop's
+              dismiss-all. Declared BEFORE the submenu card so it sits UNDER it — the submenu keeps its
+              own taps; only the exposed parent area collapses. */}
+          {submenuOpen && (
+            <GestureDetector gesture={tapCollapse}>
+              <View style={StyleSheet.absoluteFill} />
+            </GestureDetector>
+          )}
           {/* The expanded submenu card, anchored at the row that opened it (same transformed
               container as the menu, so it tracks the menu's position for free). */}
           {submenuGeom && openSubmenuSpec && (
