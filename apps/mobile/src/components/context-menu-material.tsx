@@ -9,10 +9,10 @@
  * material (see the long note in the card popup about the scrim it rests on).
  */
 import { BlurView } from 'expo-blur';
-import { Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { type AnimatedStyle, type SharedValue } from 'react-native-reanimated';
 
-import type { IconProps } from '@/components/icons/ui-icons';
+import { CheckIcon, ChevronDownIcon, type IconProps } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
@@ -79,7 +79,114 @@ export type MenuRowSpec = {
   onPress: () => void;
   /** Automation selector — required so every menu row is reachable (see src/lib/test-id.ts). */
   testID: string;
+  /**
+   * In-place SUBMENU (the iOS Files "Open With ›" pattern): the row's `Icon` should be a chevron,
+   * and `onPress` asks the host to expand this spec as a new menu card anchored at the row while
+   * the rest of the menu pushes back. A BUILDER (called per render) so the expanded rows stay live
+   * (e.g. membership checkmarks update as they're toggled). Only hosts that support submenus read
+   * it (see series-card-context-menu); others simply never call it.
+   */
+  submenu?: () => SubmenuSpec;
 };
+
+// ── Submenu (in-place expansion of one row) ──────────────────────────────────
+
+/** Default cap on the expanded row area before it scrolls — the half-row makes the cut obvious. */
+export const SUBMENU_MAX_LIST_HEIGHT = MENU_ROW_HEIGHT * 4.5;
+
+/** One row inside an expanded submenu. Presses do NOT auto-dismiss anything — a submenu is a place
+ *  you make several picks (toggle memberships), so closing is the header's job. */
+export type SubmenuRowSpec = {
+  label: string;
+  /** Selected/member state — reads as a trailing check glyph (no colour; see the menu rule). */
+  active?: boolean;
+  loading?: boolean;
+  onPress: () => void;
+  testID: string;
+};
+
+export type SubmenuSpec = {
+  /** Header label — the parent row re-stated, now carrying the collapse (down) chevron. */
+  label: string;
+  rows: SubmenuRowSpec[];
+  /** Cap (px) on the scrollable row area. Defaults to SUBMENU_MAX_LIST_HEIGHT. */
+  maxHeight?: number;
+  /** Automation prefix: header derives `.collapse`, rows carry their own testIDs. */
+  testID: string;
+};
+
+function SubmenuRow({ label, active, loading, onPress, testID }: SubmenuRowSpec) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      testID={testID}
+      disabled={loading}
+      onPress={onPress}
+      style={({ pressed }) => [menuStyles.row, pressed && { backgroundColor: theme.backgroundSelected }]}>
+      <ThemedText
+        style={[menuStyles.rowLabel, { color: loading ? theme.textSecondary : theme.text }]}
+        numberOfLines={1}>
+        {label}
+      </ThemedText>
+      {/* Membership reads through the glyph alone (present/absent) — same rule as iconFilled. */}
+      {active ? <CheckIcon color={theme.text} size={19} /> : null}
+    </Pressable>
+  );
+}
+
+/**
+ * The expanded submenu card: the same frosted material as MenuSurface, headed by the parent row
+ * (now with a down chevron — tapping it collapses back), then the rows in a scroll area capped at
+ * `listHeight`. Positioning/animation belong to the host, exactly as with MenuSurface: the host
+ * anchors this at the tapped row and pushes the parent menu back behind it.
+ */
+export function SubmenuSurface({
+  tint,
+  spec,
+  listHeight,
+  onCollapse,
+}: {
+  tint: 'light' | 'dark';
+  spec: SubmenuSpec;
+  /** Host-computed height cap for the row area (spec.maxHeight clamped to the space available). */
+  listHeight: number;
+  onCollapse: () => void;
+}) {
+  const theme = useTheme();
+  const scrolls = spec.rows.length * MENU_ROW_HEIGHT > listHeight;
+  return (
+    <BlurView
+      tint={tint}
+      intensity={MENU_BLUR}
+      experimentalBlurMethod={ANDROID_BLUR}
+      style={[menuStyles.menu, { borderColor: theme.backgroundSelected }]}>
+      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: MENU_FILL[tint] }]} />
+      {/* Header = the row that expanded, restated; bold like a primary row, chevron now pointing
+          down. Tapping anywhere on it collapses back to the parent menu. */}
+      <Pressable
+        testID={`${spec.testID}.collapse`}
+        onPress={onCollapse}
+        accessibilityRole="button"
+        accessibilityLabel={`Collapse ${spec.label}`}
+        style={menuStyles.row}>
+        <ThemedText style={[menuStyles.rowLabel, menuStyles.rowLabelPrimary, { color: theme.text }]} numberOfLines={1}>
+          {spec.label}
+        </ThemedText>
+        <ChevronDownIcon color={theme.text} size={19} />
+      </Pressable>
+      <View style={[menuStyles.submenuDivider, { backgroundColor: theme.backgroundSelected }]} />
+      <ScrollView
+        style={{ maxHeight: listHeight }}
+        bounces={false}
+        showsVerticalScrollIndicator={scrolls}
+        nestedScrollEnabled>
+        {spec.rows.map((row) => (
+          <SubmenuRow key={row.testID} {...row} />
+        ))}
+      </ScrollView>
+    </BlurView>
+  );
+}
 
 /** The hold channel a menu's rows share with the gesture that opened it (each host has its own pair
  *  of shared values — the card's and the generic host's never fight). */
@@ -219,6 +326,11 @@ export const menuStyles = StyleSheet.create({
     height: MENU_TITLE_HEIGHT,
     paddingHorizontal: Spacing.four,
     justifyContent: 'center',
+  },
+  // Hairline between a submenu's header and its scrollable rows (iOS separates them the same way).
+  submenuDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginHorizontal: Spacing.four,
   },
   row: {
     flexDirection: 'row',
