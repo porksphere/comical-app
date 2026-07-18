@@ -792,20 +792,26 @@ const mockHistory = new Map<string, MockHist>(
   }),
 );
 
-let mockActivity: MockActivity[] = [1, 2, 4, 6].map((i) => {
+let mockActivity: MockActivity[] = [1, 2, 4, 6].flatMap((i) => {
   const bridgeId = MOCK_LIB_BRIDGES[i % MOCK_LIB_BRIDGES.length]!;
   const seriesId = `lib-${i}`;
-  return {
+  const base = {
     bridgeId,
     seriesId,
-    chapterId: `${seriesId}-ch-new-${i}`,
     title: TITLES[i % TITLES.length]!,
     thumbnailUrl: cover(seriesId),
-    chapterName: `Chapter ${20 + i}`,
-    number: 20 + i,
-    detectedAt: Date.now() - i * 5400_000,
     read: false,
   };
+  // lib-2 drops three chapters at once, so the feed can demonstrate coalescing (one row, "3 new
+  // chapters"); the others get a single new chapter each.
+  const count = i === 2 ? 3 : 1;
+  return Array.from({ length: count }, (_, k) => ({
+    ...base,
+    chapterId: `${seriesId}-ch-new-${i}-${k}`,
+    chapterName: `Chapter ${20 + i + k}`,
+    number: 20 + i + k,
+    detectedAt: Date.now() - i * 5400_000 - k * 600_000,
+  }));
 });
 
 export async function mockGetLibrary(
@@ -962,6 +968,10 @@ export async function mockGetActivityCount(since?: number): Promise<number> {
 
 export async function mockClearActivity(): Promise<void> {
   mockActivity = [];
+}
+
+export async function mockClearActivityForEntry(bridgeId: string, seriesId: string): Promise<void> {
+  mockActivity = mockActivity.filter((a) => !(a.bridgeId === bridgeId && a.seriesId === seriesId));
 }
 
 export async function mockCheckForUpdates(): Promise<{ newChapters: number; partial: boolean }> {

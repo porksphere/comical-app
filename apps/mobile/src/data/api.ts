@@ -1043,6 +1043,12 @@ export function clearActivity(signal?: AbortSignal): Promise<void> {
   return fetchOk('/library/activity', 'DELETE', signal);
 }
 
+/** DELETE /library/activity/{b}/{s} → drop one series' entries from the feed (the row's swipe-away,
+ *  which coalesces a series' new chapters into a single row and clears them together). */
+export function deleteActivityEntry(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void> {
+  return fetchOk(`/library/activity/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}`, 'DELETE', signal);
+}
+
 /** GET /library/usage → the bytes the library occupies on the active host (store docs + captured
  *  cover blobs). Null when the host has no library module. */
 export function libraryUsage(signal?: AbortSignal): Promise<{ diskBytes: number } | null> {
