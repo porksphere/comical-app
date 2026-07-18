@@ -37,10 +37,12 @@ import {
   MENU_WIDTH,
   MenuSurface,
   menuStyles,
+  SUBMENU_MAX_LIST_HEIGHT,
+  SubmenuSurface,
   type MenuRowSpec,
+  type SubmenuSpec,
 } from '@/components/context-menu-material';
-import { CheckIcon, DownloadsIcon, ListPlusIcon, PlayIcon, PlusIcon, StarIcon } from '@/components/icons/ui-icons';
-import { openListPicker } from '@/components/list-picker';
+import { CheckIcon, ChevronRightIcon, DownloadsIcon, PlayIcon, PlusIcon, StarIcon } from '@/components/icons/ui-icons';
 import { PageThumb } from '@/components/series/chapters-section';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
@@ -50,8 +52,10 @@ import type { TagGroup } from '@/data/mock';
 import { seriesDetailQuery, seriesListQuery } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import type { PageThumbSource } from '@/data/types';
+import { useEntryLists } from '@/hooks/use-entry-lists';
 import { useFavorite } from '@/hooks/use-favorite';
 import { useLibrary } from '@/hooks/use-library';
+import { useLibraryLists } from '@/hooks/use-library-lists';
 import { useSeriesDownloadAction } from '@/hooks/use-series-download-action';
 import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
 import { useStartReading } from '@/hooks/use-start-reading';
@@ -107,6 +111,9 @@ const MORPH_SPRING = { damping: 16, stiffness: 170, mass: 0.8 } as const;
 // stiffness are raised TOGETHER, which keeps the damping ratio (the size of the overshoot — the
 // springy part) while doubling the decay rate, and decay is what actually sets how long it lingers.
 const CLOSE_SPRING = { damping: 28, stiffness: 660, mass: 0.7 } as const;
+// The submenu's pop-out. Quicker than the MORPH (nothing travels — it blooms in place at the row you
+// just tapped) but the same damping ratio family, so it reads as part of the same object.
+const SUBMENU_SPRING = { damping: 24, stiffness: 460, mass: 0.7 } as const;
 // ── How the resize FOLLOWS the finger ────────────────────────────────────────
 // The panel does NOT track your thumb 1:1. The pan writes a TARGET and the panel chases it with a
 // time-based lerp, so it always runs a little behind and eases into place — including while your
@@ -295,6 +302,17 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     title: entry.title,
     ...(entry.cover ? { thumbnailUrl: entry.cover } : {}),
   }));
+  // Custom lists for the "Add to list ›" submenu: the collection (drives chevron-vs-＋ and the
+  // expanded rows) + this series' live memberships (the checkmarks, optimistic). Both queries run
+  // once per open — this component mounts only while the menu is up, never per card. Each gates its
+  // own surface while loading: the ROW is inert until the collection resolves (otherwise a quick tap
+  // reads a still-loading [] as "no lists" and wrongly takes the ＋→manage path), and the submenu
+  // rows are inert until the memberships resolve (a toggle then would REPLACE unknown memberships).
+  const { lists, isLoading: listsLoading } = useLibraryLists();
+  const { listIds, loading: entryListsLoading, setLists } = useEntryLists(bridgeId, entry.id, () => ({
+    title: entry.title,
+    ...(entry.cover ? { thumbnailUrl: entry.cover } : {}),
+  }));
   // Lazy: this panel mounts only while the menu is open, so the download-status query runs once here,
   // never per card in the grid.
   const download = useSeriesDownloadAction(
@@ -347,6 +365,9 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   }, [progress, finishClose]);
 
   useEffect(() => {
+    // Android hardware-back dismisses the popup; BackHandler is native-only (it raises a red dev
+    // toast on web, where the web hold-menu path opens this via the dev hook).
+    if (Platform.OS === 'web') return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       dismiss();
       return true;
@@ -651,10 +672,75 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     }
   });
 
+  // ── In-place submenu (the iOS Files "Open With ›" expansion) ───────────────
+  // A row with a `submenu` builder expands INTO a new menu card anchored exactly at that row, while
+  // the parent stack (menu + preview) is pushed back — dimmed and slightly scaled — behind it. The
+  // header of the expanded card is the row restated with a down chevron; tapping it collapses back.
+  //
+  // Geometry is arithmetic, not measurement: a row's top inside the menu is MENU_PAD_V + i*ROW,
+  // and the menu's own screen position is derived from the same shared values `menuStyle` uses —
+  // read once at open (they're settled whenever a row is tappable). The card renders INSIDE the
+  // menu's transformed container, so it tracks the menu without its own position plumbing; `shift`
+  // pulls it up only as far as needed for the (capped) row area to clear the screen bottom.
+  const [submenuGeom, setSubmenuGeom] = useState<{ row: number; anchorTop: number; listH: number } | null>(null);
+  const submenuOpen = submenuGeom !== null;
+  const submenuProgress = useSharedValue(0);
+  const submenuShift = useSharedValue(0);
+
+  const openSubmenu = (rowIndex: number, spec: SubmenuSpec) => {
+    const rowsH = spec.rows.length * ROW_HEIGHT;
+    let listH = Math.min(rowsH, spec.maxHeight ?? SUBMENU_MAX_LIST_HEIGHT);
+    // Where the tapped row sits on screen right now (same formula as menuStyle, values settled).
+    const scale = minS.value + expand.value * (maxS.value - minS.value);
+    const menuScreenTop =
+      topMin.value + expand.value * (topMax.value - topMin.value) + naturalH.value * scale + GAP;
+    const anchorTop = MENU_PAD_V + rowIndex * ROW_HEIGHT;
+    const rowScreenTop = menuScreenTop + anchorTop;
+    // Header row + the surface's own vertical padding — what the card needs beyond the row area.
+    const chromeH = MENU_PAD_V * 2 + ROW_HEIGHT;
+    // Slide up just enough to fit; never above the chrome band. If even that can't fit the capped
+    // list, the list gives up height instead (it scrolls anyway).
+    let shift = Math.min(0, menuBottomLimit - rowScreenTop - (chromeH + listH));
+    if (rowScreenTop + shift < topLimit) {
+      shift = topLimit - rowScreenTop;
+      listH = Math.max(ROW_HEIGHT, menuBottomLimit - (rowScreenTop + shift) - chromeH);
+    }
+    submenuShift.set(shift);
+    setSubmenuGeom({ row: rowIndex, anchorTop, listH });
+    submenuProgress.set(withSpring(1, SUBMENU_SPRING));
+  };
+  const clearSubmenu = useCallback(() => setSubmenuGeom(null), []);
+  const collapseSubmenu = useCallback(() => {
+    submenuProgress.set(
+      withSpring(0, CLOSE_SPRING, (finished) => {
+        if (finished) runOnJS(clearSubmenu)();
+      }),
+    );
+  }, [submenuProgress, clearSubmenu]);
+
+  // The parent stack, pushed back while the submenu is up: the menu recedes hardest (it's what the
+  // submenu covers), the preview dims more gently — depth, not disappearance.
+  const parentMenuPushStyle = useAnimatedStyle(() => ({
+    opacity: 1 - 0.5 * submenuProgress.value,
+    transform: [{ scale: 1 - 0.06 * submenuProgress.value }],
+  }));
+  const parentDimStyle = useAnimatedStyle(() => ({
+    opacity: 1 - 0.3 * submenuProgress.value,
+  }));
+  const submenuStyle = useAnimatedStyle(() => ({
+    opacity: submenuProgress.value,
+    transform: [
+      { translateY: submenuShift.value * submenuProgress.value },
+      { scale: 0.92 + 0.08 * submenuProgress.value },
+    ],
+  }));
 
   const pan = useMemo(
     () =>
       Gesture.Pan()
+        // Parked while a submenu is expanded: its row area is a vertical SCROLL, which this pan
+        // would otherwise claim as a resize/dismiss drag. iOS locks the parent the same way.
+        .enabled(!submenuOpen)
         // Vertical intent only: a horizontal drag must reach the page rail (a horizontally-scrolling
         // list inside the panel) rather than being swallowed as a resize.
         .activeOffsetY([-8, 8])
@@ -734,7 +820,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
             expandTarget.set(projected >= 0.5 ? 1 : 0);
           }
         }),
-    [dismiss, dragRange, expand, expandTarget, overscroll, panStartExpand, progress, progressFollows, progressTarget],
+    [dismiss, dragRange, expand, expandTarget, overscroll, panStartExpand, progress, progressFollows, progressTarget, submenuOpen],
   );
 
   // Tap the backdrop to dismiss. A GESTURE, not a Pressable: the root pan and a Pressable are two
@@ -897,6 +983,25 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // ── The rows, as data ─────────────────────────────────────────────────────
   // Rendering them from a list (rather than three hand-written JSX rows) is what lets a ROW INDEX mean
   // something — which is what the held finger is hit-tested into, and what a lift commits.
+
+  // The "Add to list" submenu, built fresh every render so the checkmarks track the optimistic
+  // memberships as they're toggled (a snapshot taken at open would freeze them).
+  const hasLists = lists.length > 0;
+  const listsSubmenu = (): SubmenuSpec => ({
+    label: 'Add to list',
+    testID: 'series.card-menu.lists.submenu',
+    rows: lists.map((l) => ({
+      label: l.name,
+      active: listIds.includes(l.id),
+      loading: entryListsLoading,
+      onPress: () =>
+        setLists(listIds.includes(l.id) ? listIds.filter((x) => x !== l.id) : [...listIds, l.id]),
+      testID: `series.card-menu.lists.${l.id}`,
+    })),
+  });
+  // Its position in `rows` below — the submenu anchors at exactly this row's slot.
+  const LISTS_ROW_INDEX = 2;
+
   const rows: MenuRowSpec[] = [
     {
       label: reading.label,
@@ -920,18 +1025,21 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     },
     {
       label: 'Add to list',
-      Icon: ListPlusIcon,
-      loading: false,
+      // No lists yet → a ＋ that takes you to list management. With lists → a chevron that expands
+      // the in-place submenu (iOS Files' "Open With ›"). The glyph IS the affordance either way.
+      Icon: hasLists ? ChevronRightIcon : PlusIcon,
+      // Inert until the collection has actually loaded — see the loading note on useLibraryLists.
+      loading: listsLoading,
       testID: 'series.card-menu.lists',
-      // Do NOT close the menu — the picker STACKS on top of it (it's a root host mounted above this
-      // one, see _layout.tsx), so dismissing the picker returns here. The nested-menu behavior.
-      onPress: () =>
-        openListPicker({
-          bridgeId,
-          seriesId: entry.id,
-          title: entry.title,
-          snapshot: () => ({ title: entry.title, ...(entry.cover ? { thumbnailUrl: entry.cover } : {}) }),
-        }),
+      ...(hasLists && { submenu: listsSubmenu }),
+      onPress: hasLists
+        ? // Do NOT close the menu — the submenu expands over it while the rest pushes back.
+          () => openSubmenu(LISTS_ROW_INDEX, listsSubmenu())
+        : () => {
+            req.onClose?.(); // navigating away — un-hide the card and drop the overlay
+            closeSeriesCardMenu();
+            router.push('/manage-lists');
+          },
     },
     {
       label: favorited ? 'Unfavorite' : 'Favorite',
@@ -962,6 +1070,10 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       onPress: dismiss,
     })),
   ];
+
+  // The live spec for whichever row's submenu is expanded — re-built from the row's builder every
+  // render, so its checkmarks track the optimistic membership toggles (see listsSubmenu).
+  const openSubmenuSpec = submenuGeom ? (rows[submenuGeom.row]?.submenu?.() ?? null) : null;
 
   // What a lift runs. Registered rather than passed, because the finger that lifts belongs to the
   // CARD's gesture, which knows nothing about this component (see lib/series-card-menu).
@@ -1054,6 +1166,9 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const menuHold = useMemo(
     () =>
       Gesture.Pan()
+        // Off while a submenu is expanded — a hold there would arm the PARENT's hit-test grid
+        // against rows that are pushed back behind the submenu.
+        .enabled(!submenuOpen)
         .activateAfterLongPress(MENU_HOLD_MS)
         .onStart((e) => {
           holdActive.set(true);
@@ -1077,7 +1192,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
           holdArmed.set(false);
           hoveredRow.set(-1);
         }),
-    [],
+    [submenuOpen],
   );
 
   return (
@@ -1103,7 +1218,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       <Animated.View
         pointerEvents="box-none"
         style={[styles.panelWrap, { width: panelW }, panelStyle]}>
-        <Animated.View style={[styles.panel, { backgroundColor: theme.backgroundPanel }]}>
+        <Animated.View style={[styles.panel, { backgroundColor: theme.backgroundPanel }, parentDimStyle]}>
           {/* Measured so the scale range knows how tall the preview actually wants to be — the panel is
               never squeezed, only SCALED, so this natural height is what the whole range is derived from
               (and what the menu's tracked position is computed against). */}
@@ -1184,7 +1299,9 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
           styles.coverClip,
           { top: chromeTop, height: chromeBottom - chromeTop, overflow: clipping ? 'hidden' : 'visible' },
         ]}>
-        <Animated.View pointerEvents="none" style={[styles.coverLayer, { width: COVER_W, height: coverH }, coverStyle]}>
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.coverLayer, { width: COVER_W, height: coverH }, coverStyle, parentDimStyle]}>
           <Animated.View style={[styles.coverInner, coverRadiusStyle]}>
             {entry.cover ? (
               <Image
@@ -1208,7 +1325,23 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
           the panel's natural height. */}
       <GestureDetector gesture={menuHold}>
         <Animated.View style={[menuStyles.menuWrap, { width: menuW }, menuStyle]}>
-          <MenuSurface tint={menuTint} rows={rows} channel={{ holdActive, hoveredRow }} hoverStyle={hoverStyle} />
+          {/* The parent surface, pushed back (scaled + dimmed) while a submenu is expanded over it.
+              Inert then too — the submenu is the only interactive layer until it collapses. */}
+          <Animated.View pointerEvents={submenuOpen ? 'none' : 'auto'} style={parentMenuPushStyle}>
+            <MenuSurface tint={menuTint} rows={rows} channel={{ holdActive, hoveredRow }} hoverStyle={hoverStyle} />
+          </Animated.View>
+          {/* The expanded submenu card, anchored at the row that opened it (same transformed
+              container as the menu, so it tracks the menu's position for free). */}
+          {submenuGeom && openSubmenuSpec && (
+            <Animated.View style={[styles.submenuWrap, { width: menuW, top: submenuGeom.anchorTop }, submenuStyle]}>
+              <SubmenuSurface
+                tint={menuTint}
+                spec={openSubmenuSpec}
+                listHeight={submenuGeom.listH}
+                onCollapse={collapseSubmenu}
+              />
+            </Animated.View>
+          )}
         </Animated.View>
       </GestureDetector>
       </View>
@@ -1337,6 +1470,20 @@ const styles = StyleSheet.create({
     // The preview at its natural size. The panel is SCALED as a whole (see panelStyle), never
     // squeezed, so this never reflows — the resize costs no layout at all.
     gap: Spacing.three,
+  },
+  // The expanded submenu card: absolutely placed inside the menu's transformed container at the
+  // opening row's slot (`top` set inline), blooming from its top edge; may extend past the parent
+  // menu's bounds, which is why the shadow/radius live here rather than being inherited.
+  submenuWrap: {
+    position: 'absolute',
+    left: 0,
+    transformOrigin: '50% 0%',
+    borderRadius: 14,
+    shadowColor: '#000000',
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 12,
   },
   panel: {
     borderRadius: 16,
