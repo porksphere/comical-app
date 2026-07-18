@@ -23,9 +23,7 @@ import { testId } from '@/lib/test-id';
  *  slot rather than stretched to it, so a taller row still gets circles. */
 const PILL_WIDTH = 52;
 const PILL_GAP = Spacing.two;
-/** The glyph inside each circle. Also anchors the full-swipe pill's icon: pinned where the resting
- *  circle's centre was — `(PILL_WIDTH − PILL_ICON) / 2` from the right — so the stretch grows away
- *  from a stationary glyph. */
+/** The glyph inside each circle (and the stretching full-swipe pill, where it stays centred). */
 const PILL_ICON = 20;
 /** Minimum gap between the last circle and the container's right edge — standardized to the SAME
  *  spacing token as the gap between circles (`PILL_GAP`), so the rail reads evenly: circle · gap ·
@@ -614,12 +612,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     cursor: 'pointer',
   },
-  // The full-swipe pill (single-action rows): fills the stretching slot, with the icon pinned at
-  // the resting circle's centre so the stretch grows leftward away from a stationary glyph.
+  // The full-swipe pill (single-action rows): fills the stretching slot. The icon stays CENTRED in
+  // the pill (inherited from styles.pill), riding the middle of the stretch as it grows.
   pillFull: {
     width: '100%',
-    alignItems: 'flex-end',
-    paddingRight: (PILL_WIDTH - PILL_ICON) / 2,
   },
   webRow: {
     flexDirection: 'row',
