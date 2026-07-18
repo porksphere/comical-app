@@ -720,12 +720,20 @@ export async function mockRemoveFavorite(seriesId: string): Promise<void> {
 // A tiny mutable in-memory library so the demo build's Library/History/Activity tabs render real
 // content and add/remove/read actions actually stick within a session. Keyed by `bridgeId:seriesId`.
 
-type MockLibEntry = { bridgeId: string; seriesId: string; title: string; thumbnailUrl: string; author?: string; unread: number };
+type MockLibEntry = { bridgeId: string; seriesId: string; title: string; thumbnailUrl: string; author?: string; unread: number; listIds: string[] };
+type MockList = { id: string; name: string; order: number };
 type MockHist = { bridgeId: string; seriesId: string; title: string; thumbnailUrl: string; chapterId?: string; chapterName?: string; lastPage?: number; pageCount?: number; lastReadAt: number };
 type MockActivity = { bridgeId: string; seriesId: string; chapterId: string; title: string; thumbnailUrl: string; chapterName?: string; number?: number; detectedAt: number; read: boolean };
 
 const libKey = (bridgeId: string, seriesId: string) => `${bridgeId}:${seriesId}`;
 const MOCK_LIB_BRIDGES = MOCK_BRIDGE_NAMES.map(slugify);
+
+// A couple of seeded custom lists so the demo build shows the list selector populated. Entries are
+// assigned into them in `seedLibrary` below.
+let mockLists: MockList[] = [
+  { id: 'list-reading', name: 'Reading', order: 0 },
+  { id: 'list-favorites', name: 'Favorites', order: 1 },
+];
 
 function seedLibrary(): Map<string, MockLibEntry> {
   const m = new Map<string, MockLibEntry>();
@@ -734,12 +742,17 @@ function seedLibrary(): Map<string, MockLibEntry> {
     const bridgeId = MOCK_LIB_BRIDGES[i % MOCK_LIB_BRIDGES.length]!;
     const seriesId = `lib-${i}`;
     const h = hash(seriesId);
+    // Spread a few entries into the seeded lists (some in both, some in neither → "Unlisted").
+    const listIds: string[] = [];
+    if (i % 2 === 0) listIds.push('list-reading');
+    if (i % 3 === 0) listIds.push('list-favorites');
     m.set(libKey(bridgeId, seriesId), {
       bridgeId,
       seriesId,
       title: TITLES[i % TITLES.length]!,
       thumbnailUrl: cover(seriesId),
       unread: h % 3 === 0 ? 1 + (h % 12) : 0,
+      listIds,
     });
   }
   return m;
@@ -785,8 +798,12 @@ let mockActivity: MockActivity[] = [1, 2, 4, 6].map((i) => {
   };
 });
 
-export async function mockGetLibrary(opts: { q?: string; sort?: string } = {}): Promise<MockLibEntry[]> {
+export async function mockGetLibrary(
+  opts: { q?: string; sort?: string; listId?: string; unlisted?: boolean } = {},
+): Promise<MockLibEntry[]> {
   let items = [...mockLibrary.values()];
+  if (opts.unlisted) items = items.filter((e) => e.listIds.length === 0);
+  else if (opts.listId) items = items.filter((e) => e.listIds.includes(opts.listId!));
   const q = opts.q?.trim().toLowerCase();
   if (q) items = items.filter((e) => e.title.toLowerCase().includes(q));
   const dir = 1;
@@ -817,11 +834,56 @@ export async function mockAddToLibrary(
     thumbnailUrl: snap.thumbnailUrl ?? cover(seriesId),
     ...(snap.author !== undefined && { author: snap.author }),
     unread: 0,
+    listIds: [],
   });
 }
 
 export async function mockRemoveFromLibrary(bridgeId: string, seriesId: string): Promise<void> {
   mockLibrary.delete(libKey(bridgeId, seriesId));
+}
+
+// ─── Custom lists (in-memory, dev/demo only) ─────────────────────────────────
+
+export async function mockGetLists(): Promise<MockList[]> {
+  return [...mockLists].sort((a, b) => a.order - b.order);
+}
+
+export async function mockCreateList(name: string): Promise<MockList> {
+  const order = mockLists.reduce((max, l) => Math.max(max, l.order + 1), 0);
+  const list: MockList = { id: `list-${Date.now()}-${Math.floor(Math.random() * 1e4)}`, name, order };
+  mockLists.push(list);
+  return list;
+}
+
+export async function mockRenameList(id: string, name: string): Promise<void> {
+  const list = mockLists.find((l) => l.id === id);
+  if (list) list.name = name;
+}
+
+export async function mockReorderLists(orderedIds: string[]): Promise<void> {
+  orderedIds.forEach((id, i) => {
+    const list = mockLists.find((l) => l.id === id);
+    if (list) list.order = i;
+  });
+}
+
+export async function mockDeleteList(id: string): Promise<void> {
+  mockLists = mockLists.filter((l) => l.id !== id);
+  // Strip the id from every entry's memberships, mirroring the backend's cascade.
+  for (const e of mockLibrary.values()) {
+    const i = e.listIds.indexOf(id);
+    if (i >= 0) e.listIds.splice(i, 1);
+  }
+}
+
+export async function mockSetEntryLists(bridgeId: string, seriesId: string, listIds: string[]): Promise<void> {
+  const e = mockLibrary.get(libKey(bridgeId, seriesId));
+  if (e) e.listIds = [...listIds];
+}
+
+export async function mockGetEntryLists(bridgeId: string, seriesId: string): Promise<string[] | null> {
+  const e = mockLibrary.get(libKey(bridgeId, seriesId));
+  return e ? [...e.listIds] : null;
 }
 
 /** Upsert a history row (used by both a library progress write and a non-library read log). */

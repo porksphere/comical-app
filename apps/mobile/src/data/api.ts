@@ -649,6 +649,7 @@ import type {
   ActivityItemView as ApiActivityItem,
   HistoryItem as ApiHistoryItem,
   LibraryEntryView as ApiLibraryEntry,
+  LibraryList as ApiLibraryList,
 } from '@comical/library';
 
 export type {
@@ -662,6 +663,7 @@ export type {
   ApiActivityItem,
   ApiHistoryItem,
   ApiLibraryEntry,
+  ApiLibraryList,
 };
 
 /** GET /bridges/{id} response — settings form data for one bridge. `info` is the bridge's full
@@ -780,6 +782,20 @@ async function fetchPost<T>(path: string, body: unknown, signal?: AbortSignal): 
   return res.json() as Promise<T>;
 }
 
+async function fetchPatch<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+  const res = await transport(path, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok) {
+    const responseBody = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(responseBody.error ?? `${res.status} ${res.statusText}`);
+  }
+  return res.json() as Promise<T>;
+}
+
 /** DELETE returning a JSON body (the downloads delete routes hand back the blob `files` to remove). */
 async function fetchDelete<T>(path: string, signal?: AbortSignal): Promise<T> {
   const res = await transport(path, { method: 'DELETE', signal });
@@ -858,16 +874,63 @@ export function putBridgePrefs(
 export type LibrarySort = 'added' | 'title' | 'lastRead' | 'unread';
 
 /** GET /library → the user's library entries (with derived `unreadCount`), or `null` when no library
- *  store is mounted. `q` scopes to a title search; `sort` orders the grid. */
+ *  store is mounted. `q` scopes to a title search; `sort` orders the grid; `listId`/`unlisted` filter
+ *  by custom-list membership (mutually exclusive — `unlisted` wins if both are set). */
 export function getLibrary(
-  opts: { q?: string; sort?: LibrarySort } = {},
+  opts: { q?: string; sort?: LibrarySort; listId?: string; unlisted?: boolean } = {},
   signal?: AbortSignal,
 ): Promise<ApiLibraryEntry[] | null> {
   const qs = new URLSearchParams();
   if (opts.q) qs.set('q', opts.q);
   if (opts.sort) qs.set('sort', opts.sort);
+  if (opts.unlisted) qs.set('unlisted', 'true');
+  else if (opts.listId) qs.set('list', opts.listId);
   const query = qs.toString();
   return fetchJsonOptional(`/library${query ? `?${query}` : ''}`, signal);
+}
+
+// ─── Custom lists ────────────────────────────────────────────────────────────
+// User-defined collections the library groups entries into (e.g. "Reading"). Membership lives on
+// each entry's `listIds`; these routes manage the list docs + an entry's memberships. All require a
+// mounted library store — with none, the collection routes 404 (getLibraryLists maps that to `[]`).
+
+/** GET /library/lists → the user's custom lists (ascending `order`), or `[]` when no library store. */
+export async function getLibraryLists(signal?: AbortSignal): Promise<ApiLibraryList[]> {
+  return (await fetchJsonOptional<ApiLibraryList[]>('/library/lists', signal)) ?? [];
+}
+
+/** POST /library/lists → create a list, returning the new `LibraryList` (with its assigned id/order). */
+export function createLibraryList(name: string, signal?: AbortSignal): Promise<ApiLibraryList> {
+  return fetchPost('/library/lists', { name }, signal);
+}
+
+/** POST /library/lists/reorder → set the lists' order to `orderedIds`. */
+export function reorderLibraryLists(orderedIds: string[], signal?: AbortSignal): Promise<unknown> {
+  return fetchPost('/library/lists/reorder', { orderedIds }, signal);
+}
+
+/** PATCH /library/lists/{id} → rename a list. */
+export function renameLibraryList(id: string, name: string, signal?: AbortSignal): Promise<unknown> {
+  return fetchPatch(`/library/lists/${encodeURIComponent(id)}`, { name }, signal);
+}
+
+/** DELETE /library/lists/{id} → delete a list (also strips its id from every entry's `listIds`). */
+export function deleteLibraryList(id: string, signal?: AbortSignal): Promise<void> {
+  return fetchOk(`/library/lists/${encodeURIComponent(id)}`, 'DELETE', signal);
+}
+
+/** PUT /library/entries/{b}/{s}/lists → set which lists a series belongs to (replaces its memberships). */
+export function setEntryLists(
+  bridgeId: string,
+  seriesId: string,
+  listIds: string[],
+  signal?: AbortSignal,
+): Promise<unknown> {
+  return fetchPut(
+    `/library/entries/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/lists`,
+    { listIds },
+    signal,
+  );
 }
 
 /** GET /library/entries/{b}/{s} → whether a series is in the library (404 = not in library). */
@@ -882,6 +945,22 @@ export async function isInLibrary(bridgeId: string, seriesId: string, signal?: A
     throw new Error(body.error ?? `${res.status} ${res.statusText}`);
   }
   return true;
+}
+
+/** GET /library/entries/{b}/{s} → the entry's custom-list memberships, or `null` when the series
+ *  isn't in the library (404). Used by the list-assign picker to seed its checkboxes. */
+export async function getEntryLists(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<string[] | null> {
+  const res = await transport(
+    `/library/entries/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}`,
+    { signal },
+  );
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+  }
+  const body = (await res.json()) as { entry?: { listIds?: string[] } };
+  return body.entry?.listIds ?? [];
 }
 
 /** Display snapshot persisted with a new library entry so it renders offline / after bridge removal. */

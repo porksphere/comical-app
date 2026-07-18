@@ -20,11 +20,16 @@ import type {
   HistoryEntry,
   HomeGridSection,
   LibraryItem,
+  LibraryList,
   RailSection,
   SeriesDetail,
   SeriesEntry,
   SeriesListResult,
 } from './types';
+
+/** How the Library grid is scoped to a custom list. `null` = all entries; `'unlisted'` = entries in
+ *  no list; otherwise a specific list id. Part of the library query key so each view caches apart. */
+export type LibraryListFilter = string | 'unlisted' | null;
 
 /** Per-series fetch options that affect the *shape* of the result (and thus the key). */
 export type SeriesDetailOpts = { direct?: boolean; bridgeName?: string; title?: string; cover?: string };
@@ -67,7 +72,13 @@ export const queryKeys = {
     ['isFavorite', mock, bridgeId, seriesId] as const,
   relatedGroups: (mock: boolean, bridgeId: string, seriesId: string) =>
     ['relatedGroups', mock, bridgeId, seriesId] as const,
-  library: (mock: boolean, q: string, sort: LibrarySort) => ['library', mock, q, sort] as const,
+  library: (mock: boolean, q: string, sort: LibrarySort, list: LibraryListFilter = null) =>
+    ['library', mock, q, sort, list] as const,
+  /** The user's custom lists collection. */
+  libraryLists: (mock: boolean) => ['libraryLists', mock] as const,
+  /** One series' custom-list memberships (for the assign picker). */
+  entryLists: (mock: boolean, bridgeId: string, seriesId: string) =>
+    ['entryLists', mock, bridgeId, seriesId] as const,
   inLibrary: (mock: boolean, bridgeId: string, seriesId: string) =>
     ['inLibrary', mock, bridgeId, seriesId] as const,
   history: (mock: boolean) => ['history', mock] as const,
@@ -276,16 +287,34 @@ export function isFavoriteQuery(
   };
 }
 
-/** `useQuery` options for the library grid (`null` result = no library store mounted). */
+/** `useQuery` options for the library grid (`null` result = no library store mounted). `list` scopes
+ *  to a custom list (`'unlisted'` = entries in no list; a list id; or `null` for all). */
 export function libraryQuery(
   ds: DataSource,
   mock: boolean,
   q: string,
   sort: LibrarySort,
+  list: LibraryListFilter = null,
 ): UseQueryOptions<LibraryItem[] | null, Error> {
   return {
-    queryKey: queryKeys.library(mock, q, sort),
-    queryFn: ({ signal }) => ds.getLibrary({ ...(q ? { q } : {}), sort }, signal),
+    queryKey: queryKeys.library(mock, q, sort, list),
+    queryFn: ({ signal }) =>
+      ds.getLibrary(
+        {
+          ...(q ? { q } : {}),
+          sort,
+          ...(list === 'unlisted' ? { unlisted: true } : list ? { listId: list } : {}),
+        },
+        signal,
+      ),
+  };
+}
+
+/** `useQuery` options for the user's custom lists collection. */
+export function libraryListsQuery(ds: DataSource, mock: boolean): UseQueryOptions<LibraryList[], Error> {
+  return {
+    queryKey: queryKeys.libraryLists(mock),
+    queryFn: ({ signal }) => ds.getLists(signal),
   };
 }
 

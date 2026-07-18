@@ -167,6 +167,16 @@ export type LibraryItem = {
   author?: string;
   /** Logical unread chapters — drives the card's unread pill. */
   unread: number;
+  /** Ids of the custom lists this entry belongs to (empty = unlisted). */
+  listIds: string[];
+};
+
+/** A user-defined library list (collection). Mirrors `@comical/library`'s `LibraryList`. */
+export type LibraryList = {
+  id: string;
+  name: string;
+  /** Sort position among lists (ascending). */
+  order: number;
 };
 
 /** Sentinel `chapterId` recorded for a direct (chapterless) series — its
