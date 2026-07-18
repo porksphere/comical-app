@@ -143,14 +143,21 @@ const COVER_DECODE_WAIT_MS = 180;
 const RAIL_THUMB_W = 64; // nominal fallback width (unused in slot mode: PageThumb sizes to slotHeight)
 const RAIL_THUMB_H = 180; // the rail's fixed tile height; each tile's width follows its own page aspect
 const RAIL_GAP = Spacing.two;
-// Fixed-height meta + description slots. Reserved identically in the loading skeleton and the loaded
-// state so a fresh (uncached) series opens at the height it settles to — the title is synchronous and
-// the tag-row count is remembered, so the description (wildly variable per series) was the one thing
-// that made the panel jump; a constant reserve trades a little empty space for a stable size.
+// Meta + description slots. The skeleton reserves their expected space so a fresh (uncached) series
+// opens near the height it settles to; once the detail lands, both collapse to their REAL content —
+// a series with no description (or no meta) no longer carries a permanently-empty reserve, which was
+// most visible on landscape covers, where the info column is what sets the panel's height. The
+// resulting height change rides the panel's existing content-geometry springs (see `resizeReady`).
 const SMALL_LINE_H = 20; // ThemedText "small" lineHeight
 const META_H = SMALL_LINE_H; // one line
 const DESC_LINES = 3;
 const DESC_H = DESC_LINES * SMALL_LINE_H;
+// Rolling "last measured" description height — the same trick as series-card.tsx's rolling cover
+// aspect: each popup OPENS assuming the previous popup's description size (instead of always the
+// full 3-line reserve), then eases to the real size when its own detail resolves. Most catalogues
+// are homogeneous (all described, or none), so the assumption is usually right and the panel
+// doesn't move at all.
+let lastDescHeight = DESC_H;
 // Rough panel height before it's measured, so the menu is roughly placed on frame one.
 const PANEL_HEIGHT_ESTIMATE = 190;
 // MENU_WIDTH / ROW_HEIGHT / MENU_PAD_V / the highlight + hover constants live in
@@ -273,6 +280,13 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // the fetch resolves (`isPlaceholderData` flips false); gate the skeletons on THAT, not on presence,
   // or they never show and the panel opens condensed then jumps when the real detail lands.
   const detailLoaded = !!detail.data && !detail.isPlaceholderData;
+  // The description reserve THIS popup opened assuming (captured once — the rolling value must not
+  // move the skeleton mid-open when another popup writes it). A loaded empty description records 0,
+  // so the next popup on a description-less catalogue opens compact instead of reserving 3 lines.
+  const [assumedDescH] = useState(lastDescHeight);
+  useEffect(() => {
+    if (detailLoaded && !detail.data?.description) lastDescHeight = 0;
+  }, [detailLoaded, detail.data?.description]);
 
   const { favorited, toggle: toggleFavorite, available: favoritesAvailable } = useFavorite(bridgeId, entry.id);
   const { inLibrary, toggle: toggleLibrary } = useLibrary(bridgeId, entry.id, () => ({
@@ -1083,34 +1097,46 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
               <ThemedText style={styles.title} numberOfLines={3}>
                 {entry.title}
               </ThemedText>
-              {/* Fixed-height slots (reserved in both states) so the panel doesn't jump when the real
-                  meta/description replace their skeletons. */}
-              <View style={styles.metaSlot}>
-                {detailLoaded ? (
-                  metaLine ? (
+              {/* While loading, the slots reserve their EXPECTED space (meta line + the remembered
+                  description height) so an uncached open lands near its final size; once loaded they
+                  collapse to the real content — an absent meta/description leaves no dead reserve,
+                  and any difference from the assumption springs via the panel's content geometry. */}
+              {detailLoaded ? (
+                metaLine ? (
+                  <View style={styles.metaSlot}>
                     <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
                       {metaLine}
                     </ThemedText>
-                  ) : null
-                ) : (
+                  </View>
+                ) : null
+              ) : (
+                <View style={styles.metaSlot}>
                   <Skeleton style={styles.metaSkeleton} />
-                )}
-              </View>
-              <View style={styles.descSlot}>
-                {detailLoaded ? (
-                  detail.data?.description ? (
+                </View>
+              )}
+              {detailLoaded ? (
+                detail.data?.description ? (
+                  // Intrinsic height (≤ DESC_LINES lines), measured into the rolling assumption so
+                  // the NEXT popup opens at this size.
+                  <View
+                    onLayout={(e) => {
+                      lastDescHeight = Math.round(e.nativeEvent.layout.height);
+                    }}>
                     <ThemedText type="small" themeColor="textSecondary" numberOfLines={DESC_LINES}>
                       {detail.data.description}
                     </ThemedText>
-                  ) : null
-                ) : (
+                  </View>
+                ) : null
+              ) : assumedDescH > 0 ? (
+                // Clipped to the assumed height, so a 1-line memory shows one skeleton line, not 3.
+                <View style={{ height: assumedDescH, overflow: 'hidden' }}>
                   <View style={styles.descSkeleton}>
                     <Skeleton style={styles.descLine} />
                     <Skeleton style={styles.descLine} />
                     <Skeleton style={[styles.descLine, styles.descLineShort]} />
                   </View>
-                )}
-              </View>
+                </View>
+              ) : null}
             </View>
           </View>
           {/* Every group folded into ONE row, each chip in its group's colour (see TagStrip). A row
@@ -1330,9 +1356,6 @@ const styles = StyleSheet.create({
   metaSlot: {
     height: META_H,
     justifyContent: 'center',
-  },
-  descSlot: {
-    height: DESC_H,
   },
   // Full-bleed horizontally; vertically it spans only the gap between the bars, and clips the cover to
   // it. Transparent and non-interactive — it exists purely as the clip boundary.
