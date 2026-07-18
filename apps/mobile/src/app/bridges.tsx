@@ -4,9 +4,10 @@ import { useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AddFab } from '@/components/add-fab';
 import { openConfirm } from '@/components/confirm-popup';
 import { Holdable } from '@/components/context-menu';
-import { BridgesIcon, CheckIcon, ClearIcon, GripIcon, PlusIcon, TrashIcon } from '@/components/icons/ui-icons';
+import { BridgesIcon, CheckIcon, ClearIcon, GripIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { SelectLead, SelectLeadGap, SelectPillBar, SelectToggle, useSelectMode } from '@/components/multi-select/select-mode';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { ReorderableList } from '@/components/settings/reorderable-list';
@@ -212,15 +213,14 @@ export default function BridgesScreen() {
           ) : selecting ? (
             <SelectToggle selecting onToggle={toggleSelecting} testID="bridges.select-toggle" />
           ) : (
+            // The + install button now lives in the floating FAB below (hidden in select mode); the
+            // top-right holds the select toggle where the + used to be.
             <View style={styles.topActions}>
               {/* Reorder button only on web (native reorders in place — long-press a row). */}
               {IS_WEB && canReorder && (
                 <TopBarButton testID="bridges.reorder" icon={<GripIcon color={theme.text} size={22} />} label="Reorder bridges" onPress={() => setEditing(true)} />
               )}
               {allKeys.length > 0 && <SelectToggle selecting={false} onToggle={toggleSelecting} testID="bridges.select-toggle" />}
-              {browseRegistry && (
-                <TopBarButton testID="bridges.add" icon={<PlusIcon color={theme.text} size={22} />} label="Install a bridge" onPress={browseRegistry} />
-              )}
             </View>
           )
         }
@@ -263,6 +263,17 @@ export default function BridgesScreen() {
           editing={editing}
           dragEnabled={!selecting}
           refresh={() => refetch()}
+        />
+      )}
+
+      {/* The + install affordance: a floating FAB in normal mode, hidden while selecting/reordering. */}
+      {browseRegistry && !selecting && !editing && (
+        <AddFab
+          onPress={browseRegistry}
+          testID="bridges.add"
+          label="Install a bridge"
+          right={SettingsGutter}
+          bottom={Math.max(insets.bottom, Spacing.three)}
         />
       )}
 
