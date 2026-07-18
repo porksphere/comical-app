@@ -52,14 +52,40 @@ export const expoBlobStore: BlobStore = {
   },
   async remove(relPaths) {
     removeBlobs(relPaths);
+    invalidateDiskUsageCache(); // a delete changes the on-disk total — reflect it on the next read
   },
   async removeAll() {
     removeAllBlobs();
+    invalidateDiskUsageCache();
   },
   async usage() {
-    return downloadsDiskUsage();
+    return cachedDiskUsage();
   },
 };
+
+// ── Disk-usage cache ──────────────────────────────────────────────────────────
+// `downloadsDiskUsage()` recursively walks the whole downloads tree (expensive, and it grows with the
+// download). The usage query refetches on every progress invalidation (~3×/s during a download), and
+// re-walking the disk each time showed up as a top cost in a CPU profile. The manifest already tracks
+// `totalBytes` live; `diskBytes` (this walk) only exists as an occasional DRIFT check against it (to
+// surface orphaned blobs), so a value that's stale by a few seconds during an active download is fine.
+// So walk at most once per TTL, and invalidate immediately on a delete (the one thing that should drop
+// the number promptly). Orphans come from deletes/failures, never from active downloads adding tracked
+// bytes — so nothing meaningful is missed between walks.
+const DISK_USAGE_TTL_MS = 4000;
+let diskUsageCache: { bytes: number; at: number } | null = null;
+
+function cachedDiskUsage(): number {
+  const now = Date.now();
+  if (diskUsageCache && now - diskUsageCache.at < DISK_USAGE_TTL_MS) return diskUsageCache.bytes;
+  const bytes = downloadsDiskUsage();
+  diskUsageCache = { bytes, at: now };
+  return bytes;
+}
+
+function invalidateDiskUsageCache(): void {
+  diskUsageCache = null;
+}
 
 /** Remove stored blobs by their relative paths (best-effort). */
 export function removeBlobs(relPaths: string[]): void {
