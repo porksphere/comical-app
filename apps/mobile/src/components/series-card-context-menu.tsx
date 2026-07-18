@@ -37,6 +37,7 @@ import {
   MENU_WIDTH,
   MenuSurface,
   menuStyles,
+  SUBMENU_DIVIDER_H,
   SUBMENU_MAX_LIST_HEIGHT,
   SubmenuSurface,
   type MenuRowSpec,
@@ -177,6 +178,10 @@ const PANEL_HEIGHT_ESTIMATE = 190;
 // card's 350ms: the popup is already open and your finger is already on the thing you're choosing from,
 // so there's far less to disambiguate — only a tap and a resize drag, and both are quick by nature.
 const MENU_HOLD_MS = 220;
+// How long the held finger must DWELL on a submenu-bearing row (mid-drag) before that submenu opens
+// under it — the iOS "hover a folder to spring it open" delay. Long enough that merely sweeping PAST
+// the row on the way to another doesn't trip it, short enough that a deliberate pause feels answered.
+const SUBMENU_DWELL_MS = 320;
 // Read + Add to Library + Add to list + Favorite + Download. Keep in step with the rows rendered
 // below — the menu's height is computed from this (it's what the panel's resize range budgets for),
 // not measured.
@@ -708,10 +713,18 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       listH = Math.max(ROW_HEIGHT, menuBottomLimit - (rowScreenTop + shift) - chromeH);
     }
     submenuShift.set(shift);
+    // Clear the selection carried over from the parent row so the submenu's own bubble doesn't flash
+    // on a stale index for a frame before its hit-test (or a press) lands on a real child row.
+    hoveredRow.set(-1);
     setSubmenuGeom({ row: rowIndex, anchorTop, listH });
     submenuProgress.set(withSpring(1, SUBMENU_SPRING));
   };
-  const clearSubmenu = useCallback(() => setSubmenuGeom(null), []);
+  const clearSubmenu = useCallback(() => {
+    // Drop any leftover child selection before the parent hit-test takes `hoveredRow` back, so the
+    // parent bubble doesn't briefly light the row at the child's last index.
+    hoveredRow.set(-1);
+    setSubmenuGeom(null);
+  }, []);
   const collapseSubmenu = useCallback(() => {
     submenuProgress.set(
       withSpring(0, CLOSE_SPRING, (finished) => {
@@ -1094,10 +1107,57 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const openSubmenuSpec = submenuGeom ? (rows[submenuGeom.row]?.submenu?.() ?? null) : null;
 
   // What a lift runs. Registered rather than passed, because the finger that lifts belongs to the
-  // CARD's gesture, which knows nothing about this component (see lib/series-card-menu).
+  // CARD's gesture, which knows nothing about this component (see lib/series-card-menu). While a
+  // submenu is expanded the SAME lift commits a SUBMENU row instead — the drag flowed into it (see
+  // the submenu hit-test below), so `hoveredRow` now indexes the submenu, and the commit must too.
   useEffect(() => {
-    setMenuRowActions(rows.map((r) => (r.loading || r.disabled ? () => {} : r.onPress)));
+    if (submenuOpen && openSubmenuSpec) {
+      setMenuRowActions(openSubmenuSpec.rows.map((r) => (r.loading ? () => {} : r.onPress)));
+    } else {
+      setMenuRowActions(rows.map((r) => (r.loading || r.disabled ? () => {} : r.onPress)));
+    }
   });
+
+  // ── Spring-loaded submenu: dwell on a submenu row mid-drag to open it ───────
+  // While the original hold-drag is sweeping the menu, pausing on a row that HAS a submenu springs it
+  // open under the finger (iOS Files' folder behaviour), so the same uninterrupted drag then continues
+  // into the child rows. Driven from the hit-test reaction below via a stable JS callback; refs keep
+  // it reading the current rows / open-state without re-subscribing the worklet every render.
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
+  const submenuOpenRef = useRef(submenuOpen);
+  submenuOpenRef.current = submenuOpen;
+  const openSubmenuRef = useRef(openSubmenu);
+  openSubmenuRef.current = openSubmenu;
+  const dwellRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearDwell = useCallback(() => {
+    if (dwellRef.current) {
+      clearTimeout(dwellRef.current);
+      dwellRef.current = null;
+    }
+  }, []);
+  const handleDragHover = useCallback(
+    (row: number) => {
+      // The finger moved to a new row (or off the menu) — any pending spring-open is stale.
+      clearDwell();
+      if (submenuOpenRef.current) return; // a submenu is already up; nothing to spring
+      const r = rowsRef.current[row];
+      const spec = r?.submenu;
+      if (!spec || r.loading || r.disabled) return;
+      dwellRef.current = setTimeout(() => openSubmenuRef.current(row, spec()), SUBMENU_DWELL_MS);
+    },
+    [clearDwell],
+  );
+  useEffect(() => clearDwell, [clearDwell]);
+  // Lifting the finger cancels a pending spring-open — otherwise the lift-commit opens the submenu AND
+  // the timer fires just after and opens it a second time.
+  useAnimatedReaction(
+    () => holdActive.value,
+    (active, prev) => {
+      if (prev && !active) runOnJS(clearDwell)();
+    },
+    [clearDwell],
+  );
 
   // ── Peek and commit ───────────────────────────────────────────────────────
   // While the original long-press is STILL held, work out which row the finger is over and light it up;
@@ -1113,6 +1173,9 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // do. Off the TOP (into the preview) or below the last row still selects nothing.
   useAnimatedReaction(
     () => {
+      // Frozen while a submenu is expanded — the SUBMENU hit-test below owns `hoveredRow` then. A
+      // sentinel the handler ignores, so this one leaves the selection alone instead of fighting it.
+      if (submenuOpen) return -2;
       // Not armed = you haven't reached for anything yet, so nothing is selected — which is what stops
       // a plain hold-and-release from running whatever row happened to be under your thumb.
       if (!holdActive.value || !holdArmed.value) return -1;
@@ -1125,12 +1188,15 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       return index >= 0 && index < rowCount ? index : -1;
     },
     (row, prev) => {
-      if (row === prev) return;
+      if (row === -2 || row === prev) return;
       hoveredRow.set(row);
       // The little tick as the selection moves between rows — the thing that makes the iOS one feel
       // like it has detents rather than being a hover state.
       if (row >= 0) runOnJS(selectionTick)();
+      // Dwell on a submenu-bearing row springs it open under the finger (see handleDragHover).
+      runOnJS(handleDragHover)(row);
     },
+    [submenuOpen, handleDragHover],
   );
 
   // ── The highlight itself ──────────────────────────────────────────────────
@@ -1145,7 +1211,9 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const hoverY = useSharedValue(0);
   const hoverOn = useSharedValue(0);
   useAnimatedReaction(
-    () => hoveredRow.value,
+    // Off while a submenu is up — `hoveredRow` then indexes the SUBMENU, and the faded parent must not
+    // light one of its own rows to match. Its bubble fades out; the submenu's takes over.
+    () => (submenuOpen ? -1 : hoveredRow.value),
     (row, prev) => {
       if (row === prev) return;
       if (row < 0) {
@@ -1160,10 +1228,70 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
         hoverY.set(withSpring(y, HOVER_SPRING));
       }
     },
+    [submenuOpen],
   );
   const hoverStyle = useAnimatedStyle(() => ({
     opacity: hoverOn.value * HIGHLIGHT_OPACITY,
     transform: [{ translateY: hoverY.value }],
+  }));
+
+  // ── The submenu's selection: same hit-test, same travelling bubble ─────────
+  // The drag that opened the submenu keeps reporting the finger (it's still the CARD's gesture); once
+  // the submenu is up, THIS reaction hit-tests that finger into the submenu's rows and writes the same
+  // `hoveredRow`, so the hold flows seamlessly from the parent rows into the child ones. Geometry is
+  // the same arithmetic as the parent menu (no measurement), offset past the submenu's header + divider
+  // and its on-screen anchor. Assumes the (short) row area isn't scrolled — the same assumption the
+  // parent menu makes; a long, scrolled list falls back to tapping, which still works.
+  const submenuAnchorTop = submenuGeom?.anchorTop ?? 0;
+  const submenuRowCount = openSubmenuSpec?.rows.length ?? 0;
+  useAnimatedReaction(
+    () => {
+      if (!submenuOpen) return -2; // parent hit-test owns `hoveredRow`; leave it be
+      if (!holdActive.value || !holdArmed.value) return -1;
+      const scale = minS.value + expand.value * (maxS.value - minS.value);
+      const menuTop = topMin.value + expand.value * (topMax.value - topMin.value) + naturalH.value * scale + GAP;
+      // The submenu card's on-screen top = the menu's top + the anchor row's offset + the up-shift it
+      // took to stay on screen. Then past its own top padding + header row + divider to the first row.
+      const cardTop = menuTop + submenuAnchorTop + submenuShift.value;
+      const rowsTop = cardTop + MENU_PAD_V + ROW_HEIGHT + SUBMENU_DIVIDER_H;
+      const local = holdY.value - rowsTop;
+      if (local < 0) return -1;
+      const index = Math.floor(local / ROW_HEIGHT);
+      return index >= 0 && index < submenuRowCount ? index : -1;
+    },
+    (row, prev) => {
+      if (row === -2 || row === prev) return;
+      hoveredRow.set(row);
+      if (row >= 0) runOnJS(selectionTick)();
+    },
+    [submenuOpen, submenuAnchorTop, submenuRowCount],
+  );
+
+  // The submenu's ONE travelling bubble — identical object to the parent's, offset past the header +
+  // divider so row 0 lands on the first real row (see SUBMENU_DIVIDER_H).
+  const subHoverY = useSharedValue(0);
+  const subHoverOn = useSharedValue(0);
+  useAnimatedReaction(
+    () => (submenuOpen ? hoveredRow.value : -1),
+    (row, prev) => {
+      if (row === prev) return;
+      if (row < 0) {
+        subHoverOn.set(withTiming(0, HOVER_FADE));
+        return;
+      }
+      const y = MENU_PAD_V + ROW_HEIGHT + SUBMENU_DIVIDER_H + row * ROW_HEIGHT;
+      if (prev == null || prev < 0) {
+        subHoverY.set(y);
+        subHoverOn.set(withTiming(1, HOVER_FADE));
+      } else {
+        subHoverY.set(withSpring(y, HOVER_SPRING));
+      }
+    },
+    [submenuOpen],
+  );
+  const submenuHoverStyle = useAnimatedStyle(() => ({
+    opacity: subHoverOn.value * HIGHLIGHT_OPACITY,
+    transform: [{ translateY: subHoverY.value }],
   }));
 
   // ── Peek, started ON the menu ─────────────────────────────────────────────
@@ -1366,6 +1494,8 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
                 spec={openSubmenuSpec}
                 listHeight={submenuGeom.listH}
                 onCollapse={collapseSubmenu}
+                channel={{ holdActive, hoveredRow }}
+                hoverStyle={submenuHoverStyle}
               />
             </Animated.View>
           )}

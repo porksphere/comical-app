@@ -93,6 +93,9 @@ export type MenuRowSpec = {
 
 /** Default cap on the expanded row area before it scrolls — the half-row makes the cut obvious. */
 export const SUBMENU_MAX_LIST_HEIGHT = MENU_ROW_HEIGHT * 4.5;
+/** Hairline between the submenu's header and its rows — exported so a host driving the travelling
+ *  selection bubble can offset it past the header + divider (see SubmenuSurface / the card popup). */
+export const SUBMENU_DIVIDER_H = StyleSheet.hairlineWidth;
 
 /** One row inside an expanded submenu. Presses do NOT auto-dismiss anything — a submenu is a place
  *  you make several picks (toggle memberships), so closing is the header's job. */
@@ -115,14 +118,36 @@ export type SubmenuSpec = {
   testID: string;
 };
 
-function SubmenuRow({ label, active, loading, onPress, testID }: SubmenuRowSpec) {
+function SubmenuRow({
+  label,
+  active,
+  loading,
+  onPress,
+  testID,
+  index,
+  channel,
+}: SubmenuRowSpec & {
+  /** This row's position — what the held finger is hit-tested into, exactly as a main MenuRow. */
+  index: number;
+  channel: MenuHoldChannel;
+}) {
   const theme = useTheme();
+  // Selection is the SHARED travelling bubble (see SubmenuSurface), not a per-row background band —
+  // same shape and logic as the main MenuRow, so a tap and a hold-drag light the row identically.
+  // A press writes the channel the held finger also writes; while a hold owns the selection the press
+  // keeps its hands off (so activating the hold can't clear the row it just picked).
   return (
     <Pressable
       testID={testID}
       disabled={loading}
-      onPress={onPress}
-      style={({ pressed }) => [menuStyles.row, pressed && { backgroundColor: theme.backgroundSelected }]}>
+      onPress={loading ? undefined : onPress}
+      onPressIn={() => {
+        if (!channel.holdActive.value) channel.hoveredRow.set(index);
+      }}
+      onPressOut={() => {
+        if (!channel.holdActive.value) channel.hoveredRow.set(-1);
+      }}
+      style={menuStyles.row}>
       <ThemedText
         style={[menuStyles.rowLabel, { color: loading ? theme.textSecondary : theme.text }]}
         numberOfLines={1}>
@@ -145,12 +170,20 @@ export function SubmenuSurface({
   spec,
   listHeight,
   onCollapse,
+  channel,
+  hoverStyle,
 }: {
   tint: 'light' | 'dark';
   spec: SubmenuSpec;
   /** Host-computed height cap for the row area (spec.maxHeight clamped to the space available). */
   listHeight: number;
   onCollapse: () => void;
+  /** The SAME hold channel the parent menu uses, so a hold-drag flows from the parent rows straight
+   *  into these (see the card popup). Rows write it on press too. */
+  channel: MenuHoldChannel;
+  /** Animated style for the ONE travelling selection bubble — host-computed, offset past the header
+   *  + divider (see SUBMENU_DIVIDER_H) so row 0 lands on the first ROW, not the header. */
+  hoverStyle: StyleProp<AnimatedStyle<ViewStyle>>;
 }) {
   const theme = useTheme();
   const scrolls = spec.rows.length * MENU_ROW_HEIGHT > listHeight;
@@ -161,6 +194,12 @@ export function SubmenuSurface({
       experimentalBlurMethod={ANDROID_BLUR}
       style={[menuStyles.menu, { borderColor: theme.backgroundSelected }]}>
       <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: MENU_FILL[tint] }]} />
+      {/* The travelling selection bubble — the exact same object the main menu draws, under the rows
+          so their labels stay on top of it. */}
+      <Animated.View
+        pointerEvents="none"
+        style={[menuStyles.hoverBubble, { backgroundColor: theme.backgroundSelected }, hoverStyle]}
+      />
       {/* Header = the row that expanded, restated; bold like a primary row, chevron now pointing
           down. Tapping anywhere on it collapses back to the parent menu. */}
       <Pressable
@@ -180,8 +219,8 @@ export function SubmenuSurface({
         bounces={false}
         showsVerticalScrollIndicator={scrolls}
         nestedScrollEnabled>
-        {spec.rows.map((row) => (
-          <SubmenuRow key={row.testID} {...row} />
+        {spec.rows.map((row, i) => (
+          <SubmenuRow key={row.testID} {...row} index={i} channel={channel} />
         ))}
       </ScrollView>
     </BlurView>
