@@ -72,11 +72,15 @@ const seriesKey = (s: { bridgeId: string; seriesId: string }) => `${s.bridgeId}:
 
 /** The series list, queue-first then most-recent, with per-row object identity kept via `cache`. */
 function buildRows(bySeries: StorageUsageSeries[], cache: Map<string, DlRow>): DlRow[] {
-  const ordered = [...bySeries].sort((a, b) => bySortValue(seriesSortValue(a.chapters), seriesSortValue(b.chapters)));
+  // Decorate-sort-undecorate: seriesSortValue filters+maps a series' chapters, so calling it twice per
+  // comparison re-walked every series' chapters O(n log n) times. Compute it ONCE per series instead —
+  // cuts the allocation churn the same way the per-series chapter screen's sort does.
+  const ordered = bySeries
+    .map((s) => ({ s, key: seriesKey(s), sv: seriesSortValue(s.chapters) }))
+    .sort((a, b) => bySortValue(a.sv, b.sv));
   const rows: DlRow[] = [];
   const live = new Set<string>();
-  for (const s of ordered) {
-    const key = seriesKey(s);
+  for (const { s, key } of ordered) {
     live.add(key);
     const prev = cache.get(key);
     const row: DlRow = prev && prev.s === s ? prev : { key, s };
@@ -142,7 +146,9 @@ export default function DownloadsScreen() {
     }
   };
 
-  const rows = buildRows(usage.bySeries, rowCache);
+  // Memoized on the usage tree so it stops re-sorting + rebuilding on every unrelated re-render (it
+  // ran raw in render before). buildRows keeps stable row identities via rowCache for LegendList.
+  const rows = useMemo(() => buildRows(usage.bySeries, rowCache), [usage.bySeries, rowCache]);
 
   // ── Multi-select mode (the shared select-mode chrome) — bulk-manage SERIES here ──
   const mode = useSelectMode();
