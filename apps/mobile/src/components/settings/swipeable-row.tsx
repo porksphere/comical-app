@@ -354,11 +354,14 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
     .onEnd((e) => {
       'worklet';
       if (!enabled) return;
-      // Rest at the captured detent (its midpoints already decided which pill count we're nearest),
-      // letting a firm flick carry it one more stop in the fling direction.
-      let idx = captured.value;
-      if (e.velocityX < -500 && idx < detents.length - 1) idx += 1;
-      else if (e.velocityX > 500 && idx > 0) idx -= 1;
+      // ALL-OR-NOTHING rest: the drag itself keeps its per-pill detents (the sticky resistance and
+      // the tick as each pill clears), but the row never RESTS partially open — release anywhere
+      // past the first detent's midpoint and it springs fully open showing every action; short of
+      // it, closed. A firm fling overrides in its own direction from anywhere.
+      const openIdx = detents.length - 1;
+      let idx = captured.value >= 1 ? openIdx : 0;
+      if (e.velocityX < -500) idx = openIdx;
+      else if (e.velocityX > 500) idx = 0;
       target.value = -detents[idx];
       restIndex.value = idx;
       captured.value = idx;
@@ -507,7 +510,9 @@ const styles = StyleSheet.create({
   },
   pill: {
     width: PILL_WIDTH,
-    borderRadius: SLOT_RADIUS,
+    // A full capsule (radius > half the pill's height), matching the floating select-mode pills —
+    // deliberately rounder than the row's own slot corner (SLOT_RADIUS).
+    borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
     cursor: 'pointer',
