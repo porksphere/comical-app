@@ -23,6 +23,11 @@ import { testId } from '@/lib/test-id';
  *  slot rather than stretched to it, so a taller row still gets circles. */
 const PILL_WIDTH = 52;
 const PILL_GAP = Spacing.two;
+/** Minimum gap between the last circle and the container's right edge — the same 6px of air the
+ *  circles get vertically in a settings row ((64 − 52) / 2), so a row whose `edgeInset` is 0 (the
+ *  History list) doesn't press its circles flush against the screen. Screens with a real gutter
+ *  (`edgeInset` ≥ this) already clear it and are unaffected. */
+const PILL_EDGE_GAP = 6;
 /** Corner radius the row's trailing edge grows to as it opens into a slot. */
 const SLOT_RADIUS = 14;
 /** How many action bubbles fit a row before they'd run past the screen / crowd the content. Beyond
@@ -242,6 +247,9 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
   // Which detent the finger is currently "captured" at DURING a drag — it flips as the finger crosses
   // the midpoint between detents, which is both the resistance release point and the haptic tick.
   const captured = useSharedValue(0);
+  // Where the row was RESTING when this drag began (0 or fully open) — the all-or-nothing release
+  // rule is direction-aware, so it needs to know which end the drag set out from (see onEnd).
+  const startRest = useSharedValue(0);
   // Stable per-row identity for `swipe-row-registry`. Lazy state, not a ref, for the same reason.
   const [token] = useState(() => ({}));
   // Detent haptic (one per row). Every midpoint crossing calls it via runOnJS; it spaces bunched taps
@@ -258,10 +266,13 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
   const [open, setOpen] = useState(false);
 
   const pillCount = Math.max(1, actions.length);
+  // Where the pill rail ends, from the container's right edge: the screen gutter, floored at
+  // PILL_EDGE_GAP so a gutterless row (History) still gives its circles air on the right.
+  const trailingInset = Math.max(edgeInset, PILL_EDGE_GAP);
   // Rest positions along the drag: detents[0] = 0 (closed), detents[k] = far enough to reveal k pills;
   // detents[pillCount] is fully open. A plain number array, captured into the worklets by value.
   const detents: number[] = [0];
-  for (let k = 1; k <= pillCount; k++) detents.push(edgeInset + k * (PILL_WIDTH + PILL_GAP));
+  for (let k = 1; k <= pillCount; k++) detents.push(trailingInset + k * (PILL_WIDTH + PILL_GAP));
   const openX = detents[pillCount];
 
   // Deliberately NOT useCallback: a shared value listed in a hook's dependency array may not then be
@@ -338,6 +349,7 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
       // detent doesn't fire a spurious tick on the first frame. Clamp in case the action set just
       // shrank (a stale rest index would point past the shorter detents array).
       captured.value = Math.min(restIndex.value, detents.length - 1);
+      startRest.value = captured.value;
     })
     .onUpdate((e) => {
       'worklet';
@@ -364,11 +376,15 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
       'worklet';
       if (!enabled) return;
       // ALL-OR-NOTHING rest: the drag itself keeps its per-pill detents (the sticky resistance and
-      // the tick as each pill clears), but the row never RESTS partially open — release anywhere
-      // past the first detent's midpoint and it springs fully open showing every action; short of
-      // it, closed. A firm fling overrides in its own direction from anywhere.
+      // the tick as each pill clears), but the row never RESTS partially open — and the release
+      // rule is DIRECTION-AWARE, one action's travel committing the whole move either way:
+      //   from CLOSED — past the first detent's midpoint springs it fully open; short of it, closed.
+      //   from OPEN   — retreating past even one detent's midpoint closes the whole row; the row
+      //                 only stays open if the finger never really left the open end.
+      // A firm fling overrides in its own direction from anywhere.
       const openIdx = detents.length - 1;
-      let idx = captured.value >= 1 ? openIdx : 0;
+      const threshold = startRest.value === 0 ? 1 : startRest.value;
+      let idx = captured.value >= threshold ? openIdx : 0;
       if (e.velocityX < -500) idx = openIdx;
       else if (e.velocityX > 500) idx = 0;
       // The settle crosses every detent between the captured one and the rest — their ticks still
@@ -414,7 +430,7 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
       {/* Solid pills, uncovered by the sliding row (no fade) — that's what makes a one-pill rest read
           as fully revealed. Actions lay out left→right, so the last sits at the edge. */}
       <View
-        style={[styles.pillSlot, { right: edgeInset, width: pillCount * PILL_WIDTH + (pillCount - 1) * PILL_GAP }]}
+        style={[styles.pillSlot, { right: trailingInset, width: pillCount * PILL_WIDTH + (pillCount - 1) * PILL_GAP }]}
         pointerEvents="box-none">
         {actions.map((a) => {
           const Icon = a.icon;
