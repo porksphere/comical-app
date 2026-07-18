@@ -29,6 +29,7 @@ import { DemoBanner } from '@/components/demo-banner';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { ConfirmPopupHost } from '@/components/confirm-popup';
 import { ContextMenuHost } from '@/components/context-menu-host';
+import { ListPickerHost } from '@/components/list-picker';
 import { OverlayProvider } from '@/components/overlay/overlay';
 import { SeriesCardContextMenuHost } from '@/components/series-card-context-menu';
 import { ToastHost } from '@/components/toast';
@@ -98,6 +99,10 @@ function RootNavigation() {
           <Stack.Screen name="series" options={{ headerShown: false }} />
           {/* Search renders its own top bar (search field + back button), so hide the native one. */}
           <Stack.Screen name="search" options={{ headerShown: false }} />
+          {/* Library search: its own top bar (field + back), same as Browse's /search. */}
+          <Stack.Screen name="library-search" options={{ headerShown: false }} />
+          {/* Custom-lists manager (create/rename/reorder/delete), pushed from the Library selector. */}
+          <Stack.Screen name="manage-lists" options={{ headerShown: false }} />
           <Stack.Screen name="results" options={{ headerShown: false }} />
           {/* Full-screen page reader; its own dark chrome, fade in/out. */}
           <Stack.Screen name="reader" options={{ headerShown: false, animation: 'fade' }} />
@@ -128,6 +133,9 @@ function RootNavigation() {
         {/* Root host for the GENERIC hold menu — the card popup's menu system without its preview
             panel (chapter rows use it). Only renders while open, via openContextMenu. */}
         <ContextMenuHost />
+        {/* Root host for the "Add to list…" picker. Mounted AFTER the card menu host so it STACKS
+            on top of it (open it from the card menu's "Add to list…" row), via openListPicker. */}
+        <ListPickerHost />
         {/* Root host for the destructive-action confirmation popup (openConfirm). */}
         <ConfirmPopupHost />
         {/* Root host for the transient notice pill (showToast). */}

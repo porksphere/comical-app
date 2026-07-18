@@ -39,7 +39,8 @@ import {
   menuStyles,
   type MenuRowSpec,
 } from '@/components/context-menu-material';
-import { CheckIcon, DownloadsIcon, PlayIcon, PlusIcon, StarIcon } from '@/components/icons/ui-icons';
+import { CheckIcon, DownloadsIcon, ListPlusIcon, PlayIcon, PlusIcon, StarIcon } from '@/components/icons/ui-icons';
+import { openListPicker } from '@/components/list-picker';
 import { PageThumb } from '@/components/series/chapters-section';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
@@ -167,9 +168,10 @@ const PANEL_HEIGHT_ESTIMATE = 190;
 // card's 350ms: the popup is already open and your finger is already on the thing you're choosing from,
 // so there's far less to disambiguate — only a tap and a resize drag, and both are quick by nature.
 const MENU_HOLD_MS = 220;
-// Read + Add to Library + Favorite + Download. Keep in step with the rows rendered below — the menu's
-// height is computed from this (it's what the panel's resize range budgets for), not measured.
-const MENU_ROWS = 4;
+// Read + Add to Library + Add to list + Favorite + Download. Keep in step with the rows rendered
+// below — the menu's height is computed from this (it's what the panel's resize range budgets for),
+// not measured.
+const MENU_ROWS = 5;
 // DEV ONLY: pad the menu out with dummy rows, to exercise the case the pan gesture exists for — a
 // group too tall for the screen, where the panel has to give up height for the menu to be reachable.
 //
@@ -915,6 +917,21 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       active: !!inLibrary,
       testID: 'series.card-menu.library',
       onPress: () => act(toggleLibrary),
+    },
+    {
+      label: 'Add to list',
+      Icon: ListPlusIcon,
+      loading: false,
+      testID: 'series.card-menu.lists',
+      // Do NOT close the menu — the picker STACKS on top of it (it's a root host mounted above this
+      // one, see _layout.tsx), so dismissing the picker returns here. The nested-menu behavior.
+      onPress: () =>
+        openListPicker({
+          bridgeId,
+          seriesId: entry.id,
+          title: entry.title,
+          snapshot: () => ({ title: entry.title, ...(entry.cover ? { thumbnailUrl: entry.cover } : {}) }),
+        }),
     },
     {
       label: favorited ? 'Unfavorite' : 'Favorite',

@@ -1,29 +1,32 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { SearchIcon } from '@/components/icons/ui-icons';
+import { LibraryListSelector } from '@/components/library-list-selector';
 import { RetryBlock } from '@/components/retry-block';
-import { SearchField } from '@/components/search-field';
 import { Selector } from '@/components/selector';
 import { TabTitleBar } from '@/components/tab-title-bar';
-import { SeriesGrid, type SeriesGridItem } from '@/components/series-grid';
+import { SeriesGrid } from '@/components/series-grid';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BarContentGap, BottomTabInset, Spacing } from '@/constants/theme';
 import { type LibrarySort } from '@/data/api';
-import { libraryQuery } from '@/data/queries';
+import { libraryQuery, type LibraryListFilter } from '@/data/queries';
+import { toLibraryCard, type LibraryGridItem } from '@/data/library-card';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
-import type { Bridge, LibraryItem } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
+import { useLibraryLists } from '@/hooks/use-library-lists';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
+import { useTheme } from '@/hooks/use-theme';
 
 // Sort options shown in the header selector, mapped to the `/library?sort=` param.
 const SORT_LABELS: Record<LibrarySort, string> = {
@@ -35,14 +38,11 @@ const SORT_LABELS: Record<LibrarySort, string> = {
 const SORT_ORDER: LibrarySort[] = ['added', 'lastRead', 'title', 'unread'];
 const labelToSort = (label: string): LibrarySort => SORT_ORDER.find((s) => SORT_LABELS[s] === label) ?? 'added';
 
-// The Library is a CROSS-BRIDGE grid: unlike Browse/Search (one bridge for the whole grid), each
-// entry carries its own bridge. `SeriesGridItem` already models that — the per-item bridge fields
-// override the grid-level ones — so no Library-specific cell or item type is needed.
-type GridItem = SeriesGridItem;
-
 export default function LibraryScreen() {
   const ds = useDataSource();
   const mock = useMockActive();
+  const theme = useTheme();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const hideNsfw = useHideNsfw();
   const listRef = useRef<LegendListRef>(null);
@@ -52,14 +52,20 @@ export default function LibraryScreen() {
   // this flips, the list holds empty data and the header shows a skeleton.
   const ready = useDeferredMount();
 
-  const [query, setQuery] = useState('');
   const [sort, setSort] = useState<LibrarySort>('added');
+  // Which custom list the grid is scoped to (null = all, 'unlisted', or a list id).
+  const [listFilter, setListFilter] = useState<LibraryListFilter>(null);
 
   // Bridges resolve each entry's display name + direct-ness (each library card
   // carries its own bridge, unlike the Browse grid's single-bridge view).
   const { byId: bridgeById } = useBridgeMap();
+  const { lists } = useLibraryLists();
 
-  const { data: items = undefined, error, isLoading, refetch } = useQuery(libraryQuery(ds, mock, query, sort));
+  // Text search lives on its own pushed screen now (the top-bar search icon), so the tab always
+  // shows the whole library (no `q`); it owns the sort + the selected custom-list filter.
+  const { data: items = undefined, error, isLoading, refetch } = useQuery(
+    libraryQuery(ds, mock, '', sort, listFilter),
+  );
 
   // Reflect adds/removes made on the series detail (or a mode switch) when the
   // tab regains focus. Skips the very first focus (the query already fetched).
@@ -76,10 +82,10 @@ export default function LibraryScreen() {
   // Column count for the skeleton only — SeriesGrid derives its own layout from the same hook.
   const { numColumns } = useGridLayout();
 
-  const cards = useMemo<GridItem[]>(() => {
+  const cards = useMemo<LibraryGridItem[]>(() => {
     if (!items) return [];
     const visible = hideNsfw ? items.filter((e) => !bridgeById.get(e.bridgeId)?.nsfw) : items;
-    return visible.map((e) => toCard(e, bridgeById.get(e.bridgeId)));
+    return visible.map((e) => toLibraryCard(e, bridgeById.get(e.bridgeId)));
   }, [items, hideNsfw, bridgeById]);
 
   // Held empty until `ready` so the tab switch isn't blocked mounting the grid.
@@ -88,15 +94,6 @@ export default function LibraryScreen() {
   const listHeader = (
     <View style={styles.controls}>
       <View style={styles.controlsRow}>
-        <View style={styles.searchWrap}>
-          <SearchField
-            testID="library.search"
-            value={query}
-            onSubmit={(q) => setQuery(q.trim())}
-            onClear={() => setQuery('')}
-            placeholder="Search library…"
-          />
-        </View>
         <Selector
           testID="library.sort"
           title="Sort by"
@@ -130,11 +127,13 @@ export default function LibraryScreen() {
       );
     }
     if (cards.length === 0) {
-      return query.trim() ? (
-        <EmptyState title="No matches" detail="No series in your library match your search." />
-      ) : (
-        <EmptyState title="Your library is empty" detail="Open a series and tap “＋ Library” to add it here." />
-      );
+      if (listFilter === 'unlisted') {
+        return <EmptyState title="Nothing unlisted" detail="Every series in your library is in at least one list." />;
+      }
+      if (listFilter) {
+        return <EmptyState title="This list is empty" detail="Add series to this list from a series page or a card’s long-press menu." />;
+      }
+      return <EmptyState title="Your library is empty" detail="Open a series and tap “＋ Library” to add it here." />;
     }
     return null;
   }
@@ -147,7 +146,7 @@ export default function LibraryScreen() {
           remounts the list on a search/sort switch (a scroll-to-top moment) and resets recycled cards. */}
       <SeriesGrid
         items={listData}
-        scopeKey={`${query}|${sort}`}
+        scopeKey={`${sort}|${listFilter ?? ''}`}
         listRef={listRef}
         header={listHeader}
         paddingTop={headerHeight + BarContentGap}
@@ -155,22 +154,22 @@ export default function LibraryScreen() {
         onScroll={onScroll}
       />
 
-      <TabTitleBar title="Library" />
+      <TabTitleBar
+        titleSlot={<LibraryListSelector value={listFilter} lists={lists} onChange={setListFilter} />}
+        right={
+          <Pressable
+            testID="library.search-icon"
+            onPress={() => router.push('/library-search')}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Search library"
+            style={styles.searchIconButton}>
+            <SearchIcon color={theme.text} size={22} />
+          </Pressable>
+        }
+      />
     </ThemedView>
   );
-}
-
-function toCard(e: LibraryItem, bridge?: Bridge): GridItem {
-  return {
-    id: e.seriesId,
-    title: e.title,
-    cover: e.thumbnailUrl ?? '',
-    sub: bridge?.name ?? e.bridgeId,
-    ...(e.unread > 0 && { unread: e.unread }),
-    bridgeId: e.bridgeId,
-    ...(bridge?.name && { bridge: bridge.name }),
-    direct: bridge?.capabilities.includes('direct') ?? false,
-  };
 }
 
 function EmptyState({ title, detail }: { title: string; detail: string }) {
@@ -219,8 +218,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.three,
   },
-  searchWrap: {
-    flex: 1,
+  searchIconButton: {
+    padding: Spacing.one,
   },
   cell: {
     flex: 1,
