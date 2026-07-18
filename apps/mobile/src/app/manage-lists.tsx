@@ -1,40 +1,41 @@
 import { useRouter } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useState } from 'react';
+import { Platform, StyleSheet, View } from 'react-native';
 
 import { AddFab } from '@/components/add-fab';
 import { openConfirm } from '@/components/confirm-popup';
 import { NamePromptForm } from '@/app/custom-pages';
-import { ArrowDownIcon, ArrowUpIcon, PencilIcon, TrashIcon } from '@/components/icons/ui-icons';
+import { CheckIcon, GripIcon, PencilIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { useOverlay } from '@/components/overlay/overlay';
+import { ReorderableList } from '@/components/settings/reorderable-list';
+import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { TopBar } from '@/components/top-bar';
+import { TopBar, TopBarButton } from '@/components/top-bar';
 import { showToast } from '@/components/toast';
 import { SettingsGutter, Spacing } from '@/constants/theme';
+import type { LibraryList } from '@/data/types';
 import { useLibraryLists } from '@/hooks/use-library-lists';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 
+const IS_WEB = Platform.OS === 'web';
+
 /**
  * The custom-lists manager, pushed from the Library tab's list selector ("Manage lists…"). Create,
- * rename, reorder (▲/▼), and delete lists. Reorder is optimistic (see `useLibraryLists`) so rows
- * move under the arrow taps. Deleting a list also removes it from every entry's memberships (the
- * backend cascades). Reuses `NamePromptForm` (the shared one-field overlay) for create + rename.
+ * rename, delete, and reorder lists. Reorder is the app's standard `ReorderableList`: native
+ * long-press drag (styled lift + neighbours spring apart), and a web ▲/▼ editing mode toggled from
+ * the top bar (the drag library is native-only). Deleting a list also removes it from every entry's
+ * memberships (the backend cascades). Mirrors `custom-pages.tsx`.
  */
 export default function ManageListsScreen() {
   const router = useRouter();
   const theme = useTheme();
   const contentPadding = useSettingsScrollPadding();
   const { open } = useOverlay();
+  const [editing, setEditing] = useState(false);
   const { lists, createList, renameList, reorderLists, deleteList } = useLibraryLists();
-
-  const move = (index: number, delta: number) => {
-    const next = [...lists];
-    const target = index + delta;
-    if (target < 0 || target >= next.length) return;
-    [next[index], next[target]] = [next[target]!, next[index]!];
-    reorderLists(next.map((l) => l.id));
-  };
+  const canReorder = lists.length >= 2;
 
   const openCreate = () =>
     open(() => (
@@ -70,9 +71,42 @@ export default function ManageListsScreen() {
       },
     });
 
+  const renderRow = (l: LibraryList) => (
+    <SwipeableSettingsRow
+      label={l.name}
+      recycleKey={l.id}
+      testID={`manage-lists.row.${l.id}`}
+      onPress={() => openRename(l.id, l.name)}
+      actions={[
+        { label: 'Rename', icon: PencilIcon, onPress: () => openRename(l.id, l.name) },
+        { label: 'Delete', icon: TrashIcon, destructive: true, onPress: () => confirmDelete(l.id, l.name) },
+      ]}
+    />
+  );
+
   return (
     <ThemedView style={styles.container}>
-      <TopBar title="Manage Lists" onBack={() => router.back()} />
+      <TopBar
+        title="Manage Lists"
+        onBack={() => router.back()}
+        right={
+          editing ? (
+            <TopBarButton
+              testID="manage-lists.done"
+              icon={<CheckIcon color={theme.text} size={22} />}
+              label="Done reordering"
+              onPress={() => setEditing(false)}
+            />
+          ) : IS_WEB && canReorder ? (
+            <TopBarButton
+              testID="manage-lists.reorder"
+              icon={<GripIcon color={theme.text} size={22} />}
+              label="Reorder lists"
+              onPress={() => setEditing(true)}
+            />
+          ) : undefined
+        }
+      />
 
       {lists.length === 0 ? (
         <View style={[styles.empty, contentPadding]}>
@@ -82,60 +116,19 @@ export default function ManageListsScreen() {
           </ThemedText>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={[styles.list, contentPadding]}>
-          {lists.map((l, i) => (
-            <ThemedView key={l.id} type="backgroundElement" style={styles.row} testID={`manage-lists.row.${l.id}`}>
-              <View style={styles.reorder}>
-                <Pressable
-                  testID={`manage-lists.up.${l.id}`}
-                  onPress={() => move(i, -1)}
-                  disabled={i === 0}
-                  hitSlop={6}
-                  style={i === 0 && styles.disabled}
-                  accessibilityRole="button"
-                  accessibilityLabel="Move up">
-                  <ArrowUpIcon color={theme.text} size={18} />
-                </Pressable>
-                <Pressable
-                  testID={`manage-lists.down.${l.id}`}
-                  onPress={() => move(i, 1)}
-                  disabled={i === lists.length - 1}
-                  hitSlop={6}
-                  style={i === lists.length - 1 && styles.disabled}
-                  accessibilityRole="button"
-                  accessibilityLabel="Move down">
-                  <ArrowDownIcon color={theme.text} size={18} />
-                </Pressable>
-              </View>
-
-              <Pressable style={styles.nameHit} onPress={() => openRename(l.id, l.name)} accessibilityRole="button">
-                <ThemedText numberOfLines={1}>{l.name}</ThemedText>
-              </Pressable>
-
-              <Pressable
-                testID={`manage-lists.rename.${l.id}`}
-                onPress={() => openRename(l.id, l.name)}
-                hitSlop={6}
-                style={styles.action}
-                accessibilityRole="button"
-                accessibilityLabel="Rename list">
-                <PencilIcon color={theme.textSecondary} size={18} />
-              </Pressable>
-              <Pressable
-                testID={`manage-lists.delete.${l.id}`}
-                onPress={() => confirmDelete(l.id, l.name)}
-                hitSlop={6}
-                style={styles.action}
-                accessibilityRole="button"
-                accessibilityLabel="Delete list">
-                <TrashIcon color={theme.danger} size={18} />
-              </Pressable>
-            </ThemedView>
-          ))}
-        </ScrollView>
+        <ReorderableList
+          data={lists}
+          keyOf={(l) => l.id}
+          renderRow={renderRow}
+          label={(l) => l.name}
+          onReorder={reorderLists}
+          editing={editing}
+        />
       )}
 
-      <AddFab onPress={openCreate} testID="manage-lists.add" label="New list" right={SettingsGutter} bottom={Spacing.five} />
+      {!editing && (
+        <AddFab onPress={openCreate} testID="manage-lists.add" label="New list" right={SettingsGutter} bottom={Spacing.five} />
+      )}
     </ThemedView>
   );
 }
@@ -153,33 +146,5 @@ const styles = StyleSheet.create({
   emptyText: {
     textAlign: 'center',
     maxWidth: 340,
-  },
-  list: {
-    paddingHorizontal: SettingsGutter,
-    gap: Spacing.two,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    borderRadius: Spacing.three,
-    minHeight: 56,
-  },
-  reorder: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-  },
-  disabled: {
-    opacity: 0.3,
-  },
-  nameHit: {
-    flex: 1,
-    paddingVertical: Spacing.two,
-  },
-  action: {
-    padding: Spacing.two,
   },
 });
