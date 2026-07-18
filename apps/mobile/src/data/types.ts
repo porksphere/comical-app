@@ -242,8 +242,17 @@ export type HomeGridSection = {
   hasNextPage: boolean;
 };
 
-/** An installed bridge, as surfaced by the bridge selector. */
-export type Bridge = { id: string; name: string; nsfw: boolean; capabilities: string[]; thumbnail?: string };
+/** An installed bridge, as surfaced by the bridge selector. `cardSubtitles` mirrors the contract's
+ *  flag: this bridge's entries may carry a `sub` line, so card grids reserve the sub-line height
+ *  for its surfaces (and drop it — tighter rows — for bridges that never send one). */
+export type Bridge = {
+  id: string;
+  name: string;
+  nsfw: boolean;
+  capabilities: string[];
+  cardSubtitles?: boolean;
+  thumbnail?: string;
+};
 /** One of a bridge's browsable lists (home section or standalone page). */
 export type BridgeList = {
   id: string;

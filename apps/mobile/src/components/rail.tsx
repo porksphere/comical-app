@@ -8,6 +8,7 @@ import { estimatedCardHeight, SeriesCard, TitlePeek, type CardSize } from '@/com
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
+import { useBridgeMap } from '@/hooks/use-bridges';
 import { useHovered } from '@/hooks/use-hovered';
 import { useIsCompact, useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
@@ -97,24 +98,24 @@ export const SECTION_HEAD_HEIGHT = 32;
  * can't drift (the same discipline `series-grid.tsx`'s `cellHeight` follows). An estimate — rails are
  * few and each reserves its own `minHeight` internally, so small drift only nudges the scroll anchor.
  */
-export function railStripHeight(kind: RailSection['kind'], viewportWidth: number, wide: boolean): number {
+export function railStripHeight(kind: RailSection['kind'], viewportWidth: number, wide: boolean, hasSub: boolean): number {
   const stripGap = stripGapFor(viewportWidth);
   const cardWidth = wide ? gridCardWidth(viewportWidth, stripGap) : cardWidthFor(kind, viewportWidth);
   if (wide) {
     // Static GRID_ROWS×GRID_COLUMNS grid: rows of `estimatedCardHeight` cards + inter-row gaps + the
     // grid wrapper's own `Spacing.one` vertical padding (styles.grid).
-    const cardH = estimatedCardHeight(cardWidth);
+    const cardH = estimatedCardHeight(cardWidth, hasSub);
     return Spacing.one * 2 + GRID_ROWS * cardH + (GRID_ROWS - 1) * stripGap;
   }
   // Horizontal strip: one row of cards at the reserved strip height (mirrors `stripMinHeight` below).
-  return estimatedCardHeight(cardWidth) + STRIP_PAD_V * 2;
+  return estimatedCardHeight(cardWidth, hasSub) + STRIP_PAD_V * 2;
 }
 
 /** Whole rail row INCLUDING its own heading — for callers where the rail renders its own head (a
  *  self-headed `RailSkeleton`, or series.tsx's related rail). ContentFeed's loaded rails are headless (a
  *  shared `sectionHead` row precedes them), so it sizes those with `railStripHeight` instead. */
-export function railRowHeight(kind: RailSection['kind'], viewportWidth: number, wide: boolean): number {
-  return SECTION_HEAD_HEIGHT + Spacing.two + railStripHeight(kind, viewportWidth, wide);
+export function railRowHeight(kind: RailSection['kind'], viewportWidth: number, wide: boolean, hasSub: boolean): number {
+  return SECTION_HEAD_HEIGHT + Spacing.two + railStripHeight(kind, viewportWidth, wide, hasSub);
 }
 
 // Per-rail resting card index, remembered for the session so a rail that unmounts and remounts —
@@ -153,6 +154,9 @@ export function Rail({
 }) {
   const size = CARD_SIZE[section.kind];
   const wide = useIsLargeScreen();
+  // Whether this rail's bridge sends card subtitles — sets whether the strip reserves the sub line.
+  const { subOf } = useBridgeMap();
+  const hasSub = subOf(bridgeId);
   const stripGap = stripGapFor(viewportWidth);
   // The inter-card gap is split as symmetric padding on each item wrapper (not an
   // ItemSeparator), so the highlight ring's outward bleed has room on BOTH sides of
@@ -173,7 +177,7 @@ export function Rail({
   // in. Shares the grid's own `estimatedCardHeight` math so the two can't drift. `minHeight` (not a
   // fixed height): titles clamp to 3 lines so a card can't exceed this, and a rail whose cards all
   // have short titles just reserves a little unused bottom space, consistently.
-  const stripMinHeight = estimatedCardHeight(cardWidth) + STRIP_PAD_V * 2;
+  const stripMinHeight = estimatedCardHeight(cardWidth, hasSub) + STRIP_PAD_V * 2;
 
   // The full-title peek lives here (not in the card) so it can float ABOVE the
   // horizontal scroller / grid, which would otherwise clip the card's own

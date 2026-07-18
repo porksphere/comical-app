@@ -7,6 +7,7 @@ import { RecyclerList } from '@/components/recycler-list';
 import { estimatedCardHeight, SeriesCard } from '@/components/series-card';
 import { BottomTabInset, Spacing } from '@/constants/theme';
 import type { SeriesEntry } from '@/data/types';
+import { useBridgeMap } from '@/hooks/use-bridges';
 import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
 
 // A cell reserves the inter-row space itself (LegendList ignores vertical `gap` — items are absolutely
@@ -53,6 +54,7 @@ export function SeriesGrid({
   bridge,
   bridgeId,
   direct,
+  hasSub,
   originPage,
   crossfading,
   sharedValues,
@@ -76,6 +78,10 @@ export function SeriesGrid({
   bridge?: string;
   bridgeId?: string;
   direct?: boolean;
+  /** Whether this grid's entries carry a card sub line, which sets the fixed cell height. Omit to
+   *  resolve from `bridgeId`'s `cardSubtitles` flag; pass explicitly when the SCREEN makes the subs
+   *  itself (the Library's bridge-name line → `true`). */
+  hasSub?: boolean;
   /** Browse only: the sub-page a card was opened from, so the series screen can return to it. */
   originPage?: string;
   /** Suppresses per-card entrance work while a full-surface crossfade owns the transition. */
@@ -90,11 +96,13 @@ export function SeriesGrid({
   wrapperStyle?: Parameters<typeof Animated.View>[0]['style'];
 }) {
   const { numColumns, sidePad, cardWidth } = useGridLayout();
+  const { subOf } = useBridgeMap();
 
   // FIXED row height — every cell is forced to the SAME height (worst-case card content via
   // `estimatedCardHeight`, plus the cell's own vertical padding). With every row identical AND matching
   // `estimatedItemSize`, LegendList never re-measures a row on scroll (the release-profile #1 fix).
-  const cellHeight = estimatedCardHeight(cardWidth) + CELL_ROW_GAP;
+  // The sub line is reserved only when this surface's entries actually carry one (see `hasSub`).
+  const cellHeight = estimatedCardHeight(cardWidth, hasSub ?? subOf(bridgeId)) + CELL_ROW_GAP;
 
   return (
     <RecyclerList

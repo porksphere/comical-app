@@ -21,6 +21,9 @@ export function useBridgeMap(): {
   byId: Map<string, Bridge>;
   nameOf: (bridgeId: string) => string;
   directOf: (bridgeId: string) => boolean;
+  /** The bridge's `cardSubtitles` contract flag: whether its entries carry a card sub line, which
+   *  is what the grids/rails reserve (or drop) the sub-line height on. Unknown bridge → false. */
+  subOf: (bridgeId?: string) => boolean;
 } {
   const ds = useDataSource();
   const { data: bridges = [] } = useQuery({
@@ -35,6 +38,7 @@ export function useBridgeMap(): {
       byId,
       nameOf: (bridgeId: string) => byId.get(bridgeId)?.name ?? bridgeId,
       directOf: (bridgeId: string) => byId.get(bridgeId)?.capabilities.includes('direct') ?? false,
+      subOf: (bridgeId?: string) => (bridgeId ? (byId.get(bridgeId)?.cardSubtitles ?? false) : false),
     };
   }, [bridges]);
 }

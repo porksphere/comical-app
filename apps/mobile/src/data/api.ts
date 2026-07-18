@@ -250,6 +250,7 @@ export async function getBridges(signal?: AbortSignal): Promise<Bridge[]> {
     name: b.info.name,
     nsfw: b.info.nsfw ?? false,
     capabilities: b.info.capabilities ?? [],
+    cardSubtitles: b.info.cardSubtitles ?? false,
     thumbnail: b.info.iconUrl,
   }));
 }
