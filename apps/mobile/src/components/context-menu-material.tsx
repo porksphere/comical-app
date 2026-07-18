@@ -10,7 +10,12 @@
  */
 import { BlurView } from 'expo-blur';
 import { Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
-import Animated, { useAnimatedScrollHandler, type AnimatedStyle, type SharedValue } from 'react-native-reanimated';
+import Animated, {
+  useAnimatedScrollHandler,
+  type AnimatedRef,
+  type AnimatedStyle,
+  type SharedValue,
+} from 'react-native-reanimated';
 
 import { CheckIcon, ChevronRightIcon, type IconProps } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
@@ -174,6 +179,7 @@ export function SubmenuSurface({
   hoverStyle,
   scrollY,
   chevronStyle,
+  scrollRef,
 }: {
   tint: 'light' | 'dark';
   spec: SubmenuSpec;
@@ -192,6 +198,9 @@ export function SubmenuSurface({
   /** Rotation for the header chevron — the host drives it from the open progress so the chevron starts
    *  in the parent row's RIGHT-pointing state and rotates 90° down as the submenu unfolds (and back). */
   chevronStyle: StyleProp<AnimatedStyle<ViewStyle>>;
+  /** Animated ref on the row list, so the host can auto-scroll it (via reanimated `scrollTo`) when a
+   *  hold-drag reaches the top/bottom edge of a scrollable list. */
+  scrollRef: AnimatedRef<Animated.ScrollView>;
 }) {
   const theme = useTheme();
   const scrolls = spec.rows.length * MENU_ROW_HEIGHT > listHeight;
@@ -224,6 +233,7 @@ export function SubmenuSurface({
       </Pressable>
       <View style={[menuStyles.submenuDivider, { backgroundColor: theme.backgroundSelected }]} />
       <Animated.ScrollView
+        ref={scrollRef}
         style={{ maxHeight: listHeight }}
         // Stretch/rubber-band at the ends — the same overscroll feel as any iOS list.
         bounces
