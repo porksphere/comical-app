@@ -1286,9 +1286,10 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       if (!holdActive.value || !holdArmed.value) return -1;
       const scale = minS.value + expand.value * (maxS.value - minS.value);
       const menuTop = topMin.value + expand.value * (topMax.value - topMin.value) + naturalH.value * scale + GAP;
-      // The submenu card's on-screen top = the menu's top + the anchor row's offset + the up-shift it
-      // took to stay on screen. Then past its own top padding + header row + divider to the first row.
-      const cardTop = menuTop + submenuAnchorTop + submenuShift.value;
+      // The submenu card's on-screen top = the menu's top + the anchor row's offset − MENU_PAD_V (the
+      // wrap is lifted so its header lands on the parent row, see the render) + the up-shift it took to
+      // stay on screen. Then past its own top padding + header row + divider to the first row.
+      const cardTop = menuTop + submenuAnchorTop - MENU_PAD_V + submenuShift.value;
       const rowsTop = cardTop + MENU_PAD_V + ROW_HEIGHT + SUBMENU_DIVIDER_H;
       // Only while the finger is inside the visible row VIEWPORT — otherwise a finger over the header (or
       // below the last visible row) would still resolve to a row once the scroll offset is added in.
@@ -1537,7 +1538,9 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
           {/* The expanded submenu card, anchored at the row that opened it (same transformed
               container as the menu, so it tracks the menu's position for free). */}
           {submenuGeom && openSubmenuSpec && (
-            <Animated.View style={[styles.submenuWrap, { width: menuW, top: submenuGeom.anchorTop }, submenuOuterStyle]}>
+            // Lifted by MENU_PAD_V so the surface's own top padding sits ABOVE the anchor row and its
+            // header row lands EXACTLY on the parent "Add to list" row (not a padding's width below it).
+            <Animated.View style={[styles.submenuWrap, { width: menuW, top: submenuGeom.anchorTop - MENU_PAD_V }, submenuOuterStyle]}>
               {/* The clip layer: its height animates to unfold the full-size surface out of the header. */}
               <Animated.View style={[styles.submenuClip, submenuClipStyle]}>
                 <SubmenuSurface
