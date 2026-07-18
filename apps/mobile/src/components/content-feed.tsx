@@ -24,9 +24,10 @@ const CELL_ROW_GAP = CELL_PAD_TOP + CELL_PAD_BOTTOM;
 // The two knobs for the vertical rhythm now that EVERY heading is a shared standalone `sectionHead`
 // row: SECTION_GAP separates one section from the previous (the head's top pad), HEADING_GAP is the gap
 // from a heading to its own body (the head's bottom pad). Tune here in one place.
-// Spacing.one = a quarter of the original Spacing.three rhythm — the rails read as one continuous
-// feed with just enough air for the headings to breathe (was Spacing.two, still too roomy).
-const SECTION_GAP = Spacing.one;
+// SECTION_GAP is deliberately far tighter than HEADING_GAP: rail-to-rail spacing accumulates in the
+// feed, so the rails read as one continuous surface. 1px — a "quarter" step below Spacing.half (2),
+// which main's #89 had already tightened it to; there is no Spacing token this small.
+const SECTION_GAP = 1;
 const HEADING_GAP = Spacing.two;
 const SECTION_HEAD_ROW_HEIGHT = SECTION_HEAD_HEIGHT + SECTION_GAP + HEADING_GAP;
 
