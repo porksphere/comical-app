@@ -784,12 +784,18 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // what reveals it, so nothing reflows per frame (only the clip's height changes).
   const submenuFullH = MENU_PAD_V * 2 + ROW_HEIGHT + SUBMENU_DIVIDER_H + (submenuGeom?.listH ?? 0);
   const submenuCollapsedH = MENU_PAD_V + ROW_HEIGHT; // top padding + the header row alone
+  // The wrap only TRAVELS (no opacity) — the fade lives on the content below, so the header label the
+  // wrap carries can render crisp from the first frame (the base row's copy is hidden meanwhile).
   const submenuOuterStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(submenuProgress.value, [0, 0.25, 1], [0, 1, 1]),
     transform: [{ translateY: submenuShift.value * submenuProgress.value }],
   }));
   const submenuClipStyle = useAnimatedStyle(() => ({
     height: interpolate(submenuProgress.value, [0, 1], [submenuCollapsedH, submenuFullH]),
+  }));
+  // The fade for the frosted background + rows (NOT the header label/icon — those hard-swap with the
+  // parent row, the series-card lifted-cover trick). Passed into SubmenuSurface.
+  const submenuContentStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(submenuProgress.value, [0, 0.35, 1], [0, 1, 1]),
   }));
   // The header chevron starts where the parent row's does (pointing RIGHT) and rotates 90° to point
   // DOWN as the submenu unfolds — and back on collapse. Reads as the same glyph turning, not swapping.
@@ -1570,7 +1576,15 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
           {/* The parent surface, pushed back (scaled + dimmed) while a submenu is expanded over it.
               Inert then too — the submenu is the only interactive layer until it collapses. */}
           <Animated.View pointerEvents={submenuOpen ? 'none' : 'auto'} style={parentMenuPushStyle}>
-            <MenuSurface tint={menuTint} rows={rows} channel={{ holdActive, hoveredRow }} hoverStyle={hoverStyle} />
+            {/* Hide the expanded row's own label/icon while its submenu is up — the submenu header shows
+                the SAME label crisply on top, so the base copy must vanish rather than ghost behind it. */}
+            <MenuSurface
+              tint={menuTint}
+              rows={rows}
+              channel={{ holdActive, hoveredRow }}
+              hoverStyle={hoverStyle}
+              {...(submenuOpen && submenuGeom ? { suppressLabelIndex: submenuGeom.row } : {})}
+            />
           </Animated.View>
           {/* Tap-catcher over the pushed-back parent while the submenu is up: a tap on the faded rows
               collapses the submenu (see tapCollapse) rather than falling through to the backdrop's
@@ -1599,6 +1613,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
                   scrollY={submenuScrollY}
                   chevronStyle={submenuChevronStyle}
                   scrollRef={submenuScrollRef}
+                  contentStyle={submenuContentStyle}
                 />
               </Animated.View>
             </Animated.View>
