@@ -26,8 +26,9 @@ const CELL_ROW_GAP = CELL_PAD_TOP + CELL_PAD_BOTTOM;
 // from a heading to its own body (the head's bottom pad). Tune here in one place.
 // SECTION_GAP is deliberately tighter than HEADING_GAP: rail-to-rail spacing accumulates in the
 // many-rail aggregate/Comical home, where a larger gap read as too airy — so sections sit closer
-// together while each heading keeps its full breathing room above its own cards.
-const SECTION_GAP = Spacing.half;
+// together while each heading keeps its full breathing room above its own cards. 1px — a quarter
+// of the base unit; even Spacing.half read as too much air, and no Spacing token goes this small.
+const SECTION_GAP = 1;
 const HEADING_GAP = Spacing.two;
 const SECTION_HEAD_ROW_HEIGHT = SECTION_HEAD_HEIGHT + SECTION_GAP + HEADING_GAP;
 
