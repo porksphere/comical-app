@@ -1,4 +1,4 @@
-import { type ComponentType, type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ComponentType, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View, type GestureResponderEvent, type ViewStyle } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -279,8 +279,13 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
   const trailingInset = Math.max(edgeInset, PILL_EDGE_GAP);
   // Rest positions along the drag: detents[0] = 0 (closed), detents[k] = far enough to reveal k pills;
   // detents[pillCount] is fully open. A plain number array, captured into the worklets by value.
-  const detents: number[] = [0];
-  for (let k = 1; k <= pillCount; k++) detents.push(trailingInset + k * (PILL_WIDTH + PILL_GAP));
+  // MEMOIZED so its reference is stable across the list's frequent re-renders — a fresh array every
+  // render changed every worklet's closure and forced Reanimated to re-serialize them each tick.
+  const detents = useMemo(() => {
+    const d = [0];
+    for (let k = 1; k <= pillCount; k++) d.push(trailingInset + k * (PILL_WIDTH + PILL_GAP));
+    return d;
+  }, [pillCount, trailingInset]);
   const openX = detents[pillCount];
 
   // ── Full-swipe commit (single-action rows only — see FULL_SWIPE_COMMIT) ──
@@ -294,9 +299,13 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
     if (armed) hapticImpactMedium();
     else tickHaptic();
   }
+  // Read `actions` through a ref so the memoized gesture (below) always fires the LIVE handler without
+  // rebuilding when `actions` gets a new identity on a download tick.
+  const actionsRef = useRef(actions);
+  actionsRef.current = actions;
   function commitFullSwipe() {
     close();
-    actions[0]?.onPress();
+    actionsRef.current[0]?.onPress();
   }
 
   // Deliberately NOT useCallback: a shared value listed in a hook's dependency array may not then be
@@ -360,10 +369,20 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled]);
 
-  // Disabling rides the HANDLERS (closure-captured `enabled`, re-diffed every render), not the
-  // recognizer's .enabled() config — RNGH doesn't reliably re-apply that to already-mounted
-  // recognizers, which left rows mounted during select mode with dead gestures after exiting.
-  const pan = Gesture.Pan()
+  // Disabling rides the HANDLERS (closure-captured `enabled`), not the recognizer's .enabled() config
+  // — RNGH doesn't reliably re-apply that to already-mounted recognizers, which left rows mounted
+  // during select mode with dead gestures after exiting. `enabled` is a memo dep, so the worklets are
+  // rebuilt (and re-capture it) whenever it flips.
+  //
+  // MEMOIZED: the gesture (and its three worklets) is rebuilt ONLY when something it depends on
+  // actually changes — open state, enable, or the detent layout — not on every render. The download
+  // list re-renders ~3×/s, and rebuilding every visible row's gesture each time made Reanimated
+  // re-serialize all their worklet closures to the UI thread — the single biggest cost in a CPU
+  // profile. Shared values (stable refs) and the runOnJS callbacks are captured but kept out of the
+  // dep array (the immutability rule forbids listing a mutated shared value; the callbacks only touch
+  // stable refs, and the one that needs live data — commitFullSwipe — reads `actions` via a ref).
+  const pan = useMemo(() => {
+    const g = Gesture.Pan()
     // Vertical movement fails the pan so list scrolling still wins.
     .failOffsetY([-12, 12])
     .onBegin(() => {
@@ -448,12 +467,15 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
       runOnJS(settle)(idx);
     });
 
-  // Directional activation, by open-state (RNGH builders mutate in place; a fresh `Gesture.Pan()`
-  // each render means no stale config carries over). CLOSED: reveal on a LEFT drag only, and FAIL a
-  // right drag so a swipe from the screen's left edge cedes to the OS edge-swipe-back instead of
-  // being swallowed by the row. OPEN: allow a right drag too, so you can swipe the row back closed.
-  if (open) pan.activeOffsetX([-12, 12]);
-  else pan.activeOffsetX(-12).failOffsetX(12);
+    // Directional activation, by open-state (RNGH builders mutate in place). CLOSED: reveal on a LEFT
+    // drag only, and FAIL a right drag so a swipe from the screen's left edge cedes to the OS
+    // edge-swipe-back instead of being swallowed by the row. OPEN: allow a right drag too, so you can
+    // swipe the row back closed. `open` is a memo dep, so this rebuilds when it flips.
+    if (open) g.activeOffsetX([-12, 12]);
+    else g.activeOffsetX(-12).failOffsetX(12);
+    return g;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, open, fullSwipeable, openX, detents, pillCount]);
 
   /**
    * What the row actually DRAWS at — a spring chasing `target`, never `target` itself. Because the
@@ -466,13 +488,17 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
   // once it's open at all it reads as lifted, not half-lifted at a one-pill rest.
   const liftProgress = useDerivedValue(() => Math.min(1, -tx.value / detents[1]));
 
+  // Hoist the two colours to local strings so the worklet closes over primitives, not the whole
+  // `theme` object (which Reanimated would otherwise deep-clone into the shareable — per row).
+  const bgClosed = theme.background;
+  const bgOpen = theme.backgroundElement;
   const rowStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: tx.value }],
     borderTopRightRadius: liftProgress.value * SLOT_RADIUS,
     borderBottomRightRadius: liftProgress.value * SLOT_RADIUS,
     // At rest the row is indistinguishable from the page; as it opens it lifts onto the elevated
     // surface, which is what makes the rounded slot legible.
-    backgroundColor: interpolateColor(liftProgress.value, [0, 1], [theme.background, theme.backgroundElement]),
+    backgroundColor: interpolateColor(liftProgress.value, [0, 1], [bgClosed, bgOpen]),
   }));
 
   // The lone action's slot stretches LEFTWARD as the row is dragged past open (its right edge is
