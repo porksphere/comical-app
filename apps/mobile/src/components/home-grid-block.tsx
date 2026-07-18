@@ -6,7 +6,7 @@ import { SectionHead } from '@/components/rail';
 import { SeriesCard } from '@/components/series-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Spacing, TopLevelGutter } from '@/constants/theme';
 import { fetchBrowseScope, queryKeys } from '@/data/queries';
 import { useDedupedPages } from '@/data/grid-pages';
 import { useDataSource, useMockActive } from '@/data/source';
@@ -132,7 +132,7 @@ const styles = StyleSheet.create({
     gap: Spacing.half,
   },
   row: {
-    paddingHorizontal: Spacing.four,
+    paddingHorizontal: TopLevelGutter,
   },
   // Same shape as the main list's `columnWrapperStyle` (`row` + this gap), so a non-terminal home
   // grid's rows lay out identically to the main grid.

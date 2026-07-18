@@ -27,7 +27,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { PullIndicator } from '@/components/pull-indicator';
 import { showToast } from '@/components/toast';
-import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
 import { pageOptions } from '@/data/api';
 import { toggleNsfwUntilRestart } from '@/data/nsfw';
 import { buildHomeRows } from '@/data/content-rows';
@@ -915,7 +915,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.three,
-    paddingHorizontal: Spacing.four,
+    // The shared card-surface gutter, so the bridge thumb/selectors keep lining up with the grid's
+    // left edge below.
+    paddingHorizontal: TopLevelGutter,
     // Cap + centre so the selectors align with the constrained grid; height is
     // set inline from the shared bar height.
     width: '100%',
@@ -969,13 +971,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.four,
     borderRadius: 999,
   },
-  // Cancels Spacing.four of the list's contentContainer side padding for header/footer blocks, whose
-  // own children already self-pad by Spacing.four — so they line up with the grid cells.
+  // Cancels the gutter of the list's contentContainer side padding for header/footer blocks, whose
+  // own children already self-pad by TopLevelGutter — so they line up with the grid cells.
   bleed: {
-    marginHorizontal: -Spacing.four,
+    marginHorizontal: -TopLevelGutter,
   },
   row: {
-    paddingHorizontal: Spacing.four,
+    paddingHorizontal: TopLevelGutter,
   },
   // NO `flex: 1` — pinned to `cardWidth` at the call site, so a short last row ends rather than
   // stretching its cards (which is what the old spacer views existed to prevent).

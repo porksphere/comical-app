@@ -7,7 +7,7 @@ import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanima
 import { estimatedCardHeight, SeriesCard, TitlePeek, type CardSize } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
-import { MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { useIsCompact, useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
@@ -41,7 +41,7 @@ const GRID_ITEMS = GRID_COLUMNS * GRID_ROWS;
 // Strip left/right inset — matches the reference's body padding (1.5rem = 24px
 // = Spacing.four) on every width, so a rail's first card lines up with the
 // section heading and the grid below it.
-const STRIP_PAD = Spacing.four;
+const STRIP_PAD = TopLevelGutter;
 
 /** Reference: carousel gap is 1rem desktop / 0.5rem mobile (`@media max-width:
  *  560px`). 768px matches this file's other mobile/desktop split. */
@@ -549,7 +549,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: Spacing.three,
-    paddingHorizontal: Spacing.four,
+    paddingHorizontal: TopLevelGutter,
   },
   headTitle: {
     flexShrink: 1,

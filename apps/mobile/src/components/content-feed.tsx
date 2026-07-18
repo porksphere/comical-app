@@ -11,7 +11,7 @@ import { Rail, RailSkeleton, SECTION_HEAD_HEIGHT, SectionHead, railRowHeight, ra
 import { RecyclerList } from '@/components/recycler-list';
 import { RetryBlock } from '@/components/retry-block';
 import { estimatedCardHeight, SeriesCard } from '@/components/series-card';
-import { BottomTabInset, Spacing, topLevelCenterInset } from '@/constants/theme';
+import { BottomTabInset, Spacing, TopLevelGutter, topLevelCenterInset } from '@/constants/theme';
 import { contentRowType, type ContentRow, type SeeAllTarget } from '@/data/content-rows';
 import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
 import { useIsLargeScreen } from '@/hooks/use-responsive';
@@ -104,11 +104,11 @@ export function ContentFeed({
 
   const cellHeight = estimatedCardHeight(cardWidth) + CELL_ROW_GAP;
 
-  // Centre content to MaxTopLevelWidth. Unlike SeriesGrid (whose `sidePad` = centering + Spacing.four,
-  // with grid cells sitting directly in it), every ContentFeed row self-pads Spacing.four (rails via
-  // STRIP_PAD, heads/blocks via their own paddingHorizontal, and the terminal `gridRow` via
-  // `styles.row`). So the container carries ONLY the centering inset, and each row's own Spacing.four
-  // lands its content at the same x as a results-grid cell.
+  // Centre content to MaxTopLevelWidth. Unlike SeriesGrid (whose `sidePad` = centering +
+  // TopLevelGutter, with grid cells sitting directly in it), every ContentFeed row self-pads
+  // TopLevelGutter (rails via STRIP_PAD, heads/blocks via their own paddingHorizontal, and the
+  // terminal `gridRow` via `styles.row`). So the container carries ONLY the centering inset, and
+  // each row's own gutter lands its content at the same x as a results-grid cell.
   const centerPad = topLevelCenterInset(width);
 
   // Row-type sizing. gridRow is EXACT (cellHeight), so the many uniform terminal rows never re-measure.
@@ -262,7 +262,7 @@ export function ContentFeed({
 
 const styles = StyleSheet.create({
   row: {
-    paddingHorizontal: Spacing.four,
+    paddingHorizontal: TopLevelGutter,
   },
   // Terminal grid row: full-width, cards laid out horizontally with the shared column gap. Matches
   // series-grid.tsx's columnWrapper gap + cell width so home terminal cards align with results cells.

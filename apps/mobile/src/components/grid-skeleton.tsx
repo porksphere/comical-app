@@ -8,7 +8,7 @@
 import { StyleSheet, View } from 'react-native';
 
 import { Skeleton } from '@/components/skeleton';
-import { Spacing } from '@/constants/theme';
+import { Spacing, TopLevelGutter } from '@/constants/theme';
 import { GRID_COLUMN_GAP } from '@/hooks/use-grid-layout';
 
 /** A single skeleton card (cover + two title lines) — one grid cell's worth. */
@@ -45,17 +45,19 @@ export function GridSkeleton({ numColumns, rows }: { numColumns: number; rows: n
 const styles = StyleSheet.create({
   gridCell: {
     flex: 1,
-    paddingTop: Spacing.one,
-    paddingBottom: Spacing.three - Spacing.one,
+    // Mirrors series-grid.tsx's CELL_PAD_TOP/BOTTOM (2px top, none below) so the skeleton reads at
+    // the same row rhythm as the cards that replace it.
+    paddingTop: Spacing.half,
+    paddingBottom: 0,
   },
   skelFooter: {
     // No top padding: the list's content gap already separates the footer from the last row.
     gap: Spacing.three,
     // Bleed the list's contentContainer horizontal padding back out — the rows self-pad via `row`.
-    marginHorizontal: -Spacing.four,
+    marginHorizontal: -TopLevelGutter,
   },
   row: {
-    paddingHorizontal: Spacing.four,
+    paddingHorizontal: TopLevelGutter,
   },
   // Same column gap as the real grid's columnWrapperStyle so skeleton columns sit at the same
   // x-offsets as the real cards that replace them.
