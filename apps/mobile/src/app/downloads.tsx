@@ -165,6 +165,7 @@ export default function DownloadsScreen() {
     rowHeight: SettingsRowHeight,
     scrollRef: listRef,
     scrollYRef,
+    selecting,
   });
   const allSelected = allKeys.length > 0 && ms.count === allKeys.length;
   const stagingRows = [
@@ -268,7 +269,9 @@ export default function DownloadsScreen() {
                     selected={ms.selected.has(item.key)}
                     itemKey={item.key}
                     edgeOffset={sidePad}
-                    gesture={selecting ? dragSelect.gestureFor(index) : undefined}
+                    // Always mounted (built disabled off select mode) so entering select mode flips
+                    // `enabled` rather than mounting a GestureDetector per visible row at once.
+                    gesture={dragSelect.gestureFor(index)}
                   />
                   <DownloadStatusIndicator
                     state={state}

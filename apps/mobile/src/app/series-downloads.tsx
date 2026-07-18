@@ -268,6 +268,7 @@ export default function SeriesDownloadsScreen() {
     rowHeight: SettingsRowHeight,
     scrollRef: listRef,
     scrollYRef,
+    selecting,
   });
 
   // The series-page Download intent (`select=1`): once the chapter list lands, STAGE the default
@@ -429,7 +430,9 @@ export default function SeriesDownloadsScreen() {
                   selected={ms.selected.has(item.key)}
                   itemKey={item.key}
                   edgeOffset={sidePad}
-                  gesture={selecting ? dragSelect.gestureFor(index) : undefined}
+                  // Always mounted (built disabled off select mode) so entering select mode flips
+                  // `enabled` rather than mounting a GestureDetector per visible row at once.
+                  gesture={dragSelect.gestureFor(index)}
                 />
                 {item.c && cState ? (
                   <DownloadStatusIndicator

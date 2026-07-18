@@ -225,6 +225,7 @@ export function useDragSelect({
   rowHeight,
   scrollRef,
   scrollYRef,
+  selecting,
 }: {
   keys: readonly string[];
   selected: ReadonlySet<string>;
@@ -233,6 +234,9 @@ export function useDragSelect({
   rowHeight: number;
   scrollRef: { current: { scrollToOffset(params: { offset: number; animated?: boolean }): void } | null };
   scrollYRef: { current: number };
+  /** Whether select mode is on. The gesture is built ENABLED only then, but its `GestureDetector`
+   *  stays mounted either way (see the cache note) so entering select mode doesn't mount one per row. */
+  selecting: boolean;
 }): { gestureFor: (index: number) => PanGesture } {
   const { height: winH } = useWindowDimensions();
   const drag = useRef<DragState | null>(null);
@@ -242,8 +246,18 @@ export function useDragSelect({
     live.current = { keys, selected, selectSet, rowHeight, winH };
   });
 
-  // Stable per-row gestures (a state-held Map, populated during render's own computation).
+  // Stable per-row gestures (a state-held Map, populated during render's own computation). Cached for
+  // identity stability across re-renders (a fresh instance mid-drag makes RNGH cancel the pan, and a
+  // download tick re-renders constantly). `enabled` must follow select mode, though, and `.enabled()`
+  // is fixed at build — so rebuild the cache ONCE when `selecting` flips (it never flips mid-drag).
+  // The GestureDetectors stay MOUNTED across the toggle (only their enabled changes) rather than
+  // mounting one per visible row the instant you enter select mode, which was a measured spike.
   const [gestureCache] = useState(() => new Map<number, PanGesture>());
+  const builtForSelecting = useRef(selecting);
+  if (builtForSelecting.current !== selecting) {
+    builtForSelecting.current = selecting;
+    gestureCache.clear();
+  }
 
   const stopTimer = (d: DragState) => {
     if (d.timer) clearInterval(d.timer);
@@ -323,6 +337,9 @@ export function useDragSelect({
     const cached = gestureCache.get(index);
     if (cached) return cached;
     const gesture = Gesture.Pan()
+      // Only recognizes while select mode is on. Disabled (but still mounted) otherwise, so the
+      // collapsed check rail can't steal a scroll and entering select mode mounts nothing new.
+      .enabled(selecting)
       // Vertical intent only — a horizontal wobble hands the touch back (there's nothing to swipe
       // in select mode, but scrolling must stay winnable elsewhere on the row).
       .activeOffsetY([-8, 8])
