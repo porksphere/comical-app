@@ -11,6 +11,7 @@ import {
   DiagnosticsIcon,
   DownloadsIcon,
   GeneralSettingsIcon,
+  NotificationsIcon,
   RegistriesIcon,
   StorageIcon,
   TrackersIcon,
@@ -76,6 +77,14 @@ export default function SettingsScreen() {
             title="General"
             description="Appearance, content, and where bridges run."
             onPress={() => router.push('/settings-general')}
+          />
+          <Divider />
+          <CategoryRow
+            testID="settings.category.notifications"
+            icon={<NotificationsIcon color={theme.textSecondary} size={22} />}
+            title="Notifications"
+            description="New-chapter checks, alerts, and badges."
+            onPress={() => router.push('/settings-notifications')}
           />
           <Divider />
           <CategoryRow
