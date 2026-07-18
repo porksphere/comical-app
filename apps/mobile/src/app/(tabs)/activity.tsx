@@ -1,16 +1,19 @@
 import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { openConfirm } from '@/components/confirm-popup';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { HistoryRow } from '@/components/history-row';
 import { RetryBlock } from '@/components/retry-block';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { showToast } from '@/components/toast';
 import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing, topLevelCenterInset } from '@/constants/theme';
+import { markActivitySeen } from '@/data/activity/seen';
 import { activityQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import type { ActivityEntry } from '@/data/types';
@@ -21,6 +24,9 @@ import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
 import { relTime } from '@/lib/rel-time';
+
+/** The feed flattened for the list: day-section headers interleaved with item rows. */
+type FeedRow = { kind: 'header'; label: string } | { kind: 'item'; item: ActivityEntry };
 
 export default function ActivityScreen() {
   const ds = useDataSource();
@@ -43,22 +49,65 @@ export default function ActivityScreen() {
   const [focusedOnce, setFocusedOnce] = useState(false);
   useFocusEffect(
     useCallback(() => {
+      // Looking at the tab resets the badge watermark — the pip counts "new since last looked".
+      markActivitySeen();
       if (focusedOnce) void refetch();
       else setFocusedOnce(true);
     }, [focusedOnce, refetch]),
   );
 
-  // "Check for updates": scan the library for new chapters, then refresh the feed
-  // (and its unread count, used by a future tab badge).
+  const invalidateFeed = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.activity(mock) });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.activityCountPrefix(mock) });
+  }, [queryClient, mock]);
+
+  // "Check for updates" (button + pull-to-refresh): re-scan every library entry, then refresh the
+  // feed. `force` bypasses the host's staleness window — this is the deliberate user action.
   const syncMutation = useMutation({
-    mutationFn: () => ds.checkForUpdates(),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.activity(mock) });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.activityCount(mock) });
+    mutationFn: () => ds.checkForUpdates({ force: true }),
+    onSuccess: (res) => {
+      invalidateFeed();
+      showToast(
+        res.newChapters > 0
+          ? `${res.newChapters} new chapter${res.newChapters === 1 ? '' : 's'} found`
+          : "You're up to date",
+      );
     },
+    onError: () => showToast('Update check failed'),
   });
 
+  const clearMutation = useMutation({
+    mutationFn: () => ds.clearActivity(),
+    onSuccess: invalidateFeed,
+  });
+
+  const confirmClear = () =>
+    openConfirm({
+      message: 'Clear all new-chapter entries from the feed?',
+      confirmLabel: 'Clear Feed',
+      pendingLabel: 'Clearing…',
+      onConfirm: async () => {
+        await clearMutation.mutateAsync();
+      },
+    });
+
   const visible = items && hideNsfw ? items.filter((a) => !byId.get(a.bridgeId)?.nsfw) : items;
+
+  // Day sections (Today / Yesterday / date), newest first — the feed is already sorted desc.
+  const rows = useMemo<FeedRow[]>(() => {
+    if (!visible) return [];
+    const out: FeedRow[] = [];
+    let currentLabel: string | undefined;
+    for (const item of visible) {
+      const label = dayLabel(item.detectedAt);
+      if (label !== currentLabel) {
+        currentLabel = label;
+        out.push({ kind: 'header', label });
+      }
+      out.push({ kind: 'item', item });
+    }
+    return out;
+  }, [visible]);
 
   const barHeight = useTopBarHeight();
   const headerHeight = insets.top + barHeight;
@@ -112,12 +161,27 @@ export default function ActivityScreen() {
     </Pressable>
   );
 
+  const clearButton =
+    visible && visible.length > 0 ? (
+      <Pressable
+        testID="activity.clear"
+        onPress={confirmClear}
+        disabled={clearMutation.isPending}
+        accessibilityRole="button"
+        style={({ pressed }) => [styles.syncBtn, pressed && styles.pressed]}>
+        <ThemedText type="small" themeColor="textSecondary" style={styles.clearLabel}>
+          Clear
+        </ThemedText>
+      </Pressable>
+    ) : null;
+
   const listHeader = (
     <View style={styles.controls}>
       <View style={styles.controlsRow}>
         <ThemedText type="small" themeColor="textSecondary" style={styles.controlsText}>
           New chapters across your library
         </ThemedText>
+        {clearButton}
         {syncButton}
       </View>
     </View>
@@ -129,7 +193,8 @@ export default function ActivityScreen() {
     if (!visible || visible.length === 0) {
       return (
         <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
-          No new chapters yet. Tap “Check for updates” to scan your library.
+          New chapters in your library appear here automatically.{' '}
+          {Platform.OS === 'web' ? 'Tap “Check for updates” to scan now.' : 'Pull down to check now.'}
         </ThemedText>
       );
     }
@@ -150,8 +215,10 @@ export default function ActivityScreen() {
           ref={listRef}
           // Full-width scroller so the scrollbar sits at the window edge; rows centered via sidePad.
           style={styles.list}
-          data={visible}
-          keyExtractor={(a) => `${a.bridgeId}:${a.seriesId}:${a.chapterId}`}
+          data={rows}
+          keyExtractor={(row) =>
+            row.kind === 'header' ? `h:${row.label}` : `${row.item.bridgeId}:${row.item.seriesId}:${row.item.chapterId}`
+          }
           recycleItems={false}
           ListHeaderComponent={listHeader}
           contentContainerStyle={{
@@ -163,19 +230,36 @@ export default function ActivityScreen() {
             paddingLeft: sidePad,
             paddingRight: sidePad,
           }}
-          ItemSeparatorComponent={() => <View style={[styles.sep, { backgroundColor: theme.hairline }]} />}
-          renderItem={({ item }) => (
-            <HistoryRow
-              thumbnailUrl={item.thumbnailUrl}
-              title={item.title}
-              sub={activitySub(item)}
-              dimmed={item.read}
-              onPress={() => openDetail(item)}
-              actions={[{ label: item.read ? 'Read again' : 'Read', onPress: () => read(item) }]}
-            />
-          )}
+          renderItem={({ item: row }) =>
+            row.kind === 'header' ? (
+              <ThemedText type="small" themeColor="textSecondary" style={styles.sectionLabel}>
+                {row.label}
+              </ThemedText>
+            ) : (
+              <HistoryRow
+                thumbnailUrl={row.item.thumbnailUrl}
+                title={row.item.title}
+                sub={activitySub(row.item)}
+                dimmed={row.item.read}
+                unread={!row.item.read}
+                onPress={() => openDetail(row.item)}
+                actions={[{ label: row.item.read ? 'Read again' : 'Read', onPress: () => read(row.item) }]}
+              />
+            )
+          }
           showsVerticalScrollIndicator={Platform.OS === 'web'}
           onScroll={onScroll}
+          // Pull-to-refresh = the same forced scan as the button. Native only — RN-web has no
+          // pull gesture; the button covers it there.
+          {...(Platform.OS !== 'web'
+            ? {
+                refreshing: syncMutation.isPending,
+                onRefresh: () => {
+                  if (!syncMutation.isPending) syncMutation.mutate();
+                },
+                progressViewOffset: headerHeight + BarContentGap,
+              }
+            : {})}
         />
       )}
 
@@ -188,6 +272,21 @@ export default function ActivityScreen() {
 function activitySub(a: ActivityEntry): string {
   const chapter = a.chapterName ?? (a.number !== undefined ? `Chapter ${a.number}` : 'New chapter');
   return `${chapter}  ·  ${relTime(a.detectedAt)}`;
+}
+
+/** Section label for a detection time: Today / Yesterday / a localized date. */
+function dayLabel(ts: number): string {
+  const day = new Date(ts);
+  const today = new Date();
+  const startOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const diffDays = Math.round((startOf(today) - startOf(day)) / 86_400_000);
+  if (diffDays <= 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  return day.toLocaleDateString(undefined, {
+    month: 'long',
+    day: 'numeric',
+    ...(day.getFullYear() !== today.getFullYear() ? { year: 'numeric' } : {}),
+  });
 }
 
 const styles = StyleSheet.create({
@@ -231,6 +330,12 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     minWidth: 0,
   },
+  sectionLabel: {
+    fontWeight: '600',
+    paddingHorizontal: Spacing.four,
+    paddingTop: Spacing.four,
+    paddingBottom: Spacing.one,
+  },
   syncBtn: {
     borderRadius: 999,
     overflow: 'hidden',
@@ -250,7 +355,9 @@ const styles = StyleSheet.create({
   syncLabel: {
     fontWeight: '600',
   },
-  sep: {
-    height: StyleSheet.hairlineWidth,
+  clearLabel: {
+    fontWeight: '600',
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.two,
   },
 });

@@ -32,6 +32,7 @@ export function HistoryRow({
   onMore,
   actions,
   dimmed,
+  unread,
   thumbRef,
   coverHidden,
   testID,
@@ -46,6 +47,8 @@ export function HistoryRow({
   actions: RowAction[];
   /** Render at reduced opacity (an already-read activity item). */
   dimmed?: boolean;
+  /** Accent dot before the title (an unread activity item). */
+  unread?: boolean;
   /** Ref on the thumbnail — the anchor for the long-press preview's lift (see SeriesCardMenu). */
   thumbRef?: RefObject<View | null>;
   /** Blank just the thumbnail while this row's long-press menu is open (its lifted preview is a copy). */
@@ -73,9 +76,12 @@ export function HistoryRow({
           )}
         </View>
         <View style={styles.body}>
-          <ThemedText type="smallBold" numberOfLines={2}>
-            {title}
-          </ThemedText>
+          <View style={styles.titleRow}>
+            {unread && <View style={[styles.unreadDot, { backgroundColor: theme.accent }]} />}
+            <ThemedText type="smallBold" numberOfLines={2} style={styles.titleText}>
+              {title}
+            </ThemedText>
+          </View>
           {sub ? (
             <ThemedText type="small" themeColor="textSecondary" numberOfLines={1} style={styles.sub}>
               {sub}
@@ -153,6 +159,21 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     gap: 2,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  titleText: {
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  unreadDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    flexShrink: 0,
   },
   sub: {
     // Slightly tighter than the title→sub default so the row stays compact.
