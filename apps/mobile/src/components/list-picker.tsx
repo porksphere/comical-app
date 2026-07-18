@@ -100,6 +100,11 @@ function HostPopup({ req }: { req: ListPickerRequest }) {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const newInputRef = useRef<TextInput>(null);
+  // Submitting the new-list name fires TWICE on Enter: `onSubmitEditing` runs first, its
+  // `setCreating(false)` unmounts the input, and the unmount blurs it — firing `onBlur` while the
+  // first submit's `createList` await is still in flight and `newName` is still the stale text. The
+  // second call then created the same list again. One-shot latch, reset when the row re-opens.
+  const submittingRef = useRef(false);
 
   const dismiss = () => {
     progress.set(
@@ -132,16 +137,22 @@ function HostPopup({ req }: { req: ListPickerRequest }) {
   };
 
   const submitNew = async () => {
+    if (submittingRef.current) return; // the onBlur echo of an Enter submit — see submittingRef
     const name = newName.trim();
     if (!name) {
       setCreating(false);
       return;
     }
-    const list = await createList(name);
-    // File the series into the freshly-created list right away.
-    setLists([...listIds, list.id]);
-    setNewName('');
-    setCreating(false);
+    submittingRef.current = true;
+    try {
+      const list = await createList(name);
+      // File the series into the freshly-created list right away.
+      setLists([...listIds, list.id]);
+      setNewName('');
+      setCreating(false);
+    } finally {
+      submittingRef.current = false;
+    }
   };
 
   const backdropBlurProps = useAnimatedProps(() => ({
