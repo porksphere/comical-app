@@ -35,6 +35,7 @@ import type {
   HistoryEntry,
   HomeGridSection,
   LibraryItem,
+  LibraryList,
   MetaCell,
   PageThumbSource,
   RailKind,
@@ -79,9 +80,25 @@ export interface DataSource {
   // resolves to `null` when no library store is mounted, so screens render a "needs a library"
   // state instead of an error — the on-device embedded runtime and older servers may lack one.
 
-  /** The library grid, or `null` when this server/runtime has no library store. */
-  getLibrary(opts: { q?: string; sort?: api.LibrarySort }, signal?: AbortSignal): Promise<LibraryItem[] | null>;
+  /** The library grid, or `null` when this server/runtime has no library store. `listId`/`unlisted`
+   *  filter by custom-list membership. */
+  getLibrary(
+    opts: { q?: string; sort?: api.LibrarySort; listId?: string; unlisted?: boolean },
+    signal?: AbortSignal,
+  ): Promise<LibraryItem[] | null>;
   isInLibrary(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<boolean>;
+
+  // ─── Custom lists ───────────────────────────────────────────────────────────
+  /** The user's custom lists (ascending order); `[]` when no library store is mounted. */
+  getLists(signal?: AbortSignal): Promise<LibraryList[]>;
+  createList(name: string, signal?: AbortSignal): Promise<LibraryList>;
+  renameList(id: string, name: string, signal?: AbortSignal): Promise<void>;
+  reorderLists(orderedIds: string[], signal?: AbortSignal): Promise<void>;
+  deleteList(id: string, signal?: AbortSignal): Promise<void>;
+  /** Replace a series' list memberships (the ids it belongs to). */
+  setEntryLists(bridgeId: string, seriesId: string, listIds: string[], signal?: AbortSignal): Promise<void>;
+  /** A series' current list memberships, or `null` when it isn't in the library. */
+  getEntryLists(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<string[] | null>;
   addToLibrary(bridgeId: string, seriesId: string, snap: api.LibrarySnapshot, signal?: AbortSignal): Promise<void>;
   removeFromLibrary(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void>;
   /** Record read progress for a *library* series (updates its resume cache). */
@@ -198,6 +215,7 @@ function toLibraryItem(e: api.ApiLibraryEntry): LibraryItem {
     ...(e.thumbnailUrl !== undefined && { thumbnailUrl: e.thumbnailUrl }),
     ...(e.author !== undefined && { author: e.author }),
     unread: e.unreadCount,
+    listIds: e.listIds ?? [],
   };
 }
 
@@ -345,6 +363,21 @@ const realDataSource: DataSource = {
     const entries = await api.getLibrary(opts, signal);
     return entries === null ? null : entries.map(toLibraryItem);
   },
+  getLists: (signal) => api.getLibraryLists(signal),
+  createList: (name, signal) => api.createLibraryList(name, signal),
+  async renameList(id, name, signal) {
+    await api.renameLibraryList(id, name, signal);
+  },
+  async reorderLists(orderedIds, signal) {
+    await api.reorderLibraryLists(orderedIds, signal);
+  },
+  async deleteList(id, signal) {
+    await api.deleteLibraryList(id, signal);
+  },
+  async setEntryLists(bridgeId, seriesId, listIds, signal) {
+    await api.setEntryLists(bridgeId, seriesId, listIds, signal);
+  },
+  getEntryLists: (bridgeId, seriesId, signal) => api.getEntryLists(bridgeId, seriesId, signal),
   isInLibrary: (bridgeId, seriesId, signal) => api.isInLibrary(bridgeId, seriesId, signal),
   async addToLibrary(bridgeId, seriesId, snap, signal) {
     await api.addLibraryEntry(bridgeId, seriesId, snap, signal);
@@ -617,6 +650,13 @@ const mockDataSource: DataSource = {
   removeFavorite: (bridgeId, seriesId) => mock.mockRemoveFavorite(seriesId),
 
   getLibrary: (opts) => mock.mockGetLibrary(opts),
+  getLists: () => mock.mockGetLists(),
+  createList: (name) => mock.mockCreateList(name),
+  renameList: (id, name) => mock.mockRenameList(id, name),
+  reorderLists: (orderedIds) => mock.mockReorderLists(orderedIds),
+  deleteList: (id) => mock.mockDeleteList(id),
+  setEntryLists: (bridgeId, seriesId, listIds) => mock.mockSetEntryLists(bridgeId, seriesId, listIds),
+  getEntryLists: (bridgeId, seriesId) => mock.mockGetEntryLists(bridgeId, seriesId),
   isInLibrary: (bridgeId, seriesId) => mock.mockIsInLibrary(bridgeId, seriesId),
   addToLibrary: (bridgeId, seriesId, snap) => mock.mockAddToLibrary(bridgeId, seriesId, snap),
   removeFromLibrary: (bridgeId, seriesId) => mock.mockRemoveFromLibrary(bridgeId, seriesId),
