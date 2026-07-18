@@ -180,6 +180,7 @@ export function SubmenuSurface({
   scrollY,
   chevronStyle,
   scrollRef,
+  contentStyle,
 }: {
   tint: 'light' | 'dark';
   spec: SubmenuSpec;
@@ -201,6 +202,9 @@ export function SubmenuSurface({
   /** Animated ref on the row list, so the host can auto-scroll it (via reanimated `scrollTo`) when a
    *  hold-drag reaches the top/bottom edge of a scrollable list. */
   scrollRef: AnimatedRef<Animated.ScrollView>;
+  /** Fade applied to the frosted BACKGROUND and the rows — but NOT the header label/icon, which stay
+   *  crisp so they read as the parent row's label carried over (see the header note). */
+  contentStyle: StyleProp<AnimatedStyle<ViewStyle>>;
 }) {
   const theme = useTheme();
   const scrolls = spec.rows.length * MENU_ROW_HEIGHT > listHeight;
@@ -208,14 +212,18 @@ export function SubmenuSurface({
     scrollY.value = e.contentOffset.y;
   });
   return (
-    <BlurView
-      tint={tint}
-      intensity={MENU_BLUR}
-      experimentalBlurMethod={ANDROID_BLUR}
-      style={[menuStyles.menu, { borderColor: theme.backgroundSelected }]}>
-      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: MENU_FILL[tint] }]} />
-      {/* Header = the row that expanded, restated; bold like a primary row, chevron now pointing
-          down. Tapping anywhere on it collapses back to the parent menu. */}
+    // Root is a plain (opaque-capable) container; the frost is a SEPARATE faded layer beneath, so the
+    // header label above it can stay crisp while the background fades in.
+    <View style={[menuStyles.menu, { borderColor: theme.backgroundSelected }]}>
+      {/* The frosted background — fades in with the reveal (see contentStyle). Blur + surface tint. */}
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, contentStyle]}>
+        <BlurView tint={tint} intensity={MENU_BLUR} experimentalBlurMethod={ANDROID_BLUR} style={StyleSheet.absoluteFill} />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: MENU_FILL[tint] }]} />
+      </Animated.View>
+      {/* Header = the parent row restated. Its LABEL + CHEVRON are NOT faded — they render crisp from
+          the first frame while the base row's copy is hidden (suppressLabel), so the label reads as ONE
+          element that stays put as the card grows around it (the series-card lifted-cover trick). The
+          chevron is the parent's RIGHT chevron rotated to point DOWN (chevronStyle). Tap to collapse. */}
       <Pressable
         testID={`${spec.testID}.collapse`}
         onPress={onCollapse}
@@ -225,34 +233,35 @@ export function SubmenuSurface({
         <ThemedText style={[menuStyles.rowLabel, menuStyles.rowLabelPrimary, { color: theme.text }]} numberOfLines={1}>
           {spec.label}
         </ThemedText>
-        {/* The parent row's RIGHT chevron, rotated to point DOWN as the submenu opens (see chevronStyle)
-            — so the glyph reads as the same one turning, not a different icon appearing. */}
         <Animated.View style={chevronStyle}>
           <ChevronRightIcon color={theme.text} size={19} />
         </Animated.View>
       </Pressable>
-      <View style={[menuStyles.submenuDivider, { backgroundColor: theme.backgroundSelected }]} />
-      <Animated.ScrollView
-        ref={scrollRef}
-        style={{ maxHeight: listHeight }}
-        // Stretch/rubber-band at the ends — the same overscroll feel as any iOS list.
-        bounces
-        alwaysBounceVertical={scrolls}
-        onScroll={onScroll}
-        scrollEventThrottle={16}
-        showsVerticalScrollIndicator={scrolls}
-        nestedScrollEnabled>
-        {/* The travelling selection bubble — the exact same object the main menu draws, INSIDE the
-            scroll content (so it scrolls with the rows) and under them (labels stay on top). */}
-        <Animated.View
-          pointerEvents="none"
-          style={[menuStyles.hoverBubble, { backgroundColor: theme.backgroundSelected }, hoverStyle]}
-        />
-        {spec.rows.map((row, i) => (
-          <SubmenuRow key={row.testID} {...row} index={i} channel={channel} />
-        ))}
-      </Animated.ScrollView>
-    </BlurView>
+      {/* Divider + rows — fade in with the background; the header above stays crisp. */}
+      <Animated.View style={contentStyle}>
+        <View style={[menuStyles.submenuDivider, { backgroundColor: theme.backgroundSelected }]} />
+        <Animated.ScrollView
+          ref={scrollRef}
+          style={{ maxHeight: listHeight }}
+          // Stretch/rubber-band at the ends — the same overscroll feel as any iOS list.
+          bounces
+          alwaysBounceVertical={scrolls}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          showsVerticalScrollIndicator={scrolls}
+          nestedScrollEnabled>
+          {/* The travelling selection bubble — the exact same object the main menu draws, INSIDE the
+              scroll content (so it scrolls with the rows) and under them (labels stay on top). */}
+          <Animated.View
+            pointerEvents="none"
+            style={[menuStyles.hoverBubble, { backgroundColor: theme.backgroundSelected }, hoverStyle]}
+          />
+          {spec.rows.map((row, i) => (
+            <SubmenuRow key={row.testID} {...row} index={i} channel={channel} />
+          ))}
+        </Animated.ScrollView>
+      </Animated.View>
+    </View>
   );
 }
 
@@ -276,10 +285,15 @@ export function MenuRow({
   onPress,
   testID,
   channel,
+  suppressLabel,
 }: MenuRowSpec & {
   /** This row's position — what the held finger is hit-tested into (see "Peek and commit"). */
   index: number;
   channel: MenuHoldChannel;
+  /** Hide just this row's label + icon (the row itself stays — its highlight still draws). Used while
+   *  this row's submenu is expanded: the expanded card's header shows the SAME label crisply on top, so
+   *  the base copy must vanish rather than ghost behind it (the series-card lifted-cover trick). */
+  suppressLabel?: boolean;
 }) {
   const theme = useTheme();
   const inert = loading || !!disabled;
@@ -304,10 +318,14 @@ export function MenuRow({
         if (!channel.holdActive.value) channel.hoveredRow.set(-1);
       }}
       style={menuStyles.row}>
-      <ThemedText style={[menuStyles.rowLabel, primary && menuStyles.rowLabelPrimary, { color }]} numberOfLines={1}>
+      <ThemedText
+        style={[menuStyles.rowLabel, primary && menuStyles.rowLabelPrimary, { color }, suppressLabel && menuStyles.hiddenLabel]}
+        numberOfLines={1}>
         {label}
       </ThemedText>
-      <Icon color={iconColor} size={19} filled={iconFilled} />
+      <View style={suppressLabel ? menuStyles.hiddenLabel : undefined}>
+        <Icon color={iconColor} size={19} filled={iconFilled} />
+      </View>
     </Pressable>
   );
 }
@@ -323,6 +341,7 @@ export function MenuSurface({
   channel,
   hoverStyle,
   title,
+  suppressLabelIndex,
 }: {
   tint: 'light' | 'dark';
   rows: MenuRowSpec[];
@@ -331,6 +350,8 @@ export function MenuSurface({
    *  offsets depend on the host's header/geometry. */
   hoverStyle: StyleProp<AnimatedStyle<ViewStyle>>;
   title?: string;
+  /** Row whose label + icon to hide (its expanded submenu shows the same label crisply on top). */
+  suppressLabelIndex?: number;
 }) {
   const theme = useTheme();
   return (
@@ -355,7 +376,7 @@ export function MenuSurface({
         </View>
       )}
       {rows.map((row, i) => (
-        <MenuRow key={i} {...row} index={i} channel={channel} />
+        <MenuRow key={i} {...row} index={i} channel={channel} suppressLabel={i === suppressLabelIndex} />
       ))}
     </BlurView>
   );
@@ -413,6 +434,11 @@ export const menuStyles = StyleSheet.create({
   rowLabel: {
     flex: 1,
     fontSize: 16,
+  },
+  // A row whose label/icon is hidden because its expanded submenu shows the same label crisply on top
+  // (the series-card trick). Kept in layout (so the row's height/highlight are unchanged) — just invisible.
+  hiddenLabel: {
+    opacity: 0,
   },
   // Primary leads and is bold — that is the ONLY way it's marked. No colour. See MenuRow.
   rowLabelPrimary: {
