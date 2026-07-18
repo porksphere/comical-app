@@ -1031,9 +1031,16 @@ export function getActivity(signal?: AbortSignal): Promise<ApiActivityItem[]> {
   return fetchJson('/library/activity', signal);
 }
 
-/** GET /library/activity/count → unread new-chapter count (for a tab badge). */
-export function getActivityCount(signal?: AbortSignal): Promise<{ unread: number }> {
-  return fetchJson('/library/activity/count', signal);
+/** GET /library/activity/count → unread new-chapter count for the tab/app badge. `since` limits
+ *  it to items detected after the local seen watermark (strictly after — boundary excluded). */
+export function getActivityCount(since?: number, signal?: AbortSignal): Promise<{ unread: number }> {
+  const qs = since !== undefined ? `?since=${since}` : '';
+  return fetchJson(`/library/activity/count${qs}`, signal);
+}
+
+/** DELETE /library/activity → empty the new-chapters feed (user "clear" action). */
+export function clearActivity(signal?: AbortSignal): Promise<void> {
+  return fetchOk('/library/activity', 'DELETE', signal);
 }
 
 /** GET /library/usage → the bytes the library occupies on the active host (store docs + captured
@@ -1042,9 +1049,23 @@ export function libraryUsage(signal?: AbortSignal): Promise<{ diskBytes: number 
   return fetchJsonOptional('/library/usage', signal);
 }
 
-/** POST /library/sync → scan the library for new chapters (the "Check for updates" action). */
-export function runBackgroundSync(signal?: AbortSignal): Promise<unknown> {
-  return fetchPost('/library/sync', {}, signal);
+/** Result of a library scan — the counters the UI/notifications care about. */
+export interface ApiSyncResult {
+  updated: number;
+  newChapters: number;
+  readSynced: number;
+  /** True when the time budget expired before every stale entry was synced. */
+  partial: boolean;
+}
+
+/** POST /library/sync → scan the library for new chapters. Bodyless/optionless calls let the
+ *  host's staleness window skip recently-synced entries; `force` re-checks everything (the
+ *  user-facing "Check for updates"); `budgetMs`/`trackers: false` keep background runs short. */
+export function runBackgroundSync(
+  opts: { force?: boolean; budgetMs?: number; trackers?: boolean } = {},
+  signal?: AbortSignal,
+): Promise<ApiSyncResult> {
+  return fetchPost('/library/sync', opts, signal) as Promise<ApiSyncResult>;
 }
 
 /** POST /bridges/{id}/update → update a registry-installed bridge to its latest version. */
