@@ -21,7 +21,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ANDROID_BLUR, MENU_BLUR, MENU_FILL } from '@/components/context-menu-material';
+import { ANDROID_BLUR } from '@/components/context-menu-material';
 import { ThemedText } from '@/components/themed-text';
 import { BottomTabInset, Spacing } from '@/constants/theme';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
@@ -29,7 +29,11 @@ import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 const OPEN_SPRING = { damping: 18, stiffness: 320, mass: 0.7 } as const;
 const DISMISS_MS = 140;
 const DEFAULT_DURATION_MS = 2600;
-const PILL_MAX_WIDTH = 420;
+const PILL_MAX_WIDTH = 360;
+/** Heavy blur + a barely-there tint: the pill reads as glass over the content (same treatment as
+ *  the select-mode pills' fill), not a solid chip — the blur does all the legibility work. */
+const TOAST_BLUR = 70;
+const TOAST_FILL = { light: 'rgba(255,255,255,0.18)', dark: 'rgba(28,30,34,0.22)' } as const;
 
 type ToastRequest = {
   /** Monotonic key: a new toast REPLACES the current pill (remount via `key`), restarting the
@@ -115,10 +119,10 @@ function HostToast({ req }: { req: ToastRequest }) {
       <Animated.View style={[styles.pillShadow, pillStyle]}>
         <BlurView
           tint={scheme}
-          intensity={MENU_BLUR}
+          intensity={TOAST_BLUR}
           experimentalBlurMethod={ANDROID_BLUR}
           style={[styles.pill, { borderColor: theme.backgroundSelected }]}>
-          <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: MENU_FILL[scheme] }]} />
+          <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: TOAST_FILL[scheme] }]} />
           <Pressable
             testID="toast.dismiss"
             onPress={dismiss}
@@ -149,11 +153,12 @@ const styles = StyleSheet.create({
   pillShadow: {
     maxWidth: PILL_MAX_WIDTH,
     borderRadius: 999,
+    // A soft lift only — a heavy shadow would read as a solid chip and fight the glass look.
     shadowColor: '#000000',
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 10,
+    shadowOpacity: 0.16,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
   },
   pill: {
     borderRadius: 999,
@@ -162,8 +167,8 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
   },
   pillPress: {
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.four,
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.three,
   },
   message: {
     textAlign: 'center',

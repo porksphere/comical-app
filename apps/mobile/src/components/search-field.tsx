@@ -1,5 +1,6 @@
+import { useNavigation } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { InteractionManager, Platform, Pressable, StyleSheet, TextInput, type TextStyle } from 'react-native';
+import { Platform, Pressable, StyleSheet, TextInput, type TextStyle } from 'react-native';
 
 import { ClearIcon, SearchIcon } from '@/components/icons/ui-icons';
 import { ThemedView } from '@/components/themed-view';
@@ -36,20 +37,44 @@ export function SearchField({
   testID: string;
 }) {
   const theme = useTheme();
+  const navigation = useNavigation();
   const inputRef = useRef<TextInput>(null);
   const [text, setText] = useState(value);
   const [focused, setFocused] = useState(false);
   // Keep the field in sync when the committed query is cleared elsewhere.
   useEffect(() => setText(value), [value]);
 
-  // Autofocus AFTER the screen's push/transition settles, not via the native `autoFocus` prop —
-  // focusing (and raising the keyboard) during the in-transition makes the animation stutter. On
-  // web there's no native transition, so it focuses on the next frame all the same.
+  // Autofocus AFTER the screen's push transition settles, not via the native `autoFocus` prop —
+  // focusing (and raising the keyboard) during the in-transition makes the animation stutter.
+  // This must key off the navigator's OWN `transitionEnd` event: the previous
+  // `InteractionManager.runAfterInteractions` defer resolved immediately on iOS (it only tracks
+  // JS-driven interactions, and the native-stack push runs natively), so the keyboard still raised
+  // mid-push and the transition visibly jittered. The timeout is the fallback for hosts that never
+  // emit `transitionEnd` (web, tab screens) — comfortably past a push so it can't fire mid-swing.
   useEffect(() => {
     if (!autoFocus) return;
-    const handle = InteractionManager.runAfterInteractions(() => inputRef.current?.focus());
-    return () => handle.cancel();
-  }, [autoFocus]);
+    let done = false;
+    const focus = () => {
+      if (done) return;
+      done = true;
+      inputRef.current?.focus();
+    };
+    if (Platform.OS === 'web') {
+      // No native transition on web — focus on the next frame.
+      const raf = requestAnimationFrame(focus);
+      return () => cancelAnimationFrame(raf);
+    }
+    const unsubscribe = (navigation.addListener as (type: string, cb: () => void) => () => void)(
+      'transitionEnd',
+      focus,
+    );
+    const fallback = setTimeout(focus, 800);
+    return () => {
+      done = true;
+      unsubscribe();
+      clearTimeout(fallback);
+    };
+  }, [autoFocus, navigation]);
 
   // On mobile web the soft keyboard can be dismissed without the input firing a
   // blur (e.g. Android's "hide keyboard" button keeps DOM focus). Previously this
