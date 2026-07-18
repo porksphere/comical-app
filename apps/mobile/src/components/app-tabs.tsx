@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BarBlur } from '@/components/bar-blur';
+import { ActivityTabBadge } from '@/components/tab-badge';
 import { DesktopTopBarHeight, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
@@ -295,7 +296,10 @@ function TabButton({
         onHoverIn={onInteract}
         accessibilityLabel={typeof children === 'string' ? children : undefined}
         style={styles.bottomButton}>
-        <Icon size={22} color={color} strokeWidth={2} />
+        <View style={styles.iconWrap}>
+          <Icon size={22} color={color} strokeWidth={2} />
+          {routeName === 'activity' && <ActivityTabBadge />}
+        </View>
       </Pressable>
     );
   }
@@ -315,7 +319,10 @@ function TabButton({
         hovered && { backgroundColor: theme.backgroundSelected },
         pressed && styles.pressed,
       ]}>
-      <Icon size={22} color={color} strokeWidth={2.25} />
+      <View style={styles.iconWrap}>
+        <Icon size={22} color={color} strokeWidth={2.25} />
+        {routeName === 'activity' && <ActivityTabBadge />}
+      </View>
     </Pressable>
   );
 }
@@ -369,5 +376,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: Spacing.two,
+  },
+  // Positioning context for the badge pip overlaid on a tab icon.
+  iconWrap: {
+    position: 'relative',
   },
 });

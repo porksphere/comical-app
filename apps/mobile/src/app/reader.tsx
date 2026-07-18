@@ -250,8 +250,14 @@ export default function ReaderScreen() {
     // Invalidate the shared history list on a successful write so the series
     // screen's resume label (and the History tab) don't keep showing the
     // pre-read position after navigating back — `historyQuery` has a 5-min
-    // staleTime, so without this it silently reads stale from cache.
-    const invalidateHistory = () => queryClient.invalidateQueries({ queryKey: queryKeys.history(mock) });
+    // staleTime, so without this it silently reads stale from cache. The
+    // activity feed/badge derive `read` from the same progress, so refresh
+    // them too — reading a new chapter should drop it from the pip at once.
+    const invalidateHistory = () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.history(mock) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.activity(mock) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.activityCountPrefix(mock) });
+    };
     if (chapterId && inLibrary) {
       void ds
         .recordChapterProgress(bridgeId, seed, chapterId, {
