@@ -157,10 +157,11 @@ export const MaxTopLevelWidth = 1200;
 /**
  * The screen-edge gutter for the top-level CARD surfaces — the Browse feed (rails, headings, grid
  * rows), the results grids, Library, Search. Every one of these must pad by the SAME value or their
- * content edges visibly disagree on one screen, so it lives here. Half the old `Spacing.four` (24):
- * cards reach closer to the screen edge, which reads better on phones. No Spacing token is 12.
+ * content edges visibly disagree on one screen, so it lives here. Between the original Spacing.four
+ * (24, too roomy) and the briefly-tried 12 (too flush): cards reach close to the screen edge while
+ * keeping a real margin.
  */
-export const TopLevelGutter = 12;
+export const TopLevelGutter = Spacing.three;
 /**
  * How far a top-level view is inset on EACH side to centre it within `MaxTopLevelWidth` — WEB ONLY. On
  * native (iOS/Android) a phone or tablet fills its own screen; there's no desktop margin to reclaim, so
