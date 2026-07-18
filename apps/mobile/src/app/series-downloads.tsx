@@ -183,6 +183,29 @@ export default function SeriesDownloadsScreen() {
   // second — which made the select-mode animation stutter during an active download. A state-held
   // Map (stable instance, populated during the memo's own computation) rather than a ref, which
   // must not be read during render.
+  // The sort ORDER depends only on completeness + chapter number + addedAt (see chapterSortValue),
+  // never on download PROGRESS — so it can't change on a progress tick, only when a chapter completes
+  // or the set changes. So recompute the order on a cheap completeness signature instead of re-sorting
+  // the whole (large) manifest on every ~3/second progress patch, and decorate-sort-undecorate so
+  // chapterSortValue (which allocates a tuple) runs once per chapter, not twice per comparison.
+  const orderSig = manifest.map((c) => `${c.chapterId}:${c.state === 'complete' ? 1 : 0}`).join('|');
+  const orderedIds = useMemo(
+    () =>
+      manifest
+        .map((c) => ({ id: c.chapterId, sv: chapterSortValue(c) }))
+        .sort((a, b) => bySortValue(a.sv, b.sv))
+        .map((x) => x.id),
+    // Keyed on the completeness signature, NOT `manifest` — a progress tick makes a new manifest but
+    // the same order, so this correctly skips the re-sort. (manifest read is intentional here.)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [orderSig],
+  );
+  const manifestById = useMemo(() => {
+    const m = new Map<string, (typeof manifest)[number]>();
+    for (const c of manifest) m.set(c.chapterId, c);
+    return m;
+  }, [manifest]);
+
   const [rowCache] = useState(() => new Map<string, RosterRow>());
   const rows: RosterRow[] = useMemo(() => {
     const reuse = (next: RosterRow): RosterRow => {
@@ -206,9 +229,12 @@ export default function SeriesDownloadsScreen() {
         });
       });
     }
-    return [...manifest]
-      .sort((a, b) => bySortValue(chapterSortValue(a), chapterSortValue(b)))
-      .map((c) =>
+    // Map the (rarely-recomputed) order onto the LIVE chapter objects, so progress still updates each
+    // row's description while the order itself holds steady.
+    return orderedIds.flatMap((id) => {
+      const c = manifestById.get(id);
+      if (!c) return [];
+      return [
         reuse({
           key: c.chapterId,
           name: c.chapterName ?? (c.number !== undefined ? `Chapter ${c.number}` : c.chapterId),
@@ -216,8 +242,9 @@ export default function SeriesDownloadsScreen() {
           c,
           unread: false,
         }),
-      );
-  }, [sel, manifest, rowCache]);
+      ];
+    });
+  }, [sel, manifest, orderedIds, manifestById, rowCache]);
 
   const allKeys = useMemo(() => rows.map((r) => r.key), [rows]);
   const unreadKeys = useMemo(() => rows.filter((r) => r.unread && !r.c).map((r) => r.key), [rows]);
