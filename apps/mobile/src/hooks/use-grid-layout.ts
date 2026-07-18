@@ -15,10 +15,10 @@ import { useWindowDimensions } from 'react-native';
 import { Spacing, TopLevelGutter, topLevelCenterInset } from '@/constants/theme';
 import { useHydrated } from '@/hooks/use-responsive';
 
-// Inter-card column gap, shared so every card grid keeps the same one. Spacing.three (16px) —
-// wider than the reference's tight 8px mobile gap; cards narrow slightly to pay for it (the
-// cardWidth derivation below subtracts the gaps from the content width).
-export const GRID_COLUMN_GAP = Spacing.three;
+// The reference's mobile grid uses a tighter inter-card gap than its row gap; Spacing.two (8px) is
+// the closest token. Shared so every card grid keeps the same column gap. (Spacing.three was tried
+// and reverted — the wider gap cost card width without reading better.)
+export const GRID_COLUMN_GAP = Spacing.two;
 
 export type GridLayout = {
   numColumns: number;
