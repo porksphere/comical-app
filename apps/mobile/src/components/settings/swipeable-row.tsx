@@ -14,7 +14,7 @@ import { SettingsRow } from '@/components/settings/settings-row';
 import { SettingsGutter, Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
-import { hapticImpactLight } from '@/lib/haptics';
+import { hapticImpactLight, hapticImpactMedium } from '@/lib/haptics';
 import { claimOpenRow, releaseOpenRow } from '@/lib/swipe-row-registry';
 import { testId } from '@/lib/test-id';
 
@@ -23,11 +23,15 @@ import { testId } from '@/lib/test-id';
  *  slot rather than stretched to it, so a taller row still gets circles. */
 const PILL_WIDTH = 52;
 const PILL_GAP = Spacing.two;
-/** Minimum gap between the last circle and the container's right edge — the same 6px of air the
- *  circles get vertically in a settings row ((64 − 52) / 2), so a row whose `edgeInset` is 0 (the
- *  History list) doesn't press its circles flush against the screen. Screens with a real gutter
- *  (`edgeInset` ≥ this) already clear it and are unaffected. */
-const PILL_EDGE_GAP = 6;
+/** The glyph inside each circle. Also anchors the full-swipe pill's icon: pinned where the resting
+ *  circle's centre was — `(PILL_WIDTH − PILL_ICON) / 2` from the right — so the stretch grows away
+ *  from a stationary glyph. */
+const PILL_ICON = 20;
+/** Minimum gap between the last circle and the container's right edge — standardized to the SAME
+ *  spacing token as the gap between circles (`PILL_GAP`), so the rail reads evenly: circle · gap ·
+ *  circle · gap · edge, and it scales with the spacing system. This is the floor for rows whose
+ *  `edgeInset` is 0 (the History list); screens with a real gutter already clear it. */
+const PILL_EDGE_GAP = Spacing.two;
 /** Corner radius the row's trailing edge grows to as it opens into a slot. */
 const SLOT_RADIUS = 14;
 /** How many action bubbles fit a row before they'd run past the screen / crowd the content. Beyond
@@ -44,6 +48,12 @@ const SPRING = { damping: 22, stiffness: 200, mass: 0.7 } as const;
  *  drag feels sticky/notched: the row barely moves within a detent, then gives way at the midpoint
  *  (the centre-ish of a button) where it snaps to the next pill and a haptic ticks. */
 const DETENT_RESIST = 0.35;
+
+/** Fraction of the row's width a SINGLE-ACTION swipe must cross to ARM the full-swipe commit: past
+ *  the open detent the lone circle stretches into a pill under the finger, a medium haptic marks
+ *  the arm, and releasing while armed fires the action — the iOS Mail swipe-through. Multi-action
+ *  rows never do this (which action would it mean?). */
+const FULL_SWIPE_COMMIT = 0.6;
 
 /** Minimum gap between detent haptics. A very fast swipe crosses several midpoints within a few
  *  milliseconds; fired back-to-back the Taptic engine coalesces them into one mushy buzz. We SPACE
@@ -275,6 +285,22 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
   for (let k = 1; k <= pillCount; k++) detents.push(trailingInset + k * (PILL_WIDTH + PILL_GAP));
   const openX = detents[pillCount];
 
+  // ── Full-swipe commit (single-action rows only — see FULL_SWIPE_COMMIT) ──
+  const fullSwipeable = actions.length === 1;
+  // The row's measured width — the commit threshold is a fraction of it (and the overdrag's clamp).
+  const rowW = useSharedValue(0);
+  const fullSwipeArmed = useSharedValue(false);
+  // Arm/disarm feedback: a medium thump going over the line (this release WILL fire), the ordinary
+  // detent tick dropping back under it.
+  function armFeedback(armed: boolean) {
+    if (armed) hapticImpactMedium();
+    else tickHaptic();
+  }
+  function commitFullSwipe() {
+    close();
+    actions[0]?.onPress();
+  }
+
   // Deliberately NOT useCallback: a shared value listed in a hook's dependency array may not then be
   // mutated (react-hooks/immutability, which the React Compiler enforces here). These are cheap
   // closures, and the compiler memoizes what's worth memoizing.
@@ -350,13 +376,16 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
       // shrank (a stale rest index would point past the shorter detents array).
       captured.value = Math.min(restIndex.value, detents.length - 1);
       startRest.value = captured.value;
+      fullSwipeArmed.value = false;
     })
     .onUpdate((e) => {
       'worklet';
       if (!enabled) return;
       const from = -detents[Math.min(restIndex.value, detents.length - 1)];
-      // The finger's raw absolute position (before resistance), clamped to the openable range.
-      const absRaw = -Math.min(0, Math.max(-openX, from + e.translationX));
+      // The finger's raw absolute position (before resistance). A single-action row may be dragged
+      // PAST the open detent, clear across the row (the full-swipe commit); others stop at open.
+      const maxDrag = fullSwipeable ? Math.max(openX, rowW.value) : openX;
+      const absRaw = -Math.min(0, Math.max(-maxDrag, from + e.translationX));
       // Flip the captured detent as the finger crosses the MIDPOINT between detents — the centre-ish
       // of a button, where the resistance gives way. Tick a haptic on each flip (either direction).
       let cap = captured.value;
@@ -369,12 +398,35 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
       }
       // Resisted position: sit at the captured detent, following only a FRACTION of the finger's
       // excursion beyond it — so a drag within a detent is sticky, then releases past the midpoint.
-      const resisted = detents[cap] + DETENT_RESIST * (absRaw - detents[cap]);
-      target.value = -Math.min(openX, Math.max(0, resisted));
+      // PAST the open detent a single-action row follows the finger 1:1 instead: the circle is
+      // stretching toward the commit, and resistance there would read as the row fighting the very
+      // gesture it's inviting. (Continuous at the boundary — both forms equal openX there.)
+      let next = detents[cap] + DETENT_RESIST * (absRaw - detents[cap]);
+      if (fullSwipeable && absRaw > openX) next = absRaw;
+      target.value = -Math.min(maxDrag, Math.max(0, next));
+      // Arm/disarm the full-swipe commit as the finger crosses the threshold, with feedback both
+      // ways — the medium thump is the "release now and it fires" signal.
+      if (fullSwipeable) {
+        const armed = rowW.value > 0 && absRaw >= rowW.value * FULL_SWIPE_COMMIT;
+        if (armed !== fullSwipeArmed.value) {
+          fullSwipeArmed.value = armed;
+          runOnJS(armFeedback)(armed);
+        }
+      }
     })
     .onEnd((e) => {
       'worklet';
       if (!enabled) return;
+      // Full swipe released while ARMED: the row springs home and the lone action fires — the same
+      // path as tapping its pill, minus the tap.
+      if (fullSwipeable && fullSwipeArmed.value) {
+        fullSwipeArmed.value = false;
+        target.value = 0;
+        restIndex.value = 0;
+        captured.value = 0;
+        runOnJS(commitFullSwipe)();
+        return;
+      }
       // ALL-OR-NOTHING rest: the drag itself keeps its per-pill detents (the sticky resistance and
       // the tick as each pill clears), but the row never RESTS partially open — and the release
       // rule is DIRECTION-AWARE, one action's travel committing the whole move either way:
@@ -425,12 +477,25 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
     backgroundColor: interpolateColor(liftProgress.value, [0, 1], [theme.background, theme.backgroundElement]),
   }));
 
+  // The lone action's slot stretches LEFTWARD as the row is dragged past open (its right edge is
+  // pinned by the slot's `right`): the circle grows into a pill whose width chases the row's live
+  // (spring-lagged) position — the fill visibly pursues the finger toward the commit.
+  const pillStretchStyle = useAnimatedStyle(() => ({
+    width: PILL_WIDTH + Math.max(0, -tx.value - openX),
+  }));
+
   return (
-    <View style={[styles.swipeContainer, { marginHorizontal: -edgeInset }]}>
+    <View
+      style={[styles.swipeContainer, { marginHorizontal: -edgeInset }]}
+      onLayout={fullSwipeable ? (e) => rowW.set(e.nativeEvent.layout.width) : undefined}>
       {/* Solid pills, uncovered by the sliding row (no fade) — that's what makes a one-pill rest read
           as fully revealed. Actions lay out left→right, so the last sits at the edge. */}
-      <View
-        style={[styles.pillSlot, { right: trailingInset, width: pillCount * PILL_WIDTH + (pillCount - 1) * PILL_GAP }]}
+      <Animated.View
+        style={[
+          styles.pillSlot,
+          { right: trailingInset },
+          fullSwipeable ? pillStretchStyle : { width: pillCount * PILL_WIDTH + (pillCount - 1) * PILL_GAP },
+        ]}
         pointerEvents="box-none">
         {actions.map((a) => {
           const Icon = a.icon;
@@ -443,14 +508,14 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
                 close();
                 a.onPress();
               }}
-              style={[styles.pill, { backgroundColor: a.destructive ? theme.danger : theme.accent }]}
+              style={[styles.pill, fullSwipeable && styles.pillFull, { backgroundColor: a.destructive ? theme.danger : theme.accent }]}
               accessibilityRole="button"
               accessibilityLabel={`${a.label} ${name}`}>
-              <Icon color={theme.accentOn} size={20} />
+              <Icon color={theme.accentOn} size={PILL_ICON} />
             </Pressable>
           );
         })}
-      </View>
+      </Animated.View>
 
       <GestureDetector gesture={pan}>
         {/* `overflow: hidden` so the content's press highlight is CLIPPED to the rounded slot as it
@@ -548,6 +613,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     cursor: 'pointer',
+  },
+  // The full-swipe pill (single-action rows): fills the stretching slot, with the icon pinned at
+  // the resting circle's centre so the stretch grows leftward away from a stationary glyph.
+  pillFull: {
+    width: '100%',
+    alignItems: 'flex-end',
+    paddingRight: (PILL_WIDTH - PILL_ICON) / 2,
   },
   webRow: {
     flexDirection: 'row',
