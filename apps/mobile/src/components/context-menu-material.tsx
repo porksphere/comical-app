@@ -9,8 +9,8 @@
  * material (see the long note in the card popup about the scrim it rests on).
  */
 import { BlurView } from 'expo-blur';
-import { Platform, Pressable, ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
-import Animated, { type AnimatedStyle, type SharedValue } from 'react-native-reanimated';
+import { Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import Animated, { useAnimatedScrollHandler, type AnimatedStyle, type SharedValue } from 'react-native-reanimated';
 
 import { CheckIcon, ChevronDownIcon, type IconProps } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
@@ -172,6 +172,7 @@ export function SubmenuSurface({
   onCollapse,
   channel,
   hoverStyle,
+  scrollY,
 }: {
   tint: 'light' | 'dark';
   spec: SubmenuSpec;
@@ -181,12 +182,18 @@ export function SubmenuSurface({
   /** The SAME hold channel the parent menu uses, so a hold-drag flows from the parent rows straight
    *  into these (see the card popup). Rows write it on press too. */
   channel: MenuHoldChannel;
-  /** Animated style for the ONE travelling selection bubble — host-computed, offset past the header
-   *  + divider (see SUBMENU_DIVIDER_H) so row 0 lands on the first ROW, not the header. */
+  /** Animated style for the ONE travelling selection bubble — host-computed, row-relative (the bubble
+   *  lives INSIDE the scroll content, so it tracks the rows through a scroll for free). */
   hoverStyle: StyleProp<AnimatedStyle<ViewStyle>>;
+  /** The host reads the list's scroll offset back (to hit-test the held finger into a SCROLLED row) —
+   *  written here from the scroll handler. */
+  scrollY: SharedValue<number>;
 }) {
   const theme = useTheme();
   const scrolls = spec.rows.length * MENU_ROW_HEIGHT > listHeight;
+  const onScroll = useAnimatedScrollHandler((e) => {
+    scrollY.value = e.contentOffset.y;
+  });
   return (
     <BlurView
       tint={tint}
@@ -194,12 +201,6 @@ export function SubmenuSurface({
       experimentalBlurMethod={ANDROID_BLUR}
       style={[menuStyles.menu, { borderColor: theme.backgroundSelected }]}>
       <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: MENU_FILL[tint] }]} />
-      {/* The travelling selection bubble — the exact same object the main menu draws, under the rows
-          so their labels stay on top of it. */}
-      <Animated.View
-        pointerEvents="none"
-        style={[menuStyles.hoverBubble, { backgroundColor: theme.backgroundSelected }, hoverStyle]}
-      />
       {/* Header = the row that expanded, restated; bold like a primary row, chevron now pointing
           down. Tapping anywhere on it collapses back to the parent menu. */}
       <Pressable
@@ -214,15 +215,25 @@ export function SubmenuSurface({
         <ChevronDownIcon color={theme.text} size={19} />
       </Pressable>
       <View style={[menuStyles.submenuDivider, { backgroundColor: theme.backgroundSelected }]} />
-      <ScrollView
+      <Animated.ScrollView
         style={{ maxHeight: listHeight }}
-        bounces={false}
+        // Stretch/rubber-band at the ends — the same overscroll feel as any iOS list.
+        bounces
+        alwaysBounceVertical={scrolls}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
         showsVerticalScrollIndicator={scrolls}
         nestedScrollEnabled>
+        {/* The travelling selection bubble — the exact same object the main menu draws, INSIDE the
+            scroll content (so it scrolls with the rows) and under them (labels stay on top). */}
+        <Animated.View
+          pointerEvents="none"
+          style={[menuStyles.hoverBubble, { backgroundColor: theme.backgroundSelected }, hoverStyle]}
+        />
         {spec.rows.map((row, i) => (
           <SubmenuRow key={row.testID} {...row} index={i} channel={channel} />
         ))}
-      </ScrollView>
+      </Animated.ScrollView>
     </BlurView>
   );
 }

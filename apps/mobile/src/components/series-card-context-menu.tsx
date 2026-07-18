@@ -681,8 +681,9 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
 
   // ── In-place submenu (the iOS Files "Open With ›" expansion) ───────────────
   // A row with a `submenu` builder expands INTO a new menu card anchored exactly at that row, while
-  // the parent stack (menu + preview) is pushed back — dimmed and slightly scaled — behind it. The
-  // header of the expanded card is the row restated with a down chevron; tapping it collapses back.
+  // the parent stack (menu + preview) is pushed back — dimmed — behind it. The card unfolds out of its
+  // own header (see submenuOuterStyle/submenuClipStyle); the header is the row restated with a down
+  // chevron; tapping it collapses back.
   //
   // Geometry is arithmetic, not measurement: a row's top inside the menu is MENU_PAD_V + i*ROW,
   // and the menu's own screen position is derived from the same shared values `menuStyle` uses —
@@ -693,6 +694,9 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const submenuOpen = submenuGeom !== null;
   const submenuProgress = useSharedValue(0);
   const submenuShift = useSharedValue(0);
+  // The expanded list's scroll offset, reported back from the surface — the hold hit-test needs it to
+  // map the finger into a SCROLLED row (arithmetic, same as the parent menu, now scroll-aware).
+  const submenuScrollY = useSharedValue(0);
 
   const openSubmenu = (rowIndex: number, spec: SubmenuSpec) => {
     const rowsH = spec.rows.length * ROW_HEIGHT;
@@ -710,9 +714,12 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     let shift = Math.min(0, menuBottomLimit - rowScreenTop - (chromeH + listH));
     if (rowScreenTop + shift < topLimit) {
       shift = topLimit - rowScreenTop;
-      listH = Math.max(ROW_HEIGHT, menuBottomLimit - (rowScreenTop + shift) - chromeH);
+      // Clamp to the rows' own height too: never reserve MORE than the rows need (that would leave the
+      // reveal's clipped height taller than the surface, showing an empty gap below the last row).
+      listH = Math.max(ROW_HEIGHT, Math.min(rowsH, menuBottomLimit - (rowScreenTop + shift) - chromeH));
     }
     submenuShift.set(shift);
+    submenuScrollY.set(0); // fresh list, top of the scroll
     // Clear the selection carried over from the parent row so the submenu's own bubble doesn't flash
     // on a stale index for a frame before its hit-test (or a press) lands on a real child row.
     hoveredRow.set(-1);
@@ -744,12 +751,22 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const parentDimStyle = useAnimatedStyle(() => ({
     opacity: 1 - 0.12 * submenuProgress.value,
   }));
-  const submenuStyle = useAnimatedStyle(() => ({
-    opacity: submenuProgress.value,
-    transform: [
-      { translateY: submenuShift.value * submenuProgress.value },
-      { scale: 0.92 + 0.08 * submenuProgress.value },
-    ],
+  // The submenu opens by UNFOLDING OUT OF ITS OWN HEADER — the card popover's trick (a separate
+  // clipping layer fakes the morph). Two layers, both driven by `submenuProgress`:
+  //   • OUTER travels: it starts at the anchor (header sitting directly over the parent row) and rides
+  //     up to its final slot (`submenuShift`, which is 0 when there's already room below).
+  //   • INNER clips: its height grows from just-the-header to the full card, so the rows unfurl
+  //     downward while the whole thing rises — the header text pinned at the top the entire way.
+  // The surface inside is always full-size; the inner layer's animated height + overflow-hidden is
+  // what reveals it, so nothing reflows per frame (only the clip's height changes).
+  const submenuFullH = MENU_PAD_V * 2 + ROW_HEIGHT + SUBMENU_DIVIDER_H + (submenuGeom?.listH ?? 0);
+  const submenuCollapsedH = MENU_PAD_V + ROW_HEIGHT; // top padding + the header row alone
+  const submenuOuterStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(submenuProgress.value, [0, 0.25, 1], [0, 1, 1]),
+    transform: [{ translateY: submenuShift.value * submenuProgress.value }],
+  }));
+  const submenuClipStyle = useAnimatedStyle(() => ({
+    height: interpolate(submenuProgress.value, [0, 1], [submenuCollapsedH, submenuFullH]),
   }));
 
   const pan = useMemo(
@@ -1244,6 +1261,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // parent menu makes; a long, scrolled list falls back to tapping, which still works.
   const submenuAnchorTop = submenuGeom?.anchorTop ?? 0;
   const submenuRowCount = openSubmenuSpec?.rows.length ?? 0;
+  const submenuListH = submenuGeom?.listH ?? 0;
   useAnimatedReaction(
     () => {
       if (!submenuOpen) return -2; // parent hit-test owns `hoveredRow`; leave it be
@@ -1254,9 +1272,12 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       // took to stay on screen. Then past its own top padding + header row + divider to the first row.
       const cardTop = menuTop + submenuAnchorTop + submenuShift.value;
       const rowsTop = cardTop + MENU_PAD_V + ROW_HEIGHT + SUBMENU_DIVIDER_H;
-      const local = holdY.value - rowsTop;
-      if (local < 0) return -1;
-      const index = Math.floor(local / ROW_HEIGHT);
+      // Only while the finger is inside the visible row VIEWPORT — otherwise a finger over the header (or
+      // below the last visible row) would still resolve to a row once the scroll offset is added in.
+      const rel = holdY.value - rowsTop;
+      if (rel < 0 || rel > submenuListH) return -1;
+      // Add the scroll offset: a list scrolled down by S shows the row at content-position rel+S.
+      const index = Math.floor((rel + submenuScrollY.value) / ROW_HEIGHT);
       return index >= 0 && index < submenuRowCount ? index : -1;
     },
     (row, prev) => {
@@ -1264,11 +1285,12 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       hoveredRow.set(row);
       if (row >= 0) runOnJS(selectionTick)();
     },
-    [submenuOpen, submenuAnchorTop, submenuRowCount],
+    [submenuOpen, submenuAnchorTop, submenuRowCount, submenuListH],
   );
 
-  // The submenu's ONE travelling bubble — identical object to the parent's, offset past the header +
-  // divider so row 0 lands on the first real row (see SUBMENU_DIVIDER_H).
+  // The submenu's ONE travelling bubble — identical object to the parent's. Row-RELATIVE, because it
+  // now lives inside the scroll content (see SubmenuSurface): translateY is just row*ROW_HEIGHT and the
+  // scroll carries it, so a scrolled list keeps the highlight glued to its row.
   const subHoverY = useSharedValue(0);
   const subHoverOn = useSharedValue(0);
   useAnimatedReaction(
@@ -1279,7 +1301,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
         subHoverOn.set(withTiming(0, HOVER_FADE));
         return;
       }
-      const y = MENU_PAD_V + ROW_HEIGHT + SUBMENU_DIVIDER_H + row * ROW_HEIGHT;
+      const y = row * ROW_HEIGHT;
       if (prev == null || prev < 0) {
         subHoverY.set(y);
         subHoverOn.set(withTiming(1, HOVER_FADE));
@@ -1488,15 +1510,19 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
           {/* The expanded submenu card, anchored at the row that opened it (same transformed
               container as the menu, so it tracks the menu's position for free). */}
           {submenuGeom && openSubmenuSpec && (
-            <Animated.View style={[styles.submenuWrap, { width: menuW, top: submenuGeom.anchorTop }, submenuStyle]}>
-              <SubmenuSurface
-                tint={menuTint}
-                spec={openSubmenuSpec}
-                listHeight={submenuGeom.listH}
-                onCollapse={collapseSubmenu}
-                channel={{ holdActive, hoveredRow }}
-                hoverStyle={submenuHoverStyle}
-              />
+            <Animated.View style={[styles.submenuWrap, { width: menuW, top: submenuGeom.anchorTop }, submenuOuterStyle]}>
+              {/* The clip layer: its height animates to unfold the full-size surface out of the header. */}
+              <Animated.View style={[styles.submenuClip, submenuClipStyle]}>
+                <SubmenuSurface
+                  tint={menuTint}
+                  spec={openSubmenuSpec}
+                  listHeight={submenuGeom.listH}
+                  onCollapse={collapseSubmenu}
+                  channel={{ holdActive, hoveredRow }}
+                  hoverStyle={submenuHoverStyle}
+                  scrollY={submenuScrollY}
+                />
+              </Animated.View>
             </Animated.View>
           )}
         </Animated.View>
@@ -1634,13 +1660,20 @@ const styles = StyleSheet.create({
   submenuWrap: {
     position: 'absolute',
     left: 0,
-    transformOrigin: '50% 0%',
     borderRadius: 14,
     shadowColor: '#000000',
     shadowOpacity: 0.28,
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 8 },
     elevation: 12,
+  },
+  // The reveal clipper (see submenuClipStyle): rounded + overflow-hidden so the full-size surface shows
+  // through only up to the animated height, unfolding out of the header. Shadow stays on the wrap above
+  // it (a view with overflow-hidden can't cast one).
+  submenuClip: {
+    width: '100%',
+    borderRadius: 14,
+    overflow: 'hidden',
   },
   panel: {
     borderRadius: 16,
