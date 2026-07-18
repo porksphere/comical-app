@@ -31,6 +31,7 @@ import { useBridgeMap } from '@/hooks/use-bridges';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useFavorite } from '@/hooks/use-favorite';
 import { useHovered } from '@/hooks/use-hovered';
+import { openListPicker } from '@/components/list-picker';
 import { useLibrary } from '@/hooks/use-library';
 import { useStartReading } from '@/hooks/use-start-reading';
 import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
@@ -445,6 +446,25 @@ function SeriesBody({
         onPress={startReading}
       />
       <ActionButton testID="series.action.library" label={inLibrary ? '✓  In Library' : '＋  Library'} onPress={toggleLibrary} />
+      {bridgeId && (
+        <ActionButton
+          testID="series.action.lists"
+          label="Add to list"
+          caret
+          onPress={() =>
+            openListPicker({
+              bridgeId,
+              seriesId: series.id,
+              title: series.title,
+              snapshot: () => ({
+                title: series.title,
+                ...(series.cover ? { thumbnailUrl: series.cover } : {}),
+                ...(author ? { author } : {}),
+              }),
+            })
+          }
+        />
+      )}
       {bridgeId && (
         <SeriesDownloadButton
           bridgeId={bridgeId}
