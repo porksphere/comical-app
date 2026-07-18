@@ -63,7 +63,8 @@
       "./plugins/with-devclient-variant.js",
       "./plugins/with-ipad-orientations.js",
       "expo-sharing",
-      "expo-background-task"
+      "expo-background-task",
+      "expo-notifications"
     ],
     "experiments": {
       "typedRoutes": true,
