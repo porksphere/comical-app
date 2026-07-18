@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
-import { Image } from 'expo-image';
+import { Image, type ImageLoadEventData } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions, View, type ViewStyle } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChipRow, TagGroupRow } from '@/components/chip';
@@ -21,6 +22,7 @@ import { relativeTime } from '@/data/mock';
 import { setSearchIntent, tagSearchIntent } from '@/data/search-intent';
 import { relatedGroupsQuery, seriesDetailQuery, seriesListQuery } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
+import { ASPECT_TRANSITION_MS, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { resetPreferredGroup } from '@/lib/preferred-group';
 import { tagPaletteFor } from '@/lib/tag-colors';
 import { testId } from '@/lib/test-id';
@@ -35,6 +37,28 @@ import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 
 const LARGE_COVER_WIDTH = 300;
+
+/** Faithful hero aspect (width/height): the details page honours the cover's REAL shape — landscape
+ *  and taller-than-2:3 alike — width-constrained, with height following. Unlike `clampThumbAspect`
+ *  (grid cards, which floor at 2:3 so a slot never grows), this only bounds pathological images so
+ *  a stray banner can't blow the layout up. */
+function clampHeroAspect(ratio?: number | null): number {
+  if (!ratio || !Number.isFinite(ratio) || ratio <= 0) return DEFAULT_THUMB_ASPECT;
+  return Math.min(2.5, Math.max(0.5, ratio));
+}
+
+/** The hero cover's box: width fills its wrap, height follows the animated aspect. Mounts AT the
+ *  current aspect (no mount animation — the skeleton⇄body swap must not replay the resize) and
+ *  eases to a new one over `ASPECT_TRANSITION_MS`, matching the cards' box-settle. The box clips
+ *  and rounds; the child image/skeleton just fills it. */
+function SeriesCoverBox({ aspect, children }: { aspect: number; children: ReactNode }) {
+  const aspectSV = useSharedValue(aspect);
+  useEffect(() => {
+    aspectSV.set(withTiming(aspect, { duration: ASPECT_TRANSITION_MS }));
+  }, [aspect, aspectSV]);
+  const boxStyle = useAnimatedStyle(() => ({ aspectRatio: aspectSV.value }));
+  return <Animated.View style={[styles.coverBox, boxStyle]}>{children}</Animated.View>;
+}
 
 // Conservative cap on the top bar's "<Bridge> / <Title>" title portion — some
 // series titles run extremely long, and letting the bar's own `numberOfLines={1}`
@@ -155,6 +179,18 @@ export default function SeriesScreen() {
   // Only used on small screens.
   const actionsWidth = Math.round(Math.min(width * 0.4, 220));
 
+  // The hero cover's measured aspect, hoisted ABOVE the skeleton⇄body swap so the shape survives
+  // that remount instead of snapping back to 2:3 between them. Fed by whichever cover <Image> is
+  // currently mounted (skeleton or body — usually the same URI, so they agree).
+  const [coverAspect, setCoverAspect] = useState(DEFAULT_THUMB_ASPECT);
+  const onCoverLoad = (e: ImageLoadEventData) => {
+    const src = e.source;
+    if (!src?.width || !src.height) return;
+    const next = clampHeroAspect(src.width / src.height);
+    // Ignore sub-2% wiggle (a re-encode of the same art) so the box doesn't visibly resettle.
+    setCoverAspect((prev) => (Math.abs(next - prev) > 0.02 ? next : prev));
+  };
+
   // Error / deep-link skeleton stay in a plain ScrollView; a resolved SeriesBody
   // owns its own scroll container (a ScrollView for chaptered series, a
   // virtualized LegendList for direct/page-thumbnail series — see SeriesBody).
@@ -189,7 +225,16 @@ export default function SeriesScreen() {
       ) : !series ? (
         // No forwarded cover (deep-link) — nothing to keep steady, so use the
         // full skeleton until the fetch resolves.
-        scrollFallback(<SeriesSkeleton actionsWidth={actionsWidth} isLarge={isLarge} title={title} cover={cover} />)
+        scrollFallback(
+          <SeriesSkeleton
+            actionsWidth={actionsWidth}
+            isLarge={isLarge}
+            title={title}
+            cover={cover}
+            coverAspect={coverAspect}
+            onCoverLoad={onCoverLoad}
+          />,
+        )
       ) : (
         // `series` is either the placeholder (real hero, rest loading) or the
         // resolved detail. SeriesBody stays mounted across that transition, so
@@ -204,6 +249,8 @@ export default function SeriesScreen() {
           width={width}
           initialCover={cover}
           loading={isPlaceholderData}
+          coverAspect={coverAspect}
+          onCoverLoad={onCoverLoad}
         />
       )}
     </ThemedView>
@@ -222,6 +269,8 @@ function SeriesBody({
   width,
   initialCover,
   loading,
+  coverAspect,
+  onCoverLoad,
 }: {
   series: SeriesDetail;
   bridgeId?: string;
@@ -237,6 +286,9 @@ function SeriesBody({
    *  The hero renders for real; the actions + content render as skeletons until
    *  the fetch resolves — all without remounting the persistent cover <Image>. */
   loading?: boolean;
+  /** The hero cover's live aspect + its measurer — owned by SeriesScreen (see there). */
+  coverAspect: number;
+  onCoverLoad: (e: ImageLoadEventData) => void;
 }) {
   const ds = useDataSource();
   const router = useRouter();
@@ -335,17 +387,20 @@ function SeriesBody({
       onPress={startReading}
       accessibilityRole="button"
       accessibilityLabel={primaryLabel}>
-      <Image
-        source={{ uri: series.cover }}
-        style={isLarge ? styles.coverLarge : styles.cover}
-        contentFit="cover"
-        cachePolicy="memory-disk"
-        // The skeleton already painted this exact cover — fading it in again on the
-        // skeleton→body swap makes it flash. Skip the fade when it matches; keep the
-        // 200ms fade for a cold load (deep-link, or a bridge whose detail cover
-        // differs from the browse thumbnail).
-        transition={initialCover && initialCover === series.cover ? 0 : 200}
-      />
+      <SeriesCoverBox aspect={coverAspect}>
+        <Image
+          source={{ uri: series.cover }}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          // The skeleton already painted this exact cover — fading it in again on the
+          // skeleton→body swap makes it flash. Skip the fade when it matches; keep the
+          // 200ms fade for a cold load (deep-link, or a bridge whose detail cover
+          // differs from the browse thumbnail).
+          transition={initialCover && initialCover === series.cover ? 0 : 200}
+          onLoad={onCoverLoad}
+        />
+      </SeriesCoverBox>
       {chapterCount != null && (
         <View style={styles.coverBadge}>
           <ThemedText style={styles.coverBadgeText}>{chapterCount}</ThemedText>
@@ -623,11 +678,16 @@ function SeriesSkeleton({
   isLarge,
   title,
   cover,
+  coverAspect,
+  onCoverLoad,
 }: {
   actionsWidth: number;
   isLarge: boolean;
   title?: string;
   cover?: string;
+  /** The hero cover's live aspect + its measurer — owned by SeriesScreen (see there). */
+  coverAspect: number;
+  onCoverLoad: (e: ImageLoadEventData) => void;
 }) {
   const actionSkels = Array.from({ length: 5 }).map((_, i) => (
     <Skeleton key={i} style={styles.skelButton} />
@@ -635,17 +695,20 @@ function SeriesSkeleton({
 
   const coverSkel = (
     <View style={isLarge ? styles.coverWrapLarge : styles.coverWrap}>
-      {cover ? (
-        <Image
-          source={{ uri: cover }}
-          style={isLarge ? styles.coverLarge : styles.cover}
-          contentFit="cover"
-          cachePolicy="memory-disk"
-          transition={200}
-        />
-      ) : (
-        <Skeleton style={isLarge ? styles.coverLarge : styles.cover} />
-      )}
+      <SeriesCoverBox aspect={coverAspect}>
+        {cover ? (
+          <Image
+            source={{ uri: cover }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            transition={200}
+            onLoad={onCoverLoad}
+          />
+        ) : (
+          <Skeleton style={StyleSheet.absoluteFill} />
+        )}
+      </SeriesCoverBox>
     </View>
   );
 
@@ -772,10 +835,11 @@ const styles = StyleSheet.create({
     maxWidth: 300,
     position: 'relative',
   },
-  cover: {
+  // The animated cover box (see SeriesCoverBox): width from its wrap, height from the live aspect.
+  coverBox: {
     width: '100%',
-    aspectRatio: 2 / 3,
     borderRadius: 12,
+    overflow: 'hidden',
     backgroundColor: 'rgba(128,128,128,0.15)',
   },
   // ── Large-screen two-column ───────────────────────────────────────────────
@@ -806,12 +870,6 @@ const styles = StyleSheet.create({
   coverWrapLarge: {
     width: LARGE_COVER_WIDTH,
     position: 'relative',
-  },
-  coverLarge: {
-    width: LARGE_COVER_WIDTH,
-    aspectRatio: 2 / 3,
-    borderRadius: 12,
-    backgroundColor: 'rgba(128,128,128,0.15)',
   },
   // ── Shared ────────────────────────────────────────────────────────────────
   coverBadge: {
