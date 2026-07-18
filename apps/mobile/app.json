@@ -9,7 +9,8 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon",
-      "bundleIdentifier": "com.porksphere.comical"
+      "bundleIdentifier": "com.porksphere.comical",
+      "supportsTablet": true
     },
     "android": {
       "package": "com.porksphere.comical",
@@ -60,6 +61,7 @@
       "./plugins/with-kotlin-version.js",
       "./plugins/with-comical-ios-sources.js",
       "./plugins/with-devclient-variant.js",
+      "./plugins/with-ipad-orientations.js",
       "expo-sharing",
       "expo-background-task"
     ],
