@@ -83,7 +83,11 @@ export const queryKeys = {
     ['inLibrary', mock, bridgeId, seriesId] as const,
   history: (mock: boolean) => ['history', mock] as const,
   activity: (mock: boolean) => ['activity', mock] as const,
-  activityCount: (mock: boolean) => ['activityCount', mock] as const,
+  /** The tab/app badge count. Carries the seen watermark so bumping it (opening the Activity tab)
+   *  is a key change → instant refetch; invalidate with `activityCountPrefix`. */
+  activityCount: (mock: boolean, since: number) => ['activityCount', mock, since] as const,
+  /** Prefix for blanket-invalidating every `activityCount` regardless of watermark. */
+  activityCountPrefix: (mock: boolean) => ['activityCount', mock] as const,
   // The composed Home surface (rails + grid sections) for a bridge.
   homeSections: (mock: boolean, bridgeId: string) => ['homeSections', mock, bridgeId] as const,
   // One representative rail for a bridge (its `featured`/first rail list, page 1) — the building
@@ -364,6 +368,15 @@ export function activityQuery(ds: DataSource, mock: boolean): UseQueryOptions<Ac
   return {
     queryKey: queryKeys.activity(mock),
     queryFn: ({ signal }) => ds.getActivity(signal),
+  };
+}
+
+/** `useQuery` options for the unread-since-last-seen count behind the Activity tab pip and the
+ *  app-icon badge. `since` is the local seen watermark (see `data/activity/seen.ts`). */
+export function activityCountQuery(ds: DataSource, mock: boolean, since: number): UseQueryOptions<number, Error> {
+  return {
+    queryKey: queryKeys.activityCount(mock, since),
+    queryFn: ({ signal }) => ds.getActivityCount(since, signal),
   };
 }
 

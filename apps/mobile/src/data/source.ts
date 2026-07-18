@@ -128,9 +128,17 @@ export interface DataSource {
   removeHistoryEntry(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void>;
 
   getActivity(signal?: AbortSignal): Promise<ActivityEntry[]>;
-  getActivityCount(signal?: AbortSignal): Promise<number>;
-  /** Scan the library for new chapters (the "Check for updates" action). */
-  checkForUpdates(signal?: AbortSignal): Promise<void>;
+  /** Unread new-chapter count, restricted to items detected after `since` (the seen watermark). */
+  getActivityCount(since?: number, signal?: AbortSignal): Promise<number>;
+  /** Scan the library for new chapters. `force` re-checks every entry (the user-facing
+   *  "Check for updates"); without it the host skips recently-synced entries, and
+   *  `budgetMs`/`trackers: false` keep OS background windows short. */
+  checkForUpdates(
+    opts?: { force?: boolean; budgetMs?: number; trackers?: boolean },
+    signal?: AbortSignal,
+  ): Promise<{ newChapters: number; partial: boolean }>;
+  /** Empty the new-chapters feed (user "clear" action). */
+  clearActivity(signal?: AbortSignal): Promise<void>;
   getSeriesDetail(
     bridgeId: string,
     seriesId: string,
@@ -400,11 +408,15 @@ const realDataSource: DataSource = {
   async getActivity(signal) {
     return (await api.getActivity(signal)).map(toActivityEntry);
   },
-  async getActivityCount(signal) {
-    return (await api.getActivityCount(signal)).unread;
+  async getActivityCount(since, signal) {
+    return (await api.getActivityCount(since, signal)).unread;
   },
-  async checkForUpdates(signal) {
-    await api.runBackgroundSync(signal);
+  async checkForUpdates(opts = {}, signal) {
+    const res = await api.runBackgroundSync(opts, signal);
+    return { newChapters: res.newChapters, partial: res.partial };
+  },
+  async clearActivity(signal) {
+    await api.clearActivity(signal);
   },
 
   async getSeriesDetail(bridgeId, seriesId, opts = {}, signal) {
@@ -666,8 +678,9 @@ const mockDataSource: DataSource = {
   getHistory: () => mock.mockGetHistory(),
   removeHistoryEntry: (bridgeId, seriesId) => mock.mockRemoveHistoryEntry(bridgeId, seriesId),
   getActivity: () => mock.mockGetActivity(),
-  getActivityCount: () => mock.mockGetActivityCount(),
+  getActivityCount: (since) => mock.mockGetActivityCount(since),
   checkForUpdates: () => mock.mockCheckForUpdates(),
+  clearActivity: () => mock.mockClearActivity(),
   getSeriesDetail: (bridgeId, seriesId, opts) => mock.mockGetSeriesDetail(bridgeId, seriesId, opts),
   // Like real bridges, mock series defer the chapter list / page-thumbnail grid to this
   // call (mockGetSeriesDetail flags `listDeferred`), so both paths share one code flow.

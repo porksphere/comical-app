@@ -950,11 +950,15 @@ export async function mockGetActivity(): Promise<MockActivity[]> {
   return [...mockActivity].sort((a, b) => b.detectedAt - a.detectedAt);
 }
 
-export async function mockGetActivityCount(): Promise<number> {
-  return mockActivity.filter((a) => !a.read).length;
+export async function mockGetActivityCount(since?: number): Promise<number> {
+  return mockActivity.filter((a) => !a.read && (since === undefined || a.detectedAt > since)).length;
 }
 
-export async function mockCheckForUpdates(): Promise<void> {
+export async function mockClearActivity(): Promise<void> {
+  mockActivity = [];
+}
+
+export async function mockCheckForUpdates(): Promise<{ newChapters: number; partial: boolean }> {
   // Synthesize one fresh "new chapter" so the button visibly does something in the demo.
   const i = mockActivity.length;
   const bridgeId = MOCK_LIB_BRIDGES[i % MOCK_LIB_BRIDGES.length]!;
@@ -973,6 +977,7 @@ export async function mockCheckForUpdates(): Promise<void> {
     },
     ...mockActivity,
   ];
+  return { newChapters: 1, partial: false };
 }
 
 // ─── Settings + registries ────────────────────────────────────────────────────
