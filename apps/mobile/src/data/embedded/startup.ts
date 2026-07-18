@@ -15,6 +15,11 @@
  *
  * Called once from `_layout.tsx` at app launch.
  */
+// Polyfills `crypto.getRandomValues` on Hermes (absent natively) — the entropy source the host-rn
+// `installWebCryptoShim` builds `crypto.randomUUID` on, which `@comical/library` needs to mint list/
+// group ids. Must run before `installWebCryptoShim()` below; import order = execution order in Metro.
+import 'react-native-get-random-values';
+
 import {
   applyEmbeddedMode,
   configureEmbeddedRuntime,
