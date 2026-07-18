@@ -1,18 +1,23 @@
-import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
+import { AnimatedLegendList } from '@legendapp/list/reanimated';
+import type { LegendListRef } from '@legendapp/list/react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
+import Animated, { useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { openConfirm } from '@/components/confirm-popup';
-import { TabTitleBar } from '@/components/tab-title-bar';
 import { HistoryRow } from '@/components/history-row';
+import { TrashIcon } from '@/components/icons/ui-icons';
+import { PullIndicator } from '@/components/pull-indicator';
 import { RetryBlock } from '@/components/retry-block';
+import { SeriesCardMenu } from '@/components/series-card-menu';
+import { SwipeableRow } from '@/components/settings/swipeable-row';
+import { TabTitleBar } from '@/components/tab-title-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
-import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing, topLevelCenterInset } from '@/constants/theme';
+import { BarContentGap, BottomTabInset, listPaddingTop, MaxTopLevelWidth, Spacing, topLevelCenterInset } from '@/constants/theme';
 import { markActivitySeen } from '@/data/activity/seen';
 import { activityQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
@@ -20,13 +25,34 @@ import type { ActivityEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
+import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
 import { relTime } from '@/lib/rel-time';
 
-/** The feed flattened for the list: day-section headers interleaved with item rows. */
-type FeedRow = { kind: 'header'; label: string } | { kind: 'item'; item: ActivityEntry };
+/**
+ * One coalesced feed row: a single library series with its newly-detected chapters folded together
+ * (so three new chapters read as one "3 new chapters" row, not three), sorted by the most recent of
+ * those detections. Mirrors a History row's shape and interactions — tap reads, 3-dot opens the
+ * series, long-press opens the quick-actions popup, swipe-left clears the series from the feed.
+ */
+type SeriesActivity = {
+  bridgeId: string;
+  seriesId: string;
+  title: string;
+  thumbnailUrl?: string;
+  /** Newest detection across the group — the sort key and the row's "when". */
+  latestAt: number;
+  /** How many of the group's new chapters are still unread — the "N new chapters" count. */
+  newCount: number;
+  /** Any unread chapter in the group (drives the accent dot; all-read rows dim). */
+  hasUnread: boolean;
+  /** The chapter a tap reads: the newest unread one, else the newest overall. */
+  chapterId: string;
+  chapterName?: string;
+  number?: number;
+};
 
 export default function ActivityScreen() {
   const ds = useDataSource();
@@ -61,51 +87,78 @@ export default function ActivityScreen() {
     void queryClient.invalidateQueries({ queryKey: queryKeys.activityCountPrefix(mock) });
   }, [queryClient, mock]);
 
-  // "Check for updates" (button + pull-to-refresh): re-scan every library entry, then refresh the
-  // feed. `force` bypasses the host's staleness window — this is the deliberate user action.
-  const syncMutation = useMutation({
-    mutationFn: () => ds.checkForUpdates({ force: true }),
-    onSuccess: (res) => {
+  // Pull-to-refresh = a forced re-scan of the whole library, then a feed refresh. The app's shared
+  // custom overlay spinner (no native RefreshControl — see usePullToRefresh) sources the gesture; the
+  // list's live scroll offset feeds it via `sharedValues` below.
+  const scrollY = useSharedValue(0);
+  const refresh = useCallback(async () => {
+    try {
+      const res = await ds.checkForUpdates({ force: true });
       invalidateFeed();
       showToast(
         res.newChapters > 0
           ? `${res.newChapters} new chapter${res.newChapters === 1 ? '' : 's'} found`
           : "You're up to date",
       );
+    } catch {
+      showToast('Update check failed');
+    }
+  }, [ds, invalidateFeed]);
+  const pull = usePullToRefresh(scrollY, refresh);
+
+  // Swipe-away clears a whole series' feed entries at once (they're coalesced into one row). Optimistic:
+  // drop the row immediately, roll back on error, refresh the badge count when settled.
+  const removeMutation = useMutation({
+    mutationFn: (g: SeriesActivity) => ds.removeActivityEntry(g.bridgeId, g.seriesId),
+    onMutate: async (g: SeriesActivity) => {
+      const key = queryKeys.activity(mock);
+      await queryClient.cancelQueries({ queryKey: key });
+      const prev = queryClient.getQueryData<ActivityEntry[]>(key);
+      queryClient.setQueryData<ActivityEntry[]>(key, (cur) =>
+        (cur ?? []).filter((x) => !(x.bridgeId === g.bridgeId && x.seriesId === g.seriesId)),
+      );
+      return { prev };
     },
-    onError: () => showToast('Update check failed'),
+    onError: (_e, _g, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(queryKeys.activity(mock), ctx.prev);
+    },
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: queryKeys.activityCountPrefix(mock) }),
   });
-
-  const clearMutation = useMutation({
-    mutationFn: () => ds.clearActivity(),
-    onSuccess: invalidateFeed,
-  });
-
-  const confirmClear = () =>
-    openConfirm({
-      message: 'Clear all new-chapter entries from the feed?',
-      confirmLabel: 'Clear Feed',
-      pendingLabel: 'Clearing…',
-      onConfirm: async () => {
-        await clearMutation.mutateAsync();
-      },
-    });
 
   const visible = items && hideNsfw ? items.filter((a) => !byId.get(a.bridgeId)?.nsfw) : items;
 
-  // Day sections (Today / Yesterday / date), newest first — the feed is already sorted desc.
-  const rows = useMemo<FeedRow[]>(() => {
+  // Coalesce the flat per-chapter feed into one row per series. `visible` is already newest-first, so a
+  // series' first appearance is its newest detection (the row's snapshot + sort position), and the
+  // first unread entry we see is its newest unread (the tap's read target).
+  const rows = useMemo<SeriesActivity[]>(() => {
     if (!visible) return [];
-    const out: FeedRow[] = [];
-    let currentLabel: string | undefined;
-    for (const item of visible) {
-      const label = dayLabel(item.detectedAt);
-      if (label !== currentLabel) {
-        currentLabel = label;
-        out.push({ kind: 'header', label });
-      }
-      out.push({ kind: 'item', item });
+    const groups = new Map<string, { head: ActivityEntry; entries: ActivityEntry[] }>();
+    for (const a of visible) {
+      const key = `${a.bridgeId}:${a.seriesId}`;
+      const g = groups.get(key);
+      if (g) g.entries.push(a);
+      else groups.set(key, { head: a, entries: [a] });
     }
+    const out: SeriesActivity[] = [];
+    for (const { head, entries } of groups.values()) {
+      const unread = entries.filter((e) => !e.read);
+      const rep = unread[0] ?? entries[0]!; // newest unread, else newest
+      out.push({
+        bridgeId: head.bridgeId,
+        seriesId: head.seriesId,
+        title: head.title,
+        thumbnailUrl: head.thumbnailUrl,
+        latestAt: head.detectedAt,
+        newCount: unread.length,
+        hasUnread: unread.length > 0,
+        chapterId: rep.chapterId,
+        chapterName: rep.chapterName,
+        number: rep.number,
+      });
+    }
+    // Newest update first. (Insertion order is already close to this, but ties/interleaving make the
+    // explicit sort the source of truth.)
+    out.sort((a, b) => b.latestAt - a.latestAt);
     return out;
   }, [visible]);
 
@@ -113,79 +166,34 @@ export default function ActivityScreen() {
   const headerHeight = insets.top + barHeight;
   // Center the rows in a full-width scroller (scrollbar at the window edge) via symmetric side
   // padding — LegendList drops paddingHorizontal / ignores alignSelf on its content container, so
-  // explicit paddingLeft/Right is the reliable lever. See library.tsx.
-  // Only the centring inset (web) — the row owns its own horizontal gutter (see history-row).
+  // explicit paddingLeft/Right is the reliable lever. Only the centring inset (web); the row owns its
+  // own horizontal gutter so the swipe-to-clear reaches the edge (see history-row / history).
   const sidePad = topLevelCenterInset(width);
 
-  const openDetail = (a: ActivityEntry) =>
+  const openDetail = (g: SeriesActivity) =>
     router.push({
       pathname: '/series',
       params: {
-        id: a.seriesId,
-        title: a.title,
-        bridge: nameOf(a.bridgeId),
-        bridgeId: a.bridgeId,
-        ...(directOf(a.bridgeId) ? { direct: '1' } : {}),
+        id: g.seriesId,
+        title: g.title,
+        bridge: nameOf(g.bridgeId),
+        bridgeId: g.bridgeId,
+        ...(directOf(g.bridgeId) ? { direct: '1' } : {}),
       },
     });
 
-  const read = (a: ActivityEntry) =>
+  const read = (g: SeriesActivity) =>
     router.push({
       pathname: '/reader',
       params: {
-        seed: a.seriesId,
-        title: a.title,
-        bridgeId: a.bridgeId,
-        chapterId: a.chapterId,
-        chapterName: a.chapterName ?? '',
+        seed: g.seriesId,
+        title: g.title,
+        bridgeId: g.bridgeId,
+        chapterId: g.chapterId,
+        chapterName: g.chapterName ?? '',
         start: '0',
       },
     });
-
-  const syncButton = (
-    <Pressable
-      testID="activity.check-updates"
-      onPress={() => syncMutation.mutate()}
-      disabled={syncMutation.isPending}
-      accessibilityRole="button"
-      style={({ pressed }) => [styles.syncBtn, pressed && styles.pressed]}>
-      <ThemedView type="backgroundElement" style={styles.syncFill}>
-        {syncMutation.isPending ? (
-          <ActivityIndicator size="small" color={theme.textSecondary} />
-        ) : (
-          <ThemedText type="small" style={styles.syncLabel}>
-            Check for updates
-          </ThemedText>
-        )}
-      </ThemedView>
-    </Pressable>
-  );
-
-  const clearButton =
-    visible && visible.length > 0 ? (
-      <Pressable
-        testID="activity.clear"
-        onPress={confirmClear}
-        disabled={clearMutation.isPending}
-        accessibilityRole="button"
-        style={({ pressed }) => [styles.syncBtn, pressed && styles.pressed]}>
-        <ThemedText type="small" themeColor="textSecondary" style={styles.clearLabel}>
-          Clear
-        </ThemedText>
-      </Pressable>
-    ) : null;
-
-  const listHeader = (
-    <View style={styles.controls}>
-      <View style={styles.controlsRow}>
-        <ThemedText type="small" themeColor="textSecondary" style={styles.controlsText}>
-          New chapters across your library
-        </ThemedText>
-        {clearButton}
-        {syncButton}
-      </View>
-    </View>
-  );
 
   const body = () => {
     if (error) return <RetryBlock message={(error as Error).message || 'Failed to load activity'} onRetry={refetch} />;
@@ -193,8 +201,7 @@ export default function ActivityScreen() {
     if (!visible || visible.length === 0) {
       return (
         <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
-          New chapters in your library appear here automatically.{' '}
-          {Platform.OS === 'web' ? 'Tap “Check for updates” to scan now.' : 'Pull down to check now.'}
+          New chapters in your library appear here automatically.
         </ThemedText>
       );
     }
@@ -204,89 +211,131 @@ export default function ActivityScreen() {
   const emptyBody = body();
 
   return (
-    <ThemedView style={styles.container}>
+    <ThemedView style={styles.container} {...pull.touchHandlers}>
       {emptyBody ? (
         <View style={[styles.centeredColumn, { paddingTop: headerHeight + BarContentGap }]}>
-          {listHeader}
           <View style={styles.centerFill}>{emptyBody}</View>
         </View>
       ) : (
-        <LegendList
-          ref={listRef}
-          // Full-width scroller so the scrollbar sits at the window edge; rows centered via sidePad.
-          style={styles.list}
-          data={rows}
-          keyExtractor={(row) =>
-            row.kind === 'header' ? `h:${row.label}` : `${row.item.bridgeId}:${row.item.seriesId}:${row.item.chapterId}`
-          }
-          recycleItems={false}
-          ListHeaderComponent={listHeader}
-          contentContainerStyle={{
-            // Fill the viewport even with few rows, so the empty space below them is still part of
-            // the scroller and a drag can be started there (see SeriesGrid's note).
-            flexGrow: 1,
-            paddingTop: headerHeight + BarContentGap,
-            paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
-            paddingLeft: sidePad,
-            paddingRight: sidePad,
-          }}
-          renderItem={({ item: row }) =>
-            row.kind === 'header' ? (
-              <ThemedText type="small" themeColor="textSecondary" style={styles.sectionLabel}>
-                {row.label}
-              </ThemedText>
-            ) : (
-              <HistoryRow
-                thumbnailUrl={row.item.thumbnailUrl}
-                title={row.item.title}
-                sub={activitySub(row.item)}
-                dimmed={row.item.read}
-                unread={!row.item.read}
-                onPress={() => openDetail(row.item)}
-                actions={[{ label: row.item.read ? 'Read again' : 'Read', onPress: () => read(row.item) }]}
+        <Animated.View style={[styles.list, pull.listStyle]}>
+          <AnimatedLegendList
+            ref={listRef}
+            // Full-width scroller so the scrollbar sits at the window edge; rows centered via sidePad.
+            style={styles.list}
+            data={rows}
+            keyExtractor={(g) => `${g.bridgeId}:${g.seriesId}`}
+            recycleItems={false}
+            // Don't retro-correct offsets from measurements — a visible jitter while flinging otherwise.
+            maintainVisibleContentPosition={{ data: false, size: false }}
+            // Live UI-thread scroll offset the pull-to-refresh reads (top-of-list check + iOS bounce).
+            sharedValues={{ scrollOffset: scrollY }}
+            // WEB ONLY: routes the reanimated scroll bridge through scrollEventThrottle:1 so onScroll
+            // fires mid-drag (see recycler-list.tsx for the full root-cause note).
+            renderScrollComponent={Platform.OS === 'web' ? (scrollProps) => <Animated.ScrollView {...scrollProps} /> : undefined}
+            contentContainerStyle={{
+              // Fill the viewport even with few rows, so the empty space below them is still part of
+              // the scroller and a drag (pull-to-refresh) can be started there.
+              flexGrow: 1,
+              // Start flush under the top bar (like History / a settings list): the first row begins at
+              // the bar's bottom edge and its own top padding is all the separation it needs.
+              paddingTop: listPaddingTop(headerHeight),
+              paddingBottom: BottomTabInset + insets.bottom + Spacing.five,
+              paddingLeft: sidePad,
+              paddingRight: sidePad,
+            }}
+            ItemSeparatorComponent={() => <View style={[styles.sep, { backgroundColor: theme.hairline }]} />}
+            renderItem={({ item }) => (
+              <ActivityItem
+                item={item}
+                onRead={() => read(item)}
+                onOpenDetail={() => openDetail(item)}
+                onRemove={() => removeMutation.mutate(item)}
+                bridge={nameOf(item.bridgeId)}
+                direct={directOf(item.bridgeId)}
               />
-            )
-          }
-          showsVerticalScrollIndicator={Platform.OS === 'web'}
-          onScroll={onScroll}
-          // Pull-to-refresh = the same forced scan as the button. Native only — RN-web has no
-          // pull gesture; the button covers it there.
-          {...(Platform.OS !== 'web'
-            ? {
-                refreshing: syncMutation.isPending,
-                onRefresh: () => {
-                  if (!syncMutation.isPending) syncMutation.mutate();
-                },
-                progressViewOffset: headerHeight + BarContentGap,
-              }
-            : {})}
-        />
+            )}
+            showsVerticalScrollIndicator={Platform.OS === 'web'}
+            // Suppress Android's edge glow so it doesn't fight the custom pull; iOS keeps its bounce
+            // (that's what sources the pull there) and fires the refresh via onScrollEndDrag.
+            overScrollMode={Platform.OS === 'android' ? 'never' : undefined}
+            onScroll={onScroll}
+            onScrollEndDrag={pull.onScrollEndDrag}
+          />
+        </Animated.View>
       )}
 
+      <PullIndicator {...pull.indicator} top={headerHeight} />
       <TabTitleBar title="Activity" />
     </ThemedView>
   );
 }
 
-/** Row secondary line: `chapter · when` (falls back to "Chapter N" / "New chapter"). */
-function activitySub(a: ActivityEntry): string {
-  const chapter = a.chapterName ?? (a.number !== undefined ? `Chapter ${a.number}` : 'New chapter');
-  return `${chapter}  ·  ${relTime(a.detectedAt)}`;
+/**
+ * One coalesced activity row. A component (not inline in `renderItem`) so it can own the thumbnail ref
+ * the native long-press preview lifts FROM — the small portrait rect makes the flying cover match
+ * Browse/Library/History rather than starting huge from the wide row. Tap reads; 3-dot opens the
+ * series page; long-press (native) opens the shared quick-actions popup; swipe-left clears the series.
+ */
+function ActivityItem({
+  item,
+  onRead,
+  onOpenDetail,
+  onRemove,
+  bridge,
+  direct,
+}: {
+  item: SeriesActivity;
+  onRead: () => void;
+  onOpenDetail: () => void;
+  onRemove: () => void;
+  bridge: string;
+  direct: boolean;
+}) {
+  const thumbRef = useRef<View>(null);
+  // `coverHidden` blanks just the thumbnail while the long-press menu is open (its lifted preview is a
+  // copy) — the row's text stays visible under the dim.
+  const renderRow = (coverHidden: boolean) => (
+    <HistoryRow
+      thumbnailUrl={item.thumbnailUrl}
+      title={item.title}
+      sub={activitySub(item)}
+      dimmed={!item.hasUnread}
+      unread={item.hasUnread}
+      onPress={onRead}
+      onMore={onOpenDetail}
+      actions={[]}
+      thumbRef={thumbRef}
+      coverHidden={coverHidden}
+    />
+  );
+  return (
+    <SwipeableRow name={item.title} actions={[{ label: 'Clear', icon: TrashIcon, destructive: true, onPress: onRemove }]}>
+      {Platform.OS === 'web' ? (
+        renderRow(false)
+      ) : (
+        <SeriesCardMenu
+          enabled={!!item.bridgeId}
+          bridgeId={item.bridgeId}
+          bridge={bridge}
+          entry={{ id: item.seriesId, title: item.title, cover: item.thumbnailUrl ?? '' }}
+          direct={direct}
+          coverAspect={2 / 3}
+          startRadius={6} // matches HistoryRow's thumbnail corner
+          measureRef={thumbRef}>
+          {({ hidden }) => renderRow(hidden)}
+        </SeriesCardMenu>
+      )}
+    </SwipeableRow>
+  );
 }
 
-/** Section label for a detection time: Today / Yesterday / a localized date. */
-function dayLabel(ts: number): string {
-  const day = new Date(ts);
-  const today = new Date();
-  const startOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  const diffDays = Math.round((startOf(today) - startOf(day)) / 86_400_000);
-  if (diffDays <= 0) return 'Today';
-  if (diffDays === 1) return 'Yesterday';
-  return day.toLocaleDateString(undefined, {
-    month: 'long',
-    day: 'numeric',
-    ...(day.getFullYear() !== today.getFullYear() ? { year: 'numeric' } : {}),
-  });
+/** Row secondary line: `N new chapters · when` when several coalesce, else `chapter · when`. */
+function activitySub(g: SeriesActivity): string {
+  const chapter =
+    g.newCount > 1
+      ? `${g.newCount} new chapters`
+      : (g.chapterName ?? (g.number !== undefined ? `Chapter ${g.number}` : 'New chapter'));
+  return `${chapter}  ·  ${relTime(g.latestAt)}`;
 }
 
 const styles = StyleSheet.create({
@@ -312,52 +361,7 @@ const styles = StyleSheet.create({
   list: {
     flex: 1,
   },
-  controls: {
-    // No leading padding — the list's own `BarContentGap` is the bar->content gap (see theme.ts).
-    paddingBottom: Spacing.three,
-  },
-  controlsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: Spacing.three,
-  },
-  // Without this, RN's default `flexShrink: 0` on Text keeps it at its full
-  // natural width, leaving no room for the (non-shrinking) sync button —
-  // which then overflows the row and gets clipped at the screen edge.
-  controlsText: {
-    flex: 1,
-    flexShrink: 1,
-    minWidth: 0,
-  },
-  sectionLabel: {
-    fontWeight: '600',
-    paddingHorizontal: Spacing.four,
-    paddingTop: Spacing.four,
-    paddingBottom: Spacing.one,
-  },
-  syncBtn: {
-    borderRadius: 999,
-    overflow: 'hidden',
-    flexShrink: 0,
-  },
-  pressed: {
-    opacity: 0.7,
-  },
-  syncFill: {
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.four,
-    borderRadius: 999,
-    minWidth: 132,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  syncLabel: {
-    fontWeight: '600',
-  },
-  clearLabel: {
-    fontWeight: '600',
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.two,
+  sep: {
+    height: StyleSheet.hairlineWidth,
   },
 });

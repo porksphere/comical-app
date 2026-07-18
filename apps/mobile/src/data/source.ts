@@ -139,6 +139,9 @@ export interface DataSource {
   ): Promise<{ newChapters: number; partial: boolean }>;
   /** Empty the new-chapters feed (user "clear" action). */
   clearActivity(signal?: AbortSignal): Promise<void>;
+  /** Drop one series' entries from the feed (the Activity row's swipe-away — a series' coalesced new
+   *  chapters clear together). */
+  removeActivityEntry(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void>;
   getSeriesDetail(
     bridgeId: string,
     seriesId: string,
@@ -422,6 +425,9 @@ const realDataSource: DataSource = {
   async clearActivity(signal) {
     await api.clearActivity(signal);
   },
+  async removeActivityEntry(bridgeId, seriesId, signal) {
+    await api.deleteActivityEntry(bridgeId, seriesId, signal);
+  },
 
   async getSeriesDetail(bridgeId, seriesId, opts = {}, signal) {
     // Fetch ONLY the fast info payload (~2-9ms) and return immediately. The chapter
@@ -687,6 +693,7 @@ const mockDataSource: DataSource = {
   getActivityCount: (since) => mock.mockGetActivityCount(since),
   checkForUpdates: () => mock.mockCheckForUpdates(),
   clearActivity: () => mock.mockClearActivity(),
+  removeActivityEntry: (bridgeId, seriesId) => mock.mockClearActivityForEntry(bridgeId, seriesId),
   getSeriesDetail: (bridgeId, seriesId, opts) => mock.mockGetSeriesDetail(bridgeId, seriesId, opts),
   // Like real bridges, mock series defer the chapter list / page-thumbnail grid to this
   // call (mockGetSeriesDetail flags `listDeferred`), so both paths share one code flow.
