@@ -34,6 +34,8 @@ import comicalRuntime from '../../../modules/comical-runtime';
 import { setTransport } from '../api';
 import { bumpDataEpoch } from '../data-epoch';
 import { queryClient } from '../query-client';
+import { applyChapterCheck } from '../activity/background';
+import { getNotifyPrefsSync } from '../activity/prefs';
 import { downloadsStore } from '../downloads/async-store';
 import { applyBackgroundDownloads } from '../downloads/background';
 import { expoBlobStore } from '../downloads/blob-store';
@@ -111,4 +113,7 @@ export function startEmbeddedRuntime(): void {
   applyImageCacheConfig();
   // Re-arm the background drain task if the user enabled it.
   applyBackgroundDownloads(getDownloadPrefsSync().background);
+  // Re-arm the background chapter check if the user enabled it. Importing `activity/background`
+  // here also guarantees its defineTask ran wherever this startup module loads (incl. headless).
+  applyChapterCheck(getNotifyPrefsSync().backgroundCheck);
 }
