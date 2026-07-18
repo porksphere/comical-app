@@ -155,10 +155,18 @@ export const MaxContentWidth = 800;
  *  resize every top-level view at once. */
 export const MaxTopLevelWidth = 1200;
 /**
+ * The screen-edge gutter for the top-level CARD surfaces — the Browse feed (rails, headings, grid
+ * rows), the results grids, Library, Search. Every one of these must pad by the SAME value or their
+ * content edges visibly disagree on one screen, so it lives here. Half the old `Spacing.four` (24):
+ * cards reach closer to the screen edge, which reads better on phones. No Spacing token is 12.
+ */
+export const TopLevelGutter = 12;
+/**
  * How far a top-level view is inset on EACH side to centre it within `MaxTopLevelWidth` — WEB ONLY. On
  * native (iOS/Android) a phone or tablet fills its own screen; there's no desktop margin to reclaim, so
  * capping the content to 1200 there just leaves a weird border (most visible on an iPad). Native returns
- * 0 (full device width). Callers add their own edge gutter (`Spacing.four`) on top of this. */
+ * 0 (full device width). Callers add their own edge gutter on top of this (`TopLevelGutter` for the
+ * card surfaces). */
 export const topLevelCenterInset = (width: number): number =>
   Platform.OS === 'web' ? Math.max(0, (width - MaxTopLevelWidth) / 2) : 0;
 /** Standard height of a tappable row — the filter bar's own controls

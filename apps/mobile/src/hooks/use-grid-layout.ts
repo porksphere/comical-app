@@ -12,7 +12,7 @@
  */
 import { useWindowDimensions } from 'react-native';
 
-import { Spacing, topLevelCenterInset } from '@/constants/theme';
+import { Spacing, TopLevelGutter, topLevelCenterInset } from '@/constants/theme';
 import { useHydrated } from '@/hooks/use-responsive';
 
 // The reference's mobile grid uses a tighter inter-card gap than its row gap; Spacing.two (8px) is
@@ -38,9 +38,9 @@ export function useGridLayout(): GridLayout {
 
   const numColumns = !hydrated || width < 768 ? 3 : Math.min(6, Math.max(3, Math.floor(width / 200)));
   // Center content within MaxTopLevelWidth (web only — see topLevelCenterInset) plus the edge gutter;
-  // header/footer blocks bleed Spacing.four of this back out (see the Browse list). On native this is
+  // header/footer blocks bleed TopLevelGutter of this back out (see the Browse list). On native this is
   // just the gutter, so the grid spans the full device width.
-  const sidePad = topLevelCenterInset(width) + Spacing.four;
+  const sidePad = topLevelCenterInset(width) + TopLevelGutter;
   const railViewport = hydrated ? width : 390;
   // Not returned: it exists only to derive `cardWidth`, and nothing outside this hook ever wanted it.
   const gridContentWidth = width - sidePad * 2;
