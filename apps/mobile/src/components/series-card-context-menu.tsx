@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, Platform, StyleSheet, View, useWindowDimensions } from 'react-native';
 import Animated, {
   cancelAnimation,
+  Extrapolation,
   interpolate,
   runOnJS,
   useAnimatedProps,
@@ -745,13 +746,24 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // covers), the preview dims more gently — depth, not disappearance. Kept DELIBERATELY subtle: an
   // earlier, heavier fade (menu → 0.5, preview → 0.7) washed the parent out so far it read as gone
   // rather than behind. The parent must stay clearly legible — you tap it to come back.
-  const parentMenuPushStyle = useAnimatedStyle(() => ({
-    opacity: 1 - 0.22 * submenuProgress.value,
-    transform: [{ scale: 1 - 0.06 * submenuProgress.value }],
-  }));
-  const parentDimStyle = useAnimatedStyle(() => ({
-    opacity: 1 - 0.12 * submenuProgress.value,
-  }));
+  //
+  // The push LAGS the child reveal: it holds at rest until the submenu is ~a quarter revealed, then
+  // recedes over the remainder. Driving it off `submenuProgress` 1:1 shrank the parent before the child
+  // was even visible, so for a beat you saw the parent shrink with nothing taking its place. Now the
+  // child fades in first and the parent gives way as it arrives — and in reverse, the parent returns to
+  // full BEFORE the child has finished collapsing, so it's never briefly small next to nothing.
+  const PARENT_PUSH_DELAY = 0.25;
+  const parentMenuPushStyle = useAnimatedStyle(() => {
+    const p = interpolate(submenuProgress.value, [PARENT_PUSH_DELAY, 1], [0, 1], Extrapolation.CLAMP);
+    return {
+      opacity: 1 - 0.22 * p,
+      transform: [{ scale: 1 - 0.06 * p }],
+    };
+  });
+  const parentDimStyle = useAnimatedStyle(() => {
+    const p = interpolate(submenuProgress.value, [PARENT_PUSH_DELAY, 1], [0, 1], Extrapolation.CLAMP);
+    return { opacity: 1 - 0.12 * p };
+  });
   // The submenu opens by UNFOLDING OUT OF ITS OWN HEADER — the card popover's trick (a separate
   // clipping layer fakes the morph). Two layers, both driven by `submenuProgress`:
   //   • OUTER travels: it starts at the anchor (header sitting directly over the parent row) and rides
