@@ -13,7 +13,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BarBlur } from '@/components/bar-blur';
-import { ActivityTabBadge } from '@/components/tab-badge';
+import { ActivityTabBadge, SettingsTabBadge } from '@/components/tab-badge';
 import { DesktopTopBarHeight, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
@@ -299,6 +299,7 @@ function TabButton({
         <View style={styles.iconWrap}>
           <Icon size={22} color={color} strokeWidth={2} />
           {routeName === 'activity' && <ActivityTabBadge />}
+          {routeName === 'settings' && <SettingsTabBadge />}
         </View>
       </Pressable>
     );
@@ -322,6 +323,7 @@ function TabButton({
       <View style={styles.iconWrap}>
         <Icon size={22} color={color} strokeWidth={2.25} />
         {routeName === 'activity' && <ActivityTabBadge />}
+        {routeName === 'settings' && <SettingsTabBadge />}
       </View>
     </Pressable>
   );

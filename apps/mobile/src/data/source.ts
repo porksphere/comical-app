@@ -197,6 +197,10 @@ export interface DataSource {
 
   /** Registries the user has added, or `null` when this server has no registry support mounted. */
   getRegistries(signal?: AbortSignal): Promise<api.SavedRegistry[] | null>;
+  /** Available updates for installed registry bridges, or `null` without registry support. */
+  checkRegistryUpdates(signal?: AbortSignal): Promise<api.RegistryUpdateInfo[] | null>;
+  /** Available updates for installed registry trackers, or `null` without registry support. */
+  checkRegistryTrackerUpdates(signal?: AbortSignal): Promise<api.RegistryUpdateInfo[] | null>;
   addRegistry(url: string, requireSignature?: boolean, signal?: AbortSignal): Promise<void>;
   removeRegistry(url: string, signal?: AbortSignal): Promise<void>;
   browseRegistryBridges(url: string, signal?: AbortSignal): Promise<api.AvailableBridge[]>;
@@ -629,6 +633,8 @@ const realDataSource: DataSource = {
   },
 
   getRegistries: (signal) => api.getRegistries(signal),
+  checkRegistryUpdates: (signal) => api.checkRegistryUpdates(signal),
+  checkRegistryTrackerUpdates: (signal) => api.checkRegistryTrackerUpdates(signal),
   async addRegistry(url, requireSignature, signal) {
     await api.addRegistry(url, requireSignature, signal);
   },
@@ -712,6 +718,9 @@ const mockDataSource: DataSource = {
   uninstallTracker: (trackerId) => mock.mockUninstallTracker(trackerId),
 
   getRegistries: () => mock.mockGetRegistries(),
+  // Mock installs are always current — no update pip in mock/demo mode.
+  checkRegistryUpdates: () => Promise.resolve([]),
+  checkRegistryTrackerUpdates: () => Promise.resolve([]),
   addRegistry: (url, requireSignature) => mock.mockAddRegistry(url, requireSignature),
   removeRegistry: (url) => mock.mockRemoveRegistry(url),
   browseRegistryBridges: (url) => mock.mockBrowseRegistryBridges(url),

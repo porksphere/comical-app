@@ -1161,12 +1161,15 @@ export function installRegistryTracker(
   return fetchPost(`/registries/${encodeURIComponent(registryUrl)}/trackers/${encodeURIComponent(trackerId)}/install`, {}, signal);
 }
 
-/** GET /registry/updates → update info for all installed registry bridges (manual policy — never auto-installed). */
-export function checkRegistryUpdates(signal?: AbortSignal): Promise<RegistryUpdateInfo[]> {
-  return fetchJson('/registry/updates', signal);
+/** GET /registry/updates → update info for all installed registry bridges (manual policy — never
+ *  auto-installed), or `null` when registry support isn't mounted (same 404 contract as
+ *  `getRegistries`). */
+export function checkRegistryUpdates(signal?: AbortSignal): Promise<RegistryUpdateInfo[] | null> {
+  return fetchJsonOptional('/registry/updates', signal);
 }
 
-/** GET /registry/tracker-updates → update info for all installed registry trackers. */
-export function checkRegistryTrackerUpdates(signal?: AbortSignal): Promise<RegistryUpdateInfo[]> {
-  return fetchJson('/registry/tracker-updates', signal);
+/** GET /registry/tracker-updates → update info for all installed registry trackers, or `null`
+ *  when registry support isn't mounted. */
+export function checkRegistryTrackerUpdates(signal?: AbortSignal): Promise<RegistryUpdateInfo[] | null> {
+  return fetchJsonOptional('/registry/tracker-updates', signal);
 }

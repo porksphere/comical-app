@@ -8,6 +8,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { useActivityBadgeCount } from '@/data/activity/use-activity-badge';
+import { useSettingsBadgeCount } from '@/data/use-settings-badge';
 import { useTheme } from '@/hooks/use-theme';
 
 export function TabBadge({ count }: { count: number }) {
@@ -23,6 +24,11 @@ export function TabBadge({ count }: { count: number }) {
 /** The Activity tab's pip — new chapters detected since the tab was last opened. */
 export function ActivityTabBadge() {
   return <TabBadge count={useActivityBadgeCount()} />;
+}
+
+/** The Settings tab's pip — bridge/tracker updates available from the user's registries. */
+export function SettingsTabBadge() {
+  return <TabBadge count={useSettingsBadgeCount()} />;
 }
 
 const styles = StyleSheet.create({
