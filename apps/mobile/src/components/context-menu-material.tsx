@@ -261,6 +261,7 @@ export function MenuRow({
   disabled,
   active,
   primary,
+  submenu,
   index,
   onPress,
   testID,
@@ -274,8 +275,9 @@ export function MenuRow({
   const inert = loading || !!disabled;
   const color = inert ? theme.textSecondary : theme.text;
   // An off toggle's glyph sits back a little, so the on-state (solid glyph, full contrast) reads as
-  // a change without needing a colour of its own.
-  const iconColor = inert ? theme.textSecondary : primary || active ? color : theme.textSecondary;
+  // a change without needing a colour of its own. A submenu row's chevron uses the FULL-contrast colour
+  // too, so it matches the expanded header's chevron it rotates into (no grey→white shift on open).
+  const iconColor = inert ? theme.textSecondary : primary || active || submenu ? color : theme.textSecondary;
   // A row has NO highlight of its own: pressing it writes the same channel the held finger does, so
   // the one travelling bubble draws a press and a peek alike. While a hold owns the selection, the
   // press keeps its hands off (activating the hold cancels the responder → onPressOut fires, which
