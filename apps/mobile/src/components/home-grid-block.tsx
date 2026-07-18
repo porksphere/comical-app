@@ -127,7 +127,9 @@ const styles = StyleSheet.create({
     paddingTop: 0,
   },
   homeGridRows: {
-    gap: Spacing.three,
+    // Matches the virtualized grids' inter-row space (series-grid/content-feed CELL_ROW_GAP = 4px),
+    // so a non-terminal block's rows can't read looser than the terminal grid on the same page.
+    gap: Spacing.one,
   },
   row: {
     paddingHorizontal: Spacing.four,
