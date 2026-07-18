@@ -149,6 +149,8 @@ export default function LibraryScreen() {
         scopeKey={`${sort}|${listFilter ?? ''}`}
         listRef={listRef}
         header={listHeader}
+        // Library cards carry an app-made sub (the bridge name), regardless of any bridge flag.
+        hasSub
         paddingTop={headerHeight + BarContentGap}
         paddingBottom={BottomTabInset + insets.bottom + Spacing.five}
         onScroll={onScroll}

@@ -553,6 +553,9 @@ export async function mockGetBridges(): Promise<Bridge[]> {
       ...(MOCK_DIRECT_BRIDGES.has(name) ? ['direct'] : []),
       ...(MOCK_FAVORITES_BRIDGES.has(name) ? ['favorites'] : []),
     ],
+    // Mock entries carry "Ch. 176 · 2h ago" subs (see `entry`'s `sub` option), so the mock bridges
+    // declare the flag — the grids reserve the sub line for them, exactly like a real sub-ful bridge.
+    cardSubtitles: true,
     thumbnail: `https://picsum.photos/seed/bridge-${slugify(name)}/100/100`,
   }));
   bridges.push({
@@ -560,6 +563,7 @@ export async function mockGetBridges(): Promise<Bridge[]> {
     name: 'Rail Stress (Demo)',
     nsfw: false,
     capabilities: ['lists', 'search', 'filters', 'sort'],
+    cardSubtitles: true,
     thumbnail: `https://picsum.photos/seed/bridge-rail-stress/100/100`,
   });
   return bridges;

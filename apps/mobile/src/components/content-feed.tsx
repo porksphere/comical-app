@@ -11,6 +11,7 @@ import { Rail, RailSkeleton, SECTION_HEAD_HEIGHT, SectionHead, railRowHeight, ra
 import { RecyclerList } from '@/components/recycler-list';
 import { RetryBlock } from '@/components/retry-block';
 import { estimatedCardHeight, SeriesCard } from '@/components/series-card';
+import { useBridgeMap } from '@/hooks/use-bridges';
 import { BottomTabInset, Spacing, TopLevelGutter, topLevelCenterInset } from '@/constants/theme';
 import { contentRowType, type ContentRow, type SeeAllTarget } from '@/data/content-rows';
 import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
@@ -101,8 +102,11 @@ export function ContentFeed({
   const { numColumns, cardWidth, railViewport, width } = useGridLayout();
   const wide = useIsLargeScreen();
   const router = useRouter();
+  // Per-bridge `cardSubtitles` flags: each rail reserves the sub line only if ITS bridge sends one
+  // (aggregate rails mix bridges), and the terminal grid follows the feed's own bridge.
+  const { subOf } = useBridgeMap();
 
-  const cellHeight = estimatedCardHeight(cardWidth) + CELL_ROW_GAP;
+  const cellHeight = estimatedCardHeight(cardWidth, subOf(bridgeId)) + CELL_ROW_GAP;
 
   // Centre content to MaxTopLevelWidth. Unlike SeriesGrid (whose `sidePad` = centering +
   // TopLevelGutter, with grid cells sitting directly in it), every ContentFeed row self-pads
@@ -121,11 +125,12 @@ export function ContentFeed({
       case 'sectionHead':
         return SECTION_HEAD_ROW_HEIGHT;
       case 'rail':
-        // Strip only — the heading is its own preceding `sectionHead` row now.
-        return railStripHeight(row.section.kind, railViewport, wide);
+        // Strip only — the heading is its own preceding `sectionHead` row now. The rail's own
+        // bridge (aggregate rails carry an override) decides whether the sub line is reserved.
+        return railStripHeight(row.section.kind, railViewport, wide, subOf(row.bridgeId ?? bridgeId));
       case 'railSkeleton':
         // Self-headed (still renders its own title), so it's the whole head+strip height.
-        return railRowHeight('regular', railViewport, wide);
+        return railRowHeight('regular', railViewport, wide, subOf(bridgeId));
       default:
         return undefined; // gridBlock / gridBlockSkeleton — measured
     }

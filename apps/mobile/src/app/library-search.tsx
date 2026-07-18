@@ -106,6 +106,8 @@ export default function LibrarySearchScreen() {
           scopeKey={query}
           listRef={listRef}
           header={emptyBody}
+          // Library cards carry an app-made sub (the bridge name), regardless of any bridge flag.
+          hasSub
           paddingTop={topBarTotal + BarContentGap}
           paddingBottom={insets.bottom + Spacing.five}
         />
