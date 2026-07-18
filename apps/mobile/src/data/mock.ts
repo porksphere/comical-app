@@ -127,6 +127,12 @@ export function setMockActive(active: boolean): void {
   mockActive = active;
 }
 
+/** Non-React read for background work (auto-check, chapter-check task) that must skip real API
+ *  calls while the demo/mock source is active. */
+export function isMockActive(): boolean {
+  return mockActive;
+}
+
 /**
  * Simulated network latency for a cover, in ms. Deterministic per id so a card
  * always behaves the same. Most covers are instant; ~40% load "slowly" (so the

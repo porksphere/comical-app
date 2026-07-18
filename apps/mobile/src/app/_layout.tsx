@@ -33,6 +33,7 @@ import { ListPickerHost } from '@/components/list-picker';
 import { OverlayProvider } from '@/components/overlay/overlay';
 import { SeriesCardContextMenuHost } from '@/components/series-card-context-menu';
 import { ToastHost } from '@/components/toast';
+import { installActivityAutoCheck } from '@/data/activity/auto-check';
 import { startEmbeddedRuntime } from '@/data/embedded/startup';
 import { PROFILING_ENABLED } from '@/lib/profiling';
 import { persister, PERSIST_BUSTER, PERSIST_MAX_AGE_MS, queryClient, shouldDehydrateQuery } from '@/data/query-client';
@@ -42,6 +43,9 @@ import { ThemeSchemeProvider, useActiveColorScheme } from '@/hooks/use-theme';
 // Install the on-device transport per the persisted preference before any screen queries fire
 // (native only; a no-op on web and until the native module is linked — the app stays remote).
 startEmbeddedRuntime();
+
+// New-chapter auto-check on launch + foreground return (all platforms; startup.ts is native-only).
+installActivityAutoCheck();
 
 // DevProfiler is profiling-only tooling; require it behind `PROFILING_ENABLED` (dev, or a CI
 // profiling-release build) so its module — and the react-native-release-profiler dependency it
@@ -110,6 +114,7 @@ function RootNavigation() {
               stack header is hidden here too. The Settings tab is only a table of
               contents — every category below is a screen it pushes. */}
           <Stack.Screen name="settings-general" options={{ headerShown: false }} />
+          <Stack.Screen name="settings-notifications" options={{ headerShown: false }} />
           <Stack.Screen name="settings-developer" options={{ headerShown: false }} />
           <Stack.Screen name="bridges" options={{ headerShown: false }} />
           <Stack.Screen name="trackers" options={{ headerShown: false }} />
