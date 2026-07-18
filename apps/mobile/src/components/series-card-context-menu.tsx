@@ -9,8 +9,10 @@ import Animated, {
   Extrapolation,
   interpolate,
   runOnJS,
+  scrollTo,
   useAnimatedProps,
   useAnimatedReaction,
+  useAnimatedRef,
   useAnimatedStyle,
   useFrameCallback,
   useSharedValue,
@@ -699,6 +701,14 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // The expanded list's scroll offset, reported back from the surface — the hold hit-test needs it to
   // map the finger into a SCROLLED row (arithmetic, same as the parent menu, now scroll-aware).
   const submenuScrollY = useSharedValue(0);
+  // Animated ref on the submenu's row list, so the auto-scroll frame loop can drive it with `scrollTo`.
+  const submenuScrollRef = useAnimatedRef<Animated.ScrollView>();
+  // The submenu geometry the UI-thread auto-scroll loop needs, mirrored into shared values — a
+  // useFrameCallback captures its closure once, so plain render values would go stale.
+  const sOpen = useSharedValue(false);
+  const sAnchorTop = useSharedValue(0);
+  const sListH = useSharedValue(0);
+  const sMaxScroll = useSharedValue(0);
 
   const openSubmenu = (rowIndex: number, spec: SubmenuSpec) => {
     const rowsH = spec.rows.length * ROW_HEIGHT;
@@ -1280,6 +1290,40 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const submenuAnchorTop = submenuGeom?.anchorTop ?? 0;
   const submenuRowCount = openSubmenuSpec?.rows.length ?? 0;
   const submenuListH = submenuGeom?.listH ?? 0;
+  // Keep the auto-scroll loop's shared-value mirrors current (runs every render).
+  useEffect(() => {
+    sOpen.set(submenuOpen);
+    sAnchorTop.set(submenuAnchorTop);
+    sListH.set(submenuListH);
+    sMaxScroll.set(Math.max(0, submenuRowCount * ROW_HEIGHT - submenuListH));
+  });
+
+  // ── Auto-scroll a scrollable submenu under a hold-drag ─────────────────────
+  // When the held finger reaches the top/bottom edge of a submenu whose rows overflow, scroll the list
+  // toward it so the hold-drag can reach rows past the fold — the finger stays put and the rows come to
+  // it, and the (scroll-aware) hit-test above keeps the highlight tracking. Per-frame, on the UI thread;
+  // reads only shared values (a frame callback captures its closure once).
+  const SUBMENU_EDGE = 44; // px band at each end that triggers auto-scroll
+  const SUBMENU_SCROLL_SPEED = 16; // max px per frame at the very edge
+  useFrameCallback(() => {
+    if (!sOpen.value || !holdActive.value || !holdArmed.value || sMaxScroll.value <= 0) return;
+    const scale = minS.value + expand.value * (maxS.value - minS.value);
+    const menuTop = topMin.value + expand.value * (topMax.value - topMin.value) + naturalH.value * scale + GAP;
+    const viewTop = menuTop + sAnchorTop.value + submenuShift.value + ROW_HEIGHT + SUBMENU_DIVIDER_H;
+    const viewBottom = viewTop + sListH.value;
+    let v = 0;
+    if (holdY.value < viewTop + SUBMENU_EDGE) {
+      v = -SUBMENU_SCROLL_SPEED * Math.min(1, (viewTop + SUBMENU_EDGE - holdY.value) / SUBMENU_EDGE);
+    } else if (holdY.value > viewBottom - SUBMENU_EDGE) {
+      v = SUBMENU_SCROLL_SPEED * Math.min(1, (holdY.value - (viewBottom - SUBMENU_EDGE)) / SUBMENU_EDGE);
+    }
+    if (v === 0) return;
+    const next = Math.min(sMaxScroll.value, Math.max(0, submenuScrollY.value + v));
+    if (next === submenuScrollY.value) return;
+    submenuScrollY.set(next);
+    scrollTo(submenuScrollRef, 0, next, false);
+  });
+
   useAnimatedReaction(
     () => {
       if (!submenuOpen) return -2; // parent hit-test owns `hoveredRow`; leave it be
@@ -1353,9 +1397,11 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const menuHold = useMemo(
     () =>
       Gesture.Pan()
-        // Off while a submenu is expanded — a hold there would arm the PARENT's hit-test grid
-        // against rows that are pushed back behind the submenu.
-        .enabled(!submenuOpen)
+        // Enabled the WHOLE time the popup is up, including while a submenu is expanded — that's what
+        // lets a hold-drag started on the parent menu flow INTO the submenu (the parent hit-test freezes
+        // and the submenu's takes over, exactly as it does for the card-initiated drag), and lets a hold
+        // begun ON the submenu drag through its rows. (A quick tap still taps; a quick drag still scrolls
+        // the child list — this only activates after the long-press.)
         .activateAfterLongPress(MENU_HOLD_MS)
         .onStart((e) => {
           holdActive.set(true);
@@ -1379,7 +1425,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
           holdArmed.set(false);
           hoveredRow.set(-1);
         }),
-    [submenuOpen],
+    [],
   );
 
   return (
@@ -1552,6 +1598,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
                   hoverStyle={submenuHoverStyle}
                   scrollY={submenuScrollY}
                   chevronStyle={submenuChevronStyle}
+                  scrollRef={submenuScrollRef}
                 />
               </Animated.View>
             </Animated.View>
