@@ -103,8 +103,6 @@ function RootNavigation() {
           <Stack.Screen name="series" options={{ headerShown: false }} />
           {/* Search renders its own top bar (search field + back button), so hide the native one. */}
           <Stack.Screen name="search" options={{ headerShown: false }} />
-          {/* Library search: its own top bar (field + back), same as Browse's /search. */}
-          <Stack.Screen name="library-search" options={{ headerShown: false }} />
           {/* Custom-lists manager (create/rename/reorder/delete), pushed from the Library selector. */}
           <Stack.Screen name="manage-lists" options={{ headerShown: false }} />
           <Stack.Screen name="results" options={{ headerShown: false }} />

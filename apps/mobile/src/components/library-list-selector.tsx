@@ -19,9 +19,9 @@ import { useTheme } from '@/hooks/use-theme';
 
 /**
  * The Library tab's top-bar view selector — the bridge-selector shape, reading "Library" (all
- * entries) by default and opening a menu to switch to "Unlisted" or any custom list. A trailing
- * "Manage lists…" action pushes the manage screen (create/rename/reorder/delete). It reads the lists
- * collection itself so the Library screen only owns the selected filter.
+ * entries) by default and opening a menu to switch to any custom list. A trailing "Manage lists…"
+ * action pushes the manage screen (create/rename/reorder/delete). It reads the lists collection
+ * itself so the Library screen only owns the selected filter.
  */
 export function LibraryListSelector({
   value,
@@ -36,7 +36,7 @@ export function LibraryListSelector({
   const theme = useTheme();
   const { hovered, handlers } = useHover();
 
-  const currentLabel = value === 'unlisted' ? 'Unlisted' : value ? (lists.find((l) => l.id === value)?.name ?? 'Library') : 'Library';
+  const currentLabel = value ? (lists.find((l) => l.id === value)?.name ?? 'Library') : 'Library';
 
   return (
     <Pressable
@@ -82,13 +82,6 @@ function ListMenu({
       )}
       <OptionList>
         <ViewRow testID="library.list.all" label="Library" hint="All series" selected={value === null} onPress={() => pick(null)} />
-        <ViewRow
-          testID="library.list.unlisted"
-          label="Unlisted"
-          hint="Not in any list"
-          selected={value === 'unlisted'}
-          onPress={() => pick('unlisted')}
-        />
         {lists.map((l) => (
           <ViewRow
             key={l.id}
