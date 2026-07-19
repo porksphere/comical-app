@@ -687,13 +687,6 @@ export interface BridgeSettingsInfo {
   excludedTagLabels: Record<string, string>;
 }
 
-/** GET/PUT /bridges/{id}/genre-exclusions response (capability "exclude-genres") — account-wide
- *  state owned by the bridge's own backend, distinct from the host-stored `excludedTags`. */
-export interface GenreExclusions {
-  available: { id: string; label: string }[];
-  excluded: string[];
-}
-
 /** GET/PUT /library/bridges/{id}/prefs response. */
 export interface BridgePrefs {
   bridgeId: string;
@@ -832,20 +825,6 @@ export function putExcludedTags(
   signal?: AbortSignal,
 ): Promise<{ excludedTags: string[]; excludedTagLabels: Record<string, string> }> {
   return fetchPut(`/bridges/${encodeURIComponent(bridgeId)}/excluded-tags`, { tags, labels }, signal);
-}
-
-/** GET /bridges/{id}/genre-exclusions → account-wide genre exclusions (capability "exclude-genres"). */
-export function getGenreExclusions(bridgeId: string, signal?: AbortSignal): Promise<GenreExclusions> {
-  return fetchJson(`/bridges/${encodeURIComponent(bridgeId)}/genre-exclusions`, signal);
-}
-
-/** PUT /bridges/{id}/genre-exclusions → replace the bridge's account-wide genre exclusions. */
-export function putGenreExclusions(
-  bridgeId: string,
-  genres: string[],
-  signal?: AbortSignal,
-): Promise<GenreExclusions> {
-  return fetchPut(`/bridges/${encodeURIComponent(bridgeId)}/genre-exclusions`, { genres }, signal);
 }
 
 /** GET /library/bridges/{id}/prefs → per-bridge library prefs (tracker sync / history opt-out),

@@ -138,7 +138,6 @@ export const queryKeys = {
   // which is why they live here rather than as raw literals that can silently drift apart.
   bridgeSummaries: () => ['bridgeSummaries'] as const,
   bridgeSettings: (bridgeId: string) => ['bridgeSettings', bridgeId] as const,
-  genreExclusions: (bridgeId: string) => ['genreExclusions', bridgeId] as const,
   bridgePrefs: (bridgeId: string) => ['bridgePrefs', bridgeId] as const,
   trackers: () => ['trackers'] as const,
   trackerSettings: (trackerId: string) => ['trackerSettings', trackerId] as const,

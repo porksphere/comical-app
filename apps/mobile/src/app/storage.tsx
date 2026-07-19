@@ -31,7 +31,7 @@ import { readDiskInfo } from '@/data/downloads/disk';
 import { formatBytes } from '@/data/downloads/format';
 import { getResolvedModeSync } from '@/data/embedded/preference';
 import { queryKeys } from '@/data/queries';
-import { applyImageCacheConfig, cacheDiskUsage, cachePrefs$, clearImageCache, useCachePrefs } from '@/data/image-cache';
+import { applyImageCacheConfig, cacheBreakdown, cacheDiskUsage, cachePrefs$, clearImageCache, useCachePrefs, type CacheEntry } from '@/data/image-cache';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import type { StorageUsage } from '@comical/downloads';
 
@@ -47,6 +47,14 @@ const CACHE_MAX_OPTIONS: SettingsOption<string>[] = [
   { value: String(2 * GB), label: '2 GB' },
   { value: String(4 * GB), label: '4 GB' },
 ];
+
+/** Friendly names for the Caches subfolders we can recognise; anything else shows its raw name. */
+function cacheEntryLabel(name: string): string {
+  if (name.includes('SDImageCache') || name.startsWith('com.hackemist')) return 'Images (expo-image)';
+  if (name === 'comical-bundles') return 'Bridge bundles';
+  if (name.includes('NSURLCache') || name === 'fsCachedData' || name.startsWith('Cache.db')) return 'Network cache';
+  return name;
+}
 
 export default function StorageScreen() {
   const contentPadding = useSettingsScrollPadding();
@@ -68,8 +76,12 @@ export default function StorageScreen() {
 
   // True on-disk cache bytes (native only; 0 on web where the probe can't read disk).
   const [cacheSize, setCacheSize] = useState<number | null>(null);
+  // Per-entry split of the Caches dir — surfaces what shares the dir beyond expo-image's images
+  // (bridge bundles, NSURLCache, framework caches), which is why the total can exceed the max cap.
+  const [breakdown, setBreakdown] = useState<CacheEntry[]>([]);
   const measure = useCallback(() => {
     setCacheSize(cacheDiskUsage());
+    setBreakdown(cacheBreakdown());
   }, []);
   // Measure after paint — the directory walk is synchronous and can be chunky on a large cache.
   useEffect(() => {
@@ -135,6 +147,20 @@ export default function StorageScreen() {
             label="Cached images"
             description={cacheSize === null ? 'Measuring…' : `${formatBytes(cacheSize)} — covers & pages you've viewed`}
           />
+          {breakdown.length > 0 && (
+            <View style={styles.breakdown}>
+              {breakdown.map((e) => (
+                <View key={e.name} style={styles.breakdownRow}>
+                  <ThemedText type="small" themeColor="textSecondary" style={styles.breakdownName} numberOfLines={1}>
+                    {cacheEntryLabel(e.name)}
+                  </ThemedText>
+                  <ThemedText type="small" themeColor="textSecondary">
+                    {formatBytes(e.bytes)}
+                  </ThemedText>
+                </View>
+              ))}
+            </View>
+          )}
           <SettingsRow
             label="Clear image cache"
             description="Free the space; images re-download when next viewed."
@@ -170,5 +196,18 @@ const styles = StyleSheet.create({
   summary: {
     paddingVertical: Spacing.three,
     gap: Spacing.two,
+  },
+  breakdown: {
+    paddingHorizontal: Spacing.four,
+    paddingBottom: Spacing.three,
+    gap: Spacing.one,
+  },
+  breakdownRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: Spacing.three,
+  },
+  breakdownName: {
+    flexShrink: 1,
   },
 });
