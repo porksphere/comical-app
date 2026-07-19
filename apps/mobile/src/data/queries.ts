@@ -116,12 +116,17 @@ export const queryKeys = {
   browseGrid: (mock: boolean, bridgeId: string, scope: BrowseScope) =>
     ['browseGrid', mock, bridgeId, scope] as const,
 
+  // The installed-bridges list (Browse's rails/selector, the Library/History/Activity bridge map).
+  // Unlike the server-infra keys below this one DOES carry `mock`: the mock source serves a
+  // different bridge list, and without `mock` in the key the dev toggle left the previous mode's
+  // cached (possibly empty) list on screen until a full restart.
+  bridges: (mock: boolean) => ['bridges', mock] as const,
+
   // ─── Server-infra reads (Settings / registry screens) ──────────────────────
   // These are mock-agnostic — the registry/bridge/tracker plumbing is the same regardless of the
   // dev mock toggle — so, unlike the content keys above, they carry no `mock`. Several are shared
   // across files (a bridge-settings save must invalidate the same key the settings screen reads),
   // which is why they live here rather than as raw literals that can silently drift apart.
-  bridges: () => ['bridges'] as const,
   bridgeSummaries: () => ['bridgeSummaries'] as const,
   bridgeSettings: (bridgeId: string) => ['bridgeSettings', bridgeId] as const,
   genreExclusions: (bridgeId: string) => ['genreExclusions', bridgeId] as const,

@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
 import { queryKeys } from '@/data/queries';
-import { useDataSource } from '@/data/source';
+import { useDataSource, useMockActive } from '@/data/source';
 import type { Bridge } from '@/data/types';
 
 /**
@@ -26,8 +26,9 @@ export function useBridgeMap(): {
   subOf: (bridgeId?: string) => boolean;
 } {
   const ds = useDataSource();
+  const mock = useMockActive();
   const { data: bridges = [] } = useQuery({
-    queryKey: queryKeys.bridges(),
+    queryKey: queryKeys.bridges(mock),
     queryFn: ({ signal }) => ds.getBridges(signal),
   });
 
