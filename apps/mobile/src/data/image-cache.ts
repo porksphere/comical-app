@@ -41,6 +41,31 @@ export function cacheDiskUsage(): number {
   }
 }
 
+/** One top-level entry of the Caches dir, with its recursive byte size. */
+export interface CacheEntry {
+  name: string;
+  bytes: number;
+  isDir: boolean;
+}
+
+/**
+ * Per-entry breakdown of the Caches dir the size probe walks — so the storage number can be split
+ * into "expo-image images" (SDWebImage's subfolder) vs. everything else the OS parks alongside it
+ * (our bridge-bundle cache, NSURLCache, framework caches). Largest first. Native only; [] on web.
+ */
+export function cacheBreakdown(): CacheEntry[] {
+  try {
+    const dir = new Directory(Paths.cache);
+    if (!dir.exists) return [];
+    return dir
+      .list()
+      .map((e) => ({ name: e.name, bytes: e.size ?? 0, isDir: e instanceof Directory }))
+      .sort((a, b) => b.bytes - a.bytes);
+  } catch {
+    return [];
+  }
+}
+
 /** Clear the image cache (disk + in-memory). */
 export async function clearImageCache(): Promise<void> {
   try {

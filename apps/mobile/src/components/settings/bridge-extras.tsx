@@ -1,10 +1,8 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
-import { MeasuredHeader, OptionList, OverlayHeading, useAnchoredOverlay } from '@/components/overlay/overlay';
 import { ChipRow } from '@/components/chip';
-import { ChevronRightIcon } from '@/components/icons/ui-icons';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedSwitch } from '@/components/themed-switch';
 import { useComicalExcluded } from '@/data/comical-home';
@@ -15,9 +13,7 @@ import type { ApiBridgeInfo } from '@/data/api';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
-import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
-import { hapticImpactLight, hapticSelection } from '@/lib/haptics';
 import { testId } from '@/lib/test-id';
 
 /** Capabilities + self-reported facts from `GET /bridges/{id}`'s `info` — everything the bridge
@@ -114,10 +110,10 @@ export function TagExclusionsControl({
     mutationFn: () => ds.putExcludedTags(bridgeId, tags),
     onSuccess: async () => {
       setDirty(false);
-      // Matches `GenreExclusionsControl` and the parent screen's own settings save: the
-      // bridge-settings screen's `data.excludedTags`/`excludedTagLabels` came from this
-      // same query, so without this it goes stale until the screen is torn down and
-      // remounted (e.g. leaving and re-entering Bridge Settings).
+      // Matches the parent screen's own settings save: the bridge-settings screen's
+      // `data.excludedTags`/`excludedTagLabels` came from this same query, so without this it
+      // goes stale until the screen is torn down and remounted (e.g. leaving and re-entering
+      // Bridge Settings).
       await queryClient.invalidateQueries({ queryKey: queryKeys.bridgeSettings(bridgeId) });
     },
   });
@@ -173,147 +169,6 @@ export function TagExclusionsControl({
         </Pressable>
       )}
     </SettingsSection>
-  );
-}
-
-/** Fixed-list excluded-genre editor (capability "exclude-genres"), mirroring comical-web's
- *  `buildExcludedGenresControl`. Loads its own `available`/`excluded` set — a separate round trip
- *  from `GET /bridges/{id}`, since genre exclusions live in the bridge's own backend account. */
-export function GenreExclusionsControl({ bridgeId }: { bridgeId: string }) {
-  const ds = useDataSource();
-  const theme = useTheme();
-  const queryClient = useQueryClient();
-  const { ref, openAt } = useAnchoredOverlay();
-  const { hovered, onHoverIn, onHoverOut } = useHovered();
-  const { data, error, isLoading, refetch } = useQuery({
-    queryKey: queryKeys.genreExclusions(bridgeId),
-    queryFn: ({ signal }) => ds.getGenreExclusions(bridgeId, signal),
-  });
-  const toggleMutation = useMutation({
-    mutationFn: (selected: string[]) => ds.putGenreExclusions(bridgeId, selected),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.genreExclusions(bridgeId) });
-    },
-  });
-  const saving = toggleMutation.isPending;
-  const toggle = (selected: string[]) => toggleMutation.mutate(selected);
-
-  if (isLoading) {
-    return (
-      <SettingsSection title="Excluded genres">
-        <ActivityIndicator />
-      </SettingsSection>
-    );
-  }
-  if (error || !data) {
-    return (
-      <SettingsSection title="Excluded genres">
-        <ThemedText type="small" themeColor="textSecondary">
-          {(error as Error)?.message || 'Failed to load genres'}
-        </ThemedText>
-        <Pressable testID="settings.bridge.excluded-genres.retry" onPress={() => refetch()}>
-          <ThemedText type="smallBold">Retry</ThemedText>
-        </Pressable>
-      </SettingsSection>
-    );
-  }
-
-  const summary = data.excluded.length === 0 ? 'None excluded' : `${data.excluded.length} excluded`;
-
-  return (
-    <SettingsSection title="Excluded genres">
-      <ThemedText type="small" themeColor="textSecondary">
-        Series in these genres are hidden from this bridge&apos;s lists and search.
-      </ThemedText>
-      <Pressable
-        ref={ref}
-        testID="settings.bridge.excluded-genres.edit"
-        disabled={saving}
-        onHoverIn={onHoverIn}
-        onHoverOut={onHoverOut}
-        android_ripple={{ color: theme.backgroundElement }}
-        style={styles.pressableCursor}
-        onPress={() => {
-          hapticImpactLight();
-          openAt(() => (
-            <GenrePicker
-              available={data.available}
-              excluded={data.excluded}
-              onToggle={toggle}
-            />
-          ));
-        }}>
-        {/* Always `backgroundSelected` — this row sits inside the `backgroundElement`
-         *  `SettingsSection` card above, so resting on the same tier would make it
-         *  invisible until touched (see the identical comment in setting-field.tsx). */}
-        <ThemedView type="backgroundSelected" style={[styles.enumRow, hovered && { borderColor: theme.accent }]}>
-          <ThemedText numberOfLines={1} style={styles.enumSummary}>
-            {saving ? 'Saving…' : summary}
-          </ThemedText>
-          <ChevronRightIcon color={theme.textSecondary} size={16} />
-        </ThemedView>
-      </Pressable>
-    </SettingsSection>
-  );
-}
-
-function GenrePicker({
-  available,
-  excluded,
-  onToggle,
-}: {
-  available: { id: string; label: string }[];
-  excluded: string[];
-  onToggle: (selected: string[]) => void;
-}) {
-  const [selected, setSelected] = useState(excluded);
-  const toggle = (id: string) => {
-    const next = selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id];
-    setSelected(next);
-    onToggle(next);
-  };
-  return (
-    <View style={styles.body}>
-      <MeasuredHeader>
-        <OverlayHeading>Excluded genres</OverlayHeading>
-      </MeasuredHeader>
-      <OptionList>
-        {available.map((opt) => {
-          const on = selected.includes(opt.id);
-          return (
-            <GenreOption
-              key={opt.id}
-              testID={testId('settings.bridge.genre-option', opt.id)}
-              label={opt.label}
-              on={on}
-              onPress={() => toggle(opt.id)}
-            />
-          );
-        })}
-      </OptionList>
-    </View>
-  );
-}
-
-function GenreOption({ testID, label, on, onPress }: { testID: string; label: string; on: boolean; onPress: () => void }) {
-  const theme = useTheme();
-  const { hovered, onHoverIn, onHoverOut } = useHovered();
-  return (
-    <Pressable
-      testID={testID}
-      onPress={() => {
-        hapticSelection();
-        onPress();
-      }}
-      onHoverIn={onHoverIn}
-      onHoverOut={onHoverOut}
-      android_ripple={{ color: theme.backgroundSelected }}
-      style={styles.pressableCursor}>
-      <ThemedView type={hovered ? 'backgroundSelected' : 'backgroundElement'} style={styles.row}>
-        <ThemedText>{label}</ThemedText>
-        <View style={[styles.check, on && { borderColor: theme.accent, backgroundColor: theme.accent }]} />
-      </ThemedView>
-    </Pressable>
   );
 }
 

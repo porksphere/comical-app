@@ -7,7 +7,6 @@ import {
   BridgeMetaInfo,
   BridgePrefsToggles,
   ComicalHomeToggle,
-  GenreExclusionsControl,
   TagExclusionsControl,
 } from '@/components/settings/bridge-extras';
 import { SettingFieldEditor } from '@/components/settings/setting-field';
@@ -196,7 +195,6 @@ export default function BridgeSettingsScreen() {
                 initialLabels={data.excludedTagLabels}
               />
             )}
-            {data.info.capabilities?.includes('exclude-genres') && <GenreExclusionsControl bridgeId={bridgeId!} />}
             <BridgePrefsToggles bridgeId={bridgeId!} />
             <ComicalHomeToggle bridgeId={bridgeId!} />
 
