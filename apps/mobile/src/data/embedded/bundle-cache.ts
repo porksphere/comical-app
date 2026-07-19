@@ -48,3 +48,44 @@ export const fileSystemBundleCache: BundleCache = {
     }
   },
 };
+
+/** A cache filename is `${sanitizedId}-${sha256}.js`; the sha is exactly 64 hex chars, so we recover
+ *  the id by stripping that fixed-shape suffix. Anything not matching is ignored (left untouched). */
+const BUNDLE_FILE = /^(.*)-[0-9a-fA-F]{64}\.js$/;
+
+/**
+ * Sweep stale bundles. The cache holds one file per (id, sha256), and a bridge UPDATE writes its new
+ * bundle under a fresh filename while the old one is never read again — but nothing deletes it (the
+ * `BundleCache` contract is read/write only), so the folder grows monotonically over a bridge's life.
+ * This keeps only the newest-written bundle per id and deletes the rest. Safe by design: a wrongly
+ * pruned bundle is just a cache miss that re-downloads on next use. Call once at startup; native only.
+ */
+export function pruneBundleCache(): void {
+  try {
+    const dir = cacheDir();
+    if (!dir.exists) return;
+    const byId = new Map<string, File[]>();
+    for (const entry of dir.list()) {
+      if (!(entry instanceof File)) continue;
+      const m = BUNDLE_FILE.exec(entry.name);
+      if (!m) continue;
+      const list = byId.get(m[1]) ?? [];
+      list.push(entry);
+      byId.set(m[1], list);
+    }
+    for (const files of byId.values()) {
+      if (files.length <= 1) continue;
+      // Newest first (an update writes a newer file); keep [0], drop the rest.
+      files.sort((a, b) => (b.lastModified ?? 0) - (a.lastModified ?? 0));
+      for (const stale of files.slice(1)) {
+        try {
+          stale.delete();
+        } catch {
+          /* best-effort — a file we can't delete just stays until the OS reclaims the dir */
+        }
+      }
+    }
+  } catch {
+    /* best-effort: a failed prune leaves the cache exactly as it was */
+  }
+}

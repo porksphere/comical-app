@@ -45,7 +45,7 @@ import { devicePageFetcher, onDevicePageRetry } from '../downloads/fetch-page';
 import { hydrateDownloadIndex } from '../downloads/index-cache';
 import { getDownloadPrefsSync } from '../downloads/prefs';
 import { swapDataSourceMode } from './apply-mode';
-import { fileSystemBundleCache } from './bundle-cache';
+import { fileSystemBundleCache, pruneBundleCache } from './bundle-cache';
 import { expoCoversBlobStore } from './covers-store';
 import { AsyncStorageLibraryStore } from './library-store';
 import { getResolvedModeSync, whenEmbeddedPrefLoaded } from './preference';
@@ -121,6 +121,9 @@ export function startEmbeddedRuntime(): void {
   installNetworkAutoResume();
   // Apply the user's image-cache size cap — the native layer LRU-evicts to stay under it.
   applyImageCacheConfig();
+  // Sweep stale bridge bundles left by past updates (one file per id kept) — the only cache with no
+  // built-in bound. Cheap dir walk; safe to fire-and-forget after the runtime is configured.
+  pruneBundleCache();
   // Re-arm the background drain task if the user enabled it.
   applyBackgroundDownloads(getDownloadPrefsSync().background);
   // Re-arm the background chapter check if the user enabled it. Importing `activity/background`
