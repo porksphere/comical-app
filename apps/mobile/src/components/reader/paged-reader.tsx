@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
   type NativeScrollEvent,
@@ -22,6 +22,9 @@ type Props = {
   onPrev: () => void;
   onNext: () => void;
   onToggleChrome: () => void;
+  /** Fires when the visible page's pinch-zoom state changes — the reader screen
+   *  disables its swipe-away gesture while zoomed (a one-finger drag pans then). */
+  onZoomChange?: (zoomed: boolean) => void;
 };
 
 /**
@@ -38,7 +41,7 @@ type Props = {
  * image instead of turning the page.
  */
 export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedReader(
-  { pages, width, height, rtl, pageFit, initialPage, onPageChange, onPrev, onNext, onToggleChrome },
+  { pages, width, height, rtl, pageFit, initialPage, onPageChange, onPrev, onNext, onToggleChrome, onZoomChange },
   ref,
 ) {
   const listRef = useRef<FlatList<string>>(null);
@@ -50,6 +53,16 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   const data = useMemo(() => (rtl ? [...pages].reverse() : pages), [pages, rtl]);
 
   const [zoomed, setZoomed] = useState(false);
+  const handleZoomChange = useCallback(
+    (z: boolean) => {
+      setZoomed(z);
+      onZoomChange?.(z);
+    },
+    [onZoomChange],
+  );
+  // Unmounting (e.g. switching reader modes) must not leave the parent thinking
+  // a page is still zoomed — that would keep its swipe-dismiss disabled.
+  useEffect(() => () => onZoomChange?.(false), [onZoomChange]);
   const [activeIndex, setActiveIndex] = useState(toPhysical(Math.max(0, Math.min(n - 1, initialPage))));
 
   useImperativeHandle(
@@ -107,7 +120,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
           onLeft={leftAction}
           onRight={rightAction}
           onToggleChrome={onToggleChrome}
-          onZoomChange={setZoomed}
+          onZoomChange={handleZoomChange}
         />
       )}
     />
