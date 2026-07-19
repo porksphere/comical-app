@@ -25,6 +25,7 @@ export function SearchField({
   onClear,
   placeholder = 'Search…',
   autoFocus = false,
+  immediateFocus = false,
   testID,
 }: {
   value: string;
@@ -33,6 +34,12 @@ export function SearchField({
   placeholder?: string;
   /** Focus the field (and raise the keyboard) on mount — used by the Search screen. */
   autoFocus?: boolean;
+  /**
+   * Focus on the next frame instead of waiting for a screen push transition. Set this for an
+   * *in-place* field (no navigation push to stutter — e.g. the Library tab's inline search), where
+   * the transition-aware defer below would otherwise fall through to its slow 800ms fallback timer.
+   */
+  immediateFocus?: boolean;
   /** Automation selector for the input; the clear button derives `${testID}.clear` (see src/lib/test-id.ts). */
   testID: string;
 }) {
@@ -59,10 +66,14 @@ export function SearchField({
       done = true;
       inputRef.current?.focus();
     };
-    if (Platform.OS === 'web') {
-      // No native transition on web — focus on the next frame.
+    // In-place field (or web, which has no native transition anyway): focus on the next frame — no
+    // push animation to wait on, so skip the transition listener and its slow 800ms fallback.
+    if (immediateFocus || Platform.OS === 'web') {
       const raf = requestAnimationFrame(focus);
-      return () => cancelAnimationFrame(raf);
+      return () => {
+        done = true;
+        cancelAnimationFrame(raf);
+      };
     }
     const unsubscribe = (navigation.addListener as (type: string, cb: () => void) => () => void)(
       'transitionEnd',
@@ -74,7 +85,7 @@ export function SearchField({
       unsubscribe();
       clearTimeout(fallback);
     };
-  }, [autoFocus, navigation]);
+  }, [autoFocus, immediateFocus, navigation]);
 
   // On mobile web the soft keyboard can be dismissed without the input firing a
   // blur (e.g. Android's "hide keyboard" button keeps DOM focus). Previously this

@@ -164,6 +164,7 @@ export default function LibraryScreen() {
                   onClear={() => setQuery('')}
                   placeholder="Search library…"
                   autoFocus
+                  immediateFocus
                 />
               </View>
             </View>
