@@ -140,12 +140,12 @@ export default function LibraryScreen() {
         onScroll={onScroll}
       />
 
-      {/* Searching swaps the bar's leading content (the list selector) for a back button + search
-          field in place; the trailing icons collapse. Otherwise: list selector on the left, search +
-          sort icons on the right (sort to the right of search). */}
-      {searching ? (
-        <TabTitleBar
-          titleSlot={
+      {/* The sort button lives in the bar's trailing slot in BOTH states, so it stays put and visible
+          while searching. Searching only swaps the LEADING content — the list selector becomes a back
+          button + search field in place — and collapses the search icon (now redundant) beside sort. */}
+      <TabTitleBar
+        titleSlot={
+          searching ? (
             <View style={styles.searchRow}>
               <Pressable
                 testID="library.search-close"
@@ -167,13 +167,13 @@ export default function LibraryScreen() {
                 />
               </View>
             </View>
-          }
-        />
-      ) : (
-        <TabTitleBar
-          titleSlot={<LibraryListSelector value={listFilter} lists={lists} onChange={setListFilter} />}
-          right={
-            <>
+          ) : (
+            <LibraryListSelector value={listFilter} lists={lists} onChange={setListFilter} />
+          )
+        }
+        right={
+          <>
+            {!searching && (
               <Pressable
                 testID="library.search-icon"
                 onPress={() => setSearching(true)}
@@ -183,11 +183,11 @@ export default function LibraryScreen() {
                 style={styles.searchIconButton}>
                 <SearchIcon color={theme.text} size={22} />
               </Pressable>
-              <LibrarySortButton value={sort} onChange={setSort} />
-            </>
-          }
-        />
-      )}
+            )}
+            <LibrarySortButton value={sort} onChange={setSort} />
+          </>
+        }
+      />
     </ThemedView>
   );
 }
