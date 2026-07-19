@@ -78,6 +78,11 @@ const PALETTE: { light: string; dark: string }[] = [
  * different hues if they can appear on the SAME series.
  */
 const RESERVED: Record<string, number> = {
+  // Genres are the lead taxonomy on most series — pin them to teal (slot 0). Shares the slot with the
+  // "Artist" tag group; the sources that surface an Artist group don't surface genres, so the two
+  // never collide on one series.
+  genre: 0,
+  genres: 0,
   artist: 0,
   artists: 0,
   group: 1,

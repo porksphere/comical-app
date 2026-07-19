@@ -460,12 +460,12 @@ const realDataSource: DataSource = {
       cover: info.thumbnailUrl ?? '',
       bridge: opts.bridgeName ?? '',
       description: info.description,
-      genres: info.genres,
-      // Carry the per-tag `tagIds`/`tagQueries` through (dropping the UI-unused
-      // `kind`) so a tapped tag chip can drive a filter/search — see chip.tsx +
-      // search-intent.ts. Both are index-parallel to `tags`.
+      // Carry `kind` (so the genre group is identifiable — genres are just a `kind: "genre"` group)
+      // plus the per-tag `tagIds`/`tagQueries` (index-parallel to `tags`) so a tapped chip can drive a
+      // filter/search — see chip.tsx + search-intent.ts.
       tagGroups: info.tagGroups?.map((g) => ({
         label: g.label,
+        kind: g.kind,
         tags: g.tags,
         tagIds: g.tagIds,
         tagQueries: g.tagQueries,

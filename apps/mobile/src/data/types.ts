@@ -35,6 +35,11 @@ export type SeriesEntry = {
 
 export type TagGroup = {
   label: string;
+  /** Semantic axis of the group (mirrors the contract's `TagKind`). The client only special-cases
+   *  `'genre'`: it renders like any other group (colour + heading), but a tapped genre chip drives the
+   *  bridge's *genre* filter (key "genre") rather than the tag-multiselect, and it gets a reserved
+   *  palette slot. There is no separate flat `genres` field. */
+  kind?: 'genre' | 'theme' | 'demographic' | 'format' | 'content-warning' | 'other';
   tags: string[];
   /** Bridge-internal tag ids parallel to `tags` (same index). Present when the
    *  bridge's tags are a filterable id set — tapping a chip selects the bridge's
@@ -111,7 +116,7 @@ export type SeriesDetail = SeriesEntry & {
   chapterCount?: number;
   /** Primary read affordance label (e.g. "▶ Chapter 1 — …"). */
   readLabel?: string;
-  genres?: string[];
+  /** All taxonomies as labeled groups; genres are the `kind: "genre"` group (no separate field). */
   tagGroups?: TagGroup[];
   meta?: MetaCell[];
   description?: string;
