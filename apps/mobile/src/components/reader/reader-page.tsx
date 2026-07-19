@@ -206,6 +206,14 @@ export function ReaderPage({
           contentFit={fit === 'contain' ? 'contain' : 'cover'}
           cachePolicy="memory-disk"
           transition={150}
+          // Hold animated pages (e.g. animated WebP) on their FIRST frame — do not autoplay. On iOS,
+          // expo-image animates a WebP via a Core Animation keyframe animation that decodes each frame
+          // on the MAIN THREAD inside the layer commit (Sentry COMICAL-APP-1E: CA::Transaction::commit
+          // → CAKeyframeAnimation → WebPReadPlugin::decodeAnimatedWebP on thread 0). A large page's
+          // frames block the main thread past the OS app-hang watchdog (≥2s) and the app is killed;
+          // it's also very memory-heavy. There's no prop to move that decode off the main thread, so
+          // the only safe option is not to play it. A poster frame decodes off-thread like any image.
+          autoplay={false}
           onLoad={(e: LoadEvent) => {
             setLoaded(true);
             const w = e.source?.width;
