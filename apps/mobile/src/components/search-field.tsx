@@ -66,14 +66,21 @@ export function SearchField({
       done = true;
       inputRef.current?.focus();
     };
-    // In-place field (or web, which has no native transition anyway): focus on the next frame — no
-    // push animation to wait on, so skip the transition listener and its slow 800ms fallback.
-    if (immediateFocus || Platform.OS === 'web') {
+    // In-place field (no navigation push to wait on — e.g. the Library tab's inline search): focus on
+    // the next frame. This is an additive early-return; it MUST NOT change the two branches below,
+    // which are exactly the original push-transition-aware behavior the Browse `/search` screen relies
+    // on. `immediateFocus` defaults to false, so those callers hit the unchanged branches verbatim.
+    if (immediateFocus) {
       const raf = requestAnimationFrame(focus);
       return () => {
         done = true;
         cancelAnimationFrame(raf);
       };
+    }
+    if (Platform.OS === 'web') {
+      // No native transition on web — focus on the next frame.
+      const raf = requestAnimationFrame(focus);
+      return () => cancelAnimationFrame(raf);
     }
     const unsubscribe = (navigation.addListener as (type: string, cb: () => void) => () => void)(
       'transitionEnd',
