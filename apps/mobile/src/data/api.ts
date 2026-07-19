@@ -409,7 +409,7 @@ export async function isFavorite(bridgeId: string, seriesId: string, signal?: Ab
   return res.favorited;
 }
 
-async function fetchOk(path: string, method: 'PUT' | 'DELETE', signal?: AbortSignal): Promise<void> {
+async function fetchOk(path: string, method: 'PUT' | 'POST' | 'DELETE', signal?: AbortSignal): Promise<void> {
   const res = await transport(path, { method, signal });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -1031,11 +1031,17 @@ export function getActivity(signal?: AbortSignal): Promise<ApiActivityItem[]> {
   return fetchJson('/library/activity', signal);
 }
 
-/** GET /library/activity/count → unread new-chapter count for the tab/app badge. `since` limits
- *  it to items detected after the local seen watermark (strictly after — boundary excluded). */
-export function getActivityCount(since?: number, signal?: AbortSignal): Promise<{ unread: number }> {
-  const qs = since !== undefined ? `?since=${since}` : '';
-  return fetchJson(`/library/activity/count${qs}`, signal);
+/** GET /library/activity/count → unread new-chapter count for the tab/app badge. Counts the whole
+ *  feed — an item only leaves the count when its chapter is read (or its entry is cleared). */
+export function getActivityCount(signal?: AbortSignal): Promise<{ unread: number }> {
+  return fetchJson('/library/activity/count', signal);
+}
+
+/** POST /library/activity/{b}/{s}/read → mark one series' feed chapters read (the row's swipe
+ *  "Mark read"). Union mark-read server-side: it never un-reads, and it leaves the resume
+ *  pointer/history alone — dismissing a feed row is not reading. */
+export function markActivityRead(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void> {
+  return fetchOk(`/library/activity/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/read`, 'POST', signal);
 }
 
 /** DELETE /library/activity → empty the new-chapters feed (user "clear" action). */

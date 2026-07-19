@@ -8,7 +8,7 @@ import Animated, { useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HistoryRow } from '@/components/history-row';
-import { TrashIcon } from '@/components/icons/ui-icons';
+import { CheckIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { PullIndicator } from '@/components/pull-indicator';
 import { RetryBlock } from '@/components/retry-block';
 import { SeriesCardMenu } from '@/components/series-card-menu';
@@ -18,7 +18,6 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
 import { BarContentGap, BottomTabInset, listPaddingTop, MaxTopLevelWidth, Spacing, topLevelCenterInset } from '@/constants/theme';
-import { markActivitySeen } from '@/data/activity/seen';
 import { activityQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import type { ActivityEntry } from '@/data/types';
@@ -75,8 +74,9 @@ export default function ActivityScreen() {
   const [focusedOnce, setFocusedOnce] = useState(false);
   useFocusEffect(
     useCallback(() => {
-      // Looking at the tab resets the badge watermark — the pip counts "new since last looked".
-      markActivitySeen();
+      // Refresh the feed on re-focus so read-state changes made elsewhere (the reader, another
+      // device) show up. Deliberately does NOT touch the badge count — merely looking at the tab
+      // clears nothing; only reading, the row's "Mark read" swipe, or clearing the row drains it.
       if (focusedOnce) void refetch();
       else setFocusedOnce(true);
     }, [focusedOnce, refetch]),
@@ -84,7 +84,7 @@ export default function ActivityScreen() {
 
   const invalidateFeed = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.activity(mock) });
-    void queryClient.invalidateQueries({ queryKey: queryKeys.activityCountPrefix(mock) });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.activityCount(mock) });
   }, [queryClient, mock]);
 
   // Pull-to-refresh = a forced re-scan of the whole library, then a feed refresh. The app's shared
@@ -122,7 +122,27 @@ export default function ActivityScreen() {
     onError: (_e, _g, ctx) => {
       if (ctx?.prev) queryClient.setQueryData(queryKeys.activity(mock), ctx.prev);
     },
-    onSettled: () => void queryClient.invalidateQueries({ queryKey: queryKeys.activityCountPrefix(mock) }),
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: queryKeys.activityCount(mock) }),
+  });
+
+  // Swipe "Mark read" acknowledges a series' new chapters without opening them — with the badge no
+  // longer clearing on tab focus, this (or actually reading) is how a row's count is dismissed.
+  // Optimistic like the clear: flip the group's entries to read at once, roll back on error.
+  const markReadMutation = useMutation({
+    mutationFn: (g: SeriesActivity) => ds.markActivityRead(g.bridgeId, g.seriesId),
+    onMutate: async (g: SeriesActivity) => {
+      const key = queryKeys.activity(mock);
+      await queryClient.cancelQueries({ queryKey: key });
+      const prev = queryClient.getQueryData<ActivityEntry[]>(key);
+      queryClient.setQueryData<ActivityEntry[]>(key, (cur) =>
+        (cur ?? []).map((x) => (x.bridgeId === g.bridgeId && x.seriesId === g.seriesId ? { ...x, read: true } : x)),
+      );
+      return { prev };
+    },
+    onError: (_e, _g, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(queryKeys.activity(mock), ctx.prev);
+    },
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: queryKeys.activityCount(mock) }),
   });
 
   const visible = items && hideNsfw ? items.filter((a) => !byId.get(a.bridgeId)?.nsfw) : items;
@@ -249,6 +269,7 @@ export default function ActivityScreen() {
                 item={item}
                 onRead={() => read(item)}
                 onOpenDetail={() => openDetail(item)}
+                onMarkRead={() => markReadMutation.mutate(item)}
                 onRemove={() => removeMutation.mutate(item)}
                 bridge={nameOf(item.bridgeId)}
                 direct={directOf(item.bridgeId)}
@@ -274,12 +295,14 @@ export default function ActivityScreen() {
  * One coalesced activity row. A component (not inline in `renderItem`) so it can own the thumbnail ref
  * the native long-press preview lifts FROM — the small portrait rect makes the flying cover match
  * Browse/Library/History rather than starting huge from the wide row. Tap reads; 3-dot opens the
- * series page; long-press (native) opens the shared quick-actions popup; swipe-left clears the series.
+ * series page; long-press (native) opens the shared quick-actions popup; swipe-left offers
+ * "Mark read" (while the row has unread chapters) and "Clear" (removes the series from the feed).
  */
 function ActivityItem({
   item,
   onRead,
   onOpenDetail,
+  onMarkRead,
   onRemove,
   bridge,
   direct,
@@ -287,6 +310,7 @@ function ActivityItem({
   item: SeriesActivity;
   onRead: () => void;
   onOpenDetail: () => void;
+  onMarkRead: () => void;
   onRemove: () => void;
   bridge: string;
   direct: boolean;
@@ -309,7 +333,13 @@ function ActivityItem({
     />
   );
   return (
-    <SwipeableRow name={item.title} actions={[{ label: 'Clear', icon: TrashIcon, destructive: true, onPress: onRemove }]}>
+    <SwipeableRow
+      name={item.title}
+      actions={[
+        // All-read rows only offer Clear — nothing left to mark.
+        ...(item.hasUnread ? [{ label: 'Mark read', icon: CheckIcon, onPress: onMarkRead }] : []),
+        { label: 'Clear', icon: TrashIcon, destructive: true, onPress: onRemove },
+      ]}>
       {Platform.OS === 'web' ? (
         renderRow(false)
       ) : (

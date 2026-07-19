@@ -109,8 +109,9 @@ export const persister = createAsyncStoragePersister({
 // `staleTime` but never write it to disk; the only thing lost is an instant grid repaint on cold
 // start, which re-fetches page 1 regardless. (`homeSections` stays persisted — it's page 1 only, one
 // bounded fetch that gives an instant Home repaint on restart; its pages 2+ live under `browseGrid`.)
-// `activityCount` embeds the seen watermark in its key, so every visit to the Activity tab mints a
-// new entry — cheap in memory (a number, gc'd) but pointless churn in the disk blob.
+// (`activityCount` used to be excluded here: its key embedded a per-visit seen watermark, minting
+// a new cache entry per Activity-tab visit. The watermark is gone — the count is one stable, tiny
+// entry now, and persisting it gives the tab pip an instant cold-start value.)
 const NO_PERSIST_KEYS = new Set([
   'seriesDetail',
   'seriesList',
@@ -120,7 +121,6 @@ const NO_PERSIST_KEYS = new Set([
   'isFavorite',
   'pageThumb',
   'browseGrid',
-  'activityCount',
 ]);
 
 /** Persist only the light keys (see `NO_PERSIST_KEYS`), keeping the default
