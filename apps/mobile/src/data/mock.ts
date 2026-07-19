@@ -962,8 +962,14 @@ export async function mockGetActivity(): Promise<MockActivity[]> {
   return [...mockActivity].sort((a, b) => b.detectedAt - a.detectedAt);
 }
 
-export async function mockGetActivityCount(since?: number): Promise<number> {
-  return mockActivity.filter((a) => !a.read && (since === undefined || a.detectedAt > since)).length;
+export async function mockGetActivityCount(): Promise<number> {
+  return mockActivity.filter((a) => !a.read).length;
+}
+
+export async function mockMarkActivityRead(bridgeId: string, seriesId: string): Promise<void> {
+  mockActivity = mockActivity.map((a) =>
+    a.bridgeId === bridgeId && a.seriesId === seriesId ? { ...a, read: true } : a,
+  );
 }
 
 export async function mockClearActivity(): Promise<void> {

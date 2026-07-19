@@ -21,7 +21,6 @@ import * as api from '../api';
 import { isMockActive } from '../mock';
 import { syncAppBadge } from './app-badge';
 import { getNotifyPrefsSync } from './prefs';
-import { getActivitySeenAtSync } from './seen';
 
 export const CHAPTER_CHECK_TASK = 'comical.chapters.check';
 
@@ -60,8 +59,8 @@ export async function runChapterCheck(): Promise<BackgroundTask.BackgroundTaskRe
     const res = await api.runBackgroundSync({ budgetMs: SYNC_BUDGET_MS, trackers: false });
 
     if (res.newChapters > 0 && prefs.notifications) await notifyNewChapters(res.newChapters);
-    // Same watermark as the tab pip, so the icon and the in-app badge always agree.
-    const { unread } = await api.getActivityCount(getActivitySeenAtSync());
+    // Same whole-feed unread count as the tab pip, so the icon and the in-app badge always agree.
+    const { unread } = await api.getActivityCount();
     syncAppBadge(unread);
 
     return BackgroundTask.BackgroundTaskResult.Success;

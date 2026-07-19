@@ -48,7 +48,7 @@ async function run(): Promise<void> {
     const res = await api.runBackgroundSync({});
     // mock=false throughout: this never runs against the mock source (guard above).
     void queryClient.invalidateQueries({ queryKey: queryKeys.activity(false) });
-    void queryClient.invalidateQueries({ queryKey: queryKeys.activityCountPrefix(false) });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.activityCount(false) });
     // Unread counts on library cards moved too — but only bother when something changed.
     if (res.newChapters > 0 || res.readSynced > 0) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.libraryList(false) });

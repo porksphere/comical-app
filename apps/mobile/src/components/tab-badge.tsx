@@ -21,7 +21,7 @@ export function TabBadge({ count }: { count: number }) {
   );
 }
 
-/** The Activity tab's pip — new chapters detected since the tab was last opened. */
+/** The Activity tab's pip — unread new chapters (drains on read/mark-read/clear, not on look). */
 export function ActivityTabBadge() {
   return <TabBadge count={useActivityBadgeCount()} />;
 }

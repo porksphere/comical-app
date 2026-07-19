@@ -128,8 +128,12 @@ export interface DataSource {
   removeHistoryEntry(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void>;
 
   getActivity(signal?: AbortSignal): Promise<ActivityEntry[]>;
-  /** Unread new-chapter count, restricted to items detected after `since` (the seen watermark). */
-  getActivityCount(since?: number, signal?: AbortSignal): Promise<number>;
+  /** Unread new-chapter count across the whole feed — items leave it only when their chapter is
+   *  read (or their entry is cleared), never by merely looking at the tab. */
+  getActivityCount(signal?: AbortSignal): Promise<number>;
+  /** Mark one series' feed chapters read (the Activity row's "Mark read" swipe). Doesn't move the
+   *  resume pointer or history — dismissing a feed row is not reading. */
+  markActivityRead(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void>;
   /** Scan the library for new chapters. `force` re-checks every entry (the user-facing
    *  "Check for updates"); without it the host skips recently-synced entries, and
    *  `budgetMs`/`trackers: false` keep OS background windows short. */
@@ -415,8 +419,11 @@ const realDataSource: DataSource = {
   async getActivity(signal) {
     return (await api.getActivity(signal)).map(toActivityEntry);
   },
-  async getActivityCount(since, signal) {
-    return (await api.getActivityCount(since, signal)).unread;
+  async getActivityCount(signal) {
+    return (await api.getActivityCount(signal)).unread;
+  },
+  async markActivityRead(bridgeId, seriesId, signal) {
+    await api.markActivityRead(bridgeId, seriesId, signal);
   },
   async checkForUpdates(opts = {}, signal) {
     const res = await api.runBackgroundSync(opts, signal);
@@ -690,7 +697,8 @@ const mockDataSource: DataSource = {
   getHistory: () => mock.mockGetHistory(),
   removeHistoryEntry: (bridgeId, seriesId) => mock.mockRemoveHistoryEntry(bridgeId, seriesId),
   getActivity: () => mock.mockGetActivity(),
-  getActivityCount: (since) => mock.mockGetActivityCount(since),
+  getActivityCount: () => mock.mockGetActivityCount(),
+  markActivityRead: (bridgeId, seriesId) => mock.mockMarkActivityRead(bridgeId, seriesId),
   checkForUpdates: () => mock.mockCheckForUpdates(),
   clearActivity: () => mock.mockClearActivity(),
   removeActivityEntry: (bridgeId, seriesId) => mock.mockClearActivityForEntry(bridgeId, seriesId),

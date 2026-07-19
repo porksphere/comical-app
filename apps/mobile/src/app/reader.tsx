@@ -256,7 +256,7 @@ export default function ReaderScreen() {
     const invalidateHistory = () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.history(mock) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.activity(mock) });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.activityCountPrefix(mock) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.activityCount(mock) });
     };
     if (chapterId && inLibrary) {
       void ds

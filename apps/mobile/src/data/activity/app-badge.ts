@@ -1,6 +1,6 @@
 /**
- * The app-icon badge (iOS/Android home screen), mirrored from the same unread-since-seen count as
- * the Activity tab pip. Fire-and-forget: badge writes are cosmetic and must never fail a caller.
+ * The app-icon badge (iOS/Android home screen), mirrored from the same unread feed count as the
+ * Activity tab pip. Fire-and-forget: badge writes are cosmetic and must never fail a caller.
  */
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
