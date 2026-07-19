@@ -494,8 +494,14 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
   const bgOpen = theme.backgroundElement;
   const rowStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: tx.value }],
-    borderTopRightRadius: liftProgress.value * SLOT_RADIUS,
-    borderBottomRightRadius: liftProgress.value * SLOT_RADIUS,
+    // UNIFORM radius (all four corners), NOT just the trailing two. Only the trailing edge's
+    // rounding is ever seen — the row slides left under the container's `overflow: hidden`, so its
+    // leading corners are clipped off-screen — so this looks identical to rounding only the right
+    // corners. But it MUST stay uniform: RN 0.85's Fabric `BackgroundDrawable` takes a `drawPath`
+    // branch for a NON-uniform rounded background and hard-crashes on a null render path
+    // (`IllegalStateException: Required value was null`), which took down every History/Activity
+    // row the moment it drew. A single `borderRadius` keeps it on the safe `drawRoundRect` path.
+    borderRadius: liftProgress.value * SLOT_RADIUS,
     // At rest the row is indistinguishable from the page; as it opens it lifts onto the elevated
     // surface, which is what makes the rounded slot legible.
     backgroundColor: interpolateColor(liftProgress.value, [0, 1], [bgClosed, bgOpen]),
