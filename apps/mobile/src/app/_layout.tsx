@@ -109,12 +109,17 @@ function RootNavigation() {
           <Stack.Screen name="manage-lists" options={{ headerShown: false }} />
           <Stack.Screen name="results" options={{ headerShown: false }} />
           {/* Full-screen page reader; its own dark chrome, fade in/out. A
-              transparentModal so the screen it was opened from stays rendered
-              underneath — the reader's own dark backdrop covers it at rest and
-              fades out under a swipe-away, revealing it (see reader.tsx). */}
+              *contained* transparent modal so the screen it was opened from stays
+              rendered underneath — the reader's own dark backdrop covers it at
+              rest and fades out under a swipe-away, revealing it (see reader.tsx).
+              `contained…` (not plain `transparentModal`) keeps the reader inside
+              the JS-managed container instead of a separate native modal VC, so
+              the app-root overlays (the reader settings sheet) still render ABOVE
+              it — a plain transparentModal presented them behind the reader,
+              making the settings gear look dead on iOS. */}
           <Stack.Screen
             name="reader"
-            options={{ headerShown: false, animation: 'fade', presentation: 'transparentModal' }}
+            options={{ headerShown: false, animation: 'fade', presentation: 'containedTransparentModal' }}
           />
           {/* These render their own <TopBar> (matching series.tsx), so the native
               stack header is hidden here too. The Settings tab is only a table of
