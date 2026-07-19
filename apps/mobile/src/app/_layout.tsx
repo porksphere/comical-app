@@ -108,8 +108,14 @@ function RootNavigation() {
           {/* Custom-lists manager (create/rename/reorder/delete), pushed from the Library selector. */}
           <Stack.Screen name="manage-lists" options={{ headerShown: false }} />
           <Stack.Screen name="results" options={{ headerShown: false }} />
-          {/* Full-screen page reader; its own dark chrome, fade in/out. */}
-          <Stack.Screen name="reader" options={{ headerShown: false, animation: 'fade' }} />
+          {/* Full-screen page reader; its own dark chrome, fade in/out. A
+              transparentModal so the screen it was opened from stays rendered
+              underneath — the reader's own dark backdrop covers it at rest and
+              fades out under a swipe-away, revealing it (see reader.tsx). */}
+          <Stack.Screen
+            name="reader"
+            options={{ headerShown: false, animation: 'fade', presentation: 'transparentModal' }}
+          />
           {/* These render their own <TopBar> (matching series.tsx), so the native
               stack header is hidden here too. The Settings tab is only a table of
               contents — every category below is a screen it pushes. */}
