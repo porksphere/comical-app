@@ -28,9 +28,37 @@ describe('resolveTagIntent', () => {
     expect(resolveTagIntent([authorStr], { filterKey: 'genres', tagId: 't1', label: 'Action' })).toBeNull();
   });
 
-  test('id matches but the field is not a tag filter → null', () => {
+  test('id matches but the field is not a selectable filter → null', () => {
     const notTags: FilterDef = { id: 'genres', label: 'Genres', type: 'string' };
     expect(resolveTagIntent([notTags], { filterKey: 'genres', tagId: 't1', label: 'Action' })).toBeNull();
+  });
+
+  test('genre → a plain multi filter → single-element array value', () => {
+    const genreMulti: FilterDef = {
+      id: 'genre',
+      label: 'Genres',
+      type: 'multi',
+      options: [{ value: '39', label: 'Action' }],
+    };
+    expect(resolveTagIntent([genreMulti], { filterKey: 'genre', tagId: '39', label: 'Action' })).toEqual({
+      defId: 'genre',
+      labelHint: { '39': 'Action' },
+      value: ['39'],
+    });
+  });
+
+  test('genre → an excludable (includeExclude) filter → tri-state include', () => {
+    const genreExcl: FilterDef = {
+      id: 'genre',
+      label: 'Genres',
+      type: 'includeExclude',
+      options: [{ value: '39', label: 'Action' }],
+    };
+    expect(resolveTagIntent([genreExcl], { filterKey: 'genre', tagId: '39', label: 'Action' })).toEqual({
+      defId: 'genre',
+      labelHint: { '39': 'Action' },
+      value: { '39': 'include' },
+    });
   });
 });
 

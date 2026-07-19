@@ -8,12 +8,12 @@
  *
  * Three shapes, mirroring comical-web's tag chips (`navigateToQuerySearch` /
  * `navigateToFilteredSearch`): a `query` intent runs a free-text search — for
- * bridges whose tag groups carry `tagQueries`; a `tag` intent selects the
- * bridge's tag-multiselect filter by `filterKey` — for bridges whose tag groups
- * carry `tagIds` (keyed "tag" by convention); a `meta` intent comes from tapping
- * an Author/Artist/Type meta cell — Search routes it into the matching filter
- * field (if the bridge has one) and otherwise falls back to a plain free-text
- * search, same as `query`.
+ * bridges whose tag groups carry `tagQueries`; a `tag` intent selects one of the
+ * bridge's filters by `filterKey` — for bridges whose tag groups carry `tagIds`
+ * (keyed "tag" for the tag-multiselect, "genre" for the genre filter); a `meta`
+ * intent comes from tapping an Author/Artist/Type meta cell — Search routes it
+ * into the matching filter field (if the bridge has one) and otherwise falls back
+ * to a plain free-text search, same as `query`.
  */
 import type { TagGroup } from '@/data/mock';
 
@@ -30,8 +30,10 @@ export type SearchIntent = {
 /**
  * Build the intent for a tapped tag — the shared logic behind both the Series screen's tag chips and
  * the card long-press preview's tag rows. Mirrors comical-web: a `tagQueries` entry runs a free-text
- * search; a `tagIds` entry selects the bridge's tag-multiselect filter. Returns null for a
- * non-actionable tag (no id/query at that index). Callers `setSearchIntent` it and navigate.
+ * search; a `tagIds` entry selects one of the bridge's filters by `filterKey`. A `kind: "genre"`
+ * group targets the bridge's genre filter (key "genre" by convention — a select/multiselect); every
+ * other group targets the tag-multiselect (key "tag"). Returns null for a non-actionable tag (no
+ * id/query at that index). Callers `setSearchIntent` it and navigate.
  */
 export function tagSearchIntent(
   group: TagGroup,
@@ -41,7 +43,10 @@ export function tagSearchIntent(
   const query = group.tagQueries?.[index];
   const tagId = group.tagIds?.[index];
   if (query) return { ...base, kind: 'query', query };
-  if (tagId) return { ...base, kind: 'tag', filterKey: 'tag', tagId, label: group.tags[index] };
+  if (tagId) {
+    const filterKey = group.kind === 'genre' ? 'genre' : 'tag';
+    return { ...base, kind: 'tag', filterKey, tagId, label: group.tags[index] };
+  }
   return null;
 }
 

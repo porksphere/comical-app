@@ -485,11 +485,13 @@ export function mockSeries(
   // Chaptered: readLabel/chapterCount aren't known until the list loads — getSeriesList fills them.
 
   if (!bare) {
-    base.genres = GENRES;
+    // Genres are the leading `kind: "genre"` group; `tagIds` mirror the mock genre filter's option
+    // values (the genre names) so a tapped genre chip drives that filter — see mockGetFilters.
+    const genreGroup: TagGroup = { kind: 'genre', label: 'Genres', tags: GENRES, tagIds: GENRES };
     // The long-title series doubles as the "ton of tags" case.
     base.tagGroups = seed.includes('long')
-      ? [...TAG_GROUPS, { label: 'Tags', tags: MANY_TAGS }]
-      : TAG_GROUPS;
+      ? [genreGroup, ...TAG_GROUPS, { label: 'Tags', tags: MANY_TAGS }]
+      : [genreGroup, ...TAG_GROUPS];
     base.hasSources = h % 2 === 0;
     base.hasTrackers = true;
     base.trackers = mockTrackerLinks(seed, chapterCount);

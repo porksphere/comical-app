@@ -7,6 +7,10 @@
 // module graph) — lets it be unit-tested directly. See filter-intents.test.ts.
 import type { FilterDef, FilterValue, TriState } from './filter-types';
 
+/** Filter kinds a tapped tag/genre chip can select into, keyed by `tagId`. `tags` +
+ *  `includeExclude` take a tri-state map; `multi` takes an array of selected values. */
+const TAG_SELECTABLE = ['tags', 'includeExclude', 'multi'] as const;
+
 /** Candidate filter-field ids (lowercased) a bridge might use for each meta key tapped on the
  *  Series screen — matched against `FilterDef.id` so e.g. an Author tap lands on that bridge's own
  *  author filter when it has one. */
@@ -21,10 +25,11 @@ export type TagIntent = { filterKey: string; tagId: string; label: string };
 /** A tapped Author/Artist/Type meta cell. */
 export type MetaIntent = { metaKey: 'author' | 'artist' | 'type'; value: string };
 
-/** What a tag intent resolves to: which tag filter to touch, an id→label hint (a live-search tag
- *  filter has no static options to look the label up in), and the tri-state value to set. `null`
- *  when this bridge exposes no matching tag filter — the caller just drops the intent. */
-export type TagIntentResult = { defId: string; labelHint: Record<string, string>; value: TriState };
+/** What a tag intent resolves to: which filter to touch, an id→label hint (a live-search tag filter
+ *  has no static options to look the label up in), and the value to set — a tri-state map for
+ *  tag/includeExclude filters, or an array for a plain `multi` (e.g. a non-excludable genre filter).
+ *  `null` when this bridge exposes no matching filter — the caller just drops the intent. */
+export type TagIntentResult = { defId: string; labelHint: Record<string, string>; value: FilterValue };
 
 /** What a meta intent resolves to: set a specific filter, or (no matching field/option) fall back
  *  to a plain free-text search. */
@@ -32,14 +37,18 @@ export type MetaIntentResult =
   | { kind: 'filter'; defId: string; value: FilterValue }
   | { kind: 'query'; query: string };
 
-/** Resolve a tapped tag chip against the loaded defs. */
+/** Resolve a tapped tag/genre chip against the loaded defs. Matches the filter named `filterKey`
+ *  when it's a selectable kind — a `tags`/`includeExclude` filter takes a tri-state map; a plain
+ *  `multi` filter (e.g. a non-excludable genre filter) takes an array. Mirrors resolveMetaIntent. */
 export function resolveTagIntent(defs: FilterDef[], intent: TagIntent): TagIntentResult | null {
-  const def = defs.find((d) => d.id === intent.filterKey && d.type === 'tags');
+  const def = defs.find(
+    (d) => d.id === intent.filterKey && (TAG_SELECTABLE as readonly string[]).includes(d.type),
+  );
   if (!def) return null;
   return {
     defId: def.id,
     labelHint: { [intent.tagId]: intent.label },
-    value: { [intent.tagId]: 'include' } as TriState,
+    value: def.type === 'multi' ? [intent.tagId] : ({ [intent.tagId]: 'include' } as TriState),
   };
 }
 

@@ -1515,7 +1515,6 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
               same one the series page puts on those tags, so the strip stays readable. */}
           {detailLoaded ? (
             <TagStrip
-              genres={detail.data?.genres}
               groups={detail.data?.tagGroups}
               contentInset={PANEL_PAD}
               onTagPress={onTagPress}

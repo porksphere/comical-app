@@ -42,8 +42,8 @@ export function Chip({
   highlighted?: boolean;
 }) {
   const theme = useTheme();
-  // Matches the reference: every chip shares the neutral `chipBg` fill; tags
-  // (`accent`) carry a coloured border + coloured text, while plain chips (genres) get a
+  // Matches the reference: every chip shares the neutral `chipBg` fill; a chip given a group
+  // `color` (or `accent`) carries a coloured border + coloured text, while a plain chip gets a
   // subtle border and muted text — rather than a tinted fill.
   const border = color ? color.border : accent ? theme.chipBorder : theme.hairline;
   const text = color ? color.text : accent ? theme.chipText : theme.textSecondary;
@@ -153,15 +153,14 @@ function groupChips(
  * group would push the panel past the height a preview can justify — the colour is what still tells
  * you an "Artist" tag from a "Character" one, and it's the same colour the series page uses.
  *
- * Genres lead, in neutral: they aren't a group and have no colour of their own.
+ * Genres are just the `kind: "genre"` group — they flatten in with the rest (their reserved colour
+ * distinguishes them), no separate leading run.
  */
 export function TagStrip({
-  genres,
   groups,
   contentInset,
   onTagPress,
 }: {
-  genres?: string[];
   groups?: TagGroup[];
   /** Leading padding inside the scroll content — see `ChipRow`'s `contentInset`. */
   contentInset?: number;
@@ -171,16 +170,13 @@ export function TagStrip({
   // Computed over ALL the groups at once, not per-chip: an unrecognized label's hue depends on which
   // others are present (it probes around them), so the set is the input — see tagPaletteFor.
   const colors = tagPaletteFor(groups?.map((g) => g.label) ?? [], scheme);
-  const hasTags = !!genres?.length || !!groups?.some((g) => g.tags.length);
+  const hasTags = !!groups?.some((g) => g.tags.length);
   if (!hasTags) return null;
   return (
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={[styles.hChips, contentInset != null && { paddingLeft: contentInset }]}>
-      {genres?.map((g, i) => (
-        <Chip key={`g${chipKey(g, i)}`} label={g} />
-      ))}
       {groups?.flatMap((group, gi) =>
         groupChips(group, colors[gi]!, `t${gi}:`, onTagPress ? (i) => onTagPress(group, i) : undefined),
       )}

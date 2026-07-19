@@ -6,7 +6,7 @@ import { Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions, View,
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ChipRow, TagGroupRow } from '@/components/chip';
+import { TagGroupRow } from '@/components/chip';
 import { Rail, RailSkeleton } from '@/components/rail';
 import { RetryBlock } from '@/components/retry-block';
 import { ActionButton, NewBadge } from '@/components/series/action-button';
@@ -525,12 +525,12 @@ function SeriesBody({
   // or stacked below the hero row (small).
   const contentEl = (
     <>
-      {series.genres?.length || series.tagGroups?.length ? (
+      {series.tagGroups?.length ? (
         <View style={styles.tagsBlock}>
-          {series.genres?.length ? <ChipRow labels={series.genres} /> : null}
-          {/* Keyed by index, not `g.label` — a bridge can repeat a group label, and two siblings on
+          {/* Genres are just the `kind: "genre"` group here — one path renders every taxonomy.
+              Keyed by index, not `g.label` — a bridge can repeat a group label, and two siblings on
               the same key is a duplicate-key error (same reasoning as chip.tsx's `chipKey`). */}
-          {series.tagGroups?.map((g, gi) => (
+          {series.tagGroups.map((g, gi) => (
             <TagGroupRow
               key={`${gi}:${g.label}`}
               group={g}
