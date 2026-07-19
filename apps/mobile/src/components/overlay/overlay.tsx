@@ -608,6 +608,7 @@ function OverlaySheet({
 }) {
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
   const translateY = useSharedValue(height);
   const depthSV = useSharedValue(depthFromTop);
   const isTop = depthFromTop === 0;
@@ -629,13 +630,17 @@ function OverlaySheet({
   const focusedInputBottom = useSharedValue(-1);
   const sheetHeightSV = useSharedValue(0);
   const keyboard = useAnimatedKeyboard();
+  // `measureInWindow` on edge-to-edge Android reports Y relative to the content
+  // area below the status bar, while `height` (useWindowDimensions) is the full
+  // physical screen — add the top inset there to realign them. iOS (and web)
+  // already measure in full-window coordinates, so adding it there would
+  // overshoot the shift by the whole notch/status-bar height (the sheet flew up
+  // far more than needed). Gate it to Android; precomputed outside the worklet.
+  const measureTopInset = Platform.OS === 'android' ? insets.top : 0;
   const keyboardShift = useDerivedValue(() => {
     const kbHeight = keyboard.height.value;
     if (kbHeight <= 0 || focusedInputBottom.value < 0) return 0;
-    // `measureInWindow` on edge-to-edge Android reports Y relative to the
-    // content area below the status bar, while `height` (useWindowDimensions)
-    // is the full physical screen — realign them before comparing.
-    const inputBottom = focusedInputBottom.value + insets.top;
+    const inputBottom = focusedInputBottom.value + measureTopInset;
     const availableBottom = height - kbHeight - Spacing.three;
     const overlap = inputBottom - availableBottom;
     const sheetTop = height - sheetHeightSV.value;
@@ -763,7 +768,19 @@ function OverlaySheet({
     opacity: interpolate(depthSV.value, [0, 1], [0, 0.45], Extrapolation.CLAMP),
   }));
 
+  // Keyboard avoidance lifts the whole sheet up by `keyboardShift`, vacating a
+  // strip of that height at the very bottom of the screen. Without this the
+  // dimmed app behind shows through there (a gap below the sheet, above the
+  // keyboard). This filler paints that strip in the sheet's own panel color so
+  // the surface reads as continuing straight down to the bottom edge. It lives
+  // *outside* the translated `sheetWrap` (a sibling below) so it stays pinned to
+  // the bottom instead of riding up with the sheet — its animated height is
+  // exactly the shift, so its top meets the sheet's lifted bottom edge. The
+  // sheet has square bottom corners, so the seam is invisible.
+  const fillerStyle = useAnimatedStyle(() => ({ height: keyboardShift.value }));
+
   return (
+    <>
     <Animated.View style={[styles.sheetWrap, sheetStyle, { pointerEvents: 'box-none' }]}>
       <OverlayPresentationContext.Provider value="sheet">
       <SheetScrollContext.Provider value={sheetScroll}>
@@ -818,6 +835,10 @@ function OverlaySheet({
       </SheetScrollContext.Provider>
       </OverlayPresentationContext.Provider>
     </Animated.View>
+    <Animated.View style={[styles.bottomFiller, fillerStyle, { pointerEvents: 'none' }]}>
+      <View style={[styles.bottomFillerInner, { backgroundColor: theme.backgroundPanel }]} />
+    </Animated.View>
+    </>
   );
 }
 
@@ -976,6 +997,22 @@ const styles = StyleSheet.create({
   },
   dim: {
     backgroundColor: '#000000',
+  },
+  // Pinned to the bottom of the screen (outside the translated sheet), it fills
+  // the strip the sheet vacates when it lifts for the keyboard. Full-width outer
+  // so it centers the inner panel-colored fill the same way `sheetWrap` centers
+  // the sheet (matching its `maxWidth`), so the two align edge-to-edge.
+  bottomFiller: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+  },
+  bottomFillerInner: {
+    width: '100%',
+    maxWidth: 520,
+    flex: 1,
   },
   popoverWrap: {
     position: 'absolute',
