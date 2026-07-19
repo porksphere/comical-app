@@ -9,6 +9,7 @@ import { PagedReader, type PagedReaderHandle } from '@/components/reader/paged-r
 import { ProgressPill } from '@/components/reader/progress-pill';
 import { ReaderToolbar } from '@/components/reader/reader-toolbar';
 import { SettingsControl } from '@/components/reader/settings-panel';
+import { SwipeDismiss } from '@/components/reader/swipe-dismiss';
 import { RetryBlock } from '@/components/retry-block';
 import { ThemedText } from '@/components/themed-text';
 import { WebtoonReader, type WebtoonReaderHandle } from '@/components/reader/webtoon-reader';
@@ -126,6 +127,9 @@ export default function ReaderScreen() {
   const [settings] = useReaderSettings();
   const [currentPage, setCurrentPage] = useState(startIndex);
   const [chromeVisible, setChromeVisible] = useState(true);
+  // Whether the visible paged-reader page is pinch-zoomed — suspends the
+  // swipe-away gesture so a one-finger drag pans the zoomed image instead.
+  const [pageZoomed, setPageZoomed] = useState(false);
 
   // Latest page in a ref so the tap-zone prev/next read it without stale closures
   // (and rapid taps advance correctly).
@@ -432,48 +436,60 @@ export default function ReaderScreen() {
         </View>
       ) : (
         <>
-          {settings.mode === 'paged' ? (
-            <PagedReader
-              ref={pagedRef}
-              pages={pages}
-              width={width}
-              height={height}
-              rtl={settings.direction === 'rtl'}
-              pageFit={settings.pageFit}
-              // Seed from `startIndex` (correct the instant `pages` lands, which
-              // is the same render this mounts), NOT `currentPage` — that state
-              // still reads 0 on this render (its pages-loaded correction effect
-              // hasn't run yet), which left the native readers, which only seed
-              // at mount and never re-sync, stuck on page 1 while the pill showed
-              // the right number.
-              initialPage={startIndex}
-              onPageChange={setCurrent}
-              onPrev={turnPrev}
-              onNext={turnNext}
-              onToggleChrome={toggleChrome}
-            />
-          ) : (
-            <WebtoonReader
-              ref={webtoonRef}
-              pages={pages}
-              width={width}
-              height={height}
-              pageFit={settings.pageFit}
-              // See PagedReader above: seed from `startIndex`, not the lagging
-              // `currentPage` state, so the native readers land on the right page.
-              initialPage={startIndex}
-              onPageChange={setCurrent}
-              onToggleChrome={toggleChrome}
-              // The continuous variant advances via its end-of-chapter sentinel
-              // (scroll-to-end or tap). The fit-page variant, whose page tracking
-              // is exact, still uses the reliable `atLastPage` end-reached advance.
-              nextChapterName={nextChapter?.name}
-              onAdvance={() => void tryAdvanceChapter()}
-              onEndReached={() => {
-                if (atLastPage()) void tryAdvanceChapter();
-              }}
-            />
-          )}
+          {/* Swipe-away dismissal on the cross axis: vertical while the paged
+              reader scrolls horizontally, horizontal while the webtoon scrolls
+              vertically. The page tracks the finger and fades; past the
+              threshold it slides out and the reader closes. */}
+          <SwipeDismiss
+            axis={settings.mode === 'paged' ? 'vertical' : 'horizontal'}
+            width={width}
+            height={height}
+            enabled={settings.mode !== 'paged' || !pageZoomed}
+            onDismiss={() => router.back()}>
+            {settings.mode === 'paged' ? (
+              <PagedReader
+                ref={pagedRef}
+                pages={pages}
+                width={width}
+                height={height}
+                rtl={settings.direction === 'rtl'}
+                pageFit={settings.pageFit}
+                // Seed from `startIndex` (correct the instant `pages` lands, which
+                // is the same render this mounts), NOT `currentPage` — that state
+                // still reads 0 on this render (its pages-loaded correction effect
+                // hasn't run yet), which left the native readers, which only seed
+                // at mount and never re-sync, stuck on page 1 while the pill showed
+                // the right number.
+                initialPage={startIndex}
+                onPageChange={setCurrent}
+                onPrev={turnPrev}
+                onNext={turnNext}
+                onToggleChrome={toggleChrome}
+                onZoomChange={setPageZoomed}
+              />
+            ) : (
+              <WebtoonReader
+                ref={webtoonRef}
+                pages={pages}
+                width={width}
+                height={height}
+                pageFit={settings.pageFit}
+                // See PagedReader above: seed from `startIndex`, not the lagging
+                // `currentPage` state, so the native readers land on the right page.
+                initialPage={startIndex}
+                onPageChange={setCurrent}
+                onToggleChrome={toggleChrome}
+                // The continuous variant advances via its end-of-chapter sentinel
+                // (scroll-to-end or tap). The fit-page variant, whose page tracking
+                // is exact, still uses the reliable `atLastPage` end-reached advance.
+                nextChapterName={nextChapter?.name}
+                onAdvance={() => void tryAdvanceChapter()}
+                onEndReached={() => {
+                  if (atLastPage()) void tryAdvanceChapter();
+                }}
+              />
+            )}
+          </SwipeDismiss>
 
           <ReaderToolbar
             title={chapterName ?? title ?? 'Reader'}
