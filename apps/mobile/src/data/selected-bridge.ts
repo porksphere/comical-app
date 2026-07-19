@@ -24,7 +24,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { applyOrder, useBridgeOrder } from '@/data/list-order';
 import { queryKeys } from '@/data/queries';
-import { useDataSource, useHideNsfw } from '@/data/source';
+import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import type { Bridge } from '@/data/types';
 import { friendlyError } from '@/lib/friendly-error';
 
@@ -92,11 +92,12 @@ export type SelectedBridge = {
  */
 export function useSelectedBridge(): SelectedBridge {
   const ds = useDataSource();
+  const mock = useMockActive();
   const hideNsfw = useHideNsfw();
   const bridge = useSelectedBridgeId();
 
   const bridgesQuery = useQuery({
-    queryKey: queryKeys.bridges(),
+    queryKey: queryKeys.bridges(mock),
     queryFn: ({ signal }) => ds.getBridges(signal),
   });
   const bridges = useMemo(() => bridgesQuery.data ?? [], [bridgesQuery.data]);
