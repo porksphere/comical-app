@@ -5,6 +5,7 @@ import { BarSurface } from '@/components/bar-surface';
 import { ThemedText } from '@/components/themed-text';
 import { MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { useTopBarHeight } from '@/hooks/use-responsive';
+import { testId } from '@/lib/test-id';
 
 /**
  * The plain title bar used by the tab screens that just name themselves (Library, History, Activity,
@@ -24,7 +25,7 @@ export function TabTitleBar({ title, titleSlot, right }: { title?: string; title
       {/* Cap+centre only on web; native fills the width so the title aligns with the full-width grids. */}
       <View style={[styles.titleRow, { height: barHeight, maxWidth: Platform.OS === 'web' ? MaxTopLevelWidth : undefined }]}>
         {titleSlot ?? (
-          <ThemedText numberOfLines={1} style={styles.title}>
+          <ThemedText testID={title ? testId('screen-title', title) : undefined} numberOfLines={1} style={styles.title}>
             {title}
           </ThemedText>
         )}
