@@ -17,3 +17,4 @@ export {
   getResolvedModeSync,
   type DataSourceMode,
 } from './preference';
+export { swapDataSourceMode } from './apply-mode';

@@ -16,7 +16,7 @@ import { kickDownloads } from '@/data/downloads/engine';
 import { installDownloadProgress } from '@/data/downloads/events';
 import { hydrateDownloadIndex } from '@/data/downloads/index-cache';
 import { downloadPrefs$, useDownloadPrefs } from '@/data/downloads/prefs';
-import { applyEmbeddedMode, isEmbeddedRuntimeAvailable, useEmbeddedEnabled } from '@/data/embedded';
+import { isEmbeddedRuntimeAvailable, swapDataSourceMode, useEmbeddedEnabled } from '@/data/embedded';
 import { queryClient } from '@/data/query-client';
 import { useNsfwMode, type NsfwMode } from '@/data/source';
 import { useTheme, useThemePreference, type ThemePreference } from '@/hooks/use-theme';
@@ -62,11 +62,7 @@ export default function GeneralSettingsScreen() {
 
   const toggleOnDevice = (enabled: boolean) => {
     setOnDevice(enabled);
-    applyEmbeddedMode(enabled); // swap api.ts's transport (embedded ⇄ remote)
-    queryClient.clear(); // embedded and remote caches must not mix (mirrors PERSIST_BUSTER)
-    bumpDataEpoch(); // refetch useDataSource-backed screens against the swapped transport
-    installDownloadProgress(); // re-pipe progress (embedded engine subscription ⇄ remote SSE)
-    void hydrateDownloadIndex(); // the mode changes what a "local page" is (file:// ⇄ server /file)
+    swapDataSourceMode(enabled); // transport swap + the cache/downloads flushes (see apply-mode.ts)
   };
 
   const saveApiBase = (url: string | null) => {

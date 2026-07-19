@@ -7,6 +7,7 @@
  * swap side effects (installing the transport, clearing the query cache) are applied by the caller
  * that flips it (see settings.tsx / bootstrap.ts), keeping this free of transport/query-client deps.
  */
+import { syncState, when, type ObservableParam } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
 import { isEmbeddedRuntimeAvailable } from '@comical/host-rn';
 import { migrateLegacyKey, persisted$ } from '@/lib/observable';
@@ -55,4 +56,13 @@ export function useEmbeddedEnabled(): [boolean, (enabled: boolean) => void] {
 /** The resolved transport mode: 'embedded' only when both enabled AND the native runtime exists. */
 export function getResolvedModeSync(): DataSourceMode {
   return resolvedEnabled(storedPref()) && isEmbeddedRuntimeAvailable() ? 'embedded' : 'remote';
+}
+
+/**
+ * Resolves once the persisted preference has rehydrated from AsyncStorage. Until then,
+ * `getResolvedModeSync()` sees the unset default (embedded whenever the native runtime exists) —
+ * so any decision taken synchronously at boot must be re-checked after this (see startup.ts).
+ */
+export function whenEmbeddedPrefLoaded(): Promise<unknown> {
+  return when(syncState(pref$ as ObservableParam).isPersistLoaded);
 }
