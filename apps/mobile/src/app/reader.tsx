@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
+import Animated, { interpolate, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
 import { PagedReader, type PagedReaderHandle } from '@/components/reader/paged-reader';
 import { ProgressPill } from '@/components/reader/progress-pill';
@@ -130,6 +131,16 @@ export default function ReaderScreen() {
   // Whether the visible paged-reader page is pinch-zoomed — suspends the
   // swipe-away gesture so a one-finger drag pans the zoomed image instead.
   const [pageZoomed, setPageZoomed] = useState(false);
+
+  // Swipe-away dismissal progress (0 at rest → 1 fully swiped off), written on
+  // the UI thread by SwipeDismiss. The reader's own dark backdrop and its chrome
+  // fade out from it, revealing the screen behind (the reader route is a
+  // transparent modal, so the series screen stays rendered underneath).
+  const dismissProgress = useSharedValue(0);
+  const backdropStyle = useAnimatedStyle(() => ({ opacity: 1 - dismissProgress.value }));
+  const chromeFadeStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(dismissProgress.value, [0, 0.6], [1, 0]),
+  }));
 
   // Latest page in a ref so the tap-zone prev/next read it without stale closures
   // (and rapid taps advance correctly).
@@ -425,6 +436,11 @@ export default function ReaderScreen() {
 
   return (
     <View style={styles.root}>
+      {/* The reader's dark surface, as its own layer so it can fade with a
+          swipe-away and reveal the screen behind (the route is a transparent
+          modal — see _layout.tsx). Opaque at rest, so a normal reader looks
+          unchanged. */}
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.backdrop, backdropStyle]} />
       <StatusBar style="light" hidden={!chromeVisible} />
       {error ? (
         <View style={styles.centerFill}>
@@ -445,7 +461,8 @@ export default function ReaderScreen() {
             width={width}
             height={height}
             enabled={settings.mode !== 'paged' || !pageZoomed}
-            onDismiss={() => router.back()}>
+            onDismiss={() => router.back()}
+            progress={dismissProgress}>
             {settings.mode === 'paged' ? (
               <PagedReader
                 ref={pagedRef}
@@ -491,38 +508,46 @@ export default function ReaderScreen() {
             )}
           </SwipeDismiss>
 
-          <ReaderToolbar
-            title={chapterName ?? title ?? 'Reader'}
-            subtitle={`Page ${currentPage + 1} of ${pages.length}`}
-            visible={chromeVisible}
-            onBack={() => router.back()}
-          />
-          <ProgressPill
-            current={currentPage}
-            total={pages.length}
-            visible={chromeVisible}
-            onJump={(i) => {
-              goTo(i);
-              showChrome();
-            }}
-            onEditingChange={(editing) => {
-              if (editing) {
-                if (hideTimer.current) clearTimeout(hideTimer.current);
-              } else {
-                scheduleHide();
-              }
-            }}
-          />
+          {/* Chrome fades out with the swipe too, so the toolbar/pill don't hang
+              in front of the fading page. `absoluteFill` + `box-none` so the
+              absolutely-positioned bars inside still resolve against the full
+              screen and taps pass through the gaps. */}
+          <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, chromeFadeStyle]}>
+            <ReaderToolbar
+              title={chapterName ?? title ?? 'Reader'}
+              subtitle={`Page ${currentPage + 1} of ${pages.length}`}
+              visible={chromeVisible}
+              onBack={() => router.back()}
+            />
+            <ProgressPill
+              current={currentPage}
+              total={pages.length}
+              visible={chromeVisible}
+              onJump={(i) => {
+                goTo(i);
+                showChrome();
+              }}
+              onEditingChange={(editing) => {
+                if (editing) {
+                  if (hideTimer.current) clearTimeout(hideTimer.current);
+                } else {
+                  scheduleHide();
+                }
+              }}
+            />
+          </Animated.View>
         </>
       )}
-      <SettingsControl
-        visible={chromeVisible}
-        bridgeId={bridgeId}
-        seriesId={seed}
-        title={cachedDetail?.title ?? title ?? seed}
-        thumbnailUrl={cachedDetail?.cover}
-        author={cachedDetail?.meta?.find((m) => m.label === 'AUTHOR')?.value}
-      />
+      <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, chromeFadeStyle]}>
+        <SettingsControl
+          visible={chromeVisible}
+          bridgeId={bridgeId}
+          seriesId={seed}
+          title={cachedDetail?.title ?? title ?? seed}
+          thumbnailUrl={cachedDetail?.cover}
+          author={cachedDetail?.meta?.find((m) => m.label === 'AUTHOR')?.value}
+        />
+      </Animated.View>
     </View>
   );
 }
@@ -590,6 +615,11 @@ async function resolveAdjacentChapter(
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+    // Transparent so a swipe-away can reveal the screen behind — the dark
+    // surface is the `backdrop` layer below, which fades with the gesture.
+    backgroundColor: 'transparent',
+  },
+  backdrop: {
     // Reference: `#reader-view { background: #0f0f0f }` — not pure black.
     backgroundColor: '#0f0f0f',
   },
