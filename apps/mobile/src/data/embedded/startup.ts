@@ -44,10 +44,11 @@ import { installDownloadProgress } from '../downloads/events';
 import { devicePageFetcher, onDevicePageRetry } from '../downloads/fetch-page';
 import { hydrateDownloadIndex } from '../downloads/index-cache';
 import { getDownloadPrefsSync } from '../downloads/prefs';
+import { swapDataSourceMode } from './apply-mode';
 import { fileSystemBundleCache } from './bundle-cache';
 import { expoCoversBlobStore } from './covers-store';
 import { AsyncStorageLibraryStore } from './library-store';
-import { getResolvedModeSync } from './preference';
+import { getResolvedModeSync, whenEmbeddedPrefLoaded } from './preference';
 import { applyImageCacheConfig } from '../image-cache';
 import { installedStore, savedRegistryStore } from './stores';
 import { asyncStorageSettings } from './settings-store';
@@ -102,7 +103,16 @@ export function startEmbeddedRuntime(): void {
   // Bridge bundle verification (@comical/registry verify.ts) needs WebCrypto, absent in Hermes.
   installWebCryptoShim();
   configureEmbeddedRuntime(bootstrapConfig());
-  applyEmbeddedMode(getResolvedModeSync() === 'embedded');
+  const bootEmbedded = applyEmbeddedMode(getResolvedModeSync() === 'embedded');
+  // That sync read ran before the preference finished rehydrating from AsyncStorage, so it saw the
+  // unset DEFAULT (embedded whenever the native runtime exists) — a persisted "remote" choice
+  // hasn't loaded yet, which stranded remote users on the (bridge-less) embedded runtime every
+  // cold boot. Re-resolve once hydration lands; if the answer changed, swap with the same side
+  // effects as the Settings toggle, since anything already fetched went through the wrong transport.
+  void whenEmbeddedPrefLoaded().then(() => {
+    const embedded = getResolvedModeSync() === 'embedded';
+    if (embedded !== bootEmbedded) swapDataSourceMode(embedded);
+  });
   // Warm the sync offline index from the manifest, then resume any downloads interrupted last session.
   void hydrateDownloadIndex().then(() => resumePendingDownloads());
   // Pipe live download progress for the resolved mode (embedded engine subscription / remote SSE).
