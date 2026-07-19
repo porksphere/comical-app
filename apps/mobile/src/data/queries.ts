@@ -97,6 +97,15 @@ export const queryKeys = {
   // query must not share its cache entry — the shapes differ (`GridPage` vs react-query `InfiniteData`),
   // and an infinite query reading a plain `GridPage` reads `data.pages.length` off `undefined` → crash.
   bridgeFavoritesRail: (mock: boolean, bridgeId: string) => ['bridgeFavoritesRail', mock, bridgeId] as const,
+  // Page 1 of a bridge's search, for the cross-bridge (Comical) search fan-out's per-bridge rail. A
+  // SEPARATE key from `browseGrid({kind:'search',query})` ON PURPOSE (same reasoning as
+  // `bridgeFavoritesRail` above): that key is owned by the INFINITE search grid — the reader's `/results`
+  // "See all" of a search rail runs `useInfiniteQuery` on exactly `browseGrid({kind:'search',query})`
+  // (no `opts`, unlike the single-bridge search screen, so it hashes the same). If this plain page-1
+  // rail query shared that entry, opening See all would hydrate the infinite query from a plain
+  // `GridPage` and crash on `data.pages.length`.
+  bridgeSearchRail: (mock: boolean, bridgeId: string, query: string) =>
+    ['bridgeSearchRail', mock, bridgeId, query] as const,
   // Page 1 of a specific bridge list, for a user-composed custom page's section (rail items, or the
   // grid block's seed). A SEPARATE key from `browseGrid({kind:'homeGrid'})` on purpose — that one is
   // owned by the infinite-scroll grid queries, and a plain (non-infinite) query must not share their
