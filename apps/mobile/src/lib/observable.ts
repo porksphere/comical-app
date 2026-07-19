@@ -44,12 +44,32 @@ const noopAsyncStorage = {
   multiRemove: async () => {},
 } as unknown as typeof AsyncStorage;
 
+// Upstream wrinkle (@legendapp/state 3.0.0-beta.47): its `safeStringify` is
+// `value ? JSON.stringify(value) : value`, so a FALSY primitive store value (false / 0 / '')
+// reaches `AsyncStorage.setItem` unstringified — React Native's AsyncStorage rejects the
+// non-string write ("value is not a string" warning), silently leaving the previously
+// persisted value in place. Observed as the dev "Use mock data" toggle turning itself back
+// on after every restart: `set(false)` updated the UI but never storage. Wrapping the store
+// guarantees every write is a real string; non-falsy values arrive already stringified by
+// the plugin and pass through untouched. (Objects never hit this — `{}` is truthy — which is
+// why every object-shaped store persisted fine.)
+const baseStorage = canPersist ? AsyncStorage : noopAsyncStorage;
+const stringSafeStorage = {
+  getItem: (k: string) => baseStorage.getItem(k),
+  setItem: (k: string, v: unknown) => baseStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v)),
+  removeItem: (k: string) => baseStorage.removeItem(k),
+  getAllKeys: () => baseStorage.getAllKeys(),
+  multiGet: (ks: readonly string[]) => baseStorage.multiGet(ks),
+  multiSet: (kvs: [string, string][]) => baseStorage.multiSet(kvs),
+  multiRemove: (ks: readonly string[]) => baseStorage.multiRemove(ks),
+} as unknown as typeof AsyncStorage;
+
 // Same AsyncStorage the query-client persister (`data/query-client.ts`) and the
 // embedded stores use, so all of the app's persistence goes through one backend.
 // To get synchronous, flicker-free hydration everywhere, swap this single line
 // for `@legendapp/state/persist-plugins/mmkv` — no store needs to change.
 const persistedSynced = configureSynced(synced, {
-  persist: { plugin: observablePersistAsyncStorage({ AsyncStorage: canPersist ? AsyncStorage : noopAsyncStorage }) },
+  persist: { plugin: observablePersistAsyncStorage({ AsyncStorage: stringSafeStorage }) },
 });
 
 /**
