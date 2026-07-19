@@ -63,5 +63,6 @@ const styles = StyleSheet.create({
     marginLeft: 'auto',
     flexDirection: 'row',
     alignItems: 'center',
+    gap: Spacing.one,
   },
 });

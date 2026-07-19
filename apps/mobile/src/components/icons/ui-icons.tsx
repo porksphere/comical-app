@@ -1,6 +1,7 @@
 import {
   ArrowDown,
   ArrowUp,
+  ArrowUpDown,
   Bell,
   Blocks,
   Bug,
@@ -63,6 +64,8 @@ export const ChevronDownIcon = ({ color, size = 16 }: IconProps) => <ChevronDown
 export const ChevronRightIcon = ({ color, size = 16 }: IconProps) => <ChevronRight color={color} size={size} />;
 export const ArrowUpIcon = ({ color, size = 16 }: IconProps) => <ArrowUp color={color} size={size} />;
 export const ArrowDownIcon = ({ color, size = 16 }: IconProps) => <ArrowDown color={color} size={size} />;
+// Sort affordance — the Library top bar's sort menu trigger.
+export const SortIcon = ({ color, size = 16 }: IconProps) => <ArrowUpDown color={color} size={size} />;
 export const GripIcon = ({ color, size = 16 }: IconProps) => <GripVertical color={color} size={size} />;
 // Settings section glyphs — General/Bridges/Trackers/Registries/Developer.
 export const GeneralSettingsIcon = ({ color, size = 16 }: IconProps) => <SlidersHorizontal color={color} size={size} />;
