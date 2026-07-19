@@ -500,18 +500,37 @@ const realDataSource: DataSource = {
 
   async getSeriesList(bridgeId, seriesId, direct, signal) {
     if (direct) {
-      const pages = await api.getSeriesPages(bridgeId, seriesId, signal);
+      // A fully-downloaded direct series has every page's bytes on disk (under the reserved direct
+      // chapter id, exactly what the reader serves offline). Reuse them as the preview grid's
+      // thumbnails — expo-image downscales each to the tile and the grid is virtualized, so only
+      // visible pages decode, at no extra storage cost. Only complete downloads are indexed, so array
+      // position lines up with the reader's page index just like the bridge path below.
+      const localGrid = (): SeriesListResult | undefined => {
+        const local = localChapterPages(bridgeId, seriesId, DIRECT_DOWNLOAD_CHAPTER_ID);
+        if (!local) return undefined;
+        return {
+          chapterCount: local.length,
+          readLabel: '▶  Read',
+          pageThumbs: local.map((url): PageThumbSource => ({ kind: 'image', url })),
+        };
+      };
+
+      let pages;
+      try {
+        pages = await api.getSeriesPages(bridgeId, seriesId, signal);
+      } catch (e) {
+        // Bridge unreachable (offline): fall back to the downloaded copy's grid if we have it.
+        const offline = localGrid();
+        if (offline) return offline;
+        throw e;
+      }
+
       const result: SeriesListResult = { chapterCount: pages.length, readLabel: '▶  Read' };
       // Mirrors comical-web: only show the preview grid when the bridge actually supplies cheap
       // thumbnails somewhere in the list — never bulk-load full-resolution page images as a
       // stand-in. Sorted by index so array position lines up with the reader's page index (the
       // grid's "start" param depends on this), with `null` gaps `PageThumbGrid` fetches lazily.
       const withThumb = pages.filter((p) => p.thumbnail).length;
-      if (withThumb === 0) {
-        logDiagnostic('series-pages-no-thumbs', `${pages.length} page(s), 0 with an inline thumbnail`, {
-          context: `bridge=${bridgeId} series=${seriesId}`,
-        });
-      }
       if (withThumb > 0) {
         const sorted = [...pages].sort((a, b) => a.index - b.index);
         result.pageThumbs = sorted.map((p) => toPageThumbSource(p.thumbnail));
@@ -525,7 +544,16 @@ const realDataSource: DataSource = {
             context: `bridge=${bridgeId} series=${seriesId} (missing sheetHeight, or unrecognized kind)`,
           });
         }
+        return result;
       }
+      // The bridge supplies no inline thumbnails. If the series is downloaded, fill the grid from its
+      // local page bytes rather than showing no grid at all; otherwise leave it thumbless (as before,
+      // where `PageThumbGrid` isn't rendered and the page falls back to the Read button alone).
+      const downloaded = localGrid();
+      if (downloaded) return { ...downloaded, chapterCount: pages.length };
+      logDiagnostic('series-pages-no-thumbs', `${pages.length} page(s), 0 with an inline thumbnail`, {
+        context: `bridge=${bridgeId} series=${seriesId}`,
+      });
       return result;
     }
     const chapters: Chapter[] = (await api.getChapters(bridgeId, seriesId, signal)).map((c) => ({
