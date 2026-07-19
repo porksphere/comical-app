@@ -198,15 +198,20 @@ function LibraryRow({
   return (
     <View style={styles.seg}>
       <ThemedText style={styles.segLabel}>This series</ThemedText>
-      <Pressable
-        testID="reader.settings.library"
-        onPress={toggle}
-        style={[styles.opt, inLibrary && styles.optOn]}
-        disabled={inLibrary === null}>
-        <ThemedText style={[styles.optText, inLibrary && styles.optTextOn]}>
-          {inLibrary ? '✓  In Library' : '＋  Library'}
-        </ThemedText>
-      </Pressable>
+      {/* Wrap in a `segRow` like Segment does: `styles.opt` is `flex: 1`, which needs a horizontal
+          row to distribute width. Directly in the column `seg` it would collapse on the vertical
+          main axis to a sliver (flex-basis 0) and become untappable. */}
+      <View style={styles.segRow}>
+        <Pressable
+          testID="reader.settings.library"
+          onPress={toggle}
+          style={[styles.opt, inLibrary && styles.optOn]}
+          disabled={inLibrary === null}>
+          <ThemedText style={[styles.optText, inLibrary && styles.optTextOn]}>
+            {inLibrary ? '✓  In Library' : '＋  Library'}
+          </ThemedText>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -222,16 +227,19 @@ function FavoriteRow({ bridgeId, seriesId }: { bridgeId: string; seriesId: strin
   return (
     <View style={styles.seg}>
       <ThemedText style={styles.segLabel}>This series</ThemedText>
-      <Pressable
-        testID="reader.settings.favorite"
-        onPress={toggle}
-        style={[styles.opt, favorited && styles.optOn, !available && styles.optDisabled]}
-        // Greyed when this bridge's favorites need a login that isn't set (see useFavorite).
-        disabled={!available || favorited === null}>
-        <ThemedText style={[styles.optText, favorited && styles.optTextOn]}>
-          {favorited ? '★  Favorited' : '☆  Favorite'}
-        </ThemedText>
-      </Pressable>
+      {/* See LibraryRow: the `flex: 1` button needs a `segRow` or it collapses to a sliver. */}
+      <View style={styles.segRow}>
+        <Pressable
+          testID="reader.settings.favorite"
+          onPress={toggle}
+          style={[styles.opt, favorited && styles.optOn, !available && styles.optDisabled]}
+          // Greyed when this bridge's favorites need a login that isn't set (see useFavorite).
+          disabled={!available || favorited === null}>
+          <ThemedText style={[styles.optText, favorited && styles.optTextOn]}>
+            {favorited ? '★  Favorited' : '☆  Favorite'}
+          </ThemedText>
+        </Pressable>
+      </View>
     </View>
   );
 }
