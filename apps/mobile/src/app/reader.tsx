@@ -573,6 +573,7 @@ export default function ReaderScreen() {
           title={cachedDetail?.title ?? title ?? seed}
           thumbnailUrl={cachedDetail?.cover}
           author={cachedDetail?.meta?.find((m) => m.label === 'AUTHOR')?.value}
+          direct={isDirect}
         />
       </Animated.View>
     </View>

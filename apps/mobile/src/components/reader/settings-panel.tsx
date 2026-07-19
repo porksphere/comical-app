@@ -1,3 +1,5 @@
+import { useQuery } from '@tanstack/react-query';
+import { useRouter } from 'expo-router';
 import type { ComponentType } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
@@ -5,9 +7,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MoveLeftIcon, MoveRightIcon, MoveVerticalIcon, SettingsIcon } from '@/components/icons/reader-icons';
 import type { IconProps } from '@/components/icons/ui-icons';
-import { OverlayHeading, useAnchoredOverlay } from '@/components/overlay/overlay';
+import { openListPicker } from '@/components/list-picker';
+import { OverlayHeading, useAnchoredOverlay, useOverlay } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
+import { dlGetSeries } from '@/data/api';
+import { deriveSeriesState } from '@/data/downloads/derive';
+import { enqueueChapter } from '@/data/downloads/engine';
+import { queryKeys } from '@/data/queries';
 import { useFavorite } from '@/hooks/use-favorite';
 import { useLibrary } from '@/hooks/use-library';
 import {
@@ -29,11 +36,11 @@ export function SettingsControl({
   title,
   thumbnailUrl,
   author,
+  direct,
 }: {
   visible: boolean;
-  /** When both are set, "This series" Library/Favorite rows are shown — omitted on
-   *  bridges/pages where the reader was opened without a resolvable series (shouldn't
-   *  normally happen). */
+  /** When both are set, the "This series" actions are shown — omitted on bridges/pages where the
+   *  reader was opened without a resolvable series (shouldn't normally happen). */
   bridgeId?: string;
   seriesId?: string;
   /** Snapshot for a new library entry (title/cover/author) — only used if the
@@ -41,6 +48,8 @@ export function SettingsControl({
   title?: string;
   thumbnailUrl?: string;
   author?: string;
+  /** A direct (chapterless) series downloads as one unit; otherwise Download opens chapter select. */
+  direct?: boolean;
 }) {
   const insets = useSafeAreaInsets();
   const { ref, openAt } = useAnchoredOverlay();
@@ -61,6 +70,7 @@ export function SettingsControl({
               title={title}
               thumbnailUrl={thumbnailUrl}
               author={author}
+              direct={direct}
             />
           ))
         }
@@ -84,12 +94,14 @@ function SettingsContent({
   title,
   thumbnailUrl,
   author,
+  direct,
 }: {
   bridgeId?: string;
   seriesId?: string;
   title?: string;
   thumbnailUrl?: string;
   author?: string;
+  direct?: boolean;
 }) {
   const [settings, set] = useReaderSettings();
   return (
@@ -119,10 +131,14 @@ function SettingsContent({
         onChange={(v) => set({ prefetchAhead: Number(v) as PrefetchAhead })}
       />
       {bridgeId && seriesId && (
-        <>
-          <LibraryRow bridgeId={bridgeId} seriesId={seriesId} title={title} thumbnailUrl={thumbnailUrl} author={author} />
-          <FavoriteRow bridgeId={bridgeId} seriesId={seriesId} />
-        </>
+        <SeriesActionsRow
+          bridgeId={bridgeId}
+          seriesId={seriesId}
+          title={title}
+          thumbnailUrl={thumbnailUrl}
+          author={author}
+          direct={direct}
+        />
       )}
     </View>
   );
@@ -170,74 +186,126 @@ function DirectionRow({
   );
 }
 
-/** "This series" → Library toggle, mirroring the series screen's own toggle and
- *  cache (same query key), so adding/removing from either place stays in sync.
- *  The snapshot (title/cover/author) is best-effort — whatever the reader screen
- *  already has cached — since this panel doesn't otherwise fetch series details. */
-function LibraryRow({
+/**
+ * The single "This series" section: Library / Favorite / Download / Add-to-list, in a 2×2 grid.
+ * Each action mirrors its Series-screen counterpart and shares its cache key/hook, so toggling from
+ * either place stays in sync. The library/list snapshot (title/cover/author) is best-effort —
+ * whatever the reader already had cached — since this panel doesn't fetch series details itself.
+ *
+ * (`styles.opt` is `flex: 1`, so the buttons MUST live inside a `segRow`; directly in the column
+ * `seg` they'd collapse on the vertical axis to an untappable sliver.)
+ */
+function SeriesActionsRow({
   bridgeId,
   seriesId,
   title,
   thumbnailUrl,
   author,
+  direct,
 }: {
   bridgeId: string;
   seriesId: string;
   title?: string;
   thumbnailUrl?: string;
   author?: string;
+  direct?: boolean;
 }) {
-  // Shared hook (see useLibrary) — same cache key + optimistic flow as the Series screen, so
-  // toggling from either place stays in sync. The ADD snapshot is built lazily from the reader props.
-  const { inLibrary, toggle } = useLibrary(bridgeId, seriesId, () => ({
+  const router = useRouter();
+  const { closeTop } = useOverlay();
+  const snapshot = () => ({
     ...(title ? { title } : {}),
     ...(thumbnailUrl ? { thumbnailUrl } : {}),
     ...(author ? { author } : {}),
-  }));
+  });
+
+  const { inLibrary, toggle: toggleLibrary } = useLibrary(bridgeId, seriesId, snapshot);
+  const { favorited, toggle: toggleFavorite, available: favAvailable } = useFavorite(bridgeId, seriesId);
+
+  // Download state from the same manifest query the Series screen's button reads (so it shows
+  // "Downloaded"/"Downloading" in step). Partial-vs-complete needs the full chapter list, which the
+  // reader panel doesn't have — so this shows the coarse manifest state and defers the fine-grained
+  // picking to the download screen it opens.
+  const { data: dl } = useQuery({
+    queryKey: queryKeys.seriesDownloads(bridgeId, seriesId),
+    queryFn: () => dlGetSeries(bridgeId, seriesId).catch(() => null),
+  });
+  const dlChapters = dl?.chapters ?? [];
+  const dlState = dlChapters.length > 0 ? deriveSeriesState(dlChapters) : undefined;
+  const dlComplete = dlState === 'complete';
+  const dlInProgress = dlState !== undefined && dlState !== 'complete';
+  const downloadLabel = dlComplete ? '✓  Downloaded' : dlInProgress ? 'Downloading' : '⤓  Download';
+
+  const openSeriesDownloads = (select: boolean) => {
+    closeTop(); // close the reader sheet before pushing the download screen over the reader
+    router.push({
+      pathname: '/series-downloads',
+      params: {
+        bridgeId,
+        id: seriesId,
+        title: title ?? seriesId,
+        all: '1',
+        ...(select ? { select: '1' } : {}),
+        ...(thumbnailUrl ? { cover: thumbnailUrl } : {}),
+        ...(author ? { author } : {}),
+      },
+    });
+  };
+  const onDownload = () => {
+    // Already downloading or done → open the manage view; a direct series is one unit → enqueue it
+    // outright; otherwise open chapter selection (mirrors SeriesDownloadButton, minus partial).
+    if (dlComplete || dlInProgress) return openSeriesDownloads(false);
+    if (direct) {
+      void enqueueChapter({
+        bridgeId,
+        seriesId,
+        chapterId: seriesId,
+        direct: true,
+        title: title ?? seriesId,
+        ...(thumbnailUrl && { thumbnailUrl }),
+        ...(author && { author }),
+      });
+      return;
+    }
+    openSeriesDownloads(true);
+  };
+  const onAddToList = () => {
+    closeTop(); // close the reader sheet so the list picker isn't stacked behind it
+    openListPicker({ bridgeId, seriesId, title, snapshot });
+  };
 
   return (
     <View style={styles.seg}>
       <ThemedText style={styles.segLabel}>This series</ThemedText>
-      {/* Wrap in a `segRow` like Segment does: `styles.opt` is `flex: 1`, which needs a horizontal
-          row to distribute width. Directly in the column `seg` it would collapse on the vertical
-          main axis to a sliver (flex-basis 0) and become untappable. */}
       <View style={styles.segRow}>
         <Pressable
           testID="reader.settings.library"
-          onPress={toggle}
+          onPress={toggleLibrary}
           style={[styles.opt, inLibrary && styles.optOn]}
           disabled={inLibrary === null}>
           <ThemedText style={[styles.optText, inLibrary && styles.optTextOn]}>
             {inLibrary ? '✓  In Library' : '＋  Library'}
           </ThemedText>
         </Pressable>
-      </View>
-    </View>
-  );
-}
-
-/** "This series" → Favorite toggle, mirroring the series screen's star button and cache
- *  (same query key), so favoriting from either place stays in sync. Best-effort: a bridge
- *  without the "favorites" capability just leaves the star unfilled rather than erroring. */
-function FavoriteRow({ bridgeId, seriesId }: { bridgeId: string; seriesId: string }) {
-  // Shared hook (see useFavorite) — same cache key as the Series screen's star, so favoriting from
-  // either place stays in sync.
-  const { favorited, toggle, available } = useFavorite(bridgeId, seriesId);
-
-  return (
-    <View style={styles.seg}>
-      <ThemedText style={styles.segLabel}>This series</ThemedText>
-      {/* See LibraryRow: the `flex: 1` button needs a `segRow` or it collapses to a sliver. */}
-      <View style={styles.segRow}>
         <Pressable
           testID="reader.settings.favorite"
-          onPress={toggle}
-          style={[styles.opt, favorited && styles.optOn, !available && styles.optDisabled]}
+          onPress={toggleFavorite}
+          style={[styles.opt, favorited && styles.optOn, !favAvailable && styles.optDisabled]}
           // Greyed when this bridge's favorites need a login that isn't set (see useFavorite).
-          disabled={!available || favorited === null}>
+          disabled={!favAvailable || favorited === null}>
           <ThemedText style={[styles.optText, favorited && styles.optTextOn]}>
             {favorited ? '★  Favorited' : '☆  Favorite'}
           </ThemedText>
+        </Pressable>
+      </View>
+      <View style={styles.segRow}>
+        <Pressable
+          testID="reader.settings.download"
+          onPress={onDownload}
+          style={[styles.opt, dlComplete && styles.optOn]}>
+          <ThemedText style={[styles.optText, dlComplete && styles.optTextOn]}>{downloadLabel}</ThemedText>
+        </Pressable>
+        <Pressable testID="reader.settings.lists" onPress={onAddToList} style={styles.opt}>
+          <ThemedText style={styles.optText}>Add to list</ThemedText>
         </Pressable>
       </View>
     </View>
