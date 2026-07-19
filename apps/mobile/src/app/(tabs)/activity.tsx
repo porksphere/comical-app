@@ -335,10 +335,14 @@ function ActivityItem({
   return (
     <SwipeableRow
       name={item.title}
+      // Actions lay out left→right, so the LAST sits at the screen edge — revealed by the
+      // smallest swipe and the easiest to tap. Put the destructive Clear FIRST (the inner
+      // slot, reached only by swiping further) and Mark read at the edge, so the safe action
+      // is the easy one and a delete takes a deliberate, longer swipe. All-read rows have
+      // nothing to mark, so they offer Clear alone (which then becomes full-swipeable).
       actions={[
-        // All-read rows only offer Clear — nothing left to mark.
-        ...(item.hasUnread ? [{ label: 'Mark read', icon: CheckIcon, onPress: onMarkRead }] : []),
         { label: 'Clear', icon: TrashIcon, destructive: true, onPress: onRemove },
+        ...(item.hasUnread ? [{ label: 'Mark read', icon: CheckIcon, onPress: onMarkRead }] : []),
       ]}>
       {Platform.OS === 'web' ? (
         renderRow(false)
