@@ -34,6 +34,10 @@ const FAIL_PX = 15; // scroll-axis drift that hands the touch back to the list
 const DISMISS_FRACTION = 0.25; // released past this fraction of the screen → dismiss
 const FLICK_VELOCITY = 900; // px/s on the cross axis — a fast flick dismisses regardless of distance
 const EXIT_MS = 180;
+const MIN_SCALE = 0.45; // the page shrinks to this, reached at SCALE_SPAN_FRACTION of a span
+const SCALE_SPAN_FRACTION = 0.7; // scale bottoms out before a full span, so it shrinks noticeably early
+// Clean, non-bouncy spring-back — critically damped so the page returns without the wobble.
+const SPRING_BACK = { duration: 300, dampingRatio: 1 } as const;
 
 type Props = {
   /** The activation axis — always the opposite of the reader's scroll axis. */
@@ -46,10 +50,26 @@ type Props = {
   /** Mirrors dismissal progress (0 at rest → 1 fully swiped away), written on the
    *  UI thread — the reader fades its backdrop and chrome from it. */
   progress?: SharedValue<number>;
+  /** Fired when the dismiss pan ACTIVATES / settles (JS thread). The reader uses
+   *  this to suppress its tap zones for the gesture's lifetime: a plain RN
+   *  Pressable doesn't see the moves the pan consumes, so on release it would
+   *  otherwise fire a stray page-turn / chrome-toggle tap. */
+  onSwipeStart?: () => void;
+  onSwipeEnd?: () => void;
   children: ReactNode;
 };
 
-export function SwipeDismiss({ axis, width, height, enabled, onDismiss, progress, children }: Props) {
+export function SwipeDismiss({
+  axis,
+  width,
+  height,
+  enabled,
+  onDismiss,
+  progress,
+  onSwipeStart,
+  onSwipeEnd,
+  children,
+}: Props) {
   const vertical = axis === 'vertical';
   const span = vertical ? height : width;
   const tx = useSharedValue(0);
@@ -73,6 +93,11 @@ export function SwipeDismiss({ axis, width, height, enabled, onDismiss, progress
 
   const pan = Gesture.Pan()
     .enabled(enabled)
+    .onStart(() => {
+      // Fires on ACTIVATION (after the activeOffset threshold) — a pure tap never
+      // gets here, so the reader's tap zones stay live for real taps.
+      if (onSwipeStart) runOnJS(onSwipeStart)();
+    })
     .onUpdate((e) => {
       if (dismissing.value) return;
       tx.set(e.translationX);
@@ -86,8 +111,8 @@ export function SwipeDismiss({ axis, width, height, enabled, onDismiss, progress
       const crossVelocity = vertical ? e.velocityY : e.velocityX;
       const byFlick = Math.abs(crossVelocity) > FLICK_VELOCITY;
       if (!byFlick && Math.abs(cross) < span * DISMISS_FRACTION) {
-        tx.set(withSpring(0, { damping: 18, stiffness: 220 }));
-        ty.set(withSpring(0, { damping: 18, stiffness: 220 }));
+        tx.set(withSpring(0, SPRING_BACK));
+        ty.set(withSpring(0, SPRING_BACK));
         return;
       }
       dismissing.set(true);
@@ -106,17 +131,31 @@ export function SwipeDismiss({ axis, width, height, enabled, onDismiss, progress
           if (finished) runOnJS(onDismiss)();
         }),
       );
+    })
+    // Always fires once the gesture resolves (release OR cancel), so the tap
+    // suppression clears even on a failed/interrupted swipe.
+    .onFinalize(() => {
+      if (onSwipeEnd) runOnJS(onSwipeEnd)();
     });
   if (vertical) pan.activeOffsetY([-ACTIVATE_PX, ACTIVATE_PX]).failOffsetX([-FAIL_PX, FAIL_PX]);
   else pan.activeOffsetX([-ACTIVATE_PX, ACTIVATE_PX]).failOffsetY([-FAIL_PX, FAIL_PX]);
 
-  // Fade tracks distance travelled: fully opaque at rest, fully gone a whole
-  // span away — the exit fling covers the tail, so the fade reads as "mostly at
-  // the end" without a separate curve.
-  const animatedStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(Math.hypot(tx.value, ty.value), [0, span], [1, 0], Extrapolation.CLAMP),
-    transform: [{ translateX: tx.value }, { translateY: ty.value }],
-  }));
+  // Fade AND shrink track distance travelled: at rest full size / fully opaque,
+  // a whole span away scaled to MIN_SCALE and gone — the exit fling covers the
+  // tail, so both read as "mostly at the end" without a separate curve. Scale is
+  // listed after the translate so the page shrinks toward its own (moved)
+  // centre, i.e. it pulls away under the finger rather than snapping to origin.
+  const animatedStyle = useAnimatedStyle(() => {
+    const dist = Math.hypot(tx.value, ty.value);
+    return {
+      opacity: interpolate(dist, [0, span], [1, 0], Extrapolation.CLAMP),
+      transform: [
+        { translateX: tx.value },
+        { translateY: ty.value },
+        { scale: interpolate(dist, [0, span * SCALE_SPAN_FRACTION], [1, MIN_SCALE], Extrapolation.CLAMP) },
+      ],
+    };
+  });
 
   // Web keeps its own input model (wheel/keyboard/click); no swipe-away there.
   if (Platform.OS === 'web') return <>{children}</>;

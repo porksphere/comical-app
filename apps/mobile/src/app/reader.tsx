@@ -135,12 +135,34 @@ export default function ReaderScreen() {
   // Swipe-away dismissal progress (0 at rest → 1 fully swiped off), written on
   // the UI thread by SwipeDismiss. The reader's own dark backdrop and its chrome
   // fade out from it, revealing the screen behind (the reader route is a
-  // transparent modal, so the series screen stays rendered underneath).
+  // contained transparent modal, so the series screen stays rendered underneath).
   const dismissProgress = useSharedValue(0);
   const backdropStyle = useAnimatedStyle(() => ({ opacity: 1 - dismissProgress.value }));
   const chromeFadeStyle = useAnimatedStyle(() => ({
     opacity: interpolate(dismissProgress.value, [0, 0.6], [1, 0]),
   }));
+
+  // While a dismiss swipe is in flight (and briefly after), suppress the reader's
+  // tap zones: a plain RN Pressable doesn't see the moves the RNGH pan consumes,
+  // so on release the side/centre zone would otherwise fire a stray page-turn or
+  // chrome-toggle. `onStart` sets this on gesture ACTIVATION (a pure tap never
+  // activates the pan, so real taps are unaffected); the release schedules a
+  // short cooldown so the tap that fires right at lift-off is still caught.
+  const swipeActiveRef = useRef(false);
+  const swipeClearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const beginSwipeGuard = useCallback(() => {
+    if (swipeClearTimer.current) clearTimeout(swipeClearTimer.current);
+    swipeActiveRef.current = true;
+  }, []);
+  const endSwipeGuard = useCallback(() => {
+    if (swipeClearTimer.current) clearTimeout(swipeClearTimer.current);
+    swipeClearTimer.current = setTimeout(() => {
+      swipeActiveRef.current = false;
+    }, 150);
+  }, []);
+  useEffect(() => () => {
+    if (swipeClearTimer.current) clearTimeout(swipeClearTimer.current);
+  }, []);
 
   // Latest page in a ref so the tap-zone prev/next read it without stale closures
   // (and rapid taps advance correctly).
@@ -331,6 +353,7 @@ export default function ReaderScreen() {
     scheduleHide();
   }, [scheduleHide]);
   const toggleChrome = useCallback(() => {
+    if (swipeActiveRef.current) return; // a swipe-release tap, not a real chrome toggle
     setChromeVisible((v) => {
       const nextVisible = !v;
       if (nextVisible) scheduleHide();
@@ -353,6 +376,7 @@ export default function ReaderScreen() {
   // Tapping a page and keyboard navigation both turn instantly (no slide), on
   // every platform; only the progress-pill jump keeps the animated transition.
   const turnPrev = useCallback(() => {
+    if (swipeActiveRef.current) return; // stray tap at the end of a dismiss swipe
     if (atFirstPage()) {
       tryPrevChapter();
       return;
@@ -360,6 +384,7 @@ export default function ReaderScreen() {
     goTo(currentRef.current - 1, false);
   }, [goTo, atFirstPage, tryPrevChapter]);
   const turnNext = useCallback(() => {
+    if (swipeActiveRef.current) return; // stray tap at the end of a dismiss swipe
     if (atLastPage()) {
       tryAdvanceChapter();
       return;
@@ -462,7 +487,9 @@ export default function ReaderScreen() {
             height={height}
             enabled={settings.mode !== 'paged' || !pageZoomed}
             onDismiss={() => router.back()}
-            progress={dismissProgress}>
+            progress={dismissProgress}
+            onSwipeStart={beginSwipeGuard}
+            onSwipeEnd={endSwipeGuard}>
             {settings.mode === 'paged' ? (
               <PagedReader
                 ref={pagedRef}
