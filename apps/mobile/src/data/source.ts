@@ -200,6 +200,14 @@ export interface DataSource {
   putTrackerSettings(trackerId: string, values: Record<string, api.SettingValue>, signal?: AbortSignal): Promise<void>;
   updateTracker(trackerId: string, signal?: AbortSignal): Promise<void>;
   uninstallTracker(trackerId: string, signal?: AbortSignal): Promise<void>;
+  /** Begin an in-app OAuth round trip for an `oauth-callback` setting field: returns the
+   *  provider's `authUrl` to open in a browser. */
+  startTrackerOAuth(
+    trackerId: string,
+    key: string,
+    settings?: Record<string, string>,
+    signal?: AbortSignal,
+  ): Promise<{ authUrl: string }>;
 
   /** This series' tracker links (empty array = none linked yet). */
   getTrackerLinks(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<TrackerLink[]>;
@@ -689,6 +697,7 @@ const realDataSource: DataSource = {
   async uninstallTracker(trackerId, signal) {
     await api.uninstallTracker(trackerId, signal);
   },
+  startTrackerOAuth: (trackerId, key, settings, signal) => api.startTrackerOAuth(trackerId, key, settings, signal),
 
   async getTrackerLinks(bridgeId, seriesId, signal) {
     const links = await api.getTrackerLinks(bridgeId, seriesId, signal);
@@ -799,6 +808,10 @@ const mockDataSource: DataSource = {
   putTrackerSettings: (trackerId, values) => mock.mockPutTrackerSettings(trackerId, values),
   updateTracker: (trackerId) => mock.mockUpdateTracker(trackerId),
   uninstallTracker: (trackerId) => mock.mockUninstallTracker(trackerId),
+  // Mock settings never surface an oauth-callback field (mockGetTrackerSettings returns no
+  // settings at all), so this is never actually invoked — implemented only to satisfy the
+  // DataSource contract.
+  startTrackerOAuth: () => Promise.resolve({ authUrl: '' }),
 
   getTrackerLinks: (bridgeId, seriesId) => mock.mockGetTrackerLinks(bridgeId, seriesId),
   linkTracker: (bridgeId, seriesId, trackerId, externalId) => mock.mockLinkTracker(bridgeId, seriesId, trackerId, externalId),

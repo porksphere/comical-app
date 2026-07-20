@@ -1,4 +1,7 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useQueryClient } from '@tanstack/react-query';
+import { openAuthSessionAsync, openBrowserAsync } from 'expo-web-browser';
+import { useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { ChevronRightIcon, MinusIcon, PlusIcon } from '@/components/icons/ui-icons';
 import { MeasuredHeader, OptionList, OverlayHeading, useAnchoredOverlay, useOverlay } from '@/components/overlay/overlay';
@@ -7,7 +10,10 @@ import { settingsRowFrame, SettingsRow } from '@/components/settings/settings-ro
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
-import type { SettingDescriptor, SettingValue } from '@/data/api';
+import { getApiBase, type SettingDescriptor, type SettingValue } from '@/data/api';
+import { isEmbeddedRuntimeAvailable, useEmbeddedEnabled } from '@/data/embedded';
+import { queryKeys } from '@/data/queries';
+import { useDataSource } from '@/data/source';
 import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight, hapticSelection } from '@/lib/haptics';
@@ -16,9 +22,13 @@ import { testId } from '@/lib/test-id';
 type FieldProps<D extends SettingDescriptor> = {
   descriptor: D;
   value: SettingValue | undefined;
-  /** True when a `secret` string field already has a stored value server-side
-   *  (the server never sends the value itself, just this flag). */
+  /** True when a `secret`/oauth field already has a stored value server-side (the server never
+   *  sends the value itself, just this flag) — drives the oauth rows' Connected/Not-connected state. */
   secretSet?: boolean;
+  /** The tracker this descriptor belongs to — only set from `tracker-settings.tsx`. Required to
+   *  start an `oauth-callback` round trip (`POST /trackers/:id/oauth-start`); bridges never
+   *  declare oauth fields, so `bridge-settings.tsx` omits it. */
+  trackerId?: string;
   onChange: (v: SettingValue) => void;
 };
 
@@ -32,7 +42,7 @@ const fieldLabel = (d: SettingDescriptor): string => `${d.label}${'required' in 
  * via `SettingsSelectRow` — so a bridge's config reads like the rest of Settings. Multi-select enums
  * and bounded numbers keep their own controls (a multi picker, a ± stepper), framed as rows.
  */
-export function SettingFieldEditor({ descriptor, value, onChange }: FieldProps<SettingDescriptor>) {
+export function SettingFieldEditor({ descriptor, value, secretSet, trackerId, onChange }: FieldProps<SettingDescriptor>) {
   switch (descriptor.type) {
     case 'string':
       return (
@@ -89,9 +99,119 @@ export function SettingFieldEditor({ descriptor, value, onChange }: FieldProps<S
         />
       );
     case 'oauth-pin':
+      return <OAuthPinRow descriptor={descriptor} value={value} secretSet={secretSet} onChange={onChange} />;
     case 'oauth-callback':
-      return <SettingsRow label={descriptor.label} description="Manage this in the web app." />;
+      return <OAuthCallbackRow descriptor={descriptor} secretSet={secretSet} trackerId={trackerId} />;
   }
+}
+
+/** An `oauth-callback` field: no value is ever typed in — the whole exchange happens through a
+ *  browser round trip against the server's own `/oauth/callback`. Requires `trackerId` (only
+ *  `tracker-settings.tsx` passes one; bridges never declare this field type) and only works in
+ *  remote mode — there's no local `/oauth/callback` to redirect to on-device (see plan Gap 3b
+ *  step 2 for the serverless variant). */
+function OAuthCallbackRow({
+  descriptor,
+  secretSet,
+  trackerId,
+}: {
+  descriptor: Extract<SettingDescriptor, { type: 'oauth-callback' }>;
+  secretSet?: boolean;
+  trackerId?: string;
+}) {
+  const theme = useTheme();
+  const ds = useDataSource();
+  const queryClient = useQueryClient();
+  const [onDevice] = useEmbeddedEnabled();
+  const embeddedActive = onDevice && isEmbeddedRuntimeAvailable();
+  const [connecting, setConnecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const connect = async () => {
+    if (!trackerId || connecting) return;
+    setError(null);
+    setConnecting(true);
+    try {
+      const { authUrl } = await ds.startTrackerOAuth(trackerId, descriptor.key);
+      // Don't trust the resolved session type — on web this just resolves when the popup closes
+      // (which the server's callback page does via `window.close()` once it's done), and on
+      // native it resolves on redirect. Either way the server already did the real work; just
+      // refetch and let "Connected" reflect whatever actually landed.
+      await openAuthSessionAsync(authUrl, `${getApiBase()}/oauth/callback`);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.trackerSettings(trackerId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.trackers() }),
+      ]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to start sign-in');
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  return (
+    <SettingsRow
+      label={descriptor.label}
+      description={error ?? (embeddedActive ? 'Not available on-device yet' : secretSet ? 'Connected' : (descriptor.description ?? 'Not connected'))}
+      descriptionColor={error ? theme.danger : embeddedActive || !secretSet ? theme.badgeWarn : undefined}
+      right={
+        connecting ? (
+          <ActivityIndicator />
+        ) : (
+          <ThemedText type="smallBold" style={{ color: embeddedActive ? theme.textSecondary : theme.accent }}>
+            {secretSet ? 'Reconnect' : 'Connect'}
+          </ThemedText>
+        )
+      }
+      onPress={embeddedActive || connecting || !trackerId ? undefined : connect}
+      testID={testId('settings.oauth', descriptor.label)}
+    />
+  );
+}
+
+/** An `oauth-pin` field: user opens the auth URL, then pastes back either an authorization code
+ *  (when `exchange` is set — the server exchanges it for a token) or the raw token itself (an
+ *  implicit-grant provider, no `exchange`). Reuses the caller's existing `onChange`/save flow —
+ *  no new mutation, same as any other secret string field. */
+function OAuthPinRow({
+  descriptor,
+  value,
+  secretSet,
+  onChange,
+}: {
+  descriptor: Extract<SettingDescriptor, { type: 'oauth-pin' }>;
+  value: SettingValue | undefined;
+  secretSet?: boolean;
+  onChange: (v: SettingValue) => void;
+}) {
+  const theme = useTheme();
+  return (
+    <>
+      <SettingsRow
+        label={descriptor.label}
+        description={secretSet ? 'Connected' : (descriptor.description ?? 'Not connected')}
+        descriptionColor={secretSet ? undefined : theme.badgeWarn}
+        right={
+          <ThemedText type="smallBold" style={{ color: theme.accent }}>
+            Open
+          </ThemedText>
+        }
+        onPress={() => {
+          void openBrowserAsync(descriptor.authUrl);
+        }}
+        testID={testId('settings.oauth', descriptor.label)}
+      />
+      <SettingsTextRow
+        label={descriptor.exchange ? 'Authorization code' : 'Access token'}
+        value={(value as string | undefined) ?? ''}
+        onChange={onChange}
+        placeholder={secretSet ? '••••••••' : 'Paste here…'}
+        secureTextEntry
+        autoCapitalize="none"
+        autoCorrect={false}
+      />
+    </>
+  );
 }
 
 /** A bounded number as a settings row: label on the left, a −/+ stepper on the right. */
