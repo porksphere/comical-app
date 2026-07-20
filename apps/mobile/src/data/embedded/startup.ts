@@ -53,6 +53,7 @@ import { getResolvedModeSync, whenEmbeddedPrefLoaded } from './preference';
 import { applyImageCacheConfig } from '../image-cache';
 import { installedStore, savedRegistryStore } from './stores';
 import { asyncStorageSettings, asyncStorageTrackerSettings } from './settings-store';
+import { embeddedOAuthCallbackUrl } from './oauth-callback';
 import trackerBundles from './tracker-bundles.generated.json';
 
 /** The fixed pieces host-rn needs; the stores supply the (user-managed) registries + installs. */
@@ -92,6 +93,10 @@ function bootstrapConfig(): EmbeddedBootstrapConfig {
     // registered (see `setNativeTrackerRuntime` below), which is null until a real device build.
     trackerBundles,
     trackerSettings: asyncStorageTrackerSettings,
+    // There's no real HTTP server on-device to redirect an OAuth provider back to — see
+    // `EmbeddedBootstrapConfig.oauthCallbackUrl`'s doc comment in host-rn for how the reused router
+    // completes the round trip against this custom-scheme URL instead.
+    oauthCallbackUrl: embeddedOAuthCallbackUrl,
     // Persist verified bundles to disk so cold starts don't re-download + re-verify every bridge.
     cache: fileSystemBundleCache,
     // An install/update/uninstall (or add/remove registry) changes what the runtime serves — refetch
