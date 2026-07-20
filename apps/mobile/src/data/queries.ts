@@ -79,6 +79,8 @@ export const queryKeys = {
   /** One series' custom-list memberships (for the assign picker). */
   entryLists: (mock: boolean, bridgeId: string, seriesId: string) =>
     ['entryLists', mock, bridgeId, seriesId] as const,
+  trackerLinks: (mock: boolean, bridgeId: string, seriesId: string) =>
+    ['trackerLinks', mock, bridgeId, seriesId] as const,
   inLibrary: (mock: boolean, bridgeId: string, seriesId: string) =>
     ['inLibrary', mock, bridgeId, seriesId] as const,
   history: (mock: boolean) => ['history', mock] as const,
@@ -141,6 +143,9 @@ export const queryKeys = {
   bridgePrefs: (bridgeId: string) => ['bridgePrefs', bridgeId] as const,
   trackers: () => ['trackers'] as const,
   trackerSettings: (trackerId: string) => ['trackerSettings', trackerId] as const,
+  /** Catalog search results for the "+ Link tracker" form — mock-agnostic like `trackers` above. */
+  trackerCatalogSearch: (trackerId: string, query: string, page: number) =>
+    ['trackerCatalogSearch', trackerId, query, page] as const,
   registries: () => ['registries'] as const,
   registryBridges: (url: string) => ['registryBridges', url] as const,
   registryTrackers: (url: string) => ['registryTrackers', url] as const,

@@ -716,6 +716,23 @@ export interface TrackerSettingsInfo {
   secretsSet: string[];
 }
 
+/** A series-to-tracker link (mirrors `@comical/library`'s `TrackerLink` — the server never stores
+ *  the catalog title, only the id + progress the tracker itself reports back). */
+export interface ApiTrackerLink {
+  trackerId: string;
+  externalId: string | number;
+  status?: string;
+  chaptersRead?: number;
+  lastSyncAt?: number;
+}
+
+/** One `GET /trackers/{id}/search` result — a catalog entry the "+ Link tracker" form can link to. */
+export interface ApiTrackerSearchResult {
+  externalId: string | number;
+  title: string;
+  thumbnailUrl?: string;
+}
+
 /** Mirrors `RegistryManager.checkUpdates()`/`checkTrackerUpdates()`'s element shape. */
 export interface RegistryUpdateInfo {
   id: string;
@@ -1099,6 +1116,65 @@ export function updateTracker(trackerId: string, signal?: AbortSignal): Promise<
 /** DELETE /trackers/{id} → uninstall a registry-installed tracker. */
 export function uninstallTracker(trackerId: string, signal?: AbortSignal): Promise<void> {
   return fetchOk(`/trackers/${encodeURIComponent(trackerId)}`, 'DELETE', signal);
+}
+
+/** GET /trackers/{id}/search?q=&page= → catalog search on a tracker (capability "search"), for the
+ *  "+ Link tracker" form. */
+export function searchTrackerCatalog(
+  trackerId: string,
+  query: string,
+  page: number,
+  signal?: AbortSignal,
+): Promise<PagedResults<ApiTrackerSearchResult>> {
+  const qs = new URLSearchParams({ q: query, page: String(page) });
+  return fetchJson(`/trackers/${encodeURIComponent(trackerId)}/search?${qs}`, signal);
+}
+
+// ─── Tracker links (per-series associations to external tracker services — same optional-server-
+// capability shape as the trackers themselves) ─────────────────────────────────────────────────
+
+/** GET /library/entries/{b}/{s}/tracker-links → this series' tracker links. */
+export function getTrackerLinks(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<ApiTrackerLink[]> {
+  return fetchJson(`/library/entries/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/tracker-links`, signal);
+}
+
+/** POST /library/entries/{b}/{s}/tracker-links → link this series to a tracker's catalog entry. */
+export function linkTracker(
+  bridgeId: string,
+  seriesId: string,
+  trackerId: string,
+  externalId: string | number,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  return fetchPost(
+    `/library/entries/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/tracker-links`,
+    { trackerId, externalId },
+    signal,
+  );
+}
+
+/** DELETE /library/entries/{b}/{s}/tracker-links/{trackerId} → unlink one tracker from this series. */
+export function unlinkTracker(bridgeId: string, seriesId: string, trackerId: string, signal?: AbortSignal): Promise<void> {
+  return fetchOk(
+    `/library/entries/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/tracker-links/${encodeURIComponent(trackerId)}`,
+    'DELETE',
+    signal,
+  );
+}
+
+/** POST /library/entries/{b}/{s}/tracker-links/{trackerId}/sync → pull-sync one link from its
+ *  tracker (the scoped, per-row counterpart to `updateTracker`'s whole-library resync). */
+export function syncTrackerLink(
+  bridgeId: string,
+  seriesId: string,
+  trackerId: string,
+  signal?: AbortSignal,
+): Promise<{ updated: boolean; readSynced: number }> {
+  return fetchPost(
+    `/library/entries/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/tracker-links/${encodeURIComponent(trackerId)}/sync`,
+    {},
+    signal,
+  );
 }
 
 // ─── Registries (optional server capability — mounted only when M4 registry support is on) ───

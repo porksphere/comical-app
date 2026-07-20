@@ -365,7 +365,7 @@ export function mockTrackerSearch(trackerId: string, query: string): TrackerSear
     .slice(0, 6)
     .map((title) => {
       const h = hash(`${trackerId}:${title}`);
-      return { externalId: String(10000 + (h % 90000)), title, thumbnail: cover(`tracker-${h}`) };
+      return { externalId: String(10000 + (h % 90000)), title, thumbnailUrl: cover(`tracker-${h}`) };
     });
 }
 
@@ -460,7 +460,6 @@ export function mockSeries(
   const direct = opts.direct || seed.includes('direct');
   const bare = seed.includes('bare');
   const h = hash(seed);
-  const chapterCount = 40 + (h % 160);
 
   const base: SeriesDetail = {
     id: seed,
@@ -492,8 +491,6 @@ export function mockSeries(
       ? [genreGroup, ...TAG_GROUPS, { label: 'Tags', tags: MANY_TAGS }]
       : [genreGroup, ...TAG_GROUPS];
     base.hasSources = h % 2 === 0;
-    base.hasTrackers = true;
-    base.trackers = mockTrackerLinks(seed, chapterCount);
     base.newCount = h % 5 === 0 ? 3 : undefined;
     // Two groups, so multi-group related rendering is exercisable in mock mode too.
     base.relatedGroups = [
@@ -1068,7 +1065,11 @@ export async function mockPutBridgePrefs(
 ): Promise<void> {}
 
 export async function mockGetTrackers(): Promise<TrackerSummary[]> {
-  return [];
+  return TRACKER_SERVICES.map((s) => ({
+    info: { id: s.id, name: s.name, capabilities: ['library-sync', 'search'] },
+    configured: true,
+    missingRequired: [],
+  }));
 }
 
 export async function mockGetTrackerSettings(trackerId: string): Promise<TrackerSettingsInfo> {
@@ -1078,6 +1079,57 @@ export async function mockGetTrackerSettings(trackerId: string): Promise<Tracker
 export async function mockPutTrackerSettings(_trackerId: string, _values: Record<string, SettingValue>): Promise<void> {}
 export async function mockUpdateTracker(_trackerId: string): Promise<void> {}
 export async function mockUninstallTracker(_trackerId: string): Promise<void> {}
+
+// ─── Tracker links (per-series, in-memory) ────────────────────────────────────
+
+const mockTrackerLinksByEntry = new Map<string, TrackerLink[]>();
+
+/** Seeds a series' links deterministically the first time its tracker panel is opened, so mock
+ *  mode still shows a couple of pre-linked trackers out of the box — the same seeding `mockSeries`
+ *  used to do inline, now keyed per bridgeId+seriesId (via `libKey`) instead of just the series id,
+ *  since a real link is scoped to one library entry. */
+function seedMockTrackerLinks(bridgeId: string, seriesId: string): TrackerLink[] {
+  const key = libKey(bridgeId, seriesId);
+  let links = mockTrackerLinksByEntry.get(key);
+  if (!links) {
+    const h = hash(seriesId);
+    links = mockTrackerLinks(seriesId, 40 + (h % 160));
+    mockTrackerLinksByEntry.set(key, links);
+  }
+  return links;
+}
+
+export async function mockGetTrackerLinks(bridgeId: string, seriesId: string): Promise<TrackerLink[]> {
+  return [...seedMockTrackerLinks(bridgeId, seriesId)];
+}
+
+export async function mockLinkTracker(bridgeId: string, seriesId: string, trackerId: string, externalId: string): Promise<void> {
+  await delay(TRACKER_ACTION_DELAY_MS);
+  const links = seedMockTrackerLinks(bridgeId, seriesId).filter((l) => l.trackerId !== trackerId);
+  links.push({ trackerId, externalId, chaptersRead: 0 });
+  mockTrackerLinksByEntry.set(libKey(bridgeId, seriesId), links);
+}
+
+export async function mockUnlinkTracker(bridgeId: string, seriesId: string, trackerId: string): Promise<void> {
+  await delay(TRACKER_ACTION_DELAY_MS);
+  const links = seedMockTrackerLinks(bridgeId, seriesId).filter((l) => l.trackerId !== trackerId);
+  mockTrackerLinksByEntry.set(libKey(bridgeId, seriesId), links);
+}
+
+/** Simulates a real pull-sync: bumps the link's progress + `lastSyncAt`, mirroring the old fake
+ *  local-state bump that used to live directly in the (now-deleted) mock stub panel. */
+export async function mockSyncTrackerLink(
+  bridgeId: string,
+  seriesId: string,
+  trackerId: string,
+): Promise<{ updated: boolean; readSynced: number }> {
+  await delay(TRACKER_ACTION_DELAY_MS);
+  const link = seedMockTrackerLinks(bridgeId, seriesId).find((l) => l.trackerId === trackerId);
+  if (!link) return { updated: false, readSynced: 0 };
+  link.chaptersRead = (link.chaptersRead ?? 0) + 1;
+  link.lastSyncAt = Date.now();
+  return { updated: true, readSynced: 1 };
+}
 
 const mockRegistries: SavedRegistry[] = [];
 

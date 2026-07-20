@@ -21,7 +21,7 @@ import { TopBar, useTopBarInset } from '@/components/top-bar';
 import { BarContentGap, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { relativeTime } from '@/data/mock';
 import { setSearchIntent, tagSearchIntent } from '@/data/search-intent';
-import { relatedGroupsQuery, seriesDetailQuery, seriesListQuery } from '@/data/queries';
+import { queryKeys, relatedGroupsQuery, seriesDetailQuery, seriesListQuery } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import { ASPECT_TRANSITION_MS, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { resetPreferredGroup } from '@/lib/preferred-group';
@@ -311,6 +311,12 @@ function SeriesBody({
   const scheme = useActiveColorScheme();
   const mock = useMockActive();
 
+  // Trackers are bridge-agnostic (unlike `hasSources`, which the bridge itself reports per
+  // series), so whether the Trackers button renders comes from the same `/trackers` query the
+  // Settings screen uses, not a per-series flag: `undefined` while loading (button withheld
+  // rather than flashing in), `null` when this server has no TrackerManager mounted at all.
+  const { data: trackers } = useQuery({ queryKey: queryKeys.trackers(), queryFn: ({ signal }) => ds.getTrackers(signal) });
+
   // Let the native push transition play before mounting the heavy chapter/page
   // grid. On a cache-warm revisit the full list would otherwise render
   // synchronously on the screen's first commit and hold the transition back; the
@@ -493,7 +499,9 @@ function SeriesBody({
         />
       )}
       {series.hasSources && <ActionButton testID="series.action.sources" label="Sources" caret />}
-      {series.hasTrackers && <TrackerButton seriesId={series.id} initialLinks={series.trackers ?? []} />}
+      {Array.isArray(trackers) && trackers.length > 0 && bridgeId && (
+        <TrackerButton bridgeId={bridgeId} seriesId={series.id} />
+      )}
       <ActionButton
         testID="series.action.favorite"
         label={favorited ? '★  Favorited' : '☆  Favorite'}
