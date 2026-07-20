@@ -1,6 +1,7 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { useRef, useState, type ReactNode } from 'react';
-import { Platform, Pressable, StyleSheet, TextInput, View, type TextStyle } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, TextInput, View, type TextStyle } from 'react-native';
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import Animated, { useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
 
@@ -10,76 +11,103 @@ import { ActionButton } from '@/components/series/action-button';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import type { TrackerSummary } from '@/data/api';
+import { relativeTime } from '@/data/mock';
+import { queryKeys } from '@/data/queries';
+import { useDataSource, useMockActive } from '@/data/source';
+import type { TrackerLink, TrackerSearchResult } from '@/data/types';
 import { useTheme } from '@/hooks/use-theme';
+import { friendlyError } from '@/lib/friendly-error';
 import { testId } from '@/lib/test-id';
-import {
-  mockTrackerSearch,
-  relativeTime,
-  TRACKER_ACTION_DELAY_MS,
-  TRACKER_SERVICES,
-  type TrackerLink,
-  type TrackerSearchResult,
-} from '@/data/mock';
 
 // The "Trackers ▾" action button: opens a bottom sheet (the app's overlay
 // system) to view, sync, unlink and link progress-tracker services for this
 // series. Mirrors the reference's anchored `#tracker-menu` / `#tracker-panel`
 // popover — rebuilt as a sheet since that's this app's touch-first equivalent
 // (see Selector, which does the same for the bridge/page pickers).
+//
+// Trackers themselves are bridge-agnostic (configured once in Settings, shared across every
+// series — see trackers.tsx), but a *link* is per library entry, so every call here is scoped to
+// this series' bridgeId+seriesId.
 
-export function TrackerButton({ seriesId, initialLinks }: { seriesId: string; initialLinks: TrackerLink[] }) {
+export function TrackerButton({ bridgeId, seriesId }: { bridgeId: string; seriesId: string }) {
   const { open } = useOverlay();
   return (
     <ActionButton
       testID="series.action.trackers"
       label="Trackers"
       caret
-      onPress={() => open(() => <TrackerMenu seriesId={seriesId} initialLinks={initialLinks} />)}
+      onPress={() => open(() => <TrackerMenu bridgeId={bridgeId} seriesId={seriesId} />)}
     />
   );
 }
 
-function TrackerMenu({ initialLinks }: { seriesId: string; initialLinks: TrackerLink[] }) {
+function TrackerMenu({ bridgeId, seriesId }: { bridgeId: string; seriesId: string }) {
   const theme = useTheme();
-  const [links, setLinks] = useState(initialLinks);
-  const [busyId, setBusyId] = useState<string | null>(null);
+  const ds = useDataSource();
+  const mock = useMockActive();
+  const queryClient = useQueryClient();
   const [linking, setLinking] = useState(false);
 
-  // NOTE: this whole panel is a MOCK STUB — it is not wired to any real tracker backend. The services
-  // list (TRACKER_SERVICES), search (mockTrackerSearch), and the sync/link/unlink handlers below (which
-  // just mutate local state after a fake TRACKER_ACTION_DELAY_MS) are all fake, in every mode. So the
-  // simulated delay here is NOT a real-mode leak (there's no real behaviour to delay). Left as-is
-  // intentionally until trackers are actually implemented — do not "fix" the delay in isolation; the
-  // whole feature needs wiring to the real tracker endpoints (or hiding) as one piece of work.
-  const sync = (trackerId: string) => {
-    setBusyId(trackerId);
-    setTimeout(() => {
-      setLinks((prev) =>
-        prev.map((l) =>
-          l.trackerId === trackerId
-            ? { ...l, lastSyncAt: Date.now(), chaptersRead: (l.chaptersRead ?? 0) + 1 }
-            : l,
-        ),
-      );
-      setBusyId(null);
-    }, TRACKER_ACTION_DELAY_MS);
-  };
+  // `data === undefined` = still loading; `null` = this server has no tracker support — the same
+  // states trackers.tsx handles, defending the race where the Trackers button rendered (series.tsx
+  // gates it on this same query) but trackers vanished before the sheet opened.
+  const trackersQuery = useQuery({ queryKey: queryKeys.trackers(), queryFn: ({ signal }) => ds.getTrackers(signal) });
 
-  const unlink = (trackerId: string) => {
-    setBusyId(trackerId);
-    setTimeout(() => {
-      setLinks((prev) => prev.filter((l) => l.trackerId !== trackerId));
-      setBusyId(null);
-    }, TRACKER_ACTION_DELAY_MS);
-  };
+  const linksKey = queryKeys.trackerLinks(mock, bridgeId, seriesId);
+  const linksQuery = useQuery({
+    queryKey: linksKey,
+    queryFn: ({ signal }) => ds.getTrackerLinks(bridgeId, seriesId, signal),
+  });
+  const invalidateLinks = () => queryClient.invalidateQueries({ queryKey: linksKey });
 
-  const link = (trackerId: string, result: TrackerSearchResult) => {
-    setLinks((prev) => [
-      ...prev,
-      { trackerId, externalId: result.externalId, externalTitle: result.title, chaptersRead: 0 },
-    ]);
-    setLinking(false);
-  };
+  const syncMutation = useMutation({
+    mutationFn: (trackerId: string) => ds.syncTrackerLink(bridgeId, seriesId, trackerId),
+    onSuccess: invalidateLinks,
+  });
+  const unlinkMutation = useMutation({
+    mutationFn: (trackerId: string) => ds.unlinkTracker(bridgeId, seriesId, trackerId),
+    onSuccess: invalidateLinks,
+  });
+  const linkMutation = useMutation({
+    mutationFn: ({ trackerId, result }: { trackerId: string; result: TrackerSearchResult }) =>
+      ds.linkTracker(bridgeId, seriesId, trackerId, result.externalId),
+    onSuccess: () => {
+      invalidateLinks();
+      setLinking(false);
+    },
+  });
+
+  if (trackersQuery.data === undefined) {
+    return (
+      <View style={styles.menu}>
+        <ThemedText type="subtitle" style={styles.title}>
+          Trackers
+        </ThemedText>
+        <ActivityIndicator />
+      </View>
+    );
+  }
+
+  if (trackersQuery.data === null) {
+    return (
+      <View style={styles.menu}>
+        <ThemedText type="subtitle" style={styles.title}>
+          Trackers
+        </ThemedText>
+        <ThemedText type="small" themeColor="textSecondary">
+          Trackers are not available on this server.
+        </ThemedText>
+      </View>
+    );
+  }
+
+  const trackers = trackersQuery.data;
+  const links = linksQuery.data;
+  const linkedIds = links?.map((l) => l.trackerId) ?? [];
+  // Only configured trackers are offered for linking — search/link against one still missing
+  // required settings would just fail.
+  const availableToLink = trackers.filter((t) => t.configured && !linkedIds.includes(t.info.id));
 
   return (
     <View style={styles.menu}>
@@ -88,7 +116,13 @@ function TrackerMenu({ initialLinks }: { seriesId: string; initialLinks: Tracker
       </ThemedText>
 
       <TrackerScroll>
-        {links.length === 0 ? (
+        {links === undefined ? (
+          <ActivityIndicator />
+        ) : linksQuery.isError ? (
+          <ThemedText type="small" style={{ color: theme.danger }}>
+            {friendlyError(linksQuery.error, 'Failed to load tracker links.')}
+          </ThemedText>
+        ) : links.length === 0 ? (
           <ThemedText type="small" themeColor="textSecondary">
             No trackers linked yet.
           </ThemedText>
@@ -98,19 +132,33 @@ function TrackerMenu({ initialLinks }: { seriesId: string; initialLinks: Tracker
               <TrackerRow
                 key={link.trackerId}
                 link={link}
-                busy={busyId === link.trackerId}
-                onSync={() => sync(link.trackerId)}
-                onUnlink={() => unlink(link.trackerId)}
+                name={trackers.find((t) => t.info.id === link.trackerId)?.info.name}
+                busy={
+                  (syncMutation.isPending && syncMutation.variables === link.trackerId) ||
+                  (unlinkMutation.isPending && unlinkMutation.variables === link.trackerId)
+                }
+                onSync={() => syncMutation.mutate(link.trackerId)}
+                onUnlink={() => unlinkMutation.mutate(link.trackerId)}
               />
             ))}
           </View>
         )}
 
         {linking && (
-          <LinkTrackerForm excludeIds={links.map((l) => l.trackerId)} onLink={link} />
+          <LinkTrackerForm
+            trackers={availableToLink}
+            submitting={linkMutation.isPending}
+            onLink={(trackerId, result) => linkMutation.mutate({ trackerId, result })}
+          />
         )}
 
-        {!linking && links.length < TRACKER_SERVICES.length && (
+        {linkMutation.isError && (
+          <ThemedText type="small" style={{ color: theme.danger }}>
+            {friendlyError(linkMutation.error, 'Failed to link tracker.')}
+          </ThemedText>
+        )}
+
+        {!linking && availableToLink.length > 0 && (
           <Pressable testID="series.tracker.link-toggle" onPress={() => setLinking(true)}>
             <ThemedView type="backgroundElement" style={styles.linkToggle}>
               <ThemedText type="small" style={{ color: theme.accent }}>
@@ -154,16 +202,17 @@ function TrackerScroll({ children }: { children: ReactNode }) {
 
 function TrackerRow({
   link,
+  name,
   busy,
   onSync,
   onUnlink,
 }: {
   link: TrackerLink;
+  name?: string;
   busy: boolean;
   onSync: () => void;
   onUnlink: () => void;
 }) {
-  const service = TRACKER_SERVICES.find((s) => s.id === link.trackerId);
   const bits = [
     link.externalId,
     link.chaptersRead != null ? `${link.chaptersRead} read` : null,
@@ -174,7 +223,7 @@ function TrackerRow({
     <ThemedView type="backgroundElement" style={styles.row}>
       <View style={styles.rowText}>
         <ThemedText type="small" numberOfLines={1} style={styles.rowName}>
-          {service?.name ?? link.trackerId}
+          {name ?? link.trackerId}
         </ThemedText>
         <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
           {bits.join(' · ')}
@@ -205,40 +254,51 @@ function RowButton({ label, onPress, disabled, testID }: { label: string; onPres
 const NO_OUTLINE = Platform.select({ web: { outlineStyle: 'none' } }) as TextStyle | undefined;
 
 function LinkTrackerForm({
-  excludeIds,
+  trackers,
+  submitting,
   onLink,
 }: {
-  excludeIds: string[];
+  /** Configured, not-yet-linked trackers — already filtered by the caller. */
+  trackers: TrackerSummary[];
+  /** True while a link request from a previous result tap is in flight. */
+  submitting: boolean;
   onLink: (trackerId: string, result: TrackerSearchResult) => void;
 }) {
   const theme = useTheme();
+  const ds = useDataSource();
   const keyboardAvoiding = useKeyboardAvoidingInput();
   const inputRef = useRef<TextInput>(null);
-  const available = TRACKER_SERVICES.filter((s) => !excludeIds.includes(s.id));
-  const [trackerId, setTrackerId] = useState(available[0]?.id ?? '');
+  const [trackerId, setTrackerId] = useState(trackers[0]?.info.id ?? '');
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<TrackerSearchResult[] | null>(null);
+  const [submittedQuery, setSubmittedQuery] = useState('');
   const [focused, setFocused] = useState(false);
 
-  const search = () => setResults(mockTrackerSearch(trackerId, query));
+  const searchQuery = useQuery({
+    queryKey: queryKeys.trackerCatalogSearch(trackerId, submittedQuery, 1),
+    queryFn: ({ signal }) => ds.searchTrackerCatalog(trackerId, submittedQuery, 1, signal),
+    enabled: submittedQuery.length > 0,
+  });
+  const results = submittedQuery ? searchQuery.data : undefined;
+
+  const search = () => setSubmittedQuery(query.trim());
 
   return (
     <View style={styles.linkForm}>
       <ThemedView type="backgroundElement" style={styles.serviceTabs}>
-        {available.map((s) => (
+        {trackers.map((t) => (
           <Pressable
-            key={s.id}
-            testID={testId('series.tracker.service', s.id)}
+            key={t.info.id}
+            testID={testId('series.tracker.service', t.info.id)}
             onPress={() => {
-              setTrackerId(s.id);
-              setResults(null);
+              setTrackerId(t.info.id);
+              setSubmittedQuery('');
             }}
-            style={[styles.serviceTab, s.id === trackerId && { backgroundColor: theme.accent }]}>
+            style={[styles.serviceTab, t.info.id === trackerId && { backgroundColor: theme.accent }]}>
             <ThemedText
               type="small"
               numberOfLines={1}
-              style={s.id === trackerId ? { color: theme.accentOn } : { color: theme.textSecondary }}>
-              {s.name}
+              style={t.info.id === trackerId ? { color: theme.accentOn } : { color: theme.textSecondary }}>
+              {t.info.name}
             </ThemedText>
           </Pressable>
         ))}
@@ -254,7 +314,7 @@ function LinkTrackerForm({
           value={query}
           onChangeText={(t) => {
             setQuery(t);
-            setResults(null);
+            setSubmittedQuery('');
           }}
           onSubmitEditing={search}
           onFocus={() => {
@@ -270,6 +330,7 @@ function LinkTrackerForm({
           returnKeyType="search"
           autoCapitalize="none"
           autoCorrect={false}
+          editable={!submitting}
           style={[styles.searchInput, NO_OUTLINE, { color: theme.text }]}
         />
         {query.length > 0 && (
@@ -277,7 +338,7 @@ function LinkTrackerForm({
             testID="series.tracker.search-clear"
             onPress={() => {
               setQuery('');
-              setResults(null);
+              setSubmittedQuery('');
             }}
             hitSlop={8}
             accessibilityLabel="Clear search">
@@ -286,30 +347,42 @@ function LinkTrackerForm({
         )}
       </ThemedView>
 
-      {results && (
-        <View style={styles.results}>
-          {results.length === 0 ? (
-            <ThemedText type="small" themeColor="textSecondary" style={styles.resultsEmpty}>
-              No results.
-            </ThemedText>
-          ) : (
-            results.map((r) => (
-              <Pressable key={r.externalId} testID={testId('series.tracker.result', r.externalId)} onPress={() => onLink(trackerId, r)}>
-                <ThemedView type="backgroundElement" style={styles.resultRow}>
-                  <Image source={{ uri: r.thumbnail }} style={styles.resultThumb} />
-                  <View style={styles.resultText}>
-                    <ThemedText type="small" numberOfLines={1} style={styles.rowName}>
-                      {r.title}
-                    </ThemedText>
-                    <ThemedText type="small" themeColor="textSecondary">
-                      {r.externalId}
-                    </ThemedText>
-                  </View>
-                </ThemedView>
-              </Pressable>
-            ))
-          )}
-        </View>
+      {submittedQuery && searchQuery.isLoading ? (
+        <ActivityIndicator />
+      ) : searchQuery.isError ? (
+        <ThemedText type="small" style={{ color: theme.danger }}>
+          {friendlyError(searchQuery.error, 'Search failed.')}
+        </ThemedText>
+      ) : (
+        results && (
+          <View style={styles.results}>
+            {results.length === 0 ? (
+              <ThemedText type="small" themeColor="textSecondary" style={styles.resultsEmpty}>
+                No results.
+              </ThemedText>
+            ) : (
+              results.map((r) => (
+                <Pressable
+                  key={r.externalId}
+                  testID={testId('series.tracker.result', r.externalId)}
+                  disabled={submitting}
+                  onPress={() => onLink(trackerId, r)}>
+                  <ThemedView type="backgroundElement" style={styles.resultRow}>
+                    <Image source={r.thumbnailUrl ? { uri: r.thumbnailUrl } : undefined} style={styles.resultThumb} />
+                    <View style={styles.resultText}>
+                      <ThemedText type="small" numberOfLines={1} style={styles.rowName}>
+                        {r.title}
+                      </ThemedText>
+                      <ThemedText type="small" themeColor="textSecondary">
+                        {r.externalId}
+                      </ThemedText>
+                    </View>
+                  </ThemedView>
+                </Pressable>
+              ))
+            )}
+          </View>
+        )
       )}
     </View>
   );

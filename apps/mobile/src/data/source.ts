@@ -43,6 +43,8 @@ import type {
   SeriesDetail,
   SeriesEntry,
   SeriesListResult,
+  TrackerLink,
+  TrackerSearchResult,
 } from './types';
 
 /**
@@ -198,6 +200,28 @@ export interface DataSource {
   putTrackerSettings(trackerId: string, values: Record<string, api.SettingValue>, signal?: AbortSignal): Promise<void>;
   updateTracker(trackerId: string, signal?: AbortSignal): Promise<void>;
   uninstallTracker(trackerId: string, signal?: AbortSignal): Promise<void>;
+
+  /** This series' tracker links (empty array = none linked yet). */
+  getTrackerLinks(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<TrackerLink[]>;
+  /** Link this series to a tracker's catalog entry. */
+  linkTracker(
+    bridgeId: string,
+    seriesId: string,
+    trackerId: string,
+    externalId: string,
+    signal?: AbortSignal,
+  ): Promise<void>;
+  /** Unlink one tracker from this series. */
+  unlinkTracker(bridgeId: string, seriesId: string, trackerId: string, signal?: AbortSignal): Promise<void>;
+  /** Pull-sync one series' tracker link from its tracker (the manual per-row "Sync" action). */
+  syncTrackerLink(
+    bridgeId: string,
+    seriesId: string,
+    trackerId: string,
+    signal?: AbortSignal,
+  ): Promise<{ updated: boolean; readSynced: number }>;
+  /** Catalog search on a tracker, for the "+ Link tracker" form. */
+  searchTrackerCatalog(trackerId: string, query: string, page: number, signal?: AbortSignal): Promise<TrackerSearchResult[]>;
 
   /** Registries the user has added, or `null` when this server has no registry support mounted. */
   getRegistries(signal?: AbortSignal): Promise<api.SavedRegistry[] | null>;
@@ -666,6 +690,31 @@ const realDataSource: DataSource = {
     await api.uninstallTracker(trackerId, signal);
   },
 
+  async getTrackerLinks(bridgeId, seriesId, signal) {
+    const links = await api.getTrackerLinks(bridgeId, seriesId, signal);
+    return links.map((l) => ({
+      trackerId: l.trackerId,
+      externalId: String(l.externalId),
+      ...(l.chaptersRead !== undefined ? { chaptersRead: l.chaptersRead } : {}),
+      ...(l.lastSyncAt !== undefined ? { lastSyncAt: l.lastSyncAt } : {}),
+    }));
+  },
+  async linkTracker(bridgeId, seriesId, trackerId, externalId, signal) {
+    await api.linkTracker(bridgeId, seriesId, trackerId, externalId, signal);
+  },
+  async unlinkTracker(bridgeId, seriesId, trackerId, signal) {
+    await api.unlinkTracker(bridgeId, seriesId, trackerId, signal);
+  },
+  syncTrackerLink: (bridgeId, seriesId, trackerId, signal) => api.syncTrackerLink(bridgeId, seriesId, trackerId, signal),
+  async searchTrackerCatalog(trackerId, query, page, signal) {
+    const res = await api.searchTrackerCatalog(trackerId, query, page, signal);
+    return res.items.map((r) => ({
+      externalId: String(r.externalId),
+      title: r.title,
+      ...(r.thumbnailUrl ? { thumbnailUrl: r.thumbnailUrl } : {}),
+    }));
+  },
+
   getRegistries: (signal) => api.getRegistries(signal),
   checkRegistryUpdates: (signal) => api.checkRegistryUpdates(signal),
   checkRegistryTrackerUpdates: (signal) => api.checkRegistryTrackerUpdates(signal),
@@ -750,6 +799,12 @@ const mockDataSource: DataSource = {
   putTrackerSettings: (trackerId, values) => mock.mockPutTrackerSettings(trackerId, values),
   updateTracker: (trackerId) => mock.mockUpdateTracker(trackerId),
   uninstallTracker: (trackerId) => mock.mockUninstallTracker(trackerId),
+
+  getTrackerLinks: (bridgeId, seriesId) => mock.mockGetTrackerLinks(bridgeId, seriesId),
+  linkTracker: (bridgeId, seriesId, trackerId, externalId) => mock.mockLinkTracker(bridgeId, seriesId, trackerId, externalId),
+  unlinkTracker: (bridgeId, seriesId, trackerId) => mock.mockUnlinkTracker(bridgeId, seriesId, trackerId),
+  syncTrackerLink: (bridgeId, seriesId, trackerId) => mock.mockSyncTrackerLink(bridgeId, seriesId, trackerId),
+  searchTrackerCatalog: (trackerId, query) => Promise.resolve(mock.mockTrackerSearch(trackerId, query)),
 
   getRegistries: () => mock.mockGetRegistries(),
   // Mock installs are always current — no update pip in mock/demo mode.

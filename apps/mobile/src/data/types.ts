@@ -78,17 +78,19 @@ export type Chapter = {
 export type TrackerService = { id: string; name: string };
 
 /** A series-to-tracker link, mirroring the reference's tracker-link rows
- *  (name + external id + read progress + last sync time). */
+ *  (name + external id + read progress + last sync time). `externalTitle` is mock-only flavor —
+ *  the real backend's `TrackerLink` (`@comical/library`) doesn't persist a catalog title, only the
+ *  id + progress the tracker reports back, so it's optional and unused past the link step. */
 export type TrackerLink = {
   trackerId: string;
   externalId: string;
-  externalTitle: string;
+  externalTitle?: string;
   chaptersRead?: number;
   lastSyncAt?: number;
 };
 
 /** One row from a tracker's catalog search, used by the "+ Link tracker" form. */
-export type TrackerSearchResult = { externalId: string; title: string; thumbnail: string };
+export type TrackerSearchResult = { externalId: string; title: string; thumbnailUrl?: string };
 
 /** A page-preview thumbnail source, mirroring the bridge contract's `PageThumbnail` union:
  *  - `image` — a ready-to-display URL, rendered with a normal image loader.
@@ -120,11 +122,8 @@ export type SeriesDetail = SeriesEntry & {
   tagGroups?: TagGroup[];
   meta?: MetaCell[];
   description?: string;
-  /** Whether the bridge exposes external sources / trackers actions. */
+  /** Whether the bridge exposes external sources actions. */
   hasSources?: boolean;
-  hasTrackers?: boolean;
-  /** Trackers currently linked to this series (empty array = none linked yet). */
-  trackers?: TrackerLink[];
   /** "N new" badge in the actions column. */
   newCount?: number;
   /** Related-series rails, each independently labeled (sequels, similar, …) — a
