@@ -47,14 +47,14 @@ import { setPreferredGroup, usePreferredGroup } from '@/lib/preferred-group';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { testId } from '@/lib/test-id';
 
-// The series chapters block: tab filter (Overview / All / Read / Unread) + sort
-// toggle (oldest/newest) over the chapter rows, with a "Show all" teaser on the
-// Overview tab. For direct-series bridges, a page-thumbnail grid is rendered
-// instead. Mirrors `#chapters-section` / `.page-thumb-grid` in the reference.
+// The series chapters block: tab filter (All / Read / Unread) + sort toggle
+// (oldest/newest) over the chapter rows. Any tab that runs long collapses to its
+// first + last few chapters with a "show N more" expander between them. For
+// direct-series bridges, a page-thumbnail grid is rendered instead. Mirrors
+// `#chapters-section` / `.page-thumb-grid` in the reference.
 
-type Tab = 'overview' | 'all' | 'read' | 'unread';
+type Tab = 'all' | 'read' | 'unread';
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'overview', label: 'Overview' },
   { id: 'all', label: 'All' },
   { id: 'read', label: 'Read' },
   { id: 'unread', label: 'Unread' },
@@ -64,10 +64,10 @@ const SORT_OPTIONS: { id: 'desc' | 'asc'; label: string; Icon: typeof ArrowDownI
   { id: 'desc', label: 'Newest first', Icon: ArrowDownIcon },
   { id: 'asc', label: 'Oldest first', Icon: ArrowUpIcon },
 ];
-// Overview collapses long lists to a configurable number of chapters from the
-// start and the end, with an expand button between them for the hidden middle.
-const OVERVIEW_HEAD_COUNT = 5;
-const OVERVIEW_TAIL_COUNT = 5;
+// A long tab collapses to a configurable number of chapters from the start and the
+// end, with an expand button between them for the hidden middle.
+const COLLAPSED_HEAD_COUNT = 5;
+const COLLAPSED_TAIL_COUNT = 5;
 // Track padding / gap between tab chips.
 const TAB_PAD = 3;
 const TAB_GAP = 4;
@@ -120,7 +120,7 @@ function PageGridSkeleton() {
 }
 
 /** A row of mutually-exclusive options with a sliding highlight pill behind
- *  the active one — the chapter tab strip (Overview/All/Read/Unread) and the
+ *  the active one — the chapter tab strip (All/Read/Unread) and the
  *  sort direction toggle are both one of these. Each option is sized to its
  *  own content (not an equal slice of the strip), so the pill's geometry has
  *  to be measured per-option via `onLayout` rather than computed from a
@@ -275,7 +275,7 @@ function VersionRow({ v, active, onPress }: { v: Chapter; active: boolean; onPre
 
 /** One flat row of the chapter scroller's virtualized `data`. Everything below the series
  *  hero/meta (the list header) is a real list item so LegendList can window it — the chapter rows,
- *  the Overview "show N more" divider, and the empty-state line. */
+ *  the "show N more" divider, and the empty-state line. */
 type ChapterListRow =
   | { type: 'chapter'; group: ChapterGroup }
   | { type: 'more'; hiddenCount: number }
@@ -330,9 +330,9 @@ export function ChapterScrollList({
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const [tab, setTab] = useState<Tab>('overview');
+  const [tab, setTab] = useState<Tab>('all');
   const [asc, setAsc] = useState(false);
-  // Overview-only: reveal the collapsed middle portion inline.
+  // Reveal the collapsed middle portion of the current tab inline.
   const [middleExpanded, setMiddleExpanded] = useState(false);
   const expandMiddleHover = useHovered();
 
@@ -391,14 +391,11 @@ export function ChapterScrollList({
     });
   };
 
-  // Overview shows the first HEAD + last TAIL chapters, with the middle behind an
-  // expand button. Only collapse when it hides ≥2 chapters (a button that hides a
-  // single row isn't worth the space). Other tabs show their full filtered list.
+  // Any long tab shows the first HEAD + last TAIL chapters, with the middle behind an expand button.
+  // Only collapse when it hides ≥2 chapters (a button that hides a single row isn't worth the space).
   const collapsible =
-    tab === 'overview' &&
-    !middleExpanded &&
-    groups.length > OVERVIEW_HEAD_COUNT + OVERVIEW_TAIL_COUNT + 1;
-  const hiddenCount = collapsible ? groups.length - OVERVIEW_HEAD_COUNT - OVERVIEW_TAIL_COUNT : 0;
+    !middleExpanded && groups.length > COLLAPSED_HEAD_COUNT + COLLAPSED_TAIL_COUNT + 1;
+  const hiddenCount = collapsible ? groups.length - COLLAPSED_HEAD_COUNT - COLLAPSED_TAIL_COUNT : 0;
 
   // Flatten head + optional "show N more" divider + tail into the list's `data`. Empty while the
   // deferred fetch is loading (the header shows a skeleton instead); a single `empty` sentinel when
@@ -407,8 +404,8 @@ export function ChapterScrollList({
   const data = useMemo<ChapterListRow[]>(() => {
     if (loading || !hasChapters) return [];
     if (groups.length === 0) return [{ type: 'empty' }];
-    const head = collapsible ? groups.slice(0, OVERVIEW_HEAD_COUNT) : groups;
-    const tail = collapsible ? groups.slice(groups.length - OVERVIEW_TAIL_COUNT) : [];
+    const head = collapsible ? groups.slice(0, COLLAPSED_HEAD_COUNT) : groups;
+    const tail = collapsible ? groups.slice(groups.length - COLLAPSED_TAIL_COUNT) : [];
     const out: ChapterListRow[] = head.map((g) => ({ type: 'chapter', group: g }));
     if (collapsible) out.push({ type: 'more', hiddenCount });
     for (const g of tail) out.push({ type: 'chapter', group: g });
@@ -482,7 +479,7 @@ export function ChapterScrollList({
       {loading ? (
         <ChapterListSkeleton />
       ) : hasChapters ? (
-        <View style={styles.head}>
+        <View style={[styles.head, styles.chapterControlsHead]}>
           <ThemedText type="subtitle" style={styles.headTitle}>
             Chapters
           </ThemedText>
@@ -534,13 +531,18 @@ export function ChapterScrollList({
       keyExtractor={(item) =>
         item.type === 'chapter' ? `c:${item.group.key}` : item.type
       }
-      // Chapter rows carry their own state (expanded versions, hover) and there are only a screenful
-      // at a time, so recycling isn't worth the state-reset dance the page grid pays for — plain
-      // windowing already drops the mount count from "all N" to the visible handful.
+      // Distinct item types (chapter / more / empty) so LegendList estimates sizes per type rather
+      // than off one global average. No `getFixedItemSize` here (unlike the page grid): a chapter row
+      // expands inline to show scanlator versions, so its height genuinely varies — sizes are
+      // measured, seeded by this estimate. Chapter rows also carry their own state (expanded
+      // versions, hover) and only a screenful mount at once, so recycling isn't worth the
+      // state-reset dance the page grid pays for — plain windowing already drops the mount count
+      // from "all N" to the visible handful.
+      getItemType={(item) => item.type}
       estimatedItemSize={46}
       ListHeaderComponent={listHeader}
       ListFooterComponent={
-        footer ? <View style={isLarge ? styles.chapterFooterLarge : undefined}>{footer}</View> : null
+        footer ? <View style={[styles.chapterFooter, isLarge && styles.chapterFooterLarge]}>{footer}</View> : null
       }
       contentContainerStyle={{
         paddingTop: topInset + BarContentGap,
@@ -1553,6 +1555,16 @@ const styles = StyleSheet.create({
   chapterRowGap: {
     marginBottom: Spacing.one,
   },
+  // Breathing room below the tab/sort controls before the first chapter row (the header→rows gap is
+  // otherwise zero — the rows are list data, not siblings under the head). Matches the section's
+  // outer rhythm (the gap above the "Chapters" heading).
+  chapterControlsHead: {
+    marginBottom: Spacing.four,
+  },
+  // Clear separation between the last chapter row and the first related-series rail below.
+  chapterFooter: {
+    marginTop: Spacing.five,
+  },
   // Large-screen master–detail: a static cover+actions column beside the scrolling list, centred
   // and capped like the top-level views so the related rails (list footer) line up with them.
   masterDetail: {
@@ -1640,7 +1652,7 @@ const styles = StyleSheet.create({
   tabs: {
     // Content-sized (not `flex: 1` on each child, and not `flex: 1` on the
     // strip itself) — a tab's width follows its own label, so "All" and
-    // "Overview" don't get forced to the same width, and the whole strip
+    // "Unread" don't get forced to the same width, and the whole strip
     // doesn't stretch to the row's full width leaving a big dead-space pill
     // before the sort button. Fixed height (matching the sort button) rather
     // than letting padding drive it, so the whole controls row reads as one
@@ -1653,14 +1665,14 @@ const styles = StyleSheet.create({
     gap: TAB_GAP,
   },
   // Narrow-screen override: the strip fills the row (up to the sort toggle) instead of being
-  // content-sized, so four tabs + the sort button always sit within the content margin. `minWidth: 0`
-  // lets it shrink on react-native-web (where the default `min-width: auto` would keep it overflowing).
+  // content-sized, so the three tabs + the sort button always sit within the content margin.
+  // `minWidth: 0` lets it shrink on react-native-web (default `min-width: auto` would overflow).
   tabsFill: {
     flex: 1,
     minWidth: 0,
   },
-  // A fill-strip tab: shares the strip width equally with its siblings (each 1/4) with tighter
-  // padding, so even the long "Overview" label fits its quarter without pushing the strip wider.
+  // A fill-strip tab: shares the strip width equally with its siblings (each 1/3) with tighter
+  // padding, so even the longest label fits its share without pushing the strip wider.
   tabFill: {
     flex: 1,
     height: CONTROLS_HEIGHT - TAB_PAD * 2,
@@ -1762,7 +1774,7 @@ const styles = StyleSheet.create({
   empty: {
     paddingVertical: Spacing.three,
   },
-  // Overview's middle expand affordance — plain centred accent text (no chrome).
+  // The middle expand affordance — plain centred accent text (no chrome).
   expandMiddle: {
     alignItems: 'center',
     justifyContent: 'center',
