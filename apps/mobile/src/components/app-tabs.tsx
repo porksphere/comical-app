@@ -1,5 +1,5 @@
 import { Tabs, TabList, TabTrigger, TabSlot, TabTriggerSlotProps } from 'expo-router/ui';
-import { Activity, History, LayoutGrid, Library, Settings, type LucideIcon } from 'lucide-react-native';
+import { Bell, History, LayoutGrid, Library, Settings, type LucideIcon } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Platform,
@@ -28,7 +28,7 @@ const TABS: { name: string; href: string; label: string; Icon: LucideIcon }[] = 
   { name: 'browse', href: '/', label: 'Browse', Icon: LayoutGrid },
   { name: 'library', href: '/library', label: 'Library', Icon: Library },
   { name: 'history', href: '/history', label: 'History', Icon: History },
-  { name: 'activity', href: '/activity', label: 'Activity', Icon: Activity },
+  { name: 'activity', href: '/activity', label: 'Activity', Icon: Bell },
   { name: 'settings', href: '/settings', label: 'Settings', Icon: Settings },
 ];
 
