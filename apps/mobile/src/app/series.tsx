@@ -677,34 +677,28 @@ function SeriesBody({
   }
 
   // Chaptered series: the chapter list IS the scroll container (ChapterScrollList), virtualized so a
-  // 250-chapter series never mounts every row at once. The hero/meta is its header; the rails its
-  // footer. On a large web screen the cover + actions ride in `leftColumn` — a static column beside
-  // the scrolling list that stays pinned without any `position: sticky` (see ChapterScrollList). On
-  // small screens the cover/actions live in the header's hero row (single column).
-  const chapterHeader = (
+  // 250-chapter series never mounts every row at once. The hero is the list header, the chapter rows
+  // are full-width list items below it, and the rails are the full-width footer. On a large screen the
+  // hero is a two-column block (cover+actions | meta/description); the chapters and rails sit
+  // full-width beneath it, so they stay virtualized AND the rails span the whole column. On small
+  // screens the hero stacks (cover row, then meta). ChapterScrollList renders the title itself.
+  const chapterHeader = isLarge ? (
+    <View style={styles.twoCol}>
+      <View style={styles.leftCol}>
+        {coverEl}
+        {loading ? actionsSkel : actionsEl}
+      </View>
+      <View style={styles.rightCol}>{loading ? contentSkel : contentEl}</View>
+    </View>
+  ) : (
     <>
-      <ThemedText type="subtitle" style={styles.title}>
-        {series.title}
-      </ThemedText>
-      {isLarge ? (
-        loading ? contentSkel : contentEl
-      ) : (
-        <>
-          <View style={styles.hero}>
-            {coverEl}
-            {loading ? actionsSkel : actionsEl}
-          </View>
-          {loading ? contentSkel : contentEl}
-        </>
-      )}
+      <View style={styles.hero}>
+        {coverEl}
+        {loading ? actionsSkel : actionsEl}
+      </View>
+      {loading ? contentSkel : contentEl}
     </>
   );
-  const chapterLeftColumn = isLarge ? (
-    <>
-      {coverEl}
-      {loading ? actionsSkel : actionsEl}
-    </>
-  ) : null;
 
   return (
     <ChapterScrollList
@@ -716,7 +710,6 @@ function SeriesBody({
       offline={series.cached === true}
       header={chapterHeader}
       footer={relatedRailsEl}
-      leftColumn={chapterLeftColumn}
       isLarge={isLarge}
       topInset={topBarInset}
     />

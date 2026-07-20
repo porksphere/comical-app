@@ -71,9 +71,6 @@ const COLLAPSED_TAIL_COUNT = 5;
 // Track padding / gap between tab chips.
 const TAB_PAD = 3;
 const TAB_GAP = 4;
-// Width of the pinned cover+actions column in the large-screen master–detail layout. Kept in sync
-// with series.tsx's own LARGE_COVER_WIDTH (the leftColumn it hands us is sized to this).
-const LARGE_COVER_WIDTH = 300;
 // Shared with the sort button so the whole controls row (tab strip + sort
 // toggle) reads as one consistent height.
 const CONTROLS_HEIGHT = 32;
@@ -303,7 +300,6 @@ export function ChapterScrollList({
   offline,
   header,
   footer,
-  leftColumn,
   isLarge,
   topInset = 0,
 }: {
@@ -315,13 +311,12 @@ export function ChapterScrollList({
   title: string;
   bridgeId?: string;
   offline?: boolean;
-  /** Series hero / meta / description — the list header (this component owns the scroll). */
+  /** Series hero / meta / description — the list header (this component owns the scroll). On large
+   *  screens this is the two-column hero (cover+actions | meta/description); the chapter rows below
+   *  are full-width, so LegendList virtualizes them and the rails footer spans the full column. */
   header?: ReactNode;
   /** Related-series rails — the list footer. */
   footer?: ReactNode;
-  /** Web-large only: cover + actions, pinned beside the scrolling list (master–detail). Null on
-   *  small screens, where the cover/actions live in `header` instead. */
-  leftColumn?: ReactNode;
   isLarge: boolean;
   /** Height of the overlaying top bar, so the first content clears it (and scrolls under its frost). */
   topInset?: number;
@@ -330,6 +325,10 @@ export function ChapterScrollList({
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  // Large screens cap + centre the whole list (hero, chapter rows, rails) at MaxTopLevelWidth, the
+  // same width the top-level views use, so the related rails line up with them. Below the breakpoint
+  // the cap never binds and the list just insets by Spacing.four.
+  const largeSidePad = Math.max(0, (width - MaxTopLevelWidth) / 2) + Spacing.four;
   const [tab, setTab] = useState<Tab>('all');
   const [asc, setAsc] = useState(false);
   // Reveal the collapsed middle portion of the current tab inline.
@@ -471,56 +470,102 @@ export function ChapterScrollList({
     );
   };
 
-  // The list header: the series hero/meta (from series.tsx) followed by the "Chapters" heading and
-  // the tab/sort controls — or a skeleton where the rows will land while the deferred fetch runs.
+  // Series title — full-width above the two-column hero. series.tsx no longer bundles it into
+  // `header`, so every layout below renders it from the `title` prop here.
+  const titleEl = (
+    <ThemedText type="subtitle" style={styles.seriesTitle}>
+      {title}
+    </ThemedText>
+  );
+
+  // The "Chapters" heading + tab/sort controls — or the loading skeleton where the rows will land
+  // while the deferred fetch runs. Shared by the small-screen list header and the large-web right
+  // column.
+  const chapterControls = loading ? (
+    <ChapterListSkeleton />
+  ) : hasChapters ? (
+    <View style={[styles.head, styles.chapterControlsHead]}>
+      <ThemedText type="subtitle" style={styles.headTitle}>
+        Chapters
+      </ThemedText>
+      <View style={styles.controls}>
+        <Segmented
+          options={TABS.map((t) => ({
+            id: t.id,
+            accessibilityLabel: t.label,
+            testID: testId('series.chapters.tab', t.id),
+            render: (active) => (
+              <ThemedText
+                type="small"
+                numberOfLines={1}
+                style={[styles.tabLabel, active ? { color: theme.accentOn } : { color: theme.textSecondary }]}>
+                {t.label}
+              </ThemedText>
+            ),
+          }))}
+          active={tab}
+          onChange={(id) => {
+            setTab(id);
+            setMiddleExpanded(false);
+          }}
+          {...(fillTabs && { containerStyle: styles.tabsFill, itemStyle: styles.tabFill })}
+        />
+        <Segmented
+          options={SORT_OPTIONS.map((s) => ({
+            id: s.id,
+            accessibilityLabel: s.label,
+            testID: testId('series.chapters.sort', s.id),
+            render: (active) => (
+              <s.Icon color={active ? theme.accentOn : theme.textSecondary} size={16} />
+            ),
+          }))}
+          active={asc ? 'asc' : 'desc'}
+          onChange={(id) => setAsc(id === 'asc')}
+          itemStyle={styles.sortTab}
+        />
+      </View>
+    </View>
+  ) : null;
+
+  // One flat chapter row (a chapter, the "show N more" divider, or the empty-state line). Shared by
+  // the virtualized list (`renderItem`) and the large-web inline `.map`.
+  const renderListItem = (item: ChapterListRow): ReactElement => {
+    if (item.type === 'empty') {
+      return (
+        <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
+          No chapters here.
+        </ThemedText>
+      );
+    }
+    if (item.type === 'more') {
+      return (
+        <Pressable
+          testID="series.chapters.expand-middle"
+          onPress={() => setMiddleExpanded(true)}
+          onHoverIn={expandMiddleHover.onHoverIn}
+          onHoverOut={expandMiddleHover.onHoverOut}
+          style={[
+            styles.expandMiddle,
+            // Brighten (not dim) on hover — same treatment as the chapter tab strip.
+            expandMiddleHover.hovered && { backgroundColor: theme.backgroundSelected, borderRadius: 8 },
+          ]}>
+          <ThemedText type="small" style={[styles.expandMiddleText, { color: theme.accent }]}>
+            Show {item.hiddenCount} more chapters
+          </ThemedText>
+        </Pressable>
+      );
+    }
+    // Row gap: there's no list container to carry a `gap`, so each row supplies its own spacing.
+    return <View style={styles.chapterRowGap}>{renderRow(item.group)}</View>;
+  };
+
+  // The list header (virtualized path): the series title, the hero/meta (from series.tsx), then the
+  // "Chapters" heading/controls.
   const listHeader = (
     <View style={styles.listHeader}>
+      {titleEl}
       {header}
-      {loading ? (
-        <ChapterListSkeleton />
-      ) : hasChapters ? (
-        <View style={[styles.head, styles.chapterControlsHead]}>
-          <ThemedText type="subtitle" style={styles.headTitle}>
-            Chapters
-          </ThemedText>
-          <View style={styles.controls}>
-            <Segmented
-              options={TABS.map((t) => ({
-                id: t.id,
-                accessibilityLabel: t.label,
-                testID: testId('series.chapters.tab', t.id),
-                render: (active) => (
-                  <ThemedText
-                    type="small"
-                    numberOfLines={1}
-                    style={[styles.tabLabel, active ? { color: theme.accentOn } : { color: theme.textSecondary }]}>
-                    {t.label}
-                  </ThemedText>
-                ),
-              }))}
-              active={tab}
-              onChange={(id) => {
-                setTab(id);
-                setMiddleExpanded(false);
-              }}
-              {...(fillTabs && { containerStyle: styles.tabsFill, itemStyle: styles.tabFill })}
-            />
-            <Segmented
-              options={SORT_OPTIONS.map((s) => ({
-                id: s.id,
-                accessibilityLabel: s.label,
-                testID: testId('series.chapters.sort', s.id),
-                render: (active) => (
-                  <s.Icon color={active ? theme.accentOn : theme.textSecondary} size={16} />
-                ),
-              }))}
-              active={asc ? 'asc' : 'desc'}
-              onChange={(id) => setAsc(id === 'asc')}
-              itemStyle={styles.sortTab}
-            />
-          </View>
-        </View>
-      ) : null}
+      {chapterControls}
     </View>
   );
 
@@ -551,52 +596,21 @@ export function ChapterScrollList({
       contentContainerStyle={{
         paddingTop: topInset + BarContentGap,
         paddingBottom: insets.bottom + Spacing.five,
-        // Large screens get their horizontal inset + centering from the master–detail wrapper below;
-        // small screens inset the list content itself.
-        ...(isLarge ? null : { paddingHorizontal: Spacing.four }),
+        // Large screens cap + centre the whole list at MaxTopLevelWidth (via largeSidePad); small
+        // screens just inset by Spacing.four.
+        ...(isLarge
+          ? { paddingLeft: largeSidePad, paddingRight: largeSidePad }
+          : { paddingHorizontal: Spacing.four }),
       }}
-      renderItem={({ item }) => {
-        if (item.type === 'empty') {
-          return (
-            <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
-              No chapters here.
-            </ThemedText>
-          );
-        }
-        if (item.type === 'more') {
-          return (
-            <Pressable
-              testID="series.chapters.expand-middle"
-              onPress={() => setMiddleExpanded(true)}
-              onHoverIn={expandMiddleHover.onHoverIn}
-              onHoverOut={expandMiddleHover.onHoverOut}
-              style={[
-                styles.expandMiddle,
-                // Brighten (not dim) on hover — same treatment as the chapter tab strip.
-                expandMiddleHover.hovered && { backgroundColor: theme.backgroundSelected, borderRadius: 8 },
-              ]}>
-              <ThemedText type="small" style={[styles.expandMiddleText, { color: theme.accent }]}>
-                Show {item.hiddenCount} more chapters
-              </ThemedText>
-            </Pressable>
-          );
-        }
-        // Row gap: there's no list-container to carry a `gap`, so each row supplies its own spacing.
-        return <View style={styles.chapterRowGap}>{renderRow(item.group)}</View>;
-      }}
+      renderItem={({ item }) => renderListItem(item)}
     />
   );
 
-  // Large web screen: cover + actions pinned as a static left column beside the scrolling list
-  // (master–detail). The column stays put because it isn't inside the list's scroller — no sticky.
-  if (isLarge && leftColumn) {
-    return (
-      <View style={styles.masterDetail}>
-        <View style={[styles.masterLeft, { paddingTop: topInset + BarContentGap }]}>{leftColumn}</View>
-        {list}
-      </View>
-    );
-  }
+  // One layout on every screen: the LegendList owns the scroll and virtualizes the chapter rows. The
+  // hero (a two-column cover|meta block on large, stacked on small) is the header, the chapter rows
+  // are full-width list items below it, and the related rails are the full-width footer. Because the
+  // rows and footer are full-width — the cover lives in the header, not a persistent side column —
+  // the rails span the whole capped column with no clipping, and the chapters stay virtualized.
   return list;
 }
 
@@ -1555,6 +1569,12 @@ const styles = StyleSheet.create({
   listHeader: {
     gap: Spacing.four,
   },
+  // Series title — full-width above the two-column hero. Matches series.tsx's own title style.
+  seriesTitle: {
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: '700',
+  },
   // Per-row bottom spacing (the old inline list used a container `gap`; a virtualized list can't).
   chapterRowGap: {
     marginBottom: Spacing.one,
@@ -1576,25 +1596,11 @@ const styles = StyleSheet.create({
   chapterFooterSmall: {
     marginHorizontal: -TopLevelGutter,
   },
-  // Large-screen master–detail: a static cover+actions column beside the scrolling list, centred
-  // and capped like the top-level views so the related rails (list footer) line up with them.
-  masterDetail: {
-    flex: 1,
-    flexDirection: 'row',
-    width: '100%',
-    maxWidth: MaxTopLevelWidth,
-    alignSelf: 'center',
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
-  },
-  masterLeft: {
-    width: LARGE_COVER_WIDTH,
-    gap: Spacing.three,
-  },
-  // The related rails are full-bleed to the capped column; on large screens the list only occupies
-  // the right column, so pull the footer back left over the (by-then-empty) cover column area.
+  // Large screens: the list content is inset by `largeSidePad` (which folds in a Spacing.four gutter
+  // on top of the centering pad). A Rail bakes in its OWN gutter, so cancel just that Spacing.four so
+  // the rails are full-bleed to the capped column and their first card lines up with the hero edge.
   chapterFooterLarge: {
-    marginLeft: -(LARGE_COVER_WIDTH + Spacing.four),
+    marginHorizontal: -Spacing.four,
   },
   // ── Page-thumbnail list (PageThumbList) ──────────────────────────────────
   pageList: {
