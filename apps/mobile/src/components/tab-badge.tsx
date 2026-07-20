@@ -31,6 +31,21 @@ export function SettingsTabBadge() {
   return <TabBadge count={useSettingsBadgeCount()} />;
 }
 
+/**
+ * The same accent count pill as the tab pip, but laid out inline in a row (not overlaid on an icon).
+ * Used on the Settings landing screen's Bridges/Trackers rows so the thing that surfaced the tab pip
+ * is visible in the page too — matching color and count makes the connection unmistakable.
+ */
+export function InlineUpdatePip({ count }: { count: number }) {
+  const theme = useTheme();
+  if (count <= 0) return null;
+  return (
+    <View style={[styles.pip, styles.inline, { backgroundColor: theme.accent }]} testID="settings-update-pip">
+      <ThemedText style={[styles.label, { color: theme.accentOn }]}>{count > 9 ? '9+' : count}</ThemedText>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   pip: {
     position: 'absolute',
@@ -42,6 +57,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // Cancels the tab-icon overlay positioning so the same pill sits inline in a settings row.
+  inline: {
+    position: 'relative',
+    top: 0,
+    right: 0,
   },
   label: {
     fontSize: 9,
