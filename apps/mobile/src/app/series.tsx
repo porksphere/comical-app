@@ -155,6 +155,7 @@ export default function SeriesScreen() {
     data: series = null,
     error: queryError,
     isPlaceholderData,
+    isFetching,
     refetch,
   } = useQuery(
     seriesDetailQuery(ds, mock, bridgeId ?? '', id ?? '', {
@@ -250,6 +251,13 @@ export default function SeriesScreen() {
           width={width}
           initialCover={cover}
           loading={isPlaceholderData}
+          // The chapters fetch may start as soon as the detail request is IN FLIGHT (not once it
+          // resolves) — this is true while background-fetching the placeholder (isFetching) and after
+          // the real detail lands (!isPlaceholderData). Because this only flips true AFTER the detail
+          // query's own fetch has begun (fetchStatus turns 'fetching' in an effect, a commit later),
+          // the detail request is always enqueued at the rate limiter first — chapters never jump
+          // ahead of it. See seriesListQuery `enabled` in SeriesBody.
+          detailStarted={isFetching || !isPlaceholderData}
           coverAspect={coverAspect}
           onCoverLoad={onCoverLoad}
         />
@@ -270,6 +278,7 @@ function SeriesBody({
   width,
   initialCover,
   loading,
+  detailStarted,
   coverAspect,
   onCoverLoad,
 }: {
@@ -287,6 +296,10 @@ function SeriesBody({
    *  The hero renders for real; the actions + content render as skeletons until
    *  the fetch resolves — all without remounting the persistent cover <Image>. */
   loading?: boolean;
+  /** The detail request has begun (see SeriesScreen). Gates the chapters/pages fetch so it fires as
+   *  soon as detail is in flight — not only once detail resolves — while still, by construction,
+   *  being enqueued after the detail request. */
+  detailStarted: boolean;
   /** The hero cover's live aspect + its measurer — owned by SeriesScreen (see there). */
   coverAspect: number;
   onCoverLoad: (e: ImageLoadEventData) => void;
@@ -331,19 +344,22 @@ function SeriesBody({
   );
   const relatedGroups = series.relatedGroups ?? fetchedRelated;
 
-  // Chapter list / page-thumbnail grid: `getSeriesDetail` returns only the fast
-  // info payload and flags `listDeferred`, leaving this ~200ms fetch to stream in
-  // separately so the hero/meta/description paint immediately (this is what made
-  // the page feel slower than comical-web, which for chaptered series blocks its
-  // whole body on the /chapters request). The chapter section shows a skeleton
-  // meanwhile. The chapter list / page-thumbnail grid comes only from the deferred
-  // result now (both real and mock defer it); count/label still fall back to any
-  // inline detail value a direct series carries.
-  const listDeferred = !!series.listDeferred;
+  // Chapter list / page-thumbnail grid: `getSeriesDetail` returns only the fast info payload and
+  // defers this fetch so the hero/meta/description paint immediately (this is what made the page feel
+  // slower than comical-web, which blocked its whole body on the /chapters request). The chapter
+  // section shows a skeleton meanwhile. The list comes only from this fetch (both real and mock defer
+  // it); count/label still fall back to any inline detail value a direct series carries.
+  //
+  // Gated on `detailStarted` rather than the resolved detail's `listDeferred`, so it fires the moment
+  // the detail request is IN FLIGHT instead of waiting for it to fully resolve. Under the bridge's
+  // serial rate limit (maxConcurrent 1) the detail request is still admitted first — `detailStarted`
+  // only turns true a commit AFTER detail begins fetching — so chapters never delay detail; they just
+  // stop idling behind detail's resolve on a slow link. `series.id` is the real id even on the
+  // placeholder, and `direct` comes from the route, so nothing here needs the resolved detail.
   const { data: listData, isLoading: listFetching } = useQuery(
-    seriesListQuery(ds, mock, bridgeId ?? '', series.id, direct, listDeferred),
+    seriesListQuery(ds, mock, bridgeId ?? '', series.id, direct, detailStarted),
   );
-  const listLoading = listDeferred && listFetching;
+  const listLoading = detailStarted && listFetching;
   const chapters = listData?.chapters;
   const pageThumbs = listData?.pageThumbs;
   const chapterCount = listData?.chapterCount ?? series.chapterCount;
