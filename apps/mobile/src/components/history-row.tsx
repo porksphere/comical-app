@@ -6,6 +6,7 @@ import { MoreVerticalIcon } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useTheme } from '@/hooks/use-theme';
 import { testId } from '@/lib/test-id';
 
@@ -58,14 +59,15 @@ export function HistoryRow({
   testID?: string;
 }) {
   const theme = useTheme();
+  const resolvedThumb = useResolvedAsset(thumbnailUrl);
   const base = testID ?? testId('history-row', title);
   return (
     <View style={[styles.row, dimmed && styles.dimmed]}>
       <Pressable testID={base} style={styles.main} onPress={onPress} accessibilityRole="button">
         <View ref={thumbRef} collapsable={false} style={[styles.thumbWrap, coverHidden && styles.thumbHidden]}>
-          {thumbnailUrl ? (
+          {resolvedThumb ? (
             <Image
-              source={{ uri: thumbnailUrl }}
+              source={{ uri: resolvedThumb }}
               style={styles.thumb}
               contentFit="cover"
               cachePolicy="memory-disk"

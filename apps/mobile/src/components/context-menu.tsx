@@ -20,6 +20,7 @@ import type { IconProps } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { RowHeight, Spacing } from '@/constants/theme';
+import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useTheme } from '@/hooks/use-theme';
 import { clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 
@@ -95,12 +96,13 @@ export function MenuHeader({
   const aspect = clampThumbAspect(coverAspect ?? DEFAULT_THUMB_ASPECT);
   const coverW = 48;
   const coverH = coverW / aspect;
+  const resolvedCover = useResolvedAsset(cover);
   return (
     <View style={styles.header}>
       {!textOnly &&
-        (cover ? (
+        (resolvedCover ? (
           <Image
-            source={{ uri: cover }}
+            source={{ uri: resolvedCover }}
             style={[styles.headerCover, { width: coverW, height: coverH }]}
             contentFit="cover"
             cachePolicy="memory-disk"

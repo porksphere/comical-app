@@ -3,6 +3,7 @@ import { Image } from 'expo-image';
 import { usePathname, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { BackHandler, Platform, StyleSheet, View, useWindowDimensions } from 'react-native';
 import Animated, {
   cancelAnimation,
@@ -344,6 +345,10 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     openedRef.current = true;
     progress.set(withSpring(1, MORPH_SPRING));
   }, [progress]);
+  // Resolve the lifted cover like everywhere else (absolute passthrough; /img-proxy covers routed);
+  // the grid already resolved it, so this is a cached hit. The openMorph timeout above still fires if
+  // it somehow can't decode.
+  const resolvedCover = useResolvedAsset(entry.cover);
 
   useEffect(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); // fire immediately — the press must feel instant
@@ -1550,9 +1555,9 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
           pointerEvents="none"
           style={[styles.coverLayer, { width: COVER_W, height: coverH }, coverStyle, parentDimStyle]}>
           <Animated.View style={[styles.coverInner, coverRadiusStyle]}>
-            {entry.cover ? (
+            {resolvedCover ? (
               <Image
-                source={{ uri: entry.cover }}
+                source={{ uri: resolvedCover }}
                 style={StyleSheet.absoluteFill}
                 contentFit="cover"
                 cachePolicy="memory-disk"

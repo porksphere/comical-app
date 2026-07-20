@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Image, type ImageLoadEventData } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions, View, type ViewStyle } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -739,6 +740,7 @@ function SeriesSkeleton({
   coverAspect: number;
   onCoverLoad: (e: ImageLoadEventData) => void;
 }) {
+  const resolvedCover = useResolvedAsset(cover);
   const actionSkels = Array.from({ length: 5 }).map((_, i) => (
     <Skeleton key={i} style={styles.skelButton} />
   ));
@@ -746,9 +748,9 @@ function SeriesSkeleton({
   const coverSkel = (
     <View style={isLarge ? styles.coverWrapLarge : styles.coverWrap}>
       <SeriesCoverBox aspect={coverAspect}>
-        {cover ? (
+        {resolvedCover ? (
           <Image
-            source={{ uri: cover }}
+            source={{ uri: resolvedCover }}
             style={StyleSheet.absoluteFill}
             contentFit="cover"
             cachePolicy="memory-disk"

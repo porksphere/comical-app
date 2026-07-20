@@ -12,6 +12,7 @@ import { Spacing } from '@/constants/theme';
 import { coverDelayMs } from '@/data/mock';
 import type { SeriesEntry } from '@/data/types';
 import { useIsCompact } from '@/hooks/use-responsive';
+import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { useLightCards } from '@/lib/perf-flags';
@@ -299,6 +300,10 @@ export function SeriesCard({
   // effects are wanted — see the render below), so its reanimated hooks aren't allocated per card
   // when Lightweight cards is on.
   const { active, handlers, reset: resetHeld } = useHeld();
+  // Resolve the cover the same way the reader resolves page images: absolute URLs pass through,
+  // a server-relative `/img-proxy` cover (Referer-gated sources like Hitomi) is routed to the API
+  // base on web / the in-process transport on device. Without this those covers render blank.
+  const resolvedCover = useResolvedAsset(entry.cover);
   const fixedWidth = size === 'grid' ? undefined : (width ?? WIDTHS[size]);
   // The active/held decorations differ by platform: web keeps the hover highlight ring + full-title
   // peek popover; iOS/Android drop both (the OS-native long-press context menu is the affordance
@@ -448,7 +453,7 @@ export function SeriesCard({
       <>
         {delayPassed && (
           <Image
-            source={{ uri: entry.cover }}
+            source={{ uri: resolvedCover }}
             style={StyleSheet.absoluteFill}
             contentFit="cover"
             cachePolicy="memory-disk"
