@@ -1130,6 +1130,19 @@ export function searchTrackerCatalog(
   return fetchJson(`/trackers/${encodeURIComponent(trackerId)}/search?${qs}`, signal);
 }
 
+/** POST /trackers/{id}/oauth-start → begin an OAuth round trip for an `oauth-callback` setting
+ *  field: the server stashes PKCE/state server-side and returns the provider's `authUrl` to open
+ *  in a browser. The server's own `/oauth/callback` completes the exchange and persists the
+ *  token blob — this call has no matching "finish" endpoint on the client. */
+export function startTrackerOAuth(
+  trackerId: string,
+  key: string,
+  settings?: Record<string, string>,
+  signal?: AbortSignal,
+): Promise<{ authUrl: string }> {
+  return fetchPost(`/trackers/${encodeURIComponent(trackerId)}/oauth-start`, { key, settings }, signal);
+}
+
 // ─── Tracker links (per-series associations to external tracker services — same optional-server-
 // capability shape as the trackers themselves) ─────────────────────────────────────────────────
 

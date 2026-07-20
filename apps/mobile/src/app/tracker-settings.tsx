@@ -90,6 +90,7 @@ export default function TrackerSettingsScreen() {
                     descriptor={d}
                     value={d.key in edits ? edits[d.key] : data.values[d.key]}
                     secretSet={data.secretsSet.includes(d.key)}
+                    trackerId={trackerId}
                     onChange={(v) => setField(d.key, v)}
                   />
                 ))}
