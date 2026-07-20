@@ -11,7 +11,7 @@ import { Rail, RailSkeleton } from '@/components/rail';
 import { RetryBlock } from '@/components/retry-block';
 import { ActionButton, NewBadge } from '@/components/series/action-button';
 import { SeriesDownloadButton } from '@/components/series/download-button';
-import { ChaptersSection, PageThumbList } from '@/components/series/chapters-section';
+import { ChapterScrollList, PageThumbList } from '@/components/series/chapters-section';
 import { TrackerButton } from '@/components/series/tracker-panel';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
@@ -575,28 +575,15 @@ function SeriesBody({
           {series.description}
         </ThemedText>
       ) : null}
-
-      {/* Chapters live with the metadata (right column on large screens). Direct
-          series have no chapters — their page-thumbnail grid is the screen's own
-          virtualized scroller instead (see `PageThumbList` in the return). */}
-      {!direct && (
-        <ChaptersSection
-          chapters={chapters}
-          loading={listLoading || !listReady}
-          seed={series.id}
-          title={series.title}
-          bridgeId={bridgeId}
-          offline={series.cached === true}
-        />
-      )}
     </>
   );
+  // `contentEl` above is now just tags + meta + description (no chapters). For chaptered series the
+  // chapter list is the screen's own virtualized scroller (`ChapterScrollList` below), which takes
+  // this block as its header; direct series render `contentEl` inside the page-thumb list header.
 
-  const insets = useSafeAreaInsets();
   const topBarInset = useTopBarInset();
-  // The web-only sticky cover column is a chaptered-ScrollView affordance — a
-  // direct series' hero lives inside the page list's header, where position:sticky
-  // doesn't apply, so don't ask for it there.
+  // The web-only sticky cover column is a two-column-hero affordance — a direct series' hero lives
+  // inside the page list's header, where position:sticky doesn't apply, so don't ask for it there.
   const heroSticky = sticky && !direct;
 
   // Hero + metadata (+ chapters, for chaptered series). Shared by both layouts
@@ -657,8 +644,7 @@ function SeriesBody({
 
   // Direct series: the page-thumbnail grid IS the scroll container — a
   // virtualized, recycling LegendList with the hero/meta as its header and the
-  // rails as its footer, so a huge page set stays cheap. Chaptered series keep
-  // the plain ScrollView (chapters in the two-column layout + web sticky cover).
+  // rails as its footer, so a huge page set stays cheap.
   if (direct) {
     return (
       <PageThumbList
@@ -674,15 +660,50 @@ function SeriesBody({
     );
   }
 
+  // Chaptered series: the chapter list IS the scroll container (ChapterScrollList), virtualized so a
+  // 250-chapter series never mounts every row at once. The hero/meta is its header; the rails its
+  // footer. On a large web screen the cover + actions ride in `leftColumn` — a static column beside
+  // the scrolling list that stays pinned without any `position: sticky` (see ChapterScrollList). On
+  // small screens the cover/actions live in the header's hero row (single column).
+  const chapterHeader = (
+    <>
+      <ThemedText type="subtitle" style={styles.title}>
+        {series.title}
+      </ThemedText>
+      {isLarge ? (
+        loading ? contentSkel : contentEl
+      ) : (
+        <>
+          <View style={styles.hero}>
+            {coverEl}
+            {loading ? actionsSkel : actionsEl}
+          </View>
+          {loading ? contentSkel : contentEl}
+        </>
+      )}
+    </>
+  );
+  const chapterLeftColumn = isLarge ? (
+    <>
+      {coverEl}
+      {loading ? actionsSkel : actionsEl}
+    </>
+  ) : null;
+
   return (
-    <ScrollView
-      contentContainerStyle={[styles.scroll, { paddingTop: topBarInset + BarContentGap, paddingBottom: insets.bottom + Spacing.five }]}
-      showsVerticalScrollIndicator={false}>
-      <View style={styles.column}>
-        <View style={styles.inner}>{heroBlock}</View>
-        {relatedRailsEl}
-      </View>
-    </ScrollView>
+    <ChapterScrollList
+      chapters={chapters}
+      loading={listLoading || !listReady}
+      seed={series.id}
+      title={series.title}
+      bridgeId={bridgeId}
+      offline={series.cached === true}
+      header={chapterHeader}
+      footer={relatedRailsEl}
+      leftColumn={chapterLeftColumn}
+      isLarge={isLarge}
+      topInset={topBarInset}
+    />
   );
 }
 

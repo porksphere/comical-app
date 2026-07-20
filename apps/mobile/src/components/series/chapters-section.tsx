@@ -26,8 +26,9 @@ import { OptionList, useOverlay, type AnchorRect } from '@/components/overlay/ov
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BarContentGap, MaxContentWidth, Spacing } from '@/constants/theme';
+import { BarContentGap, MaxContentWidth, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
+import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
 import { useLightCards } from '@/lib/perf-flags';
 import { useTheme } from '@/hooks/use-theme';
 import { dlDeleteChapter, dlGetSeries, resolveAssetSourceCached } from '@/data/api';
@@ -70,39 +71,12 @@ const OVERVIEW_TAIL_COUNT = 5;
 // Track padding / gap between tab chips.
 const TAB_PAD = 3;
 const TAB_GAP = 4;
+// Width of the pinned cover+actions column in the large-screen master–detail layout. Kept in sync
+// with series.tsx's own LARGE_COVER_WIDTH (the leftColumn it hands us is sized to this).
+const LARGE_COVER_WIDTH = 300;
 // Shared with the sort button so the whole controls row (tab strip + sort
 // toggle) reads as one consistent height.
 const CONTROLS_HEIGHT = 32;
-
-export function ChaptersSection({
-  chapters,
-  loading,
-  seed,
-  title,
-  bridgeId,
-  offline,
-}: {
-  chapters?: Chapter[];
-  /** The deferred chapter list is still fetching (see series.tsx + getSeriesList)
-   *  — show a skeleton in this section's place. */
-  loading?: boolean;
-  /** Series identity, used to build reader navigation params. */
-  seed: string;
-  title: string;
-  /** Originating bridge's stable id, carried to the reader for real API calls. */
-  bridgeId?: string;
-  /** The page is rendering from the offline metadata cache — chapters that aren't downloaded can't
-   *  be read, so they dim and disable while downloaded ones stay fully readable. */
-  offline?: boolean;
-}) {
-  // Direct-series page thumbnails are no longer rendered here — they're the
-  // series screen's own virtualized scroller (see `PageThumbList`); this section
-  // is just the chaptered-series list now.
-  if (loading) return <ChapterListSkeleton />;
-  return chapters?.length ? (
-    <ChapterList chapters={chapters} seed={seed} title={title} bridgeId={bridgeId} offline={offline} />
-  ) : null;
-}
 
 /** Chapter-list placeholder shown while the deferred chapter fetch is in flight
  *  (getSeriesList). Header + a few skeleton rows, so the section holds its place
@@ -167,11 +141,15 @@ function Segmented<T extends string>({
   active,
   onChange,
   itemStyle,
+  containerStyle,
 }: {
   options: { id: T; render: (active: boolean) => ReactNode; accessibilityLabel?: string; testID: string }[];
   active: T;
   onChange: (id: T) => void;
   itemStyle?: StyleProp<ViewStyle>;
+  /** Override the strip container — e.g. `flex: 1` so a narrow-screen tab strip fills the row
+   *  (and its items share the width equally) instead of overflowing past the content margin. */
+  containerStyle?: StyleProp<ViewStyle>;
 }) {
   const theme = useTheme();
   const [layouts, setLayouts] = useState<Partial<Record<T, { x: number; width: number }>>>({});
@@ -180,7 +158,7 @@ function Segmented<T extends string>({
   };
   const activeBox = layouts[active];
   return (
-    <ThemedView type="backgroundElement" style={styles.tabs}>
+    <ThemedView type="backgroundElement" style={[styles.tabs, containerStyle]}>
       {activeBox && (
         <Animated.View
           pointerEvents="none"
@@ -295,26 +273,74 @@ function VersionRow({ v, active, onPress }: { v: Chapter; active: boolean; onPre
   );
 }
 
-function ChapterList({
-  chapters,
+/** One flat row of the chapter scroller's virtualized `data`. Everything below the series
+ *  hero/meta (the list header) is a real list item so LegendList can window it — the chapter rows,
+ *  the Overview "show N more" divider, and the empty-state line. */
+type ChapterListRow =
+  | { type: 'chapter'; group: ChapterGroup }
+  | { type: 'more'; hiddenCount: number }
+  | { type: 'empty' };
+
+/**
+ * The chaptered-series screen's own scroll container — a virtualized, LegendList-owned scroller,
+ * the chaptered counterpart to `PageThumbList`. It replaced a plain `ScrollView` + `.map` that
+ * mounted EVERY chapter row at once: switching to All/Unread on a 250-chapter series rendered all
+ * of them synchronously on the tap, which is what made tab-switching feel slow. Now only the
+ * on-screen window of rows is mounted.
+ *
+ * The series hero/meta is the list `header` and the related rails are the `footer`, both threaded
+ * in from `series.tsx`. On a large web screen the cover + actions ride in `leftColumn` — a static
+ * sibling beside the list (master–detail): it stays pinned simply because it isn't inside the
+ * scroller, reproducing the old `position: sticky` cover without any sticky machinery. On small
+ * screens `leftColumn` is null and the cover/actions live in `header` (single column).
+ */
+export function ChapterScrollList({
+  chapters = [],
+  loading,
   seed,
   title,
   bridgeId,
   offline,
+  header,
+  footer,
+  leftColumn,
+  isLarge,
+  topInset = 0,
 }: {
-  chapters: Chapter[];
+  chapters?: Chapter[];
+  /** The deferred chapter list is still fetching (see series.tsx + getSeriesList) — show a
+   *  skeleton where the rows will land while the header still paints for real. */
+  loading?: boolean;
   seed: string;
   title: string;
   bridgeId?: string;
   offline?: boolean;
+  /** Series hero / meta / description — the list header (this component owns the scroll). */
+  header?: ReactNode;
+  /** Related-series rails — the list footer. */
+  footer?: ReactNode;
+  /** Web-large only: cover + actions, pinned beside the scrolling list (master–detail). Null on
+   *  small screens, where the cover/actions live in `header` instead. */
+  leftColumn?: ReactNode;
+  isLarge: boolean;
+  /** Height of the overlaying top bar, so the first content clears it (and scrolls under its frost). */
+  topInset?: number;
 }) {
   const theme = useTheme();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const [tab, setTab] = useState<Tab>('overview');
   const [asc, setAsc] = useState(false);
   // Overview-only: reveal the collapsed middle portion inline.
   const [middleExpanded, setMiddleExpanded] = useState(false);
   const expandMiddleHover = useHovered();
+
+  // Narrow screens can't fit four content-sized tabs + the sort toggle within the content margin
+  // (the strip overflowed ~34pt past the right edge). There, the strip fills the row and its tabs
+  // share the width equally; large screens (chapters live in a roomy right column) keep the
+  // content-sized tabs.
+  const fillTabs = width < LARGE_SCREEN_BREAKPOINT;
 
   // Per-chapter download state for the trailing indicators. Same query key the series Download
   // button subscribes to, so it's already fetched on this page AND live-patched page-by-page by the
@@ -334,15 +360,19 @@ function ChapterList({
   const preferredGroup = usePreferredGroup();
 
   // Collapse multi-scanlator copies into logical chapters and order them by number
-  // (see @/lib/chapter-order). `groupChapters` returns ascending reading order; the
-  // default view is newest-first, so reverse unless the ascending toggle is on. A
-  // group counts as read only when every one of its versions is read.
+  // (see @/lib/chapter-order). Grouping is independent of the tab/sort, so it's memoized on
+  // `chapters` alone — a tab change no longer re-groups the whole list, only re-filters it.
+  const grouped = useMemo(() => groupChapters(chapters), [chapters]);
+  // `groupChapters` returns ascending reading order; the default view is newest-first, so reverse
+  // unless the ascending toggle is on. A group counts as read only when every one of its versions
+  // is read. Only the on-screen window of rows mounts now (LegendList), so re-filtering on a tab
+  // switch is cheap — no deferring needed.
   const groups = useMemo(() => {
-    let list = groupChapters(chapters);
-    if (tab === 'read') list = list.filter((g) => g.versions.every((v) => v.read));
-    else if (tab === 'unread') list = list.filter((g) => g.versions.some((v) => !v.read));
+    let list = grouped;
+    if (tab === 'read') list = grouped.filter((g) => g.versions.every((v) => v.read));
+    else if (tab === 'unread') list = grouped.filter((g) => g.versions.some((v) => !v.read));
     return asc ? list : [...list].reverse();
-  }, [chapters, tab, asc]);
+  }, [grouped, tab, asc]);
 
   // Open a specific version: remember its group as the preferred source, then route
   // to the reader for that copy.
@@ -369,8 +399,21 @@ function ChapterList({
     !middleExpanded &&
     groups.length > OVERVIEW_HEAD_COUNT + OVERVIEW_TAIL_COUNT + 1;
   const hiddenCount = collapsible ? groups.length - OVERVIEW_HEAD_COUNT - OVERVIEW_TAIL_COUNT : 0;
-  const head = collapsible ? groups.slice(0, OVERVIEW_HEAD_COUNT) : groups;
-  const tail = collapsible ? groups.slice(groups.length - OVERVIEW_TAIL_COUNT) : [];
+
+  // Flatten head + optional "show N more" divider + tail into the list's `data`. Empty while the
+  // deferred fetch is loading (the header shows a skeleton instead); a single `empty` sentinel when
+  // a filter tab matched nothing.
+  const hasChapters = !!chapters?.length;
+  const data = useMemo<ChapterListRow[]>(() => {
+    if (loading || !hasChapters) return [];
+    if (groups.length === 0) return [{ type: 'empty' }];
+    const head = collapsible ? groups.slice(0, OVERVIEW_HEAD_COUNT) : groups;
+    const tail = collapsible ? groups.slice(groups.length - OVERVIEW_TAIL_COUNT) : [];
+    const out: ChapterListRow[] = head.map((g) => ({ type: 'chapter', group: g }));
+    if (collapsible) out.push({ type: 'more', hiddenCount });
+    for (const g of tail) out.push({ type: 'chapter', group: g });
+    return out;
+  }, [loading, hasChapters, groups, collapsible, hiddenCount]);
 
   // Long-press a row → the per-chapter download menu. NATIVE: the generic hold-menu host — the
   // series card popup's menu system (frosted point-anchored menu, peek-and-commit, open thump),
@@ -416,11 +459,10 @@ function ChapterList({
     );
   };
 
-  const row = (g: ChapterGroup) => {
+  const renderRow = (g: ChapterGroup) => {
     const dlState = groupDownloadState(g, dlByChapter);
     return (
       <ChapterRow
-        key={g.key}
         group={g}
         preferredGroup={preferredGroup}
         onOpen={openVersion}
@@ -432,79 +474,124 @@ function ChapterList({
     );
   };
 
-  return (
-    <View style={styles.section}>
-      <View style={styles.head}>
-        <ThemedText type="subtitle" style={styles.headTitle}>
-          Chapters
-        </ThemedText>
-        <View style={styles.controls}>
-          <Segmented
-            options={TABS.map((t) => ({
-              id: t.id,
-              accessibilityLabel: t.label,
-              testID: testId('series.chapters.tab', t.id),
-              render: (active) => (
-                <ThemedText
-                  type="small"
-                  numberOfLines={1}
-                  style={[styles.tabLabel, active ? { color: theme.accentOn } : { color: theme.textSecondary }]}>
-                  {t.label}
-                </ThemedText>
-              ),
-            }))}
-            active={tab}
-            onChange={(id) => {
-              setTab(id);
-              setMiddleExpanded(false);
-            }}
-          />
-          <Segmented
-            options={SORT_OPTIONS.map((s) => ({
-              id: s.id,
-              accessibilityLabel: s.label,
-              testID: testId('series.chapters.sort', s.id),
-              render: (active) => (
-                <s.Icon color={active ? theme.accentOn : theme.textSecondary} size={16} />
-              ),
-            }))}
-            active={asc ? 'asc' : 'desc'}
-            onChange={(id) => setAsc(id === 'asc')}
-            itemStyle={styles.sortTab}
-          />
-        </View>
-      </View>
-
-      <View style={styles.list}>
-        {head.map(row)}
-
-        {collapsible && (
-          <Pressable
-            testID="series.chapters.expand-middle"
-            onPress={() => setMiddleExpanded(true)}
-            onHoverIn={expandMiddleHover.onHoverIn}
-            onHoverOut={expandMiddleHover.onHoverOut}
-            style={[
-              styles.expandMiddle,
-              // Brighten (not dim) on hover — same treatment as the chapter tab strip.
-              expandMiddleHover.hovered && { backgroundColor: theme.backgroundSelected, borderRadius: 8 },
-            ]}>
-            <ThemedText type="small" style={[styles.expandMiddleText, { color: theme.accent }]}>
-              Show {hiddenCount} more chapters
-            </ThemedText>
-          </Pressable>
-        )}
-
-        {tail.map(row)}
-
-        {groups.length === 0 && (
-          <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
-            No chapters here.
+  // The list header: the series hero/meta (from series.tsx) followed by the "Chapters" heading and
+  // the tab/sort controls — or a skeleton where the rows will land while the deferred fetch runs.
+  const listHeader = (
+    <View style={styles.listHeader}>
+      {header}
+      {loading ? (
+        <ChapterListSkeleton />
+      ) : hasChapters ? (
+        <View style={styles.head}>
+          <ThemedText type="subtitle" style={styles.headTitle}>
+            Chapters
           </ThemedText>
-        )}
-      </View>
+          <View style={styles.controls}>
+            <Segmented
+              options={TABS.map((t) => ({
+                id: t.id,
+                accessibilityLabel: t.label,
+                testID: testId('series.chapters.tab', t.id),
+                render: (active) => (
+                  <ThemedText
+                    type="small"
+                    numberOfLines={1}
+                    style={[styles.tabLabel, active ? { color: theme.accentOn } : { color: theme.textSecondary }]}>
+                    {t.label}
+                  </ThemedText>
+                ),
+              }))}
+              active={tab}
+              onChange={(id) => {
+                setTab(id);
+                setMiddleExpanded(false);
+              }}
+              {...(fillTabs && { containerStyle: styles.tabsFill, itemStyle: styles.tabFill })}
+            />
+            <Segmented
+              options={SORT_OPTIONS.map((s) => ({
+                id: s.id,
+                accessibilityLabel: s.label,
+                testID: testId('series.chapters.sort', s.id),
+                render: (active) => (
+                  <s.Icon color={active ? theme.accentOn : theme.textSecondary} size={16} />
+                ),
+              }))}
+              active={asc ? 'asc' : 'desc'}
+              onChange={(id) => setAsc(id === 'asc')}
+              itemStyle={styles.sortTab}
+            />
+          </View>
+        </View>
+      ) : null}
     </View>
   );
+
+  const list = (
+    <LegendList
+      style={styles.chapterList}
+      data={data}
+      keyExtractor={(item) =>
+        item.type === 'chapter' ? `c:${item.group.key}` : item.type
+      }
+      // Chapter rows carry their own state (expanded versions, hover) and there are only a screenful
+      // at a time, so recycling isn't worth the state-reset dance the page grid pays for — plain
+      // windowing already drops the mount count from "all N" to the visible handful.
+      estimatedItemSize={46}
+      ListHeaderComponent={listHeader}
+      ListFooterComponent={
+        footer ? <View style={isLarge ? styles.chapterFooterLarge : undefined}>{footer}</View> : null
+      }
+      contentContainerStyle={{
+        paddingTop: topInset + BarContentGap,
+        paddingBottom: insets.bottom + Spacing.five,
+        // Large screens get their horizontal inset + centering from the master–detail wrapper below;
+        // small screens inset the list content itself.
+        ...(isLarge ? null : { paddingHorizontal: Spacing.four }),
+      }}
+      renderItem={({ item }) => {
+        if (item.type === 'empty') {
+          return (
+            <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
+              No chapters here.
+            </ThemedText>
+          );
+        }
+        if (item.type === 'more') {
+          return (
+            <Pressable
+              testID="series.chapters.expand-middle"
+              onPress={() => setMiddleExpanded(true)}
+              onHoverIn={expandMiddleHover.onHoverIn}
+              onHoverOut={expandMiddleHover.onHoverOut}
+              style={[
+                styles.expandMiddle,
+                // Brighten (not dim) on hover — same treatment as the chapter tab strip.
+                expandMiddleHover.hovered && { backgroundColor: theme.backgroundSelected, borderRadius: 8 },
+              ]}>
+              <ThemedText type="small" style={[styles.expandMiddleText, { color: theme.accent }]}>
+                Show {item.hiddenCount} more chapters
+              </ThemedText>
+            </Pressable>
+          );
+        }
+        // Row gap: there's no list-container to carry a `gap`, so each row supplies its own spacing.
+        return <View style={styles.chapterRowGap}>{renderRow(item.group)}</View>;
+      }}
+    />
+  );
+
+  // Large web screen: cover + actions pinned as a static left column beside the scrolling list
+  // (master–detail). The column stays put because it isn't inside the list's scroller — no sticky.
+  if (isLarge && leftColumn) {
+    return (
+      <View style={styles.masterDetail}>
+        <View style={[styles.masterLeft, { paddingTop: topInset + BarContentGap }]}>{leftColumn}</View>
+        {list}
+      </View>
+    );
+  }
+  return list;
 }
 
 /**
@@ -1454,6 +1541,38 @@ const styles = StyleSheet.create({
   section: {
     gap: Spacing.three,
   },
+  // ── Chaptered-series scroller (ChapterScrollList) ────────────────────────
+  chapterList: {
+    flex: 1,
+  },
+  // Series hero/meta + the "Chapters" heading/controls, stacked as the list header.
+  listHeader: {
+    gap: Spacing.four,
+  },
+  // Per-row bottom spacing (the old inline list used a container `gap`; a virtualized list can't).
+  chapterRowGap: {
+    marginBottom: Spacing.one,
+  },
+  // Large-screen master–detail: a static cover+actions column beside the scrolling list, centred
+  // and capped like the top-level views so the related rails (list footer) line up with them.
+  masterDetail: {
+    flex: 1,
+    flexDirection: 'row',
+    width: '100%',
+    maxWidth: MaxTopLevelWidth,
+    alignSelf: 'center',
+    paddingHorizontal: Spacing.four,
+    gap: Spacing.four,
+  },
+  masterLeft: {
+    width: LARGE_COVER_WIDTH,
+    gap: Spacing.three,
+  },
+  // The related rails are full-bleed to the capped column; on large screens the list only occupies
+  // the right column, so pull the footer back left over the (by-then-empty) cover column area.
+  chapterFooterLarge: {
+    marginLeft: -(LARGE_COVER_WIDTH + Spacing.four),
+  },
   // ── Page-thumbnail list (PageThumbList) ──────────────────────────────────
   pageList: {
     flex: 1,
@@ -1533,6 +1652,23 @@ const styles = StyleSheet.create({
     padding: TAB_PAD,
     gap: TAB_GAP,
   },
+  // Narrow-screen override: the strip fills the row (up to the sort toggle) instead of being
+  // content-sized, so four tabs + the sort button always sit within the content margin. `minWidth: 0`
+  // lets it shrink on react-native-web (where the default `min-width: auto` would keep it overflowing).
+  tabsFill: {
+    flex: 1,
+    minWidth: 0,
+  },
+  // A fill-strip tab: shares the strip width equally with its siblings (each 1/4) with tighter
+  // padding, so even the long "Overview" label fits its quarter without pushing the strip wider.
+  tabFill: {
+    flex: 1,
+    height: CONTROLS_HEIGHT - TAB_PAD * 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.one,
+    borderRadius: 8,
+  },
   // Sliding highlight behind the active option (see `Segmented`) — sized to
   // exactly overlay the active option's own rect (same top/bottom inset from
   // the strip's padding, same radius as `tab`/`sortTab`), so the selected
@@ -1568,9 +1704,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 8,
-  },
-  list: {
-    gap: Spacing.one,
   },
   row: {
     flexDirection: 'row',
