@@ -26,7 +26,7 @@ import { OptionList, useOverlay, type AnchorRect } from '@/components/overlay/ov
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BarContentGap, MaxContentWidth, MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { BarContentGap, MaxContentWidth, MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
 import { useLightCards } from '@/lib/perf-flags';
@@ -542,7 +542,11 @@ export function ChapterScrollList({
       estimatedItemSize={46}
       ListHeaderComponent={listHeader}
       ListFooterComponent={
-        footer ? <View style={[styles.chapterFooter, isLarge && styles.chapterFooterLarge]}>{footer}</View> : null
+        footer ? (
+          <View style={[styles.chapterFooter, isLarge ? styles.chapterFooterLarge : styles.chapterFooterSmall]}>
+            {footer}
+          </View>
+        ) : null
       }
       contentContainerStyle={{
         paddingTop: topInset + BarContentGap,
@@ -1556,14 +1560,21 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.one,
   },
   // Breathing room below the tab/sort controls before the first chapter row (the header→rows gap is
-  // otherwise zero — the rows are list data, not siblings under the head). Matches the section's
-  // outer rhythm (the gap above the "Chapters" heading).
+  // otherwise zero — the rows are list data, not siblings under the head). Mirrors the head's own
+  // internal gap (the "Chapters" heading → controls), so the selector is framed symmetrically.
   chapterControlsHead: {
-    marginBottom: Spacing.four,
+    marginBottom: Spacing.two,
   },
   // Clear separation between the last chapter row and the first related-series rail below.
   chapterFooter: {
     marginTop: Spacing.five,
+  },
+  // Small screens: the list content is inset by Spacing.four, but a Rail bakes in its OWN
+  // `STRIP_PAD` (= TopLevelGutter) — so without this the rails would be double-inset (16 + 24) and
+  // sit further right than the chapter rows. Cancel exactly the rail's own gutter so its first card
+  // lines up with the content padding edge, matching the chapter rows.
+  chapterFooterSmall: {
+    marginHorizontal: -TopLevelGutter,
   },
   // Large-screen master–detail: a static cover+actions column beside the scrolling list, centred
   // and capped like the top-level views so the related rails (list footer) line up with them.
@@ -1774,14 +1785,18 @@ const styles = StyleSheet.create({
   empty: {
     paddingVertical: Spacing.three,
   },
-  // The middle expand affordance — plain centred accent text (no chrome).
+  // The middle expand affordance — plain centred accent text (no chrome). The rows above/below carry
+  // their gap as `marginBottom`, so without a matching `marginBottom` here the button would hug the
+  // row below it (4px gap above, 0 below) and read as vertically off-centre between the two rows.
   expandMiddle: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: Spacing.two,
+    paddingVertical: Spacing.three,
+    marginBottom: Spacing.one,
   },
   expandMiddleText: {
     fontWeight: '600',
+    textAlign: 'center',
   },
   showMore: {
     paddingVertical: Spacing.two,
