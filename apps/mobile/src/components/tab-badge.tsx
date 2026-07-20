@@ -32,15 +32,16 @@ export function SettingsTabBadge() {
 }
 
 /**
- * The same accent count pill as the tab pip, but laid out inline in a row (not overlaid on an icon).
- * Used on the Settings landing screen's Bridges/Trackers rows so the thing that surfaced the tab pip
- * is visible in the page too — matching color and count makes the connection unmistakable.
+ * The bare accent count pill (no positioning of its own — the parent places it). Used on the Settings
+ * landing screen, overlaid on a category ROW's icon exactly the way the tab pip sits on the tab icon,
+ * so the thing that surfaced the tab dot is visible in the page too. Matching color and count make
+ * the connection unmistakable.
  */
-export function InlineUpdatePip({ count }: { count: number }) {
+export function UpdatePip({ count }: { count: number }) {
   const theme = useTheme();
   if (count <= 0) return null;
   return (
-    <View style={[styles.pip, styles.inline, { backgroundColor: theme.accent }]} testID="settings-update-pip">
+    <View style={[styles.pip, styles.static, { backgroundColor: theme.accent }]} testID="settings-update-pip">
       <ThemedText style={[styles.label, { color: theme.accentOn }]}>{count > 9 ? '9+' : count}</ThemedText>
     </View>
   );
@@ -58,8 +59,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Cancels the tab-icon overlay positioning so the same pill sits inline in a settings row.
-  inline: {
+  // Drops the tab-icon overlay offsets so the pill flows where its parent puts it (the settings row
+  // wraps it in its own absolutely-positioned overlay over the category icon).
+  static: {
     position: 'relative',
     top: 0,
     right: 0,
