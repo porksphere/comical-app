@@ -1143,6 +1143,22 @@ export function startTrackerOAuth(
   return fetchPost(`/trackers/${encodeURIComponent(trackerId)}/oauth-start`, { key, settings }, signal);
 }
 
+/** GET /oauth/callback → complete an in-flight `oauth-callback` round trip through the *active*
+ *  transport. Only the embedded (on-device) Connect flow calls this directly: there's no real
+ *  server to redirect to on-device, so the app intercepts the provider's redirect itself
+ *  (`openAuthSessionAsync`'s native redirect detection) and finishes the exchange by hitting this
+ *  same route through the in-process router instead. Remote mode never calls this — the OS browser
+ *  navigates to the server's own `/oauth/callback` directly. The route renders an HTML page (meant
+ *  for a real browser tab), not JSON, so this only checks the response status. */
+export async function completeOAuthCallback(code: string, state: string, signal?: AbortSignal): Promise<void> {
+  const qs = new URLSearchParams({ code, state }).toString();
+  const res = await transport(`/oauth/callback?${qs}`, { signal });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || `${res.status} ${res.statusText}`);
+  }
+}
+
 // ─── Tracker links (per-series associations to external tracker services — same optional-server-
 // capability shape as the trackers themselves) ─────────────────────────────────────────────────
 

@@ -1,4 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
+import * as Linking from 'expo-linking';
 import { openAuthSessionAsync, openBrowserAsync } from 'expo-web-browser';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
@@ -10,8 +11,8 @@ import { settingsRowFrame, SettingsRow } from '@/components/settings/settings-ro
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
-import { getApiBase, type SettingDescriptor, type SettingValue } from '@/data/api';
-import { isEmbeddedRuntimeAvailable, useEmbeddedEnabled } from '@/data/embedded';
+import { completeOAuthCallback, getApiBase, type SettingDescriptor, type SettingValue } from '@/data/api';
+import { embeddedOAuthCallbackUrl, isEmbeddedRuntimeAvailable, useEmbeddedEnabled } from '@/data/embedded';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
 import { useHovered } from '@/hooks/use-hovered';
@@ -106,10 +107,16 @@ export function SettingFieldEditor({ descriptor, value, secretSet, trackerId, on
 }
 
 /** An `oauth-callback` field: no value is ever typed in — the whole exchange happens through a
- *  browser round trip against the server's own `/oauth/callback`. Requires `trackerId` (only
- *  `tracker-settings.tsx` passes one; bridges never declare this field type) and only works in
- *  remote mode — there's no local `/oauth/callback` to redirect to on-device (see plan Gap 3b
- *  step 2 for the serverless variant). */
+ *  browser round trip. Requires `trackerId` (only `tracker-settings.tsx` passes one; bridges
+ *  never declare this field type).
+ *
+ *  Remote mode redirects to the server's own `/oauth/callback`, which does the whole exchange
+ *  itself. On-device there's no server to redirect to, so the auth URL is built (server-side, at
+ *  `oauth-start` time) around this app's own custom-scheme deep link instead
+ *  (`embeddedOAuthCallbackUrl`) — `openAuthSessionAsync` intercepts that redirect itself, and the
+ *  app finishes the exchange by hitting the *same* `/oauth/callback` route through the in-process
+ *  embedded router (`completeOAuthCallback`). Either way the round trip completes without this
+ *  component ever handling a token. */
 function OAuthCallbackRow({
   descriptor,
   secretSet,
@@ -133,11 +140,21 @@ function OAuthCallbackRow({
     setConnecting(true);
     try {
       const { authUrl } = await ds.startTrackerOAuth(trackerId, descriptor.key);
-      // Don't trust the resolved session type — on web this just resolves when the popup closes
-      // (which the server's callback page does via `window.close()` once it's done), and on
-      // native it resolves on redirect. Either way the server already did the real work; just
-      // refetch and let "Connected" reflect whatever actually landed.
-      await openAuthSessionAsync(authUrl, `${getApiBase()}/oauth/callback`);
+      if (embeddedActive) {
+        const result = await openAuthSessionAsync(authUrl, embeddedOAuthCallbackUrl);
+        if (result.type !== 'success') return;
+        const { queryParams } = Linking.parse(result.url);
+        const code = typeof queryParams?.code === 'string' ? queryParams.code : undefined;
+        const state = typeof queryParams?.state === 'string' ? queryParams.state : undefined;
+        if (!code || !state) throw new Error('Sign-in did not return an authorization code.');
+        await completeOAuthCallback(code, state);
+      } else {
+        // Don't trust the resolved session type — on web this just resolves when the popup closes
+        // (which the server's callback page does via `window.close()` once it's done), and on
+        // native it resolves on redirect. Either way the server already did the real work; just
+        // refetch and let "Connected" reflect whatever actually landed.
+        await openAuthSessionAsync(authUrl, `${getApiBase()}/oauth/callback`);
+      }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.trackerSettings(trackerId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.trackers() }),
@@ -152,18 +169,18 @@ function OAuthCallbackRow({
   return (
     <SettingsRow
       label={descriptor.label}
-      description={error ?? (embeddedActive ? 'Not available on-device yet' : secretSet ? 'Connected' : (descriptor.description ?? 'Not connected'))}
-      descriptionColor={error ? theme.danger : embeddedActive || !secretSet ? theme.badgeWarn : undefined}
+      description={error ?? (secretSet ? 'Connected' : (descriptor.description ?? 'Not connected'))}
+      descriptionColor={error ? theme.danger : secretSet ? undefined : theme.badgeWarn}
       right={
         connecting ? (
           <ActivityIndicator />
         ) : (
-          <ThemedText type="smallBold" style={{ color: embeddedActive ? theme.textSecondary : theme.accent }}>
+          <ThemedText type="smallBold" style={{ color: theme.accent }}>
             {secretSet ? 'Reconnect' : 'Connect'}
           </ThemedText>
         )
       }
-      onPress={embeddedActive || connecting || !trackerId ? undefined : connect}
+      onPress={connecting || !trackerId ? undefined : connect}
       testID={testId('settings.oauth', descriptor.label)}
     />
   );
