@@ -17,7 +17,7 @@ import {
   TrackersIcon,
 } from '@/components/icons/ui-icons';
 import { CumulativeDownloadRadial } from '@/components/downloads/cumulative-radial';
-import { InlineUpdatePip } from '@/components/tab-badge';
+import { UpdatePip } from '@/components/tab-badge';
 import { settingsRowFrame } from '@/components/settings/settings-row';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { ThemedText } from '@/components/themed-text';
@@ -247,13 +247,21 @@ function CategoryRow({
             styles.row,
             (pressed || hovered) && Platform.OS !== 'android' && { backgroundColor: theme.backgroundSelected },
           ]}>
-          <View style={styles.icon}>{icon}</View>
+          <View style={styles.icon}>
+            {icon}
+            {/* The registry-update pip sits on the row's icon exactly the way the tab pip sits on the
+                tab icon — same glyph-corner placement, so the two read as the same signal. */}
+            {updates !== undefined && updates > 0 && (
+              <View style={styles.iconPip} pointerEvents="none">
+                <UpdatePip count={updates} />
+              </View>
+            )}
+          </View>
           <View style={settingsRowFrame.text}>
             <ThemedText type="small" numberOfLines={1}>
               {title}
             </ThemedText>
           </View>
-          {updates !== undefined && updates > 0 && <InlineUpdatePip count={updates} />}
           {value !== undefined && (
             <ThemedText type="small" themeColor="textSecondary">
               {value}
@@ -298,6 +306,12 @@ const styles = StyleSheet.create({
   icon: {
     width: 24,
     alignItems: 'center',
+  },
+  // Hugs the top-right corner of the 24-wide icon box so the pip overlaps the glyph like the tab pip.
+  iconPip: {
+    position: 'absolute',
+    top: -6,
+    right: -4,
   },
   divider: {
     height: StyleSheet.hairlineWidth,
