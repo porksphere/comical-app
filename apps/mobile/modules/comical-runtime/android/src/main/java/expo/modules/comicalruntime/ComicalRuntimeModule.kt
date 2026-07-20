@@ -2,6 +2,7 @@ package expo.modules.comicalruntime
 
 import android.content.Context
 import dev.comical.host.ComicalBridgeContext
+import dev.comical.host.ComicalTrackerContext
 import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
@@ -12,18 +13,23 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Expo native module "ComicalRuntime": a thin JSON-in/JSON-out wrapper over the shared
- * `dev.comical.host.ComicalBridgeContext` (QuickJS), keyed by bridge id so the app can run several
- * bridges at once. The heavy lifting — loading the bundle through @comical/core, capability gating,
- * the host capabilities (OkHttp/storage/log) — all lives in ComicalBridgeContext, compiled in from
- * the comical submodule (see build.gradle).
+ * `dev.comical.host.ComicalBridgeContext` / `ComicalTrackerContext` (both QuickJS), keyed by id so
+ * the app can run several bridges/trackers at once. The heavy lifting — loading the bundle through
+ * @comical/core, capability gating, the host capabilities (OkHttp/storage/log) — all lives in those
+ * context classes, compiled in from the comical submodule (see build.gradle).
  *
- * Mirrors the app's `NativeBridgeRuntime` contract (src/data/embedded/types.ts):
+ * Mirrors the app's `NativeBridgeRuntime` + `NativeTrackerRuntime` contracts (@comical/host-rn):
  *   initBridge(id, code, settingsJson, networkJson?) -> "{ info, methods }" JSON
  *   callBridge(id, method, argsJson)                 -> raw result JSON
  *   disposeBridge(id)
+ *   initTracker(id, code, settingsJson, networkJson?) -> "{ info, methods }" JSON
+ *   callTracker(id, method, argsJson)                 -> raw result JSON
+ *   disposeTracker(id)
+ *   drainTrackerSettingsPatch(id)                     -> "{ key, blob }" JSON, or null
  */
 class ComicalRuntimeModule : Module() {
   private val bridges = ConcurrentHashMap<String, ComicalBridgeContext>()
+  private val trackers = ConcurrentHashMap<String, ComicalTrackerContext>()
 
   override fun definition() = ModuleDefinition {
     Name("ComicalRuntime")
@@ -49,9 +55,35 @@ class ComicalRuntimeModule : Module() {
       bridges.remove(id)?.close()
     }
 
+    AsyncFunction("initTracker") Coroutine { id: String, code: String, settingsJson: String, networkJson: String? ->
+      val context = appContext.reactContext ?: throw Exceptions.ReactContextLost()
+      val settings = jsonToMap(settingsJson)
+      // Namespace persistently by tracker id, same rationale as bridges (own storage.json each, so
+      // e.g. AniList's and MAL's OAuth tokens/cookies never collide).
+      val ctx = ComicalTrackerContext.create(context, code, settings, trackerDataDir(context, id), networkJson)
+      trackers.put(id, ctx)?.close()
+      ctx.describeJson()
+    }
+
+    AsyncFunction("callTracker") Coroutine { id: String, method: String, argsJson: String ->
+      val ctx = trackers[id] ?: throw IllegalStateException("tracker not initialised: $id")
+      ctx.callJson(method, argsJson)
+    }
+
+    Function("disposeTracker") { id: String ->
+      trackers.remove(id)?.close()
+    }
+
+    AsyncFunction("drainTrackerSettingsPatch") Coroutine { id: String ->
+      val ctx = trackers[id] ?: throw IllegalStateException("tracker not initialised: $id")
+      ctx.drainSettingsPatch()
+    }
+
     OnDestroy {
       bridges.values.forEach { it.close() }
       bridges.clear()
+      trackers.values.forEach { it.close() }
+      trackers.clear()
     }
   }
 
@@ -67,6 +99,12 @@ class ComicalRuntimeModule : Module() {
    *  to a safe single path component so a hostile registry id can't traverse out of the folder. */
   private fun bridgeDataDir(context: Context, id: String): File =
     File(File(context.filesDir, "comical/bridges"), safePathComponent(id))
+
+  /** Same shape as `bridgeDataDir`, under `filesDir/comical/trackers/<id>` instead — kept fully
+   *  separate from bridge storage since tracker ids and bridge ids are different id spaces that
+   *  could collide. */
+  private fun trackerDataDir(context: Context, id: String): File =
+    File(File(context.filesDir, "comical/trackers"), safePathComponent(id))
 
   /** Keep ASCII alphanumerics plus `-_.`, replace anything else with `_`, and never allow an empty
    *  component or `.`/`..` (directory traversal). */

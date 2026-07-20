@@ -17,6 +17,13 @@
  *      asset — without it every bridge init fails at runtime with
  *      "FileNotFoundException: comical_harness.js".
  *
+ * Also regenerates `apps/mobile/src/data/embedded/tracker-bundles.generated.json` — the app's v1
+ * on-device tracker install model (trackers bundled into the app build; see `build-tracker-bundles.mjs`
+ * and `TrackerBundles`'s doc comment in `@comical/host-rn`). Unlike the harness step, this one is
+ * best-effort: it's sourced from the sibling `comical-trackers` repo (only present inside the
+ * `comicals` workspace, not a standalone `comical-app` clone), and simply leaves the tracker map
+ * empty — same "start empty" shape as an absent registry — when that sibling isn't there.
+ *
  * This script runs all of that (plus the app's own `bun install`) so the next
  * step is just `bun run android` (a dev build — see apps/mobile/modules/
  * comical-runtime/SETUP.md). Re-running is safe/idempotent. NOTE: the harness is
@@ -29,6 +36,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const COMICAL = join(ROOT, "external", "comical");
+const MOBILE = join(ROOT, "apps", "mobile");
 
 /** Run a command, streaming its output; abort the whole setup if it fails. */
 function run(cmd: string[], cwd: string, label: string): void {
@@ -46,6 +54,19 @@ function run(cmd: string[], cwd: string, label: string): void {
   }
 }
 
+/** Like `run`, but never aborts setup — for steps that are allowed to no-op (see call site). */
+function runBestEffort(cmd: string[], cwd: string, label: string): void {
+  console.log(`\n==> ${label}`);
+  console.log(`    ${cmd.join(" ")}  (in ${cwd})`);
+  const { exitCode } = spawnSync(cmd, {
+    cwd,
+    stdout: "inherit",
+    stderr: "inherit",
+    stdin: "inherit",
+  });
+  if (exitCode !== 0) console.warn(`  (non-fatal: exit ${exitCode})`);
+}
+
 // 1. Fetch the comical submodule (pinned commit).
 run(["git", "submodule", "update", "--init", "--recursive"], ROOT, "Checking out the external/comical submodule");
 
@@ -58,6 +79,10 @@ run(["bun", "install", "--linker", "hoisted"], COMICAL, "Installing submodule de
 
 // 4. Generate the QuickJS harness (comical_harness.js / harness.js) the native runtime loads.
 run(["bun", "run", "build:native"], COMICAL, "Generating the native runtime harness");
+
+// 5. Best-effort: pull built anilist/mal tracker bundles from the sibling comical-trackers repo, if
+//    present (workspace dev only — see the file doc comment above).
+runBestEffort(["bun", "run", "build:tracker-bundles"], MOBILE, "Generating on-device tracker bundles");
 
 console.log("\n✓ Setup complete. Next:");
 console.log("    bun run android      # Android dev build on an emulator/device");

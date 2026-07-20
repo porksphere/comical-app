@@ -25,6 +25,7 @@ import {
   configureEmbeddedRuntime,
   installWebCryptoShim,
   setNativeBridgeRuntime,
+  setNativeTrackerRuntime,
   type CreateRouter,
   type EmbeddedBootstrapConfig,
 } from '@comical/host-rn';
@@ -51,7 +52,8 @@ import { AsyncStorageLibraryStore } from './library-store';
 import { getResolvedModeSync, whenEmbeddedPrefLoaded } from './preference';
 import { applyImageCacheConfig } from '../image-cache';
 import { installedStore, savedRegistryStore } from './stores';
-import { asyncStorageSettings } from './settings-store';
+import { asyncStorageSettings, asyncStorageTrackerSettings } from './settings-store';
+import trackerBundles from './tracker-bundles.generated.json';
 
 /** The fixed pieces host-rn needs; the stores supply the (user-managed) registries + installs. */
 function bootstrapConfig(): EmbeddedBootstrapConfig {
@@ -82,6 +84,14 @@ function bootstrapConfig(): EmbeddedBootstrapConfig {
     // Guaranteed-offline library covers: captured into this device store on library-add/browse and
     // served back by the reused router at /library/entries/:b/:s/cover.
     covers: { blobs: expoCoversBlobStore, fetchPage: devicePageFetcher },
+    // On-device tracker loading (v1 install model: bundled into the app build at prebuild time via
+    // `build-tracker-bundles.mjs`, not registry-installed like bridges — see `TrackerBundles`'s doc
+    // comment in host-rn). `trackerBundles` is `{}` when the sibling comical-trackers repo wasn't
+    // built for this app build; an empty map still mounts `/trackers*` cleanly, it just lists none
+    // (same "start empty" shape as an absent registry) — also needs a native tracker runtime to be
+    // registered (see `setNativeTrackerRuntime` below), which is null until a real device build.
+    trackerBundles,
+    trackerSettings: asyncStorageTrackerSettings,
     // Persist verified bundles to disk so cold starts don't re-download + re-verify every bridge.
     cache: fileSystemBundleCache,
     // An install/update/uninstall (or add/remove registry) changes what the runtime serves — refetch
@@ -100,6 +110,9 @@ export function startEmbeddedRuntime(): void {
   started = true;
   // Register the on-device engine (null on web / before the native module is built → stays remote).
   setNativeBridgeRuntime(comicalRuntime);
+  // Same native module also implements NativeTrackerRuntime (see modules/comical-runtime) — one
+  // `requireOptionalNativeModule` call up top covers both.
+  setNativeTrackerRuntime(comicalRuntime);
   // Bridge bundle verification (@comical/registry verify.ts) needs WebCrypto, absent in Hermes.
   installWebCryptoShim();
   configureEmbeddedRuntime(bootstrapConfig());

@@ -1,21 +1,27 @@
 import ExpoModulesCore
 
-// ComicalBridgeContext is compiled into this same pod (see ComicalRuntime.podspec source_files),
-// so it's referenced directly without an `import ComicalHostIOS`.
+// ComicalBridgeContext / ComicalTrackerContext are compiled into this same pod (see
+// ComicalRuntime.podspec source_files), so they're referenced directly without an
+// `import ComicalHostIOS`.
 
 /**
  * Expo native module "ComicalRuntime": a thin JSON-in/JSON-out wrapper over the shared
- * `ComicalBridgeContext` (JavaScriptCore), keyed by bridge id so several bridges can run at once.
- * The bundle load through @comical/core, capability gating, and host capabilities
- * (URLSession/FileManager/os.log) all live in ComicalBridgeContext.
+ * `ComicalBridgeContext` / `ComicalTrackerContext` (both JavaScriptCore), keyed by id so several
+ * bridges/trackers can run at once. The bundle load through @comical/core, capability gating, and
+ * host capabilities (URLSession/FileManager/os.log) all live in those context classes.
  *
- * Mirrors the app's `NativeBridgeRuntime` contract (src/data/embedded/types.ts):
+ * Mirrors the app's `NativeBridgeRuntime` + `NativeTrackerRuntime` contracts (@comical/host-rn):
  *   initBridge(id, code, settingsJson, networkJson?) -> "{ info, methods }" JSON
  *   callBridge(id, method, argsJson)                 -> raw result JSON
  *   disposeBridge(id)
+ *   initTracker(id, code, settingsJson, networkJson?) -> "{ info, methods }" JSON
+ *   callTracker(id, method, argsJson)                 -> raw result JSON
+ *   disposeTracker(id)
+ *   drainTrackerSettingsPatch(id)                     -> "{ key, blob }" JSON, or null
  */
 public final class ComicalRuntimeModule: Module {
   private var bridges: [String: ComicalBridgeContext] = [:]
+  private var trackers: [String: ComicalTrackerContext] = [:]
 
   public func definition() -> ModuleDefinition {
     Name("ComicalRuntime")
@@ -44,6 +50,35 @@ public final class ComicalRuntimeModule: Module {
     Function("disposeBridge") { (id: String) in
       self.bridges[id] = nil
     }
+
+    AsyncFunction("initTracker") { (id: String, code: String, settingsJson: String, networkJson: String?) -> String in
+      // See initBridge's note — networkJson parity TODO on iOS.
+      _ = networkJson
+      let settings = (try? JSONSerialization.jsonObject(with: Data(settingsJson.utf8))) as? [String: Any] ?? [:]
+      // Namespace persistently by tracker id, same rationale as bridges (own storage.json each, so
+      // e.g. AniList's and MAL's OAuth tokens/cookies never collide).
+      let ctx = try ComicalTrackerContext(trackerBundle: code, settings: settings, dataDir: ComicalRuntimeModule.trackerDataDir(for: id))
+      self.trackers[id] = ctx
+      return ctx.describeJson()
+    }
+
+    AsyncFunction("callTracker") { (id: String, method: String, argsJson: String) -> String in
+      guard let ctx = self.trackers[id] else {
+        throw NSError(domain: "ComicalRuntime", code: 1, userInfo: [NSLocalizedDescriptionKey: "tracker not initialised: \(id)"])
+      }
+      return try await ctx.callJson(method, argsJSON: argsJson)
+    }
+
+    Function("disposeTracker") { (id: String) in
+      self.trackers[id] = nil
+    }
+
+    AsyncFunction("drainTrackerSettingsPatch") { (id: String) -> String? in
+      guard let ctx = self.trackers[id] else {
+        throw NSError(domain: "ComicalRuntime", code: 1, userInfo: [NSLocalizedDescriptionKey: "tracker not initialised: \(id)"])
+      }
+      return ctx.drainSettingsPatch()
+    }
   }
 
   /// A persistent, per-bridge data directory: `<Application Support>/comical/bridges/<id>`. Falls back
@@ -56,6 +91,18 @@ public final class ComicalRuntimeModule: Module {
     return base
       .appendingPathComponent("comical", isDirectory: true)
       .appendingPathComponent("bridges", isDirectory: true)
+      .appendingPathComponent(safePathComponent(id), isDirectory: true)
+  }
+
+  /// Same shape as `bridgeDataDir`, under `.../comical/trackers/<id>` instead — kept fully separate
+  /// from bridge storage since tracker ids and bridge ids are different id spaces that could collide.
+  private static func trackerDataDir(for id: String) -> URL {
+    let base = (try? FileManager.default.url(
+      for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
+    )) ?? FileManager.default.temporaryDirectory
+    return base
+      .appendingPathComponent("comical", isDirectory: true)
+      .appendingPathComponent("trackers", isDirectory: true)
       .appendingPathComponent(safePathComponent(id), isDirectory: true)
   }
 
