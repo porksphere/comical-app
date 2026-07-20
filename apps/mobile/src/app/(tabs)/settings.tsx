@@ -17,6 +17,7 @@ import {
   TrackersIcon,
 } from '@/components/icons/ui-icons';
 import { CumulativeDownloadRadial } from '@/components/downloads/cumulative-radial';
+import { InlineUpdatePip } from '@/components/tab-badge';
 import { settingsRowFrame } from '@/components/settings/settings-row';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { ThemedText } from '@/components/themed-text';
@@ -28,6 +29,7 @@ import { dlStorageUsage } from '@/data/api';
 import { useCustomPages } from '@/data/custom-pages';
 import { overallProgress } from '@/data/downloads/derive';
 import { queryKeys } from '@/data/queries';
+import { useRegistryUpdateCounts } from '@/data/use-settings-badge';
 import { useDataSource, useHideNsfw } from '@/data/source';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useHovered } from '@/hooks/use-hovered';
@@ -52,6 +54,9 @@ export default function SettingsScreen() {
   const contentPadding = useSettingsScrollPadding();
 
   const counts = useCategoryCounts();
+  // Same source as the Settings tab pip — badge the exact rows that produced it so opening Settings
+  // shows what surfaced the tab dot, instead of a mystery pip with no in-page counterpart.
+  const updates = useRegistryUpdateCounts();
   const customPageCount = useCustomPages().length;
 
   return (
@@ -87,6 +92,7 @@ export default function SettingsScreen() {
             icon={<BridgesIcon color={theme.textSecondary} size={22} />}
             title="Bridges"
             value={counts.bridges}
+            updates={updates.bridges}
             onPress={() => router.push('/bridges')}
           />
           <Divider />
@@ -95,6 +101,7 @@ export default function SettingsScreen() {
             icon={<TrackersIcon color={theme.textSecondary} size={22} />}
             title="Trackers"
             value={counts.trackers}
+            updates={updates.trackers}
             onPress={() => router.push('/trackers')}
           />
           <Divider />
@@ -203,6 +210,7 @@ function CategoryRow({
   icon,
   title,
   value,
+  updates,
   progress,
   onPress,
   testID,
@@ -210,6 +218,8 @@ function CategoryRow({
   icon: ReactNode;
   title: string;
   value?: string;
+  /** Registry updates available for this category — renders the same accent pip as the tab badge. */
+  updates?: number;
   /** Cumulative download progress [0,1] — renders a small radial before the chevron while in flight. */
   progress?: number;
   onPress: () => void;
@@ -243,6 +253,7 @@ function CategoryRow({
               {title}
             </ThemedText>
           </View>
+          {updates !== undefined && updates > 0 && <InlineUpdatePip count={updates} />}
           {value !== undefined && (
             <ThemedText type="small" themeColor="textSecondary">
               {value}
