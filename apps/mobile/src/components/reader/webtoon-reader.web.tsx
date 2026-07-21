@@ -1,7 +1,17 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useReducer, useRef, useState } from 'react';
 
 import { ReaderPage } from '@/components/reader/reader-page';
-import { clamp, distance, MAX_SCALE, midpoint, type Point, ZOOM_EPSILON } from '@/components/reader/reader-zoom';
+import {
+  clamp,
+  distance,
+  DOUBLE_TAP_DIST,
+  DOUBLE_TAP_MS,
+  DOUBLE_TAP_SCALE,
+  MAX_SCALE,
+  midpoint,
+  type Point,
+  ZOOM_EPSILON,
+} from '@/components/reader/reader-zoom';
 import type { PageFit } from '@/hooks/use-reader-settings';
 
 export type WebtoonReaderHandle = { goToPage: (index: number) => void };
@@ -137,6 +147,86 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
   onPageChangeRef.current = onPageChange;
 
   const applyZoom = (z: number) => contentRef.current?.style.setProperty('zoom', String(z));
+
+  // Double-tap tracking: a click is deferred by DOUBLE_TAP_MS so a second click
+  // can turn it into a zoom instead of a chrome toggle.
+  const lastTapRef = useRef<{ t: number; x: number; y: number } | null>(null);
+  const pendingTapRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Double-tap toggles between 1× and a fixed zoom, anchored on the tap point via
+  // scrollLeft/Top (same model the pinch uses). Skipped in fit-page mode, where
+  // CSS-`zoom` would fight the scroll-snap slots (the pinch is skipped there too).
+  const doubleTapZoom = useCallback(
+    (clientX: number, clientY: number) => {
+      const el = scrollerRef.current;
+      if (!el || paged) return;
+      const rect = el.getBoundingClientRect();
+      const fx = clientX - rect.left;
+      const fy = clientY - rect.top;
+      if (zoom.current > ZOOM_EPSILON) {
+        // Zoom out, keeping the vertical reading position (content shrinks).
+        const prevTop = el.scrollTop;
+        const z0 = zoom.current;
+        zoom.current = 1;
+        applyZoom(1);
+        el.style.overflowX = 'hidden';
+        el.style.touchAction = 'pan-y';
+        el.scrollLeft = 0;
+        el.scrollTop = z0 > 0 ? prevTop / z0 : prevTop;
+      } else {
+        const z0 = zoom.current;
+        const cpX = (el.scrollLeft + fx) / z0;
+        const cpY = (el.scrollTop + fy) / z0;
+        const z = DOUBLE_TAP_SCALE;
+        zoom.current = z;
+        applyZoom(z);
+        el.style.overflowX = 'auto';
+        el.style.touchAction = 'pan-x pan-y';
+        el.scrollLeft = clamp(cpX * z - fx, 0, Math.max(0, el.scrollWidth - el.clientWidth));
+        el.scrollTop = clamp(cpY * z - fy, 0, Math.max(0, el.scrollHeight - el.clientHeight));
+      }
+    },
+    [paged],
+  );
+
+  // Click handler: a lone click toggles chrome after DOUBLE_TAP_MS; a qualifying
+  // second click cancels that and zooms. In fit-page mode there's no custom zoom,
+  // so the click toggles chrome immediately.
+  const onSurfaceClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (paged) {
+        onToggleChrome();
+        return;
+      }
+      const x = e.clientX;
+      const y = e.clientY;
+      const now = performance.now();
+      const last = lastTapRef.current;
+      if (last && now - last.t < DOUBLE_TAP_MS && Math.hypot(x - last.x, y - last.y) < DOUBLE_TAP_DIST) {
+        if (pendingTapRef.current != null) {
+          clearTimeout(pendingTapRef.current);
+          pendingTapRef.current = null;
+        }
+        lastTapRef.current = null;
+        doubleTapZoom(x, y);
+        return;
+      }
+      lastTapRef.current = { t: now, x, y };
+      if (pendingTapRef.current != null) clearTimeout(pendingTapRef.current);
+      pendingTapRef.current = setTimeout(() => {
+        pendingTapRef.current = null;
+        lastTapRef.current = null;
+        onToggleChrome();
+      }, DOUBLE_TAP_MS);
+    },
+    [paged, onToggleChrome, doubleTapZoom],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (pendingTapRef.current != null) clearTimeout(pendingTapRef.current);
+    };
+  }, []);
 
   // Report the page that owns the top half of the viewport. Re-runs on every
   // scroll frame while a hold-scroll is in flight (see `onScroll` below), so
@@ -436,7 +526,7 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
   const snapEnabled = paged && !isDesktopPointer();
 
   return (
-    <div ref={scrollerRef} onScroll={onScroll} onClick={onToggleChrome} style={scrollerStyle(paged, snapEnabled)}>
+    <div ref={scrollerRef} onScroll={onScroll} onClick={onSurfaceClick} style={scrollerStyle(paged, snapEnabled)}>
       <div ref={contentRef} style={contentStyle}>
         {pages.map((uri, i) => {
           const isLoaded = loaded.has(i);
