@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withDecay,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { ReaderPage } from '@/components/reader/reader-page';
 import type { PageFit } from '@/hooks/use-reader-settings';
@@ -23,6 +29,8 @@ import type { PageFit } from '@/hooks/use-reader-settings';
 const MAX_SCALE = 4;
 // Below this we treat the page as "not zoomed" (and snap back to a clean 1×).
 const ZOOM_EPSILON = 1.01;
+// Scale a double-tap zooms into (and back out of).
+const DOUBLE_TAP_SCALE = 2.5;
 
 function clamp(value: number, min: number, max: number) {
   'worklet';
@@ -43,26 +51,17 @@ type Props = {
   onZoomChange: (zoomed: boolean) => void;
 };
 
-function TapZones({
-  zoomed,
-  suspended,
-  onLeft,
-  onRight,
-  onToggleChrome,
-}: {
-  zoomed: boolean;
-  /** True while the page is showing its failed/Retry state — suspends these
-   *  zones so a tap reaches the Retry chip instead of turning the page. */
-  suspended: boolean;
-  onLeft: () => void;
-  onRight: () => void;
-  onToggleChrome: () => void;
-}) {
+// Non-interactive markers only: navigation taps are handled by the GestureDetector
+// below (`singleTap`) so they compose cleanly with double-tap-to-zoom. These Views
+// keep the `reader.control.*` testIDs at the right coordinates so Maestro's
+// `tapOn: id` still lands in the correct zone, but `pointerEvents: none` means they
+// never claim a touch away from the gestures.
+function TapZones() {
   return (
-    <View style={[StyleSheet.absoluteFill, styles.zones, { pointerEvents: zoomed || suspended ? 'none' : 'auto' }]}>
-      <Pressable testID="reader.control.prev" style={styles.side} onPress={onLeft} />
-      <Pressable testID="reader.control.toggle-chrome" style={styles.center} onPress={onToggleChrome} />
-      <Pressable testID="reader.control.next" style={styles.side} onPress={onRight} />
+    <View style={[StyleSheet.absoluteFill, styles.zones]} pointerEvents="none">
+      <View testID="reader.control.prev" style={styles.side} />
+      <View testID="reader.control.toggle-chrome" style={styles.center} />
+      <View testID="reader.control.next" style={styles.side} />
     </View>
   );
 }
@@ -120,6 +119,18 @@ export function ZoomablePage({
       onZoomChange(next);
     },
     [onZoomChange],
+  );
+
+  // Navigation for a single tap, dispatched by the `singleTap` gesture using the
+  // tap's x within the page — the same three zones the `TapZones` markers cover
+  // (~30% / ~40% / ~30%).
+  const onTapNav = useCallback(
+    (x: number) => {
+      if (x < width * 0.3) onLeft();
+      else if (x > width * 0.7) onRight();
+      else onToggleChrome();
+    },
+    [width, onLeft, onRight, onToggleChrome],
   );
 
   const reset = useCallback(() => {
@@ -201,9 +212,14 @@ export function ZoomablePage({
       tx.set(clamp(savedTx.value + e.translationX, -limitX, limitX));
       ty.set(clamp(savedTy.value + e.translationY, -limitY, limitY));
     })
-    .onEnd(() => {
-      savedTx.set(tx.value);
-      savedTy.set(ty.value);
+    // Fling the zoomed image: keep gliding on release, decelerating and stopping
+    // at the pan bounds (`clamp`). The next pan's onStart re-captures tx/ty as its
+    // base, so grabbing mid-glide continues seamlessly from wherever it's coasted.
+    .onEnd((e) => {
+      const limitX = ((scale.value - 1) * width) / 2;
+      const limitY = ((scale.value - 1) * height) / 2;
+      tx.set(withDecay({ velocity: e.velocityX, clamp: [-limitX, limitX], deceleration: 0.994 }));
+      ty.set(withDecay({ velocity: e.velocityY, clamp: [-limitY, limitY], deceleration: 0.994 }));
     });
 
   // One-finger vertical scroll of an overflowing fit-width page. A deadzone
@@ -228,7 +244,58 @@ export function ZoomablePage({
       runOnJS(setContentPanning)(false);
     });
 
-  const gesture = Gesture.Simultaneous(pinch, pan, contentPan);
+  // Double-tap toggles between fit-to-screen and a fixed zoom, centred on the tap
+  // point (clamped into bounds). Disabled during the failed/Retry or content-pan
+  // states (same `suspended` rule the old Pressable zones used).
+  const suspended = pageFailed || contentPanning;
+  const doubleTap = Gesture.Tap()
+    .enabled(!suspended)
+    .numberOfTaps(2)
+    .maxDuration(300)
+    .onEnd((e) => {
+      if (scale.value > ZOOM_EPSILON) {
+        scale.set(withTiming(1));
+        tx.set(withTiming(0));
+        ty.set(withTiming(0));
+        savedTx.set(0);
+        savedTy.set(0);
+        runOnJS(reportZoom)(false);
+        return;
+      }
+      const cx = width / 2;
+      const cy = height / 2;
+      const limitX = ((DOUBLE_TAP_SCALE - 1) * width) / 2;
+      const limitY = ((DOUBLE_TAP_SCALE - 1) * height) / 2;
+      // Keep the tapped content point under the finger: at 1× a screen point maps
+      // to content offset (p − centre); after scaling, translate so it lands back
+      // where it was tapped, i.e. tx = (p − centre)(1 − scale).
+      const nextTx = clamp((e.x - cx) * (1 - DOUBLE_TAP_SCALE), -limitX, limitX);
+      const nextTy = clamp((e.y - cy) * (1 - DOUBLE_TAP_SCALE), -limitY, limitY);
+      scale.set(withTiming(DOUBLE_TAP_SCALE));
+      tx.set(withTiming(nextTx));
+      ty.set(withTiming(nextTy));
+      savedTx.set(nextTx);
+      savedTy.set(nextTy);
+      runOnJS(reportZoom)(true);
+    });
+
+  // Single tap = the page-turn / chrome zones. Off while zoomed (a tap there does
+  // nothing, matching the pan-only behaviour) and during `suspended`. Exclusive
+  // with `doubleTap` so it waits to make sure a second tap isn't coming.
+  const singleTap = Gesture.Tap()
+    .enabled(!zoomed && !suspended)
+    .numberOfTaps(1)
+    .maxDuration(300)
+    .onEnd((e) => {
+      runOnJS(onTapNav)(e.x);
+    });
+
+  const gesture = Gesture.Simultaneous(
+    pinch,
+    pan,
+    contentPan,
+    Gesture.Exclusive(doubleTap, singleTap),
+  );
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: tx.value }, { translateY: ty.value }, { scale: scale.value }],
@@ -253,13 +320,7 @@ export function ZoomablePage({
             />
           </Animated.View>
         </Animated.View>
-        <TapZones
-          zoomed={zoomed}
-          suspended={pageFailed || contentPanning}
-          onLeft={onLeft}
-          onRight={onRight}
-          onToggleChrome={onToggleChrome}
-        />
+        <TapZones />
       </View>
     </GestureDetector>
   );
