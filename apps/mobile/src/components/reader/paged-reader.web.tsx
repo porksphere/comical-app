@@ -79,6 +79,16 @@ const RENDER_RADIUS = 2;
 // it, a vertical-dominant drag becomes 'content-pan' (fit-width overflow only),
 // a horizontal-dominant one stays 'swipe'.
 const DIR_DEADZONE = 8; // px
+// Double-tap-to-zoom: a second tap within this window and this distance of the
+// first is a double tap. Because we can't know a first tap isn't the start of a
+// double until the window elapses, a single tap's action is deferred by this long.
+const DOUBLE_TAP_MS = 280;
+const DOUBLE_TAP_DIST = 40; // px
+const DOUBLE_TAP_SCALE = 2.5;
+// Pan-fling friction: velocity is multiplied by this each 16ms frame, and the
+// glide stops once it drops below MIN_FLING_V (px/ms).
+const FLING_FRICTION = 0.94;
+const MIN_FLING_V = 0.02;
 
 type Mode = 'idle' | 'swipe' | 'pan' | 'pinch' | 'content-pan';
 
@@ -139,6 +149,13 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // Live zoom transform for the current page (scale + pan), written to the DOM.
   const zoom = useRef({ scale: 1, tx: 0, ty: 0 });
 
+  // rAF handle for the in-flight pan-momentum glide (null when idle).
+  const inertiaRef = useRef<number | null>(null);
+  // Last committed tap (time + position), for double-tap detection, plus the
+  // deferred single-tap timer (a single tap waits DOUBLE_TAP_MS to rule out a double).
+  const lastTapRef = useRef<{ t: number; x: number; y: number } | null>(null);
+  const pendingTapRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const gesture = useRef({
     mode: 'idle' as Mode,
     pointers: new Map<number, Point>(),
@@ -160,6 +177,12 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     panStartY: 0,
     panBaseTx: 0,
     panBaseTy: 0,
+    // pan velocity, for the momentum fling on release
+    panLastX: 0,
+    panLastY: 0,
+    panLastT: 0,
+    panVX: 0,
+    panVY: 0,
     // pinch
     startDist: 0,
     focalStartX: 0,
@@ -187,8 +210,16 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     el.style.transform = `translate3d(${tx}px, ${ty}px, 0) scale(${scale})`;
   }, [zoom]);
 
+  const cancelInertia = useCallback(() => {
+    if (inertiaRef.current != null) {
+      cancelAnimationFrame(inertiaRef.current);
+      inertiaRef.current = null;
+    }
+  }, []);
+
   const resetZoom = useCallback(
     (animate: boolean) => {
+      cancelInertia();
       zoom.current = { scale: 1, tx: 0, ty: 0 };
       writeZoom(animate);
       if (zoomedRef.current) {
@@ -196,7 +227,70 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         setZoomed(false);
       }
     },
-    [writeZoom, zoom],
+    [cancelInertia, writeZoom, zoom],
+  );
+
+  // Momentum after a pan release: keep gliding from the last pan velocity,
+  // decelerating each frame and stopping dead at the pan bounds. Grabbing again
+  // (onPointerDown → cancelInertia) halts it immediately.
+  const startPanInertia = useCallback(() => {
+    cancelInertia();
+    const s = zoom.current.scale;
+    if (s <= 1) return;
+    const limitX = ((s - 1) * width) / 2;
+    const limitY = ((s - 1) * height) / 2;
+    let vx = gesture.panVX;
+    let vy = gesture.panVY;
+    if (Math.abs(vx) < MIN_FLING_V && Math.abs(vy) < MIN_FLING_V) return;
+    let last = performance.now();
+    const step = () => {
+      const now = performance.now();
+      const dt = Math.min(32, now - last);
+      last = now;
+      let { tx, ty } = zoom.current;
+      tx += vx * dt;
+      ty += vy * dt;
+      if (tx <= -limitX) { tx = -limitX; vx = 0; }
+      else if (tx >= limitX) { tx = limitX; vx = 0; }
+      if (ty <= -limitY) { ty = -limitY; vy = 0; }
+      else if (ty >= limitY) { ty = limitY; vy = 0; }
+      const decay = Math.pow(FLING_FRICTION, dt / 16);
+      vx *= decay;
+      vy *= decay;
+      zoom.current = { scale: s, tx, ty };
+      writeZoom(false);
+      if (Math.abs(vx) > MIN_FLING_V || Math.abs(vy) > MIN_FLING_V) {
+        inertiaRef.current = requestAnimationFrame(step);
+      } else {
+        inertiaRef.current = null;
+      }
+    };
+    inertiaRef.current = requestAnimationFrame(step);
+  }, [cancelInertia, gesture, width, height, writeZoom, zoom]);
+
+  // Double-tap toggles between fit-to-screen and a fixed zoom centred on the tap
+  // point (clamped into bounds). Unavailable when pinch is (fit-width overflow),
+  // matching the native reader.
+  const doubleTapZoom = useCallback(
+    (x: number, y: number) => {
+      cancelInertia();
+      if (zoomedRef.current) {
+        resetZoom(true);
+        return;
+      }
+      const cx = width / 2;
+      const cy = height / 2;
+      const limitX = ((DOUBLE_TAP_SCALE - 1) * width) / 2;
+      const limitY = ((DOUBLE_TAP_SCALE - 1) * height) / 2;
+      // Keep the tapped point under the finger: tx = (p − centre)(1 − scale).
+      const tx = clamp((x - cx) * (1 - DOUBLE_TAP_SCALE), -limitX, limitX);
+      const ty = clamp((y - cy) * (1 - DOUBLE_TAP_SCALE), -limitY, limitY);
+      zoom.current = { scale: DOUBLE_TAP_SCALE, tx, ty };
+      writeZoom(true);
+      zoomedRef.current = true;
+      setZoomed(true);
+    },
+    [cancelInertia, resetZoom, width, height, writeZoom, zoom],
   );
 
   // Commit to a page. `animate` slides (swipe settle / pill jump); otherwise the
@@ -268,6 +362,15 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     };
   }, []);
 
+  // Stop any in-flight momentum glide / pending single-tap timer when unmounting
+  // (e.g. switching reader modes or leaving the reader).
+  useEffect(() => {
+    return () => {
+      if (inertiaRef.current != null) cancelAnimationFrame(inertiaRef.current);
+      if (pendingTapRef.current != null) clearTimeout(pendingTapRef.current);
+    };
+  }, []);
+
   const posOf = useCallback((e: ReactPointerEvent<HTMLDivElement>): Point => {
     const rect = surfaceRef.current?.getBoundingClientRect();
     return { x: e.clientX - (rect?.left ?? 0), y: e.clientY - (rect?.top ?? 0) };
@@ -299,6 +402,11 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       gesture.panStartY = p.y;
       gesture.panBaseTx = zoom.current.tx;
       gesture.panBaseTy = zoom.current.ty;
+      gesture.panLastX = p.x;
+      gesture.panLastY = p.y;
+      gesture.panLastT = performance.now();
+      gesture.panVX = 0;
+      gesture.panVY = 0;
     },
     [gesture, zoom],
   );
@@ -306,6 +414,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   const onPointerDown = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
       if (currentFailedRef.current) return;
+      // Grabbing the page halts any in-flight momentum glide.
+      cancelInertia();
       try {
         e.currentTarget.setPointerCapture(e.pointerId);
       } catch {
@@ -338,7 +448,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         gesture.velocity = 0;
       }
     },
-    [beginPan, beginPinch, gesture, pageFit, posOf],
+    [beginPan, beginPinch, cancelInertia, gesture, pageFit, posOf],
   );
 
   const onPointerMove = useCallback(
@@ -377,6 +487,16 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
           tx: clamp(gesture.panBaseTx + (p.x - gesture.panStartX), -limitX, limitX),
           ty: clamp(gesture.panBaseTy + (p.y - gesture.panStartY), -limitY, limitY),
         };
+        // Track a short-window velocity so release can fling with momentum.
+        const dt = Math.max(1, now - gesture.panLastT);
+        gesture.panVX = (p.x - gesture.panLastX) / dt;
+        gesture.panVY = (p.y - gesture.panLastY) / dt;
+        gesture.panLastX = p.x;
+        gesture.panLastY = p.y;
+        gesture.panLastT = now;
+        if (Math.abs(p.x - gesture.downX) > TAP_MAX_MOVE || Math.abs(p.y - gesture.downY) > TAP_MAX_MOVE) {
+          gesture.moved = true;
+        }
         writeZoom(false);
         return;
       }
@@ -455,11 +575,50 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     [onToggleChrome, onPrev, onNext, settleTo, width, n],
   );
 
+  // A completed one-finger tap. Double-tap-to-zoom means we can't act on a tap
+  // until we know a second one isn't coming, so a lone tap's action is deferred by
+  // DOUBLE_TAP_MS; a qualifying second tap cancels that and zooms instead.
+  const handleTapGesture = useCallback(
+    (x: number, y: number) => {
+      // Double-tap zoom is off exactly where pinch is (an overflowing fit-width
+      // page, which content-pans instead) — there, taps stay immediate.
+      const canZoom = !(pageFit === 'fit-width' && contentOverflowsRef.current);
+      const now = performance.now();
+      const last = lastTapRef.current;
+      if (
+        canZoom &&
+        last &&
+        now - last.t < DOUBLE_TAP_MS &&
+        Math.hypot(x - last.x, y - last.y) < DOUBLE_TAP_DIST
+      ) {
+        if (pendingTapRef.current != null) {
+          clearTimeout(pendingTapRef.current);
+          pendingTapRef.current = null;
+        }
+        lastTapRef.current = null;
+        doubleTapZoom(x, y);
+        return;
+      }
+      if (!canZoom) {
+        handleTap(x);
+        return;
+      }
+      lastTapRef.current = { t: now, x, y };
+      if (pendingTapRef.current != null) clearTimeout(pendingTapRef.current);
+      pendingTapRef.current = setTimeout(() => {
+        pendingTapRef.current = null;
+        lastTapRef.current = null;
+        handleTap(x);
+      }, DOUBLE_TAP_MS);
+    },
+    [pageFit, doubleTapZoom, handleTap],
+  );
+
   const finalizeSwipe = useCallback(() => {
     const dur = performance.now() - gesture.downT;
     if (!gesture.moved && dur <= TAP_MAX_MS) {
       writeTrack(0, false); // undo any sub-threshold drift, then act as a tap
-      handleTap(gesture.downX);
+      handleTapGesture(gesture.downX, gesture.downY);
       return;
     }
     const passed =
@@ -483,7 +642,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     } else {
       settleTo(indexRef.current, true); // spring back
     }
-  }, [gesture, handleTap, settleTo, width, writeTrack, onPrev, onNext, n]);
+  }, [gesture, handleTapGesture, settleTo, width, writeTrack, onPrev, onNext, n]);
 
   const endPointer = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -508,10 +667,18 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
 
       if (gesture.pointers.size > 0) return; // still mid-gesture
 
-      if (wasMode === 'swipe') finalizeSwipe();
+      if (wasMode === 'swipe') {
+        finalizeSwipe();
+      } else if (wasMode === 'pan') {
+        // A zoomed one-finger interaction: a stationary press is a tap (→ double-tap
+        // zoom-out); a real drag flings on with momentum.
+        const dur = performance.now() - gesture.downT;
+        if (!gesture.moved && dur <= TAP_MAX_MS) handleTapGesture(gesture.downX, gesture.downY);
+        else startPanInertia();
+      }
       gesture.mode = 'idle';
     },
-    [beginPan, finalizePinch, finalizeSwipe, gesture],
+    [beginPan, finalizePinch, finalizeSwipe, handleTapGesture, startPanInertia, gesture],
   );
 
   return (
