@@ -47,6 +47,16 @@ export function UpdatePip({ count }: { count: number }) {
   );
 }
 
+/**
+ * A bare accent dot (no count) — marks a SINGLE item that has an update, e.g. one bridge row, where a
+ * number would be noise (it's always "1"). Same accent as `UpdatePip`, so a row's dot reads as the
+ * per-item form of the category pill it rolls up into. The parent positions it.
+ */
+export function UpdateDot() {
+  const theme = useTheme();
+  return <View style={[styles.dot, { backgroundColor: theme.accent }]} testID="update-dot" pointerEvents="none" />;
+}
+
 const styles = StyleSheet.create({
   pip: {
     position: 'absolute',
@@ -58,6 +68,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  dot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
   },
   // Drops the tab-icon overlay offsets so the pill flows where its parent puts it (the settings row
   // wraps it in its own absolutely-positioned overlay over the category icon).
