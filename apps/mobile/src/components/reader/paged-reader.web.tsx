@@ -10,7 +10,17 @@ import {
 } from 'react';
 
 import { ReaderPage } from '@/components/reader/reader-page';
-import { clamp, distance, MAX_SCALE, midpoint, type Point, ZOOM_EPSILON } from '@/components/reader/reader-zoom';
+import {
+  clamp,
+  distance,
+  DOUBLE_TAP_DIST,
+  DOUBLE_TAP_MS,
+  DOUBLE_TAP_SCALE,
+  MAX_SCALE,
+  midpoint,
+  type Point,
+  ZOOM_EPSILON,
+} from '@/components/reader/reader-zoom';
 import type { PageFit } from '@/hooks/use-reader-settings';
 
 export type PagedReaderHandle = { goToPage: (logical: number, animated?: boolean) => void };
@@ -79,14 +89,9 @@ const RENDER_RADIUS = 2;
 // it, a vertical-dominant drag becomes 'content-pan' (fit-width overflow only),
 // a horizontal-dominant one stays 'swipe'.
 const DIR_DEADZONE = 8; // px
-// Double-tap-to-zoom: a second tap within this window and this distance of the
-// first is a double tap. Because we can't know a first tap isn't the start of a
-// double until the window elapses, a single tap's action is deferred by this long.
-const DOUBLE_TAP_MS = 280;
-const DOUBLE_TAP_DIST = 40; // px
-const DOUBLE_TAP_SCALE = 2.5;
 // Pan-fling friction: velocity is multiplied by this each 16ms frame, and the
-// glide stops once it drops below MIN_FLING_V (px/ms).
+// glide stops once it drops below MIN_FLING_V (px/ms). (Double-tap tuning lives
+// in reader-zoom.ts — shared with the webtoon reader.)
 const FLING_FRICTION = 0.94;
 const MIN_FLING_V = 0.02;
 
@@ -407,6 +412,14 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       gesture.panLastT = performance.now();
       gesture.panVX = 0;
       gesture.panVY = 0;
+      // Treat this finger's contact as a fresh interaction: judge tap-vs-fling on
+      // ITS own movement, not anything inherited from a preceding pinch. Without
+      // this, a leftover finger after a pinch counted as "already moved" and flung
+      // the image on release (the "jumps after releasing pinch" bug).
+      gesture.downX = p.x;
+      gesture.downY = p.y;
+      gesture.downT = performance.now();
+      gesture.moved = false;
     },
     [gesture, zoom],
   );
@@ -671,10 +684,12 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         finalizeSwipe();
       } else if (wasMode === 'pan') {
         // A zoomed one-finger interaction: a stationary press is a tap (→ double-tap
-        // zoom-out); a real drag flings on with momentum.
+        // zoom-out); a genuine drag flings on with momentum. Only a drag that
+        // actually `moved` flings — otherwise a near-still release (common right
+        // after a pinch) would coast off on stray velocity.
         const dur = performance.now() - gesture.downT;
         if (!gesture.moved && dur <= TAP_MAX_MS) handleTapGesture(gesture.downX, gesture.downY);
-        else startPanInertia();
+        else if (gesture.moved) startPanInertia();
       }
       gesture.mode = 'idle';
     },
