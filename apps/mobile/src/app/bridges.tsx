@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AddFab } from '@/components/add-fab';
 import { openConfirm } from '@/components/confirm-popup';
 import { Holdable } from '@/components/context-menu';
-import { BridgesIcon, CheckIcon, ClearIcon, GripIcon, TrashIcon } from '@/components/icons/ui-icons';
+import { ArrowUpIcon, BridgesIcon, CheckIcon, ClearIcon, GripIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { SelectLead, SelectLeadGap, SelectPillBar, SelectToggle, useSelectMode } from '@/components/multi-select/select-mode';
 import { useMultiSelect } from '@/components/multi-select/use-multi-select';
 import { ReorderableList } from '@/components/settings/reorderable-list';
@@ -16,6 +16,8 @@ import { useBrowseRegistry } from '@/components/settings/browse-registry';
 import { RowIcon } from '@/components/settings/row-icon';
 import { SettingsRow } from '@/components/settings/settings-row';
 import { SwipeableSettingsRow } from '@/components/settings/swipeable-row';
+import type { SwipeRowAction } from '@/components/settings/swipeable-row';
+import { UpdateDot } from '@/components/tab-badge';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
@@ -140,17 +142,42 @@ export default function BridgesScreen() {
       },
     });
 
+  // Update a single bridge in place (the row's swipe "Update" action), then broad-invalidate so its
+  // "Update available" state, the count pills, and the Settings/tab pips all clear at once.
+  const updateOne = async (b: BridgeSummary) => {
+    try {
+      await ds.updateBridge(b.info.id);
+      bumpDataEpoch();
+      await queryClient.invalidateQueries();
+      showToast(`${b.info.name} updated`);
+    } catch (e) {
+      showToast(friendlyError(e, 'Failed to update bridge'));
+    }
+  };
+
   // The page's real row — full swipe-to-uninstall + tap. On native the reorder list wraps this
   // unchanged inside a drag item (swipe stays identical); on web it's the normal-mode row.
   const renderRow = (b: BridgeSummary) => {
     const status = bridgeStatus(b);
+    const hasUpdate = !!b.availableVersion;
     const openBridge = () =>
       router.push({
         pathname: '/bridge-settings',
         params: { bridgeId: b.info.id, source: b.source, ...(b.availableVersion ? { availableVersion: b.availableVersion } : {}) },
       });
     const statusColor = status && (status.tone === 'warn' ? theme.badgeWarn : theme.badgeInfo);
-    const icon = <RowIcon uri={b.info.iconUrl} fallback={(color, size) => <BridgesIcon color={color} size={size} />} />;
+    // The row's own accent dot — the per-bridge form of the counted pip on the Settings "Bridges"
+    // icon, so a bridge that surfaced that pip is identifiable in the list itself.
+    const icon = (
+      <View>
+        <RowIcon uri={b.info.iconUrl} fallback={(color, size) => <BridgesIcon color={color} size={size} />} />
+        {hasUpdate && (
+          <View style={styles.iconDot} pointerEvents="none">
+            <UpdateDot />
+          </View>
+        )}
+      </View>
+    );
     // Only registry-installed bridges can be uninstalled — a server-built one has nothing to remove,
     // so it gets a plain non-swipeable row (same `source` gate bridge-settings.tsx uses), isn't
     // selectable, and goes inert while select mode is on.
@@ -172,6 +199,12 @@ export default function BridgesScreen() {
       );
     }
     const key = b.info.id;
+    // "Update" (accent) sits left of the destructive "Uninstall" (edge slot) — a direct way to update
+    // from the list instead of opening each bridge. Only shown when an update is actually available.
+    const rowActions: SwipeRowAction[] = [
+      ...(hasUpdate ? [{ key: 'update', label: 'Update', icon: ArrowUpIcon, onPress: () => void updateOne(b) }] : []),
+      { key: 'uninstall', label: 'Uninstall', icon: TrashIcon, destructive: true, onPress: () => confirmUninstallOne(b) },
+    ];
     return (
       // In select mode the row toggles (tap) / range-fills (hold, via the shared Holdable) instead
       // of opening bridge settings, and its swipe is parked. Same pattern as the Downloads screen.
@@ -196,7 +229,7 @@ export default function BridgesScreen() {
             swipeEnabled={!selecting}
             onPress={selecting ? () => ms.toggle(key) : openBridge}
             onLongPress={selecting ? onLongPress : undefined}
-            actions={[{ label: 'Uninstall', icon: TrashIcon, destructive: true, onPress: () => confirmUninstallOne(b) }]}
+            actions={rowActions}
           />
         )}
       </Holdable>
@@ -312,6 +345,13 @@ const styles = StyleSheet.create({
   topActions: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  // Hugs the top-right corner of the 28-wide RowIcon tile so the dot overlaps the artwork, mirroring
+  // how the Settings category row places its update pip over the section glyph.
+  iconDot: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
   },
   stateHost: {
     flex: 1,
