@@ -8,6 +8,16 @@ name: Build Android APK (reusable)
 
 on:
   workflow_call:
+    inputs:
+      demo_mode:
+        # Bakes EXPO_PUBLIC_COMICAL_DEMO_MODE=1 into the JS bundle: fully client-side mock data
+        # (src/data/mock.ts), no host-server or bridge required at runtime. Only e2e.yml sets
+        # this — every other caller (build-android.yml, release.yml) leaves it unset so real
+        # builds never fall back to mock data.
+        description: Bake EXPO_PUBLIC_COMICAL_DEMO_MODE=1 into the JS bundle (client-side mock data, no backend).
+        type: boolean
+        default: false
+        required: false
     secrets:
       SENTRY_AUTH_TOKEN:
         # Optional: without it, the Sentry Gradle plugin below no-ops (skips
@@ -104,6 +114,9 @@ jobs:
           # instead of failing the Gradle bundle task. Mirrors the iOS build and this workflow's intent
           # that Sentry integration is optional, never build-blocking.
           SENTRY_ALLOW_FAILURE: 'true'
+          # EXPO_PUBLIC_* inlining happens when the "bundle React Native code" Gradle task shells
+          # out to node/Metro during assembleRelease — same mechanism deploy-web.yml relies on.
+          EXPO_PUBLIC_COMICAL_DEMO_MODE: ${{ inputs.demo_mode && '1' || '' }}
         run: ./gradlew assembleRelease --no-daemon --build-cache
         working-directory: apps/mobile/android
 

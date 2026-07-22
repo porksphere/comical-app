@@ -1,0 +1,48 @@
+# Navigation smoke: launch the app and tap through every tab by its testID. Proves the
+# structured-selector approach end to end — every tap resolves by id and lands (no coordinate
+# guessing, no missed taps). Data-independent: only asserts each tab's own screen chrome
+# renders, so it passes with real or mock data alike. Shared across android/ios/web
+# entrypoints — do not run this file directly (it has no appId/url), see e2e/README.md.
+#
+# Tab testIDs are `tab.<routeName>` (see src/components/app-tabs.tsx: `tab.${routeName}`).
+---
+# Plain launchApp (default stopApp: true) — CI artifacts embed the JS bundle, so a full clean
+# restart is correct here, unlike the dev-client Metro-reconnect flows in .maestro-local
+# (which use stopApp: false because a restart bounces the dev client to its launcher instead
+# of reconnecting to Metro).
+- launchApp
+
+# The custom tab bar is always mounted; its presence confirms we're in the app shell.
+- assertVisible:
+    id: "tab.browse"
+
+# Browse
+- tapOn:
+    id: "tab.browse"
+- assertVisible:
+    id: "browse\\..*" # any browse.* control (search-icon, bridge-selector, …)
+
+# Library
+- tapOn:
+    id: "tab.library"
+- assertVisible:
+    id: "library\\..*" # library.sort / library.search-icon
+
+# History — anchor on the shared TabTitleBar's testID (screen-title.<title>).
+- tapOn:
+    id: "tab.history"
+- assertVisible:
+    id: "screen-title.history"
+
+# Activity — its action buttons (activity.check-updates/clear) render only when there are
+# updates, so anchor on the shared TabTitleBar's testID instead.
+- tapOn:
+    id: "tab.activity"
+- assertVisible:
+    id: "screen-title.activity"
+
+# Settings
+- tapOn:
+    id: "tab.settings"
+- assertVisible:
+    id: "settings.category.general"

@@ -1,0 +1,151 @@
+name: E2E (Maestro)
+
+# Drives the app across web, Android, and iOS from ONE shared flow suite (apps/mobile/e2e/) —
+# see apps/mobile/e2e/README.md for the architecture. Every build in this workflow uses
+# EXPO_PUBLIC_COMICAL_DEMO_MODE=1 (client-side mock data only, no host-server or scraping-adjacent
+# bridge involved) — deterministic on purpose, and never runs live bridge traffic from an
+# external contributor's PR.
+#
+# Advisory only for now (not a required status check) — see the phased rollout in the e2e plan.
+# Promote android/ios/web to required checks in branch protection once proven stable.
+#
+# Runs on `main` too, in addition to PRs: the iOS Simulator build's ccache is flavor-specific
+# (see build-ios-reusable.yml) and only ever gets saved on `main`, so PR runs need a `main` run
+# to have populated a warm `sim`-flavor cache to restore from.
+
+on:
+  pull_request:
+    paths:
+      - 'apps/mobile/**'
+      - 'external/comical'
+      - '.github/workflows/e2e.yml'
+      - '.github/workflows/build-android-reusable.yml'
+      - '.github/workflows/build-ios-reusable.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/mobile/**'
+      - 'external/comical'
+      - '.github/workflows/e2e.yml'
+      - '.github/workflows/build-android-reusable.yml'
+      - '.github/workflows/build-ios-reusable.yml'
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-android:
+    uses: ./.github/workflows/build-android-reusable.yml
+    with:
+      demo_mode: true
+    secrets: inherit
+
+  test-android:
+    needs: build-android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build-android.outputs.artifact }}
+          path: ${{ runner.temp }}/apk
+
+      - name: Install Maestro
+        run: curl -Ls "https://get.maestro.mobile.dev" | bash
+
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          profile: pixel_6
+          script: |
+            adb install -r "$RUNNER_TEMP/apk/comical-android.apk"
+            export PATH="$HOME/.maestro/bin:$PATH"
+            maestro test apps/mobile/e2e/config/android.yaml
+
+  build-ios-sim:
+    uses: ./.github/workflows/build-ios-reusable.yml
+    with:
+      simulator: true
+      demo_mode: true
+    secrets: inherit
+
+  test-ios:
+    needs: build-ios-sim
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build-ios-sim.outputs.artifact }}
+          path: ${{ runner.temp }}/app
+
+      - name: Install Maestro
+        run: curl -Ls "https://get.maestro.mobile.dev" | bash
+
+      - name: Install and run on Simulator
+        run: |
+          set -euo pipefail
+          ditto -x -k "$RUNNER_TEMP/app/comical-simulator.zip" "$RUNNER_TEMP/app"
+          APP=$(find "$RUNNER_TEMP/app" -maxdepth 1 -name "*.app" | head -1)
+
+          # Pin to whatever device type macos-26's default Xcode actually ships — don't
+          # hard-code a name that may not exist on a given runner image.
+          DEVICE_TYPE=$(xcrun simctl list devicetypes -j | jq -r '.devicetypes[] | select(.name | test("iPhone")) | .identifier' | tail -1)
+          RUNTIME=$(xcrun simctl list runtimes -j | jq -r '.runtimes[] | select(.name | test("iOS")) | .identifier' | tail -1)
+          UDID=$(xcrun simctl create comical-e2e "$DEVICE_TYPE" "$RUNTIME")
+
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" "$APP"
+
+          export PATH="$HOME/.maestro/bin:$PATH"
+          maestro --device "$UDID" test apps/mobile/e2e/config/ios.yaml
+
+  test-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install --frozen-lockfile
+
+      # Metro's web bundle still statically resolves the comical submodule's deps (hono/zod/
+      # cheerio, via metro.config.js's extra node_modules root) even though the embedded runtime
+      # itself never runs on web — without this, `expo export` fails with "Unable to resolve
+      # module hono". See setup.ts's comment on this exact gotcha. Only the hoisted `bun install`
+      # is needed here, not `build:native` (that only generates the native-only harness asset).
+      - name: Install submodule dependencies (hoisted, for Metro resolution)
+        run: bun install --linker hoisted
+        working-directory: external/comical
+
+      - name: Export + serve web build (demo mode)
+        working-directory: apps/mobile
+        env:
+          EXPO_PUBLIC_COMICAL_DEMO_MODE: '1'
+        run: |
+          set -euo pipefail
+          bunx expo export --platform web
+          npx --yes serve@latest dist -l 4000 &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:4000 >/dev/null && exit 0
+            sleep 1
+          done
+          echo "web server never came up"; exit 1
+
+      - name: Install Maestro
+        run: curl -Ls "https://get.maestro.mobile.dev" | bash
+
+      - name: Run e2e flows (web)
+        run: |
+          export PATH="$HOME/.maestro/bin:$PATH"
+          maestro test apps/mobile/e2e/config/web.yaml

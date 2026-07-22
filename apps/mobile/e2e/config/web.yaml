@@ -1,0 +1,16 @@
+# Maestro workspace config for the web CI/local lane (Chromium, Maestro web support is Beta).
+#
+# Run the whole suite:  maestro test apps/mobile/e2e/config/web.yaml
+# Run one flow:         maestro test apps/mobile/e2e/web/smoke.yaml
+#
+# See ../README.md for the full authoring/running workflow.
+
+flows:
+  - "../web/*.yaml"
+
+executionOrder:
+  continueOnFailure: false
+  flowsOrder:
+    - smoke
+    - browse-to-reader
+    - search

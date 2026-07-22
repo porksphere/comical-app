@@ -52,6 +52,24 @@ on:
         type: string
         default: ''
         required: false
+      simulator:
+        # When true, builds an unsigned .app for the iOS Simulator (-sdk iphonesimulator, no
+        # code signing needed at all) instead of an unsigned device .ipa. Only e2e.yml sets
+        # this — it's how the CI-only Maestro e2e lane gets an installable artifact without a
+        # SideStore/AltStore-style device signing workaround. Every other caller leaves this
+        # false and gets the existing device archive path, unchanged.
+        description: Build for the iOS Simulator (-sdk iphonesimulator) instead of a device .ipa.
+        type: boolean
+        default: false
+        required: false
+      demo_mode:
+        # Bakes EXPO_PUBLIC_COMICAL_DEMO_MODE=1 into the JS bundle: fully client-side mock data
+        # (src/data/mock.ts), no host-server or bridge required at runtime. Only e2e.yml sets
+        # this.
+        description: Bake EXPO_PUBLIC_COMICAL_DEMO_MODE=1 into the JS bundle (client-side mock data, no backend).
+        type: boolean
+        default: false
+        required: false
     secrets:
       SENTRY_AUTH_TOKEN:
         # Optional: without it, the Sentry build-phase script below no-ops
@@ -63,8 +81,9 @@ on:
         description: expo.version read from apps/mobile/app.json
         value: ${{ jobs.build.outputs.version }}
       artifact:
-        description: Name of the uploaded unsigned IPA artifact
-        value: comical-ios-unsigned-ipa
+        description: Name of the uploaded artifact — an unsigned device .ipa normally, or a
+          Simulator .app zip when `simulator: true`.
+        value: ${{ inputs.simulator && 'comical-ios-simulator-app' || 'comical-ios-unsigned-ipa' }}
 
 jobs:
   build:
@@ -93,6 +112,8 @@ jobs:
       # tagged release (release.yml), so the profiler never ships in the public channel.
       COMICAL_PROFILING: ${{ inputs.profiling && '1' || '' }}
       EXPO_PUBLIC_COMICAL_PROFILING: ${{ inputs.profiling && '1' || '' }}
+      # See the `demo_mode` input above — empty for every normal (non-e2e) build.
+      EXPO_PUBLIC_COMICAL_DEMO_MODE: ${{ inputs.demo_mode && '1' || '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -139,14 +160,20 @@ jobs:
       # Compiler cache: the actual native-compile speedup. main saves a fresh
       # per-commit entry; branches restore the newest read-only and recompile
       # only their delta. See "Route ccache" for why this needs a wrapper patch.
+      #
+      # Keyed on build flavor (device vs simulator): iphoneos and iphonesimulator compiles
+      # produce almost entirely different object code from the same source (different SDK/target
+      # triple), so a shared key would give the simulator flavor a near-0% hit rate against a
+      # cache only ever warmed by device builds. e2e.yml's push-to-main trigger keeps the `sim`
+      # entry warm the same way the device entry already is.
       - name: Restore ccache
         uses: actions/cache/restore@v4
         with:
           path: ${{ github.workspace }}/.ccache
-          key: ccache-ios-${{ hashFiles('bun.lock') }}-${{ github.sha }}
+          key: ccache-ios-${{ inputs.simulator && 'sim' || 'device' }}-${{ hashFiles('bun.lock') }}-${{ github.sha }}
           restore-keys: |
-            ccache-ios-${{ hashFiles('bun.lock') }}-
-            ccache-ios-
+            ccache-ios-${{ inputs.simulator && 'sim' || 'device' }}-${{ hashFiles('bun.lock') }}-
+            ccache-ios-${{ inputs.simulator && 'sim' || 'device' }}-
 
       # ccache isn't preinstalled on macos-26; install it BEFORE pod install so
       # RN's Podfile detects it and wires CC=ccache-clang.sh. Zero stats so the
@@ -199,6 +226,7 @@ jobs:
       # IPA's version matches the apps.json manifest below — AltStore rejects
       # the install otherwise.
       - name: Stamp full version into generated Info.plist
+        if: ${{ !inputs.simulator }}
         working-directory: apps/mobile/ios
         run: |
           set -euo pipefail
@@ -247,6 +275,7 @@ jobs:
           [ "$count" -gt 0 ] || { echo "ERROR: no RN ccache wrapper found to patch"; exit 1; }
 
       - name: Build unsigned archive
+        if: ${{ !inputs.simulator }}
         working-directory: apps/mobile/ios
         env:
           # A transient Sentry outage (e.g. an unresolvable sentry.io during the "Bundle React Native
@@ -285,6 +314,7 @@ jobs:
         run: ccache -s -v 2>/dev/null || ccache -s
 
       - name: Package unsigned IPA
+        if: ${{ !inputs.simulator }}
         run: |
           set -euo pipefail
           APP=$(ls -d "$RUNNER_TEMP/comical.xcarchive/Products/Applications/"*.app | head -1)
@@ -292,15 +322,59 @@ jobs:
           cp -R "$APP" "$RUNNER_TEMP/Payload/"
           (cd "$RUNNER_TEMP" && zip -qry comical-unsigned.ipa Payload)
 
+      # Simulator artifacts need NO code signing at all (unlike the device path above, which
+      # works around needing an unsigned *device* binary) — `build`, not `archive`, is the
+      # standard action here. macos-26 runners are Apple Silicon, so this is a native arm64
+      # compile, no -arch fan-out needed.
+      - name: Build unsigned .app (Simulator)
+        if: ${{ inputs.simulator }}
+        working-directory: apps/mobile/ios
+        env:
+          SENTRY_ALLOW_FAILURE: 'true'
+        run: |
+          set -euo pipefail
+          WORKSPACE=$(ls -d *.xcworkspace | head -1)
+          SCHEME=$(basename "$WORKSPACE" .xcworkspace)
+          echo "Building workspace=$WORKSPACE scheme=$SCHEME (Simulator)"
+          xcodebuild \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEBUG_INFORMATION_FORMAT=dwarf \
+            COMPILER_INDEX_STORE_ENABLE=NO
+
+      - name: Package .app for upload (Simulator)
+        if: ${{ inputs.simulator }}
+        run: |
+          set -euo pipefail
+          APP=$(find "$RUNNER_TEMP/DerivedData/Build/Products" -maxdepth 2 -name "*.app" | head -1)
+          ditto -c -k --keepParent "$APP" "$RUNNER_TEMP/comical-simulator.zip"
+
       - name: Read app version
         id: meta
         run: echo "version=${{ steps.ver.outputs.full }}" >> "$GITHUB_OUTPUT"
 
       - name: Upload unsigned IPA artifact
+        if: ${{ !inputs.simulator }}
         uses: actions/upload-artifact@v4
         with:
           name: comical-ios-unsigned-ipa
           path: ${{ runner.temp }}/comical-unsigned.ipa
+          if-no-files-found: error
+
+      - name: Upload Simulator .app artifact
+        if: ${{ inputs.simulator }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: comical-ios-simulator-app
+          path: ${{ runner.temp }}/comical-simulator.zip
           if-no-files-found: error
 
       # --- Cache SAVE (main only) ------------------------------------------
@@ -312,7 +386,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ github.workspace }}/.ccache
-          key: ccache-ios-${{ hashFiles('bun.lock') }}-${{ github.sha }}
+          key: ccache-ios-${{ inputs.simulator && 'sim' || 'device' }}-${{ hashFiles('bun.lock') }}-${{ github.sha }}
 
       # Bun + CocoaPods CDN caches are keyed on bun.lock (one authoritative warm
       # entry each). Gate their save on a restore MISS: an exact hit means the
