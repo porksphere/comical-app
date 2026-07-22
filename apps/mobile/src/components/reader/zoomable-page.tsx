@@ -31,6 +31,10 @@ const MAX_SCALE = 4;
 const ZOOM_EPSILON = 1.01;
 // Scale a double-tap zooms into (and back out of).
 const DOUBLE_TAP_SCALE = 2.5;
+// A pinch that reached at least this scale counts as a deliberate zoom-in, so a
+// final frame that dips under ZOOM_EPSILON on lift (common on a fast pinch)
+// commits the zoom instead of rubber-banding to 1×.
+const PINCH_COMMIT = 1.2;
 
 function clamp(value: number, min: number, max: number) {
   'worklet';
@@ -90,6 +94,9 @@ export function ZoomablePage({
   const baseScale = useSharedValue(1);
   const baseTx = useSharedValue(0);
   const baseTy = useSharedValue(0);
+  // Largest scale reached during the current pinch — lets the release tell a real
+  // zoom-in (whose last frame may dip on lift) from a tiny/settled pinch.
+  const pinchMaxScale = useSharedValue(1);
 
   const [zoomed, setZoomed] = useState(false);
   const [pageFailed, setPageFailed] = useState(false);
@@ -171,11 +178,13 @@ export function ZoomablePage({
       baseScale.set(scale.value);
       baseTx.set(tx.value);
       baseTy.set(ty.value);
+      pinchMaxScale.set(scale.value);
     })
     .onUpdate((e) => {
       const cx = width / 2;
       const cy = height / 2;
       const nextScale = clamp(baseScale.value * e.scale, 1, MAX_SCALE);
+      if (nextScale > pinchMaxScale.value) pinchMaxScale.set(nextScale);
       const anchorX = (focalStartX.value - cx - baseTx.value) / baseScale.value;
       const anchorY = (focalStartY.value - cy - baseTy.value) / baseScale.value;
       const limitX = ((nextScale - 1) * width) / 2;
@@ -185,23 +194,42 @@ export function ZoomablePage({
       scale.set(nextScale);
     })
     .onEnd(() => {
-      if (scale.value <= ZOOM_EPSILON) {
-        scale.set(withTiming(1));
-        tx.set(withTiming(0));
-        ty.set(withTiming(0));
-        savedTx.set(0);
-        savedTy.set(0);
-        runOnJS(reportZoom)(false);
+      if (scale.value > ZOOM_EPSILON) {
+        savedTx.set(tx.value);
+        savedTy.set(ty.value);
+        runOnJS(reportZoom)(true);
         return;
       }
-      savedTx.set(tx.value);
-      savedTy.set(ty.value);
-      runOnJS(reportZoom)(true);
+      // Ended at ~1×. A fast pinch-in's LAST frame often dips under the epsilon as
+      // the fingers converge on lift — don't rubber-band those: if the pinch STARTED
+      // from ~1× and actually reached a real zoom, commit at that peak instead. A
+      // pinch that started already-zoomed still honours a deliberate return to 1×.
+      if (baseScale.value <= ZOOM_EPSILON && pinchMaxScale.value > PINCH_COMMIT) {
+        const target = clamp(pinchMaxScale.value, 1, MAX_SCALE);
+        const limitX = ((target - 1) * width) / 2;
+        const limitY = ((target - 1) * height) / 2;
+        scale.set(withTiming(target));
+        tx.set(withTiming(clamp(tx.value, -limitX, limitX)));
+        ty.set(withTiming(clamp(ty.value, -limitY, limitY)));
+        savedTx.set(clamp(tx.value, -limitX, limitX));
+        savedTy.set(clamp(ty.value, -limitY, limitY));
+        runOnJS(reportZoom)(true);
+        return;
+      }
+      scale.set(withTiming(1));
+      tx.set(withTiming(0));
+      ty.set(withTiming(0));
+      savedTx.set(0);
+      savedTy.set(0);
+      runOnJS(reportZoom)(false);
     });
 
-  // One-finger pan, only while zoomed (so it never steals a swipe at 1×).
+  // One-finger pan, only while zoomed (so it never steals a swipe at 1×). Capped at
+  // a single pointer so a two-finger pinch never registers as a pan and flings on
+  // release — momentum belongs to a deliberate one-finger drag, not to zooming.
   const pan = Gesture.Pan()
     .enabled(zoomed)
+    .maxPointers(1)
     .onStart(() => {
       savedTx.set(tx.value);
       savedTy.set(ty.value);
