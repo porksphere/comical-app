@@ -19,10 +19,6 @@ const MAX_SCALE = 4;
 const ZOOM_EPSILON = 1.01;
 // Scale a double-tap zooms into (and back out of).
 const DOUBLE_TAP_SCALE = 2.5;
-// A pinch that reached at least this scale counts as a deliberate zoom-in, so a
-// final frame that dips under ZOOM_EPSILON on lift (common on a fast pinch)
-// commits the zoom instead of rubber-banding to 1×.
-const PINCH_COMMIT = 1.2;
 
 function clamp(value: number, min: number, max: number) {
   'worklet';
@@ -56,9 +52,6 @@ export function useZoomable({
   const baseScale = useSharedValue(1);
   const baseTx = useSharedValue(0);
   const baseTy = useSharedValue(0);
-  // Largest scale reached during the current pinch — lets the release tell a real
-  // zoom-in (whose last frame may dip on lift) from a tiny/settled pinch.
-  const pinchMaxScale = useSharedValue(1);
 
   const [zoomed, setZoomed] = useState(false);
 
@@ -87,13 +80,16 @@ export function useZoomable({
       baseScale.set(scale.value);
       baseTx.set(tx.value);
       baseTy.set(ty.value);
-      pinchMaxScale.set(scale.value);
     })
     .onUpdate((e) => {
+      // Ignore frames where a finger has already begun to lift (numberOfPointers < 2):
+      // those report a collapsing two-finger distance that yanks the scale down right
+      // before release — the "pinch in, then it animates out / jumps" jank. Keeping
+      // the last clean two-finger frame means the scale ends where the fingers were.
+      if (e.numberOfPointers < 2) return;
       const cx = width / 2;
       const cy = height / 2;
       const nextScale = clamp(baseScale.value * e.scale, 1, MAX_SCALE);
-      if (nextScale > pinchMaxScale.value) pinchMaxScale.set(nextScale);
       const anchorX = (focalStartX.value - cx - baseTx.value) / baseScale.value;
       const anchorY = (focalStartY.value - cy - baseTy.value) / baseScale.value;
       const limitX = ((nextScale - 1) * width) / 2;
@@ -103,36 +99,22 @@ export function useZoomable({
       scale.set(nextScale);
     })
     .onEnd(() => {
+      // No animation on release: the scale is already exactly where the fingers left
+      // it (the lift-frame guard above keeps it clean), so just keep it — or reset to
+      // a clean 1× when it's within a hair of 1×, which is imperceptible since it's
+      // already there. Animating here is what produced the "weird jump on release".
       if (scale.value > ZOOM_EPSILON) {
         savedTx.set(tx.value);
         savedTy.set(ty.value);
         runOnJS(reportZoom)(true);
-        return;
+      } else {
+        scale.set(1);
+        tx.set(0);
+        ty.set(0);
+        savedTx.set(0);
+        savedTy.set(0);
+        runOnJS(reportZoom)(false);
       }
-      // Ended at ~1×. A fast pinch-in's LAST frame often dips under the epsilon as
-      // the fingers converge on lift — don't rubber-band those: if the pinch STARTED
-      // from ~1× and actually reached a real zoom, commit at that peak instead. A
-      // pinch that started already-zoomed still honours a deliberate return to 1×.
-      if (baseScale.value <= ZOOM_EPSILON && pinchMaxScale.value > PINCH_COMMIT) {
-        const target = clamp(pinchMaxScale.value, 1, MAX_SCALE);
-        const limitX = ((target - 1) * width) / 2;
-        const limitY = ((target - 1) * height) / 2;
-        const nx = clamp(tx.value, -limitX, limitX);
-        const ny = clamp(ty.value, -limitY, limitY);
-        scale.set(withTiming(target));
-        tx.set(withTiming(nx));
-        ty.set(withTiming(ny));
-        savedTx.set(nx);
-        savedTy.set(ny);
-        runOnJS(reportZoom)(true);
-        return;
-      }
-      scale.set(withTiming(1));
-      tx.set(withTiming(0));
-      ty.set(withTiming(0));
-      savedTx.set(0);
-      savedTy.set(0);
-      runOnJS(reportZoom)(false);
     });
 
   const doubleTap = Gesture.Tap()
