@@ -101,6 +101,16 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
   // thinking a zoom is still active — that would keep its swipe-dismiss disabled.
   useEffect(() => () => onZoomChange?.(false), [onZoomChange]);
 
+  // The FlatList's own scroll, as a gesture RNGH can reason about. Without this the
+  // pinch/tap on the wrapping detector never fire — the native ScrollView swallows the
+  // touch (the paged reader dodges this by living inside a non-scrolling cell). Marking
+  // the zoom gestures `simultaneousWithExternalGesture(nativeScroll)` lets them run
+  // alongside (a 2-finger pinch, or a stationary tap) instead of losing to the scroll.
+  const nativeScroll = Gesture.Native();
+  pinch.simultaneousWithExternalGesture(nativeScroll);
+  pan.simultaneousWithExternalGesture(nativeScroll);
+  doubleTap.simultaneousWithExternalGesture(nativeScroll);
+
   // Chrome toggle rides a single-tap gesture (Exclusive with the double-tap, so it
   // waits out a possible second tap that would zoom instead). Off while zoomed, where
   // a lone tap does nothing. The per-row overlays are inert markers now (see WebtoonRow).
@@ -108,6 +118,7 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
     .enabled(!zoomed)
     .numberOfTaps(1)
     .maxDuration(300)
+    .simultaneousWithExternalGesture(nativeScroll)
     .onEnd(() => {
       runOnJS(onToggleChrome)();
     });
@@ -211,37 +222,45 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
   }).current;
 
   return (
-    <GestureDetector gesture={gesture}>
-      <Animated.View style={[{ width, height, overflow: 'hidden' }, animatedStyle]}>
-        <FlatList
-          ref={listRef}
-          data={pages}
-          keyExtractor={(uri, i) => `${uri}:${i}`}
-          // Frozen while zoomed so the pan gesture owns one-finger drags; scrolling
-          // resumes the instant it's back at 1×.
-          scrollEnabled={!zoomed}
-          showsVerticalScrollIndicator={false}
-          onViewableItemsChanged={onViewable}
-          viewabilityConfig={viewabilityConfig}
-          getItemLayout={getItemLayout}
-          onScroll={onScroll}
-          scrollEventThrottle={16}
-          onScrollToIndexFailed={(info) => {
-            const offset = offsetsRef.current[info.index] ?? info.averageItemLength * info.index;
-            listRef.current?.scrollToOffset({ offset, animated: false });
-            setTimeout(() => {
-              listRef.current?.scrollToIndex({ index: info.index, animated: false });
-            }, 60);
-          }}
-          ListFooterComponent={
-            nextChapterName ? <ChapterSentinel name={nextChapterName} onPress={onAdvance} /> : null
-          }
-          renderItem={({ item, index }) => (
-            <WebtoonRow uri={item} index={index} width={width} onRowLayout={onRowLayout} testID={testId('reader.page.tap', index + 1)} />
-          )}
-        />
-      </Animated.View>
-    </GestureDetector>
+    // Fixed-size clip so the scaled strip can grow past the viewport and be masked;
+    // the zoom transform lives on the inner Animated.View, and the FlatList's own
+    // GestureDetector (nativeScroll) is what the zoom gestures compose against.
+    <View style={{ width, height, overflow: 'hidden' }}>
+      <GestureDetector gesture={gesture}>
+        <Animated.View style={[{ width, height }, animatedStyle]}>
+          <GestureDetector gesture={nativeScroll}>
+            <FlatList
+              ref={listRef}
+              style={{ width, height }}
+              data={pages}
+              keyExtractor={(uri, i) => `${uri}:${i}`}
+              // Frozen while zoomed so the pan gesture owns one-finger drags; scrolling
+              // resumes the instant it's back at 1×.
+              scrollEnabled={!zoomed}
+              showsVerticalScrollIndicator={false}
+              onViewableItemsChanged={onViewable}
+              viewabilityConfig={viewabilityConfig}
+              getItemLayout={getItemLayout}
+              onScroll={onScroll}
+              scrollEventThrottle={16}
+              onScrollToIndexFailed={(info) => {
+                const offset = offsetsRef.current[info.index] ?? info.averageItemLength * info.index;
+                listRef.current?.scrollToOffset({ offset, animated: false });
+                setTimeout(() => {
+                  listRef.current?.scrollToIndex({ index: info.index, animated: false });
+                }, 60);
+              }}
+              ListFooterComponent={
+                nextChapterName ? <ChapterSentinel name={nextChapterName} onPress={onAdvance} /> : null
+              }
+              renderItem={({ item, index }) => (
+                <WebtoonRow uri={item} index={index} width={width} onRowLayout={onRowLayout} testID={testId('reader.page.tap', index + 1)} />
+              )}
+            />
+          </GestureDetector>
+        </Animated.View>
+      </GestureDetector>
+    </View>
   );
 });
 
