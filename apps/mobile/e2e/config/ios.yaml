@@ -1,0 +1,16 @@
+# Maestro workspace config for the iOS CI/local lane.
+#
+# Run the whole suite:  maestro test apps/mobile/e2e/config/ios.yaml
+# Run one flow:         maestro test apps/mobile/e2e/ios/smoke.yaml
+#
+# See ../README.md for the full authoring/running workflow.
+
+flows:
+  - "../ios/*.yaml"
+
+executionOrder:
+  continueOnFailure: false
+  flowsOrder:
+    - smoke
+    - browse-to-reader
+    - search

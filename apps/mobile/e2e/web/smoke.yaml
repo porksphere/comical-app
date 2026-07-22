@@ -1,0 +1,6 @@
+# Entrypoint only — the journey lives once in ../flows/smoke.yaml. See e2e/README.md.
+# Port 4000 is the fixed convention this suite always serves the web build on, in CI and
+# locally — see e2e/README.md.
+url: http://localhost:4000
+---
+- runFlow: ../flows/smoke.yaml
