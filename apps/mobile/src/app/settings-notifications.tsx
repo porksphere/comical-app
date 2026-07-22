@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import * as Notifications from 'expo-notifications';
 import { Platform, ScrollView, StyleSheet } from 'react-native';
 
@@ -10,12 +11,16 @@ import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { syncAppBadge } from '@/data/activity/app-badge';
 import { applyChapterCheck } from '@/data/activity/background';
 import { notifyPrefs$, useNotifyPrefs } from '@/data/activity/prefs';
+import { queryKeys } from '@/data/queries';
+import { useMockActive } from '@/data/source';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 
 const isNative = Platform.OS !== 'web';
 
 export default function NotificationsSettingsScreen() {
   const contentPadding = useSettingsScrollPadding();
+  const queryClient = useQueryClient();
+  const mock = useMockActive();
   const { autoCheck, backgroundCheck, wifiOnly, notifications, appBadge } = useNotifyPrefs();
 
   /** Enabling alerts needs the OS permission first; a denial reverts the toggle with a pointer. */
@@ -39,6 +44,37 @@ export default function NotificationsSettingsScreen() {
     } catch {
       // Native module absent (a dev client built before expo-notifications shipped).
       showToast('Notifications need an updated app build');
+    }
+  };
+
+  /**
+   * The icon badge needs its own permission grant: iOS silently discards `setBadgeCountAsync`
+   * unless the app holds badge authorization, and that's independent of the alerts toggle — so
+   * enabling this must request it, not assume "Notify about new chapters" already did.
+   */
+  const toggleAppBadge = async (v: boolean) => {
+    if (!v) {
+      notifyPrefs$.appBadge.set(false);
+      syncAppBadge(0); // clear immediately; re-enabling refreshes from the live count
+      return;
+    }
+    try {
+      let perm = await Notifications.getPermissionsAsync();
+      if (!perm.granted && perm.canAskAgain) {
+        perm = await Notifications.requestPermissionsAsync({ ios: { allowBadge: true } });
+      }
+      if (!perm.granted) {
+        showToast('Allow badges for Comical in system settings');
+        return;
+      }
+      notifyPrefs$.appBadge.set(true);
+      // Paint the icon now rather than waiting for the count to next change. The always-mounted
+      // tab badge keeps this query fresh, so the cache is the current whole-feed unread count.
+      const count = queryClient.getQueryData<number>(queryKeys.activityCount(mock)) ?? 0;
+      syncAppBadge(count);
+    } catch {
+      // Native module absent (a dev client built before expo-notifications shipped).
+      showToast('App icon badge needs an updated app build');
     }
   };
 
@@ -85,10 +121,7 @@ export default function NotificationsSettingsScreen() {
               label="App icon badge"
               description="Show the unread count on the app icon."
               value={appBadge}
-              onChange={(v) => {
-                notifyPrefs$.appBadge.set(v);
-                if (!v) syncAppBadge(0); // clear immediately; re-enabling refreshes on the next count
-              }}
+              onChange={(v) => void toggleAppBadge(v)}
             />
           )}
         </SettingsSection>
