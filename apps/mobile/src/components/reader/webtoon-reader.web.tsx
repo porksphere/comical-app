@@ -383,15 +383,27 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
       }
     };
 
+    // iOS WebKit pinches the whole PAGE (visual viewport) on a 2-finger gesture, and
+    // `touch-action: pan-y` alone doesn't stop it — the reliable lever is preventing
+    // the Safari-only `gesture*` events (same fix the paged reader uses). Without
+    // this the custom CSS-`zoom` pinch never got a look-in on iOS: the browser's own
+    // page-zoom swallowed the gesture. One finger (plain scroll) never fires these.
+    const preventGesture = (e: Event) => e.preventDefault();
     el.addEventListener('touchstart', onStart, { passive: false });
     el.addEventListener('touchmove', onMove, { passive: false });
     el.addEventListener('touchend', onEnd);
     el.addEventListener('touchcancel', onEnd);
+    el.addEventListener('gesturestart', preventGesture as EventListener, { passive: false });
+    el.addEventListener('gesturechange', preventGesture as EventListener, { passive: false });
+    el.addEventListener('gestureend', preventGesture as EventListener, { passive: false });
     return () => {
       el.removeEventListener('touchstart', onStart);
       el.removeEventListener('touchmove', onMove);
       el.removeEventListener('touchend', onEnd);
       el.removeEventListener('touchcancel', onEnd);
+      el.removeEventListener('gesturestart', preventGesture as EventListener);
+      el.removeEventListener('gesturechange', preventGesture as EventListener);
+      el.removeEventListener('gestureend', preventGesture as EventListener);
     };
   }, [pageFit]);
 
