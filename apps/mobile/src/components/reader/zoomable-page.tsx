@@ -162,7 +162,11 @@ export function ZoomablePage({
       runOnJS(onTapNav)(e.x);
     });
 
-  const gesture = Gesture.Simultaneous(pinch, pan, contentPan, Gesture.Exclusive(doubleTap, singleTap));
+  // pinch / double-tap / single-tap are mutually EXCLUSIVE (you're pinching, or
+  // double-tapping, or single-tapping — never two at once), so a pinch's two fingers
+  // can't be misread as a double-tap and randomly zoom all the way in/out. pan and
+  // contentPan still run alongside whichever wins.
+  const gesture = Gesture.Simultaneous(pan, contentPan, Gesture.Exclusive(pinch, doubleTap, singleTap));
 
   const contentPanStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: contentTy.value }],

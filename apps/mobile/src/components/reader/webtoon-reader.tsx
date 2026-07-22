@@ -122,7 +122,9 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
     .onEnd(() => {
       runOnJS(onToggleChrome)();
     });
-  const gesture = Gesture.Simultaneous(pinch, pan, Gesture.Exclusive(doubleTap, singleTap));
+  // pinch / double-tap / single-tap are mutually EXCLUSIVE so a pinch's two fingers
+  // can't be misread as a double-tap and randomly zoom all the way; pan runs alongside.
+  const gesture = Gesture.Simultaneous(pan, Gesture.Exclusive(pinch, doubleTap, singleTap));
 
   // Auto-advance when the reader scrolls to the very end (where the sentinel sits).
   // Gated on the content actually being scrollable, so a short chapter that fits on
@@ -418,7 +420,9 @@ function WebtoonPagedRow({
     .onEnd(() => {
       runOnJS(onToggleChrome)();
     });
-  const gesture = Gesture.Simultaneous(pinch, pan, Gesture.Exclusive(doubleTap, singleTap));
+  // See WebtoonContinuous: pinch/double-tap/single-tap are mutually exclusive so a
+  // pinch can't be misread as a double-tap; pan runs alongside whichever wins.
+  const gesture = Gesture.Simultaneous(pan, Gesture.Exclusive(pinch, doubleTap, singleTap));
 
   return (
     <GestureDetector gesture={gesture}>
