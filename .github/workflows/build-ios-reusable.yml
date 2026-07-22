@@ -167,37 +167,18 @@ jobs:
         working-directory: external/comical
 
       # Trackers are bundled into the app build (not registry-installed like bridges — see
-      # apps/mobile/scripts/build-tracker-bundles.mjs's doc comment), sourced from the standalone
-      # comical-trackers repo. Its build in turn resolves @comical/* via a sibling `../comical`
-      # (tsconfig paths, see comical-trackers/tsconfig.json) — symlink one in to match the local
-      # workspace layout, reusing the submodule already checked out above instead of a second clone.
-      - name: Checkout comical-trackers (tracker sources)
-        uses: actions/checkout@v4
-        with:
-          repository: porksphere/comical-trackers
-          path: comical-trackers
-
-      - name: Link comical-trackers' sibling comical dependency
-        run: ln -s "$(pwd)/external/comical" comical
-
-      - name: Build tracker bundles (comical-trackers)
-        run: bun install && bun run build
-        working-directory: comical-trackers
-
-      # Regenerates src/data/embedded/tracker-bundles.generated.json before Metro bundles the JS
-      # below. Unlike a bare local clone (where an empty result is an acceptable "no siblings
-      # checked out" fallback), an empty result in CI always means the checkout/build above failed
-      # silently — fail loudly instead of shipping a build with zero on-device trackers.
-      - name: Generate on-device tracker bundles
-        env:
-          COMICAL_TRACKERS_REPO: ${{ github.workspace }}/comical-trackers
+      # apps/mobile/scripts/build-tracker-bundles.mjs's doc comment): the built tracker source is
+      # committed straight into tracker-bundles.generated.json rather than fetched from the
+      # standalone comical-trackers repo at CI time (no live external-repo dependency in the build
+      # — regenerate and commit that file locally whenever comical-trackers changes). Just sanity
+      # check it wasn't accidentally committed empty.
+      - name: Verify on-device tracker bundles are present
         run: |
           set -euo pipefail
-          bun run build:tracker-bundles
           COUNT=$(node -e "console.log(Object.keys(require('./src/data/embedded/tracker-bundles.generated.json')).length)")
           echo "Tracker bundles: $COUNT"
           if [ "$COUNT" -eq 0 ]; then
-            echo "ERROR: tracker-bundles.generated.json is empty — comical-trackers checkout/build failed silently."
+            echo "ERROR: tracker-bundles.generated.json is empty. Regenerate it locally (cd ../comical-trackers && bun run build; cd apps/mobile && bun run build:tracker-bundles) and commit the result."
             exit 1
           fi
         working-directory: apps/mobile
