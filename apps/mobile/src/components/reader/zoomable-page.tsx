@@ -94,31 +94,11 @@ export function ZoomablePage({
   // disabled exactly when `contentPan` would be enabled. Zoom is also off while
   // the page shows its failed/Retry state so a tap reaches the Retry chip.
   const zoomEnabled = !(pageFit === 'fit-width' && overflowsVertically) && !pageFailed;
+  // The page-turn / chrome tap zones stay live except while zoomed or suspended.
+  const suspended = pageFailed || contentPanning;
 
-  const { pinch, doubleTap, pan, animatedStyle, zoomed, reset } = useZoomable({
-    width,
-    height,
-    enabled: zoomEnabled,
-    onZoomChange,
-  });
-
-  // Swiping to another page (or jumping via the progress pill) drops the zoom so
-  // every page starts fit-to-screen.
-  useEffect(() => {
-    if (!active && zoomed) reset();
-  }, [active, zoomed, reset]);
-
-  // Same for content-pan: a page left behind always comes back scrolled to the top.
-  useEffect(() => {
-    if (!active) {
-      contentTy.set(0);
-      savedContentTy.set(0);
-    }
-  }, [active, contentTy, savedContentTy]);
-
-  // Navigation for a single tap, dispatched by the `singleTap` gesture using the
-  // tap's x within the page — the same three zones the `TapZones` markers cover
-  // (~30% / ~40% / ~30%).
+  // Navigation for a single tap, by the tap's x within the page — the same three
+  // zones the `TapZones` markers cover (~30% / ~40% / ~30%).
   const onTapNav = useCallback(
     (x: number) => {
       if (x < width * 0.3) onLeft();
@@ -129,12 +109,13 @@ export function ZoomablePage({
   );
 
   // One-finger vertical scroll of an overflowing fit-width page. A deadzone
-  // (`activeOffsetY`) plus `failOffsetX` disambiguate it from the FlatList's
-  // own horizontal swipe: a mostly-vertical drag wins here, a mostly-horizontal
-  // one bails out and lets the page-turn swipe handle it as always. Because a
-  // true tap never moves 10px, ordinary taps still reach `TapZones` untouched.
+  // (`activeOffsetY`) plus `failOffsetX` disambiguate it from the FlatList's own
+  // horizontal swipe: a mostly-vertical drag wins here, a mostly-horizontal one
+  // bails out and lets the page-turn swipe handle it. (No `!zoomed` guard needed —
+  // an overflowing fit-width page can't zoom in the first place, so `zoomEnabled`
+  // is already false and this never coexists with a zoom.)
   const contentPan = Gesture.Pan()
-    .enabled(pageFit === 'fit-width' && overflowsVertically && !zoomed)
+    .enabled(pageFit === 'fit-width' && overflowsVertically)
     .activeOffsetY([-10, 10])
     .failOffsetX([-15, 15])
     .onStart(() => {
@@ -150,23 +131,32 @@ export function ZoomablePage({
       runOnJS(setContentPanning)(false);
     });
 
-  // Single tap = the page-turn / chrome zones. Off while zoomed (a tap there does
-  // nothing, matching the pan-only behaviour) and during the failed/content-pan
-  // states. Exclusive with `doubleTap` so it waits to rule out a second tap.
-  const suspended = pageFailed || contentPanning;
-  const singleTap = Gesture.Tap()
-    .enabled(!zoomed && !suspended)
-    .numberOfTaps(1)
-    .maxDuration(300)
-    .onEnd((e) => {
-      runOnJS(onTapNav)(e.x);
-    });
+  // The whole zoom gesture (pinch / double-tap / one-finger pan / the tap zones,
+  // all composed) comes from the shared hook; this page just feeds it the tap-zone
+  // handler and its content-pan.
+  const { gesture, animatedStyle, zoomed, reset } = useZoomable({
+    width,
+    height,
+    enabled: zoomEnabled,
+    onZoomChange,
+    onSingleTap: onTapNav,
+    singleTapEnabled: !suspended,
+    extraSimultaneous: [contentPan],
+  });
 
-  // pinch / double-tap / single-tap are mutually EXCLUSIVE (you're pinching, or
-  // double-tapping, or single-tapping — never two at once), so a pinch's two fingers
-  // can't be misread as a double-tap and randomly zoom all the way in/out. pan and
-  // contentPan still run alongside whichever wins.
-  const gesture = Gesture.Simultaneous(pan, contentPan, Gesture.Exclusive(pinch, doubleTap, singleTap));
+  // Swiping to another page (or jumping via the progress pill) drops the zoom so
+  // every page starts fit-to-screen.
+  useEffect(() => {
+    if (!active && zoomed) reset();
+  }, [active, zoomed, reset]);
+
+  // Same for content-pan: a page left behind always comes back scrolled to the top.
+  useEffect(() => {
+    if (!active) {
+      contentTy.set(0);
+      savedContentTy.set(0);
+    }
+  }, [active, contentTy, savedContentTy]);
 
   const contentPanStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: contentTy.value }],
