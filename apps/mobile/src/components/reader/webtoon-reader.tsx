@@ -11,7 +11,7 @@ import {
   type ViewToken,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { runOnJS } from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 
 import { ReaderPage } from '@/components/reader/reader-page';
 import { useZoomable } from '@/components/reader/use-zoomable';
@@ -95,36 +95,26 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
   // drag pans the magnified view; unzoom to resume scrolling. The pan is bounded to
   // the scaled viewport, which is exactly the content that was already on screen (and
   // therefore rendered), so panning never exposes un-virtualized blanks.
-  const { pinch, doubleTap, pan, animatedStyle, zoomed } = useZoomable({ width, height, onZoomChange });
+  // The FlatList's own scroll, as a gesture RNGH can reason about. Without this the
+  // pinch/tap on the wrapping detector never fire — the native ScrollView swallows the
+  // touch (the paged reader dodges this by living inside a non-scrolling cell). The
+  // hook marks its gestures `simultaneousWithExternalGesture(nativeScroll)` so they run
+  // alongside it (a 2-finger pinch, or a stationary tap) instead of losing to the scroll.
+  const nativeScroll = Gesture.Native();
+
+  // Whole zoom gesture (pinch / double-tap / pan) plus the chrome-toggle single tap,
+  // composed by the shared hook. Chrome toggle ignores the tap's x.
+  const { gesture, animatedStyle, zoomed } = useZoomable({
+    width,
+    height,
+    onZoomChange,
+    onSingleTap: onToggleChrome,
+    simultaneousExternal: nativeScroll,
+  });
 
   // Unmounting (switching reader modes, leaving the reader) must not leave the parent
   // thinking a zoom is still active — that would keep its swipe-dismiss disabled.
   useEffect(() => () => onZoomChange?.(false), [onZoomChange]);
-
-  // The FlatList's own scroll, as a gesture RNGH can reason about. Without this the
-  // pinch/tap on the wrapping detector never fire — the native ScrollView swallows the
-  // touch (the paged reader dodges this by living inside a non-scrolling cell). Marking
-  // the zoom gestures `simultaneousWithExternalGesture(nativeScroll)` lets them run
-  // alongside (a 2-finger pinch, or a stationary tap) instead of losing to the scroll.
-  const nativeScroll = Gesture.Native();
-  pinch.simultaneousWithExternalGesture(nativeScroll);
-  pan.simultaneousWithExternalGesture(nativeScroll);
-  doubleTap.simultaneousWithExternalGesture(nativeScroll);
-
-  // Chrome toggle rides a single-tap gesture (Exclusive with the double-tap, so it
-  // waits out a possible second tap that would zoom instead). Off while zoomed, where
-  // a lone tap does nothing. The per-row overlays are inert markers now (see WebtoonRow).
-  const singleTap = Gesture.Tap()
-    .enabled(!zoomed)
-    .numberOfTaps(1)
-    .maxDuration(300)
-    .simultaneousWithExternalGesture(nativeScroll)
-    .onEnd(() => {
-      runOnJS(onToggleChrome)();
-    });
-  // pinch / double-tap / single-tap are mutually EXCLUSIVE so a pinch's two fingers
-  // can't be misread as a double-tap and randomly zoom all the way; pan runs alongside.
-  const gesture = Gesture.Simultaneous(pan, Gesture.Exclusive(pinch, doubleTap, singleTap));
 
   // Auto-advance when the reader scrolls to the very end (where the sentinel sits).
   // Gated on the content actually being scrollable, so a short chapter that fits on
@@ -407,22 +397,16 @@ function WebtoonPagedRow({
   testID: string;
 }) {
   const [failed, setFailed] = useState(false);
-  const { pinch, doubleTap, pan, animatedStyle, zoomed } = useZoomable({
+  // Whole zoom gesture + the chrome-toggle single tap, composed by the shared hook
+  // (the chrome toggle ignores the tap's x). Same primitive the paged reader uses.
+  const { gesture, animatedStyle } = useZoomable({
     width,
     height,
     enabled: !failed,
     onZoomChange,
+    onSingleTap: onToggleChrome,
+    singleTapEnabled: !failed,
   });
-  const singleTap = Gesture.Tap()
-    .enabled(!zoomed && !failed)
-    .numberOfTaps(1)
-    .maxDuration(300)
-    .onEnd(() => {
-      runOnJS(onToggleChrome)();
-    });
-  // See WebtoonContinuous: pinch/double-tap/single-tap are mutually exclusive so a
-  // pinch can't be misread as a double-tap; pan runs alongside whichever wins.
-  const gesture = Gesture.Simultaneous(pan, Gesture.Exclusive(pinch, doubleTap, singleTap));
 
   return (
     <GestureDetector gesture={gesture}>

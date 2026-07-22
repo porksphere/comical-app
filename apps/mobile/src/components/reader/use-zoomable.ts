@@ -1,18 +1,20 @@
 import { useCallback, useState } from 'react';
-import { Gesture } from 'react-native-gesture-handler';
+import { Gesture, type GestureType } from 'react-native-gesture-handler';
 import { runOnJS, useAnimatedStyle, useSharedValue, withDecay, withTiming } from 'react-native-reanimated';
 
-// Shared NATIVE zoom primitive for both readers (a paged page, and the webtoon
-// viewport). It owns the pieces the two share verbatim:
+// Shared NATIVE zoom primitive for both readers (a paged page, and each webtoon
+// page). It owns EVERYTHING the two share — not just the math but the whole gesture
+// wiring, so there's one place that defines how zoom behaves:
 //   - pinch-to-zoom, anchored on the focal point, clamped to a width×height box,
-//     with a fast-pinch commit so a lift that momentarily dips the scale under
-//     ZOOM_EPSILON doesn't rubber-band back to 1×;
+//     ignoring finger-lift frames so the scale doesn't jump/rubber-band on release;
 //   - double-tap to toggle between fit and a fixed zoom, centred on the tap;
-//   - one-finger pan (only while zoomed) that flings with momentum on release.
-// The consumer composes the returned gestures with its OWN (tap zones / chrome
-// toggle / content-pan / list scroll) and applies `animatedStyle` to whichever
-// view should scale. Web readers have their own pointer-event implementations —
-// this is native-only (reanimated + gesture-handler).
+//   - one-finger pan (only while zoomed) that flings with momentum on release;
+//   - an optional single tap (page-turn zones / chrome toggle), and the mutually
+//     EXCLUSIVE composition of pinch vs the taps (so a pinch is never misread as a
+//     double-tap), with pan/extras running Simultaneous alongside.
+// The consumer just applies the returned `gesture` to a GestureDetector and
+// `animatedStyle` to the view that should scale. Web readers have their own
+// pointer-event implementations — this is native-only (reanimated + gesture-handler).
 
 const MAX_SCALE = 4;
 // At/below this we treat the content as "not zoomed" and snap back to a clean 1×.
@@ -30,6 +32,10 @@ export function useZoomable({
   height,
   enabled = true,
   onZoomChange,
+  onSingleTap,
+  singleTapEnabled = true,
+  simultaneousExternal,
+  extraSimultaneous,
 }: {
   width: number;
   height: number;
@@ -39,6 +45,19 @@ export function useZoomable({
   /** Fires when the zoomed state flips — the reader disables its swipe-away /
    *  scroll while zoomed so a one-finger drag pans instead. */
   onZoomChange?: (zoomed: boolean) => void;
+  /** Optional single tap, dispatched with the tap's x within the view (page-turn
+   *  zones use it; a chrome toggle ignores it). Composed Exclusive with the
+   *  double-tap so it waits out a possible second tap. Omit for no single tap. */
+  onSingleTap?: (x: number) => void;
+  /** Gate for the single tap, independent of `enabled` (e.g. a page's tap zones
+   *  stay live on an overflowing fit-width page where pinch is off). */
+  singleTapEnabled?: boolean;
+  /** An external gesture (e.g. a list's `Gesture.Native()` scroll) the zoom
+   *  gestures must run SIMULTANEOUSLY with, or the scroll would swallow them. */
+  simultaneousExternal?: GestureType;
+  /** Extra gestures composed Simultaneous with the zoom gestures (e.g. a page's
+   *  fit-width content-pan). */
+  extraSimultaneous?: GestureType[];
 }) {
   const scale = useSharedValue(1);
   const tx = useSharedValue(0);
@@ -172,9 +191,38 @@ export function useZoomable({
       ty.set(withDecay({ velocity: e.velocityY, clamp: [-limitY, limitY], deceleration: 0.994 }));
     });
 
+  // Optional single tap — page-turn zones (x-based) or a chrome toggle (ignores x).
+  // Off while zoomed (a tap there does nothing) and per the consumer's own gate.
+  const singleTap = onSingleTap
+    ? Gesture.Tap()
+        .enabled(!zoomed && singleTapEnabled)
+        .numberOfTaps(1)
+        .maxDuration(300)
+        .onEnd((e) => {
+          runOnJS(onSingleTap)(e.x);
+        })
+    : null;
+
+  // A list's native scroll (passed in) would otherwise swallow the pinch/taps on a
+  // detector wrapping it — let them run alongside it.
+  if (simultaneousExternal) {
+    pinch.simultaneousWithExternalGesture(simultaneousExternal);
+    pan.simultaneousWithExternalGesture(simultaneousExternal);
+    doubleTap.simultaneousWithExternalGesture(simultaneousExternal);
+    singleTap?.simultaneousWithExternalGesture(simultaneousExternal);
+  }
+
+  // pinch / double-tap / single-tap are mutually EXCLUSIVE (pinch has priority, so a
+  // pinch's two fingers can't be misread as a double-tap and randomly zoom all the
+  // way); pan and any extras (a page's content-pan) run Simultaneous alongside.
+  const exclusive = singleTap
+    ? Gesture.Exclusive(pinch, doubleTap, singleTap)
+    : Gesture.Exclusive(pinch, doubleTap);
+  const gesture = Gesture.Simultaneous(pan, ...(extraSimultaneous ?? []), exclusive);
+
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: tx.value }, { translateY: ty.value }, { scale: scale.value }],
   }));
 
-  return { pinch, doubleTap, pan, animatedStyle, zoomed, reset };
+  return { gesture, animatedStyle, zoomed, reset };
 }
