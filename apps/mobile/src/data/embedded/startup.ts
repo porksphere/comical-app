@@ -51,10 +51,9 @@ import { expoCoversBlobStore } from './covers-store';
 import { AsyncStorageLibraryStore } from './library-store';
 import { getResolvedModeSync, whenEmbeddedPrefLoaded } from './preference';
 import { applyImageCacheConfig } from '../image-cache';
-import { installedStore, savedRegistryStore } from './stores';
+import { installedStore, installedTrackerStore, savedRegistryStore } from './stores';
 import { asyncStorageSettings, asyncStorageTrackerSettings } from './settings-store';
 import { embeddedOAuthCallbackUrl } from './oauth-callback';
-import trackerBundles from './tracker-bundles.generated.json';
 
 /** The fixed pieces host-rn needs; the stores supply the (user-managed) registries + installs. */
 function bootstrapConfig(): EmbeddedBootstrapConfig {
@@ -85,13 +84,11 @@ function bootstrapConfig(): EmbeddedBootstrapConfig {
     // Guaranteed-offline library covers: captured into this device store on library-add/browse and
     // served back by the reused router at /library/entries/:b/:s/cover.
     covers: { blobs: expoCoversBlobStore, fetchPage: devicePageFetcher },
-    // On-device tracker loading (v1 install model: bundled into the app build at prebuild time via
-    // `build-tracker-bundles.mjs`, not registry-installed like bridges — see `TrackerBundles`'s doc
-    // comment in host-rn). `trackerBundles` is `{}` when the sibling comical-trackers repo wasn't
-    // built for this app build; an empty map still mounts `/trackers*` cleanly, it just lists none
-    // (same "start empty" shape as an absent registry) — also needs a native tracker runtime to be
-    // registered (see `setNativeTrackerRuntime` below), which is null until a real device build.
-    trackerBundles,
+    // On-device tracker persistence — trackers are registry-installed exactly like bridges, not a
+    // static app-bundled map (mirrors `installed`/`savedRegistryStore` above). Also needs a native
+    // tracker runtime to be registered (see `setNativeTrackerRuntime` below), which is null until a
+    // real device build.
+    installedTrackers: installedTrackerStore,
     trackerSettings: asyncStorageTrackerSettings,
     // There's no real HTTP server on-device to redirect an OAuth provider back to — see
     // `EmbeddedBootstrapConfig.oauthCallbackUrl`'s doc comment in host-rn for how the reused router
