@@ -300,14 +300,32 @@ function WebtoonRow({
  * variant this needs no `onScrollToIndexFailed` retry dance, and page
  * tracking is via `onMomentumScrollEnd` (matching the *native Paged* reader's
  * own technique — more precise than viewability for a hard-snapping list).
- * No pinch/zoom here: the spec only asks for one-page-at-a-time snapping.
+ *
+ * Because each row is exactly one non-scrolling viewport, zoom lives INSIDE the
+ * row (like the horizontal paged reader's `ZoomablePage`) rather than wrapping
+ * the list — the proven arrangement where a pinch/tap actually reaches the
+ * gesture instead of being eaten by the scroll. While any page is zoomed the
+ * list's paging is frozen so a one-finger drag pans instead of turning.
  */
 const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPaged(
-  { pages, width, height, initialPage, onPageChange, onToggleChrome, onEndReached },
+  { pages, width, height, initialPage, onPageChange, onToggleChrome, onZoomChange, onEndReached },
   ref,
 ) {
   const listRef = useRef<FlatList<string>>(null);
   const n = pages.length;
+
+  // Whichever page is on screen owns the zoom (only one is ever interacted with
+  // in a hard-snapping list); its state gates the list's scroll and the reader's
+  // swipe-away, exactly like the horizontal paged reader.
+  const [zoomed, setZoomed] = useState(false);
+  const handleZoom = useCallback(
+    (z: boolean) => {
+      setZoomed(z);
+      onZoomChange?.(z);
+    },
+    [onZoomChange],
+  );
+  useEffect(() => () => onZoomChange?.(false), [onZoomChange]);
 
   useImperativeHandle(
     ref,
@@ -340,6 +358,8 @@ const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPage
       data={pages}
       keyExtractor={(uri, i) => `${uri}:${i}`}
       pagingEnabled
+      // Frozen while a page is zoomed so its own pan owns one-finger drags.
+      scrollEnabled={!zoomed}
       showsVerticalScrollIndicator={false}
       initialScrollIndex={Math.max(0, Math.min(n - 1, initialPage))}
       getItemLayout={getItemLayout}
@@ -354,6 +374,7 @@ const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPage
           width={width}
           height={height}
           onToggleChrome={onToggleChrome}
+          onZoomChange={handleZoom}
           testID={testId('reader.page.tap', index + 1)}
         />
       )}
@@ -361,14 +382,18 @@ const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPage
   );
 });
 
-/** One paginated-webtoon row: fixed to exactly one viewport, whole page
- *  visible (letterboxed), same failed-state tap-suspension as `WebtoonRow`. */
+/** One paginated-webtoon row: fixed to exactly one viewport, whole page visible
+ *  (letterboxed), and independently zoomable via the shared `useZoomable` (pinch
+ *  / double-tap / pan-with-momentum). The gesture lives on the row itself — a
+ *  non-scrolling cell — so it fires reliably. A single tap toggles chrome
+ *  (Exclusive with the double-tap). Suspended while the page shows its Retry state. */
 function WebtoonPagedRow({
   uri,
   index,
   width,
   height,
   onToggleChrome,
+  onZoomChange,
   testID,
 }: {
   uri: string;
@@ -376,14 +401,35 @@ function WebtoonPagedRow({
   width: number;
   height: number;
   onToggleChrome: () => void;
+  onZoomChange: (zoomed: boolean) => void;
   testID: string;
 }) {
   const [failed, setFailed] = useState(false);
+  const { pinch, doubleTap, pan, animatedStyle, zoomed } = useZoomable({
+    width,
+    height,
+    enabled: !failed,
+    onZoomChange,
+  });
+  const singleTap = Gesture.Tap()
+    .enabled(!zoomed && !failed)
+    .numberOfTaps(1)
+    .maxDuration(300)
+    .onEnd(() => {
+      runOnJS(onToggleChrome)();
+    });
+  const gesture = Gesture.Simultaneous(pinch, pan, Gesture.Exclusive(doubleTap, singleTap));
+
   return (
-    <View style={{ width, height }}>
-      <ReaderPage uri={uri} page={index + 1} fit="contain" width={width} height={height} onFailedChange={setFailed} />
-      {!failed && <Pressable testID={testID} style={StyleSheet.absoluteFill} onPress={onToggleChrome} />}
-    </View>
+    <GestureDetector gesture={gesture}>
+      <View style={{ width, height, overflow: 'hidden' }}>
+        <Animated.View style={[{ width, height }, animatedStyle]}>
+          <ReaderPage uri={uri} page={index + 1} fit="contain" width={width} height={height} onFailedChange={setFailed} />
+        </Animated.View>
+        {/* Inert marker for the reader.page.tap.* testID (asserted by Maestro). */}
+        {!failed && <View testID={testID} style={StyleSheet.absoluteFill} pointerEvents="none" />}
+      </View>
+    </GestureDetector>
   );
 }
 
