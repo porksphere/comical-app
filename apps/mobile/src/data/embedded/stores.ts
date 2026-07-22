@@ -1,10 +1,13 @@
 /**
- * The app's AsyncStorage-backed persistence for the on-device registry model — the two stores
- * `@comical/host-rn`'s `EmbeddedRegistryProvider` / `ManifestBundleSource` read and write:
+ * The app's AsyncStorage-backed persistence for the on-device registry model — the stores
+ * `@comical/host-rn`'s `EmbeddedRegistryProvider` / `ManifestBundleSource` / `ManifestTrackerBundleSource`
+ * read and write:
  *
- *   - `savedRegistryStore`  — the bridge registries the user has added (browsable catalogs).
- *   - `installedStore`      — the *installed* bridges (pinned records). Only these load; adding a
- *                             registry no longer activates all its bridges.
+ *   - `savedRegistryStore`   — the bridge registries the user has added (browsable catalogs).
+ *   - `installedStore`       — the *installed* bridges (pinned records). Only these load; adding a
+ *                              registry no longer activates all its bridges.
+ *   - `installedTrackerStore` — the *installed* trackers (pinned records). Trackers are
+ *                              registry-installed exactly like bridges, not a static app-bundled map.
  *
  * Published builds start empty. For local dev, `EXPO_PUBLIC_COMICAL_REGISTRY` (a gitignored
  * `.env.local` value) pre-*adds* that registry so you can browse and install from it — but nothing is
@@ -15,10 +18,17 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { registryDisplayName, resolveRegistryUrl } from '@comical/registry/url';
 import type { SavedRegistry } from '@comical/registry/schema';
-import type { InstalledBridgeRecord, InstalledStore, SavedRegistryStore } from '@comical/host-rn';
+import type {
+  InstalledBridgeRecord,
+  InstalledStore,
+  InstalledTrackerRecord,
+  InstalledTrackerStore,
+  SavedRegistryStore,
+} from '@comical/host-rn';
 
 const REGISTRIES_KEY = 'comical:embedded:registries';
 const INSTALLED_KEY = 'comical:embedded:installed';
+const INSTALLED_TRACKERS_KEY = 'comical:embedded:installed-trackers';
 
 /** Dev-only: pre-add the configured registry (browsable), without installing any of its bridges. */
 const ENV_REGISTRY = process.env.EXPO_PUBLIC_COMICAL_REGISTRY;
@@ -91,5 +101,11 @@ export const savedRegistryStore: SavedRegistryStore = new AsyncKeyedStore<SavedR
 export const installedStore: InstalledStore = new AsyncKeyedStore<InstalledBridgeRecord>(
   INSTALLED_KEY,
   (b) => b.id,
+  [],
+);
+
+export const installedTrackerStore: InstalledTrackerStore = new AsyncKeyedStore<InstalledTrackerRecord>(
+  INSTALLED_TRACKERS_KEY,
+  (t) => t.id,
   [],
 );

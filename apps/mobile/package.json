@@ -68,7 +68,6 @@
     "run:android": "expo run:android",
     "run:ios": "expo run:ios",
     "build:web": "expo export --platform web",
-    "build:tracker-bundles": "node scripts/build-tracker-bundles.mjs",
     "lint": "expo lint",
     "lint:testids": "eslint --format json \"src/**/*.{ts,tsx}\" | node scripts/assert-testids.mjs",
     "typecheck": "tsc --noEmit",
