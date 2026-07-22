@@ -10,8 +10,11 @@ import {
   type NativeSyntheticEvent,
   type ViewToken,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { runOnJS } from 'react-native-reanimated';
 
 import { ReaderPage } from '@/components/reader/reader-page';
+import { useZoomable } from '@/components/reader/use-zoomable';
 import type { PageFit } from '@/hooks/use-reader-settings';
 import { testId } from '@/lib/test-id';
 
@@ -27,6 +30,9 @@ type Props = {
   initialPage: number;
   onPageChange: (index: number) => void;
   onToggleChrome: () => void;
+  /** Fires when the webtoon viewport's pinch-zoom flips — the reader disables its
+   *  swipe-away gesture while zoomed (a one-finger drag pans then). */
+  onZoomChange?: (zoomed: boolean) => void;
   /** Fires as the list nears its end. The caller still checks whether the
    *  current page is actually the last one before acting on it — a short
    *  chapter can otherwise fire this before it's been scrolled through. */
@@ -77,11 +83,35 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
  * vertical drag still scrolls).
  */
 const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function WebtoonContinuous(
-  { pages, width, initialPage, onPageChange, onToggleChrome, nextChapterName, onAdvance },
+  { pages, width, height, initialPage, onPageChange, onToggleChrome, onZoomChange, nextChapterName, onAdvance },
   ref,
 ) {
   const listRef = useRef<FlatList<string>>(null);
   const n = pages.length;
+
+  // Pinch / double-tap / pan-while-zoomed for the whole viewport — the same shared
+  // primitive the paged reader uses. Zooming scales the current on-screen strip and
+  // freezes the scroll (the FlatList is disabled while zoomed, below) so a one-finger
+  // drag pans the magnified view; unzoom to resume scrolling. The pan is bounded to
+  // the scaled viewport, which is exactly the content that was already on screen (and
+  // therefore rendered), so panning never exposes un-virtualized blanks.
+  const { pinch, doubleTap, pan, animatedStyle, zoomed } = useZoomable({ width, height, onZoomChange });
+
+  // Unmounting (switching reader modes, leaving the reader) must not leave the parent
+  // thinking a zoom is still active — that would keep its swipe-dismiss disabled.
+  useEffect(() => () => onZoomChange?.(false), [onZoomChange]);
+
+  // Chrome toggle rides a single-tap gesture (Exclusive with the double-tap, so it
+  // waits out a possible second tap that would zoom instead). Off while zoomed, where
+  // a lone tap does nothing. The per-row overlays are inert markers now (see WebtoonRow).
+  const singleTap = Gesture.Tap()
+    .enabled(!zoomed)
+    .numberOfTaps(1)
+    .maxDuration(300)
+    .onEnd(() => {
+      runOnJS(onToggleChrome)();
+    });
+  const gesture = Gesture.Simultaneous(pinch, pan, Gesture.Exclusive(doubleTap, singleTap));
 
   // Auto-advance when the reader scrolls to the very end (where the sentinel sits).
   // Gated on the content actually being scrollable, so a short chapter that fits on
@@ -181,63 +211,64 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
   }).current;
 
   return (
-    <FlatList
-      ref={listRef}
-      data={pages}
-      keyExtractor={(uri, i) => `${uri}:${i}`}
-      showsVerticalScrollIndicator={false}
-      onViewableItemsChanged={onViewable}
-      viewabilityConfig={viewabilityConfig}
-      getItemLayout={getItemLayout}
-      onScroll={onScroll}
-      scrollEventThrottle={16}
-      onScrollToIndexFailed={(info) => {
-        const offset = offsetsRef.current[info.index] ?? info.averageItemLength * info.index;
-        listRef.current?.scrollToOffset({ offset, animated: false });
-        setTimeout(() => {
-          listRef.current?.scrollToIndex({ index: info.index, animated: false });
-        }, 60);
-      }}
-      ListFooterComponent={
-        nextChapterName ? <ChapterSentinel name={nextChapterName} onPress={onAdvance} /> : null
-      }
-      renderItem={({ item, index }) => (
-        <WebtoonRow
-          uri={item}
-          index={index}
-          width={width}
-          onRowLayout={onRowLayout}
-          onToggleChrome={onToggleChrome}
-          testID={testId('reader.page.tap', index + 1)}
+    <GestureDetector gesture={gesture}>
+      <Animated.View style={[{ width, height, overflow: 'hidden' }, animatedStyle]}>
+        <FlatList
+          ref={listRef}
+          data={pages}
+          keyExtractor={(uri, i) => `${uri}:${i}`}
+          // Frozen while zoomed so the pan gesture owns one-finger drags; scrolling
+          // resumes the instant it's back at 1×.
+          scrollEnabled={!zoomed}
+          showsVerticalScrollIndicator={false}
+          onViewableItemsChanged={onViewable}
+          viewabilityConfig={viewabilityConfig}
+          getItemLayout={getItemLayout}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          onScrollToIndexFailed={(info) => {
+            const offset = offsetsRef.current[info.index] ?? info.averageItemLength * info.index;
+            listRef.current?.scrollToOffset({ offset, animated: false });
+            setTimeout(() => {
+              listRef.current?.scrollToIndex({ index: info.index, animated: false });
+            }, 60);
+          }}
+          ListFooterComponent={
+            nextChapterName ? <ChapterSentinel name={nextChapterName} onPress={onAdvance} /> : null
+          }
+          renderItem={({ item, index }) => (
+            <WebtoonRow uri={item} index={index} width={width} onRowLayout={onRowLayout} testID={testId('reader.page.tap', index + 1)} />
+          )}
         />
-      )}
-    />
+      </Animated.View>
+    </GestureDetector>
   );
 });
 
-/** One webtoon row. Tracks its own failed state so a failed page's overlay
- *  (which would otherwise swallow every tap, including the Retry chip) is
- *  suspended while that page is showing its Retry state. */
+/** One webtoon row. The chrome-toggle / pinch / double-tap gestures now live on the
+ *  list's container (see WebtoonContinuous), so the per-row overlay is just an inert
+ *  marker: it carries the `reader.page.tap.*` testID (asserted by the webtoon Maestro
+ *  flow) and `pointerEvents: none` so it never claims a touch away from those
+ *  gestures or from a failed page's own Retry chip. Suspended while the page is in
+ *  its failed state, matching the previous behaviour. */
 function WebtoonRow({
   uri,
   index,
   width,
   onRowLayout,
-  onToggleChrome,
   testID,
 }: {
   uri: string;
   index: number;
   width: number;
   onRowLayout: (index: number, height: number) => void;
-  onToggleChrome: () => void;
   testID: string;
 }) {
   const [failed, setFailed] = useState(false);
   return (
     <View onLayout={(e: LayoutChangeEvent) => onRowLayout(index, e.nativeEvent.layout.height)}>
       <ReaderPage uri={uri} page={index + 1} fit="width" width={width} onFailedChange={setFailed} />
-      {!failed && <Pressable testID={testID} style={StyleSheet.absoluteFill} onPress={onToggleChrome} />}
+      {!failed && <View testID={testID} style={StyleSheet.absoluteFill} pointerEvents="none" />}
     </View>
   );
 }

@@ -128,9 +128,9 @@ export default function ReaderScreen() {
   const [settings] = useReaderSettings();
   const [currentPage, setCurrentPage] = useState(startIndex);
   const [chromeVisible, setChromeVisible] = useState(true);
-  // Whether the visible paged-reader page is pinch-zoomed — suspends the
-  // swipe-away gesture so a one-finger drag pans the zoomed image instead.
-  const [pageZoomed, setPageZoomed] = useState(false);
+  // Whether the reader is pinch-zoomed (paged page OR webtoon viewport) — suspends
+  // the swipe-away gesture so a one-finger drag pans the zoomed image instead.
+  const [readerZoomed, setReaderZoomed] = useState(false);
 
   // Swipe-away dismissal progress (0 at rest → 1 fully swiped off), written on
   // the UI thread by SwipeDismiss. The reader's own dark backdrop and its chrome
@@ -485,7 +485,7 @@ export default function ReaderScreen() {
             axis={settings.mode === 'paged' ? 'vertical' : 'horizontal'}
             width={width}
             height={height}
-            enabled={settings.mode !== 'paged' || !pageZoomed}
+            enabled={!readerZoomed}
             onDismiss={() => router.back()}
             progress={dismissProgress}
             onSwipeStart={beginSwipeGuard}
@@ -509,7 +509,7 @@ export default function ReaderScreen() {
                 onPrev={turnPrev}
                 onNext={turnNext}
                 onToggleChrome={toggleChrome}
-                onZoomChange={setPageZoomed}
+                onZoomChange={setReaderZoomed}
               />
             ) : (
               <WebtoonReader
@@ -523,6 +523,7 @@ export default function ReaderScreen() {
                 initialPage={startIndex}
                 onPageChange={setCurrent}
                 onToggleChrome={toggleChrome}
+                onZoomChange={setReaderZoomed}
                 // The continuous variant advances via its end-of-chapter sentinel
                 // (scroll-to-end or tap). The fit-page variant, whose page tracking
                 // is exact, still uses the reliable `atLastPage` end-reached advance.
