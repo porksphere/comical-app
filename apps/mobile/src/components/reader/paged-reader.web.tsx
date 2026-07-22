@@ -94,6 +94,10 @@ const DIR_DEADZONE = 8; // px
 // in reader-zoom.ts — shared with the webtoon reader.)
 const FLING_FRICTION = 0.94;
 const MIN_FLING_V = 0.02;
+// A pinch that reached at least this scale counts as a deliberate zoom-in, so a
+// final frame that dips back under ZOOM_EPSILON on lift (common on a fast pinch)
+// commits the zoom instead of rubber-banding to 1×.
+const PINCH_COMMIT = 1.2;
 
 type Mode = 'idle' | 'swipe' | 'pan' | 'pinch' | 'content-pan';
 
@@ -188,6 +192,10 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     panLastT: 0,
     panVX: 0,
     panVY: 0,
+    // Whether this pan may fling on release. Only a STANDALONE pan (one finger on an
+    // already-zoomed page) coasts; a pan spun up from a pinch's leftover finger must
+    // not, so releasing a pinch never drifts the image.
+    momentumOk: false,
     // pinch
     startDist: 0,
     focalStartX: 0,
@@ -195,6 +203,9 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     baseScale: 1,
     basePinchTx: 0,
     basePinchTy: 0,
+    // Largest scale reached during the current pinch — lets the release tell a
+    // real zoom-in (whose last frame may dip on lift) from a tiny/settled pinch.
+    pinchMaxScale: 1,
   }).current;
 
   const writeTrack = useCallback(
@@ -394,6 +405,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     gesture.focalStartX = mid.x;
     gesture.focalStartY = mid.y;
     gesture.baseScale = zoom.current.scale;
+    gesture.pinchMaxScale = zoom.current.scale;
     gesture.basePinchTx = zoom.current.tx;
     gesture.basePinchTy = zoom.current.ty;
     // We're zooming, not turning — drop any in-progress swipe offset.
@@ -401,8 +413,10 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   }, [firstTwo, gesture, writeTrack, zoom]);
 
   const beginPan = useCallback(
-    (p: Point) => {
+    (p: Point, momentumOk: boolean) => {
       gesture.mode = 'pan';
+      // Only a standalone pan (one finger on an already-zoomed page) may fling.
+      gesture.momentumOk = momentumOk;
       gesture.panStartX = p.x;
       gesture.panStartY = p.y;
       gesture.panBaseTx = zoom.current.tx;
@@ -451,7 +465,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       gesture.moved = false;
       gesture.dirDecided = false;
       if (zoomedRef.current) {
-        beginPan(p);
+        beginPan(p, true); // standalone pan on a zoomed page — momentum allowed
       } else {
         gesture.mode = 'swipe';
         gesture.startX = p.x;
@@ -478,6 +492,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         const mid = midpoint(a, b);
         const factor = distance(a, b) / gesture.startDist;
         const nextScale = clamp(gesture.baseScale * factor, 1, MAX_SCALE);
+        if (nextScale > gesture.pinchMaxScale) gesture.pinchMaxScale = nextScale;
         const anchorX = (gesture.focalStartX - cx - gesture.basePinchTx) / gesture.baseScale;
         const anchorY = (gesture.focalStartY - cy - gesture.basePinchTy) / gesture.baseScale;
         const limitX = ((nextScale - 1) * width) / 2;
@@ -558,13 +573,35 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   );
 
   const finalizePinch = useCallback(() => {
-    if (zoom.current.scale <= ZOOM_EPSILON) {
-      resetZoom(true);
-    } else if (!zoomedRef.current) {
+    if (zoom.current.scale > ZOOM_EPSILON) {
+      // Ended clearly zoomed — keep it.
+      if (!zoomedRef.current) {
+        zoomedRef.current = true;
+        setZoomed(true);
+      }
+      return;
+    }
+    // Ended at ~1×. A deliberate zoom-in whose LAST frame dipped on lift (fingers
+    // converging as they leave the glass) would rubber-band to 1× here — so if the
+    // pinch STARTED from ~1× and actually reached a real zoom (pinchMaxScale), commit
+    // at that peak instead. A pinch that started already-zoomed (a deliberate pinch
+    // back down) still honours the return to 1×.
+    if (gesture.baseScale <= ZOOM_EPSILON && gesture.pinchMaxScale > PINCH_COMMIT) {
+      const target = clamp(gesture.pinchMaxScale, 1, MAX_SCALE);
+      const limitX = ((target - 1) * width) / 2;
+      const limitY = ((target - 1) * height) / 2;
+      zoom.current = {
+        scale: target,
+        tx: clamp(zoom.current.tx, -limitX, limitX),
+        ty: clamp(zoom.current.ty, -limitY, limitY),
+      };
+      writeZoom(true);
       zoomedRef.current = true;
       setZoomed(true);
+      return;
     }
-  }, [resetZoom, zoom]);
+    resetZoom(true);
+  }, [resetZoom, zoom, gesture, width, height, writeZoom]);
 
   const handleTap = useCallback(
     (x: number) => {
@@ -668,9 +705,10 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       if (wasMode === 'pinch') {
         finalizePinch();
         if (gesture.pointers.size === 1) {
-          // One finger left after a pinch: pan with it if still zoomed.
+          // One finger left after a pinch: pan with it if still zoomed — but NOT with
+          // momentum (this pan is a pinch side-effect, not a standalone fling).
           const [p] = [...gesture.pointers.values()];
-          if (zoomedRef.current) beginPan(p);
+          if (zoomedRef.current) beginPan(p, false);
           else gesture.mode = 'idle';
         } else if (gesture.pointers.size === 0) {
           gesture.mode = 'idle';
@@ -684,12 +722,12 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         finalizeSwipe();
       } else if (wasMode === 'pan') {
         // A zoomed one-finger interaction: a stationary press is a tap (→ double-tap
-        // zoom-out); a genuine drag flings on with momentum. Only a drag that
-        // actually `moved` flings — otherwise a near-still release (common right
-        // after a pinch) would coast off on stray velocity.
+        // zoom-out); a genuine standalone drag flings on with momentum. Only a
+        // momentum-eligible drag that actually `moved` flings — a pinch's leftover
+        // finger (momentumOk=false) never coasts, so releasing a pinch can't drift.
         const dur = performance.now() - gesture.downT;
         if (!gesture.moved && dur <= TAP_MAX_MS) handleTapGesture(gesture.downX, gesture.downY);
-        else if (gesture.moved) startPanInertia();
+        else if (gesture.moved && gesture.momentumOk) startPanInertia();
       }
       gesture.mode = 'idle';
     },
