@@ -1,0 +1,46 @@
+# The representative real-user journey: Browse -> open a series -> open a chapter
+# -> land in the reader. Every step selects by id, so a card/chapter is chosen by
+# its stable domain id, never by pixel position or display text.
+#
+# Selectors (confirmed against source — see ../web/browse-to-reader.yaml for why the web
+# copy anchors differently):
+#   - series cards:  `series-card.<seriesId>`     (components/series-card.tsx)
+#   - series cover:  `series.cover`                (app/series.tsx)
+#   - chapter rows:  `series.chapter.<key>`        (components/series/chapters-section.tsx)
+#     NB: a chapter key like "1.5" slugs into extra dot-segments, so match the row
+#     prefix broadly and take the first hit rather than anchoring on segment count.
+#   - reader back:   `reader.toolbar.back`         (components/reader/reader-toolbar.tsx)
+appId: com.porksphere.comical
+---
+# Plain launchApp (default stopApp: true) — see mobile/smoke.yaml's comment: CI artifacts embed
+# the JS bundle, so a full clean restart is correct here (unlike .maestro-local's dev-client
+# reconnect flows, which use stopApp: false).
+- launchApp
+
+- tapOn:
+    id: "tab.browse"
+
+# First series card. Maestro taps the first match when several resolve.
+- tapOn:
+    id: "series-card\\..*"
+
+# Series screen rendered.
+- assertVisible:
+    id: "series.cover"
+
+# Chapter rows (`series.chapter.<key>`, e.g. series.chapter.n-1) live below the fold,
+# so scroll them into view first. `series.chapter.*` also matches child views
+# (…download-state, …versions); the row itself is the tappable Pressable — take the
+# first match.
+- scrollUntilVisible:
+    element:
+      id: "series\\.chapter\\..*"
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: "series\\.chapter\\..*"
+    index: 0
+
+# Reader is up.
+- assertVisible:
+    id: "reader.toolbar.back"

@@ -85,17 +85,25 @@ matchable `id:` field to the aria-label text, not `data-testid` — `data-testid
 no competing `aria-label` exists on that node. Android/iOS are unaffected (they map
 `testID`/`accessibilityIdentifier` directly, no aria-label involved).
 
-In this app, that collision hits icon-only controls that set `accessibilityLabel` for
-accessibility (there's no visible label text to fall back on) — the tab bar
-(`app-tabs.tsx`'s `TabButton`) and Settings' category rows are the two known cases. `web/smoke.yaml`
-selects those by their aria-label text (`id: "Browse"`, `id: "General"`, …) instead of their
-`tab.<route>` / `settings.category.<name>` testID, while `mobile/smoke.yaml` uses the real testID
-for the same elements. Everything else (`browse\..*`, `library\..*`, `screen-title.*`) has no
-competing `accessibilityLabel`, so the same testID-shaped selector works unchanged on both. If you
-add a new flow and a web selector mysteriously can't find an element that's visibly on screen,
-suspect this before anything else — dump the failing run's debug hierarchy JSON
+This hits every `Pressable` in the codebase that sets `accessibilityRole="button"` +
+`accessibilityLabel` alongside its `testID` — a common, deliberate a11y pattern here, **not**
+limited to icon-only controls. Confirmed cases so far: the tab bar (`app-tabs.tsx`'s `TabButton`),
+Settings' category rows, `series.cover` (app/series.tsx — note its label is the dynamic
+`primaryLabel`, not a fixed string, so it can't be selected by label text at all; anchor on
+`series.action.read`/`ActionButton` instead, which has no competing label), `reader.toolbar.back`
+(label `"Close reader"`), `browse.search-icon`/`browse.search-pill` (both label `"Search"` — same
+text either way, so one selector covers whichever layout renders), and `search.field.clear` (label
+`"Clear search"`). `mobile/*.yaml` selects all of these by testID (Android/iOS have no aria-label
+involved); the `web/*.yaml` copies for the same flows select by the label text instead — see
+`browse-to-reader.yaml`/`search.yaml` for worked examples, and `web/smoke.yaml` for the tab
+bar/Settings case. Plain testIDs with no `accessibilityLabel` prop at all (`browse\..*`,
+`library\..*`, `screen-title.*`, `series\.chapter\..*`, `series.action.*`) are unaffected — same
+selector on both platforms.
+
+**Don't assume either way for a new selector** — grep the component for a co-located
+`accessibilityLabel` before writing a web flow, or dump the failing run's debug hierarchy JSON
 (`C:\Users\<you>\.maestro\tests\<timestamp>\commands-*.json` → `metadata.error.hierarchyRoot`) and
-check whether the element's `resource-id` is the label text rather than the testID.
+check whether the element's `resource-id` is label text rather than the testID.
 
 ## Running locally
 

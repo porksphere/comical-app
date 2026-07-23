@@ -1,0 +1,85 @@
+# Verifies the reader's swipe-away dismissal in WEBTOON (vertical) mode, where
+# the dismiss axis is HORIZONTAL (see components/reader/swipe-dismiss.tsx).
+# Switches the reader to Vertical via the in-reader settings sheet first.
+#
+# Self-contained (does its own Browse -> series -> chapter navigation, matching
+# browse-to-reader.yaml) rather than assuming it runs right after swipe-dismiss.yaml in the same
+# app session — CI flows each get a fresh `launchApp` cold start (see mobile/smoke.yaml's note),
+# so relying on where a prior flow left off doesn't hold. Still listed adjacent to
+# swipe-dismiss.yaml in each config's flowsOrder for readability, not because either depends on it.
+#
+# Mobile-only, same rationale as swipe-dismiss.yaml.
+appId: com.porksphere.comical
+---
+- launchApp
+
+- tapOn:
+    id: "tab.browse"
+
+- tapOn:
+    id: "series-card\\..*"
+
+- assertVisible:
+    id: "series.cover"
+
+- scrollUntilVisible:
+    element:
+      id: "series\\.chapter\\..*"
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: "series\\.chapter\\..*"
+    index: 0
+
+- assertVisible:
+    id: "reader.control.next"
+
+# Chrome is visible on entry — open the settings sheet and pick Vertical.
+- tapOn:
+    id: "reader.settings.open"
+- tapOn:
+    id: "reader.settings.direction.vertical"
+# Close the sheet by tapping the dimmed backdrop above it.
+- tapOn:
+    point: "50%, 8%"
+
+# Now in webtoon mode (webtoon rows, not the paged tap zones).
+- assertVisible:
+    id: "reader\\.page\\.tap\\..*"
+
+# Small, slow horizontal drag — must spring back, reader still open.
+- swipe:
+    start: 55%, 50%
+    end: 45%, 50%
+    duration: 1000
+- assertVisible:
+    id: "reader\\.page\\.tap\\..*"
+
+# Fast horizontal swipe — the page slides away and the reader closes.
+- swipe:
+    start: 80%, 50%
+    end: 15%, 50%
+    duration: 250
+
+# Back on the series screen (still scrolled to the chapter list).
+- assertNotVisible:
+    id: "reader\\.page\\.tap\\..*"
+- assertVisible:
+    id: "series\\.chapter\\..*"
+
+# Reset the persisted reader direction back to paged (the app default) before finishing — the
+# mode switch above is a real AsyncStorage write that outlives this flow (launchApp restarts the
+# process, not app storage), and other flows added later (e.g. reader-navigation.yaml) assume the
+# default paged mode. Reopen, switch back, exit with a plain back tap (no need to re-exercise the
+# swipe-dismiss gesture itself, already covered above).
+- tapOn:
+    id: "series\\.chapter\\..*"
+    index: 0
+- tapOn:
+    id: "reader.settings.open"
+- tapOn:
+    id: "reader.settings.direction.paged"
+- tapOn:
+    point: "50%, 8%"
+- tapOn:
+    id: "reader.toolbar.back"

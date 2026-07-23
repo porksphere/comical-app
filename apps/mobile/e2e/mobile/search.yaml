@@ -1,0 +1,30 @@
+# Search flow: open search from Browse, type a query, confirm results render.
+# Exercises text input by id (inputText into the search field) — another action
+# that's unreliable with coordinate taps.
+#
+# Selectors (see app/(tabs)/index.tsx and app/search.tsx + components/search-field.tsx):
+#   - open search:  `browse.search-icon`  (browse.search-pill also opens /search, on wide layouts)
+#   - field input:  `search.field.input`   (SearchField puts testID on the inner
+#                   TextInput as `${testID}.input`; the clear button is `${testID}.clear`)
+appId: com.porksphere.comical
+---
+- launchApp
+
+- tapOn:
+    id: "tab.browse"
+
+- tapOn:
+    id: "browse.search-icon"
+
+# The Search screen autofocuses the field after the push settles; wait for the input
+# to exist, then type into it.
+- extendedWaitUntil:
+    visible:
+      id: "search.field.input"
+    timeout: 10000
+- inputText: "one piece"
+
+# The clear (✕) button only renders once the field has text, so its presence proves
+# the query was entered — a data-independent assertion.
+- assertVisible:
+    id: "search.field.clear"

@@ -1,0 +1,54 @@
+# Verifies the reader's swipe-away dismissal (see components/reader/swipe-dismiss.tsx).
+# Default settings = paged (horizontal) mode, so the dismiss axis is VERTICAL:
+#   1. a small, slow vertical drag must NOT dismiss (below distance + flick thresholds),
+#   2. a big fast vertical swipe must slide the page away and close the reader.
+# Mobile-only: web/Chromium's pointer-based swipe simulation isn't verified to drive this
+# gesture-threshold logic faithfully — see ../README.md's "Gesture-only flows" ground rule.
+appId: com.porksphere.comical
+---
+- launchApp
+
+- tapOn:
+    id: "tab.browse"
+
+- tapOn:
+    id: "series-card\\..*"
+
+- assertVisible:
+    id: "series.cover"
+
+- scrollUntilVisible:
+    element:
+      id: "series\\.chapter\\..*"
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: "series\\.chapter\\..*"
+    index: 0
+
+- assertVisible:
+    id: "reader.toolbar.back"
+
+# Small, slow drag (~10% of the screen, well under the 25% distance and 900px/s
+# flick thresholds) — the page must spring back, reader still open. NB: assert on
+# the always-present tap zones, not the toolbar — chrome auto-hides after 3s.
+- swipe:
+    start: 50%, 55%
+    end: 50%, 45%
+    duration: 1000
+- assertVisible:
+    id: "reader.control.next"
+
+# Big fast swipe up — the page follows, fades, and the reader dismisses.
+- swipe:
+    start: 50%, 75%
+    end: 50%, 15%
+    duration: 250
+
+# Back on the series screen — assert on the chapter list, not `series.cover`:
+# the screen kept its scroll position from before entering the reader, so the
+# cover sits above the fold.
+- assertNotVisible:
+    id: "reader.control.next"
+- assertVisible:
+    id: "series\\.chapter\\..*"

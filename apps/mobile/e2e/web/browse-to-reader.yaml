@@ -1,0 +1,39 @@
+# Same journey as ../mobile/browse-to-reader.yaml (Browse -> series -> chapter -> reader), kept in
+# sync by hand — two of its selectors hit the web-only aria-label quirk (see ../README.md), so this
+# copy anchors on different (label-free) testIDs at those two points instead of skipping the checks:
+#
+#   - `series.cover`'s Pressable sets `accessibilityLabel={primaryLabel}` (app/series.tsx) — a
+#     DYNAMIC string (varies with resume/readLabel state), so it can't be matched by a fixed
+#     selector at all, aria-label or otherwise. Anchor on `series.action.read`
+#     (components/series/action-button.tsx's ActionButton — confirmed no competing
+#     accessibilityLabel) instead: same "series screen rendered" guarantee, stable selector.
+#   - `reader.toolbar.back` sets `accessibilityLabel="Close reader"` (a static string) — select by
+#     that label text instead of the testID.
+#
+# Everything else (series-card.*, series.chapter.*) has no competing accessibilityLabel — same
+# selectors as the mobile copy. The tab bar itself has the same quirk as smoke.yaml already
+# documents (icon-only, sets accessibilityLabel) — select "Browse", not tab.browse.
+url: http://localhost:4000/comical-app
+---
+- launchApp
+
+- tapOn:
+    id: "Browse"
+
+- tapOn:
+    id: "series-card\\..*"
+
+- assertVisible:
+    id: "series.action.read"
+
+- scrollUntilVisible:
+    element:
+      id: "series\\.chapter\\..*"
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: "series\\.chapter\\..*"
+    index: 0
+
+- assertVisible:
+    id: "Close reader"
