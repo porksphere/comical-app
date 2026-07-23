@@ -1,0 +1,117 @@
+# Settings tab: drill into every category and back out, asserting a stable landing element on
+# each pushed screen. Categories walked (9 of the 10 in settings.tsx): general, notifications,
+# bridges, trackers, registries, custom-pages, downloads, storage, diagnostics.
+#
+# `settings.category.developer` is deliberately SKIPPED: it's gated behind PROFILING_ENABLED
+# (src/lib/profiling.ts — true only in __DEV__ or a EXPO_PUBLIC_COMICAL_PROFILING=1 build), which
+# neither this repo's demo/CI builds nor local `expo export` set, so the row never renders here.
+#
+# Landing-element selectors (confirmed against source — each is the first unconditionally-rendered
+# element with a stable id on that screen, since a pushed screen's own TopBar title has no testID):
+#   - general:        settings.select.appearance   (settings-general.tsx's Appearance row)
+#   - notifications:  settings.toggle.check-for-new-chapters (settings-notifications.tsx)
+#   - bridges:        bridges.add                  (AddFab)
+#   - trackers:        trackers.install            (TopBarButton)
+#   - registries:      registries.add              (AddFab)
+#   - custom-pages:    custom-pages.add             (AddFab)
+#   - downloads:       downloads.select-toggle      (TopBar right slot)
+#   - storage:         "Cached images" row label, matched via Maestro's `text:` selector — the ONLY
+#     category with no testID/accessibilityLabel anywhere on the screen (storage.tsx), so `id:`
+#     (which only resolves testID / web aria-label, see the web copy's header comment) can't find
+#     anything here at all; `text:` matches rendered text directly regardless of accessibility
+#     metadata. NOT the "Image cache" SECTION TITLE above it, which also has
+#     textTransform:'uppercase' (settings-row.tsx's sectionTitle style) — confirmed on web to render/
+#     resolve as "IMAGE CACHE", a second reason to prefer "Cached images" (normal-case, no transform).
+#   - diagnostics:      diagnostics.share            (Pressable, plain text child, no accessibilityLabel)
+appId: com.porksphere.comical
+---
+- launchApp
+
+- tapOn:
+    id: "tab.settings"
+- assertVisible:
+    id: "screen-title.settings"
+
+# General
+- tapOn:
+    id: "settings.category.general"
+- takeScreenshot: general
+- assertVisible:
+    id: "settings.select.appearance"
+- tapOn:
+    id: "top-bar.back"
+
+# Notifications
+- tapOn:
+    id: "settings.category.notifications"
+- takeScreenshot: notifications
+- assertVisible:
+    id: "settings.toggle.check-for-new-chapters"
+- tapOn:
+    id: "top-bar.back"
+
+# Bridges
+- tapOn:
+    id: "settings.category.bridges"
+- takeScreenshot: bridges
+- assertVisible:
+    id: "bridges.add"
+- tapOn:
+    id: "top-bar.back"
+
+# Trackers
+- tapOn:
+    id: "settings.category.trackers"
+- takeScreenshot: trackers
+- assertVisible:
+    id: "trackers.install"
+- tapOn:
+    id: "top-bar.back"
+
+# Registries
+- tapOn:
+    id: "settings.category.registries"
+- takeScreenshot: registries
+- assertVisible:
+    id: "registries.add"
+- tapOn:
+    id: "top-bar.back"
+
+# Custom Pages
+- tapOn:
+    id: "settings.category.custom-pages"
+- takeScreenshot: custom-pages
+- assertVisible:
+    id: "custom-pages.add"
+- tapOn:
+    id: "top-bar.back"
+
+# Downloads
+- tapOn:
+    id: "settings.category.downloads"
+- takeScreenshot: downloads
+- assertVisible:
+    id: "downloads.select-toggle"
+- tapOn:
+    id: "top-bar.back"
+
+# Storage
+- tapOn:
+    id: "settings.category.storage"
+- takeScreenshot: storage
+- assertVisible:
+    text: "Cached images"
+- tapOn:
+    id: "top-bar.back"
+
+# Diagnostics
+- tapOn:
+    id: "settings.category.diagnostics"
+- takeScreenshot: diagnostics
+- assertVisible:
+    id: "diagnostics.share"
+- tapOn:
+    id: "top-bar.back"
+
+- assertVisible:
+    id: "screen-title.settings"
