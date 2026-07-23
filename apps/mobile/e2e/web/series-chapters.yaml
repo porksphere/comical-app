@@ -1,0 +1,60 @@
+# Same journey as ../mobile/series-chapters.yaml, kept in sync by hand. Several selectors hit
+# the web-only aria-label quirk (see ../README.md):
+#   - tab bar: "Browse", not tab.browse (same as smoke.yaml).
+#   - series.cover's accessibilityLabel is dynamic (see ../web/browse-to-reader.yaml's comment) —
+#     anchor on series.action.read instead, same as that flow.
+#   - series.chapters.tab.<id> sets accessibilityLabel=t.label ("All"/"Read"/"Unread") — select by
+#     that label text (chapters-section.tsx's Segmented/SegmentButton sets both testID and
+#     accessibilityLabel on the same Pressable).
+#   - series.chapters.sort.<id> sets accessibilityLabel=s.label ("Newest first"/"Oldest first") —
+#     same reason, select by label text.
+# series.chapter.*, series.chapters.expand-middle, and series.chapter-menu.<this|from-here> have no
+# competing accessibilityLabel — same selectors as mobile (confirmed against source: the expand
+# Pressable and context-menu.tsx's MenuActionRow both set testID only).
+#
+# series.tsx's chapter list is a LegendList-owned scroller (see ../README.md / memory on LegendList
+# web quirks), and empirically (confirmed via a scratch debug flow) Maestro-web's `scroll`/
+# `scrollUntilVisible` are no-ops against it — neither the tab/sort controls nor the chapter rows
+# ever need scrolling to reach anyway (all visible on launch on the Maestro-web viewport), except
+# `series.chapters.expand-middle`, which sits one row below the fold. That one step uses an explicit
+# `swipe` instead, which was confirmed (same debug flow) to scroll this screen correctly.
+url: http://localhost:4000/comical-app
+---
+- launchApp
+
+- tapOn:
+    id: "Browse"
+- tapOn:
+    id: "series-card\\..*"
+- assertVisible:
+    id: "series.action.read"
+
+# Tab filter
+- tapOn:
+    id: "Unread"
+- tapOn:
+    id: "All"
+
+# Sort toggle
+- tapOn:
+    id: "Oldest first"
+- tapOn:
+    id: "Newest first"
+
+# Expand the collapsed middle — one row below the fold; scrollUntilVisible is a no-op against
+# this LegendList-owned scroller on web (see the header comment), so swipe explicitly instead.
+- swipe:
+    start: 50%, 70%
+    end: 50%, 40%
+    duration: 600
+- tapOn:
+    id: "series.chapters.expand-middle"
+
+# Long-press a chapter row -> per-chapter download menu.
+- longPressOn:
+    id: "series\\.chapter\\..*"
+    index: 0
+- assertVisible:
+    id: "series.chapter-menu.this"
+- assertVisible:
+    id: "series.chapter-menu.from-here"
