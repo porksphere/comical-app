@@ -1,0 +1,10 @@
+# Cloudflare Worker config for the Sentry → GitHub relay. Deploy with `wrangler deploy` from this
+# directory; see README.md for the full setup runbook (secrets, Sentry integration, GitHub PAT).
+name = "comical-sentry-relay"
+main = "worker.js"
+compatibility_date = "2026-07-01"
+
+[vars]
+GITHUB_REPO = "porksphere/comical-app"
+# Minimum Sentry issue level that triggers an autofix run: debug|info|warning|error|fatal.
+MIN_LEVEL = "error"
