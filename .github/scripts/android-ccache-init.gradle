@@ -1,0 +1,25 @@
+// Wires ccache into every Android module's CMake external-native build, via the NDK CMake
+// toolchain's built-in ANDROID_CCACHE cache variable (see
+// https://developer.android.com/ndk/guides/cmake#ccache — the toolchain wraps the compiler
+// with the given ccache binary itself, no compiler-wrapper script needed).
+//
+// Applied globally via ~/.gradle/init.d/ (copied there by build-android-reusable.yml) so it
+// survives `expo prebuild` regenerating apps/mobile/android from scratch every run — it never
+// touches generated or node_modules files. Most Android modules have no CMake build at all
+// (plain Java/Kotlin); this is a no-op for those. The two that do, in this repo, are :app
+// (the RN/Hermes native template) and react-native-reanimated — both are wired the same way,
+// with zero per-module special-casing needed.
+def ccacheExe = System.getenv("CCACHE_EXE")
+if (ccacheExe) {
+    allprojects {
+        afterEvaluate { proj ->
+            if (proj.hasProperty("android")) {
+                try {
+                    proj.android.defaultConfig.externalNativeBuild.cmake.arguments "-DANDROID_CCACHE=${ccacheExe}"
+                } catch (ignored) {
+                    // No externalNativeBuild.cmake block on this module — nothing to wire.
+                }
+            }
+        }
+    }
+}
