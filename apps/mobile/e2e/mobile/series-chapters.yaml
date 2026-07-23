@@ -1,0 +1,58 @@
+# Series screen chapters section: tab filter (All/Read/Unread), sort toggle
+# (newest/oldest), expanding a collapsed middle, and the per-chapter long-press
+# download menu. Selectors (confirmed against source — see ../web/series-chapters.yaml
+# for why the web copy anchors differently):
+#   - series.chapters.tab.<all|read|unread>   (components/series/chapters-section.tsx)
+#   - series.chapters.sort.<desc|asc>          (same file)
+#   - series.chapters.expand-middle            (same file — only rendered once a tab
+#     has more chapters than the collapsed head+tail count; every mocked chaptered
+#     series has 40-200 chapters, well over that threshold)
+#   - series.chapter-menu.<this|from-here>     (same file — long-press a chapter row;
+#     triggers the same menu content on native and web, per `openChapterMenu`)
+appId: com.porksphere.comical
+---
+- launchApp
+
+- tapOn:
+    id: "tab.browse"
+- tapOn:
+    id: "series-card\\..*"
+- assertVisible:
+    id: "series.cover"
+
+# Scroll the chapters section's tab/sort controls into view once.
+- scrollUntilVisible:
+    element:
+      id: "series\\.chapters\\.tab\\..*"
+    direction: DOWN
+    timeout: 20000
+
+# Tab filter
+- tapOn:
+    id: "series.chapters.tab.unread"
+- tapOn:
+    id: "series.chapters.tab.all"
+
+# Sort toggle
+- tapOn:
+    id: "series.chapters.sort.asc"
+- tapOn:
+    id: "series.chapters.sort.desc"
+
+# Expand the collapsed middle — switching tabs above reset it, so scroll back down.
+- scrollUntilVisible:
+    element:
+      id: "series.chapters.expand-middle"
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: "series.chapters.expand-middle"
+
+# Long-press a chapter row -> per-chapter download menu.
+- longPressOn:
+    id: "series\\.chapter\\..*"
+    index: 0
+- assertVisible:
+    id: "series.chapter-menu.this"
+- assertVisible:
+    id: "series.chapter-menu.from-here"
