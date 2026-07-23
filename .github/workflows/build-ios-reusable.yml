@@ -89,8 +89,9 @@ on:
         description: expo.version read from apps/mobile/app.json
         value: ${{ jobs.build.outputs.version }}
       artifact:
-        description: Name of the uploaded artifact — an unsigned device .ipa normally, or a
-          Simulator .app zip when `simulator: true`.
+        description: >-
+          Name of the uploaded artifact — an unsigned device .ipa normally, or a Simulator .app
+          zip when `simulator: true`.
         value: ${{ inputs.simulator && 'comical-ios-simulator-app' || 'comical-ios-unsigned-ipa' }}
 
 jobs:
