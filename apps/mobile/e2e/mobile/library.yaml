@@ -1,0 +1,42 @@
+# Library tab: inline search, sort, and list-scope navigation (Manage Lists + back).
+appId: com.porksphere.comical
+---
+- launchApp
+
+- tapOn:
+    id: "tab.library"
+- assertVisible:
+    id: "series-card\\..*"
+
+# Inline search
+- tapOn:
+    id: "library.search-icon"
+- extendedWaitUntil:
+    visible:
+      id: "library.search.input"
+    timeout: 10000
+- inputText: "one piece"
+- assertVisible:
+    id: "library.search.clear"
+- tapOn:
+    id: "library.search-close"
+
+# Sort
+- tapOn:
+    id: "library.sort"
+- tapOn:
+    id: "library.sort.title"
+- assertVisible:
+    id: "series-card\\..*"
+
+# List scope -> Manage Lists -> back
+- tapOn:
+    id: "library.list-selector"
+- tapOn:
+    id: "library.list.manage"
+- assertVisible:
+    id: "manage-lists.add"
+- tapOn:
+    id: "top-bar.back"
+- assertVisible:
+    id: "tab.library"

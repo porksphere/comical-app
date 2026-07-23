@@ -14,3 +14,4 @@ executionOrder:
     - smoke
     - browse-to-reader
     - search
+    - library
