@@ -1,6 +1,69 @@
-# Entrypoint only — the journey lives once in ../flows/smoke.yaml. See e2e/README.md.
-# Port 4000 is the fixed convention this suite always serves the web build on, in CI and
-# locally — see e2e/README.md.
-url: http://localhost:4000
+url: http://localhost:4000/comical-app
 ---
-- runFlow: ../flows/smoke.yaml
+# Navigation smoke: launch the app and tap through every tab. Proves the structured-selector
+# approach end to end — every tap resolves by a stable selector and lands (no coordinate
+# guessing, no missed taps). Data-independent: only asserts each tab's own screen chrome
+# renders, so it passes with real or mock data alike.
+#
+# `/comical-app` in the url above matches app.json's `experiments.baseUrl`, which is baked
+# unconditionally into every `expo export --platform web` output (every asset reference is an
+# absolute `/comical-app/...` path) — serve the exported `dist` under a `/comical-app`-named
+# subdirectory, not at the served root, or every asset 404s. Port 4000 is the fixed convention
+# this suite always serves the web build on, in CI and locally — see ../README.md.
+#
+# Kept in sync BY HAND with ../mobile/smoke.yaml (same journey), but selectors deliberately
+# differ for the tab bar and Settings category rows — see the note below. See mobile/smoke.yaml's
+# comment for why this can't be a shared subflow: Maestro requires every flow file to declare its
+# own appId/url.
+#
+# WEB-ONLY SELECTOR QUIRK (confirmed empirically against Maestro 2.6.1's web/Chromium beta
+# support): when a react-native-web element has BOTH a `testID` (-> data-testid) and an explicit
+# `accessibilityLabel` (-> aria-label) on the same DOM node, Maestro's web hierarchy walker
+# resolves its matchable `id:` field to the aria-label text, not data-testid — data-testid is
+# only used when no competing aria-label exists on that node. `mobile/smoke.yaml`'s `tab.<route>`
+# selectors are unaffected (Android/iOS map testID/accessibilityIdentifier directly, no aria-label
+# involved), but on web the tab bar (icon-only Pressables set accessibilityLabel for a11y, since
+# there's no visible label text) and Settings' category rows (same pattern) must be selected by
+# their aria-label text instead. Everything else below (browse\..*, library\..*, screen-title.*)
+# has no competing accessibilityLabel, so the same testID-shaped selectors as mobile/smoke.yaml
+# work unchanged. If this ever changes (Maestro web fixing the precedence, or the app adding/
+# removing an accessibilityLabel somewhere), re-verify with `maestro hierarchy`-style debugging
+# (see ../README.md) rather than guessing.
+
+- launchApp
+
+# The custom tab bar is always mounted; its presence confirms we're in the app shell.
+- assertVisible:
+    id: "Browse"
+
+# Browse
+- tapOn:
+    id: "Browse"
+- assertVisible:
+    id: "browse\\..*" # any browse.* control (search-icon, bridge-selector, …)
+
+# Library
+- tapOn:
+    id: "Library"
+- assertVisible:
+    id: "library\\..*" # library.sort / library.search-icon
+
+# History — anchor on the shared TabTitleBar's testID (screen-title.<title>).
+- tapOn:
+    id: "History"
+- assertVisible:
+    id: "screen-title.history"
+
+# Activity — its action buttons (activity.check-updates/clear) render only when there are
+# updates, so anchor on the shared TabTitleBar's testID instead.
+- tapOn:
+    id: "Activity"
+- assertVisible:
+    id: "screen-title.activity"
+
+# Settings — category rows set accessibilityLabel (see the web-only quirk note above), so
+# select by the row's visible label text rather than its settings.category.* testID.
+- tapOn:
+    id: "Settings"
+- assertVisible:
+    id: "General"

@@ -1,36 +1,50 @@
 # comical-app end-to-end tests (Maestro)
 
-One flow, written once, drives web, Android, and iOS. Runs in CI on every PR (see
-`.github/workflows/e2e.yml`) and locally the same way.
+The same journey, written once for mobile and once for web, drives web, Android, and iOS. Runs
+in CI on every PR (see `.github/workflows/e2e.yml`) and locally the same way.
 
-## Why Maestro, and why no per-platform reimplementation
+## Why Maestro
 
 Maestro flows are plain YAML, select elements by `id:` (matched to `accessibilityIdentifier` on
-iOS, `resource-id` on Android, and `data-testid` on web via react-native-web), and — as of the Beta
-web support Maestro shipped in 2025/2026 — run against Android, iOS, *and* a managed Chromium
-browser from the exact same flow format. That `id:` selector is precisely this app's existing
-`testID` convention (`src/lib/test-id.ts`), so a single flow body genuinely works unmodified on all
-three platforms. No custom adapter/interpreter exists in this repo, and none is needed — Maestro
-itself is the adapter.
+iOS, `resource-id` on Android, and `data-testid` on web via react-native-web), and — as of the
+Beta web support Maestro shipped in 2025/2026 — run against Android, iOS, *and* a managed
+Chromium browser from the exact same flow format. That `id:` selector is precisely this app's
+existing `testID` convention (`src/lib/test-id.ts`). No custom adapter/interpreter exists in this
+repo, and none is needed — Maestro itself is the adapter.
 
 ## Layout
 
 ```
 e2e/
-  flows/     # the actual journeys — platform-agnostic, no appId/url header, never run directly
-  android/   # thin entrypoints: appId + `runFlow: ../flows/<name>.yaml`
-  ios/       # same, same appId (both platforms share com.porksphere.comical)
-  web/       # same, but `url: http://localhost:4000` instead of appId
-  config/    # one Maestro workspace config per platform (execution order, flow glob)
+  mobile/    # committed flows — appId: com.porksphere.comical + steps. Covers BOTH Android and
+             # iOS: they share the same bundle id, and Maestro targets whichever device/
+             # emulator/simulator is currently connected, not anything encoded in the file.
+  web/       # committed flows — url: http://localhost:4000 + steps. Same journeys as mobile/,
+             # kept in sync by hand (see "Why two copies, not one" below).
+  config/    # one Maestro workspace config per platform (execution order, flow glob):
+             # android.yaml and ios.yaml both point at ../mobile/*.yaml; web.yaml at ../web/*.yaml.
   scripts/
     run-device.sh   # local runner: reconnects a dev-client build to Metro, then runs a flow
 ```
 
-**Write a flow once, in `flows/`.** Add a two-line entrypoint per platform you want it to run on
-(`android/`, `ios/`, `web/`) — copy an existing entrypoint, it's always just `appId`/`url` +
-`runFlow`. A flow doesn't need all three; e.g. `swipe-dismiss.yaml` currently ships only
-`android/`+`ios/` entrypoints (web mouse-drag gesture parity with a touch swipe hasn't been
-verified yet — add `web/swipe-dismiss.yaml` once it has).
+### Why two copies, not one shared body
+
+Maestro requires **every** flow file to declare its own `appId`/`url` in a real config section —
+this is true even for a file that's only ever reached via `runFlow:` (confirmed empirically: an
+empty or missing config section fails with `Config Section Required` / `Config Field Required`).
+So a single flow body can't be platform-agnostic the way a plain `testID`-selecting step list
+otherwise could be. The practical floor this gives us:
+
+- **Android and iOS share one copy** (`mobile/`) — they use the identical `appId`
+  (`com.porksphere.comical`), so nothing platform-specific needs to differ in the file at all.
+- **Web needs its own copy** (`web/`) — it needs `url:` instead of `appId:`. The steps below the
+  `---` are identical to the `mobile/` version; keep them in sync by hand when editing either.
+
+This is real, Maestro-imposed duplication (config header + a copy of the steps), not a design
+choice — the previous `flows/` + thin per-platform-entrypoint (`runFlow:`) approach this repo
+tried first does **not** work: subflow files still need their own appId/url, so the "thin
+entrypoint" layer added an extra file without removing the duplication. Two copies (mobile, web)
+is the actual minimum, not three.
 
 ## Data: demo/mock mode only
 
@@ -40,14 +54,48 @@ flows deterministic and fast, and means PRs from external contributors never tri
 scraping-adjacent bridge traffic. A flow should never depend on data that only a real backend
 would produce.
 
+## Web: static export, not the live Metro dev server
+
+CI (and the local instructions above) build web with `bunx expo export --platform web` rather
+than `expo start --web` — deterministic (matches what a real build renders, no HMR overhead
+irrelevant to a one-shot test) and trivially health-checked. `app.json`'s
+`experiments.baseUrl: "/comical-app"` is baked unconditionally into every export's asset paths
+(`/comical-app/_expo/static/js/...`, not relative), so the exported `dist` must be served *under*
+a `/comical-app`-named subdirectory of whatever's serving it, not at the served root — otherwise
+every JS/CSS asset 404s and the app never renders. `web/smoke.yaml`'s `url:` and `e2e.yml`'s
+`test-web` job both already account for this; keep it in mind if you add a new web flow or change
+how the export is served.
+
 ## Platform divergence
 
 Most screens render identical testIDs on every platform (the custom tab bar in `app-tabs.tsx`
-does, for instance), so most flows need no platform branching at all. When a screen genuinely
-differs (e.g. a desktop-only sidebar column), branch *inside* the shared flow body with Maestro's
-`when: { platform: ... }` conditional steps — check current syntax at
-https://docs.maestro.dev before relying on it, Maestro's flow schema evolves. Don't fork the flow
-file per platform for this; that's exactly the duplication this suite exists to avoid.
+does, for instance), so most flow *bodies* need no platform branching at all — `mobile/` and
+`web/` are line-for-line the same journey. Selectors are a different story on web, though (see
+next section). When a screen's actual *behavior* genuinely differs (e.g. a desktop-only sidebar
+column), branch *inside* a flow body with Maestro's `when: { platform: ... }` conditional steps —
+check current syntax at https://docs.maestro.dev before relying on it, Maestro's flow schema
+evolves.
+
+## Web-only selector quirk: aria-label beats data-testid
+
+Confirmed empirically against Maestro 2.6.1's web/Chromium beta support: when a react-native-web
+element has **both** a `testID` (→ `data-testid`) and an explicit `accessibilityLabel`
+(→ `aria-label`) on the same DOM node, Maestro's web hierarchy walker resolves that element's
+matchable `id:` field to the aria-label text, not `data-testid` — `data-testid` is only used when
+no competing `aria-label` exists on that node. Android/iOS are unaffected (they map
+`testID`/`accessibilityIdentifier` directly, no aria-label involved).
+
+In this app, that collision hits icon-only controls that set `accessibilityLabel` for
+accessibility (there's no visible label text to fall back on) — the tab bar
+(`app-tabs.tsx`'s `TabButton`) and Settings' category rows are the two known cases. `web/smoke.yaml`
+selects those by their aria-label text (`id: "Browse"`, `id: "General"`, …) instead of their
+`tab.<route>` / `settings.category.<name>` testID, while `mobile/smoke.yaml` uses the real testID
+for the same elements. Everything else (`browse\..*`, `library\..*`, `screen-title.*`) has no
+competing `accessibilityLabel`, so the same testID-shaped selector works unchanged on both. If you
+add a new flow and a web selector mysteriously can't find an element that's visibly on screen,
+suspect this before anything else — dump the failing run's debug hierarchy JSON
+(`C:\Users\<you>\.maestro\tests\<timestamp>\commands-*.json` → `metadata.error.hierarchyRoot`) and
+check whether the element's `resource-id` is the label text rather than the testID.
 
 ## Running locally
 
@@ -55,17 +103,34 @@ file per platform for this; that's exactly the duplication this suite exists to 
 ```
 bun run dev:device                                   # start Metro, from apps/mobile
 bash e2e/scripts/run-device.sh android smoke.yaml     # one flow
-bash e2e/scripts/run-device.sh android                # every android/ flow, in order
-bash e2e/scripts/run-device.sh ios browse-to-reader.yaml
+bash e2e/scripts/run-device.sh android                # every flow, in order
+bash e2e/scripts/run-device.sh ios smoke.yaml
 ```
 Requires the dev-client build already installed (`expo run:android` / the `ios-devclient`
-SideStore channel — see repo root docs) and Maestro installed (below).
+SideStore channel — see repo root docs) and Maestro installed (below). Works against an
+already-running dev server too — no need to start a second one if `bun run dev` is already up.
 
-**Web:**
+**Web** (a static `expo export`, not the live Metro dev server — see "Web: static export" below):
 ```
-PORT=4000 EXPO_PUBLIC_COMICAL_DEMO_MODE=1 bun run dev      # from apps/mobile
-maestro test e2e/web/smoke.yaml                             # in a second terminal
+EXPO_PUBLIC_COMICAL_DEMO_MODE=1 bunx expo export --platform web   # from apps/mobile
+mkdir -p /tmp/comical-e2e-web/comical-app && cp -r dist/. /tmp/comical-e2e-web/comical-app/
+npx serve /tmp/comical-e2e-web -l 4000
+maestro test e2e/web/smoke.yaml                                   # in a second terminal
 ```
+The `/comical-app` subdirectory step matters — see "Web: static export" below for why.
+
+**Run every flow for a platform in Maestro's own executionOrder** (what CI actually runs — a
+single flow file, as above, ignores `config/*.yaml`'s `flowsOrder`):
+```
+maestro test --config e2e/config/android.yaml e2e/mobile
+maestro test --config e2e/config/ios.yaml e2e/mobile
+maestro test --config e2e/config/web.yaml e2e/web
+```
+Maestro's `--config` flag is a *workspace config* (execution order only) — the flow files
+themselves still come from the `<flowFiles>` positional argument (a folder here), which is why
+each config file has no `flows:` glob: one was tried and confirmed (empirically, Maestro 2.6.1)
+to resolve relative to the CLI's cwd rather than the config file's own directory, so it silently
+matched nothing when invoked from the repo root, as CI does.
 
 **One-time Maestro setup:**
 ```
@@ -80,8 +145,8 @@ Add `~/.maestro/bin` to `PATH`, then `maestro --version`. On Windows use Git Bas
    interactive equivalent.
 2. The sibling `.maestro-local/` folder (gitignored, never committed — see its own README) is the
    scratch pad for this step: iterate there against a live dev-client build, then **promote** the
-   finished flow into `flows/` here plus its per-platform entrypoints once it's reliable. Don't
-   skip straight to writing in `flows/` for anything you haven't run at least once.
+   finished flow into `mobile/<name>.yaml` (and `web/<name>.yaml` if it applies to web) once
+   it's reliable. Don't skip straight to writing here for anything you haven't run at least once.
 3. Every new user-facing screen or flow should get a flow here — see the root `AGENTS.md` and the
    PR template checklist. `apps/mobile/scripts/check-flow-coverage.mjs` (run in CI, advisory-only)
    flags new tab/screen-title testIDs that no committed flow references yet.

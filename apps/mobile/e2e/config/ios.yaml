@@ -1,12 +1,10 @@
 # Maestro workspace config for the iOS CI/local lane.
 #
-# Run the whole suite:  maestro test apps/mobile/e2e/config/ios.yaml
-# Run one flow:         maestro test apps/mobile/e2e/ios/smoke.yaml
+# Run the whole suite:  maestro test --config apps/mobile/e2e/config/ios.yaml apps/mobile/e2e/mobile
+# Run one flow:         maestro test apps/mobile/e2e/mobile/smoke.yaml
 #
-# See ../README.md for the full authoring/running workflow.
-
-flows:
-  - "../ios/*.yaml"
+# apps/mobile/e2e/mobile is shared with android.yaml above — see its comment for why, and for
+# why there's no `flows:` glob here (the <flowFiles> CLI argument handles discovery instead).
 
 executionOrder:
   continueOnFailure: false

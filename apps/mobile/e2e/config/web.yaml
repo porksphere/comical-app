@@ -1,12 +1,12 @@
 # Maestro workspace config for the web CI/local lane (Chromium, Maestro web support is Beta).
 #
-# Run the whole suite:  maestro test apps/mobile/e2e/config/web.yaml
+# Run the whole suite:  maestro test --config apps/mobile/e2e/config/web.yaml apps/mobile/e2e/web
 # Run one flow:         maestro test apps/mobile/e2e/web/smoke.yaml
 #
+# No `flows:` glob here — the <flowFiles> CLI argument (apps/mobile/e2e/web above) handles
+# discovery; a relative glob in this file resolves against the CLI's cwd, not this file's own
+# directory (confirmed empirically), so it silently matched nothing run from the repo root.
 # See ../README.md for the full authoring/running workflow.
-
-flows:
-  - "../web/*.yaml"
 
 executionOrder:
   continueOnFailure: false
