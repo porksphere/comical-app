@@ -46,21 +46,28 @@ const noopAsyncStorage = {
 
 // Upstream wrinkle (@legendapp/state 3.0.0-beta.47): its `safeStringify` is
 // `value ? JSON.stringify(value) : value`, so a FALSY primitive store value (false / 0 / '')
-// reaches `AsyncStorage.setItem` unstringified — React Native's AsyncStorage rejects the
-// non-string write ("value is not a string" warning), silently leaving the previously
-// persisted value in place. Observed as the dev "Use mock data" toggle turning itself back
-// on after every restart: `set(false)` updated the UI but never storage. Wrapping the store
-// guarantees every write is a real string; non-falsy values arrive already stringified by
-// the plugin and pass through untouched. (Objects never hit this — `{}` is truthy — which is
-// why every object-shaped store persisted fine.)
+// reaches AsyncStorage unstringified — React Native's AsyncStorage rejects the non-string
+// write, silently leaving the previously persisted value in place. Observed as the dev "Use
+// mock data" toggle turning itself back on after every restart: `set(false)` updated the UI
+// but never storage. Wrapping the store guarantees every write is a real string; non-falsy
+// values arrive already stringified by the plugin and pass through untouched. (Objects never
+// hit this — `{}` is truthy — which is why every object-shaped store persisted fine.)
+//
+// The plugin's actual write path is `multiSet` (batched), NOT `setItem`, so it needs the same
+// coercion — otherwise a persisted `false` reaches the native module as a Java Boolean and
+// throws "java.lang.Boolean cannot be cast to java.lang.String" (an unhandled rejection out of
+// `multiSet`, seen in Sentry as COMICAL-APP-1B). `setItem` is wrapped too for any single-write
+// path / plugin version that uses it.
 const baseStorage = canPersist ? AsyncStorage : noopAsyncStorage;
+const asString = (v: unknown): string => (typeof v === 'string' ? v : JSON.stringify(v));
 const stringSafeStorage = {
   getItem: (k: string) => baseStorage.getItem(k),
-  setItem: (k: string, v: unknown) => baseStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v)),
+  setItem: (k: string, v: unknown) => baseStorage.setItem(k, asString(v)),
   removeItem: (k: string) => baseStorage.removeItem(k),
   getAllKeys: () => baseStorage.getAllKeys(),
   multiGet: (ks: readonly string[]) => baseStorage.multiGet(ks),
-  multiSet: (kvs: [string, string][]) => baseStorage.multiSet(kvs),
+  multiSet: (kvs: [string, unknown][]) =>
+    baseStorage.multiSet(kvs.map(([k, v]) => [k, asString(v)] as [string, string])),
   multiRemove: (ks: readonly string[]) => baseStorage.multiRemove(ks),
 } as unknown as typeof AsyncStorage;
 
