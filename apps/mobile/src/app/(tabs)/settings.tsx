@@ -27,7 +27,7 @@ import { MaxTopLevelWidth, SettingsGutter } from '@/constants/theme';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { dlStorageUsage } from '@/data/api';
 import { useCustomPages } from '@/data/custom-pages';
-import { overallProgress } from '@/data/downloads/derive';
+import { EMPTY_STORAGE_USAGE, overallProgress } from '@/data/downloads/derive';
 import { queryKeys } from '@/data/queries';
 import { useRegistryUpdateCounts } from '@/data/use-settings-badge';
 import { useDataSource, useHideNsfw } from '@/data/source';
@@ -182,14 +182,17 @@ function useCategoryCounts() {
     queryKey: queryKeys.registries(),
     queryFn: ({ signal }) => ds.getRegistries(signal),
   });
-  const { data: downloads } = useQuery({
+  const { data: downloads = EMPTY_STORAGE_USAGE } = useQuery({
     queryKey: queryKeys.downloadsUsage(),
-    // Device-local downloads; a backend without the module yields an empty tree, not an error.
-    queryFn: () => dlStorageUsage().catch(() => null),
+    // Device-local downloads; a backend without the module yields an empty tree, not an error. Must
+    // resolve to the SAME empty shape the Downloads/Storage screens fall back to (EMPTY_STORAGE_USAGE),
+    // not null/undefined — they share this cache entry, and a null cached here crashes whichever of
+    // those screens reads it next (its own `= EMPTY_STORAGE_USAGE` default only guards `undefined`).
+    queryFn: () => dlStorageUsage().catch(() => EMPTY_STORAGE_USAGE),
   });
   // Manifest-driven (the engine patches this query per page — see engine.ts), so the row's radial
   // advances through the reliable useQuery subscription without the live-overlay re-render gap.
-  const downloadsOverall = downloads ? overallProgress(downloads.bySeries) : null;
+  const downloadsOverall = overallProgress(downloads.bySeries);
 
   // Matches the filter the Bridges screen applies, so the count can't disagree with the list.
   const visibleBridges = bridges && hideNsfw ? bridges.filter((b) => !b.info.nsfw) : bridges;
@@ -198,9 +201,9 @@ function useCategoryCounts() {
     bridges: visibleBridges ? String(visibleBridges.length) : undefined,
     trackers: trackers ? String(trackers.length) : undefined,
     registries: registries ? String(registries.length) : undefined,
-    downloads: downloads && downloads.seriesCount > 0 ? String(downloads.seriesCount) : undefined,
+    downloads: downloads.seriesCount > 0 ? String(downloads.seriesCount) : undefined,
     // Cumulative progress across all series, shown as a small radial while anything is downloading.
-    downloadsProgress: downloadsOverall?.inProgress ? downloadsOverall.fraction : undefined,
+    downloadsProgress: downloadsOverall.inProgress ? downloadsOverall.fraction : undefined,
   };
 }
 
