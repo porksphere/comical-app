@@ -1,0 +1,86 @@
+# Three separate demo-safe, in-memory mutations that a mock-mode flow CAN legitimately assert took
+# effect (unlike downloads, see ../mobile/downloads.yaml's header, or registry BROWSE results —
+# mockBrowseRegistryBridges/Trackers always return [] in mock mode, so this flow never asserts an
+# installed-bridge/tracker result, only that the registry/list ITSELF was added):
+#   - registries.add          -> mockAddRegistry pushes into mock.ts's mockRegistries array; the new
+#     row shows up in registries.tsx's list (mockGetRegistries returns a fresh copy each call
+#     specifically so react-query sees a changed reference).
+#   - manage-lists.add        -> useLibraryLists().createList persists a new custom list; the new row
+#     shows up in manage-lists.tsx's ReorderableList.
+#   - series.action.lists     -> openListPicker's "New list…" row (list-picker.tsx) also calls
+#     createList, then immediately files the series into it — same createList path as manage-lists,
+#     reached from a series detail page instead.
+#
+# registries.add and manage-lists.add both open their form via useOverlay()'s plain `open()`, which
+# always renders as an OverlaySheet (bottom sheet, `Gesture.Pan().activeOffsetY(12)`) — on web this
+# is EMPIRICALLY CONFIRMED broken (not just theoretically at risk, see ../README.md's "Web-only
+# gesture quirk" section, which scoped series-trackers.yaml mobile-only on the same theory): a local
+# headless run showed the sheet dismiss itself the instant its TextInput is tapped, before any
+# typing happens. So this flow (all three sub-flows) is MOBILE-ONLY; ../web/registries-lists.yaml
+# covers only the third sub-flow (series.action.lists), whose route is DIFFERENT and confirmed safe
+# the same way: openListPicker renders its own floating card (list-picker.tsx's HostPopup, dismissed
+# by a plain Pressable backdrop or the Done button) — no pan gesture at all.
+appId: com.porksphere.comical
+---
+- launchApp
+
+# --- Registries: Settings -> Registries -> Add ---
+- tapOn:
+    id: "tab.settings"
+- tapOn:
+    id: "settings.category.registries"
+- tapOn:
+    id: "registries.add"
+- tapOn:
+    id: "registries.add.url-input"
+- inputText: "https://example.com/test-registry"
+- tapOn:
+    id: "registries.add.submit"
+- assertVisible:
+    text: "https://example.com/test-registry"
+- tapOn:
+    id: "top-bar.back"
+- tapOn:
+    id: "top-bar.back"
+
+# --- Manage Lists: Library -> list-selector -> Manage lists... -> New list ---
+- tapOn:
+    id: "tab.library"
+- tapOn:
+    id: "library.list-selector"
+- tapOn:
+    id: "library.list.manage"
+- tapOn:
+    id: "manage-lists.add"
+- tapOn:
+    id: "custom-pages.name-input"
+- inputText: "Reading later"
+- tapOn:
+    id: "custom-pages.name-submit"
+- assertVisible:
+    text: "Reading later"
+- tapOn:
+    id: "top-bar.back"
+
+# --- "Add to list" picker from a series detail page: New list, filed and checked ---
+- tapOn:
+    id: "tab.browse"
+- tapOn:
+    id: "series-card\\..*"
+- assertVisible:
+    id: "series.action.read"
+- tapOn:
+    id: "series.action.lists"
+- tapOn:
+    id: "list-picker.new"
+- tapOn:
+    id: "list-picker.new-name"
+# "Backlog", not "Favorites"/"Reading" -- mock.ts pre-seeds both of those as default lists
+# (mockLists' list-reading/list-favorites), so either name would already be visible before this
+# flow creates anything, silently passing the assertion below for the wrong reason.
+- inputText: "Backlog"
+- pressKey: Enter
+- assertVisible:
+    text: "Backlog"
+- tapOn:
+    id: "list-picker.done"

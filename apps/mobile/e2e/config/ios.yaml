@@ -21,3 +21,4 @@ executionOrder:
     - reader-navigation
     - series-trackers
     - downloads
+    - registries-lists

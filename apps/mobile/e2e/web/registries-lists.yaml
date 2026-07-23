@@ -1,0 +1,57 @@
+# Web copy of ../mobile/registries-lists.yaml -- but only its THIRD sub-flow ("Add to list" via
+# series.action.lists). The other two (registries.add, manage-lists.add) are DELIBERATELY OMITTED
+# here, not just untested: both open their form via useOverlay()'s plain `open()`, which always
+# renders as an OverlaySheet (`Gesture.Pan().activeOffsetY(12)`, see ../README.md's "Web-only
+# gesture quirk" section, which is what scoped series-trackers.yaml mobile-only). This is the first
+# EMPIRICAL confirmation of that risk, not just the prior "untested, matches precedent" call:
+#
+#   A local headless run against a served static export showed the sheet closes the moment its
+#   TextInput is tapped -- a screenshot taken right after `tapOn: registries.add.url-input`
+#   (before any typing) already shows the plain Registries screen with no sheet at all. The most
+#   likely cause: `useKeyboardAvoidingInput`'s onFocus handler repositions the sheet (to dodge
+#   where a keyboard would be) the instant the input focuses, and that programmatic translateY
+#   shift, arriving mid-gesture, reads to `contentPan`'s Pan responder as motion past its 12px
+#   activation threshold -- so the tap gets reinterpreted as a drag-to-dismiss. Not a Maestro
+#   quirk: a real user tapping that field on web would very likely hit the same thing.
+#
+# series.action.lists's route is DIFFERENT and empirically CONFIRMED SAFE the same way: it opens
+# via openListPicker, which renders list-picker.tsx's own HostPopup -- no Gesture.Pan/GestureDetector
+# anywhere in that component (confirmed against source), dismissed only by a plain Pressable
+# backdrop or the Done button. A local run tapping straight through list-picker.new ->
+# list-picker.new-name -> typing -> Enter kept the popup open and showed the new list created and
+# checked, exactly like mobile.
+#
+# Selectors hitting the web-only aria-label quirk (see ../README.md):
+#   - tab bar: "Browse", not tab.browse (same as smoke.yaml / browse-to-reader.yaml's web copy).
+#   - list-picker.done sets an explicit accessibilityLabel="Done" (list-picker.tsx) -- select by
+#     that text instead.
+# series.action.read, series.action.lists (ActionButton, no accessibilityLabel -- confirmed against
+# action-button.tsx), and list-picker.new / list-picker.new-name (no competing label on either,
+# confirmed against list-picker.tsx) use the same id: selectors as mobile.
+url: http://localhost:4000/comical-app
+---
+- launchApp
+
+- tapOn:
+    id: "Browse"
+- tapOn:
+    id: "series-card\\..*"
+- assertVisible:
+    id: "series.action.read"
+
+- tapOn:
+    id: "series.action.lists"
+- tapOn:
+    id: "list-picker.new"
+- tapOn:
+    id: "list-picker.new-name"
+# "Backlog", not "Favorites"/"Reading" -- mock.ts pre-seeds both of those as default lists, so
+# either name would already be visible before this flow creates anything.
+- inputText: "Backlog"
+- pressKey: Enter
+- assertVisible:
+    text: "Backlog"
+# list-picker.done sets an explicit accessibilityLabel="Done" (list-picker.tsx) -- select by that
+# instead, unlike list-picker.new/.new-name above which have no competing label.
+- tapOn:
+    id: "Done"
