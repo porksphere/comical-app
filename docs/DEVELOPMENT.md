@@ -65,6 +65,15 @@ export — start that server first with `cd ../comical-web && bun run dev`. The 
 `COMICAL_SERVER_PORT=...`, or set `EXPO_PUBLIC_COMICAL_SERVER` yourself to point elsewhere
 (e.g. the deployed prod API, which does need `/api`).
 
+## Testing
+
+`bun run typecheck` and CI's `lint:testids` gate (every interactive element needs a `testID`) run
+on every push. Beyond that, **new user-facing screens/flows need a Maestro e2e flow** —
+`apps/mobile/e2e/` has the full authoring/running workflow (writing a flow, verifying it locally
+against a dev-client or a static web export, the mobile/web selector quirks). CI's
+`check:flow-coverage` job nudges (advisory-only, never fails the job) when a new tab/screen/Settings
+category has no flow referencing it yet — see `apps/mobile/e2e/README.md`.
+
 ## Build (GitHub-hosted runners, local builds — no Expo cloud)
 
 Native projects are generated on the fly (`expo prebuild`, CNG); `ios/` and `android/` are

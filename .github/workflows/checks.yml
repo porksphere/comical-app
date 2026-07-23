@@ -11,6 +11,10 @@ name: Checks
 # is checked out and built). Gating on those here would make this red for reasons unrelated to
 # testIDs. The rule is purely syntactic, so it needs neither the submodule nor a build step — keeping
 # this check fast and reliable.
+#
+# It also runs `check:flow-coverage`, an advisory-only e2e-flow nudge (never fails the job — see
+# apps/mobile/scripts/check-flow-coverage.mjs) alongside the mandatory testID gate, since both are
+# cheap, submodule-free, syntactic checks over the same source tree.
 
 on:
   pull_request:
@@ -49,3 +53,10 @@ jobs:
       - name: Enforce testIDs on interactive elements
         working-directory: apps/mobile
         run: bun run lint:testids
+
+      - name: Check e2e flow coverage (advisory)
+        working-directory: apps/mobile
+        # Never fails the job -- see scripts/check-flow-coverage.mjs's header. `|| true` is a second
+        # layer of defense on top of the script's own `process.exit(0)`, so a future bug in the script
+        # can't accidentally turn this advisory nudge into a hard gate.
+        run: bun run check:flow-coverage || true
