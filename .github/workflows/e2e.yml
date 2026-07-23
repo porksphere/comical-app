@@ -55,7 +55,13 @@ jobs:
           path: ${{ runner.temp }}/apk
 
       - name: Install Maestro
-        run: curl -Ls "https://get.maestro.mobile.dev" | bash
+        run: |
+          curl -Ls "https://get.maestro.mobile.dev" | bash
+          # reactivecircus/android-emulator-runner's `script:` block runs each line as its own
+          # separate `sh -c` invocation, so a plain `export PATH=...` inside that script wouldn't
+          # survive to the next line. $GITHUB_PATH persists across steps AND separate script lines
+          # for the rest of the job, so it's the only mechanism that actually works here.
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
 
       - uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -64,7 +70,6 @@ jobs:
           profile: pixel_6
           script: |
             adb install -r "$RUNNER_TEMP/apk/comical-android.apk"
-            export PATH="$HOME/.maestro/bin:$PATH"
             maestro test --config apps/mobile/e2e/config/android.yaml apps/mobile/e2e/mobile
 
   build-ios-sim:
@@ -87,7 +92,9 @@ jobs:
           path: ${{ runner.temp }}/app
 
       - name: Install Maestro
-        run: curl -Ls "https://get.maestro.mobile.dev" | bash
+        run: |
+          curl -Ls "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
 
       - name: Install and run on Simulator
         run: |
@@ -105,7 +112,6 @@ jobs:
           xcrun simctl bootstatus "$UDID" -b
           xcrun simctl install "$UDID" "$APP"
 
-          export PATH="$HOME/.maestro/bin:$PATH"
           maestro --device "$UDID" test --config apps/mobile/e2e/config/ios.yaml apps/mobile/e2e/mobile
 
   test-web:
@@ -151,9 +157,9 @@ jobs:
           echo "web server never came up"; exit 1
 
       - name: Install Maestro
-        run: curl -Ls "https://get.maestro.mobile.dev" | bash
+        run: |
+          curl -Ls "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
 
       - name: Run e2e flows (web)
-        run: |
-          export PATH="$HOME/.maestro/bin:$PATH"
-          maestro test --config apps/mobile/e2e/config/web.yaml apps/mobile/e2e/web
+        run: maestro test --config apps/mobile/e2e/config/web.yaml apps/mobile/e2e/web
