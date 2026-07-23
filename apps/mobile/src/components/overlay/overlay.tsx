@@ -792,8 +792,7 @@ function OverlaySheet({
             sit flush against this padding) is still `OptionList`'s own
             trailing padding (`listContent` above) / the overflow-filters
             sheet's own content padding, not this outer container. */}
-        <ThemedView
-          type="backgroundPanel"
+        <View
           onLayout={(e) => { sheetHeightSV.set(e.nativeEvent.layout.height); }}
           style={[
             styles.sheet,
@@ -802,6 +801,17 @@ function OverlaySheet({
               paddingBottom: contentNeedsScroll ? 0 : insets.bottom,
             },
           ]}>
+          {/* The panel color lives on this square, non-rounded fill — NOT on the
+              container above, which keeps only its top-corner radius, for clipping
+              (`overflow: 'hidden'`). RN 0.85's Fabric `BackgroundDrawable.draw`
+              hard-crashes (`IllegalStateException: Required value was null`) when it
+              paints a background on a view that has *non-uniform* corner radii and no
+              border: it takes a `drawPath` branch and dereferences a null render path
+              (BackgroundDrawable.kt). That branch is gated on the view having a
+              background at all, so a backgroundless rounded container never reaches it;
+              this fill is uniform (square) and gets clipped to the rounded top by the
+              parent, so the look is unchanged. */}
+          <ThemedView type="backgroundPanel" style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]} />
           <GestureDetector gesture={handlePan}>
             <View style={styles.handleArea}>
               <View style={styles.handle} />
@@ -815,7 +825,7 @@ function OverlaySheet({
           <Animated.View
             style={[StyleSheet.absoluteFill, styles.dim, dimStyle, { pointerEvents: 'none' }]}
           />
-        </ThemedView>
+        </View>
       </SheetContentScrollContext.Provider>
       </SheetBudgetContext.Provider>
       </SheetKeyboardContext.Provider>
