@@ -9,7 +9,7 @@
 import { useQuery } from '@tanstack/react-query';
 
 import { queryKeys } from '@/data/queries';
-import { useDataSource } from '@/data/source';
+import { useDataSource, useHideNsfw } from '@/data/source';
 
 export type RegistryUpdateCounts = {
   bridges: number;
@@ -22,19 +22,36 @@ const EMPTY: RegistryUpdateCounts = { bridges: 0, trackers: 0, total: 0 };
 /** The full breakdown — used by the Settings landing screen to badge the Bridges/Trackers rows. */
 export function useRegistryUpdateCounts(): RegistryUpdateCounts {
   const ds = useDataSource();
+  const hideNsfw = useHideNsfw();
+
   const { data } = useQuery({
     queryKey: queryKeys.registryUpdateCount(),
-    queryFn: async ({ signal }): Promise<RegistryUpdateCounts> => {
+    // Keep the raw update lists (not pre-counted): the NSFW filter below depends on `hideNsfw`, which
+    // must re-derive the count on toggle without a refetch. Still one cache entry feeding every pip.
+    queryFn: async ({ signal }) => {
       const [bridges, trackers] = await Promise.all([
         ds.checkRegistryUpdates(signal),
         ds.checkRegistryTrackerUpdates(signal),
       ]);
-      const b = bridges?.length ?? 0;
-      const t = trackers?.length ?? 0;
-      return { bridges: b, trackers: t, total: b + t };
+      return { bridges: bridges ?? [], trackers: trackers ?? [] };
     },
   });
-  return data ?? EMPTY;
+
+  // The update list carries no `nsfw` flag; the installed-bridge summaries do. When NSFW is hidden a
+  // hidden bridge's update must NOT be counted — otherwise the pip advertises an update the user can't
+  // see or act on (its row isn't in the Bridges list). Cross-reference by id and drop those. (Same
+  // query key the Bridges screen uses, so this is served from cache — no extra fetch.)
+  const { data: summaries } = useQuery({
+    queryKey: queryKeys.bridgeSummaries(),
+    queryFn: ({ signal }) => ds.getBridgeSummaries(signal),
+  });
+
+  if (!data) return EMPTY;
+  const nsfwIds = new Set((summaries ?? []).filter((s) => s.info.nsfw).map((s) => s.info.id));
+  const bridgeUpdates = hideNsfw ? data.bridges.filter((u) => !nsfwIds.has(u.id)) : data.bridges;
+  const b = bridgeUpdates.length;
+  const t = data.trackers.length;
+  return { bridges: b, trackers: t, total: b + t };
 }
 
 /** The grand total — the Settings tab pip. */
