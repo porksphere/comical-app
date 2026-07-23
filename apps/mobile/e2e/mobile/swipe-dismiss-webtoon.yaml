@@ -78,7 +78,7 @@ appId: com.porksphere.comical
 - tapOn:
     id: "reader.settings.open"
 - tapOn:
-    id: "reader.settings.direction.paged"
+    id: "reader.settings.direction.ltr"
 - tapOn:
     point: "50%, 8%"
 - tapOn:
