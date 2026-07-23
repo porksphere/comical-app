@@ -39,7 +39,7 @@ import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, SettingsGutter, SettingsRowHeight, Spacing } from '@/constants/theme';
 import { dlDeleteChapter, dlDeleteSeries, dlStorageUsage } from '@/data/api';
-import { bySortValue, deriveSeriesState, seriesFraction, seriesSortValue } from '@/data/downloads/derive';
+import { bySortValue, deriveSeriesState, EMPTY_STORAGE_USAGE, seriesFraction, seriesSortValue } from '@/data/downloads/derive';
 import { kickDownloads, pauseSeries, resumeSeriesDownload, retryChapter } from '@/data/downloads/engine';
 import { forgetChapter, forgetSeries } from '@/data/downloads/index-cache';
 import { formatBytes } from '@/data/downloads/format';
@@ -49,9 +49,7 @@ import { hapticSelection } from '@/lib/haptics';
 import { testId } from '@/lib/test-id';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
-import type { StorageUsage, StorageUsageSeries } from '@comical/downloads';
-
-const EMPTY_USAGE: StorageUsage = { totalBytes: 0, seriesCount: 0, chapterCount: 0, pageCount: 0, bySeries: [] };
+import type { StorageUsageSeries } from '@comical/downloads';
 
 /**
  * One list row — a series. Row objects are REUSED from `cache` while their `s` snapshot is identical,
@@ -109,9 +107,9 @@ export default function DownloadsScreen() {
   // be read during render.
   const [rowCache] = useState(() => new Map<string, DlRow>());
 
-  const { data: usage = EMPTY_USAGE } = useQuery({
+  const { data: usage = EMPTY_STORAGE_USAGE } = useQuery({
     queryKey: queryKeys.downloadsUsage(),
-    queryFn: () => dlStorageUsage().catch(() => EMPTY_USAGE),
+    queryFn: () => dlStorageUsage().catch(() => EMPTY_STORAGE_USAGE),
   });
 
   // Opening this screen nudges the queue to drain — a safety net so a download that didn't resume at

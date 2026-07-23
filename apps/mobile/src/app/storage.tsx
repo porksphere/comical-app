@@ -28,14 +28,12 @@ import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { dlStorageUsage, libraryUsage } from '@/data/api';
 import { readDiskInfo } from '@/data/downloads/disk';
+import { EMPTY_STORAGE_USAGE } from '@/data/downloads/derive';
 import { formatBytes } from '@/data/downloads/format';
 import { getResolvedModeSync } from '@/data/embedded/preference';
 import { queryKeys } from '@/data/queries';
 import { applyImageCacheConfig, cacheBreakdown, cacheDiskUsage, cachePrefs$, clearImageCache, useCachePrefs, type CacheEntry } from '@/data/image-cache';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
-import type { StorageUsage } from '@comical/downloads';
-
-const EMPTY_USAGE: StorageUsage = { totalBytes: 0, seriesCount: 0, chapterCount: 0, pageCount: 0, bySeries: [] };
 
 const GB = 1024 * 1024 * 1024;
 /** Max image-cache size, as byte-count strings (0 = unlimited) for the select row. The native cache
@@ -64,9 +62,9 @@ export default function StorageScreen() {
 
   // Downloads footprint + counts from the manifest (cross-platform); a backend without the module
   // yields an empty tree, not an error. `diskBytes` is the owning host's true blob size.
-  const { data: usage = EMPTY_USAGE } = useQuery({
+  const { data: usage = EMPTY_STORAGE_USAGE } = useQuery({
     queryKey: queryKeys.downloadsUsage(),
-    queryFn: () => dlStorageUsage().catch(() => EMPTY_USAGE),
+    queryFn: () => dlStorageUsage().catch(() => EMPTY_STORAGE_USAGE),
   });
   // The library's footprint on the same host (store docs + captured covers); null without the module.
   const { data: libUsage = null } = useQuery({

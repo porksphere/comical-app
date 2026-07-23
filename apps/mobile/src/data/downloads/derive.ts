@@ -8,7 +8,21 @@
  * downloads and these derivations re-render through the reliable TanStack Query subscription — no
  * separate live-progress overlay needed.
  */
-import type { DownloadedChapter, DownloadState, StorageUsageSeries } from '@comical/downloads';
+import type { DownloadedChapter, DownloadState, StorageUsage, StorageUsageSeries } from '@comical/downloads';
+
+/** The `queryKeys.downloadsUsage()` fallback every reader of that query key must agree on — Settings'
+ *  badge count, the Downloads screen, and the Storage screen all share this one cache entry (Settings
+ *  reads it opportunistically, off whichever screen fetched it first), so a request failure must
+ *  resolve to this same shape everywhere. A `null`/`undefined` fallback in any one of them would
+ *  poison the shared cache for the others, which only guard against the query never having run yet —
+ *  not against a cached "no data" written by a different consumer. */
+export const EMPTY_STORAGE_USAGE: StorageUsage = {
+  totalBytes: 0,
+  seriesCount: 0,
+  chapterCount: 0,
+  pageCount: 0,
+  bySeries: [],
+};
 
 /** The state to DISPLAY for a chapter — straight from the (per-page-patched) manifest. */
 export function displayChapterState(c: DownloadedChapter): DownloadState {
