@@ -1,0 +1,85 @@
+# Web copy of ../mobile/downloads.yaml — same trigger journey (series detail -> Download action ->
+# forced-select screen -> tap "Download N chapters" -> back on series detail), but web CANNOT verify
+# a real enqueue the way the mobile copy does. This is a genuine platform split, confirmed by tracing
+# the source, not a flaky race (an earlier version of this file chased a "select=1 missing from the
+# URL" theory that turned out to be a red herring — see below):
+#
+#   - data/embedded/preference.ts: "on web... the resolved mode is always 'remote'" — web never uses
+#     the self-contained embedded download engine mobile gets (data/embedded/startup.ts: "the `.web.ts`
+#     sibling is a no-op — web is always remote").
+#   - 'remote' mode means every downloads call is a real HTTP request to `getApiBase()`
+#     (data/api.ts) — which, with no `EXPO_PUBLIC_COMICAL_SERVER` baked into this e2e web export,
+#     resolves to `DEFAULT_API_BASE = 'http://localhost:3100'`.
+#   - `.github/workflows/e2e.yml`'s `test-web` job only exports and serves the static build — it never
+#     starts a host-server, so localhost:3100 has nothing listening in CI. The enqueue POST
+#     (data/downloads/engine.ts's `enqueueChapters`) fails outright; its `catch` just logs a diagnostic
+#     and calls `invalidateDownloads()` (a cache refetch) — since nothing was ever written
+#     server-side, that refetch returns the same "nothing downloaded" state as before, so
+#     `series.action.download`'s label NEVER changes. Waiting for it (as the mobile copy does) would
+#     hang until timeout on every web CI run, unconditionally — not intermittently.
+#
+# (The earlier "select=1 missing from the URL" symptom chased in a prior pass of this file was a
+# LOCAL-ONLY artifact: repeated manual test runs against this same demo series, on a workspace that
+# happens to have a real host-server running on :3100 for normal dev use, had actually written 40
+# real "failed" chapter entries into that server's persisted downloads manifest — confirmed directly
+# via `curl http://localhost:3100/downloads/entries/panelfox/featured-p1-0` returning real manifest
+# rows, reproducing identically across brand-new frontend origins/ports because the frontend port was
+# never the source of truth. With that manifest non-empty, `SeriesDownloadButton`'s `inProgress` check
+# (download-button.tsx) was true on load, so the button correctly routed to `openDownloads` — plain
+# management, not forced select — instead of `openSelect`. Not a bug; the flow's assumption of a
+# "fresh, nothing-downloaded series" just didn't hold once local testing had polluted that real
+# server's state. Cleaned up via `curl -X DELETE`. CI can't hit this at all: it has no host-server for
+# a download to ever land on in the first place.)
+#
+# So this copy only asserts the trigger round-trip (open forced-select, tap the download pill, land
+# back on the series screen) — the actual enqueue-and-progress assertion is mobile-only, where the
+# embedded engine really does complete real fetches against picsum.photos (see
+# ../mobile/downloads.yaml's header).
+#
+# Reuses two ALREADY-documented aria-label swaps from browse-to-reader.yaml's web copy: the tab bar
+# (select "Browse", not tab.browse) and series.cover (its accessibilityLabel is the dynamic
+# primaryLabel, unselectable by any fixed text -- anchor on series.action.read instead, same
+# "series screen rendered" guarantee).
+#
+# Two EXTRA web-only selector swaps beyond those, both newly confirmed while designing this flow,
+# neither previously documented — both selected via `id:`, not `text:` (the aria-label quirk resolves
+# through Maestro's `id:` matcher, not `text:`, which checks rendered DOM text; confirmed the hard way
+# — an initial `text:`-based attempt here failed even though the element was plainly on screen):
+#   - series.dl.select-options   select-mode.tsx's SelectOptionsButton sets a STATIC competing
+#     accessibilityLabel ("Selection options") on the same Pressable as the testID -> select by that
+#     id on web instead.
+#   - series.dl.download   select-mode.tsx's SelectPillBar verb Pressable sets accessibilityLabel to
+#     the verb's own DYNAMIC label (`Download N chapters` — same shape as series.cover's dynamic
+#     primaryLabel, which ../README.md already flags as unselectable by fixed text). Unlike
+#     series.cover, there's no label-free alternative element to anchor on here, so this one is
+#     selected by a REGEX id match instead of a fixed string (matching series.tracker.result.<id>'s
+#     precedent of regex-matching a value that isn't reproducible ahead of time) — the exact chapter
+#     count N varies by how many chapters are still unread when this flow runs.
+url: http://localhost:4000/comical-app
+---
+- launchApp
+
+- tapOn:
+    id: "Browse"
+- tapOn:
+    id: "series-card\\..*"
+- assertVisible:
+    id: "series.action.read"
+
+- tapOn:
+    id: "series.action.download"
+
+- assertVisible:
+    id: "Selection options"
+- extendedWaitUntil:
+    visible:
+      id: "^Download \\d+ chapters?$"
+    timeout: 10000
+- tapOn:
+    id: "^Download \\d+ chapters?$"
+
+# forcedSelect's downloadSelected() enqueues then immediately router.back()s (no didManage yet). No
+# further assertion here on purpose — see this file's header for why web can't verify the enqueue
+# actually landed the way ../mobile/downloads.yaml does.
+- assertVisible:
+    id: "series.action.read"

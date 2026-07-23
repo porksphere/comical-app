@@ -20,3 +20,4 @@ executionOrder:
     - history-activity
     - reader-navigation
     - series-trackers
+    - downloads
