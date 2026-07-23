@@ -95,3 +95,12 @@ Writing a local store:
 (reanimated UI-thread value) and `lib/diagnostics.ts` (ring buffer) stay
 hand-rolled on purpose. Rationale + the full split: `docs/ARCHITECTURE.md` →
 "State management".
+
+# Testing: new screens need a flow
+
+A new top-level screen, tab, or interactive feature needs a Maestro e2e flow, not just a testID.
+See `e2e/README.md` for the authoring/running workflow (two copies per flow — `e2e/mobile/` and
+`e2e/web/` — plus the web-only selector/gesture quirks to check against before assuming a mobile
+flow ports over as-is). CI's `check:flow-coverage` (advisory-only) flags a new tab/screen/Settings
+category with no flow referencing it yet, but can't tell when an *existing* flow has gone stale
+because a screen it already covers changed — that's on the PR author, not the check.
