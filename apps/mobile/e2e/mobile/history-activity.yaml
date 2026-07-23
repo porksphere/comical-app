@@ -1,0 +1,108 @@
+# History: tap a row (resumes into the reader), back out, then swipe-clear that row. Activity:
+# swipe to reveal actions, tap Mark read, then swipe-clear the same (now single-action) row —
+# asserting the tab badge count drops after Mark read and holds steady after Clear (clearing an
+# already-read row removes it from the feed but doesn't touch the unread count a second time).
+#
+# Mobile-only (native swipe gesture), matching the existing swipe-dismiss*/README scoping
+# rationale — Maestro's web/Chromium beta isn't a reliable driver for RNGH pan gestures.
+#
+# NOT locally verifiable this session (no Android dev-client / no Mac for iOS — see e2e/README.md
+# and the plan's Ground rules) — the row Y-coordinates below are BEST-EFFORT ESTIMATES, not
+# confirmed against a live run. Both History and Activity's content lists start "flush under the
+# top bar" (see history.tsx / activity.tsx's contentContainerStyle comments), so row 0 is assumed
+# to sit around 18-22% down the screen; treat the first CI run of this flow as its real
+# verification, per the plan's existing precedent for iOS-only-CI-verified flows, extended here to
+# the coordinate estimate itself since neither platform could be locally checked this session.
+#
+# Selectors (confirmed against source):
+#   - history-row.<slug>            HistoryRow's own testID (history-row.tsx), slug = testId()'s
+#                                    slugify of the item's title (src/lib/test-id.ts)
+#   - swipe-action.<slug>.<action>  SwipeableRow's revealed action buttons (swipeable-row.tsx),
+#                                    slug = the SAME title slug (both History and Activity pass
+#                                    `name={item.title}` to SwipeableRow)
+#   - tab-badge                     Activity tab's unread pip (tab-badge.tsx) — uniquely resolves
+#                                    to Activity's badge only: Settings' own pip shares the same
+#                                    testID but mock mode's checkRegistryUpdates()/
+#                                    checkRegistryTrackerUpdates() both resolve to [] (source.ts),
+#                                    so Settings' count is always 0 and its pip never renders
+#                                    (TabBadge returns null for count<=0) — no collision.
+#
+# Mock data (data/mock.ts, confirmed):
+#   - History's newest/first row (sorted by lastReadAt desc) is seed index 0 -> title
+#     "The Silent Sea" -> slug "the-silent-sea". Its SwipeableRow has exactly one action
+#     ("Remove"), so FULL_SWIPE_COMMIT (0.6, swipeable-row.tsx) auto-commits it on a wide swipe
+#     with no button tap needed.
+#   - Activity's newest/first row (sorted by detectedAt desc) is seed index 1 -> title
+#     "Crimson Harbor" -> slug "crimson-harbor", seeded with a single new chapter and
+#     hasUnread: true, so it starts with TWO actions (Clear + Mark read) — a wide swipe only
+#     reveals both buttons (2-action rows don't auto-commit regardless of swipe distance), so
+#     "Mark read" is tapped by id rather than relying on swipe distance/position. After that
+#     mutation the row becomes read (hasUnread: false) and drops to Clear-only, making it
+#     single-action and full-swipe-committable like History's row.
+#   - Initial Activity unread count across all 4 seeded series-groups is 6
+#     (mockGetActivityCount sums unread chapter entries, not series count); marking
+#     "Crimson Harbor" (1 chapter) read drops it to 5; clearing that same now-read row doesn't
+#     change the count again (still 5).
+appId: com.porksphere.comical
+---
+- launchApp
+
+# ── History ──────────────────────────────────────────────────────────────────
+- tapOn:
+    id: "tab.history"
+- assertVisible:
+    id: "screen-title.history"
+- assertVisible:
+    id: "history-row.the-silent-sea"
+
+# Tap the row: resumes straight into the reader.
+- tapOn:
+    id: "history-row.the-silent-sea"
+- assertVisible:
+    id: "reader.toolbar.back"
+- tapOn:
+    id: "reader.toolbar.back"
+- assertVisible:
+    id: "screen-title.history"
+
+# Swipe-clear it: single action ("Remove") auto-commits past FULL_SWIPE_COMMIT, no button tap.
+- swipe:
+    start: "90%, 20%"
+    end: "5%, 20%"
+    duration: 300
+- assertNotVisible:
+    id: "history-row.the-silent-sea"
+
+# ── Activity ─────────────────────────────────────────────────────────────────
+- tapOn:
+    id: "tab.activity"
+- assertVisible:
+    id: "screen-title.activity"
+- assertVisible:
+    id: "tab-badge"
+    text: "6"
+- assertVisible:
+    id: "history-row.crimson-harbor"
+
+# Swipe wide enough to reveal both actions (2-action rows don't auto-commit), then tap Mark read
+# by id rather than guessing its on-screen position.
+- swipe:
+    start: "90%, 20%"
+    end: "10%, 20%"
+    duration: 300
+- tapOn:
+    id: "swipe-action.crimson-harbor.mark-read"
+- assertVisible:
+    id: "tab-badge"
+    text: "5"
+
+# Row is now read/single-action (Clear only) — a wide swipe auto-commits it directly.
+- swipe:
+    start: "90%, 20%"
+    end: "5%, 20%"
+    duration: 300
+- assertNotVisible:
+    id: "history-row.crimson-harbor"
+- assertVisible:
+    id: "tab-badge"
+    text: "5"
