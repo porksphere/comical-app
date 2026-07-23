@@ -1,0 +1,117 @@
+# Same journey as ../mobile/settings-walkthrough.yaml, kept in sync by hand. Selectors hitting the
+# web-only aria-label quirk (see ../README.md):
+#   - tab bar: "Settings", not tab.settings (same as smoke.yaml).
+#   - settings.category.<id> sets accessibilityLabel={title} ((tabs)/settings.tsx's CategoryRow) —
+#     select by the row's visible title text instead.
+#   - trackers.install (TopBarButton) sets accessibilityLabel="Install a tracker" — same reason.
+#   - bridges.add / registries.add / custom-pages.add (AddFab) set accessibilityLabel=label — select
+#     by "Install a bridge" / "Add registry" / "Add page" instead.
+#   - downloads.select-toggle (SelectToggle) sets accessibilityLabel="Select items" (not selecting)
+#     — select by that text.
+#   - top-bar.back sets accessibilityLabel="Go back" — same as every other flow using it.
+# screen-title.settings, settings.select.appearance, settings.toggle.check-for-new-chapters,
+# "Cached images", and diagnostics.share have no competing accessibilityLabel — same selectors as
+# mobile (confirmed against source, see ../mobile/settings-walkthrough.yaml's header comment for
+# why each one is safe).
+#
+# Storage's landing anchor uses Maestro's `text:` selector, not `id:` — storage.tsx has ZERO
+# testIDs/accessibilityLabels anywhere (confirmed against source), so there's no element `id:` can
+# resolve at all (that selector only matches testID / web aria-label, per the quirk above — it does
+# NOT fall back to plain rendered text on a bare ThemedText, confirmed by two failed local runs: one
+# against "Image cache" — which ALSO turned out to have a textTransform:'uppercase' style,
+# settings-row.tsx's sectionTitle, rendering as "IMAGE CACHE" — and one against "Cached images",
+# which is normal-case but still an inert ThemedText with no accessibility metadata). `text:` matches
+# rendered text directly regardless of accessibility props, so it works on this one screen without a
+# style-transform pitfall.
+url: http://localhost:4000/comical-app
+---
+- launchApp
+
+- tapOn:
+    id: "Settings"
+- assertVisible:
+    id: "screen-title.settings"
+
+# General
+- tapOn:
+    id: "General"
+- takeScreenshot: general
+- assertVisible:
+    id: "settings.select.appearance"
+- tapOn:
+    id: "Go back"
+
+# Notifications
+- tapOn:
+    id: "Notifications"
+- takeScreenshot: notifications
+- assertVisible:
+    id: "settings.toggle.check-for-new-chapters"
+- tapOn:
+    id: "Go back"
+
+# Bridges
+- tapOn:
+    id: "Bridges"
+- takeScreenshot: bridges
+- assertVisible:
+    id: "Install a bridge"
+- tapOn:
+    id: "Go back"
+
+# Trackers
+- tapOn:
+    id: "Trackers"
+- takeScreenshot: trackers
+- assertVisible:
+    id: "Install a tracker"
+- tapOn:
+    id: "Go back"
+
+# Registries
+- tapOn:
+    id: "Registries"
+- takeScreenshot: registries
+- assertVisible:
+    id: "Add registry"
+- tapOn:
+    id: "Go back"
+
+# Custom Pages
+- tapOn:
+    id: "Custom Pages"
+- takeScreenshot: custom-pages
+- assertVisible:
+    id: "Add page"
+- tapOn:
+    id: "Go back"
+
+# Downloads
+- tapOn:
+    id: "Downloads"
+- takeScreenshot: downloads
+- assertVisible:
+    id: "Select items"
+- tapOn:
+    id: "Go back"
+
+# Storage
+- tapOn:
+    id: "Storage"
+- takeScreenshot: storage
+- assertVisible:
+    text: "Cached images"
+- tapOn:
+    id: "Go back"
+
+# Diagnostics
+- tapOn:
+    id: "Diagnostics"
+- takeScreenshot: diagnostics
+- assertVisible:
+    id: "diagnostics.share"
+- tapOn:
+    id: "Go back"
+
+- assertVisible:
+    id: "screen-title.settings"
