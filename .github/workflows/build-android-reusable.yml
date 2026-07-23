@@ -18,6 +18,14 @@ on:
         type: boolean
         default: false
         required: false
+      demo_fast:
+        # Bakes EXPO_PUBLIC_COMICAL_DEMO_FAST=1: zeroes mock.ts's simulated network delays. Only
+        # e2e.yml sets this (alongside demo_mode) — CI flow runs don't need mock mode's realistic
+        # latency feel, and it adds up across a growing flow count.
+        description: Bake EXPO_PUBLIC_COMICAL_DEMO_FAST=1 into the JS bundle (zero mock latency, for e2e CI).
+        type: boolean
+        default: false
+        required: false
     secrets:
       SENTRY_AUTH_TOKEN:
         # Optional: without it, the Sentry Gradle plugin below no-ops (skips
@@ -158,6 +166,7 @@ jobs:
           # EXPO_PUBLIC_* inlining happens when the "bundle React Native code" Gradle task shells
           # out to node/Metro during assembleRelease — same mechanism deploy-web.yml relies on.
           EXPO_PUBLIC_COMICAL_DEMO_MODE: ${{ inputs.demo_mode && '1' || '' }}
+          EXPO_PUBLIC_COMICAL_DEMO_FAST: ${{ inputs.demo_fast && '1' || '' }}
         run: ./gradlew assembleRelease --no-daemon --build-cache
         working-directory: apps/mobile/android
 

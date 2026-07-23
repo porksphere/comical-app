@@ -70,6 +70,14 @@ on:
         type: boolean
         default: false
         required: false
+      demo_fast:
+        # Bakes EXPO_PUBLIC_COMICAL_DEMO_FAST=1: zeroes mock.ts's simulated network delays. Only
+        # e2e.yml sets this (alongside demo_mode) — CI flow runs don't need mock mode's realistic
+        # latency feel, and it adds up across a growing flow count.
+        description: Bake EXPO_PUBLIC_COMICAL_DEMO_FAST=1 into the JS bundle (zero mock latency, for e2e CI).
+        type: boolean
+        default: false
+        required: false
     secrets:
       SENTRY_AUTH_TOKEN:
         # Optional: without it, the Sentry build-phase script below no-ops
@@ -114,6 +122,7 @@ jobs:
       EXPO_PUBLIC_COMICAL_PROFILING: ${{ inputs.profiling && '1' || '' }}
       # See the `demo_mode` input above — empty for every normal (non-e2e) build.
       EXPO_PUBLIC_COMICAL_DEMO_MODE: ${{ inputs.demo_mode && '1' || '' }}
+      EXPO_PUBLIC_COMICAL_DEMO_FAST: ${{ inputs.demo_fast && '1' || '' }}
     steps:
       - uses: actions/checkout@v4
         with:
