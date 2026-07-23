@@ -1,0 +1,27 @@
+# Same journey as ../mobile/search.yaml, kept in sync by hand. Three selectors hit the web-only
+# aria-label quirk (see ../README.md):
+#   - tab bar: select "Browse", not tab.browse (same as smoke.yaml).
+#   - search entry: both the narrow-layout icon (`browse.search-icon`) and the wide-layout pill
+#     (`browse.search-pill`, app/(tabs)/index.tsx — Maestro's web/Chromium viewport renders the
+#     wide layout) share the same accessibilityLabel="Search", so one selector covers either.
+#   - clear button: `search.field.clear` sets accessibilityLabel="Clear search"
+#     (components/search-field.tsx) — select by that label text instead of the testID.
+# `search.field.input` has no competing accessibilityLabel — same selector as mobile.
+url: http://localhost:4000/comical-app
+---
+- launchApp
+
+- tapOn:
+    id: "Browse"
+
+- tapOn:
+    id: "Search"
+
+- extendedWaitUntil:
+    visible:
+      id: "search.field.input"
+    timeout: 10000
+- inputText: "one piece"
+
+- assertVisible:
+    id: "Clear search"

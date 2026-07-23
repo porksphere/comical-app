@@ -12,3 +12,5 @@ executionOrder:
     - smoke
     - browse-to-reader
     - search
+    - swipe-dismiss
+    - swipe-dismiss-webtoon
