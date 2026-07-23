@@ -105,6 +105,27 @@ selector on both platforms.
 (`C:\Users\<you>\.maestro\tests\<timestamp>\commands-*.json` → `metadata.error.hierarchyRoot`) and
 check whether the element's `resource-id` is label text rather than the testID.
 
+Two more cases confirmed while writing `downloads.yaml`, both worth knowing about generally:
+
+- **Select by `id:`, not `text:`, for an aria-label match.** Maestro's `text:` matcher checks
+  rendered DOM text; an `accessibilityLabel`/`aria-label` isn't rendered text at all, so `text:`
+  never matches it even when the element is plainly on screen — only `id:` resolves through the
+  aria-label path described above. Confirmed the hard way: an initial `text:`-based attempt at
+  `select-mode.tsx`'s `SelectOptionsButton` (static label `"Selection options"`) and its
+  `SelectPillBar` verb pills (dynamic label, e.g. `"Download 40 chapters"` — matched with a regex
+  `id:`, the same precedent as `series.tracker.result.<id>`) both failed until switched to `id:`.
+- **A combined `assertVisible`/`extendedWaitUntil` (`id: + text:`) requires both to match the SAME
+  hierarchy node** — not a node plus one of its descendants. `ActionButton`
+  (`components/series/action-button.tsx`) sets `testID` on the outer `Pressable` but renders its
+  label in a separate child `Text` node; the testID'd node itself carries no `text` attribute in
+  Maestro's hierarchy dump. An `assertVisible: {id: "series.action.download", text: "..."}`-style
+  combo therefore never matches, regardless of whether either condition alone is correct — confirmed
+  via a hierarchy-JSON dump showing the label two levels below the testID'd node. Fix: drop the
+  `id:` constraint and assert on a bare `text:` regex when the string is unambiguous on that screen
+  (see `downloads.yaml`'s final assertion in both mobile copies for a worked example). This
+  potentially affects other flows combining `id:` + `text:` on an `ActionButton` — not yet audited
+  beyond `downloads.yaml`.
+
 ## Web-only gesture quirk: a tap inside an OverlaySheet can misfire as drag-to-dismiss
 
 Confirmed empirically (local Maestro-web run + debug screenshots) while writing

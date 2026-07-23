@@ -1,0 +1,81 @@
+# Series detail -> Download action -> forced-select screen -> real enqueue -> back on series detail
+# with the button reflecting a real (not simulated) state change.
+#
+# Scope decision: asserts the download actually STARTS, not that it FINISHES. Per the plan's own
+# fallback clause ("if [asserting completion] proves flaky in practice, fall back to asserting the
+# trigger UI... without asserting completion") — confirmed here, before writing any flow, that
+# waiting for full completion is the wrong default:
+#   - data/downloads/engine.ts has NO EXPO_PUBLIC_COMICAL_DEMO_FAST (or any) timing override — every
+#     page is a real fetch to picsum.photos (data/downloads/fetch-page.ts), unlike mock.ts's
+#     SERIES_OPEN_DELAY_MS-style constants which ARE demo-fast-gated.
+#   - series-downloads.tsx's forced-select screen auto-preselects every UNREAD chapter
+#     (`ms.selectOnly(unreadKeys)`), not just one. Since this same first Browse card is opened by
+#     several earlier flows (browse-to-reader, swipe-dismiss*, reader-navigation), at most its FIRST
+#     chapter is ever marked read — every other chapter (a mock series' chapter count regularly runs
+#     into the dozens, per series-chapters.yaml's own pagination/expand coverage) is still unread and
+#     gets preselected. Downloading dozens of chapters x several real picsum.photos page fetches each
+#     is an unbounded, network-bound wait — not something to gate a CI job on.
+# So this flow taps "Download N chapters" (however many N is) and then waits only for the series
+# screen's own action button to visibly leave its initial "nothing downloaded" label — proof the
+# enqueue was real and the engine started processing, bounded by a short timeout, without waiting for
+# every preselected chapter to finish. The (possibly many) chapters keep downloading in the
+# background after this flow ends; harmless since this is the last Batch-C-adjacent flow that reads
+# this series, and every flow does its own fresh navigation regardless of background network activity.
+#
+# Left selecting ALL preselected (unread) chapters rather than narrowing to one: series-downloads.tsx
+# has no way to shrink the selection down to exactly one chapter without first landing on a KNOWN
+# baseline (deselect-all via the "..." staging menu, itself gated behind the same forcedSelect
+# preselect timing), which added complexity for no real benefit given the flow already doesn't wait
+# for completion either way.
+#
+# Global downloads.tsx (the plan's third bullet) deliberately NOT re-visited here:
+# settings-walkthrough.yaml already asserts its landing anchor (downloads.select-toggle); this flow
+# has no per-row testID to assert against there (downloads.tsx's SwipeableSettingsRow rows carry no
+# testID, only the bulk-select verbs do), and a second bare landing-render assertion adds ~no
+# incremental coverage over what settings-walkthrough.yaml already exercises.
+#
+# Selectors (confirmed against source):
+#   - series.action.download   Always this testID regardless of state (download-button.tsx) — no
+#     accessibilityLabel set on the node at all (unlike the two below), same id: works on web too.
+#   - series.dl.select-options   The bottom-left "..." staging trigger (SelectPillBar's
+#     SelectOptionsButton, select-mode.tsx). Renders immediately once forcedSelect starts select mode
+#     (independent of the async preselect) — no wait needed beyond the screen transition itself.
+#   - series.dl.download   The "Download N chapters" verb pill (select-mode.tsx's SelectPillBar,
+#     `v.testID`) — only renders once the async preselect lands and toDownload is non-empty, hence
+#     the extendedWaitUntil before tapping it.
+appId: com.porksphere.comical
+---
+- launchApp
+
+- tapOn:
+    id: "tab.browse"
+- tapOn:
+    id: "series-card\\..*"
+- assertVisible:
+    id: "series.cover"
+
+- tapOn:
+    id: "series.action.download"
+
+- assertVisible:
+    id: "series.dl.select-options"
+- extendedWaitUntil:
+    visible:
+      id: "series.dl.download"
+    timeout: 10000
+- tapOn:
+    id: "series.dl.download"
+
+# forcedSelect's downloadSelected() enqueues then immediately router.back()s (no didManage yet).
+- assertVisible:
+    id: "series.cover"
+# Text-only, no `id:` constraint: confirmed via a local web run's debug hierarchy dump that
+# ActionButton renders its label in a CHILD Text node, not on the testID'd Pressable itself — an
+# `id: + text:` combo (the pattern reader-navigation.yaml's progress-pill assertions use) requires
+# both to match the SAME node, so it never matches here. These label strings ("Downloading" etc.)
+# only ever appear inside this one button on this screen, so a bare text regex is unambiguous
+# without the id constraint.
+- extendedWaitUntil:
+    visible:
+      text: "Downloading|Paused|Failed|Downloaded|⤓  \\d+ / \\d+"
+    timeout: 15000
