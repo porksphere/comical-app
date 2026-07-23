@@ -105,6 +105,28 @@ selector on both platforms.
 (`C:\Users\<you>\.maestro\tests\<timestamp>\commands-*.json` → `metadata.error.hierarchyRoot`) and
 check whether the element's `resource-id` is label text rather than the testID.
 
+## Web-only gesture quirk: a tap inside an OverlaySheet can misfire as drag-to-dismiss
+
+Confirmed empirically (local Maestro-web run + debug screenshots) while writing
+`series-trackers.yaml`: tapping `series.tracker.link-toggle` — a plain `Pressable` with no gesture
+of its own, inside the Trackers bottom sheet — closed the sheet instead of triggering its
+`onPress`. Root cause is in `components/overlay/overlay.tsx`, not the tapped screen:
+`OverlaySheet`'s `contentPan` `Gesture.Pan()` wraps the *entire* sheet body with
+`activeOffsetY(12)`, chaining into dismiss once the inner content is scrolled to the top and the
+drag continues downward. Maestro-web's synthetic tap apparently isn't a stationary
+mousedown/mouseup at one point — when the tap target sits well below the previous tap's position,
+the pointer travel is enough to cross that 12px threshold, so the pan gesture wins the race against
+the Pressable's own `onPress` and the sheet just dismisses. Not reproducible as a real bug: an
+actual user's tap doesn't travel that far.
+
+**Any web flow that taps content inside an `OverlaySheet` body (Trackers, Sources, list-picker,
+filter sheets, …) is at risk of this** — not just multi-step swipe/pinch gestures, which were
+already known to be unreliable on Maestro-web. Treat that class of flow as mobile-only unless/until
+Maestro-web's synthetic tap behavior is confirmed to not trigger this (e.g. a short
+`extendedWaitUntil` pause before tapping might avoid it if it's actually a timing artifact rather
+than pointer travel — untested, since the mobile-only scoping was simpler and matched existing
+precedent). See `mobile/series-trackers.yaml`'s header comment for the full flow-specific writeup.
+
 ## Running locally
 
 **Android / iOS (dev-client, Metro-connected):**

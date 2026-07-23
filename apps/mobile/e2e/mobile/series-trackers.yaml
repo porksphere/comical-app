@@ -1,0 +1,66 @@
+# Series detail -> Trackers sheet -> "+ Link tracker" -> search -> assert a real result row.
+# Confirmed demo-safe (see the plan's "Known demo-mode limitations"): mockTrackerSearch is a local
+# substring match against the shared TITLES pool, independent of which series/bridge is open.
+#
+# Selectors (confirmed against source, components/series/tracker-panel.tsx):
+#   - series.action.trackers        ActionButton, opens the sheet (no accessibilityLabel — same
+#                                    id works on web, unlike the Settings-category-row quirk).
+#   - series.tracker.link-toggle    "+ Link tracker" — ALWAYS renders regardless of which series
+#                                    card gets opened: mockTrackerLinks pre-links 0-2 of the 3
+#                                    TRACKER_SERVICES (anilist/mal/kitsu) per series (deterministic
+#                                    hash of the series id), so at least one is always still
+#                                    available to link.
+#   - series.tracker.search         The catalog-search TextInput. No accessibilityLabel either.
+#     Search only fires on submit (onSubmitEditing sets submittedQuery — onChangeText resets it,
+#     so typing alone does nothing), hence `pressKey: Enter` after `inputText`.
+#   - series.tracker.result.<externalId>   Matched broadly by regex (like series.chapter.* in
+#     browse-to-reader.yaml) since externalId is a hash, not a value worth reproducing here.
+#
+# Query "Silent" is a deliberately unique substring: of the whole TITLES pool (data/mock.ts) only
+# "The Silent Sea" contains it (checked against every title, including the long-title fixture), so
+# the result list is always exactly one row — no dependency on which series/tracker-tab is active.
+#
+# The sheet is left open at the end (not explicitly closed) — unlike the reader's mode switch,
+# nothing here is a persisted setting, so there's no state to restore before the next flow's own
+# launchApp.
+#
+# Mobile-only (no web copy), despite no swipe/pinch gesture in this flow's own steps: confirmed
+# empirically (a local Maestro-web run against a static export, three debug screenshots) that
+# tapping `series.tracker.link-toggle` closes the sheet instead of opening the link form.
+# Root cause is in overlay.tsx, not this app screen: OverlaySheet's `contentPan` Gesture.Pan wraps
+# the ENTIRE sheet body with `activeOffsetY(12)` (drag-to-dismiss once the inner list is scrolled
+# to the top — see its own comment, "a continued downward drag chains into dismissal"). Maestro-web's
+# synthetic tap on link-toggle apparently moves the pointer far enough (link-toggle sits well below
+# series.action.trackers, the previous tap target, so the click likely isn't a stationary
+# mousedown/mouseup at one point) to cross that 12px threshold and register as a dismiss-drag,
+# which wins the gesture race against the Pressable's own onPress — so `setLinking(true)` never
+# fires and the sheet just closes. Not reproducible as a real bug: an actual user's stationary
+# click/tap doesn't traverse that distance. See ../README.md's "Web-only gesture quirk" section —
+# this generalizes to any web flow tapping content inside an OverlaySheet body, not just this one.
+appId: com.porksphere.comical
+---
+- launchApp
+
+- tapOn:
+    id: "tab.browse"
+- tapOn:
+    id: "series-card\\..*"
+- assertVisible:
+    id: "series.cover"
+
+- tapOn:
+    id: "series.action.trackers"
+- assertVisible:
+    id: "series.tracker.link-toggle"
+- tapOn:
+    id: "series.tracker.link-toggle"
+
+- assertVisible:
+    id: "series.tracker.search"
+- tapOn:
+    id: "series.tracker.search"
+- inputText: "Silent"
+- pressKey: Enter
+
+- assertVisible:
+    id: "series\\.tracker\\.result\\..*"
