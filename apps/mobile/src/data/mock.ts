@@ -121,6 +121,11 @@ function hash(s: string): number {
 // Default false = real; production (real mode) leaves it false forever.
 let mockActive = false;
 
+// CI-speed override: zeroes every simulated mock latency below (see `delay` and `coverDelayMs`).
+// A sibling flag to `source.ts`'s IS_DEMO_MODE, not piggybacked onto the mockActive toggle above,
+// since local dev demo mode should keep its realistic feel — only e2e.yml sets this.
+const IS_DEMO_FAST = process.env.EXPO_PUBLIC_COMICAL_DEMO_FAST === '1';
+
 /** Set by `data/source` whenever the mock toggle / demo flag changes. */
 export function setMockActive(active: boolean): void {
   mockActive = active;
@@ -142,7 +147,7 @@ export function isMockActive(): boolean {
  * skeleton). This is the single choke point — no caller needs to gate on mock mode itself.
  */
 export function coverDelayMs(id: string): number {
-  if (!mockActive) return 0;
+  if (!mockActive || IS_DEMO_FAST) return 0;
   const h = hash(`cover:${id}`);
   if (h % 5 < 2) return 500 + (h % 2000); // ~0.5s–2.5s on ~40% of covers
   return 0;
@@ -535,7 +540,7 @@ const slugify = (name: string) => name.toLowerCase();
 // data function outside mock mode can't add fake latency to a real page load (infinite scroll, series
 // detail, etc.). In practice these run only via mockDataSource (mock mode), but this makes it airtight.
 const delay = (ms: number): Promise<void> =>
-  mockActive ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
+  mockActive && !IS_DEMO_FAST ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
 
 // Perf spike fixture: a synthetic bridge whose composed Home has a LOT of rails, so the
 // rail-virtualization work (ContentFeed) can be stress-profiled on demand — a real bridge home is only

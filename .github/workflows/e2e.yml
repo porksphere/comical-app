@@ -40,6 +40,7 @@ jobs:
     uses: ./.github/workflows/build-android-reusable.yml
     with:
       demo_mode: true
+      demo_fast: true
     secrets: inherit
 
   test-android:
@@ -71,6 +72,7 @@ jobs:
     with:
       simulator: true
       demo_mode: true
+      demo_fast: true
     secrets: inherit
 
   test-ios:
@@ -132,6 +134,7 @@ jobs:
         working-directory: apps/mobile
         env:
           EXPO_PUBLIC_COMICAL_DEMO_MODE: '1'
+          EXPO_PUBLIC_COMICAL_DEMO_FAST: '1'
         run: |
           set -euo pipefail
           bunx expo export --platform web
