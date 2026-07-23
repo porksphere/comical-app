@@ -1,0 +1,112 @@
+# Extends past browse-to-reader.yaml's "reader opened" assertion: paged prev/next tap zones, the
+# progress-pill's numeric chapter-jump input, and the settings sheet's reading-direction switch.
+#
+# Mobile-only: the tap-zone testIDs (reader.control.*) are NATIVE-only markers
+# (components/reader/zoomable-page.tsx's TapZones — "web has its own gesture pager in
+# paged-reader.web.tsx", which sets none), so there's no web-selectable equivalent for the
+# prev/next taps this flow exercises. Matches the existing swipe-dismiss*/README scoping.
+#
+# Selectors (confirmed against source):
+#   - reader.control.prev / .next / .toggle-chrome   Absolutely-positioned, pointerEvents:none
+#     marker Views at the real tap-zone coordinates (left 30% / centre 40% / right 30% of the
+#     page) — the actual gesture lives on the GestureDetector beneath them, but a Maestro
+#     `tapOn: id` still lands in the right spot (zoomable-page.tsx's own comment confirms this is
+#     intentional, done FOR Maestro).
+#   - reader.progress-pill / .input / .go   progress-pill.tsx's closed pill / open editing row.
+#   - reader.settings.open                  settings-panel.tsx's gear button.
+#   - reader.settings.direction.ltr / .vertical / .rtl   The 3-way mode+direction row — NOT
+#     ".paged"/".webtoon" (a wrong name already caught and fixed in
+#     swipe-dismiss-webtoon.yaml this same session; DIRECTION_OPTIONS only has ltr/vertical/rtl).
+#   - reader.toolbar.back                   Reused from browse-to-reader.yaml.
+#
+# The settings sheet has no dedicated close button — swipe-dismiss-webtoon.yaml's already-
+# committed flow establishes tapping the dimmed backdrop above it (point: "50%, 8%") as the way
+# to dismiss it; reused verbatim here rather than re-deriving a new estimate.
+#
+# Ends back in the default paged/ltr mode (explicitly switches back before finishing) — the
+# direction switch is a real persisted (AsyncStorage) setting that outlives a plain `launchApp`,
+# so leaving it on Vertical would break this same flow's own re-run (reader.control.* only exists
+# in paged mode) as well as any flow after it in flowsOrder.
+#
+# NOT locally verifiable this session (no Android dev-client / no Mac for iOS) — treat the first
+# CI run as this flow's verification, per the plan's existing precedent.
+appId: com.porksphere.comical
+---
+- launchApp
+
+- tapOn:
+    id: "tab.browse"
+- tapOn:
+    id: "series-card\\..*"
+- assertVisible:
+    id: "series.cover"
+- scrollUntilVisible:
+    element:
+      id: "series\\.chapter\\..*"
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: "series\\.chapter\\..*"
+    index: 0
+
+# Reader is up, chrome visible, on page 1.
+- assertVisible:
+    id: "reader.toolbar.back"
+- assertVisible:
+    id: "reader.progress-pill"
+    text: "^1 / \\d+$"
+
+# Paged next/prev taps.
+- tapOn:
+    id: "reader.control.next"
+- assertVisible:
+    id: "reader.progress-pill"
+    text: "^2 / \\d+$"
+- tapOn:
+    id: "reader.control.prev"
+- assertVisible:
+    id: "reader.progress-pill"
+    text: "^1 / \\d+$"
+
+# Progress-pill numeric jump.
+- tapOn:
+    id: "reader.progress-pill"
+- assertVisible:
+    id: "reader.progress-pill.input"
+- tapOn:
+    id: "reader.progress-pill.input"
+- inputText: "3"
+- tapOn:
+    id: "reader.progress-pill.go"
+- assertVisible:
+    id: "reader.progress-pill"
+    text: "^3 / \\d+$"
+
+# Settings sheet: switch reading direction to Vertical (webtoon) and back to L -> R (paged).
+- tapOn:
+    id: "reader.settings.open"
+- assertVisible:
+    id: "reader.settings.direction.vertical"
+- tapOn:
+    id: "reader.settings.direction.vertical"
+- tapOn:
+    point: "50%, 8%"
+
+# Now in webtoon mode: the paged tap zones are gone, replaced by webtoon's own page markers.
+- assertNotVisible:
+    id: "reader.control.next"
+- assertVisible:
+    id: "reader\\.page\\.tap\\..*"
+
+# Switch back to paged/ltr (the app default) before finishing.
+- tapOn:
+    id: "reader.settings.open"
+- tapOn:
+    id: "reader.settings.direction.ltr"
+- tapOn:
+    point: "50%, 8%"
+- assertVisible:
+    id: "reader.control.next"
+
+- tapOn:
+    id: "reader.toolbar.back"
