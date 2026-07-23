@@ -1,11 +1,21 @@
+appId: com.porksphere.comical
+---
 # Navigation smoke: launch the app and tap through every tab by its testID. Proves the
 # structured-selector approach end to end — every tap resolves by id and lands (no coordinate
 # guessing, no missed taps). Data-independent: only asserts each tab's own screen chrome
-# renders, so it passes with real or mock data alike. Shared across android/ios/web
-# entrypoints — do not run this file directly (it has no appId/url), see e2e/README.md.
+# renders, so it passes with real or mock data alike.
+#
+# Shared by both android/ and ios/ CI lanes (see ../config/android.yaml, ../config/ios.yaml) —
+# Android and iOS use the identical bundle id, and Maestro picks up the currently connected
+# device/emulator/simulator at run time, not anything in this file, so one copy genuinely
+# covers both. Only web needs a separate copy (../web/smoke.yaml) — Maestro requires every flow
+# file, including ones only ever reached via runFlow, to declare its own `appId`/`url` in a
+# real config section (confirmed empirically: an empty or omitted config section fails with
+# "Config Section/Field Required"), and web needs `url:` instead of `appId:`, so its body is a
+# duplicate of this file rather than a shared subflow. Keep the two in sync by hand.
 #
 # Tab testIDs are `tab.<routeName>` (see src/components/app-tabs.tsx: `tab.${routeName}`).
----
+
 # Plain launchApp (default stopApp: true) — CI artifacts embed the JS bundle, so a full clean
 # restart is correct here, unlike the dev-client Metro-reconnect flows in .maestro-local
 # (which use stopApp: false because a restart bounces the dev client to its launcher instead

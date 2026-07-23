@@ -1,15 +1,21 @@
 # Maestro workspace config for the Android CI/local lane.
 #
-# Run the whole suite:  maestro test apps/mobile/e2e/config/android.yaml
-# Run one flow:         maestro test apps/mobile/e2e/android/smoke.yaml
+# Run the whole suite:  maestro test --config apps/mobile/e2e/config/android.yaml apps/mobile/e2e/mobile
+# Run one flow:         maestro test apps/mobile/e2e/mobile/smoke.yaml
 #
-# See ../README.md for the full authoring/running workflow.
-
-flows:
-  - "../android/*.yaml"
+# NOTE: `maestro test`'s <flowFiles> positional argument (a flow file OR a folder) is what
+# actually discovers flows — this file only supplies `executionOrder`. There's deliberately no
+# `flows:` glob here: it's confirmed (empirically, Maestro 2.6.1) to resolve relative to the
+# CLI's cwd rather than this file's own directory, so a relative glob here silently matched
+# nothing once invoked from the repo root (as CI does) instead of from this config/ folder.
+#
+# apps/mobile/e2e/mobile is shared with ios.yaml below — Android and iOS use the identical
+# bundle id (com.porksphere.comical) and Maestro targets whatever device/emulator/simulator is
+# currently connected, so one set of flow files covers both. See ../README.md for why web can't
+# share these files (needs `url:` instead of `appId:`) and the full authoring/running workflow.
 
 # Run the cheap navigation smoke first; data-dependent journeys after. Flows not yet
-# migrated (see ../README.md phased rollout) are simply absent from ../android/ and are
+# migrated (see ../README.md phased rollout) are simply absent from ../mobile/ and are
 # skipped here — this list is the intended final order, not a promise every entry exists yet.
 executionOrder:
   continueOnFailure: false

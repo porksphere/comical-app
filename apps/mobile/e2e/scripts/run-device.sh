@@ -3,13 +3,11 @@
 #
 # Generalized from the original apps/mobile/.maestro-local/run.sh: the dev client doesn't
 # auto-reconnect to Metro on restart, so before each flow this deep-links it to the Metro
-# server and waits for the app UI to load. The flows' `launchApp: { stopApp: false }`
-# entrypoint variant then just foregrounds the (reloaded) app — but the COMMITTED entrypoints
-# under ../android and ../ios use plain `runFlow: ../flows/<name>.yaml`, whose shared flow body
-# uses a plain `launchApp` (stopApp: true, correct for CI's standalone builds). Against a
-# dev-client build that matters: a restart bounces the client to its launcher instead of
-# reconnecting to Metro. This script papers over that by reconnecting first, then letting the
-# flow's own launchApp run as a no-op-ish foreground (the dev client is already loaded).
+# server and waits for the app UI to load. The COMMITTED flows under ../mobile use a plain
+# `launchApp` (stopApp: true, correct for CI's standalone builds) — against a dev-client build
+# that matters, since a restart bounces the client to its launcher instead of reconnecting to
+# Metro. This script papers over that by reconnecting first, then letting the flow's own
+# launchApp run as a no-op-ish foreground (the dev client is already loaded).
 #
 # Usage:
 #   bash e2e/scripts/run-device.sh android smoke.yaml       # one flow
@@ -34,7 +32,10 @@ if [ "$PLATFORM" != "android" ] && [ "$PLATFORM" != "ios" ]; then
   exit 1
 fi
 
-FLOW_DIR="$DIR/$PLATFORM"
+# Android and iOS share the same flow files (../mobile) — same appId, and Maestro targets
+# whatever device/emulator/simulator is currently connected. Only the reconnect mechanics below
+# differ per platform.
+FLOW_DIR="$DIR/mobile"
 
 if [ "$PLATFORM" = "android" ]; then
   ADB="${ADB:-adb}"

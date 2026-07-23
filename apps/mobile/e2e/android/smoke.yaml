@@ -1,4 +1,0 @@
-# Entrypoint only — the journey lives once in ../flows/smoke.yaml. See e2e/README.md.
-appId: com.porksphere.comical
----
-- runFlow: ../flows/smoke.yaml

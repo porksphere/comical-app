@@ -64,7 +64,7 @@ jobs:
           script: |
             adb install -r "$RUNNER_TEMP/apk/comical-android.apk"
             export PATH="$HOME/.maestro/bin:$PATH"
-            maestro test apps/mobile/e2e/config/android.yaml
+            maestro test --config apps/mobile/e2e/config/android.yaml apps/mobile/e2e/mobile
 
   build-ios-sim:
     uses: ./.github/workflows/build-ios-reusable.yml
@@ -104,7 +104,7 @@ jobs:
           xcrun simctl install "$UDID" "$APP"
 
           export PATH="$HOME/.maestro/bin:$PATH"
-          maestro --device "$UDID" test apps/mobile/e2e/config/ios.yaml
+          maestro --device "$UDID" test --config apps/mobile/e2e/config/ios.yaml apps/mobile/e2e/mobile
 
   test-web:
     runs-on: ubuntu-latest
@@ -135,9 +135,14 @@ jobs:
         run: |
           set -euo pipefail
           bunx expo export --platform web
-          npx --yes serve@latest dist -l 4000 &
+          # app.json's experiments.baseUrl ("/comical-app") is baked unconditionally into every
+          # export's asset paths (e.g. /comical-app/_expo/static/js/...), so `dist` must be served
+          # *under* a /comical-app subpath, not at the served root, or every asset 404s.
+          mkdir -p serve-root/comical-app
+          cp -r dist/. serve-root/comical-app/
+          npx --yes serve@latest serve-root -l 4000 &
           for i in $(seq 1 30); do
-            curl -sf http://localhost:4000 >/dev/null && exit 0
+            curl -sf http://localhost:4000/comical-app/ >/dev/null && exit 0
             sleep 1
           done
           echo "web server never came up"; exit 1
@@ -148,4 +153,4 @@ jobs:
       - name: Run e2e flows (web)
         run: |
           export PATH="$HOME/.maestro/bin:$PATH"
-          maestro test apps/mobile/e2e/config/web.yaml
+          maestro test --config apps/mobile/e2e/config/web.yaml apps/mobile/e2e/web
