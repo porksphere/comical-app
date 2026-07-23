@@ -34,6 +34,15 @@ const TABS: { name: string; href: string; label: string; Icon: LucideIcon }[] = 
 
 const MOBILE_BREAKPOINT = 768;
 
+// Each desktop nav icon is a 22px Icon inside `iconButton`'s Spacing.one (4px) padding on every
+// side, laid out in `topNav`'s Spacing.three (16px) gap — see the styles below. Kept as a formula
+// (not a guessed constant) so a screen's own trailing header controls can reserve exactly enough
+// room to clear this row on wide/desktop web, rather than drifting out of sync with a hardcoded
+// pixel value the way index.tsx's old `searchPillWrap.marginRight` did (verified too narrow —
+// left only ~14px clearance — when the same gap was needed for TabTitleBar's `right` slot).
+const DESKTOP_NAV_ICON_SIZE = 22 + Spacing.one * 2;
+export const DesktopNavWidth = TABS.length * DESKTOP_NAV_ICON_SIZE + (TABS.length - 1) * Spacing.three;
+
 // Mobile bottom-bar auto-hide thresholds (px of cumulative scroll in one
 // direction). Hiding only after a chunk of downward scroll lets the fade land
 // *after* the browser's own bottom chrome has collapsed and dropped our bar to
