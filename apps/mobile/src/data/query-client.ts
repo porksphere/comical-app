@@ -121,6 +121,12 @@ const NO_PERSIST_KEYS = new Set([
   'isFavorite',
   'pageThumb',
   'browseGrid',
+  // Its cached shape has changed twice in a few days of active development (plain number →
+  // {bridges,trackers,total} counts → {bridges,trackers} arrays) — a stale persisted entry from
+  // an older build crashes useRegistryUpdateCounts on cold start (data.bridges.filter is not a
+  // function when the rehydrated value predates the current shape). Cheap to refetch (one
+  // combined registry check), so just never persist it.
+  'registryUpdateCount',
 ]);
 
 /** Persist only the light keys (see `NO_PERSIST_KEYS`), keeping the default
@@ -137,5 +143,10 @@ export const PERSIST_MAX_AGE_MS = GC_TIME_MS;
  * sources can't restore another origin's stale data: the on-device embedded runtime and each remote
  * backend URL get disjoint persisted caches. (Resolved at module load from the startup preference;
  * a mid-session swap also clears the cache — see settings.tsx — so the two never mix.)
+ *
+ * Also bump this whenever a persisted query's cached *shape* changes, not just its origin — e.g.
+ * v2→v3 here cleared a stale `registryUpdateCount` entry (an older build's plain-number/counts
+ * shape) that crashed `useRegistryUpdateCounts` on cold start once the current code started
+ * expecting `{bridges, trackers}` arrays instead.
  */
-export const PERSIST_BUSTER = `v2:${getResolvedModeSync() === 'embedded' ? 'embedded' : getApiBase()}`;
+export const PERSIST_BUSTER = `v3:${getResolvedModeSync() === 'embedded' ? 'embedded' : getApiBase()}`;
