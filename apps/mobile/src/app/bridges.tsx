@@ -28,6 +28,7 @@ import { bumpDataEpoch } from '@/data/data-epoch';
 import { applyOrder, setBridgeOrder, useBridgeOrder } from '@/data/list-order';
 import { queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw } from '@/data/source';
+import { useBridgeUpdateMap } from '@/data/use-settings-badge';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { friendlyError } from '@/lib/friendly-error';
@@ -40,9 +41,9 @@ const IS_WEB = Platform.OS === 'web';
  *  "needs setup" hint, so the user sees the most actionable state at a glance. `tone` picks the
  *  status color (amber for something needing attention, blue for an informational update) so the
  *  more urgent states are visually distinct instead of blending into the secondary-text color. */
-function bridgeStatus(b: BridgeSummary): { text: string; tone: 'warn' | 'info' } | undefined {
+function bridgeStatus(b: BridgeSummary, availableVersion: string | undefined): { text: string; tone: 'warn' | 'info' } | undefined {
   if (b.discontinued) return { text: 'No longer offered by its registry', tone: 'warn' };
-  if (b.availableVersion) return { text: `Update available — v${b.availableVersion}`, tone: 'info' };
+  if (availableVersion) return { text: `Update available — v${availableVersion}`, tone: 'info' };
   if (!b.configured) return { text: 'Needs setup', tone: 'warn' };
   return undefined;
 }
@@ -56,6 +57,10 @@ export default function BridgesScreen() {
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const browseRegistry = useBrowseRegistry();
+  // Live registry update check (id → newer version) — the authoritative signal for a row's update
+  // dot / swipe-Update, so a pending update shows even when the summary's `availableVersion`
+  // annotation hasn't been persisted back yet (see useBridgeUpdateMap). Served from the pip's cache.
+  const updateMap = useBridgeUpdateMap();
 
   // Web-only reorder mode (▲/▼). Native reorders in place via long-press drag — no mode.
   const [editing, setEditing] = useState(false);
@@ -158,12 +163,16 @@ export default function BridgesScreen() {
   // The page's real row — full swipe-to-uninstall + tap. On native the reorder list wraps this
   // unchanged inside a drag item (swipe stays identical); on web it's the normal-mode row.
   const renderRow = (b: BridgeSummary) => {
-    const status = bridgeStatus(b);
-    const hasUpdate = !!b.availableVersion;
+    // The live check wins over the summary's cached annotation, so a freshly-published update shows
+    // its dot/swipe without waiting for the annotation to be re-persisted; fall back to the annotation
+    // when the check hasn't resolved (or is offline) so a known update still surfaces.
+    const availableVersion = updateMap.get(b.info.id) ?? b.availableVersion;
+    const status = bridgeStatus(b, availableVersion);
+    const hasUpdate = !!availableVersion;
     const openBridge = () =>
       router.push({
         pathname: '/bridge-settings',
-        params: { bridgeId: b.info.id, source: b.source, ...(b.availableVersion ? { availableVersion: b.availableVersion } : {}) },
+        params: { bridgeId: b.info.id, source: b.source, ...(availableVersion ? { availableVersion } : {}) },
       });
     const statusColor = status && (status.tone === 'warn' ? theme.badgeWarn : theme.badgeInfo);
     // The row's own accent dot — the per-bridge form of the counted pip on the Settings "Bridges"

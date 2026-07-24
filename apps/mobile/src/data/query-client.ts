@@ -121,11 +121,11 @@ const NO_PERSIST_KEYS = new Set([
   'isFavorite',
   'pageThumb',
   'browseGrid',
-  // Its cached shape has churned repeatedly during active development (plain number →
-  // {bridges,trackers,total} counts → {bridges,trackers} arrays → a bare tracker-update array now
-  // that bridge updates are read off the bridge summaries instead) — a stale persisted entry from
-  // an older build would crash useRegistryUpdateCounts on cold start (reading a field/method the
-  // rehydrated value predates). Cheap to refetch (one registry tracker check), so never persist it.
+  // Its cached shape has changed twice in a few days of active development (plain number →
+  // {bridges,trackers,total} counts → {bridges,trackers} arrays) — a stale persisted entry from
+  // an older build crashes useRegistryUpdateCounts on cold start (data.bridges.filter is not a
+  // function when the rehydrated value predates the current shape). Cheap to refetch (one
+  // combined registry check), so just never persist it.
   'registryUpdateCount',
 ]);
 
@@ -146,7 +146,7 @@ export const PERSIST_MAX_AGE_MS = GC_TIME_MS;
  *
  * Also bump this whenever a persisted query's cached *shape* changes, not just its origin — e.g.
  * v2→v3 here cleared a stale `registryUpdateCount` entry (an older build's plain-number/counts
- * shape) that crashed `useRegistryUpdateCounts` on cold start. (`registryUpdateCount` is no longer
- * persisted at all — see NO_PERSIST_KEYS — so its later shape changes don't need a buster bump.)
+ * shape) that crashed `useRegistryUpdateCounts` on cold start once the current code started
+ * expecting `{bridges, trackers}` arrays instead.
  */
 export const PERSIST_BUSTER = `v3:${getResolvedModeSync() === 'embedded' ? 'embedded' : getApiBase()}`;

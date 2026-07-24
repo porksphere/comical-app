@@ -13,7 +13,7 @@ import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import type { AvailableBridge, AvailableTracker } from '@/data/api';
 import { bumpDataEpoch } from '@/data/data-epoch';
 import { queryKeys } from '@/data/queries';
-import { useDataSource } from '@/data/source';
+import { useDataSource, useHideNsfw } from '@/data/source';
 import { testId } from '@/lib/test-id';
 
 export default function RegistryBrowseScreen() {
@@ -21,6 +21,7 @@ export default function RegistryBrowseScreen() {
   const ds = useDataSource();
   const contentPadding = useSettingsScrollPadding();
   const queryClient = useQueryClient();
+  const hideNsfw = useHideNsfw();
 
   const bridgesQuery = useQuery({
     queryKey: queryKeys.registryBridges(url ?? ''),
@@ -44,6 +45,11 @@ export default function RegistryBrowseScreen() {
   const loading = bridgesQuery.isLoading || trackersQuery.isLoading;
   const error = bridgesQuery.error || trackersQuery.error;
 
+  // Hide NSFW bridge entries while Hide NSFW is on — same rule the installed Bridges list applies, so
+  // browsing a registry to install/update doesn't expose NSFW sources the rest of the app is hiding.
+  // (Trackers carry no NSFW flag, so they're unaffected.) Reveal NSFW to see and update them here.
+  const visibleBridges = (bridgesQuery.data ?? []).filter((b) => !hideNsfw || !b.entry.nsfw);
+
   return (
     <ThemedView style={styles.container}>
       <TopBar title="Browse registry" />
@@ -66,12 +72,12 @@ export default function RegistryBrowseScreen() {
         ) : (
           <>
             <SettingsSection title="Bridges">
-              {(bridgesQuery.data ?? []).length === 0 ? (
+              {visibleBridges.length === 0 ? (
                 <ThemedText type="small" themeColor="textSecondary">
                   No bridges in this registry.
                 </ThemedText>
               ) : (
-                bridgesQuery.data!.map((b) => (
+                visibleBridges.map((b) => (
                   <BridgeRow key={b.entry.id} bridge={b} url={url ?? ''} onDone={invalidateBrowse} />
                 ))
               )}
