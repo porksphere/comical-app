@@ -89,6 +89,8 @@ the workflow caps each run with `--max-turns` and dedupes per issue.
   you configure on the Sentry side. No workflow changes needed.
 - **Dev/local crashes never autofix**: the workflow's environment guard checks the issue's
   environments via the Sentry API and proceeds only if `production` is among them (fails closed).
+- **e2e CI crashes never autofix either**: e2e runs are Release builds (so `production` env); the
+  guard additionally skips issues whose events all carry an `*-e2e` `buildChannel` tag.
   Caveat: an issue *first* seen in dev won't re-fire the webhook when it later hits production —
   use the manual workflow run for those; the guard passes once production events exist.
 - **Dedupe**: one branch/PR per Sentry short ID; re-alerts and regressions short-circuit.
