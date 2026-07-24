@@ -75,18 +75,53 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v4
+      # Local testing and Expo dev-client crashes still log to Sentry, but must not spend a Claude
+      # run: the app tags dev sessions with environment=development (__DEV__ in _layout.tsx), so
+      # only issues with at least one production-environment event proceed. Fails closed — if the
+      # environment can't be determined, we skip rather than burn subscription usage.
+      # Known gap: an issue FIRST seen in dev never re-fires the created webhook if it later hits
+      # production; use the manual workflow_dispatch run for those (this guard will then pass).
+      - name: Environment guard — skip dev-only issues
+        id: envguard
         if: steps.dedupe.outputs.skip != 'true'
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: |
+          if [ -z "$ISSUE_ID" ]; then
+            # Manual runs pass only the short ID; resolve the numeric issue id.
+            ISSUE_ID=$(curl -sf -H "Authorization: Bearer ${SENTRY_AUTH_TOKEN}" \
+              "https://sentry.io/api/0/organizations/comical/shortids/${SHORT_ID}/" \
+              | jq -r '.group.id // empty')
+            if [ -z "$ISSUE_ID" ]; then
+              echo "::error::Could not resolve Sentry issue for ${SHORT_ID}"
+              exit 1
+            fi
+            echo "ISSUE_ID=${ISSUE_ID}" >> "$GITHUB_ENV"
+          fi
+          ENVIRONMENTS=$(curl -sf -H "Authorization: Bearer ${SENTRY_AUTH_TOKEN}" \
+            "https://sentry.io/api/0/organizations/comical/issues/${ISSUE_ID}/tags/environment/" \
+            | jq -r '[.topValues[].value] | join(",")' || true)
+          echo "Issue ${SHORT_ID} environments: ${ENVIRONMENTS:-<unknown>}"
+          case ",${ENVIRONMENTS}," in
+            *,production,*)
+              echo "skip=false" >> "$GITHUB_OUTPUT" ;;
+            *)
+              echo "No production-environment events — logging only, no autofix."
+              echo "skip=true" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - uses: actions/checkout@v4
+        if: steps.envguard.outputs.skip == 'false'
         with:
           token: ${{ secrets.AUTOFIX_PAT || github.token }}
 
       - uses: oven-sh/setup-bun@v2
-        if: steps.dedupe.outputs.skip != 'true'
+        if: steps.envguard.outputs.skip == 'false'
         with:
           bun-version: latest
 
       - name: Claude — investigate and fix
-        if: steps.dedupe.outputs.skip != 'true'
+        if: steps.envguard.outputs.skip == 'false'
         uses: anthropics/claude-code-action@v1
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
@@ -126,7 +161,7 @@ jobs:
                to /tmp/sentry-autofix-diagnosis.md and stop.
 
       - name: Open draft PR
-        if: steps.dedupe.outputs.skip != 'true'
+        if: steps.envguard.outputs.skip == 'false'
         run: |
           if [ -z "$(git ls-remote origin "refs/heads/${FIX_BRANCH}")" ]; then
             echo "No fix branch was pushed."
@@ -147,7 +182,7 @@ jobs:
           PAYLOAD_TITLE: ${{ github.event.client_payload.title }}
 
       - name: Surface diagnosis when no fix was pushed
-        if: steps.dedupe.outputs.skip != 'true'
+        if: steps.envguard.outputs.skip == 'false'
         run: |
           if [ -n "$(git ls-remote origin "refs/heads/${FIX_BRANCH}")" ]; then
             exit 0  # A fix was pushed; nothing to surface.
