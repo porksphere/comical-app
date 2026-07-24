@@ -1,7 +1,9 @@
 # Sentry → Claude auto-fix pipeline
 
-When a new error-level issue appears in Sentry, Claude automatically investigates it and opens a
-draft fix PR on this repo. Fully event-driven (Sentry webhooks, no polling) and authenticated with a
+When a new **production** error-level issue appears in Sentry, Claude automatically investigates
+it and opens a draft fix PR on this repo. Crashes from local testing and Expo dev clients
+(`environment=development`, set via `__DEV__` in the app's `Sentry.init`) still log to Sentry as
+usual but never trigger a fix run. Fully event-driven (Sentry webhooks, no polling) and authenticated with a
 Claude **subscription** OAuth token (no metered API key).
 
 ```
@@ -85,6 +87,10 @@ the workflow caps each run with `--max-turns` and dedupes per issue.
 
 - **Which issues fire**: `MIN_LEVEL` in `wrangler.toml` (default `error`), plus whatever filtering
   you configure on the Sentry side. No workflow changes needed.
+- **Dev/local crashes never autofix**: the workflow's environment guard checks the issue's
+  environments via the Sentry API and proceeds only if `production` is among them (fails closed).
+  Caveat: an issue *first* seen in dev won't re-fire the webhook when it later hits production —
+  use the manual workflow run for those; the guard passes once production events exist.
 - **Dedupe**: one branch/PR per Sentry short ID; re-alerts and regressions short-circuit.
 - **Manual run / retry**: Actions → "Sentry autofix" → Run workflow, with a Sentry short ID
   (e.g. `COMICAL-APP-1B`).
