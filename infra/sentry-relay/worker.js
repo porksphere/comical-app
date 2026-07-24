@@ -17,7 +17,7 @@
 const LEVELS = ['debug', 'info', 'warning', 'error', 'fatal'];
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (request.method !== 'POST') {
       return new Response('method not allowed', { status: 405 });
     }
@@ -49,37 +49,46 @@ export default {
       return new Response(`ignored: level ${issue.level} below threshold`, { status: 200 });
     }
 
-    // Compact on purpose: repository_dispatch payloads have size limits, and the workflow re-fetches
-    // the authoritative issue + latest event from the Sentry API anyway. Only identifiers travel.
-    const repo = env.GITHUB_REPO || 'porksphere/comical-app';
-    const resp = await fetch(`https://api.github.com/repos/${repo}/dispatches`, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${env.GITHUB_DISPATCH_TOKEN}`,
-        accept: 'application/vnd.github+json',
-        'content-type': 'application/json',
-        'user-agent': 'comical-sentry-relay',
-      },
-      body: JSON.stringify({
-        event_type: 'sentry-issue',
-        client_payload: {
-          issue_id: String(issue.id),
-          short_id: issue.shortId,
-          title: (issue.title || '').slice(0, 200),
-          culprit: (issue.culprit || '').slice(0, 200),
-          level: issue.level,
-          project: issue.project?.slug,
-          web_url: issue.permalink || `https://sentry.io/organizations/comical/issues/${issue.id}/`,
-        },
-      }),
-    });
-
-    if (!resp.ok) {
-      return new Response(`github dispatch failed: ${resp.status} ${await resp.text()}`, { status: 502 });
-    }
-    return new Response('dispatched', { status: 200 });
+    // Answer Sentry immediately and dispatch to GitHub in the background: Sentry's webhook timeout
+    // is short, and a cold start plus a synchronous GitHub API round-trip can exceed it (delivery
+    // then shows "timeout" in the integration's Request Log even though the dispatch succeeded).
+    // Failures land in the Worker logs (`wrangler tail` / dashboard), not the Sentry log.
+    ctx.waitUntil(dispatchToGitHub(env, issue));
+    return new Response('accepted', { status: 202 });
   },
 };
+
+// Compact on purpose: repository_dispatch payloads have size limits, and the workflow re-fetches
+// the authoritative issue + latest event from the Sentry API anyway. Only identifiers travel.
+async function dispatchToGitHub(env, issue) {
+  const repo = env.GITHUB_REPO || 'porksphere/comical-app';
+  const resp = await fetch(`https://api.github.com/repos/${repo}/dispatches`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${env.GITHUB_DISPATCH_TOKEN}`,
+      accept: 'application/vnd.github+json',
+      'content-type': 'application/json',
+      'user-agent': 'comical-sentry-relay',
+    },
+    body: JSON.stringify({
+      event_type: 'sentry-issue',
+      client_payload: {
+        issue_id: String(issue.id),
+        short_id: issue.shortId,
+        title: (issue.title || '').slice(0, 200),
+        culprit: (issue.culprit || '').slice(0, 200),
+        level: issue.level,
+        project: issue.project?.slug,
+        web_url: issue.permalink || `https://sentry.io/organizations/comical/issues/${issue.id}/`,
+      },
+    }),
+  });
+  if (!resp.ok) {
+    console.error(`github dispatch failed for ${issue.shortId}: ${resp.status} ${await resp.text()}`);
+  } else {
+    console.log(`dispatched ${issue.shortId}`);
+  }
+}
 
 // Sentry signs the raw body with HMAC-SHA256 (hex) using the integration's client secret.
 async function verifySignature(body, signature, secret) {
