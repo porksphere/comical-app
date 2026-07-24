@@ -1074,6 +1074,7 @@ export async function mockGetTrackers(): Promise<TrackerSummary[]> {
     info: { id: s.id, name: s.name, capabilities: ['library-sync', 'search'] },
     configured: true,
     missingRequired: [],
+    source: 'registry' as const,
   }));
 }
 

@@ -706,6 +706,9 @@ export interface TrackerSummary {
   info: TrackerInfo;
   configured: boolean;
   missingRequired: string[];
+  /** `registry`-installed trackers can be uninstalled (swipe-to-delete on the Trackers list); a
+   *  `local` (server-built) one can't. Mirrors `BridgeSummary.source`. */
+  source: 'local' | 'registry';
 }
 
 /** GET /trackers/{id}/settings response. */
