@@ -56,6 +56,12 @@ type Props = {
    *  otherwise fire a stray page-turn / chrome-toggle tap. */
   onSwipeStart?: () => void;
   onSwipeEnd?: () => void;
+  /** Fired on raw touch-down, before any activation threshold — a plain tap
+   *  reaches this too. Distinct from `onSwipeStart`: this is a "the user is
+   *  touching the reader" signal (e.g. for keeping auto-hiding chrome alive
+   *  through a touch that never ends up dragging far enough to activate the
+   *  pan at all), not a "the dismiss gesture is active" one. */
+  onTouchBegin?: () => void;
   children: ReactNode;
 };
 
@@ -68,6 +74,7 @@ export function SwipeDismiss({
   progress,
   onSwipeStart,
   onSwipeEnd,
+  onTouchBegin,
   children,
 }: Props) {
   const vertical = axis === 'vertical';
@@ -93,6 +100,11 @@ export function SwipeDismiss({
 
   const pan = Gesture.Pan()
     .enabled(enabled)
+    .onBegin(() => {
+      // Fires on raw touch-down, before the activeOffset threshold — unlike
+      // onStart, this reaches a plain tap or a drag too small to activate.
+      if (onTouchBegin) runOnJS(onTouchBegin)();
+    })
     .onStart(() => {
       // Fires on ACTIVATION (after the activeOffset threshold) — a pure tap never
       // gets here, so the reader's tap zones stay live for real taps.

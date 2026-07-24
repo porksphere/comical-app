@@ -20,9 +20,18 @@
 # "The Silent Sea" contains it (checked against every title, including the long-title fixture), so
 # the result list is always exactly one row — no dependency on which series/tracker-tab is active.
 #
-# The sheet is left open at the end (not explicitly closed) — unlike the reader's mode switch,
-# nothing here is a persisted setting, so there's no state to restore before the next flow's own
-# launchApp.
+# The sheet is explicitly closed at the end via a backdrop tap (point: "50%, 8%", same established
+# pattern as reader-navigation.yaml/swipe-dismiss-webtoon.yaml's settings-sheet dismissal). This
+# isn't about persisted state (there is none here) — it's an IME/window-focus hazard: leaving
+# series.tracker.search focused with the OverlaySheet open when the NEXT flow's launchApp force-
+# kills this process leaves residual Android-OS-level focus/IME state that prevents the next app
+# instance's AppTabs/TabList subtree (the bottom tab bar) from ever mounting, even though routed
+# screen content renders fine. Root-caused via an A/B isolation test: running every other flow
+# before trackers-uninstall.yaml passes; only including this flow immediately before it fails
+# trackers-uninstall's `tab.settings` assertion every time. Confirmed NOT explained by stale JS
+# state (launchApp does a genuine process kill, verified via logcat), a JS crash/ANR (none found),
+# responsive-breakpoint mis-evaluation, tab-bar-visibility.ts module state (non-persisted, always
+# resets), or general emulator/environment degradation (identical repro after a full adb reboot).
 #
 # Mobile-only (no web copy), despite no swipe/pinch gesture in this flow's own steps: confirmed
 # empirically (a local Maestro-web run against a static export, three debug screenshots) that
@@ -64,3 +73,13 @@ appId: com.porksphere.comical
 
 - assertVisible:
     id: "series\\.tracker\\.result\\..*"
+
+# Close the sheet (see header comment) — tap the dimmed backdrop above it, not `- back`:
+# OverlaySheet has no BackHandler/onRequestClose wiring, so hardware back isn't confirmed to
+# reach it, and a stationary point tap here also can't cross OverlaySheet's own 12px
+# drag-to-dismiss threshold the way a fast synthetic web click can (see the web-scoping note
+# above), so it reliably hits the backdrop's plain onPress={closeTop} instead.
+- tapOn:
+    point: "50%, 8%"
+- assertNotVisible:
+    id: "series.tracker.search"

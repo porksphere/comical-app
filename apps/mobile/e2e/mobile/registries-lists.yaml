@@ -40,8 +40,6 @@ appId: com.porksphere.comical
     text: "https://example.com/test-registry"
 - tapOn:
     id: "top-bar.back"
-- tapOn:
-    id: "top-bar.back"
 
 # --- Manage Lists: Library -> list-selector -> Manage lists... -> New list ---
 - tapOn:
@@ -52,8 +50,13 @@ appId: com.porksphere.comical
     id: "library.list.manage"
 - tapOn:
     id: "manage-lists.add"
-- tapOn:
-    id: "custom-pages.name-input"
+# No explicit tapOn custom-pages.name-input here — same autoFocus reasoning as the list-picker.new
+# fix below: the field (custom-pages.tsx) is autoFocus, so manage-lists.add above already focuses
+# it and raises the keyboard. A redundant follow-up tap risks landing while the sheet's open
+# animation/keyboard-raise is still settling, which can miss the input (or blur it) and leave
+# inputText typing into nothing — the likely cause of an observed flake here (a captured debug
+# screenshot showed the sheet still open with an empty, unsubmitted input after this exact
+# sequence). inputText targets whatever's already focused, so it doesn't need a fresh tap.
 - inputText: "Reading later"
 - tapOn:
     id: "custom-pages.name-submit"
@@ -73,8 +76,15 @@ appId: com.porksphere.comical
     id: "series.action.lists"
 - tapOn:
     id: "list-picker.new"
-- tapOn:
-    id: "list-picker.new-name"
+# No explicit tapOn list-picker.new-name here (same reasoning as reader-navigation.yaml's
+# progress-pill jump): the row's TextInput is autoFocus (list-picker.tsx), so tapping
+# list-picker.new above already focuses it and opens the keyboard. A follow-up tap is not just
+# redundant but actively fails here: by the time it runs, the keyboard has already covered enough
+# of the card (MAX_LIST_HEIGHT: 320, no keyboard-avoidance wrapper on this popup, unlike
+# AddRegistryForm's useKeyboardAvoidingInput above) that the input drops out of the accessibility
+# hierarchy entirely — confirmed via a captured debug hierarchy dump showing list-picker.new-name
+# absent. inputText targets whatever already has focus, so it doesn't need the element found.
+#
 # "Backlog", not "Favorites"/"Reading" -- mock.ts pre-seeds both of those as default lists
 # (mockLists' list-reading/list-favorites), so either name would already be visible before this
 # flow creates anything, silently passing the assertion below for the wrong reason.

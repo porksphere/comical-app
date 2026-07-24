@@ -122,9 +122,11 @@ Two more cases confirmed while writing `downloads.yaml`, both worth knowing abou
   combo therefore never matches, regardless of whether either condition alone is correct — confirmed
   via a hierarchy-JSON dump showing the label two levels below the testID'd node. Fix: drop the
   `id:` constraint and assert on a bare `text:` regex when the string is unambiguous on that screen
-  (see `downloads.yaml`'s final assertion in both mobile copies for a worked example). This
-  potentially affects other flows combining `id:` + `text:` on an `ActionButton` — not yet audited
-  beyond `downloads.yaml`.
+  (see `downloads.yaml`'s final assertion in both mobile copies for a worked example). Confirmed to
+  affect the same testID/child-Text split beyond `ActionButton` too: `tab-badge.tsx` (fixed in
+  `history-activity.yaml`) and `progress-pill.tsx`'s closed pill (fixed in `reader-navigation.yaml`)
+  both hit it — audit any *new* `id: + text:` combo against the component's actual JSX structure
+  before assuming it'll resolve on Android.
 
 ## Web-only gesture quirk: a tap inside an OverlaySheet can misfire as drag-to-dismiss
 
