@@ -186,10 +186,49 @@ function OAuthCallbackRow({
   );
 }
 
-/** An `oauth-pin` field: user opens the auth URL, then pastes back either an authorization code
- *  (when `exchange` is set — the server exchanges it for a token) or the raw token itself (an
- *  implicit-grant provider, no `exchange`). Reuses the caller's existing `onChange`/save flow —
- *  no new mutation, same as any other secret string field. */
+/**
+ * The app's own URL scheme (`comical` on a native build, `http(s)` on web), e.g. from
+ * `Linking.createURL('') === 'comical://'`. Used to recognise an implicit-grant redirect that lands
+ * back in this app so we can intercept it via an in-app auth session instead of copy-paste.
+ */
+const appScheme = Linking.createURL('').match(/^([a-z0-9.+-]+):/i)?.[1] ?? '';
+
+/**
+ * When a descriptor is an implicit-grant `oauth-pin` (no `exchange`) whose `authUrl` redirects back
+ * into *this app's own scheme*, we can capture the token automatically: an in-app auth session
+ * intercepts the redirect and hands us the URL with the token in its fragment. Returns that
+ * redirect URI (to hand to `openAuthSessionAsync`), or `null` when the field is a plain
+ * open-and-paste flow (a code-exchange field, or an implicit token shown on a provider web page).
+ */
+function autoCaptureRedirect(descriptor: Extract<SettingDescriptor, { type: 'oauth-pin' }>): string | null {
+  if (descriptor.exchange || !appScheme) return null;
+  const m = descriptor.authUrl.match(/[?&]redirect_uri=([^&]+)/);
+  if (!m) return null;
+  const redirect = decodeURIComponent(m[1]);
+  return redirect.toLowerCase().startsWith(`${appScheme.toLowerCase()}:`) ? redirect : null;
+}
+
+/** Pull an implicit-grant token out of an intercepted redirect URL's fragment
+ *  (`comical://…#access_token=…&token_type=Bearer`). Parsed by hand — no `URL`/`URLSearchParams`
+ *  reliance, which is spotty across JS engines (Hermes/JSC). */
+function tokenFromRedirect(url: string): string | undefined {
+  const hash = url.includes('#') ? url.slice(url.indexOf('#') + 1) : '';
+  for (const pair of hash.split('&')) {
+    const eq = pair.indexOf('=');
+    if (eq === -1) continue;
+    if (pair.slice(0, eq) === 'access_token') return decodeURIComponent(pair.slice(eq + 1));
+  }
+  return undefined;
+}
+
+/** An `oauth-pin` field. Two shapes:
+ *  - **Auto-capture** (`autoCaptureRedirect` matches): a single "Connect" row that opens an in-app
+ *    auth session and pulls the implicit-grant token straight out of the redirect fragment — no
+ *    copy-paste. Used by trackers (e.g. AniList) that redirect back into the app's own scheme.
+ *  - **Open-and-paste** (otherwise): the user opens the auth URL, then pastes back an authorization
+ *    code (`exchange` set — server exchanges it) or the raw token (implicit, shown on a provider page).
+ *  Either way the token/code flows through the caller's existing `onChange`/save flow — no new
+ *  mutation, same as any other secret string field (the user still taps the screen's Save button). */
 function OAuthPinRow({
   descriptor,
   value,
@@ -202,6 +241,57 @@ function OAuthPinRow({
   onChange: (v: SettingValue) => void;
 }) {
   const theme = useTheme();
+  const captureRedirect = autoCaptureRedirect(descriptor);
+  const [connecting, setConnecting] = useState(false);
+  const [captured, setCaptured] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (captureRedirect) {
+    const connect = async () => {
+      if (connecting) return;
+      setError(null);
+      setConnecting(true);
+      try {
+        const result = await openAuthSessionAsync(descriptor.authUrl, captureRedirect);
+        if (result.type !== 'success') return; // user dismissed — leave state as-is
+        const token = tokenFromRedirect(result.url);
+        if (!token) throw new Error('Sign-in did not return an access token.');
+        onChange(token); // staged like a paste; the screen's Save button persists it
+        setCaptured(true);
+      } catch (e) {
+        setCaptured(false);
+        setError(e instanceof Error ? e.message : 'Sign-in failed');
+      } finally {
+        setConnecting(false);
+      }
+    };
+    const description = error
+      ? error
+      : captured
+        ? 'Signed in — tap Save to finish'
+        : secretSet
+          ? 'Connected'
+          : (descriptor.description ?? 'Not connected');
+    return (
+      <SettingsRow
+        label={descriptor.label}
+        description={description}
+        descriptionColor={error ? theme.danger : captured ? theme.accent : secretSet ? undefined : theme.badgeWarn}
+        right={
+          connecting ? (
+            <ActivityIndicator />
+          ) : (
+            <ThemedText type="smallBold" style={{ color: theme.accent }}>
+              {secretSet || captured ? 'Reconnect' : 'Connect'}
+            </ThemedText>
+          )
+        }
+        onPress={connecting ? undefined : connect}
+        testID={testId('settings.oauth', descriptor.label)}
+      />
+    );
+  }
+
   return (
     <>
       <SettingsRow
