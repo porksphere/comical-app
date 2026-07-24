@@ -70,8 +70,8 @@ appId: com.porksphere.comical
 # Reset the persisted reader direction back to paged (the app default) before finishing — the
 # mode switch above is a real AsyncStorage write that outlives this flow (launchApp restarts the
 # process, not app storage), and other flows added later (e.g. reader-navigation.yaml) assume the
-# default paged mode. Reopen, switch back, exit with a plain back tap (no need to re-exercise the
-# swipe-dismiss gesture itself, already covered above).
+# default paged mode. Reopen, switch back, exit (no need to re-exercise the swipe-dismiss gesture
+# itself, already covered above).
 - tapOn:
     id: "series\\.chapter\\..*"
     index: 0
@@ -81,5 +81,10 @@ appId: com.porksphere.comical
     id: "reader.settings.direction.ltr"
 - tapOn:
     point: "50%, 8%"
-- tapOn:
-    id: "reader.toolbar.back"
+# Exit via Maestro's built-in back (not a tap on reader.toolbar.back): the toolbar is gated behind
+# `chromeVisible`, which auto-hides 3s after the last chrome-visible interaction (reader.tsx's
+# CHROME_HIDE_MS) — the settings-open/direction-switch/close sequence above can outlast that on a
+# loaded CI simulator, so the toolbar can already be faded (pointerEvents: 'none') by the time a
+# tap on it would land, failing with "Element not found". `back` operates at the OS/navigation
+# level and doesn't depend on chrome visibility at all.
+- back
