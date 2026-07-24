@@ -1,10 +1,19 @@
 /**
  * Registry updates available from the user's registries, split by category (bridges vs trackers).
- * One combined query (a single cache entry) feeds BOTH the Settings tab pip — which shows the grand
- * total — AND the per-category pips on the Settings landing rows, so the tab badge and the Bridges/
- * Trackers row badges can never disagree. The per-item detail lives where it always did (the Bridges
- * screen's "Update available" rows and the registry browse screen). Servers without registry support
- * resolve both checks to `null`, so every count is simply 0 there.
+ * These counts feed BOTH the Settings tab pip — the grand total — AND the per-category pips on the
+ * Settings landing rows, so the tab badge and the Bridges/Trackers row badges can never disagree.
+ * The per-item detail lives where it always did (the Bridges screen's "Update available" rows and the
+ * registry browse screen). A server without registry support has no `availableVersion` on any summary
+ * and resolves the tracker check to `null`, so every count is simply 0 there.
+ *
+ * The BRIDGE count is derived from the same source the Bridges list shows its update dots for — each
+ * installed bridge summary's `availableVersion` — rather than a separate `/registry/updates` list.
+ * That's deliberate: the two must never disagree. The old approach cross-referenced the update list
+ * (which carries no `nsfw` flag) against the summaries by id to drop hidden-NSFW updates, but the two
+ * were separate queries — when the update list resolved before the summaries one, the filter had no
+ * ids to match yet and a hidden NSFW bridge's update briefly leaked into the pip (visible on Settings,
+ * yet absent from the NSFW-filtered Bridges list). Counting `availableVersion` on the SAME
+ * (NSFW-filtered) summaries the list renders makes the pip and the list agree by construction.
  */
 import { useQuery } from '@tanstack/react-query';
 
@@ -17,40 +26,30 @@ export type RegistryUpdateCounts = {
   total: number;
 };
 
-const EMPTY: RegistryUpdateCounts = { bridges: 0, trackers: 0, total: 0 };
-
 /** The full breakdown — used by the Settings landing screen to badge the Bridges/Trackers rows. */
 export function useRegistryUpdateCounts(): RegistryUpdateCounts {
   const ds = useDataSource();
   const hideNsfw = useHideNsfw();
 
-  const { data } = useQuery({
-    queryKey: queryKeys.registryUpdateCount(),
-    // Keep the raw update lists (not pre-counted): the NSFW filter below depends on `hideNsfw`, which
-    // must re-derive the count on toggle without a refetch. Still one cache entry feeding every pip.
-    queryFn: async ({ signal }) => {
-      const [bridges, trackers] = await Promise.all([
-        ds.checkRegistryUpdates(signal),
-        ds.checkRegistryTrackerUpdates(signal),
-      ]);
-      return { bridges: bridges ?? [], trackers: trackers ?? [] };
-    },
-  });
-
-  // The update list carries no `nsfw` flag; the installed-bridge summaries do. When NSFW is hidden a
-  // hidden bridge's update must NOT be counted — otherwise the pip advertises an update the user can't
-  // see or act on (its row isn't in the Bridges list). Cross-reference by id and drop those. (Same
-  // query key the Bridges screen uses, so this is served from cache — no extra fetch.)
+  // Bridge updates: the SAME query the Bridges screen reads (served from cache — no extra fetch), so
+  // the pip counts exactly the rows that would show an update dot. `availableVersion` is set by the
+  // host from its registry update check, so this is the identical signal the list's dot keys off.
   const { data: summaries } = useQuery({
     queryKey: queryKeys.bridgeSummaries(),
     queryFn: ({ signal }) => ds.getBridgeSummaries(signal),
   });
 
-  if (!data) return EMPTY;
-  const nsfwIds = new Set((summaries ?? []).filter((s) => s.info.nsfw).map((s) => s.info.id));
-  const bridgeUpdates = hideNsfw ? data.bridges.filter((u) => !nsfwIds.has(u.id)) : data.bridges;
-  const b = bridgeUpdates.length;
-  const t = data.trackers.length;
+  // Trackers have no NSFW concept and no per-summary update field, so they keep the registry check.
+  const { data: trackerUpdates } = useQuery({
+    queryKey: queryKeys.registryUpdateCount(),
+    queryFn: async ({ signal }) => (await ds.checkRegistryTrackerUpdates(signal)) ?? [],
+  });
+
+  // Apply the exact visibility rule the Bridges list uses (`bridges.tsx`), so a hidden NSFW bridge's
+  // update is never counted — its row isn't in that list, so advertising it would be a dead-end pip.
+  const visibleBridges = summaries && hideNsfw ? summaries.filter((s) => !s.info.nsfw) : summaries;
+  const b = (visibleBridges ?? []).filter((s) => s.availableVersion).length;
+  const t = (trackerUpdates ?? []).length;
   return { bridges: b, trackers: t, total: b + t };
 }
 
