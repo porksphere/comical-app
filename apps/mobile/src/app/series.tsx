@@ -402,6 +402,12 @@ function SeriesBody({
   // as it comes.
   const primaryLabel = !resumeEntry && readLabel ? readLabel : `▶  ${readingLabel}`;
 
+  // Some bridges hand back a Referer-gated, server-relative `/img-proxy?…` cover that
+  // `<Image>` can't load raw — resolve it the same way the browse card and the loading
+  // skeleton do (absolute CDN covers pass straight through, no async work). Without this
+  // the detail hero rendered blank even though the browse thumbnail showed fine.
+  const resolvedCover = useResolvedAsset(series.cover);
+
   // Cover image + optional chapter-count badge — shared between layouts. Tapping
   // it starts reading, same as the primary Read button.
   const coverEl = (
@@ -412,18 +418,26 @@ function SeriesBody({
       accessibilityRole="button"
       accessibilityLabel={primaryLabel}>
       <SeriesCoverBox aspect={coverAspect}>
-        <Image
-          source={{ uri: series.cover }}
-          style={StyleSheet.absoluteFill}
-          contentFit="cover"
-          cachePolicy="memory-disk"
-          // The skeleton already painted this exact cover — fading it in again on the
-          // skeleton→body swap makes it flash. Skip the fade when it matches; keep the
-          // 200ms fade for a cold load (deep-link, or a bridge whose detail cover
-          // differs from the browse thumbnail).
-          transition={initialCover && initialCover === series.cover ? 0 : 200}
-          onLoad={onCoverLoad}
-        />
+        {resolvedCover ? (
+          <Image
+            source={{ uri: resolvedCover }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            // The skeleton already painted this exact cover — fading it in again on the
+            // skeleton→body swap makes it flash. Skip the fade when it matches; keep the
+            // 200ms fade for a cold load (deep-link, or a bridge whose detail cover
+            // differs from the browse thumbnail). Raw comparison: resolution is
+            // deterministic and its cache is warm from the skeleton, so equal raw values
+            // still mean "same cover already painted".
+            transition={initialCover && initialCover === series.cover ? 0 : 200}
+            onLoad={onCoverLoad}
+          />
+        ) : (
+          // Brief window while a server-relative cover resolves (absolute covers seed
+          // synchronously and never hit this).
+          <Skeleton style={StyleSheet.absoluteFill} />
+        )}
       </SeriesCoverBox>
       {chapterCount != null && (
         <View style={styles.coverBadge}>
