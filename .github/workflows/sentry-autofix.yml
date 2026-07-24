@@ -127,6 +127,9 @@ jobs:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Explicit token skips the action's OIDC → GitHub App token exchange, which fails unless
+          # the Claude GitHub App is installed and `id-token: write` is granted.
+          github_token: ${{ secrets.AUTOFIX_PAT || github.token }}
           claude_args: |
             --max-turns 50
             --allowedTools "Read,Glob,Grep,Edit,Write,Bash(bun:*),Bash(git:*),Bash(curl:*),Bash(mkdir:*),Bash(ls:*)"
