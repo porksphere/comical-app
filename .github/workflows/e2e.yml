@@ -41,6 +41,7 @@ jobs:
     with:
       demo_mode: true
       demo_fast: true
+      channel: android-e2e
     secrets: inherit
 
   test-android:
@@ -90,6 +91,7 @@ jobs:
       simulator: true
       demo_mode: true
       demo_fast: true
+      channel: ios-e2e
     secrets: inherit
 
   test-ios:
