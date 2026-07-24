@@ -27,6 +27,15 @@ import { DIRECT_CHAPTER_ID, type Chapter, type SeriesDetail, type SeriesListResu
 import { firstChapterInReadingOrder, getAdjacentChapter } from '@/lib/chapter-order';
 import { getPreferredGroup, setPreferredGroup } from '@/lib/preferred-group';
 import { useReaderSettings } from '@/hooks/use-reader-settings';
+import {
+  cancelAll as cancelAllTranslation,
+  cancelOutsideWindow as cancelTranslationOutsideWindow,
+  clearLocalizedPages,
+  ensurePage as ensureTranslationPage,
+  initTranslation,
+  isTranslationSupported,
+  useTranslationSettings,
+} from '@/translation';
 
 // Full-screen page reader. Resolves a page-URL list from route params and
 // renders either the horizontal Paged reader or the vertical Webtoon reader,
@@ -202,6 +211,41 @@ export default function ReaderScreen() {
       });
     }
   }, [pages, currentPage, chapterId, ds, mock, queryClient, bridgeId, seed, settings.prefetchAhead]);
+
+  // Translate-ahead: the pipeline sibling of warm-ahead above. Current page runs at 'current'
+  // priority (preempts), the next `translateAhead` pages queue behind it, and anything that
+  // left the window (plus one page back, kept for a quick flip-back) is aborted. Everything
+  // no-ops when the feature is off/unsupported (web resolves the inert stub module).
+  const [{ translateAhead }] = useTranslationSettings();
+  const liveTranslate = settings.liveTranslate && isTranslationSupported();
+  useEffect(() => {
+    if (!liveTranslate || !pages?.length) return;
+    initTranslation();
+    const window = pages.slice(currentPage, currentPage + 1 + translateAhead);
+    const keep = new Set(window);
+    if (currentPage > 0) keep.add(pages[currentPage - 1]);
+    cancelTranslationOutsideWindow(keep);
+    let cancelled = false;
+    void (async () => {
+      for (let i = 0; i < window.length; i++) {
+        const resolved = await resolveAssetSourceCached(window[i]).catch(() => null);
+        if (cancelled || !resolved) continue;
+        ensureTranslationPage(window[i], resolved, i === 0 ? 'current' : 'ahead');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [liveTranslate, pages, currentPage, translateAhead]);
+
+  // Toggle-off / reader unmount: stop the pipeline and sweep the localized-page scratch dir.
+  useEffect(() => {
+    if (!liveTranslate) return;
+    return () => {
+      cancelAllTranslation();
+      clearLocalizedPages();
+    };
+  }, [liveTranslate]);
 
   // ── Auto-advance to the next chapter ──────────────────────────────────────
   // Guards against a re-entrant double-advance (e.g. a rapid extra tap/scroll

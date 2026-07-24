@@ -1,6 +1,6 @@
 # Settings tab: drill into every category and back out, asserting a stable landing element on
-# each pushed screen. Categories walked (9 of the 10 in settings.tsx): general, notifications,
-# bridges, trackers, registries, custom-pages, downloads, storage, diagnostics.
+# each pushed screen. Categories walked (10 of the 11 in settings.tsx): general, notifications,
+# bridges, trackers, registries, custom-pages, downloads, translation, storage, diagnostics.
 #
 # `settings.category.developer` is deliberately SKIPPED: it's gated behind PROFILING_ENABLED
 # (src/lib/profiling.ts — true only in __DEV__ or a EXPO_PUBLIC_COMICAL_PROFILING=1 build), which
@@ -92,6 +92,15 @@ appId: com.porksphere.comical
 - takeScreenshot: downloads
 - assertVisible:
     id: "downloads.select-toggle"
+- tapOn:
+    id: "top-bar.back"
+
+# Translation
+- tapOn:
+    id: "settings.category.translation"
+- takeScreenshot: translation
+- assertVisible:
+    id: "settings.select.translate-to"
 - tapOn:
     id: "top-bar.back"
 

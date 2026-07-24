@@ -25,6 +25,7 @@ import {
   type ReaderSettings,
 } from '@/hooks/use-reader-settings';
 import { testId } from '@/lib/test-id';
+import { isTranslationSupported } from '@/translation';
 
 /** Gear button (bottom-right) that opens reader settings in the app's shared
  *  overlay system — a near-full-width bottom sheet on mobile/narrow web, an
@@ -130,6 +131,25 @@ function SettingsContent({
         options={[1, 2, 3, 4, 6, 8].map((n) => [String(n), String(n)] as [string, string])}
         onChange={(v) => set({ prefetchAhead: Number(v) as PrefetchAhead })}
       />
+      {isTranslationSupported() && (
+        <>
+          <Segment
+            label="Live translate"
+            testIdPrefix="reader.settings.live-translate"
+            value={settings.liveTranslate ? 'on' : 'off'}
+            options={[
+              ['off', 'Off'],
+              ['on', 'On'],
+            ]}
+            onChange={(v) => set({ liveTranslate: v === 'on' })}
+          />
+          {settings.liveTranslate && (
+            <ThemedText style={styles.hint}>
+              OCR + translation run on-device. Models & languages: Settings → Translation
+            </ThemedText>
+          )}
+        </>
+      )}
       {bridgeId && seriesId && (
         <SeriesActionsRow
           bridgeId={bridgeId}

@@ -15,6 +15,7 @@ import {
   RegistriesIcon,
   StorageIcon,
   TrackersIcon,
+  TranslationIcon,
 } from '@/components/icons/ui-icons';
 import { CumulativeDownloadRadial } from '@/components/downloads/cumulative-radial';
 import { UpdatePip } from '@/components/tab-badge';
@@ -128,6 +129,13 @@ export default function SettingsScreen() {
             value={counts.downloads}
             progress={counts.downloadsProgress}
             onPress={() => router.push('/downloads')}
+          />
+          <Divider />
+          <CategoryRow
+            testID="settings.category.translation"
+            icon={<TranslationIcon color={theme.textSecondary} size={22} />}
+            title="Translation"
+            onPress={() => router.push('/settings-translation')}
           />
           <Divider />
           <CategoryRow

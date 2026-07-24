@@ -127,6 +127,12 @@ const NO_PERSIST_KEYS = new Set([
   // function when the rehydrated value predates the current shape). Cheap to refetch (one
   // combined registry check), so just never persist it.
   'registryUpdateCount',
+  // Live-translation entries: results persist in the feature's own sharded AsyncStorage store
+  // (src/translation/results-cache.ts) precisely so they never ride this whole-cache
+  // reserialize; state entries are ephemeral by nature. See docs/live-translator-feasibility.md.
+  'pageTranslation',
+  'pageTranslationState',
+  'translatorModels',
 ]);
 
 /** Persist only the light keys (see `NO_PERSIST_KEYS`), keeping the default

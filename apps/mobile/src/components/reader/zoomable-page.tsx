@@ -6,6 +6,7 @@ import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-nativ
 import { ReaderPage } from '@/components/reader/reader-page';
 import { useZoomable } from '@/components/reader/use-zoomable';
 import type { PageFit } from '@/hooks/use-reader-settings';
+import { ReaderTranslationOverlay } from '@/translation/components/reader-translation-overlay';
 
 // A single paged-reader page (NATIVE only — web has its own gesture pager in
 // paged-reader.web.tsx and never renders this).
@@ -175,6 +176,13 @@ export function ZoomablePage({
               height={height}
               onLoadDims={onLoadDims}
               onFailedChange={setPageFailed}
+            />
+            {/* Inside the zoom + content-pan transforms, so bubbles track the page 1:1. */}
+            <ReaderTranslationOverlay
+              pageKey={uri}
+              width={width}
+              height={height}
+              fit={pageFit === 'fit-width' ? 'width' : 'contain'}
             />
           </Animated.View>
         </Animated.View>

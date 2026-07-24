@@ -127,6 +127,7 @@ function RootNavigation() {
               contents — every category below is a screen it pushes. */}
           <Stack.Screen name="settings-general" options={{ headerShown: false }} />
           <Stack.Screen name="settings-notifications" options={{ headerShown: false }} />
+          <Stack.Screen name="settings-translation" options={{ headerShown: false }} />
           <Stack.Screen name="settings-developer" options={{ headerShown: false }} />
           <Stack.Screen name="bridges" options={{ headerShown: false }} />
           <Stack.Screen name="trackers" options={{ headerShown: false }} />

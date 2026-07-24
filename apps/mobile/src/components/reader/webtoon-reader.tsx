@@ -17,6 +17,7 @@ import { ReaderPage } from '@/components/reader/reader-page';
 import { useZoomable } from '@/components/reader/use-zoomable';
 import type { PageFit } from '@/hooks/use-reader-settings';
 import { testId } from '@/lib/test-id';
+import { ReaderTranslationOverlay } from '@/translation/components/reader-translation-overlay';
 
 export type WebtoonReaderHandle = { goToPage: (index: number) => void };
 
@@ -279,6 +280,9 @@ function WebtoonRow({
   return (
     <View onLayout={(e: LayoutChangeEvent) => onRowLayout(index, e.nativeEvent.layout.height)}>
       <ReaderPage uri={uri} page={index + 1} fit="width" width={width} onFailedChange={setFailed} />
+      {/* Stateless (rows unmount off-screen); re-reads the result cache on remount. Height is
+          derived from the image aspect in 'width' fit, so 0 is fine as the unused box height. */}
+      <ReaderTranslationOverlay pageKey={uri} width={width} height={0} fit="width" />
       {!failed && <View testID={testID} style={StyleSheet.absoluteFill} pointerEvents="none" />}
     </View>
   );
@@ -413,6 +417,7 @@ function WebtoonPagedRow({
       <View style={{ width, height, overflow: 'hidden' }}>
         <Animated.View style={[{ width, height }, animatedStyle]}>
           <ReaderPage uri={uri} page={index + 1} fit="contain" width={width} height={height} onFailedChange={setFailed} />
+          <ReaderTranslationOverlay pageKey={uri} width={width} height={height} fit="contain" />
         </Animated.View>
         {/* Inert marker for the reader.page.tap.* testID (asserted by Maestro). */}
         {!failed && <View testID={testID} style={StyleSheet.absoluteFill} pointerEvents="none" />}

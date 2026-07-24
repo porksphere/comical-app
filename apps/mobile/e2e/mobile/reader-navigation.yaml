@@ -87,6 +87,10 @@ appId: com.porksphere.comical
     id: "reader.settings.open"
 - assertVisible:
     id: "reader.settings.direction.vertical"
+# The Live translate segment renders whenever the native translator module is linked (always
+# true for this build); its per-option ids come from Segment's testIdPrefix.
+- assertVisible:
+    id: "reader.settings.live-translate.off"
 - tapOn:
     id: "reader.settings.direction.vertical"
 - tapOn:

@@ -38,6 +38,7 @@
     "expo-web-browser": "~56.0.5",
     "lucide-react": "^1.21.0",
     "lucide-react-native": "1.21.0",
+    "onnxruntime-react-native": "^1.24.3",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.85.3",

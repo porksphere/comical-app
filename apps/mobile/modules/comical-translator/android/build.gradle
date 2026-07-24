@@ -1,0 +1,40 @@
+apply plugin: 'com.android.library'
+apply plugin: 'org.jetbrains.kotlin.android'
+
+group = 'expo.modules.comicaltranslator'
+version = '0.1.0'
+
+// Expo Modules gradle plugin (provides the Module DSL + autolinking hooks).
+def expoModulesCorePlugin = new File(project(":expo-modules-core").projectDir.absolutePath, "ExpoModulesCorePlugin.gradle")
+apply from: expoModulesCorePlugin
+applyKotlinExpoModulesCorePlugin()
+useCoreDependencies()
+useExpoPublishing()
+
+android {
+  namespace "expo.modules.comicaltranslator"
+  compileSdk 36
+
+  defaultConfig {
+    minSdk 26
+  }
+
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_17
+    targetCompatibility JavaVersion.VERSION_17
+  }
+  kotlinOptions { jvmTarget = "17" }
+}
+
+dependencies {
+  // Bundled ML Kit recognizers (not the Play-Services "thin" variants): the app sideloads and
+  // must OCR offline on first run, so the per-script models ship in the AAB/APK (~4 MB each).
+  implementation "com.google.mlkit:text-recognition:16.0.1"
+  implementation "com.google.mlkit:text-recognition-japanese:16.0.1"
+  implementation "com.google.mlkit:text-recognition-korean:16.0.1"
+  implementation "com.google.mlkit:text-recognition-chinese:16.0.1"
+  // On-device translation; language packs download on demand (~30 MB per language).
+  implementation "com.google.mlkit:translate:17.0.3"
+  implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1"
+  implementation "org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1"
+}

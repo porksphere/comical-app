@@ -95,6 +95,16 @@ url: http://localhost:4000/comical-app
 - tapOn:
     id: "Go back"
 
+# Translation — web has no on-device pipeline, so the screen's whole content is the
+# "not available on web" block (settings.translation.unavailable, an unconditional testID).
+- tapOn:
+    id: "Translation"
+- takeScreenshot: translation
+- assertVisible:
+    id: "settings.translation.unavailable"
+- tapOn:
+    id: "Go back"
+
 # Storage
 - tapOn:
     id: "Storage"

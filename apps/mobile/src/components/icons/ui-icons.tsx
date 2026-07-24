@@ -17,6 +17,7 @@ import {
   Eye,
   EyeOff,
   HardDrive,
+  Languages,
   Pause,
   RotateCcw,
   TriangleAlert,
@@ -78,6 +79,7 @@ export const DiagnosticsIcon = ({ color, size = 16 }: IconProps) => <Bug color={
 // Custom pages — the settings entry for composing your own Comical pages.
 export const CustomPagesIcon = ({ color, size = 16 }: IconProps) => <LayoutGrid color={color} size={size} />;
 export const DownloadsIcon = ({ color, size = 16 }: IconProps) => <Download color={color} size={size} />;
+export const TranslationIcon = ({ color, size = 16 }: IconProps) => <Languages color={color} size={size} />;
 export const StorageIcon = ({ color, size = 16 }: IconProps) => <HardDrive color={color} size={size} />;
 export const DownloadingIcon = ({ color, size = 16 }: IconProps) => <Download color={color} size={size} />;
 // Outline (not filled): filled bars read as a solid blob at small sizes.

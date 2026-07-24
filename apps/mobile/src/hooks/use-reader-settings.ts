@@ -15,10 +15,18 @@ export type ReaderSettings = {
   direction: ReaderDirection;
   pageFit: PageFit;
   prefetchAhead: PrefetchAhead;
+  /** Live translation: OCR + translate pages as they load, overlaying the result (native only). */
+  liveTranslate: boolean;
 };
 
 const STORAGE_KEY = 'comical:readerSettings';
-const DEFAULT_SETTINGS: ReaderSettings = { mode: 'paged', direction: 'ltr', pageFit: 'fit-page', prefetchAhead: 4 };
+const DEFAULT_SETTINGS: ReaderSettings = {
+  mode: 'paged',
+  direction: 'ltr',
+  pageFit: 'fit-page',
+  prefetchAhead: 4,
+  liveTranslate: false,
+};
 
 // Starts at DEFAULT_SETTINGS (also the pre-hydration value the web static export
 // renders) and rehydrates from the same `comical:readerSettings` key the old

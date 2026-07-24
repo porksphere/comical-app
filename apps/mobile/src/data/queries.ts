@@ -161,6 +161,18 @@ export const queryKeys = {
   /** The library's host-side storage footprint (the Storage screen's breakdown segment). */
   libraryUsage: () => ['libraryUsage'] as const,
 
+  // ─── Live translation (device-local pipeline output) ───────────────────────
+  // Device data (like downloads): no `mock`. Results/state are push-written by the pipeline
+  // scheduler (`src/translation/`) via setQueryData; both result keys are in NO_PERSIST_KEYS —
+  // durable persistence is the translation feature's own sharded store, not the query blob.
+  /** A page's translated regions, keyed by the reader's raw page path + target language. */
+  pageTranslation: (pagePath: string, dstLang: string) =>
+    ['pageTranslation', pagePath, dstLang] as const,
+  /** Live pipeline state for a page (translating/error chips). */
+  pageTranslationState: (pagePath: string) => ['pageTranslationState', pagePath] as const,
+  /** Translator model download rows (the Settings → Translation screen). */
+  translatorModels: () => ['translatorModels'] as const,
+
   // Invalidation target that prefix-matches the library grid (`['library', mock, q, sort]`), so
   // invalidating this refreshes the Library tab regardless of its current search/sort.
   libraryList: (mock: boolean) => ['library', mock] as const,
