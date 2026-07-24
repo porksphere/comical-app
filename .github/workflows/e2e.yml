@@ -54,6 +54,18 @@ jobs:
           name: ${{ needs.build-android.outputs.artifact }}
           path: ${{ runner.temp }}/apk
 
+      # Without this, /dev/kvm exists but isn't group-writable by the runner user, so the emulator
+      # silently falls back to pure software (QEMU) x86_64 emulation — dramatically slower than
+      # hardware-accelerated: observed as an ~8min emulator boot and a ~6min `adb install` for a
+      # normal-sized APK (should be ~1min and a few seconds respectively), which starved the smoke
+      # flow of enough time to ever see `tab.browse` render. Standard fix recommended by
+      # reactivecircus/android-emulator-runner's own docs for Linux runners.
+      - name: Enable KVM group perms
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
       - name: Install Maestro
         run: |
           curl -Ls "https://get.maestro.mobile.dev" | bash
@@ -102,10 +114,17 @@ jobs:
           ditto -x -k "$RUNNER_TEMP/app/comical-simulator.zip" "$RUNNER_TEMP/app"
           APP=$(find "$RUNNER_TEMP/app" -maxdepth 1 -name "*.app" | head -1)
 
-          # Pin to whatever device type macos-26's default Xcode actually ships — don't
-          # hard-code a name that may not exist on a given runner image.
-          DEVICE_TYPE=$(xcrun simctl list devicetypes -j | jq -r '.devicetypes[] | select(.name | test("iPhone")) | .identifier' | tail -1)
-          RUNTIME=$(xcrun simctl list runtimes -j | jq -r '.runtimes[] | select(.name | test("iOS")) | .identifier' | tail -1)
+          # Pin to whatever runtime/device pair macos-26's default Xcode actually ships — don't
+          # hard-code names that may not exist on a given runner image. Picking DEVICE_TYPE
+          # independently from the full devicetypes list (the previous approach) could select a
+          # devicetype the chosen runtime doesn't actually support, failing `simctl create` with
+          # "Incompatible device" (403) — e.g. a newer iPhone devicetype not yet paired with an
+          # older installed iOS runtime. Selecting from the runtime's own `supportedDeviceTypes`
+          # instead guarantees a valid pairing.
+          RUNTIME_JSON=$(xcrun simctl list runtimes -j | jq -c '[.runtimes[] | select(.name | test("iOS")) | select(.isAvailable)] | sort_by(.version) | last')
+          RUNTIME=$(echo "$RUNTIME_JSON" | jq -r '.identifier')
+          DEVICE_TYPE=$(echo "$RUNTIME_JSON" | jq -r '.supportedDeviceTypes[] | select(.name | test("iPhone")) | .identifier' | tail -1)
+          echo "Using runtime=$RUNTIME device_type=$DEVICE_TYPE"
           UDID=$(xcrun simctl create comical-e2e "$DEVICE_TYPE" "$RUNTIME")
 
           xcrun simctl boot "$UDID"
