@@ -20,5 +20,6 @@ executionOrder:
     - history-activity
     - reader-navigation
     - series-trackers
+    - trackers-uninstall
     - downloads
     - registries-lists

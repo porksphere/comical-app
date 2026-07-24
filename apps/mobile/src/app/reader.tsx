@@ -34,6 +34,13 @@ import { useReaderSettings } from '@/hooks/use-reader-settings';
 // Always dark — the reader is its own black surface, not a ThemedView.
 
 const CHROME_HIDE_MS = 3000;
+// CI-speed override: scripted Maestro flows have per-step overhead (navigation,
+// assertion retries) that can exceed 3s between reader-mount and a later
+// chrome-dependent step — and once chrome auto-hides, the pill/toolbar drop out
+// of the accessibility tree (pointerEvents: 'none'), reliably breaking any
+// later tap/assert that assumed it was still up. Same flag as mock.ts's
+// IS_DEMO_FAST (set only by e2e.yml); local dev keeps the real hide behavior.
+const CHROME_AUTO_HIDE = process.env.EXPO_PUBLIC_COMICAL_DEMO_FAST !== '1';
 // How close to the end of a chapter before the next chapter's pages are
 // prefetched — restores comical-web's `prefetchNextChapter` reading smoothness.
 // (How many page *images* to warm ahead is the user-configurable
@@ -142,6 +149,41 @@ export default function ReaderScreen() {
     opacity: interpolate(dismissProgress.value, [0, 0.6], [1, 0]),
   }));
 
+  // Auto-hide chrome; any toggle/show resets the timer.
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleHide = useCallback(() => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    if (!CHROME_AUTO_HIDE) return;
+    hideTimer.current = setTimeout(() => {
+      setChromeVisible(false);
+    }, CHROME_HIDE_MS);
+  }, []);
+  useEffect(() => {
+    scheduleHide();
+    return () => {
+      if (hideTimer.current) clearTimeout(hideTimer.current);
+    };
+  }, [scheduleHide]);
+
+  const showChrome = useCallback(() => {
+    setChromeVisible(true);
+    scheduleHide();
+  }, [scheduleHide]);
+
+  // Keeping chrome alive through a touch: rather than force it visible (which
+  // would fight a tap-to-reveal toggle resolving on the same touch), a touch
+  // just PAUSES the countdown — SwipeDismiss's `onTouchBegin` fires on raw
+  // touch-down (RNGH's onBegin), before any activation threshold, so a drag
+  // too small/slow to ever activate the pan is covered too. The countdown
+  // resumes fresh from release (`onSwipeEnd`, RNGH's onFinalize — always fires
+  // once the touch resolves, tap or drag, activated or not), so however long
+  // the touch/drag itself takes, chrome stays up for the whole thing and for a
+  // full CHROME_HIDE_MS after — never snatched away mid-touch or right as a
+  // slow gesture completes.
+  const pauseHide = useCallback(() => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+  }, []);
+
   // While a dismiss swipe is in flight (and briefly after), suppress the reader's
   // tap zones: a plain RN Pressable doesn't see the moves the RNGH pan consumes,
   // so on release the side/centre zone would otherwise fire a stray page-turn or
@@ -159,7 +201,10 @@ export default function ReaderScreen() {
     swipeClearTimer.current = setTimeout(() => {
       swipeActiveRef.current = false;
     }, 150);
-  }, []);
+    // Resume the auto-hide countdown now that the touch has ended (a no-op if
+    // a tap-toggle on the same touch already hid chrome and cleared this).
+    scheduleHide();
+  }, [scheduleHide]);
   useEffect(() => () => {
     if (swipeClearTimer.current) clearTimeout(swipeClearTimer.current);
   }, []);
@@ -335,23 +380,6 @@ export default function ReaderScreen() {
   const pagedRef = useRef<PagedReaderHandle>(null);
   const webtoonRef = useRef<WebtoonReaderHandle>(null);
 
-  // Auto-hide chrome; any toggle/show resets the timer.
-  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scheduleHide = useCallback(() => {
-    if (hideTimer.current) clearTimeout(hideTimer.current);
-    hideTimer.current = setTimeout(() => setChromeVisible(false), CHROME_HIDE_MS);
-  }, []);
-  useEffect(() => {
-    scheduleHide();
-    return () => {
-      if (hideTimer.current) clearTimeout(hideTimer.current);
-    };
-  }, [scheduleHide]);
-
-  const showChrome = useCallback(() => {
-    setChromeVisible(true);
-    scheduleHide();
-  }, [scheduleHide]);
   const toggleChrome = useCallback(() => {
     if (swipeActiveRef.current) return; // a swipe-release tap, not a real chrome toggle
     setChromeVisible((v) => {
@@ -489,7 +517,8 @@ export default function ReaderScreen() {
             onDismiss={() => router.back()}
             progress={dismissProgress}
             onSwipeStart={beginSwipeGuard}
-            onSwipeEnd={endSwipeGuard}>
+            onSwipeEnd={endSwipeGuard}
+            onTouchBegin={pauseHide}>
             {settings.mode === 'paged' ? (
               <PagedReader
                 ref={pagedRef}

@@ -32,15 +32,16 @@ appId: com.porksphere.comical
 - assertVisible:
     id: "trackers.row.anilist"
 
-# Moderate swipe left to reveal the Uninstall pill without auto-committing, then tap it by id
-# (rather than guessing its on-screen position). Its onPress opens the confirm popup — uninstall is
-# guarded, never an immediate delete.
+# Single-action row (mock's anilist has no pending update, see header) is full-swipeable
+# (swipeable-row.tsx's FULL_SWIPE_COMMIT) — a wide swipe alone commits and fires the SAME onPress a
+# pill tap would, same pattern as history-activity.yaml's single-action rows. A moderate swipe that
+# only reveals the pill without committing doesn't work here: the row springs back closed (and the
+# revealed pill's tap target disappears) well before a follow-up `tapOn: id` could land on it. Its
+# onPress opens the confirm popup — uninstall is guarded, never an immediate delete.
 - swipe:
     start: "90%, 20%"
-    end: "35%, 20%"
+    end: "5%, 20%"
     duration: 300
-- tapOn:
-    id: "swipe-action.anilist.uninstall"
 
 # The guard: a confirm popup, not an instant removal.
 - assertVisible:

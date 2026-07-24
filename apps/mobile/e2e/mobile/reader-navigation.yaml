@@ -13,6 +13,9 @@
 #     `tapOn: id` still lands in the right spot (zoomable-page.tsx's own comment confirms this is
 #     intentional, done FOR Maestro).
 #   - reader.progress-pill / .input / .go   progress-pill.tsx's closed pill / open editing row.
+#     The "N / total" text renders in a child Text node, not on the testID'd Pressable itself, so
+#     an `id: + text:` combo never matches on Android (same pitfall as ActionButton/tab-badge, see
+#     e2e/README.md) — asserted as a bare anchored `text:` regex instead.
 #   - reader.settings.open                  settings-panel.tsx's gear button.
 #   - reader.settings.direction.ltr / .vertical / .rtl   The 3-way mode+direction row — NOT
 #     ".paged"/".webtoon" (a wrong name already caught and fixed in
@@ -53,33 +56,32 @@ appId: com.porksphere.comical
 - assertVisible:
     id: "reader.toolbar.back"
 - assertVisible:
-    id: "reader.progress-pill"
     text: "^1 / \\d+$"
 
 # Paged next/prev taps.
 - tapOn:
     id: "reader.control.next"
 - assertVisible:
-    id: "reader.progress-pill"
     text: "^2 / \\d+$"
 - tapOn:
     id: "reader.control.prev"
 - assertVisible:
-    id: "reader.progress-pill"
     text: "^1 / \\d+$"
 
-# Progress-pill numeric jump.
+# Progress-pill numeric jump. The input is autoFocus + selectTextOnFocus the moment editing opens
+# (progress-pill.tsx), so its prefilled value ("1", from current+1) is already selected and ready
+# for inputText to REPLACE outright — an extra tapOn the input here would re-tap an already-focused
+# field, which repositions the cursor instead of re-selecting, turning the replace into an insert
+# ("1" + typed "3" -> "13", jumping to the wrong page). Confirmed via Maestro debug artifacts: the
+# pill read "13 / 26" instead of "3 / 26" with the extra tap present.
 - tapOn:
     id: "reader.progress-pill"
 - assertVisible:
-    id: "reader.progress-pill.input"
-- tapOn:
     id: "reader.progress-pill.input"
 - inputText: "3"
 - tapOn:
     id: "reader.progress-pill.go"
 - assertVisible:
-    id: "reader.progress-pill"
     text: "^3 / \\d+$"
 
 # Settings sheet: switch reading direction to Vertical (webtoon) and back to L -> R (paged).
