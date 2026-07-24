@@ -3,7 +3,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
-import { SettingFieldEditor } from '@/components/settings/setting-field';
+import { SettingFieldEditor, isAutoPersistedField } from '@/components/settings/setting-field';
 import { SettingsSection } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -43,19 +43,41 @@ export default function TrackerSettingsScreen() {
   const saved = saveMutation.isSuccess;
   const saveError = saveMutation.isError ? (saveMutation.error as Error).message || 'Failed to save settings' : null;
 
+  // PUT is a full replace, so a save must carry every field's current value, not just the changed
+  // one: staged edits (plus any one-shot `extra`) win, else the last-loaded value — but secrets and
+  // oauth tokens are never echoed back by the server, so they're only sent when actually (re)entered.
+  const buildBody = (extra: Record<string, SettingValue> = {}): Record<string, SettingValue> => {
+    const body: Record<string, SettingValue> = {};
+    if (!data) return body;
+    const source = { ...edits, ...extra };
+    for (const d of data.settings) {
+      const isSecret = (d.type === 'string' && d.secret) || d.type === 'oauth-pin' || d.type === 'oauth-callback';
+      if (d.key in source) body[d.key] = source[d.key];
+      else if (!isSecret && d.key in data.values) body[d.key] = data.values[d.key];
+    }
+    return body;
+  };
+
   const save = () => {
     if (!trackerId || !data) return;
-    const body: Record<string, SettingValue> = {};
-    for (const d of data.settings) {
-      const isSecret = d.type === 'string' && d.secret;
-      if (isSecret) {
-        if (d.key in edits) body[d.key] = edits[d.key];
-        continue;
-      }
-      if (d.key in edits) body[d.key] = edits[d.key];
-      else if (d.key in data.values) body[d.key] = data.values[d.key];
-    }
-    saveMutation.mutate(body);
+    saveMutation.mutate(buildBody());
+  };
+
+  // Persist a single field the instant it's captured — used by OAuth fields so signing in commits
+  // straight away (no Save button). Drops the field from staged edits and refreshes both the
+  // settings (secretsSet → "Connected") and the trackers list (`configured` → linkable in series).
+  const commitField = async (key: string, value: SettingValue) => {
+    if (!trackerId || !data) return;
+    await ds.putTrackerSettings(trackerId, buildBody({ [key]: value }));
+    setEdits((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.trackerSettings(trackerId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.trackers() }),
+    ]);
   };
 
   return (
@@ -92,26 +114,34 @@ export default function TrackerSettingsScreen() {
                     secretSet={data.secretsSet.includes(d.key)}
                     trackerId={trackerId}
                     onChange={(v) => setField(d.key, v)}
+                    onCommit={(v) => commitField(d.key, v)}
                   />
                 ))}
 
-                {saveError && (
-                  <ThemedText type="small" style={{ color: theme.danger }}>
-                    {saveError}
-                  </ThemedText>
+                {/* The Save button only exists for fields that stage their value (typed strings,
+                    numbers, toggles, paste-style OAuth). When every field auto-persists on interaction
+                    (e.g. a lone "Connect" OAuth row like AniList), signing in is the save — no button. */}
+                {data.settings.some((d) => !isAutoPersistedField(d)) && (
+                  <>
+                    {saveError && (
+                      <ThemedText type="small" style={{ color: theme.danger }}>
+                        {saveError}
+                      </ThemedText>
+                    )}
+                    {saved && !saveError && (
+                      <ThemedText type="small" themeColor="textSecondary">
+                        Saved.
+                      </ThemedText>
+                    )}
+                    <Pressable testID="settings.tracker.save" onPress={save} disabled={saving}>
+                      <ThemedView style={[styles.saveBtn, { backgroundColor: theme.accent }, saving && styles.saveBtnDisabled]}>
+                        <ThemedText type="smallBold" style={{ color: theme.accentOn }}>
+                          {saving ? 'Saving…' : 'Save'}
+                        </ThemedText>
+                      </ThemedView>
+                    </Pressable>
+                  </>
                 )}
-                {saved && !saveError && (
-                  <ThemedText type="small" themeColor="textSecondary">
-                    Saved.
-                  </ThemedText>
-                )}
-                <Pressable testID="settings.tracker.save" onPress={save} disabled={saving}>
-                  <ThemedView style={[styles.saveBtn, { backgroundColor: theme.accent }, saving && styles.saveBtnDisabled]}>
-                    <ThemedText type="smallBold" style={{ color: theme.accentOn }}>
-                      {saving ? 'Saving…' : 'Save'}
-                    </ThemedText>
-                  </ThemedView>
-                </Pressable>
               </SettingsSection>
             )}
           </>

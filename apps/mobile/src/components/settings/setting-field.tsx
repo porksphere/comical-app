@@ -31,7 +31,21 @@ type FieldProps<D extends SettingDescriptor> = {
    *  declare oauth fields, so `bridge-settings.tsx` omits it. */
   trackerId?: string;
   onChange: (v: SettingValue) => void;
+  /** When set (tracker settings only), an OAuth capture *persists immediately* through this instead
+   *  of staging for the screen's Save button — signing in is the commit, so there's no separate Save
+   *  step. Bridges omit it (they never declare oauth fields), so their oauth-less rows still stage. */
+  onCommit?: (v: SettingValue) => Promise<void>;
 };
+
+/** Whether a descriptor persists itself the moment it's interacted with, so the settings screen
+ *  needs no Save button for it: `oauth-callback` (server finishes the exchange and stores it) and an
+ *  implicit-capture `oauth-pin` (Connect auto-commits, see `OAuthPinRow`). A paste-style oauth-pin or
+ *  any typed field still stages and needs Save. */
+export function isAutoPersistedField(d: SettingDescriptor): boolean {
+  if (d.type === 'oauth-callback') return true;
+  if (d.type === 'oauth-pin') return isImplicitCapture(d);
+  return false;
+}
 
 /** Label with a trailing `*` for a required field. */
 const fieldLabel = (d: SettingDescriptor): string => `${d.label}${'required' in d && d.required ? ' *' : ''}`;
@@ -43,7 +57,7 @@ const fieldLabel = (d: SettingDescriptor): string => `${d.label}${'required' in 
  * via `SettingsSelectRow` — so a bridge's config reads like the rest of Settings. Multi-select enums
  * and bounded numbers keep their own controls (a multi picker, a ± stepper), framed as rows.
  */
-export function SettingFieldEditor({ descriptor, value, secretSet, trackerId, onChange }: FieldProps<SettingDescriptor>) {
+export function SettingFieldEditor({ descriptor, value, secretSet, trackerId, onChange, onCommit }: FieldProps<SettingDescriptor>) {
   switch (descriptor.type) {
     case 'string':
       return (
@@ -100,7 +114,7 @@ export function SettingFieldEditor({ descriptor, value, secretSet, trackerId, on
         />
       );
     case 'oauth-pin':
-      return <OAuthPinRow descriptor={descriptor} value={value} secretSet={secretSet} onChange={onChange} />;
+      return <OAuthPinRow descriptor={descriptor} value={value} secretSet={secretSet} onChange={onChange} onCommit={onCommit} />;
     case 'oauth-callback':
       return <OAuthCallbackRow descriptor={descriptor} secretSet={secretSet} trackerId={trackerId} />;
   }
@@ -264,18 +278,22 @@ function captureImplicitTokenWeb(authUrl: string): Promise<WebCaptureResult> {
  *    popup + `postMessage` on web. Used by trackers like AniList.
  *  - **Open-and-paste** (otherwise): the user opens the auth URL, then pastes back an authorization
  *    code (`exchange` set — server exchanges it) or the raw token (implicit, shown on a provider page).
- *  Either way the token/code flows through the caller's existing `onChange`/save flow — no new
- *  mutation, same as any other secret string field (the user still taps the screen's Save button). */
+ *  When `onCommit` is provided (tracker settings), a successful auto-capture *persists the token right
+ *  away* — signing in is the save, so there's no separate Save step. Otherwise (paste path, or a
+ *  bridge with no `onCommit`) the token stages through `onChange` and the screen's Save button
+ *  persists it, same as any other secret string field. */
 function OAuthPinRow({
   descriptor,
   value,
   secretSet,
   onChange,
+  onCommit,
 }: {
   descriptor: Extract<SettingDescriptor, { type: 'oauth-pin' }>;
   value: SettingValue | undefined;
   secretSet?: boolean;
   onChange: (v: SettingValue) => void;
+  onCommit?: (v: SettingValue) => Promise<void>;
 }) {
   const theme = useTheme();
   const [connecting, setConnecting] = useState(false);
@@ -306,7 +324,12 @@ function OAuthPinRow({
           token = tokenFromRedirect(result.url);
         }
         if (!token) throw new Error('Sign-in did not return an access token.');
-        onChange(token); // staged like a paste; the screen's Save button persists it
+        onChange(token);
+        // In tracker settings `onCommit` persists the token immediately — signing in IS the save,
+        // so there's no separate Save step (a captured-but-unsaved token would look connected yet
+        // read back as "needs setup" after a restart). Without it (bridge / paste path) it stages
+        // for the screen's Save button.
+        if (onCommit) await onCommit(token);
         setCaptured(true);
       } catch (e) {
         setCaptured(false);
@@ -318,7 +341,9 @@ function OAuthPinRow({
     const description = error
       ? error
       : captured
-        ? 'Signed in — tap Save to finish'
+        ? onCommit
+          ? 'Connected'
+          : 'Signed in — tap Save to finish'
         : secretSet
           ? 'Connected'
           : (descriptor.description ?? 'Not connected');
