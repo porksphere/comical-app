@@ -1,0 +1,101 @@
+// Sentry → GitHub relay.
+//
+// Sentry's Integration Platform webhooks cannot attach an Authorization header, so they can't call
+// GitHub's repository_dispatch API directly. This Worker sits in between: it receives the (HMAC-
+// signed) "issue created" webhook from a Sentry internal integration, verifies the signature,
+// filters out noise, and forwards a compact payload to GitHub as a `sentry-issue` dispatch event,
+// which .github/workflows/sentry-autofix.yml consumes.
+//
+// Secrets (set with `wrangler secret put <NAME>`):
+//   SENTRY_CLIENT_SECRET   Client secret of the Sentry internal integration (signs webhooks).
+//   GITHUB_DISPATCH_TOKEN  Fine-grained PAT scoped to the repo, Contents: read+write.
+//
+// Optional vars (wrangler.toml [vars]):
+//   GITHUB_REPO   owner/repo to dispatch to (default porksphere/comical-app).
+//   MIN_LEVEL     Minimum issue level to forward: debug|info|warning|error|fatal (default error).
+
+const LEVELS = ['debug', 'info', 'warning', 'error', 'fatal'];
+
+export default {
+  async fetch(request, env) {
+    if (request.method !== 'POST') {
+      return new Response('method not allowed', { status: 405 });
+    }
+
+    const body = await request.text();
+
+    if (!(await verifySignature(body, request.headers.get('sentry-hook-signature'), env.SENTRY_CLIENT_SECRET))) {
+      return new Response('invalid signature', { status: 401 });
+    }
+
+    // Sentry sends installation lifecycle events and others to the same URL; only brand-new issues
+    // should trigger an autofix run.
+    if (request.headers.get('sentry-hook-resource') !== 'issue') {
+      return new Response('ignored: not an issue event', { status: 200 });
+    }
+
+    const payload = JSON.parse(body);
+    if (payload.action !== 'created') {
+      return new Response('ignored: not issue creation', { status: 200 });
+    }
+
+    const issue = payload.data?.issue;
+    if (!issue) {
+      return new Response('ignored: no issue in payload', { status: 200 });
+    }
+
+    const minLevel = LEVELS.indexOf(env.MIN_LEVEL || 'error');
+    if (LEVELS.indexOf(issue.level) < minLevel) {
+      return new Response(`ignored: level ${issue.level} below threshold`, { status: 200 });
+    }
+
+    // Compact on purpose: repository_dispatch payloads have size limits, and the workflow re-fetches
+    // the authoritative issue + latest event from the Sentry API anyway. Only identifiers travel.
+    const repo = env.GITHUB_REPO || 'porksphere/comical-app';
+    const resp = await fetch(`https://api.github.com/repos/${repo}/dispatches`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${env.GITHUB_DISPATCH_TOKEN}`,
+        accept: 'application/vnd.github+json',
+        'content-type': 'application/json',
+        'user-agent': 'comical-sentry-relay',
+      },
+      body: JSON.stringify({
+        event_type: 'sentry-issue',
+        client_payload: {
+          issue_id: String(issue.id),
+          short_id: issue.shortId,
+          title: (issue.title || '').slice(0, 200),
+          culprit: (issue.culprit || '').slice(0, 200),
+          level: issue.level,
+          project: issue.project?.slug,
+          web_url: issue.permalink || `https://sentry.io/organizations/comical/issues/${issue.id}/`,
+        },
+      }),
+    });
+
+    if (!resp.ok) {
+      return new Response(`github dispatch failed: ${resp.status} ${await resp.text()}`, { status: 502 });
+    }
+    return new Response('dispatched', { status: 200 });
+  },
+};
+
+// Sentry signs the raw body with HMAC-SHA256 (hex) using the integration's client secret.
+async function verifySignature(body, signature, secret) {
+  if (!signature || !secret) return false;
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(body));
+  const expected = [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  // Constant-time comparison.
+  if (expected.length !== signature.length) return false;
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ signature.charCodeAt(i);
+  return diff === 0;
+}
