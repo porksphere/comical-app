@@ -182,5 +182,14 @@ jobs:
           curl -Ls "https://get.maestro.mobile.dev" | bash
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
 
+      # ubuntu-latest has no display server, so Maestro's default (non-headless) Chrome launch
+      # crashes immediately on startup ("session not created: Chrome instance exited" — every
+      # single run, not a flake). Maestro does have a --headless flag, but it's known to break
+      # scrollUntilVisible after navigation (mobile-dev-inc/Maestro#2573) — two of our web flows
+      # (browse-to-reader, series-chapters) rely on scrollUntilVisible, so that's not a safe swap.
+      # Running plain (non-headless) Chrome against a virtual framebuffer sidesteps both problems.
+      - name: Install Xvfb
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
       - name: Run e2e flows (web)
-        run: maestro test --config apps/mobile/e2e/config/web.yaml apps/mobile/e2e/web
+        run: xvfb-run -a --server-args="-screen 0 1920x1080x24" maestro test --config apps/mobile/e2e/config/web.yaml apps/mobile/e2e/web
