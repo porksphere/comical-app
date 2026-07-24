@@ -103,11 +103,17 @@ function freePort(port: number): void {
 freePort(PORT);
 
 const mobileDir = join(ROOT, "apps", "mobile");
-console.log(`==> Starting Metro (dev-client) on :${PORT}...`);
+// Pass `--clear` (or `-c`, or CLEAR=1) to wipe Metro's transform cache on start.
+// Needed after editing the workspace submodule (`external/comical`): Metro's
+// file watcher often misses changes under that nested path, so a plain restart
+// keeps serving the cached (stale) module — a cache-clear forces a fresh read.
+const clearCache =
+  process.env.CLEAR === "1" || process.argv.slice(2).some((a) => a === "--clear" || a === "-c");
+console.log(`==> Starting Metro (dev-client) on :${PORT}${clearCache ? " (cache cleared)" : ""}...`);
 const expo = spawn({
   // --dev-client serves the native bundle for a development build (not Expo Go)
   // and prints a QR the installed dev-client launcher can scan.
-  cmd: ["bunx", "expo", "start", "--dev-client", "--port", String(PORT)],
+  cmd: ["bunx", "expo", "start", "--dev-client", "--port", String(PORT), ...(clearCache ? ["--clear"] : [])],
   cwd: mobileDir,
   // Bun.spawn's default env doesn't reflect runtime mutations to process.env
   // (EXPO_PUBLIC_COMICAL_SERVER / REACT_NATIVE_PACKAGER_HOSTNAME above) — pass
