@@ -83,6 +83,10 @@ jobs:
     uses: ./.github/workflows/build-ios-reusable.yml
     with:
       profiling: true
+      # One job serves both push-to-main and pull_request (see the `if` above) — the reusable
+      # workflow's own `github` context reflects whichever event triggered THIS caller, so this
+      # correctly resolves to ios-pr on a PR run and ios-main on a push-to-main run.
+      channel: ${{ github.event_name == 'pull_request' && 'ios-pr' || 'ios-main' }}
     secrets: inherit
 
   publish:

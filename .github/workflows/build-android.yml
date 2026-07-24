@@ -66,6 +66,11 @@ jobs:
     # Skip the build when a PR merely closes — cleanup-pr handles that event.
     if: github.event.action != 'closed'
     uses: ./.github/workflows/build-android-reusable.yml
+    with:
+      # One job serves both push-to-main and pull_request (see the `if` above) — the reusable
+      # workflow's own `github` context reflects whichever event triggered THIS caller, so this
+      # correctly resolves to android-pr on a PR run and android-main on a push-to-main run.
+      channel: ${{ github.event_name == 'pull_request' && 'android-pr' || 'android-main' }}
     secrets: inherit
 
   publish:

@@ -36,6 +36,7 @@ jobs:
     with:
       configuration: Debug
       dev_client: true
+      channel: ios-devclient
     secrets: inherit
 
   publish:

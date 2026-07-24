@@ -54,11 +54,14 @@ jobs:
     uses: ./.github/workflows/build-ios-reusable.yml
     with:
       version: ${{ needs.prep.outputs.version }}
+      channel: ios-release
     secrets: inherit
 
   android:
     needs: prep
     uses: ./.github/workflows/build-android-reusable.yml
+    with:
+      channel: android-release
     secrets: inherit
 
   release:

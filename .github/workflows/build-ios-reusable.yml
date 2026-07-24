@@ -78,6 +78,15 @@ on:
         type: boolean
         default: false
         required: false
+      channel:
+        # Bakes EXPO_PUBLIC_COMICAL_BUILD_CHANNEL into the JS bundle — read by src/lib/sentry.ts
+        # as the `buildChannel` tag on every Sentry event, so a crash report is attributable to
+        # the exact CI build that produced it. Every caller passes its own distinct value
+        # (ios-devclient / ios-main / ios-pr / ios-release / ios-e2e) — required, not defaulted,
+        # so a new caller can't silently ship crash reports with no channel attached.
+        description: Value baked into EXPO_PUBLIC_COMICAL_BUILD_CHANNEL (Sentry's buildChannel tag).
+        type: string
+        required: true
     secrets:
       SENTRY_AUTH_TOKEN:
         # Optional: without it, the Sentry build-phase script below no-ops
@@ -124,6 +133,8 @@ jobs:
       # See the `demo_mode` input above — empty for every normal (non-e2e) build.
       EXPO_PUBLIC_COMICAL_DEMO_MODE: ${{ inputs.demo_mode && '1' || '' }}
       EXPO_PUBLIC_COMICAL_DEMO_FAST: ${{ inputs.demo_fast && '1' || '' }}
+      # See the `channel` input above — every caller must pass one.
+      EXPO_PUBLIC_COMICAL_BUILD_CHANNEL: ${{ inputs.channel }}
     steps:
       - uses: actions/checkout@v4
         with:

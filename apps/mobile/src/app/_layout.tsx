@@ -1,21 +1,22 @@
 import * as Sentry from '@sentry/react-native';
 import { Platform } from 'react-native';
 
-import { SENTRY_DSN } from '@/lib/sentry';
+import { SENTRY_BUILD_CHANNEL, SENTRY_DSN } from '@/lib/sentry';
 
 // Runs before any other module below, so JS errors/native crashes are caught
 // from the earliest possible point in app startup. Disabled on web: the
 // deploy-web.yml GitHub Pages preview is a public, unauthenticated URL with
 // no native crash surface, so there's no reason to spend free-tier quota on
-// anonymous visitors there. Also disabled in __DEV__ (the ios-devclient/
-// Debug-configuration build and any local Metro-connected session) — every
-// crash there is expected noise from in-progress local iteration, not a real
-// user hitting a shipped build, and would just burn the same free-tier quota.
+// anonymous visitors there. Dev-client crashes ARE kept (not gated on
+// __DEV__) — they're real signal from on-device iteration, distinguished from
+// shipped builds via the `buildChannel` tag (see lib/sentry.ts) instead of
+// being dropped outright.
 Sentry.init({
   dsn: SENTRY_DSN,
-  enabled: Platform.OS !== 'web' && !__DEV__,
+  enabled: Platform.OS !== 'web',
   environment: __DEV__ ? 'development' : 'production',
   tracesSampleRate: 0, // crash/error capture only, no perf/APM quota usage
+  initialScope: { tags: { buildChannel: SENTRY_BUILD_CHANNEL } },
 });
 
 /* eslint-disable import/first -- these must stay below Sentry.init above:
