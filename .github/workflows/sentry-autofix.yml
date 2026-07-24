@@ -130,9 +130,12 @@ jobs:
           # Explicit token skips the action's OIDC → GitHub App token exchange, which fails unless
           # the Claude GitHub App is installed and `id-token: write` is granted.
           github_token: ${{ secrets.AUTOFIX_PAT || github.token }}
+          # Full Bash on purpose: a granular allowlist denied piped commands (curl | jq etc.) and
+          # burned half the turn budget on permission denials. The runner is ephemeral and the
+          # secrets reachable via Bash are the same ones the allowed curl/git already exposed.
           claude_args: |
-            --max-turns 50
-            --allowedTools "Read,Glob,Grep,Edit,Write,Bash(bun:*),Bash(git:*),Bash(curl:*),Bash(mkdir:*),Bash(ls:*)"
+            --max-turns 80
+            --allowedTools "Read,Glob,Grep,Edit,Write,Bash"
           prompt: |
             You are fixing a crash reported by Sentry for Comical, the Expo/React Native monorepo
             you are checked out in (org: comical, project: comical-app). Work autonomously.
@@ -163,8 +166,10 @@ jobs:
                Instead write your findings (what you looked at, hypotheses, what info is missing)
                to /tmp/sentry-autofix-diagnosis.md and stop.
 
+      # !cancelled(): run even if the Claude step errored — a pushed branch should still get its
+      # PR, and a written diagnosis should still surface.
       - name: Open draft PR
-        if: steps.envguard.outputs.skip == 'false'
+        if: ${{ !cancelled() && steps.envguard.outputs.skip == 'false' }}
         run: |
           if [ -z "$(git ls-remote origin "refs/heads/${FIX_BRANCH}")" ]; then
             echo "No fix branch was pushed."
@@ -185,7 +190,7 @@ jobs:
           PAYLOAD_TITLE: ${{ github.event.client_payload.title }}
 
       - name: Surface diagnosis when no fix was pushed
-        if: steps.envguard.outputs.skip == 'false'
+        if: ${{ !cancelled() && steps.envguard.outputs.skip == 'false' }}
         run: |
           if [ -n "$(git ls-remote origin "refs/heads/${FIX_BRANCH}")" ]; then
             exit 0  # A fix was pushed; nothing to surface.
