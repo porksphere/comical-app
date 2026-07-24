@@ -211,7 +211,8 @@ CI job without reworking the pipeline.
 ## Crash monitoring & Sentry autofix
 
 Crashes report to Sentry (org `comical`, project `comical-app`; SDK init in
-`apps/mobile/src/lib/sentry.ts` / `_layout.tsx`). New error-level issues automatically trigger a
+`apps/mobile/src/lib/sentry.ts` / `_layout.tsx`). New **production** error-level issues (dev-client
+and local-testing crashes are logged but exempt) automatically trigger a
 Claude Code run that investigates the stack trace and opens a **draft fix PR**: Sentry webhook →
 Cloudflare Worker relay → `repository_dispatch` → `sentry-autofix.yml`. Event-driven (no polling),
 authenticated with a Claude subscription token. Setup, secrets, and tuning:
