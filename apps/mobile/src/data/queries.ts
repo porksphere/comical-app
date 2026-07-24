@@ -12,6 +12,7 @@
  */
 import { keepPreviousData, type UseQueryOptions } from '@tanstack/react-query';
 
+import { STALE_TIME_MS } from './query-client';
 import type { LibrarySort } from './api';
 import { isRailLayout, railKindFor, type DataSource, type QueryOpts } from './source';
 import type {
@@ -245,6 +246,20 @@ export function seriesDetailQuery(
     queryFn: ({ signal }) => ds.getSeriesDetail(bridgeId, seriesId, opts, signal),
     enabled: !!seriesId,
     placeholderData,
+    // A `cached` payload is the host's OFFLINE fallback — the live `getSeriesDetails` fetch failed
+    // and it served the library's saved detail (see host-server router). Left under the normal 5-min
+    // staleTime, that offline copy is treated as fresh and never re-attempted on a revisit, so a
+    // series that failed once (a cold-start bridge load, a blip, a transient source error) stays
+    // pinned in "offline mode" until the entry is removed and re-added. Mark an offline result as
+    // ALWAYS stale so it re-attempts live automatically — on the next mount/revisit, on refocus, and
+    // on reconnect — not only when the user manually pulls to refresh. A live result heals it and
+    // reverts to the normal staleTime; a still-failing fetch just re-serves the cached copy (one
+    // attempt per trigger, so there's no refetch loop). Fresh (non-cached) details keep the 5-min
+    // reuse window that makes revisits instant.
+    staleTime: (query) => (query.state.data?.cached ? 0 : STALE_TIME_MS),
+    refetchOnMount: (query) => (query.state.data?.cached ? 'always' : true),
+    refetchOnReconnect: (query) => query.state.data?.cached === true,
+    refetchOnWindowFocus: (query) => query.state.data?.cached === true,
   };
 }
 

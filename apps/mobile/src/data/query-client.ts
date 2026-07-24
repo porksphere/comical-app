@@ -26,7 +26,7 @@ import { logDiagnostic } from '@/lib/diagnostics';
 // Content (series detail, chapters, lists, pages) is effectively immutable for
 // a browsing session, so keep it fresh for a few minutes (no refetch on
 // revisit) and retained for a day so it repaints instantly across navigations.
-const STALE_TIME_MS = 5 * 60 * 1000; // 5 min — mirrors web's "reuse within session"
+export const STALE_TIME_MS = 5 * 60 * 1000; // 5 min — mirrors web's "reuse within session"
 const GC_TIME_MS = 24 * 60 * 60 * 1000; // 24 h — kept for the persisted cache's maxAge
 
 /** Message + which query/mutation, for the diagnostics log. */
