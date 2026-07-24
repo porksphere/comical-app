@@ -1,0 +1,55 @@
+# Trackers settings screen: a registry-installed tracker (source === 'registry') is a
+# swipe-to-uninstall row (trackers.tsx). Verifies the swipe reveals the destructive Uninstall
+# action and that committing it raises the confirm popup (a guarded, non-immediate delete) —
+# then cancels, so the row survives. Mock data serves every tracker with source: 'registry'
+# (mock.ts) and no pending updates, so each row carries a single Uninstall action that
+# auto-commits past the full-swipe threshold, exactly like history-activity.yaml's single-action
+# rows.
+#
+# Mobile-only: swipe-to-reveal is a gesture, and web/Chromium's pointer simulation isn't verified
+# to drive SwipeableRow faithfully (on web the actions reveal on hover, not a drag) — see
+# ../README.md's "Gesture-only flows" ground rule (same reason swipe-dismiss/history-activity are
+# mobile-only).
+#
+# Selectors (confirmed against source):
+#   - settings.category.trackers   settings.tsx category row
+#   - trackers.row.anilist         testId('trackers.row', t.info.id) — first mock tracker (AniList)
+#   - swipe-action.anilist.uninstall  SwipeableRow pill, testId('swipe-action', name, action.key)
+#   - confirm.confirm / confirm.cancel  confirm-popup.tsx
+appId: com.porksphere.comical
+---
+- launchApp
+
+- tapOn:
+    id: "tab.settings"
+- assertVisible:
+    id: "screen-title.settings"
+
+- tapOn:
+    id: "settings.category.trackers"
+- assertVisible:
+    id: "trackers.install"
+- assertVisible:
+    id: "trackers.row.anilist"
+
+# Moderate swipe left to reveal the Uninstall pill without auto-committing, then tap it by id
+# (rather than guessing its on-screen position). Its onPress opens the confirm popup — uninstall is
+# guarded, never an immediate delete.
+- swipe:
+    start: "90%, 20%"
+    end: "35%, 20%"
+    duration: 300
+- tapOn:
+    id: "swipe-action.anilist.uninstall"
+
+# The guard: a confirm popup, not an instant removal.
+- assertVisible:
+    id: "confirm.confirm"
+
+# Cancel — the tracker stays installed (also proves the popup is dismissible).
+- tapOn:
+    id: "confirm.cancel"
+- assertNotVisible:
+    id: "confirm.confirm"
+- assertVisible:
+    id: "trackers.row.anilist"

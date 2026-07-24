@@ -53,6 +53,14 @@ export function useBridgeUpdateMap(): Map<string, string> {
   return useMemo(() => new Map((data?.bridges ?? []).map((u) => [u.id, u.availableVersion])), [data]);
 }
 
+/** `trackerId → availableVersion` for every installed tracker with a newer version — the tracker
+ *  counterpart to `useBridgeUpdateMap`, so the Trackers screen can show a per-row update dot / swipe-
+ *  Update off the live check rather than a stale summary annotation. Shares the same cache entry. */
+export function useTrackerUpdateMap(): Map<string, string> {
+  const { data } = useRegistryUpdates();
+  return useMemo(() => new Map((data?.trackers ?? []).map((u) => [u.id, u.availableVersion])), [data]);
+}
+
 /** The full breakdown — used by the Settings landing screen to badge the Bridges/Trackers rows. */
 export function useRegistryUpdateCounts(): RegistryUpdateCounts {
   const ds = useDataSource();
