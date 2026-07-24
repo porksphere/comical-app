@@ -103,12 +103,26 @@ jobs:
             | jq -r '[.topValues[].value] | join(",")' || true)
           echo "Issue ${SHORT_ID} environments: ${ENVIRONMENTS:-<unknown>}"
           case ",${ENVIRONMENTS}," in
-            *,production,*)
-              echo "skip=false" >> "$GITHUB_OUTPUT" ;;
+            *,production,*) ;;
             *)
               echo "No production-environment events — logging only, no autofix."
-              echo "skip=true" >> "$GITHUB_OUTPUT" ;;
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0 ;;
           esac
+          # e2e CI runs are Release builds, so they report environment=production — filter them by
+          # the buildChannel tag instead (ios-e2e/android-e2e, set in lib/sentry.ts). Skip only when
+          # every event's channel ends in -e2e; a missing tag or mixed channels means real users
+          # are affected, so proceed.
+          CHANNELS=$(curl -sf -H "Authorization: Bearer ${SENTRY_AUTH_TOKEN}" \
+            "https://sentry.io/api/0/organizations/comical/issues/${ISSUE_ID}/tags/buildChannel/" \
+            | jq -r '[.topValues[].value] | join(",")' || true)
+          echo "Issue ${SHORT_ID} buildChannels: ${CHANNELS:-<none>}"
+          if [ -n "$CHANNELS" ] && ! printf '%s' "$CHANNELS" | tr ',' '\n' | grep -qv -- '-e2e$'; then
+            echo "All events come from e2e CI builds — logging only, no autofix."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v4
         if: steps.envguard.outputs.skip == 'false'
