@@ -7,10 +7,13 @@ import { SENTRY_DSN } from '@/lib/sentry';
 // from the earliest possible point in app startup. Disabled on web: the
 // deploy-web.yml GitHub Pages preview is a public, unauthenticated URL with
 // no native crash surface, so there's no reason to spend free-tier quota on
-// anonymous visitors there.
+// anonymous visitors there. Also disabled in __DEV__ (the ios-devclient/
+// Debug-configuration build and any local Metro-connected session) — every
+// crash there is expected noise from in-progress local iteration, not a real
+// user hitting a shipped build, and would just burn the same free-tier quota.
 Sentry.init({
   dsn: SENTRY_DSN,
-  enabled: Platform.OS !== 'web',
+  enabled: Platform.OS !== 'web' && !__DEV__,
   environment: __DEV__ ? 'development' : 'production',
   tracesSampleRate: 0, // crash/error capture only, no perf/APM quota usage
 });
