@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import * as Linking from 'expo-linking';
 import { openAuthSessionAsync, openBrowserAsync } from 'expo-web-browser';
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { ChevronRightIcon, MinusIcon, PlusIcon } from '@/components/icons/ui-icons';
 import { MeasuredHeader, OptionList, OverlayHeading, useAnchoredOverlay, useOverlay } from '@/components/overlay/overlay';
@@ -187,25 +187,28 @@ function OAuthCallbackRow({
 }
 
 /**
- * The app's own URL scheme (`comical` on a native build, `http(s)` on web), e.g. from
- * `Linking.createURL('') === 'comical://'`. Used to recognise an implicit-grant redirect that lands
- * back in this app so we can intercept it via an in-app auth session instead of copy-paste.
+ * The custom-scheme deep link the native in-app auth session waits for. The provider's implicit
+ * grant redirects to our https relay (`ANILIST_REDIRECT_URI` in the tracker), and the relay bounces
+ * the token here as `comical://oauth-token#access_token=…`; `openAuthSessionAsync` intercepts the
+ * `comical` scheme and hands us the URL. (On web this resolves to an http(s) URL and is unused — the
+ * web path captures via a popup + `postMessage` instead.)
  */
-const appScheme = Linking.createURL('').match(/^([a-z0-9.+-]+):/i)?.[1] ?? '';
+const NATIVE_OAUTH_CALLBACK = Linking.createURL('oauth-token');
 
 /**
- * When a descriptor is an implicit-grant `oauth-pin` (no `exchange`) whose `authUrl` redirects back
- * into *this app's own scheme*, we can capture the token automatically: an in-app auth session
- * intercepts the redirect and hands us the URL with the token in its fragment. Returns that
- * redirect URI (to hand to `openAuthSessionAsync`), or `null` when the field is a plain
- * open-and-paste flow (a code-exchange field, or an implicit token shown on a provider web page).
+ * An implicit-grant `oauth-pin` (`response_type=token`, no `exchange`) is captured automatically —
+ * no copy-paste. The provider redirects the token to our relay page, which returns it to the app; a
+ * `code`-exchange field or a non-implicit `authUrl` still falls back to open-and-paste.
  */
-function autoCaptureRedirect(descriptor: Extract<SettingDescriptor, { type: 'oauth-pin' }>): string | null {
-  if (descriptor.exchange || !appScheme) return null;
-  const m = descriptor.authUrl.match(/[?&]redirect_uri=([^&]+)/);
-  if (!m) return null;
-  const redirect = decodeURIComponent(m[1]);
-  return redirect.toLowerCase().startsWith(`${appScheme.toLowerCase()}:`) ? redirect : null;
+function isImplicitCapture(descriptor: Extract<SettingDescriptor, { type: 'oauth-pin' }>): boolean {
+  if (descriptor.exchange) return false;
+  return /[?&]response_type=token(?:&|$)/.test(descriptor.authUrl);
+}
+
+/** Append a query param to an authorize URL (used to tag the redirect with the capture platform,
+ *  which the relay reads back out of the OAuth `state` echoed into the fragment). */
+function withParam(url: string, key: string, value: string): string {
+  return `${url}${url.includes('?') ? '&' : '?'}${key}=${encodeURIComponent(value)}`;
 }
 
 /** Pull an implicit-grant token out of an intercepted redirect URL's fragment
@@ -221,10 +224,44 @@ function tokenFromRedirect(url: string): string | undefined {
   return undefined;
 }
 
+type WebCaptureResult = { token?: string; error?: string; dismissed?: boolean };
+
+/** Web-only implicit capture: open the authorize URL as a popup and wait for our same-origin relay
+ *  page to `postMessage` the token back (see `public/oauth-relay.html`). Resolves `dismissed` if the
+ *  user closes the popup first. Must be called from a user gesture or the browser blocks the popup. */
+function captureImplicitTokenWeb(authUrl: string): Promise<WebCaptureResult> {
+  return new Promise((resolve) => {
+    const popup = window.open(authUrl, 'comical-oauth', 'width=520,height=680');
+    if (!popup) {
+      resolve({ error: 'Sign-in popup was blocked — allow popups for this site and try again.' });
+      return;
+    }
+    let settled = false;
+    const finish = (r: WebCaptureResult) => {
+      if (settled) return;
+      settled = true;
+      window.removeEventListener('message', onMessage);
+      clearInterval(poll);
+      resolve(r);
+    };
+    const onMessage = (e: MessageEvent) => {
+      const data = e.data as { source?: string; access_token?: string | null; error?: string | null } | null;
+      if (!data || data.source !== 'comical-oauth') return;
+      finish(data.error ? { error: data.error } : { token: data.access_token ?? undefined });
+    };
+    window.addEventListener('message', onMessage);
+    const poll = setInterval(() => {
+      if (popup.closed) finish({ dismissed: true });
+    }, 700);
+  });
+}
+
 /** An `oauth-pin` field. Two shapes:
- *  - **Auto-capture** (`autoCaptureRedirect` matches): a single "Connect" row that opens an in-app
- *    auth session and pulls the implicit-grant token straight out of the redirect fragment — no
- *    copy-paste. Used by trackers (e.g. AniList) that redirect back into the app's own scheme.
+ *  - **Auto-capture** (`isImplicitCapture` matches — an implicit-grant `response_type=token` field):
+ *    a single "Connect" row that signs in without copy-paste. The provider redirects the token to
+ *    our relay page (`public/oauth-relay.html`), which returns it to the app — via an in-app auth
+ *    session on native (token arrives in the intercepted `comical://` redirect's fragment) or a
+ *    popup + `postMessage` on web. Used by trackers like AniList.
  *  - **Open-and-paste** (otherwise): the user opens the auth URL, then pastes back an authorization
  *    code (`exchange` set — server exchanges it) or the raw token (implicit, shown on a provider page).
  *  Either way the token/code flows through the caller's existing `onChange`/save flow — no new
@@ -241,20 +278,33 @@ function OAuthPinRow({
   onChange: (v: SettingValue) => void;
 }) {
   const theme = useTheme();
-  const captureRedirect = autoCaptureRedirect(descriptor);
   const [connecting, setConnecting] = useState(false);
   const [captured, setCaptured] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (captureRedirect) {
+  if (isImplicitCapture(descriptor)) {
     const connect = async () => {
       if (connecting) return;
       setError(null);
       setConnecting(true);
       try {
-        const result = await openAuthSessionAsync(descriptor.authUrl, captureRedirect);
-        if (result.type !== 'success') return; // user dismissed — leave state as-is
-        const token = tokenFromRedirect(result.url);
+        let token: string | undefined;
+        if (Platform.OS === 'web') {
+          // The relay is served same-origin with the web client, so a popup can hand the token back.
+          const r = await captureImplicitTokenWeb(withParam(descriptor.authUrl, 'state', 'web'));
+          if (r.dismissed) return; // user closed the popup — leave state as-is
+          if (r.error) throw new Error(r.error);
+          token = r.token;
+        } else {
+          // Native: the relay bounces the token to `comical://oauth-token`, which the auth session
+          // intercepts. `state=native` tells the relay to redirect rather than postMessage.
+          const result = await openAuthSessionAsync(
+            withParam(descriptor.authUrl, 'state', 'native'),
+            NATIVE_OAUTH_CALLBACK,
+          );
+          if (result.type !== 'success') return; // user dismissed — leave state as-is
+          token = tokenFromRedirect(result.url);
+        }
         if (!token) throw new Error('Sign-in did not return an access token.');
         onChange(token); // staged like a paste; the screen's Save button persists it
         setCaptured(true);
