@@ -13,6 +13,19 @@
 # Everything else (series-card.*, series.chapter.*) has no competing accessibilityLabel — same
 # selectors as the mobile copy. The tab bar itself has the same quirk as smoke.yaml already
 # documents (icon-only, sets accessibilityLabel) — select "Browse", not tab.browse.
+#
+# No scroll step before tapping the chapter row (unlike the mobile copy): series.tsx's chapter list
+# is a LegendList-owned scroller (see ../README.md / memory on LegendList web quirks), and
+# Maestro-web's `scrollUntilVisible` is a no-op against it — CdpWebDriver.kt implements
+# element-targeted scrolling as a blind `window.scroll(...)` (confirmed against Maestro's own
+# source), but this app locks window/body scroll app-wide (ChapterScrollList owns its own internal
+# scroll offset instead), so the call never advances LegendList's virtualization window and
+# `series.chapter.*` never mounts — a 20s timeout every time, not a flake. Confirmed (same debug
+# flow as ../web/series-chapters.yaml) that the first several chapter rows — including index 0 —
+# are already on-screen at this point with no scrolling needed, so the fix is simply not to ask for
+# one; series-chapters.yaml's `expand-middle` step, which genuinely needs to scroll, uses an
+# explicit-coordinate `swipe` instead (a real touch-drag gesture, which CdpWebDriver dispatches as
+# actual pointer input rather than `window.scroll`).
 url: http://localhost:4000/comical-app
 ---
 - launchApp
@@ -26,11 +39,6 @@ url: http://localhost:4000/comical-app
 - assertVisible:
     id: "series.action.read"
 
-- scrollUntilVisible:
-    element:
-      id: "series\\.chapter\\..*"
-    direction: DOWN
-    timeout: 20000
 - tapOn:
     id: "series\\.chapter\\..*"
     index: 0
