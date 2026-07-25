@@ -648,6 +648,7 @@ import type { RegistryBridgeEntry, RegistryTrackerEntry, SavedRegistry } from '@
 // are the exact shapes the `/library*` REST routes serialize, so no per-field adapter is needed.
 import type {
   ActivityItemView as ApiActivityItem,
+  ChapterProgress as ApiChapterProgress,
   HistoryItem as ApiHistoryItem,
   LibraryEntryView as ApiLibraryEntry,
   LibraryList as ApiLibraryList,
@@ -662,6 +663,7 @@ export type {
   RegistryTrackerEntry,
   SavedRegistry,
   ApiActivityItem,
+  ApiChapterProgress,
   ApiHistoryItem,
   ApiLibraryEntry,
   ApiLibraryList,
@@ -981,18 +983,55 @@ export function removeLibraryEntry(bridgeId: string, seriesId: string, signal?: 
   return fetchOk(`/library/entries/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}`, 'DELETE', signal);
 }
 
+/** GET /library/entries/{b}/{s}/progress → persisted read state for one series' chapters. Safe to
+ *  call for any series: a series that isn't in the library just has no progress rows (`[]`), unlike
+ *  the write routes below, which 404 without an entry. */
+export function getChapterProgress(
+  bridgeId: string,
+  seriesId: string,
+  signal?: AbortSignal,
+): Promise<ApiChapterProgress[]> {
+  return fetchJson(
+    `/library/entries/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/progress`,
+    signal,
+  );
+}
+
 /** PUT /library/entries/{b}/{s}/progress/{chapterId} → record read progress for a library series
- *  (also updates its last-read resume cache). No-op-safe: the caller fires-and-forgets. */
+ *  (also updates its last-read resume cache). No-op-safe: the caller fires-and-forgets.
+ *
+ *  The route branches on `lastPage`: supplying it records a reading POSITION (which auto-marks the
+ *  chapter read on the last page), while omitting it sets the read FLAG outright — that's the
+ *  "mark as read" path. Send `number` whenever it's known: the host derives the `chaptersRead`
+ *  high-water mark it pushes to linked trackers from the recorded chapter numbers, so a mark-read
+ *  without one syncs a weaker value. */
 export function putChapterProgress(
   bridgeId: string,
   seriesId: string,
   chapterId: string,
-  update: { lastPage?: number; pageCount?: number; chapterName?: string },
+  update: { read?: boolean; lastPage?: number; pageCount?: number; chapterName?: string; number?: number },
   signal?: AbortSignal,
 ): Promise<unknown> {
   return fetchPut(
     `/library/entries/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/progress/${encodeURIComponent(chapterId)}`,
     update,
+    signal,
+  );
+}
+
+/** POST /library/entries/{b}/{s}/read-up-to → mark every chapter up to and including `chapterId`
+ *  read, in reading order. The host does the ordering/language scoping from the `chapters` list it's
+ *  given (it keeps no chapter store of its own), so pass the series' full chapter list. */
+export function postReadUpTo(
+  bridgeId: string,
+  seriesId: string,
+  chapters: { id: string; name: string; number?: number; languageCode?: string; group?: string }[],
+  chapterId: string,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  return fetchPost(
+    `/library/entries/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/read-up-to`,
+    { chapters, chapterId },
     signal,
   );
 }

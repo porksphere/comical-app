@@ -10,6 +10,7 @@ import type {
   Bridge,
   BridgeList,
   Chapter,
+  ChapterProgress,
   GridPage,
   HomeGridSection,
   MetaCell,
@@ -910,12 +911,81 @@ function upsertMockHistory(h: MockHist): void {
   mockHistory.set(libKey(h.bridgeId, h.seriesId), h);
 }
 
+/**
+ * Read-state OVERRIDES, keyed `bridge:series` → chapter id → read. Only what the user changed in
+ * this session lives here: a mock series' chapters are generated with deterministic `read` flags
+ * (see `mockChapters`), and this map layers on top of them rather than replacing them — so the
+ * demo still opens with a plausible half-read series, and marking a chapter read/unread visibly
+ * sticks. Mirrors what the real backend persists per library entry.
+ */
+const mockProgress = new Map<string, Map<string, ChapterProgress>>();
+
+function mockProgressFor(bridgeId: string, seriesId: string): Map<string, ChapterProgress> {
+  const key = libKey(bridgeId, seriesId);
+  let m = mockProgress.get(key);
+  if (!m) mockProgress.set(key, (m = new Map()));
+  return m;
+}
+
+export async function mockGetChapterProgress(bridgeId: string, seriesId: string): Promise<ChapterProgress[]> {
+  return [...mockProgressFor(bridgeId, seriesId).values()].map((p) => ({ ...p }));
+}
+
+export async function mockSetChaptersRead(
+  bridgeId: string,
+  seriesId: string,
+  chapters: Chapter[],
+  read: boolean,
+): Promise<void> {
+  const m = mockProgressFor(bridgeId, seriesId);
+  for (const c of chapters) {
+    m.set(c.id, {
+      chapterId: c.id,
+      read,
+      ...(c.number !== undefined && { number: c.number }),
+      ...(c.languageCode !== undefined && { languageCode: c.languageCode }),
+    });
+  }
+}
+
+/** Same rule as `@comical/library`'s `markReadUpTo`: everything at or below the target's chapter
+ *  number, within the target's language only, across every scanlation group. Falls back to the
+ *  supplied order for chapters with no number (which never sort reliably by date). */
+export async function mockMarkReadUpTo(
+  bridgeId: string,
+  seriesId: string,
+  chapters: Chapter[],
+  chapterId: string,
+): Promise<void> {
+  const ordered = [...chapters].sort((a, b) => {
+    if (a.number !== undefined && b.number !== undefined) return a.number - b.number;
+    if (a.number !== undefined) return -1;
+    if (b.number !== undefined) return 1;
+    return 0;
+  });
+  const cut = ordered.findIndex((c) => c.id === chapterId);
+  if (cut === -1) return;
+  const target = ordered[cut]!;
+  const within = ordered.filter((c, i) => {
+    if (c.languageCode !== target.languageCode) return false;
+    return target.number !== undefined && c.number !== undefined ? c.number <= target.number : i <= cut;
+  });
+  await mockSetChaptersRead(bridgeId, seriesId, within, true);
+}
+
 export async function mockRecordChapterProgress(
   bridgeId: string,
   seriesId: string,
   chapterId: string,
   update: { lastPage?: number; pageCount?: number; chapterName?: string },
 ): Promise<void> {
+  // Reaching the last page marks the chapter read, exactly as the host's `setProgress` does — so a
+  // chapter finished in the demo reader also shows up read in the chapter list.
+  const { lastPage, pageCount } = update;
+  if (lastPage !== undefined && pageCount !== undefined && pageCount > 0 && lastPage >= pageCount - 1) {
+    const existing = mockProgressFor(bridgeId, seriesId).get(chapterId);
+    mockProgressFor(bridgeId, seriesId).set(chapterId, { ...existing, chapterId, read: true });
+  }
   const lib = mockLibrary.get(libKey(bridgeId, seriesId));
   upsertMockHistory({
     bridgeId,

@@ -9,6 +9,8 @@
 #     series has 40-200 chapters, well over that threshold)
 #   - series.chapter-menu.<this|from-here>     (same file — long-press a chapter row;
 #     triggers the same menu content on native and web, per `openChapterMenu`)
+#   - series.chapter-menu.<read|read-up-to>    (same file — only rendered for a series in
+#     the library, which is the only place read state can be stored)
 appId: com.porksphere.comical
 ---
 - launchApp
@@ -19,6 +21,12 @@ appId: com.porksphere.comical
     id: "series-card\\..*"
 - assertVisible:
     id: "series.cover"
+
+# Put the series in the library so the menu's read rows exist further down. Always an
+# ADD, never a remove: the seeded library entries are `lib-0..7` (mock.ts's `seedLibrary`),
+# which the browse grid never serves.
+- tapOn:
+    id: "series.action.library"
 
 # Scroll the chapters section's tab/sort controls into view once.
 - scrollUntilVisible:
@@ -48,7 +56,7 @@ appId: com.porksphere.comical
 - tapOn:
     id: "series.chapters.expand-middle"
 
-# Long-press a chapter row -> per-chapter download menu.
+# Long-press a chapter row -> per-chapter read + download menu.
 - longPressOn:
     id: "series\\.chapter\\..*"
     index: 0
@@ -56,3 +64,17 @@ appId: com.porksphere.comical
     id: "series.chapter-menu.this"
 - assertVisible:
     id: "series.chapter-menu.from-here"
+- assertVisible:
+    id: "series.chapter-menu.read"
+- assertVisible:
+    id: "series.chapter-menu.read-up-to"
+
+# Mark this chapter read, then re-open the menu: the rows are rebuilt per open, so the
+# label flipping to "Mark as unread" proves the write round-tripped through the progress
+# query rather than just firing.
+- tapOn:
+    id: "series.chapter-menu.read"
+- longPressOn:
+    id: "series\\.chapter\\..*"
+    index: 0
+- assertVisible: "Mark as unread"

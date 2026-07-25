@@ -335,10 +335,13 @@ export default function ReaderScreen() {
     // staleTime, so without this it silently reads stale from cache. The
     // activity feed/badge derive `read` from the same progress, so refresh
     // them too — reading a new chapter should drop it from the pip at once.
+    // The series screen's chapter list reads that progress directly (finishing a
+    // chapter marks it read host-side), so it needs the same treatment.
     const invalidateHistory = () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.history(mock) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.activity(mock) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.activityCount(mock) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.chapterProgress(mock, bridgeId, seed) });
     };
     if (chapterId && inLibrary) {
       void ds
