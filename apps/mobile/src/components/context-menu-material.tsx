@@ -209,7 +209,7 @@ export function SubmenuSurface({
   const theme = useTheme();
   const scrolls = spec.rows.length * MENU_ROW_HEIGHT > listHeight;
   const onScroll = useAnimatedScrollHandler((e) => {
-    scrollY.value = e.contentOffset.y;
+    scrollY.set(e.contentOffset.y);
   });
   return (
     // Root is a plain (opaque-capable) container; the frost is a SEPARATE faded layer beneath, so the
