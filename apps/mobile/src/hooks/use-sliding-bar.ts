@@ -23,7 +23,7 @@
  */
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, type RefObject } from 'react';
-import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
+import type { NativeScrollEvent, NativeSyntheticEvent, ViewStyle } from 'react-native';
 import {
   runOnJS,
   useAnimatedReaction,
@@ -45,8 +45,10 @@ export type SlidingBar = {
   maxScrollY: SharedValue<number>;
   /** The bar's translateY: 0 fully visible, −barHeight fully hidden. */
   offset: SharedValue<number>;
-  /** Animated transform for the bar (translateY = offset). */
-  barStyle: ReturnType<typeof useAnimatedStyle>;
+  /** Animated transform for the bar (translateY = offset). Explicitly instantiated at `ViewStyle`:
+   *  left bare, `useAnimatedStyle`'s default `DefaultStyle` isn't assignable to the `style` of a
+   *  view (Animated.View / BarSurface), so every consumer would get a type error. */
+  barStyle: ReturnType<typeof useAnimatedStyle<ViewStyle>>;
   /** Fades the bar's INNER content with the slide (1 → 0) and drops its pointer events once mostly
    *  hidden. For a bar that docks under the status bar rather than leaving the screen (Browse): the
    *  frosted surface stays, but the controls must not sit legible — or tappable — over the clock and
