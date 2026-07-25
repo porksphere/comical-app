@@ -186,10 +186,14 @@ function TrackerMenu({ bridgeId, seriesId }: { bridgeId: string; seriesId: strin
 }
 
 /** One line saying which direction the two-way sync actually moved, so "Sync" can't silently
- *  read as success when nothing reached the tracker. */
+ *  read as success when nothing reached the tracker.
+ *
+ *  The push line deliberately talks about *your* progress rather than claiming an exact number on
+ *  the tracker: services store an integer chapter count (AniList's `progress` is an `Int`), so a
+ *  decimal chapter like 12.5 lands there as 12 and "tracker now at 12.5" would be a lie. */
 function syncSummary(res: TrackerLinkSyncResult): string {
   const at = `chapter ${res.chaptersRead}`;
-  if (res.pushed) return `Pushed your progress — tracker now at ${at}.`;
+  if (res.pushed) return `Pushed your progress — you're at ${at}.`;
   if (res.readSynced > 0) {
     return `Synced from tracker — ${res.readSynced} chapter${res.readSynced === 1 ? '' : 's'} marked read (now at ${at}).`;
   }
