@@ -244,13 +244,14 @@ export interface DataSource {
   ): Promise<void>;
   /** Unlink one tracker from this series. */
   unlinkTracker(bridgeId: string, seriesId: string, trackerId: string, signal?: AbortSignal): Promise<void>;
-  /** Pull-sync one series' tracker link from its tracker (the manual per-row "Sync" action). */
+  /** Two-way sync one series' tracker link with its tracker (the manual per-row "Sync" action):
+   *  whichever side has read further wins. */
   syncTrackerLink(
     bridgeId: string,
     seriesId: string,
     trackerId: string,
     signal?: AbortSignal,
-  ): Promise<{ updated: boolean; readSynced: number }>;
+  ): Promise<api.TrackerLinkSyncResult>;
   /** Catalog search on a tracker, for the "+ Link tracker" form. */
   searchTrackerCatalog(trackerId: string, query: string, page: number, signal?: AbortSignal): Promise<TrackerSearchResult[]>;
 
