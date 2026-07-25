@@ -11,7 +11,7 @@ import { ActionButton } from '@/components/series/action-button';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
-import type { TrackerSummary } from '@/data/api';
+import type { TrackerLinkSyncResult, TrackerSummary } from '@/data/api';
 import { relativeTime } from '@/data/mock';
 import { queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
@@ -61,6 +61,9 @@ function TrackerMenu({ bridgeId, seriesId }: { bridgeId: string; seriesId: strin
   });
   const invalidateLinks = () => queryClient.invalidateQueries({ queryKey: linksKey });
 
+  // The sync is two-way, so its outcome isn't self-evident from the row alone — a push leaves the
+  // local read-state untouched and only moves the tracker. Report which way it went, and surface a
+  // failure instead of letting it look like it worked (an expired token used to do exactly that).
   const syncMutation = useMutation({
     mutationFn: (trackerId: string) => ds.syncTrackerLink(bridgeId, seriesId, trackerId),
     onSuccess: invalidateLinks,
@@ -144,6 +147,16 @@ function TrackerMenu({ bridgeId, seriesId }: { bridgeId: string; seriesId: strin
           </View>
         )}
 
+        {syncMutation.isError ? (
+          <ThemedText type="small" style={{ color: theme.danger }} testID="series.tracker.sync-status">
+            {friendlyError(syncMutation.error, 'Failed to sync tracker.')}
+          </ThemedText>
+        ) : syncMutation.isSuccess ? (
+          <ThemedText type="small" themeColor="textSecondary" testID="series.tracker.sync-status">
+            {syncSummary(syncMutation.data)}
+          </ThemedText>
+        ) : null}
+
         {linking && (
           <LinkTrackerForm
             trackers={availableToLink}
@@ -170,6 +183,18 @@ function TrackerMenu({ bridgeId, seriesId }: { bridgeId: string; seriesId: strin
       </TrackerScroll>
     </View>
   );
+}
+
+/** One line saying which direction the two-way sync actually moved, so "Sync" can't silently
+ *  read as success when nothing reached the tracker. */
+function syncSummary(res: TrackerLinkSyncResult): string {
+  const at = `chapter ${res.chaptersRead}`;
+  if (res.pushed) return `Pushed your progress — tracker now at ${at}.`;
+  if (res.readSynced > 0) {
+    return `Synced from tracker — ${res.readSynced} chapter${res.readSynced === 1 ? '' : 's'} marked read (now at ${at}).`;
+  }
+  if (res.updated) return `Already in sync at ${at}.`;
+  return 'Nothing to sync yet — no read progress on either side.';
 }
 
 const AnimatedScrollView = Animated.createAnimatedComponent(GHScrollView);
