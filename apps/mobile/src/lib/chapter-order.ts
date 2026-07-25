@@ -1,4 +1,4 @@
-import type { Chapter } from '@/data/types';
+import type { Chapter, ChapterProgress } from '@/data/types';
 
 // Logical chapters (scanlator grouping) — ported from comical-web's mature
 // implementation (`comical-web/client/app.ts`), and mirrored server-side by
@@ -31,6 +31,34 @@ export interface ChapterGroup {
  *  never wrongly merge. */
 export function chapterLogicalKey(c: Chapter): string {
   return c.number !== undefined ? `n:${c.number}:${c.languageCode ?? ''}` : `i:${c.id}`;
+}
+
+/**
+ * Overlay the library's persisted read state onto a bridge's chapter list.
+ *
+ * Chapters arrive from the bridge with no idea whether they've been read (`Chapter.read` is only
+ * ever populated by mock data, which seeds a plausible half-read series); the truth lives in the
+ * local library as `ChapterProgress` rows and is fetched separately. This merges the two.
+ *
+ * Matching is by chapter id first, then by LOGICAL chapter — a progress row recorded against the
+ * Scanline copy of chapter 12 also marks the MangaDweebs copy read, which is what makes the
+ * read/unread filter and the dimmed row agree with the unread counts the host derives the same way
+ * (`@comical/library`'s `logicalChapterKey`). A chapter no row mentions keeps whatever flag it came
+ * with, so this never *un*-reads mock data.
+ */
+export function applyReadState(chapters: Chapter[], progress: ChapterProgress[]): Chapter[] {
+  if (progress.length === 0) return chapters;
+  const byId = new Map<string, boolean>();
+  const byLogical = new Map<string, boolean>();
+  for (const p of progress) {
+    byId.set(p.chapterId, p.read);
+    // Same key shape as `chapterLogicalKey`, built from the row's own (number, language).
+    byLogical.set(p.number !== undefined ? `n:${p.number}:${p.languageCode ?? ''}` : `i:${p.chapterId}`, p.read);
+  }
+  return chapters.map((c) => {
+    const read = byId.get(c.id) ?? byLogical.get(chapterLogicalKey(c));
+    return read === undefined || read === c.read ? c : { ...c, read };
+  });
 }
 
 /** Collapse a chapter list into logical-chapter groups, ordered for reading

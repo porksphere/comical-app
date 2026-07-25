@@ -17,6 +17,7 @@ import type { LibrarySort } from './api';
 import { isRailLayout, railKindFor, type DataSource, type QueryOpts } from './source';
 import type {
   ActivityEntry,
+  ChapterProgress,
   GridPage,
   HistoryEntry,
   HomeGridSection,
@@ -67,6 +68,12 @@ export const queryKeys = {
     ['chapterPages', mock, bridgeId, seriesId, chapterId] as const,
   directPages: (mock: boolean, bridgeId: string, seriesId: string) =>
     ['directPages', mock, bridgeId, seriesId] as const,
+  /** One series' persisted chapter read state. Deliberately NOT folded into `seriesList`: read
+   *  state is local library data that changes on every mark-read/finished chapter, while the
+   *  chapter list itself comes from the bridge over the network — keeping them apart means a
+   *  mark-read invalidates only this key instead of re-fetching chapters. */
+  chapterProgress: (mock: boolean, bridgeId: string, seriesId: string) =>
+    ['chapterProgress', mock, bridgeId, seriesId] as const,
   pageThumb: (mock: boolean, bridgeId: string, seriesId: string, pageIndex: number) =>
     ['pageThumb', mock, bridgeId, seriesId, pageIndex] as const,
   isFavorite: (mock: boolean, bridgeId: string, seriesId: string) =>
@@ -278,6 +285,22 @@ export function seriesListQuery(
     queryKey: queryKeys.seriesList(mock, bridgeId, seriesId, direct),
     queryFn: ({ signal }) => ds.getSeriesList(bridgeId, seriesId, direct, signal),
     enabled: enabled && !!seriesId,
+  };
+}
+
+/** `useQuery` options for a series' chapter read state. Safe for any series — one that isn't in the
+ *  library has nowhere to store progress and simply resolves empty. */
+export function chapterProgressQuery(
+  ds: DataSource,
+  mock: boolean,
+  bridgeId: string,
+  seriesId: string,
+  enabled: boolean,
+): UseQueryOptions<ChapterProgress[], Error> {
+  return {
+    queryKey: queryKeys.chapterProgress(mock, bridgeId, seriesId),
+    queryFn: ({ signal }) => ds.getChapterProgress(bridgeId, seriesId, signal),
+    enabled: enabled && !!bridgeId && !!seriesId,
   };
 }
 

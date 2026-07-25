@@ -6,6 +6,7 @@ import {
   Blocks,
   Bug,
   Check,
+  CheckCheck,
   CircleCheck,
   ChevronDown,
   ChevronRight,
@@ -57,6 +58,8 @@ export const StarIcon = ({ color, size = 16, filled }: IconProps) => (
   <Star color={color} size={size} fill={filled ? color : 'none'} />
 );
 export const CheckIcon = ({ color, size = 16 }: IconProps) => <Check color={color} size={size} />;
+/** A double check — "everything up to here", as distinct from `CheckIcon`'s single item. */
+export const CheckAllIcon = ({ color, size = 16 }: IconProps) => <CheckCheck color={color} size={size} />;
 export const ListPlusIcon = ({ color, size = 16 }: IconProps) => <ListPlus color={color} size={size} />;
 // Vertical 3-dot "more actions" trigger — the web series-card context-menu affordance.
 export const MoreVerticalIcon = ({ color, size = 16 }: IconProps) => <MoreVertical color={color} size={size} />;

@@ -31,6 +31,7 @@ import type {
   Bridge,
   BridgeList,
   Chapter,
+  ChapterProgress,
   GridPage,
   HistoryEntry,
   HomeGridSection,
@@ -109,6 +110,28 @@ export interface DataSource {
     seriesId: string,
     chapterId: string,
     update: { lastPage?: number; pageCount?: number; chapterName?: string },
+    signal?: AbortSignal,
+  ): Promise<void>;
+  /** Persisted read state for one series' chapters. Empty for a series that isn't in the library
+   *  (it has nowhere to store progress), so this is safe to call for any series. */
+  getChapterProgress(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<ChapterProgress[]>;
+  /** Set the read flag on specific chapters (the chapter row's "Mark as read"/"unread"). Pass every
+   *  copy of the logical chapter so a multi-scanlator row flips as a whole. Library-only: the host
+   *  404s a series that isn't in the library. */
+  setChaptersRead(
+    bridgeId: string,
+    seriesId: string,
+    chapters: Chapter[],
+    read: boolean,
+    signal?: AbortSignal,
+  ): Promise<void>;
+  /** Mark everything up to and including `chapterId` read, in reading order. The host derives that
+   *  order (and the language lane) from `chapters`, so pass the series' full list. Library-only. */
+  markReadUpTo(
+    bridgeId: string,
+    seriesId: string,
+    chapters: Chapter[],
+    chapterId: string,
     signal?: AbortSignal,
   ): Promise<void>;
   /** Record a *non-library* read into the reading log (library reads persist via progress instead). */
@@ -281,6 +304,20 @@ function toHistoryEntry(h: api.ApiHistoryItem): HistoryEntry {
   };
 }
 
+/** Back to the contract's `Chapter` shape, for the routes that take a chapter list as input
+ *  (`read-up-to`). The app's `Chapter` renames `publishedAt` to `date` and carries a derived `read`
+ *  flag the host has no field for; everything else is already contract-shaped. */
+function toApiChapter(c: Chapter): { id: string; name: string; number?: number; languageCode?: string; group?: string; publishedAt?: number } {
+  return {
+    id: c.id,
+    name: c.name,
+    ...(c.number !== undefined && { number: c.number }),
+    ...(c.languageCode !== undefined && { languageCode: c.languageCode }),
+    ...(c.group !== undefined && { group: c.group }),
+    ...(c.date ? { publishedAt: c.date } : {}),
+  };
+}
+
 function toActivityEntry(a: api.ApiActivityItem): ActivityEntry {
   return {
     bridgeId: a.bridgeId,
@@ -435,6 +472,31 @@ const realDataSource: DataSource = {
   },
   async recordChapterProgress(bridgeId, seriesId, chapterId, update, signal) {
     await api.putChapterProgress(bridgeId, seriesId, chapterId, update, signal);
+  },
+  async getChapterProgress(bridgeId, seriesId, signal) {
+    return (await api.getChapterProgress(bridgeId, seriesId, signal)).map((p) => ({
+      chapterId: p.chapterId,
+      read: p.read,
+      ...(p.number !== undefined && { number: p.number }),
+      ...(p.languageCode !== undefined && { languageCode: p.languageCode }),
+    }));
+  },
+  async setChaptersRead(bridgeId, seriesId, chapters, read, signal) {
+    // One write per copy — the host's read flag is per chapter id, and a logical chapter can have
+    // several (one per scanlation group). Sequential, not Promise.all: they all patch the same
+    // entry's progress document, so concurrent writes would race.
+    for (const c of chapters) {
+      await api.putChapterProgress(
+        bridgeId,
+        seriesId,
+        c.id,
+        { read, chapterName: c.name, ...(c.number !== undefined && { number: c.number }) },
+        signal,
+      );
+    }
+  },
+  async markReadUpTo(bridgeId, seriesId, chapters, chapterId, signal) {
+    await api.postReadUpTo(bridgeId, seriesId, chapters.map(toApiChapter), chapterId, signal);
   },
   async recordReadingHistory(entry, signal) {
     await api.recordReadingHistory(entry, signal);
@@ -772,6 +834,11 @@ const mockDataSource: DataSource = {
   removeFromLibrary: (bridgeId, seriesId) => mock.mockRemoveFromLibrary(bridgeId, seriesId),
   recordChapterProgress: (bridgeId, seriesId, chapterId, update) =>
     mock.mockRecordChapterProgress(bridgeId, seriesId, chapterId, update),
+  getChapterProgress: (bridgeId, seriesId) => mock.mockGetChapterProgress(bridgeId, seriesId),
+  setChaptersRead: (bridgeId, seriesId, chapters, read) =>
+    mock.mockSetChaptersRead(bridgeId, seriesId, chapters, read),
+  markReadUpTo: (bridgeId, seriesId, chapters, chapterId) =>
+    mock.mockMarkReadUpTo(bridgeId, seriesId, chapters, chapterId),
   recordReadingHistory: (entry) => mock.mockRecordReadingHistory(entry),
   getHistory: () => mock.mockGetHistory(),
   removeHistoryEntry: (bridgeId, seriesId) => mock.mockRemoveHistoryEntry(bridgeId, seriesId),

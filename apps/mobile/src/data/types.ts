@@ -74,6 +74,23 @@ export type Chapter = {
   pageCount?: number;
 };
 
+/**
+ * Persisted read-state for one chapter of a *library* series (`@comical/library`'s
+ * `ChapterProgress`). Kept separate from `Chapter` on purpose: chapters come from the bridge and
+ * are cached per series, read state is local library data that changes independently — so it gets
+ * its own query and can be invalidated without re-fetching the chapter list over the network.
+ * A series that isn't in the library simply has none.
+ */
+export type ChapterProgress = {
+  chapterId: string;
+  read: boolean;
+  /** Mirrors `Chapter.number` — lets read state collapse by logical chapter, and lets the host
+   *  compute the high-water mark trackers want as `chaptersRead`. */
+  number?: number;
+  /** Mirrors `Chapter.languageCode` — read state collapses within one language only. */
+  languageCode?: string;
+};
+
 /** A trackable progress service (AniList, MyAnimeList, …) a series can be linked to. */
 export type TrackerService = { id: string; name: string };
 

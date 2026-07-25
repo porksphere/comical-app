@@ -1,10 +1,20 @@
-import { LegendList } from '@legendapp/list/react-native';
+import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import { useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
-import { Platform, Pressable, StyleSheet, useWindowDimensions, View, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  Platform,
+  Pressable,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import Animated, {
   Easing,
   LinearTransition,
@@ -12,6 +22,7 @@ import Animated, {
   useSharedValue,
   withTiming,
   type AnimatedStyle,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -21,7 +32,15 @@ import { MenuActionRow, MenuHeader } from '@/components/context-menu';
 import { ContextMenuHold, openContextMenu } from '@/components/context-menu-host';
 import type { MenuRowSpec } from '@/components/context-menu-material';
 import { DownloadStateVisual } from '@/components/downloads/download-status-indicator';
-import { ArrowDownIcon, ArrowUpIcon, DownloadsIcon, TrashIcon } from '@/components/icons/ui-icons';
+import {
+  ArrowDownIcon,
+  ArrowUpIcon,
+  CheckAllIcon,
+  CheckIcon,
+  DownloadsIcon,
+  EyeOffIcon,
+  TrashIcon,
+} from '@/components/icons/ui-icons';
 import { OptionList, useOverlay, type AnchorRect } from '@/components/overlay/overlay';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
@@ -38,11 +57,11 @@ import { fromHere, selectableGroups, toEnqueue } from '@/data/downloads/select';
 import { queryClient } from '@/data/query-client';
 import { coverDelayMs, relativeTime } from '@/data/mock';
 import { hapticImpactMedium } from '@/lib/haptics';
-import { queryKeys } from '@/data/queries';
-import { useDataSource, useMockActive } from '@/data/source';
+import { chapterProgressQuery, inLibraryQuery, queryKeys } from '@/data/queries';
+import { useDataSource, useMockActive, type DataSource } from '@/data/source';
 import type { Chapter, PageThumbSource, SpriteThumb } from '@/data/types';
 import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
-import { groupChapters, pickVersion, type ChapterGroup } from '@/lib/chapter-order';
+import { applyReadState, groupChapters, pickVersion, type ChapterGroup } from '@/lib/chapter-order';
 import { setPreferredGroup, usePreferredGroup } from '@/lib/preferred-group';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { testId } from '@/lib/test-id';
@@ -279,6 +298,32 @@ type ChapterListRow =
   | { type: 'empty' };
 
 /**
+ * Pull-to-refresh + scroll wiring threaded down from the series screen's `usePullToRefresh` (see
+ * series.tsx). The screen owns the spinner (`PullIndicator`) and the web/Android touch handlers; each
+ * LegendList-owned scroller only needs to feed its scroll offset up (`sharedValues`, for the "am I at
+ * the top?" check and the iOS bounce read), fire the iOS release past the threshold (`onScrollEndDrag`),
+ * and ride the pulled-open content shift (`wrapperStyle` on a wrapping Animated.View) — the same three
+ * seams `RecyclerList` exposes for the Browse/Search grids. Switching from `LegendList` to
+ * `AnimatedLegendList` is what makes `sharedValues` update on the UI thread; the web
+ * `renderScrollComponent` below is mandatory once animated (see the legendlist-web-scroll-throttle
+ * fix — an animated list at throttle 0 stops firing onScroll mid-drag without it).
+ */
+type PullListWiring = {
+  sharedValues?: { scrollOffset: SharedValue<number> };
+  onScrollEndDrag?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  wrapperStyle?: Parameters<typeof Animated.View>[0]['style'];
+};
+
+/** Shared list props that arm an `AnimatedLegendList` for the house pull-to-refresh. Spread onto the
+ *  list so the web throttle fix and the Android glow suppression stay identical across both scrollers
+ *  (mirrors `RecyclerList`). */
+const pullScrollProps = {
+  renderScrollComponent:
+    Platform.OS === 'web' ? (scrollProps: object) => <Animated.ScrollView {...scrollProps} /> : undefined,
+  overScrollMode: Platform.OS === 'android' ? ('never' as const) : undefined,
+};
+
+/**
  * The chaptered-series screen's own scroll container — a virtualized, LegendList-owned scroller,
  * the chaptered counterpart to `PageThumbList`. It replaced a plain `ScrollView` + `.map` that
  * mounted EVERY chapter row at once: switching to All/Unread on a 250-chapter series rendered all
@@ -292,7 +337,7 @@ type ChapterListRow =
  * screens `leftColumn` is null and the cover/actions live in `header` (single column).
  */
 export function ChapterScrollList({
-  chapters = [],
+  chapters: rawChapters = [],
   loading,
   seed,
   title,
@@ -302,6 +347,9 @@ export function ChapterScrollList({
   footer,
   isLarge,
   topInset = 0,
+  sharedValues,
+  onScrollEndDrag,
+  wrapperStyle,
 }: {
   chapters?: Chapter[];
   /** The deferred chapter list is still fetching (see series.tsx + getSeriesList) — show a
@@ -320,7 +368,7 @@ export function ChapterScrollList({
   isLarge: boolean;
   /** Height of the overlaying top bar, so the first content clears it (and scrolls under its frost). */
   topInset?: number;
-}) {
+} & PullListWiring) {
   const theme = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -353,6 +401,32 @@ export function ChapterScrollList({
     () => new Map((dl?.chapters ?? []).map((c) => [c.chapterId, c])),
     [dl],
   );
+
+  // Read state. A bridge has no idea what the user has read — it lives in the local library as
+  // per-chapter progress rows, fetched on its own key so marking a chapter read re-reads THIS and
+  // not the (networked) chapter list. `applyReadState` merges it onto the incoming chapters, which
+  // is what lights up the Read/Unread tabs and the dimmed row title. A series that isn't in the
+  // library has no progress at all and just resolves empty.
+  const ds = useDataSource();
+  const mock = useMockActive();
+  const { data: progress } = useQuery(chapterProgressQuery(ds, mock, bridgeId ?? '', seed, !!bridgeId));
+  // Read state is library-only (the host 404s a progress write for a series it isn't storing), so
+  // the mark-read rows only make sense — and only appear — once the series is in the library. Same
+  // key the series screen's Library button already populates, so it's cached by the time a menu opens.
+  const { data: inLibrary } = useQuery({
+    ...inLibraryQuery(ds, mock, bridgeId ?? '', seed),
+    enabled: !!bridgeId && !!seed,
+  });
+  const chapters = useMemo(() => applyReadState(rawChapters, progress ?? []), [rawChapters, progress]);
+
+  // Unread counts (the Library grid's badge, the Activity feed and its tab badge) are all derived
+  // host-side from these same progress rows, so a mark-read has to refresh them too.
+  const invalidateReadState = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.chapterProgress(mock, bridgeId ?? '', seed) });
+    void queryClient.invalidateQueries({ queryKey: ['library'] });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.activity(mock) });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.activityCount(mock) });
+  }, [mock, bridgeId, seed]);
 
   // The scanlation group the user last opened — controls which version each logical
   // chapter defaults to, so the list keeps showing the source they're reading.
@@ -419,6 +493,13 @@ export function ChapterScrollList({
   const manifest = useMemo(() => dl?.chapters ?? [], [dl]);
   const openChapterMenu = (g: ChapterGroup, anchor?: AnchorRect) => {
     if (!bridgeId) return;
+    // Read state has nowhere to live for a series that isn't in the library, so those rows are
+    // simply absent there (like "Delete download" on a chapter that isn't downloaded) rather than
+    // present-but-dead. Built per open, so the "Mark as read/unread" label reflects current state.
+    const readArgs =
+      inLibrary === true
+        ? { ds, bridgeId, seriesId: seed, chapters, group: g, onChanged: invalidateReadState }
+        : undefined;
     if (Platform.OS !== 'web' && anchor) {
       openContextMenu({
         // No title line — the pressed row is right there naming the chapter; rows only, like the
@@ -433,6 +514,7 @@ export function ChapterScrollList({
           manifest,
           group: g,
           preferredGroup,
+          ...(readArgs && { read: readArgs }),
         }),
       });
       return;
@@ -448,6 +530,7 @@ export function ChapterScrollList({
           manifest={manifest}
           group={g}
           preferredGroup={preferredGroup}
+          {...(readArgs && { read: readArgs })}
         />
       ),
       anchor ?? null,
@@ -570,8 +653,11 @@ export function ChapterScrollList({
   );
 
   const list = (
-    <LegendList
+    <AnimatedLegendList
       style={styles.chapterList}
+      sharedValues={sharedValues}
+      onScrollEndDrag={onScrollEndDrag}
+      {...pullScrollProps}
       data={data}
       keyExtractor={(item) =>
         item.type === 'chapter' ? `c:${item.group.key}` : item.type
@@ -611,7 +697,11 @@ export function ChapterScrollList({
   // are full-width list items below it, and the related rails are the full-width footer. Because the
   // rows and footer are full-width — the cover lives in the header, not a persistent side column —
   // the rails span the whole capped column with no clipping, and the chapters stay virtualized.
-  return list;
+  //
+  // Wrapped in an Animated.View that carries `wrapperStyle` — the pull-to-refresh content shift the
+  // series screen drives (see series.tsx / usePullToRefresh). The screen owns the spinner + touch
+  // handlers; this scroller only feeds its scroll offset up and rides the shift.
+  return <Animated.View style={[styles.chapterList, wrapperStyle]}>{list}</Animated.View>;
 }
 
 /**
@@ -742,6 +832,48 @@ function ChapterRow({
   );
 }
 
+/**
+ * The chapter menu's READ-state half (the download half is `chapterMenuActions` below), shared by
+ * both presentations.
+ *
+ * Both writes go through the host, which owns the semantics: "mark as read" sets the flag on every
+ * copy of this logical chapter (so a multi-scanlator row flips as a whole), and "up to here" hands
+ * the host the full chapter list and lets IT do the ordering — walking every chapter at or below
+ * this one's number, within this one's language, across every scanlation group. Both then push the
+ * new high-water mark to any linked trackers automatically; nothing extra is needed here for that.
+ */
+function chapterReadActions(args: {
+  ds: DataSource;
+  bridgeId: string;
+  seriesId: string;
+  chapters: Chapter[];
+  group: ChapterGroup;
+  onChanged: () => void;
+}) {
+  const { ds, bridgeId, seriesId, chapters, group, onChanged } = args;
+  const read = group.versions.every((v) => v.read);
+  // How many logical chapters "up to here" would newly mark — the same lane the host walks (this
+  // chapter's language, at or below its position), minus the ones already read. Rides in the label
+  // like the download rows' counts do; 0 means the row would do nothing.
+  const lane = groupChapters(chapters).filter((g) => g.languageCode === group.languageCode);
+  const cut = lane.findIndex((g) => g.key === group.key);
+  const pending =
+    cut === -1 ? 0 : lane.slice(0, cut + 1).filter((g) => !g.versions.every((v) => v.read)).length;
+  return {
+    read,
+    pending,
+    setRead: async (next: boolean) => {
+      await ds.setChaptersRead(bridgeId, seriesId, group.versions, next);
+      onChanged();
+    },
+    markUpTo: async () => {
+      // Any copy names the same logical chapter to the host, so the default version is fine.
+      await ds.markReadUpTo(bridgeId, seriesId, chapters, group.versions[0]!.id);
+      onChanged();
+    },
+  };
+}
+
 /** The chapter menu's actions + coverage, computed once and shared by both presentations (the
  *  native hold menu's rows and the web overlay's). */
 function chapterMenuActions(args: {
@@ -779,9 +911,33 @@ function chapterMenuActions(args: {
 
 /** The NATIVE hold menu's rows (`MenuRowSpec` — the series-popup menu system's row shape). Counts
  *  ride in the labels; per the shared menu's rule, nothing is coloured. */
-function chapterMenuRows(args: Parameters<typeof chapterMenuActions>[0]): MenuRowSpec[] {
+function chapterMenuRows(
+  args: Parameters<typeof chapterMenuActions>[0] & { read?: Parameters<typeof chapterReadActions>[0] },
+): MenuRowSpec[] {
   const { entry, span, downloadedVersions, downloadThis, downloadFromHere, deleteDownload } = chapterMenuActions(args);
-  const rows: MenuRowSpec[] = [
+  const rows: MenuRowSpec[] = [];
+  if (args.read) {
+    const { read, pending, setRead, markUpTo } = chapterReadActions(args.read);
+    rows.push(
+      {
+        label: read ? 'Mark as unread' : 'Mark as read',
+        Icon: read ? EyeOffIcon : CheckIcon,
+        loading: false,
+        testID: testId('series.chapter-menu', 'read'),
+        onPress: () => void setRead(!read),
+      },
+      {
+        label: pending > 1 ? `Mark read up to here (${pending})` : 'Mark read up to here',
+        Icon: CheckAllIcon,
+        loading: false,
+        // Nothing left below this chapter to mark — the row above already covers this one alone.
+        disabled: pending <= 1,
+        testID: testId('series.chapter-menu', 'read-up-to'),
+        onPress: () => void markUpTo(),
+      },
+    );
+  }
+  rows.push(
     {
       label: entry?.settled ? 'Already saved' : 'Download chapter',
       Icon: DownloadsIcon,
@@ -798,7 +954,7 @@ function chapterMenuRows(args: Parameters<typeof chapterMenuActions>[0]): MenuRo
       testID: testId('series.chapter-menu', 'from-here'),
       onPress: downloadFromHere,
     },
-  ];
+  );
   if (downloadedVersions.length > 0) {
     rows.push({
       label: 'Delete download',
@@ -812,9 +968,11 @@ function chapterMenuRows(args: Parameters<typeof chapterMenuActions>[0]): MenuRo
 }
 
 /**
- * The long-press chapter menu: quick per-chapter download actions without leaving the list.
- * "Download from here" is the one-gesture range answer (this chapter through the end of reading
- * order, skipping anything already kept/queued); a fully-downloaded chapter offers Delete too.
+ * The long-press chapter menu: quick per-chapter read + download actions without leaving the list.
+ * "Mark read up to here" and "Download from here" are the two one-gesture range answers (everything
+ * below this chapter in reading order / this chapter through the end, skipping what's already
+ * done); a fully-downloaded chapter offers Delete too. The read rows only appear for a series in
+ * the library, which is the only place read state can be stored (see `chapterReadActions`).
  * Rendered with the shared context-menu chrome (`MenuHeader` + `MenuActionRow`), so it reads as the
  * same kind of object as the series card's long-press menu. WEB ONLY — native uses the hold-menu
  * host (see `openChapterMenu`).
@@ -827,6 +985,7 @@ function ChapterDownloadMenu({
   manifest,
   group,
   preferredGroup,
+  read,
 }: {
   bridgeId: string;
   seriesId: string;
@@ -835,6 +994,8 @@ function ChapterDownloadMenu({
   manifest: DownloadedChapter[];
   group: ChapterGroup;
   preferredGroup?: string;
+  /** Read-state actions — omitted when the series isn't in the library. */
+  read?: Parameters<typeof chapterReadActions>[0];
 }) {
   const { closeTop } = useOverlay();
   const { entry, span, downloadedVersions, downloadThis, downloadFromHere, deleteDownload } = chapterMenuActions({
@@ -846,11 +1007,38 @@ function ChapterDownloadMenu({
     group,
     ...(preferredGroup !== undefined && { preferredGroup }),
   });
+  const readActions = read ? chapterReadActions(read) : null;
 
   return (
     <View style={styles.menuBody}>
       <MenuHeader title={group.name} textOnly />
       <OptionList>
+        {readActions && (
+          <>
+            <MenuActionRow
+              testID={testId('series.chapter-menu', 'read')}
+              label={readActions.read ? 'Mark as unread' : 'Mark as read'}
+              Icon={readActions.read ? EyeOffIcon : CheckIcon}
+              detail={readActions.read ? 'clear read state' : '1 chapter'}
+              onPress={() => {
+                void readActions.setRead(!readActions.read);
+                closeTop();
+              }}
+            />
+            <MenuActionRow
+              testID={testId('series.chapter-menu', 'read-up-to')}
+              label="Mark read up to here"
+              Icon={CheckAllIcon}
+              // Nothing left below this chapter to mark — the row above already covers it alone.
+              disabled={readActions.pending <= 1}
+              detail={readActions.pending > 1 ? `${readActions.pending} chapters` : 'nothing to mark'}
+              onPress={() => {
+                void readActions.markUpTo();
+                closeTop();
+              }}
+            />
+          </>
+        )}
         <MenuActionRow
           testID={testId('series.chapter-menu', 'this')}
           label="Download this chapter"
@@ -932,6 +1120,9 @@ export function PageThumbList({
   header,
   footer,
   topInset = 0,
+  sharedValues,
+  onScrollEndDrag,
+  wrapperStyle,
 }: {
   thumbs: (PageThumbSource | null)[];
   /** The deferred page list is still fetching — show a skeleton in the header. */
@@ -946,7 +1137,7 @@ export function PageThumbList({
   /** Related-series rails — the list footer, below the grid and the "Show all"
    *  button (while collapsed). */
   footer?: ReactElement | null;
-}) {
+} & PullListWiring) {
   const theme = useTheme();
   const router = useRouter();
   const { width: screenW } = useWindowDimensions();
@@ -985,9 +1176,12 @@ export function PageThumbList({
     [base],
   );
 
-  return (
-    <LegendList
+  const list = (
+    <AnimatedLegendList
       style={styles.pageList}
+      sharedValues={sharedValues}
+      onScrollEndDrag={onScrollEndDrag}
+      {...pullScrollProps}
       data={data}
       keyExtractor={(_, i) => String(i)}
       numColumns={cols}
@@ -1079,6 +1273,7 @@ export function PageThumbList({
       )}
     />
   );
+  return <Animated.View style={[styles.pageList, wrapperStyle]}>{list}</Animated.View>;
 }
 
 // Cross-instance cache of page thumbnails that have already resolved at least once this

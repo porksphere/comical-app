@@ -2,9 +2,19 @@ import { useQuery } from '@tanstack/react-query';
 import { Image, type ImageLoadEventData } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
-import { useEffect, useState, type ReactNode } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions, View, type ViewStyle } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  type ViewStyle,
+} from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TagGroupRow } from '@/components/chip';
@@ -22,6 +32,9 @@ import { BarContentGap, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { relativeTime } from '@/data/mock';
 import { setSearchIntent, tagSearchIntent } from '@/data/search-intent';
 import { queryKeys, relatedGroupsQuery, seriesDetailQuery, seriesListQuery } from '@/data/queries';
+import { queryClient } from '@/data/query-client';
+import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
+import { PullIndicator } from '@/components/pull-indicator';
 import { useDataSource, useMockActive } from '@/data/source';
 import { ASPECT_TRANSITION_MS, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { resetPreferredGroup } from '@/lib/preferred-group';
@@ -169,6 +182,30 @@ export default function SeriesScreen() {
   const error = queryError ? (queryError as Error).message || 'Failed to load series' : null;
   const retry = refetch;
 
+  // Pull-to-refresh for the series scroller (the same house overlay spinner Browse/Search use — see
+  // usePullToRefresh). The body's LegendList (ChapterScrollList or PageThumbList) owns the scroll, so
+  // this screen owns the shared scroll offset + the spinner and threads `sharedValues` /
+  // `onScrollEndDrag` / the content-shift `wrapperStyle` down through SeriesBody to whichever list is
+  // mounted. A pull re-attempts the live fetch for THIS series — which is also the manual escape hatch
+  // for a stuck "Offline — showing saved details" entry (the embedded runtime served the library's
+  // cached detail because the live fetch failed); refetching the detail replaces that cached payload
+  // and the pill disappears with it. (The automatic recovery — a `cached` detail is marked
+  // always-stale so it re-attempts on its own — lives in seriesDetailQuery; this is the on-demand one.)
+  const scrollY = useSharedValue(0);
+  const sharedValues = useMemo(() => ({ scrollOffset: scrollY }), [scrollY]);
+  const refreshSeries = useCallback(
+    () =>
+      // Refetch every mounted query for this exact series (detail, chapter/page list, related rails,
+      // favorite, …) — all keyed `[name, mock, bridgeId, seriesId, …]`, so match on the bridge+series
+      // slots. `type: 'active'` limits it to what's actually on screen.
+      queryClient.refetchQueries({
+        type: 'active',
+        predicate: (q) => q.queryKey[2] === (bridgeId ?? '') && q.queryKey[3] === (id ?? ''),
+      }),
+    [bridgeId, id],
+  );
+  const pull = usePullToRefresh(scrollY, refreshSeries);
+
   const isLarge = width >= LARGE_SCREEN_BREAKPOINT;
   // Sticky cover column is a web-only, large-screen affordance: as the page
   // scrolls, the left column pins to the top until the chapters end (mirrors the
@@ -215,7 +252,11 @@ export default function SeriesScreen() {
     : (topBarBridge ?? '');
 
   return (
-    <ThemedView style={styles.container}>
+    <ThemedView
+      style={styles.container}
+      // Touch-driven pull for web + Android (caught here so it works regardless of what's under the
+      // finger); empty on iOS, which sources its pull from the native bounce (see usePullToRefresh).
+      {...pull.touchHandlers}>
       <TopBar title={topBarTitle} />
 
       {/* Served from the library's offline metadata cache — a floating, non-blocking pill under the
@@ -261,8 +302,13 @@ export default function SeriesScreen() {
           detailStarted={isFetching || !isPlaceholderData}
           coverAspect={coverAspect}
           onCoverLoad={onCoverLoad}
+          sharedValues={sharedValues}
+          onScrollEndDrag={pull.onScrollEndDrag}
+          wrapperStyle={pull.listStyle}
         />
       )}
+      {/* The house pull-to-refresh spinner — sits under the top bar, above the scroller. */}
+      <PullIndicator {...pull.indicator} top={topBarInset} />
     </ThemedView>
   );
 }
@@ -282,6 +328,9 @@ function SeriesBody({
   detailStarted,
   coverAspect,
   onCoverLoad,
+  sharedValues,
+  onScrollEndDrag,
+  wrapperStyle,
 }: {
   series: SeriesDetail;
   bridgeId?: string;
@@ -304,6 +353,10 @@ function SeriesBody({
   /** The hero cover's live aspect + its measurer — owned by SeriesScreen (see there). */
   coverAspect: number;
   onCoverLoad: (e: ImageLoadEventData) => void;
+  /** Pull-to-refresh wiring owned by SeriesScreen, threaded to whichever list owns the scroll. */
+  sharedValues?: { scrollOffset: SharedValue<number> };
+  onScrollEndDrag?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  wrapperStyle?: Parameters<typeof Animated.View>[0]['style'];
 }) {
   const ds = useDataSource();
   const router = useRouter();
@@ -695,6 +748,9 @@ function SeriesBody({
         bridgeId={bridgeId}
         header={<View style={styles.innerNoPad}>{heroBlock}</View>}
         footer={relatedRailsEl}
+        sharedValues={sharedValues}
+        onScrollEndDrag={onScrollEndDrag}
+        wrapperStyle={wrapperStyle}
       />
     );
   }
@@ -735,6 +791,9 @@ function SeriesBody({
       footer={relatedRailsEl}
       isLarge={isLarge}
       topInset={topBarInset}
+      sharedValues={sharedValues}
+      onScrollEndDrag={onScrollEndDrag}
+      wrapperStyle={wrapperStyle}
     />
   );
 }
