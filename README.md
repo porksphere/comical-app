@@ -93,7 +93,8 @@ Comical is built around a small **TypeScript runtime core** (`@comical/*`):
 - **Core runtime** — the shared logic that fetches and normalizes comics.
 - **Bridges** — per-source adapters that know how to talk to a given site/service. These are
   downloaded and verified from user-managed registries at runtime, so support for new sources
-  ships without an app update.
+  ships without an app update. Public registries are discoverable on GitHub via the
+  **[`comical-registry` topic](https://github.com/topics/comical-registry)** (sorted by stars).
 - **React Native + Expo shell** — one UI codebase for iOS, Android, and web. Because the core
   is plain TypeScript, it runs directly in the app's JS runtime with no native rewrite.
 
