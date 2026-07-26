@@ -77,9 +77,14 @@ export function useCrossBridgeRails(
       const r = results[i];
       const direct = b.capabilities.includes('direct');
       let section: RailSection | null;
+      let listName: string | undefined;
       let drill: { listId?: string; query?: string; favorites?: boolean };
       if (params.mode === 'home') {
         section = (r.data as RailSection | null | undefined) ?? null;
+        // The rail's heading reads "{bridge} — {list}". `section.title` IS the picked list's name on
+        // every one of fetchBridgeFeaturedRail's sourcing paths (featured flag / first rail-layout
+        // home list / first home list / first list of any kind), so no separate lookup is needed.
+        listName = section?.title;
         drill = { listId: section?.id };
       } else if (params.mode === 'favorites') {
         const items = (r.data as GridPage | undefined)?.items ?? [];
@@ -103,6 +108,7 @@ export function useCrossBridgeRails(
         error: r.isError,
         onRetry: () => void r.refetch(),
         section,
+        listName,
         drill,
       };
     });
