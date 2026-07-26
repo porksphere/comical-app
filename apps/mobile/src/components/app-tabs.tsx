@@ -18,7 +18,12 @@ import { DesktopTopBarHeight, MaxTopLevelWidth, Spacing } from '@/constants/them
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
-import { getTabBarProgress, subscribeTabBarProgress } from '@/lib/tab-bar-visibility';
+import {
+  getTabBarHideOffset,
+  getTabBarProgress,
+  setTabBarHideOffset,
+  subscribeTabBarProgress,
+} from '@/lib/tab-bar-visibility';
 
 // A custom-rendered bar on every platform (no OS-native tab bar) — responsive: an app-like black
 // icon bottom bar on phones; on wider/desktop viewports a compact icon-only row pinned to the
@@ -137,12 +142,12 @@ function useAutoHideBottomBar(enabled: boolean) {
   return { hidden: enabled && hidden, reveal };
 }
 
-// Vertical distance the mobile bar slides to clear the viewport, plus a little
-// extra so its shadow/border doesn't peek in on lower-end devices. Exported so
-// anything that has to know where the bar currently IS — the long-press overlay
-// clips its flying cover to the on-screen chrome — can turn the shared
-// `tab-bar-visibility` progress back into pixels.
-export const NATIVE_HIDE_OFFSET = 120;
+// Slack added onto the bar's measured height when publishing its hide offset, so the top hairline
+// can't peek back in on a subpixel rounding. The offset itself lives in `tab-bar-visibility`
+// (setTabBarHideOffset below) — it used to be an exported padded constant (120), but sliding
+// further than the bar is tall is exactly what made a scroll-up feel dead until the invisible
+// overshoot was walked back.
+const HIDE_OFFSET_SLACK = 2;
 
 /**
  * Native only: tracks the bottom bar's hidden-ness continuously (0 shown → 1 fully
@@ -188,6 +193,16 @@ export default function AppTabs() {
   const { hidden, reveal } = useAutoHideBottomBar(isMobile);
   // Native only: slide the whole bar off-screen as the screen scrolls down, back in as it scrolls up.
   const nativeProgress = useNativeTabBarProgress(isMobile);
+  // How far that slide travels: the bar's own measured height (+ slack), so progress 1 puts its top
+  // edge exactly at the screen edge — no invisible overshoot for a scroll-up to walk back before the
+  // bar visibly rises. Published to `tab-bar-visibility` for everything else that converts the shared
+  // progress to pixels (the scroll hook's 1:1 span, the long-press overlay's chrome band).
+  const [hideOffset, setHideOffset] = useState(getTabBarHideOffset());
+  const onBarLayout = useCallback((e: { nativeEvent: { layout: { height: number } } }) => {
+    const px = Math.ceil(e.nativeEvent.layout.height) + HIDE_OFFSET_SLACK;
+    setHideOffset(px);
+    setTabBarHideOffset(px);
+  }, []);
 
   // Pin the desktop nav to the right edge of the constrained content (the same
   // MaxTopLevelWidth the views centre within), not the raw screen edge, so it
@@ -236,6 +251,8 @@ export default function AppTabs() {
 
       {isMobile && (
         <TabList
+          // TabList spreads extra props onto its plain View, so onLayout reaches the real bar.
+          onLayout={onBarLayout}
           style={[
             styles.bottomBar,
             Platform.OS === 'web' && FADE_TRANSITION,
@@ -251,10 +268,11 @@ export default function AppTabs() {
               opacity: hidden ? FADED_OPACITY : 1,
               // Slide via transform (compositor) rather than animating `bottom` (layout): the bar
               // is repositioned on every scroll-reported frame, so a translate avoids a native
-              // layout pass each time. translateY > 0 pushes it down off-screen. Native only —
+              // layout pass each time. translateY > 0 pushes it down off-screen, by the bar's own
+              // measured height (see onBarLayout) so it stops right at the edge. Native only —
               // nativeProgress is 0 on web, where the opacity fade above handles hiding instead.
               bottom: 0,
-              transform: [{ translateY: NATIVE_HIDE_OFFSET * nativeProgress }],
+              transform: [{ translateY: hideOffset * nativeProgress }],
             },
           ]}>
           {/* Frosted background behind the icons (content scrolls under the bar). */}
