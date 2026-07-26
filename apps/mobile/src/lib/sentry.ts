@@ -10,3 +10,13 @@ export const SENTRY_DSN =
 // (a local `bun run dev`/`bun start` Metro session), so crashes from local iteration are still
 // distinguishable from every shipped build.
 export const SENTRY_BUILD_CHANNEL = process.env.EXPO_PUBLIC_COMICAL_BUILD_CHANNEL || 'local-dev';
+
+// The `*-e2e` channels are Maestro's CI builds (e2e.yml), driven by an XCTest/UIAutomator
+// synthetic tap/type harness on top of GitHub's macOS runners — capped at 3 vCPUs for the iOS
+// Simulator, versus 6+ on a real device or a developer's own Mac. That contention routinely trips
+// the native App Hang watchdog on an ordinary TextInput.focus() (COMICAL-APP-1M/1K/1D: every
+// occurrence was build_type "simulator" + this exact channel, none ever seen on a real device or a
+// manual dev-client run) — noise, not a reproducible app defect. `enableAppHangTracking` is
+// disabled for exactly these channels; every other channel, including a developer's own simulator,
+// keeps it, since a real hang there is still actionable.
+export const isE2eBuildChannel = (channel: string): boolean => channel.endsWith('-e2e');

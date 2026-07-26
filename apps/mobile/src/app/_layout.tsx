@@ -1,7 +1,7 @@
 import * as Sentry from '@sentry/react-native';
 import { Platform } from 'react-native';
 
-import { SENTRY_BUILD_CHANNEL, SENTRY_DSN } from '@/lib/sentry';
+import { isE2eBuildChannel, SENTRY_BUILD_CHANNEL, SENTRY_DSN } from '@/lib/sentry';
 
 // Runs before any other module below, so JS errors/native crashes are caught
 // from the earliest possible point in app startup. Disabled on web: the
@@ -16,6 +16,9 @@ Sentry.init({
   enabled: Platform.OS !== 'web',
   environment: __DEV__ ? 'development' : 'production',
   tracesSampleRate: 0, // crash/error capture only, no perf/APM quota usage
+  // See isE2eBuildChannel: the Maestro E2E CI simulator is too CPU-starved for the App Hang
+  // watchdog's readings to mean anything.
+  enableAppHangTracking: !isE2eBuildChannel(SENTRY_BUILD_CHANNEL),
   initialScope: { tags: { buildChannel: SENTRY_BUILD_CHANNEL } },
 });
 
