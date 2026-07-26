@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Platform, useWindowDimensions } from 'react-native';
+import { useSyncExternalStore } from 'react';
+import { useWindowDimensions } from 'react-native';
 
 import { DesktopTopBarHeight, TopBarHeight } from '@/constants/theme';
 
@@ -14,11 +14,20 @@ import { DesktopTopBarHeight, TopBarHeight } from '@/constants/theme';
  * lays out at the fallback size, then jumps to the real one a frame later (rail cards visibly
  * snapping wider, a desktop-width top bar starting short). Gate the deferral on web so native is
  * correct immediately.
+ *
+ * Expressed as a `useSyncExternalStore` with two constant snapshots rather than a `setState` in an
+ * effect: hydrated-ness IS the difference between React's prerender pass and its client pass, which
+ * is exactly what the server/client snapshot split means. React uses `getServerSnapshot` for the
+ * static export AND for the hydrating render, then the client snapshot from then on — so web still
+ * holds the small-screen assumption for exactly one render, while native (which never prerenders)
+ * reads `true` on its very first one. Nothing can change it afterwards, hence the no-op subscribe.
  */
+const subscribeToNothing = () => () => {};
+const hydratedSnapshot = () => true;
+const prerenderSnapshot = () => false;
+
 export function useHydrated(): boolean {
-  const [hydrated, setHydrated] = useState(Platform.OS !== 'web');
-  useEffect(() => setHydrated(true), []);
-  return hydrated;
+  return useSyncExternalStore(subscribeToNothing, hydratedSnapshot, prerenderSnapshot);
 }
 
 // The reference site switches its type scale at 560/561px (max-width:560 reads as

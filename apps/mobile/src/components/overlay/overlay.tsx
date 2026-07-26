@@ -80,24 +80,28 @@ export function useOverlay(): OverlayApi {
 export function useAnchoredOverlay() {
   const { open, closeTop, topId } = useOverlay();
   const ref = useRef<View>(null);
-  const myId = useRef<number | null>(null);
-  const isOpen = myId.current !== null && myId.current === topId;
+  // The id of the overlay THIS trigger opened. State, not a ref: `isOpen` is derived from it during
+  // render, and a ref read during render isn't tracked by React (nor allowed — react-hooks/refs), so
+  // the toggle could paint stale. As state, the write that records the id is itself what re-renders,
+  // and `openAt` closes over a value from the same render as the `topId` it compares against.
+  const [myId, setMyId] = useState<number | null>(null);
+  const isOpen = myId !== null && myId === topId;
   const openAt = useCallback(
     (render: () => ReactNode) => {
-      if (myId.current !== null && myId.current === topId) {
+      if (myId !== null && myId === topId) {
         closeTop();
         return;
       }
       const node = ref.current;
       if (node && typeof node.measureInWindow === 'function') {
         node.measureInWindow((x, y, width, height) => {
-          myId.current = open(render, { x, y, width, height });
+          setMyId(open(render, { x, y, width, height }));
         });
       } else {
-        myId.current = open(render);
+        setMyId(open(render));
       }
     },
-    [open, closeTop, topId],
+    [open, closeTop, topId, myId],
   );
   return { ref, openAt, isOpen };
 }

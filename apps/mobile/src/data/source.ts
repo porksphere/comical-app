@@ -261,8 +261,16 @@ export interface DataSource {
   checkRegistryUpdates(signal?: AbortSignal): Promise<api.RegistryUpdateInfo[] | null>;
   /** Available updates for installed registry trackers, or `null` without registry support. */
   checkRegistryTrackerUpdates(signal?: AbortSignal): Promise<api.RegistryUpdateInfo[] | null>;
-  addRegistry(url: string, requireSignature?: boolean, signal?: AbortSignal): Promise<void>;
+  /** Returns the saved row — the caller needs its `pendingAdoption` to offer the adoption prompt. */
+  addRegistry(url: string, requireSignature?: boolean, signal?: AbortSignal): Promise<api.SavedRegistry | null>;
   removeRegistry(url: string, signal?: AbortSignal): Promise<void>;
+  /**
+   * The user's answer to a registry-move claim it couldn't verify on its own — see `pendingMove` /
+   * `pendingAdoption` on `SavedRegistry`. Confirming repoints everything installed from the old URL.
+   */
+  confirmRegistryMove(url: string, signal?: AbortSignal): Promise<string>;
+  dismissRegistryMove(url: string, signal?: AbortSignal): Promise<void>;
+  adoptRegistry(newUrl: string, oldUrl: string, signal?: AbortSignal): Promise<void>;
   browseRegistryBridges(url: string, signal?: AbortSignal): Promise<api.AvailableBridge[]>;
   browseRegistryTrackers(url: string, signal?: AbortSignal): Promise<api.AvailableTracker[]>;
   installRegistryBridge(registryUrl: string, bridgeId: string, signal?: AbortSignal): Promise<void>;
@@ -790,9 +798,10 @@ const realDataSource: DataSource = {
   getRegistries: (signal) => api.getRegistries(signal),
   checkRegistryUpdates: (signal) => api.checkRegistryUpdates(signal),
   checkRegistryTrackerUpdates: (signal) => api.checkRegistryTrackerUpdates(signal),
-  async addRegistry(url, requireSignature, signal) {
-    await api.addRegistry(url, requireSignature, signal);
-  },
+  addRegistry: (url, requireSignature, signal) => api.addRegistry(url, requireSignature, signal),
+  confirmRegistryMove: (url, signal) => api.confirmRegistryMove(url, signal),
+  dismissRegistryMove: (url, signal) => api.dismissRegistryMove(url, signal),
+  adoptRegistry: (newUrl, oldUrl, signal) => api.adoptRegistry(newUrl, oldUrl, signal),
   async removeRegistry(url, signal) {
     await api.removeRegistry(url, signal);
   },
@@ -891,8 +900,15 @@ const mockDataSource: DataSource = {
   // Mock installs are always current — no update pip in mock/demo mode.
   checkRegistryUpdates: () => Promise.resolve([]),
   checkRegistryTrackerUpdates: () => Promise.resolve([]),
-  addRegistry: (url, requireSignature) => mock.mockAddRegistry(url, requireSignature),
+  addRegistry: async (url, requireSignature) => {
+    await mock.mockAddRegistry(url, requireSignature);
+    return null;
+  },
   removeRegistry: (url) => mock.mockRemoveRegistry(url),
+  // No mock registry ever advertises a move, so these are unreachable in mock/demo mode.
+  confirmRegistryMove: (url) => Promise.resolve(url),
+  dismissRegistryMove: () => Promise.resolve(),
+  adoptRegistry: () => Promise.resolve(),
   browseRegistryBridges: (url) => mock.mockBrowseRegistryBridges(url),
   browseRegistryTrackers: (url) => mock.mockBrowseRegistryTrackers(url),
   installRegistryBridge: (registryUrl, bridgeId) => mock.mockInstallRegistryBridge(registryUrl, bridgeId),
