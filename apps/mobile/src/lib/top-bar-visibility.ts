@@ -1,5 +1,8 @@
 /**
- * How far the focused screen's sliding top bar is currently slid off-screen (px, 0 = fully shown).
+ * How far the focused screen's sliding top bar is currently slid up (px, 0 = fully shown). Note the
+ * bar may DOCK rather than leave the screen: Browse's slides by its content height and keeps its
+ * frosted strip over the status-bar inset, so at max slide the remaining chrome is `insets.top` tall
+ * — which the consumer's `insets.top + barHeight - hidden` arithmetic already yields.
  * The mirror image of `tab-bar-visibility` for the bar at the other end of the screen, and reported
  * by the same hook that drives the slide (`useSlidingBar`).
  *
