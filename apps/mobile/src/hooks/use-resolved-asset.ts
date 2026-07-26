@@ -1,7 +1,7 @@
 /**
  * Resolve a bridge-supplied cover/asset URL into something `<Image>` can load, mirroring what the
  * reader does for page images. Most bridges hand back an absolute CDN URL — that passes straight
- * through with no async work or flash. A bridge whose cover CDN is Referer-gated (e.g. a gallery bridge)
+ * through with no async work or flash. A bridge whose cover CDN is Referer-gated
  * instead hands back a server-relative `/img-proxy?…` path; that gets resolved through the shared
  * resolver — prefixed with the API base on web, fetched through the in-process transport (→ a `data:`
  * URI) on device — so covers work on every platform, not just the reader.

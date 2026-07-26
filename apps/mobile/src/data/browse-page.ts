@@ -3,7 +3,7 @@
  *
  * A page is a TAGGED value, never a bare string: the surfaces come from different namespaces (the
  * host's own built-ins, a bridge's `page: true` lists, the user's Comical custom pages) and nothing
- * stops them from colliding. a gallery bridge really does publish a list named "Home"; a user really can
+ * stops them from colliding. A real bridge really does publish a list named "Home"; a user really can
  * name a custom page "Favorites". Tagging keeps each one distinct, and keying list pages by **id**
  * (not display name) means renaming a list can't strand the selection.
  *
@@ -60,7 +60,7 @@ export function parsePageKey(key: string): BrowsePage {
 export const samePage = (a: BrowsePage, b: BrowsePage): boolean => pageKey(a) === pageKey(b);
 
 /** A bridge has a composed Home only if it has at least one non-`page` list to build it from. Bridges
- *  whose lists are ALL page-flagged (a gallery bridge) get no Home option at all — offering one would open an
+ *  whose lists are ALL page-flagged get no Home option at all — offering one would open an
  *  permanently empty surface. */
 const hasComposedHome = (lists: BridgeList[]): boolean => lists.some((l) => !l.page);
 

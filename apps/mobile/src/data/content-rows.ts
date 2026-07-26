@@ -215,7 +215,7 @@ export function buildCrossBridgeRows(inputs: CrossBridgeRailInput[]): ContentRow
     if (!b.section || b.section.items.length === 0) continue;
     // "{bridge} — {list}" when the rail is backed by a named list, so the aggregate home says what
     // each rail is composed of. Skipped when the name is blank, or would just repeat the bridge name
-    // (a bridge whose only home list is named after itself — "a manga bridge — a manga bridge" reads broken).
+    // (a bridge whose only home list is named after itself — "Foo — Foo" reads broken).
     const listName = b.listName?.trim();
     const headTitle =
       listName && listName.toLowerCase() !== b.bridgeName.trim().toLowerCase()

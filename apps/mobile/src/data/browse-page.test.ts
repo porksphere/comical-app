@@ -46,8 +46,8 @@ describe('pageKey / parsePageKey', () => {
   });
 
   test('a list named like a built-in stays distinct from it', () => {
-    // The collision that used to force the `id === 'home'` special case: a gallery bridge publishes a list
-    // whose id AND name are "home", which must not be mistaken for the composed Home surface.
+    // The collision that used to force the `id === 'home'` special case: a real bridge publishes a
+    // list whose id AND name are "home", which must not be mistaken for the composed Home surface.
     const listPage: BrowsePage = { kind: 'list', listId: 'home' };
     expect(pageKey(listPage)).not.toBe(pageKey(HOME_PAGE));
     expect(parsePageKey(pageKey(listPage))).toEqual(listPage);
@@ -108,7 +108,7 @@ describe('comicalPageOptions', () => {
 });
 
 describe('defaultBridgePage', () => {
-  test('a featured page list wins — a gallery bridge opens on Popular, not its "home" list', () => {
+  test('a featured page list wins — the bridge opens on Popular, not its "home" list', () => {
     expect(defaultBridgePage(PAGES_ONLY)).toEqual({ kind: 'list', listId: 'popular' });
   });
 

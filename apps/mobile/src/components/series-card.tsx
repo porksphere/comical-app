@@ -295,7 +295,7 @@ export function SeriesCard({
   // when Lightweight cards is on.
   const { active, handlers, reset: resetHeld } = useHeld();
   // Resolve the cover the same way the reader resolves page images: absolute URLs pass through,
-  // a server-relative `/img-proxy` cover (Referer-gated sources like a gallery bridge) is routed to the API
+  // a server-relative `/img-proxy` cover (from a Referer-gated source) is routed to the API
   // base on web / the in-process transport on device. Without this those covers render blank.
   const resolvedCover = useResolvedAsset(entry.cover);
   const fixedWidth = size === 'grid' ? undefined : (width ?? WIDTHS[size]);
