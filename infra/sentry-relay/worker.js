@@ -49,54 +49,44 @@ export default {
       return new Response(`ignored: level ${issue.level} below threshold`, { status: 200 });
     }
 
-    // Answer Sentry immediately and talk to GitHub in the background: Sentry's webhook timeout
+    // Answer Sentry immediately and dispatch to GitHub in the background: Sentry's webhook timeout
     // is short, and a cold start plus a synchronous GitHub API round-trip can exceed it (delivery
-    // then shows "timeout" in the integration's Request Log even though the call succeeded).
+    // then shows "timeout" in the integration's Request Log even though the dispatch succeeded).
     // Failures land in the Worker logs (`wrangler tail` / dashboard), not the Sentry log.
-    ctx.waitUntil(createGitHubIssue(env, issue));
+    ctx.waitUntil(dispatchToGitHub(env, issue));
     return new Response('accepted', { status: 202 });
   },
 };
 
-// Opens a GitHub issue for the crash; .github/workflows/sentry-autofix.yml triggers on it. The
-// HTML-comment marker on the FIRST body line is the machine-readable contract the workflow parses
-// (strict regex, first match wins — which is why crash-controlled text is sanitized of <> and the
-// marker leads the body: a crash title can't smuggle in a fake marker ahead of the real one).
-async function createGitHubIssue(env, issue) {
+// Compact on purpose: repository_dispatch payloads have size limits, and the workflow re-fetches
+// the authoritative issue + latest event from the Sentry API anyway. Only identifiers travel.
+async function dispatchToGitHub(env, issue) {
   const repo = env.GITHUB_REPO || 'porksphere/comical-app';
-  const shortId = issue.shortId;
-  const webUrl = issue.permalink || `https://sentry.io/organizations/comical/issues/${issue.id}/`;
-  const clean = (s, n) => (s || '').replace(/[<>]/g, '').slice(0, n);
-  const title = clean(issue.title, 150) || 'untitled crash';
-  const culprit = clean(issue.culprit, 200);
-  const body = [
-    `<!-- sentry-autofix v1 short_id=${shortId} issue_id=${issue.id} -->`,
-    `Sentry reported a new **${issue.level}** issue: **[${shortId}](${webUrl})** — ${title}`,
-    culprit ? `\nCulprit: \`${culprit}\`` : '',
-    '',
-    'The autofix workflow will investigate and either open a draft fix PR (closing this issue on',
-    'merge) or post a diagnosis below. Duplicate, dev-only, and e2e-only crashes are closed as',
-    'not planned; the Sentry issue itself stays open either way.',
-  ].join('\n');
-
-  const create = (labels) =>
-    fetch(`https://api.github.com/repos/${repo}/issues`, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${env.GITHUB_DISPATCH_TOKEN}`,
-        accept: 'application/vnd.github+json',
-        'content-type': 'application/json',
-        'user-agent': 'comical-sentry-relay',
+  const resp = await fetch(`https://api.github.com/repos/${repo}/dispatches`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${env.GITHUB_DISPATCH_TOKEN}`,
+      accept: 'application/vnd.github+json',
+      'content-type': 'application/json',
+      'user-agent': 'comical-sentry-relay',
+    },
+    body: JSON.stringify({
+      event_type: 'sentry-issue',
+      client_payload: {
+        issue_id: String(issue.id),
+        short_id: issue.shortId,
+        title: (issue.title || '').slice(0, 200),
+        culprit: (issue.culprit || '').slice(0, 200),
+        level: issue.level,
+        project: issue.project?.slug,
+        web_url: issue.permalink || `https://sentry.io/organizations/comical/issues/${issue.id}/`,
       },
-      body: JSON.stringify({ title: `[${shortId}] ${title}`, body, ...(labels && { labels }) }),
-    });
-
-  let resp = await create(['sentry']);
-  if (resp.status === 422) resp = await create(null); // label may not exist yet — retry without
+    }),
+  });
   if (!resp.ok) {
-    console.error(`github issue creation failed for ${shortId}: ${resp.status} ${await resp.text()}`);
+    console.error(`github dispatch failed for ${issue.shortId}: ${resp.status} ${await resp.text()}`);
   } else {
-    console.log(`opened crash issue for ${shortId}`);
+    console.log(`dispatched ${issue.shortId}`);
   }
 }
 
