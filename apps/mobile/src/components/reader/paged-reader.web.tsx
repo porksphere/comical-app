@@ -9,6 +9,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 
+import type { ReaderPageItem } from '@/components/reader/paged-reader';
 import { ReaderPage } from '@/components/reader/reader-page';
 import {
   clamp,
@@ -26,7 +27,10 @@ import type { PageFit } from '@/hooks/use-reader-settings';
 export type PagedReaderHandle = { goToPage: (logical: number, animated?: boolean) => void };
 
 type Props = {
-  pages: string[];
+  /** Per-chapter on web (reader.tsx doesn't stitch here): this pager hands a
+   *  swipe past the last/first page to onNext/onPrev (see finalizeSwipe), so
+   *  chapter transitions stay route-level. Item shape shared with native. */
+  pages: ReaderPageItem[];
   width: number;
   height: number;
   rtl: boolean;
@@ -36,11 +40,6 @@ type Props = {
   onPrev: () => void;
   onNext: () => void;
   onToggleChrome: () => void;
-  /** Accepted for parity with the native pager (reader.tsx passes them), but
-   *  unused here: the web pager already hands a swipe past the last/first page
-   *  to onNext/onPrev (see finalizeSwipe), so chapter advance needs no sentinel. */
-  nextChapterName?: string;
-  onAdvance?: () => void;
 };
 
 /**
@@ -748,19 +747,19 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       onContextMenu={(e) => e.preventDefault()}
     >
       <div ref={trackRef} style={trackStyle(n, width, height)}>
-        {data.map((uri, i) => {
+        {data.map((item, i) => {
           // Only pages within the window mount an image (lazy fetch + bounded
           // memory); the rest are empty placeholders that still hold the slot.
           const near = Math.abs(i - index) <= RENDER_RADIUS;
           return (
-            <div key={`${uri}:${i}`} style={cellStyle(width, height)}>
+            <div key={item.key} style={cellStyle(width, height)}>
               <div
                 ref={i === index ? zoomRef : undefined}
                 style={zoomWrapperStyle(width, height, i === index && pageFit === 'fit-width' && contentOverflows)}>
                 {near ? (
                   <ReaderPage
-                    uri={uri}
-                    page={toLogical(i) + 1}
+                    uri={item.uri}
+                    page={item.pageNumber}
                     fit={pageFit === 'fit-width' ? 'width' : 'contain'}
                     width={width}
                     height={height}
