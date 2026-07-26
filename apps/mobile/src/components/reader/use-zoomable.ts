@@ -21,6 +21,15 @@ const MAX_SCALE = 4;
 const ZOOM_EPSILON = 1.01;
 // Scale a double-tap zooms into (and back out of).
 const DOUBLE_TAP_SCALE = 2.5;
+// Movement caps that make the tap recognizers FAIL once the finger travels —
+// they must be explicit: RNGH's iOS tap handler has no default distance bound,
+// and when the taps run `simultaneousWithExternalGesture` a scroll (the
+// continuous webtoon's Gesture.Native list) no longer preempts them either.
+// Without these, two quick scroll flicks read as a double-tap and zoomed the
+// viewport mid-scroll on iOS. 40 matches the web readers' DOUBLE_TAP_DIST
+// (how far apart the two taps may land); a lone tap gets a tighter drift cap.
+const DOUBLE_TAP_MAX_DIST = 40;
+const SINGLE_TAP_MAX_DIST = 16;
 
 function clamp(value: number, min: number, max: number) {
   'worklet';
@@ -140,6 +149,7 @@ export function useZoomable({
     .enabled(enabled)
     .numberOfTaps(2)
     .maxDuration(300)
+    .maxDistance(DOUBLE_TAP_MAX_DIST)
     .onEnd((e) => {
       if (scale.value > ZOOM_EPSILON) {
         scale.set(withTiming(1));
@@ -198,6 +208,7 @@ export function useZoomable({
         .enabled(!zoomed && singleTapEnabled)
         .numberOfTaps(1)
         .maxDuration(300)
+        .maxDistance(SINGLE_TAP_MAX_DIST)
         .onEnd((e) => {
           runOnJS(onSingleTap)(e.x);
         })
