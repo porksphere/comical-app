@@ -2,11 +2,13 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useRef } from 'react';
 import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 
-import { setTabBarProgress } from '@/lib/tab-bar-visibility';
+import { getTabBarHideOffset, setTabBarProgress } from '@/lib/tab-bar-visibility';
 
-// Scroll distance (px) over which the bar fully hides/reveals — it tracks the finger 1:1 within
-// this span, X/Twitter-style, rather than flipping between two states past a threshold.
-const SLIDE_DISTANCE = 96;
+// The scroll span over which the bar fully hides/reveals is the bar's own hide offset (its measured
+// height — see tab-bar-visibility), so the bar tracks the finger EXACTLY 1:1, X/Twitter-style:
+// translateY = progress * hideOffset = the accumulated scroll px. A span larger than the offset
+// (the old fixed 96 vs ~82) made the fully-hidden bar overshoot the screen edge, and a scroll-up
+// had to walk the invisible overshoot back before the bar appeared to move.
 const TOP_GUARD = 8;
 
 /**
@@ -32,7 +34,8 @@ export function useHideTabBarOnScroll() {
   // adding to the pre-transition stall. Endpoints still publish (0.98 → 1 is a
   // real change); only truly-unchanged frames are skipped.
   const publish = useCallback((p: number) => {
-    const q = Math.round(p * SLIDE_DISTANCE) / SLIDE_DISTANCE;
+    const span = getTabBarHideOffset();
+    const q = Math.round(p * span) / span;
     if (q === lastProgress.current) return;
     lastProgress.current = q;
     setTabBarProgress(q);
@@ -65,8 +68,11 @@ export function useHideTabBarOnScroll() {
       //
       // `maxY` unknown (a caller that can't supply it) ⇒ no guard, i.e. the previous behaviour.
       if (maxY !== undefined && maxY > 0 && y >= maxY) return;
-      distance.current = Math.min(SLIDE_DISTANCE, Math.max(0, distance.current + dy));
-      publish(distance.current / SLIDE_DISTANCE);
+      // Re-read the span each report: the bar re-measures on inset/layout changes, and the px-based
+      // accumulator just re-clamps to whatever the span currently is.
+      const span = getTabBarHideOffset();
+      distance.current = Math.min(span, Math.max(0, distance.current + dy));
+      publish(distance.current / span);
     },
     [publish],
   );
