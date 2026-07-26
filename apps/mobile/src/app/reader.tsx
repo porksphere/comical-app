@@ -542,6 +542,12 @@ export default function ReaderScreen() {
                 onNext={turnNext}
                 onToggleChrome={toggleChrome}
                 onZoomChange={setReaderZoomed}
+                // Same end-of-chapter sentinel the continuous webtoon shows:
+                // swiping past the last page lands on a "Next: … →" page that
+                // auto-advances (the native pager otherwise just bounces there,
+                // with nothing signalling a next chapter exists).
+                nextChapterName={nextChapter?.name}
+                onAdvance={() => void tryAdvanceChapter()}
               />
             ) : (
               <WebtoonReader
