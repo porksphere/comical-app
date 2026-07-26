@@ -4,7 +4,7 @@ import { Image } from 'expo-image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
-import {
+import Animated, {
   Easing,
   interpolateColor,
   runOnJS,
@@ -606,16 +606,26 @@ export default function BrowseScreen() {
   // Top bar: the bridge/page selectors sit in a fixed-height band (barHeight below
   // the safe-area inset), overlaid on the scrolling list. Unlike the old
   // expand-at-top/collapse-on-scroll animation, the bar itself never changes size —
-  // instead it slides away as a whole (see `headerOffsetY` below), X/Twitter-style.
+  // instead it slides as a whole (see `headerStyle` below), X/Twitter-style.
   const headerHeight = insets.top + barHeight;
-  // The bridge/page bar slides away 1:1 with scroll (X/Twitter-style) via the shared `useSlidingBar`
-  // helper — the same one the Search filter bar uses, so their motion can't drift. It's fed the
-  // list's UI-thread scroll offset via `sharedValues` + the plain `onListScroll` (both wired on the
-  // list below); a `gridScope` change snaps the bar back to visible and scrolls the list to the top.
-  const { scrollY, maxScrollY, barStyle: headerStyle, sharedValues, onScroll: onListScroll } = useSlidingBar(
-    headerHeight,
-    { resetKey: gridScope, listRef },
-  );
+  // The bridge/page bar slides up 1:1 with scroll (X/Twitter-style) via the shared `useSlidingBar`
+  // helper — the same one the Search filter bar uses, so their motion can't drift. The slide
+  // distance is `barHeight`, NOT `headerHeight`: the bar stops once its content band is gone,
+  // leaving the frosted surface docked over the status-bar inset (content keeps scrolling under it,
+  // blurred) instead of leaving raw content behind the clock/battery. The selectors themselves fade
+  // out with the slide (`headerContentStyle`) so they never sit legible — or tappable — over the
+  // status bar. On a device/viewport with no top inset (web), the same distance hides the bar
+  // entirely, so there's no orphaned strip. It's fed the list's UI-thread scroll offset via
+  // `sharedValues` + the plain `onListScroll` (both wired on the list below); a `gridScope` change
+  // snaps the bar back to visible and scrolls the list to the top.
+  const {
+    scrollY,
+    maxScrollY,
+    barStyle: headerStyle,
+    contentStyle: headerContentStyle,
+    sharedValues,
+    onScroll: onListScroll,
+  } = useSlidingBar(barHeight, { resetKey: gridScope, listRef });
   // Bridge the same UI-thread offset back to JS for the mobile tab-bar auto-hide. `maxScrollY` rides
   // along so the tab bar can ignore the elastic bottom bounce, exactly as the top bar does — without
   // it, overscrolling the end of the grid slides the tab bar back in.
@@ -641,7 +651,14 @@ export default function BrowseScreen() {
       {/* Inner row capped to the content width so the selectors line up with the
           grid below, while the bar background stays full-bleed. */}
       {/* Cap+centre only on web; native fills the width so the bar aligns with the full-width grid. */}
-      <View style={[styles.selectorRow, { height: barHeight, maxWidth: Platform.OS === 'web' ? MaxTopLevelWidth : undefined }]}>
+      {/* Animated: the row fades out (and stops taking taps) as the bar docks under the status bar —
+          see `headerContentStyle` where the slide is wired. */}
+      <Animated.View
+        style={[
+          styles.selectorRow,
+          { height: barHeight, maxWidth: Platform.OS === 'web' ? MaxTopLevelWidth : undefined },
+          headerContentStyle,
+        ]}>
         {currentBridge ? (
           <Pressable
             testID="browse.nsfw-hold"
@@ -703,7 +720,7 @@ export default function BrowseScreen() {
             <SearchIcon color={theme.text} size={22} />
           </Pressable>
         )}
-      </View>
+      </Animated.View>
     </BarSurface>
   );
 
@@ -901,9 +918,9 @@ const styles = StyleSheet.create({
     maxWidth: 320,
   },
   // Absolute overlay, positioned from the screen top, fixed size — the whole bar slides
-  // as one unit via `headerOffsetY`/`headerStyle` (see the comment above `topBar`'s JSX)
-  // rather than changing height, hiding/revealing 1:1 with scroll-down/up but staying
-  // pinned in place at/above the top (see `headerOffsetY`'s own comment).
+  // as one unit via `headerStyle` (see the comment above `topBar`'s JSX) rather than
+  // changing height, sliding 1:1 with scroll-down/up until it docks with only the
+  // safe-area strip showing (or fully hides when there's no top inset).
   topBar: {
     position: 'absolute',
     top: 0,

@@ -13,6 +13,13 @@
  * `scrollY`/`maxScrollY`/`offset` are exposed for screens that drive additional scroll-linked effects
  * off the same values (e.g. Browse's tab-bar auto-hide, a border/shadow that fades with scroll,
  * pull-to-refresh).
+ *
+ * `barHeight` is the SLIDE DISTANCE, and picking it is how a bar chooses between two hide styles:
+ * a screen-top bar passes its content height WITHOUT the safe-area inset, so it stops with the
+ * frosted strip still filling the status-bar band (X/Twitter's dock — pair with `contentStyle` so
+ * the controls fade out instead of parking over the clock; on a device with no top inset the same
+ * distance is simply a full hide). A secondary bar that disappears behind other chrome (Search's
+ * clipped filter bar) passes its full height.
  */
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, type RefObject } from 'react';
@@ -39,6 +46,11 @@ export type SlidingBar = {
   offset: SharedValue<number>;
   /** Animated transform for the bar (translateY = offset). */
   barStyle: ReturnType<typeof useAnimatedStyle>;
+  /** Fades the bar's INNER content with the slide (1 → 0) and drops its pointer events once mostly
+   *  hidden. For a bar that docks under the status bar rather than leaving the screen (Browse): the
+   *  frosted surface stays, but the controls must not sit legible — or tappable — over the clock and
+   *  battery. Apply to an Animated.View wrapping the bar's content row, not the surface itself. */
+  contentStyle: ReturnType<typeof useAnimatedStyle>;
   /** Spread onto the AnimatedLegendList's `sharedValues` prop. */
   sharedValues: { scrollOffset: SharedValue<number> };
   /** Wire to the list's plain `onScroll` — keeps `maxScrollY` in sync. */
@@ -72,6 +84,14 @@ export function useSlidingBar(
   );
 
   const barStyle = useAnimatedStyle(() => ({ transform: [{ translateY: offset.value }] }));
+
+  // Content fade, linear with slide progress. Pointer events cut past halfway: the faded (invisible)
+  // controls end up translated into the status-bar band, where they'd otherwise swallow taps meant
+  // for the system (e.g. iOS's tap-status-bar-to-scroll-to-top).
+  const contentStyle = useAnimatedStyle(() => {
+    const progress = barHeight > 0 ? Math.min(1, Math.max(0, -offset.value / barHeight)) : 0;
+    return { opacity: 1 - progress, pointerEvents: progress > 0.5 ? 'none' : 'auto' } as const;
+  });
 
   // Mirror the slide to the JS thread for code that can't read a worklet's value at the moment it
   // needs it — the root long-press overlay, which clips its flying cover to the chrome actually on
@@ -125,5 +145,5 @@ export function useSlidingBar(
 
   const sharedValues = useMemo(() => ({ scrollOffset: scrollY }), [scrollY]);
 
-  return { scrollY, maxScrollY, offset, barStyle, sharedValues, onScroll };
+  return { scrollY, maxScrollY, offset, barStyle, contentStyle, sharedValues, onScroll };
 }
