@@ -26,6 +26,18 @@ import { testId } from '@/lib/test-id';
  * escape, hover/press highlight, and one-line-description rule as every other settings row.
  */
 
+/**
+ * The narrowest a text row's value column is ever allowed to get, whatever is on its left.
+ *
+ * This is a hard guarantee, not a hint: a bridge declares its own setting labels and descriptions, so
+ * a long one ("Paste the `cf_clearance` cookie from your browser…") must not be able to squeeze the
+ * field it's describing off the row. It could — the label column sized to its content while the value
+ * column had a zero flex basis, so the shrink pass (which weights by basis) handed the label 100% of
+ * the row and collapsed the input to 0pt wide, leaving an api-key/cookie setting literally
+ * un-enterable. The label ellipsizes at one line anyway; the field is the part you can't do without.
+ */
+const ValueColumnMinWidth = 132;
+
 /** One choice in a `SettingsSelectRow`. `description` shows in the picker (not on the row); an optional
  *  `thumbnail` URL renders a leading image (e.g. a bridge icon). */
 export type SettingsOption<T extends string> = {
@@ -273,16 +285,26 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     minWidth: 0,
   },
-  // String row: label hugs its content on the left (shrinking if long); the input fills the rest and
-  // right-aligns, so the field reads like the value column of the select/toggle rows.
+  // String row: label hugs its content on the left (shrinking and ellipsizing if long); the input
+  // takes the rest and right-aligns, so the field reads like the value column of the select/toggle
+  // rows. The label column is the ONLY shrinkable one — see `ValueColumnMinWidth`.
   textRowLabel: {
     flexShrink: 1,
+    minWidth: 0,
+    // Never more than a bit over half the row, so a wide (desktop) row spends its extra width on the
+    // field rather than on ever more of a description that's clamped to one line anyway. On a phone
+    // `ValueColumnMinWidth` is already the tighter of the two limits, so this changes nothing there.
+    maxWidth: '60%',
     gap: Spacing.half,
   },
-  // Holds the input (and, for secrets, the reveal button) in the row's value column.
+  // Holds the input (and, for secrets, the reveal button) in the row's value column. Grows into
+  // whatever the label doesn't take, but never shrinks below `ValueColumnMinWidth`: `flexShrink: 0`
+  // over a non-zero basis is what forces a too-wide label/description to absorb the overflow itself.
   textRowRight: {
-    flex: 1,
-    minWidth: 0,
+    flexGrow: 1,
+    flexShrink: 0,
+    flexBasis: ValueColumnMinWidth,
+    minWidth: ValueColumnMinWidth,
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
