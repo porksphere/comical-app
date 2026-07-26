@@ -55,7 +55,6 @@ export function SeriesGrid({
   bridgeId,
   direct,
   hasSub,
-  originPage,
   crossfading,
   sharedValues,
   onScroll,
@@ -82,8 +81,6 @@ export function SeriesGrid({
    *  resolve from `bridgeId`'s `cardSubtitles` flag; pass explicitly when the SCREEN makes the subs
    *  itself (the Library's bridge-name line → `true`). */
   hasSub?: boolean;
-  /** Browse only: the sub-page a card was opened from, so the series screen can return to it. */
-  originPage?: string;
   /** Suppresses per-card entrance work while a full-surface crossfade owns the transition. */
   crossfading?: boolean;
   /** Feeds a `useSlidingBar`'s UI-thread scroll offset. */
@@ -147,7 +144,6 @@ export function SeriesGrid({
             bridge={item.bridge ?? bridge}
             bridgeId={item.bridgeId ?? bridgeId}
             direct={item.direct ?? direct}
-            originPage={originPage}
             cohort={scopeKey}
             crossfading={crossfading}
           />

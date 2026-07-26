@@ -285,6 +285,7 @@ export type BridgeList = {
   searchable?: boolean;
   /** The bridge's own "surface this list prominently on a home screen" flag (contract's
    *  `SeriesList.featured`). The synthetic "Comical" aggregate home uses it to pick each bridge's one
-   *  representative rail; falls back to the bridge's first rail when unset. */
+   *  representative rail; falls back to the bridge's first rail when unset. On a `page` list it also
+   *  makes that page the one Browse opens on for the bridge, instead of the Home tab. */
   featured?: boolean;
 };

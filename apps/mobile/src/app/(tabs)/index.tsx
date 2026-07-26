@@ -29,8 +29,18 @@ import { ThemedView } from '@/components/themed-view';
 import { PullIndicator } from '@/components/pull-indicator';
 import { showToast } from '@/components/toast';
 import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
-import { pageOptions } from '@/data/api';
 import { toggleNsfwUntilRestart } from '@/data/nsfw';
+import {
+  bridgePageOptions,
+  comicalPageOptions,
+  defaultBridgePage,
+  HOME_PAGE,
+  pageKey,
+  pageLabelMap,
+  parsePageKey,
+  samePage,
+  type BrowsePage,
+} from '@/data/browse-page';
 import { buildHomeRows } from '@/data/content-rows';
 import { useComicalExcludedIds } from '@/data/comical-home';
 import { useCustomPages } from '@/data/custom-pages';
@@ -138,13 +148,13 @@ export default function BrowseScreen() {
   // fires off stale lists (the old `listsBridgeId === bridgeId` check).
   const listsSettled =
     !!bridgeId && (bridgeListsQuery.isSuccess || bridgeListsQuery.isError) && !bridgeListsQuery.isPlaceholderData;
-  const [page, setPage] = useState('home');
+  const [page, setPage] = useState<BrowsePage>(HOME_PAGE);
 
-  // The active custom page: Comical selected AND the page state is a custom page id (not 'home').
+  // The active custom page: Comical selected AND the page state names one of the user's pages.
   // Undefined otherwise, which makes `useCustomPageRows` run zero queries and the home fall back to
   // the featured aggregate (`comicalRails`).
   const activeCustomPage = useMemo(
-    () => (isComical && page !== 'home' ? customPages.find((p) => p.id === page) : undefined),
+    () => (isComical && page.kind === 'custom' ? customPages.find((p) => p.id === page.id) : undefined),
     [isComical, page, customPages],
   );
   const customPageRows = useCustomPageRows(activeCustomPage);
@@ -152,78 +162,62 @@ export default function BrowseScreen() {
   // The consolidated Favorites page is active when Comical is selected and it's the chosen page. Its
   // rails fan out over `comicalFavoritesBridges` (the logged-in, favorites-capable bridges); NO_BRIDGES
   // otherwise, so the hook runs zero queries when the page isn't showing.
-  const activeFavoritesPage = isComical && page === 'favorites';
+  const activeFavoritesPage = isComical && page.kind === 'favorites';
   const favoritesRows = useCrossBridgeRails(activeFavoritesPage ? comicalFavoritesBridges : NO_BRIDGES, { mode: 'favorites' });
 
-  // Default landing page for a bridge, applied once its lists settle: a bridge whose lists are ALL
-  // page-flagged (no composed Home) opens on its first page instead of a blank Home; anything with a
-  // home-eligible (or home-backing) list opens on Home. Ref-guarded to once per bridge so a later
-  // lists refetch — or the user navigating to a sub-page — can't reset the page out from under them
-  // (matches the old effect, which only re-picked on a bridge switch).
+  // Default landing page for a bridge, applied once its lists settle (see `defaultBridgePage`):
+  // whatever page list it marked `featured`, else its composed Home, else its first page list.
+  // Ref-guarded to once per bridge so a later lists refetch — or the user navigating to a sub-page —
+  // can't reset the page out from under them (matches the old effect, which only re-picked on a
+  // bridge switch).
   const pageInitedForRef = useRef<string | null>(null);
   useEffect(() => {
-    // Comical's Page selector is "Home" (the featured aggregate) plus the user's custom pages. Keep a
-    // valid selection (Home, or a still-existing custom page id) but clear any stale page carried from
-    // the previous bridge — otherwise a page like "Popular" would strand the selector on a dead label.
+    // Comical's Page selector is "Home" (the featured aggregate), Favorites, and the user's custom
+    // pages. Keep a still-valid selection but clear any stale page carried from the previous bridge —
+    // otherwise a bridge's list page would strand the selector on a dead option.
     if (isComical) {
       setPage((prev) => {
-        if (prev === 'home') return prev;
         // Favorites survives only while at least one bridge qualifies (else it's not in the selector).
-        if (prev === 'favorites') return comicalFavoritesBridges.length > 0 ? prev : 'home';
-        return customPages.some((p) => p.id === prev) ? prev : 'home';
+        if (prev.kind === 'favorites') return comicalFavoritesBridges.length > 0 ? prev : HOME_PAGE;
+        if (prev.kind === 'custom') return customPages.some((p) => p.id === prev.id) ? prev : HOME_PAGE;
+        return HOME_PAGE;
       });
       return;
     }
     if (!bridgeId || !listsSettled) return;
     if (pageInitedForRef.current === bridgeId) return;
     pageInitedForRef.current = bridgeId;
-    const hasHomeList = lists.some((l) => !l.page || l.id === 'home');
-    const firstPage = lists.find((l) => l.page);
-    setPage(hasHomeList || !firstPage ? 'home' : firstPage.name.toLowerCase());
+    setPage(defaultBridgePage(lists));
   }, [isComical, customPages, comicalFavoritesBridges, bridgeId, listsSettled, lists]);
 
-  // Comical: "home" (featured aggregate), then "Favorites" (only when a bridge qualifies), then each
-  // custom page id. Real bridge: its pageOptions — with favorites gated on the login being set.
-  const pages = useMemo(
+  // Page selector entries — `{ key, label }` pairs, since the option VALUES are opaque namespaced
+  // keys (see data/browse-page.ts) and every surface needs a display name of its own.
+  const pageOptions = useMemo(
     () =>
       isComical
-        ? ['home', ...(comicalFavoritesBridges.length > 0 ? ['favorites'] : []), ...customPages.map((p) => p.id)]
-        : currentBridge
-          ? pageOptions(lists, currentBridge.capabilities, favoritesAvailable(bridgeId))
-          : ['home'],
+        ? comicalPageOptions(customPages, comicalFavoritesBridges.length > 0)
+        : bridgePageOptions(lists, currentBridge?.capabilities ?? [], favoritesAvailable(bridgeId)),
     [isComical, comicalFavoritesBridges, customPages, lists, currentBridge, favoritesAvailable, bridgeId],
   );
-  // The Page selector's option values for Comical are opaque page ids — map them back to display
-  // names (and the built-in 'home' → "Home", 'favorites' → "Favorites"). Undefined for a real bridge
-  // (its option values are already the human-readable page names).
-  const pageLabels = useMemo(() => {
-    if (!isComical) return undefined;
-    const map: Record<string, string> = { home: 'Home', favorites: 'Favorites' };
-    for (const p of customPages) map[p.id] = p.name;
-    return map;
-  }, [isComical, customPages]);
-  // A `page: true` list with id "home" IS the Home tab's content (the bridge's front page): it
-  // replaces the composed rails/grid Home entirely. Mirrors comical-web's selectHomeTab("home")
-  // special case (app.ts) — without it the Home tab falls through to getHomeSections, which excludes
-  // every `page` list, so a bridge whose only lists are page-flagged shows a permanently blank Home.
-  const homeList = useMemo(() => lists.find((l) => l.id === 'home' && l.page), [lists]);
-  // The built-in composed Home surface (rails + grid from non-`page` lists) — only when no page-list
-  // backs the Home tab. Every "is this Home?" decision below keys off this, not a bare page === 'home'.
-  // Comical is ALWAYS its composed (cross-bridge) home regardless of the `page` state — otherwise a
-  // stale `page` carried over from the previous bridge (e.g. "Popular") would flip this false, route
-  // Comical through the SeriesGrid branch, and strand its disabled results query as a permanent
-  // placeholder → `gridUpdating` stuck true → the reveal dim never clears (a stuck crossfade).
-  const composedHome = isComical || (page === 'home' && !homeList);
-  // The list backing the current page: a `page: true` list picked in the selector (e.g. "Popular"),
-  // or the home-backing list above when the Home tab is showing the bridge's front page.
+  const pageKeys = useMemo(() => pageOptions.map((o) => o.key), [pageOptions]);
+  const pageLabels = useMemo(() => pageLabelMap(pageOptions), [pageOptions]);
+  // The built-in composed Home surface (a real bridge's rails + grid from its non-`page` lists).
+  // Every "is this Home?" decision below keys off this. Comical is ALWAYS its composed (cross-bridge)
+  // home regardless of the `page` state — otherwise a stale `page` carried over from the previous
+  // bridge would flip this false, route Comical through the SeriesGrid branch, and strand its
+  // disabled results query as a permanent placeholder → `gridUpdating` stuck true → the reveal dim
+  // never clears (a stuck crossfade).
+  const composedHome = isComical || page.kind === 'home';
+  // The list backing the current page — resolved by id, so two lists sharing a display name stay
+  // distinct and a bridge renaming one doesn't strand the selection.
   const selectedList = useMemo(
-    () => (page === 'home' ? homeList : lists.find((l) => l.page && l.name.toLowerCase() === page)),
-    [lists, page, homeList],
+    () => (page.kind === 'list' ? lists.find((l) => l.id === page.listId) : undefined),
+    [lists, page],
   );
   // The per-BRIDGE favorites page (a real bridge's account favorites as a flat results grid). Comical's
-  // 'favorites' is the CONSOLIDATED page instead (`activeFavoritesPage`), rendered as rails — so exclude
+  // favorites is the CONSOLIDATED page instead (`activeFavoritesPage`), rendered as rails — so exclude
   // Comical here, or its composed surface would be mistaken for a single-bridge favorites results grid.
-  const isFavoritesPage = !isComical && page === 'favorites';
+  const isFavoritesPage = !isComical && page.kind === 'favorites';
 
   // Search + filters now live on the pushed Search screen (`app/search.tsx`), reachable from this
   // screen's top bar. Browse itself is pure discovery: bridge/page selectors, rails, home grid,
@@ -558,13 +552,11 @@ export default function BrowseScreen() {
   };
   // A page switch is a top-level navigation too — a home↔page-list↔favorites swap of the whole
   // surface — so it runs the SAME crossfade as a bridge change (fade out, commit setPage at opacity
-  // 0, fade the new page in) rather than the lighter grid dim. A no-op re-tap just commits immediately.
-  const selectPage = (p: string) => {
-    if (p === page) {
-      setPage(p);
-      return;
-    }
-    beginCrossfade(() => setPage(p));
+  // 0, fade the new page in) rather than the lighter grid dim. A no-op re-tap changes nothing.
+  const selectPage = (key: string) => {
+    const next = parsePageKey(key);
+    if (samePage(next, page)) return;
+    beginCrossfade(() => setPage(next));
   };
 
   // Hold the bridge icon to flip the session-only NSFW override: three haptic beats ramp up while
@@ -596,7 +588,7 @@ export default function BrowseScreen() {
   // the collapsing top bar snaps back and the persisted list scrolls to top on a real scope change.
   const gridScope = [
     bridgeId ?? '',
-    page,
+    pageKey(page),
     inResults ? 'r' : 'h',
     activeListId ?? '',
     isFavoritesPage ? 'fav' : '',
@@ -687,7 +679,15 @@ export default function BrowseScreen() {
           sources={COMICAL_SOURCES}
           labels={bridgeLabels}
         />
-        <Selector testID="browse.page-selector" title="Page" value={page} options={pages} onChange={selectPage} size="subtitle" labels={pageLabels} />
+        <Selector
+          testID="browse.page-selector"
+          title="Page"
+          value={pageKey(page)}
+          options={pageKeys}
+          onChange={selectPage}
+          size="subtitle"
+          labels={pageLabels}
+        />
         {isLargeScreen ? (
           // Desktop: an always-visible search pill in the middle of the bar. Pressing it opens the
           // (blank) Search screen — real typing happens there. `searchPillWrap`'s right margin
@@ -851,7 +851,6 @@ export default function BrowseScreen() {
           bridge={isComical ? undefined : (currentBridge?.name ?? undefined)}
           bridgeId={isComical ? undefined : bridgeId}
           direct={isComical ? undefined : directBridge}
-          originPage={page}
           crossfading={switching}
           sharedValues={sharedValues}
           onScroll={onListScroll}
@@ -875,7 +874,6 @@ export default function BrowseScreen() {
           bridge={currentBridge?.name ?? undefined}
           bridgeId={bridgeId}
           direct={directBridge}
-          originPage={page}
           crossfading={switching}
           sharedValues={sharedValues}
           onScroll={onListScroll}

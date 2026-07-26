@@ -70,7 +70,6 @@ export function ContentFeed({
   bridge,
   bridgeId,
   direct,
-  originPage,
   crossfading,
   sharedValues,
   onScroll,
@@ -91,7 +90,6 @@ export function ContentFeed({
   bridge?: string;
   bridgeId?: string;
   direct?: boolean;
-  originPage?: string;
   crossfading?: boolean;
   sharedValues?: { scrollOffset: SharedValue<number> };
   onScroll?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
@@ -251,7 +249,6 @@ export function ContentFeed({
                       bridge={entry.bridge ?? bridge}
                       bridgeId={entry.bridgeId ?? bridgeId}
                       direct={entry.direct ?? direct}
-                      originPage={originPage}
                       cohort={scopeKey}
                       crossfading={crossfading}
                     />
