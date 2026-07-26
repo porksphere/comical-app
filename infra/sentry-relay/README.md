@@ -10,14 +10,18 @@ Claude **subscription** OAuth token (no metered API key).
 Sentry issue created (error+)
   → internal-integration webhook (HMAC-signed)
   → this Cloudflare Worker (verifies signature, filters, holds the GitHub PAT)
-  → repository_dispatch: sentry-issue
-  → .github/workflows/sentry-autofix.yml
+  → opens GitHub issue "[<SHORT-ID>] <title>" (label: sentry)
+  → .github/workflows/sentry-autofix.yml triggers on that issue
   → claude-code-action (subscription auth) fixes on claude/sentry-<SHORT-ID>
-  → draft PR linking back to the Sentry issue
+  → draft PR that closes the crash issue on merge
+    (no confident fix → diagnosis posted as a comment on the crash issue;
+     duplicate / dev-only / e2e-only → crash issue closed as "not planned")
 ```
 
-The Worker exists only because Sentry webhooks can't attach the `Authorization` header GitHub's
-`repository_dispatch` API requires.
+The Worker exists only because Sentry can't create GitHub issues automatically (its ticket rules
+support Jira/Azure DevOps only) and its webhooks can't attach the `Authorization` header GitHub's
+API requires. The crash issue doubles as the durable record and conversation thread for each
+crash.
 
 ## One-time setup
 
@@ -31,8 +35,9 @@ npx wrangler deploy          # note the printed URL, e.g. https://comical-sentry
 ### 2. GitHub PAT for the Worker
 
 Create a **fine-grained PAT** (GitHub → Settings → Developer settings → Fine-grained tokens):
-repository access = `porksphere/comical-app` only, permissions = **Contents: read and write**
-(required for the dispatches endpoint), **Pull requests: read and write**, Metadata: read. Then:
+repository access = `porksphere/comical-app` only, permissions = **Contents: read and write**,
+**Pull requests: read and write**, **Issues: read and write** (the Worker opens crash issues),
+Metadata: read. Then:
 
 ```sh
 npx wrangler secret put GITHUB_DISPATCH_TOKEN
@@ -41,6 +46,10 @@ npx wrangler secret put GITHUB_DISPATCH_TOKEN
 Also save the same token as the `AUTOFIX_PAT` repo secret on GitHub. The workflow pushes the fix
 branch and opens the draft PR with it instead of the default `GITHUB_TOKEN` — pushes/PRs made with
 `GITHUB_TOKEN` don't trigger other workflows, so without this the draft PRs would get no CI.
+
+Note: the workflow's issue gate only trusts crash issues authored by this PAT's owner
+(`porksphere`, hardcoded in sentry-autofix.yml) — if the PAT is ever recreated under a different
+account, update that check.
 
 ### 3. Sentry internal integration
 
@@ -78,7 +87,7 @@ the workflow caps each run with `--max-turns` and dedupes per issue.
 | Where | Name | Purpose |
 |---|---|---|
 | Worker | `SENTRY_CLIENT_SECRET` | Verify webhook HMAC signatures |
-| Worker | `GITHUB_DISPATCH_TOKEN` | Call the repository_dispatch API |
+| Worker | `GITHUB_DISPATCH_TOKEN` | Open crash issues on GitHub |
 | GitHub repo | `CLAUDE_CODE_OAUTH_TOKEN` | Claude subscription auth for claude-code-action |
 | GitHub repo | `SENTRY_AUTH_TOKEN` | Fetch issue/event details from the Sentry API |
 | GitHub repo | `AUTOFIX_PAT` | Push fix branches / open draft PRs so CI triggers (can be the same token as `GITHUB_DISPATCH_TOKEN`) |
@@ -100,8 +109,9 @@ the workflow caps each run with `--max-turns` and dedupes per issue.
 ## Testing the pipeline
 
 1. `npx wrangler dev`, then POST a captured webhook payload with a valid/invalid
-   `Sentry-Hook-Signature` → expect 200 / 401.
+   `Sentry-Hook-Signature` → expect 202 / 401.
 2. Dry-run the workflow via workflow_dispatch with a real short ID → expect a
-   `claude/sentry-<SHORT-ID>` branch and a draft PR.
-3. End-to-end: throw a deliberate test error in a dev build, watch it flow through
-   (Sentry issue → Worker log → Actions run → draft PR), then clean up the test issue/PR.
+   `claude/sentry-<SHORT-ID>` branch and a draft PR (or a diagnosis issue).
+3. End-to-end: resolve/unresolve an old Sentry issue and check the integration's Request Log for
+   a 202 (URL + secret sanity), then throw a deliberate test error in a production-tagged build
+   and watch: Sentry issue → GitHub crash issue → Actions run → draft PR closing the crash issue.
