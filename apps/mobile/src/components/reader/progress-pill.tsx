@@ -96,7 +96,13 @@ export function ProgressPill({
 
   const startEditing = () => {
     clearBlurTimer();
-    setText(String(current + 1));
+    // Open EMPTY, with the current page as the placeholder. The old prefill
+    // (current page + selectTextOnFocus) relied on focus selecting the text so
+    // typing would replace it — but selectTextOnFocus doesn't fire on native
+    // for an autoFocus-mounted input (iOS especially), leaving a stale "12"
+    // the user had to backspace before typing. An empty field types clean
+    // everywhere, and submitting it empty just closes without jumping.
+    setText('');
     setEditing(true);
     onEditingChange?.(true);
   };
@@ -132,7 +138,6 @@ export function ProgressPill({
           <TextInput
             testID="reader.progress-pill.input"
             autoFocus
-            selectTextOnFocus
             keyboardType="number-pad"
             value={text}
             onChangeText={setText}
