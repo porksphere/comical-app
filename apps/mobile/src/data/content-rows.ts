@@ -164,7 +164,8 @@ export function buildHomeRows(args: {
 }
 
 /** One bridge's contribution to a cross-bridge feed (the "Comical" home or a cross-bridge search):
- *  a rail titled with the bridge name, once loaded. `loading` → a skeleton row; a null/empty
+ *  a rail titled with the bridge name (plus " — {list}" when `listName` is set), once loaded.
+ *  `loading` → a skeleton row; a null/empty
  *  `section` → the bridge is skipped (contributed nothing). `drill` is the rail's "See all" target
  *  discriminator — a home rail drills into `listId`, a search rail into `query`. */
 export type CrossBridgeRailInput = {
@@ -177,12 +178,20 @@ export type CrossBridgeRailInput = {
   /** Refetch just this bridge's query (the railError's Retry). */
   onRetry: () => void;
   section: RailSection | null;
+  /** The name of the LIST the rail is composed of (e.g. "Popular"), when the feed shows one — the
+   *  Comical home passes its featured section's title, which `fetchBridgeFeaturedRail` sourced from
+   *  the picked list's `name` on EVERY pick path (declared `featured` list, first rail-layout home
+   *  list, first home list, or first list of any kind), so it's accurate regardless of how the list
+   *  was chosen. Shown as "{bridge} — {list}" in the rail's heading; omitted (search/favorites) the
+   *  heading is the bridge name alone. */
+  listName?: string;
   drill: { listId?: string; query?: string; favorites?: boolean };
 };
 
 /**
  * Build `ContentRow[]` for a cross-bridge feed — one rail per bridge, in the given order. Each bridge
- * yields `[sectionHead(title = bridge name, seeAll), rail(section, per-rail BridgeScope)]` once loaded,
+ * yields `[sectionHead(title = "{bridge}" or "{bridge} — {list}", seeAll), rail(section, per-rail
+ * BridgeScope)]` once loaded,
  * a `railSkeleton` while loading, or nothing when it has no results. The rail's `BridgeScope`
  * (bridgeId/bridge/direct) is what makes its cards open the correct real bridge from the aggregate feed.
  */
@@ -204,10 +213,18 @@ export function buildCrossBridgeRows(inputs: CrossBridgeRailInput[]): ContentRow
       continue;
     }
     if (!b.section || b.section.items.length === 0) continue;
+    // "{bridge} — {list}" when the rail is backed by a named list, so the aggregate home says what
+    // each rail is composed of. Skipped when the name is blank, or would just repeat the bridge name
+    // (a bridge whose only home list is named after itself — "Atsumaru — Atsumaru" reads broken).
+    const listName = b.listName?.trim();
+    const headTitle =
+      listName && listName.toLowerCase() !== b.bridgeName.trim().toLowerCase()
+        ? `${b.bridgeName} — ${listName}`
+        : b.bridgeName;
     rows.push({
       type: 'sectionHead',
       key: `head:${b.bridgeId}`,
-      title: b.bridgeName,
+      title: headTitle,
       seeAll: {
         // The results page shows "{bridge} › {title}", so `title` is the section label — the search
         // query for a search rail, the section title (e.g. "Favorites") otherwise.
