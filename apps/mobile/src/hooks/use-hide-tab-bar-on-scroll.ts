@@ -2,6 +2,7 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useRef } from 'react';
 import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 
+import { slideStep } from '@/lib/slide-step';
 import { getTabBarHideOffset, setTabBarProgress } from '@/lib/tab-bar-visibility';
 
 // The scroll span over which the bar fully hides/reveals is the bar's own hide offset (its measured
@@ -51,27 +52,16 @@ export function useHideTabBarOnScroll() {
 
   const reportOffset = useCallback(
     (y: number, maxY?: number) => {
-      const dy = y - lastY.current;
+      const prevY = lastY.current;
       lastY.current = y;
-      if (dy === 0) return;
-      if (y <= TOP_GUARD) {
-        distance.current = 0;
-        publish(0);
-        return;
-      }
-      // Past the content end the list is in (or springing back out of) its elastic bottom bounce.
-      // That stretch reports the same "offset decreasing" deltas a genuine scroll-UP does, so without
-      // this the tab bar slides back in every time you overscroll the end of a list — the bar visibly
-      // reacting to the rubber-band. Ignore deltas at/beyond the end; only real scrolling below the
-      // max moves the bar. This is the same guard the top bar already has (see `useSlidingBar`, whose
-      // `maxScrollY` check exists for exactly this) — the two bars now behave symmetrically.
-      //
-      // `maxY` unknown (a caller that can't supply it) ⇒ no guard, i.e. the previous behaviour.
-      if (maxY !== undefined && maxY > 0 && y >= maxY) return;
-      // Re-read the span each report: the bar re-measures on inset/layout changes, and the px-based
-      // accumulator just re-clamps to whatever the span currently is.
+      if (y === prevY) return;
+      // The scroll→slide rule (top pin, bottom-bounce guard, clamped accumulation) is the shared
+      // `slideStep` — the top bar's hook runs the same function, so the two bars' motion can't
+      // drift. `maxY` unknown (a caller that can't supply it) ⇒ 0 ⇒ no bounce guard. The span is
+      // re-read each report: the bar re-measures on inset/layout changes, and the px accumulator
+      // just re-clamps to whatever it currently is.
       const span = getTabBarHideOffset();
-      distance.current = Math.min(span, Math.max(0, distance.current + dy));
+      distance.current = slideStep(distance.current, y, prevY, maxY ?? 0, span, TOP_GUARD);
       publish(distance.current / span);
     },
     [publish],

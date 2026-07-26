@@ -32,6 +32,7 @@ import {
   type SharedValue,
 } from 'react-native-reanimated';
 
+import { slideStep } from '@/lib/slide-step';
 import { setTopBarHidden } from '@/lib/top-bar-visibility';
 
 /** Minimal structural type for the list refs we reset — LegendList and FlatList both satisfy it. */
@@ -68,17 +69,10 @@ export function useSlidingBar(
   useAnimatedReaction(
     () => scrollY.value,
     (y, prevY) => {
-      // At/above the top (resting, or an active pull/overscroll reporting negative y): pinned visible.
-      if (y <= 0) {
-        offset.set(0);
-        return;
-      }
-      // Past the content end the list is in (or springing out of) its elastic bottom bounce, which
-      // produces the same "offset decreasing" delta a real scroll-up does — ignore it so the bar
-      // isn't revealed on every bottom bounce. Only apply the delta below the max (real scrolling).
-      if (maxScrollY.value > 0 && y >= maxScrollY.value) return;
-      const dy = y - (prevY ?? y);
-      offset.set(Math.min(0, Math.max(-barHeight, offset.value - dy)));
+      // The scroll→slide rule (top pin, bottom-bounce guard, clamped accumulation) is the shared
+      // `slideStep` — the tab bar's hook runs the same function, so the two bars' motion can't
+      // drift. It works in hidden-px (positive); this bar's offset is a translateY, hence the sign.
+      offset.set(-slideStep(-offset.value, y, prevY ?? y, maxScrollY.value, barHeight));
     },
     [barHeight],
   );
