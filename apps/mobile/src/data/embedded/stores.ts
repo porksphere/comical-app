@@ -26,6 +26,8 @@ import type {
   SavedRegistryStore,
 } from '@comical/host-rn';
 
+import { logDiagnostic } from '@/lib/diagnostics';
+
 const REGISTRIES_KEY = 'comical:embedded:registries';
 const INSTALLED_KEY = 'comical:embedded:installed';
 const INSTALLED_TRACKERS_KEY = 'comical:embedded:installed-trackers';
@@ -39,12 +41,28 @@ function seedRegistries(): SavedRegistry[] {
 }
 
 /**
- * A minimal AsyncStorage-backed keyed list. `add` is an upsert by key; every accessor awaits the
- * one-time hydration so a store never reports empty just because AsyncStorage hasn't resolved yet.
+ * A minimal AsyncStorage-backed keyed list. `add` is an upsert by key; every accessor awaits
+ * hydration so a store never reports empty just because AsyncStorage hasn't resolved yet.
+ *
+ * A failed *read* is the dangerous case, and it's why this is more than a getItem/setItem pair.
+ * `persist()` writes the whole in-memory mirror, so swallowing a read error left that mirror at its
+ * (empty) seed and turned the very next `add()` into a full overwrite: one transient read failure
+ * plus one install silently destroyed every other installed bridge, with every screen in between
+ * reporting "nothing installed" rather than "couldn't read". So a read failure is never reported as
+ * emptiness — it propagates to the caller, is retried on the next access, and no write may run
+ * against an unhydrated mirror.
+ *
+ * A *malformed* stored value is the other half, and needs the opposite treatment: those bytes are
+ * unrecoverable, so refusing forever would wedge the store permanently. It's quarantined under
+ * `<key>:corrupt` (still inspectable, and logged) and the store starts fresh.
  */
-class AsyncKeyedStore<T> {
+export class AsyncKeyedStore<T> {
   private items: T[];
-  private readonly hydrated: Promise<void>;
+  /** In-flight read, shared by concurrent callers. Cleared when it settles so a failure retries. */
+  private hydration: Promise<void> | null = null;
+  private hydrated = false;
+  /** Tail of the write chain — see `persist`. */
+  private writes: Promise<unknown> = Promise.resolve();
 
   constructor(
     private readonly storageKey: string,
@@ -52,43 +70,85 @@ class AsyncKeyedStore<T> {
     seed: T[],
   ) {
     this.items = seed;
-    this.hydrated = AsyncStorage.getItem(storageKey)
-      .then((stored) => {
-        if (stored === null) return; // nothing persisted yet — keep the seed
-        try {
-          const parsed: unknown = JSON.parse(stored);
-          if (Array.isArray(parsed)) this.items = parsed as T[];
-        } catch {
-          /* ignore malformed persisted value */
-        }
-      })
-      .catch(() => {});
+    // Start reading at construction — the runtime installs its transport before AsyncStorage
+    // resolves. The catch only keeps a retryable failure from surfacing as an unhandled rejection;
+    // the accessors below re-await and re-throw it.
+    void this.hydrate().catch(() => {});
   }
 
-  private persist(): void {
-    AsyncStorage.setItem(this.storageKey, JSON.stringify(this.items)).catch(() => {});
+  private hydrate(): Promise<void> {
+    if (this.hydrated) return Promise.resolve();
+    if (this.hydration) return this.hydration;
+    const attempt = AsyncStorage.getItem(this.storageKey)
+      .then(async (stored) => {
+        if (stored !== null) {
+          // nothing persisted yet (null) keeps the seed; anything else must parse as an array
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(stored);
+          } catch {
+            parsed = undefined;
+          }
+          if (Array.isArray(parsed)) this.items = parsed as T[];
+          else await this.quarantine(stored);
+        }
+        this.hydrated = true;
+      })
+      .finally(() => {
+        this.hydration = null;
+      });
+    this.hydration = attempt;
+    return attempt;
+  }
+
+  /** Park an unparseable stored value under a sibling key rather than overwriting it unseen. */
+  private async quarantine(raw: string): Promise<void> {
+    logDiagnostic('storage', `discarded a malformed value for ${this.storageKey}`, {
+      context: `${raw.length} bytes preserved at ${this.storageKey}:corrupt`,
+    });
+    try {
+      await AsyncStorage.setItem(`${this.storageKey}:corrupt`, raw);
+    } catch {
+      /* best effort — the store starts fresh either way */
+    }
+  }
+
+  /**
+   * Write the whole mirror, ordered against every other write. Callers commit to the mirror
+   * synchronously before getting here, so concurrent writers each serialize a snapshot that already
+   * contains the others' items — ordering is all it takes for the last write to be the complete one.
+   * The promise is awaited by `add`/`remove` so a failed write surfaces as a failed install rather
+   * than a mirror that silently disagrees with storage.
+   */
+  private persist(): Promise<void> {
+    const snapshot = JSON.stringify(this.items);
+    const write = this.writes
+      .catch(() => {}) // a failed write must not poison the ones queued behind it
+      .then(() => AsyncStorage.setItem(this.storageKey, snapshot));
+    this.writes = write.catch(() => {});
+    return write;
   }
 
   async all(): Promise<T[]> {
-    await this.hydrated;
+    await this.hydrate();
     return [...this.items];
   }
 
   async get(key: string): Promise<T | null> {
-    await this.hydrated;
+    await this.hydrate();
     return this.items.find((i) => this.keyOf(i) === key) ?? null;
   }
 
   async add(item: T): Promise<void> {
-    await this.hydrated;
+    await this.hydrate(); // never write over state we failed to read
     this.items = [...this.items.filter((i) => this.keyOf(i) !== this.keyOf(item)), item];
-    this.persist();
+    await this.persist();
   }
 
   async remove(key: string): Promise<void> {
-    await this.hydrated;
+    await this.hydrate();
     this.items = this.items.filter((i) => this.keyOf(i) !== key);
-    this.persist();
+    await this.persist();
   }
 }
 
