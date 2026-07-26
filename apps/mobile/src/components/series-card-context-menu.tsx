@@ -26,7 +26,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LegendList } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
 
-import { NATIVE_HIDE_OFFSET } from '@/components/app-tabs';
 import { TagStrip } from '@/components/chip';
 import {
   ANDROID_BLUR,
@@ -80,7 +79,7 @@ import {
   useSeriesCardMenu,
   type SeriesCardMenuRequest,
 } from '@/lib/series-card-menu';
-import { getTabBarProgress } from '@/lib/tab-bar-visibility';
+import { getTabBarHideOffset, getTabBarProgress } from '@/lib/tab-bar-visibility';
 import { getTopBarHidden } from '@/lib/top-bar-visibility';
 
 const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
@@ -405,7 +404,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   const chromeTop = Math.max(0, insets.top + useTopBarHeight() - getTopBarHidden());
   const tabBarH = BottomTabInset + insets.bottom;
   const hasTabBar = !useIsLargeScreen() && TAB_ROUTES.has(pathname);
-  const tabBarShown = hasTabBar ? Math.max(0, tabBarH - NATIVE_HIDE_OFFSET * getTabBarProgress()) : 0;
+  const tabBarShown = hasTabBar ? Math.max(0, tabBarH - getTabBarHideOffset() * getTabBarProgress()) : 0;
   const chromeBottom = winH - tabBarShown;
 
   // ── Geometry ──────────────────────────────────────────────────────────────
