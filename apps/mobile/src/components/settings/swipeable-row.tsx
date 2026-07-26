@@ -312,10 +312,10 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
   // mutated (react-hooks/immutability, which the React Compiler enforces here). These are cheap
   // closures, and the compiler memoizes what's worth memoizing.
   function close() {
-    restIndex.value = 0;
-    captured.value = 0;
+    restIndex.set(0);
+    captured.set(0);
     releaseOpenRow(token);
-    target.value = 0;
+    target.set(0);
     setOpen(false);
   }
 
@@ -332,9 +332,9 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
   // item value), so a mere data update to the SAME item (a download tick) doesn't change it and leaves
   // an open swipe alone. Fires once on mount too (a harmless no-op — the row is already closed).
   useEffect(() => {
-    restIndex.value = 0;
-    captured.value = 0;
-    target.value = 0;
+    restIndex.set(0);
+    captured.set(0);
+    target.set(0);
     releaseOpenRow(token);
     setOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -349,9 +349,9 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
   useEffect(() => {
     if (prevPillCount.current === pillCount) return;
     prevPillCount.current = pillCount;
-    restIndex.value = 0;
-    captured.value = 0;
-    target.value = 0;
+    restIndex.set(0);
+    captured.set(0);
+    target.set(0);
     releaseOpenRow(token);
     setOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -361,9 +361,9 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
   // can't linger under the selection UI. The gesture below is switched off via `.enabled()`.
   useEffect(() => {
     if (enabled) return;
-    restIndex.value = 0;
-    captured.value = 0;
-    target.value = 0;
+    restIndex.set(0);
+    captured.set(0);
+    target.set(0);
     releaseOpenRow(token);
     setOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -391,9 +391,9 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
       // Capture from wherever the row is currently resting, so resuming a drag from an already-open
       // detent doesn't fire a spurious tick on the first frame. Clamp in case the action set just
       // shrank (a stale rest index would point past the shorter detents array).
-      captured.value = Math.min(restIndex.value, detents.length - 1);
-      startRest.value = captured.value;
-      fullSwipeArmed.value = false;
+      captured.set(Math.min(restIndex.value, detents.length - 1));
+      startRest.set(captured.value);
+      fullSwipeArmed.set(false);
     })
     .onUpdate((e) => {
       'worklet';
@@ -409,7 +409,7 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
       while (cap < detents.length - 1 && absRaw > (detents[cap] + detents[cap + 1]) / 2) cap += 1;
       while (cap > 0 && absRaw < (detents[cap - 1] + detents[cap]) / 2) cap -= 1;
       if (cap !== captured.value) {
-        captured.value = cap;
+        captured.set(cap);
         // The JS-side `tickHaptic` throttles taps that land too close together (see its note).
         runOnJS(tickHaptic)();
       }
@@ -420,13 +420,13 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
       // gesture it's inviting. (Continuous at the boundary — both forms equal openX there.)
       let next = detents[cap] + DETENT_RESIST * (absRaw - detents[cap]);
       if (fullSwipeable && absRaw > openX) next = absRaw;
-      target.value = -Math.min(maxDrag, Math.max(0, next));
+      target.set(-Math.min(maxDrag, Math.max(0, next)));
       // Arm/disarm the full-swipe commit as the finger crosses the threshold, with feedback both
       // ways — the medium thump is the "release now and it fires" signal.
       if (fullSwipeable) {
         const armed = rowW.value > 0 && absRaw >= rowW.value * FULL_SWIPE_COMMIT;
         if (armed !== fullSwipeArmed.value) {
-          fullSwipeArmed.value = armed;
+          fullSwipeArmed.set(armed);
           runOnJS(armFeedback)(armed);
         }
       }
@@ -437,10 +437,10 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
       // Full swipe released while ARMED: the row springs home and the lone action fires — the same
       // path as tapping its pill, minus the tap.
       if (fullSwipeable && fullSwipeArmed.value) {
-        fullSwipeArmed.value = false;
-        target.value = 0;
-        restIndex.value = 0;
-        captured.value = 0;
+        fullSwipeArmed.set(false);
+        target.set(0);
+        restIndex.set(0);
+        captured.set(0);
         runOnJS(commitFullSwipe)();
         return;
       }
@@ -461,9 +461,9 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
       // way the finger dragging all the way would have.
       const swept = Math.abs(idx - captured.value);
       if (swept > 0) runOnJS(tickMany)(swept);
-      target.value = -detents[idx];
-      restIndex.value = idx;
-      captured.value = idx;
+      target.set(-detents[idx]);
+      restIndex.set(idx);
+      captured.set(idx);
       runOnJS(settle)(idx);
     });
 

@@ -23,7 +23,7 @@ import { SettingsGutter, Spacing } from '@/constants/theme';
 import type { SavedRegistry } from '@/data/api';
 import { applyOrder, setRegistryOrder, useRegistryOrder } from '@/data/list-order';
 import { queryKeys } from '@/data/queries';
-import { useDataSource } from '@/data/source';
+import { type DataSource, useDataSource } from '@/data/source';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { friendlyError } from '@/lib/friendly-error';
@@ -136,6 +136,47 @@ export default function RegistriesScreen() {
       },
     });
 
+  // ── Registry moves ──
+  // A registry advertises a move it can't prove (`movedTo` from an unsigned host, or one signed by
+  // a different key). The runtime parks it rather than following it, because following repoints
+  // every bridge installed from that registry at a new URL — so it needs the user, here.
+  const invalidateRegistries = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: queryKeys.registries() });
+    await queryClient.invalidateQueries({ queryKey: queryKeys.registryUpdateCount() });
+  }, [queryClient]);
+
+  const reviewMove = (r: SavedRegistry) =>
+    openConfirm({
+      title: 'Registry moved?',
+      message:
+        `${r.name} says it has moved. Following it repoints this registry — and everything installed ` +
+        "from it — at the new address. Only do this if you trust the move.",
+      detail: r.pendingMove,
+      confirmLabel: 'Follow Move',
+      pendingLabel: 'Moving…',
+      tone: 'primary',
+      errorFallback: 'Failed to follow the move',
+      onConfirm: async () => {
+        await ds.confirmRegistryMove(r.url);
+        await invalidateRegistries();
+        showToast('Registry moved');
+      },
+    });
+
+  const ignoreMove = (r: SavedRegistry) =>
+    openConfirm({
+      title: 'Ignore move?',
+      message: "The registry stays where it is. You won't see updates for it if the old address stops working.",
+      detail: r.pendingMove,
+      confirmLabel: 'Ignore Move',
+      pendingLabel: 'Ignoring…',
+      errorFallback: 'Failed to dismiss the move',
+      onConfirm: async () => {
+        await ds.dismissRegistryMove(r.url);
+        await invalidateRegistries();
+      },
+    });
+
   const renderRow = (r: SavedRegistry) => (
     // In select mode the row toggles (tap) / range-fills (hold, via the shared Holdable) instead of
     // opening the registry, and its swipe action is parked. Same pattern as the Downloads screen.
@@ -151,7 +192,10 @@ export default function RegistriesScreen() {
           // Operator-set label (e.g. "SFW") shown next to the derived owner/repo name, so one publisher's
           // several registries are distinguishable. Falls back to just the name.
           label={r.displayName ? `${r.displayName} — ${r.name}` : r.name}
-          description={r.url}
+          // A held move takes over the description line: it's the one thing about this registry the
+          // user has to act on, and browsing it meanwhile reads the address that's going away.
+          description={r.pendingMove ? `Moved — tap to review the new address` : r.url}
+          descriptionColor={r.pendingMove ? theme.accent : undefined}
           swipeEnabled={!selecting}
           leading={
             <SelectLead progress={mode.progress} selected={ms.isSelected(r.url)} itemKey={r.url} edgeOffset={SettingsGutter} />
@@ -159,10 +203,17 @@ export default function RegistriesScreen() {
           onPress={
             selecting
               ? () => ms.toggle(r.url)
-              : () => router.push({ pathname: '/registry-browse', params: { url: r.url } })
+              : r.pendingMove
+                ? () => reviewMove(r)
+                : () => router.push({ pathname: '/registry-browse', params: { url: r.url } })
           }
           onLongPress={selecting ? onLongPress : undefined}
-          actions={[{ label: 'Remove', icon: TrashIcon, destructive: true, onPress: () => confirmRemoveOne(r) }]}
+          actions={[
+            ...(r.pendingMove
+              ? [{ label: 'Ignore', icon: ClearIcon, onPress: () => ignoreMove(r) }]
+              : []),
+            { label: 'Remove', icon: TrashIcon, destructive: true, onPress: () => confirmRemoveOne(r) },
+          ]}
         />
       )}
     </Holdable>
@@ -265,6 +316,43 @@ export default function RegistriesScreen() {
   );
 }
 
+/**
+ * The `movedFrom` prompt: this registry says it is the new home of one the user already has.
+ *
+ * Unlike a `movedTo` claim this one comes from a publisher the old registry never vouched for —
+ * anyone can write "I succeed X" in their index — so accepting it hands update authority over the
+ * bridges installed from X to whoever published this. The runtime already refused to offer claims
+ * that share none of X's installed ids; the rest is the user's call, which is why this is a popup
+ * and not a silent migration.
+ */
+function offerAdoption(
+  ds: DataSource,
+  newUrl: string,
+  newName: string,
+  claims: string[],
+  onDone: () => Promise<void>,
+): void {
+  const one = claims.length === 1;
+  openConfirm({
+    title: one ? 'Adopt previous registry?' : 'Adopt previous registries?',
+    message:
+      `${newName} says it is the new home of ${one ? 'a registry' : `${claims.length} registries`} you already ` +
+      `have. Adopting moves everything installed from ${one ? 'it' : 'them'} to this registry, so updates come ` +
+      'from here instead.',
+    detail: claims.join('\n'),
+    confirmLabel: one ? 'Adopt' : `Adopt ${claims.length}`,
+    pendingLabel: 'Adopting…',
+    tone: 'primary',
+    errorFallback: 'Failed to adopt',
+    onConfirm: async () => {
+      // Sequential, not Promise.all: each adoption rewrites the same saved-registry document.
+      for (const oldUrl of claims) await ds.adoptRegistry(newUrl, oldUrl);
+      await onDone();
+      showToast(one ? 'Registry adopted' : `${claims.length} registries adopted`);
+    },
+  });
+}
+
 function AddRegistryForm() {
   const ds = useDataSource();
   const theme = useTheme();
@@ -277,10 +365,19 @@ function AddRegistryForm() {
 
   const addMutation = useMutation({
     mutationFn: () => ds.addRegistry(url.trim(), requireSignature),
-    onSuccess: async () => {
+    onSuccess: async (added) => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.registries() });
       await queryClient.invalidateQueries({ queryKey: queryKeys.registryUpdateCount() });
       closeTop();
+      // The registry just added claims to succeed one the user already has (its index's
+      // `movedFrom`), but couldn't prove it with the key that registry pinned — so the runtime saved
+      // the claim instead of acting on it. Offer it now, while the user is still in the flow that
+      // caused it; a claim left unanswered simply resurfaces the next time they add this registry.
+      const claims = added?.pendingAdoption ?? [];
+      if (claims.length > 0) offerAdoption(ds, added!.url, added!.name, claims, async () => {
+        await queryClient.invalidateQueries({ queryKey: queryKeys.registries() });
+        await queryClient.invalidateQueries({ queryKey: queryKeys.registryUpdateCount() });
+      });
     },
   });
   const adding = addMutation.isPending;
