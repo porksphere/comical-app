@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { interpolate, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
-import { PagedReader, type PagedReaderHandle } from '@/components/reader/paged-reader';
+import { PagedReader, type PagedReaderHandle, type ReaderPageItem } from '@/components/reader/paged-reader';
 import { ProgressPill } from '@/components/reader/progress-pill';
 import { ReaderToolbar } from '@/components/reader/reader-toolbar';
 import { SettingsControl } from '@/components/reader/settings-panel';
@@ -46,6 +46,9 @@ const CHROME_AUTO_HIDE = process.env.EXPO_PUBLIC_COMICAL_DEMO_FAST !== '1';
 // (How many page *images* to warm ahead is the user-configurable
 // `settings.prefetchAhead`, comical-web's `prefetchAhead`.)
 const NEXT_CHAPTER_TRIGGER = 3;
+// The web paged reader is not stitched (it hands boundary swipes to
+// onPrev/onNext itself); the native one pages across a flat multi-chapter list.
+const IS_WEB = Platform.OS === 'web';
 
 /** Warm expo-image's cache for a small window of upcoming pages. `pages` are now raw (unresolved)
  *  paths, so resolve them first (deduped/cached, shared with ReaderPage's own lazy resolve) and only
@@ -104,7 +107,11 @@ export default function ReaderScreen() {
     [resolveFirst, chapters],
   );
   const chapterId = paramChapterId ?? firstChapter?.id;
-  const chapterName = paramChapterName ?? firstChapter?.name;
+  // `|| undefined`: a seamless chapter crossing relabels via router.setParams,
+  // which MERGES params — an unnamed chapter must overwrite the previous name
+  // with '' (omitting the key would keep the stale one), so read '' back as
+  // "no name" rather than as a real (empty) title.
+  const chapterName = (paramChapterName || undefined) ?? firstChapter?.name;
   // Still waiting on the list to tell us where to start — don't fetch pages for the wrong thing.
   const resolvingFirst = resolveFirst && !chapterId;
 
@@ -311,16 +318,87 @@ export default function ReaderScreen() {
     if (group !== undefined) setPreferredGroup(group);
   }, [chapterId, chapters]);
 
-  // The next chapter in reading order — drives the webtoon end-of-chapter sentinel.
-  // Resolved from the combined chapter list (`chapters`), which subscribes to the
-  // deferred `getSeriesList` for real bridges; a still-cold list just omits the
-  // sentinel, and the scroll/tap auto-advance re-resolves via a fetch
-  // (`resolveNextChapter`).
+  // ── Adjacent chapters, stitched for seamless paging ──────────────────────
+  // The next/previous chapters in reading order, resolved from the combined
+  // chapter list (`chapters`); a still-cold list just resolves null, and the
+  // tap fallbacks re-resolve via a fetch (`resolveAdjacentChapter`). `next`
+  // also drives the webtoon end-of-chapter sentinel.
   const nextChapter = useMemo(() => {
     if (!chapterId || !chapters) return null;
     const current = chapters.find((c) => c.id === chapterId);
     return current ? getAdjacentChapter(chapters, current, 1, getPreferredGroup()) : null;
   }, [chapterId, chapters]);
+  const prevChapter = useMemo(() => {
+    if (!chapterId || !chapters) return null;
+    const current = chapters.find((c) => c.id === chapterId);
+    return current ? getAdjacentChapter(chapters, current, -1, getPreferredGroup()) : null;
+  }, [chapterId, chapters]);
+
+  // Their page lists, subscribed eagerly (cache-first; the list is just URLs)
+  // so the native paged reader can stitch them into ONE flat pager — swiping
+  // across a chapter boundary is then an ordinary page turn, with no
+  // route-replace remount (the old sentinel/replace flow visibly tore the
+  // reader down and back up between chapters).
+  const { data: prevPages } = useQuery({
+    ...chapterPagesQuery(ds, mock, bridgeId ?? '', seed ?? '', prevChapter?.id ?? ''),
+    enabled: !!seed && !!chapterId && !!prevChapter,
+  });
+  const { data: nextPages } = useQuery({
+    ...chapterPagesQuery(ds, mock, bridgeId ?? '', seed ?? '', nextChapter?.id ?? ''),
+    enabled: !!seed && !!chapterId && !!nextChapter,
+  });
+
+  // The stitched window: [previous?, current, next?] — a segment only joins
+  // once its pages are actually loaded, so the flat list never has holes.
+  const segments = useMemo(() => {
+    if (!pages) return [] as { id: string; name?: string; pages: string[] }[];
+    const segs: { id: string; name?: string; pages: string[] }[] = [];
+    if (chapterId && prevChapter && prevPages?.length)
+      segs.push({ id: prevChapter.id, name: prevChapter.name, pages: prevPages });
+    segs.push({ id: chapterId ?? DIRECT_CHAPTER_ID, name: chapterName, pages });
+    if (chapterId && nextChapter && nextPages?.length)
+      segs.push({ id: nextChapter.id, name: nextChapter.name, pages: nextPages });
+    return segs;
+  }, [pages, chapterId, chapterName, prevChapter, prevPages, nextChapter, nextPages]);
+
+  // Flat pager items. Keys are stable across window slides (`chapterId:page`) —
+  // that's what lets the pager's maintainVisibleContentPosition hold the view
+  // still when a segment loads in ahead of the current position.
+  const flatItems: ReaderPageItem[] = useMemo(
+    () => segments.flatMap((s) => s.pages.map((uri, i) => ({ uri, key: `${s.id}:${i}`, pageNumber: i + 1 }))),
+    [segments],
+  );
+  // How many stitched pages sit before the current chapter (flat index of the
+  // current chapter's page 0).
+  const prefixLen = useMemo(() => {
+    const currentId = chapterId ?? DIRECT_CHAPTER_ID;
+    let acc = 0;
+    for (const s of segments) {
+      if (s.id === currentId) break;
+      acc += s.pages.length;
+    }
+    return acc;
+  }, [segments, chapterId]);
+  // The web pager keeps per-chapter pages (it hands boundary swipes to
+  // onPrev/onNext itself — see paged-reader.web.tsx), so no stitching there.
+  const currentItems: ReaderPageItem[] = useMemo(
+    () =>
+      (pages ?? []).map((uri, i) => ({ uri, key: `${chapterId ?? DIRECT_CHAPTER_ID}:${i}`, pageNumber: i + 1 })),
+    [pages, chapterId],
+  );
+
+  // Which stitched segment a flat pager index falls in, and the page within it.
+  const locateFlat = useCallback(
+    (flat: number) => {
+      let acc = 0;
+      for (const s of segments) {
+        if (flat < acc + s.pages.length) return { segment: s, page: flat - acc };
+        acc += s.pages.length;
+      }
+      return null;
+    },
+    [segments],
+  );
 
   // Kept in a ref (reassigned every render) so the debounce + unmount-flush
   // effects below always record the latest page/membership without re-subscribing.
@@ -383,6 +461,33 @@ export default function ReaderScreen() {
   const pagedRef = useRef<PagedReaderHandle>(null);
   const webtoonRef = useRef<WebtoonReaderHandle>(null);
 
+  // Native paged reader position reports arrive as FLAT (stitched-list)
+  // indices. Within the current chapter it's plain page bookkeeping; crossing
+  // a chapter boundary flushes the old chapter's progress, then relabels the
+  // route in place — router.setParams, NOT replace, so nothing remounts and
+  // the swipe that carried the user across stays seamless. The relabel swaps
+  // which chapter is "current": the stitched window slides one over, the pager
+  // keeps its position (stable keys + maintainVisibleContentPosition), and the
+  // start param is kept in step for the pages/startIndex sync effect above.
+  const handleFlatPageChange = useCallback(
+    (flat: number) => {
+      const loc = locateFlat(flat);
+      if (!loc) return;
+      if (loc.segment.id === (chapterId ?? DIRECT_CHAPTER_ID)) {
+        setCurrent(loc.page);
+        return;
+      }
+      recordRef.current(); // old chapter's final settled position
+      setCurrent(loc.page);
+      router.setParams({
+        chapterId: loc.segment.id,
+        chapterName: loc.segment.name ?? '',
+        start: String(loc.page),
+      });
+    },
+    [locateFlat, chapterId, setCurrent, router],
+  );
+
   const toggleChrome = useCallback(() => {
     if (swipeActiveRef.current) return; // a swipe-release tap, not a real chrome toggle
     setChromeVisible((v) => {
@@ -393,35 +498,53 @@ export default function ReaderScreen() {
     });
   }, [scheduleHide]);
 
+  // Chapter-local page index in, flat index out for the (stitched) native pager.
   const goTo = useCallback(
     (index: number, animated = true) => {
       const clamped = Math.max(0, Math.min((pages?.length ?? 1) - 1, index));
       setCurrent(clamped);
-      if (settings.mode === 'paged') pagedRef.current?.goToPage(clamped, animated);
+      if (settings.mode === 'paged') pagedRef.current?.goToPage(IS_WEB ? clamped : prefixLen + clamped, animated);
       else webtoonRef.current?.goToPage(clamped);
     },
-    [pages, settings.mode, setCurrent],
+    [pages, settings.mode, setCurrent, prefixLen],
   );
   const atLastPage = useCallback(() => !!pages && currentRef.current >= pages.length - 1, [pages]);
   const atFirstPage = useCallback(() => currentRef.current <= 0, []);
   // Tapping a page and keyboard navigation both turn instantly (no slide), on
   // every platform; only the progress-pill jump keeps the animated transition.
+  //
+  // At a chapter boundary in the native paged reader, prefer stepping within
+  // the stitched flat list (same seamless relabel path a swipe crossing takes);
+  // the route-level advance is only the fallback for when the adjacent pages
+  // aren't stitched in yet (cold list / still loading) — or for web/webtoon,
+  // whose readers aren't stitched.
   const turnPrev = useCallback(() => {
     if (swipeActiveRef.current) return; // stray tap at the end of a dismiss swipe
-    if (atFirstPage()) {
-      tryPrevChapter();
+    if (!atFirstPage()) {
+      goTo(currentRef.current - 1, false);
       return;
     }
-    goTo(currentRef.current - 1, false);
-  }, [goTo, atFirstPage, tryPrevChapter]);
+    if (!IS_WEB && settings.mode === 'paged' && prefixLen > 0) {
+      handleFlatPageChange(prefixLen - 1);
+      pagedRef.current?.goToPage(prefixLen - 1, false);
+      return;
+    }
+    tryPrevChapter();
+  }, [goTo, atFirstPage, tryPrevChapter, settings.mode, prefixLen, handleFlatPageChange]);
   const turnNext = useCallback(() => {
     if (swipeActiveRef.current) return; // stray tap at the end of a dismiss swipe
-    if (atLastPage()) {
-      tryAdvanceChapter();
+    if (!atLastPage()) {
+      goTo(currentRef.current + 1, false);
       return;
     }
-    goTo(currentRef.current + 1, false);
-  }, [goTo, atLastPage, tryAdvanceChapter]);
+    const nextFlat = prefixLen + (pages?.length ?? 0);
+    if (!IS_WEB && settings.mode === 'paged' && nextFlat < flatItems.length) {
+      handleFlatPageChange(nextFlat);
+      pagedRef.current?.goToPage(nextFlat, false);
+      return;
+    }
+    tryAdvanceChapter();
+  }, [goTo, atLastPage, tryAdvanceChapter, settings.mode, prefixLen, pages, flatItems.length, handleFlatPageChange]);
 
   // Web keyboard nav: arrows (or A/D) page instantly like a tap (respecting
   // direction), Esc closes. Held-key repeat is driven by our own fixed-rate
@@ -525,7 +648,10 @@ export default function ReaderScreen() {
             {settings.mode === 'paged' ? (
               <PagedReader
                 ref={pagedRef}
-                pages={pages}
+                // Native: the stitched multi-chapter flat list, so swiping across
+                // a chapter boundary is an ordinary page turn. Web: per-chapter
+                // (its pager hands boundary swipes to onPrev/onNext itself).
+                pages={IS_WEB ? currentItems : flatItems}
                 width={width}
                 height={height}
                 rtl={settings.direction === 'rtl'}
@@ -535,19 +661,15 @@ export default function ReaderScreen() {
                 // still reads 0 on this render (its pages-loaded correction effect
                 // hasn't run yet), which left the native readers, which only seed
                 // at mount and never re-sync, stuck on page 1 while the pill showed
-                // the right number.
-                initialPage={startIndex}
-                onPageChange={setCurrent}
+                // the right number. Native seeds in flat terms; segments stitched
+                // in after mount are handled by the pager's
+                // maintainVisibleContentPosition, not by re-seeding.
+                initialPage={IS_WEB ? startIndex : prefixLen + startIndex}
+                onPageChange={IS_WEB ? setCurrent : handleFlatPageChange}
                 onPrev={turnPrev}
                 onNext={turnNext}
                 onToggleChrome={toggleChrome}
                 onZoomChange={setReaderZoomed}
-                // Same end-of-chapter sentinel the continuous webtoon shows:
-                // swiping past the last page lands on a "Next: … →" page that
-                // auto-advances (the native pager otherwise just bounces there,
-                // with nothing signalling a next chapter exists).
-                nextChapterName={nextChapter?.name}
-                onAdvance={() => void tryAdvanceChapter()}
               />
             ) : (
               <WebtoonReader
