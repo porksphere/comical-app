@@ -68,12 +68,12 @@ appId: com.porksphere.comical
 - assertVisible:
     text: "^1 / \\d+$"
 
-# Progress-pill numeric jump. The input is autoFocus + selectTextOnFocus the moment editing opens
-# (progress-pill.tsx), so its prefilled value ("1", from current+1) is already selected and ready
-# for inputText to REPLACE outright — an extra tapOn the input here would re-tap an already-focused
-# field, which repositions the cursor instead of re-selecting, turning the replace into an insert
-# ("1" + typed "3" -> "13", jumping to the wrong page). Confirmed via Maestro debug artifacts: the
-# pill read "13 / 26" instead of "3 / 26" with the extra tap present.
+# Progress-pill numeric jump. The input opens EMPTY and autoFocused (progress-pill.tsx shows the
+# current page as the placeholder instead of prefilling — selectTextOnFocus never fired for an
+# autoFocus-mounted input on native, leaving a stale prefill to backspace), so inputText types
+# straight in. Still no extra tapOn the input first: it's already focused, and a historical re-tap
+# once turned a selected-prefill replace into an insert ("13 / 26" instead of "3 / 26" — caught
+# via Maestro debug artifacts back when the field prefilled).
 - tapOn:
     id: "reader.progress-pill"
 - assertVisible:

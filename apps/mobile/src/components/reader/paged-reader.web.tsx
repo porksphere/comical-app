@@ -36,6 +36,11 @@ type Props = {
   onPrev: () => void;
   onNext: () => void;
   onToggleChrome: () => void;
+  /** Accepted for parity with the native pager (reader.tsx passes them), but
+   *  unused here: the web pager already hands a swipe past the last/first page
+   *  to onNext/onPrev (see finalizeSwipe), so chapter advance needs no sentinel. */
+  nextChapterName?: string;
+  onAdvance?: () => void;
 };
 
 /**
