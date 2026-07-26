@@ -1285,6 +1285,29 @@ export function removeRegistry(url: string, signal?: AbortSignal): Promise<void>
   return fetchOk(`/registries/${encodeURIComponent(url)}`, 'DELETE', signal);
 }
 
+// ── Registry moves ──
+// A registry that changed host advertises it: `movedTo` on the old index, `movedFrom` on the new
+// one. The server/runtime follows a claim on its own only when the target is signed by the key it
+// already pinned; otherwise it parks it on the saved registry as `pendingMove`/`pendingAdoption`,
+// because following one hands update authority over every bridge installed from it to a new URL.
+// These three endpoints carry the user's answer.
+
+/** POST /registries/{encodedUrl}/confirm-move → follow a held `movedTo`; returns the new URL. */
+export async function confirmRegistryMove(url: string, signal?: AbortSignal): Promise<string> {
+  const res = await fetchPost<{ url: string }>(`/registries/${encodeURIComponent(url)}/confirm-move`, {}, signal);
+  return res.url;
+}
+
+/** POST /registries/{encodedUrl}/dismiss-move → drop a held `movedTo` without following it. */
+export async function dismissRegistryMove(url: string, signal?: AbortSignal): Promise<void> {
+  await fetchPost(`/registries/${encodeURIComponent(url)}/dismiss-move`, {}, signal);
+}
+
+/** POST /registries/{encodedUrl}/adopt → accept one of this registry's `movedFrom` claims. */
+export async function adoptRegistry(newUrl: string, oldUrl: string, signal?: AbortSignal): Promise<void> {
+  await fetchPost(`/registries/${encodeURIComponent(newUrl)}/adopt`, { url: oldUrl }, signal);
+}
+
 /** GET /registries/{encodedUrl}/bridges → bridges available in one registry. */
 export function browseRegistryBridges(url: string, signal?: AbortSignal): Promise<AvailableBridge[]> {
   return fetchJson(`/registries/${encodeURIComponent(url)}/bridges`, signal);
