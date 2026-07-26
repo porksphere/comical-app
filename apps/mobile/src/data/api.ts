@@ -175,21 +175,48 @@ export async function resolveAssetSource(url: string): Promise<string> {
  * is just a cheap identity map.
  */
 const assetResolveCache = new Map<string, Promise<string>>();
+/** The SETTLED results of the cache above, readable synchronously — see `peekResolvedAssetSource`.
+ *  Same lifetime and eviction as the promise cache. */
+const assetResolvedValues = new Map<string, string>();
 export function resolveAssetSourceCached(url: string): Promise<string> {
   const hit = assetResolveCache.get(url);
   if (hit) return hit;
-  const p = resolveAssetSource(url).catch((e) => {
-    assetResolveCache.delete(url);
-    throw e;
-  });
+  const p = resolveAssetSource(url)
+    .then((resolved) => {
+      assetResolvedValues.set(url, resolved);
+      return resolved;
+    })
+    .catch((e) => {
+      assetResolveCache.delete(url);
+      throw e;
+    });
   assetResolveCache.set(url, p);
   return p;
+}
+
+/**
+ * The resolution of `url` if it's knowable RIGHT NOW, without awaiting anything — else `undefined`.
+ *
+ * `resolveAssetSourceCached` is promise-only, so a component rendering an asset it (or another
+ * component) already resolved still had to learn the answer from an effect, i.e. a commit late. For
+ * a recycled `<Image>` that lateness is visible: the view is handed a new `recyclingKey` paired with
+ * the PREVIOUS item's URI, paints that (it's in the image cache, so instantly), and then gets the
+ * right URI under an unchanged recycling key — which expo-image treats as a cross-fade from the old
+ * bitmap rather than a reset, so the old cover lingers until the new one decodes. Peeking
+ * synchronously during render keeps the key and the URI in the same commit.
+ *
+ * An absolute URL (the overwhelmingly common case) resolves to itself — no map lookup even needed.
+ */
+export function peekResolvedAssetSource(url: string): string | undefined {
+  if (!url.startsWith('/')) return url;
+  return assetResolvedValues.get(url);
 }
 
 /** Drop a cached resolution so the next `resolveAssetSourceCached` re-runs it (retry after a stale/
  *  expired resolved URL fails to load). */
 export function invalidateAssetSource(url: string): void {
   assetResolveCache.delete(url);
+  assetResolvedValues.delete(url);
 }
 
 /**
@@ -278,22 +305,6 @@ export function getBridgeSummaries(signal?: AbortSignal): Promise<BridgeSummary[
 /** GET /bridges/{id}/lists → the bridge's browse lists (home rails + pages). */
 export function getBridgeLists(id: string, signal?: AbortSignal): Promise<BridgeList[]> {
   return fetchJson<BridgeList[]>(`/bridges/${encodeURIComponent(id)}/lists`, signal);
-}
-
-/**
- * Page-selector labels for a bridge, matching the reference's `i8`: "home"
- * first, then each page-list (lowercased name), then "favorites" if supported.
- *
- * `favoritesAvailable` gates the favorites page on the user actually being able to use it: a bridge
- * advertises the capability, but favorites need an account, so when the login isn't set (see
- * `useFavoritesAvailability`) the page is hidden rather than opening onto an auth error. Defaults true
- * so a caller that doesn't care about the gate gets the old behaviour.
- */
-export function pageOptions(lists: BridgeList[], capabilities: string[], favoritesAvailable = true): string[] {
-  const opts = ['home'];
-  for (const l of lists) if (l.page && l.id !== 'home') opts.push(l.name.toLowerCase());
-  if (capabilities.includes('favorites') && favoritesAvailable) opts.push('favorites');
-  return opts;
 }
 
 // ─── @comical/contract shapes (type-only, erased at build — see header) ─────

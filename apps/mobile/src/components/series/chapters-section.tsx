@@ -50,7 +50,7 @@ import { useHovered } from '@/hooks/use-hovered';
 import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
 import { useLightCards } from '@/lib/perf-flags';
 import { useTheme } from '@/hooks/use-theme';
-import { dlDeleteChapter, dlGetSeries, resolveAssetSourceCached } from '@/data/api';
+import { dlDeleteChapter, dlGetSeries, peekResolvedAssetSource, resolveAssetSourceCached } from '@/data/api';
 import { enqueueChapters } from '@/data/downloads/engine';
 import { forgetChapter } from '@/data/downloads/index-cache';
 import { fromHere, selectableGroups, toEnqueue } from '@/data/downloads/select';
@@ -1702,26 +1702,37 @@ function SpriteCrop({
  *  rather than resolving every page up front. `null` until resolved; a resolve failure calls `onError`
  *  so the tile falls back like any load failure. Absolute URLs resolve synchronously (cheap identity).*/
 function useResolvedThumbUrl(url: string, onError?: (message: string) => void): string | null {
-  const [resolved, setResolved] = useState<string | null>(null);
+  const [resolved, setResolved] = useState<string | null>(() => peekResolvedAssetSource(url) ?? null);
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
 
   // Recycle-safety: PageThumb reuses this hook's instance for a different page
   // as the grid scrolls (recycleItems), and only the `url` prop changes — the
   // stale `resolved` value from the PREVIOUS page otherwise survives into the
-  // first render with the new url (this state only cleared inside the effect
-  // below, which runs a commit later), so that first frame renders the old
+  // first render with the new url (were this state only cleared inside the effect
+  // below, which runs a commit later), so that first frame would render the old
   // tile's resolved image/sheet under the new tile's geometry — the "stale
-  // thumbnail" flash. Clear it synchronously during render instead (same
+  // thumbnail" flash. Re-derive synchronously during render instead (same
   // ref-compare pattern as PageThumb/SeriesCard's own per-item reset), so the
-  // gap is never visible; the effect still does the actual async resolve.
+  // gap is never visible; the effect only handles what genuinely needs awaiting.
+  // `peekResolvedAssetSource` answers absolute URLs (and already-resolved relative
+  // ones) right here, so the common tile needs neither a blank frame nor the extra
+  // state commit a promise round-trip costs — across a long page grid that's one
+  // fewer render per tile.
   const prevUrlRef = useRef(url);
   if (prevUrlRef.current !== url) {
     prevUrlRef.current = url;
-    setResolved(null);
+    setResolved(peekResolvedAssetSource(url) ?? null);
   }
 
   useEffect(() => {
+    // Nothing to await when the resolution was already knowable (re-asserted in case another tile
+    // resolved this path since the render; React bails out when it's unchanged).
+    const known = peekResolvedAssetSource(url);
+    if (known !== undefined) {
+      setResolved(known);
+      return;
+    }
     let cancelled = false;
     setResolved(null);
     resolveAssetSourceCached(url)
