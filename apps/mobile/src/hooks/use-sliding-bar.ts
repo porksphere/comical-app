@@ -52,8 +52,9 @@ export type SlidingBar = {
   /** Fades the bar's INNER content with the slide (1 → 0) and drops its pointer events once mostly
    *  hidden. For a bar that docks under the status bar rather than leaving the screen (Browse): the
    *  frosted surface stays, but the controls must not sit legible — or tappable — over the clock and
-   *  battery. Apply to an Animated.View wrapping the bar's content row, not the surface itself. */
-  contentStyle: ReturnType<typeof useAnimatedStyle>;
+   *  battery. Apply to an Animated.View wrapping the bar's content row, not the surface itself.
+   *  Instantiated at `ViewStyle` for the same reason as `barStyle` above. */
+  contentStyle: ReturnType<typeof useAnimatedStyle<ViewStyle>>;
   /** Spread onto the AnimatedLegendList's `sharedValues` prop. */
   sharedValues: { scrollOffset: SharedValue<number> };
   /** Wire to the list's plain `onScroll` — keeps `maxScrollY` in sync. */
