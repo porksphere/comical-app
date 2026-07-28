@@ -1,0 +1,84 @@
+name: Clean up per-PR releases
+
+# Deletes the `android-pr-<N>` / `ios-pr-<N>` install channels once their PR is done.
+#
+# Both build workflows already carry a `cleanup-pr` job on `pull_request: closed`, and both were
+# silently not running it: every merged PR since the channels were introduced left its release
+# behind (a dozen-plus stale entries on the Releases page by 2026-07-28). Those jobs sit behind the
+# same `paths:` filter as the build they live with, so whether teardown happens depends on which
+# files the PR touched — a filter that makes sense for "should we build this?" and none at all for
+# "is this PR over?". This workflow has no paths filter, does no build, and is the one that matters.
+#
+# The schedule is the backstop: `pull_request: closed` fires once and can't be replayed, so a run
+# that fails (or a workflow edit that lands after a merge) would strand a release forever. The
+# nightly sweep reconciles against reality instead — every `*-pr-<N>` release whose PR is no longer
+# open gets dropped, which is also what retired the original backlog.
+on:
+  pull_request:
+    types: [closed]
+  schedule:
+    - cron: '17 5 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: cleanup-pr-releases
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete this PR's channels
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.number }}
+        run: |
+          set -euo pipefail
+          for tag in "android-pr-${PR}" "ios-pr-${PR}"; do
+            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag \
+              && echo "deleted $tag" || echo "no $tag to delete"
+          done
+
+      # Reconcile: any per-PR release whose PR isn't open anymore. Deliberately keyed on "not
+      # open" rather than "merged" so abandoned PRs are swept too. A tag whose number doesn't
+      # resolve to a PR at all (hand-made, or a deleted PR) is left alone — this only removes
+      # channels it can positively show are finished.
+      - name: Sweep channels left over from finished PRs
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName \
+            -q '.[].tagName | select(test("^(android|ios)-pr-[0-9]+$"))' > tags.txt || true
+
+          [ -s tags.txt ] || { echo "No per-PR releases."; exit 0; }
+
+          while IFS= read -r tag; do
+            num="${tag##*-}"
+            state="$(gh pr view "$num" --repo "$GITHUB_REPOSITORY" --json state -q .state 2>/dev/null || true)"
+            case "$state" in
+              OPEN) echo "keep $tag (PR #$num open)" ;;
+              MERGED|CLOSED)
+                gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag \
+                  && echo "swept $tag (PR #$num $state)"
+                ;;
+              *) echo "skip $tag (PR #$num not found)" ;;
+            esac
+          done < tags.txt
+
+      # Deleting an `ios-pr-<N>` release orphans its entry in the aggregate `ios-pr` AltStore
+      # source, which would keep offering an IPA that 404s. The script rebuilds that source from
+      # whichever ios-pr-* releases still exist, so running it unconditionally converges whether or
+      # not this run deleted anything.
+      - uses: actions/checkout@v4
+
+      - name: Rebuild the ios-pr source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/refresh-ios-pr-source.sh

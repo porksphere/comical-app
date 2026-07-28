@@ -86,27 +86,14 @@ jobs:
           name: ${{ needs.build.outputs.artifact }}
           path: ${{ runner.temp }}/apk
 
+      # Shared with release.yml, so a tagged release moves this download link too — see the
+      # script's header for why that matters on Android.
+      - uses: actions/checkout@v4
+
       - name: Publish APK to the android-latest Release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ needs.build.outputs.version }}
-        run: |
-          set -euo pipefail
-          APK="$RUNNER_TEMP/apk/comical-android.apk"
-          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/android-latest"
-
-          # Recreate the rolling tag/release so the URL above stays stable.
-          gh release delete android-latest --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
-          gh release create android-latest \
-            "$APK" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "Comical Android (latest APK)" \
-            --notes "Installable release APK (debug-keystore signed).
-
-          **Install directly:**
-          \`${BASE}/comical-android.apk\`
-
-          On-device: enable \"Install unknown apps\" for your browser, open the link, install."
+        run: bash .github/scripts/publish-android-latest.sh "$RUNNER_TEMP/apk/comical-android.apk" "${{ needs.build.outputs.version }}"
 
   # Per-PR channel. Each open PR gets its own `android-pr-<N>` Release with a
   # stable APK download URL (parity with the iOS per-PR channel). The APK keeps

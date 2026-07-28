@@ -49,6 +49,47 @@ jobs:
           fi
           echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
+      # Needs full history + tags: the versionCode check below compares this tag's app.json
+      # against the previous release tag's.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # The tag is NOT the only source of the version. It drives iOS (stamped into Info.plist and
+      # the AltStore manifest above), but Android's versionName and the in-app About screen come
+      # from app.json, which nothing here patches — so a tag that disagrees with app.json ships an
+      # APK quietly claiming the previous version. Catch it in seconds rather than after the
+      # ~20-minute macOS build.
+      - name: Guard — app.json matches the tag, versionCode moved forward
+        run: |
+          set -euo pipefail
+          APP_JSON=apps/mobile/app.json
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          APP_VERSION="$(jq -r '.expo.version' "$APP_JSON")"
+
+          if [ "$APP_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} says $TAG_VERSION but $APP_JSON says $APP_VERSION. Bump expo.version to $TAG_VERSION on main and re-tag — otherwise the Android APK ships versionName $APP_VERSION."
+            exit 1
+          fi
+
+          # Android identifies builds by versionCode, not versionName: two APKs sharing a code
+          # can't be ordered, and Play refuses an upload that doesn't increase it. Expo defaults a
+          # missing field to 1, which is also what tags predating the field carry — hence `// 1`.
+          CODE="$(jq -r '.expo.android.versionCode // 1' "$APP_JSON")"
+          PREV_TAG="$(git tag -l 'v*' --sort=-v:refname | grep -vFx "$GITHUB_REF_NAME" | head -n1)"
+
+          if [ -z "$PREV_TAG" ]; then
+            echo "First release — versionCode $CODE."
+            exit 0
+          fi
+
+          PREV_CODE="$(git show "$PREV_TAG:$APP_JSON" | jq -r '.expo.android.versionCode // 1')"
+          if [ "$CODE" -le "$PREV_CODE" ]; then
+            echo "::error::android.versionCode is $CODE but $PREV_TAG already shipped $PREV_CODE. Raise expo.android.versionCode in $APP_JSON — Android treats an equal-or-lower code as a non-upgrade."
+            exit 1
+          fi
+          echo "versionCode $PREV_CODE ($PREV_TAG) → $CODE (${GITHUB_REF_NAME}). OK."
+
   ios:
     needs: prep
     uses: ./.github/workflows/build-ios-reusable.yml
@@ -119,3 +160,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash .github/scripts/refresh-ios-release-source.sh
+
+      # Android has no source manifest to subscribe to — the rolling android-latest URL in the
+      # README is the only thing users follow, and it's otherwise refreshed solely by pushes to
+      # main. Without this, tagging a commit main already built would publish a vX.Y.Z release
+      # while that download button kept serving the older APK.
+      - name: Refresh android-latest download link
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/publish-android-latest.sh "$RUNNER_TEMP/apk/comical-android.apk" "${{ github.ref_name }}"

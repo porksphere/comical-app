@@ -350,6 +350,17 @@
       registry and asserts the `registry-browse.{bridge,tracker}.<id>.unsupported` / `.install`
       testIDs. The same fixture then unlocks the other registry states real data can't reach: an
       entry with a pending update, a discontinued entry, and an id colliding across two registries.
+- [ ] Add an **app update notifier** — the app never tells you a newer version exists. iOS gets this
+      free from the AltStore/SideStore source (it polls `ios-release` and shows an update badge), so
+      this is really an **Android** gap: the only delivery path is the rolling
+      `releases/download/android-latest/comical-android.apk` link in the README, and nothing
+      prompts a user to revisit it. There's no `expo-updates`/OTA either, so this can't be a silent
+      background update — it's a *notice*, plus a link. Sketch: poll the GitHub releases API for
+      the newest `v*` tag, compare against `APP_VERSION` (`src/lib/build-info.ts` — note it's
+      `<base>.<run>` on rolling channels and a bare `X.Y.Z` on release builds, so the comparison
+      has to tolerate both, and `local-dev`/`ios-*` channels should opt out), surface it in the
+      About screen and as a dismissible-once banner. Worth pairing with the release-notes gap: the
+      workflow writes a generic body, so there'd be nothing meaningful to show as "what's new".
 
 ## Publish `@comical/*` packages instead of tsconfig-paths/local-stub hacks
 
