@@ -62,17 +62,20 @@ export function useNsfwMode(): [NsfwMode, (mode: NsfwMode) => void] {
 }
 
 /**
- * Flip the SESSION-ONLY 'until-restart' override (the Browse bridge-icon hold gesture): hidden →
- * shown for this process's lifetime; an active session override → back to the stored durable mode.
+ * Flip the SESSION-ONLY 'until-background' override (the Browse bridge-icon hold gesture): hidden →
+ * shown until the app is next backgrounded; an active session override → back to the stored durable
+ * mode. This is the shortest-lived of the two session modes on purpose — a gesture that's easy to
+ * trigger by accident shouldn't leave NSFW content showing for the rest of the process's life.
+ * Picking the longer 'until-restart' is a deliberate act, so it stays a Settings-only choice.
  * Nothing durable is ever written. The return value says what happened, so the caller can toast it:
  *  - 'enabled'          — NSFW now visible until the app is closed
  *  - 'reverted'         — the session override was dropped; NSFW is hidden again
  *  - 'already-visible'  — the DURABLE mode already shows NSFW ('on'), so there was nothing to flip
  */
-export function toggleNsfwUntilRestart(): 'enabled' | 'reverted' | 'already-visible' {
+export function toggleNsfwUntilClosed(): 'enabled' | 'reverted' | 'already-visible' {
   const mode = nsfwMode$.peek();
   if (mode === 'off') {
-    nsfwMode$.set('until-restart');
+    nsfwMode$.set('until-background');
     return 'enabled';
   }
   // A live session override ('until-restart' or 'until-background') drops back to the durable mode.

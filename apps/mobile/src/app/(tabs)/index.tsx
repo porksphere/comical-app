@@ -28,7 +28,7 @@ import { ThemedView } from '@/components/themed-view';
 import { PullIndicator } from '@/components/pull-indicator';
 import { showToast } from '@/components/toast';
 import { BarContentGap, BottomTabInset, MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
-import { toggleNsfwUntilRestart } from '@/data/nsfw';
+import { toggleNsfwUntilClosed } from '@/data/nsfw';
 import {
   bridgePageOptions,
   comicalPageOptions,
@@ -563,7 +563,7 @@ export default function BrowseScreen() {
   // holding, then the flip commits (see useRampedHold) and a toast says what happened. A plain tap
   // still does nothing — the icon stays a passive identity mark otherwise.
   const nsfwHold = useRampedHold(() => {
-    const result = toggleNsfwUntilRestart();
+    const result = toggleNsfwUntilClosed();
     showToast(
       result === 'enabled'
         ? 'NSFW enabled until the app is closed'
