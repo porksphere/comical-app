@@ -3,12 +3,12 @@
  * version, which CI lane produced it, which commit, and how its JS is being hosted.
  *
  * **Why the version can't just come from `Constants.expoConfig.version`.** `app.json`'s
- * `expo.version` is a *base* ("0.0.1") that never moves; the real shipped version is
+ * `expo.version` is a *base* ("0.1.0") that only moves on a release; the real shipped version is
  * `<base>.<run number>` (or the git tag, for a release), computed inside the build workflow and
  * patched straight into the generated `Info.plist` — see build-ios-reusable.yml's "Compute full
  * version" / "Stamp full version" steps. The embedded Expo manifest that `Constants` reads is
- * generated from `app.json` *before* that patch, so it keeps saying "0.0.1" while the installed app
- * (and the AltStore/SideStore source manifest) says "0.0.1.142". The workflows therefore also bake
+ * generated from `app.json` *before* that patch, so it keeps saying "0.1.0" while the installed app
+ * (and the AltStore/SideStore source manifest) says "0.1.0.142". The workflows therefore also bake
  * the computed string in as `EXPO_PUBLIC_COMICAL_APP_VERSION`, which is what we prefer here; the
  * manifest value is only the local-dev fallback.
  *
