@@ -1,6 +1,6 @@
 # Settings tab: drill into every category and back out, asserting a stable landing element on
-# each pushed screen. Categories walked (9 of the 10 in settings.tsx): general, notifications,
-# bridges, trackers, registries, custom-pages, downloads, storage, diagnostics.
+# each pushed screen. Categories walked (10 of the 11 in settings.tsx): general, notifications,
+# bridges, trackers, registries, custom-pages, downloads, storage, diagnostics, about.
 #
 # `settings.category.developer` is deliberately SKIPPED: it's gated behind PROFILING_ENABLED
 # (src/lib/profiling.ts — true only in __DEV__ or a EXPO_PUBLIC_COMICAL_PROFILING=1 build), which
@@ -23,6 +23,9 @@
 #     textTransform:'uppercase' (settings-row.tsx's sectionTitle style) — confirmed on web to render/
 #     resolve as "IMAGE CACHE", a second reason to prefer "Cached images" (normal-case, no transform).
 #   - diagnostics:      diagnostics.share            (Pressable, plain text child, no accessibilityLabel)
+#   - about:            about.share                  (the export row at the foot of settings-about.tsx;
+#     the info rows above it are built from `value &&` filters, so every one of them can vanish in
+#     some build — this row is the only thing on the screen that always renders)
 appId: com.porksphere.comical
 ---
 - launchApp
@@ -110,6 +113,15 @@ appId: com.porksphere.comical
 - takeScreenshot: diagnostics
 - assertVisible:
     id: "diagnostics.share"
+- tapOn:
+    id: "top-bar.back"
+
+# About
+- tapOn:
+    id: "settings.category.about"
+- takeScreenshot: about
+- assertVisible:
+    id: "about.share"
 - tapOn:
     id: "top-bar.back"
 

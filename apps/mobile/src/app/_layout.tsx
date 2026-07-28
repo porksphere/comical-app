@@ -132,6 +132,7 @@ function RootNavigation() {
           <Stack.Screen name="settings-general" options={{ headerShown: false }} />
           <Stack.Screen name="settings-notifications" options={{ headerShown: false }} />
           <Stack.Screen name="settings-developer" options={{ headerShown: false }} />
+          <Stack.Screen name="settings-about" options={{ headerShown: false }} />
           <Stack.Screen name="bridges" options={{ headerShown: false }} />
           <Stack.Screen name="trackers" options={{ headerShown: false }} />
           <Stack.Screen name="bridge-settings" options={{ headerShown: false }} />

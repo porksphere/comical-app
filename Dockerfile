@@ -38,6 +38,17 @@ RUN cd external/comical && bun install
 # so the Docker build references root-relative assets. (Node is already present in this stage.)
 RUN node -e "const f='apps/mobile/app.json';const j=require('./'+f);j.expo.experiments.baseUrl='';require('fs').writeFileSync(f,JSON.stringify(j,null,2)+'\n')"
 
+# Which build this is, for the in-app About screen (apps/mobile/src/lib/build-info.ts). Unlike the
+# server URL above these ARE baked at export time — they describe the bundle itself, so they can't
+# be injected at container start. Defaulted so a plain `docker build` still produces a working image
+# (About just falls back to "local-dev" / no commit); publish-web-image.yml passes the real values.
+ARG COMICAL_BUILD_CHANNEL=web-docker
+ARG COMICAL_BUILD_COMMIT=
+ARG COMICAL_BUILD_TIME=
+ENV EXPO_PUBLIC_COMICAL_BUILD_CHANNEL=$COMICAL_BUILD_CHANNEL \
+    EXPO_PUBLIC_COMICAL_BUILD_COMMIT=$COMICAL_BUILD_COMMIT \
+    EXPO_PUBLIC_COMICAL_BUILD_TIME=$COMICAL_BUILD_TIME
+
 # Real build — NOT demo mode (that flag is only for the backend-less GitHub Pages preview).
 WORKDIR /build/apps/mobile
 RUN bunx expo export --platform web

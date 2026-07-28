@@ -125,6 +125,11 @@ jobs:
         # labels the preview accordingly. Real production builds never set this.
         env:
           EXPO_PUBLIC_COMICAL_DEMO_MODE: '1'
+          # Identify this preview in the in-app About screen (src/lib/build-info.ts), the same way
+          # the iOS/Android workflows identify their binaries — a Pages preview is the one build a
+          # bug report is most likely to be filed against without knowing what it is.
+          EXPO_PUBLIC_COMICAL_BUILD_CHANNEL: web-pages
+          EXPO_PUBLIC_COMICAL_BUILD_COMMIT: ${{ github.sha }}
         run: bunx expo export --platform web
         working-directory: apps/mobile
 

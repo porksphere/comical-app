@@ -4,6 +4,7 @@ import { type ReactNode, useRef } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import {
+  AboutIcon,
   BridgesIcon,
   ChevronRightIcon,
   CustomPagesIcon,
@@ -35,6 +36,7 @@ import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useHovered } from '@/hooks/use-hovered';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
+import { APP_VERSION } from '@/lib/build-info';
 import { PROFILING_ENABLED } from '@/lib/profiling';
 import { hapticImpactLight } from '@/lib/haptics';
 
@@ -142,6 +144,16 @@ export default function SettingsScreen() {
             icon={<DiagnosticsIcon color={theme.textSecondary} size={22} />}
             title="Diagnostics"
             onPress={() => router.push('/diagnostics')}
+          />
+          <Divider />
+          <CategoryRow
+            testID="settings.category.about"
+            icon={<AboutIcon color={theme.textSecondary} size={22} />}
+            title="About"
+            // The version doubles as the row's value, so the answer to "which build am I on?" is on
+            // the landing screen itself — the screen behind it is for the rest of the readout.
+            value={APP_VERSION}
+            onPress={() => router.push('/settings-about')}
           />
           {PROFILING_ENABLED && (
             <>

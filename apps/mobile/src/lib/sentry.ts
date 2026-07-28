@@ -6,9 +6,14 @@ export const SENTRY_DSN =
 
 // Which CI build produced this binary — baked in by each workflow's job-level env (see
 // build-ios-reusable.yml / build-android-reusable.yml): ios-devclient, ios-main, ios-pr,
-// ios-release, ios-e2e, android-main, android-pr, android-release, android-e2e. Unset outside CI
-// (a local `bun run dev`/`bun start` Metro session), so crashes from local iteration are still
-// distinguishable from every shipped build.
+// ios-release, ios-e2e, android-main, android-pr, android-release, android-e2e, web-pages,
+// web-docker. Unset outside CI (a local `bun run dev`/`bun start` Metro session), so crashes from
+// local iteration are still distinguishable from every shipped build.
+//
+// Defined HERE, and re-exported by lib/build-info.ts as `BUILD_CHANNEL` (the About screen shows the
+// same value), rather than the other way round: this module must stay import-free so `bun test` can
+// load sentry.test.ts without dragging in build-info's `react-native` import, whose Flow-typed
+// index.js the runner can't parse.
 export const SENTRY_BUILD_CHANNEL = process.env.EXPO_PUBLIC_COMICAL_BUILD_CHANNEL || 'local-dev';
 
 // The `*-e2e` channels are Maestro's CI builds (e2e.yml), driven by an XCTest/UIAutomator

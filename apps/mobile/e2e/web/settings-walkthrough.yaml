@@ -8,6 +8,9 @@
 #     by "Install a bridge" / "Add registry" / "Add page" instead.
 #   - downloads.select-toggle (SelectToggle) sets accessibilityLabel="Select items" (not selecting)
 #     — select by that text.
+#   - about.share (a SettingsRow) sets accessibilityLabel={label}, and that label is platform-split:
+#     "Copy build info" on web (the clipboard path), "Share build info" on native — so this copy
+#     selects the web wording, not the mobile flow's id.
 #   - top-bar.back sets accessibilityLabel="Go back" — same as every other flow using it.
 # screen-title.settings, settings.select.appearance, settings.toggle.check-for-new-chapters,
 # "Cached images", and diagnostics.share have no competing accessibilityLabel — same selectors as
@@ -110,6 +113,15 @@ url: http://localhost:4000/comical-app
 - takeScreenshot: diagnostics
 - assertVisible:
     id: "diagnostics.share"
+- tapOn:
+    id: "Go back"
+
+# About
+- tapOn:
+    id: "About"
+- takeScreenshot: about
+- assertVisible:
+    id: "Copy build info"
 - tapOn:
     id: "Go back"
 

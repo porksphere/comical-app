@@ -71,6 +71,13 @@ jobs:
           file: Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
+          # Baked into the JS bundle for the in-app About screen — see the Dockerfile's ARG block.
+          # `created` is metadata-action's own build timestamp, so the image label and what the app
+          # reports can't disagree.
+          build-args: |
+            COMICAL_BUILD_CHANNEL=web-docker
+            COMICAL_BUILD_COMMIT=${{ github.sha }}
+            COMICAL_BUILD_TIME=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

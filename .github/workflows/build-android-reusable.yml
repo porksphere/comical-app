@@ -164,6 +164,19 @@ jobs:
         run: bunx expo prebuild --platform android --no-install
         working-directory: apps/mobile
 
+      # Which commit, built when — baked into the JS bundle for the in-app About screen
+      # (src/lib/build-info.ts). No APP_VERSION here, unlike iOS: nothing patches the Android
+      # versionName, so it stays the app.json base and `Constants.expoConfig.version` —
+      # build-info's fallback — already reports exactly what the APK carries. The commit is what
+      # tells two APKs of the same versionName apart.
+      - name: Compute build stamps
+        run: |
+          set -euo pipefail
+          {
+            echo "EXPO_PUBLIC_COMICAL_BUILD_COMMIT=${GITHUB_SHA:0:7}"
+            echo "EXPO_PUBLIC_COMICAL_BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_ENV"
+
       - name: Build release APK
         env:
           # A transient Sentry outage during the release JS-bundle's source-map upload (sentry.gradle
@@ -178,6 +191,8 @@ jobs:
           EXPO_PUBLIC_COMICAL_DEMO_FAST: ${{ inputs.demo_fast && '1' || '' }}
           # See the `channel` input above — every caller must pass one.
           EXPO_PUBLIC_COMICAL_BUILD_CHANNEL: ${{ inputs.channel }}
+          # EXPO_PUBLIC_COMICAL_BUILD_COMMIT / _BUILD_TIME come from the stamps step above
+          # ($GITHUB_ENV), which subsequent steps inherit.
         run: ./gradlew assembleRelease --no-daemon --build-cache
         working-directory: apps/mobile/android
 

@@ -18,6 +18,7 @@ import {
   Eye,
   EyeOff,
   HardDrive,
+  Info,
   Pause,
   RotateCcw,
   TriangleAlert,
@@ -78,6 +79,8 @@ export const TrackersIcon = ({ color, size = 16 }: IconProps) => <Compass color=
 export const RegistriesIcon = ({ color, size = 16 }: IconProps) => <Database color={color} size={size} />;
 export const DeveloperIcon = ({ color, size = 16 }: IconProps) => <Terminal color={color} size={size} />;
 export const DiagnosticsIcon = ({ color, size = 16 }: IconProps) => <Bug color={color} size={size} />;
+// About — the build/version readout at the foot of Settings.
+export const AboutIcon = ({ color, size = 16 }: IconProps) => <Info color={color} size={size} />;
 // Custom pages — the settings entry for composing your own Comical pages.
 export const CustomPagesIcon = ({ color, size = 16 }: IconProps) => <LayoutGrid color={color} size={size} />;
 export const DownloadsIcon = ({ color, size = 16 }: IconProps) => <Download color={color} size={size} />;
