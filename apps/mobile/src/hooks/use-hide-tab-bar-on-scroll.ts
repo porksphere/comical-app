@@ -26,6 +26,8 @@ export function useHideTabBarOnScroll() {
   const lastY = useRef(0);
   const distance = useRef(0);
   const lastProgress = useRef(0);
+  // Whether `lastY` holds a real previous position yet. See `reportOffset`.
+  const primed = useRef(false);
 
   // Quantize to whole-pixel steps of the slide and drop no-op repeats before
   // touching the store. Without this, a fast scroll — or scrolling further while
@@ -46,12 +48,24 @@ export function useHideTabBarOnScroll() {
     useCallback(() => {
       distance.current = 0;
       lastProgress.current = 0;
+      primed.current = false;
       setTabBarProgress(0);
     }, []),
   );
 
   const reportOffset = useCallback(
     (y: number, maxY?: number) => {
+      // The first offset after mount/focus only establishes the baseline — it is a position, not a
+      // gesture. Diffing it against a `lastY` still sitting at 0 reads a list that comes up already
+      // scrolled as one enormous downward flick, which hid the bar completely before the user had
+      // touched anything: on Android CI, relaunching with a warm persisted query cache renders the
+      // whole feed at once, the list settles mid-content, and Browse cold-started with no tab bar at
+      // all (`tab.browse` absent from the view hierarchy — caught by e2e/mobile/swipe-dismiss).
+      if (!primed.current) {
+        primed.current = true;
+        lastY.current = y;
+        return;
+      }
       const prevY = lastY.current;
       lastY.current = y;
       if (y === prevY) return;
