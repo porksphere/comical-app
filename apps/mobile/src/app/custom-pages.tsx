@@ -1,4 +1,3 @@
-import { useRouter } from 'expo-router';
 import { useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -21,6 +20,7 @@ import { addPage, deletePage, renamePage, reorderPages, useCustomPages, type Cus
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticSelection } from '@/lib/haptics';
+import { useRouter } from '@/lib/nav';
 import { testId } from '@/lib/test-id';
 
 const IS_WEB = Platform.OS === 'web';

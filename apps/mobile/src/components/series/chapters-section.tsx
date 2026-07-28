@@ -2,7 +2,6 @@ import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import { useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import {
   Platform,
@@ -64,6 +63,7 @@ import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/
 import { applyReadState, groupChapters, pickVersion, type ChapterGroup } from '@/lib/chapter-order';
 import { setPreferredGroup, usePreferredGroup } from '@/lib/preferred-group';
 import { logDiagnostic } from '@/lib/diagnostics';
+import { useRouter } from '@/lib/nav';
 import { testId } from '@/lib/test-id';
 
 // The series chapters block: tab filter (All / Read / Unread) + sort toggle

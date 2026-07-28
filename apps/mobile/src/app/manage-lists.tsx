@@ -1,4 +1,3 @@
-import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 
@@ -18,6 +17,7 @@ import type { LibraryList } from '@/data/types';
 import { useLibraryLists } from '@/hooks/use-library-lists';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
+import { useRouter } from '@/lib/nav';
 
 const IS_WEB = Platform.OS === 'web';
 

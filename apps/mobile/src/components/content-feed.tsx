@@ -1,5 +1,4 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
-import { useRouter } from 'expo-router';
 import type { ReactElement, RefObject } from 'react';
 import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import type Animated from 'react-native-reanimated';
@@ -16,6 +15,7 @@ import { BottomTabInset, Spacing, TopLevelGutter, topLevelCenterInset } from '@/
 import { contentRowType, type ContentRow, type SeeAllTarget } from '@/data/content-rows';
 import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
 import { useIsLargeScreen } from '@/hooks/use-responsive';
+import { useRouter } from '@/lib/nav';
 
 // Terminal-grid cell inter-row spacing — mirrors series-grid.tsx's CELL_PAD_TOP/BOTTOM so a home
 // terminal row reads at the exact same height as a results-grid cell (and matches the fixed cellHeight).

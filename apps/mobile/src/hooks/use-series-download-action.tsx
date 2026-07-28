@@ -9,12 +9,12 @@
  *   - already downloading / downloaded → opens the Downloads screen focused on this series.
  */
 import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
 
 import { deriveSeriesState } from '@/data/downloads/derive';
 import { enqueueChapter } from '@/data/downloads/engine';
 import { dlGetSeries } from '@/data/api';
 import { queryKeys } from '@/data/queries';
+import { useRouter } from '@/lib/nav';
 
 export interface SeriesDownloadAction {
   label: string;

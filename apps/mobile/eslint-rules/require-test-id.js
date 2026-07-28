@@ -30,6 +30,9 @@ const INTERACTIVE = {
   'react-native': ['Pressable', 'TouchableOpacity', 'TouchableHighlight', 'TouchableWithoutFeedback', 'TextInput', 'Switch'],
   'react-native-gesture-handler': ['TouchableOpacity', 'TouchableHighlight', 'TouchableWithoutFeedback'],
   'expo-router': ['Link'],
+  // The guarded `<Link>` wrapper (see src/lib/nav.tsx) — call sites import it from there, not from
+  // expo-router, so it needs its own entry or the rule would stop seeing every link in the app.
+  '@/lib/nav': ['Link'],
 };
 
 /** @type {import('eslint').Rule.RuleModule} */

@@ -1,4 +1,3 @@
-import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import {
@@ -16,6 +15,7 @@ import type { LibraryListFilter } from '@/data/queries';
 import type { LibraryList } from '@/data/types';
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
+import { useRouter } from '@/lib/nav';
 
 /**
  * The Library tab's top-bar view selector — the bridge-selector shape, reading "Library" (all

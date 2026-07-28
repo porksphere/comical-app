@@ -1,4 +1,3 @@
-import { useRouter } from 'expo-router';
 import { type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,6 +9,7 @@ import { Spacing } from '@/constants/theme';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight } from '@/lib/haptics';
+import { useRouter } from '@/lib/nav';
 
 /**
  * Static top bar (back button + centered title) shared by every pushed detail

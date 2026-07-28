@@ -10,7 +10,6 @@
  * Direct (chapterless) series are a single unit and keep the instant two-state behavior.
  */
 import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
 import { View } from 'react-native';
 
 import { DownloadStateVisual } from '@/components/downloads/download-status-indicator';
@@ -21,6 +20,7 @@ import { enqueueChapter } from '@/data/downloads/engine';
 import { queryKeys } from '@/data/queries';
 import type { Chapter } from '@/data/types';
 import { groupChapters } from '@/lib/chapter-order';
+import { useRouter } from '@/lib/nav';
 
 export function SeriesDownloadButton({
   bridgeId,

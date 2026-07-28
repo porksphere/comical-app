@@ -1,9 +1,9 @@
-import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 
 import { historyQuery } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type HistoryEntry } from '@/data/types';
+import { useRouter } from '@/lib/nav';
 
 /**
  * "Where does Read take you?" — the resume point for one series, and the push that opens it.

@@ -3,6 +3,7 @@ const { defineConfig } = require('eslint/config');
 const expoConfig = require("eslint-config-expo/flat");
 
 const requireTestId = require("./eslint-rules/require-test-id");
+const noUnguardedNav = require("./eslint-rules/no-unguarded-nav");
 
 module.exports = defineConfig([
   expoConfig,
@@ -13,10 +14,13 @@ module.exports = defineConfig([
     // the TS parser + JSX config from eslint-config-expo/flat still apply.
     files: ["src/**/*.{ts,tsx}"],
     plugins: {
-      comical: { rules: { "require-test-id": requireTestId } },
+      comical: { rules: { "require-test-id": requireTestId, "no-unguarded-nav": noUnguardedNav } },
     },
     rules: {
       "comical/require-test-id": "error",
+      // Navigation goes through the double-tap-guarded wrapper in src/lib/nav.tsx, so one slow
+      // screen can't be opened twice by an impatient second tap. See eslint-rules/no-unguarded-nav.js.
+      "comical/no-unguarded-nav": "error",
     },
   },
   {

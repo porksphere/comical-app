@@ -13,7 +13,6 @@
  */
 import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -49,6 +48,7 @@ import { hapticSelection } from '@/lib/haptics';
 import { testId } from '@/lib/test-id';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
+import { useRouter } from '@/lib/nav';
 import type { StorageUsageSeries } from '@comical/downloads';
 
 /**

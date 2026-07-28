@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { MeasuredHeader, OptionList, OverlayHeading, useOverlay } from '@/components/overlay/overlay';
@@ -10,6 +9,7 @@ import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticSelection } from '@/lib/haptics';
+import { useRouter } from '@/lib/nav';
 import { testId } from '@/lib/test-id';
 
 /**

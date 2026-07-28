@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Image, type ImageLoadEventData } from 'expo-image';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
@@ -50,6 +50,7 @@ import { useLibrary } from '@/hooks/use-library';
 import { useStartReading } from '@/hooks/use-start-reading';
 import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
+import { useRouter } from '@/lib/nav';
 
 const LARGE_COVER_WIDTH = 300;
 

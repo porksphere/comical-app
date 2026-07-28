@@ -2,7 +2,6 @@ import type { LegendListRef } from '@legendapp/list/react-native';
 import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'expo-router';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
@@ -62,6 +61,7 @@ import { useRampedHold } from '@/hooks/use-ramped-hold';
 import { useRevealDim } from '@/hooks/use-reveal-dim';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
+import { useRouter } from '@/lib/nav';
 
 // Stable, never-fetched keys for the two grid infinite queries while they're disabled (no active
 // scope) — hooks must be called unconditionally, so a disabled query still needs a queryKey; these

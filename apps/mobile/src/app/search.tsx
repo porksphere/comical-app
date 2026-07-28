@@ -1,6 +1,6 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useAnimatedStyle } from 'react-native-reanimated';
@@ -37,6 +37,7 @@ import { useSlidingBar } from '@/hooks/use-sliding-bar';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight } from '@/lib/haptics';
+import { useRouter } from '@/lib/nav';
 
 // Stable, never-fetched key for the results infinite query while it's disabled (no active search).
 const DISABLED_RESULTS_KEY = ['browseGrid', 'disabled', 'search'] as const;

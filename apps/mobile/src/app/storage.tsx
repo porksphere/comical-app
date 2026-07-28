@@ -15,7 +15,6 @@
  * space occupied, not work in flight.
  */
 import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
@@ -34,6 +33,7 @@ import { getResolvedModeSync } from '@/data/embedded/preference';
 import { queryKeys } from '@/data/queries';
 import { applyImageCacheConfig, cacheBreakdown, cacheDiskUsage, cachePrefs$, clearImageCache, useCachePrefs, type CacheEntry } from '@/data/image-cache';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
+import { useRouter } from '@/lib/nav';
 
 const GB = 1024 * 1024 * 1024;
 /** Max image-cache size, as byte-count strings (0 = unlimited) for the select row. The native cache

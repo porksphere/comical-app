@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
 import type { ComponentType } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
@@ -17,6 +16,7 @@ import { enqueueChapter } from '@/data/downloads/engine';
 import { queryKeys } from '@/data/queries';
 import { useFavorite } from '@/hooks/use-favorite';
 import { useLibrary } from '@/hooks/use-library';
+import { useRouter } from '@/lib/nav';
 import {
   useReaderSettings,
   type PageFit,

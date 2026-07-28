@@ -1,6 +1,6 @@
 import { type QueryClient, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
@@ -27,6 +27,7 @@ import { DIRECT_CHAPTER_ID, type Chapter, type SeriesDetail, type SeriesListResu
 import { firstChapterInReadingOrder, getAdjacentChapter } from '@/lib/chapter-order';
 import { getPreferredGroup, setPreferredGroup } from '@/lib/preferred-group';
 import { useReaderSettings } from '@/hooks/use-reader-settings';
+import { useRouter } from '@/lib/nav';
 
 // Full-screen page reader. Resolves a page-URL list from route params and
 // renders either the horizontal Paged reader or the vertical Webtoon reader,

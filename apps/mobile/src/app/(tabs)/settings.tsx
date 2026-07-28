@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
 import { type ReactNode, useRef } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
@@ -39,6 +38,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { APP_VERSION } from '@/lib/build-info';
 import { PROFILING_ENABLED } from '@/lib/profiling';
 import { hapticImpactLight } from '@/lib/haptics';
+import { useRouter } from '@/lib/nav';
 
 /**
  * The Settings landing screen is a table of contents, nothing more: every category owns its own

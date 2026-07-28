@@ -1,6 +1,6 @@
 import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
-import { usePathname, useRouter } from 'expo-router';
+import { usePathname } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
@@ -65,6 +65,7 @@ import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
 import { useStartReading } from '@/hooks/use-start-reading';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
+import { useRouter } from '@/lib/nav';
 import { testId } from '@/lib/test-id';
 import {
   closeSeriesCardMenu,
