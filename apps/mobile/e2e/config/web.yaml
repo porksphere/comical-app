@@ -9,7 +9,10 @@
 # See ../README.md for the full authoring/running workflow.
 
 executionOrder:
-  continueOnFailure: false
+  continueOnFailure: true # TEMPORARY (diagnostic run) — restore to false once the suite is green.
+  # Fail-fast normally, so a failure names the FIRST thing that broke rather than a cascade of
+  # flows tripping over each other's leftover state. Flipped while the suite is being repaired:
+  # at 30min a run, one failure per cycle is too slow a way to find out what else is stale.
   flowsOrder:
     - smoke
     - browse-to-reader
