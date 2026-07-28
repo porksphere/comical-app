@@ -3,9 +3,9 @@ import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useKeyboardLift } from '@/components/reader/use-keyboard-lift';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
+import { useKeyboardLift } from '@/hooks/use-keyboard-lift';
 
 /** Bottom-centre "X / Y" pill; tapping reveals a numeric jump input + Go. */
 export function ProgressPill({

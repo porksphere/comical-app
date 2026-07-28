@@ -78,12 +78,16 @@ appId: com.porksphere.comical
     id: "list-picker.new"
 # No explicit tapOn list-picker.new-name here (same reasoning as reader-navigation.yaml's
 # progress-pill jump): the row's TextInput is autoFocus (list-picker.tsx), so tapping
-# list-picker.new above already focuses it and opens the keyboard. A follow-up tap is not just
-# redundant but actively fails here: by the time it runs, the keyboard has already covered enough
-# of the card (MAX_LIST_HEIGHT: 320, no keyboard-avoidance wrapper on this popup, unlike
-# AddRegistryForm's useKeyboardAvoidingInput above) that the input drops out of the accessibility
-# hierarchy entirely — confirmed via a captured debug hierarchy dump showing list-picker.new-name
-# absent. inputText targets whatever already has focus, so it doesn't need the element found.
+# list-picker.new above already focuses it and opens the keyboard, and inputText targets whatever
+# already has focus. A follow-up tap would just be redundant.
+#
+# It used to be worse than redundant: this popup is its own bottom-anchored card, not an overlay
+# sheet, so it never got the sheet-only useKeyboardAvoidingInput treatment AddRegistryForm uses
+# above, and the keyboard covered the very input it opens for (MAX_LIST_HEIGHT: 320) until the
+# field dropped out of the accessibility hierarchy. That eventually failed for real rather than
+# just blocking a tap — the input blurred two characters in, and list-picker's submit-on-blur
+# committed the partial name, creating and filing a list called "Ba". The card now rides above the
+# keyboard (useKeyboardLift), so the input stays visible and on-screen the whole time it's typed.
 #
 # "Backlog", not "Favorites"/"Reading" -- mock.ts pre-seeds both of those as default lists
 # (mockLists' list-reading/list-favorites), so either name would already be visible before this

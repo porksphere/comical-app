@@ -36,6 +36,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import type { LibrarySnapshot } from '@/data/api';
 import { useEntryLists } from '@/hooks/use-entry-lists';
+import { useKeyboardLift } from '@/hooks/use-keyboard-lift';
 import { useLibraryLists } from '@/hooks/use-library-lists';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight } from '@/lib/haptics';
@@ -162,10 +163,18 @@ function HostPopup({ req }: { req: ListPickerRequest }) {
   const backdropTintStyle = useAnimatedStyle(() => ({
     opacity: interpolate(progress.value, [0, 1], [0, scrimOpacity]),
   }));
+  // Lift the whole card clear of the keyboard while the new-list name is being typed. This popup is
+  // its own bottom-anchored card rather than an overlay sheet, so it never got the sheet-only
+  // `useKeyboardAvoidingInput` treatment the other forms use — and the keyboard covered the very
+  // input it opens for. e2e/mobile/registries-lists documented that gap as a workaround (the input
+  // drops out of the accessibility hierarchy once covered, so the flow can't tap it) before it
+  // turned into an actual failure: the field blurred two characters into "Backlog", `onBlur` below
+  // committed the partial name, and a list called "Ba" was created and filed instead.
+  const keyboardLift = useKeyboardLift(creating);
   const cardStyle = useAnimatedStyle(() => ({
     opacity: progress.value,
     transform: [
-      { translateY: interpolate(progress.value, [0, 1], [16, 0]) },
+      { translateY: interpolate(progress.value, [0, 1], [16, 0]) - keyboardLift.value },
       { scale: interpolate(progress.value, [0, 1], [0.94, 1]) },
     ],
   }));
