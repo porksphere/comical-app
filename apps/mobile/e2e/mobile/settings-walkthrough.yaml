@@ -25,7 +25,8 @@
 #   - diagnostics:      diagnostics.share            (Pressable, plain text child, no accessibilityLabel)
 #   - about:            about.share                  (the export row at the foot of settings-about.tsx;
 #     the info rows above it are built from `value &&` filters, so every one of them can vanish in
-#     some build — this row is the only thing on the screen that always renders)
+#     some build — this row is the only thing on the screen that always renders. Being at the FOOT,
+#     it's also the only landing element that needs scrolling to; see that step's own comment.)
 appId: com.porksphere.comical
 ---
 - launchApp
@@ -116,12 +117,20 @@ appId: com.porksphere.comical
 - tapOn:
     id: "top-bar.back"
 
-# About
+# About. The only category whose landing element is BELOW the fold: about.share sits at the foot of
+# three sections of info rows (settings-about.tsx), which on a phone-sized screen is off-screen on
+# arrival — a plain `assertVisible` fails there even though the row rendered. settings-about.tsx's
+# ScrollView is an ordinary one (not a LegendList-owned scroller like the series screen's chapter
+# list), so `scrollUntilVisible` drives it fine on native. Screenshot first, so `about.png` still
+# captures the top of the screen rather than wherever the scroll ended.
 - tapOn:
     id: "settings.category.about"
 - takeScreenshot: about
-- assertVisible:
-    id: "about.share"
+- scrollUntilVisible:
+    element:
+      id: "about.share"
+    direction: DOWN
+    timeout: 20000
 - tapOn:
     id: "top-bar.back"
 

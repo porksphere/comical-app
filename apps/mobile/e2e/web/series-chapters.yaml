@@ -15,10 +15,10 @@
 #
 # series.tsx's chapter list is a LegendList-owned scroller (see ../README.md / memory on LegendList
 # web quirks), and empirically (confirmed via a scratch debug flow) Maestro-web's `scroll`/
-# `scrollUntilVisible` are no-ops against it — neither the tab/sort controls nor the chapter rows
-# ever need scrolling to reach anyway (all visible on launch on the Maestro-web viewport), except
-# `series.chapters.expand-middle`, which sits one row below the fold. That one step uses an explicit
-# `swipe` instead, which was confirmed (same debug flow) to scroll this screen correctly.
+# `scrollUntilVisible` are no-ops against it. So every step that has to reach the chapters section
+# scrolls with an explicit `swipe` instead, which was confirmed (same debug flow) to scroll this
+# screen correctly. There are two: one to bring the section on screen at all, and a second before
+# `series.chapters.expand-middle`, which sits further down the list again.
 url: http://localhost:4000/comical-app
 ---
 - launchApp
@@ -36,6 +36,19 @@ url: http://localhost:4000/comical-app
 - tapOn:
     id: "series.action.library"
 
+# Nothing in the chapters section is on screen on arrival — not the tab/sort controls either, which
+# an earlier version of this flow assumed. On the ~945x917 viewport Maestro's Chrome gives it, the
+# desktop two-column layout puts the cover + action buttons and the metadata block in the first
+# screenful (confirmed against a CI run's own hierarchy dump: the deepest thing above the fold is
+# `series.action.favorite` at y≈908, and the chapters section renders nothing at all until the page
+# scrolls). Same swipe browse-to-reader.yaml already uses to reach `series.chapter.*`, and for the
+# same reason — `scrollUntilVisible` is a no-op against this LegendList-owned scroller (see the
+# header comment).
+- swipe:
+    start: 50%, 70%
+    end: 50%, 40%
+    duration: 600
+
 # Tab filter
 - tapOn:
     id: "Unread"
@@ -48,8 +61,8 @@ url: http://localhost:4000/comical-app
 - tapOn:
     id: "Newest first"
 
-# Expand the collapsed middle — one row below the fold; scrollUntilVisible is a no-op against
-# this LegendList-owned scroller on web (see the header comment), so swipe explicitly instead.
+# Expand the collapsed middle — below the rows the first swipe brought into view, so scroll once
+# more (same reason as that one: scrollUntilVisible is a no-op against this scroller).
 - swipe:
     start: 50%, 70%
     end: 50%, 40%
