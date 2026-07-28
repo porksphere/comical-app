@@ -763,6 +763,13 @@ export interface AvailableBridge {
   registryUrl: string;
   installedVersion: string | null;
   updateAvailable: boolean;
+  /**
+   * Whether this build can actually load the entry's `contractVersion` — the registry refuses to
+   * install it otherwise, and withholds `updateAvailable`. Optional because a host-server older than
+   * that guard doesn't send it, and a missing value must not read as "incompatible" and disable
+   * every install; treat only an explicit `false` as a refusal.
+   */
+  compatible?: boolean;
 }
 
 /** Mirrors `RegistryManager.browseTrackers()`'s element shape (`AvailableTracker`). */
@@ -771,6 +778,8 @@ export interface AvailableTracker {
   registryUrl: string;
   installedVersion: string | null;
   updateAvailable: boolean;
+  /** See `AvailableBridge.compatible`. */
+  compatible?: boolean;
 }
 
 /** Mirrors `RegistryManager.install()`/`update()`/`installTracker()`/`updateTracker()`'s

@@ -1,4 +1,4 @@
-import { parseBridgeId } from '@comical/contract';
+import { CONTRACT_VERSION, parseBridgeId } from '@comical/contract';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
@@ -143,6 +143,7 @@ function BridgeRow({ bridge, url, onDone }: { bridge: AvailableBridge; url: stri
         description={entrySubtitle(bridge.entry.id, bridge.entry.version, bridge.entry.description)}
         right={<InstallButton state={bridge} onInstall={install} onUpdate={update} busy={busy} testID={testId('registry-browse.bridge', bridge.entry.id)} />}
       />
+      <ContractNote state={bridge} contractVersion={bridge.entry.contractVersion} />
       {error && (
         <ThemedText type="small" themeColor="danger" style={styles.rowError}>
           {error}
@@ -181,6 +182,7 @@ function TrackerRow({ tracker, url, onDone }: { tracker: AvailableTracker; url: 
         description={entrySubtitle(tracker.entry.id, tracker.entry.version, tracker.entry.description)}
         right={<InstallButton state={tracker} onInstall={install} onUpdate={update} busy={busy} testID={testId('registry-browse.tracker', tracker.entry.id)} />}
       />
+      <ContractNote state={tracker} contractVersion={tracker.entry.contractVersion} />
       {error && (
         <ThemedText type="small" themeColor="danger" style={styles.rowError}>
           {error}
@@ -190,6 +192,16 @@ function TrackerRow({ tracker, url, onDone }: { tracker: AvailableTracker; url: 
   );
 }
 
+/** What the registry told us about an entry, as far as the action affordance cares. */
+type EntryState = { installedVersion: string | null; updateAvailable: boolean; compatible?: boolean };
+
+/**
+ * An entry this build can't load. Only an explicit `false` counts — a host-server predating the
+ * compatibility guard omits the field entirely, and treating that as incompatible would grey out
+ * every install against an older server.
+ */
+const isIncompatible = (state: EntryState): boolean => state.compatible === false;
+
 function InstallButton({
   state,
   onInstall,
@@ -197,7 +209,7 @@ function InstallButton({
   busy,
   testID,
 }: {
-  state: { installedVersion: string | null; updateAvailable: boolean };
+  state: EntryState;
   onInstall: () => void;
   onUpdate: () => void;
   busy: boolean;
@@ -213,10 +225,22 @@ function InstallButton({
       </Pressable>
     );
   }
+  // Checked before the incompatible case on purpose: what's installed is a DIFFERENT, working
+  // version — it's only the registry's current one that can't be loaded. Calling the row
+  // "Unsupported" would read as "the thing you're using is broken".
   if (state.installedVersion) {
     return (
       <ThemedText type="small" themeColor="textSecondary">
         Installed
+      </ThemedText>
+    );
+  }
+  if (isIncompatible(state)) {
+    // Deliberately not a disabled-looking button: there is no action, and offering one that always
+    // throws is how this looked before the registry started refusing it up front.
+    return (
+      <ThemedText testID={`${testID}.unsupported`} type="small" themeColor="textSecondary">
+        Unsupported
       </ThemedText>
     );
   }
@@ -226,6 +250,22 @@ function InstallButton({
         <ThemedText type="smallBold">Install</ThemedText>
       </View>
     </Pressable>
+  );
+}
+
+/**
+ * Why a row offers no Install/Update. Both contract versions are shown rather than a "the app is
+ * too old"/"the bridge is too old" verdict: which side is behind is obvious from the two numbers,
+ * and the app has no business re-deriving a judgement the registry already made.
+ */
+function ContractNote({ state, contractVersion }: { state: EntryState; contractVersion: string }) {
+  if (!isIncompatible(state)) return null;
+  return (
+    <ThemedText type="small" themeColor="textSecondary" style={styles.rowNote}>
+      {state.installedVersion
+        ? `Newer version needs contract ${contractVersion} · this app has ${CONTRACT_VERSION}`
+        : `Needs contract ${contractVersion} · this app has ${CONTRACT_VERSION}`}
+    </ThemedText>
   );
 }
 
@@ -245,6 +285,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
   },
   rowError: {
+    paddingHorizontal: Spacing.three,
+    paddingBottom: Spacing.two,
+  },
+  // Same inset as rowError, separate name: this one is a standing explanation, not a failed action.
+  rowNote: {
     paddingHorizontal: Spacing.three,
     paddingBottom: Spacing.two,
   },
