@@ -338,6 +338,18 @@
       unnoticed) — reported as reading like an unwanted boxed-in outline, particularly along
       the bottom. Changed to `borderLeftWidth`/`borderRightWidth` only (dropped top/bottom),
       same color.
+- [ ] Build a committed **fixture-registry e2e harness**, so registry states no real registry can
+      produce become testable. The immediate gap: the contract-**incompatible** entry rendering in
+      `registry-browse.tsx` ("Unsupported" instead of Install, plus a "Needs contract X · this app
+      has Y" note) has no automated coverage — the repo convention is a Maestro flow per screen,
+      and this state is unreachable from one, because every real bridge/tracker declares contract
+      `1.0.0`, exactly what the runtime supports. It was verified once by hand against a throwaway
+      `Bun.serve` registry. Commit that fixture instead (an `index.json` with a same-version pair
+      of each kind — one at `contractVersion: "1.0.0"`, one at `"2.0.0"` — plus a stub bundle),
+      start it alongside the web dev server in the e2e run, and add a flow that adds it as a
+      registry and asserts the `registry-browse.{bridge,tracker}.<id>.unsupported` / `.install`
+      testIDs. The same fixture then unlocks the other registry states real data can't reach: an
+      entry with a pending update, a discontinued entry, and an id colliding across two registries.
 
 ## Publish `@comical/*` packages instead of tsconfig-paths/local-stub hacks
 
