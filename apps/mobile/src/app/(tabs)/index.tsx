@@ -624,7 +624,14 @@ export default function BrowseScreen() {
   const { reportOffset } = useHideTabBarOnScroll();
   useAnimatedReaction(
     () => scrollY.value,
-    (y) => runOnJS(reportOffset)(y, maxScrollY.value),
+    (y, prevY) => {
+      // Skip the mapper's registration fire (`prevY` null, no movement) rather than forwarding it.
+      // `reportOffset` treats the first value it sees as its baseline, so handing it this one spent
+      // that baseline before the list had reported anything — and the real offset then arrived as a
+      // gesture, hiding the tab bar on a screen nobody had scrolled yet.
+      if (prevY === null) return;
+      runOnJS(reportOffset)(y, maxScrollY.value);
+    },
     [reportOffset],
   );
   // The bar's bottom hairline fades in only once the list is scrolled: at the very top the bar reads

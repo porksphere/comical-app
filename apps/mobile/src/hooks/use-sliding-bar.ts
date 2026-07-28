@@ -68,14 +68,33 @@ export function useSlidingBar(
   const scrollY = useSharedValue(0);
   const maxScrollY = useSharedValue(0);
   const offset = useSharedValue(0);
+  // Whether `scrollY` has reported a real position since the last mount/reset. See the reaction.
+  const primed = useSharedValue(false);
 
   useAnimatedReaction(
     () => scrollY.value,
     (y, prevY) => {
+      // Reanimated runs a mapper ONCE when it registers, before any scrolling — `prevY` is null only
+      // for that fire. It carries no movement, so it must neither slide the bar nor count as the
+      // baseline below.
+      if (prevY === null) return;
+      // The first real offset after mount/reset is a POSITION, not a gesture: a list that comes up
+      // already scrolled (restored offset, or a warm query cache rendering the whole feed at once)
+      // reports it in one step, and diffing it against a `scrollY` still sitting at 0 reads as one
+      // enormous downward flick that parks the bar off-screen before the user has touched anything.
+      // `slideStep`'s MAX_GESTURE_STEP only rejects that above 240px — a list settling ~150px down
+      // slid this ~82px bar fully away and left it there, which is how Browse cold-started with no
+      // chrome (`tab.browse` absent from the hierarchy — e2e/mobile/{search,swipe-dismiss}).
+      // Swallowing the first report re-baselines at whatever the list is ACTUALLY showing, so the
+      // distance can't be accumulated at all, at any magnitude.
+      if (!primed.value) {
+        primed.set(true);
+        return;
+      }
       // The scroll→slide rule (top pin, bottom-bounce guard, clamped accumulation) is the shared
       // `slideStep` — the tab bar's hook runs the same function, so the two bars' motion can't
       // drift. It works in hidden-px (positive); this bar's offset is a translateY, hence the sign.
-      offset.set(-slideStep(-offset.value, y, prevY ?? y, maxScrollY.value, barHeight));
+      offset.set(-slideStep(-offset.value, y, prevY, maxScrollY.value, barHeight));
     },
     [barHeight],
   );
@@ -122,7 +141,15 @@ export function useSlidingBar(
   useEffect(() => {
     // A scope change snaps the bar back to visible + the list to the top. The list instance persists
     // across scope changes (keepPreviousData, no remount), so it won't return to the top on its own.
-    scrollY.set(0);
+    //
+    // Deliberately NOT `scrollY.set(0)`: that fabricated a position the list wasn't necessarily at
+    // yet. It fired the reaction above with a value no scroll produced, which burned the re-baseline
+    // and left the list's real offset to arrive as a delta from a fake 0 — the exact jump the
+    // baseline exists to absorb. `scrollY` now only ever holds something the list actually reported,
+    // so the two can't disagree; un-priming is what makes the next real report re-baseline instead,
+    // whether the list honours `scrollToOffset` (it reports 0 itself) or ignores it (it keeps
+    // reporting where it truly is).
+    primed.set(false);
     offset.set(0);
     maxScrollY.set(0);
     listRef?.current?.scrollToOffset({ offset: 0, animated: false });
