@@ -16,6 +16,18 @@ import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useTheme } from '@/hooks/use-theme';
 import { testId } from '@/lib/test-id';
 
+/**
+ * A capability id as a person would read it: `"related-series"` → `"Related series"`.
+ *
+ * Deliberately a transform rather than a lookup table — the contract's capability list grows, and a
+ * bridge built against a newer contract can advertise one this build has never heard of. A table
+ * would render those as a raw kebab id (or, worse, drop them); the transform degrades gracefully.
+ */
+const capabilityLabel = (id: string): string => {
+  const words = id.replace(/-/g, ' ');
+  return words.charAt(0).toUpperCase() + words.slice(1);
+};
+
 /** Capabilities + self-reported facts from `GET /bridges/{id}`'s `info` — everything the bridge
  *  declares about itself (version, contract version, languages, content rating, rate limit),
  *  matching comical-web's `buildBridgeMetadata` in `comical-web/client/app.ts`. */
@@ -27,35 +39,41 @@ export function BridgeMetaInfo({ info }: { info: ApiBridgeInfo }) {
   const capabilities = info.capabilities ?? [];
   const languages = info.languages ?? [];
   return (
-    <SettingsSection title="About this bridge">
+    <>
+      {/* Untitled: this is the top of the bridge's own settings screen, whose TopBar already carries
+          the bridge's name — a heading restating it just pushed the facts down a row. */}
+      <SettingsSection>
+        <SettingsRow label="Version" right={<ThemedText type="small">{info.version}</ThemedText>} />
+        <SettingsRow label="Contract" right={<ThemedText type="small">{info.contractVersion}</ThemedText>} />
+        <SettingsRow label="Languages" right={<ThemedText type="small">{languages.join(', ')}</ThemedText>} />
+        <SettingsRow label="Content" right={<ThemedText type="small">{info.nsfw ? 'NSFW' : 'SFW'}</ThemedText>} />
+        {info.rateLimit && (info.rateLimit.maxConcurrent !== undefined || info.rateLimit.minIntervalMs !== undefined) && (
+          <SettingsRow
+            label="Rate limit"
+            right={
+              <ThemedText type="small">
+                {[
+                  info.rateLimit.maxConcurrent !== undefined ? `${info.rateLimit.maxConcurrent} concurrent` : null,
+                  info.rateLimit.minIntervalMs !== undefined ? `${info.rateLimit.minIntervalMs}ms interval` : null,
+                ]
+                  .filter(Boolean)
+                  .join(', ')}
+              </ThemedText>
+            }
+          />
+        )}
+      </SettingsSection>
+      {/* Its own section rather than a hand-rolled label above a chip row INSIDE the facts list. That
+          label was `small`/sentence-case where every other heading on the screen is the section
+          title's `smallBold`/uppercase, and its chips — a section child, so no row gutter escape and
+          no row height — wrapped straight onto the divider beneath them. As a section it inherits
+          both, and being last it has no divider to crowd. */}
       {capabilities.length > 0 && (
-        <View style={styles.metaBlock}>
-          <ThemedText type="small" themeColor="textSecondary">
-            Capabilities
-          </ThemedText>
-          <ChipRow labels={capabilities} />
-        </View>
+        <SettingsSection title="Capabilities">
+          <ChipRow labels={capabilities.map(capabilityLabel)} accent />
+        </SettingsSection>
       )}
-      <SettingsRow label="Version" right={<ThemedText type="small">{info.version}</ThemedText>} />
-      <SettingsRow label="Contract" right={<ThemedText type="small">{info.contractVersion}</ThemedText>} />
-      <SettingsRow label="Languages" right={<ThemedText type="small">{languages.join(', ')}</ThemedText>} />
-      <SettingsRow label="Content" right={<ThemedText type="small">{info.nsfw ? 'NSFW' : 'SFW'}</ThemedText>} />
-      {info.rateLimit && (info.rateLimit.maxConcurrent !== undefined || info.rateLimit.minIntervalMs !== undefined) && (
-        <SettingsRow
-          label="Rate limit"
-          right={
-            <ThemedText type="small">
-              {[
-                info.rateLimit.maxConcurrent !== undefined ? `${info.rateLimit.maxConcurrent} concurrent` : null,
-                info.rateLimit.minIntervalMs !== undefined ? `${info.rateLimit.minIntervalMs}ms interval` : null,
-              ]
-                .filter(Boolean)
-                .join(', ')}
-            </ThemedText>
-          }
-        />
-      )}
-    </SettingsSection>
+    </>
   );
 }
 
@@ -223,9 +241,6 @@ export function ComicalHomeToggle({ bridgeId }: { bridgeId: string }) {
 }
 
 const styles = StyleSheet.create({
-  metaBlock: {
-    gap: Spacing.one,
-  },
   tagRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',

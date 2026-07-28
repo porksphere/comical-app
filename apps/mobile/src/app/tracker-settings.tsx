@@ -105,7 +105,10 @@ export default function TrackerSettingsScreen() {
                 This tracker has no configurable settings.
               </ThemedText>
             ) : (
-              <SettingsSection title="Configuration">
+              // Untitled: the TopBar already names the tracker, and unlike a bridge (whose fields sit
+              // below its metadata and update banner) these fields ARE the whole screen — so the
+              // heading labelled nothing it wasn't already next to.
+              <SettingsSection>
                 {data.settings.map((d) => (
                   <SettingFieldEditor
                     key={d.key}
