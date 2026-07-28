@@ -30,6 +30,17 @@ const DOUBLE_TAP_SCALE = 2.5;
 // (how far apart the two taps may land); a lone tap gets a tighter drift cap.
 const DOUBLE_TAP_MAX_DIST = 40;
 const SINGLE_TAP_MAX_DIST = 16;
+// How long the finger may stay down and still count as a page-turn tap. The single tap used to
+// inherit the double-tap's 300ms, which is the wrong bound for it: 300ms limits the interval
+// BETWEEN two taps, whereas here it silently rejects one deliberate, unhurried press-and-release.
+// Nothing else on the page claims a long press, so the only outcome a tight bound buys is "nothing
+// happens" — strictly worse than turning the page. `SINGLE_TAP_MAX_DIST` is what actually keeps a
+// drag (a page swipe, a content-pan) from reading as a tap; duration was never doing that work.
+// This also unblocks Maestro on iOS, whose XCUITest-synthesized touch is held far longer than a
+// human tap: e2e/mobile/reader-navigation is the first flow to TAP a zone rather than just assert
+// one exists, and it failed on iOS at `reader.control.next` — chrome still up, page still 1/26 —
+// while Android (tapped via `adb shell input tap`, ~50ms) sailed through the same step.
+const SINGLE_TAP_MAX_DURATION = 800;
 
 function clamp(value: number, min: number, max: number) {
   'worklet';
@@ -207,7 +218,7 @@ export function useZoomable({
     ? Gesture.Tap()
         .enabled(!zoomed && singleTapEnabled)
         .numberOfTaps(1)
-        .maxDuration(300)
+        .maxDuration(SINGLE_TAP_MAX_DURATION)
         .maxDistance(SINGLE_TAP_MAX_DIST)
         .onEnd((e) => {
           runOnJS(onSingleTap)(e.x);

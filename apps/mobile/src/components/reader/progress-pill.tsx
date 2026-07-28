@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { Keyboard, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useKeyboardLift } from '@/components/reader/use-keyboard-lift';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 
@@ -26,63 +27,14 @@ export function ProgressPill({
   const insets = useSafeAreaInsets();
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState('');
-  const keyboardHeight = useSharedValue(0);
-
-  // Native: raise the pill above the on-screen keyboard while editing. iOS fires
-  // keyboardWill*  with a duration/easing synced to the keyboard's own animation;
-  // Android only reliably fires keyboardDid* (abrupt, no duration), so its rise
-  // just uses a synthetic ease instead — expected platform difference, not a bug.
-  //
-  // Listener lifetime is NOT gated on `editing`: tapping "Go" (or blurring)
-  // flips `editing` to false immediately, but the real keyboard dismiss (and
-  // its keyboardWill/DidHide event) only arrives after its own animation
-  // finishes, shortly *after* that. Gating registration on `editing` tore the
-  // listener down before that event could arrive, so the pill never came back
-  // down. Keyboard state is independent of our own `editing` state — just keep
-  // listening for the component's whole lifetime instead.
-  useEffect(() => {
-    if (Platform.OS === 'web') return;
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const subShow = Keyboard.addListener(showEvent, (e) => {
-      keyboardHeight.set(withTiming(Math.max(0, e.endCoordinates.height - insets.bottom), {
-        duration: e.duration || 220,
-      }));
-    });
-    const subHide = Keyboard.addListener(hideEvent, (e) => {
-      keyboardHeight.set(withTiming(0, { duration: e.duration || 220 }));
-    });
-    return () => {
-      subShow.remove();
-      subHide.remove();
-    };
-  }, [insets.bottom, keyboardHeight]);
-
-  // Web: adapts the visualViewport-resize signal search-field.tsx already uses
-  // (there, to force a blur on keyboard-close) — here, into a raise-above-keyboard
-  // offset instead. `scroll` also fires on some mobile browsers when the keyboard
-  // shifts the viewport's offsetTop rather than resizing it.
-  useEffect(() => {
-    if (Platform.OS !== 'web' || !editing) return;
-    const vv = window.visualViewport;
-    if (!vv) return;
-    const baseline = window.innerHeight;
-    const onResize = () => {
-      keyboardHeight.set(withTiming(Math.max(0, baseline - vv.height - vv.offsetTop), { duration: 150 }));
-    };
-    onResize();
-    vv.addEventListener('resize', onResize);
-    vv.addEventListener('scroll', onResize);
-    return () => {
-      vv.removeEventListener('resize', onResize);
-      vv.removeEventListener('scroll', onResize);
-      keyboardHeight.set(withTiming(0, { duration: 150 }));
-    };
-  }, [editing, keyboardHeight]);
+  // Raise the pill above the on-screen keyboard while editing, so the page number stays readable
+  // as it's typed. Both platform halves live in use-keyboard-lift — see there for why the previous
+  // `Keyboard.addListener` version silently did nothing on Android.
+  const keyboardLift = useKeyboardLift(editing);
 
   const style = useAnimatedStyle(() => ({
     opacity: withTiming(visible ? 1 : 0, { duration: 200 }),
-    transform: [{ translateY: -keyboardHeight.value }],
+    transform: [{ translateY: -keyboardLift.value }],
   }));
 
   const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
