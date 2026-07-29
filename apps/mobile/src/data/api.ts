@@ -1119,6 +1119,64 @@ export function libraryUsage(signal?: AbortSignal): Promise<{ diskBytes: number 
   return fetchJsonOptional('/library/usage', signal);
 }
 
+// ─── Importing a bridge's favorites into the library ─────────────────────────
+
+/** One of a bridge's favorites, classified against the library by the host. */
+export interface FavoritesImportCandidate {
+  seriesId: string;
+  title: string;
+  thumbnailUrl?: string;
+  /** `in-library`: already added FROM THIS BRIDGE, nothing to do. `duplicate`: the same title is
+   *  already in the library from ANOTHER bridge, so importing adds a second source. `new`: neither. */
+  status: 'new' | 'in-library' | 'duplicate';
+  /** Present for `duplicate` — every library entry the title matched (it can match more than one). */
+  matches?: { key: string; bridgeId: string; seriesId: string; title: string }[];
+}
+
+export interface FavoritesImportPreview {
+  items: FavoritesImportCandidate[];
+  /** True when the host's page cap stopped the walk, so this isn't the whole favorites list. */
+  truncated: boolean;
+}
+
+/** One series to import. `linkTo` is the entry key (`bridgeId:seriesId`) of an existing library
+ *  entry this is another source for — set it to record the cross-bridge link. */
+export interface FavoritesImportItem {
+  seriesId: string;
+  title: string;
+  thumbnailUrl?: string;
+  linkTo?: string;
+}
+
+export interface FavoritesImportResult {
+  imported: number;
+  skipped: number;
+  linked: number;
+}
+
+/** GET /library/import/bridges/{id}/favorites/preview → every favorite classified against the
+ *  library, for a confirmation dialog. Read-only: nothing is written until the POST below. */
+export function getFavoritesImportPreview(
+  bridgeId: string,
+  signal?: AbortSignal,
+): Promise<FavoritesImportPreview> {
+  return fetchJson(`/library/import/bridges/${encodeURIComponent(bridgeId)}/favorites/preview`, signal);
+}
+
+/** POST /library/import/bridges/{id}/favorites → import the confirmed selection. Passing `items`
+ *  imports exactly those (favorites are not re-fetched); omitting it imports everything. */
+export function importBridgeFavorites(
+  bridgeId: string,
+  items?: FavoritesImportItem[],
+  signal?: AbortSignal,
+): Promise<FavoritesImportResult> {
+  return fetchPost(
+    `/library/import/bridges/${encodeURIComponent(bridgeId)}/favorites`,
+    items ? { items } : {},
+    signal,
+  );
+}
+
 /** Result of a library scan — the counters the UI/notifications care about. */
 export interface ApiSyncResult {
   updated: number;

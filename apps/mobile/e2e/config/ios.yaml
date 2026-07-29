@@ -25,3 +25,4 @@ executionOrder:
     - trackers-uninstall
     - downloads
     - registries-lists
+    - favorites-import

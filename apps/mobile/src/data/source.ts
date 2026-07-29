@@ -91,6 +91,16 @@ export interface DataSource {
   ): Promise<LibraryItem[] | null>;
   isInLibrary(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<boolean>;
 
+  /** A bridge's favorites classified against the library, for the import confirmation dialog.
+   *  Read-only — nothing is added until `importBridgeFavorites`. */
+  getFavoritesImportPreview(bridgeId: string, signal?: AbortSignal): Promise<api.FavoritesImportPreview>;
+  /** Import the confirmed selection into the library. Omitting `items` imports everything. */
+  importBridgeFavorites(
+    bridgeId: string,
+    items?: api.FavoritesImportItem[],
+    signal?: AbortSignal,
+  ): Promise<api.FavoritesImportResult>;
+
   // ─── Custom lists ───────────────────────────────────────────────────────────
   /** The user's custom lists (ascending order); `[]` when no library store is mounted. */
   getLists(signal?: AbortSignal): Promise<LibraryList[]>;
@@ -473,6 +483,8 @@ const realDataSource: DataSource = {
   },
   getEntryLists: (bridgeId, seriesId, signal) => api.getEntryLists(bridgeId, seriesId, signal),
   isInLibrary: (bridgeId, seriesId, signal) => api.isInLibrary(bridgeId, seriesId, signal),
+  getFavoritesImportPreview: (bridgeId, signal) => api.getFavoritesImportPreview(bridgeId, signal),
+  importBridgeFavorites: (bridgeId, items, signal) => api.importBridgeFavorites(bridgeId, items, signal),
   async addToLibrary(bridgeId, seriesId, snap, signal) {
     await api.addLibraryEntry(bridgeId, seriesId, snap, signal);
   },
@@ -840,6 +852,8 @@ const mockDataSource: DataSource = {
   setEntryLists: (bridgeId, seriesId, listIds) => mock.mockSetEntryLists(bridgeId, seriesId, listIds),
   getEntryLists: (bridgeId, seriesId) => mock.mockGetEntryLists(bridgeId, seriesId),
   isInLibrary: (bridgeId, seriesId) => mock.mockIsInLibrary(bridgeId, seriesId),
+  getFavoritesImportPreview: (bridgeId) => mock.mockGetFavoritesImportPreview(bridgeId),
+  importBridgeFavorites: (bridgeId, items) => mock.mockImportBridgeFavorites(bridgeId, items),
   addToLibrary: (bridgeId, seriesId, snap) => mock.mockAddToLibrary(bridgeId, seriesId, snap),
   removeFromLibrary: (bridgeId, seriesId) => mock.mockRemoveFromLibrary(bridgeId, seriesId),
   recordChapterProgress: (bridgeId, seriesId, chapterId, update) =>

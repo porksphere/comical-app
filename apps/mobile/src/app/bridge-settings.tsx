@@ -9,8 +9,9 @@ import {
   ComicalHomeToggle,
   TagExclusionsControl,
 } from '@/components/settings/bridge-extras';
+import { openFavoritesImport } from '@/components/favorites-import';
 import { SettingFieldEditor } from '@/components/settings/setting-field';
-import { SettingsSection } from '@/components/settings/settings-row';
+import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
@@ -186,6 +187,22 @@ export default function BridgeSettingsScreen() {
                     onChange={(v) => setField(d.key, v)}
                   />
                 ))}
+              </SettingsSection>
+            )}
+
+            {/* Gated on the CAPABILITY alone, not on whether credentials are set: every favorites
+                bridge declares its login as OPTIONAL settings, so a logged-out one still looks
+                configured (see use-favorites-available.ts). The dialog's own error — the bridge's
+                "favorites require a username + password" — is the better signal, and it names the
+                fields sitting right above this row. */}
+            {data.info.capabilities?.includes('favorites') && (
+              <SettingsSection title="Favorites">
+                <SettingsRow
+                  testID="settings.bridge.import-favorites"
+                  label="Import favorites into library"
+                  description="Pick which of this account's favorites to add"
+                  onPress={() => openFavoritesImport({ bridgeId: bridgeId!, bridgeName: data.info.name })}
+                />
               </SettingsSection>
             )}
 

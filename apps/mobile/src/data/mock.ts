@@ -32,6 +32,9 @@ import type {
   BridgePrefs,
   BridgeSummary,
   BridgeSettingsInfo,
+  FavoritesImportItem,
+  FavoritesImportPreview,
+  FavoritesImportResult,
   TrackerSummary,
   TrackerSettingsInfo,
   TrackerLinkSyncResult,
@@ -770,6 +773,28 @@ function seedLibrary(): Map<string, MockLibEntry> {
       listIds,
     });
   }
+  // Two extra entries that overlap the favorites set (`mockFavorites` above), so the favorites-import
+  // dialog has something to classify as other than "new": `fav-1` is already here from panelfox
+  // itself, and `fav-2`'s title is already here under a DIFFERENT id on another bridge — the
+  // cross-bridge duplicate case. Without these the mock preview would be an undifferentiated list.
+  const alreadyHere = entry('fav-1', hash('fav-1'));
+  m.set(libKey('panelfox', 'fav-1'), {
+    bridgeId: 'panelfox',
+    seriesId: 'fav-1',
+    title: alreadyHere.title,
+    thumbnailUrl: alreadyHere.cover,
+    unread: 0,
+    listIds: [],
+  });
+  const otherSource = entry('fav-2', hash('fav-2'));
+  m.set(libKey('nightshelf', 'ns-771'), {
+    bridgeId: 'nightshelf',
+    seriesId: 'ns-771',
+    title: otherSource.title,
+    thumbnailUrl: cover('ns-771'),
+    unread: 0,
+    listIds: [],
+  });
   return m;
 }
 
@@ -861,6 +886,76 @@ export async function mockAddToLibrary(
 
 export async function mockRemoveFromLibrary(bridgeId: string, seriesId: string): Promise<void> {
   mockLibrary.delete(libKey(bridgeId, seriesId));
+}
+
+// ─── Importing a bridge's favorites into the library ─────────────────────────
+// Mirrors what the host's runtime does (`previewBridgeFavoritesImport`): walk the favorites, classify
+// each against the library. The title fold below is the mock's own small copy of the host's
+// `normalizeTitle` — enough for ASCII mock titles, and kept here so mock.ts stays dependency-free.
+
+const foldTitle = (t: string) => t.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+export async function mockGetFavoritesImportPreview(bridgeId: string): Promise<FavoritesImportPreview> {
+  await delay(400);
+  const byTitle = new Map<string, MockLibEntry[]>();
+  for (const e of mockLibrary.values()) {
+    const k = foldTitle(e.title);
+    if (!k) continue;
+    const bucket = byTitle.get(k);
+    if (bucket) bucket.push(e);
+    else byTitle.set(k, [e]);
+  }
+
+  const items = [...mockFavorites].map((id) => {
+    const fav = entry(id, hash(id));
+    if (mockLibrary.has(libKey(bridgeId, id))) {
+      return { seriesId: id, title: fav.title, thumbnailUrl: fav.cover, status: 'in-library' as const };
+    }
+    // Only other bridges count: a same-bridge title twin is a different series, not another source.
+    const matches = (byTitle.get(foldTitle(fav.title)) ?? []).filter((e) => e.bridgeId !== bridgeId);
+    return {
+      seriesId: id,
+      title: fav.title,
+      thumbnailUrl: fav.cover,
+      status: matches.length > 0 ? ('duplicate' as const) : ('new' as const),
+      ...(matches.length > 0 && {
+        matches: matches.map((e) => ({
+          key: libKey(e.bridgeId, e.seriesId),
+          bridgeId: e.bridgeId,
+          seriesId: e.seriesId,
+          title: e.title,
+        })),
+      }),
+    };
+  });
+  return { items, truncated: false };
+}
+
+export async function mockImportBridgeFavorites(
+  bridgeId: string,
+  items?: FavoritesImportItem[],
+): Promise<FavoritesImportResult> {
+  await delay(500);
+  const selection: FavoritesImportItem[] =
+    items ?? [...mockFavorites].map((id) => ({ seriesId: id, title: entry(id, hash(id)).title }));
+
+  let imported = 0;
+  let skipped = 0;
+  let linked = 0;
+  for (const item of selection) {
+    if (mockLibrary.has(libKey(bridgeId, item.seriesId))) {
+      skipped++;
+      continue;
+    }
+    await mockAddToLibrary(bridgeId, item.seriesId, {
+      title: item.title,
+      ...(item.thumbnailUrl !== undefined && { thumbnailUrl: item.thumbnailUrl }),
+    });
+    imported++;
+    // The mock library has no series-group model, so a confirmed link is only counted, not stored.
+    if (item.linkTo && mockLibrary.has(item.linkTo)) linked++;
+  }
+  return { imported, skipped, linked };
 }
 
 // ─── Custom lists (in-memory, dev/demo only) ─────────────────────────────────

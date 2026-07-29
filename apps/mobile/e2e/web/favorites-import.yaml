@@ -1,0 +1,60 @@
+# Web copy of ../mobile/favorites-import.yaml, kept in sync by hand. Same journey and the same
+# reasoning for every step — see that file's header for why Panelfox, why select-all instead of a
+# hardcoded default count, and what the three row kinds are.
+#
+# The card is safe to drive on web: like list-picker.tsx (see ../README.md's "Not every overlay is an
+# OverlaySheet" note) favorites-import.tsx renders its own floating BlurView card with no
+# Gesture.Pan/GestureDetector anywhere — only a plain Pressable backdrop — so the sheet-dismiss
+# misfire that scopes registries.add/manage-lists.add to mobile doesn't apply here.
+#
+# Selectors hitting the web-only aria-label quirk (see ../README.md):
+#   - tab bar: "Settings", not tab.settings (same as smoke.yaml / settings-walkthrough.yaml).
+#   - settings.category.bridges sets accessibilityLabel={title} — select by "Bridges".
+#   - the bridge row and the import row are both SettingsRows, which set accessibilityLabel={label}
+#     — select by "Panelfox" and "Import favorites into library" instead of their testIDs.
+# favorites-import.row.<id> / .selectAll / .confirm set accessibilityRole but no accessibilityLabel
+# (confirmed against favorites-import.tsx), so those ids resolve here exactly as on mobile. The
+# toast is matched by `text:` in both copies — its Pressable's aria-label is the whole message.
+url: http://localhost:4000/comical-app
+---
+- launchApp
+
+- tapOn:
+    id: "Settings"
+- tapOn:
+    id: "Bridges"
+- tapOn:
+    id: "Panelfox"
+
+- scrollUntilVisible:
+    element:
+      id: "Import favorites into library"
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: "Import favorites into library"
+
+# The mock preview resolves after a deliberate 400ms delay (mock.ts), so wait rather than assert.
+- extendedWaitUntil:
+    visible:
+      id: "favorites-import.row.fav-1"
+    timeout: 10000
+- assertVisible:
+    id: "favorites-import.row.fav-2"
+- takeScreenshot: favorites-import
+
+# "All" checks every selectable row — including the cross-bridge duplicate, which is what makes the
+# import ALSO link it as a second source for the series already in the library.
+- tapOn:
+    id: "favorites-import.selectAll"
+- tapOn:
+    id: "favorites-import.confirm"
+
+# fav-2..fav-6 land in the library; fav-1 was already there and never entered the selection.
+- extendedWaitUntil:
+    visible:
+      text: "5 series imported.*"
+    timeout: 10000
+# The card dismisses itself on success.
+- assertNotVisible:
+    id: "favorites-import.confirm"

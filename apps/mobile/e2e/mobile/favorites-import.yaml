@@ -1,0 +1,70 @@
+# Import a bridge's account favorites into the library: Settings -> Bridges -> Panelfox ->
+# "Import favorites into library" -> the confirmation card -> Import -> the result toast.
+#
+# Why Panelfox specifically: it's in mock.ts's MOCK_FAVORITES_BRIDGES (so its settings screen renders
+# the Favorites section at all — the row is gated on the `favorites` capability) AND it's the bridge
+# the two deliberately-overlapping seeded library entries point at, so the card shows all three row
+# kinds rather than an undifferentiated list of "new":
+#   - fav-1 -> `in-library` (mock library already holds panelfox:fav-1), inert and unchecked.
+#   - fav-2 -> `duplicate`  (the same title is in the library from Nightshelf), unchecked by default.
+#   - fav-3..fav-6 -> `new`, checked by default.
+# Inkwell would NOT work here: MOCK_LOGGED_OUT_BRIDGES marks it as missing a required credential.
+#
+# The flow taps "All" rather than toggling one row and asserting a count: mock titles come from a
+# hashed pool, so which of fav-3..fav-6 happen to collide with a seeded library title (and therefore
+# classify as `duplicate` instead of `new`) is not something this flow should depend on. Select-all
+# makes the *selection* deterministic — all 5 selectable rows, fav-1 excluded because it's inert —
+# so `imported` is always 5 while `linked` is free to vary; hence the trailing `.*` on the toast.
+#
+# Selectors (confirmed against source):
+#   - settings.row.panelfox — bridges.tsx renders mock bridges (source: 'local', not 'registry') as a
+#     plain SettingsRow, which defaults its testID to testId('settings.row', label).
+#   - The card's own controls (favorites-import.*) set accessibilityRole but NO accessibilityLabel,
+#     so the same ids resolve on web too — except the toast, which is asserted by `text:` in both
+#     copies (its Pressable's aria-label is the message, and an id:-regex would have to escape the
+#     parenthesised "(N linked as another source)" tail).
+#   - The import row sits below six setting fields + the meta block, so it needs scrollUntilVisible
+#     on a phone-sized screen — same as settings-walkthrough.yaml's About landing element.
+appId: com.porksphere.comical
+---
+- launchApp
+
+- tapOn:
+    id: "tab.settings"
+- tapOn:
+    id: "settings.category.bridges"
+- tapOn:
+    id: "settings.row.panelfox"
+
+- scrollUntilVisible:
+    element:
+      id: "settings.bridge.import-favorites"
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: "settings.bridge.import-favorites"
+
+# The mock preview resolves after a deliberate 400ms delay (mock.ts), so wait rather than assert.
+- extendedWaitUntil:
+    visible:
+      id: "favorites-import.row.fav-1"
+    timeout: 10000
+- assertVisible:
+    id: "favorites-import.row.fav-2"
+- takeScreenshot: favorites-import
+
+# "All" checks every selectable row — including the cross-bridge duplicate, which is what makes the
+# import ALSO link it as a second source for the series already in the library.
+- tapOn:
+    id: "favorites-import.selectAll"
+- tapOn:
+    id: "favorites-import.confirm"
+
+# fav-2..fav-6 land in the library; fav-1 was already there and never entered the selection.
+- extendedWaitUntil:
+    visible:
+      text: "5 series imported.*"
+    timeout: 10000
+# The card dismisses itself on success.
+- assertNotVisible:
+    id: "favorites-import.confirm"

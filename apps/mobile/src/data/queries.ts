@@ -13,7 +13,7 @@
 import { keepPreviousData, type UseQueryOptions } from '@tanstack/react-query';
 
 import { STALE_TIME_MS } from './query-client';
-import type { LibrarySort } from './api';
+import type { FavoritesImportPreview, LibrarySort } from './api';
 import { isRailLayout, railKindFor, type DataSource, type QueryOpts } from './source';
 import type {
   ActivityEntry,
@@ -91,6 +91,10 @@ export const queryKeys = {
     ['trackerLinks', mock, bridgeId, seriesId] as const,
   inLibrary: (mock: boolean, bridgeId: string, seriesId: string) =>
     ['inLibrary', mock, bridgeId, seriesId] as const,
+  /** A bridge's favorites classified against the library, for the import dialog. Invalidated after
+   *  an import so re-opening the dialog shows what just landed as "already in library". */
+  favoritesImportPreview: (mock: boolean, bridgeId: string) =>
+    ['favoritesImportPreview', mock, bridgeId] as const,
   history: (mock: boolean) => ['history', mock] as const,
   activity: (mock: boolean) => ['activity', mock] as const,
   /** The tab/app badge count — unread items across the whole feed. It only drops when a chapter
@@ -344,6 +348,24 @@ export function isFavoriteQuery(
     queryKey: queryKeys.isFavorite(mock, bridgeId, seriesId),
     queryFn: ({ signal }) => ds.isFavorite(bridgeId, seriesId, signal),
     enabled: !!bridgeId && !!seriesId,
+  };
+}
+
+/** `useQuery` options for a bridge's favorites-import preview. Always refetched on open (`staleTime: 0`):
+ *  the point of the dialog is to show the library as it is right now, and it's a per-open user action,
+ *  not a background read. */
+export function favoritesImportPreviewQuery(
+  ds: DataSource,
+  mock: boolean,
+  bridgeId: string,
+): UseQueryOptions<FavoritesImportPreview, Error> {
+  return {
+    queryKey: queryKeys.favoritesImportPreview(mock, bridgeId),
+    queryFn: ({ signal }) => ds.getFavoritesImportPreview(bridgeId, signal),
+    enabled: !!bridgeId,
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
   };
 }
 
