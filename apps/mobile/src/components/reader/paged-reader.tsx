@@ -61,9 +61,11 @@ type Props = {
    *  a shared value rather than a callback keeps the whole drag on the UI thread:
    *  the scroll follows the finger even while JS is busy re-windowing the list. */
   scrubTarget?: SharedValue<number>;
-  /** True for the duration of that drag. Suppresses the per-page `setActiveIndex`
-   *  re-render, which would otherwise re-render every mounted cell for each page
-   *  swept past — the single biggest source of stutter in a long scrub. */
+  /** True for the duration of that drag. Suppresses the per-page JS work
+   *  viewability would otherwise kick off — a re-render of every mounted cell
+   *  plus one of the reader screen, for each page swept past. That work is the
+   *  single biggest source of stutter in a long scrub, and mid-drag nothing
+   *  reads its results. */
   scrubbing?: boolean;
 };
 
@@ -165,17 +167,24 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // anchor needs no `data` closure either.
   const anchorRef = useRef<{ key: string; index: number } | null>(null);
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
-  // Mid-scrub, `setActiveIndex` is skipped: it re-renders every mounted cell, and
-  // a drag across a chapter would do that once per page swept past — for a state
-  // only the zoom reset reads, which nothing can be doing while a finger is on the
-  // slider. The release re-syncs it (viewability fires again on the settle).
+  // Mid-scrub, both JS-side effects are skipped and only the anchor is kept up to
+  // date. `setActiveIndex` re-renders every mounted cell, and reporting the
+  // visible page re-renders the whole reader screen (its counter and stitched-
+  // segment state hang off it) — a drag across a chapter would do each once per
+  // page swept past, on the thread the list needs to render those pages. Neither
+  // is worth anything during the drag: the navigator shows the scrub's own
+  // position (it knows where the finger is sooner and more exactly than
+  // viewability can), and the zoom state nothing can be touching mid-drag. The
+  // release re-syncs both — viewability fires again on the settle, and the
+  // reader's seek names the landing page directly.
   const scrubbingRef = useRef(false);
   scrubbingRef.current = !!scrubbing;
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     const first = viewableItems[0];
     if (first?.index == null) return;
-    if (!scrubbingRef.current) setActiveIndex(first.index);
     anchorRef.current = { key: (first.item as ReaderPageItem).key, index: first.index };
+    if (scrubbingRef.current) return;
+    setActiveIndex(first.index);
     reportVisibleRef.current(first.index);
   }).current;
 

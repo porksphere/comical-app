@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SkipBackIcon, SkipForwardIcon } from '@/components/icons/reader-icons';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
-import { createTickHaptic, hapticSelection } from '@/lib/haptics';
+import { hapticSelection } from '@/lib/haptics';
 
 /**
  * The reader's bottom bar (NATIVE only — web keeps the tap-to-jump progress pill):
@@ -45,21 +45,37 @@ import { createTickHaptic, hapticSelection } from '@/lib/haptics';
  * the webtoon reader, which has nothing to interpolate between, falls back to the
  * `onScrub` callback.
  *
- * Haptics tick once per page boundary crossed, through the same delaying queue
- * the swipeable rows use: a fast scrub crosses several boundaries within a frame
- * or two, and taps fired back-to-back get coalesced (or swallowed) by the Taptic
- * engine, so they're spaced out rather than fired blind.
+ * Haptics tick once per page boundary crossed, rate-limited ON THE UI THREAD and
+ * by DROPPING, not delaying. The swipeable rows' `createTickHaptic` queue spaces
+ * bunched taps out over time, which is right for a short row swipe but wrong
+ * here: a fast scrub crosses dozens of boundaries, and a queue that holds each
+ * one back turns into a buzz still playing out seconds after the finger stopped.
+ * A dropped tick is invisible; a late one reads as lag.
  */
 
 const THUMB = 14;
 const R = THUMB / 2;
 const TRACK_H = 4;
+/** Minimum gap between scrub ticks. Anything crossed inside the window is
+ *  dropped, so what you feel is always the page you're on right now. */
+const TICK_MS = 45;
+
+/** `Date.now()` on the UI thread, hoisted out of the component: the gesture body
+ *  is built inside a `useMemo`, and the React Compiler lint can't tell a worklet
+ *  that runs later on another thread from render code, so an inline clock read
+ *  there reads as an impure call during render. */
+function nowMs() {
+  'worklet';
+  return Date.now();
+}
 /** Height of the pill AND of the chapter-skip buttons — the bar and the arrows
  *  either side of it are one continuous row of the same weight. */
 const BAR_H = 40;
 
 type Props = {
-  /** 0-based page within the chapter, and how many that chapter has. */
+  /** 0-based page within the chapter, and how many that chapter has. Only what's
+   *  displayed when the user ISN'T dragging — a scrub shows its own position
+   *  instead, which it knows before the reader does. */
   page: number;
   total: number;
   /** Reading right-to-left — flips the slider and what the skip buttons do. */
@@ -117,6 +133,13 @@ export function ChapterNavigator({
   const scrubbing = useSharedValue(false);
   const lastPage = useSharedValue(-1);
   const lastSent = useSharedValue(-1);
+  const lastTickAt = useSharedValue(0);
+  // What the pill shows WHILE dragging. The `page` prop can't do this job: it's
+  // driven by the pager's viewability callbacks, which only report cells that
+  // actually rendered — during a fast scrub over a short render window that's a
+  // fraction of the pages swept past, arriving late. The scrub knows the answer
+  // already, so it says it directly and hands the number back on release.
+  const [scrubPage, setScrubPage] = useState<number | null>(null);
 
   // Follow the reader while the user isn't the one driving. A short timing (not a
   // hard set) keeps the thumb from stuttering as a fast flick reports pages.
@@ -130,11 +153,20 @@ export function ChapterNavigator({
   // gesture of the same type isn't reattached — GestureDetector's `needsToReattach`
   // only fires when the number/type of gestures changes — it just updates the
   // handlers in place, so the in-flight scrub carries on with the fresh callbacks.
-  const [tickHaptic] = useState(() => createTickHaptic(hapticSelection));
   const emitScrub = useCallback((position: number) => onScrub(position), [onScrub]);
-  const emitSeek = useCallback((index: number) => onSeek(index), [onSeek]);
+  const emitSeek = useCallback((index: number) => {
+    // Clearing the display in the same commit as the settle: the seek is what
+    // makes `page` correct, so the pill never falls back to a stale number.
+    setScrubPage(null);
+    onSeek(index);
+  }, [onSeek]);
   const emitHold = useCallback((held: boolean) => onScrubbingChange?.(held), [onScrubbingChange]);
-  const emitTick = useCallback(() => tickHaptic(), [tickHaptic]);
+  // One hop per tick carries BOTH the buzz and the number, so they can't drift
+  // apart and the JS thread is asked for at most one wake-up per TICK_MS.
+  const emitTick = useCallback((index: number) => {
+    hapticSelection();
+    setScrubPage(index);
+  }, []);
 
   const pan = useMemo(() => {
     const apply = (x: number) => {
@@ -155,8 +187,15 @@ export function ChapterNavigator({
       }
       const index = Math.round(position);
       if (index === lastPage.value) return;
+      const now = nowMs();
+      // Inside the window: drop this crossing, and DON'T record it — the next
+      // touch event (a frame or so later) tries again and reports wherever the
+      // finger is by then, so the number and the buzz always describe the
+      // present rather than a queued-up past.
+      if (now - lastTickAt.value < TICK_MS) return;
       lastPage.set(index);
-      runOnJS(emitTick)();
+      lastTickAt.set(now);
+      runOnJS(emitTick)(index);
     };
     return (
       Gesture.Pan()
@@ -166,6 +205,7 @@ export function ChapterNavigator({
         .onBegin(() => {
           scrubbing.set(true);
           lastPage.set(Math.round(frac.value * steps));
+          lastTickAt.set(0); // the first crossing of a new drag always ticks
           runOnJS(emitHold)(true);
         })
         .onStart((e) => apply(e.x))
@@ -183,7 +223,22 @@ export function ChapterNavigator({
           runOnJS(emitHold)(false);
         })
     );
-  }, [rtl, steps, offset, scrubTarget, len, frac, lastPage, lastSent, scrubbing, emitScrub, emitSeek, emitHold, emitTick]);
+  }, [
+    rtl,
+    steps,
+    offset,
+    scrubTarget,
+    len,
+    frac,
+    lastPage,
+    lastSent,
+    lastTickAt,
+    scrubbing,
+    emitScrub,
+    emitSeek,
+    emitHold,
+    emitTick,
+  ]);
 
   const onTrackLayout = useCallback(
     (e: LayoutChangeEvent) => {
@@ -221,7 +276,7 @@ export function ChapterNavigator({
         <SkipButton {...left} Icon={SkipBackIcon} />
         {total > 1 ? (
           <View style={[styles.pill, rtl && styles.pillRtl]}>
-            <NumSlot value={page + 1} widest={total} />
+            <NumSlot value={(scrubPage ?? page) + 1} widest={total} />
             <GestureDetector gesture={pan}>
               <View testID="reader.navigator.slider" style={styles.track} onLayout={onTrackLayout}>
                 <View style={styles.bar} />

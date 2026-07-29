@@ -652,9 +652,8 @@ export default function ReaderScreen() {
   // interpolate), so it keeps the JS callback below.
   //
   // Nothing is committed by either — no `setCurrent`, no progress write; the
-  // reader's own viewability reporting updates the page counter as the pages go
-  // past, and the release settles onto a real page through `goTo`. The position
-  // is clamped to this chapter, so a scrub can never run off either end into the
+  // release settles onto a real page through `seekTo` below. The position is
+  // clamped to this chapter, so a scrub can never run off either end into the
   // stitched neighbours.
   const scrubFlat = useSharedValue(-1);
   const [scrubbing, setScrubbing] = useState(false);
@@ -672,6 +671,20 @@ export default function ReaderScreen() {
       else webtoonRef.current?.goToPage(Math.round(clamped), false);
     },
     [pages, settings.mode, prefixLen],
+  );
+  // Where a scrub lands. `goTo` alone isn't enough for the stitched pager: the
+  // counter reads `visibleSeg`, which the pager reports from viewability — and
+  // that's suppressed for the duration of the drag (see PagedReader's
+  // `scrubbing`), so it would still be describing the page the drag started on
+  // until the scroll settled and viewability fired again. Naming the landing
+  // page here makes the whole chrome correct in the same commit that releases
+  // the navigator's own scrub display, so nothing flickers back.
+  const seekTo = useCallback(
+    (index: number) => {
+      goTo(index, true);
+      if (!IS_WEB && settings.mode === 'paged') handleFlatVisiblePage(prefixLen + index);
+    },
+    [goTo, settings.mode, prefixLen, handleFlatVisiblePage],
   );
   const atLastPage = useCallback(() => !!pages && currentRef.current >= pages.length - 1, [pages]);
   const atFirstPage = useCallback(() => currentRef.current <= 0, []);
@@ -950,7 +963,7 @@ export default function ReaderScreen() {
                 // falls back to `onScrub` above.
                 scrubTarget={settings.mode === 'paged' ? scrubFlat : undefined}
                 offset={prefixLen}
-                onSeek={(i) => goTo(i, true)}
+                onSeek={seekTo}
                 onScrubbingChange={handleScrubbing}
               />
             )}
