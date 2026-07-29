@@ -16,11 +16,10 @@ import {
   type NativeSyntheticEvent,
   type ViewToken,
 } from 'react-native';
-import Animated, {
+import {
   scrollTo,
   useAnimatedReaction,
   useAnimatedRef,
-  useAnimatedStyle,
   type SharedValue,
 } from 'react-native-reanimated';
 
@@ -264,7 +263,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
 
   return (
     <View style={{ width, height }}>
-      <PageBackdrop width={width} height={height} target={scrubTarget} />
+      <View style={styles.backdrop} pointerEvents="none" />
       <FlatList
         ref={listRef}
         // Sized explicitly: it used to BE this component's root and take the size
@@ -318,42 +317,16 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   );
 });
 
-/**
- * What's behind the list. A virtualized list draws NOTHING where it hasn't mounted a cell, so a
- * scrub that outruns virtualization used to expose the reader's own near-black surface — the "black
- * pages". This paints the same placeholder surface a mounted-but-unloaded page shows, so outrunning
- * the list looks like pages that haven't drawn yet rather than like the reader falling over.
- *
- * Two panels, offset by the FRACTIONAL part of the scrub position, so page boundaries slide past
- * under the finger: without them a long scrub over unmounted cells is a motionless slab, which
- * reads as a freeze — the very thing being fixed. Two is enough at any offset, since the shift is
- * always within one page width. It runs off the same shared value the scroll does, so it stays with
- * the finger no matter how busy the JS thread is, and sits still (a plain surface) the rest of the
- * time — a fling isn't driven by `scrubTarget`, and doesn't outrun the list far enough to need this.
- */
-function PageBackdrop({ width, height, target }: { width: number; height: number; target?: SharedValue<number> }) {
-  const style = useAnimatedStyle(() => {
-    const t = target?.value ?? -1;
-    return { transform: [{ translateX: t < 0 ? 0 : -(t - Math.floor(t)) * width }] };
-  });
-  return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      <Animated.View style={[styles.backdropRow, style]}>
-        <View style={[styles.backdropPage, { width, height }]} />
-        <View style={[styles.backdropPage, { width, height }]} />
-      </Animated.View>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
-  backdropRow: {
-    flexDirection: 'row',
-  },
-  backdropPage: {
-    backgroundColor: PAGE_SURFACE,
-    // The seam between two pages, in the reader's own surface colour.
-    borderRightWidth: 2,
-    borderRightColor: '#0f0f0f',
-  },
+  // What's behind the list. A virtualized list draws NOTHING where it hasn't mounted a cell, so a
+  // scrub that outruns virtualization used to expose the reader's own near-black surface — the
+  // "black pages". Painting the same surface a mounted-but-unloaded page shows makes outrunning the
+  // list look like pages that haven't drawn yet rather than like the reader falling over.
+  //
+  // It's a plain static fill. This started out as two panels sliding by the fractional part of the
+  // scrub position, so page seams moved under the finger instead of presenting a motionless slab —
+  // but the moving seam was the only part of it you could see, and it read as lag: it tracks the
+  // scrub target, which is AHEAD of where the list has actually caught up to. A featureless surface
+  // has nothing to be out of sync with.
+  backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: PAGE_SURFACE },
 });
