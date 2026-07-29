@@ -14,7 +14,7 @@ import { SettingsRow } from '@/components/settings/settings-row';
 import { SettingsGutter, Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
-import { hapticImpactLight, hapticImpactMedium } from '@/lib/haptics';
+import { createTickHaptic, hapticImpactLight, hapticImpactMedium } from '@/lib/haptics';
 import { claimOpenRow, releaseOpenRow } from '@/lib/swipe-row-registry';
 import { testId } from '@/lib/test-id';
 
@@ -52,28 +52,6 @@ const DETENT_RESIST = 0.35;
  *  the arm, and releasing while armed fires the action — the iOS Mail swipe-through. Multi-action
  *  rows never do this (which action would it mean?). */
 const FULL_SWIPE_COMMIT = 0.6;
-
-/** Minimum gap between detent haptics. A very fast swipe crosses several midpoints within a few
- *  milliseconds; fired back-to-back the Taptic engine coalesces them into one mushy buzz. We SPACE
- *  them out to at least this far apart (delaying, not dropping) so each detent is felt as its own tap. */
-const MIN_HAPTIC_MS = 70;
-
-/** A per-row detent haptic that guarantees `MIN_HAPTIC_MS` between taps by DELAYING bunched ones onto
- *  the next free slot — so a fast swipe's near-simultaneous crossings still land as distinct taps
- *  rather than one buzz. Deferral is capped so frantic back-and-forth can't queue taps far into the
- *  future. Module-level (not in the component) so the `Date.now()` read stays out of render — the
- *  compiler flags impure calls there. Created once per row via a lazy `useState`. */
-function createDetentHaptic() {
-  let nextAt = 0; // earliest time (ms) the next tap may fire
-  return () => {
-    const now = Date.now();
-    const at = Math.max(now, Math.min(nextAt, now + MIN_HAPTIC_MS * 3));
-    nextAt = at + MIN_HAPTIC_MS;
-    const delay = at - now;
-    if (delay <= 0) hapticImpactLight();
-    else setTimeout(hapticImpactLight, delay);
-  };
-}
 
 // Constant for the process, so the platform branch is stable and each platform only ever renders one
 // of the two implementations below — their hooks never interleave.
@@ -261,11 +239,11 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
   // Stable per-row identity for `swipe-row-registry`. Lazy state, not a ref, for the same reason.
   const [token] = useState(() => ({}));
   // Detent haptic (one per row). Every midpoint crossing calls it via runOnJS; it spaces bunched taps
-  // out to MIN_HAPTIC_MS apart so a fast swipe lands as distinct taps rather than one buzz.
-  const [tickHaptic] = useState(createDetentHaptic);
+  // out to MIN_TICK_MS apart so a fast swipe lands as distinct taps rather than one buzz.
+  const [tickHaptic] = useState(() => createTickHaptic(hapticImpactLight));
   // The all-or-nothing settle (see onEnd) sweeps the detents the finger didn't reach — play their
   // ticks through the SAME queue, so the auto-open clicks through the remaining pills exactly as a
-  // full drag would have (MIN_HAPTIC_MS apart, not one mushy buzz).
+  // full drag would have (MIN_TICK_MS apart, not one mushy buzz).
   function tickMany(n: number) {
     for (let i = 0; i < n; i++) tickHaptic();
   }
@@ -457,7 +435,7 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
       if (e.velocityX < -500) idx = openIdx;
       else if (e.velocityX > 500) idx = 0;
       // The settle crosses every detent between the captured one and the rest — their ticks still
-      // play (queued MIN_HAPTIC_MS apart), so the sprung-open row clicks through its pills the same
+      // play (queued MIN_TICK_MS apart), so the sprung-open row clicks through its pills the same
       // way the finger dragging all the way would have.
       const swept = Math.abs(idx - captured.value);
       if (swept > 0) runOnJS(tickMany)(swept);

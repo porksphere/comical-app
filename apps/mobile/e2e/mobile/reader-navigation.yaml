@@ -1,5 +1,5 @@
 # Extends past browse-to-reader.yaml's "reader opened" assertion: paged prev/next tap zones, the
-# bottom navigator's page slider, and the settings sheet's reading-direction switch.
+# bottom navigator's page scrubber, and the settings sheet's reading-direction switch.
 #
 # Mobile-only: the tap-zone testIDs (reader.control.*) are NATIVE-only markers
 # (components/reader/zoomable-page.tsx's TapZones — "web has its own gesture pager in
@@ -76,11 +76,11 @@ appId: com.porksphere.comical
     text: "^Page 1 of \\d+$"
 
 # Bottom navigator: both chapter-skip buttons are present (they're DISABLED, never hidden, at the
-# ends of a series — chapter-navigator.tsx), and dragging the slider seeks. A Maestro element swipe
-# starts at the track's CENTRE, and the slider seeks on touch-down (minDistance(0), Material
-# behaviour), so the page has already left 1 before the drag even moves — which is all this needs
-# to assert. An exact landing page isn't assertable: it depends on the track's pixel width and on
-# how far Maestro's swipe travels.
+# ends of a series — chapter-navigator.tsx), and dragging the slider scrubs. A Maestro element swipe
+# starts at the track's CENTRE, and the scrub follows the finger from touch-down (minDistance(0),
+# Material behaviour) rather than waiting for the release, so the page has already left 1 before the
+# drag even moves — which is all this needs to assert. An exact landing page isn't assertable: it
+# depends on the track's pixel width and on how far Maestro's swipe travels.
 - assertVisible:
     id: "reader.navigator.prev-chapter"
 - assertVisible:

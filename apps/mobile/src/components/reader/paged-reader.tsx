@@ -18,7 +18,14 @@ import {
 import { ZoomablePage } from '@/components/reader/zoomable-page';
 import type { PageFit } from '@/hooks/use-reader-settings';
 
-export type PagedReaderHandle = { goToPage: (logical: number, animated?: boolean) => void };
+export type PagedReaderHandle = {
+  goToPage: (logical: number, animated?: boolean) => void;
+  /** Continuous seek: `logical` may be FRACTIONAL (1.5 = halfway between pages 2 and 3), and the
+   *  move is never animated. This is what the bottom scrubber drives — dragging scrolls the reader
+   *  through the chapter's whole pixel space 1:1 with the finger, rather than stepping page to page,
+   *  so a settle to the nearest page only happens on release (a plain `goToPage`). */
+  scrubTo: (logical: number) => void;
+};
 
 /** One pager cell. The pager itself is chapter-agnostic — the reader screen may
  *  stitch SEVERAL chapters' pages into one `pages` array (seamless
@@ -113,9 +120,17 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         const clamped = Math.max(0, Math.min(n - 1, logical));
         listRef.current?.scrollToIndex({ index: toPhysical(clamped), animated });
       },
+      // Every cell is exactly one viewport wide (getItemLayout), so a fractional
+      // index is just an offset — `pagingEnabled` only snaps at the end of a real
+      // drag/fling, never against a programmatic offset, so the list happily rests
+      // between pages while the finger is down.
+      scrubTo(logical: number) {
+        const clamped = Math.max(0, Math.min(n - 1, logical));
+        listRef.current?.scrollToOffset({ offset: toPhysical(clamped) * width, animated: false });
+      },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [n, rtl],
+    [n, rtl, width],
   );
 
   const onMomentumEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {

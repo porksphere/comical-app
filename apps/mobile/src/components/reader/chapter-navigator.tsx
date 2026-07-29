@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -7,14 +7,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SkipBackIcon, SkipForwardIcon } from '@/components/icons/reader-icons';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
-import { hapticSelection } from '@/lib/haptics';
+import { createTickHaptic, hapticSelection } from '@/lib/haptics';
 
 /**
  * The reader's bottom bar (NATIVE only — web keeps the tap-to-jump progress pill):
- * a page slider flanked by chapter-skip buttons, modelled on Mihon's
- * `ChapterNavigator` (`presentation/reader/components/ChapterNavigator.kt`).
+ * a page scrubber flanked by chapter-skip buttons, modelled on Mihon's
+ * `ChapterNavigator` (`presentation/reader/components/ChapterNavigator.kt`) for
+ * its layout and on Suwatte for how the drag itself feels.
  *
- * Behaviour taken from there:
+ * Behaviour taken from Mihon:
  *   - The outer row stays LTR whatever the reading direction, so the ⏮ button is
  *     always on the left and ⏭ always on the right. What flips under RTL is which
  *     CHAPTER each one goes to (left = next chapter when reading right-to-left)
@@ -22,19 +23,28 @@ import { hapticSelection } from '@/lib/haptics';
  *     `LocalLayoutDirection` for the row and another for the slider pill.
  *   - The buttons are DISABLED (dimmed), never hidden, when there's no chapter
  *     that way, so the slider never shifts around as you move through a series.
- *   - The slider is stepped: one stop per page, seeking live as you drag with a
- *     selection tick at each page — not just on release.
  *   - Below two pages there's nothing to slide, so the pill is replaced by a
  *     spacer and only the chapter buttons remain.
  *
- * Seeking is reported as a plain page index; the reader animates the move (the
- * pages slide past as if swiped, rather than cutting straight to the target).
+ * The drag is CONTINUOUS, not stepped. The thumb sits exactly under the finger
+ * and `onScrub` reports a fractional page position, which the reader turns into a
+ * raw scroll offset — so dragging pulls the pages through the chapter's whole
+ * scroll space 1:1, the way Suwatte's slider does, instead of animating a page
+ * turn per stop (which lagged behind the finger and felt stepped). Only the
+ * RELEASE settles, via `onSeek`, onto the nearest page.
+ *
+ * Haptics tick once per page boundary crossed, through the same delaying queue
+ * the swipeable rows use: a fast scrub crosses several boundaries within a frame
+ * or two, and taps fired back-to-back get coalesced (or swallowed) by the Taptic
+ * engine, so they're spaced out rather than fired blind.
  */
 
-const THUMB = 16;
+const THUMB = 14;
 const R = THUMB / 2;
 const TRACK_H = 4;
-const ROW_H = 32; // touch height of the slider — the bar/thumb are centred in it
+/** Height of the pill AND of the chapter-skip buttons — the bar and the arrows
+ *  either side of it are one continuous row of the same weight. */
+const BAR_H = 40;
 
 type Props = {
   /** 0-based page within the chapter, and how many that chapter has. */
@@ -47,8 +57,10 @@ type Props = {
   hasNextChapter: boolean;
   onPrevChapter: () => void;
   onNextChapter: () => void;
-  /** Fires for every page the drag passes over, not just the one it's released
-   *  on — the reader moves along with the thumb. */
+  /** Live position while dragging, in pages and FRACTIONAL (2.4 = 40% of the way
+   *  from page 3 to page 4). The reader scrolls straight to it, unanimated. */
+  onScrub: (position: number) => void;
+  /** The page the drag came to rest on — the only point anything is committed. */
   onSeek: (page: number) => void;
   /** True while the thumb is held. The reader suspends its chrome auto-hide for
    *  the duration, so a slow scrub can't have the bar fade out from under it. */
@@ -64,6 +76,7 @@ export function ChapterNavigator({
   hasNextChapter,
   onPrevChapter,
   onNextChapter,
+  onScrub,
   onSeek,
   onScrubbingChange,
 }: Props) {
@@ -79,7 +92,8 @@ export function ChapterNavigator({
   // Usable travel: the track inset by the thumb's radius at each end.
   const len = useSharedValue(0);
   const scrubbing = useSharedValue(false);
-  const lastIndex = useSharedValue(-1);
+  const lastPage = useSharedValue(-1);
+  const lastSent = useSharedValue(-1);
 
   // Follow the reader while the user isn't the one driving. A short timing (not a
   // hard set) keeps the thumb from stuttering as a fast flick reports pages.
@@ -88,15 +102,16 @@ export function ChapterNavigator({
     frac.set(withTiming(total > 1 ? Math.min(1, Math.max(0, page / steps)) : 0, { duration: 120 }));
   }, [page, total, steps, frac, scrubbing]);
 
-  const emitSeek = useCallback(
-    (index: number) => {
-      onSeek(index);
-      // One tick per page crossed, like Mihon's TextHandleMove feedback.
-      hapticSelection();
-    },
-    [onSeek],
-  );
-  const emitScrub = useCallback((s: boolean) => onScrubbingChange?.(s), [onScrubbingChange]);
+  // `pan` is rebuilt whenever a callback or the direction changes, INCLUDING mid-
+  // drag. That's safe (checked against the RNGH source, not assumed): a rebuilt
+  // gesture of the same type isn't reattached — GestureDetector's `needsToReattach`
+  // only fires when the number/type of gestures changes — it just updates the
+  // handlers in place, so the in-flight scrub carries on with the fresh callbacks.
+  const [tickHaptic] = useState(() => createTickHaptic(hapticSelection));
+  const emitScrub = useCallback((position: number) => onScrub(position), [onScrub]);
+  const emitSeek = useCallback((index: number) => onSeek(index), [onSeek]);
+  const emitHold = useCallback((held: boolean) => onScrubbingChange?.(held), [onScrubbingChange]);
+  const emitTick = useCallback(() => tickHaptic(), [tickHaptic]);
 
   const pan = useMemo(() => {
     const apply = (x: number) => {
@@ -104,11 +119,18 @@ export function ChapterNavigator({
       const l = len.value;
       if (l <= 0) return;
       const along = Math.min(1, Math.max(0, (x - R) / l));
-      const index = Math.round((rtl ? 1 - along : along) * steps);
-      frac.set(index / steps); // snap the thumb to page stops
-      if (index === lastIndex.value) return;
-      lastIndex.set(index);
-      runOnJS(emitSeek)(index);
+      const f = rtl ? 1 - along : along;
+      frac.set(f); // no snapping — the thumb goes exactly where the finger is
+      const position = f * steps;
+      // Sub-hundredth-of-a-page moves aren't worth a hop to JS and a scroll write.
+      if (Math.abs(position - lastSent.value) >= 0.01) {
+        lastSent.set(position);
+        runOnJS(emitScrub)(position);
+      }
+      const index = Math.round(position);
+      if (index === lastPage.value) return;
+      lastPage.set(index);
+      runOnJS(emitTick)();
     };
     return (
       Gesture.Pan()
@@ -117,19 +139,24 @@ export function ChapterNavigator({
         .minDistance(0)
         .onBegin(() => {
           scrubbing.set(true);
-          runOnJS(emitScrub)(true);
+          lastPage.set(Math.round(frac.value * steps));
+          runOnJS(emitHold)(true);
         })
         .onStart((e) => apply(e.x))
         .onUpdate((e) => apply(e.x))
         // onFinalize, not onEnd: a cancelled gesture must release the chrome
         // timer too, or the bar hangs around forever.
         .onFinalize(() => {
+          const index = Math.round(frac.value * steps);
+          frac.set(index / steps); // settle onto the stop
           scrubbing.set(false);
-          lastIndex.set(-1);
-          runOnJS(emitScrub)(false);
+          lastPage.set(-1);
+          lastSent.set(-1);
+          runOnJS(emitSeek)(index);
+          runOnJS(emitHold)(false);
         })
     );
-  }, [rtl, steps, len, frac, lastIndex, scrubbing, emitSeek, emitScrub]);
+  }, [rtl, steps, len, frac, lastPage, lastSent, scrubbing, emitScrub, emitSeek, emitHold, emitTick]);
 
   const onTrackLayout = useCallback(
     (e: LayoutChangeEvent) => {
@@ -240,9 +267,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
   },
   skip: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: BAR_H,
+    height: BAR_H,
+    borderRadius: BAR_H / 2,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(0,0,0,0.55)',
@@ -252,11 +279,12 @@ const styles = StyleSheet.create({
   },
   pill: {
     flex: 1,
+    height: BAR_H,
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
     paddingHorizontal: Spacing.three,
-    borderRadius: 24,
+    borderRadius: BAR_H / 2,
     backgroundColor: 'rgba(0,0,0,0.55)',
   },
   // Reading right-to-left, the current page belongs on the right and the total on
@@ -278,22 +306,23 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
   },
+  // Full-height so the whole pill is grabbable, not just the 4px line in it.
   track: {
     flex: 1,
-    height: ROW_H,
+    height: BAR_H,
   },
   bar: {
     position: 'absolute',
     left: R,
     right: R,
-    top: (ROW_H - TRACK_H) / 2,
+    top: (BAR_H - TRACK_H) / 2,
     height: TRACK_H,
     borderRadius: TRACK_H / 2,
     backgroundColor: 'rgba(255,255,255,0.25)',
   },
   fill: {
     position: 'absolute',
-    top: (ROW_H - TRACK_H) / 2,
+    top: (BAR_H - TRACK_H) / 2,
     height: TRACK_H,
     borderRadius: TRACK_H / 2,
     backgroundColor: '#fff',
@@ -307,7 +336,7 @@ const styles = StyleSheet.create({
   thumb: {
     position: 'absolute',
     left: 0,
-    top: (ROW_H - THUMB) / 2,
+    top: (BAR_H - THUMB) / 2,
     width: THUMB,
     height: THUMB,
     borderRadius: THUMB / 2,

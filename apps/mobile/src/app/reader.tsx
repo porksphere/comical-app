@@ -171,9 +171,15 @@ export default function ReaderScreen() {
 
   // Auto-hide chrome; any toggle/show resets the timer.
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // While a chrome control is being HELD (see holdChrome), nothing may arm the
+  // countdown — not a seek, not a swipe-guard release, not a fresh showChrome.
+  // The hold is authoritative rather than just clearing the timer once, so a
+  // scrub that fires callbacks the whole time it runs can't re-arm it by
+  // accident and have the bar fade out from under the finger.
+  const chromeHeldRef = useRef(false);
   const scheduleHide = useCallback(() => {
     if (hideTimer.current) clearTimeout(hideTimer.current);
-    if (!CHROME_AUTO_HIDE) return;
+    if (!CHROME_AUTO_HIDE || chromeHeldRef.current) return;
     hideTimer.current = setTimeout(() => {
       setChromeVisible(false);
     }, CHROME_HIDE_MS);
@@ -196,9 +202,11 @@ export default function ReaderScreen() {
   // under a finger mid-drag is the one thing the timer must never do.
   const holdChrome = useCallback(
     (hold: boolean) => {
+      chromeHeldRef.current = hold;
       if (hold) {
         if (hideTimer.current) clearTimeout(hideTimer.current);
       } else {
+        setChromeVisible(true); // a scrub that outlasted a stray hide brings it back
         scheduleHide();
       }
     },
@@ -633,6 +641,23 @@ export default function ReaderScreen() {
     },
     [pages, settings.mode, setCurrent, prefixLen],
   );
+  // The bottom scrubber's live drag: a FRACTIONAL page position straight into a
+  // scroll offset, so the pages track the finger through the chapter's whole
+  // scroll space instead of stepping (and animating) one page at a time. Nothing
+  // is committed here — no `setCurrent`, no progress write; the reader's own
+  // viewability reporting updates the page counter as the pages go past, and the
+  // release settles onto a real page through `goTo`.
+  //
+  // The position is chapter-local and clamped to this chapter, so a scrub can
+  // never run off either end into the stitched neighbours.
+  const scrubTo = useCallback(
+    (position: number) => {
+      const clamped = Math.max(0, Math.min((pages?.length ?? 1) - 1, position));
+      if (settings.mode === 'paged') pagedRef.current?.scrubTo(IS_WEB ? clamped : prefixLen + clamped);
+      else webtoonRef.current?.goToPage(Math.round(clamped), false);
+    },
+    [pages, settings.mode, prefixLen],
+  );
   const atLastPage = useCallback(() => !!pages && currentRef.current >= pages.length - 1, [pages]);
   const atFirstPage = useCallback(() => currentRef.current <= 0, []);
   // Tapping a page and keyboard navigation both turn instantly (no slide), on
@@ -900,8 +925,10 @@ export default function ReaderScreen() {
                 hasNextChapter={!!nextChapter}
                 onPrevChapter={() => skipChapter(-1)}
                 onNextChapter={() => skipChapter(1)}
-                // Animated, so the pages slide past under the thumb the way they
-                // would under a swipe rather than cutting to the target.
+                // The drag itself moves the scroll offset directly (1:1 with the
+                // finger, no animation); only the release settles, and the settle
+                // animates because it's a short slide onto the nearest page.
+                onScrub={scrubTo}
                 onSeek={(i) => goTo(i, true)}
                 onScrubbingChange={holdChrome}
               />

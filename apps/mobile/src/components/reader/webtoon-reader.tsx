@@ -18,7 +18,10 @@ import { useZoomable } from '@/components/reader/use-zoomable';
 import type { PageFit } from '@/hooks/use-reader-settings';
 import { testId } from '@/lib/test-id';
 
-export type WebtoonReaderHandle = { goToPage: (index: number) => void };
+/** `animated` defaults to true (a jump). The reader's page scrubber passes false: rows here have
+ *  variable heights, so a scrub can't land between pages the way the paged reader does — it steps
+ *  to the nearest page instead, and an animation per drag frame would fight the finger. */
+export type WebtoonReaderHandle = { goToPage: (index: number, animated?: boolean) => void };
 
 type Props = {
   pages: string[];
@@ -176,8 +179,8 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
   useImperativeHandle(
     ref,
     () => ({
-      goToPage(index: number) {
-        listRef.current?.scrollToIndex({ index: Math.max(0, Math.min(n - 1, index)), animated: true });
+      goToPage(index: number, animated = true) {
+        listRef.current?.scrollToIndex({ index: Math.max(0, Math.min(n - 1, index)), animated });
       },
     }),
     [n],
@@ -322,8 +325,8 @@ const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPage
   useImperativeHandle(
     ref,
     () => ({
-      goToPage(index: number) {
-        listRef.current?.scrollToIndex({ index: Math.max(0, Math.min(n - 1, index)), animated: true });
+      goToPage(index: number, animated = true) {
+        listRef.current?.scrollToIndex({ index: Math.max(0, Math.min(n - 1, index)), animated });
       },
     }),
     [n],

@@ -24,7 +24,12 @@ import {
 } from '@/components/reader/reader-zoom';
 import type { PageFit } from '@/hooks/use-reader-settings';
 
-export type PagedReaderHandle = { goToPage: (logical: number, animated?: boolean) => void };
+export type PagedReaderHandle = {
+  goToPage: (logical: number, animated?: boolean) => void;
+  /** Web has no continuous scrubber (it keeps the tap-to-jump progress pill), so this is just the
+   *  nearest-page jump — present only to satisfy the shared handle shape. */
+  scrubTo: (logical: number) => void;
+};
 
 type Props = {
   /** Per-chapter on web (reader.tsx doesn't stitch here): this pager hands a
@@ -339,6 +344,9 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     () => ({
       goToPage(logical: number, animated = true) {
         settleTo(toPhysical(clampIndex(logical)), animated);
+      },
+      scrubTo(logical: number) {
+        settleTo(toPhysical(clampIndex(Math.round(logical))), false);
       },
     }),
     [settleTo, toPhysical, clampIndex],
