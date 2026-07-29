@@ -290,6 +290,14 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         // Mid-scrub the window stays that size but is filled FASTER: after a jump
         // the list has ~5 cells to build, and at the resting batch size that's
         // three passes ~50ms apart before the page under the finger exists at all.
+        //
+        // UNMEASURED TRADE-OFF, if the scrubber ever feels less responsive than
+        // it should: this spends JS-thread time on the same thread the navigator's
+        // page number and haptic tick arrive on (one runOnJS hop per ~45ms, see
+        // chapter-navigator.tsx). Pages fill sooner; the number and buzz queue
+        // behind whatever cell work is in flight. Nothing has been observed —
+        // walking these back toward the resting values (3 / 32) is the first
+        // thing to try if it has.
         initialNumToRender={1}
         maxToRenderPerBatch={scrubbing ? 5 : 2}
         updateCellsBatchingPeriod={scrubbing ? 16 : 50}
