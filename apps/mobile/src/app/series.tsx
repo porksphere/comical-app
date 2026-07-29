@@ -538,6 +538,27 @@ function SeriesBody({
       />
       <ActionButton testID="series.action.library" label={inLibrary ? '✓  In Library' : '＋  Library'} onPress={toggleLibrary} />
       {bridgeId && (
+        <SeriesDownloadButton
+          bridgeId={bridgeId}
+          seriesId={series.id}
+          direct={direct}
+          title={series.title}
+          cover={series.cover}
+          {...(chapters !== undefined && { chapters })}
+        />
+      )}
+      {series.hasSources && <ActionButton testID="series.action.sources" label="Sources" caret />}
+      <ActionButton
+        testID="series.action.favorite"
+        label={favorited ? '★  Favorited' : '☆  Favorite'}
+        onPress={toggleFavorite}
+        // Greyed when the bridge's favorites need a login the user hasn't set (see useFavorite) — as
+        // well as while the initial status check loads.
+        disabled={!favoritesAvailable || favorited === null}
+      />
+      {/* List + tracker sit at the bottom of the column: they're the "where does this
+          series belong" actions, below the ones that act on the series itself. */}
+      {bridgeId && (
         <ActionButton
           testID="series.action.lists"
           label="Add to list"
@@ -556,28 +577,9 @@ function SeriesBody({
           }
         />
       )}
-      {bridgeId && (
-        <SeriesDownloadButton
-          bridgeId={bridgeId}
-          seriesId={series.id}
-          direct={direct}
-          title={series.title}
-          cover={series.cover}
-          {...(chapters !== undefined && { chapters })}
-        />
-      )}
-      {series.hasSources && <ActionButton testID="series.action.sources" label="Sources" caret />}
       {Array.isArray(trackers) && trackers.length > 0 && bridgeId && (
         <TrackerButton bridgeId={bridgeId} seriesId={series.id} />
       )}
-      <ActionButton
-        testID="series.action.favorite"
-        label={favorited ? '★  Favorited' : '☆  Favorite'}
-        onPress={toggleFavorite}
-        // Greyed when the bridge's favorites need a login the user hasn't set (see useFavorite) — as
-        // well as while the initial status check loads.
-        disabled={!favoritesAvailable || favorited === null}
-      />
       {series.newCount != null && <NewBadge count={series.newCount} />}
     </View>
   );
