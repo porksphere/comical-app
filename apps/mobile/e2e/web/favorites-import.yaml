@@ -1,20 +1,33 @@
 # Web copy of ../mobile/favorites-import.yaml, kept in sync by hand. Same journey and the same
 # reasoning for every step — see that file's header for why Panelfox, why select-all instead of a
-# hardcoded default count, and what the three row kinds are.
+# hardcoded default count, what the three row kinds are, and why the inert rows sort last.
 #
-# The card is safe to drive on web: like list-picker.tsx (see ../README.md's "Not every overlay is an
-# OverlaySheet" note) favorites-import.tsx renders its own floating BlurView card with no
-# Gesture.Pan/GestureDetector anywhere — only a plain Pressable backdrop — so the sheet-dismiss
-# misfire that scopes registries.add/manage-lists.add to mobile doesn't apply here.
+# It's a plain pushed screen (app/favorites-import.tsx), not an overlay, so none of the sheet-gesture
+# caveats that scope registries.add / manage-lists.add to mobile apply here.
 #
-# Selectors hitting the web-only aria-label quirk (see ../README.md):
+# Selectors hitting the web-only aria-label quirk (see ../README.md — an accessibilityLabel wins over
+# data-testid for Maestro's `id:` matcher on web):
 #   - tab bar: "Settings", not tab.settings (same as smoke.yaml / settings-walkthrough.yaml).
 #   - settings.category.bridges sets accessibilityLabel={title} — select by "Bridges".
 #   - the bridge row and the import row are both SettingsRows, which set accessibilityLabel={label}
 #     — select by "Panelfox" and "Import favorites into library" instead of their testIDs.
-# favorites-import.row.<id> / .selectAll / .confirm set accessibilityRole but no accessibilityLabel
-# (confirmed against favorites-import.tsx), so those ids resolve here exactly as on mobile. The
-# toast is matched by `text:` in both copies — its Pressable's aria-label is the whole message.
+#   - favorites-import.row.<id> is ALSO a SettingsRow, so a SELECTABLE candidate row's id is shadowed
+#     by its own series title (mock titles come from a hashed pool — not a fixed string this flow
+#     could match). The `in-library` rows are the exception (no onPress, so SettingsRow renders the
+#     testID on a plain View with no label), but those sort to the BOTTOM of the list and may sit
+#     below the fold. So this copy anchors on the two screen-level elements instead:
+#       * "Selection options" — SelectOptionsButton's static aria-label (documented in
+#         ../web/downloads.yaml for series.dl.select-options), and
+#       * the intro paragraph's text, which names the bridge and is plain Text (no label to shadow).
+#   - favorites-import.menu.all — context-menu rows carry a testID and NO accessibilityLabel
+#     (context-menu-material.tsx), so this id resolves unchanged here.
+#   - favorites-import.confirm — SelectPillBar's verb Pressable sets accessibilityLabel to the verb's
+#     DYNAMIC label ("Import N series"), exactly like series.dl.download. Same fix: match the label
+#     by regex. N is 5 after select-all (5 selectable rows), but keep it a pattern rather than a
+#     literal so a seeding change doesn't silently make this the ONE step that fails.
+#   - the toast is matched by `text:` in both copies — its Pressable's aria-label is the whole
+#     message, and an id:-regex would have to escape the parenthesised "(N linked as another
+#     source)" tail.
 url: http://localhost:4000/comical-app
 ---
 - launchApp
@@ -37,24 +50,26 @@ url: http://localhost:4000/comical-app
 # The mock preview resolves after a deliberate 400ms delay (mock.ts), so wait rather than assert.
 - extendedWaitUntil:
     visible:
-      id: "favorites-import.row.fav-1"
+      text: "Favorites on Panelfox.*"
     timeout: 10000
 - assertVisible:
-    id: "favorites-import.row.fav-2"
+    id: "Selection options"
 - takeScreenshot: favorites-import
 
-# "All" checks every selectable row — including the cross-bridge duplicate, which is what makes the
-# import ALSO link it as a second source for the series already in the library.
+# "Select all" checks every selectable row — including the cross-bridge duplicate, which is what
+# makes the import ALSO link it as a second source for the series already in the library.
 - tapOn:
-    id: "favorites-import.selectAll"
+    id: "Selection options"
 - tapOn:
-    id: "favorites-import.confirm"
+    id: "favorites-import.menu.all"
+- tapOn:
+    id: "^Import \\d+ series$"
 
 # fav-2..fav-6 land in the library; fav-1 was already there and never entered the selection.
 - extendedWaitUntil:
     visible:
       text: "5 series imported.*"
     timeout: 10000
-# The card dismisses itself on success.
-- assertNotVisible:
-    id: "favorites-import.confirm"
+# A successful import pops the screen, landing back on the bridge's settings.
+- assertVisible:
+    id: "Import favorites into library"

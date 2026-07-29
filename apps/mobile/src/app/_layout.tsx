@@ -36,7 +36,6 @@ import { DemoBanner } from '@/components/demo-banner';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { ConfirmPopupHost } from '@/components/confirm-popup';
 import { ContextMenuHost } from '@/components/context-menu-host';
-import { FavoritesImportHost } from '@/components/favorites-import';
 import { ListPickerHost } from '@/components/list-picker';
 import { OverlayProvider } from '@/components/overlay/overlay';
 import { SeriesCardContextMenuHost } from '@/components/series-card-context-menu';
@@ -148,6 +147,7 @@ function RootNavigation() {
           <Stack.Screen name="downloads" options={{ headerShown: false }} />
           <Stack.Screen name="series-downloads" options={{ headerShown: false }} />
           <Stack.Screen name="storage" options={{ headerShown: false }} />
+          <Stack.Screen name="favorites-import" options={{ headerShown: false }} />
         </Stack>
         <DemoBanner />
         {/* Root host for the native card long-press context menu (dim + lifted preview + menu). Only
@@ -161,8 +161,6 @@ function RootNavigation() {
         <ListPickerHost />
         {/* Root host for the destructive-action confirmation popup (openConfirm). */}
         <ConfirmPopupHost />
-        {/* Root host for the bridge favorites → library import confirmation (openFavoritesImport). */}
-        <FavoritesImportHost />
         {/* Root host for the transient notice pill (showToast). */}
         <ToastHost />
         {/* DEV-only floating Hermes JS profiler; null in production (see require above),

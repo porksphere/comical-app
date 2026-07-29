@@ -127,12 +127,16 @@ export function SelectToggle({ selecting, onToggle, testID }: { selecting: boole
 export function SelectLead({
   progress,
   selected,
+  done,
   edgeOffset,
   itemKey,
   gesture,
 }: {
   progress: SharedValue<number>;
   selected: boolean;
+  /** Settled — "you already have this", checked-but-muted and not something the caller lets you
+   *  toggle (see `SelectCircle`). Distinct from `selected`, which is "picked to act on". */
+  done?: boolean;
   edgeOffset: number;
   /** The row's stable list key. In a RECYCLING list the circle is keyed by it, so a view reused
    *  for a DIFFERENT row remounts the circle and renders its state instantly — without this,
@@ -153,7 +157,7 @@ export function SelectLead({
   const lead = (
     <Animated.View style={[styles.selectLead, slot]}>
       <Animated.View style={circle}>
-        <SelectCircle key={itemKey} selected={selected} />
+        <SelectCircle key={itemKey} selected={selected} done={done} />
       </Animated.View>
     </Animated.View>
   );
