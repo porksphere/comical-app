@@ -55,7 +55,15 @@ export function Holdable({
   const gesture = useMemo(
     () =>
       Gesture.LongPress()
-        .minDuration(350)
+        // 500ms, matching UIKit's own UILongPressGestureRecognizer default. 350 was eager enough to
+        // claim touches meant as taps: a deliberate, unhurried press on a card would open the menu
+        // instead of the series. It also sat under the duration of an XCUITest-synthesized touch,
+        // which is how e2e/mobile/browse-to-reader failed on iOS — the card tap registered (Maestro
+        // saw the UI react) but the hold won it, so nothing navigated and `series.cover` never
+        // appeared, while Android (`adb shell input tap`, ~50ms) was nowhere near the threshold.
+        // Same class as the reader's single-tap bound, which had to move the other way for the same
+        // reason (see use-zoomable's SINGLE_TAP_MAX_DURATION).
+        .minDuration(500)
         .runOnJS(true)
         .enabled(enabled && Platform.OS !== 'web')
         .onStart((e) => onHold({ x: e.absoluteX, y: e.absoluteY, width: 0, height: 0 })),
