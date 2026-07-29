@@ -547,7 +547,6 @@ function SeriesBody({
           {...(chapters !== undefined && { chapters })}
         />
       )}
-      {series.hasSources && <ActionButton testID="series.action.sources" label="Sources" caret />}
       <ActionButton
         testID="series.action.favorite"
         label={favorited ? '★  Favorited' : '☆  Favorite'}
@@ -556,6 +555,7 @@ function SeriesBody({
         // well as while the initial status check loads.
         disabled={!favoritesAvailable || favorited === null}
       />
+      {series.hasSources && <ActionButton testID="series.action.sources" label="Sources" caret />}
       {/* List + tracker sit at the bottom of the column: they're the "where does this
           series belong" actions, below the ones that act on the series itself. */}
       {bridgeId && (
