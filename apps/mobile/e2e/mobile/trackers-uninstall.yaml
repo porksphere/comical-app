@@ -2,9 +2,9 @@
 # swipe-to-uninstall row (trackers.tsx). Verifies the swipe reveals the destructive Uninstall
 # action and that committing it raises the confirm popup (a guarded, non-immediate delete) —
 # then cancels, so the row survives. Mock data serves every tracker with source: 'registry'
-# (mock.ts) and no pending updates, so each row carries a single Uninstall action that
-# auto-commits past the full-swipe threshold, exactly like history-activity.yaml's single-action
-# rows.
+# (mock.ts) and no pending updates, so each row carries exactly one Uninstall action — see the
+# swipe below for why this taps that revealed pill instead of leaning on the resulting
+# single-action full-swipe commit.
 #
 # Mobile-only: swipe-to-reveal is a gesture, and web/Chromium's pointer simulation isn't verified
 # to drive SwipeableRow faithfully (on web the actions reveal on hover, not a drag) — see
@@ -32,16 +32,32 @@ appId: com.porksphere.comical
 - assertVisible:
     id: "trackers.row.anilist"
 
-# Single-action row (mock's anilist has no pending update, see header) is full-swipeable
-# (swipeable-row.tsx's FULL_SWIPE_COMMIT) — a wide swipe alone commits and fires the SAME onPress a
-# pill tap would, same pattern as history-activity.yaml's single-action rows. A moderate swipe that
-# only reveals the pill without committing doesn't work here: the row springs back closed (and the
-# revealed pill's tap target disappears) well before a follow-up `tapOn: id` could land on it. Its
-# onPress opens the confirm popup — uninstall is guarded, never an immediate delete.
+# Swipe the row to reveal its Uninstall pill, then tap it. Its onPress opens the confirm popup —
+# uninstall is guarded, never an immediate delete.
+#
+# Anchored to the ROW ELEMENT, not screen percentages. This used to be `start: "90%, 20%"` ->
+# `"5%, 20%"`, and 20% of a 1080x2400 emulator is y=480 — which is not the AniList row at all. The
+# demo-preview banner (EXPO_PUBLIC_COMICAL_DEMO_MODE, on in CI) pushes the list down, so the rows
+# landed at anilist [286,454], mal [454,622], kitsu [622,790]: the swipe hit MyAnimeList, one row
+# below the one asserted above. Had it committed it would have uninstalled the wrong tracker, and
+# the closing `trackers.row.anilist` assertion would still have passed — for the wrong reason. A
+# `from:` selector tracks the row wherever layout puts it.
+#
+# Tapping the pill rather than relying on the full-swipe commit: the row IS full-swipeable
+# (swipeable-row.tsx arms at FULL_SWIPE_COMMIT = 0.6 * row width once actions.length === 1), but
+# arming depends on Maestro's synthesized drag being delivered as motion events the pan handler
+# actually tracks that far — and the captured hierarchy shows it wasn't: the row settled at its
+# reveal detent (surface right edge 860 vs 1017 closed) with no popup. The same dump also refutes
+# the old note here claiming a revealed row "springs back closed before a follow-up tapOn could
+# land": it was taken at assertion time, seconds after the swipe, and both `swipe-close.myanimelist`
+# and the pill were still on screen. The revealed pill is a stable target, and its onPress is the
+# very same handler the full swipe would have fired.
 - swipe:
-    start: "90%, 20%"
-    end: "5%, 20%"
-    duration: 300
+    from:
+      id: "trackers.row.anilist"
+    direction: LEFT
+- tapOn:
+    id: "swipe-action.anilist.uninstall"
 
 # The guard: a confirm popup, not an instant removal.
 - assertVisible:
