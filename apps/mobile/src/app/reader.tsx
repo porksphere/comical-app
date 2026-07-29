@@ -51,6 +51,9 @@ const NEXT_CHAPTER_TRIGGER = 3;
 // onPrev/onNext itself); the native one pages across a flat multi-chapter list.
 const IS_WEB = Platform.OS === 'web';
 
+/** One chapter's worth of pages inside the native pager's stitched flat list. */
+type Segment = { id: string; name?: string; pages: string[] };
+
 /** Warm expo-image's cache for a small window of upcoming pages. `pages` are now raw (unresolved)
  *  paths, so resolve them first (deduped/cached, shared with ReaderPage's own lazy resolve) and only
  *  prefetch the http(s) results — a `data:` URI is already inlined, nothing to fetch. Best-effort:
@@ -142,6 +145,14 @@ export default function ReaderScreen() {
 
   const [settings] = useReaderSettings();
   const [currentPage, setCurrentPage] = useState(startIndex);
+  // The page under your eyes right now, with the stitched segment it belongs to
+  // — see `shown` below. Null until the pager reports one.
+  const [visibleSeg, setVisibleSeg] = useState<{
+    id: string;
+    page: number;
+    total: number;
+    name?: string;
+  } | null>(null);
   const [chromeVisible, setChromeVisible] = useState(true);
   // Whether the reader is pinch-zoomed (paged page OR webtoon viewport) — suspends
   // the swipe-away gesture so a one-finger drag pans the zoomed image instead.
@@ -349,22 +360,73 @@ export default function ReaderScreen() {
     enabled: !!seed && !!chapterId && !!nextChapter,
   });
 
-  // The stitched window: [previous?, current, next?] — a segment only joins
-  // once its pages are actually loaded, so the flat list never has holes.
-  const segments = useMemo(() => {
-    if (!pages) return [] as { id: string; name?: string; pages: string[] }[];
-    const segs: { id: string; name?: string; pages: string[] }[] = [];
-    if (chapterId && prevChapter && prevPages?.length)
-      segs.push({ id: prevChapter.id, name: prevChapter.name, pages: prevPages });
-    segs.push({ id: chapterId ?? DIRECT_CHAPTER_ID, name: chapterName, pages });
-    if (chapterId && nextChapter && nextPages?.length)
-      segs.push({ id: nextChapter.id, name: nextChapter.name, pages: nextPages });
-    return segs;
-  }, [pages, chapterId, chapterName, prevChapter, prevPages, nextChapter, nextPages]);
+  // The stitched window. A segment only joins once its pages are actually
+  // loaded, so the flat list never has holes.
+  //
+  // It only ever GROWS while you read one continuous run: crossing forward
+  // appends the new next chapter at the TAIL, so nothing at or before the
+  // current position moves and the pager's scroll offset stays valid as-is.
+  // (It used to be recomputed as [prev, current, next] on every crossing, which
+  // dropped the chapter you'd just finished off the HEAD and shifted every
+  // remaining cell by a whole chapter. The pager can re-anchor from that — see
+  // paged-reader.tsx — but not before FlatList has rendered one pass with its
+  // virtualization window around the now-stale offset, unmounting the page you
+  // just landed on: a black flash right after the crossing settled.)
+  //
+  // Landing outside the run (chapter list, deep link, prev/next past either end
+  // of the window) starts a fresh one, and `runKey` changes with it so the pager
+  // remounts and seeds its position from `initialPage` instead of re-anchoring.
+  //
+  // The run is state, but what renders is a pure merge of it with the chapters
+  // currently loaded — so a window that has just grown is used on the SAME render
+  // that grows it, and the state write below only catches the result up. The
+  // merge returns the existing array (identity included) when there's nothing to
+  // add, which is what stops that write from looping.
+  const [run, setRun] = useState<{ key: number; segs: Segment[] }>({ key: 0, segs: [] });
+  const { segments, runKey } = useMemo(() => {
+    if (!pages) return { segments: [] as Segment[], runKey: run.key };
+    const currentId = chapterId ?? DIRECT_CHAPTER_ID;
+    const prevSeg: Segment | null =
+      chapterId && prevChapter && prevPages?.length
+        ? { id: prevChapter.id, name: prevChapter.name, pages: prevPages }
+        : null;
+    const nextSeg: Segment | null =
+      chapterId && nextChapter && nextPages?.length
+        ? { id: nextChapter.id, name: nextChapter.name, pages: nextPages }
+        : null;
 
-  // Flat pager items. Keys are stable across window slides (`chapterId:page`) —
-  // that's what lets the pager's maintainVisibleContentPosition hold the view
-  // still when a segment loads in ahead of the current position.
+    const at = run.segs.findIndex((s) => s.id === currentId);
+    if (at === -1) {
+      const segs: Segment[] = [];
+      if (prevSeg) segs.push(prevSeg);
+      segs.push({ id: currentId, name: chapterName, pages });
+      if (nextSeg) segs.push(nextSeg);
+      // Bump the key only when there was a real run to leave, so the very first
+      // window doesn't count as a remount.
+      return { segments: segs, runKey: run.key + (run.segs.length ? 1 : 0) };
+    }
+    // Extend, never drop.
+    const stale = run.segs[at]!;
+    const refreshCurrent = stale.pages !== pages || stale.name !== chapterName;
+    const addPrev = !!prevSeg && at === 0;
+    const addNext = !!nextSeg && run.segs[run.segs.length - 1]!.id === currentId;
+    if (!refreshCurrent && !addPrev && !addNext) return { segments: run.segs, runKey: run.key };
+    const segs = run.segs.slice();
+    if (refreshCurrent) segs[at] = { id: currentId, name: chapterName, pages };
+    if (addPrev) segs.unshift(prevSeg);
+    if (addNext) segs.push(nextSeg);
+    return { segments: segs, runKey: run.key };
+  }, [run, pages, chapterId, chapterName, prevChapter, prevPages, nextChapter, nextPages]);
+  useEffect(() => {
+    // `!pages` (a chapter still loading) renders no window at all, but must not
+    // wipe the run — the pager is unmounted then and comes back to the same one.
+    if (!pages) return;
+    if (segments !== run.segs || runKey !== run.key) setRun({ key: runKey, segs: segments });
+  }, [pages, segments, runKey, run]);
+
+  // Flat pager items. Keys are stable across window changes (`chapterId:page`) —
+  // that's what lets the pager re-anchor the visible page when a segment does
+  // land ahead of the current position (a previous chapter arriving late).
   const flatItems: ReaderPageItem[] = useMemo(
     () => segments.flatMap((s) => s.pages.map((uri, i) => ({ uri, key: `${s.id}:${i}`, pageNumber: i + 1 }))),
     [segments],
@@ -468,7 +530,7 @@ export default function ReaderScreen() {
   // route in place — router.setParams, NOT replace, so nothing remounts and
   // the swipe that carried the user across stays seamless. The relabel swaps
   // which chapter is "current": the stitched window slides one over, the pager
-  // keeps its position (stable keys + maintainVisibleContentPosition), and the
+  // keeps its position (stable keys — it re-anchors on them itself), and the
   // start param is kept in step for the pages/startIndex sync effect above.
   const handleFlatPageChange = useCallback(
     (flat: number) => {
@@ -488,6 +550,49 @@ export default function ReaderScreen() {
     },
     [locateFlat, chapterId, setCurrent, router],
   );
+
+  // Same mapping, but for the page merely *scrolling past* — the pager reports
+  // this as soon as a page is mostly on screen, so the chrome keeps up with a
+  // fast flick instead of sitting still until the scroll settles. Display only:
+  // no progress write, no route relabel (both belong to the settled page).
+  //
+  // Its segment is carried along, because a page mid-crossing belongs to a
+  // DIFFERENT chapter than the committed one — the counter has to read against
+  // that chapter's length, and the title has to be its name, or the crossing
+  // shows "page 1 of 32" under the chapter you just left.
+  const handleFlatVisiblePage = useCallback(
+    (flat: number) => {
+      const loc = locateFlat(flat);
+      if (!loc) return;
+      setVisibleSeg({
+        id: loc.segment.id,
+        page: loc.page,
+        total: loc.segment.pages.length,
+        name: loc.segment.name,
+      });
+      if (loc.segment.id === (chapterId ?? DIRECT_CHAPTER_ID)) setCurrent(loc.page);
+    },
+    [locateFlat, chapterId, setCurrent],
+  );
+
+  // What the chrome shows. Normally the committed chapter and page; while a
+  // swipe is carrying a page from a neighbouring stitched chapter across the
+  // screen, that page instead — so the title and counter turn over WITH the
+  // crossing rather than a beat after it settles. Once the crossing lands, the
+  // two agree, so nothing flickers back. Only trusted for the stitched pager,
+  // and only while it names a chapter still in the window (a jump elsewhere
+  // rebuilds the run and leaves this pointing at nothing).
+  const shown = useMemo(() => {
+    const v =
+      !IS_WEB && settings.mode === 'paged' && visibleSeg && segments.some((s) => s.id === visibleSeg.id)
+        ? visibleSeg
+        : null;
+    return {
+      page: v?.page ?? currentPage,
+      total: v?.total ?? pages?.length ?? 0,
+      name: v ? v.name : chapterName,
+    };
+  }, [visibleSeg, segments, settings.mode, currentPage, pages, chapterName]);
 
   const toggleChrome = useCallback(() => {
     if (swipeActiveRef.current) return; // a swipe-release tap, not a real chrome toggle
@@ -649,6 +754,25 @@ export default function ReaderScreen() {
             {settings.mode === 'paged' ? (
               <PagedReader
                 ref={pagedRef}
+                // Both pagers seed their position once, at mount, and neither can
+                // re-seed reliably on its own — so remount them exactly when the
+                // position they were seeded with stops meaning anything.
+                //
+                // Web: once per chapter. Its internal index only re-syncs when
+                // `initialPage` (or the page count) changes, so advancing into a
+                // chapter with the SAME number of pages — start already '0', n
+                // unchanged — left it parked on the previous chapter's index
+                // (visible whenever the next chapter was already prefetched, so
+                // `pages` never blinked out to unmount it). Remounting also clears
+                // the per-page failed/overflow state, which is likewise keyed on
+                // the index changing.
+                //
+                // Native: once per RUN, not per chapter — a seamless crossing
+                // stays inside the run and must NOT remount (that's the whole
+                // point of relabelling via setParams), but landing outside it
+                // rebuilds the stitched list wholesale, and only a remount lands
+                // on the right page then.
+                key={IS_WEB ? chapterId : `run:${runKey}`}
                 // Native: the stitched multi-chapter flat list, so swiping across
                 // a chapter boundary is an ordinary page turn. Web: per-chapter
                 // (its pager hands boundary swipes to onPrev/onNext itself).
@@ -663,10 +787,11 @@ export default function ReaderScreen() {
                 // hasn't run yet), which left the native readers, which only seed
                 // at mount and never re-sync, stuck on page 1 while the pill showed
                 // the right number. Native seeds in flat terms; segments stitched
-                // in after mount are handled by the pager's
-                // maintainVisibleContentPosition, not by re-seeding.
+                // in after mount are handled by the pager's own key-anchored
+                // re-scroll, not by re-seeding.
                 initialPage={IS_WEB ? startIndex : prefixLen + startIndex}
                 onPageChange={IS_WEB ? setCurrent : handleFlatPageChange}
+                onVisiblePageChange={IS_WEB ? undefined : handleFlatVisiblePage}
                 onPrev={turnPrev}
                 onNext={turnNext}
                 onToggleChrome={toggleChrome}
@@ -703,14 +828,14 @@ export default function ReaderScreen() {
               screen and taps pass through the gaps. */}
           <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, chromeFadeStyle]}>
             <ReaderToolbar
-              title={chapterName ?? title ?? 'Reader'}
-              subtitle={`Page ${currentPage + 1} of ${pages.length}`}
+              title={shown.name ?? title ?? 'Reader'}
+              subtitle={`Page ${shown.page + 1} of ${shown.total}`}
               visible={chromeVisible}
               onBack={() => router.back()}
             />
             <ProgressPill
-              current={currentPage}
-              total={pages.length}
+              current={shown.page}
+              total={shown.total}
               visible={chromeVisible}
               onJump={(i) => {
                 goTo(i);

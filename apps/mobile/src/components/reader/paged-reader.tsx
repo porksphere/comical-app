@@ -1,4 +1,13 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   FlatList,
   type NativeScrollEvent,
@@ -14,9 +23,9 @@ export type PagedReaderHandle = { goToPage: (logical: number, animated?: boolean
 /** One pager cell. The pager itself is chapter-agnostic — the reader screen may
  *  stitch SEVERAL chapters' pages into one `pages` array (seamless
  *  chapter-to-chapter swiping), so each item carries a stable identity (`key`,
- *  unique across chapters — required for maintainVisibleContentPosition to
- *  keep the view still when earlier segments load in) and its own per-chapter
- *  display number (`pageNumber`, what ReaderPage's failed state shows). */
+ *  unique across chapters AND stable across window slides — that's what lets the
+ *  pager re-anchor the visible page when segments come and go) and its own
+ *  per-chapter display number (`pageNumber`, what ReaderPage's failed state shows). */
 export type ReaderPageItem = { uri: string; key: string; pageNumber: number };
 
 type Props = {
@@ -26,7 +35,13 @@ type Props = {
   rtl: boolean;
   pageFit: PageFit;
   initialPage: number;
+  /** The page the scroll SETTLED on — the committed position (progress, chapter
+   *  relabel). Fires once per scroll, on momentum end. */
   onPageChange: (logical: number) => void;
+  /** The page currently on screen, reported as it goes past — every page of a
+   *  fast flick, not just the one it lands on. For display only (the pill and
+   *  toolbar count along); nothing that writes should hang off it. */
+  onVisiblePageChange?: (logical: number) => void;
   onPrev: () => void;
   onNext: () => void;
   onToggleChrome: () => void;
@@ -48,15 +63,26 @@ type Props = {
  * page is zoomed the FlatList scroll is disabled so a one-finger drag pans the
  * image instead of turning the page.
  *
- * `maintainVisibleContentPosition` keeps the visible page put when the reader
- * screen stitches an adjacent chapter's pages IN FRONT of the current position
- * (the previous chapter in LTR; the next chapter in RTL, where appending in
- * reading order physically prepends to the reversed data) — every cell is
- * exactly one page wide, so the native offset adjustment is always a whole
- * number of pages and paging alignment survives it.
+ * The reader screen stitches adjacent chapters into `pages`, extending that
+ * window as you cross a boundary. It appends at the tail wherever it can, so the
+ * current position usually doesn't move; when a chapter does land ahead of it,
+ * see `useLayoutEffect` below for how the visible page is kept put.
  */
 export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedReader(
-  { pages, width, height, rtl, pageFit, initialPage, onPageChange, onPrev, onNext, onToggleChrome, onZoomChange },
+  {
+    pages,
+    width,
+    height,
+    rtl,
+    pageFit,
+    initialPage,
+    onPageChange,
+    onVisiblePageChange,
+    onPrev,
+    onNext,
+    onToggleChrome,
+    onZoomChange,
+  },
   ref,
 ) {
   const listRef = useRef<FlatList<ReaderPageItem>>(null);
@@ -97,12 +123,53 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     onPageChange(toLogical(Math.max(0, Math.min(n - 1, physical))));
   };
 
-  // Track which page is on screen so off-screen pages reset their zoom.
+  // Reported live from viewability below. Kept in a ref (rewritten every render)
+  // because that callback has to stay identity-stable — FlatList throws if it
+  // changes — so it can't close over the current `rtl`/`n` mapping itself.
+  const reportVisibleRef = useRef<(physical: number) => void>(() => {});
+  reportVisibleRef.current = (physical: number) => onVisiblePageChange?.(toLogical(physical));
+
+  // Track which page is on screen so off-screen pages reset their zoom, report it
+  // to the reader for its page counter, and remember it as `anchorRef` — the page
+  // the scroll is parked on, identified by its stable key plus the index it
+  // occupies in the CURRENT `data`. The token carries the item itself, so the
+  // anchor needs no `data` closure either.
+  const anchorRef = useRef<{ key: string; index: number } | null>(null);
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     const first = viewableItems[0];
-    if (first?.index != null) setActiveIndex(first.index);
+    if (first?.index == null) return;
+    setActiveIndex(first.index);
+    anchorRef.current = { key: (first.item as ReaderPageItem).key, index: first.index };
+    reportVisibleRef.current(first.index);
   }).current;
+
+  // Keep the visible page put when a segment lands AHEAD of the current position
+  // (a previous chapter arriving late), which shifts every cell after it by a
+  // whole chapter while the scroll offset — a raw pixel value — knows nothing
+  // about it. The reader screen only ever extends its stitched window at the
+  // tail while you read forward, precisely so this stays a rare case.
+  //
+  // Deliberately NOT `maintainVisibleContentPosition`: that tracks the first
+  // visible *view* across a commit and shifts contentOffset by how far that view
+  // moved, which yields a garbage delta the moment the view it's tracking is
+  // recycled — which is what happens here, since the render window is computed
+  // from the pre-change offset and a whole chapter (~30 pages) lands far outside
+  // it. Measured on a real LTR crossing: dropping the 31-page previous chapter
+  // off the head snapped the offset to 0, i.e. back into the chapter just
+  // finished. It also misfired mid-fling on plain virtualization commits.
+  //
+  // Keys are stable across window changes (`chapterId:page`), so the correction
+  // is exact in JS: find where the anchored page went and scroll there. Every
+  // cell is one page wide, so this always lands page-aligned.
+  useLayoutEffect(() => {
+    const anchor = anchorRef.current;
+    if (!anchor) return;
+    const index = data.findIndex((item) => item.key === anchor.key);
+    if (index < 0 || index === anchor.index) return;
+    anchorRef.current = { key: anchor.key, index };
+    listRef.current?.scrollToOffset({ offset: index * width, animated: false });
+  }, [data, width]);
 
   // Tap-zone meaning flips with direction (RTL: left = next, right = prev),
   // mirroring the reference's `t(±l())`.
@@ -120,7 +187,6 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       showsHorizontalScrollIndicator={false}
       initialScrollIndex={toPhysical(Math.max(0, Math.min(n - 1, initialPage)))}
       getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
-      maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
       onMomentumScrollEnd={onMomentumEnd}
       onScrollToIndexFailed={() => {}}
       viewabilityConfig={viewabilityConfig}

@@ -69,9 +69,13 @@ type Props = {
  * toolbar / progress pill / settings (siblings in reader.tsx) never move.
  *
  * RTL: the data array is reversed and logical↔physical mapping keeps "next" =
- * reading order +1. Physical navigation is direction-agnostic (left tap zone =
- * physical −1, right = physical +1; dragging content left = physical +1); only
- * the reported page number goes back through `toLogical`.
+ * reading order +1. Gestures move the track in PHYSICAL terms regardless of
+ * direction (left tap zone = physical −1, right = physical +1; dragging content
+ * left = physical +1) — which under RTL already reads correctly, since the
+ * reversed track puts the next page to the left. Only two things translate back
+ * to logical: the reported page number (`toLogical`) and, at either end of the
+ * track, which chapter a hand-off goes to — physical n−1 is the LAST page in
+ * reading order in LTR but the FIRST in RTL.
  */
 
 // Fraction of the width a swipe must cover (or the fling velocity it must beat)
@@ -611,22 +615,21 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     (x: number) => {
       if (zoomedRef.current) return; // no tap zones while zoomed (mirrors native)
       if (x < width * 0.3) {
-        // Already at the first physical page (= first in reading order — `data` is
-        // pre-reversed for RTL): hand off to the reader for previous-chapter
-        // navigation instead of a silent clamp (mirrors the last-page → onNext path).
-        if (indexRef.current <= 0) onPrev?.();
+        // Nothing left physically to the left: hand off to the reader for chapter
+        // navigation instead of a silent clamp. WHICH chapter depends on direction —
+        // `data` is pre-reversed for RTL, so physical 0 is the last page in reading
+        // order there (and the first in LTR).
+        if (indexRef.current <= 0) (rtl ? onNext : onPrev)?.();
         else settleTo(indexRef.current - 1, false);
       } else if (x > width * 0.7) {
-        // Already at the last physical page (= the last page in reading order —
-        // `data` is pre-reversed for RTL, so "physical +1" is direction-agnostic
-        // "next"; see the file-level comment): nothing left to settle to
-        // internally, so hand off to the reader for auto-advance instead of a
-        // silent no-op clamp (mirrors native's tap-zone → onNext wiring).
-        if (indexRef.current >= n - 1) onNext?.();
+        // Mirror image: physical n-1 is the last page in reading order in LTR, the
+        // FIRST one in RTL — so the end of the track means auto-advance one way and
+        // previous-chapter the other.
+        if (indexRef.current >= n - 1) (rtl ? onPrev : onNext)?.();
         else settleTo(indexRef.current + 1, false);
       } else onToggleChrome();
     },
-    [onToggleChrome, onPrev, onNext, settleTo, width, n],
+    [onToggleChrome, onPrev, onNext, settleTo, width, n, rtl],
   );
 
   // A completed one-finger tap. Double-tap-to-zoom means we can't act on a tap
@@ -680,23 +683,22 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     if (passed) {
       // Drag/fling left (dx < 0) advances one physical page; right goes back.
       const dir = gesture.dx !== 0 ? -Math.sign(gesture.dx) : -Math.sign(gesture.velocity);
-      if (dir > 0 && indexRef.current >= n - 1) {
+      // Off the end of the track: hand the swipe to the reader for chapter nav
+      // rather than rubber-banding into nothing. Physical ±1 is NOT reading order
+      // ±1 under RTL (`data` is pre-reversed), so which chapter we hand off to is
+      // decided in logical terms — otherwise swiping off the end of an RTL chapter
+      // goes to the one you just came from.
+      if (dir > 0 ? indexRef.current >= n - 1 : indexRef.current <= 0) {
+        const forward = rtl ? dir < 0 : dir > 0;
         writeTrack(0, false);
-        onNext?.();
-        return;
-      }
-      if (dir < 0 && indexRef.current <= 0) {
-        // Past the first page in reading order — hand off to previous-chapter nav
-        // (symmetric to the last-page → onNext case above).
-        writeTrack(0, false);
-        onPrev?.();
+        (forward ? onNext : onPrev)?.();
         return;
       }
       settleTo(indexRef.current + dir, true);
     } else {
       settleTo(indexRef.current, true); // spring back
     }
-  }, [gesture, handleTapGesture, settleTo, width, writeTrack, onPrev, onNext, n]);
+  }, [gesture, handleTapGesture, settleTo, width, writeTrack, onPrev, onNext, n, rtl]);
 
   const endPointer = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
