@@ -29,8 +29,13 @@ import { hapticSelection } from '@/lib/haptics';
  *     `LocalLayoutDirection` for the row and another for the slider pill.
  *   - The buttons are DISABLED (dimmed), never hidden, when there's no chapter
  *     that way, so the slider never shifts around as you move through a series.
+ *     A CHAPTERLESS ("direct") series is the one exception — there's no chapter
+ *     to skip to in either direction ever, so a permanently-dead pair of buttons
+ *     is just stolen width; `chaptered={false}` drops them and the scrubber
+ *     takes the whole row.
  *   - Below two pages there's nothing to slide, so the pill is replaced by a
- *     spacer and only the chapter buttons remain.
+ *     spacer and only the chapter buttons remain (and with no buttons either,
+ *     the bar has nothing left to show and doesn't render at all).
  *
  * The drag is CONTINUOUS, not stepped. The thumb sits exactly under the finger
  * and reports a FRACTIONAL page position, which becomes a raw scroll offset — so
@@ -81,6 +86,10 @@ type Props = {
   /** Reading right-to-left — flips the slider and what the skip buttons do. */
   rtl: boolean;
   visible: boolean;
+  /** False for a chapterless ("direct") series: the skip buttons are omitted
+   *  entirely rather than rendered dead, and the scrubber flexes into the space
+   *  they'd have taken. Defaults true — every chaptered reader keeps them. */
+  chaptered?: boolean;
   hasPrevChapter: boolean;
   hasNextChapter: boolean;
   onPrevChapter: () => void;
@@ -115,6 +124,7 @@ export function ChapterNavigator({
   total,
   rtl,
   visible,
+  chaptered = true,
   hasPrevChapter,
   hasNextChapter,
   onPrevChapter,
@@ -279,12 +289,17 @@ export function ChapterNavigator({
   const left = rtl ? next : prev;
   const right = rtl ? prev : next;
 
+  // A one-page direct series has neither a slider nor buttons to put in the bar.
+  // (Every hook above has already run — this branch is stable for the lifetime
+  // of a given series, but keeping the return here means it can't reorder them.)
+  if (!chaptered && total <= 1) return null;
+
   return (
     <Animated.View
       pointerEvents={visible ? 'box-none' : 'none'}
       style={[styles.wrap, { bottom: insets.bottom + Spacing.two }, style]}>
       <View style={styles.row}>
-        <SkipButton {...left} Icon={SkipBackIcon} />
+        {chaptered && <SkipButton {...left} Icon={SkipBackIcon} />}
         {total > 1 ? (
           <View style={[styles.pill, rtl && styles.pillRtl]}>
             <NumSlot value={(scrubPage ?? page) + 1} widest={total} />
@@ -300,7 +315,7 @@ export function ChapterNavigator({
         ) : (
           <View style={styles.spacer} />
         )}
-        <SkipButton {...right} Icon={SkipForwardIcon} />
+        {chaptered && <SkipButton {...right} Icon={SkipForwardIcon} />}
       </View>
     </Animated.View>
   );

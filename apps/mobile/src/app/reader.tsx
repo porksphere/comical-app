@@ -985,6 +985,10 @@ export default function ReaderScreen() {
                 // Only the paged reader has a direction; the webtoon one is vertical.
                 rtl={settings.mode === 'paged' && settings.direction === 'rtl'}
                 visible={chromeVisible}
+                // A direct series has no chapters at all, so there's nothing for
+                // the skip buttons to ever reach — drop them and give the width
+                // to the scrubber.
+                chaptered={!isDirect}
                 hasPrevChapter={!!prevChapter}
                 hasNextChapter={!!nextChapter}
                 onPrevChapter={() => skipChapter(-1)}
