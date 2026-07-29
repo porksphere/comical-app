@@ -18,10 +18,9 @@
 # migrated (see ../README.md phased rollout) are simply absent from ../mobile/ and are
 # skipped here — this list is the intended final order, not a promise every entry exists yet.
 executionOrder:
-  continueOnFailure: true # TEMPORARY (diagnostic run) — restore to false once the suite is green.
-  # Fail-fast normally, so a failure names the FIRST thing that broke rather than a cascade of
-  # flows tripping over each other's leftover state. Flipped while the suite is being repaired:
-  # at 30min a run, one failure per cycle is too slow a way to find out what else is stale.
+  # Fail-fast, so a failure names the FIRST thing that broke rather than a cascade of flows
+  # tripping over each other's leftover state.
+  continueOnFailure: false
   flowsOrder:
     - smoke
     - browse-to-reader
