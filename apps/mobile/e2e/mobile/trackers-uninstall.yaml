@@ -52,10 +52,18 @@ appId: com.porksphere.comical
 # land": it was taken at assertion time, seconds after the swipe, and both `swipe-close.myanimelist`
 # and the pill were still on screen. The revealed pill is a stable target, and its onPress is the
 # very same handler the full swipe would have fired.
+#
+# `duration` is not decoration. Without it, iOS took this swipe as a TAP and navigated into the
+# AniList tracker's detail screen ("This tracker has no configurable settings." in the captured
+# hierarchy), so the pill was never found. A default-speed XCUITest swipe is a flick that delivers
+# too few intermediate touch points for the row's pan to claim it (activeOffsetX -12), leaving the
+# underlying Pressable to win. A slower drag sends the moves the gesture handler needs to recognise
+# it as a drag, on both platforms.
 - swipe:
     from:
       id: "trackers.row.anilist"
     direction: LEFT
+    duration: 600
 - tapOn:
     id: "swipe-action.anilist.uninstall"
 
