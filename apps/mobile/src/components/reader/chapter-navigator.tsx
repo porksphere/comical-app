@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+  type SharedValue,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SkipBackIcon, SkipForwardIcon } from '@/components/icons/reader-icons';
@@ -27,11 +33,17 @@ import { createTickHaptic, hapticSelection } from '@/lib/haptics';
  *     spacer and only the chapter buttons remain.
  *
  * The drag is CONTINUOUS, not stepped. The thumb sits exactly under the finger
- * and `onScrub` reports a fractional page position, which the reader turns into a
- * raw scroll offset — so dragging pulls the pages through the chapter's whole
- * scroll space 1:1, the way Suwatte's slider does, instead of animating a page
- * turn per stop (which lagged behind the finger and felt stepped). Only the
- * RELEASE settles, via `onSeek`, onto the nearest page.
+ * and reports a FRACTIONAL page position, which becomes a raw scroll offset — so
+ * dragging pulls the pages through the chapter's whole scroll space 1:1, the way
+ * Suwatte's slider does, instead of animating a page turn per stop (which lagged
+ * behind the finger and felt stepped). Only the RELEASE settles, via `onSeek`,
+ * onto the nearest page.
+ *
+ * That position goes out through `scrubTarget`, a shared value the pager reacts
+ * to on the UI thread, so the whole drag runs without touching JS — which is what
+ * makes it keep up while the list is still rendering the pages swept past. Only
+ * the webtoon reader, which has nothing to interpolate between, falls back to the
+ * `onScrub` callback.
  *
  * Haptics tick once per page boundary crossed, through the same delaying queue
  * the swipeable rows use: a fast scrub crosses several boundaries within a frame
@@ -58,8 +70,17 @@ type Props = {
   onPrevChapter: () => void;
   onNextChapter: () => void;
   /** Live position while dragging, in pages and FRACTIONAL (2.4 = 40% of the way
-   *  from page 3 to page 4). The reader scrolls straight to it, unanimated. */
+   *  from page 3 to page 4). The reader scrolls straight to it, unanimated.
+   *  Only used when there's no `scrubTarget` to write to (the webtoon reader). */
   onScrub: (position: number) => void;
+  /** Preferred over `onScrub` when given: the same fractional position, written
+   *  straight into a shared value the pager reacts to on the UI thread, so the
+   *  drag never hops to JS and the pages keep up with the finger even while the
+   *  list is busy rendering. Written as an index into the READER's whole stitched
+   *  page array, hence `offset`; negative means "not scrubbing". */
+  scrubTarget?: SharedValue<number>;
+  /** Where this chapter starts in that array (0 unless chapters are stitched). */
+  offset?: number;
   /** The page the drag came to rest on — the only point anything is committed. */
   onSeek: (page: number) => void;
   /** True while the thumb is held. The reader suspends its chrome auto-hide for
@@ -77,6 +98,8 @@ export function ChapterNavigator({
   onPrevChapter,
   onNextChapter,
   onScrub,
+  scrubTarget,
+  offset = 0,
   onSeek,
   onScrubbingChange,
 }: Props) {
@@ -122,8 +145,11 @@ export function ChapterNavigator({
       const f = rtl ? 1 - along : along;
       frac.set(f); // no snapping — the thumb goes exactly where the finger is
       const position = f * steps;
-      // Sub-hundredth-of-a-page moves aren't worth a hop to JS and a scroll write.
-      if (Math.abs(position - lastSent.value) >= 0.01) {
+      if (scrubTarget) {
+        scrubTarget.set(offset + position);
+      } else if (Math.abs(position - lastSent.value) >= 0.01) {
+        // No shared-value path (webtoon): fall back to a JS hop, but only for
+        // moves big enough to be worth one.
         lastSent.set(position);
         runOnJS(emitScrub)(position);
       }
@@ -149,6 +175,7 @@ export function ChapterNavigator({
         .onFinalize(() => {
           const index = Math.round(frac.value * steps);
           frac.set(index / steps); // settle onto the stop
+          scrubTarget?.set(-1); // hand the scroll back to the reader
           scrubbing.set(false);
           lastPage.set(-1);
           lastSent.set(-1);
@@ -156,7 +183,7 @@ export function ChapterNavigator({
           runOnJS(emitHold)(false);
         })
     );
-  }, [rtl, steps, len, frac, lastPage, lastSent, scrubbing, emitScrub, emitSeek, emitHold, emitTick]);
+  }, [rtl, steps, offset, scrubTarget, len, frac, lastPage, lastSent, scrubbing, emitScrub, emitSeek, emitHold, emitTick]);
 
   const onTrackLayout = useCallback(
     (e: LayoutChangeEvent) => {

@@ -641,15 +641,30 @@ export default function ReaderScreen() {
     },
     [pages, settings.mode, setCurrent, prefixLen],
   );
-  // The bottom scrubber's live drag: a FRACTIONAL page position straight into a
-  // scroll offset, so the pages track the finger through the chapter's whole
-  // scroll space instead of stepping (and animating) one page at a time. Nothing
-  // is committed here — no `setCurrent`, no progress write; the reader's own
-  // viewability reporting updates the page counter as the pages go past, and the
-  // release settles onto a real page through `goTo`.
+  // The bottom scrubber's live drag. In the native paged reader this never comes
+  // through JS at all: the navigator writes a FRACTIONAL page position into
+  // `scrubFlat` and the pager scrolls to it on the UI thread, so the pages keep
+  // up with the finger even while the list is busy rendering what it swept past.
+  // `scrubbing` is the same drag as a plain boolean, for the things that do need
+  // to know on the JS side (the pager's per-page re-render, the chrome hold).
   //
-  // The position is chapter-local and clamped to this chapter, so a scrub can
-  // never run off either end into the stitched neighbours.
+  // The webtoon reader has no such path (variable row heights, nothing to
+  // interpolate), so it keeps the JS callback below.
+  //
+  // Nothing is committed by either — no `setCurrent`, no progress write; the
+  // reader's own viewability reporting updates the page counter as the pages go
+  // past, and the release settles onto a real page through `goTo`. The position
+  // is clamped to this chapter, so a scrub can never run off either end into the
+  // stitched neighbours.
+  const scrubFlat = useSharedValue(-1);
+  const [scrubbing, setScrubbing] = useState(false);
+  const handleScrubbing = useCallback(
+    (active: boolean) => {
+      setScrubbing(active);
+      holdChrome(active);
+    },
+    [holdChrome],
+  );
   const scrubTo = useCallback(
     (position: number) => {
       const clamped = Math.max(0, Math.min((pages?.length ?? 1) - 1, position));
@@ -865,6 +880,8 @@ export default function ReaderScreen() {
                 initialPage={IS_WEB ? startIndex : prefixLen + startIndex}
                 onPageChange={IS_WEB ? setCurrent : handleFlatPageChange}
                 onVisiblePageChange={IS_WEB ? undefined : handleFlatVisiblePage}
+                scrubTarget={scrubFlat}
+                scrubbing={scrubbing}
                 onPrev={turnPrev}
                 onNext={turnNext}
                 onToggleChrome={toggleChrome}
@@ -929,8 +946,12 @@ export default function ReaderScreen() {
                 // finger, no animation); only the release settles, and the settle
                 // animates because it's a short slide onto the nearest page.
                 onScrub={scrubTo}
+                // The paged reader takes the UI-thread path; the webtoon one
+                // falls back to `onScrub` above.
+                scrubTarget={settings.mode === 'paged' ? scrubFlat : undefined}
+                offset={prefixLen}
                 onSeek={(i) => goTo(i, true)}
-                onScrubbingChange={holdChrome}
+                onScrubbingChange={handleScrubbing}
               />
             )}
           </Animated.View>

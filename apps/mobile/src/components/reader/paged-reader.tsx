@@ -14,6 +14,7 @@ import {
   type NativeSyntheticEvent,
   type ViewToken,
 } from 'react-native';
+import { scrollTo, useAnimatedReaction, useAnimatedRef, type SharedValue } from 'react-native-reanimated';
 
 import { ZoomablePage } from '@/components/reader/zoomable-page';
 import type { PageFit } from '@/hooks/use-reader-settings';
@@ -55,6 +56,15 @@ type Props = {
   /** Fires when the visible page's pinch-zoom state changes — the reader screen
    *  disables its swipe-away gesture while zoomed (a one-finger drag pans then). */
   onZoomChange?: (zoomed: boolean) => void;
+  /** Where the bottom scrubber's finger is, as a FRACTIONAL page index into
+   *  `pages` — or a negative number when nothing is being scrubbed. Driving it as
+   *  a shared value rather than a callback keeps the whole drag on the UI thread:
+   *  the scroll follows the finger even while JS is busy re-windowing the list. */
+  scrubTarget?: SharedValue<number>;
+  /** True for the duration of that drag. Suppresses the per-page `setActiveIndex`
+   *  re-render, which would otherwise re-render every mounted cell for each page
+   *  swept past — the single biggest source of stutter in a long scrub. */
+  scrubbing?: boolean;
 };
 
 /**
@@ -89,10 +99,15 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     onNext,
     onToggleChrome,
     onZoomChange,
+    scrubTarget,
+    scrubbing,
   },
   ref,
 ) {
-  const listRef = useRef<FlatList<ReaderPageItem>>(null);
+  // An animated ref: still an ordinary ref for the imperative calls below
+  // (`.current` is the FlatList), but ALSO usable from a worklet, which is what
+  // lets the scrubber reaction scroll without a hop to JS.
+  const listRef = useAnimatedRef<FlatList<ReaderPageItem>>();
   const n = pages.length;
 
   const toPhysical = (logical: number) => (rtl ? n - 1 - logical : logical);
@@ -120,10 +135,9 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         const clamped = Math.max(0, Math.min(n - 1, logical));
         listRef.current?.scrollToIndex({ index: toPhysical(clamped), animated });
       },
-      // Every cell is exactly one viewport wide (getItemLayout), so a fractional
-      // index is just an offset — `pagingEnabled` only snaps at the end of a real
-      // drag/fling, never against a programmatic offset, so the list happily rests
-      // between pages while the finger is down.
+      // The JS-side fallback for the same move (the webtoon reader's scrubber path
+      // and web). The native paged scrubber doesn't come through here at all — it
+      // drives `scrubTarget` and never touches the JS thread; see the reaction below.
       scrubTo(logical: number) {
         const clamped = Math.max(0, Math.min(n - 1, logical));
         listRef.current?.scrollToOffset({ offset: toPhysical(clamped) * width, animated: false });
@@ -151,13 +165,34 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // anchor needs no `data` closure either.
   const anchorRef = useRef<{ key: string; index: number } | null>(null);
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
+  // Mid-scrub, `setActiveIndex` is skipped: it re-renders every mounted cell, and
+  // a drag across a chapter would do that once per page swept past — for a state
+  // only the zoom reset reads, which nothing can be doing while a finger is on the
+  // slider. The release re-syncs it (viewability fires again on the settle).
+  const scrubbingRef = useRef(false);
+  scrubbingRef.current = !!scrubbing;
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     const first = viewableItems[0];
     if (first?.index == null) return;
-    setActiveIndex(first.index);
+    if (!scrubbingRef.current) setActiveIndex(first.index);
     anchorRef.current = { key: (first.item as ReaderPageItem).key, index: first.index };
     reportVisibleRef.current(first.index);
   }).current;
+
+  // The scrubber's live drag, resolved entirely on the UI thread — a shared value
+  // in, a native scroll command out, with the JS thread never in the loop. Every
+  // cell is exactly one viewport wide (getItemLayout), so a fractional page index
+  // is just an offset; `pagingEnabled` only snaps at the end of a real drag, never
+  // against a programmatic scroll, so the list rests between pages under a finger.
+  useAnimatedReaction(
+    () => scrubTarget?.value ?? -1,
+    (target) => {
+      if (target < 0) return;
+      const logical = Math.max(0, Math.min(n - 1, target));
+      scrollTo(listRef, (rtl ? n - 1 - logical : logical) * width, 0, false);
+    },
+    [scrubTarget, n, rtl, width],
+  );
 
   // Keep the visible page put when a segment lands AHEAD of the current position
   // (a previous chapter arriving late), which shifts every cell after it by a
@@ -184,7 +219,9 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     if (index < 0 || index === anchor.index) return;
     anchorRef.current = { key: anchor.key, index };
     listRef.current?.scrollToOffset({ offset: index * width, animated: false });
-  }, [data, width]);
+    // `listRef` is stable (an animated ref, which the lint rule can't tell from a
+    // plain one); it's listed only to keep exhaustive-deps quiet.
+  }, [data, width, listRef]);
 
   // Tap-zone meaning flips with direction (RTL: left = next, right = prev),
   // mirroring the reference's `t(±l())`.
@@ -202,6 +239,16 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       showsHorizontalScrollIndicator={false}
       initialScrollIndex={toPhysical(Math.max(0, Math.min(n - 1, initialPage)))}
       getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
+      // Window tuning matters more here than in a normal list: a cell is a
+      // FULL-SCREEN image, so the default windowSize of 21 keeps ~10 pages of
+      // decoded bitmap mounted either side and re-renders all of them on every
+      // virtualization pass. Two pages either side is enough to have the next
+      // page ready before you reach it, and it's what makes a long scrub survive:
+      // the shorter the window, the faster the list catches up with the offset
+      // and the less time you spend looking at unmounted (blank) cells.
+      initialNumToRender={1}
+      maxToRenderPerBatch={2}
+      windowSize={5}
       onMomentumScrollEnd={onMomentumEnd}
       onScrollToIndexFailed={() => {}}
       viewabilityConfig={viewabilityConfig}
