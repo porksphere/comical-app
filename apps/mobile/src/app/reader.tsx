@@ -647,6 +647,14 @@ export default function ReaderScreen() {
     };
   }, [visibleSeg, segments, settings.mode, currentPage, pages, chapterName]);
 
+  // What the top bar says. Series above, chapter below — NOT the page counter,
+  // which both platforms already show in the bottom chrome (the slider's own
+  // number on native, the progress pill on web). Repeating it up here spent the
+  // toolbar's one line on the thing nothing else could say: which series this is.
+  // Falls back to chapter-as-title when there's no series name to show (a direct
+  // chapter opened by URL), rather than leaving the bar blank.
+  const seriesTitle = cachedDetail?.title ?? title;
+
   const toggleChrome = useCallback(() => {
     if (swipeActiveRef.current) return; // a swipe-release tap, not a real chrome toggle
     setChromeVisible((v) => {
@@ -1002,8 +1010,8 @@ export default function ReaderScreen() {
           reachable while pages are still loading or a fetch has failed. */}
       <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, chromeFadeStyle]}>
         <ReaderToolbar
-          title={shown.name ?? title ?? 'Reader'}
-          subtitle={shown.total > 0 ? `Page ${shown.page + 1} of ${shown.total}` : ''}
+          title={seriesTitle ?? shown.name ?? 'Reader'}
+          subtitle={seriesTitle ? (shown.name ?? '') : ''}
           visible={chromeVisible}
           onBack={() => router.back()}
           right={

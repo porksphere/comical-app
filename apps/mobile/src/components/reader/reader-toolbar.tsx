@@ -8,8 +8,10 @@ import { ChevronLeftIcon } from '@/components/icons/chevron-left';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 
-/** Auto-hiding top toolbar over the reader: back + title + "page X of Y", with an
- *  optional trailing control (the reader's settings gear) on the right. */
+/** Auto-hiding top toolbar over the reader: back + the series title with its
+ *  chapter beneath, and an optional trailing control (the reader's settings gear)
+ *  on the right. The page counter is deliberately NOT here — the bottom chrome
+ *  owns it on both platforms. */
 export function ReaderToolbar({
   title,
   subtitle,

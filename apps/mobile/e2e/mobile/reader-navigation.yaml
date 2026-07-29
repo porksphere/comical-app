@@ -20,10 +20,12 @@
 #     position-based name would mean the opposite thing in a right-to-left series.
 #   - reader.settings.open                  settings-panel.tsx's gear button, now in the toolbar's
 #     trailing (top-right) slot rather than floating at the bottom-right.
-#
-# The page is read off the TOOLBAR subtitle ("Page N of M", reader.tsx) rather than a bottom-bar
-# number: the navigator renders the current page and the total as two separate Text nodes, so
-# there's no single node holding a "N / M" string to anchor a regex to.
+#   - reader.navigator.page                 the navigator's current-page number. The page used to be
+#     read off the toolbar subtitle ("Page N of M"), but the toolbar now carries the series and
+#     chapter instead — the count belongs to the bottom bar, which is where it's asserted from.
+#     The navigator renders the page and the total as SEPARATE Text nodes (and a third, invisible,
+#     sizing ghost), so there's no "N / M" string to regex; this testID is on the node holding the
+#     current page alone, which is why the assertions below match a bare number.
 #   - reader.settings.direction.ltr / .vertical / .rtl   The 3-way mode+direction row — NOT
 #     ".paged"/".webtoon" (a wrong name already caught and fixed in
 #     swipe-dismiss-webtoon.yaml this same session; DIRECTION_OPTIONS only has ltr/vertical/rtl).
@@ -63,17 +65,20 @@ appId: com.porksphere.comical
 - assertVisible:
     id: "reader.toolbar.back"
 - assertVisible:
-    text: "^Page 1 of \\d+$"
+    id: "reader.navigator.page"
+    text: "^1$"
 
 # Paged next/prev taps.
 - tapOn:
     id: "reader.control.next"
 - assertVisible:
-    text: "^Page 2 of \\d+$"
+    id: "reader.navigator.page"
+    text: "^2$"
 - tapOn:
     id: "reader.control.prev"
 - assertVisible:
-    text: "^Page 1 of \\d+$"
+    id: "reader.navigator.page"
+    text: "^1$"
 
 # Bottom navigator: both chapter-skip buttons are present (they're DISABLED, never hidden, at the
 # ends of a series — chapter-navigator.tsx), and dragging the slider scrubs. A Maestro element swipe
@@ -90,7 +95,8 @@ appId: com.porksphere.comical
       id: "reader.navigator.slider"
     direction: RIGHT
 - assertNotVisible:
-    text: "^Page 1 of \\d+$"
+    id: "reader.navigator.page"
+    text: "^1$"
 
 # Settings sheet: switch reading direction to Vertical (webtoon) and back to L -> R (paged).
 - tapOn:

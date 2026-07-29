@@ -341,7 +341,12 @@ function NumSlot({ value, widest }: { value: number; widest: number }) {
   return (
     <View>
       <ThemedText style={[styles.num, styles.numGhost]}>{widest}</ThemedText>
-      <ThemedText style={[styles.num, styles.numOver]}>{value}</ThemedText>
+      {/* The one node holding the current page as its own text — the ghost
+          underneath holds the total, and e2e has to be able to tell them
+          apart to read a page number off the bar. */}
+      <ThemedText testID="reader.navigator.page" style={[styles.num, styles.numOver]}>
+        {value}
+      </ThemedText>
     </View>
   );
 }
