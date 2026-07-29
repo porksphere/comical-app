@@ -25,6 +25,12 @@ export type ImageProgress = {
  *  would cost an extra render pass on every page mount. */
 const keyOf = (uri: string | null, attempt: number) => `${uri ?? ''}#${attempt}`;
 
+/** How much the percentage has to move to be worth a render. expo-image reports every chunk, which
+ *  for a page over a fast connection is dozens of events — each one a setState, on every page the
+ *  reader currently has mounted, competing with the work that actually puts pages on screen. A
+ *  number that advances in visible steps costs a fraction of that and reads the same. */
+const STEP_PERCENT = 5;
+
 export function useImageProgress(uri: string | null, attempt: number): ImageProgress {
   const [reported, setReported] = useState<{ key: string; percent: number } | null>(null);
   const key = keyOf(uri, attempt);
@@ -33,7 +39,17 @@ export function useImageProgress(uri: string | null, attempt: number): ImageProg
     (e: { loaded: number; total: number }) => {
       // Hold at 99 until `onLoad` — decode still has to happen after the last byte arrives, and
       // showing 100% over a still-blank page reads as a stall.
-      if (e.total > 0) setReported({ key, percent: Math.min(99, Math.round((e.loaded / e.total) * 100)) });
+      if (e.total <= 0) return;
+      const percent = Math.min(99, Math.round((e.loaded / e.total) * 100));
+      setReported((prev) => {
+        // A different download's number is always replaced, however small the change.
+        if (prev?.key === key) {
+          if (prev.percent === percent) return prev;
+          // The 99 that means "downloaded, now decoding" is never held back.
+          if (percent < 99 && Math.abs(prev.percent - percent) < STEP_PERCENT) return prev;
+        }
+        return { key, percent };
+      });
     },
     [key],
   );

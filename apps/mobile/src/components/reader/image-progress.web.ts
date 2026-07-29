@@ -40,6 +40,11 @@ function measurable(uri: string): boolean {
  *  stale one is dropped by key mismatch at read time rather than cleared in an effect. */
 const keyOf = (uri: string | null, attempt: number) => `${uri ?? ''}#${attempt}`;
 
+/** See `image-progress.ts`'s copy — every chunk is otherwise a render, on every page in the reader's
+ *  window at once. Declared again rather than imported because on web `./image-progress` resolves to
+ *  THIS file. */
+const STEP_PERCENT = 5;
+
 type Download = { key: string; source: string | null; percent: number | null; error: string | null };
 
 export function useImageProgress(uri: string | null, attempt: number): ImageProgress {
@@ -64,7 +69,13 @@ export function useImageProgress(uri: string | null, attempt: number): ImageProg
       // so no percentage — the skeleton alone carries the loading state.
       if (!e.lengthComputable || e.total <= 0) return;
       const percent = Math.min(99, Math.round((e.loaded / e.total) * 100));
-      setDownload((d) => ({ key, source: d?.key === key ? d.source : null, percent, error: null }));
+      setDownload((d) => {
+        if (d?.key === key && d.percent !== null) {
+          if (d.percent === percent) return d;
+          if (percent < 99 && Math.abs(d.percent - percent) < STEP_PERCENT) return d;
+        }
+        return { key, source: d?.key === key ? d.source : null, percent, error: null };
+      });
     };
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300 && xhr.response) {

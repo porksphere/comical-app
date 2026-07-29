@@ -7,7 +7,7 @@ import { useImageProgress } from '@/components/reader/image-progress';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
-import { invalidateAssetSource, resolveAssetSourceCached } from '@/data/api';
+import { invalidateAssetSource, peekResolvedAssetSource, resolveAssetSourceCached } from '@/data/api';
 import { coverDelayMs } from '@/data/mock';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { testId } from '@/lib/test-id';
@@ -26,6 +26,18 @@ import { testId } from '@/lib/test-id';
 
 const DEFAULT_ASPECT = 2 / 3; // width / height before the image reports its size
 const RETRY_DELAYS_MS = [1000, 2000, 4000];
+
+/**
+ * The surface shown wherever a page isn't on screen yet. Exported because the pager paints the SAME
+ * colour behind its (virtualized) list — see paged-reader.tsx's `PageBackdrop`.
+ *
+ * There are two ways a page can be missing and they used to look identical and like nothing at all:
+ * a cell the list hasn't mounted yet showed the reader's own `#0f0f0f`, and a mounted-but-unloaded
+ * one showed the skeleton's `rgba(128,128,128,0.18)` over it — about `#1a1a1a`, ten RGB values
+ * away. Both read as "the reader went black". They're now one deliberate, clearly-lighter surface,
+ * and the only difference between them is that a mounted page can say which page it is.
+ */
+export const PAGE_SURFACE = '#1f1f24';
 
 type LoadEvent = { source?: { width?: number; height?: number } | null };
 
@@ -61,7 +73,11 @@ export function ReaderPage({
   // this page has actually mounted (readers window their rows, so pages far off-screen never mount and
   // never resolve). This is what keeps a big gallery from resolving every page up front. `null` until
   // resolved; while null the skeleton shows.
-  const [resolvedUri, setResolvedUri] = useState<string | null>(null);
+  // Seeded from the synchronous peek: the warm-ahead prefetch has usually resolved this path
+  // already (and an absolute URL resolves to itself, which is nearly all of them), and learning
+  // that from the effect below instead cost every page an extra commit as a placeholder before the
+  // <Image> could even mount.
+  const [resolvedUri, setResolvedUri] = useState<string | null>(() => peekResolvedAssetSource(uri) ?? null);
   // `coverDelayMs` self-gates on mock mode (0 in real mode), so real pages get no fake latency.
   const delay = useMemo(() => coverDelayMs(uri), [uri]);
   const [delayPassed, setDelayPassed] = useState(delay === 0);
@@ -127,8 +143,21 @@ export function ReaderPage({
   // Retry chip like any other failure.
   useEffect(() => {
     let cancelled = false;
-    setResolvedUri(null);
-    if (attempt > 0) invalidateAssetSource(uri);
+    // Don't tear a good URL down to re-derive the same answer: on a first attempt the seed above is
+    // already correct whenever the peek knew it, and clearing it here would unmount the <Image>
+    // for a frame. A retry (`attempt > 0`) deliberately does start from nothing.
+    if (attempt > 0) {
+      setResolvedUri(null);
+      invalidateAssetSource(uri);
+    } else {
+      // Re-asserted rather than assumed: the seed belongs to whatever `uri` was at MOUNT, so a
+      // changed one still has to say so (a no-op set when it agrees, which is the common case).
+      const known = peekResolvedAssetSource(uri);
+      if (known) {
+        setResolvedUri(known);
+        return;
+      }
+    }
     resolveAssetSourceCached(uri)
       .then((u) => {
         if (!cancelled) setResolvedUri(u);
@@ -205,7 +234,11 @@ export function ReaderPage({
           style={StyleSheet.absoluteFill}
           contentFit={fit === 'contain' ? 'contain' : 'cover'}
           cachePolicy="memory-disk"
-          transition={150}
+          // No cross-fade in paged mode. The page it fades UP FROM is the placeholder, so a page
+          // that was actually ready still spent 150ms looking like one — the exact impression this
+          // pass is trying to remove. Webtoon keeps it: rows arrive under a continuously moving
+          // scroll, where a hard swap is the more jarring of the two.
+          transition={fit === 'contain' ? 0 : 150}
           // Hold animated pages (e.g. animated WebP) on their FIRST frame — do not autoplay. On iOS,
           // expo-image animates a WebP via a Core Animation keyframe animation that decodes each frame
           // on the MAIN THREAD inside the layer commit (Sentry COMICAL-APP-1E: CA::Transaction::commit
@@ -227,10 +260,15 @@ export function ReaderPage({
           {...imageProps}
         />
       )}
-      {!ready && <Skeleton style={StyleSheet.absoluteFill} />}
-      {!ready && status && (
-        <View style={styles.status} pointerEvents="none">
-          <ThemedText style={styles.statusText}>{status}</ThemedText>
+      {!ready && (
+        // Laid over the box (absolute, centred) rather than inside it, so it can't affect the page's
+        // measured height — webtoon mode derives row heights from that.
+        <View style={[StyleSheet.absoluteFill, styles.placeholder]} pointerEvents="none">
+          <Skeleton style={StyleSheet.absoluteFill} />
+          {/* Always named, not just once bytes are moving: "waiting to start" was the most common
+              loading state and the one that said nothing at all. */}
+          <ThemedText style={styles.placeholderPage}>Page {page}</ThemedText>
+          {status && <ThemedText style={styles.statusText}>{status}</ThemedText>}
         </View>
       )}
     </View>
@@ -254,20 +292,20 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.35)',
     fontSize: 12,
   },
-  // Centred on the skeleton, and centred on the *box* rather than laid out in it, so it can't
-  // affect the page's measured height (webtoon mode derives row heights from that).
-  status: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+  placeholder: {
+    backgroundColor: PAGE_SURFACE,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: Spacing.one,
   },
   // Same treatment as the failed screen's "Page N" line — no pill/backdrop, just the text.
-  statusText: {
+  placeholderPage: {
     color: 'rgba(255,255,255,0.5)',
+  },
+  // Secondary to the page name above it, like the failed screen's two lines.
+  statusText: {
+    color: 'rgba(255,255,255,0.35)',
+    fontSize: 12,
     fontVariant: ['tabular-nums'], // a ticking percentage shouldn't jitter its own width
   },
   retryChip: {

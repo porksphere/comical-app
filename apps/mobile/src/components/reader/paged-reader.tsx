@@ -10,12 +10,21 @@ import {
 } from 'react';
 import {
   FlatList,
+  StyleSheet,
+  View,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   type ViewToken,
 } from 'react-native';
-import { scrollTo, useAnimatedReaction, useAnimatedRef, type SharedValue } from 'react-native-reanimated';
+import Animated, {
+  scrollTo,
+  useAnimatedReaction,
+  useAnimatedRef,
+  useAnimatedStyle,
+  type SharedValue,
+} from 'react-native-reanimated';
 
+import { PAGE_SURFACE } from '@/components/reader/reader-page';
 import { ZoomablePage } from '@/components/reader/zoomable-page';
 import type { PageFit } from '@/hooks/use-reader-settings';
 
@@ -35,6 +44,9 @@ export type PagedReaderHandle = {
  *  pager re-anchor the visible page when segments come and go) and its own
  *  per-chapter display number (`pageNumber`, what ReaderPage's failed state shows). */
 export type ReaderPageItem = { uri: string; key: string; pageNumber: number };
+
+/** Module-level so it's stable without a hook — FlatList keeps the first one it's given. */
+const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 60 };
 
 type Props = {
   pages: ReaderPageItem[];
@@ -154,11 +166,10 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     onPageChange(toLogical(Math.max(0, Math.min(n - 1, physical))));
   };
 
-  // Reported live from viewability below. Kept in a ref (rewritten every render)
-  // because that callback has to stay identity-stable — FlatList throws if it
-  // changes — so it can't close over the current `rtl`/`n` mapping itself.
+  // Reported live from viewability below. Kept in a ref because that callback has
+  // to stay identity-stable — FlatList throws if it changes — so it can't close
+  // over the current `rtl`/`n` mapping itself.
   const reportVisibleRef = useRef<(physical: number) => void>(() => {});
-  reportVisibleRef.current = (physical: number) => onVisiblePageChange?.(toLogical(physical));
 
   // Track which page is on screen so off-screen pages reset their zoom, report it
   // to the reader for its page counter, and remember it as `anchorRef` — the page
@@ -166,7 +177,6 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // occupies in the CURRENT `data`. The token carries the item itself, so the
   // anchor needs no `data` closure either.
   const anchorRef = useRef<{ key: string; index: number } | null>(null);
-  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
   // Mid-scrub, both JS-side effects are skipped and only the anchor is kept up to
   // date. `setActiveIndex` re-renders every mounted cell, and reporting the
   // visible page re-renders the whole reader screen (its counter and stitched-
@@ -178,15 +188,30 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // release re-syncs both — viewability fires again on the settle, and the
   // reader's seek names the landing page directly.
   const scrubbingRef = useRef(false);
-  scrubbingRef.current = !!scrubbing;
-  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+  const [onViewableItemsChanged] = useState(() => ({ viewableItems }: { viewableItems: ViewToken[] }) => {
     const first = viewableItems[0];
     if (first?.index == null) return;
     anchorRef.current = { key: (first.item as ReaderPageItem).key, index: first.index };
     if (scrubbingRef.current) return;
     setActiveIndex(first.index);
     reportVisibleRef.current(first.index);
-  }).current;
+  });
+
+  // Both refs above are rewritten AFTER each render rather than during it.
+  //
+  // They were written inline in the render body until this pass, which the React
+  // Compiler forbids — and it had never said so, because it was quietly bailing
+  // out of this component altogether (giving up its memoization as well as its
+  // diagnostics). Splitting the return into a wrapper for the backdrop is what
+  // made it compilable, at which point four long-standing violations surfaced at
+  // once. Nothing reads either ref before the first commit — viewability can only
+  // fire once the list has laid out and scrolled — so a layout effect is early
+  // enough, and it deliberately has no dependency array: every render's values
+  // are the ones the next callback should see.
+  useLayoutEffect(() => {
+    reportVisibleRef.current = (physical: number) => onVisiblePageChange?.(toLogical(physical));
+    scrubbingRef.current = !!scrubbing;
+  });
 
   // The scrubber's live drag, resolved entirely on the UI thread — a shared value
   // in, a native scroll command out, with the JS thread never in the loop. Every
@@ -238,44 +263,97 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   const rightAction = rtl ? onPrev : onNext;
 
   return (
-    <FlatList
-      ref={listRef}
-      data={data}
-      keyExtractor={(item) => item.key}
-      horizontal
-      pagingEnabled
-      scrollEnabled={!zoomed}
-      showsHorizontalScrollIndicator={false}
-      initialScrollIndex={toPhysical(Math.max(0, Math.min(n - 1, initialPage)))}
-      getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
-      // Window tuning matters more here than in a normal list: a cell is a
-      // FULL-SCREEN image, so the default windowSize of 21 keeps ~10 pages of
-      // decoded bitmap mounted either side and re-renders all of them on every
-      // virtualization pass. Two pages either side is enough to have the next
-      // page ready before you reach it, and it's what makes a long scrub survive:
-      // the shorter the window, the faster the list catches up with the offset
-      // and the less time you spend looking at unmounted (blank) cells.
-      initialNumToRender={1}
-      maxToRenderPerBatch={2}
-      windowSize={5}
-      onMomentumScrollEnd={onMomentumEnd}
-      onScrollToIndexFailed={() => {}}
-      viewabilityConfig={viewabilityConfig}
-      onViewableItemsChanged={onViewableItemsChanged}
-      renderItem={({ item, index }) => (
-        <ZoomablePage
-          uri={item.uri}
-          page={item.pageNumber}
-          width={width}
-          height={height}
-          pageFit={pageFit}
-          active={index === activeIndex}
-          onLeft={leftAction}
-          onRight={rightAction}
-          onToggleChrome={onToggleChrome}
-          onZoomChange={handleZoomChange}
-        />
-      )}
-    />
+    <View style={{ width, height }}>
+      <PageBackdrop width={width} height={height} target={scrubTarget} />
+      <FlatList
+        ref={listRef}
+        // Sized explicitly: it used to BE this component's root and take the size
+        // from whatever hosted it, but it now shares that slot with the backdrop
+        // behind it, and a scroller that sizes to its content is not what wants to
+        // decide the reader's dimensions.
+        style={{ width, height }}
+        data={data}
+        keyExtractor={(item) => item.key}
+        horizontal
+        pagingEnabled
+        scrollEnabled={!zoomed}
+        showsHorizontalScrollIndicator={false}
+        initialScrollIndex={toPhysical(Math.max(0, Math.min(n - 1, initialPage)))}
+        getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
+        // Window tuning matters more here than in a normal list: a cell is a
+        // FULL-SCREEN image, so the default windowSize of 21 keeps ~10 pages of
+        // decoded bitmap mounted either side and re-renders all of them on every
+        // virtualization pass. Two pages either side is enough to have the next
+        // page ready before you reach it, and it's what makes a long scrub survive:
+        // the shorter the window, the faster the list catches up with the offset
+        // and the less time you spend looking at unmounted (blank) cells.
+        //
+        // Mid-scrub the window stays that size but is filled FASTER: after a jump
+        // the list has ~5 cells to build, and at the resting batch size that's
+        // three passes ~50ms apart before the page under the finger exists at all.
+        initialNumToRender={1}
+        maxToRenderPerBatch={scrubbing ? 5 : 2}
+        updateCellsBatchingPeriod={scrubbing ? 16 : 50}
+        windowSize={5}
+        onMomentumScrollEnd={onMomentumEnd}
+        onScrollToIndexFailed={() => {}}
+        viewabilityConfig={VIEWABILITY_CONFIG}
+        onViewableItemsChanged={onViewableItemsChanged}
+        renderItem={({ item, index }) => (
+          <ZoomablePage
+            uri={item.uri}
+            page={item.pageNumber}
+            width={width}
+            height={height}
+            pageFit={pageFit}
+            active={index === activeIndex}
+            onLeft={leftAction}
+            onRight={rightAction}
+            onToggleChrome={onToggleChrome}
+            onZoomChange={handleZoomChange}
+          />
+        )}
+      />
+    </View>
   );
+});
+
+/**
+ * What's behind the list. A virtualized list draws NOTHING where it hasn't mounted a cell, so a
+ * scrub that outruns virtualization used to expose the reader's own near-black surface — the "black
+ * pages". This paints the same placeholder surface a mounted-but-unloaded page shows, so outrunning
+ * the list looks like pages that haven't drawn yet rather than like the reader falling over.
+ *
+ * Two panels, offset by the FRACTIONAL part of the scrub position, so page boundaries slide past
+ * under the finger: without them a long scrub over unmounted cells is a motionless slab, which
+ * reads as a freeze — the very thing being fixed. Two is enough at any offset, since the shift is
+ * always within one page width. It runs off the same shared value the scroll does, so it stays with
+ * the finger no matter how busy the JS thread is, and sits still (a plain surface) the rest of the
+ * time — a fling isn't driven by `scrubTarget`, and doesn't outrun the list far enough to need this.
+ */
+function PageBackdrop({ width, height, target }: { width: number; height: number; target?: SharedValue<number> }) {
+  const style = useAnimatedStyle(() => {
+    const t = target?.value ?? -1;
+    return { transform: [{ translateX: t < 0 ? 0 : -(t - Math.floor(t)) * width }] };
+  });
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      <Animated.View style={[styles.backdropRow, style]}>
+        <View style={[styles.backdropPage, { width, height }]} />
+        <View style={[styles.backdropPage, { width, height }]} />
+      </Animated.View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  backdropRow: {
+    flexDirection: 'row',
+  },
+  backdropPage: {
+    backgroundColor: PAGE_SURFACE,
+    // The seam between two pages, in the reader's own surface colour.
+    borderRightWidth: 2,
+    borderRightColor: '#0f0f0f',
+  },
 });

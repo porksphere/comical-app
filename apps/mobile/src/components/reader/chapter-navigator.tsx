@@ -102,6 +102,12 @@ type Props = {
   /** True while the thumb is held. The reader suspends its chrome auto-hide for
    *  the duration, so a slow scrub can't have the bar fade out from under it. */
   onScrubbingChange?: (scrubbing: boolean) => void;
+  /** Each page the drag settles onto, at the same rate as the haptics (so at most
+   *  one per TICK_MS, riding the hop that's already crossing to JS). The reader
+   *  warms images around it — a scrub is otherwise the one way to arrive at a
+   *  page nothing has prefetched, since the warm-ahead follows the READ position
+   *  and that deliberately stops updating while a finger is down. */
+  onScrubPage?: (page: number) => void;
 };
 
 export function ChapterNavigator({
@@ -118,6 +124,7 @@ export function ChapterNavigator({
   offset = 0,
   onSeek,
   onScrubbingChange,
+  onScrubPage,
 }: Props) {
   const insets = useSafeAreaInsets();
   const style = useAnimatedStyle(() => ({
@@ -163,10 +170,14 @@ export function ChapterNavigator({
   const emitHold = useCallback((held: boolean) => onScrubbingChange?.(held), [onScrubbingChange]);
   // One hop per tick carries BOTH the buzz and the number, so they can't drift
   // apart and the JS thread is asked for at most one wake-up per TICK_MS.
-  const emitTick = useCallback((index: number) => {
-    hapticSelection();
-    setScrubPage(index);
-  }, []);
+  const emitTick = useCallback(
+    (index: number) => {
+      hapticSelection();
+      setScrubPage(index);
+      onScrubPage?.(index);
+    },
+    [onScrubPage],
+  );
 
   const pan = useMemo(() => {
     const apply = (x: number) => {

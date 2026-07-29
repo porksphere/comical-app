@@ -48,6 +48,11 @@ const CHROME_AUTO_HIDE = process.env.EXPO_PUBLIC_COMICAL_DEMO_FAST !== '1';
 // (How many page *images* to warm ahead is the user-configurable
 // `settings.prefetchAhead`, comical-web's `prefetchAhead`.)
 const NEXT_CHAPTER_TRIGGER = 3;
+// How many pages BEHIND the current one to keep warm. The warm-ahead used to be strictly forward,
+// which is right for reading and wrong for everything else you can do in a reader: paging back, and
+// above all scrubbing, always arrived at a cold page. Small, because going back is the rarer move —
+// the point is only that it isn't a cold start.
+const WARM_BEHIND = 2;
 // The web paged reader is not stitched (it hands boundary swipes to
 // onPrev/onNext itself); the native one pages across a flat multi-chapter list.
 const IS_WEB = Platform.OS === 'web';
@@ -59,9 +64,19 @@ type Segment = { id: string; name?: string; pages: string[] };
  *  paths, so resolve them first (deduped/cached, shared with ReaderPage's own lazy resolve) and only
  *  prefetch the http(s) results — a `data:` URI is already inlined, nothing to fetch. Best-effort:
  *  failures are the per-page ReaderPage's problem to surface, not the prefetch's. */
+/** Paths already handed to `Image.prefetch` this session. Warm windows overlap heavily — every page
+ *  turn re-asks for most of the previous window, and a scrub re-asks several times a second — and
+ *  each re-ask is a native round-trip to be told the image is already cached. Capped rather than
+ *  grown forever; a wrap just re-warms, which is harmless. */
+const warmed = new Set<string>();
+const WARM_MEMO_MAX = 2000;
+
 function warmPrefetch(pages: string[]): void {
-  if (!pages.length) return;
-  void Promise.all(pages.map((p) => resolveAssetSourceCached(p).catch(() => null))).then((urls) => {
+  const fresh = pages.filter((p) => !warmed.has(p));
+  if (!fresh.length) return;
+  if (warmed.size > WARM_MEMO_MAX) warmed.clear();
+  for (const p of fresh) warmed.add(p);
+  void Promise.all(fresh.map((p) => resolveAssetSourceCached(p).catch(() => null))).then((urls) => {
     const http = urls.filter((u): u is string => !!u && !u.startsWith('data:'));
     if (http.length) void Image.prefetch(http);
   });
@@ -274,10 +289,21 @@ export default function ReaderScreen() {
   // next chapter's page list into the query cache (so opening it is instant) plus
   // its first few page images (so they're not cold the moment the reader lands
   // on them after auto-advancing).
+  //
+  // `warmAround` is also what a scrub calls (see the navigator's `onScrubPage`),
+  // so the pages the drag is heading for are being fetched while it's still
+  // moving rather than from a standing start on release.
+  const warmAround = useCallback(
+    (index: number) => {
+      if (!pages?.length) return;
+      warmPrefetch(pages.slice(Math.max(0, index - WARM_BEHIND), index + 1 + settings.prefetchAhead));
+    },
+    [pages, settings.prefetchAhead],
+  );
+
   useEffect(() => {
     if (!pages || pages.length === 0) return;
-    const ahead = pages.slice(currentPage + 1, currentPage + 1 + settings.prefetchAhead);
-    warmPrefetch(ahead);
+    warmAround(currentPage);
 
     if (!chapterId || currentPage < pages.length - NEXT_CHAPTER_TRIGGER) return;
     const nextId = nextChapterId(queryClient, mock, bridgeId ?? '', seed ?? '', chapterId);
@@ -289,7 +315,7 @@ export default function ReaderScreen() {
         if (nextPages?.length) warmPrefetch(nextPages.slice(0, settings.prefetchAhead));
       });
     }
-  }, [pages, currentPage, chapterId, ds, mock, queryClient, bridgeId, seed, settings.prefetchAhead]);
+  }, [pages, currentPage, chapterId, ds, mock, queryClient, bridgeId, seed, settings.prefetchAhead, warmAround]);
 
   // ── Auto-advance to the next chapter ──────────────────────────────────────
   // Guards against a re-entrant double-advance (e.g. a rapid extra tap/scroll
@@ -965,6 +991,8 @@ export default function ReaderScreen() {
                 offset={prefixLen}
                 onSeek={seekTo}
                 onScrubbingChange={handleScrubbing}
+                // Fetch what the drag is heading for while it's still moving.
+                onScrubPage={warmAround}
               />
             )}
           </Animated.View>
