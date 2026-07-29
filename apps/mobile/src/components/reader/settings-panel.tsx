@@ -1,8 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import type { ComponentType } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MoveLeftIcon, MoveRightIcon, MoveVerticalIcon, SettingsIcon } from '@/components/icons/reader-icons';
 import type { IconProps } from '@/components/icons/ui-icons';
@@ -26,11 +24,13 @@ import {
 } from '@/hooks/use-reader-settings';
 import { testId } from '@/lib/test-id';
 
-/** Gear button (bottom-right) that opens reader settings in the app's shared
- *  overlay system — a near-full-width bottom sheet on mobile/narrow web, an
- *  anchored popover (matching Browse's filter buttons) on wide desktop web. */
+/** Gear button that opens reader settings in the app's shared overlay system — a
+ *  near-full-width bottom sheet on mobile/narrow web, an anchored popover
+ *  (matching Browse's filter buttons) on wide desktop web.
+ *
+ *  Rendered inline in the reader toolbar's trailing slot, so it inherits that
+ *  bar's fade/auto-hide rather than positioning or animating itself. */
 export function SettingsControl({
-  visible,
   bridgeId,
   seriesId,
   title,
@@ -38,7 +38,6 @@ export function SettingsControl({
   author,
   direct,
 }: {
-  visible: boolean;
   /** When both are set, the "This series" actions are shown — omitted on bridges/pages where the
    *  reader was opened without a resolvable series (shouldn't normally happen). */
   bridgeId?: string;
@@ -51,35 +50,30 @@ export function SettingsControl({
   /** A direct (chapterless) series downloads as one unit; otherwise Download opens chapter select. */
   direct?: boolean;
 }) {
-  const insets = useSafeAreaInsets();
   const { ref, openAt } = useAnchoredOverlay();
-  const style = useAnimatedStyle(() => ({ opacity: withTiming(visible ? 1 : 0, { duration: 200 }) }));
 
   return (
-    <Animated.View
-      pointerEvents={visible ? 'box-none' : 'none'}
-      style={[styles.wrap, { bottom: insets.bottom + Spacing.two }, style]}>
-      <Pressable
-        testID="reader.settings.open"
-        ref={ref}
-        onPress={() =>
-          openAt(() => (
-            <SettingsContent
-              bridgeId={bridgeId}
-              seriesId={seriesId}
-              title={title}
-              thumbnailUrl={thumbnailUrl}
-              author={author}
-              direct={direct}
-            />
-          ))
-        }
-        style={styles.gear}
-        accessibilityRole="button"
-        accessibilityLabel="Reader settings">
-        <SettingsIcon color="#fff" size={20} />
-      </Pressable>
-    </Animated.View>
+    <Pressable
+      testID="reader.settings.open"
+      ref={ref}
+      hitSlop={12}
+      onPress={() =>
+        openAt(() => (
+          <SettingsContent
+            bridgeId={bridgeId}
+            seriesId={seriesId}
+            title={title}
+            thumbnailUrl={thumbnailUrl}
+            author={author}
+            direct={direct}
+          />
+        ))
+      }
+      style={styles.gear}
+      accessibilityRole="button"
+      accessibilityLabel="Reader settings">
+      <SettingsIcon color="#fff" size={20} />
+    </Pressable>
   );
 }
 
@@ -347,20 +341,11 @@ function Segment({
 }
 
 const styles = StyleSheet.create({
-  wrap: {
-    position: 'absolute',
-    right: Spacing.three,
-    alignItems: 'flex-end',
-    gap: Spacing.two,
-    zIndex: 2,
-  },
   gear: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 32,
+    height: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.55)',
   },
   content: {
     gap: Spacing.three,

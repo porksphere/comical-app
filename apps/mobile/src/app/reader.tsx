@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { interpolate, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
+import { ChapterNavigator } from '@/components/reader/chapter-navigator';
 import { PagedReader, type PagedReaderHandle, type ReaderPageItem } from '@/components/reader/paged-reader';
 import { ProgressPill } from '@/components/reader/progress-pill';
 import { ReaderToolbar } from '@/components/reader/reader-toolbar';
@@ -189,6 +190,21 @@ export default function ReaderScreen() {
     scheduleHide();
   }, [scheduleHide]);
 
+  // Suspend the auto-hide for as long as a chrome control is being USED — the
+  // page-jump input on web, the page slider on native. Both can be held longer
+  // than CHROME_HIDE_MS, and having the bar fade (pointerEvents: 'none') out from
+  // under a finger mid-drag is the one thing the timer must never do.
+  const holdChrome = useCallback(
+    (hold: boolean) => {
+      if (hold) {
+        if (hideTimer.current) clearTimeout(hideTimer.current);
+      } else {
+        scheduleHide();
+      }
+    },
+    [scheduleHide],
+  );
+
   // Keeping chrome alive through a touch: rather than force it visible (which
   // would fight a tap-to-reveal toggle resolving on the same touch), a touch
   // just PAUSES the countdown — SwipeDismiss's `onTouchBegin` fires on raw
@@ -277,10 +293,13 @@ export default function ReaderScreen() {
     advancingRef.current = false;
   }, [pages]);
 
-  // Move to the adjacent chapter in reading order: `delta` +1 = next (land on its
-  // first page), -1 = previous (land on its last page, so paging back is continuous).
+  // Move to the adjacent chapter in reading order. `delta` +1 = next, -1 = previous.
+  // `landing` says which end to arrive at, and defaults to whichever keeps PAGING
+  // continuous — forward lands on page 1, backward on the last page, so stepping
+  // off either end of a chapter reads as one uninterrupted sequence. An explicit
+  // chapter JUMP (the navigator's skip buttons) passes 'first' either way.
   const goAdjacentChapter = useCallback(
-    async (delta: 1 | -1) => {
+    async (delta: 1 | -1, landing: 'first' | 'last' = delta === 1 ? 'first' : 'last') => {
       if (advancingRef.current || !chapterId) return;
       advancingRef.current = true;
       const target = await resolveAdjacentChapter(queryClient, ds, mock, bridgeId ?? '', seed ?? '', chapterId, delta);
@@ -291,7 +310,7 @@ export default function ReaderScreen() {
       const params: Record<string, string> = {
         seed: seed ?? '',
         title: title ?? '',
-        start: delta === 1 ? '0' : 'last',
+        start: landing === 'last' ? 'last' : '0',
         chapterId: target.id,
       };
       if (bridgeId) params.bridgeId = bridgeId;
@@ -652,6 +671,35 @@ export default function ReaderScreen() {
     tryAdvanceChapter();
   }, [goTo, atLastPage, tryAdvanceChapter, settings.mode, prefixLen, pages, flatItems.length, handleFlatPageChange]);
 
+  // The bottom navigator's chapter-skip buttons: jump to the START of the
+  // adjacent chapter, wherever in the current one you are. Distinct from
+  // turnPrev/turnNext, which page one step and only reach a neighbouring chapter
+  // by falling off an end.
+  //
+  // When the target is already stitched into the pager's window, jump inside it
+  // (same relabel path a swipe crossing takes) instead of replacing the route —
+  // a route replace would rebuild a window that already holds the destination.
+  // Instant, not animated: sliding through a whole chapter to land on a jump
+  // isn't a page turn.
+  const skipChapter = useCallback(
+    (delta: 1 | -1) => {
+      showChrome();
+      const targetId = (delta === 1 ? nextChapter : prevChapter)?.id;
+      if (!IS_WEB && settings.mode === 'paged' && targetId) {
+        const at = segments.findIndex((s) => s.id === targetId);
+        if (at !== -1) {
+          let flat = 0;
+          for (let i = 0; i < at; i++) flat += segments[i]!.pages.length;
+          handleFlatPageChange(flat);
+          pagedRef.current?.goToPage(flat, false);
+          return;
+        }
+      }
+      void goAdjacentChapter(delta, 'first');
+    },
+    [showChrome, nextChapter, prevChapter, settings.mode, segments, handleFlatPageChange, goAdjacentChapter],
+  );
+
   // Web keyboard nav: arrows (or A/D) page instantly like a tap (respecting
   // direction), Esc closes. Held-key repeat is driven by our own fixed-rate
   // interval rather than the browser's native key-repeat (which fires at an
@@ -822,45 +870,63 @@ export default function ReaderScreen() {
             )}
           </SwipeDismiss>
 
-          {/* Chrome fades out with the swipe too, so the toolbar/pill don't hang
-              in front of the fading page. `absoluteFill` + `box-none` so the
-              absolutely-positioned bars inside still resolve against the full
-              screen and taps pass through the gaps. */}
+          {/* Bottom chrome. Native gets the slider + chapter-skip navigator;
+              web keeps the tap-to-jump progress pill (a pointer already has the
+              keyboard and click-to-page, and there's no thumb to drag with).
+              Fades out with the swipe too, so it doesn't hang in front of the
+              fading page. `absoluteFill` + `box-none` so the absolutely-
+              positioned bar inside still resolves against the full screen and
+              taps pass through the gaps. */}
           <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, chromeFadeStyle]}>
-            <ReaderToolbar
-              title={shown.name ?? title ?? 'Reader'}
-              subtitle={`Page ${shown.page + 1} of ${shown.total}`}
-              visible={chromeVisible}
-              onBack={() => router.back()}
-            />
-            <ProgressPill
-              current={shown.page}
-              total={shown.total}
-              visible={chromeVisible}
-              onJump={(i) => {
-                goTo(i);
-                showChrome();
-              }}
-              onEditingChange={(editing) => {
-                if (editing) {
-                  if (hideTimer.current) clearTimeout(hideTimer.current);
-                } else {
-                  scheduleHide();
-                }
-              }}
-            />
+            {IS_WEB ? (
+              <ProgressPill
+                current={shown.page}
+                total={shown.total}
+                visible={chromeVisible}
+                onJump={(i) => {
+                  goTo(i);
+                  showChrome();
+                }}
+                onEditingChange={holdChrome}
+              />
+            ) : (
+              <ChapterNavigator
+                page={shown.page}
+                total={shown.total}
+                // Only the paged reader has a direction; the webtoon one is vertical.
+                rtl={settings.mode === 'paged' && settings.direction === 'rtl'}
+                visible={chromeVisible}
+                hasPrevChapter={!!prevChapter}
+                hasNextChapter={!!nextChapter}
+                onPrevChapter={() => skipChapter(-1)}
+                onNextChapter={() => skipChapter(1)}
+                // Animated, so the pages slide past under the thumb the way they
+                // would under a swipe rather than cutting to the target.
+                onSeek={(i) => goTo(i, true)}
+                onScrubbingChange={holdChrome}
+              />
+            )}
           </Animated.View>
         </>
       )}
+      {/* The toolbar sits OUTSIDE the loaded/error branch: back and settings stay
+          reachable while pages are still loading or a fetch has failed. */}
       <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, chromeFadeStyle]}>
-        <SettingsControl
+        <ReaderToolbar
+          title={shown.name ?? title ?? 'Reader'}
+          subtitle={shown.total > 0 ? `Page ${shown.page + 1} of ${shown.total}` : ''}
           visible={chromeVisible}
-          bridgeId={bridgeId}
-          seriesId={seed}
-          title={cachedDetail?.title ?? title ?? seed}
-          thumbnailUrl={cachedDetail?.cover}
-          author={cachedDetail?.meta?.find((m) => m.label === 'AUTHOR')?.value}
-          direct={isDirect}
+          onBack={() => router.back()}
+          right={
+            <SettingsControl
+              bridgeId={bridgeId}
+              seriesId={seed}
+              title={cachedDetail?.title ?? title ?? seed}
+              thumbnailUrl={cachedDetail?.cover}
+              author={cachedDetail?.meta?.find((m) => m.label === 'AUTHOR')?.value}
+              direct={isDirect}
+            />
+          }
         />
       </Animated.View>
     </View>

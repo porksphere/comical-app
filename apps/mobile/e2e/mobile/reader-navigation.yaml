@@ -1,5 +1,5 @@
 # Extends past browse-to-reader.yaml's "reader opened" assertion: paged prev/next tap zones, the
-# progress-pill's numeric chapter-jump input, and the settings sheet's reading-direction switch.
+# bottom navigator's page slider, and the settings sheet's reading-direction switch.
 #
 # Mobile-only: the tap-zone testIDs (reader.control.*) are NATIVE-only markers
 # (components/reader/zoomable-page.tsx's TapZones — "web has its own gesture pager in
@@ -12,11 +12,18 @@
 #     page) — the actual gesture lives on the GestureDetector beneath them, but a Maestro
 #     `tapOn: id` still lands in the right spot (zoomable-page.tsx's own comment confirms this is
 #     intentional, done FOR Maestro).
-#   - reader.progress-pill / .input / .go   progress-pill.tsx's closed pill / open editing row.
-#     The "N / total" text renders in a child Text node, not on the testID'd Pressable itself, so
-#     an `id: + text:` combo never matches on Android (same pitfall as ActionButton/tab-badge, see
-#     e2e/README.md) — asserted as a bare anchored `text:` regex instead.
-#   - reader.settings.open                  settings-panel.tsx's gear button.
+#   - reader.navigator.slider               chapter-navigator.tsx's page slider track (NATIVE only;
+#     web keeps progress-pill.tsx's tap-to-jump pill instead — see reader.tsx's IS_WEB branch, and
+#     e2e/web has no counterpart to this flow anyway).
+#   - reader.navigator.prev-chapter / .next-chapter   the chapter-skip buttons flanking it. Named
+#     for the CHAPTER each one goes to, not the side it sits on — under RTL they swap places, so a
+#     position-based name would mean the opposite thing in a right-to-left series.
+#   - reader.settings.open                  settings-panel.tsx's gear button, now in the toolbar's
+#     trailing (top-right) slot rather than floating at the bottom-right.
+#
+# The page is read off the TOOLBAR subtitle ("Page N of M", reader.tsx) rather than a bottom-bar
+# number: the navigator renders the current page and the total as two separate Text nodes, so
+# there's no single node holding a "N / M" string to anchor a regex to.
 #   - reader.settings.direction.ltr / .vertical / .rtl   The 3-way mode+direction row — NOT
 #     ".paged"/".webtoon" (a wrong name already caught and fixed in
 #     swipe-dismiss-webtoon.yaml this same session; DIRECTION_OPTIONS only has ltr/vertical/rtl).
@@ -56,33 +63,34 @@ appId: com.porksphere.comical
 - assertVisible:
     id: "reader.toolbar.back"
 - assertVisible:
-    text: "^1 / \\d+$"
+    text: "^Page 1 of \\d+$"
 
 # Paged next/prev taps.
 - tapOn:
     id: "reader.control.next"
 - assertVisible:
-    text: "^2 / \\d+$"
+    text: "^Page 2 of \\d+$"
 - tapOn:
     id: "reader.control.prev"
 - assertVisible:
-    text: "^1 / \\d+$"
+    text: "^Page 1 of \\d+$"
 
-# Progress-pill numeric jump. The input opens EMPTY and autoFocused (progress-pill.tsx shows the
-# current page as the placeholder instead of prefilling — selectTextOnFocus never fired for an
-# autoFocus-mounted input on native, leaving a stale prefill to backspace), so inputText types
-# straight in. Still no extra tapOn the input first: it's already focused, and a historical re-tap
-# once turned a selected-prefill replace into an insert ("13 / 26" instead of "3 / 26" — caught
-# via Maestro debug artifacts back when the field prefilled).
-- tapOn:
-    id: "reader.progress-pill"
+# Bottom navigator: both chapter-skip buttons are present (they're DISABLED, never hidden, at the
+# ends of a series — chapter-navigator.tsx), and dragging the slider seeks. A Maestro element swipe
+# starts at the track's CENTRE, and the slider seeks on touch-down (minDistance(0), Material
+# behaviour), so the page has already left 1 before the drag even moves — which is all this needs
+# to assert. An exact landing page isn't assertable: it depends on the track's pixel width and on
+# how far Maestro's swipe travels.
 - assertVisible:
-    id: "reader.progress-pill.input"
-- inputText: "3"
-- tapOn:
-    id: "reader.progress-pill.go"
+    id: "reader.navigator.prev-chapter"
 - assertVisible:
-    text: "^3 / \\d+$"
+    id: "reader.navigator.next-chapter"
+- swipe:
+    from:
+      id: "reader.navigator.slider"
+    direction: RIGHT
+- assertNotVisible:
+    text: "^Page 1 of \\d+$"
 
 # Settings sheet: switch reading direction to Vertical (webtoon) and back to L -> R (paged).
 - tapOn:

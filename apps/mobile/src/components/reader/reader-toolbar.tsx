@@ -1,4 +1,5 @@
 import { LinearGradient } from 'expo-linear-gradient';
+import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,17 +8,22 @@ import { ChevronLeftIcon } from '@/components/icons/chevron-left';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 
-/** Auto-hiding top toolbar over the reader: back + title + "page X of Y". */
+/** Auto-hiding top toolbar over the reader: back + title + "page X of Y", with an
+ *  optional trailing control (the reader's settings gear) on the right. */
 export function ReaderToolbar({
   title,
   subtitle,
   visible,
   onBack,
+  right,
 }: {
   title: string;
   subtitle: string;
   visible: boolean;
   onBack: () => void;
+  /** Rendered in the slot opposite Back. Sized like the back button so the
+   *  titles stay centred whether or not anything is passed. */
+  right?: ReactNode;
 }) {
   const insets = useSafeAreaInsets();
   const style = useAnimatedStyle(() => ({
@@ -44,12 +50,15 @@ export function ReaderToolbar({
           <ThemedText type="smallBold" numberOfLines={1} style={styles.title}>
             {title}
           </ThemedText>
-          <ThemedText type="small" numberOfLines={1} style={styles.subtitle}>
-            {subtitle}
-          </ThemedText>
+          {!!subtitle && (
+            <ThemedText type="small" numberOfLines={1} style={styles.subtitle}>
+              {subtitle}
+            </ThemedText>
+          )}
         </View>
-        {/* Right spacer balances the back button so the titles stay centred. */}
-        <View style={styles.back} />
+        {/* Balances the back button so the titles stay centred — with the
+            trailing control in it when there is one, empty otherwise. */}
+        <View style={styles.back}>{right}</View>
       </View>
     </Animated.View>
   );

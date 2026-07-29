@@ -124,7 +124,8 @@ Two more cases confirmed while writing `downloads.yaml`, both worth knowing abou
   `id:` constraint and assert on a bare `text:` regex when the string is unambiguous on that screen
   (see `downloads.yaml`'s final assertion in both mobile copies for a worked example). Confirmed to
   affect the same testID/child-Text split beyond `ActionButton` too: `tab-badge.tsx` (fixed in
-  `history-activity.yaml`) and `progress-pill.tsx`'s closed pill (fixed in `reader-navigation.yaml`)
+  `history-activity.yaml`) and `progress-pill.tsx`'s closed pill (fixed in `reader-navigation.yaml` back when
+  that flow read the page off the pill — it reads the toolbar subtitle now)
   both hit it — audit any *new* `id: + text:` combo against the component's actual JSX structure
   before assuming it'll resolve on Android.
 
