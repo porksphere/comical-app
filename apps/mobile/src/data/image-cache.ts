@@ -9,6 +9,7 @@
  * The size probe measures `Paths.cache` (the app's Caches dir, where expo-image stores its disk cache)
  * — native only; on web it reports 0.
  */
+import * as Device from 'expo-device';
 import { Directory, Paths } from 'expo-file-system';
 import { Image } from 'expo-image';
 import { use$ } from '@legendapp/state/react';
@@ -81,12 +82,44 @@ export async function clearImageCache(): Promise<void> {
 }
 
 /**
- * Push the user's max onto expo-image's native cache (`maxDiskSize` in bytes; 0 = unlimited). The
- * native layer LRU-evicts to stay under it. Call at startup and whenever the setting changes.
+ * The in-memory (decoded-bitmap) cache cap, in bytes — distinct from `cachePrefs$`'s disk cap above,
+ * which is a user preference. This one isn't: SDWebImage's (iOS) `maxMemoryCost` defaults to 0 —
+ * unlimited — and the reader's FlatList windowing only unmounts far-off page VIEWS, not the decoded
+ * bitmaps expo-image keeps cached behind them (`cachePolicy="memory-disk"` on every page). A long
+ * reading session decodes one full-resolution page after another with nothing ever evicted, which is
+ * exactly what produced Sentry COMICAL-APP-1H (WatchdogTermination — iOS killed the app for RAM
+ * overuse after ~30 pages read across two stitched chapters in one sitting, on a device with
+ * `memory_size: 3840311296` per the crash report).
+ *
+ * Scaled off `Device.totalMemory` rather than fixed, so a budget device (2-3GB) gets a cap that
+ * actually protects it and a high-RAM device (8GB+ iPad) isn't left throttled to the same number for
+ * no reason. Clamped between a floor (still enough for a healthy prefetch window on the smallest
+ * supported devices) and a ceiling (an unbounded native image cache is never the right call, however
+ * much RAM is around — LRU eviction is what keeps memory reclaimable at all).
+ */
+const MEMORY_CACHE_FRACTION = 0.08; // ~8% of total device RAM
+const MEMORY_CACHE_FLOOR_BYTES = 96 * 1024 * 1024; // 96MB
+const MEMORY_CACHE_CEILING_BYTES = 512 * 1024 * 1024; // 512MB
+/** Used when `Device.totalMemory` is unavailable (web, or an older/unsupported native build) — a
+ *  conservative mid-point rather than the (also unavailable) scaled value. */
+const MEMORY_CACHE_FALLBACK_BYTES = 160 * 1024 * 1024;
+
+function computeMaxMemoryCostBytes(): number {
+  const total = Device.totalMemory;
+  if (!total || total <= 0) return MEMORY_CACHE_FALLBACK_BYTES;
+  return Math.round(
+    Math.max(MEMORY_CACHE_FLOOR_BYTES, Math.min(MEMORY_CACHE_CEILING_BYTES, total * MEMORY_CACHE_FRACTION)),
+  );
+}
+
+/**
+ * Push the user's max onto expo-image's native cache (`maxDiskSize` in bytes; 0 = unlimited), plus the
+ * device-scaled in-memory cap above. The native layer LRU-evicts to stay under both. Call at startup
+ * and whenever the disk setting changes.
  */
 export function applyImageCacheConfig(): void {
   try {
-    Image.configureCache({ maxDiskSize: getCacheMaxSync() });
+    Image.configureCache({ maxDiskSize: getCacheMaxSync(), maxMemoryCost: computeMaxMemoryCostBytes() });
   } catch {
     // web / older native — no-op (the size cap simply isn't enforced there)
   }
