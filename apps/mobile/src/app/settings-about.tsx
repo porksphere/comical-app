@@ -13,10 +13,12 @@
 import { CONTRACT_VERSION } from '@comical/contract';
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
+import { openBrowserAsync } from 'expo-web-browser';
 import { useEffect, useState } from 'react';
 import { Platform, ScrollView, Share, StyleSheet } from 'react-native';
 
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
+import { UpdateDot } from '@/components/tab-badge';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
@@ -24,7 +26,9 @@ import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useApiBase } from '@/data/api';
 import { getResolvedModeSync } from '@/data/embedded/preference';
 import { IS_DEMO_MODE, useMockActive } from '@/data/source';
+import { useAppUpdateCheck } from '@/data/use-app-update';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
+import { useTheme } from '@/hooks/use-theme';
 import {
   APP_VERSION,
   BUILD_COMMIT,
@@ -73,8 +77,17 @@ export default function AboutScreen() {
     const timer = setTimeout(() => setCopied(false), 2000);
     return () => clearTimeout(timer);
   }, [copied]);
+  const theme = useTheme();
   const [apiBase] = useApiBase();
   const mockActive = useMockActive();
+  const appUpdate = useAppUpdateCheck();
+  const handleUpdatePress = () => {
+    if (Platform.OS === 'web') {
+      window.location.reload();
+      return;
+    }
+    if (appUpdate.downloadUrl) void openBrowserAsync(appUpdate.downloadUrl);
+  };
   // The mode actually in force right now, not the stored preference — the toggle only takes effect
   // where the native runtime exists (see embedded/preference.ts).
   const embedded = getResolvedModeSync() === 'embedded';
@@ -150,6 +163,31 @@ export default function AboutScreen() {
               .map(([label, value]) => (
                 <SettingsRow key={label} label={label} right={<InfoValue value={value} />} />
               ))}
+            {title === 'Build' && appUpdate.status !== 'unsupported' && (
+              <SettingsRow
+                key="check-for-updates"
+                testID="about.checkForUpdates"
+                label="Check for updates"
+                description={
+                  appUpdate.status === 'update-available'
+                    ? `Version ${appUpdate.latestVersionLabel ?? 'newer build'} available`
+                    : appUpdate.status === 'checking'
+                      ? 'Checking…'
+                      : appUpdate.status === 'error'
+                        ? "Couldn't check"
+                        : 'Up to date'
+                }
+                leading={appUpdate.status === 'update-available' ? <UpdateDot /> : undefined}
+                right={
+                  appUpdate.status === 'update-available' ? (
+                    <ThemedText type="smallBold" style={{ color: theme.accent }}>
+                      Update
+                    </ThemedText>
+                  ) : undefined
+                }
+                onPress={appUpdate.status === 'update-available' ? handleUpdatePress : undefined}
+              />
+            )}
           </SettingsSection>
         ))}
 

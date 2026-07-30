@@ -93,7 +93,7 @@ jobs:
       - name: Publish APK to the android-latest Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash .github/scripts/publish-android-latest.sh "$RUNNER_TEMP/apk/comical-android.apk" "${{ needs.build.outputs.version }}"
+        run: bash .github/scripts/publish-android-latest.sh "$RUNNER_TEMP/apk/comical-android.apk" "${{ needs.build.outputs.version }}" "${{ github.sha }}"
 
   # Per-PR channel. Each open PR gets its own `android-pr-<N>` Release with a
   # stable APK download URL (parity with the iOS per-PR channel). The APK keeps

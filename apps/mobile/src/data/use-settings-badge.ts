@@ -17,6 +17,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw } from '@/data/source';
+import { useAppUpdateCheck } from '@/data/use-app-update';
 
 export type RegistryUpdateCounts = {
   bridges: number;
@@ -88,7 +89,11 @@ export function useRegistryUpdateCounts(): RegistryUpdateCounts {
   return { bridges: b, trackers: t, total: b + t };
 }
 
-/** The grand total — the Settings tab pip. */
+/** The grand total — the Settings tab pip. Folds in the in-app update checker (`use-app-update.ts`)
+ *  alongside registry updates, so a pending app update lights the same pip a pending bridge/tracker
+ *  update would. */
 export function useSettingsBadgeCount(): number {
-  return useRegistryUpdateCounts().total;
+  const { total } = useRegistryUpdateCounts();
+  const appUpdate = useAppUpdateCheck();
+  return total + (appUpdate.status === 'update-available' ? 1 : 0);
 }

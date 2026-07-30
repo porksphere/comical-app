@@ -130,8 +130,21 @@ jobs:
           # bug report is most likely to be filed against without knowing what it is.
           EXPO_PUBLIC_COMICAL_BUILD_CHANNEL: web-pages
           EXPO_PUBLIC_COMICAL_BUILD_COMMIT: ${{ github.sha }}
+          # The in-app update checker (data/use-app-update.ts) needs this to build a
+          # route-independent version.json URL — see lib/build-info.ts's WEB_BASE_URL.
+          EXPO_PUBLIC_COMICAL_BASE_URL: ${{ steps.meta.outputs.base_url }}
         run: bunx expo export --platform web
         working-directory: apps/mobile
+
+      - name: Write version.json for the in-app update checker
+        if: github.event_name != 'delete'
+        working-directory: apps/mobile
+        run: |
+          set -euo pipefail
+          printf '{"commit":"%s","publishedAt":"%s"}\n' \
+            "${GITHUB_SHA:0:7}" \
+            "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            > dist/version.json
 
       # ── Update gh-pages content store ────────────────────────────────────────
 

@@ -168,4 +168,4 @@ jobs:
       - name: Refresh android-latest download link
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash .github/scripts/publish-android-latest.sh "$RUNNER_TEMP/apk/comical-android.apk" "${{ github.ref_name }}"
+        run: bash .github/scripts/publish-android-latest.sh "$RUNNER_TEMP/apk/comical-android.apk" "${{ github.ref_name }}" "${{ github.sha }}"

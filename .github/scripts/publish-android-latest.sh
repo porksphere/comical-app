@@ -13,12 +13,14 @@
 # byte-identical across builds (a second asset of the same name would otherwise be served as
 # `comical-android.1.apk`). `--cleanup-tag` takes the lightweight tag with it.
 #
-# Usage: publish-android-latest.sh <path-to-apk> [version-label]
+# Usage: publish-android-latest.sh <path-to-apk> [version-label] [commit-sha]
 # Requires gh + GH_TOKEN and GITHUB_REPOSITORY in the environment.
 set -euo pipefail
 
-APK="${1:?usage: publish-android-latest.sh <path-to-apk> [version-label]}"
+APK="${1:?usage: publish-android-latest.sh <path-to-apk> [version-label] [commit-sha]}"
 VERSION="${2:-}"
+COMMIT="${3:-}"
+COMMIT="${COMMIT:0:7}"
 REPO="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY not set}"
 TAG="android-latest"
 BASE="https://github.com/${REPO}/releases/download/${TAG}"
@@ -30,9 +32,17 @@ BASE="https://github.com/${REPO}/releases/download/${TAG}"
 TITLE="Comical Android (latest APK)"
 [ -n "$VERSION" ] && TITLE="$TITLE — $VERSION"
 
+# version.json: what the in-app update checker (apps/mobile/src/data/use-app-update.ts) compares
+# BUILD_COMMIT against to decide "there's a newer android-latest build than the one I'm running".
+# Equality-only, not ordering — Android's versionName never moves per-build (see
+# build-android-reusable.yml), so the commit is the only thing that changes between two APKs.
+WORK="$(mktemp -d)"
+jq -n --arg commit "$COMMIT" --arg version "$VERSION" --arg publishedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  '{commit: $commit, version: $version, publishedAt: $publishedAt}' > "$WORK/version.json"
+
 gh release delete "$TAG" --repo "$REPO" --yes --cleanup-tag || true
 gh release create "$TAG" \
-  "$APK" \
+  "$APK" "$WORK/version.json" \
   --repo "$REPO" \
   --title "$TITLE" \
   --notes "Installable release APK (debug-keystore signed).

@@ -42,6 +42,7 @@ import { SeriesCardContextMenuHost } from '@/components/series-card-context-menu
 import { ToastHost } from '@/components/toast';
 import { installActivityAutoCheck } from '@/data/activity/auto-check';
 import { startEmbeddedRuntime } from '@/data/embedded/startup';
+import { installAppUpdateAutoCheck } from '@/data/use-app-update';
 import { PROFILING_ENABLED } from '@/lib/profiling';
 import { persister, PERSIST_BUSTER, PERSIST_MAX_AGE_MS, queryClient, shouldDehydrateQuery } from '@/data/query-client';
 import { ThemeSchemeProvider, useActiveColorScheme } from '@/hooks/use-theme';
@@ -53,6 +54,10 @@ startEmbeddedRuntime();
 
 // New-chapter auto-check on launch + foreground return (all platforms; startup.ts is native-only).
 installActivityAutoCheck();
+
+// App-update auto-check on launch + foreground return — see data/use-app-update.ts. No-ops on
+// internal/dev build channels.
+installAppUpdateAutoCheck();
 
 // DevProfiler is profiling-only tooling; require it behind `PROFILING_ENABLED` (dev, or a CI
 // profiling-release build) so its module — and the react-native-release-profiler dependency it

@@ -165,6 +165,9 @@ export const queryKeys = {
   registryTrackers: (url: string) => ['registryTrackers', url] as const,
   // One combined count of available bridge + tracker updates, behind the Settings tab pip.
   registryUpdateCount: () => ['registryUpdateCount'] as const,
+  // The in-app update checker's result — one entry per channel (a device only ever runs one, but
+  // keying on it keeps the cache honest, same as `bridges(mock)`).
+  appUpdateCheck: (channel: string) => ['appUpdateCheck', channel] as const,
 
   // ─── Downloads (device-local offline manifest) ─────────────────────────────
   // Downloads are device data, not source content, so these carry no `mock`. Both are prefixed
