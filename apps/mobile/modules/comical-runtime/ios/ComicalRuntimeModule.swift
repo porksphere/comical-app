@@ -20,8 +20,44 @@ import ExpoModulesCore
  *   drainTrackerSettingsPatch(id)                     -> "{ key, blob }" JSON, or null
  */
 public final class ComicalRuntimeModule: Module {
+  // AsyncFunction closures below run on whatever executor Swift Concurrency schedules them on, and
+  // the app calls initBridge/callBridge for several source ids concurrently (e.g. a multi-source
+  // search). Plain Dictionary mutation isn't safe under concurrent access — it previously crashed
+  // with EXC_BAD_ACCESS inside Swift's Dictionary COW check (COMICAL-APP-1S). Guard both maps with a
+  // lock, mirroring the ConcurrentHashMap the Android side already uses for the same reason.
+  private let stateLock = NSLock()
   private var bridges: [String: ComicalBridgeContext] = [:]
   private var trackers: [String: ComicalTrackerContext] = [:]
+
+  private func bridge(for id: String) -> ComicalBridgeContext? {
+    stateLock.lock(); defer { stateLock.unlock() }
+    return bridges[id]
+  }
+
+  private func setBridge(_ ctx: ComicalBridgeContext, for id: String) {
+    stateLock.lock(); defer { stateLock.unlock() }
+    bridges[id] = ctx
+  }
+
+  private func removeBridge(for id: String) {
+    stateLock.lock(); defer { stateLock.unlock() }
+    bridges[id] = nil
+  }
+
+  private func tracker(for id: String) -> ComicalTrackerContext? {
+    stateLock.lock(); defer { stateLock.unlock() }
+    return trackers[id]
+  }
+
+  private func setTracker(_ ctx: ComicalTrackerContext, for id: String) {
+    stateLock.lock(); defer { stateLock.unlock() }
+    trackers[id] = ctx
+  }
+
+  private func removeTracker(for id: String) {
+    stateLock.lock(); defer { stateLock.unlock() }
+    trackers[id] = nil
+  }
 
   public func definition() -> ModuleDefinition {
     Name("ComicalRuntime")
@@ -36,19 +72,19 @@ public final class ComicalRuntimeModule: Module {
       // capability (cookies, per-bridge KV) would collide in one storage.json — and temporary is
       // purgeable. Namespace persistently by bridge id instead.
       let ctx = try await ComicalBridgeContext(bridgeBundle: code, settings: settings, dataDir: ComicalRuntimeModule.bridgeDataDir(for: id))
-      self.bridges[id] = ctx
+      self.setBridge(ctx, for: id)
       return ctx.describeJson()
     }
 
     AsyncFunction("callBridge") { (id: String, method: String, argsJson: String) -> String in
-      guard let ctx = self.bridges[id] else {
+      guard let ctx = self.bridge(for: id) else {
         throw NSError(domain: "ComicalRuntime", code: 1, userInfo: [NSLocalizedDescriptionKey: "bridge not initialised: \(id)"])
       }
       return try await ctx.callJson(method, argsJSON: argsJson)
     }
 
     Function("disposeBridge") { (id: String) in
-      self.bridges[id] = nil
+      self.removeBridge(for: id)
     }
 
     AsyncFunction("initTracker") { (id: String, code: String, settingsJson: String, networkJson: String?) -> String in
@@ -58,23 +94,23 @@ public final class ComicalRuntimeModule: Module {
       // Namespace persistently by tracker id, same rationale as bridges (own storage.json each, so
       // e.g. AniList's and MAL's OAuth tokens/cookies never collide).
       let ctx = try ComicalTrackerContext(trackerBundle: code, settings: settings, dataDir: ComicalRuntimeModule.trackerDataDir(for: id))
-      self.trackers[id] = ctx
+      self.setTracker(ctx, for: id)
       return ctx.describeJson()
     }
 
     AsyncFunction("callTracker") { (id: String, method: String, argsJson: String) -> String in
-      guard let ctx = self.trackers[id] else {
+      guard let ctx = self.tracker(for: id) else {
         throw NSError(domain: "ComicalRuntime", code: 1, userInfo: [NSLocalizedDescriptionKey: "tracker not initialised: \(id)"])
       }
       return try await ctx.callJson(method, argsJSON: argsJson)
     }
 
     Function("disposeTracker") { (id: String) in
-      self.trackers[id] = nil
+      self.removeTracker(for: id)
     }
 
     AsyncFunction("drainTrackerSettingsPatch") { (id: String) -> String? in
-      guard let ctx = self.trackers[id] else {
+      guard let ctx = self.tracker(for: id) else {
         throw NSError(domain: "ComicalRuntime", code: 1, userInfo: [NSLocalizedDescriptionKey: "tracker not initialised: \(id)"])
       }
       return ctx.drainSettingsPatch()
