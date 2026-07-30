@@ -35,7 +35,7 @@ public final class ComicalRuntimeModule: Module {
       // defaults to a single shared `temporaryDirectory/comical`, so every bridge's `storage`
       // capability (cookies, per-bridge KV) would collide in one storage.json — and temporary is
       // purgeable. Namespace persistently by bridge id instead.
-      let ctx = try ComicalBridgeContext(bridgeBundle: code, settings: settings, dataDir: ComicalRuntimeModule.bridgeDataDir(for: id))
+      let ctx = try await ComicalBridgeContext(bridgeBundle: code, settings: settings, dataDir: ComicalRuntimeModule.bridgeDataDir(for: id))
       self.bridges[id] = ctx
       return ctx.describeJson()
     }
