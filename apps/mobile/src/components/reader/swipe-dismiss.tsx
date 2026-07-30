@@ -62,6 +62,11 @@ type Props = {
    *  through a touch that never ends up dragging far enough to activate the
    *  pan at all), not a "the dismiss gesture is active" one. */
   onTouchBegin?: () => void;
+  /** Painted as an absolute-fill layer BEHIND `children`, inside the same
+   *  transformed view — so it scales/translates/fades as one unit with the
+   *  page instead of staying a static, screen-sized rectangle behind a page
+   *  that shrinks and slides out from under it (see the call site). */
+  backdropColor?: string;
   children: ReactNode;
 };
 
@@ -75,6 +80,7 @@ export function SwipeDismiss({
   onSwipeStart,
   onSwipeEnd,
   onTouchBegin,
+  backdropColor,
   children,
 }: Props) {
   const vertical = axis === 'vertical';
@@ -169,12 +175,26 @@ export function SwipeDismiss({
     };
   });
 
-  // Web keeps its own input model (wheel/keyboard/click); no swipe-away there.
-  if (Platform.OS === 'web') return <>{children}</>;
+  // Web keeps its own input model (wheel/keyboard/click); no swipe-away there,
+  // so the backdrop just sits static behind the content — nothing to sync.
+  if (Platform.OS === 'web') {
+    if (!backdropColor) return <>{children}</>;
+    return (
+      <Animated.View style={styles.fill}>
+        <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: backdropColor }]} />
+        {children}
+      </Animated.View>
+    );
+  }
 
   return (
     <GestureDetector gesture={pan}>
-      <Animated.View style={[styles.fill, animatedStyle]}>{children}</Animated.View>
+      <Animated.View style={[styles.fill, animatedStyle]}>
+        {backdropColor && (
+          <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: backdropColor }]} />
+        )}
+        {children}
+      </Animated.View>
     </GestureDetector>
   );
 }

@@ -179,7 +179,6 @@ export default function ReaderScreen() {
   // fade out from it, revealing the screen behind (the reader route is a
   // contained transparent modal, so the series screen stays rendered underneath).
   const dismissProgress = useSharedValue(0);
-  const backdropStyle = useAnimatedStyle(() => ({ opacity: 1 - dismissProgress.value }));
   const chromeFadeStyle = useAnimatedStyle(() => ({
     opacity: interpolate(dismissProgress.value, [0, 0.6], [1, 0]),
   }));
@@ -856,11 +855,16 @@ export default function ReaderScreen() {
 
   return (
     <View style={styles.root}>
-      {/* The reader's dark surface, as its own layer so it can fade with a
-          swipe-away and reveal the screen behind (the route is a transparent
-          modal — see _layout.tsx). Opaque at rest, so a normal reader looks
-          unchanged. */}
-      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.backdrop, backdropStyle]} />
+      {/* The reader's dark surface. Before pages are ready there's nothing to
+          swipe away yet (SwipeDismiss below only wraps the loaded branch), so
+          this is a plain static fill covering the transparent modal (see
+          _layout.tsx). Once loaded, SwipeDismiss paints its own copy of this
+          same colour INSIDE its transformed view instead (its `backdropColor`
+          prop) — a separate, static, full-screen layer here would sit behind
+          the page as it shrinks and slides during a swipe, showing through as
+          a hard-edged rectangle around the now-smaller page rather than
+          moving with it. */}
+      {(!pages || error) && <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.backdrop]} />}
       <StatusBar style="light" hidden={!chromeVisible} />
       {error ? (
         <View style={styles.centerFill}>
@@ -885,7 +889,8 @@ export default function ReaderScreen() {
             progress={dismissProgress}
             onSwipeStart={beginSwipeGuard}
             onSwipeEnd={endSwipeGuard}
-            onTouchBegin={pauseHide}>
+            onTouchBegin={pauseHide}
+            backdropColor={styles.backdrop.backgroundColor}>
             {settings.mode === 'paged' ? (
               <PagedReader
                 ref={pagedRef}
