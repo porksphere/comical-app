@@ -274,7 +274,8 @@ export type CustomPageSectionInput = {
   error: boolean;
   onRetry: () => void;
   items: SeriesEntry[];
-  hasNextPage: boolean;
+  /** Resume token for the page after these items, when the section's list has one. */
+  nextCursor?: string;
 };
 
 /**
@@ -308,7 +309,12 @@ export function buildCustomPageRows(inputs: CustomPageSectionInput[]): ContentRo
       rows.push({
         type: 'gridBlock',
         key: `block:${s.key}`,
-        section: { id: s.listId, title: s.title, items: s.items, hasNextPage: s.hasNextPage },
+        section: {
+          id: s.listId,
+          title: s.title,
+          items: s.items,
+          ...(s.nextCursor ? { nextCursor: s.nextCursor } : {}),
+        },
         bridgeId: s.bridgeId,
         bridge: s.bridgeName,
         direct: s.direct,

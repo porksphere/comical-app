@@ -303,8 +303,9 @@ function LinkTrackerForm({
   const [focused, setFocused] = useState(false);
 
   const searchQuery = useQuery({
-    queryKey: queryKeys.trackerCatalogSearch(trackerId, submittedQuery, 1),
-    queryFn: ({ signal }) => ds.searchTrackerCatalog(trackerId, submittedQuery, 1, signal),
+    queryKey: queryKeys.trackerCatalogSearch(trackerId, submittedQuery),
+    // No cursor: the form shows the first page of matches only, so there's no walk to resume.
+    queryFn: ({ signal }) => ds.searchTrackerCatalog(trackerId, submittedQuery, undefined, signal),
     enabled: submittedQuery.length > 0,
   });
   const results = submittedQuery ? searchQuery.data : undefined;

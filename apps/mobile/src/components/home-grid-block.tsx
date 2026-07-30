@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
@@ -7,7 +7,8 @@ import { SeriesCard } from '@/components/series-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing, TopLevelGutter } from '@/constants/theme';
-import { fetchBrowseScope, queryKeys } from '@/data/queries';
+import type { Cursor } from '@/data/api';
+import { fetchBrowseScope, nextGridCursor, NO_CURSOR, queryKeys } from '@/data/queries';
 import { useDedupedPages } from '@/data/grid-pages';
 import { useDataSource, useMockActive } from '@/data/source';
 import type { GridPage, HomeGridSection, SeriesEntry } from '@/data/types';
@@ -47,6 +48,12 @@ export function HomeGridBlock({
   const ds = useDataSource();
   const mock = useMockActive();
   const queryClient = useQueryClient();
+  // The section as react-query's first page: it was fetched by `getHomeSections` with no cursor, so
+  // that's the page param it's recorded under, and its `nextCursor` is what "Load more" follows.
+  const seededPages: InfiniteData<GridPage, Cursor | undefined> = {
+    pages: [{ items: section.items, ...(section.nextCursor ? { nextCursor: section.nextCursor } : {}) }],
+    pageParams: [NO_CURSOR],
+  };
   // Same infinite-query pipeline as the main grid (`homeGrid` scope keyed on this section's list
   // id). Page 1 is seeded from the section itself via `initialData`, so no extra request fires on
   // Home; "Load more" pulls pages 2+.
@@ -55,18 +62,17 @@ export function HomeGridBlock({
     queryFn: ({ pageParam, signal }) =>
       fetchBrowseScope(ds, bridgeId ?? '', { kind: 'homeGrid', listId: section.id }, pageParam, signal),
     enabled: !!bridgeId,
-    initialPageParam: 1,
-    getNextPageParam: (last: GridPage, _all: GridPage[], lastParam: number) =>
-      last.hasNextPage ? lastParam + 1 : undefined,
-    initialData: { pages: [{ items: section.items, hasNextPage: section.hasNextPage }], pageParams: [1] },
+    initialPageParam: NO_CURSOR,
+    getNextPageParam: nextGridCursor,
+    initialData: seededPages,
   });
   // When the underlying section changes (a Home refetch / pull-to-refresh brought fresh page-1
   // content), reset this block's cache to that fresh page 1 — matching the old reset-on-prop-change,
   // discarding any expanded "Load more" pages so the block never shows stale content after a refresh.
   useEffect(() => {
     queryClient.setQueryData(queryKeys.browseGrid(mock, bridgeId ?? '', { kind: 'homeGrid', listId: section.id }), {
-      pages: [{ items: section.items, hasNextPage: section.hasNextPage }],
-      pageParams: [1],
+      pages: [{ items: section.items, ...(section.nextCursor ? { nextCursor: section.nextCursor } : {}) }],
+      pageParams: [NO_CURSOR],
     });
   }, [section, mock, bridgeId, queryClient]);
 

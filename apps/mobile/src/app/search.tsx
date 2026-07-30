@@ -21,11 +21,11 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BarContentGap, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { useDedupedPages } from '@/data/grid-pages';
-import { fetchBrowseScope, queryKeys, type BrowseScope } from '@/data/queries';
+import { fetchBrowseScope, nextGridCursor, NO_CURSOR, queryKeys, type BrowseScope } from '@/data/queries';
 import { subscribeSearchIntent, takeSearchIntent } from '@/data/search-intent';
 import { COMICAL_BRIDGE_ID, isComicalBridge, useSelectedBridge } from '@/data/selected-bridge';
 import { useDataSource, useMockActive } from '@/data/source';
-import type { Bridge, GridPage } from '@/data/types';
+import type { Bridge } from '@/data/types';
 import { friendlyError } from '@/lib/friendly-error';
 import { useBridgeFilters } from '@/hooks/use-bridge-filters';
 import { useCrossBridgeRails } from '@/hooks/use-cross-bridge-rails';
@@ -46,9 +46,6 @@ const NO_BRIDGES: Bridge[] = [];
 
 // Peak opacity of the top bar's drop shadow at the mid-point of the filter bar's slide.
 const SHADOW_PEAK_OPACITY = 0.16;
-
-const getNextPageParam = (last: GridPage, _all: GridPage[], lastParam: number) =>
-  last.hasNextPage ? lastParam + 1 : undefined;
 
 /**
  * The dedicated Search screen, pushed over the tabs. Its top bar holds the search
@@ -235,8 +232,8 @@ export default function SearchScreen() {
     queryFn: ({ pageParam, signal }) => fetchBrowseScope(ds, bridgeId ?? '', scope!, pageParam, signal),
     // Comical has no single-bridge results — its rows come from the cross-bridge fan-out instead.
     enabled: !!scope && !isComical,
-    initialPageParam: 1,
-    getNextPageParam,
+    initialPageParam: NO_CURSOR,
+    getNextPageParam: nextGridCursor,
     placeholderData: keepPreviousData,
   });
 

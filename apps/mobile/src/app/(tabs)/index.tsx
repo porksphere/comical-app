@@ -47,10 +47,17 @@ import { useCrossBridgeRails } from '@/hooks/use-cross-bridge-rails';
 import { useCustomPageRows } from '@/hooks/use-custom-page-rows';
 import { useFavoritesAvailability } from '@/hooks/use-favorites-available';
 import { useDedupedPages } from '@/data/grid-pages';
-import { fetchBrowseScope, homeSectionsQuery, queryKeys, type BrowseScope } from '@/data/queries';
+import {
+  fetchBrowseScope,
+  homeSectionsQuery,
+  nextGridCursor,
+  NO_CURSOR,
+  queryKeys,
+  type BrowseScope,
+} from '@/data/queries';
 import { COMICAL_BRIDGE_ID, COMICAL_ICON, isComicalBridge, useSelectedBridge } from '@/data/selected-bridge';
 import { isRailLayout, useDataSource, useMockActive } from '@/data/source';
-import type { Bridge, BridgeList, GridPage } from '@/data/types';
+import type { Bridge, BridgeList } from '@/data/types';
 import { friendlyError } from '@/lib/friendly-error';
 import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
@@ -314,9 +321,6 @@ export default function BrowseScreen() {
     return null;
   }, [isHomeTerminal, showResultsGrid, bridgeId, listsSettled, isFavoritesPage, activeListId]);
 
-  const getNextPageParam = (last: GridPage, _all: GridPage[], lastParam: number) =>
-    last.hasNextPage ? lastParam + 1 : undefined;
-
   // keepPreviousData holds the previous scope's items until the new scope resolves, so a
   // bridge/page/filter/sort/search switch never clears the grid to empty — no flash, and no
   // empty→populated transition for the list to choke on (see the list `key` below).
@@ -324,8 +328,8 @@ export default function BrowseScreen() {
     queryKey: resultsScope ? queryKeys.browseGrid(mock, bridgeId ?? '', resultsScope) : DISABLED_RESULTS_KEY,
     queryFn: ({ pageParam, signal }) => fetchBrowseScope(ds, bridgeId ?? '', resultsScope!, pageParam, signal),
     enabled: !!resultsScope,
-    initialPageParam: 1,
-    getNextPageParam,
+    initialPageParam: NO_CURSOR,
+    getNextPageParam: nextGridCursor,
     placeholderData: keepPreviousData,
   });
 
@@ -348,13 +352,19 @@ export default function BrowseScreen() {
     queryKey: terminalScope ? queryKeys.browseGrid(mock, bridgeId ?? '', terminalScope) : DISABLED_TERMINAL_KEY,
     queryFn: ({ pageParam, signal }) => fetchBrowseScope(ds, bridgeId ?? '', terminalScope!, pageParam, signal),
     enabled: !!terminalScope,
-    initialPageParam: 1,
-    getNextPageParam,
+    initialPageParam: NO_CURSOR,
+    getNextPageParam: nextGridCursor,
     ...(terminalScope && terminalGridSection
       ? {
           initialData: {
-            pages: [{ items: terminalGridSection.items, hasNextPage: terminalGridSection.hasNextPage }],
-            pageParams: [1],
+            pages: [
+              {
+                items: terminalGridSection.items,
+                ...(terminalGridSection.nextCursor ? { nextCursor: terminalGridSection.nextCursor } : {}),
+              },
+            ],
+            // The seeded page was fetched without a cursor, so that's the param it's recorded under.
+            pageParams: [NO_CURSOR],
           },
         }
       : {}),

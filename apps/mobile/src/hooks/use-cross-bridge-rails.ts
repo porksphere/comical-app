@@ -4,10 +4,10 @@
  * the Comical home and the cross-bridge search are this same shape, differing only in what each bridge's
  * rail is fetched from:
  *   - `home`      → `fetchBridgeFeaturedRail(bridgeId)` (that bridge's featured/first rail list, page 1).
- *   - `search`    → `fetchBrowseScope(bridgeId, {kind:'search',query}, 1)` (page 1 of that bridge's
- *                   search) under a DEDICATED `bridgeSearchRail` key — never the infinite
+ *   - `search`    → `fetchBrowseScope(bridgeId, {kind:'search',query})` (the cursorless first page of
+ *                   that bridge's search) under a DEDICATED `bridgeSearchRail` key — never the infinite
  *                   `browseGrid({kind:'search'})` the See-all grid owns (see the queryKey note below).
- *   - `favorites` → `fetchBrowseScope(bridgeId, {kind:'favorites'}, 1)` (page 1 of that bridge's account
+ *   - `favorites` → `fetchBrowseScope(bridgeId, {kind:'favorites'})` (first page of that bridge's account
  *                   favorites) — the consolidated Comical Favorites page, one rail per logged-in bridge.
  *
  * `bridges` MUST be the REAL bridges (the caller excludes `COMICAL_BRIDGE_ID`). Each rail carries its
@@ -44,11 +44,12 @@ export function useCrossBridgeRails(
       if (params.mode === 'favorites') {
         return {
           // A DEDICATED key — NOT `browseGrid({kind:'favorites'})`. That key is owned by the single-bridge
-          // favorites INFINITE grid; this is a plain page-1 query, and sharing the entry would let the
+          // favorites INFINITE grid; this is a plain first-page query, and sharing the entry would let the
           // infinite query read a plain `GridPage` and crash on `data.pages.length` (see queries.ts).
           queryKey: queryKeys.bridgeFavoritesRail(mock, b.id),
+          // No cursor: a rail shows one page and never walks — "See all" hands the walk to the grid.
           queryFn: ({ signal }: { signal: AbortSignal }) =>
-            fetchBrowseScope(ds, b.id, { kind: 'favorites' }, 1, signal),
+            fetchBrowseScope(ds, b.id, { kind: 'favorites' }, undefined, signal),
         };
       }
       return {
@@ -56,10 +57,10 @@ export function useCrossBridgeRails(
         // INFINITE search grid (the `/results` "See all" of a search rail runs an infinite query on
         // exactly it, `opts`-less so it hashes the same). Sharing the entry would let that infinite
         // query hydrate from this plain `GridPage` and crash on `data.pages.length` — the same trap
-        // the favorites rail avoids (see queries.ts). So this page-1 rail gets its own key.
+        // the favorites rail avoids (see queries.ts). So this first-page rail gets its own key.
         queryKey: queryKeys.bridgeSearchRail(mock, b.id, query),
         queryFn: ({ signal }: { signal: AbortSignal }) =>
-          fetchBrowseScope(ds, b.id, { kind: 'search', query }, 1, signal),
+          fetchBrowseScope(ds, b.id, { kind: 'search', query }, undefined, signal),
         enabled: active,
       };
     }),

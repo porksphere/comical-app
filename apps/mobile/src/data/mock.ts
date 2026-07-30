@@ -624,23 +624,41 @@ export async function mockGetHomeSections(
     sections:
       bridgeId === RAIL_STRESS_BRIDGE_ID ? mockRailStressSections(bridgeId) : mockHomeSections('home', bridgeId),
     gridSections: [
-      { id: 'staff-picks', title: 'Staff Picks', items: mockGrid('staff-picks', 12, bridgeId), hasNextPage: true },
-      { id: 'home', title: 'Browse all', items: mockGrid('home', 24, bridgeId), hasNextPage: true },
+      { id: 'staff-picks', title: 'Staff Picks', items: mockGrid('staff-picks', 12, bridgeId), nextCursor: mockCursor(2) },
+      { id: 'home', title: 'Browse all', items: mockGrid('home', 24, bridgeId), nextCursor: mockCursor(2) },
     ],
   };
 }
 
-/** Infinite mock grid: always reports another page so infinite-scroll stays exercisable. Also
+/**
+ * The mock's own cursor format. A cursor is opaque to everything outside the source that issues it,
+ * and the mock is a stand-in *source*, not a client — so it picks whatever identifies its next page,
+ * here just the page number its item generator is seeded from. Absent or unreadable reads as the
+ * first page rather than throwing, matching how the SDK's real helpers degrade for a stale cursor.
+ */
+const mockCursor = (page: number): string => `p${page}`;
+const mockPage = (cursor: string | undefined): number => {
+  const n = Number(cursor?.replace(/^p/, ''));
+  return Number.isInteger(n) && n >= 1 ? n : 1;
+};
+
+/** Infinite mock grid: always hands back another cursor so infinite-scroll stays exercisable. Also
  *  delays the first page so sub-page switches (and "See all") show their loading skeleton. */
-export async function mockGetGridPage(bridgeId: string, listId: string, page: number): Promise<GridPage> {
+export async function mockGetGridPage(bridgeId: string, listId: string, cursor?: string): Promise<GridPage> {
   await delay(PAGE_LOAD_DELAY_MS);
-  return { items: mockGrid(`${listId}-p${page}`, 24, bridgeId), hasNextPage: true };
+  const page = mockPage(cursor);
+  return { items: mockGrid(`${listId}-p${page}`, 24, bridgeId), nextCursor: mockCursor(page + 1) };
 }
 
-/** Finite mock search results (3 pages), so the "end of results" case is reachable too. */
-export async function mockSearch(bridgeId: string, query: string, page: number): Promise<GridPage> {
+/** Finite mock search results (3 pages), so the "end of results" case is reachable too — the third
+ *  page comes back with no cursor, which is the only way this source says "that's all". */
+export async function mockSearch(bridgeId: string, query: string, cursor?: string): Promise<GridPage> {
   await delay(PAGE_LOAD_DELAY_MS);
-  return { items: mockGrid(`${query || 'search'}-p${page}`, 24, bridgeId), hasNextPage: page < 3 };
+  const page = mockPage(cursor);
+  return {
+    items: mockGrid(`${query || 'search'}-p${page}`, 24, bridgeId),
+    ...(page < 3 ? { nextCursor: mockCursor(page + 1) } : {}),
+  };
 }
 
 export async function mockGetSeriesDetail(
@@ -717,9 +735,10 @@ export async function mockGetTags(query: string): Promise<{ value: string; label
 // the consolidated Comical Favorites page) have content out of the box, not an empty grid.
 const mockFavorites = new Set<string>(['fav-1', 'fav-2', 'fav-3', 'fav-4', 'fav-5', 'fav-6']);
 
-export async function mockGetFavorites(page: number): Promise<GridPage> {
-  if (page > 1) return { items: [], hasNextPage: false };
-  return { items: [...mockFavorites].map((id) => entry(id, hash(id))), hasNextPage: false };
+/** One page, no cursor — and with no cursor to hand back there is no second read to guard against,
+ *  which is why this no longer needs the "page > 1 → empty" branch it used to carry. */
+export async function mockGetFavorites(): Promise<GridPage> {
+  return { items: [...mockFavorites].map((id) => entry(id, hash(id))) };
 }
 
 export async function mockIsFavorite(seriesId: string): Promise<boolean> {

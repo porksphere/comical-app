@@ -323,6 +323,7 @@ import type {
   SortOption as ApiSortOption,
   SortSelection as ApiSortSelection,
   Tag as ApiTag,
+  Cursor,
   PagedResults,
 } from '@comical/contract';
 
@@ -340,6 +341,7 @@ export type {
   ApiSortOption,
   ApiSortSelection,
   ApiTag,
+  Cursor,
   PagedResults,
 };
 
@@ -351,8 +353,15 @@ export type {
  */
 export type QueryOptions = { query?: string; filters?: ApiFilterValue[]; sort?: ApiSortSelection };
 
-function queryParamsFor(page: number, opts?: QueryOptions): URLSearchParams {
-  const qs = new URLSearchParams({ page: String(page) });
+/**
+ * Query string for a paged list/search read. The `cursor` is the bridge's own opaque resume token,
+ * handed back verbatim — nothing on this side decodes or increments it, so no code here has to know
+ * whether the source behind it pages by number, offset, or continuation token. Omitted entirely for
+ * the first read: absence of a cursor is what "start at the beginning" means.
+ */
+function queryParamsFor(cursor: Cursor | undefined, opts?: QueryOptions): URLSearchParams {
+  const qs = new URLSearchParams();
+  if (cursor) qs.set('cursor', cursor);
   if (opts?.query) qs.set('q', opts.query);
   if (opts?.filters?.length) qs.set('filters', JSON.stringify(opts.filters));
   if (opts?.sort) {
@@ -366,11 +375,11 @@ function queryParamsFor(page: number, opts?: QueryOptions): URLSearchParams {
 export function getSeriesListItems(
   bridgeId: string,
   listId: string,
-  page: number,
+  cursor?: Cursor,
   opts?: QueryOptions,
   signal?: AbortSignal,
 ): Promise<PagedResults<ApiSeriesEntry>> {
-  const qs = queryParamsFor(page, opts);
+  const qs = queryParamsFor(cursor, opts);
   return fetchJson(`/bridges/${encodeURIComponent(bridgeId)}/lists/${encodeURIComponent(listId)}?${qs}`, signal);
 }
 
@@ -378,11 +387,11 @@ export function getSeriesListItems(
 export function searchBridge(
   bridgeId: string,
   query: string,
-  page: number,
+  cursor?: Cursor,
   opts?: QueryOptions,
   signal?: AbortSignal,
 ): Promise<PagedResults<ApiSeriesEntry>> {
-  const qs = queryParamsFor(page, opts);
+  const qs = queryParamsFor(cursor, opts);
   qs.set('q', query);
   return fetchJson(`/bridges/${encodeURIComponent(bridgeId)}/search?${qs}`, signal);
 }
@@ -406,8 +415,8 @@ export function getTags(bridgeId: string, query: string, signal?: AbortSignal): 
 // ─── Favorites (capability "favorites") ──────────────────────────────────────
 
 /** GET /bridges/{id}/favorites → one page of the user's favorited series. */
-export function getFavorites(bridgeId: string, page: number, signal?: AbortSignal): Promise<PagedResults<ApiSeriesEntry>> {
-  const qs = new URLSearchParams({ page: String(page) });
+export function getFavorites(bridgeId: string, cursor?: Cursor, signal?: AbortSignal): Promise<PagedResults<ApiSeriesEntry>> {
+  const qs = queryParamsFor(cursor);
   return fetchJson(`/bridges/${encodeURIComponent(bridgeId)}/favorites?${qs}`, signal);
 }
 
@@ -1250,15 +1259,16 @@ export function uninstallTracker(trackerId: string, signal?: AbortSignal): Promi
   return fetchOk(`/trackers/${encodeURIComponent(trackerId)}`, 'DELETE', signal);
 }
 
-/** GET /trackers/{id}/search?q=&page= → catalog search on a tracker (capability "search"), for the
+/** GET /trackers/{id}/search?q=&cursor= → catalog search on a tracker (capability "search"), for the
  *  "+ Link tracker" form. */
 export function searchTrackerCatalog(
   trackerId: string,
   query: string,
-  page: number,
+  cursor?: Cursor,
   signal?: AbortSignal,
 ): Promise<PagedResults<ApiTrackerSearchResult>> {
-  const qs = new URLSearchParams({ q: query, page: String(page) });
+  const qs = new URLSearchParams({ q: query });
+  if (cursor) qs.set('cursor', cursor);
   return fetchJson(`/trackers/${encodeURIComponent(trackerId)}/search?${qs}`, signal);
 }
 

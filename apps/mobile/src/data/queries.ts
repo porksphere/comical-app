@@ -13,7 +13,7 @@
 import { keepPreviousData, type UseQueryOptions } from '@tanstack/react-query';
 
 import { STALE_TIME_MS } from './query-client';
-import type { FavoritesImportPreview, LibrarySort } from './api';
+import type { Cursor, FavoritesImportPreview, LibrarySort } from './api';
 import { isRailLayout, railKindFor, type DataSource, type QueryOpts } from './source';
 import type {
   ActivityEntry,
@@ -155,9 +155,11 @@ export const queryKeys = {
   bridgePrefs: (bridgeId: string) => ['bridgePrefs', bridgeId] as const,
   trackers: () => ['trackers'] as const,
   trackerSettings: (trackerId: string) => ['trackerSettings', trackerId] as const,
-  /** Catalog search results for the "+ Link tracker" form — mock-agnostic like `trackers` above. */
-  trackerCatalogSearch: (trackerId: string, query: string, page: number) =>
-    ['trackerCatalogSearch', trackerId, query, page] as const,
+  /** Catalog search results for the "+ Link tracker" form — mock-agnostic like `trackers` above. The
+   *  form only ever shows the first page (you pick one match and link it), so there's nothing to
+   *  discriminate beyond the query. */
+  trackerCatalogSearch: (trackerId: string, query: string) =>
+    ['trackerCatalogSearch', trackerId, query] as const,
   registries: () => ['registries'] as const,
   registryBridges: (url: string) => ['registryBridges', url] as const,
   registryTrackers: (url: string) => ['registryTrackers', url] as const,
@@ -178,28 +180,46 @@ export const queryKeys = {
   libraryList: (mock: boolean) => ['library', mock] as const,
 };
 
-/** Maps a `BrowseScope` (+ page number) to the data-source call that fetches it — the single place
+/** Maps a `BrowseScope` (+ resume cursor) to the data-source call that fetches it — the single place
  *  the grid's "which endpoint for this view" branching lives, shared by the infinite query's
  *  `queryFn`. Mirrors the old inline `fetchGrid`. */
 export function fetchBrowseScope(
   ds: DataSource,
   bridgeId: string,
   scope: BrowseScope,
-  page: number,
+  cursor?: Cursor,
   signal?: AbortSignal,
 ): Promise<GridPage> {
   switch (scope.kind) {
     case 'favorites':
-      return ds.getFavorites(bridgeId, page, signal);
+      return ds.getFavorites(bridgeId, cursor, signal);
     case 'seeAll':
     case 'homeGrid':
-      return ds.getGridPage(bridgeId, scope.listId, page, undefined, signal);
+      return ds.getGridPage(bridgeId, scope.listId, cursor, undefined, signal);
     case 'list':
-      return ds.getGridPage(bridgeId, scope.listId, page, scope.opts, signal);
+      return ds.getGridPage(bridgeId, scope.listId, cursor, scope.opts, signal);
     case 'search':
-      return ds.search(bridgeId, scope.query, page, scope.opts, signal);
+      return ds.search(bridgeId, scope.query, cursor, scope.opts, signal);
   }
 }
+
+/**
+ * `initialPageParam` for every grid infinite query: the first read carries no cursor, because "start
+ * at the beginning" is the absence of a position rather than a magic first value. Declared here with
+ * an explicit type (not inlined as a bare `undefined`) so react-query infers the page param as a
+ * cursor and `nextGridCursor` can hand back a real one.
+ */
+export const NO_CURSOR: Cursor | undefined = undefined;
+
+/**
+ * `getNextPageParam` for every grid infinite query: follow whatever cursor the last page handed back.
+ *
+ * This replaced a `(last, _all, lastParam) => last.hasNextPage ? lastParam + 1 : undefined` that each
+ * screen redeclared. Guessing the next position from the previous one is exactly what a cursor
+ * removes: a page with no `nextCursor` IS the last page, so there is no longer a flag that can claim
+ * more results while pointing at the page just fetched.
+ */
+export const nextGridCursor = (last: GridPage): Cursor | undefined => last.nextCursor;
 
 /**
  * One representative rail for a bridge — the building block of the synthetic "Comical" aggregate home.
@@ -220,7 +240,7 @@ export async function fetchBridgeFeaturedRail(
     lists.find((l) => !l.page) ?? // else its first home section — a grid, shown here AS a rail
     lists[0]; // else its first list of ANY kind (incl. a page / infinite grid), also shown as a rail
   if (!pick) return null;
-  const page = await ds.getGridPage(bridgeId, pick.id, 1, undefined, signal);
+  const page = await ds.getGridPage(bridgeId, pick.id, undefined, undefined, signal);
   if (page.items.length === 0) return null;
   // A grid/page list gets `kind: 'regular'` from railKindFor, so it renders as a normal horizontal rail.
   return { id: pick.id, title: pick.name, kind: railKindFor(pick.layout), items: page.items };

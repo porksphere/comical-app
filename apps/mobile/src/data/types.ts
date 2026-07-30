@@ -243,10 +243,15 @@ export type RailSection = {
   items: SeriesEntry[];
 };
 
-/** A page of grid results, with enough info to drive infinite scroll. */
+/**
+ * A page of grid results, with enough info to drive infinite scroll: the bridge's opaque resume
+ * token, or nothing at all when this was the last page. Present ⟺ there is more — so unlike the
+ * `hasNextPage` boolean this replaced, the flag and the means of acting on it can't disagree (a
+ * `true` with nowhere to go was an infinite spinner). Nothing on this side reads its contents.
+ */
 export type GridPage = {
   items: SeriesEntry[];
-  hasNextPage: boolean;
+  nextCursor?: string;
 };
 
 /**
@@ -260,7 +265,8 @@ export type HomeGridSection = {
   id: string;
   title: string;
   items: SeriesEntry[];
-  hasNextPage: boolean;
+  /** Resume token for the page after the seeded first one — see {@link GridPage.nextCursor}. */
+  nextCursor?: string;
 };
 
 /** An installed bridge, as surfaced by the bridge selector. `cardSubtitles` mirrors the contract's

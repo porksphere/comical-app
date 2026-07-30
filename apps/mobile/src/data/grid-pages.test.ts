@@ -4,7 +4,8 @@ import { dedupPages } from './grid-pages';
 import type { GridPage, SeriesEntry } from './types';
 
 const entry = (id: string): SeriesEntry => ({ id, title: id, cover: '' });
-const page = (...ids: string[]): GridPage => ({ items: ids.map(entry), hasNextPage: true });
+// A mid-walk page: it carries a cursor, though `dedupPages` only ever looks at `items`.
+const page = (...ids: string[]): GridPage => ({ items: ids.map(entry), nextCursor: 'more' });
 const ids = (items: SeriesEntry[]) => items.map((e) => e.id);
 
 describe('dedupPages', () => {

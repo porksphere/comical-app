@@ -13,14 +13,10 @@ import { ThemedView } from '@/components/themed-view';
 import { TopBar, useTopBarInset } from '@/components/top-bar';
 import { BarContentGap, Spacing } from '@/constants/theme';
 import { useDedupedPages } from '@/data/grid-pages';
-import { fetchBrowseScope, queryKeys, type BrowseScope } from '@/data/queries';
+import { fetchBrowseScope, nextGridCursor, NO_CURSOR, queryKeys, type BrowseScope } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
-import type { GridPage } from '@/data/types';
 import { friendlyError } from '@/lib/friendly-error';
 import { useGridLayout } from '@/hooks/use-grid-layout';
-
-const getNextPageParam = (last: GridPage, _all: GridPage[], lastParam: number) =>
-  last.hasNextPage ? lastParam + 1 : undefined;
 
 /**
  * A rail's "See all" destination — a single bridge's infinite-scroll results, with NO search bar.
@@ -66,8 +62,8 @@ export default function ResultsScreen() {
     queryKey: scope ? queryKeys.browseGrid(mock, bridgeId ?? '', scope) : ['browseGrid', 'disabled', 'results'],
     queryFn: ({ pageParam, signal }) => fetchBrowseScope(ds, bridgeId ?? '', scope!, pageParam, signal),
     enabled: !!scope && !!bridgeId,
-    initialPageParam: 1,
-    getNextPageParam,
+    initialPageParam: NO_CURSOR,
+    getNextPageParam: nextGridCursor,
     placeholderData: keepPreviousData,
   });
 

@@ -73,7 +73,8 @@ export function useCustomPageRows(
   const itemResults = useQueries({
     queries: sections.map((s) => ({
       queryKey: queryKeys.customSectionPage(mock, s.bridgeId, s.listId),
-      queryFn: ({ signal }: { signal: AbortSignal }) => ds.getGridPage(s.bridgeId, s.listId, 1, undefined, signal),
+      queryFn: ({ signal }: { signal: AbortSignal }) =>
+        ds.getGridPage(s.bridgeId, s.listId, undefined, undefined, signal),
     })),
   });
 
@@ -109,7 +110,7 @@ export function useCustomPageRows(
         error: !!r?.isError,
         onRetry: () => void r?.refetch(),
         items: page?.items ?? [],
-        hasNextPage: page?.hasNextPage ?? false,
+        ...(page?.nextCursor ? { nextCursor: page.nextCursor } : {}),
       };
     });
     return {

@@ -62,18 +62,20 @@ export interface DataSource {
     bridgeId: string,
     signal?: AbortSignal,
   ): Promise<{ sections: RailSection[]; gridSections: HomeGridSection[] }>;
+  /** One page of a list. `cursor` is the previous page's `nextCursor`, opaque here; omit it to start
+   *  from the beginning. */
   getGridPage(
     bridgeId: string,
     listId: string,
-    page: number,
+    cursor?: api.Cursor,
     opts?: QueryOpts,
     signal?: AbortSignal,
   ): Promise<GridPage>;
-  search(bridgeId: string, query: string, page: number, opts?: QueryOpts, signal?: AbortSignal): Promise<GridPage>;
+  search(bridgeId: string, query: string, cursor?: api.Cursor, opts?: QueryOpts, signal?: AbortSignal): Promise<GridPage>;
   getFilters(bridgeId: string, signal?: AbortSignal): Promise<api.ApiFilter[]>;
   getSortOptions(bridgeId: string, signal?: AbortSignal): Promise<api.ApiSortOption[]>;
   getTags(bridgeId: string, query: string, signal?: AbortSignal): Promise<{ value: string; label: string }[]>;
-  getFavorites(bridgeId: string, page: number, signal?: AbortSignal): Promise<GridPage>;
+  getFavorites(bridgeId: string, cursor?: api.Cursor, signal?: AbortSignal): Promise<GridPage>;
   isFavorite(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<boolean>;
   addFavorite(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void>;
   removeFavorite(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void>;
@@ -263,7 +265,7 @@ export interface DataSource {
     signal?: AbortSignal,
   ): Promise<api.TrackerLinkSyncResult>;
   /** Catalog search on a tracker, for the "+ Link tracker" form. */
-  searchTrackerCatalog(trackerId: string, query: string, page: number, signal?: AbortSignal): Promise<TrackerSearchResult[]>;
+  searchTrackerCatalog(trackerId: string, query: string, cursor?: api.Cursor, signal?: AbortSignal): Promise<TrackerSearchResult[]>;
 
   /** Registries the user has added, or `null` when this server has no registry support mounted. */
   getRegistries(signal?: AbortSignal): Promise<api.SavedRegistry[] | null>;
@@ -294,7 +296,11 @@ function toSeriesEntry(e: api.ApiSeriesEntry): SeriesEntry {
 }
 
 function toGridPage(p: api.PagedResults<api.ApiSeriesEntry>): GridPage {
-  return { items: p.items.map(toSeriesEntry), hasNextPage: p.hasNextPage };
+  // Spread conditionally so the key is genuinely ABSENT on a last page rather than present-and-
+  // undefined. These pages are serialized into the persisted query cache, where the two are the same
+  // thing on the way out but not on the way in — keeping them identical here means a rehydrated page
+  // ends the walk exactly like a freshly fetched one.
+  return { items: p.items.map(toSeriesEntry), ...(p.nextCursor ? { nextCursor: p.nextCursor } : {}) };
 }
 
 function toLibraryItem(e: api.ApiLibraryEntry): LibraryItem {
@@ -415,8 +421,8 @@ const realDataSource: DataSource = {
     // callbacks themselves would not be.
     const resolved = await Promise.all(
       homeLists.map(async (l) => {
-        const page = await api.getSeriesListItems(bridgeId, l.id, 1, undefined, signal);
-        return { list: l, items: page.items.map(toSeriesEntry), hasNextPage: page.hasNextPage };
+        const page = await api.getSeriesListItems(bridgeId, l.id, undefined, undefined, signal);
+        return { list: l, items: page.items.map(toSeriesEntry), nextCursor: page.nextCursor };
       }),
     );
     const sections: RailSection[] = [];
@@ -426,7 +432,12 @@ const realDataSource: DataSource = {
       if (isRailLayout(r.list.layout)) {
         sections.push({ id: r.list.id, title: r.list.name, kind: railKindFor(r.list.layout), items: r.items });
       } else {
-        gridSections.push({ id: r.list.id, title: r.list.name, items: r.items, hasNextPage: r.hasNextPage });
+        gridSections.push({
+          id: r.list.id,
+          title: r.list.name,
+          items: r.items,
+          ...(r.nextCursor ? { nextCursor: r.nextCursor } : {}),
+        });
       }
     }
     // Home renders nothing at all when this comes back empty, with no error — log the shape so
@@ -441,12 +452,12 @@ const realDataSource: DataSource = {
     return { sections, gridSections };
   },
 
-  async getGridPage(bridgeId, listId, page, opts, signal) {
-    return toGridPage(await api.getSeriesListItems(bridgeId, listId, page, opts, signal));
+  async getGridPage(bridgeId, listId, cursor, opts, signal) {
+    return toGridPage(await api.getSeriesListItems(bridgeId, listId, cursor, opts, signal));
   },
 
-  async search(bridgeId, query, page, opts, signal) {
-    return toGridPage(await api.searchBridge(bridgeId, query, page, opts, signal));
+  async search(bridgeId, query, cursor, opts, signal) {
+    return toGridPage(await api.searchBridge(bridgeId, query, cursor, opts, signal));
   },
 
   getFilters: (bridgeId, signal) => api.getFilters(bridgeId, signal),
@@ -456,8 +467,8 @@ const realDataSource: DataSource = {
     return tags.map((t) => ({ value: t.id, label: t.label }));
   },
 
-  async getFavorites(bridgeId, page, signal) {
-    return toGridPage(await api.getFavorites(bridgeId, page, signal));
+  async getFavorites(bridgeId, cursor, signal) {
+    return toGridPage(await api.getFavorites(bridgeId, cursor, signal));
   },
   isFavorite: (bridgeId, seriesId, signal) => api.isFavorite(bridgeId, seriesId, signal),
   addFavorite: (bridgeId, seriesId, signal) => api.addFavorite(bridgeId, seriesId, signal),
@@ -798,8 +809,8 @@ const realDataSource: DataSource = {
     await api.unlinkTracker(bridgeId, seriesId, trackerId, signal);
   },
   syncTrackerLink: (bridgeId, seriesId, trackerId, signal) => api.syncTrackerLink(bridgeId, seriesId, trackerId, signal),
-  async searchTrackerCatalog(trackerId, query, page, signal) {
-    const res = await api.searchTrackerCatalog(trackerId, query, page, signal);
+  async searchTrackerCatalog(trackerId, query, cursor, signal) {
+    const res = await api.searchTrackerCatalog(trackerId, query, cursor, signal);
     return res.items.map((r) => ({
       externalId: String(r.externalId),
       title: r.title,
@@ -833,12 +844,12 @@ const mockDataSource: DataSource = {
   getBridges: () => mock.mockGetBridges(),
   getBridgeLists: (bridgeId) => mock.mockGetBridgeLists(bridgeId),
   getHomeSections: (bridgeId) => mock.mockGetHomeSections(bridgeId),
-  getGridPage: (bridgeId, listId, page) => mock.mockGetGridPage(bridgeId, listId, page),
-  search: (bridgeId, query, page) => mock.mockSearch(bridgeId, query, page),
+  getGridPage: (bridgeId, listId, cursor) => mock.mockGetGridPage(bridgeId, listId, cursor),
+  search: (bridgeId, query, cursor) => mock.mockSearch(bridgeId, query, cursor),
   getFilters: () => mock.mockGetFilters(),
   getSortOptions: () => mock.mockGetSortOptions(),
   getTags: (bridgeId, query) => mock.mockGetTags(query),
-  getFavorites: (bridgeId, page) => mock.mockGetFavorites(page),
+  getFavorites: () => mock.mockGetFavorites(),
   isFavorite: (bridgeId, seriesId) => mock.mockIsFavorite(seriesId),
   addFavorite: (bridgeId, seriesId) => mock.mockAddFavorite(seriesId),
   removeFavorite: (bridgeId, seriesId) => mock.mockRemoveFavorite(seriesId),
