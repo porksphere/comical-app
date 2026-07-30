@@ -219,6 +219,9 @@ export interface DataSource {
 
   /** Replace a bridge's persistent tag exclusions (capability "exclude-tags"). */
   putExcludedTags(bridgeId: string, tags: { id: string; label: string }[], signal?: AbortSignal): Promise<void>;
+  /** Set (or clear via `null`) a bridge's persistent content-rating ceiling (capability
+   *  "content-rating"). */
+  putMaxContentRating(bridgeId: string, rating: api.ContentRating | null, signal?: AbortSignal): Promise<void>;
   /** Per-bridge library prefs (tracker sync / reading-history opt-out), or `null` when this
    *  server has no library store mounted. */
   getBridgePrefs(bridgeId: string, signal?: AbortSignal): Promise<api.BridgePrefs | null>;
@@ -775,6 +778,9 @@ const realDataSource: DataSource = {
     for (const t of tags) if (t.label && t.label !== t.id) labels[t.id] = t.label;
     await api.putExcludedTags(bridgeId, tags.map((t) => t.id), labels, signal);
   },
+  async putMaxContentRating(bridgeId, rating, signal) {
+    await api.putMaxContentRating(bridgeId, rating, signal);
+  },
   getBridgePrefs: (bridgeId, signal) => api.getBridgePrefs(bridgeId, signal),
   async putBridgePrefs(bridgeId, update, signal) {
     await api.putBridgePrefs(bridgeId, update, signal);
@@ -902,6 +908,7 @@ const mockDataSource: DataSource = {
   updateBridge: (bridgeId) => mock.mockUpdateBridge(bridgeId),
   uninstallBridge: (bridgeId) => mock.mockUninstallBridge(bridgeId),
   putExcludedTags: (bridgeId, tags) => mock.mockPutExcludedTags(bridgeId, tags),
+  putMaxContentRating: (bridgeId, rating) => mock.mockPutMaxContentRating(bridgeId, rating),
   getBridgePrefs: (bridgeId) => mock.mockGetBridgePrefs(bridgeId),
   putBridgePrefs: (bridgeId, update) => mock.mockPutBridgePrefs(bridgeId, update),
 

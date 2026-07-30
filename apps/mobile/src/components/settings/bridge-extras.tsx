@@ -3,13 +3,14 @@ import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { ChipRow } from '@/components/chip';
+import { SettingsSelectRow, type SettingsOption } from '@/components/settings/settings-fields';
 import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
 import { ThemedSwitch } from '@/components/themed-switch';
 import { useComicalExcluded } from '@/data/comical-home';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
-import type { ApiBridgeInfo } from '@/data/api';
+import type { ApiBridgeInfo, ContentRating } from '@/data/api';
 import { queryKeys } from '@/data/queries';
 import { useDataSource } from '@/data/source';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
@@ -186,6 +187,46 @@ export function TagExclusionsControl({
           </ThemedView>
         </Pressable>
       )}
+    </SettingsSection>
+  );
+}
+
+const CONTENT_RATING_OPTIONS: SettingsOption<string>[] = [
+  { value: '', label: 'No limit' },
+  { value: 'everyone', label: 'Everyone' },
+  { value: 'mature', label: 'Mature' },
+  { value: 'adult', label: 'Adult' },
+];
+
+/** Max content-rating ceiling picker (capability "content-rating") — series rated above the chosen
+ *  tier are hidden the same way `TagExclusionsControl`'s exclusions are, but the redaction itself is
+ *  entirely host-side (the rating already travels on the item). */
+export function MaxContentRatingControl({
+  bridgeId,
+  initialRating,
+}: {
+  bridgeId: string;
+  initialRating: ContentRating | null;
+}) {
+  const ds = useDataSource();
+  const queryClient = useQueryClient();
+  const saveMutation = useMutation({
+    mutationFn: (rating: ContentRating | null) => ds.putMaxContentRating(bridgeId, rating),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.bridgeSettings(bridgeId) });
+    },
+  });
+
+  return (
+    <SettingsSection title="Content rating">
+      <SettingsSelectRow
+        label="Maximum content rating"
+        description="Series rated above this are hidden from this bridge's lists and search."
+        value={initialRating ?? ''}
+        options={CONTENT_RATING_OPTIONS}
+        onChange={(v) => saveMutation.mutate(v === '' ? null : (v as ContentRating))}
+        heading="Maximum content rating"
+      />
     </SettingsSection>
   );
 }

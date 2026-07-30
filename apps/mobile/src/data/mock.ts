@@ -32,6 +32,7 @@ import type {
   BridgePrefs,
   BridgeSummary,
   BridgeSettingsInfo,
+  ContentRating,
   FavoritesImportItem,
   FavoritesImportPreview,
   FavoritesImportResult,
@@ -1239,6 +1240,7 @@ export async function mockGetBridgeSettings(bridgeId: string): Promise<BridgeSet
     configured: false,
     excludedTags: [],
     excludedTagLabels: {},
+    maxContentRating: null,
   };
 }
 
@@ -1246,6 +1248,7 @@ export async function mockPutBridgeSettings(_bridgeId: string, _values: Record<s
 export async function mockUpdateBridge(_bridgeId: string): Promise<void> {}
 export async function mockUninstallBridge(_bridgeId: string): Promise<void> {}
 export async function mockPutExcludedTags(_bridgeId: string, _tags: { id: string; label: string }[]): Promise<void> {}
+export async function mockPutMaxContentRating(_bridgeId: string, _rating: ContentRating | null): Promise<void> {}
 export async function mockGetBridgePrefs(bridgeId: string): Promise<BridgePrefs> {
   return { bridgeId, trackersDisabled: false, historyDisabled: false };
 }

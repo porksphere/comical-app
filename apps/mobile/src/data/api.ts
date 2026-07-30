@@ -660,7 +660,7 @@ export function dlDeleteAll(): Promise<{ files: string[] }> {
 // methods return — live in `manager.ts` itself, not `schema.ts`, so they're hand-defined below
 // instead of imported; they're tiny (3-4 fields) and just wrap the imported entry types.
 
-import type { BridgeInfo as ApiBridgeInfo, SettingDescriptor, SettingOption, SettingValue } from '@comical/contract';
+import type { BridgeInfo as ApiBridgeInfo, ContentRating, SettingDescriptor, SettingOption, SettingValue } from '@comical/contract';
 import type { RegistryBridgeEntry, RegistryTrackerEntry, SavedRegistry } from '@comical/registry';
 // The local-library model — the user's own collection + reading progress, spanning every bridge.
 // Type-only re-exports of `@comical/library` (mapped in tsconfig.json to the sibling package's
@@ -676,6 +676,7 @@ import type {
 
 export type {
   ApiBridgeInfo,
+  ContentRating,
   SettingDescriptor,
   SettingOption,
   SettingValue,
@@ -707,6 +708,9 @@ export interface BridgeSettingsInfo {
   excludedTags: string[];
   /** Id → display label for `excludedTags`, folded in by the host from its tag-name cache. */
   excludedTagLabels: Record<string, string>;
+  /** Reserved, host-managed content-rating ceiling (capability "content-rating"); `null` = no
+   *  limit. Entries above it are redacted the same way as tag exclusions — see `MAX_CONTENT_RATING_KEY`. */
+  maxContentRating: ContentRating | null;
 }
 
 /** GET/PUT /library/bridges/{id}/prefs response. */
@@ -876,6 +880,16 @@ export function putExcludedTags(
   signal?: AbortSignal,
 ): Promise<{ excludedTags: string[]; excludedTagLabels: Record<string, string> }> {
   return fetchPut(`/bridges/${encodeURIComponent(bridgeId)}/excluded-tags`, { tags, labels }, signal);
+}
+
+/** PUT /bridges/{id}/max-content-rating → set (or clear via `null`) the bridge's persistent
+ *  content-rating ceiling (capability "content-rating"). */
+export function putMaxContentRating(
+  bridgeId: string,
+  rating: ContentRating | null,
+  signal?: AbortSignal,
+): Promise<{ maxContentRating: ContentRating | null }> {
+  return fetchPut(`/bridges/${encodeURIComponent(bridgeId)}/max-content-rating`, { rating }, signal);
 }
 
 /** GET /library/bridges/{id}/prefs → per-bridge library prefs (tracker sync / history opt-out),

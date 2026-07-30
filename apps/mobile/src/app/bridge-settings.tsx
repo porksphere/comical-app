@@ -7,6 +7,7 @@ import {
   BridgeMetaInfo,
   BridgePrefsToggles,
   ComicalHomeToggle,
+  MaxContentRatingControl,
   TagExclusionsControl,
 } from '@/components/settings/bridge-extras';
 import { SettingFieldEditor } from '@/components/settings/setting-field';
@@ -216,6 +217,9 @@ export default function BridgeSettingsScreen() {
                 initialTags={data.excludedTags}
                 initialLabels={data.excludedTagLabels}
               />
+            )}
+            {data.info.capabilities?.includes('content-rating') && (
+              <MaxContentRatingControl bridgeId={bridgeId!} initialRating={data.maxContentRating} />
             )}
             <BridgePrefsToggles bridgeId={bridgeId!} />
             <ComicalHomeToggle bridgeId={bridgeId!} />
