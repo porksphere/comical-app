@@ -36,8 +36,13 @@ const RETRY_DELAYS_MS = [1000, 2000, 4000];
  * one showed the skeleton's `rgba(128,128,128,0.18)` over it — about `#1a1a1a`, ten RGB values
  * away. Both read as "the reader went black". They're now one deliberate, clearly-lighter surface,
  * and the only difference between them is that a mounted page can say which page it is.
+ *
+ * TRANSLUCENT, not opaque, same alpha as the skeleton it sits alongside — this used to be a solid
+ * `#1f1f24`, which rides along with the swipe-to-dismiss gesture (SwipeDismiss fades/scales the
+ * WHOLE reader as one animated box) and showed up as a hard-edged rectangle instead of blending
+ * into the reader's own fading backdrop behind it. A low-alpha fill lets that show through.
  */
-export const PAGE_SURFACE = '#1f1f24';
+export const PAGE_SURFACE = 'rgba(31,31,36,0.18)';
 
 type LoadEvent = { source?: { width?: number; height?: number } | null };
 
