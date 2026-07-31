@@ -3,21 +3,22 @@
  * one signal both auto-hiding bars settle on.
  *
  * Both bars (the Browse/Search top bar via `useSlidingBar`, the tab bar via `useHideTabBarOnScroll`
- * + the web fade in `app-tabs`) follow the same rule: they only *commit* to a state when the user
- * lets go. Revealing tracks the finger but has to reach FULL extension to stick — release it
- * part-way and it slides back out of view; hiding doesn't move the bar at all mid-gesture, it just
- * marks it and slides it away on release. That rule needs a "the gesture ended" event, which a
- * scroll offset alone can't give you — hence this module. (The pixel bookkeeping itself is
- * `settleStep` in `slide-step.ts`; this is only the timing signal.)
+ * + the web fade in `app-tabs`) follow the same rule: they track the scroll 1:1 in both directions,
+ * but only *commit* to a state when the user lets go — all the way back in if the gesture earned
+ * `COMMIT_DISTANCE` of upward scroll, all the way out otherwise. That needs a "the gesture ended"
+ * event, which a scroll offset alone can't give you — hence this module. (The pixel bookkeeping
+ * itself is `settleStep` in `slide-step.ts`; this is only the timing signal.)
  *
  * There's one scroller in play at a time (the focused screen's list), so this is a single shared
  * broadcast rather than per-screen state, matching `tab-bar-visibility`.
  *
  * Phases:
- * - `begin`  — `onScrollBeginDrag`: the finger went down. Cancels any settle in flight so the new
- *              gesture takes over a bar mid-animation.
- * - `release`— `onScrollEndDrag`: the finger came up. A *pending hide* fires here, so the bar gets
- *              out of the way immediately rather than riding out the fling.
+ * - `begin`  — `onScrollBeginDrag`, or the first scroll frame after a rest where that event doesn't
+ *              exist (see `inferBegin`): a gesture started. Cancels any settle in flight, so
+ *              grabbing a bar mid-animation hands it straight back to 1:1 tracking from wherever it
+ *              had got to.
+ * - `release`— `onScrollEndDrag`: the finger came up. An earned reveal and any dismissal fire here,
+ *              so the bar finishes its move immediately rather than riding out the fling.
  * - `rest`   — `onMomentumScrollEnd`, or the idle fallback below: scrolling actually stopped. A
  *              part-way reveal snaps back here, NOT at `release` — an upward fling should get the
  *              chance to finish revealing the bar under its own momentum.
@@ -27,6 +28,8 @@
  * and any scroller that doesn't wire the handlers. It's suppressed while a drag is in progress, so
  * holding a finger still mid-gesture never counts as a release.
  */
+import { Platform } from 'react-native';
+
 export type ScrollPhase = 'begin' | 'release' | 'rest';
 
 type Listener = (phase: ScrollPhase) => void;
@@ -34,8 +37,23 @@ type Listener = (phase: ScrollPhase) => void;
 /** No scroll event for this long (and no finger down) ⇒ the scroll has come to rest. */
 const IDLE_MS = 140;
 
+/**
+ * Whether the first scroll frame after a rest has to stand in for `onScrollBeginDrag`. On web there
+ * is no drag event to cancel a settle on, so scroll activity is the ONLY evidence of a gesture —
+ * including a SECOND gesture that starts while a bar is still animating out of the first. Without
+ * this, grabbing a settling bar did nothing until it finished, and the scroll it was given went
+ * unrecorded.
+ *
+ * Deliberately NOT inferred on native, and not from "no drag events seen yet" either: there, the
+ * frames arriving after a release are momentum, not a new grab, and must not take a settling bar
+ * over — the bar shouldn't ride out a fling it was just dismissed by. Native has the real event.
+ */
+const inferBegin = Platform.OS === 'web';
+
 const listeners = new Set<Listener>();
 let dragging = false;
+// Between an inferred `begin` and the `rest` that ends it (web only — see `inferBegin`).
+let gesturing = false;
 let lastActivity = 0;
 let idle: ReturnType<typeof setTimeout> | null = null;
 
@@ -59,6 +77,7 @@ function tick(): void {
     idle = setTimeout(tick, IDLE_MS - since);
     return;
   }
+  gesturing = false;
   emit('rest');
 }
 
@@ -75,6 +94,7 @@ export function subscribeScrollPhase(listener: Listener): () => void {
 
 export function notifyScrollBeginDrag(): void {
   dragging = true;
+  gesturing = true;
   clearIdle();
   emit('begin');
 }
@@ -90,14 +110,23 @@ export function notifyScrollEndDrag(): void {
 
 export function notifyScrollRest(): void {
   dragging = false;
+  gesturing = false;
   clearIdle();
   emit('rest');
 }
 
-/** Called from the bars' own `onScroll`: keeps the idle fallback's clock honest. */
+/**
+ * Called from the bars' own `onScroll`: keeps the idle fallback's clock honest, and — where there's
+ * no drag event to do it (see `inferBegin`) — opens the gesture, so scrolling into a bar that's
+ * mid-settle takes it over at the position it had reached instead of being ignored until it lands.
+ */
 export function notifyScrollActivity(): void {
   lastActivity = Date.now();
   if (dragging) return;
+  if (inferBegin && !gesturing) {
+    gesturing = true;
+    emit('begin');
+  }
   armIdle();
 }
 
