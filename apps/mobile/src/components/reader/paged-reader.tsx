@@ -10,7 +10,6 @@ import {
 } from 'react';
 import {
   FlatList,
-  StyleSheet,
   View,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -23,7 +22,6 @@ import {
   type SharedValue,
 } from 'react-native-reanimated';
 
-import { PAGE_SURFACE } from '@/components/reader/reader-page';
 import { ZoomablePage } from '@/components/reader/zoomable-page';
 import type { PageFit } from '@/hooks/use-reader-settings';
 
@@ -263,13 +261,17 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
 
   return (
     <View style={{ width, height }}>
-      <View style={styles.backdrop} pointerEvents="none" />
+      {/* Nothing full-screen is painted here on purpose. A virtualized list draws NOTHING where it
+          hasn't mounted a cell, so a scrub that outruns virtualization shows whatever is behind the
+          list — which is SwipeDismiss's STATIC backdrop, deliberately tinted to the same composite
+          an unloaded page shows (PAGED_BACKDROP, see reader-page.tsx). A fill here used to provide
+          that tint, but this subtree is the part that translates/scales during swipe-to-dismiss, so
+          any full-screen fill inside it reads as the background travelling with the page. */}
       <FlatList
         ref={listRef}
         // Sized explicitly: it used to BE this component's root and take the size
-        // from whatever hosted it, but it now shares that slot with the backdrop
-        // behind it, and a scroller that sizes to its content is not what wants to
-        // decide the reader's dimensions.
+        // from whatever hosted it, and a scroller that sizes to its content is
+        // not what wants to decide the reader's dimensions.
         style={{ width, height }}
         data={data}
         keyExtractor={(item) => item.key}
@@ -325,16 +327,3 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   );
 });
 
-const styles = StyleSheet.create({
-  // What's behind the list. A virtualized list draws NOTHING where it hasn't mounted a cell, so a
-  // scrub that outruns virtualization used to expose the reader's own near-black surface — the
-  // "black pages". Painting the same surface a mounted-but-unloaded page shows makes outrunning the
-  // list look like pages that haven't drawn yet rather than like the reader falling over.
-  //
-  // It's a plain static fill. This started out as two panels sliding by the fractional part of the
-  // scrub position, so page seams moved under the finger instead of presenting a motionless slab —
-  // but the moving seam was the only part of it you could see, and it read as lag: it tracks the
-  // scrub target, which is AHEAD of where the list has actually caught up to. A featureless surface
-  // has nothing to be out of sync with.
-  backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: PAGE_SURFACE },
-});
