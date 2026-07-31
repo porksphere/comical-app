@@ -30,6 +30,7 @@ import { useCustomPages } from '@/data/custom-pages';
 import { EMPTY_STORAGE_USAGE, overallProgress } from '@/data/downloads/derive';
 import { queryKeys } from '@/data/queries';
 import { useRegistryUpdateCounts } from '@/data/use-settings-badge';
+import { useAppUpdateCheck } from '@/data/use-app-update';
 import { useDataSource, useHideNsfw } from '@/data/source';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useHovered } from '@/hooks/use-hovered';
@@ -56,9 +57,13 @@ export default function SettingsScreen() {
   const contentPadding = useSettingsScrollPadding();
 
   const counts = useCategoryCounts();
-  // Same source as the Settings tab pip — badge the exact rows that produced it so opening Settings
-  // shows what surfaced the tab dot, instead of a mystery pip with no in-page counterpart.
+  // Same sources as the Settings tab pip — badge the exact rows that produced it so opening Settings
+  // shows what surfaced the tab dot, instead of a mystery pip with no in-page counterpart. That pip
+  // is `useSettingsBadgeCount` = these registry counts PLUS the in-app update check, so BOTH have to
+  // be represented here: registry updates land on Bridges/Trackers, an app update on About (whose
+  // pushed screen owns the "Check for updates" row).
   const updates = useRegistryUpdateCounts();
+  const appUpdate = useAppUpdateCheck();
   const customPageCount = useCustomPages().length;
 
   return (
@@ -153,6 +158,11 @@ export default function SettingsScreen() {
             // The version doubles as the row's value, so the answer to "which build am I on?" is on
             // the landing screen itself — the screen behind it is for the rest of the readout.
             value={APP_VERSION}
+            // A newer build of this channel exists. Only ever 0 or 1 (there's one app, not a list of
+            // them), which still goes through the counted pip rather than a bare UpdateDot: this is a
+            // CATEGORY row like Bridges/Trackers, and keeping the same pill means the tab badge's
+            // total is exactly the sum of the pips visible on this screen.
+            updates={appUpdate.status === 'update-available' ? 1 : 0}
             onPress={() => router.push('/settings-about')}
           />
           {PROFILING_ENABLED && (
@@ -233,7 +243,8 @@ function CategoryRow({
   icon: ReactNode;
   title: string;
   value?: string;
-  /** Registry updates available for this category — renders the same accent pip as the tab badge. */
+  /** Updates available for this category — registry updates on Bridges/Trackers, a pending app
+   *  update on About. Renders the same accent pip as the tab badge. */
   updates?: number;
   /** Cumulative download progress [0,1] — renders a small radial before the chevron while in flight. */
   progress?: number;
