@@ -148,5 +148,11 @@ export const PERSIST_MAX_AGE_MS = GC_TIME_MS;
  * v2→v3 here cleared a stale `registryUpdateCount` entry (an older build's plain-number/counts
  * shape) that crashed `useRegistryUpdateCounts` on cold start once the current code started
  * expecting `{bridges, trackers}` arrays instead.
+ *
+ * v3→v4: cursor pagination added `nextCursor` to `homeSections`' grid sections, and that key IS
+ * persisted. A pre-cursor entry rehydrates without one, so Home's terminal grid seeds
+ * `terminalQuery.initialData` with a cursor-less page 1 → `getNextPageParam` returns undefined →
+ * `hasNextPage` false → `loadMore` bails with no spinner. That reads as "infinite scroll is dead on
+ * every bridge", and it self-heals only once the entry refetches, which makes it look intermittent.
  */
-export const PERSIST_BUSTER = `v3:${getResolvedModeSync() === 'embedded' ? 'embedded' : getApiBase()}`;
+export const PERSIST_BUSTER = `v4:${getResolvedModeSync() === 'embedded' ? 'embedded' : getApiBase()}`;
