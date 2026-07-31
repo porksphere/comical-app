@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { settleStep, slideStep } from './slide-step';
+import { COMMIT_DISTANCE, settleStep, slideStep } from './slide-step';
 
 // The bar spans ~82px (its measured height) on a real device; use a round 100 here.
 const SPAN = 100;
@@ -53,38 +53,47 @@ describe('slideStep', () => {
 });
 
 describe('settleStep', () => {
-  test('a fully-shown bar only MARKS the hide — it does not move under the finger', () => {
-    expect(settleStep(0, false, 30, 0, 0, SPAN)).toEqual({ hidden: 0, pending: true });
-    // ...however far the scroll goes; the caller slides it away on release.
-    expect(settleStep(0, true, 130, 30, 0, SPAN)).toEqual({ hidden: 0, pending: true });
+  test('slides 1:1 in both directions, exactly like slideStep', () => {
+    expect(settleStep(0, 0, 30, 0, 0, SPAN).hidden).toBe(30);
+    expect(settleStep(30, 0, 70, 30, 0, SPAN).hidden).toBe(70);
+    expect(settleStep(70, 0, 40, 70, 0, SPAN).hidden).toBe(40);
   });
 
-  test('reveals 1:1 on upward scroll and drops the pending hide', () => {
-    expect(settleStep(SPAN, true, 160, 200, 0, SPAN)).toEqual({ hidden: 60, pending: false });
-    expect(settleStep(60, false, 130, 160, 0, SPAN)).toEqual({ hidden: 30, pending: false });
+  test('upward scroll earns reveal credit, capped at the commit distance', () => {
+    expect(settleStep(SPAN, 0, 180, 200, 0, SPAN).up).toBe(20);
+    expect(settleStep(80, 20, 150, 180, 0, SPAN).up).toBe(50);
+    // Capped: once it's committed, more of the same gesture changes nothing.
+    expect(settleStep(50, 50, 0, 150, 0, SPAN, -1).up).toBe(COMMIT_DISTANCE);
   });
 
-  test('an upward step against an already-shown bar still clears the mark', () => {
-    // Nothing to reveal (hidden is already 0), but the user is asking for the chrome, so the hide
-    // marked earlier in the same gesture is off.
-    expect(settleStep(0, true, 120, 140, 0, SPAN)).toEqual({ hidden: 0, pending: false });
+  test('any downward scroll spends the credit back to nothing', () => {
+    expect(settleStep(0, COMMIT_DISTANCE, 1, 0, 0, SPAN).up).toBe(0);
+    expect(settleStep(0, COMMIT_DISTANCE - 1, 40, 0, 0, SPAN).up).toBe(0);
   });
 
-  test('a part-way reveal gives its ground back 1:1 — it was never committed either', () => {
-    expect(settleStep(40, false, 220, 200, 0, SPAN)).toEqual({ hidden: 60, pending: true });
+  test('at the top the credit saturates — a pinned bar has nothing left to earn', () => {
+    expect(settleStep(SPAN, 0, 4, 400, 0, SPAN, 8)).toEqual({ hidden: 0, up: COMMIT_DISTANCE });
+    // Even coming DOWN into the top guard, where the raw step would have spent it.
+    expect(settleStep(0, 10, 6, 2, 0, SPAN, 8)).toEqual({ hidden: 0, up: COMMIT_DISTANCE });
   });
 
-  test('snaps fully shown at the top, with nothing left to commit', () => {
-    expect(settleStep(SPAN, true, 4, 400, 0, SPAN, 8)).toEqual({ hidden: 0, pending: false });
-    expect(settleStep(0, true, 4, 6, 0, SPAN, 8)).toEqual({ hidden: 0, pending: false });
-  });
-
-  test('a guard-rejected step leaves the mark exactly as it was', () => {
-    // Elastic bottom bounce, in both directions: no movement, no change of intent.
-    expect(settleStep(SPAN, true, 520, 560, 500, SPAN)).toEqual({ hidden: SPAN, pending: true });
-    expect(settleStep(0, true, 560, 520, 500, SPAN)).toEqual({ hidden: 0, pending: true });
+  test('a guard-rejected step moves neither the bar nor the credit', () => {
+    // Elastic bottom bounce, in both directions.
+    expect(settleStep(SPAN, 10, 520, 560, 500, SPAN)).toEqual({ hidden: SPAN, up: 10 });
+    expect(settleStep(0, 10, 560, 520, 500, SPAN)).toEqual({ hidden: 0, up: 10 });
     // A reposition-sized jump, likewise.
-    expect(settleStep(0, false, 780, 0, 0, SPAN)).toEqual({ hidden: 0, pending: false });
-    expect(settleStep(0, true, 0, 780, 0, SPAN, -1)).toEqual({ hidden: 0, pending: true });
+    expect(settleStep(0, 10, 780, 0, 0, SPAN)).toEqual({ hidden: 0, up: 10 });
+    expect(settleStep(0, 10, 0, 780, 0, SPAN, -1)).toEqual({ hidden: 0, up: 10 });
+  });
+
+  // What the caller does with the credit: `up >= COMMIT_DISTANCE` ⇒ settle fully shown, else fully
+  // hidden. Both bars use the SAME threshold despite different spans, so they agree about a flick.
+  test('a flick shorter than the commit distance leaves the reveal unearned', () => {
+    let s = { hidden: SPAN, up: 0 };
+    for (let y = 400; y > 400 - (COMMIT_DISTANCE - 8); y -= 8) {
+      s = settleStep(s.hidden, s.up, y - 8, y, 0, SPAN);
+    }
+    expect(s.hidden).toBeLessThan(SPAN); // it did move, 1:1, the whole way
+    expect(s.up).toBeLessThan(COMMIT_DISTANCE); // ...but never earned the lock-in
   });
 });

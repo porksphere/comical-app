@@ -34,6 +34,12 @@
 // The cost of the guard misfiring is a bar that fails to hide for one frame of an unusually janky
 // fling — visible only as the hide starting a frame late, and self-correcting on the next report.
 const MAX_GESTURE_STEP = 240;
+/** The two ways a scroll step carries no gesture intent: a reposition-sized jump (above), and the
+ *  elastic bottom bounce, whose springback produces the same deltas a real scroll-up does. */
+function stepRejected(y: number, prevY: number, maxScrollY: number): boolean {
+  'worklet';
+  return Math.abs(y - prevY) > MAX_GESTURE_STEP || (maxScrollY > 0 && y >= maxScrollY);
+}
 export function slideStep(
   hidden: number,
   y: number,
@@ -44,50 +50,52 @@ export function slideStep(
 ): number {
   'worklet';
   if (y <= topGuard) return 0;
-  if (Math.abs(y - prevY) > MAX_GESTURE_STEP) return hidden;
-  if (maxScrollY > 0 && y >= maxScrollY) return hidden;
+  if (stepRejected(y, prevY, maxScrollY)) return hidden;
   return Math.min(span, Math.max(0, hidden + (y - prevY)));
 }
 
 /**
- * `slideStep` plus the commit-on-release rule the bars actually ship: a state only sticks when the
- * gesture ENDS, so nothing half-done survives letting go.
+ * Upward scroll (in one gesture) that locks a bar back in. Deliberately ONE number for every bar
+ * rather than "however far this particular bar travels": the top bar's span is its content height
+ * (60) and the tab bar's is its measured height (~82), so per-bar thresholds meant the top bar stuck
+ * while the tab bar, given the identical flick, slid straight back out — the two disagreeing about
+ * the same gesture, which is what it looked like.
  *
- * - **Hiding never starts under the finger.** A fully-shown bar holds still on downward scroll and
- *   only raises `pending`; the caller slides it away on `release` (see `scroll-release`). Before
- *   this, a few px of downward scroll immediately shaved a few px off the bar, which read as the
- *   chrome twitching at every direction change.
- * - **Revealing tracks the finger, but only a FULL reveal is committed.** Upward scroll gives the
- *   bar back 1:1 (so it feels attached to the gesture), and symmetrically a partial reveal gives
- *   ground 1:1 to a downward one — neither was ever committed. The caller drops anything still
- *   part-way at `rest`, so a stingy flick doesn't leave a bar hanging half-on-screen.
+ * Set just UNDER the shortest bar's span so no bar can sit fully extended yet uncommitted (releasing
+ * there would yank back a bar that already looks all the way out, for no reason a user can see). The
+ * taller tab bar locks in with a little travel left and finishes it in the settle.
+ */
+export const COMMIT_DISTANCE = 56;
+
+/**
+ * `slideStep` plus the bookkeeping for the commit-on-release rule the bars actually ship: both
+ * directions track the finger 1:1, and letting go finishes the job in whichever direction the
+ * gesture earned.
  *
- * `pending` is carried in/out rather than owned here so this stays a pure function usable from both
- * threads: the top bar keeps it in a shared value, the tab bar in a ref.
+ * `up` is that earning: upward px accumulated within the current gesture, capped at (and so read as
+ * committed at) `COMMIT_DISTANCE`. Any downward scroll spends it back to zero — which is what makes
+ * a dismissal cheap, in line with how the bars are used: you flick down to get the chrome out of the
+ * way constantly, and ask for it back deliberately. At the top it saturates, since a bar pinned
+ * fully shown has nothing left to earn.
+ *
+ * The caller settles on it when the gesture ends: `up >= COMMIT_DISTANCE` ⇒ all the way shown, else
+ * all the way hidden. Carried in/out rather than owned here so this stays a pure function usable
+ * from both threads — the top bar keeps it in a shared value, the tab bar in a ref.
  */
 export function settleStep(
   hidden: number,
-  pending: boolean,
+  up: number,
   y: number,
   prevY: number,
   maxScrollY: number,
   span: number,
   topGuard = 0,
-): { hidden: number; pending: boolean } {
+): { hidden: number; up: number } {
   'worklet';
   const next = slideStep(hidden, y, prevY, maxScrollY, span, topGuard);
-  // Revealing (including the snap to fully-shown at the top): track it, and drop any pending hide —
-  // the user has changed their mind mid-gesture.
-  if (next < hidden) return { hidden: next, pending: false };
-  // Hiding. A fully-shown bar is only MARKED; a partial reveal gives its ground back immediately.
-  if (next > hidden) return { hidden: hidden === 0 ? hidden : next, pending: true };
-  // No movement, so the intent has to be read off the raw step. Three ways to get here:
-  // pinned at the top (nothing to commit), a guard rejecting the step (unknown intent — leave
-  // `pending` exactly as it was), or an already-fully-shown bar clamping an upward step to 0 — which
-  // is still the user asking for the chrome, so a hide marked earlier in the same gesture is off.
-  if (y <= topGuard) return { hidden: 0, pending: false };
-  if (y < prevY && Math.abs(y - prevY) <= MAX_GESTURE_STEP && (maxScrollY <= 0 || y < maxScrollY)) {
-    return { hidden, pending: false };
-  }
-  return { hidden, pending };
+  if (y <= topGuard) return { hidden: next, up: COMMIT_DISTANCE };
+  // A step with no gesture intent moves neither the bar nor the credit.
+  if (stepRejected(y, prevY, maxScrollY)) return { hidden: next, up };
+  const dy = y - prevY;
+  return { hidden: next, up: dy > 0 ? 0 : Math.min(COMMIT_DISTANCE, up - dy) };
 }

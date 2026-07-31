@@ -4,10 +4,11 @@
  * bridge/page bar and the Search screen's filter bar so their motion can't drift — and reusable by
  * any other scrolling screen that wants a collapsing header.
  *
- * Nothing half-done survives letting go: a reveal has to reach full extension to stick (release it
- * part-way and it slides back out), and downward scroll doesn't shave the bar away under the finger
- * — it marks a hide that fires on release. The rule is `settleStep`; the "gesture ended" signal is
- * `scroll-release`; the settle animation is `settle` below.
+ * Nothing half-done survives letting go: both directions track the finger 1:1, and then the bar
+ * finishes the job on its own — all the way back in if the gesture earned `COMMIT_DISTANCE` of
+ * upward scroll, all the way out otherwise (so dismissing it takes a flick, not a full swipe). The
+ * rule is `settleStep`; the "gesture ended" signal is `scroll-release`; the settle animation is
+ * `settle` below.
  *
  * Wiring: spread `sharedValues` onto the (Animated)LegendList's `sharedValues` prop so it feeds the
  * live scroll offset, and pass `onScroll` to the list so `maxScrollY` stays in sync (it distinguishes
@@ -44,7 +45,7 @@ import {
   subscribeScrollPhase,
   type ScrollPhase,
 } from '@/lib/scroll-release';
-import { settleStep } from '@/lib/slide-step';
+import { COMMIT_DISTANCE, settleStep } from '@/lib/slide-step';
 import { setTopBarHidden } from '@/lib/top-bar-visibility';
 
 /** How long the bar takes to slide to its committed state once the gesture ends. */
@@ -85,9 +86,9 @@ export function useSlidingBar(
   const offset = useSharedValue(0);
   // Whether `scrollY` has reported a real position since the last mount/reset. See the reaction.
   const primed = useSharedValue(false);
-  // A hide the user has asked for but hasn't committed yet — it fires when they let go. See
-  // `settleStep` for the rule and `settle` below for the animation.
-  const pendingHide = useSharedValue(false);
+  // Upward scroll earned in the current gesture; `COMMIT_DISTANCE` of it locks the bar back in when
+  // the user lets go. See `settleStep` for the rule and `settle` below for the animation.
+  const revealUp = useSharedValue(COMMIT_DISTANCE);
   // A settle animation currently owns `offset`; scroll reports stand back until it lands (or a new
   // gesture cancels it).
   const settling = useSharedValue(false);
@@ -120,8 +121,8 @@ export function useSlidingBar(
       // commit-on-release layer over it) is the shared `settleStep` — the tab bar's hook runs the
       // same function, so the two bars' motion can't drift. It works in hidden-px (positive); this
       // bar's offset is a translateY, hence the sign.
-      const next = settleStep(-offset.value, pendingHide.value, y, prevY, maxScrollY.value, barHeight);
-      pendingHide.set(next.pending);
+      const next = settleStep(-offset.value, revealUp.value, y, prevY, maxScrollY.value, barHeight);
+      revealUp.set(next.up);
       offset.set(-next.hidden);
     },
     [barHeight],
@@ -143,28 +144,37 @@ export function useSlidingBar(
         settling.set(false);
         return;
       }
-      const hide = () => {
+      // A settle already in flight owns the bar — a `rest` arriving behind the `release` that
+      // started it must not restart the same animation.
+      if (settling.value) return;
+      const settleTo = (hidden: number) => {
+        if (-offset.value === hidden) return;
         settling.set(true);
         offset.set(
-          withTiming(-barHeight, { duration: SETTLE_MS }, (finished) => {
+          withTiming(-hidden, { duration: SETTLE_MS }, (finished) => {
             'worklet';
             if (finished) settling.set(false);
           }),
         );
       };
-      // A marked hide fires as soon as the finger lifts, so the bar is out of the way for the fling
-      // rather than sliding away after it.
-      if (pendingHide.value) {
-        pendingHide.set(false);
-        hide();
+      const earned = revealUp.value >= COMMIT_DISTANCE;
+      // An earned reveal, and any dismissal, finish the moment the finger lifts — the bar shouldn't
+      // still be moving after a fling has started.
+      if (earned || revealUp.value === 0) {
+        revealUp.set(earned ? COMMIT_DISTANCE : 0);
+        settleTo(earned ? 0 : barHeight);
         return;
       }
-      // A reveal that never reached full extension isn't committed — but it only loses at `rest`,
-      // so an upward fling gets its momentum to finish the job first.
-      const hidden = -offset.value;
-      if (phase === 'rest' && hidden > 0 && hidden < barHeight) hide();
+      // In between: the gesture asked for the bar but hasn't earned it yet. Wait for `rest` rather
+      // than deciding here, so an upward fling's momentum gets to finish earning it. Once it's over,
+      // the credit is spent — the next gesture earns the reveal from scratch rather than adding to a
+      // half-finished one.
+      if (phase === 'rest') {
+        revealUp.set(0);
+        settleTo(barHeight);
+      }
     },
-    [barHeight, offset, pendingHide, settling],
+    [barHeight, offset, revealUp, settling],
   );
   useEffect(() => subscribeScrollPhase(settle), [settle]);
 
@@ -225,7 +235,7 @@ export function useSlidingBar(
     primed.set(false);
     cancelAnimation(offset);
     settling.set(false);
-    pendingHide.set(false);
+    revealUp.set(COMMIT_DISTANCE);
     offset.set(0);
     maxScrollY.set(0);
     listRef?.current?.scrollToOffset({ offset: 0, animated: false });

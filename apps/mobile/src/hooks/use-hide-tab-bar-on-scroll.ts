@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 
 import { notifyScrollActivity, subscribeScrollPhase, type ScrollPhase } from '@/lib/scroll-release';
-import { settleStep } from '@/lib/slide-step';
+import { COMMIT_DISTANCE, settleStep } from '@/lib/slide-step';
 import { getTabBarHideOffset, setTabBarProgress } from '@/lib/tab-bar-visibility';
 
 // The scroll span over which the bar fully hides/reveals is the bar's own hide offset (its measured
@@ -21,9 +21,11 @@ const SETTLE_MS = 200;
  * into the shared `tab-bar-visibility` store (there's one bar, and only the focused screen's
  * scrolling should drive it).
  *
- * Same commit-on-release rule as the top bar, out of the same `settleStep`: downward scroll marks a
- * hide that fires when the finger lifts, and a reveal that never reached full extension slides back
- * out once the scroll comes to rest. See `scroll-release` for where those two moments come from.
+ * Same commit-on-release rule as the top bar, out of the same `settleStep`: it tracks the finger 1:1
+ * both ways, then finishes the job on its own — back in if the gesture earned `COMMIT_DISTANCE` of
+ * upward scroll (the same threshold the top bar uses, so the two agree about a given flick even
+ * though this bar is taller), all the way out otherwise. See `scroll-release` for where "the gesture
+ * ended" comes from.
  *
  * Returns a ready `onScroll` for a plain FlatList/ScrollView, plus the underlying `reportOffset`
  * for screens that already drive a Reanimated `useAnimatedScrollHandler` worklet and need to
@@ -35,8 +37,9 @@ export function useHideTabBarOnScroll() {
   const lastProgress = useRef(0);
   // Whether `lastY` holds a real previous position yet. See `reportOffset`.
   const primed = useRef(false);
-  // A hide the user has asked for but hasn't committed yet — it fires on release. See `settleStep`.
-  const pending = useRef(false);
+  // Upward scroll earned in the current gesture; `COMMIT_DISTANCE` of it locks the bar back in when
+  // the user lets go. See `settleStep`.
+  const up = useRef(COMMIT_DISTANCE);
   // Handle of the settle tween in flight; while it's set, it owns the bar (see `reportOffset`).
   const settleFrame = useRef<number | null>(null);
   const focused = useRef(true);
@@ -65,21 +68,24 @@ export function useHideTabBarOnScroll() {
   // The commit animation. A hand-rolled rAF tween rather than Reanimated's `withTiming` because this
   // bar's position is plain React state the whole way through (`tab-bar-visibility` → AppTabs), for
   // the reason spelled out in app-tabs: expo-router's `TabList` exposes a plain `style` only.
-  const settleToHidden = useCallback(() => {
-    cancelSettle();
-    const span = getTabBarHideOffset();
-    const from = distance.current;
-    if (from >= span) return;
-    const start = Date.now();
-    const step = () => {
-      const t = Math.min(1, (Date.now() - start) / SETTLE_MS);
-      const eased = 1 - (1 - t) ** 3;
-      distance.current = from + (span - from) * eased;
-      publish(distance.current / span);
-      settleFrame.current = t < 1 ? requestAnimationFrame(step) : null;
-    };
-    settleFrame.current = requestAnimationFrame(step);
-  }, [cancelSettle, publish]);
+  const settleTo = useCallback(
+    (target: number) => {
+      cancelSettle();
+      const span = getTabBarHideOffset();
+      const from = distance.current;
+      if (from === target) return;
+      const start = Date.now();
+      const step = () => {
+        const t = Math.min(1, (Date.now() - start) / SETTLE_MS);
+        const eased = 1 - (1 - t) ** 3;
+        distance.current = from + (target - from) * eased;
+        publish(distance.current / span);
+        settleFrame.current = t < 1 ? requestAnimationFrame(step) : null;
+      };
+      settleFrame.current = requestAnimationFrame(step);
+    },
+    [cancelSettle, publish],
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -87,7 +93,7 @@ export function useHideTabBarOnScroll() {
       cancelSettle();
       distance.current = 0;
       lastProgress.current = 0;
-      pending.current = false;
+      up.current = COMMIT_DISTANCE;
       primed.current = false;
       setTabBarProgress(0);
       return () => {
@@ -107,18 +113,27 @@ export function useHideTabBarOnScroll() {
         cancelSettle();
         return;
       }
-      // A marked hide fires as soon as the finger lifts, so the bar is out of the way for the fling
-      // rather than sliding away after it.
-      if (pending.current) {
-        pending.current = false;
-        settleToHidden();
+      // A settle already in flight owns the bar — a `rest` arriving behind the `release` that
+      // started it must not restart the same animation.
+      if (settleFrame.current !== null) return;
+      const earned = up.current >= COMMIT_DISTANCE;
+      // An earned reveal, and any dismissal, finish the moment the finger lifts — the bar shouldn't
+      // still be moving after a fling has started.
+      if (earned || up.current === 0) {
+        up.current = earned ? COMMIT_DISTANCE : 0;
+        settleTo(earned ? 0 : getTabBarHideOffset());
         return;
       }
-      // A reveal that never reached full extension isn't committed — but it only loses at `rest`,
-      // so an upward fling gets its momentum to finish the job first.
-      if (phase === 'rest' && distance.current > 0) settleToHidden();
+      // In between: the gesture asked for the bar but hasn't earned it yet. Wait for `rest` rather
+      // than deciding here, so an upward fling's momentum gets to finish earning it. Once it's over,
+      // the credit is spent — the next gesture earns the reveal from scratch rather than adding to a
+      // half-finished one.
+      if (phase === 'rest') {
+        up.current = 0;
+        settleTo(getTabBarHideOffset());
+      }
     },
-    [cancelSettle, settleToHidden],
+    [cancelSettle, settleTo],
   );
   useEffect(() => subscribeScrollPhase(settle), [settle]);
 
@@ -148,8 +163,8 @@ export function useHideTabBarOnScroll() {
       // supply it) ⇒ 0 ⇒ no bounce guard. The span is re-read each report: the bar re-measures on
       // inset/layout changes, and the px accumulator just re-clamps to whatever it currently is.
       const span = getTabBarHideOffset();
-      const next = settleStep(distance.current, pending.current, y, prevY, maxY ?? 0, span, TOP_GUARD);
-      pending.current = next.pending;
+      const next = settleStep(distance.current, up.current, y, prevY, maxY ?? 0, span, TOP_GUARD);
+      up.current = next.up;
       distance.current = next.hidden;
       publish(next.hidden / span);
     },
