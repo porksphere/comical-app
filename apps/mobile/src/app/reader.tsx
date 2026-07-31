@@ -858,12 +858,11 @@ export default function ReaderScreen() {
       {/* The reader's dark surface. Before pages are ready there's nothing to
           swipe away yet (SwipeDismiss below only wraps the loaded branch), so
           this is a plain static fill covering the transparent modal (see
-          _layout.tsx). Once loaded, SwipeDismiss paints its own copy of this
-          same colour INSIDE its transformed view instead (its `backdropColor`
-          prop) — a separate, static, full-screen layer here would sit behind
-          the page as it shrinks and slides during a swipe, showing through as
-          a hard-edged rectangle around the now-smaller page rather than
-          moving with it. */}
+          _layout.tsx). Once loaded, SwipeDismiss owns this same colour (its
+          `backdropColor` prop) as a static full-screen layer BEHIND its
+          transformed page — X-media-viewer style: a swipe drags the page out
+          over the dim, which fades in place with drag distance to reveal the
+          series screen beneath, instead of travelling along with the page. */}
       {(!pages || error) && <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.backdrop]} />}
       <StatusBar style="light" hidden={!chromeVisible} />
       {error ? (
@@ -878,8 +877,9 @@ export default function ReaderScreen() {
         <>
           {/* Swipe-away dismissal on the cross axis: vertical while the paged
               reader scrolls horizontally, horizontal while the webtoon scrolls
-              vertically. The page tracks the finger and fades; past the
-              threshold it slides out and the reader closes. */}
+              vertically. The page tracks the finger and shrinks while the dark
+              backdrop fades in place beneath it; past the threshold the page
+              slides out and the reader closes. */}
           <SwipeDismiss
             axis={settings.mode === 'paged' ? 'vertical' : 'horizontal'}
             width={width}

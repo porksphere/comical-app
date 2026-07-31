@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from 'react';
-import { Platform, StyleSheet } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Extrapolation,
@@ -18,10 +18,13 @@ import Animated, {
 // NOT scroll on — vertical for the horizontal paged reader, horizontal for the
 // vertical webtoon — so it never competes with page turning: the pan only claims
 // the touch after a clear cross-axis drag and fails on a scroll-axis one. Once
-// active the page follows the finger in BOTH axes, fading with distance
-// travelled, and the caller's `progress` value fades its backdrop/chrome in
-// lockstep (revealing the screen behind — the reader route is a transparent
-// modal). Releasing past a quarter of the screen (or a fast flick) flings the
+// active the page follows the finger in BOTH axes, shrinking but staying fully
+// opaque, while the backdrop — a STATIC full-screen dim layer behind it — fades
+// out in place with distance travelled (the X media-viewer treatment: the page
+// slides over the screen behind, it doesn't drag a black rectangle along;
+// the reader route is a transparent modal, so the screen underneath shows
+// through the thinning dim). The caller's `progress` value fades its chrome in
+// lockstep. Releasing past a quarter of the screen (or a fast flick) flings the
 // page out along the gesture's own direction and closes the reader; anything
 // less springs back.
 //
@@ -62,10 +65,10 @@ type Props = {
    *  through a touch that never ends up dragging far enough to activate the
    *  pan at all), not a "the dismiss gesture is active" one. */
   onTouchBegin?: () => void;
-  /** Painted as an absolute-fill layer BEHIND `children`, inside the same
-   *  transformed view — so it scales/translates/fades as one unit with the
-   *  page instead of staying a static, screen-sized rectangle behind a page
-   *  that shrinks and slides out from under it (see the call site). */
+  /** Painted as a STATIC absolute-fill layer BEHIND the transformed page. It
+   *  never moves with the drag; its opacity fades from full to nothing over a
+   *  span of travel, so swiping reads as the page pulling away over the screen
+   *  behind while the dim dissolves in place (see the call site). */
   backdropColor?: string;
   children: ReactNode;
 };
@@ -136,16 +139,20 @@ export function SwipeDismiss({
       dismissing.set(true);
       // Fling out along the gesture's own direction — the release velocity when
       // it was a flick, the accumulated travel otherwise — never a fixed
-      // axis-aligned path. One extra span of travel puts the distance-driven
-      // opacity at 0 with the page well offscreen.
+      // axis-aligned path. The page stays opaque, so the travel must clear the
+      // screen geometrically: a full screen DIAGONAL covers the worst case (a
+      // near-diagonal fling released close to the origin), where one span would
+      // leave a corner of the scaled page peeking in. The backdrop's
+      // distance-driven opacity crosses its span and hits 0 en route.
       let dirX = byFlick ? e.velocityX : tx.value;
       let dirY = byFlick ? e.velocityY : ty.value;
       const len = Math.hypot(dirX, dirY) || 1;
       dirX /= len;
       dirY /= len;
-      tx.set(withTiming(tx.value + dirX * span, { duration: EXIT_MS }));
+      const exit = Math.hypot(width, height);
+      tx.set(withTiming(tx.value + dirX * exit, { duration: EXIT_MS }));
       ty.set(
-        withTiming(ty.value + dirY * span, { duration: EXIT_MS }, (finished) => {
+        withTiming(ty.value + dirY * exit, { duration: EXIT_MS }, (finished) => {
           if (finished) runOnJS(onDismiss)();
         }),
       );
@@ -158,15 +165,13 @@ export function SwipeDismiss({
   if (vertical) pan.activeOffsetY([-ACTIVATE_PX, ACTIVATE_PX]).failOffsetX([-FAIL_PX, FAIL_PX]);
   else pan.activeOffsetX([-ACTIVATE_PX, ACTIVATE_PX]).failOffsetY([-FAIL_PX, FAIL_PX]);
 
-  // Fade AND shrink track distance travelled: at rest full size / fully opaque,
-  // a whole span away scaled to MIN_SCALE and gone — the exit fling covers the
-  // tail, so both read as "mostly at the end" without a separate curve. Scale is
-  // listed after the translate so the page shrinks toward its own (moved)
+  // The page shrinks with distance travelled but never fades — X-style, the
+  // dragged page stays solid and only the dim layer behind it dissolves. Scale
+  // is listed after the translate so the page shrinks toward its own (moved)
   // centre, i.e. it pulls away under the finger rather than snapping to origin.
   const animatedStyle = useAnimatedStyle(() => {
     const dist = Math.hypot(tx.value, ty.value);
     return {
-      opacity: interpolate(dist, [0, span], [1, 0], Extrapolation.CLAMP),
       transform: [
         { translateX: tx.value },
         { translateY: ty.value },
@@ -174,6 +179,15 @@ export function SwipeDismiss({
       ],
     };
   });
+
+  // The backdrop's fade in place: proportional to distance, gone a whole span
+  // away. Still ~75% dim at the release threshold — fading fully by then would
+  // flash the screen behind during a drag that ends up cancelled. Derived from
+  // the same offsets as the transform, so the drag, the spring-back, and the
+  // exit fling all animate it with no imperative writes.
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(Math.hypot(tx.value, ty.value), [0, span], [1, 0], Extrapolation.CLAMP),
+  }));
 
   // Web keeps its own input model (wheel/keyboard/click); no swipe-away there,
   // so the backdrop just sits static behind the content — nothing to sync.
@@ -188,14 +202,17 @@ export function SwipeDismiss({
   }
 
   return (
-    <GestureDetector gesture={pan}>
-      <Animated.View style={[styles.fill, animatedStyle]}>
-        {backdropColor && (
-          <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: backdropColor }]} />
-        )}
-        {children}
-      </Animated.View>
-    </GestureDetector>
+    <View style={styles.fill}>
+      {backdropColor && (
+        <Animated.View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, { backgroundColor: backdropColor }, backdropStyle]}
+        />
+      )}
+      <GestureDetector gesture={pan}>
+        <Animated.View style={[styles.fill, animatedStyle]}>{children}</Animated.View>
+      </GestureDetector>
+    </View>
   );
 }
 
