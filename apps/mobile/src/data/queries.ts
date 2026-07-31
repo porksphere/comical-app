@@ -165,9 +165,16 @@ export const queryKeys = {
   registryTrackers: (url: string) => ['registryTrackers', url] as const,
   // One combined count of available bridge + tracker updates, behind the Settings tab pip.
   registryUpdateCount: () => ['registryUpdateCount'] as const,
-  // The in-app update checker's result — one entry per channel (a device only ever runs one, but
-  // keying on it keeps the cache honest, same as `bridges(mock)`).
-  appUpdateCheck: (channel: string) => ['appUpdateCheck', channel] as const,
+  // The in-app update checker's result — keyed by the channel AND the exact build asking. The
+  // verdict is a statement *about the running binary* ("something newer than ME exists"), so it must
+  // never outlive it: this entry is persisted to disk, and an in-place update keeps that storage
+  // (SideStore/AltStore reinstalls over the same bundle id, an APK installs over itself, a web
+  // reload is the same origin). Keyed on channel alone, a freshly updated build rehydrated the OLD
+  // build's "update available: X" and — the entry still being inside its staleTime — showed it
+  // without refetching, i.e. told you to update to the version you had just installed. Both parts of
+  // the build id are needed: APP_VERSION doesn't move per-build on android/web (the reason those
+  // channels compare commits instead), and BUILD_COMMIT is empty outside CI.
+  appUpdateCheck: (channel: string, build: string) => ['appUpdateCheck', channel, build] as const,
 
   // ─── Downloads (device-local offline manifest) ─────────────────────────────
   // Downloads are device data, not source content, so these carry no `mock`. Both are prefixed

@@ -58,6 +58,10 @@ const ANDROID_LATEST_APK_URL = 'https://github.com/porksphere/comical-app/releas
 
 const SUPPORTED_CHANNELS = new Set(['ios-release', 'ios-main', 'android-release', 'android-main', 'web-pages']);
 
+/** Identifies the binary doing the checking, so its verdict can't be inherited by the build that
+ *  replaces it — see `queryKeys.appUpdateCheck`, which this is the second half of. */
+const RUNNING_BUILD_ID = `${APP_VERSION}+${BUILD_COMMIT}`;
+
 function isSupportedChannel(channel: string): boolean {
   return SUPPORTED_CHANNELS.has(channel);
 }
@@ -129,7 +133,7 @@ const APP_UPDATE_STALE_TIME_MS = 30 * 60 * 1000;
 export function useAppUpdateCheck(): AppUpdateCheck {
   const supported = isSupportedChannel(BUILD_CHANNEL);
   const { data, isError } = useQuery({
-    queryKey: queryKeys.appUpdateCheck(BUILD_CHANNEL),
+    queryKey: queryKeys.appUpdateCheck(BUILD_CHANNEL, RUNNING_BUILD_ID),
     queryFn: ({ signal }) => fetchAppUpdateCheck(signal),
     enabled: supported,
     staleTime: APP_UPDATE_STALE_TIME_MS,
@@ -171,7 +175,7 @@ async function run(): Promise<void> {
     // Same query key `useAppUpdateCheck` reads — populates its cache, so every mounted consumer
     // (About row, tab pip) updates reactively with no extra fetch of their own.
     const result = await queryClient.fetchQuery({
-      queryKey: queryKeys.appUpdateCheck(BUILD_CHANNEL),
+      queryKey: queryKeys.appUpdateCheck(BUILD_CHANNEL, RUNNING_BUILD_ID),
       queryFn: ({ signal }) => fetchAppUpdateCheck(signal),
       staleTime: APP_UPDATE_STALE_TIME_MS,
     });
