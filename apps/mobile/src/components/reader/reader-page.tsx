@@ -38,11 +38,22 @@ const RETRY_DELAYS_MS = [1000, 2000, 4000];
  * and the only difference between them is that a mounted page can say which page it is.
  *
  * TRANSLUCENT, not opaque, same alpha as the skeleton it sits alongside — this used to be a solid
- * `#1f1f24`, which rides along with the swipe-to-dismiss gesture (SwipeDismiss fades/scales the
- * WHOLE reader as one animated box) and showed up as a hard-edged rectangle instead of blending
- * into the reader's own fading backdrop behind it. A low-alpha fill lets that show through.
+ * `#1f1f24`, which showed up as a hard-edged rectangle riding along with the swipe-to-dismiss
+ * gesture instead of blending into the backdrop behind it. A low-alpha fill lets that show
+ * through. It's fine ON A PAGE (a page-sized tint moving with the page it belongs to is the page
+ * moving); what must never exist is a full-SCREEN fill inside the pager, since that whole subtree
+ * translates/scales during swipe-to-dismiss while the backdrop stays put (see SwipeDismiss).
  */
 export const PAGE_SURFACE = 'rgba(31,31,36,0.18)';
+
+/** The paged reader's static backdrop: PAGE_SURFACE flattened over the reader's base `#0f0f0f`
+ *  (0.82·15 + 0.18·31 ≈ 18 / blue 0.18·36 ≈ 19 → #121213). The pager used to paint PAGE_SURFACE
+ *  full-screen behind its list so a scrub that outruns virtualization shows "pages that haven't
+ *  drawn yet" instead of a raw black gap — but that fill lived inside the subtree that
+ *  translates/scales during swipe-to-dismiss, so it travelled with the receding page. Baking the
+ *  same composite into the STATIC backdrop keeps scrub gaps and unloaded pages looking identical
+ *  while only the pages themselves move during a swipe. */
+export const PAGED_BACKDROP = '#121213';
 
 type LoadEvent = { source?: { width?: number; height?: number } | null };
 

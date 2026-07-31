@@ -8,6 +8,7 @@ import Animated, { interpolate, useAnimatedStyle, useSharedValue } from 'react-n
 
 import { ChapterNavigator } from '@/components/reader/chapter-navigator';
 import { PagedReader, type PagedReaderHandle, type ReaderPageItem } from '@/components/reader/paged-reader';
+import { PAGED_BACKDROP } from '@/components/reader/reader-page';
 import { ProgressPill } from '@/components/reader/progress-pill';
 import { ReaderToolbar } from '@/components/reader/reader-toolbar';
 import { SettingsControl } from '@/components/reader/settings-panel';
@@ -890,7 +891,11 @@ export default function ReaderScreen() {
             onSwipeStart={beginSwipeGuard}
             onSwipeEnd={endSwipeGuard}
             onTouchBegin={pauseHide}
-            backdropColor={styles.backdrop.backgroundColor}>
+            // Paged mode composites the pager's old full-screen page-surface
+            // tint into the static backdrop (see PAGED_BACKDROP) — the pager
+            // itself paints nothing full-screen, so scrub-outrun gaps show this
+            // same tone and only the pages move during a swipe.
+            backdropColor={settings.mode === 'paged' ? PAGED_BACKDROP : styles.backdrop.backgroundColor}>
             {settings.mode === 'paged' ? (
               <PagedReader
                 ref={pagedRef}
