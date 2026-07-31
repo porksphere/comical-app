@@ -35,6 +35,16 @@ on:
         description: Value baked into EXPO_PUBLIC_COMICAL_BUILD_CHANNEL (Sentry's buildChannel tag).
         type: string
         required: true
+      version:
+        # Mirrors build-ios-reusable.yml's input of the same name. Optional explicit version
+        # string; when empty (the rolling android-main lane) the version is computed as
+        # `<app.json base>.<Nth build of this release series>` — see
+        # .github/scripts/compute-build-version.sh. release.yml passes the git tag so a tagged APK
+        # carries the real release version rather than a build counter.
+        description: Explicit version string to stamp (overrides the computed base.N default).
+        type: string
+        default: ''
+        required: false
     secrets:
       SENTRY_AUTH_TOKEN:
         # Optional: without it, the Sentry Gradle plugin below no-ops (skips
@@ -43,7 +53,7 @@ on:
         required: false
     outputs:
       version:
-        description: expo.version read from apps/mobile/app.json
+        description: The full version this APK carries (the `version` input, or app.json's base plus a series build number)
         value: ${{ jobs.build.outputs.version }}
       artifact:
         description: Name of the uploaded APK artifact
@@ -69,6 +79,9 @@ jobs:
         with:
           # The on-device runtime (@comical/*, native hosts) lives in the `comical` submodule.
           submodules: recursive
+          # Full history: the version below counts commits back to the one that last moved
+          # app.json's `expo.version`, which a depth-1 checkout can't see.
+          fetch-depth: 0
 
       # Bun is the package manager; Node is still required because Metro and the
       # Gradle "bundle React Native code" phase shell out to `node`.
@@ -164,18 +177,40 @@ jobs:
         run: bunx expo prebuild --platform android --no-install
         working-directory: apps/mobile
 
-      # Which commit, built when — baked into the JS bundle for the in-app About screen
-      # (src/lib/build-info.ts). No APP_VERSION here, unlike iOS: nothing patches the Android
-      # versionName, so it stays the app.json base and `Constants.expoConfig.version` —
-      # build-info's fallback — already reports exactly what the APK carries. The commit is what
-      # tells two APKs of the same versionName apart.
+      # Which version, which commit, built when — baked into the JS bundle for the in-app About
+      # screen (src/lib/build-info.ts). Runs AFTER prebuild: `expo prebuild` writes app.json's
+      # bare base ("0.1.1") into the generated build.gradle, so the patch below has to land on
+      # the generated file, and it must land BEFORE assembleRelease reads it.
+      #
+      # versionCode is deliberately NOT touched. It's what Android orders installs by, and it
+      # would have to restart at 1 alongside the version string — which reads as a DOWNGRADE and
+      # makes the next APK refuse to install over the current one. It stays app.json's
+      # release-managed value (release.yml's prep job guards that it moves forward per tag);
+      # within a series it's the commit, baked above, that tells two APKs apart.
       - name: Compute build stamps
+        id: ver
+        env:
+          VERSION_INPUT: ${{ inputs.version }}
         run: |
           set -euo pipefail
+          FULL="$(bash .github/scripts/compute-build-version.sh)"
+          echo "Version: ${FULL}"
+          echo "full=${FULL}" >> "$GITHUB_OUTPUT"
           {
+            echo "EXPO_PUBLIC_COMICAL_APP_VERSION=${FULL}"
             echo "EXPO_PUBLIC_COMICAL_BUILD_COMMIT=${GITHUB_SHA:0:7}"
             echo "EXPO_PUBLIC_COMICAL_BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           } >> "$GITHUB_ENV"
+
+      # So the APK itself agrees with the About screen: Android's Settings → Apps entry, `adb
+      # shell dumpsys package`, and any crash report read versionName, not our baked env var.
+      - name: Stamp full version into the generated build.gradle
+        working-directory: apps/mobile/android
+        run: |
+          set -euo pipefail
+          FULL="${{ steps.ver.outputs.full }}"
+          sed -i -E "s/versionName \"[^\"]*\"/versionName \"${FULL}\"/" app/build.gradle
+          grep -n 'versionName\|versionCode' app/build.gradle
 
       - name: Build release APK
         env:
@@ -204,7 +239,7 @@ jobs:
 
       - name: Read app version
         id: meta
-        run: echo "version=$(node -p "require('./apps/mobile/app.json').expo.version")" >> "$GITHUB_OUTPUT"
+        run: echo "version=${{ steps.ver.outputs.full }}" >> "$GITHUB_OUTPUT"
 
       - name: Collect APK under a stable name
         run: |

@@ -55,11 +55,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      # The tag is NOT the only source of the version. It drives iOS (stamped into Info.plist and
-      # the AltStore manifest above), but Android's versionName and the in-app About screen come
-      # from app.json, which nothing here patches — so a tag that disagrees with app.json ships an
-      # APK quietly claiming the previous version. Catch it in seconds rather than after the
-      # ~20-minute macOS build.
+      # The tag drives both binaries' stamped version, but app.json's base is what every ROLLING
+      # build after this tag counts from (`<base>.<N>` — see compute-build-version.sh). A tag that
+      # disagrees with app.json therefore ships a correct vX.Y.Z release and then has main
+      # immediately fall back to advertising the previous series. Catch it in seconds rather than
+      # after the ~20-minute macOS build.
       - name: Guard — app.json matches the tag, versionCode moved forward
         run: |
           set -euo pipefail
@@ -68,7 +68,7 @@ jobs:
           APP_VERSION="$(jq -r '.expo.version' "$APP_JSON")"
 
           if [ "$APP_VERSION" != "$TAG_VERSION" ]; then
-            echo "::error::Tag ${GITHUB_REF_NAME} says $TAG_VERSION but $APP_JSON says $APP_VERSION. Bump expo.version to $TAG_VERSION on main and re-tag — otherwise the Android APK ships versionName $APP_VERSION."
+            echo "::error::Tag ${GITHUB_REF_NAME} says $TAG_VERSION but $APP_JSON says $APP_VERSION. Bump expo.version to $TAG_VERSION on main and re-tag — otherwise every rolling build after this release goes back to advertising $APP_VERSION.<N>."
             exit 1
           fi
 
@@ -102,6 +102,10 @@ jobs:
     needs: prep
     uses: ./.github/workflows/build-android-reusable.yml
     with:
+      # Same tag the iOS job gets: without it the APK would carry the rolling `<base>.<N>` build
+      # counter instead of the release version (the prep guard above already pins app.json's base
+      # to the tag, so this only strips the counter).
+      version: ${{ needs.prep.outputs.version }}
       channel: android-release
     secrets: inherit
 

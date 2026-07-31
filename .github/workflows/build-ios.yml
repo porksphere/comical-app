@@ -126,7 +126,7 @@ jobs:
           SIZE=$(stat -c%s "$IPA")
           DATE=$(date -u +%Y-%m-%d)
 
-          # The reusable build already stamped the version as base.run_number
+          # The reusable build already stamped the version as base.<series build number>
           # (e.g. 0.1.0.42) so both the IPA's CFBundleShortVersionString and this
           # manifest carry the same string — AltStore's version check passes and
           # every push to main yields a strictly higher version than the last.
@@ -257,9 +257,10 @@ jobs:
           SIZE=$(stat -c%s "$IPA")
           DATE=$(date -u +%Y-%m-%d)
 
-          # meta.json fragment consumed by refresh-ios-pr-source.sh. `sort` is
-          # this run's number (same one baked into $VERSION) so PRs order newest
-          # first in the aggregate source. localizedDescription = PR title; jq
+          # meta.json fragment consumed by refresh-ios-pr-source.sh. `sort` is this run's number
+          # — deliberately NOT $VERSION, which counts commits in the release series and so ties
+          # between two PRs of equal depth; the run number is globally monotonic, which is what
+          # ordering PRs newest-first in the aggregate source needs. localizedDescription = PR title; jq
           # JSON-escapes it safely (titles may contain quotes/$/backticks).
           jq -n \
             --arg version "$VERSION" \

@@ -43,12 +43,13 @@ on:
         required: false
       version:
         # Optional explicit version string. When empty (the rolling ios-main /
-        # ios-pr channels), the version is computed as `<app.json base>.<run
-        # number>` so every push yields a strictly higher, AltStore-valid value.
+        # ios-pr channels), the version is computed as `<app.json base>.<Nth build of this
+        # release series>` — see .github/scripts/compute-build-version.sh — so every push yields a
+        # strictly higher, AltStore-valid value that restarts at .1 when a release moves the base.
         # release.yml passes the git tag (minus the leading `v`, e.g. "1.2.0") so
         # a tagged build's IPA + its ios-release manifest carry the real release
-        # version instead of a run-number string.
-        description: Explicit version string to stamp (overrides the base.run_number default).
+        # version instead of a build-counter string.
+        description: Explicit version string to stamp (overrides the computed base.N default).
         type: string
         default: ''
         required: false
@@ -140,6 +141,9 @@ jobs:
         with:
           # The on-device runtime (@comical/*, native hosts) lives in the `comical` submodule.
           submodules: recursive
+          # Full history: the version below counts commits back to the one that last moved
+          # app.json's `expo.version`, which a depth-1 checkout can't see.
+          fetch-depth: 0
 
       # Bun is the package manager; Node is still required because Metro and the
       # Xcode "Bundle React Native code" phase shell out to `node`.
@@ -224,22 +228,18 @@ jobs:
         run: pod install
         working-directory: apps/mobile/ios
 
-      # Version precedence: an explicit `version` input (release.yml passes the
-      # git tag) wins; otherwise fall back to `<app.json base>.<run number>`,
-      # which the rolling ios-main / ios-pr channels use so every push is a
-      # strictly higher, AltStore-valid version.
-      - name: Compute full version (input override or base + run number)
+      # Version precedence: an explicit `version` input (release.yml passes the git tag) wins;
+      # otherwise the rolling ios-main / ios-pr channels get `<app.json base>.<Nth build of this
+      # release series>` — see .github/scripts/compute-build-version.sh for how N is derived and
+      # why it's no longer the run number.
+      - name: Compute full version (input override or base + series build number)
         id: ver
         env:
           VERSION_INPUT: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          if [ -n "${VERSION_INPUT:-}" ]; then
-            FULL="${VERSION_INPUT}"
-          else
-            BASE=$(node -p "require('./apps/mobile/app.json').expo.version")
-            FULL="${BASE}.${GITHUB_RUN_NUMBER}"
-          fi
+          FULL="$(bash .github/scripts/compute-build-version.sh)"
+          echo "Version: ${FULL}"
           echo "full=${FULL}" >> "$GITHUB_OUTPUT"
           # Bake the same three facts into the JS bundle for the in-app About screen
           # (src/lib/build-info.ts). $GITHUB_ENV so the archive step below — where the "Bundle React

@@ -9,13 +9,14 @@
  *  - ios-release / ios-main: compare the channel's AltStore/SideStore source's `apps[0].version`
  *    against APP_VERSION via `compareVersions`. Both sources carry the same string the build baked
  *    into APP_VERSION — see build-ios-reusable.yml's "Compute full version", whose two branches
- *    give ios-release a plain `X.Y.Z` (the git tag) and ios-main a `X.Y.Z.<run number>`. Each
- *    channel only ever compares against its own source, so the two formats never meet;
- *    `compareVersions` handles the extra part either way.
- *  - android-release / android-main: compare `version.json`'s `commit` against BUILD_COMMIT. No
- *    ordering info exists (Android's APP_VERSION never moves per-build — see
- *    build-android-reusable.yml), so ANY mismatch means "there's a newer build" — android-latest is
- *    always rebuilt from the tip of main/newest tag and never regresses in practice.
+ *    give ios-release a plain `X.Y.Z` (the git tag) and ios-main a `X.Y.Z.<Nth build of that
+ *    release series>`. Each channel only ever compares against its own source, so the two formats
+ *    never meet; `compareVersions` handles the extra part either way.
+ *  - android-release / android-main: compare `version.json`'s `commit` against BUILD_COMMIT.
+ *    Commit equality, not version ordering: the counter in APP_VERSION restarts at .1 each release
+ *    series, and android-latest serves whichever of the two lanes published last, so a tag's APK
+ *    and main's can legitimately compare in either direction. ANY mismatch means "there's a newer
+ *    build" — that URL is always rebuilt from the tip of main / the newest tag.
  *  - web-pages: same commit-equality check, against a `version.json` written into `dist/` by
  *    deploy-web.yml, fetched with `cache: 'no-store'` so a stale CDN/browser cache can't mask it.
  *
@@ -69,10 +70,11 @@ function isSupportedChannel(channel: string): boolean {
 /** Numeric part-by-part compare of `MAJOR.MINOR.PATCH[.N]` strings (missing parts treated as 0),
  *  positive when `a` is newer than `b`. Not general semver — doesn't need to be: every version this
  *  compares is minted by CI as numeric parts only, never a pre-release suffix — a `vX.Y.Z` tag on
- *  ios-release, `X.Y.Z.<run number>` on ios-main. The optional 4th part is why the shorter side's
- *  missing parts count as 0: that's what makes a tag and the main builds derived from it order
- *  correctly, though in practice the two never meet (each channel compares only against its own
- *  source). */
+ *  ios-release, `X.Y.Z.<series build number>` on ios-main. The optional 4th part is why the shorter
+ *  side's missing parts count as 0: that's what makes a tag and the main builds derived from it
+ *  order correctly, though in practice the two never meet (each channel compares only against its
+ *  own source). Most-significant-part-first is also what makes the counter safe to restart at .1
+ *  on a release: the base moving up outranks the counter dropping, so 0.2.0.1 > 0.1.1.4287. */
 export function compareVersions(a: string, b: string): number {
   const pa = a.split('.').map((n) => parseInt(n, 10) || 0);
   const pb = b.split('.').map((n) => parseInt(n, 10) || 0);
