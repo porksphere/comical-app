@@ -45,4 +45,7 @@ dependencies {
   implementation "io.github.dokar3:quickjs-kt-android:1.0.5"
   implementation "com.squareup.okhttp3:okhttp:4.12.0"
   implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1"
+  // storage.secure's MasterKey + EncryptedFile. Only the RUNTIME deps above need repeating —
+  // host-android's androidTest* ones don't, since the srcDirs above take main/kotlin only.
+  implementation "androidx.security:security-crypto:1.1.0-alpha06"
 }
