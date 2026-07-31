@@ -18,6 +18,7 @@ import { DesktopTopBarHeight, MaxTopLevelWidth, Spacing } from '@/constants/them
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
+import { notifyScrollActivity, subscribeScrollPhase } from '@/lib/scroll-release';
 import {
   getTabBarHideOffset,
   getTabBarProgress,
@@ -48,13 +49,13 @@ const MOBILE_BREAKPOINT = 768;
 const DESKTOP_NAV_ICON_SIZE = 22 + Spacing.one * 2;
 export const DesktopNavWidth = TABS.length * DESKTOP_NAV_ICON_SIZE + (TABS.length - 1) * Spacing.three;
 
-// Mobile bottom-bar auto-hide thresholds (px of cumulative scroll in one
-// direction). Hiding only after a chunk of downward scroll lets the fade land
-// *after* the browser's own bottom chrome has collapsed and dropped our bar to
-// the new viewport bottom, rather than fighting that reposition. Showing needs a
-// smaller, deliberate upward scroll so the bar comes back readily.
-const HIDE_AFTER = 72;
-const SHOW_AFTER = 40;
+// Web mobile: how much cumulative UPWARD scroll brings the bar back. The web bar fades rather than
+// sliding, so there's no partial state to release part-way — the "a reveal only sticks once it's
+// full" rule (see `settleStep`) becomes this one distance, deliberately larger than a stray flick.
+// Hiding needs no distance at all: any downward scroll marks it, and it fades on release, which
+// also lands the fade *after* the browser's own bottom chrome has collapsed and dropped our bar to
+// the new viewport bottom, rather than fighting that reposition mid-gesture.
+const REVEAL_DISTANCE = 96;
 const TOP_GUARD = 8;
 // Faded (not gone): a faint ghost that still reads as "the nav is here, scroll up
 // to bring it back" while letting content show through.
@@ -70,11 +71,14 @@ const FADE_TRANSITION = {
 } as unknown as ViewStyle;
 
 /**
- * Web mobile only: fade the bottom nav out on sustained downward scroll, and
- * back in on a deliberate upward scroll, on reaching the top, or via `reveal()`
- * (wired to bar interaction). Returns `false`/no-op when `enabled` is false
- * (desktop, or any native platform - the bar is always shown there), so the
- * desktop top-nav is never affected.
+ * Web mobile only: fade the bottom nav out when a downward scroll is RELEASED, and back in on a
+ * deliberate upward scroll (`REVEAL_DISTANCE`), on reaching the top, or via `reveal()` (wired to
+ * bar interaction). Returns `false`/no-op when `enabled` is false (desktop, or any native platform
+ * - the bar is always shown there), so the desktop top-nav is never affected.
+ *
+ * Same commit-on-release rule as the sliding bars (`settleStep` / `scroll-release`), reduced to two
+ * states because this bar fades rather than slides: downward scroll only *marks* the hide — it
+ * lands when the gesture ends, so the bar doesn't flicker off at the first stray pixel.
  *
  * A capture-phase scroll listener is used because react-native-web scrolls an
  * inner `<div>` (the active screen's FlatList), not the window — capture catches
@@ -85,18 +89,41 @@ const FADE_TRANSITION = {
 function useAutoHideBottomBar(enabled: boolean) {
   const [hidden, setHidden] = useState(false);
   const hiddenRef = useRef(false);
+  // A hide the user has asked for but hasn't committed by letting go yet.
+  const pending = useRef(false);
+  // Upward px accumulated in the current gesture; reset once it comes to rest, so every reveal has
+  // to earn the full distance rather than adding up across separate flicks.
+  const up = useRef(0);
   const set = useCallback((next: boolean) => {
     if (hiddenRef.current === next) return;
     hiddenRef.current = next;
     setHidden(next);
   }, []);
-  const reveal = useCallback(() => set(false), [set]);
+  const reveal = useCallback(() => {
+    pending.current = false;
+    up.current = 0;
+    set(false);
+  }, [set]);
+
+  // Commit on release: the marked hide fires when the finger lifts; `rest` also re-arms the reveal
+  // distance so a part-way attempt doesn't carry over into the next gesture.
+  useEffect(() => {
+    if (!enabled || Platform.OS !== 'web') return;
+    return subscribeScrollPhase((phase) => {
+      if (phase === 'begin') return;
+      if (pending.current) {
+        pending.current = false;
+        up.current = 0;
+        set(true);
+        return;
+      }
+      if (phase === 'rest') up.current = 0;
+    });
+  }, [enabled, set]);
 
   useEffect(() => {
     if (!enabled || Platform.OS !== 'web' || typeof window === 'undefined') return;
     const positions = new WeakMap<object, number>();
-    let down = 0;
-    let up = 0;
     const onScroll = (e: Event) => {
       const target = e.target as (HTMLElement & EventTarget) | Document | null;
       let y: number;
@@ -119,19 +146,24 @@ function useAutoHideBottomBar(enabled: boolean) {
       const dy = y - (positions.get(key) ?? 0);
       positions.set(key, y);
       if (dy === 0) return; // horizontal rail, or no vertical movement
+      // A wheel/trackpad emits no drag events at all, so this is also what keeps the release
+      // detector's idle fallback ticking for the DOM-driven path.
+      notifyScrollActivity();
       if (y <= TOP_GUARD) {
-        down = 0;
+        pending.current = false;
+        up.current = 0;
         set(false);
         return;
       }
       if (dy > 0) {
-        down += dy;
-        up = 0;
-        if (down >= HIDE_AFTER) set(true);
+        up.current = 0;
+        pending.current = true;
       } else {
-        up -= dy;
-        down = 0;
-        if (up >= SHOW_AFTER) set(false);
+        up.current -= dy;
+        if (up.current >= REVEAL_DISTANCE) {
+          pending.current = false;
+          set(false);
+        }
       }
     };
     const opts = { capture: true, passive: true } as const;

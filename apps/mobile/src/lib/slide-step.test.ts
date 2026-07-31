@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { slideStep } from './slide-step';
+import { settleStep, slideStep } from './slide-step';
 
 // The bar spans ~82px (its measured height) on a real device; use a round 100 here.
 const SPAN = 100;
@@ -49,5 +49,42 @@ describe('slideStep', () => {
   test('a hard fling stays under the jump threshold', () => {
     // ~130px/frame is about as fast as a 60Hz fling reports.
     expect(slideStep(0, 130, 0, 0, SPAN)).toBe(100);
+  });
+});
+
+describe('settleStep', () => {
+  test('a fully-shown bar only MARKS the hide — it does not move under the finger', () => {
+    expect(settleStep(0, false, 30, 0, 0, SPAN)).toEqual({ hidden: 0, pending: true });
+    // ...however far the scroll goes; the caller slides it away on release.
+    expect(settleStep(0, true, 130, 30, 0, SPAN)).toEqual({ hidden: 0, pending: true });
+  });
+
+  test('reveals 1:1 on upward scroll and drops the pending hide', () => {
+    expect(settleStep(SPAN, true, 160, 200, 0, SPAN)).toEqual({ hidden: 60, pending: false });
+    expect(settleStep(60, false, 130, 160, 0, SPAN)).toEqual({ hidden: 30, pending: false });
+  });
+
+  test('an upward step against an already-shown bar still clears the mark', () => {
+    // Nothing to reveal (hidden is already 0), but the user is asking for the chrome, so the hide
+    // marked earlier in the same gesture is off.
+    expect(settleStep(0, true, 120, 140, 0, SPAN)).toEqual({ hidden: 0, pending: false });
+  });
+
+  test('a part-way reveal gives its ground back 1:1 — it was never committed either', () => {
+    expect(settleStep(40, false, 220, 200, 0, SPAN)).toEqual({ hidden: 60, pending: true });
+  });
+
+  test('snaps fully shown at the top, with nothing left to commit', () => {
+    expect(settleStep(SPAN, true, 4, 400, 0, SPAN, 8)).toEqual({ hidden: 0, pending: false });
+    expect(settleStep(0, true, 4, 6, 0, SPAN, 8)).toEqual({ hidden: 0, pending: false });
+  });
+
+  test('a guard-rejected step leaves the mark exactly as it was', () => {
+    // Elastic bottom bounce, in both directions: no movement, no change of intent.
+    expect(settleStep(SPAN, true, 520, 560, 500, SPAN)).toEqual({ hidden: SPAN, pending: true });
+    expect(settleStep(0, true, 560, 520, 500, SPAN)).toEqual({ hidden: 0, pending: true });
+    // A reposition-sized jump, likewise.
+    expect(settleStep(0, false, 780, 0, 0, SPAN)).toEqual({ hidden: 0, pending: false });
+    expect(settleStep(0, true, 0, 780, 0, SPAN, -1)).toEqual({ hidden: 0, pending: true });
   });
 });

@@ -1,8 +1,13 @@
 /**
- * A top bar that slides away 1:1 with downward scroll and back with upward scroll (X/Twitter-style),
- * driven by the list's UI-thread scroll offset. Shared by the Browse grid's bridge/page bar and the
- * Search screen's filter bar so their motion can't drift — and reusable by any other scrolling
- * screen that wants a collapsing header.
+ * A top bar that reveals 1:1 with upward scroll (X/Twitter-style) and commits to shown-or-hidden
+ * when the gesture ends, driven by the list's UI-thread scroll offset. Shared by the Browse grid's
+ * bridge/page bar and the Search screen's filter bar so their motion can't drift — and reusable by
+ * any other scrolling screen that wants a collapsing header.
+ *
+ * Nothing half-done survives letting go: a reveal has to reach full extension to stick (release it
+ * part-way and it slides back out), and downward scroll doesn't shave the bar away under the finger
+ * — it marks a hide that fires on release. The rule is `settleStep`; the "gesture ended" signal is
+ * `scroll-release`; the settle animation is `settle` below.
  *
  * Wiring: spread `sharedValues` onto the (Animated)LegendList's `sharedValues` prop so it feeds the
  * live scroll offset, and pass `onScroll` to the list so `maxScrollY` stays in sync (it distinguishes
@@ -25,15 +30,25 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, type RefObject } from 'react';
 import type { NativeScrollEvent, NativeSyntheticEvent, ViewStyle } from 'react-native';
 import {
+  cancelAnimation,
   runOnJS,
   useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
+  withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
 
-import { slideStep } from '@/lib/slide-step';
+import {
+  notifyScrollActivity,
+  subscribeScrollPhase,
+  type ScrollPhase,
+} from '@/lib/scroll-release';
+import { settleStep } from '@/lib/slide-step';
 import { setTopBarHidden } from '@/lib/top-bar-visibility';
+
+/** How long the bar takes to slide to its committed state once the gesture ends. */
+const SETTLE_MS = 200;
 
 /** Minimal structural type for the list refs we reset — LegendList and FlatList both satisfy it. */
 type Scrollable = { scrollToOffset: (opts: { offset: number; animated?: boolean }) => void };
@@ -70,6 +85,12 @@ export function useSlidingBar(
   const offset = useSharedValue(0);
   // Whether `scrollY` has reported a real position since the last mount/reset. See the reaction.
   const primed = useSharedValue(false);
+  // A hide the user has asked for but hasn't committed yet — it fires when they let go. See
+  // `settleStep` for the rule and `settle` below for the animation.
+  const pendingHide = useSharedValue(false);
+  // A settle animation currently owns `offset`; scroll reports stand back until it lands (or a new
+  // gesture cancels it).
+  const settling = useSharedValue(false);
 
   useAnimatedReaction(
     () => scrollY.value,
@@ -91,13 +112,61 @@ export function useSlidingBar(
         primed.set(true);
         return;
       }
-      // The scroll→slide rule (top pin, bottom-bounce guard, clamped accumulation) is the shared
-      // `slideStep` — the tab bar's hook runs the same function, so the two bars' motion can't
-      // drift. It works in hidden-px (positive); this bar's offset is a translateY, hence the sign.
-      offset.set(-slideStep(-offset.value, y, prevY, maxScrollY.value, barHeight));
+      // A settle is playing out (the user let go and the bar is animating to its committed state).
+      // Scroll reports don't fight it; `begin` cancels it the moment a finger goes down, and on web
+      // — where there's no drag event to cancel on — it's over in SETTLE_MS.
+      if (settling.value) return;
+      // The scroll→slide rule (top pin, bottom-bounce guard, clamped accumulation, and the
+      // commit-on-release layer over it) is the shared `settleStep` — the tab bar's hook runs the
+      // same function, so the two bars' motion can't drift. It works in hidden-px (positive); this
+      // bar's offset is a translateY, hence the sign.
+      const next = settleStep(-offset.value, pendingHide.value, y, prevY, maxScrollY.value, barHeight);
+      pendingHide.set(next.pending);
+      offset.set(-next.hidden);
     },
     [barHeight],
   );
+
+  // Committing: the bar slides the rest of the way out on its own once the gesture is over. Kept as
+  // a JS-thread callback (rather than a worklet reacting to a shared value) because the phase
+  // broadcast it subscribes to is a plain JS module — shared-value writes hop to the UI thread on
+  // their own, and a settle happens once per gesture, not per frame.
+  const focused = useRef(true);
+  const settle = useCallback(
+    (phase: ScrollPhase) => {
+      // The broadcast is global (one scroller at a time), but a blurred screen's bar keeps its
+      // subscription — it must not animate off the back of another screen's scrolling.
+      if (!focused.current) return;
+      if (phase === 'begin') {
+        // A new gesture takes the bar over wherever the settle had got to.
+        cancelAnimation(offset);
+        settling.set(false);
+        return;
+      }
+      const hide = () => {
+        settling.set(true);
+        offset.set(
+          withTiming(-barHeight, { duration: SETTLE_MS }, (finished) => {
+            'worklet';
+            if (finished) settling.set(false);
+          }),
+        );
+      };
+      // A marked hide fires as soon as the finger lifts, so the bar is out of the way for the fling
+      // rather than sliding away after it.
+      if (pendingHide.value) {
+        pendingHide.set(false);
+        hide();
+        return;
+      }
+      // A reveal that never reached full extension isn't committed — but it only loses at `rest`,
+      // so an upward fling gets its momentum to finish the job first.
+      const hidden = -offset.value;
+      if (phase === 'rest' && hidden > 0 && hidden < barHeight) hide();
+    },
+    [barHeight, offset, pendingHide, settling],
+  );
+  useEffect(() => subscribeScrollPhase(settle), [settle]);
 
   const barStyle = useAnimatedStyle(() => ({ transform: [{ translateY: offset.value }] }));
 
@@ -131,8 +200,12 @@ export function useSlidingBar(
   // so without the reset Browse's slid-away bar would still be clipping covers over on Library.
   useFocusEffect(
     useCallback(() => {
+      focused.current = true;
       setTopBarHidden(hiddenPx.current);
-      return () => setTopBarHidden(0);
+      return () => {
+        focused.current = false;
+        setTopBarHidden(0);
+      };
     }, []),
   );
 
@@ -150,6 +223,9 @@ export function useSlidingBar(
     // whether the list honours `scrollToOffset` (it reports 0 itself) or ignores it (it keeps
     // reporting where it truly is).
     primed.set(false);
+    cancelAnimation(offset);
+    settling.set(false);
+    pendingHide.set(false);
     offset.set(0);
     maxScrollY.set(0);
     listRef?.current?.scrollToOffset({ offset: 0, animated: false });
@@ -159,6 +235,9 @@ export function useSlidingBar(
 
   const onScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      // Feeds the release detector's idle fallback, which is the ONLY "the gesture ended" signal on
+      // web (a wheel/trackpad emits no drag events at all).
+      notifyScrollActivity();
       const { contentSize, layoutMeasurement } = e.nativeEvent;
       if (contentSize && layoutMeasurement) {
         maxScrollY.set(Math.max(0, contentSize.height - layoutMeasurement.height));

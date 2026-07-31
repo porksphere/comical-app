@@ -30,6 +30,7 @@ import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect'
 import { useTheme } from '@/hooks/use-theme';
 import { useRouter } from '@/lib/nav';
 import { relTime } from '@/lib/rel-time';
+import { notifyScrollBeginDrag, notifyScrollEndDrag, notifyScrollRest } from '@/lib/scroll-release';
 
 /**
  * One coalesced feed row: a single library series with its newly-detected chapters folded together
@@ -281,7 +282,15 @@ export default function ActivityScreen() {
             // (that's what sources the pull there) and fires the refresh via onScrollEndDrag.
             overScrollMode={Platform.OS === 'android' ? 'never' : undefined}
             onScroll={onScroll}
-            onScrollEndDrag={pull.onScrollEndDrag}
+            // Gesture phases for the tab bar (it commits to shown/hidden on release). Composed by
+            // hand rather than spreading `scrollPhaseHandlers`: pull-to-refresh already owns
+            // `onScrollEndDrag`, and that's the release signal.
+            onScrollBeginDrag={notifyScrollBeginDrag}
+            onMomentumScrollEnd={notifyScrollRest}
+            onScrollEndDrag={() => {
+              notifyScrollEndDrag();
+              pull.onScrollEndDrag?.();
+            }}
           />
         </Animated.View>
       )}

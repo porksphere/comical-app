@@ -25,6 +25,7 @@ import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect'
 import { useTheme } from '@/hooks/use-theme';
 import { useRouter } from '@/lib/nav';
 import { relTime } from '@/lib/rel-time';
+import { scrollPhaseHandlers } from '@/lib/scroll-release';
 
 export default function HistoryScreen() {
   const ds = useDataSource();
@@ -161,6 +162,9 @@ export default function HistoryScreen() {
           )}
           showsVerticalScrollIndicator={Platform.OS === 'web'}
           onScroll={onScroll}
+          // Gesture phases for the tab bar, which commits to shown/hidden on release — this screen
+          // owns its list rather than going through RecyclerList, which reports them itself.
+          {...scrollPhaseHandlers}
         />
       )}
 

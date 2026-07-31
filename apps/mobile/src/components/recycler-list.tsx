@@ -4,6 +4,8 @@ import type { ReactElement, RefObject } from 'react';
 import { Platform, StyleSheet, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import Animated, { type SharedValue } from 'react-native-reanimated';
 
+import { notifyScrollBeginDrag, notifyScrollEndDrag, notifyScrollRest } from '@/lib/scroll-release';
+
 /**
  * THE one virtualized-list primitive. Every scrolling list of cards/rows in the app — the uniform
  * `SeriesGrid` (Browse results, Search, Library, …) AND the heterogeneous `ContentFeed` (Browse's
@@ -38,6 +40,7 @@ export function RecyclerList<T>({
   onEndReached,
   onEndReachedThreshold = 0.6,
   onScrollEndDrag,
+  onMomentumScrollEnd,
   wrapperStyle,
 }: {
   data: T[];
@@ -78,6 +81,7 @@ export function RecyclerList<T>({
   onEndReached?: () => void;
   onEndReachedThreshold?: number;
   onScrollEndDrag?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  onMomentumScrollEnd?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   /** Animated styles for the list wrapper — e.g. the pull-to-refresh shift and the refinement dim.
    *  Applied to a wrapping Animated.View rather than the list's own `style` (not typed for a
    *  Reanimated style). */
@@ -145,7 +149,19 @@ export function RecyclerList<T>({
         // edge-stretch glow is suppressed so it doesn't fight the custom pull; iOS keeps its bounce
         // (that's what sources the pull there), and a release past the threshold fires via onScrollEndDrag.
         overScrollMode={Platform.OS === 'android' ? 'never' : undefined}
-        onScrollEndDrag={onScrollEndDrag}
+        // Gesture phases for the auto-hiding chrome: both bars commit to shown-or-hidden when the
+        // scroll is RELEASED, not while it moves (see `lib/scroll-release`). Reported here, on the
+        // one list primitive, so every list built on it feeds them without wiring anything — a
+        // caller's own handler still runs after.
+        onScrollBeginDrag={notifyScrollBeginDrag}
+        onScrollEndDrag={(e) => {
+          notifyScrollEndDrag();
+          onScrollEndDrag?.(e);
+        }}
+        onMomentumScrollEnd={(e) => {
+          notifyScrollRest();
+          onMomentumScrollEnd?.(e);
+        }}
       />
     </Animated.View>
   );

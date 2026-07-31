@@ -48,3 +48,46 @@ export function slideStep(
   if (maxScrollY > 0 && y >= maxScrollY) return hidden;
   return Math.min(span, Math.max(0, hidden + (y - prevY)));
 }
+
+/**
+ * `slideStep` plus the commit-on-release rule the bars actually ship: a state only sticks when the
+ * gesture ENDS, so nothing half-done survives letting go.
+ *
+ * - **Hiding never starts under the finger.** A fully-shown bar holds still on downward scroll and
+ *   only raises `pending`; the caller slides it away on `release` (see `scroll-release`). Before
+ *   this, a few px of downward scroll immediately shaved a few px off the bar, which read as the
+ *   chrome twitching at every direction change.
+ * - **Revealing tracks the finger, but only a FULL reveal is committed.** Upward scroll gives the
+ *   bar back 1:1 (so it feels attached to the gesture), and symmetrically a partial reveal gives
+ *   ground 1:1 to a downward one — neither was ever committed. The caller drops anything still
+ *   part-way at `rest`, so a stingy flick doesn't leave a bar hanging half-on-screen.
+ *
+ * `pending` is carried in/out rather than owned here so this stays a pure function usable from both
+ * threads: the top bar keeps it in a shared value, the tab bar in a ref.
+ */
+export function settleStep(
+  hidden: number,
+  pending: boolean,
+  y: number,
+  prevY: number,
+  maxScrollY: number,
+  span: number,
+  topGuard = 0,
+): { hidden: number; pending: boolean } {
+  'worklet';
+  const next = slideStep(hidden, y, prevY, maxScrollY, span, topGuard);
+  // Revealing (including the snap to fully-shown at the top): track it, and drop any pending hide —
+  // the user has changed their mind mid-gesture.
+  if (next < hidden) return { hidden: next, pending: false };
+  // Hiding. A fully-shown bar is only MARKED; a partial reveal gives its ground back immediately.
+  if (next > hidden) return { hidden: hidden === 0 ? hidden : next, pending: true };
+  // No movement, so the intent has to be read off the raw step. Three ways to get here:
+  // pinned at the top (nothing to commit), a guard rejecting the step (unknown intent — leave
+  // `pending` exactly as it was), or an already-fully-shown bar clamping an upward step to 0 — which
+  // is still the user asking for the chrome, so a hide marked earlier in the same gesture is off.
+  if (y <= topGuard) return { hidden: 0, pending: false };
+  if (y < prevY && Math.abs(y - prevY) <= MAX_GESTURE_STEP && (maxScrollY <= 0 || y < maxScrollY)) {
+    return { hidden, pending: false };
+  }
+  return { hidden, pending };
+}

@@ -40,6 +40,7 @@ import { APP_VERSION } from '@/lib/build-info';
 import { PROFILING_ENABLED } from '@/lib/profiling';
 import { hapticImpactLight } from '@/lib/haptics';
 import { useRouter } from '@/lib/nav';
+import { scrollPhaseHandlers } from '@/lib/scroll-release';
 
 /**
  * The Settings landing screen is a table of contents, nothing more: every category owns its own
@@ -71,6 +72,8 @@ export default function SettingsScreen() {
       <ScrollView
         ref={scrollRef}
         onScroll={onScroll}
+        // Gesture phases for the tab bar, which commits to shown/hidden on release.
+        {...scrollPhaseHandlers}
         scrollEventThrottle={16}
         contentContainerStyle={[
           styles.content,
