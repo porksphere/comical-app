@@ -34,8 +34,16 @@ export type ScrollPhase = 'begin' | 'release' | 'rest';
 
 type Listener = (phase: ScrollPhase) => void;
 
-/** No scroll event for this long (and no finger down) ⇒ the scroll has come to rest. */
-const IDLE_MS = 140;
+/**
+ * No scroll event for this long (and no finger down) ⇒ the scroll has come to rest.
+ *
+ * This is dead time before anything moves, and on web it is the ONLY release signal there is (no
+ * drag events — see below), so every commit there waits it out. Kept short for that reason. The cost
+ * of it being too short is a still-held finger on web reading as a release mid-gesture; that's a
+ * self-correcting misfire rather than a stuck state, since the next scroll frame emits an inferred
+ * `begin` which cancels the settle and hands the bar back to 1:1 tracking where it stood.
+ */
+const IDLE_MS = 100;
 
 /**
  * Whether the first scroll frame after a rest has to stand in for `onScrollBeginDrag`. On web there

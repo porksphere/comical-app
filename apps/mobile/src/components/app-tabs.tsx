@@ -19,7 +19,7 @@ import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
 import { notifyScrollActivity, subscribeScrollPhase } from '@/lib/scroll-release';
-import { COMMIT_DISTANCE } from '@/lib/slide-step';
+import { COMMIT_DISTANCE, SETTLE_MS } from '@/lib/slide-step';
 import {
   getTabBarHideOffset,
   getTabBarProgress,
@@ -58,10 +58,16 @@ const FADED_OPACITY = 0.2;
 // react-native-web maps these onto the underlying div so the opacity change
 // eases; they aren't part of RN's ViewStyle, hence the cast. Web only - no scroll-driven fade
 // exists on native, so there's nothing to animate there.
+//
+// Borrows the sliding bars' `SETTLE_MS` and curve (`cubic-bezier` here is `settleEase` — cubic
+// ease-out — since CSS can't take the function). Different animation, same commit: this fades while
+// the top bar slides, but they fire off the same release, so a slower or softer-starting curve here
+// just reads as the two bars disagreeing about when the gesture ended. It used to be 320ms `ease`,
+// which both lagged the slide and eased IN — the visible pause after letting go.
 const FADE_TRANSITION = {
   transitionProperty: 'opacity',
-  transitionDuration: '320ms',
-  transitionTimingFunction: 'ease',
+  transitionDuration: `${SETTLE_MS}ms`,
+  transitionTimingFunction: 'cubic-bezier(0.215, 0.61, 0.355, 1)',
 } as unknown as ViewStyle;
 
 /**

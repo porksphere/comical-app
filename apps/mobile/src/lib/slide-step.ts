@@ -90,6 +90,29 @@ export function slideStep(
 export const COMMIT_DISTANCE = 56;
 
 /**
+ * How long a bar takes to slide to its committed state once the gesture ends, and the curve it takes
+ * getting there. Here rather than in each hook for the same reason `COMMIT_DISTANCE` is: the bars
+ * move together or they look broken — and they had already drifted. All three agreed on 200ms and
+ * nothing else: the tab bar hand-rolled this ease-out, the web fade used CSS `ease` over 320ms, and
+ * the top bar passed no `easing` at all, so it took Reanimated's default `Easing.inOut(Easing.quad)`.
+ * An ease-IN start is nearly motionless for its first frames, which is what made a released drag look
+ * like it paused before the bar moved.
+ *
+ * Ease-out is the curve a gesture hand-off wants: the bar leaves at the speed the finger left it and
+ * decelerates into place, so the settle reads as the end of the drag rather than a separate animation
+ * that had to spin up. That's most of why this feels quicker — the duration cut is the rest.
+ */
+export const SETTLE_MS = 140;
+
+/** The settle curve — cubic ease-out. A worklet so the top bar can hand it straight to `withTiming`
+ *  on the UI thread, while the tab bar's rAF tween calls it as an ordinary function on the JS one.
+ *  The web fade can't take a function at all and repeats it as a `cubic-bezier` — see app-tabs. */
+export function settleEase(t: number): number {
+  'worklet';
+  return 1 - (1 - t) ** 3;
+}
+
+/**
  * `slideStep` plus the bookkeeping for the commit-on-release rule the bars actually ship: both
  * directions track the finger 1:1, and letting go finishes the job in whichever direction the
  * gesture earned.

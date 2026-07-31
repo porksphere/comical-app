@@ -45,11 +45,8 @@ import {
   subscribeScrollPhase,
   type ScrollPhase,
 } from '@/lib/scroll-release';
-import { COMMIT_DISTANCE, hideCeiling, settleStep } from '@/lib/slide-step';
+import { COMMIT_DISTANCE, hideCeiling, SETTLE_MS, settleEase, settleStep } from '@/lib/slide-step';
 import { setTopBarHidden } from '@/lib/top-bar-visibility';
-
-/** How long the bar takes to slide to its committed state once the gesture ends. */
-const SETTLE_MS = 200;
 
 /** Minimal structural type for the list refs we reset — LegendList and FlatList both satisfy it. */
 type Scrollable = { scrollToOffset: (opts: { offset: number; animated?: boolean }) => void };
@@ -151,7 +148,10 @@ export function useSlidingBar(
         if (-offset.value === hidden) return;
         settling.set(true);
         offset.set(
-          withTiming(-hidden, { duration: SETTLE_MS }, (finished) => {
+          // `easing` is not optional in practice: omitting it takes Reanimated's default
+          // `Easing.inOut(Easing.quad)`, whose near-motionless first frames read as the bar
+          // hesitating after you let go. See `settleEase`.
+          withTiming(-hidden, { duration: SETTLE_MS, easing: settleEase }, (finished) => {
             'worklet';
             if (finished) settling.set(false);
           }),

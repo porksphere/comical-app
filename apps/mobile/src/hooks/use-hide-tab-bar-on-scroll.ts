@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 
 import { notifyScrollActivity, subscribeScrollPhase, type ScrollPhase } from '@/lib/scroll-release';
-import { COMMIT_DISTANCE, hideCeiling, settleStep } from '@/lib/slide-step';
+import { COMMIT_DISTANCE, hideCeiling, SETTLE_MS, settleEase, settleStep } from '@/lib/slide-step';
 import { getTabBarHideOffset, setTabBarProgress } from '@/lib/tab-bar-visibility';
 
 // The scroll span over which the bar fully hides/reveals is the bar's own hide offset (its measured
@@ -12,8 +12,6 @@ import { getTabBarHideOffset, setTabBarProgress } from '@/lib/tab-bar-visibility
 // (the old fixed 96 vs ~82) made the fully-hidden bar overshoot the screen edge, and a scroll-up
 // had to walk the invisible overshoot back before the bar appeared to move.
 const TOP_GUARD = 8;
-/** How long the bar takes to slide to its committed state once the gesture ends. */
-const SETTLE_MS = 200;
 
 /**
  * Native only: reveals the tab bar as the screen scrolls up and commits it to shown-or-hidden when
@@ -67,7 +65,8 @@ export function useHideTabBarOnScroll() {
 
   // The commit animation. A hand-rolled rAF tween rather than Reanimated's `withTiming` because this
   // bar's position is plain React state the whole way through (`tab-bar-visibility` → AppTabs), for
-  // the reason spelled out in app-tabs: expo-router's `TabList` exposes a plain `style` only.
+  // the reason spelled out in app-tabs: expo-router's `TabList` exposes a plain `style` only. The
+  // duration and curve still come from `slide-step` — different animator, same motion as the top bar.
   const settleTo = useCallback(
     (target: number) => {
       cancelSettle();
@@ -77,8 +76,7 @@ export function useHideTabBarOnScroll() {
       const start = Date.now();
       const step = () => {
         const t = Math.min(1, (Date.now() - start) / SETTLE_MS);
-        const eased = 1 - (1 - t) ** 3;
-        distance.current = from + (target - from) * eased;
+        distance.current = from + (target - from) * settleEase(t);
         publish(distance.current / span);
         settleFrame.current = t < 1 ? requestAnimationFrame(step) : null;
       };
