@@ -90,7 +90,12 @@ function useAutoHideBottomBar(enabled: boolean) {
   // scroll spends it back to zero, and it's spent again once the gesture is over, so every reveal
   // earns the distance rather than adding up across separate flicks.
   const up = useRef(COMMIT_DISTANCE);
+  // Last reported scroll offset, for the same "can't have travelled further than the content" rule
+  // the sliding bars get from `hideCeiling` — a fade has no partial state, so here it reduces to
+  // refusing to hide at all until the content has scrolled past the bar's own height.
+  const lastY = useRef(0);
   const set = useCallback((next: boolean) => {
+    if (next && lastY.current < getTabBarHideOffset()) return;
     if (hiddenRef.current === next) return;
     hiddenRef.current = next;
     setHidden(next);
@@ -144,6 +149,7 @@ function useAutoHideBottomBar(enabled: boolean) {
       const dy = y - (positions.get(key) ?? 0);
       positions.set(key, y);
       if (dy === 0) return; // horizontal rail, or no vertical movement
+      lastY.current = y;
       // A wheel/trackpad emits no drag events at all, so this is also what keeps the release
       // detector's idle fallback ticking for the DOM-driven path.
       notifyScrollActivity();

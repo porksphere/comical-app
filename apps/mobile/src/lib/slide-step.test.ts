@@ -25,6 +25,24 @@ describe('slideStep', () => {
     expect(slideStep(SPAN, -40, 0, 0, SPAN, 8)).toBe(0);
   });
 
+  // The bar can't have travelled further from its resting place than the content has, so within the
+  // first `span` px of scroll it is tied to the content and arrives fully shown exactly at 0. Before
+  // this, commit-on-release could park a bar fully hidden a few px down the list (an unearned reveal
+  // snaps it back there) and crossing the top guard then flung it open in a single frame.
+  test('is never hidden further than the content has scrolled', () => {
+    expect(slideStep(SPAN, 20, 40, 0, SPAN)).toBe(20);
+    expect(slideStep(SPAN, 1, 2, 0, SPAN)).toBe(1);
+    // Past the span the ceiling stops binding and normal accumulation takes over.
+    expect(slideStep(40, 130, 120, 0, SPAN)).toBe(50);
+  });
+
+  test('the ceiling also applies to a step the guards rejected', () => {
+    // A reposition landing near the top must not leave the bar parked off-screen up there.
+    expect(slideStep(SPAN, 30, 800, 0, SPAN)).toBe(30);
+    // ...but a rejected step further down still just holds still.
+    expect(slideStep(60, 800, 400, 0, SPAN)).toBe(60);
+  });
+
   test('holds still through the elastic bottom bounce', () => {
     // maxScrollY = 500: springing back from 560 -> 520 is not a real scroll-up.
     expect(slideStep(SPAN, 520, 560, 500, SPAN)).toBe(SPAN);
@@ -37,8 +55,9 @@ describe('slideStep', () => {
   // enormous step that is a reposition, not a gesture. Accumulating it hid both bars for good.
   test('ignores a reposition-sized jump instead of accumulating it', () => {
     expect(slideStep(0, 780, 0, 0, SPAN)).toBe(0);
-    // ...and the same in reverse, so a jump back up can't fake a reveal either.
-    expect(slideStep(SPAN, 0, 780, 0, SPAN, -1)).toBe(SPAN);
+    // ...and the same in reverse, so a jump back up can't fake a reveal either. Landing well clear
+    // of the top: a jump that ends up NEAR it legitimately shows the bar (see the hide ceiling).
+    expect(slideStep(SPAN, 300, 1080, 0, SPAN)).toBe(SPAN);
   });
 
   test('still tracks the frame after a jump, measured from where the list landed', () => {
@@ -84,6 +103,13 @@ describe('settleStep', () => {
     // A reposition-sized jump, likewise.
     expect(settleStep(0, 10, 780, 0, 0, SPAN)).toEqual({ hidden: 0, up: 10 });
     expect(settleStep(0, 10, 0, 780, 0, SPAN, -1)).toEqual({ hidden: 0, up: 10 });
+  });
+
+  test('carries the hide ceiling through, so a reveal near the top is gradual not a pop', () => {
+    // 5px up from y=25 with the bar fully hidden: the ceiling has it at 25, so it moves to 20 —
+    // where the hard top-guard snap used to jump it the whole way to 0.
+    expect(settleStep(SPAN, 0, 20, 25, 0, SPAN, 8).hidden).toBe(20);
+    expect(settleStep(20, 5, 12, 20, 0, SPAN, 8).hidden).toBe(12);
   });
 
   // What the caller does with the credit: `up >= COMMIT_DISTANCE` ⇒ settle fully shown, else fully

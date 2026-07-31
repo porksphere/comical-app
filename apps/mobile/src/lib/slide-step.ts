@@ -40,6 +40,25 @@ function stepRejected(y: number, prevY: number, maxScrollY: number): boolean {
   'worklet';
   return Math.abs(y - prevY) > MAX_GESTURE_STEP || (maxScrollY > 0 && y >= maxScrollY);
 }
+/**
+ * The furthest a bar can be hidden at scroll offset `y`: it cannot have travelled further from its
+ * resting place than the content itself has. Within the first `span` px of scroll that ties the bar
+ * to the content, so it arrives fully shown exactly as the list reaches the top — "pinned at the
+ * top" stops being a separate rule that has to fire and becomes something the position can't
+ * violate.
+ *
+ * The bug this fixes: the top pin used to be a hard `y <= topGuard ⇒ hidden = 0` snap. That was
+ * invisible while the bars tracked scroll 1:1 in both directions — approaching the top they were
+ * already almost fully in, so the snap covered a pixel or two. Commit-on-release changed that: an
+ * unearned reveal snaps a bar back to FULLY hidden, which it can now be while the list sits a few px
+ * from the top. Crossing the guard then flung a 60-82px bar open in a single frame off a 5px scroll,
+ * most visibly right as a settle finished.
+ */
+export function hideCeiling(y: number, span: number): number {
+  'worklet';
+  return Math.min(span, Math.max(0, y));
+}
+
 export function slideStep(
   hidden: number,
   y: number,
@@ -50,8 +69,11 @@ export function slideStep(
 ): number {
   'worklet';
   if (y <= topGuard) return 0;
-  if (stepRejected(y, prevY, maxScrollY)) return hidden;
-  return Math.min(span, Math.max(0, hidden + (y - prevY)));
+  const ceiling = hideCeiling(y, span);
+  // A rejected step still can't leave the bar further out than the content allows — a reposition
+  // that lands near the top must not park it off-screen up there until the next real frame.
+  if (stepRejected(y, prevY, maxScrollY)) return Math.min(hidden, ceiling);
+  return Math.min(ceiling, Math.max(0, hidden + (y - prevY)));
 }
 
 /**

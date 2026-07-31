@@ -45,7 +45,7 @@ import {
   subscribeScrollPhase,
   type ScrollPhase,
 } from '@/lib/scroll-release';
-import { COMMIT_DISTANCE, settleStep } from '@/lib/slide-step';
+import { COMMIT_DISTANCE, hideCeiling, settleStep } from '@/lib/slide-step';
 import { setTopBarHidden } from '@/lib/top-bar-visibility';
 
 /** How long the bar takes to slide to its committed state once the gesture ends. */
@@ -157,12 +157,16 @@ export function useSlidingBar(
           }),
         );
       };
+      // Where a hide settles TO: normally the full span, but never further than the content has
+      // scrolled (see `hideCeiling`). Releasing 20px down the list must not animate the bar out past
+      // what the scroll position allows, only for the next frame to clamp it back.
+      const hideTo = hideCeiling(scrollY.value, barHeight);
       const earned = revealUp.value >= COMMIT_DISTANCE;
       // An earned reveal, and any dismissal, finish the moment the finger lifts — the bar shouldn't
       // still be moving after a fling has started.
       if (earned || revealUp.value === 0) {
         revealUp.set(earned ? COMMIT_DISTANCE : 0);
-        settleTo(earned ? 0 : barHeight);
+        settleTo(earned ? 0 : hideTo);
         return;
       }
       // In between: the gesture asked for the bar but hasn't earned it yet. Wait for `rest` rather
@@ -171,10 +175,10 @@ export function useSlidingBar(
       // half-finished one.
       if (phase === 'rest') {
         revealUp.set(0);
-        settleTo(barHeight);
+        settleTo(hideTo);
       }
     },
-    [barHeight, offset, revealUp, settling],
+    [barHeight, offset, revealUp, scrollY, settling],
   );
   useEffect(() => subscribeScrollPhase(settle), [settle]);
 
