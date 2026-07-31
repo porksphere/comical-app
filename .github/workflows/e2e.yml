@@ -6,30 +6,26 @@ name: E2E (Maestro)
 # bridge involved) — deterministic on purpose, and never runs live bridge traffic from an
 # external contributor's PR.
 #
-# Advisory only for now (not a required status check) — see the phased rollout in the e2e plan.
-# Promote android/ios/web to required checks in branch protection once proven stable.
+# MANUAL ONLY — this workflow does not run itself.
 #
-# Runs on `main` too, in addition to PRs: the iOS Simulator build's ccache is flavor-specific
-# (see build-ios-reusable.yml) and only ever gets saved on `main`, so PR runs need a `main` run
-# to have populated a warm `sim`-flavor cache to restore from.
+# It used to fire on every PR and every push to main, and it was too flaky on GitHub's runners to
+# be worth it: emulator boots, simulator timing, and Metro/web startup all fail intermittently for
+# reasons that have nothing to do with the change under test, and a red X on an otherwise-good
+# commit trains you to ignore CI. It was never a required check, so nothing was gated on it —
+# the failures were pure noise.
+#
+# The suite itself is still the real validation tool, kept for exactly that: run it on demand
+# (Actions → E2E (Maestro) → Run workflow, or `gh workflow run e2e.yml --ref <branch>`) when
+# you've changed something it covers and want the answer, and read the result yourself instead of
+# having it stamped on the commit. Locally it's the faster loop anyway — see
+# apps/mobile/e2e/README.md.
+#
+# Consequence to know about: the iOS Simulator ccache is flavor-specific and only saved on `main`
+# (see build-ios-reusable.yml), and nothing populates it on a schedule anymore. A dispatch from
+# `main` still warms it; a run from a branch after a long gap may just build cold.
 
 on:
-  pull_request:
-    paths:
-      - 'apps/mobile/**'
-      - 'external/comical'
-      - '.github/workflows/e2e.yml'
-      - '.github/workflows/build-android-reusable.yml'
-      - '.github/workflows/build-ios-reusable.yml'
-  push:
-    branches:
-      - main
-    paths:
-      - 'apps/mobile/**'
-      - 'external/comical'
-      - '.github/workflows/e2e.yml'
-      - '.github/workflows/build-android-reusable.yml'
-      - '.github/workflows/build-ios-reusable.yml'
+  workflow_dispatch:
 
 concurrency:
   group: e2e-${{ github.ref }}

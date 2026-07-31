@@ -1,7 +1,10 @@
 # comical-app end-to-end tests (Maestro)
 
 The same journey, written once for mobile and once for web, drives web, Android, and iOS. Runs
-in CI on every PR (see `.github/workflows/e2e.yml`) and locally the same way.
+locally, and in CI **on demand only** — `.github/workflows/e2e.yml` is `workflow_dispatch`-only
+(`gh workflow run e2e.yml --ref <branch>`), because on GitHub's runners the suite failed often
+enough for reasons unrelated to the change under test that a red X stopped meaning anything. Run
+it deliberately when you've touched something it covers; don't expect it to catch things for you.
 
 ## Why Maestro
 
