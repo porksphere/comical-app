@@ -59,6 +59,12 @@ export const COMIC_TEXT_DETECTOR: OnnxModelManifest = {
 /**
  * manga-ocr (kha-white) — Japanese manga OCR, ViT encoder + autoregressive decoder,
  * int8-quantized export split into encoder/decoder + vocab.
+ *
+ * The int8 + 'coreml' pairing below is self-defeating — see review finding 2 in
+ * docs/live-translator-feasibility.md. DynamicQuantizeLinear/MatMulInteger aren't in the CoreML
+ * EP's op set (onnxruntime#22346), so those subgraphs fall back to CPU, and int8 via MLAS on
+ * ARM often isn't faster than fp32 anyway: on an iPhone 12 this trades the ANE for ~340 MB of
+ * download. Publish fp16 for iOS/CoreML (encoder ~172 MB) and keep int8 for Android/XNNPACK.
  */
 export const MANGA_OCR: OnnxModelManifest = {
   id: 'manga-ocr',

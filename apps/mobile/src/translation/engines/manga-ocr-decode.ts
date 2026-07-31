@@ -2,6 +2,14 @@
  * manga-ocr's greedy autoregressive decode — pure TS, no runtime/RN imports, so the loop's
  * correctness (argmax over the last row, EOS/maxLen stops, wordpiece joining) is unit-testable
  * against a scripted fake session. The adapter in `manga-ocr.ts` feeds it real ORT sessions.
+ *
+ * BLOCKED on a KV-cached re-export — see review finding 1 in docs/live-translator-feasibility.md.
+ * The "bubbles are short, so O(n²) holds up" reasoning below is wrong: the dominant cost isn't
+ * the prefix re-run, it's that cross-attention K/V over the 577-token encoder output is
+ * recomputed EVERY token (~4 GFLOPs/token across the ~3-layer decoder, vs ~17.5 GFLOPs for one
+ * whole ViT-B/16 encoder pass). A 20-token bubble therefore spends ~5× more compute decoding
+ * than encoding, all of it recompute — tens of seconds per page on an A14. Re-export with
+ * `past_key_values` (optimum, `image-to-text-with-past`) before this ships.
  */
 
 export type MangaOcrVocab = {
