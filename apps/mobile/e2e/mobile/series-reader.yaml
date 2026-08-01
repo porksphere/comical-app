@@ -1,0 +1,67 @@
+# EXPERIMENTAL series reader page (app/series-reader.tsx): with the Settings → General →
+# "Series reader page" toggle on, tapping ANY series card opens the reader-first page — pages up
+# immediately (resume-or-first-chapter resolved on the spot), series info + chapter list one
+# swipe away — instead of the /series detail screen.
+#
+# Journey: enable the toggle -> Browse -> tap a card (the default mock bridge is chaptered, so
+# this exercises the chapter-resolution path) -> assert the reader chrome came up directly ->
+# reveal the info via the chrome's Details pill -> tap a chapter row -> back in the reader.
+# (The pill, not a swipe, is the reveal step here: it's the guaranteed path — a fit-width page
+# taller than the viewport takes vertical drags for its own content-pan — and it gives this flow
+# a deterministic tap target.)
+#
+# Selectors (confirmed against source):
+#   - settings category:  settings.category.general               (app/(tabs)/settings.tsx)
+#   - the toggle:         settings.toggle.series-reader-page      (SettingsToggleRow derives
+#                         settings.toggle.<slug(label)> — settings-fields.tsx)
+#   - back from General:  top-bar.back                            (components/top-bar.tsx)
+#   - series cards:       series-card.<seriesId>                  (components/series-card.tsx)
+#   - reader back:        reader.toolbar.back                     (components/reader/reader-toolbar.tsx)
+#   - Details pill:       series-reader.details                   (app/series-reader.tsx DetailsHint)
+#   - info section:       series-reader.info                      (app/series-reader.tsx)
+#   - chapter rows:       series-reader.chapter.<key>             (app/series-reader.tsx; chapter ids
+#                         slug into extra dot-segments, so match the prefix broadly)
+appId: com.porksphere.comical
+---
+- launchApp
+
+# Turn the experiment on: Settings → General → Experimental → "Series reader page".
+- tapOn:
+    id: "tab.settings"
+- tapOn:
+    id: "settings.category.general"
+- scrollUntilVisible:
+    element:
+      id: "settings.toggle.series-reader-page"
+    direction: DOWN
+- tapOn:
+    id: "settings.toggle.series-reader-page"
+- tapOn:
+    id: "top-bar.back"
+
+# A card tap lands straight in the reader — the reader toolbar, with no series detail screen in
+# between. Maestro taps the first match when several cards resolve.
+- tapOn:
+    id: "tab.browse"
+- tapOn:
+    id: "series-card\\..*"
+- assertVisible:
+    id: "reader.toolbar.back"
+
+# Reveal the info half (tags/meta/description/chapters/related) via the Details pill.
+- tapOn:
+    id: "series-reader.details"
+- assertVisible:
+    id: "series-reader.info"
+
+# Tapping a chapter row hands it to the reader and scrolls back up into it.
+- scrollUntilVisible:
+    element:
+      id: "series-reader\\.chapter\\..*"
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: "series-reader\\.chapter\\..*"
+    index: 0
+- assertVisible:
+    id: "reader.toolbar.back"

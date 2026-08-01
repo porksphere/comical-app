@@ -1,0 +1,44 @@
+# Same journey as ../mobile/series-reader.yaml (enable the experimental toggle -> Browse -> card
+# tap lands straight in the reader -> Details pill reveals the info), kept in sync by hand, with
+# the usual web quirks (see ../README.md):
+#
+#   - tab bar + settings category rows are selected by their accessibilityLabel ("Settings",
+#     "General", "Browse"), not tab.*/settings.category.* — icon rows set aria-label, which wins.
+#   - back out of General via "Go back" (the TopBar back button's aria-label).
+#   - the toggle has no competing accessibilityLabel, so its testID works.
+#   - reader back asserts on "Close reader" (reader.toolbar.back's aria-label), the Details pill
+#     taps on "Show series details" (its own aria-label) — same aria-label-wins rule.
+#   - the chapter-row round-trip stays mobile-only: rows set accessibilityLabel={c.name} (a
+#     dynamic string, unmatchable by a fixed selector), and reaching rows below the fold needs
+#     scrolling the info panel, which Maestro-web can't drive in this app's locked-window layout
+#     (see browse-to-reader.yaml's header). Asserting the info section rendered is the web floor.
+#   - no scrollUntilVisible before the toggle: General's list is short enough at the CI viewport,
+#     and Maestro-web's element scrolling is a no-op in this app anyway (window scroll is locked).
+url: http://localhost:4000/comical-app
+---
+- launchApp
+
+# Turn the experiment on: Settings → General → Experimental → "Series reader page".
+- tapOn:
+    id: "Settings"
+- tapOn:
+    id: "General"
+- tapOn:
+    id: "settings.toggle.series-reader-page"
+- tapOn:
+    id: "Go back"
+
+# A card tap lands straight in the reader — no series detail screen in between.
+- tapOn:
+    id: "Browse"
+- tapOn:
+    id: "series-card\\..*"
+- assertVisible:
+    id: "Close reader"
+
+# Reveal the info half via the Details pill (web can't swipe over the pager — it owns its whole
+# touch surface; the pill is the guaranteed path).
+- tapOn:
+    id: "Show series details"
+- assertVisible:
+    id: "series-reader.info"
