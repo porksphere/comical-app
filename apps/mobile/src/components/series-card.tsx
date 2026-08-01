@@ -14,6 +14,7 @@ import { useIsCompact } from '@/hooks/use-responsive';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
+import { useDirectSeriesReader } from '@/lib/experimental-flags';
 import { Link, router } from '@/lib/nav';
 import { useLightCards } from '@/lib/perf-flags';
 import { testId } from '@/lib/test-id';
@@ -267,6 +268,9 @@ export function SeriesCard({
 }) {
   // Perf toggle (Settings → "Lightweight cards") — see lib/perf-flags.
   const lightCards = useLightCards();
+  // EXPERIMENTAL (Settings → General → Experimental): tapping a DIRECT series card opens the
+  // reader-first `/direct-series` page instead of `/series` — see lib/experimental-flags.
+  const directReaderPage = useDirectSeriesReader();
   const [loaded, setLoaded] = useState(() => resolvedCoverIds.has(entry.id));
   const [truncated, setTruncated] = useState(false);
   // True while masking a scope swap (see the recycle-safety block): the shared `Skeleton` is only
@@ -613,7 +617,10 @@ export function SeriesCard({
         // instead of drilling in. Also correct from Browse/Library/History (no `/series` on the stack
         // yet there, so equivalent to a plain push).
         const buildHref = () => ({
-          pathname: '/series' as const,
+          // EXPERIMENTAL: with the "Direct series reader" toggle on, a direct series opens
+          // reader-first (`/direct-series`, which takes the same params) instead of on the detail
+          // screen. Remove this ternary (keeping '/series') with the experiment.
+          pathname: directReaderPage && direct ? ('/direct-series' as const) : ('/series' as const),
           params: {
             id: entry.id,
             title: entry.title,

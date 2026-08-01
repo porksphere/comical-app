@@ -131,6 +131,12 @@ function RootNavigation() {
             name="reader"
             options={{ headerShown: false, animation: 'fade', presentation: 'containedTransparentModal' }}
           />
+          {/* EXPERIMENTAL direct-series page (Settings → General → Experimental): a direct series
+              opened from a card lands straight in its reader, info one scroll away. Fades in like
+              the reader but stays an ordinary opaque card (its info half is themed content, and the
+              back edge-swipe should keep working). Remove with the experiment — see
+              app/direct-series.tsx for the full removal list. */}
+          <Stack.Screen name="direct-series" options={{ headerShown: false, animation: 'fade' }} />
           {/* These render their own <TopBar> (matching series.tsx), so the native
               stack header is hidden here too. The Settings tab is only a table of
               contents — every category below is a screen it pushes. */}

@@ -1,0 +1,41 @@
+# Same journey as ../mobile/direct-series-reader.yaml (enable the experimental toggle -> Browse
+# the direct mock bridge -> card tap lands straight in the reader), kept in sync by hand, with the
+# usual web quirks (see ../README.md):
+#
+#   - tab bar + settings category rows are selected by their accessibilityLabel ("Settings",
+#     "General", "Browse"), not tab.*/settings.category.* — icon rows set aria-label, which wins.
+#   - back out of General via "Go back" (the TopBar back button's aria-label).
+#   - the toggle + bridge selector have no competing accessibilityLabel, so their testIDs work.
+#   - NO swipe-up reveal step: the web paged reader owns its touch surface (`touch-action: none`
+#     + preventDefault — see paged-reader.web.tsx), so a Selenium touch-drag over the pages never
+#     reaches the outer reveal scroller. The web assertion stops at "the reader came up directly"
+#     (`Close reader` = reader.toolbar.back's aria-label, same anchor browse-to-reader.yaml uses).
+#   - no scrollUntilVisible before the toggle: General's list is short enough at the CI viewport,
+#     and Maestro-web's element scrolling is a no-op in this app anyway (window scroll is locked).
+url: http://localhost:4000/comical-app
+---
+- launchApp
+
+# Turn the experiment on: Settings → General → Experimental → "Direct series reader".
+- tapOn:
+    id: "Settings"
+- tapOn:
+    id: "General"
+- tapOn:
+    id: "settings.toggle.direct-series-reader"
+- tapOn:
+    id: "Go back"
+
+# Browse the direct mock bridge (Coldspine — MOCK_DIRECT_BRIDGES in src/data/mock.ts).
+- tapOn:
+    id: "Browse"
+- tapOn:
+    id: "browse.bridge-selector"
+- tapOn:
+    id: "browse.bridge-selector.option.coldspine"
+
+# A card tap lands straight in the reader — no series detail screen in between.
+- tapOn:
+    id: "series-card\\..*"
+- assertVisible:
+    id: "Close reader"
