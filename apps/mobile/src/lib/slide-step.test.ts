@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { COMMIT_DISTANCE, settleStep, slideStep } from './slide-step';
+import { COMMIT_DISTANCE, dismissTarget, settleStep, slideStep } from './slide-step';
 
 // The bar spans ~82px (its measured height) on a real device; use a round 100 here.
 const SPAN = 100;
@@ -121,5 +121,27 @@ describe('settleStep', () => {
     }
     expect(s.hidden).toBeLessThan(SPAN); // it did move, 1:1, the whole way
     expect(s.up).toBeLessThan(COMMIT_DISTANCE); // ...but never earned the lock-in
+  });
+});
+
+describe('dismissTarget', () => {
+  test('commits to fully hidden once the content has scrolled past the bar', () => {
+    expect(dismissTarget(SPAN, SPAN)).toBe(SPAN);
+    expect(dismissTarget(400, SPAN)).toBe(SPAN);
+  });
+
+  // The bug: nearer the top than its own height, a bar has no room to hide, and settling to the
+  // ceiling left it parked half-way — a small scroll down from the top did this every time.
+  test('sends the bar back rather than parking it half-way near the top', () => {
+    expect(dismissTarget(20, SPAN)).toBe(0);
+    expect(dismissTarget(SPAN - 1, SPAN)).toBe(0);
+    expect(dismissTarget(0, SPAN)).toBe(0);
+  });
+
+  test('only decides the resting place — tracking under the finger still moves 1:1', () => {
+    // Same 20px offset: the bar has genuinely slid 20px while the finger is down...
+    expect(slideStep(0, 20, 0, 0, SPAN)).toBe(20);
+    // ...and on release goes back to shown, since 20px of content can't hide a 100px bar.
+    expect(dismissTarget(20, SPAN)).toBe(0);
   });
 });

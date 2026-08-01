@@ -45,7 +45,7 @@ import {
   subscribeScrollPhase,
   type ScrollPhase,
 } from '@/lib/scroll-release';
-import { COMMIT_DISTANCE, hideCeiling, SETTLE_MS, settleEase, settleStep } from '@/lib/slide-step';
+import { COMMIT_DISTANCE, dismissTarget, SETTLE_MS, settleEase, settleStep } from '@/lib/slide-step';
 import { setTopBarHidden } from '@/lib/top-bar-visibility';
 
 /** Minimal structural type for the list refs we reset — LegendList and FlatList both satisfy it. */
@@ -157,10 +157,10 @@ export function useSlidingBar(
           }),
         );
       };
-      // Where a hide settles TO: normally the full span, but never further than the content has
-      // scrolled (see `hideCeiling`). Releasing 20px down the list must not animate the bar out past
-      // what the scroll position allows, only for the next frame to clamp it back.
-      const hideTo = hideCeiling(scrollY.value, barHeight);
+      // Where a hide settles TO: all the way out, or — if the list hasn't scrolled far enough for
+      // the bar to leave entirely — all the way back in rather than parking half-way. See
+      // `dismissTarget`.
+      const hideTo = dismissTarget(scrollY.value, barHeight);
       const earned = revealUp.value >= COMMIT_DISTANCE;
       // An earned reveal, and any dismissal, finish the moment the finger lifts — the bar shouldn't
       // still be moving after a fling has started.

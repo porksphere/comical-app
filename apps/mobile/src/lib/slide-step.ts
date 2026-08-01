@@ -127,6 +127,27 @@ export function settleEase(t: number): number {
  * all the way hidden. Carried in/out rather than owned here so this stays a pure function usable
  * from both threads — the top bar keeps it in a shared value, the tab bar in a ref.
  */
+/**
+ * Where a DISMISSAL settles to at scroll offset `y` — all the way out, or all the way back in.
+ *
+ * `hideCeiling` caps how far a bar can be hidden by how far the content has scrolled, which is right
+ * while the finger is down (that's the 1:1 tracking) but wrong as a resting place: nearer the top
+ * than the bar's own height there is no room to hide, so committing to "the ceiling" parked the bar
+ * half-way — visible, clipped, and not really usable, with no gesture able to explain the position.
+ * A small scroll down from the top hit this every time.
+ *
+ * So a dismissal only commits if the content can actually see it through; otherwise the bar goes back
+ * where it came from. This is the rule app-tabs' web fade already used (it refuses to hide until
+ * `lastY >= getTabBarHideOffset()`) — the sliding bars were the ones out of step.
+ *
+ * Only the RESTING position is decided here. Tracking under the finger still follows the ceiling, so
+ * the bar moves with a scroll of any size; it's the release that snaps the decision to one end.
+ */
+export function dismissTarget(y: number, span: number): number {
+  'worklet';
+  return hideCeiling(y, span) < span ? 0 : span;
+}
+
 export function settleStep(
   hidden: number,
   up: number,

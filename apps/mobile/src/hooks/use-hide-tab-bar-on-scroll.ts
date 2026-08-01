@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 
 import { notifyScrollActivity, subscribeScrollPhase, type ScrollPhase } from '@/lib/scroll-release';
-import { COMMIT_DISTANCE, hideCeiling, SETTLE_MS, settleEase, settleStep } from '@/lib/slide-step';
+import { COMMIT_DISTANCE, dismissTarget, SETTLE_MS, settleEase, settleStep } from '@/lib/slide-step';
 import { getTabBarHideOffset, setTabBarProgress } from '@/lib/tab-bar-visibility';
 
 // The scroll span over which the bar fully hides/reveals is the bar's own hide offset (its measured
@@ -114,8 +114,9 @@ export function useHideTabBarOnScroll() {
       // A settle already in flight owns the bar — a `rest` arriving behind the `release` that
       // started it must not restart the same animation.
       if (settleFrame.current !== null) return;
-      // Never further out than the content has scrolled — see `hideCeiling`.
-      const hideTo = hideCeiling(lastY.current, getTabBarHideOffset());
+      // All the way out, or all the way back in if the content hasn't scrolled far enough for this
+      // bar to leave — never parked half-way. See `dismissTarget`.
+      const hideTo = dismissTarget(lastY.current, getTabBarHideOffset());
       const earned = up.current >= COMMIT_DISTANCE;
       // An earned reveal, and any dismissal, finish the moment the finger lifts — the bar shouldn't
       // still be moving after a fling has started.
