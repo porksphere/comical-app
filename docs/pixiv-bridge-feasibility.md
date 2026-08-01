@@ -5,9 +5,10 @@ gallery, Referer-gated CDN, mixed content ratings, account-gated extras) hits al
 contract doesn't already model. The `direct-example` bridge is literally described as an
 "illustration gallery concept" and is the right template.
 
-There is exactly **one** area that needs a decision rather than just bridge-authoring: **initial
-authentication**. Everything else is either already supported or a small, contained app-side
-improvement.
+Two areas need a decision rather than just bridge-authoring: **how Pixiv's content maps onto
+series/chapters** (Pixiv's browse unit and its subscription unit are different objects, which the
+model doesn't assume) and **initial authentication**. Everything else is either already supported or
+a small, contained app-side improvement.
 
 This document covers what's already there, what needs care, and what would need platform changes —
 with file references so the next person doesn't have to re-derive it.
@@ -141,30 +142,100 @@ Three mitigations, cheapest first:
    on native and skip the proxy (and the base64 round-trip) completely. That's a small, contained
    change and it benefits every Referer-gated source, not just Pixiv.
 
-### A bridge can't mix chaptered and chapterless series
+---
 
-`direct` is a **bridge-level** capability, and the client treats it that way everywhere —
-`directOf(bridgeId)` (`src/hooks/use-bridges.ts:41`), `selected-bridge.ts:140`,
-`use-cross-bridge-rails.ts:79`, `library-card.ts:20` all read it off the bridge's capability list and
-pass the result down as a route param.
+## The shape question: mixing `direct` with chapters, or a third category
 
-So you can't have `illust:123` be direct while `user:456` is chaptered inside one bridge. That
-forces a mapping decision (below), or two separate bridges.
+Pixiv's real hierarchy is **artist → artwork → page**. Comical's is **series → chapter → page**.
+Those line up exactly *if* artist = series. The trouble is that Pixiv's **browse unit and its
+subscription unit are different objects**: you browse artworks, but you follow artists. In a manga
+source those are the same object, which is the assumption baked into the model.
 
-### Mapping decision
+So there are two ways out — make one bridge serve both shapes, or add a shape that fits natively.
 
-Three defensible mappings, and they're mutually exclusive per bridge:
+### What "mixing" would actually cost
+
+Less than the bridge-level capability suggests. Three things are already true:
+
+1. **The host doesn't care.** `/series/:seriesId/chapters` and `/series/:seriesId/pages` gate purely
+   on *method presence* — `if (!bridge.getChapters)` / `if (!bridge.getSeriesPages)`
+   (`router.ts:639,663`). Nothing checks the declared `direct` capability. A bridge implementing both
+   already works server-side today.
+2. **The data layer already threads `direct` per-item**, not per-bridge. It's a parameter on
+   `getSeriesList` (`src/data/source.ts:195`), part of the `seriesDetail`/`seriesList` query keys
+   (`queries.ts:63-66`), a route param on the series screen and reader, and a field on
+   `ContentRow` items (`content-rows.ts`). None of that needs to change.
+3. **Only five places derive it from the bridge**: `use-bridges.ts:41` (`directOf`),
+   `use-cross-bridge-rails.ts:79`, `use-custom-page-rows.ts:104`, `selected-bridge.ts:140`,
+   `library-card.ts:20`.
+
+So the change is: **move the source of truth from the bridge to the item.** Add an optional
+`direct?: boolean` to `seriesEntrySchema` and `seriesInfoSchema`, and have those five sites read
+`entry.direct ?? bridgeLevelFallback`. The fallback keeps every existing bridge working unchanged,
+which is exactly the additive pattern the contract already requires.
+
+Three of the five sites are "live" contexts that have a `SeriesEntry` in hand, so they're trivial.
+The other two are the real work, because they render **persisted** rows rather than fetched ones:
+
+- `library-card.ts` maps a stored `LibraryItem`, and `directOf` serves the History and Activity tabs.
+  Neither has a `SeriesEntry` available.
+- So `libraryEntrySchema` (`packages/library/src/models.ts:84`) needs an optional `direct` alongside
+  the display snapshot it already caches (title/thumbnail/author, kept so the library renders offline
+  and survives bridge removal). `HistoryItem` needs the same. Both are additive and default false.
+- Downloads already have a home for it — `DIRECT_DOWNLOAD_CHAPTER_ID` (`'__direct__'`) is the
+  reserved chapter id a chapterless series' pages are filed under, and that's keyed per series
+  already.
+
+That's a contract field, a library-schema field, and roughly five call sites plus their persistence.
+Genuinely modest — this is a day or two of work, not a refactor.
+
+With that in place one `pixiv` bridge serves `illust:123` as a direct series (browse + read) and
+`user:456` as a chaptered one (follow + track updates), and `SeriesInfo.artistId` — which already
+exists — is the natural hook for a "follow this artist" action off an artwork.
+
+### Would a third category fit better?
+
+Worth being precise about what a new category would buy, because "gallery" is already `direct` and
+renaming it gains nothing.
+
+The one structural thing mixing does **not** fix: **`getChapters` is unpaginated.**
+`getChapters?(seriesId): Promise<Chapter[]>` returns the entire list in one call
+(`packages/contract/src/bridge.ts:86`), the router hands that whole array to `syncChapters`
+(`router.ts:644`), and the library persists every entry into `knownChapters` for unread counting
+(`packages/library/src/models.ts:103`). For a prolific Pixiv artist that's thousands of artworks per
+call, persisted per library entry.
+
+So the genuine third shape isn't a gallery — it's a **feed**: open-ended, reverse-chronological,
+cursor-paginated, never "completes", with an unbounded unread count. That describes a Pixiv artist,
+a Pixiv tag, a saved search, a booru tag. The defining need is a paginated chapter list
+(`getChaptersPaged?(seriesId, req): Promise<PagedResults<Chapter>>`), and that's a much bigger
+change than mixing: it touches chapter next/prev navigation, download-all, unread counting,
+`knownChapters` persistence, and `checkForUpdates` — all of which currently assume the full list is
+in hand.
+
+### Recommendation
+
+**Do the per-series `direct` flag; don't build a feed category yet.**
+
+Sidestep the pagination problem in v1 by having the bridge cap an artist's chapter list at a
+recent-works window (the latest ~200 artworks, newest first). That's honest, it's what a reader
+actually wants, and it needs no contract change. Pixiv's own UI paginates at 48/page, so nobody is
+scrolling 5,000 entries anyway.
+
+If feeds later prove to be a real category — and they might, since booru-style sources have the same
+shape — `getChaptersPaged` is a separate additive capability that can land on its own schedule. The
+per-series `direct` flag is useful either way and doesn't box that in.
+
+For reference, the three mappings and what each is good for:
 
 | Mapping | Fits | Costs |
 |---|---|---|
 | **Artwork = direct series** | The reader. Matches `direct-example` exactly. Simplest. | Library fills with thousands of one-shot entries; `checkForUpdates` is meaningless (an artwork never gains pages) |
-| **Artist = series, artwork = chapter** | The *library*. Following an artist becomes a library entry, new artwork becomes a new chapter, `checkForUpdates` and the Activity screen start working, `favorites` = followed users | An "artist" isn't a comic; chapter ordering is just reverse-chronological |
+| **Artist = series, artwork = chapter** | The *library*. Following an artist becomes a library entry, new artwork a new chapter; `checkForUpdates` and the Activity tab start working | An artist isn't a comic; ordering is just reverse-chronological; unpaginated chapter list |
 | **Pixiv series (`/ajax/series/{id}`) = series, episode = chapter** | Genuinely correct for Pixiv's own manga-series feature | Only covers a small slice of the site |
 
-**Recommendation: two bridges, not one.** `pixiv` (artwork-as-direct-series) for browsing and
-reading, and `pixiv-follows` (artist-as-series, chaptered) for the library/update-tracking use case.
-They share almost all their code, the id namespaces stay clean, and each advertises an honest
-capability set. Shipping the direct one first is the smaller, more obviously useful piece.
+With per-series `direct`, these stop being mutually exclusive — one bridge serves all three, keyed by
+an id prefix.
 
 ---
 
@@ -234,9 +305,10 @@ None of those are prerequisites for a working bridge.
 | `pixiv` direct bridge — browse, search, artwork detail, pages, tags, ratings | ~400–600 lines, comparable to `example-bridge` (415) |
 | Auth via pasted credential + self-refresh | small, inside the bridge |
 | `favorites` (bookmarks) | small, once auth works |
-| `pixiv-follows` chaptered bridge | mostly shared code |
+| Artist-as-series (follow + update tracking), same bridge | mostly shared code, once per-series `direct` lands |
+| Per-series `direct` — contract field, library-schema field, 5 call sites | 1–2 days, additive, benefits every source |
 | Reader `Page.headers` plumbing (optional, app-side) | small and contained |
-| Anything else platform-side | **not required** |
+| `getChaptersPaged` / feed category | **deferred** — not needed if artist chapter lists are windowed |
 
 ---
 
