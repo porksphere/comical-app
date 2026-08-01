@@ -11,6 +11,7 @@ import { Spacing } from '@/constants/theme';
 import { dlGetSeries } from '@/data/api';
 import { deriveSeriesState } from '@/data/downloads/derive';
 import { enqueueChapter } from '@/data/downloads/engine';
+import { downloadsScreenRoute } from '@/data/downloads/nav';
 import { queryKeys } from '@/data/queries';
 import { useFavorite } from '@/hooks/use-favorite';
 import { useLibrary } from '@/hooks/use-library';
@@ -247,7 +248,16 @@ function SeriesActionsRow({
   const onDownload = () => {
     // Already downloading or done → open the manage view; a direct series is one unit → enqueue it
     // outright; otherwise open chapter selection (mirrors SeriesDownloadButton, minus partial).
-    if (dlComplete || dlInProgress) return openSeriesDownloads(false);
+    if (dlComplete || dlInProgress) {
+      // A direct series has no chapter roster to manage — its row on the Downloads screen is the
+      // whole download (see downloads/nav.ts).
+      if (direct) {
+        closeTop(); // close the reader sheet before pushing over the reader, as openSeriesDownloads does
+        router.push(downloadsScreenRoute(bridgeId, seriesId));
+        return;
+      }
+      return openSeriesDownloads(false);
+    }
     if (direct) {
       void enqueueChapter({
         bridgeId,

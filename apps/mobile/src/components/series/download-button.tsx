@@ -7,7 +7,9 @@
  *  - partial (M of N logical chapters kept, nothing in flight) → "⤓ M / N", opens the selection
  *    screen (settled chapters render checked-and-dimmed there).
  *  - every chapter downloaded → "Downloaded"; tapping opens the Downloads screen to manage it.
- * Direct (chapterless) series are a single unit and keep the instant two-state behavior.
+ * Direct (chapterless) series are a single unit and keep the instant two-state behavior — and, being
+ * chapterless, their manage/watch tap goes to the Downloads screen's own row instead of a chapter
+ * roster with nothing in it (see `downloads/nav.ts`).
  */
 import { useQuery } from '@tanstack/react-query';
 import { View } from 'react-native';
@@ -17,6 +19,7 @@ import { ActionButton } from '@/components/series/action-button';
 import { dlGetSeries } from '@/data/api';
 import { deriveSeriesState, seriesFraction } from '@/data/downloads/derive';
 import { enqueueChapter } from '@/data/downloads/engine';
+import { downloadsScreenRoute } from '@/data/downloads/nav';
 import { queryKeys } from '@/data/queries';
 import type { Chapter } from '@/data/types';
 import { groupChapters } from '@/lib/chapter-order';
@@ -62,7 +65,7 @@ export function SeriesDownloadButton({
   const totalGroups = groups?.length ?? 0;
   const partial = !direct && state === 'complete' && totalGroups > 0 && completeGroups < totalGroups;
 
-  // Everything routes to the per-series download screen — with `select=1` when the intent is
+  // Chaptered series route to the per-series download screen — with `select=1` when the intent is
   // picking chapters to download, without it when it's watching/managing what's already there.
   const openSeriesDownloads = (select: boolean) =>
     router.push({
@@ -77,7 +80,10 @@ export function SeriesDownloadButton({
         ...(author ? { author } : {}),
       },
     });
-  const openDownloads = () => openSeriesDownloads(false);
+  // Watching/managing: a direct series has no chapter roster to open, so it goes to its row on the
+  // Downloads screen; a chaptered one keeps the roster.
+  const openDownloads = () =>
+    direct ? router.push(downloadsScreenRoute(bridgeId, seriesId)) : openSeriesDownloads(false);
   const openSelect = () => openSeriesDownloads(true);
 
   let button;

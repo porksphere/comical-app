@@ -53,6 +53,7 @@ import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
 import { MaxContentWidth, SettingsGutter, SettingsRowHeight, Spacing } from '@/constants/theme';
 import { dlDeleteChapter, dlGetSeries } from '@/data/api';
+import { DIRECT_DOWNLOAD_CHAPTER_ID } from '@/data/downloads/constants';
 import { bySortValue, chapterSortValue, displayChapterState } from '@/data/downloads/derive';
 import {
   enqueueChapters,
@@ -238,7 +239,17 @@ export default function SeriesDownloadsScreen() {
       return [
         reuse({
           key: c.chapterId,
-          name: c.chapterName ?? (c.number !== undefined ? `Chapter ${c.number}` : c.chapterId),
+          // A direct (chapterless) series files its single page set under a RESERVED chapter id —
+          // never a name to show, so label it for what it is. (The series page's Download button
+          // sends a direct series to the Downloads screen instead of here, but its row there still
+          // opens this screen.)
+          name:
+            c.chapterName ??
+            (c.chapterId === DIRECT_DOWNLOAD_CHAPTER_ID
+              ? 'All pages'
+              : c.number !== undefined
+                ? `Chapter ${c.number}`
+                : c.chapterId),
           desc: chapterDescription(c, displayChapterState(c)),
           c,
           unread: false,

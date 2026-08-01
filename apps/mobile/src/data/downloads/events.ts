@@ -33,6 +33,15 @@ import { clearDownloadIndex, forgetChapter, forgetSeries, refreshChapterIndex } 
  * Patch the cached storage-usage tree in place as a chapter downloads, WITHOUT a refetch. The
  * chapter's completed pages / bytes / state advance, and the series + total rollups follow. Cheap: a
  * shallow immutable patch, no store round-trip.
+ *
+ * A patch can only advance a chapter the cached tree ALREADY knows about. When the tree predates the
+ * chapter, the patch must write NOTHING — `setQueryData` refreshes the entry's timestamp and clears
+ * the `invalidated` flag the enqueue set, so a "return the old tree unchanged" no-op still left the
+ * Downloads screen mounting on a stale tree and never refetching. That's how a freshly enqueued
+ * series stayed invisible there for its whole download: for a chaptered series the first chapter to
+ * COMPLETE invalidates and heals the list within seconds, but a direct (chapterless) series is one
+ * unit — nothing invalidates until the entire download finishes, so it only appeared once done.
+ * Instead of writing, ask for a refetch from host truth (coalesced), which lands the missing chapter.
  */
 function patchProgressCaches(
   bridgeId: string,
@@ -53,9 +62,13 @@ function patchProgressCaches(
     state,
     ...(pageCount ? { pageCount } : {}),
   });
+  // `undefined` from an updater is a true no-op in TanStack Query — the entry is left exactly as it
+  // was, invalidation included. These flags then ask for the refetch that heals the stale tree.
+  let usageStale = false;
+  let seriesStale = false;
   // The Downloads screen's storage-usage tree.
   queryClient.setQueryData<StorageUsage>(queryKeys.downloadsUsage(), (old) => {
-    if (!old) return old;
+    if (!old) return undefined; // never fetched — nothing cached to patch or to go stale
     let hit = false;
     const bySeries = old.bySeries.map((se) => {
       if (se.bridgeId !== bridgeId || se.seriesId !== seriesId) return se;
@@ -66,23 +79,33 @@ function patchProgressCaches(
       });
       return { ...se, chapters, bytes: chapters.reduce((n, c) => n + c.bytes, 0) };
     });
-    if (!hit) return old; // chapter not in the cached tree (e.g. first page before the query populated)
+    if (!hit) {
+      usageStale = true; // chapter not in the cached tree — that tree is out of date, refetch it
+      return undefined;
+    }
     return { ...old, bySeries, totalBytes: bySeries.reduce((n, se) => n + se.bytes, 0) };
   });
   // The series screen's own download detail (drives the series Download button / context menu).
   queryClient.setQueryData<{ series: DownloadedSeries; chapters: DownloadedChapter[] } | null>(
     queryKeys.seriesDownloads(bridgeId, seriesId),
     (old) => {
-      if (!old) return old;
+      if (!old) return undefined; // never fetched, or a cached "not downloaded" the enqueue already invalidated
       let hit = false;
       const chapters = old.chapters.map((c) => {
         if (c.chapterId !== chapterId) return c;
         hit = true;
         return patch(c);
       });
-      return hit ? { ...old, chapters } : old;
+      if (!hit) {
+        seriesStale = true;
+        return undefined;
+      }
+      return { ...old, chapters };
     },
   );
+  if (usageStale && seriesStale) invalidate(bridgeId, seriesId);
+  else if (usageStale) invalidateUsage();
+  else if (seriesStale) invalidateSeries(bridgeId, seriesId);
 }
 
 // Invalidations are COALESCED on a trailing timer: a 300-chapter bulk enqueue emits one 'chapter'
@@ -118,6 +141,12 @@ function invalidate(bridgeId: string, seriesId: string): void {
 
 function invalidateUsage(): void {
   pendingUsage = true;
+  scheduleFlush();
+}
+
+/** Just one series' manifest — when the storage tree is already in step and only this is behind. */
+function invalidateSeries(bridgeId: string, seriesId: string): void {
+  pendingSeries.set(`${bridgeId} ${seriesId}`, [bridgeId, seriesId]);
   scheduleFlush();
 }
 
