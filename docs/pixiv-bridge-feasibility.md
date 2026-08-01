@@ -15,6 +15,51 @@ with file references so the next person doesn't have to re-derive it.
 
 ---
 
+## What's actually on Pixiv
+
+Worth stating plainly, because Pixiv is not a comic site — it's an art-posting social network that
+*contains* comics. Everything a user posts is a "work", and there are four kinds:
+
+| Work type | What it is | Readable here? |
+|---|---|---|
+| **Illustration** | The default and overwhelmingly the most common. One image — or up to **200** in one work. So "a single picture" and "a 20-image variant set" are the same object with a different page count. | Yes — a flat page sequence |
+| **Manga** | Same images-in-a-work structure, but flagged as manga by the uploader. Gets the page-turning reader instead of the scroll view, and — critically — **only manga can go into a Series** | Yes, and this is the real comic content |
+| **Ugoira** (うごイラ, "moving illustration") | A short looping animation: a set of PNG/JPEG frames plus a per-frame duration. Higher quality than a GIF and pausable. | **No** — it's animation, not pages |
+| **Novel** | Pure text, 21M+ works. Own reader with font/size and vertical-vs-horizontal Japanese text modes, chapter prev/next, and "markers" instead of bookmarks. | **No** — no images at all |
+
+Above the individual work there are two groupings, and they are not the same thing:
+
+- **Series (連載)** — an author serializing *their own* sequential works into an ordered, numbered
+  run. Restricted to **manga and novels**; you cannot put illustrations in a series. If someone
+  posted comic pages as "illustration", they have to change the work's type before it can join one.
+  This is the one native Pixiv concept that maps onto "series → chapter" without inventing anything.
+- **Collections** (newer, beta) — a user-curated page mixing illustrations, manga, novels, ugoira,
+  links to other pixiv services and external links. Spans creators. A board/playlist, not a readable
+  unit.
+
+And in practice the thing most users actually follow is neither: it's the **artist**. A profile is a
+reverse-chronological feed of that person's works.
+
+Discovery is mostly **tags** (Touhou and "original" each exceed a million works), **rankings**
+(daily/weekly/monthly, plus rookie, original, AI-generated, and separate "popular among male/female
+users", each split by work type), **bookmarks** (public or private, with your own tags and notes),
+and **follows**. Ratings are all-ages, **R-18** (sexual) and **R-18G** (gore/grotesque), filtered
+separately and both off by default. AI-generated works are their own flag with their own ranking and
+filter.
+
+Several things branded "pixiv" are separate services with separate catalogs and are easy to confuse
+for the main site: **pixiv COMIC** (commercially published manga, free sample chapters — not user
+uploads), **pixivFANBOX** (paid creator subscriptions), **BOOTH** (marketplace), **pixiv Sketch**
+(casual sketching), **pixiv Requests** (commissions), **pixiv Encyclopedia** (fandom wiki), and
+**pixivision** (editorial features). A "Pixiv bridge" means the main site only.
+
+**What this means for scope:** manga works and manga Series are the genuine comic content;
+multi-page illustrations read fine as flat page sequences; single illustrations work but are an art
+feed rather than reading. **Ugoira and novels are out of scope** — one is an animation with no page
+model, the other has no images. Both need to be filtered out rather than rendered badly.
+
+---
+
 ## What Pixiv actually needs from a host
 
 | Need | Why |
@@ -217,25 +262,29 @@ in hand.
 
 **Do the per-series `direct` flag; don't build a feed category yet.**
 
-Sidestep the pagination problem in v1 by having the bridge cap an artist's chapter list at a
-recent-works window (the latest ~200 artworks, newest first). That's honest, it's what a reader
-actually wants, and it needs no contract change. Pixiv's own UI paginates at 48/page, so nobody is
-scrolling 5,000 entries anyway.
+Once you look at what Pixiv actually has (above), the mapping falls out on its own — and notably
+*not* the way an earlier draft of this document guessed. Pixiv has a **native Series concept**, it is
+authored and ordered and numbered, and it exists specifically for manga. That's the chaptered
+mapping. Artist-as-series was an invention to work around not having one.
+
+| Pixiv object | Maps to | Why |
+|---|---|---|
+| **Manga / novel Series** | series → chapters | Native, authored, ordered. No invention needed |
+| **Standalone manga or illustration work** | direct series (flat pages) | Exactly `direct-example`'s shape |
+| **Artist** | *optionally* a chaptered series | Useful for follow + update tracking, but secondary |
+| **Ugoira, novels** | excluded | Animation and text — neither has a page model |
+
+Per-series `direct` is what lets the first two coexist in one bridge, keyed by an id prefix
+(`series:789` chaptered, `illust:123` direct). That's the whole reason to do it.
+
+This also mostly dissolves the pagination worry. A native series has tens of episodes, not thousands
+— it's only *artist*-as-series that produces an unbounded chapter list, and that's now the optional
+tier rather than the primary mapping. If it ships, window it to recent works (the latest ~200,
+newest first); Pixiv's own UI paginates at 48/page, so nobody is scrolling 5,000 entries anyway.
 
 If feeds later prove to be a real category — and they might, since booru-style sources have the same
 shape — `getChaptersPaged` is a separate additive capability that can land on its own schedule. The
 per-series `direct` flag is useful either way and doesn't box that in.
-
-For reference, the three mappings and what each is good for:
-
-| Mapping | Fits | Costs |
-|---|---|---|
-| **Artwork = direct series** | The reader. Matches `direct-example` exactly. Simplest. | Library fills with thousands of one-shot entries; `checkForUpdates` is meaningless (an artwork never gains pages) |
-| **Artist = series, artwork = chapter** | The *library*. Following an artist becomes a library entry, new artwork a new chapter; `checkForUpdates` and the Activity tab start working | An artist isn't a comic; ordering is just reverse-chronological; unpaginated chapter list |
-| **Pixiv series (`/ajax/series/{id}`) = series, episode = chapter** | Genuinely correct for Pixiv's own manga-series feature | Only covers a small slice of the site |
-
-With per-series `direct`, these stop being mutually exclusive — one bridge serves all three, keyed by
-an id prefix.
 
 ---
 
