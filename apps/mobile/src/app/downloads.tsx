@@ -6,6 +6,10 @@
  * roster — there is no inline foldout anymore. The storage bar + size accounting live on the Storage
  * screen; this page is management.
  *
+ * A `focus=<bridgeId>:<seriesId>` param scrolls that series' row into view and tints it briefly —
+ * how a DIRECT (chapterless) series' Download button lands here, since it has no chapter roster of
+ * its own to open (see `data/downloads/nav.ts`).
+ *
  * This reads the `/downloads` storage tree through `api.ts`; a backend without the module yields an
  * empty tree. Mutations (delete/cancel/resume) go to the HOST's download engine — embedded or remote
  * server — which owns the blobs and aborts in-flight work; this screen only prunes the offline index
@@ -13,6 +17,7 @@
  */
 import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
+import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -41,6 +46,7 @@ import { dlDeleteChapter, dlDeleteSeries, dlStorageUsage } from '@/data/api';
 import { bySortValue, deriveSeriesState, EMPTY_STORAGE_USAGE, seriesFraction, seriesSortValue } from '@/data/downloads/derive';
 import { kickDownloads, pauseSeries, resumeSeriesDownload, retryChapter } from '@/data/downloads/engine';
 import { forgetChapter, forgetSeries } from '@/data/downloads/index-cache';
+import { seriesRowKey } from '@/data/downloads/nav';
 import { formatBytes } from '@/data/downloads/format';
 import { queryClient } from '@/data/query-client';
 import { queryKeys } from '@/data/queries';
@@ -66,7 +72,10 @@ function refresh(): void {
   void queryClient.invalidateQueries({ queryKey: queryKeys.downloadsUsage() });
 }
 
-const seriesKey = (s: { bridgeId: string; seriesId: string }) => `${s.bridgeId}:${s.seriesId}`;
+const seriesKey = (s: { bridgeId: string; seriesId: string }) => seriesRowKey(s.bridgeId, s.seriesId);
+
+/** How long a focused row stays tinted after being scrolled to (see the `focus` param). */
+const FOCUS_FLASH_MS = 2200;
 
 /** The series list, queue-first then most-recent, with per-row object identity kept via `cache`. */
 function buildRows(bySeries: StorageUsageSeries[], cache: Map<string, DlRow>): DlRow[] {
@@ -148,12 +157,24 @@ export default function DownloadsScreen() {
   // ran raw in render before). buildRows keeps stable row identities via rowCache for LegendList.
   const rows = useMemo(() => buildRows(usage.bySeries, rowCache), [usage.bySeries, rowCache]);
 
+  // ── Focused row (`focus=<bridgeId>:<seriesId>`) ───────────────────────────────
+  // Arriving from a direct series' Download button: scroll that row into view and tint it long
+  // enough to be spotted, then let it settle into an ordinary row. `focused` is what's TINTED — it
+  // clears on the timer — while the scroll runs once, guarded by a ref, so a progress tick (which
+  // remakes `rows`) can't yank the list back under a user who has scrolled away.
+  const focusKey = useLocalSearchParams<{ focus?: string }>().focus ?? '';
+  const [focused, setFocused] = useState(focusKey);
+  const didScrollToFocus = useRef(false);
+
   // ── Multi-select mode (the shared select-mode chrome) — bulk-manage SERIES here ──
   const mode = useSelectMode();
   const selecting = mode.selecting;
   const allKeys = useMemo(() => rows.map((r) => r.key), [rows]);
   const ms = useMultiSelect(allKeys);
-  const listExtra = useMemo(() => ({ selected: ms.selected, selecting }), [ms.selected, selecting]);
+  const listExtra = useMemo(
+    () => ({ selected: ms.selected, selecting, focused }),
+    [ms.selected, selecting, focused],
+  );
   const toggleSelecting = () => {
     if (selecting) ms.clear();
     mode.toggle();
@@ -171,6 +192,22 @@ export default function DownloadsScreen() {
     scrollYRef,
     selecting,
   });
+  // The focus scroll + its flash timer. Runs when the row first EXISTS (the list arrives async), so
+  // it depends on the row index rather than on `rows` itself — a progress tick doesn't re-trigger it.
+  const focusIndex = focused ? rows.findIndex((r) => r.key === focused) : -1;
+  useEffect(() => {
+    if (!focused || focusIndex < 0 || didScrollToFocus.current) return;
+    didScrollToFocus.current = true;
+    // Next frame: the list has just been handed these rows and can't scroll to an index it hasn't
+    // laid out yet.
+    const scroll = setTimeout(() => listRef.current?.scrollToIndex({ index: focusIndex, animated: true }), 0);
+    const clear = setTimeout(() => setFocused(''), FOCUS_FLASH_MS);
+    return () => {
+      clearTimeout(scroll);
+      clearTimeout(clear);
+    };
+  }, [focused, focusIndex]);
+
   const allSelected = allKeys.length > 0 && ms.count === allKeys.length;
   const stagingRows = [
     {
@@ -305,6 +342,11 @@ export default function DownloadsScreen() {
         {index < rows.length - 1 && (
           <View pointerEvents="none" style={[styles.divider, { backgroundColor: theme.hairline }]} />
         )}
+        {/* The arrived-here-for-this-series flash (see the `focus` param). Painted OVER the row, not
+            behind it: a swipeable row fills its own opaque background, which would hide a tint. */}
+        {item.key === focused && (
+          <View pointerEvents="none" style={[styles.focusFlash, { backgroundColor: theme.accent }]} />
+        )}
       </View>
     );
   };
@@ -418,5 +460,16 @@ const styles = StyleSheet.create({
     left: 0,
     right: -SettingsGutter,
     height: StyleSheet.hairlineWidth,
+  },
+  // The focused row's brief accent wash — same extent as the divider, translucent so the row's own
+  // label/radial read straight through it.
+  focusFlash: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: -SettingsGutter,
+    opacity: 0.14,
+    borderRadius: 8,
   },
 });

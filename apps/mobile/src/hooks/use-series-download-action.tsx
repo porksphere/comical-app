@@ -6,12 +6,14 @@
  *   - not downloaded, chaptered → opens the chapter-selection screen (`/download-select`, which
  *     fetches the chapter list itself),
  *   - not downloaded, direct → enqueues the series' single page set immediately,
- *   - already downloading / downloaded → opens the Downloads screen focused on this series.
+ *   - already downloading / downloaded → opens the per-series chapter roster, or — for a direct
+ *     (chapterless) series, which has no roster — the Downloads screen focused on its own row.
  */
 import { useQuery } from '@tanstack/react-query';
 
 import { deriveSeriesState } from '@/data/downloads/derive';
 import { enqueueChapter } from '@/data/downloads/engine';
+import { downloadsScreenRoute } from '@/data/downloads/nav';
 import { dlGetSeries } from '@/data/api';
 import { queryKeys } from '@/data/queries';
 import { useRouter } from '@/lib/nav';
@@ -48,8 +50,13 @@ export function useSeriesDownloadAction(
 
   const onPress = () => {
     if (!bridgeId) return;
-    // Already tracked → the per-series download screen, to watch/manage it.
+    // Already tracked → somewhere to watch/manage it: the Downloads screen's own row for a direct
+    // (chapterless) series, the per-series chapter roster for a chaptered one.
     if (state !== undefined) {
+      if (direct) {
+        router.push(downloadsScreenRoute(bridgeId, seriesId));
+        return;
+      }
       router.push({
         pathname: '/series-downloads',
         params: {
