@@ -348,6 +348,7 @@ export function ChapterScrollList({
   footer,
   isLarge,
   topInset = 0,
+  bottomInset = 0,
   onOpenChapter,
   sharedValues,
   onScrollEndDrag,
@@ -371,6 +372,9 @@ export function ChapterScrollList({
   isLarge: boolean;
   /** Height of the overlaying top bar, so the first content clears it (and scrolls under its frost). */
   topInset?: number;
+  /** Extra bottom padding — the series-reader embedding oversizes this list's viewport below the
+   *  screen and passes the same amount here so the scroll extent stays honest. */
+  bottomInset?: number;
   /** When set, opening a chapter version is handed HERE instead of pushing `/reader` (the
    *  preferred-group side effect still applies first). Used by the experimental series-reader
    *  page, whose details panel feeds its own in-place reader rather than navigating. */
@@ -693,7 +697,7 @@ export function ChapterScrollList({
       }
       contentContainerStyle={{
         paddingTop: topInset + BarContentGap,
-        paddingBottom: insets.bottom + Spacing.five,
+        paddingBottom: insets.bottom + Spacing.five + bottomInset,
         // Large screens cap + centre the whole list at MaxTopLevelWidth (via largeSidePad); small
         // screens just inset by Spacing.four.
         ...(isLarge
@@ -1132,6 +1136,7 @@ export function PageThumbList({
   header,
   footer,
   topInset = 0,
+  bottomInset = 0,
   onOpenPage,
   sharedValues,
   onScrollEndDrag,
@@ -1148,6 +1153,8 @@ export function PageThumbList({
   header?: ReactElement | null;
   /** Height of an overlaying top bar, so the first row clears it (and scrolls under its frost). */
   topInset?: number;
+  /** See ChapterScrollList's `bottomInset`. */
+  bottomInset?: number;
   /** Related-series rails — the list footer, below the grid and the "Show all"
    *  button (while collapsed). */
   footer?: ReactElement | null;
@@ -1218,7 +1225,7 @@ export function PageThumbList({
       columnWrapperStyle={{ gap }}
       contentContainerStyle={{
         paddingTop: BarContentGap + topInset,
-        paddingBottom: insets.bottom + Spacing.five,
+        paddingBottom: insets.bottom + Spacing.five + bottomInset,
         paddingLeft: sidePad,
         paddingRight: sidePad,
       }}

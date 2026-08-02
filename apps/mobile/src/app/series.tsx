@@ -335,6 +335,7 @@ export function SeriesBody({
   coverAspect,
   onCoverLoad,
   topInset,
+  bottomInset,
   onStartReading,
   onOpenChapter,
   onOpenPage,
@@ -367,6 +368,9 @@ export function SeriesBody({
   /** Top inset for the owning scroller — defaults to this screen's overlaying TopBar height.
    *  The series-reader embedding passes its own (its details card has no top bar). */
   topInset?: number;
+  /** Extra bottom padding for the owning scroller — the series-reader embedding oversizes its
+   *  list viewport below the screen and compensates the scroll extent with this. */
+  bottomInset?: number;
   /** Replaces the Read button / cover tap's "open `/reader` at the resume point" — the
    *  series-reader embedding returns to its own in-place reader instead. */
   onStartReading?: () => void;
@@ -776,6 +780,7 @@ export function SeriesBody({
         bridgeId={bridgeId}
         header={<View style={styles.innerNoPad}>{heroBlock}</View>}
         footer={relatedRailsEl}
+        bottomInset={bottomInset}
         onOpenPage={onOpenPage}
         sharedValues={sharedValues}
         onScrollEndDrag={onScrollEndDrag}
@@ -821,6 +826,7 @@ export function SeriesBody({
       footer={relatedRailsEl}
       isLarge={isLarge}
       topInset={topBarInset}
+      bottomInset={bottomInset}
       onOpenChapter={onOpenChapter}
       sharedValues={sharedValues}
       onScrollEndDrag={onScrollEndDrag}
