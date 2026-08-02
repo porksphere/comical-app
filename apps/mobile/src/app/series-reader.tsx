@@ -576,6 +576,12 @@ export default function SeriesReaderScreen() {
   const readerTintStyle = useAnimatedStyle(() => ({
     opacity: 0.18 * Math.min(1, progress.value / FADE_WINDOW),
   }));
+  // The separating hairlines only exist where there's a SEAM: the paged top edge always meets the
+  // docked details, but the bottom edge (and webtoon's sides) sit flush with the screen at rest —
+  // those fade in the instant the card starts traveling and are gone when it's fully active.
+  const travelEdgeStyle = useAnimatedStyle(() => ({
+    opacity: Math.min(1, Math.max(progress.value, dismiss.value) * 20),
+  }));
   const detailsContentStyle = useAnimatedStyle(() => {
     const reveal = Math.min(1, progress.value / FADE_WINDOW);
     // Freeze the iOS return pull's rubber-band: the scroll's own visual offset is cancelled by a
@@ -687,12 +693,7 @@ export default function SeriesReaderScreen() {
             { top: dockInset, width, height: readerH, borderRadius: cardRadius },
             readerCardStyle,
           ]}>
-          <View
-            style={[
-              styles.readerClip,
-              settings.mode === 'paged' ? styles.readerEdgesPaged : styles.readerEdgesWebtoon,
-              { borderRadius: cardRadius },
-            ]}>
+          <View style={[styles.readerClip, { borderRadius: cardRadius }]}>
           {error ? (
             <View style={styles.centerFill}>
               <RetryBlock message={error} onRetry={refetch} />
@@ -736,6 +737,19 @@ export default function SeriesReaderScreen() {
           )}
             {/* The reader's tint, matched to the details fade — separates the lifting card. */}
             <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.readerTint, readerTintStyle]} />
+            {/* Separating hairlines, only where a seam exists: paged's top edge always meets the
+                docked details; its bottom edge (and webtoon's sides) only once the card travels. */}
+            {settings.mode === 'paged' ? (
+              <>
+                <View pointerEvents="none" style={[styles.hairlineH, { top: 0 }]} />
+                <Animated.View pointerEvents="none" style={[styles.hairlineH, { bottom: 0 }, travelEdgeStyle]} />
+              </>
+            ) : (
+              <>
+                <Animated.View pointerEvents="none" style={[styles.hairlineV, { left: 0 }, travelEdgeStyle]} />
+                <Animated.View pointerEvents="none" style={[styles.hairlineV, { right: 0 }, travelEdgeStyle]} />
+              </>
+            )}
             {/* Webtoon keeps the floating Details pill; paged mode's affordance is the docked
                 details sliver above the card. */}
             {settings.mode === 'webtoon' && (
@@ -1259,17 +1273,21 @@ const styles = StyleSheet.create({
     backgroundColor: READER_BACKDROP,
     overflow: 'hidden',
   },
-  // The card's separating hairlines sit on its travel edges: top/bottom while it lifts vertically
-  // (paged), the sides while it slides horizontally (webtoon).
-  readerEdgesPaged: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: READER_EDGE,
+  // Seam hairlines, drawn as overlays so their visibility can follow the card's travel (a border
+  // can't fade per-edge). Clipped by the card's rounded corners like everything else.
+  hairlineH: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: READER_EDGE,
   },
-  readerEdgesWebtoon: {
-    borderLeftWidth: StyleSheet.hairlineWidth,
-    borderRightWidth: StyleSheet.hairlineWidth,
-    borderColor: READER_EDGE,
+  hairlineV: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: StyleSheet.hairlineWidth,
+    backgroundColor: READER_EDGE,
   },
   readerTint: {
     backgroundColor: '#000',
