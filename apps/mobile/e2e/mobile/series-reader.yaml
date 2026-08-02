@@ -6,8 +6,8 @@
 #
 # Journey: enable the toggle -> Browse -> tap a card (the default mock bridge is chaptered, so
 # this exercises the chapter-resolution path) -> assert the reader chrome came up directly ->
-# reveal the details card via the chrome's Details pill -> assert the real series content ->
-# tap a chapter row -> the card slides away and the reader is back on that chapter.
+# reveal the details via the chrome's Details pill (the reader slides away) -> assert the real
+# series content -> tap a chapter row -> the reader slides back on that chapter.
 # (The pill, not a swipe, is the reveal step: it's the guaranteed path — a fit-width page taller
 # than the viewport takes vertical drags for its own content-pan — and it gives this flow a
 # deterministic tap target.)
@@ -50,14 +50,14 @@ appId: com.porksphere.comical
 - assertVisible:
     id: "reader.toolbar.back"
 
-# Reveal the details card: it renders the series screen's own body (cover, action column, tags,
-# chapters, rails), so asserting its Read button proves the real content is up.
+# Reveal the details (the reader card slides away): they render the series screen's own body
+# (cover, action column, tags, chapters, rails) — the Read button proves the real content is up.
 - tapOn:
     id: "series-reader.details"
 - assertVisible:
     id: "series.action.read"
 
-# Tapping a chapter row hands it to the in-place reader — the card slides away.
+# Tapping a chapter row hands it to the in-place reader — the reader card slides back over.
 - scrollUntilVisible:
     element:
       id: "series\\.chapter\\..*"

@@ -8,7 +8,7 @@
 #   - the toggle has no competing accessibilityLabel, so its testID works.
 #   - reader back asserts on "Close reader" (reader.toolbar.back's aria-label), the Details pill
 #     taps on "Show series details", the card's grab-handle on "Back to reader" — aria-label wins.
-#   - the card renders series.tsx's real SeriesBody; "series.action.read" (no competing label —
+#   - the details render series.tsx's real SeriesBody; "series.action.read" (no competing label —
 #     same anchor browse-to-reader.yaml uses) proves the real series content is up.
 #   - the chapter-row round-trip stays mobile-only: reaching rows below the fold needs scrolling
 #     the card's internal list, which Maestro-web can't drive in this app's locked-window layout
@@ -37,8 +37,8 @@ url: http://localhost:4000/comical-app
 - assertVisible:
     id: "Close reader"
 
-# Reveal the details card via the Details pill (web can't swipe over the pager — it owns its whole
-# touch surface; the pill is the guaranteed path). The Read button proves the real SeriesBody is up.
+# Reveal the details via the Details pill — the reader card slides away (web can't swipe over the
+# pager; the pill is the guaranteed path). The Read button proves the real SeriesBody is up.
 - tapOn:
     id: "Show series details"
 - assertVisible:

@@ -3,13 +3,29 @@ import { Image, type ImageLoadEventData } from 'expo-image';
 import { useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { BackHandler, Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import {
+  BackHandler,
+  Platform,
+  Pressable,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, {
+  Easing,
+  runOnJS,
+  useAnimatedReaction,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
-import { ChevronDownIcon } from '@/components/icons/ui-icons';
+import { ChevronDownIcon, ChevronRightIcon, ChevronUpIcon } from '@/components/icons/ui-icons';
 import { ChapterNavigator } from '@/components/reader/chapter-navigator';
 import { PagedReader, type PagedReaderHandle, type ReaderPageItem } from '@/components/reader/paged-reader';
 import { ProgressPill } from '@/components/reader/progress-pill';
@@ -44,15 +60,19 @@ import { SeriesBody } from './series';
 
 // EXPERIMENTAL series reader page (Settings → General → Experimental). A series opened from a card
 // lands HERE instead of on `/series`: the reader is up immediately — same paged/webtoon readers,
-// chrome, scrubber, and progress recording as `/reader` — and the series details live on a
-// screen-sized, round-cornered card (X-media-viewer style) revealed over it:
-//   - paged mode (horizontal reading): the card slides up from the BOTTOM — swipe up to reveal.
-//   - webtoon mode (vertical reading): the card slides in from the LEFT — swipe right to reveal.
+// chrome, scrubber, and progress recording as `/reader` — presented as the TOP layer, a shadowed
+// card with device-matched corner rounding, with the series details as the base layer BENEATH it
+// (X-media-viewer style — the media is what you swipe away):
+//   - paged mode (horizontal reading): swipe UP throws the reader up off the details.
+//   - webtoon mode (vertical reading): swipe RIGHT slides the reader off to the right.
 // The reveal favors whichever view is active: a partial drag springs back, and only a
-// deep-enough drag (25% of the axis) or a flick commits to the other view. While dragging you see
-// the card's curved edges over the (slightly scaled, dimmed) reader. The chrome's "Details" pill
-// and the card's grab-handle are the guaranteed non-gesture paths — needed on web (the web pager
-// owns its whole touch surface) and under a fit-width page taller than the viewport (its vertical
+// deep-enough drag (25% of the axis) or a flick commits to the other view. Coming back: on iOS,
+// pulling the details list past its top rubber-bands the reader back down 1:1 (the same
+// native-bounce sourcing usePullToRefresh uses) and releasing past PULL_COMMIT_PX commits —
+// this works from anywhere on the list, not just its top edge; Android/web keep a
+// manual-activation pan gated on the list being at its top. The chrome's "Details" pill and the
+// details' grab-handle are the guaranteed non-gesture paths — needed on web (the web pager owns
+// its whole touch surface) and under a fit-width page taller than the viewport (its vertical
 // content-pan rightly wins the drag; see zoomable-page's `contentPan`).
 //
 // The details card renders series.tsx's OWN `SeriesBody` — cover hero, action column, tag/meta/
@@ -80,14 +100,27 @@ const CHROME_HIDE_MS = 3000;
 const CHROME_AUTO_HIDE = process.env.EXPO_PUBLIC_COMICAL_DEMO_FAST !== '1';
 const WARM_BEHIND = 2;
 const IS_WEB = Platform.OS === 'web';
+const IS_IOS = Platform.OS === 'ios';
 // The reader surface's tone — matches reader.tsx's backdrop (`#reader-view`'s #0f0f0f, not pure black).
 const READER_BACKDROP = '#0f0f0f';
-// The details card's corner radius — the "curved screen edge" read while it's mid-drag.
-const CARD_RADIUS = 24;
 // Reveal hysteresis: the drag must cover this fraction of the axis (or flick past FLICK_VELOCITY)
 // to commit to the other view; anything less springs back to the active one.
 const COMMIT_FRACTION = 0.25;
 const FLICK_VELOCITY = 900;
+// iOS return pull: how far past the details list's top the rubber-band must be pulled, at release,
+// to bring the reader back. Roughly usePullToRefresh's trigger feel.
+const PULL_COMMIT_PX = 80;
+
+/** Best-effort match for the DEVICE's screen corner radius (there's no public API for the real
+ *  value): modern edge-to-edge iPhones draw ~54pt continuous corners, older flat-cornered ones
+ *  none; Android is a guess at the common ballpark; web windows are square. Because the reader
+ *  card is exactly screen-sized, a matching radius is invisible at rest (it aligns with the
+ *  physical corners) and reads as the screen itself lifting once the drag starts. */
+function screenCornerRadius(insetBottom: number): number {
+  if (IS_WEB) return 0;
+  if (IS_IOS) return insetBottom > 0 ? 54 : 8;
+  return 28;
+}
 
 // Warm expo-image's cache around the read position — a trimmed copy of reader.tsx's warmPrefetch
 // (same dedup memo, same "resolve then prefetch only http(s)" rule; see there for the reasoning).
@@ -295,6 +328,9 @@ export default function SeriesReaderScreen() {
   // downward drag only pulls the card away when its content is already at the top.
   const detailsScrollOffset = useSharedValue(0);
   const sharedValues = useMemo(() => ({ scrollOffset: detailsScrollOffset }), [detailsScrollOffset]);
+  // UI-thread mirror of `detailsActive`, for the worklets below (the iOS pull-follow must stop the
+  // instant a commit animation takes over `progress`).
+  const detailsActiveSV = useSharedValue(false);
 
   // JS-side half of a commit — deliberately closes over nothing but state setters (no shared
   // values, no timer refs), so the gesture worklets can `runOnJS` it; the worklets animate
@@ -310,10 +346,32 @@ export default function SeriesReaderScreen() {
   // Full JS-side reveal (pill, grab-handle, hardware back, chapter/page intents).
   const setRevealed = useCallback(
     (to: 0 | 1) => {
+      detailsActiveSV.set(to === 1);
       progress.set(withTiming(to, { duration: 240, easing: Easing.out(Easing.cubic) }));
       commitReveal(to);
     },
-    [progress, commitReveal],
+    [progress, detailsActiveSV, commitReveal],
+  );
+
+  // iOS return pull: while the details are up, the list's top overscroll (native rubber-band —
+  // `scrollOffset` goes negative) drags the reader back down 1:1 from anywhere on the list, and
+  // a release short of the threshold lets the bounce carry it back up. The commit itself is the
+  // release (`onScrollEndDrag` below), mirroring usePullToRefresh's iOS sourcing.
+  useAnimatedReaction(
+    () => detailsScrollOffset.value,
+    (off) => {
+      if (!IS_IOS) return;
+      if (!detailsActiveSV.value) return;
+      progress.set(Math.max(0, Math.min(1, 1 + off / height)));
+    },
+    [height, detailsScrollOffset, detailsActiveSV, progress],
+  );
+  const onDetailsScrollEndDrag = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (!IS_IOS || !detailsActive) return;
+      if (e.nativeEvent.contentOffset.y <= -PULL_COMMIT_PX) setRevealed(0);
+    },
+    [detailsActive, setRevealed],
   );
 
   // Android hardware back: details open → return to the reader instead of popping the screen.
@@ -344,6 +402,7 @@ export default function SeriesReaderScreen() {
           })
           .onEnd((e) => {
             const open = -e.translationY / height > COMMIT_FRACTION || e.velocityY < -FLICK_VELOCITY;
+            detailsActiveSV.set(open);
             progress.set(withTiming(open ? 1 : 0, { duration: 240, easing: Easing.out(Easing.cubic) }));
             runOnJS(commitReveal)(open ? 1 : 0);
           })
@@ -356,22 +415,24 @@ export default function SeriesReaderScreen() {
           })
           .onEnd((e) => {
             const open = e.translationX / width > COMMIT_FRACTION || e.velocityX > FLICK_VELOCITY;
+            detailsActiveSV.set(open);
             progress.set(withTiming(open ? 1 : 0, { duration: 240, easing: Easing.out(Easing.cubic) }));
             runOnJS(commitReveal)(open ? 1 : 0);
           });
-  }, [settings.mode, revealEnabled, width, height, progress, commitReveal]);
+  }, [settings.mode, revealEnabled, width, height, progress, detailsActiveSV, commitReveal]);
 
-  // Return pan — on the card. Paged mode shares the vertical axis with the card's own scroller, so
-  // it activates MANUALLY: only a clearly-downward drag that starts with the details content at its
-  // top takes the card; everything else fails fast and the list scrolls (the sheet-handoff rule).
-  // Webtoon mode's card scrolls vertically while the card travels horizontally — a plain
-  // orthogonal pan suffices.
+  // Return pan — on the details layer. Paged mode shares the vertical axis with the details' own
+  // scroller, so it activates MANUALLY: only a clearly-downward drag with the content at its top
+  // pulls the reader back down; everything else fails fast and the list scrolls. iOS doesn't use
+  // this path at all — the native bounce (reaction above) both follows the finger and commits,
+  // which is what makes the pull work from anywhere once the list is at its top. Webtoon mode's
+  // details scroll vertically while the reader travels horizontally — a plain orthogonal pan.
   const touchStartX = useSharedValue(0);
   const touchStartY = useSharedValue(0);
   const returnPan = useMemo(() => {
     return settings.mode === 'paged'
       ? Gesture.Pan()
-          .enabled(detailsActive)
+          .enabled(detailsActive && !IS_IOS)
           .manualActivation(true)
           .onTouchesDown((e) => {
             const t = e.allTouches[0]!;
@@ -400,6 +461,7 @@ export default function SeriesReaderScreen() {
           })
           .onEnd((e) => {
             const close = e.translationY / height > COMMIT_FRACTION || e.velocityY > FLICK_VELOCITY;
+            detailsActiveSV.set(!close);
             progress.set(withTiming(close ? 0 : 1, { duration: 240, easing: Easing.out(Easing.cubic) }));
             runOnJS(commitReveal)(close ? 0 : 1);
           })
@@ -412,23 +474,25 @@ export default function SeriesReaderScreen() {
           })
           .onEnd((e) => {
             const close = -e.translationX / width > COMMIT_FRACTION || e.velocityX < -FLICK_VELOCITY;
+            detailsActiveSV.set(!close);
             progress.set(withTiming(close ? 0 : 1, { duration: 240, easing: Easing.out(Easing.cubic) }));
             runOnJS(commitReveal)(close ? 0 : 1);
           });
-  }, [settings.mode, detailsActive, width, height, progress, touchStartX, touchStartY, detailsScrollOffset, commitReveal]);
+  }, [settings.mode, detailsActive, width, height, progress, touchStartX, touchStartY, detailsScrollOffset, detailsActiveSV, commitReveal]);
 
-  // The card travels on the reveal axis; the reader scales/dims slightly beneath it (X-style).
-  const cardStyle = useAnimatedStyle(() => {
+  // The reader card travels on the reveal axis (up in paged mode, right in webtoon); the details
+  // beneath pop from a slight scale-down as it clears, and their dim lifts with it (X-style).
+  const cardRadius = screenCornerRadius(insets.bottom);
+  const readerCardStyle = useAnimatedStyle(() => {
     const p = progress.value;
     return settings.mode === 'paged'
-      ? { transform: [{ translateY: (1 - p) * height }] }
-      : { transform: [{ translateX: -(1 - p) * width }] };
+      ? { transform: [{ translateY: -p * height }] }
+      : { transform: [{ translateX: p * width }] };
   }, [settings.mode, width, height]);
-  const readerFxStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: 1 - 0.04 * progress.value }],
-    borderRadius: CARD_RADIUS * progress.value,
+  const detailsFxStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: 0.96 + 0.04 * progress.value }],
   }));
-  const dimStyle = useAnimatedStyle(() => ({ opacity: 0.35 * progress.value }));
+  const dimStyle = useAnimatedStyle(() => ({ opacity: 0.3 * (1 - progress.value) }));
 
   // ── Details-card intents, routed back into the in-place reader ───────────
   const paneRef = useRef<ReaderPaneHandle>(null);
@@ -466,10 +530,59 @@ export default function SeriesReaderScreen() {
         hidden={!chromeVisible && !detailsActive}
       />
 
-      {/* The reader layer + its chrome. The reveal pan wraps the whole cell (the scrubber and a
-          zoomed page disable it), matching how SwipeDismiss wraps the readers on /reader. */}
+      {/* Base layer: the series details (series.tsx's real SeriesBody) with their grab-handle. */}
+      <GestureDetector gesture={returnPan}>
+        <Animated.View
+          testID="series-reader.details-card"
+          style={[styles.detailsLayer, { width, height }, detailsFxStyle]}>
+          <ThemedView style={styles.detailsInner}>
+            <SeriesDetailsHost
+              bridgeId={bridgeId}
+              id={id}
+              title={title}
+              bridge={bridge}
+              cover={cover}
+              isDirect={isDirect}
+              width={width}
+              sharedValues={sharedValues}
+              onScrollEndDrag={onDetailsScrollEndDrag}
+              onStartReading={startReadingFromDetails}
+              onOpenChapter={openChapterFromDetails}
+              onOpenPage={openPageFromDetails}
+            />
+            {/* Grab-handle: tap (or drag) to bring the reader back — it returns from the top in
+                paged mode, from the right in webtoon. */}
+            <Pressable
+              testID="series-reader.details-grabber"
+              onPress={() => setRevealed(0)}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel="Back to reader"
+              style={[styles.grabber, { top: insets.top + Spacing.one }]}>
+              <ThemedView type="backgroundElement" style={[styles.grabberPill, { borderColor: theme.hairline }]}>
+                {settings.mode === 'paged' ? (
+                  <ChevronDownIcon color={theme.text} size={16} />
+                ) : (
+                  <ChevronLeftIcon color={theme.text} size={16} />
+                )}
+              </ThemedView>
+            </Pressable>
+          </ThemedView>
+        </Animated.View>
+      </GestureDetector>
+
+      {/* Dim over the details, lifting as the reader clears them. */}
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.dim, dimStyle]} />
+
+      {/* Top layer: the reader as a shadowed, device-cornered card — the thing you swipe away.
+          The reveal pan wraps the whole cell (the scrubber and a zoomed page disable it), matching
+          how SwipeDismiss wraps the readers on /reader. Shadow lives on an outer, non-clipping
+          view (iOS shadows don't survive overflow: hidden); the inner view clips to the corners. */}
       <GestureDetector gesture={revealPan}>
-        <Animated.View style={[styles.readerCell, { width, height }, readerFxStyle]}>
+        <Animated.View
+          testID="series-reader.reader-card"
+          style={[styles.readerShadow, { width, height, borderRadius: cardRadius }, readerCardStyle]}>
+          <View style={[styles.readerClip, { borderRadius: cardRadius }]}>
           {error ? (
             <View style={styles.centerFill}>
               <RetryBlock message={error} onRetry={refetch} />
@@ -511,68 +624,30 @@ export default function SeriesReaderScreen() {
               onScrubActive={onScrubActive}
             />
           )}
-          <DetailsHint mode={settings.mode} visible={chromeVisible && !detailsActive} onPress={() => setRevealed(1)} />
-          {/* Toolbar outside the loaded branch, like reader.tsx: back + settings stay reachable
-              while pages are loading or the fetch failed. Series title on top, chapter beneath. */}
-          <ReaderToolbar
-            title={seriesTitle}
-            subtitle={target?.chapterName ?? ''}
-            visible={chromeVisible}
-            onBack={() => router.back()}
-            right={
-              <SettingsControl
-                bridgeId={bridgeId}
-                seriesId={id}
-                title={seriesTitle}
-                thumbnailUrl={series?.cover}
-                author={author}
-                direct={isDirect}
-              />
-            }
-          />
-        </Animated.View>
-      </GestureDetector>
-
-      {/* Dim between the reader and the card, fading in with the reveal. */}
-      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.dim, dimStyle]} />
-
-      {/* The details card: exactly screen-sized with curved edges, so mid-drag it reads as a second
-          screen sliding over the reader. Content is series.tsx's real SeriesBody. */}
-      <GestureDetector gesture={returnPan}>
-        <Animated.View
-          testID="series-reader.details-card"
-          style={[styles.detailsCard, { width, height, borderColor: theme.hairline }, cardStyle]}>
-          <ThemedView style={styles.detailsCardInner}>
-            <SeriesDetailsHost
-              bridgeId={bridgeId}
-              id={id}
-              title={title}
-              bridge={bridge}
-              cover={cover}
-              isDirect={isDirect}
-              width={width}
-              sharedValues={sharedValues}
-              onStartReading={startReadingFromDetails}
-              onOpenChapter={openChapterFromDetails}
-              onOpenPage={openPageFromDetails}
+            <DetailsHint
+              mode={settings.mode}
+              visible={chromeVisible && !detailsActive}
+              onPress={() => setRevealed(1)}
             />
-            {/* Grab-handle: the card's own way back (drag, tap, or hardware back all work). */}
-            <Pressable
-              testID="series-reader.details-grabber"
-              onPress={() => setRevealed(0)}
-              hitSlop={10}
-              accessibilityRole="button"
-              accessibilityLabel="Back to reader"
-              style={[styles.grabber, { top: insets.top + Spacing.one }]}>
-              <ThemedView type="backgroundElement" style={[styles.grabberPill, { borderColor: theme.hairline }]}>
-                {settings.mode === 'paged' ? (
-                  <ChevronDownIcon color={theme.text} size={16} />
-                ) : (
-                  <ChevronLeftIcon color={theme.text} size={16} />
-                )}
-              </ThemedView>
-            </Pressable>
-          </ThemedView>
+            {/* Toolbar outside the loaded branch, like reader.tsx: back + settings stay reachable
+                while pages are loading or the fetch failed. Series title on top, chapter beneath. */}
+            <ReaderToolbar
+              title={seriesTitle}
+              subtitle={target?.chapterName ?? ''}
+              visible={chromeVisible}
+              onBack={() => router.back()}
+              right={
+                <SettingsControl
+                  bridgeId={bridgeId}
+                  seriesId={id}
+                  title={seriesTitle}
+                  thumbnailUrl={series?.cover}
+                  author={author}
+                  direct={isDirect}
+                />
+              }
+            />
+          </View>
         </Animated.View>
       </GestureDetector>
     </ThemedView>
@@ -592,6 +667,7 @@ function SeriesDetailsHost({
   isDirect,
   width,
   sharedValues,
+  onScrollEndDrag,
   onStartReading,
   onOpenChapter,
   onOpenPage,
@@ -604,6 +680,8 @@ function SeriesDetailsHost({
   isDirect: boolean;
   width: number;
   sharedValues: Parameters<typeof SeriesBody>[0]['sharedValues'];
+  /** Release of a details-list drag — the screen's iOS return pull commits on it. */
+  onScrollEndDrag?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   onStartReading: () => void;
   onOpenChapter: (version: Chapter) => void;
   onOpenPage: (pageIndex: number) => void;
@@ -676,6 +754,7 @@ function SeriesDetailsHost({
       onOpenChapter={onOpenChapter}
       onOpenPage={onOpenPage}
       sharedValues={sharedValues}
+      onScrollEndDrag={onScrollEndDrag}
     />
   );
 }
@@ -1012,8 +1091,8 @@ function DetailsHint({
         accessibilityRole="button"
         accessibilityLabel="Show series details"
         style={styles.detailsHintPill}>
-        {/* The chevron points where the card comes FROM: below in paged mode, the left in webtoon. */}
-        {mode === 'paged' ? <ChevronDownIcon color="#fff" size={16} /> : <ChevronLeftIcon color="#fff" size={16} />}
+        {/* The chevron points where the READER goes: up and away in paged mode, right in webtoon. */}
+        {mode === 'paged' ? <ChevronUpIcon color="#fff" size={16} /> : <ChevronRightIcon color="#fff" size={16} />}
         <ThemedText type="small" style={styles.detailsHintLabel}>
           Details
         </ThemedText>
@@ -1027,7 +1106,21 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000',
   },
-  readerCell: {
+  // The reader card's two halves: the outer view owns the shadow + travel (no clipping — iOS
+  // shadows die under overflow: hidden), the inner clips content to the device-matched corners.
+  readerShadow: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    backgroundColor: READER_BACKDROP,
+    shadowColor: '#000',
+    shadowOpacity: 0.45,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 24,
+  },
+  readerClip: {
+    flex: 1,
     backgroundColor: READER_BACKDROP,
     overflow: 'hidden',
   },
@@ -1042,15 +1135,12 @@ const styles = StyleSheet.create({
   dim: {
     backgroundColor: '#000',
   },
-  detailsCard: {
+  detailsLayer: {
     position: 'absolute',
     top: 0,
     left: 0,
-    borderRadius: CARD_RADIUS,
-    borderWidth: StyleSheet.hairlineWidth,
-    overflow: 'hidden',
   },
-  detailsCardInner: {
+  detailsInner: {
     flex: 1,
   },
   grabber: {

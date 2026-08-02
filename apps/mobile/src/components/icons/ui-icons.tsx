@@ -10,6 +10,7 @@ import {
   CircleCheck,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   Compass,
   Clock,
   Database,
@@ -66,6 +67,7 @@ export const ListPlusIcon = ({ color, size = 16 }: IconProps) => <ListPlus color
 export const MoreVerticalIcon = ({ color, size = 16 }: IconProps) => <MoreVertical color={color} size={size} />;
 export const ChevronDownIcon = ({ color, size = 16 }: IconProps) => <ChevronDown color={color} size={size} />;
 export const ChevronRightIcon = ({ color, size = 16 }: IconProps) => <ChevronRight color={color} size={size} />;
+export const ChevronUpIcon = ({ color, size = 16 }: IconProps) => <ChevronUp color={color} size={size} />;
 export const ArrowUpIcon = ({ color, size = 16 }: IconProps) => <ArrowUp color={color} size={size} />;
 export const ArrowDownIcon = ({ color, size = 16 }: IconProps) => <ArrowDown color={color} size={size} />;
 // Sort affordance — the Library top bar's sort menu trigger.
