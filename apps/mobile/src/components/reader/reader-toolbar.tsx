@@ -18,6 +18,7 @@ export function ReaderToolbar({
   visible,
   onBack,
   right,
+  topInset,
 }: {
   title: string;
   subtitle: string;
@@ -26,6 +27,9 @@ export function ReaderToolbar({
   /** Rendered in the slot opposite Back. Sized like the back button so the
    *  titles stay centred whether or not anything is passed. */
   right?: ReactNode;
+  /** Overrides the safe-area top padding — the experimental series-reader's docked reader card
+   *  already sits below the notch, so its toolbar doesn't need to duck it again. */
+  topInset?: number;
 }) {
   const insets = useSafeAreaInsets();
   const style = useAnimatedStyle(() => ({
@@ -38,7 +42,7 @@ export function ReaderToolbar({
         colors={['rgba(0,0,0,0.78)', 'transparent']}
         style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}
       />
-      <View style={[styles.bar, { paddingTop: insets.top + Spacing.two }]}>
+      <View style={[styles.bar, { paddingTop: (topInset ?? insets.top) + Spacing.two }]}>
         <Pressable
           testID="reader.toolbar.back"
           onPress={onBack}

@@ -6,11 +6,11 @@
 #
 # Journey: enable the toggle -> Browse -> tap a card (the default mock bridge is chaptered, so
 # this exercises the chapter-resolution path) -> assert the reader chrome came up directly ->
-# reveal the details via the chrome's Details pill (the reader slides away) -> assert the real
-# series content -> tap a chapter row -> the reader slides back on that chapter.
-# (The pill, not a swipe, is the reveal step: it's the guaranteed path — a fit-width page taller
-# than the viewport takes vertical drags for its own content-pan — and it gives this flow a
-# deterministic tap target.)
+# reveal the details via the docked details sliver at the top (the reader slides away) -> assert
+# the real series content -> tap a chapter row -> the reader slides back on that chapter.
+# (The dock tap, not a swipe, is the reveal step: it's the guaranteed path — a fit-width page
+# taller than the viewport takes vertical drags for its own content-pan — and it gives this flow
+# a deterministic tap target.)
 #
 # Selectors (confirmed against source):
 #   - settings category:  settings.category.general               (app/(tabs)/settings.tsx)
@@ -19,7 +19,8 @@
 #   - back from General:  top-bar.back                            (components/top-bar.tsx)
 #   - series cards:       series-card.<seriesId>                  (components/series-card.tsx)
 #   - reader back:        reader.toolbar.back                     (components/reader/reader-toolbar.tsx)
-#   - Details pill:       series-reader.details                   (app/series-reader.tsx DetailsHint)
+#   - details dock:       series-reader.details-dock              (app/series-reader.tsx — the docked
+#                         sliver above the reader card; paged mode's reveal affordance)
 #   - card content:       series.action.read                      (SeriesBody's Read button)
 #   - chapter rows:       series.chapter.<key>                    (components/series/chapters-section.tsx;
 #                         a key like "1.5" slugs into extra dot-segments — match the prefix broadly)
@@ -53,7 +54,7 @@ appId: com.porksphere.comical
 # Reveal the details (the reader card slides away): they render the series screen's own body
 # (cover, action column, tags, chapters, rails) — the Read button proves the real content is up.
 - tapOn:
-    id: "series-reader.details"
+    id: "series-reader.details-dock"
 - assertVisible:
     id: "series.action.read"
 

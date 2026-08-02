@@ -132,11 +132,14 @@ function RootNavigation() {
             options={{ headerShown: false, animation: 'fade', presentation: 'containedTransparentModal' }}
           />
           {/* EXPERIMENTAL series reader page (Settings → General → Experimental): a series opened
-              from a card lands straight in its reader, info + chapters one scroll away. Fades in
-              like the reader but stays an ordinary opaque card (its info half is themed content,
-              and the back edge-swipe should keep working). Remove with the experiment — see
-              app/series-reader.tsx for the full removal list. */}
-          <Stack.Screen name="series-reader" options={{ headerShown: false, animation: 'fade' }} />
+              from a card lands straight in its reader, details docked beneath. A contained
+              transparent modal like /reader, so the swipe-down (paged) / swipe-left (webtoon)
+              dismissal can fade the screen out over the browse grid it was opened from. Remove
+              with the experiment — see app/series-reader.tsx for the full removal list. */}
+          <Stack.Screen
+            name="series-reader"
+            options={{ headerShown: false, animation: 'fade', presentation: 'containedTransparentModal' }}
+          />
           {/* These render their own <TopBar> (matching series.tsx), so the native
               stack header is hidden here too. The Settings tab is only a table of
               contents — every category below is a screen it pushes. */}

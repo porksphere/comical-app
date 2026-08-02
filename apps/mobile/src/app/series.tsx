@@ -340,6 +340,7 @@ export function SeriesBody({
   onOpenPage,
   sharedValues,
   onScrollEndDrag,
+  onScrollBeginDrag,
   wrapperStyle,
 }: {
   series: SeriesDetail;
@@ -376,6 +377,7 @@ export function SeriesBody({
   /** Pull-to-refresh wiring owned by SeriesScreen, threaded to whichever list owns the scroll. */
   sharedValues?: { scrollOffset: SharedValue<number> };
   onScrollEndDrag?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  onScrollBeginDrag?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   wrapperStyle?: Parameters<typeof Animated.View>[0]['style'];
 }) {
   const ds = useDataSource();
@@ -777,6 +779,7 @@ export function SeriesBody({
         onOpenPage={onOpenPage}
         sharedValues={sharedValues}
         onScrollEndDrag={onScrollEndDrag}
+        onScrollBeginDrag={onScrollBeginDrag}
         wrapperStyle={wrapperStyle}
       />
     );
@@ -821,6 +824,7 @@ export function SeriesBody({
       onOpenChapter={onOpenChapter}
       sharedValues={sharedValues}
       onScrollEndDrag={onScrollEndDrag}
+      onScrollBeginDrag={onScrollBeginDrag}
       wrapperStyle={wrapperStyle}
     />
   );

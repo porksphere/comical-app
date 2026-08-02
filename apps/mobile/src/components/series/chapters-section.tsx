@@ -311,6 +311,7 @@ type ChapterListRow =
 type PullListWiring = {
   sharedValues?: { scrollOffset: SharedValue<number> };
   onScrollEndDrag?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  onScrollBeginDrag?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   wrapperStyle?: Parameters<typeof Animated.View>[0]['style'];
 };
 
@@ -350,6 +351,7 @@ export function ChapterScrollList({
   onOpenChapter,
   sharedValues,
   onScrollEndDrag,
+  onScrollBeginDrag,
   wrapperStyle,
 }: {
   chapters?: Chapter[];
@@ -666,6 +668,7 @@ export function ChapterScrollList({
       style={styles.chapterList}
       sharedValues={sharedValues}
       onScrollEndDrag={onScrollEndDrag}
+      onScrollBeginDrag={onScrollBeginDrag}
       {...pullScrollProps}
       data={data}
       keyExtractor={(item) =>
@@ -1132,6 +1135,7 @@ export function PageThumbList({
   onOpenPage,
   sharedValues,
   onScrollEndDrag,
+  onScrollBeginDrag,
   wrapperStyle,
 }: {
   thumbs: (PageThumbSource | null)[];
@@ -1194,6 +1198,7 @@ export function PageThumbList({
       style={styles.pageList}
       sharedValues={sharedValues}
       onScrollEndDrag={onScrollEndDrag}
+      onScrollBeginDrag={onScrollBeginDrag}
       {...pullScrollProps}
       data={data}
       keyExtractor={(_, i) => String(i)}

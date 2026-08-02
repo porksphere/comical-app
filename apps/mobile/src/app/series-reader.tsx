@@ -110,6 +110,12 @@ const FLICK_VELOCITY = 900;
 // iOS return pull: how far past the details list's top the rubber-band must be pulled, at release,
 // to bring the reader back. Roughly usePullToRefresh's trigger feel.
 const PULL_COMMIT_PX = 80;
+// The reader card's separating edge over the (always-dark-or-light) details — a light hairline
+// reads on the dark reader surface in both themes.
+const READER_EDGE = 'rgba(255,255,255,0.25)';
+// The details-content fade (and the reader's matching tint) complete within this fraction of the
+// travel — weighted toward the START of a reveal and, symmetrically, the END of a hide.
+const FADE_WINDOW = 0.4;
 
 /** Best-effort match for the DEVICE's screen corner radius (there's no public API for the real
  *  value): modern edge-to-edge iPhones draw ~54pt continuous corners, older flat-cornered ones
@@ -331,6 +337,14 @@ export default function SeriesReaderScreen() {
   // UI-thread mirror of `detailsActive`, for the worklets below (the iOS pull-follow must stop the
   // instant a commit animation takes over `progress`).
   const detailsActiveSV = useSharedValue(false);
+  // Dismissal progress (0 at rest → 1 swiped out): the reader slides down (paged) / left (webtoon)
+  // and the whole screen fades to the browse grid beneath — the old reader's swipe-away, folded
+  // into the same pans as the reveal (opposite direction on the same axis).
+  const dismiss = useSharedValue(0);
+  // True only for a details drag that BEGAN with the list at its top — that's the drag allowed to
+  // pull the reader back (and whose rubber-band the details visually freeze against). A drag from
+  // mid-list that reaches the top just stretches like any scroll.
+  const pullArmedSV = useSharedValue(false);
 
   // JS-side half of a commit — deliberately closes over nothing but state setters (no shared
   // values, no timer refs), so the gesture worklets can `runOnJS` it; the worklets animate
@@ -353,25 +367,38 @@ export default function SeriesReaderScreen() {
     [progress, detailsActiveSV, commitReveal],
   );
 
-  // iOS return pull: while the details are up, the list's top overscroll (native rubber-band —
-  // `scrollOffset` goes negative) drags the reader back down 1:1 from anywhere on the list, and
-  // a release short of the threshold lets the bounce carry it back up. The commit itself is the
-  // release (`onScrollEndDrag` below), mirroring usePullToRefresh's iOS sourcing.
+  // iOS return pull: while the details are up, a drag that STARTS with the list at its top rides
+  // the native rubber-band (`scrollOffset` goes negative — the same bounce sourcing
+  // usePullToRefresh uses) to drag the reader back down 1:1 from anywhere on the list; releasing
+  // past the threshold commits (`onScrollEndDrag`), short of it the bounce carries it back. The
+  // details content itself is visually FROZEN against that rubber-band (see detailsContentStyle's
+  // counter-translate) — only the reader should move. `pullArmedSV` clears once the overscroll
+  // settles back to zero, so the freeze survives the bounce-back without a jump; a drag that
+  // reaches the top from mid-list never arms and just stretches natively.
+  const onDetailsScrollBeginDrag = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (!IS_IOS || !detailsActive) return;
+      if (e.nativeEvent.contentOffset.y <= 1) pullArmedSV.set(true);
+    },
+    [detailsActive, pullArmedSV],
+  );
   useAnimatedReaction(
     () => detailsScrollOffset.value,
-    (off) => {
+    (off, prevOff) => {
       if (!IS_IOS) return;
-      if (!detailsActiveSV.value) return;
-      progress.set(Math.max(0, Math.min(1, 1 + off / height)));
+      if (pullArmedSV.value && off >= -0.5 && (prevOff ?? 0) < -0.5) pullArmedSV.set(false);
+      if (!detailsActiveSV.value || !pullArmedSV.value) return;
+      if (off < 0) progress.set(Math.max(0, Math.min(1, 1 + off / height)));
     },
-    [height, detailsScrollOffset, detailsActiveSV, progress],
+    [height, detailsScrollOffset, detailsActiveSV, pullArmedSV, progress],
   );
   const onDetailsScrollEndDrag = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       if (!IS_IOS || !detailsActive) return;
+      if (!pullArmedSV.get()) return;
       if (e.nativeEvent.contentOffset.y <= -PULL_COMMIT_PX) setRevealed(0);
     },
-    [detailsActive, setRevealed],
+    [detailsActive, pullArmedSV, setRevealed],
   );
 
   // Android hardware back: details open → return to the reader instead of popping the screen.
@@ -385,41 +412,87 @@ export default function SeriesReaderScreen() {
     return () => sub.remove();
   }, [detailsActive, setRevealed]);
 
-  // Reveal pan — wraps the reader, on the cross axis of its scroll (SwipeDismiss's recipe), with
-  // hysteresis: progress follows the finger, and only a deep drag or a flick commits. Built inside
-  // useMemo like chapter-navigator's pan: the React Compiler lint can't tell a worklet that runs
-  // later on the UI thread from render code, so shared-value writes in an inline-built gesture
-  // read as render mutations.
+  // The pop back to browse, shared by the dismiss worklets (ref-free for runOnJS).
+  const goBack = useCallback(() => router.back(), [router]);
+
+  // Reveal/dismiss pan — wraps the reader, on the cross axis of its scroll (SwipeDismiss's
+  // recipe), with hysteresis: the reveal direction (up in paged, right in webtoon) throws the
+  // reader off the details, and the OPPOSITE direction is the old reader's swipe-away — the
+  // screen fades out over the browse grid beneath (the route is a contained transparent modal)
+  // and pops. Built inside useMemo like chapter-navigator's pan: the React Compiler lint can't
+  // tell a worklet that runs later on the UI thread from render code, so shared-value writes in
+  // an inline-built gesture read as render mutations. `buildPan` is called twice — a gesture
+  // instance can only attach to one detector, and the docked details sliver carries its own copy.
   const revealEnabled = !detailsActive && !readerZoomed && !scrubbing;
-  const revealPan = useMemo(() => {
-    return settings.mode === 'paged'
-      ? Gesture.Pan()
+  const [revealPan, dockPan] = useMemo(() => {
+    const buildPan = () => {
+      if (settings.mode === 'paged') {
+        return Gesture.Pan()
           .enabled(revealEnabled)
           .activeOffsetY([-20, 20])
           .failOffsetX([-15, 15])
           .onUpdate((e) => {
-            progress.set(Math.max(0, Math.min(1, -e.translationY / height)));
+            const ty = e.translationY;
+            if (ty <= 0) {
+              progress.set(Math.min(1, -ty / height));
+              dismiss.set(0);
+            } else {
+              dismiss.set(Math.min(1, ty / height));
+              progress.set(0);
+            }
           })
           .onEnd((e) => {
-            const open = -e.translationY / height > COMMIT_FRACTION || e.velocityY < -FLICK_VELOCITY;
-            detailsActiveSV.set(open);
-            progress.set(withTiming(open ? 1 : 0, { duration: 240, easing: Easing.out(Easing.cubic) }));
-            runOnJS(commitReveal)(open ? 1 : 0);
-          })
-      : Gesture.Pan()
-          .enabled(revealEnabled)
-          .activeOffsetX([-20, 20])
-          .failOffsetY([-15, 15])
-          .onUpdate((e) => {
-            progress.set(Math.max(0, Math.min(1, e.translationX / width)));
-          })
-          .onEnd((e) => {
-            const open = e.translationX / width > COMMIT_FRACTION || e.velocityX > FLICK_VELOCITY;
-            detailsActiveSV.set(open);
-            progress.set(withTiming(open ? 1 : 0, { duration: 240, easing: Easing.out(Easing.cubic) }));
-            runOnJS(commitReveal)(open ? 1 : 0);
+            const ty = e.translationY;
+            if (ty <= 0) {
+              const open = -ty / height > COMMIT_FRACTION || e.velocityY < -FLICK_VELOCITY;
+              detailsActiveSV.set(open);
+              progress.set(withTiming(open ? 1 : 0, { duration: 240, easing: Easing.out(Easing.cubic) }));
+              runOnJS(commitReveal)(open ? 1 : 0);
+            } else {
+              const out = ty / height > COMMIT_FRACTION || e.velocityY > FLICK_VELOCITY;
+              if (out) {
+                dismiss.set(withTiming(1, { duration: 160 }));
+                runOnJS(goBack)();
+              } else {
+                dismiss.set(withTiming(0, { duration: 200 }));
+              }
+            }
           });
-  }, [settings.mode, revealEnabled, width, height, progress, detailsActiveSV, commitReveal]);
+      }
+      return Gesture.Pan()
+        .enabled(revealEnabled)
+        .activeOffsetX([-20, 20])
+        .failOffsetY([-15, 15])
+        .onUpdate((e) => {
+          const tx = e.translationX;
+          if (tx >= 0) {
+            progress.set(Math.min(1, tx / width));
+            dismiss.set(0);
+          } else {
+            dismiss.set(Math.min(1, -tx / width));
+            progress.set(0);
+          }
+        })
+        .onEnd((e) => {
+          const tx = e.translationX;
+          if (tx >= 0) {
+            const open = tx / width > COMMIT_FRACTION || e.velocityX > FLICK_VELOCITY;
+            detailsActiveSV.set(open);
+            progress.set(withTiming(open ? 1 : 0, { duration: 240, easing: Easing.out(Easing.cubic) }));
+            runOnJS(commitReveal)(open ? 1 : 0);
+          } else {
+            const out = -tx / width > COMMIT_FRACTION || e.velocityX < -FLICK_VELOCITY;
+            if (out) {
+              dismiss.set(withTiming(1, { duration: 160 }));
+              runOnJS(goBack)();
+            } else {
+              dismiss.set(withTiming(0, { duration: 200 }));
+            }
+          }
+        });
+    };
+    return [buildPan(), buildPan()];
+  }, [settings.mode, revealEnabled, width, height, progress, dismiss, detailsActiveSV, commitReveal, goBack]);
 
   // Return pan — on the details layer. Paged mode shares the vertical axis with the details' own
   // scroller, so it activates MANUALLY: only a clearly-downward drag with the content at its top
@@ -480,19 +553,40 @@ export default function SeriesReaderScreen() {
           });
   }, [settings.mode, detailsActive, width, height, progress, touchStartX, touchStartY, detailsScrollOffset, detailsActiveSV, commitReveal]);
 
-  // The reader card travels on the reveal axis (up in paged mode, right in webtoon); the details
-  // beneath pop from a slight scale-down as it clears, and their dim lifts with it (X-style).
+  // Geometry: in paged mode the reader card is DOCKED below the safe area — the details stay
+  // visible in the top band (their own affordance, replacing the floating Details pill), and the
+  // dock itself is grab-able (tap or drag). Webtoon keeps the full-height reader + pill. The
+  // sliver is floored so flat-cornered/web devices still get one.
+  const dockInset = settings.mode === 'paged' ? Math.max(insets.top, 24) : 0;
+  const readerH = height - dockInset;
   const cardRadius = screenCornerRadius(insets.bottom);
+
+  // The reader card travels on the reveal axis (up in paged mode, right in webtoon); the dismiss
+  // direction is the opposite, with the old reader's shrink. The details content fades in/out on
+  // a curve weighted toward the front of a reveal / the end of a hide (fully faded in within
+  // FADE_WINDOW of the travel), matched by a slight tint on the reader; the whole details layer
+  // also fades out under a dismissal, handing the screen back to the browse grid beneath.
   const readerCardStyle = useAnimatedStyle(() => {
     const p = progress.value;
+    const d = dismiss.value;
     return settings.mode === 'paged'
-      ? { transform: [{ translateY: -p * height }] }
-      : { transform: [{ translateX: p * width }] };
+      ? { transform: [{ translateY: -p * height + d * height }, { scale: 1 - 0.05 * d }] }
+      : { transform: [{ translateX: p * width - d * width }, { scale: 1 - 0.05 * d }] };
   }, [settings.mode, width, height]);
-  const detailsFxStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: 0.96 + 0.04 * progress.value }],
+  const readerTintStyle = useAnimatedStyle(() => ({
+    opacity: 0.18 * Math.min(1, progress.value / FADE_WINDOW),
   }));
-  const dimStyle = useAnimatedStyle(() => ({ opacity: 0.3 * (1 - progress.value) }));
+  const detailsContentStyle = useAnimatedStyle(() => {
+    const reveal = Math.min(1, progress.value / FADE_WINDOW);
+    // Freeze the iOS return pull's rubber-band: the scroll's own visual offset is cancelled by a
+    // counter-translate while the pull is armed, so only the reader moves (see the reaction above).
+    const freeze = IS_IOS && pullArmedSV.value ? Math.min(0, detailsScrollOffset.value) : 0;
+    return {
+      opacity: 0.45 + 0.55 * reveal,
+      transform: [{ translateY: freeze }, { scale: 0.96 + 0.04 * reveal }],
+    };
+  });
+  const dismissFadeStyle = useAnimatedStyle(() => ({ opacity: 1 - dismiss.value }));
 
   // ── Details-card intents, routed back into the in-place reader ───────────
   const paneRef = useRef<ReaderPaneHandle>(null);
@@ -524,32 +618,39 @@ export default function SeriesReaderScreen() {
   const author = series?.meta?.find((m) => m.label === 'AUTHOR')?.value;
 
   return (
-    <ThemedView style={styles.container}>
+    // Plain (transparent) root — the route is a contained transparent modal, so a dismissal can
+    // fade the layers out over the screen beneath. The details layer supplies the opaque fill.
+    <View style={styles.container}>
       <StatusBar
-        style={detailsActive ? (scheme === 'dark' ? 'light' : 'dark') : 'light'}
-        hidden={!chromeVisible && !detailsActive}
+        style={settings.mode === 'paged' || detailsActive ? (scheme === 'dark' ? 'light' : 'dark') : 'light'}
+        hidden={settings.mode !== 'paged' && !chromeVisible && !detailsActive}
       />
 
-      {/* Base layer: the series details (series.tsx's real SeriesBody) with their grab-handle. */}
+      {/* Base layer: the series details (series.tsx's real SeriesBody) with their grab-handle.
+          The outer view fades with a dismissal (handing back to the screen beneath); the inner
+          wrapper carries the reveal fade/scale over the opaque themed fill. */}
       <GestureDetector gesture={returnPan}>
         <Animated.View
           testID="series-reader.details-card"
-          style={[styles.detailsLayer, { width, height }, detailsFxStyle]}>
+          style={[styles.detailsLayer, { width, height }, dismissFadeStyle]}>
           <ThemedView style={styles.detailsInner}>
-            <SeriesDetailsHost
-              bridgeId={bridgeId}
-              id={id}
-              title={title}
-              bridge={bridge}
-              cover={cover}
-              isDirect={isDirect}
-              width={width}
-              sharedValues={sharedValues}
-              onScrollEndDrag={onDetailsScrollEndDrag}
-              onStartReading={startReadingFromDetails}
-              onOpenChapter={openChapterFromDetails}
-              onOpenPage={openPageFromDetails}
-            />
+            <Animated.View style={[styles.detailsContent, detailsContentStyle]}>
+              <SeriesDetailsHost
+                bridgeId={bridgeId}
+                id={id}
+                title={title}
+                bridge={bridge}
+                cover={cover}
+                isDirect={isDirect}
+                width={width}
+                sharedValues={sharedValues}
+                onScrollBeginDrag={onDetailsScrollBeginDrag}
+                onScrollEndDrag={onDetailsScrollEndDrag}
+                onStartReading={startReadingFromDetails}
+                onOpenChapter={openChapterFromDetails}
+                onOpenPage={openPageFromDetails}
+              />
+            </Animated.View>
             {/* Grab-handle: tap (or drag) to bring the reader back — it returns from the top in
                 paged mode, from the right in webtoon. */}
             <Pressable
@@ -571,18 +672,27 @@ export default function SeriesReaderScreen() {
         </Animated.View>
       </GestureDetector>
 
-      {/* Dim over the details, lifting as the reader clears them. */}
-      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.dim, dimStyle]} />
-
-      {/* Top layer: the reader as a shadowed, device-cornered card — the thing you swipe away.
-          The reveal pan wraps the whole cell (the scrubber and a zoomed page disable it), matching
-          how SwipeDismiss wraps the readers on /reader. Shadow lives on an outer, non-clipping
-          view (iOS shadows don't survive overflow: hidden); the inner view clips to the corners. */}
+      {/* Top layer: the reader as a shadowed, device-cornered card — the thing you swipe away —
+          docked below the safe area in paged mode so the details stay slightly visible above it.
+          A hairline on the travel edges (top/bottom in paged, sides in webtoon) separates it from
+          the details. The reveal/dismiss pan wraps the whole cell (the scrubber and a zoomed page
+          disable it), matching how SwipeDismiss wraps the readers on /reader. Shadow lives on an
+          outer, non-clipping view (iOS shadows don't survive overflow: hidden); the inner view
+          clips to the corners. */}
       <GestureDetector gesture={revealPan}>
         <Animated.View
           testID="series-reader.reader-card"
-          style={[styles.readerShadow, { width, height, borderRadius: cardRadius }, readerCardStyle]}>
-          <View style={[styles.readerClip, { borderRadius: cardRadius }]}>
+          style={[
+            styles.readerShadow,
+            { top: dockInset, width, height: readerH, borderRadius: cardRadius },
+            readerCardStyle,
+          ]}>
+          <View
+            style={[
+              styles.readerClip,
+              settings.mode === 'paged' ? styles.readerEdgesPaged : styles.readerEdgesWebtoon,
+              { borderRadius: cardRadius },
+            ]}>
           {error ? (
             <View style={styles.centerFill}>
               <RetryBlock message={error} onRetry={refetch} />
@@ -600,7 +710,7 @@ export default function SeriesReaderScreen() {
               pages={pages}
               start={target.start}
               width={width}
-              height={height}
+              height={readerH}
               bridgeId={bridgeId}
               seriesId={id}
               seriesTitle={seriesTitle}
@@ -624,17 +734,21 @@ export default function SeriesReaderScreen() {
               onScrubActive={onScrubActive}
             />
           )}
-            <DetailsHint
-              mode={settings.mode}
-              visible={chromeVisible && !detailsActive}
-              onPress={() => setRevealed(1)}
-            />
+            {/* The reader's tint, matched to the details fade — separates the lifting card. */}
+            <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.readerTint, readerTintStyle]} />
+            {/* Webtoon keeps the floating Details pill; paged mode's affordance is the docked
+                details sliver above the card. */}
+            {settings.mode === 'webtoon' && (
+              <DetailsHint mode={settings.mode} visible={chromeVisible && !detailsActive} onPress={() => setRevealed(1)} />
+            )}
             {/* Toolbar outside the loaded branch, like reader.tsx: back + settings stay reachable
                 while pages are loading or the fetch failed. Series title on top, chapter beneath. */}
             <ReaderToolbar
               title={seriesTitle}
               subtitle={target?.chapterName ?? ''}
               visible={chromeVisible}
+              // The docked card already clears the notch — don't duck it twice.
+              topInset={settings.mode === 'paged' ? 0 : undefined}
               onBack={() => router.back()}
               right={
                 <SettingsControl
@@ -650,7 +764,23 @@ export default function SeriesReaderScreen() {
           </View>
         </Animated.View>
       </GestureDetector>
-    </ThemedView>
+
+      {/* The docked details sliver's touch surface (paged mode, reader at rest): tap to reveal
+          the details, or drag — up throws the reader off, down pulls it into the dismissal. */}
+      {settings.mode === 'paged' && !detailsActive && (
+        <GestureDetector gesture={dockPan}>
+          <View style={[styles.dockBand, { height: dockInset }]}>
+            <Pressable
+              testID="series-reader.details-dock"
+              onPress={() => setRevealed(1)}
+              accessibilityRole="button"
+              accessibilityLabel="Show series details"
+              style={StyleSheet.absoluteFill}
+            />
+          </View>
+        </GestureDetector>
+      )}
+    </View>
   );
 }
 
@@ -667,6 +797,7 @@ function SeriesDetailsHost({
   isDirect,
   width,
   sharedValues,
+  onScrollBeginDrag,
   onScrollEndDrag,
   onStartReading,
   onOpenChapter,
@@ -680,7 +811,8 @@ function SeriesDetailsHost({
   isDirect: boolean;
   width: number;
   sharedValues: Parameters<typeof SeriesBody>[0]['sharedValues'];
-  /** Release of a details-list drag — the screen's iOS return pull commits on it. */
+  /** Start/release of a details-list drag — the screen's iOS return pull arms and commits on them. */
+  onScrollBeginDrag?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   onScrollEndDrag?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   onStartReading: () => void;
   onOpenChapter: (version: Chapter) => void;
@@ -754,6 +886,7 @@ function SeriesDetailsHost({
       onOpenChapter={onOpenChapter}
       onOpenPage={onOpenPage}
       sharedValues={sharedValues}
+      onScrollBeginDrag={onScrollBeginDrag}
       onScrollEndDrag={onScrollEndDrag}
     />
   );
@@ -1104,7 +1237,9 @@ function DetailsHint({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    // Transparent: the route is a contained transparent modal — the details layer is the opaque
+    // fill, and a dismissal fades it out over the screen beneath (see dismissFadeStyle).
+    backgroundColor: 'transparent',
   },
   // The reader card's two halves: the outer view owns the shadow + travel (no clipping — iOS
   // shadows die under overflow: hidden), the inner clips content to the device-matched corners.
@@ -1124,6 +1259,29 @@ const styles = StyleSheet.create({
     backgroundColor: READER_BACKDROP,
     overflow: 'hidden',
   },
+  // The card's separating hairlines sit on its travel edges: top/bottom while it lifts vertically
+  // (paged), the sides while it slides horizontally (webtoon).
+  readerEdgesPaged: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: READER_EDGE,
+  },
+  readerEdgesWebtoon: {
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderColor: READER_EDGE,
+  },
+  readerTint: {
+    backgroundColor: '#000',
+  },
+  // Touch surface over the docked details sliver (paged mode, reader at rest).
+  dockBand: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 3,
+  },
   centerFill: {
     flex: 1,
     alignItems: 'center',
@@ -1132,15 +1290,15 @@ const styles = StyleSheet.create({
   loadingText: {
     color: '#fff',
   },
-  dim: {
-    backgroundColor: '#000',
-  },
   detailsLayer: {
     position: 'absolute',
     top: 0,
     left: 0,
   },
   detailsInner: {
+    flex: 1,
+  },
+  detailsContent: {
     flex: 1,
   },
   grabber: {
