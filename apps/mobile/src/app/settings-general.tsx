@@ -20,7 +20,7 @@ import { isEmbeddedRuntimeAvailable, swapDataSourceMode, useEmbeddedEnabled } fr
 import { queryClient } from '@/data/query-client';
 import { useNsfwMode, type NsfwMode } from '@/data/source';
 import { useTheme, useThemePreference, type ThemePreference } from '@/hooks/use-theme';
-import { seriesReaderPage$, useSeriesReaderPage } from '@/lib/experimental-flags';
+import { seriesReaderPage$, useSeriesReaderPage, useSeriesReaderVariant, type SeriesReaderVariant } from '@/lib/experimental-flags';
 import { lightCards$, useLightCards } from '@/lib/perf-flags';
 
 const NSFW_MODE_OPTIONS: SettingsOption<NsfwMode>[] = [
@@ -38,6 +38,19 @@ const NSFW_MODE_OPTIONS: SettingsOption<NsfwMode>[] = [
   },
 ];
 
+const SERIES_READER_LAYOUT_OPTIONS: SettingsOption<SeriesReaderVariant>[] = [
+  {
+    value: 'card',
+    label: 'Reader on top',
+    description: 'Opens reading. The pages are a card over the details — swipe up (right in webtoon mode) for details, the opposite way to close.',
+  },
+  {
+    value: 'header',
+    label: 'Reader as header',
+    description: 'Opens on the details, with the pages as a short faded strip on top — tap or swipe it up to read full screen.',
+  },
+];
+
 const THEME_OPTIONS: SettingsOption<ThemePreference>[] = [
   { value: 'system', label: 'System', description: 'Follow the device’s light or dark setting.' },
   { value: 'light', label: 'Light', description: 'Always use the light theme.' },
@@ -52,6 +65,7 @@ export default function GeneralSettingsScreen() {
   const [apiBase, setApiBaseOverride] = useApiBase();
   const lightCards = useLightCards();
   const seriesReaderPage = useSeriesReaderPage();
+  const seriesReaderVariant = useSeriesReaderVariant();
   const { wifiOnly, background } = useDownloadPrefs();
   const { open } = useOverlay();
   // The on-device runtime is only offered where a native bridge engine exists (iOS/Android with the
@@ -152,10 +166,19 @@ export default function GeneralSettingsScreen() {
         <SettingsSection title="Experimental">
           <SettingsToggleRow
             label="Series reader page"
-            description="Open series straight into the reader — swipe up (or right in webtoon mode) for details and chapters."
+            description="Replace the series page with a combined reader + details view."
             value={seriesReaderPage}
             onChange={(v) => seriesReaderPage$.enabled.set(v)}
           />
+          {seriesReaderPage && (
+            <SettingsSelectRow
+              label="Series reader layout"
+              description="How the reader and the details share the screen."
+              value={seriesReaderVariant}
+              options={SERIES_READER_LAYOUT_OPTIONS}
+              onChange={(v) => seriesReaderPage$.variant.set(v)}
+            />
+          )}
         </SettingsSection>
       </ScrollView>
     </ThemedView>

@@ -28,6 +28,8 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
+import { LinearGradient } from 'expo-linear-gradient';
+
 import { ChevronDownIcon, ChevronRightIcon, ChevronUpIcon } from '@/components/icons/ui-icons';
 import { ChapterNavigator } from '@/components/reader/chapter-navigator';
 import { PagedReader, type PagedReaderHandle, type ReaderPageItem } from '@/components/reader/paged-reader';
@@ -52,6 +54,7 @@ import {
 import { useDataSource, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type Chapter } from '@/data/types';
 import { useReaderSettings } from '@/hooks/use-reader-settings';
+import { useSeriesReaderVariant } from '@/lib/experimental-flags';
 import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
@@ -128,6 +131,9 @@ const SPRING_BACK = { duration: 300, dampingRatio: 1 } as const;
 // The reader card's separating edge over the (always-dark-or-light) details — a light hairline
 // reads on the dark reader surface in both themes.
 const READER_EDGE = 'rgba(255,255,255,0.25)';
+// Header variant: the visible height of the collapsed reader strip (below the safe area) — "quite
+// short, almost like a faded out background image".
+const HEADER_BAND = 120;
 // The details-content fade (and the reader's matching tint) complete within this fraction of the
 // travel — weighted toward the START of a reveal and, symmetrically, the END of a hide.
 const FADE_WINDOW = 0.4;
@@ -170,6 +176,10 @@ export default function SeriesReaderScreen() {
   const insets = useSafeAreaInsets();
   const mock = useMockActive();
   const [settings] = useReaderSettings();
+  // Which experimental layout this screen runs (Settings → Experimental → "Series reader layout").
+  // 'card': reader on top, opens reading. 'header': reader as a short faded strip above the
+  // details, opens on the details — captured at mount (changing it means reopening the screen).
+  const isHeader = useSeriesReaderVariant() === 'header';
 
   // Same params a series card forwards to `/series` (see series-card.tsx buildHref) — including the
   // percent-encoded bridge name / cover, decoded the same way series.tsx does.
@@ -342,8 +352,10 @@ export default function SeriesReaderScreen() {
   // `progress` (0 = reader, 1 = details) is the single source of truth, written on the UI thread
   // by the pans below and animated by `setRevealed`. `detailsActive` mirrors the committed side
   // for everything JS-side (gesture enabling, back handling, status bar).
-  const progress = useSharedValue(0);
-  const [detailsActive, setDetailsActive] = useState(false);
+  // Header variant opens ON the details (reader collapsed to the strip) — same progress semantics
+  // (0 = full reader, 1 = details), different starting side.
+  const progress = useSharedValue(isHeader ? 1 : 0);
+  const [detailsActive, setDetailsActive] = useState(isHeader);
   // The details card's internal scroll offset (SeriesBody's list writes it on the UI thread via
   // the same `sharedValues` wiring pull-to-refresh uses) — gates the paged-mode return pan so a
   // downward drag only pulls the card away when its content is already at the top.
@@ -351,7 +363,7 @@ export default function SeriesReaderScreen() {
   const sharedValues = useMemo(() => ({ scrollOffset: detailsScrollOffset }), [detailsScrollOffset]);
   // UI-thread mirror of `detailsActive`, for the worklets below (the iOS pull-follow must stop the
   // instant a commit animation takes over `progress`).
-  const detailsActiveSV = useSharedValue(false);
+  const detailsActiveSV = useSharedValue(isHeader);
   // Dismissal offsets — the old reader's swipe-away, folded into the same pans as the reveal
   // (opposite direction on the same axis): the page follows the finger in BOTH axes while the
   // backdrop fades, and a commit flings it out along its own direction. `dismissing` freezes the
@@ -395,40 +407,44 @@ export default function SeriesReaderScreen() {
   // reaches the top from mid-list never arms and just stretches natively.
   const onDetailsScrollBeginDrag = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      if (!IS_IOS || !detailsActive) return;
+      if (!IS_IOS || !detailsActive || isHeader) return;
       if (e.nativeEvent.contentOffset.y <= 1) pullArmedSV.set(true);
     },
-    [detailsActive, pullArmedSV],
+    [detailsActive, isHeader, pullArmedSV],
   );
   useAnimatedReaction(
     () => detailsScrollOffset.value,
     (off, prevOff) => {
-      if (!IS_IOS) return;
+      if (!IS_IOS || isHeader) return;
       if (pullArmedSV.value && off >= -0.5 && (prevOff ?? 0) < -0.5) pullArmedSV.set(false);
       if (!detailsActiveSV.value || !pullArmedSV.value) return;
       if (off < 0) progress.set(Math.max(0, Math.min(1, 1 + off / height)));
     },
-    [height, detailsScrollOffset, detailsActiveSV, pullArmedSV, progress],
+    [height, isHeader, detailsScrollOffset, detailsActiveSV, pullArmedSV, progress],
   );
   const onDetailsScrollEndDrag = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      if (!IS_IOS || !detailsActive) return;
+      if (!IS_IOS || !detailsActive || isHeader) return;
       if (!pullArmedSV.get()) return;
       if (e.nativeEvent.contentOffset.y <= -PULL_COMMIT_PX) setRevealed(0);
     },
-    [detailsActive, pullArmedSV, setRevealed],
+    [detailsActive, isHeader, pullArmedSV, setRevealed],
   );
 
-  // Android hardware back: details open → return to the reader instead of popping the screen.
-  // (Android-only API — react-native-web's BackHandler stub rejects addEventListener.)
+  // Android hardware back steps back to the variant's HOME side before popping: card variant's
+  // home is the reader (details open → back closes them), header variant's is the details
+  // (reader expanded → back collapses it). (Android-only API — react-native-web's BackHandler
+  // stub rejects addEventListener.)
   useEffect(() => {
-    if (Platform.OS !== 'android' || !detailsActive) return;
+    if (Platform.OS !== 'android') return;
+    const away = isHeader ? !detailsActive : detailsActive;
+    if (!away) return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      setRevealed(0);
+      setRevealed(isHeader ? 1 : 0);
       return true;
     });
     return () => sub.remove();
-  }, [detailsActive, setRevealed]);
+  }, [detailsActive, isHeader, setRevealed]);
 
   // The pop back to browse, shared by the dismiss worklets (ref-free for runOnJS).
   const goBack = useCallback(() => router.back(), [router]);
@@ -440,7 +456,7 @@ export default function SeriesReaderScreen() {
   // a contained transparent modal). Built inside useMemo like chapter-navigator's pan (the React
   // Compiler lint can't tell worklets from render code). `buildPan` runs twice — a gesture
   // instance attaches to one detector only, and the docked details sliver carries its own copy.
-  const revealEnabled = !detailsActive && !readerZoomed && !scrubbing;
+  const revealEnabled = !isHeader && !detailsActive && !readerZoomed && !scrubbing;
   const [revealPan, dockPan] = useMemo(() => {
     const span = settings.mode === 'paged' ? height : width;
     const buildPan = () => {
@@ -500,6 +516,57 @@ export default function SeriesReaderScreen() {
     };
     return [buildPan(), buildPan()];
   }, [settings.mode, revealEnabled, width, height, progress, dismissX, dismissY, dismissing, detailsActiveSV, commitReveal, goBack]);
+
+  // Header-variant pans. The BAND (the collapsed reader strip) expands: a tap or an upward drag
+  // pushes the details sheet up and away, following the finger. The expanded reader collapses
+  // back on the cross axis of its scroll: drag down (paged) / rightward (webtoon) slides the
+  // details back in from the top. Same hysteresis as everything else.
+  const headerCollapseEnabled = isHeader && !detailsActive && !readerZoomed && !scrubbing;
+  const headerPans = useMemo(() => {
+    if (!isHeader) return null;
+    const bandPan = Gesture.Pan()
+      .enabled(detailsActive)
+      .activeOffsetY([-20, 20])
+      .failOffsetX([-15, 15])
+      .onUpdate((e) => {
+        progress.set(Math.max(0, Math.min(1, 1 + e.translationY / height)));
+      })
+      .onEnd((e) => {
+        const open = -e.translationY / height > COMMIT_FRACTION || e.velocityY < -FLICK_VELOCITY;
+        detailsActiveSV.set(!open);
+        progress.set(withTiming(open ? 0 : 1, { duration: 240, easing: Easing.out(Easing.cubic) }));
+        runOnJS(commitReveal)(open ? 0 : 1);
+      });
+    const collapsePan =
+      settings.mode === 'paged'
+        ? Gesture.Pan()
+            .enabled(headerCollapseEnabled)
+            .activeOffsetY([-20, 20])
+            .failOffsetX([-15, 15])
+            .onUpdate((e) => {
+              progress.set(Math.max(0, Math.min(1, e.translationY / height)));
+            })
+            .onEnd((e) => {
+              const close = e.translationY / height > COMMIT_FRACTION || e.velocityY > FLICK_VELOCITY;
+              detailsActiveSV.set(close);
+              progress.set(withTiming(close ? 1 : 0, { duration: 240, easing: Easing.out(Easing.cubic) }));
+              runOnJS(commitReveal)(close ? 1 : 0);
+            })
+        : Gesture.Pan()
+            .enabled(headerCollapseEnabled)
+            .activeOffsetX([-20, 20])
+            .failOffsetY([-15, 15])
+            .onUpdate((e) => {
+              progress.set(Math.max(0, Math.min(1, e.translationX / width)));
+            })
+            .onEnd((e) => {
+              const close = e.translationX / width > COMMIT_FRACTION || e.velocityX > FLICK_VELOCITY;
+              detailsActiveSV.set(close);
+              progress.set(withTiming(close ? 1 : 0, { duration: 240, easing: Easing.out(Easing.cubic) }));
+              runOnJS(commitReveal)(close ? 1 : 0);
+            });
+    return { bandPan, collapsePan };
+  }, [isHeader, detailsActive, headerCollapseEnabled, settings.mode, width, height, progress, detailsActiveSV, commitReveal]);
 
   // Return pan — on the details layer. Paged mode shares the vertical axis with the details' own
   // scroller, so it activates MANUALLY: only a clearly-downward drag with the content at its top
@@ -564,9 +631,14 @@ export default function SeriesReaderScreen() {
   // visible in the top band (their own affordance, replacing the floating Details pill), and the
   // dock itself is grab-able (tap or drag). Webtoon keeps the full-height reader + pill. The
   // sliver is floored so flat-cornered/web devices still get one.
-  const dockInset = settings.mode === 'paged' ? Math.max(insets.top, 24) : 0;
+  const dockInset = settings.mode === 'paged' && !isHeader ? Math.max(insets.top, 24) : 0;
   const readerH = height - dockInset;
-  const detailsSlack = IS_IOS && settings.mode === 'paged' ? PULL_SLACK : 0;
+  const detailsSlack = IS_IOS && settings.mode === 'paged' && !isHeader ? PULL_SLACK : 0;
+  // Header variant: the collapsed reader strip's height, and the sheet geometry hanging below it.
+  const bandH = insets.top + HEADER_BAND;
+  // The sheet is screen-height but sits bandH down — compensate the hidden tail as bottom padding
+  // (same bottomInset mechanism as the pull slack) so its scroll extent stays honest.
+  const detailsBottomInset = isHeader ? bandH : detailsSlack;
   const cardRadius = screenCornerRadius(insets.bottom);
 
   // The reader card travels on the reveal axis (up in paged mode, right in webtoon). A dismissal
@@ -577,6 +649,7 @@ export default function SeriesReaderScreen() {
   // FADE_WINDOW of the travel), matched by a slight tint on the reader.
   const span = settings.mode === 'paged' ? height : width;
   const readerCardStyle = useAnimatedStyle(() => {
+    if (isHeader) return { transform: [] }; // header variant: the reader is a static backdrop
     const p = progress.value;
     const dx = dismissX.value;
     const dy = dismissY.value;
@@ -587,7 +660,15 @@ export default function SeriesReaderScreen() {
     return {
       transform: [{ translateX: baseX + dx }, { translateY: baseY + dy }, { scale }],
     };
-  }, [settings.mode, width, height, span]);
+  }, [isHeader, settings.mode, width, height, span]);
+  // Header variant: the details as a SHEET hanging below the band, sliding up and off (past its
+  // own height plus the band) as the reader expands; and the collapsed reader's heavy fade —
+  // "almost like a faded out background image".
+  const headerSheetStyle = useAnimatedStyle(
+    () => ({ transform: [{ translateY: -(1 - progress.value) * (height + bandH) }] }),
+    [height, bandH],
+  );
+  const headerReaderFadeStyle = useAnimatedStyle(() => ({ opacity: 0.55 * progress.value }));
   const readerTintStyle = useAnimatedStyle(() => ({
     opacity: 0.18 * Math.min(1, progress.value / FADE_WINDOW),
   }));
@@ -667,7 +748,22 @@ export default function SeriesReaderScreen() {
       <GestureDetector gesture={returnPan}>
         <Animated.View
           testID="series-reader.details-card"
-          style={[styles.detailsLayer, { width, height }, dismissFadeStyle]}>
+          style={[
+            styles.detailsLayer,
+            { width, height },
+            // Header variant: the details are a sheet hanging below the reader strip, in FRONT of
+            // the (static) reader; card variant: the base layer behind the traveling card.
+            isHeader ? [{ top: bandH, zIndex: 2 }, headerSheetStyle] : dismissFadeStyle,
+          ]}>
+          {/* Header variant's seam: the reader strip fades down into the sheet — a gradient
+              hanging just above the sheet's top edge, traveling with it. */}
+          {isHeader && (
+            <LinearGradient
+              colors={['transparent', theme.background]}
+              style={styles.sheetFade}
+              pointerEvents="none"
+            />
+          )}
           <ThemedView style={styles.detailsInner}>
             <Animated.View
               style={[
@@ -685,7 +781,8 @@ export default function SeriesReaderScreen() {
                 cover={cover}
                 isDirect={isDirect}
                 width={width}
-                bottomInset={detailsSlack}
+                topInset={isHeader ? Spacing.five : undefined}
+                bottomInset={detailsBottomInset}
                 sharedValues={sharedValues}
                 onScrollBeginDrag={onDetailsScrollBeginDrag}
                 onScrollEndDrag={onDetailsScrollEndDrag}
@@ -695,7 +792,9 @@ export default function SeriesReaderScreen() {
               />
             </Animated.View>
             {/* Grab-handle: tap (or drag) to bring the reader back — it returns from the top in
-                paged mode, from the right in webtoon. */}
+                paged mode, from the right in webtoon. (Header variant's affordance is the reader
+                strip itself, so no grab-handle there.) */}
+            {!isHeader && (
             <Pressable
               testID="series-reader.details-grabber"
               onPress={() => setRevealed(0)}
@@ -711,6 +810,7 @@ export default function SeriesReaderScreen() {
                 )}
               </ThemedView>
             </Pressable>
+            )}
           </ThemedView>
         </Animated.View>
       </GestureDetector>
@@ -726,15 +826,16 @@ export default function SeriesReaderScreen() {
           disable it), matching how SwipeDismiss wraps the readers on /reader. Shadow lives on an
           outer, non-clipping view (iOS shadows don't survive overflow: hidden); the inner view
           clips to the corners. */}
-      <GestureDetector gesture={revealPan}>
+      <GestureDetector gesture={headerPans ? headerPans.collapsePan : revealPan}>
         <Animated.View
           testID="series-reader.reader-card"
           style={[
             styles.readerShadow,
-            { top: dockInset, width, height: readerH, borderRadius: cardRadius },
+            { top: dockInset, width, height: readerH, borderRadius: isHeader ? 0 : cardRadius },
+            isHeader && styles.readerFlat,
             readerCardStyle,
           ]}>
-          <View style={[styles.readerClip, { borderRadius: cardRadius }]}>
+          <View style={[styles.readerClip, { borderRadius: isHeader ? 0 : cardRadius }]}>
           {error ? (
             <View style={styles.centerFill}>
               <RetryBlock message={error} onRetry={refetch} />
@@ -768,7 +869,7 @@ export default function SeriesReaderScreen() {
                 showChrome();
                 goAdjacentChapter(delta, 'first');
               }}
-              chromeVisible={chromeVisible}
+              chromeVisible={chromeVisible && !(isHeader && detailsActive)}
               onToggleChrome={toggleChrome}
               onShowChrome={showChrome}
               onHoldChrome={holdChrome}
@@ -778,12 +879,20 @@ export default function SeriesReaderScreen() {
           )}
             {/* The reader's tint, matched to the details fade — separates the lifting card. */}
             <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.readerTint, readerTintStyle]} />
+            {/* Header variant: the collapsed strip's heavy fade — the reader as a muted
+                background image behind the band. */}
+            {isHeader && (
+              <Animated.View
+                pointerEvents="none"
+                style={[StyleSheet.absoluteFill, styles.readerTint, headerReaderFadeStyle]}
+              />
+            )}
             {/* Separating hairlines, only where a seam exists, following the card's SHAPE — each is
                 a border "cap" that traces the edge THROUGH its rounded corners. Paged: the top cap
                 always shows (it permanently meets the docked details); the bottom cap only while
                 the card travels. Webtoon rests flush on all edges, so its full outline is
                 travel-gated. */}
-            {settings.mode === 'paged' ? (
+            {isHeader ? null : settings.mode === 'paged' ? (
               <>
                 <View
                   pointerEvents="none"
@@ -828,9 +937,10 @@ export default function SeriesReaderScreen() {
                 ]}
               />
             )}
-            {/* Webtoon keeps the floating Details pill; paged mode's affordance is the docked
-                details sliver above the card. */}
-            {settings.mode === 'webtoon' && (
+            {/* Card variant: webtoon keeps the floating Details pill (paged's affordance is the
+                docked sliver). Header variant: the pill is the guaranteed collapse path in both
+                modes (webtoon's expanded reader owns vertical drags). */}
+            {(settings.mode === 'webtoon' || isHeader) && (
               <DetailsHint mode={settings.mode} visible={chromeVisible && !detailsActive} onPress={() => setRevealed(1)} />
             )}
             {/* Toolbar outside the loaded branch, like reader.tsx: back + settings stay reachable
@@ -838,9 +948,10 @@ export default function SeriesReaderScreen() {
             <ReaderToolbar
               title={seriesTitle}
               subtitle={target?.chapterName ?? ''}
-              visible={chromeVisible}
-              // The docked card already clears the notch — don't duck it twice.
-              topInset={settings.mode === 'paged' ? 0 : undefined}
+              visible={chromeVisible && !(isHeader && detailsActive)}
+              // The card variant's docked card already clears the notch — don't duck it twice.
+              // (Header variant's reader is truly full screen, so it keeps the default inset.)
+              topInset={!isHeader && settings.mode === 'paged' ? 0 : undefined}
               onBack={() => router.back()}
               right={
                 <SettingsControl
@@ -857,9 +968,10 @@ export default function SeriesReaderScreen() {
         </Animated.View>
       </GestureDetector>
 
-      {/* The docked details sliver's touch surface (paged mode, reader at rest): tap to reveal
-          the details, or drag — up throws the reader off, down pulls it into the dismissal. */}
-      {settings.mode === 'paged' && !detailsActive && (
+      {/* Card variant: the docked details sliver's touch surface (paged mode, reader at rest):
+          tap to reveal the details, or drag — up throws the reader off, down pulls it into the
+          dismissal. */}
+      {!isHeader && settings.mode === 'paged' && !detailsActive && (
         <GestureDetector gesture={dockPan}>
           <View style={[styles.dockBand, { height: dockInset }]}>
             <Pressable
@@ -867,6 +979,22 @@ export default function SeriesReaderScreen() {
               onPress={() => setRevealed(1)}
               accessibilityRole="button"
               accessibilityLabel="Show series details"
+              style={StyleSheet.absoluteFill}
+            />
+          </View>
+        </GestureDetector>
+      )}
+
+      {/* Header variant: the collapsed reader strip's touch surface — tap to read full screen, or
+          drag up to push the details sheet away under the finger. */}
+      {headerPans && detailsActive && (
+        <GestureDetector gesture={headerPans.bandPan}>
+          <View style={[styles.dockBand, { height: bandH }]}>
+            <Pressable
+              testID="series-reader.header-band"
+              onPress={() => setRevealed(0)}
+              accessibilityRole="button"
+              accessibilityLabel="Read full screen"
               style={StyleSheet.absoluteFill}
             />
           </View>
@@ -888,6 +1016,7 @@ function SeriesDetailsHost({
   cover,
   isDirect,
   width,
+  topInset,
   bottomInset,
   sharedValues,
   onScrollBeginDrag,
@@ -903,7 +1032,10 @@ function SeriesDetailsHost({
   cover?: string;
   isDirect: boolean;
   width: number;
-  /** Extra list bottom padding matching the screen's PULL_SLACK overdraw, keeping scroll extent honest. */
+  /** Overrides the default content top inset (safe area + breathing room) — the header variant's
+   *  sheet already hangs below the reader strip, so it only needs the breathing room. */
+  topInset?: number;
+  /** Extra list bottom padding matching the screen's below-screen overdraw, keeping scroll extent honest. */
   bottomInset?: number;
   sharedValues: Parameters<typeof SeriesBody>[0]['sharedValues'];
   /** Start/release of a details-list drag — the screen's iOS return pull arms and commits on them. */
@@ -975,8 +1107,9 @@ function SeriesDetailsHost({
       detailStarted={isFetching || !isPlaceholderData}
       coverAspect={coverAspect}
       onCoverLoad={onCoverLoad}
-      // The card has no TopBar — clear the notch plus room for the grab-handle.
-      topInset={insets.top + Spacing.five}
+      // The card has no TopBar — clear the notch plus room for the grab-handle (or the caller's
+      // own inset, when its layout already clears the notch).
+      topInset={topInset ?? insets.top + Spacing.five}
       bottomInset={bottomInset}
       onStartReading={onStartReading}
       onOpenChapter={onOpenChapter}
@@ -1354,6 +1487,20 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: READER_BACKDROP,
     overflow: 'hidden',
+  },
+  // Header variant: the reader is a flat, static backdrop — no lift shadow.
+  readerFlat: {
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  // Header variant's seam: hangs above the details sheet's top edge, fading the reader strip
+  // down into the sheet.
+  sheetFade: {
+    position: 'absolute',
+    top: -56,
+    left: 0,
+    right: 0,
+    height: 56,
   },
   // Seam hairlines as border "caps"/outline so they trace the rounded corners, drawn as overlays
   // so their visibility can follow the card's travel (a static border can't fade per-edge).

@@ -23,7 +23,17 @@ import { persisted$ } from '@/lib/observable';
  * `safeStringify` hands a falsy value to AsyncStorage unstringified, which crashes native
  * RNCAsyncStorage when the toggle is off. An object is always truthy → serialized.
  */
-export const seriesReaderPage$ = persisted$('comical:experimental-series-reader', { enabled: false });
+export type SeriesReaderVariant = 'card' | 'header';
+
+export const seriesReaderPage$ = persisted$('comical:experimental-series-reader', {
+  enabled: false,
+  /** Which layout /series-reader uses:
+   *  - 'card':   the reader is the top layer (shadowed, device-cornered card docked below the safe
+   *              area) and swipes away to reveal the details beneath — opens reading.
+   *  - 'header': the reader sits as a SHORT, faded strip above the details (background-image-like),
+   *              and expands to full screen on demand — opens on the details. */
+  variant: 'card' as SeriesReaderVariant,
+});
 
 /** Reactive read via `useSyncExternalStore` — NOT a bare `use$()`; see perf-flags.ts for why
  *  (React Compiler doesn't recognize `use$` as a hook and mis-memoizes its internals). */
@@ -32,5 +42,13 @@ export function useSeriesReaderPage(): boolean {
     (onStoreChange) => seriesReaderPage$.enabled.onChange(onStoreChange),
     () => seriesReaderPage$.enabled.peek(),
     () => seriesReaderPage$.enabled.peek(),
+  );
+}
+
+export function useSeriesReaderVariant(): SeriesReaderVariant {
+  return useSyncExternalStore(
+    (onStoreChange) => seriesReaderPage$.variant.onChange(onStoreChange),
+    () => seriesReaderPage$.variant.peek() ?? 'card',
+    () => seriesReaderPage$.variant.peek() ?? 'card',
   );
 }
