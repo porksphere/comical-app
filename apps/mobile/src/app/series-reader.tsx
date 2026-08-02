@@ -1,25 +1,15 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Image } from 'expo-image';
+import { Image, type ImageLoadEventData } from 'expo-image';
 import { useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
-import {
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  useWindowDimensions,
-  View,
-  type NativeScrollEvent,
-  type NativeSyntheticEvent,
-} from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { BackHandler, Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { TagGroupRow } from '@/components/chip';
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
 import { ChevronDownIcon } from '@/components/icons/ui-icons';
-import { Rail, RailSkeleton } from '@/components/rail';
 import { ChapterNavigator } from '@/components/reader/chapter-navigator';
 import { PagedReader, type PagedReaderHandle, type ReaderPageItem } from '@/components/reader/paged-reader';
 import { ProgressPill } from '@/components/reader/progress-pill';
@@ -27,58 +17,62 @@ import { ReaderToolbar } from '@/components/reader/reader-toolbar';
 import { SettingsControl } from '@/components/reader/settings-panel';
 import { WebtoonReader, type WebtoonReaderHandle } from '@/components/reader/webtoon-reader';
 import { RetryBlock } from '@/components/retry-block';
-import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { resolveAssetSourceCached } from '@/data/api';
-import { relativeTime } from '@/data/mock';
 import {
   chapterPagesQuery,
-  chapterProgressQuery,
   directPagesQuery,
   historyQuery,
   inLibraryQuery,
   queryKeys,
-  relatedGroupsQuery,
   seriesDetailQuery,
   seriesListQuery,
 } from '@/data/queries';
-import { setSearchIntent, tagSearchIntent } from '@/data/search-intent';
 import { useDataSource, useMockActive } from '@/data/source';
-import { DIRECT_CHAPTER_ID, type Chapter, type SeriesDetail, type TagGroup } from '@/data/types';
-import { useBridgeMap } from '@/hooks/use-bridges';
+import { DIRECT_CHAPTER_ID, type Chapter } from '@/data/types';
 import { useReaderSettings } from '@/hooks/use-reader-settings';
+import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
-import { applyReadState, firstChapterInReadingOrder, getAdjacentChapter } from '@/lib/chapter-order';
+import { DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
+import { firstChapterInReadingOrder, getAdjacentChapter } from '@/lib/chapter-order';
 import { useRouter } from '@/lib/nav';
 import { getPreferredGroup, resetPreferredGroup, setPreferredGroup } from '@/lib/preferred-group';
-import { tagPaletteFor } from '@/lib/tag-colors';
-import { testId } from '@/lib/test-id';
+
+import { SeriesBody } from './series';
 
 // EXPERIMENTAL series reader page (Settings → General → Experimental). A series opened from a card
 // lands HERE instead of on `/series`: the reader is up immediately — same paged/webtoon readers,
-// chrome, scrubber, and progress recording as `/reader` — and the series info (tags, meta,
-// description, chapter list, related rails) sits one scroll away as if the whole thing were a
-// single scrollable page, with a snap at the reader↔info boundary so the pages always rest fully
-// framed:
-//   - paged mode (horizontal reading): the info is BELOW — swipe up to reveal it.
-//   - webtoon mode (vertical reading): the info is a panel to the LEFT — swipe right to reveal it.
-// The chrome also carries an explicit "Details" pill — the guaranteed reveal path for the cases a
-// cross-axis swipe can't serve: web (the web pager owns its whole touch surface) and a fit-width
-// page taller than the viewport in paged mode (its own vertical content-pan — see zoomable-page's
-// `contentPan`, whose 10px activation out-competes the outer scroll — rightly wins the drag).
+// chrome, scrubber, and progress recording as `/reader` — and the series details live on a
+// screen-sized, round-cornered card (X-media-viewer style) revealed over it:
+//   - paged mode (horizontal reading): the card slides up from the BOTTOM — swipe up to reveal.
+//   - webtoon mode (vertical reading): the card slides in from the LEFT — swipe right to reveal.
+// The reveal favors whichever view is active: a partial drag springs back, and only a
+// deep-enough drag (25% of the axis) or a flick commits to the other view. While dragging you see
+// the card's curved edges over the (slightly scaled, dimmed) reader. The chrome's "Details" pill
+// and the card's grab-handle are the guaranteed non-gesture paths — needed on web (the web pager
+// owns its whole touch surface) and under a fit-width page taller than the viewport (its vertical
+// content-pan rightly wins the drag; see zoomable-page's `contentPan`).
+//
+// The details card renders series.tsx's OWN `SeriesBody` — cover hero, action column, tag/meta/
+// description, the real chapter list (downloads, versions, read state), page-thumb grid, related
+// rails — so the two screens cannot drift. Three override props route its intents back into this
+// screen instead of pushing routes: `onStartReading` (Read button → back to the in-place reader),
+// `onOpenChapter` (chapter row → swap the reader pane's chapter and return to it), `onOpenPage`
+// (direct-series thumbnail → jump the pane to that page and return).
 //
 // Chaptered series read chapter-by-chapter: the screen resolves resume-or-first-chapter itself
-// (same history lookup as useStartReading), the navigator's skip buttons and falling off either
-// end of a chapter swap chapters in place, and tapping a chapter in the revealed info scrolls back
-// up into the reader at that chapter. Unlike /reader there's NO cross-chapter stitching — a
-// boundary crossing remounts the pane on the new chapter (the pre-stitching /reader behavior),
-// which is the simplicity/fidelity trade this experiment deliberately makes.
+// (same history lookup as useStartReading), and the navigator's skip buttons / falling off either
+// end of a chapter swap chapters in place. Unlike /reader there's NO cross-chapter stitching — a
+// boundary crossing remounts the reader pane (the pre-stitching /reader behavior), the
+// simplicity/fidelity trade this experiment deliberately makes.
 //
-// Deliberately self-contained so removing the experiment is simple: delete this file +
-// `lib/experimental-flags.ts`, the Settings row in `settings-general.tsx`, the `buildHref` target
-// switch in `series-card.tsx`, and this route's Stack.Screen entry in `_layout.tsx`.
+// Removal list for the whole experiment: this file + `lib/experimental-flags.ts`, the Settings row
+// in `settings-general.tsx`, the `buildHref` target switch in `series-card.tsx`, this route's
+// Stack.Screen entry in `_layout.tsx`, and the default-preserving embedding props on
+// `series.tsx`'s SeriesBody (`topInset`/`onStartReading`/`onOpenChapter`/`onOpenPage`) +
+// `chapters-section.tsx`'s `onOpenChapter`/`onOpenPage`.
 
 const CHROME_HIDE_MS = 3000;
 // Same CI-speed override as reader.tsx: Maestro steps can outlast the auto-hide, and hidden chrome
@@ -88,10 +82,12 @@ const WARM_BEHIND = 2;
 const IS_WEB = Platform.OS === 'web';
 // The reader surface's tone — matches reader.tsx's backdrop (`#reader-view`'s #0f0f0f, not pure black).
 const READER_BACKDROP = '#0f0f0f';
-// How many chapter rows the info section shows before collapsing behind "Show all" — the info
-// column mounts with the screen (it's the other half of the reveal scroll), so a 200-chapter
-// series must not pay for 200 rows just to open the reader.
-const COLLAPSED_CHAPTER_ROWS = 25;
+// The details card's corner radius — the "curved screen edge" read while it's mid-drag.
+const CARD_RADIUS = 24;
+// Reveal hysteresis: the drag must cover this fraction of the axis (or flick past FLICK_VELOCITY)
+// to commit to the other view; anything less springs back to the active one.
+const COMMIT_FRACTION = 0.25;
+const FLICK_VELOCITY = 900;
 
 // Warm expo-image's cache around the read position — a trimmed copy of reader.tsx's warmPrefetch
 // (same dedup memo, same "resolve then prefetch only http(s)" rule; see there for the reasoning).
@@ -115,7 +111,9 @@ type ReadTarget = { chapterId?: string; chapterName?: string; start: number | 'l
 export default function SeriesReaderScreen() {
   const ds = useDataSource();
   const router = useRouter();
+  const theme = useTheme();
   const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const mock = useMockActive();
   const [settings] = useReaderSettings();
 
@@ -139,9 +137,10 @@ export default function SeriesReaderScreen() {
     resetPreferredGroup();
   }, [id]);
 
-  // Series detail (title/tags/meta/description/related) — placeholder-seeded from the forwarded
-  // title+cover exactly like series.tsx, so the info section has a real title immediately.
-  const { data: series = null, isPlaceholderData } = useQuery(
+  // Series detail for the toolbar/settings gear (placeholder-seeded from the forwarded
+  // title+cover). The details card's SeriesDetailsHost subscribes to this same query key, so this
+  // costs one fetch total.
+  const { data: series = null } = useQuery(
     seriesDetailQuery(ds, mock, bridgeId ?? '', id ?? '', {
       direct: isDirect,
       bridgeName: bridge ?? 'Library',
@@ -150,17 +149,11 @@ export default function SeriesReaderScreen() {
     }),
   );
 
-  // Chapter list (chaptered series only), with local read state merged on for the info rows —
-  // the same chapterProgressQuery + applyReadState pair ChapterScrollList uses.
-  const { data: listData, isLoading: listLoading } = useQuery(
-    seriesListQuery(ds, mock, bridgeId ?? '', id ?? '', false, !isDirect),
-  );
-  const { data: progress } = useQuery(chapterProgressQuery(ds, mock, bridgeId ?? '', id ?? '', !isDirect && !!bridgeId));
-  const chapters = useMemo(
-    () => (listData?.chapters ? applyReadState(listData.chapters, progress ?? []) : undefined),
-    [listData, progress],
-  );
-  const chapterCount = listData?.chapterCount ?? series?.chapterCount;
+  // Chapter list (chaptered series only) — drives resume-or-first resolution and prev/next
+  // adjacency for the reader pane. (The details card's own list rendering — read state, downloads,
+  // versions — is SeriesBody's business, not duplicated here.)
+  const { data: listData } = useQuery(seriesListQuery(ds, mock, bridgeId ?? '', id ?? '', false, !isDirect));
+  const chapters = listData?.chapters;
 
   // ── Where does reading start? ────────────────────────────────────────────
   // Resume from the reading history (same lookup as useStartReading — resolved here, not at the
@@ -207,8 +200,8 @@ export default function SeriesReaderScreen() {
     error: queryError,
     refetch,
   } = useQuery({
-    ...(target?.chapterId
-      ? chapterPagesQuery(ds, mock, bridgeId ?? '', id ?? '', target.chapterId)
+    ...(targetChapterId
+      ? chapterPagesQuery(ds, mock, bridgeId ?? '', id ?? '', targetChapterId)
       : directPagesQuery(ds, mock, bridgeId ?? '', id ?? '')),
     enabled: !!target && !!id,
   });
@@ -279,8 +272,8 @@ export default function SeriesReaderScreen() {
     });
   }, [scheduleHide]);
 
-  // Pinch-zoom suspends the outer reveal scroll so a one-finger drag pans the zoomed page; a scrub
-  // drag suspends it so the thumb can't also pull the page off the reader.
+  // Pinch-zoom / an active scrub both suspend the reveal pan (a one-finger drag pans the zoomed
+  // page; a scrub owns the finger).
   const [readerZoomed, setReaderZoomed] = useState(false);
   const [scrubbing, setScrubbing] = useState(false);
   const onScrubActive = useCallback(
@@ -291,227 +284,468 @@ export default function SeriesReaderScreen() {
     [holdChrome],
   );
 
-  // ── Reveal plumbing: outer scroll ref, revealed-state (status bar), programmatic jumps ──
-  const outerRef = useRef<ScrollView>(null);
-  const [infoRevealed, setInfoRevealed] = useState(false);
+  // ── The reveal: reader ⇄ details card ────────────────────────────────────
+  // `progress` (0 = reader, 1 = details) is the single source of truth, written on the UI thread
+  // by the pans below and animated by `setRevealed`. `detailsActive` mirrors the committed side
+  // for everything JS-side (gesture enabling, back handling, status bar).
+  const progress = useSharedValue(0);
+  const [detailsActive, setDetailsActive] = useState(false);
+  // The details card's internal scroll offset (SeriesBody's list writes it on the UI thread via
+  // the same `sharedValues` wiring pull-to-refresh uses) — gates the paged-mode return pan so a
+  // downward drag only pulls the card away when its content is already at the top.
+  const detailsScrollOffset = useSharedValue(0);
+  const sharedValues = useMemo(() => ({ scrollOffset: detailsScrollOffset }), [detailsScrollOffset]);
+
+  // JS-side half of a commit — deliberately closes over nothing but state setters (no shared
+  // values, no timer refs), so the gesture worklets can `runOnJS` it; the worklets animate
+  // `progress` themselves. Landing back in the reader re-shows the chrome (it may have auto-hidden
+  // while the details were up) — the effect below re-arms the countdown.
+  const commitReveal = useCallback((to: 0 | 1) => {
+    setDetailsActive(to === 1);
+    if (to === 0) setChromeVisible(true);
+  }, []);
+  useEffect(() => {
+    if (!detailsActive) scheduleHide();
+  }, [detailsActive, scheduleHide]);
+  // Full JS-side reveal (pill, grab-handle, hardware back, chapter/page intents).
+  const setRevealed = useCallback(
+    (to: 0 | 1) => {
+      progress.set(withTiming(to, { duration: 240, easing: Easing.out(Easing.cubic) }));
+      commitReveal(to);
+    },
+    [progress, commitReveal],
+  );
+
+  // Android hardware back: details open → return to the reader instead of popping the screen.
+  // (Android-only API — react-native-web's BackHandler stub rejects addEventListener.)
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !detailsActive) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setRevealed(0);
+      return true;
+    });
+    return () => sub.remove();
+  }, [detailsActive, setRevealed]);
+
+  // Reveal pan — wraps the reader, on the cross axis of its scroll (SwipeDismiss's recipe), with
+  // hysteresis: progress follows the finger, and only a deep drag or a flick commits. Built inside
+  // useMemo like chapter-navigator's pan: the React Compiler lint can't tell a worklet that runs
+  // later on the UI thread from render code, so shared-value writes in an inline-built gesture
+  // read as render mutations.
+  const revealEnabled = !detailsActive && !readerZoomed && !scrubbing;
+  const revealPan = useMemo(() => {
+    return settings.mode === 'paged'
+      ? Gesture.Pan()
+          .enabled(revealEnabled)
+          .activeOffsetY([-20, 20])
+          .failOffsetX([-15, 15])
+          .onUpdate((e) => {
+            progress.set(Math.max(0, Math.min(1, -e.translationY / height)));
+          })
+          .onEnd((e) => {
+            const open = -e.translationY / height > COMMIT_FRACTION || e.velocityY < -FLICK_VELOCITY;
+            progress.set(withTiming(open ? 1 : 0, { duration: 240, easing: Easing.out(Easing.cubic) }));
+            runOnJS(commitReveal)(open ? 1 : 0);
+          })
+      : Gesture.Pan()
+          .enabled(revealEnabled)
+          .activeOffsetX([-20, 20])
+          .failOffsetY([-15, 15])
+          .onUpdate((e) => {
+            progress.set(Math.max(0, Math.min(1, e.translationX / width)));
+          })
+          .onEnd((e) => {
+            const open = e.translationX / width > COMMIT_FRACTION || e.velocityX > FLICK_VELOCITY;
+            progress.set(withTiming(open ? 1 : 0, { duration: 240, easing: Easing.out(Easing.cubic) }));
+            runOnJS(commitReveal)(open ? 1 : 0);
+          });
+  }, [settings.mode, revealEnabled, width, height, progress, commitReveal]);
+
+  // Return pan — on the card. Paged mode shares the vertical axis with the card's own scroller, so
+  // it activates MANUALLY: only a clearly-downward drag that starts with the details content at its
+  // top takes the card; everything else fails fast and the list scrolls (the sheet-handoff rule).
+  // Webtoon mode's card scrolls vertically while the card travels horizontally — a plain
+  // orthogonal pan suffices.
+  const touchStartX = useSharedValue(0);
+  const touchStartY = useSharedValue(0);
+  const returnPan = useMemo(() => {
+    return settings.mode === 'paged'
+      ? Gesture.Pan()
+          .enabled(detailsActive)
+          .manualActivation(true)
+          .onTouchesDown((e) => {
+            const t = e.allTouches[0]!;
+            touchStartX.set(t.x);
+            touchStartY.set(t.y);
+          })
+          .onTouchesMove((e, mgr) => {
+            const t = e.allTouches[0]!;
+            const dx = t.x - touchStartX.get();
+            const dy = t.y - touchStartY.get();
+            if (Math.abs(dx) > 16 && Math.abs(dx) > Math.abs(dy)) {
+              mgr.fail();
+              return;
+            }
+            if (dy < -16) {
+              mgr.fail(); // scrolling the details content up
+              return;
+            }
+            if (dy > 16) {
+              if (detailsScrollOffset.get() <= 1) mgr.activate();
+              else mgr.fail();
+            }
+          })
+          .onUpdate((e) => {
+            progress.set(Math.max(0, Math.min(1, 1 - e.translationY / height)));
+          })
+          .onEnd((e) => {
+            const close = e.translationY / height > COMMIT_FRACTION || e.velocityY > FLICK_VELOCITY;
+            progress.set(withTiming(close ? 0 : 1, { duration: 240, easing: Easing.out(Easing.cubic) }));
+            runOnJS(commitReveal)(close ? 0 : 1);
+          })
+      : Gesture.Pan()
+          .enabled(detailsActive)
+          .activeOffsetX([-20, 20])
+          .failOffsetY([-15, 15])
+          .onUpdate((e) => {
+            progress.set(Math.max(0, Math.min(1, 1 + e.translationX / width)));
+          })
+          .onEnd((e) => {
+            const close = -e.translationX / width > COMMIT_FRACTION || e.velocityX < -FLICK_VELOCITY;
+            progress.set(withTiming(close ? 0 : 1, { duration: 240, easing: Easing.out(Easing.cubic) }));
+            runOnJS(commitReveal)(close ? 0 : 1);
+          });
+  }, [settings.mode, detailsActive, width, height, progress, touchStartX, touchStartY, detailsScrollOffset, commitReveal]);
+
+  // The card travels on the reveal axis; the reader scales/dims slightly beneath it (X-style).
+  const cardStyle = useAnimatedStyle(() => {
+    const p = progress.value;
+    return settings.mode === 'paged'
+      ? { transform: [{ translateY: (1 - p) * height }] }
+      : { transform: [{ translateX: -(1 - p) * width }] };
+  }, [settings.mode, width, height]);
+  const readerFxStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: 1 - 0.04 * progress.value }],
+    borderRadius: CARD_RADIUS * progress.value,
+  }));
+  const dimStyle = useAnimatedStyle(() => ({ opacity: 0.35 * progress.value }));
+
+  // ── Details-card intents, routed back into the in-place reader ───────────
+  const paneRef = useRef<ReaderPaneHandle>(null);
+  const openChapterFromDetails = useCallback(
+    (v: Chapter) => {
+      if (v.id !== targetChapterId) {
+        setOverride({
+          chapterId: v.id,
+          chapterName: v.name,
+          start: resume?.chapterId === v.id ? (resume.lastPage ?? 0) : 0,
+        });
+      }
+      setRevealed(0);
+    },
+    [targetChapterId, resume, setRevealed],
+  );
+  const openPageFromDetails = useCallback(
+    (pageIndex: number) => {
+      paneRef.current?.goTo(pageIndex, false);
+      setRevealed(0);
+    },
+    [setRevealed],
+  );
+  // The Read button/cover: the pane already sits at the same resume point Read would compute.
+  const startReadingFromDetails = useCallback(() => setRevealed(0), [setRevealed]);
+
   const scheme = useActiveColorScheme();
-  const onOuterScroll = useCallback(
-    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const { contentOffset } = e.nativeEvent;
-      const revealed = settings.mode === 'paged' ? contentOffset.y > height / 2 : contentOffset.x < width / 2;
-      setInfoRevealed(revealed);
-    },
-    [settings.mode, height, width],
-  );
-  const revealInfo = useCallback(() => {
-    if (settings.mode === 'paged') outerRef.current?.scrollTo({ y: height, animated: true });
-    else outerRef.current?.scrollTo({ x: 0, animated: true });
-  }, [settings.mode, height]);
-  const revealReader = useCallback(() => {
-    if (settings.mode === 'paged') outerRef.current?.scrollTo({ y: 0, animated: true });
-    else outerRef.current?.scrollTo({ x: width, animated: true });
-  }, [settings.mode, width]);
-
-  // A chapter row in the revealed info: scroll back up into the reader, now on that chapter —
-  // resuming its recorded page when it's the series' resume chapter, else from the top.
-  const openChapter = useCallback(
-    (chapter: Chapter) => {
-      setOverride({
-        chapterId: chapter.id,
-        chapterName: chapter.name,
-        start: resume?.chapterId === chapter.id ? (resume.lastPage ?? 0) : 0,
-      });
-      revealReader();
-    },
-    [resume, revealReader],
-  );
-
   const seriesTitle = series?.title ?? title ?? id ?? 'Reader';
   const author = series?.meta?.find((m) => m.label === 'AUTHOR')?.value;
-
-  // One full-viewport cell: the reader plus its own chrome (toolbar, page scrubber / progress
-  // pill, Details hint). The chrome is absolutely positioned WITHIN the cell, so it travels with
-  // the reader when the info is revealed instead of floating over it.
-  const readerCell = (
-    <View style={[styles.readerCell, { width, height }]}>
-      {error ? (
-        <View style={styles.centerFill}>
-          <RetryBlock message={error} onRetry={refetch} />
-        </View>
-      ) : !readerReady ? (
-        <View style={styles.centerFill}>
-          <ThemedText style={styles.loadingText}>Loading…</ThemedText>
-        </View>
-      ) : (
-        <ReaderPane
-          // Chapter navigation swaps the pane wholesale — position state, records, and the pager
-          // all belong to exactly one chapter (or the direct page list).
-          key={target.chapterId ?? DIRECT_CHAPTER_ID}
-          pages={pages}
-          start={target.start}
-          width={width}
-          height={height}
-          bridgeId={bridgeId}
-          seriesId={id}
-          seriesTitle={seriesTitle}
-          seriesCover={series?.cover}
-          chapterId={target.chapterId}
-          chapterName={target.chapterName}
-          chaptered={!isDirect}
-          hasPrevChapter={!!prevChapter}
-          hasNextChapter={!!nextChapter}
-          nextChapterName={nextChapter?.name}
-          onCrossChapter={goAdjacentChapter}
-          onSkipChapter={(delta) => {
-            showChrome();
-            goAdjacentChapter(delta, 'first');
-          }}
-          chromeVisible={chromeVisible}
-          onToggleChrome={toggleChrome}
-          onShowChrome={showChrome}
-          onHoldChrome={holdChrome}
-          onZoomChange={setReaderZoomed}
-          onScrubActive={onScrubActive}
-        />
-      )}
-      <DetailsHint mode={settings.mode} visible={chromeVisible} onPress={revealInfo} />
-      {/* Toolbar outside the loaded branch, like reader.tsx: back + settings stay reachable while
-          pages are loading or the fetch failed. Series title on top, chapter beneath. */}
-      <ReaderToolbar
-        title={seriesTitle}
-        subtitle={target?.chapterName ?? ''}
-        visible={chromeVisible}
-        onBack={() => router.back()}
-        right={
-          <SettingsControl
-            bridgeId={bridgeId}
-            seriesId={id}
-            title={seriesTitle}
-            thumbnailUrl={series?.cover}
-            author={author}
-            direct={isDirect}
-          />
-        }
-      />
-    </View>
-  );
-
-  const info = (
-    <InfoSection
-      series={series}
-      loading={!series || isPlaceholderData}
-      fallbackTitle={title}
-      bridgeId={bridgeId}
-      width={width}
-      chapters={isDirect ? undefined : chapters}
-      chaptersLoading={!isDirect && listLoading}
-      chapterCount={isDirect ? undefined : chapterCount}
-      currentChapterId={target?.chapterId}
-      onOpenChapter={openChapter}
-    />
-  );
-
-  // Vertical (paged reading): [reader | info below]. `snapToOffsets` puts a snap point at each side
-  // of the reader↔info boundary — a partial swipe settles on one or the other so the pages are never
-  // left half-framed — while `snapToEnd: false` leaves everything past the boundary free-scrolling,
-  // so the info still reads as one continuous page.
-  const snapOffsets = useMemo(() => [0, height], [height]);
 
   return (
     <ThemedView style={styles.container}>
       <StatusBar
-        style={infoRevealed ? (scheme === 'dark' ? 'light' : 'dark') : 'light'}
-        hidden={!chromeVisible && !infoRevealed}
+        style={detailsActive ? (scheme === 'dark' ? 'light' : 'dark') : 'light'}
+        hidden={!chromeVisible && !detailsActive}
       />
-      {settings.mode === 'paged' ? (
-        <ScrollView
-          // Keyed by mode: flipping paged↔webtoon in the reader settings swaps the outer axis, and a
-          // reused scroller would keep the old axis' offset.
-          key="outer-vertical"
-          ref={outerRef}
-          testID="series-reader.scroll"
-          snapToOffsets={snapOffsets}
-          snapToEnd={false}
-          scrollEnabled={!readerZoomed && !scrubbing}
-          showsVerticalScrollIndicator={false}
-          onScroll={onOuterScroll}
-          scrollEventThrottle={32}
-          contentInsetAdjustmentBehavior="never">
-          {readerCell}
-          {info}
-        </ScrollView>
-      ) : (
-        // Horizontal (webtoon reading): [info | reader], starting on the reader — swiping right
-        // reveals the info panel to the left. Two exactly-viewport pages, so plain paging IS the snap.
-        <HorizontalReveal scrollRef={outerRef} width={width} onScroll={onOuterScroll} scrollEnabled={!readerZoomed}>
-          <View style={[styles.infoPanel, { width, height }]}>
-            <ScrollView showsVerticalScrollIndicator={false}>{info}</ScrollView>
-          </View>
-          {readerCell}
-        </HorizontalReveal>
-      )}
+
+      {/* The reader layer + its chrome. The reveal pan wraps the whole cell (the scrubber and a
+          zoomed page disable it), matching how SwipeDismiss wraps the readers on /reader. */}
+      <GestureDetector gesture={revealPan}>
+        <Animated.View style={[styles.readerCell, { width, height }, readerFxStyle]}>
+          {error ? (
+            <View style={styles.centerFill}>
+              <RetryBlock message={error} onRetry={refetch} />
+            </View>
+          ) : !readerReady ? (
+            <View style={styles.centerFill}>
+              <ThemedText style={styles.loadingText}>Loading…</ThemedText>
+            </View>
+          ) : (
+            <ReaderPane
+              // Chapter navigation swaps the pane wholesale — position state, records, and the
+              // pager all belong to exactly one chapter (or the direct page list).
+              key={target.chapterId ?? DIRECT_CHAPTER_ID}
+              ref={paneRef}
+              pages={pages}
+              start={target.start}
+              width={width}
+              height={height}
+              bridgeId={bridgeId}
+              seriesId={id}
+              seriesTitle={seriesTitle}
+              seriesCover={series?.cover}
+              chapterId={target.chapterId}
+              chapterName={target.chapterName}
+              chaptered={!isDirect}
+              hasPrevChapter={!!prevChapter}
+              hasNextChapter={!!nextChapter}
+              nextChapterName={nextChapter?.name}
+              onCrossChapter={goAdjacentChapter}
+              onSkipChapter={(delta) => {
+                showChrome();
+                goAdjacentChapter(delta, 'first');
+              }}
+              chromeVisible={chromeVisible}
+              onToggleChrome={toggleChrome}
+              onShowChrome={showChrome}
+              onHoldChrome={holdChrome}
+              onZoomChange={setReaderZoomed}
+              onScrubActive={onScrubActive}
+            />
+          )}
+          <DetailsHint mode={settings.mode} visible={chromeVisible && !detailsActive} onPress={() => setRevealed(1)} />
+          {/* Toolbar outside the loaded branch, like reader.tsx: back + settings stay reachable
+              while pages are loading or the fetch failed. Series title on top, chapter beneath. */}
+          <ReaderToolbar
+            title={seriesTitle}
+            subtitle={target?.chapterName ?? ''}
+            visible={chromeVisible}
+            onBack={() => router.back()}
+            right={
+              <SettingsControl
+                bridgeId={bridgeId}
+                seriesId={id}
+                title={seriesTitle}
+                thumbnailUrl={series?.cover}
+                author={author}
+                direct={isDirect}
+              />
+            }
+          />
+        </Animated.View>
+      </GestureDetector>
+
+      {/* Dim between the reader and the card, fading in with the reveal. */}
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.dim, dimStyle]} />
+
+      {/* The details card: exactly screen-sized with curved edges, so mid-drag it reads as a second
+          screen sliding over the reader. Content is series.tsx's real SeriesBody. */}
+      <GestureDetector gesture={returnPan}>
+        <Animated.View
+          testID="series-reader.details-card"
+          style={[styles.detailsCard, { width, height, borderColor: theme.hairline }, cardStyle]}>
+          <ThemedView style={styles.detailsCardInner}>
+            <SeriesDetailsHost
+              bridgeId={bridgeId}
+              id={id}
+              title={title}
+              bridge={bridge}
+              cover={cover}
+              isDirect={isDirect}
+              width={width}
+              sharedValues={sharedValues}
+              onStartReading={startReadingFromDetails}
+              onOpenChapter={openChapterFromDetails}
+              onOpenPage={openPageFromDetails}
+            />
+            {/* Grab-handle: the card's own way back (drag, tap, or hardware back all work). */}
+            <Pressable
+              testID="series-reader.details-grabber"
+              onPress={() => setRevealed(0)}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel="Back to reader"
+              style={[styles.grabber, { top: insets.top + Spacing.one }]}>
+              <ThemedView type="backgroundElement" style={[styles.grabberPill, { borderColor: theme.hairline }]}>
+                {settings.mode === 'paged' ? (
+                  <ChevronDownIcon color={theme.text} size={16} />
+                ) : (
+                  <ChevronLeftIcon color={theme.text} size={16} />
+                )}
+              </ThemedView>
+            </Pressable>
+          </ThemedView>
+        </Animated.View>
+      </GestureDetector>
     </ThemedView>
   );
 }
+
+/** The details card's content: series.tsx's SeriesBody, fed exactly the way SeriesScreen feeds it
+ *  (same detail query + placeholder seeding, same cover-aspect measurement, same layout inputs) —
+ *  minus the TopBar/pull-to-refresh, plus the three intent overrides that route back into the
+ *  in-place reader. */
+function SeriesDetailsHost({
+  bridgeId,
+  id,
+  title,
+  bridge,
+  cover,
+  isDirect,
+  width,
+  sharedValues,
+  onStartReading,
+  onOpenChapter,
+  onOpenPage,
+}: {
+  bridgeId?: string;
+  id?: string;
+  title?: string;
+  bridge?: string;
+  cover?: string;
+  isDirect: boolean;
+  width: number;
+  sharedValues: Parameters<typeof SeriesBody>[0]['sharedValues'];
+  onStartReading: () => void;
+  onOpenChapter: (version: Chapter) => void;
+  onOpenPage: (pageIndex: number) => void;
+}) {
+  const ds = useDataSource();
+  const mock = useMockActive();
+  const insets = useSafeAreaInsets();
+  const {
+    data: series = null,
+    error: queryError,
+    isPlaceholderData,
+    isFetching,
+    refetch,
+  } = useQuery(
+    seriesDetailQuery(ds, mock, bridgeId ?? '', id ?? '', {
+      direct: isDirect,
+      bridgeName: bridge ?? 'Library',
+      title,
+      cover,
+    }),
+  );
+
+  // The hero cover's measured aspect — same clamp + wiggle filter as SeriesScreen's onCoverLoad.
+  const [coverAspect, setCoverAspect] = useState(DEFAULT_THUMB_ASPECT);
+  const onCoverLoad = (e: ImageLoadEventData) => {
+    const src = e.source;
+    if (!src?.width || !src.height) return;
+    const ratio = src.width / src.height;
+    const next = !Number.isFinite(ratio) || ratio <= 0 ? DEFAULT_THUMB_ASPECT : Math.min(2.5, Math.max(0.5, ratio));
+    setCoverAspect((prev) => (Math.abs(next - prev) > 0.02 ? next : prev));
+  };
+
+  const isLarge = width >= LARGE_SCREEN_BREAKPOINT;
+  const actionsWidth = Math.round(Math.min(width * 0.4, 220));
+
+  if (queryError) {
+    return (
+      <View style={styles.centerFill}>
+        <RetryBlock message={(queryError as Error).message || 'Failed to load series'} onRetry={refetch} />
+      </View>
+    );
+  }
+  if (!series) {
+    // No forwarded cover (deep link) and the fetch hasn't resolved — brief, so keep it plain.
+    return (
+      <View style={styles.centerFill}>
+        <ThemedText themeColor="textSecondary">Loading…</ThemedText>
+      </View>
+    );
+  }
+  return (
+    <SeriesBody
+      series={series}
+      bridgeId={bridgeId}
+      isLarge={isLarge}
+      // position:sticky is a web full-page affordance — inside the card's own scroller it wouldn't
+      // resolve against the viewport anyway.
+      sticky={false}
+      actionsWidth={actionsWidth}
+      direct={isDirect}
+      width={width}
+      initialCover={cover}
+      loading={isPlaceholderData}
+      detailStarted={isFetching || !isPlaceholderData}
+      coverAspect={coverAspect}
+      onCoverLoad={onCoverLoad}
+      // The card has no TopBar — clear the notch plus room for the grab-handle.
+      topInset={insets.top + Spacing.five}
+      onStartReading={onStartReading}
+      onOpenChapter={onOpenChapter}
+      onOpenPage={onOpenPage}
+      sharedValues={sharedValues}
+    />
+  );
+}
+
+type ReaderPaneHandle = { goTo: (index: number, animated?: boolean) => void };
 
 /** The reader itself + its bottom chrome, keyed to ONE chapter (or the direct page list) and
  *  mounted only once its pages are in — so the start position seeds `useState`/`useRef` directly
  *  at mount (the same reason reader.tsx's pagers seed from `initialPage` exactly once). A trim of
  *  reader.tsx's body: chapter changes swap the whole pane (no cross-chapter stitching), and the
  *  unmount flush records the outgoing chapter's final position. */
-function ReaderPane({
-  pages,
-  start,
-  width,
-  height,
-  bridgeId,
-  seriesId,
-  seriesTitle,
-  seriesCover,
-  chapterId,
-  chapterName,
-  chaptered,
-  hasPrevChapter,
-  hasNextChapter,
-  nextChapterName,
-  onCrossChapter,
-  onSkipChapter,
-  chromeVisible,
-  onToggleChrome,
-  onShowChrome,
-  onHoldChrome,
-  onZoomChange,
-  onScrubActive,
-}: {
-  pages: string[];
-  /** First page to show — `'last'` lands on the final page (arriving backward from the next chapter). */
-  start: number | 'last';
-  width: number;
-  height: number;
-  bridgeId?: string;
-  seriesId?: string;
-  seriesTitle: string;
-  seriesCover?: string;
-  chapterId?: string;
-  chapterName?: string;
-  /** False for a direct series — drops the navigator's chapter-skip buttons. */
-  chaptered: boolean;
-  hasPrevChapter: boolean;
-  hasNextChapter: boolean;
-  nextChapterName?: string;
-  /** Paging off either end of the chapter (delta −1 lands on the previous chapter's LAST page). */
-  onCrossChapter: (delta: 1 | -1) => void;
-  /** The navigator's skip buttons — always land on the target chapter's first page. */
-  onSkipChapter: (delta: 1 | -1) => void;
-  chromeVisible: boolean;
-  onToggleChrome: () => void;
-  onShowChrome: () => void;
-  /** Chrome-hold (see reader.tsx's holdChrome): suspend auto-hide while a control is in use. */
-  onHoldChrome: (hold: boolean) => void;
-  onZoomChange: (zoomed: boolean) => void;
-  /** A scrub drag started/ended — the screen also freezes its reveal scroll for the duration. */
-  onScrubActive: (active: boolean) => void;
-}) {
+const ReaderPane = forwardRef<
+  ReaderPaneHandle,
+  {
+    pages: string[];
+    /** First page to show — `'last'` lands on the final page (arriving backward from the next chapter). */
+    start: number | 'last';
+    width: number;
+    height: number;
+    bridgeId?: string;
+    seriesId?: string;
+    seriesTitle: string;
+    seriesCover?: string;
+    chapterId?: string;
+    chapterName?: string;
+    /** False for a direct series — drops the navigator's chapter-skip buttons. */
+    chaptered: boolean;
+    hasPrevChapter: boolean;
+    hasNextChapter: boolean;
+    nextChapterName?: string;
+    /** Paging off either end of the chapter (delta −1 lands on the previous chapter's LAST page). */
+    onCrossChapter: (delta: 1 | -1) => void;
+    /** The navigator's skip buttons — always land on the target chapter's first page. */
+    onSkipChapter: (delta: 1 | -1) => void;
+    chromeVisible: boolean;
+    onToggleChrome: () => void;
+    onShowChrome: () => void;
+    /** Chrome-hold (see reader.tsx's holdChrome): suspend auto-hide while a control is in use. */
+    onHoldChrome: (hold: boolean) => void;
+    onZoomChange: (zoomed: boolean) => void;
+    /** A scrub drag started/ended — the screen also freezes its reveal pan for the duration. */
+    onScrubActive: (active: boolean) => void;
+  }
+>(function ReaderPane(
+  {
+    pages,
+    start,
+    width,
+    height,
+    bridgeId,
+    seriesId,
+    seriesTitle,
+    seriesCover,
+    chapterId,
+    chapterName,
+    chaptered,
+    hasPrevChapter,
+    hasNextChapter,
+    nextChapterName,
+    onCrossChapter,
+    onSkipChapter,
+    chromeVisible,
+    onToggleChrome,
+    onShowChrome,
+    onHoldChrome,
+    onZoomChange,
+    onScrubActive,
+  },
+  ref,
+) {
   const ds = useDataSource();
   const mock = useMockActive();
   const router = useRouter();
@@ -542,6 +776,8 @@ function ReaderPane({
     },
     [pages, settings.mode, setCurrent],
   );
+  // The details card's page-thumbnail taps jump the mounted pane directly (see openPageFromDetails).
+  useImperativeHandle(ref, () => ({ goTo }), [goTo]);
   // Boundary page-turns fall through to the adjacent chapter (chaptered only), same as reader.tsx's
   // route-level fallback — there's no stitched window here, so this is the only crossing.
   const turnPrev = useCallback(() => {
@@ -746,9 +982,9 @@ function ReaderPane({
       )}
     </>
   );
-}
+});
 
-/** The chrome's "Details" pill — the guaranteed, non-gesture way into the info half. Sits above
+/** The chrome's "Details" pill — the guaranteed, non-gesture way into the details card. Sits above
  *  the bottom chrome and fades with it. Needed because the cross-axis swipe can't always win:
  *  the web pager owns its whole touch surface, and an overflowing fit-width page's content-pan
  *  (rightly) takes vertical drags in paged mode. */
@@ -768,17 +1004,17 @@ function DetailsHint({
   return (
     <Animated.View
       pointerEvents={visible ? 'box-none' : 'none'}
-      style={[styles.detailsWrap, { bottom: insets.bottom + Spacing.two + 48 }, style]}>
+      style={[styles.detailsHintWrap, { bottom: insets.bottom + Spacing.two + 48 }, style]}>
       <Pressable
         testID="series-reader.details"
         onPress={onPress}
         hitSlop={8}
         accessibilityRole="button"
         accessibilityLabel="Show series details"
-        style={styles.detailsPill}>
-        {/* The chevron points where the info comes FROM: below in paged mode, the left in webtoon. */}
+        style={styles.detailsHintPill}>
+        {/* The chevron points where the card comes FROM: below in paged mode, the left in webtoon. */}
         {mode === 'paged' ? <ChevronDownIcon color="#fff" size={16} /> : <ChevronLeftIcon color="#fff" size={16} />}
-        <ThemedText type="small" style={styles.detailsLabel}>
+        <ThemedText type="small" style={styles.detailsHintLabel}>
           Details
         </ThemedText>
       </Pressable>
@@ -786,242 +1022,10 @@ function DetailsHint({
   );
 }
 
-/** The webtoon-mode outer pager: horizontal, two viewport-wide pages, resting on the SECOND (the
- *  reader). `contentOffset` seeds that rest position on iOS/web; the onLayout scroll is the Android
- *  fallback (where the prop has historically been unreliable) — one unanimated jump, first layout only. */
-function HorizontalReveal({
-  scrollRef,
-  width,
-  onScroll,
-  scrollEnabled,
-  children,
-}: {
-  scrollRef: RefObject<ScrollView | null>;
-  width: number;
-  onScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
-  scrollEnabled: boolean;
-  children: ReactNode;
-}) {
-  const seededRef = useRef(false);
-  return (
-    <ScrollView
-      key="outer-horizontal"
-      ref={scrollRef}
-      testID="series-reader.scroll"
-      horizontal
-      pagingEnabled
-      contentOffset={{ x: width, y: 0 }}
-      onLayout={() => {
-        if (seededRef.current) return;
-        seededRef.current = true;
-        scrollRef.current?.scrollTo({ x: width, animated: false });
-      }}
-      scrollEnabled={scrollEnabled}
-      showsHorizontalScrollIndicator={false}
-      onScroll={onScroll}
-      scrollEventThrottle={32}>
-      {children}
-    </ScrollView>
-  );
-}
-
-/** The series-info block: title, tags, meta, description, chapter list (chaptered series), and
- *  related rails — a compact single-column take on series.tsx's contentEl + chapter list +
- *  relatedRailsEl (duplicated on purpose: extracting them from SeriesBody would couple the
- *  experiment to the stable screen it exists to bypass; the chapter rows here are deliberately
- *  plain — no swipe actions/downloads — because the full ChapterScrollList owns its own scroller,
- *  which can't nest inside the reveal scroll). */
-function InfoSection({
-  series,
-  loading,
-  fallbackTitle,
-  bridgeId,
-  width,
-  chapters,
-  chaptersLoading,
-  chapterCount,
-  currentChapterId,
-  onOpenChapter,
-}: {
-  series: SeriesDetail | null;
-  /** Placeholder detail (or none at all) — tags/meta/description still in flight. */
-  loading: boolean;
-  fallbackTitle?: string;
-  bridgeId?: string;
-  width: number;
-  /** Chaptered series only — with local read state already merged on (applyReadState). */
-  chapters?: Chapter[];
-  chaptersLoading?: boolean;
-  chapterCount?: number;
-  /** The chapter the reader pane is on — highlighted in the list. */
-  currentChapterId?: string;
-  onOpenChapter?: (chapter: Chapter) => void;
-}) {
-  const ds = useDataSource();
-  const mock = useMockActive();
-  const router = useRouter();
-  const theme = useTheme();
-  const scheme = useActiveColorScheme();
-  const insets = useSafeAreaInsets();
-  const { height } = useWindowDimensions();
-  const [chaptersExpanded, setChaptersExpanded] = useState(false);
-
-  // Related rails: same lazy fetch + capability gate as series.tsx (see there for why
-  // `relatedGroupsDeferred` alone can't distinguish "deferred" from "has none").
-  const { byId: bridgeById } = useBridgeMap();
-  const relatedCapable = bridgeId
-    ? (bridgeById.get(bridgeId)?.capabilities.includes('related-series') ?? false)
-    : false;
-  const needsRelatedFetch = relatedCapable && !!series?.relatedGroupsDeferred && !series.relatedGroups;
-  const { data: fetchedRelated, isLoading: relatedLoading } = useQuery(
-    relatedGroupsQuery(ds, mock, bridgeId ?? '', series?.id ?? '', needsRelatedFetch),
-  );
-  const relatedGroups = series?.relatedGroups ?? fetchedRelated;
-
-  const tagColors = tagPaletteFor(series?.tagGroups?.map((g) => g.label) ?? [], scheme);
-  const onTagPress = (group: TagGroup, index: number) => {
-    if (!bridgeId) return;
-    const intent = tagSearchIntent(group, index, { bridgeId });
-    if (!intent) return;
-    setSearchIntent(intent);
-    router.push('/search');
-  };
-
-  const shownChapters = chaptersExpanded ? chapters : chapters?.slice(0, COLLAPSED_CHAPTER_ROWS);
-  const hiddenCount = (chapters?.length ?? 0) - (shownChapters?.length ?? 0);
-
-  return (
-    <View
-      testID="series-reader.info"
-      // At least one viewport tall, so the snap boundary always has a full info page behind it.
-      style={[styles.info, { width, minHeight: height, paddingBottom: insets.bottom + Spacing.five }]}>
-      <ThemedText style={styles.infoTitle}>{series?.title ?? fallbackTitle ?? ''}</ThemedText>
-
-      {loading ? (
-        <>
-          <View style={styles.skelChips}>
-            {[60, 48, 80, 52, 70].map((w, i) => (
-              <Skeleton key={i} style={[styles.skelChip, { width: w }]} />
-            ))}
-          </View>
-          {(['100%', '96%', '100%', '60%'] as const).map((w, i) => (
-            <Skeleton key={i} style={[styles.skelLine, { width: w }]} />
-          ))}
-        </>
-      ) : (
-        <>
-          {series?.tagGroups?.length ? (
-            <View style={styles.tagsBlock}>
-              {series.tagGroups.map((g, gi) => (
-                <TagGroupRow key={`${gi}:${g.label}`} group={g} color={tagColors[gi]!} onTagPress={(i) => onTagPress(g, i)} />
-              ))}
-            </View>
-          ) : null}
-
-          {series?.meta?.length ? (
-            <View style={[styles.metaGrid, { borderColor: theme.hairline }]}>
-              {series.meta.map((m) => (
-                <View key={m.label} style={styles.metaCell}>
-                  <ThemedText type="small" themeColor="textSecondary" style={styles.metaLabel}>
-                    {m.label}
-                  </ThemedText>
-                  <ThemedText type="small">{m.value}</ThemedText>
-                </View>
-              ))}
-            </View>
-          ) : null}
-
-          {series?.description ? (
-            <ThemedText themeColor="textSecondary" style={styles.description}>
-              {series.description}
-            </ThemedText>
-          ) : null}
-        </>
-      )}
-
-      {/* Chapter list (chaptered series). Tapping a row hands it to the reader half and the screen
-          scrolls back up into it — the row IS the navigation, so no /reader push. */}
-      {chapters || chaptersLoading ? (
-        <View>
-          <ThemedText type="smallBold" themeColor="textSecondary" style={styles.chaptersHeading}>
-            {chapterCount != null ? `${chapterCount} CHAPTERS` : 'CHAPTERS'}
-          </ThemedText>
-          {chaptersLoading && !chapters
-            ? Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} style={styles.skelChapterRow} />)
-            : shownChapters?.map((c) => {
-                const current = c.id === currentChapterId;
-                return (
-                  <Pressable
-                    key={c.id}
-                    testID={testId('series-reader.chapter', c.id)}
-                    onPress={() => onOpenChapter?.(c)}
-                    accessibilityRole="button"
-                    accessibilityLabel={c.name}
-                    style={({ pressed }) => [
-                      styles.chapterRow,
-                      { borderColor: theme.hairline },
-                      pressed && styles.chapterRowPressed,
-                    ]}>
-                    <View style={styles.chapterRowText}>
-                      <ThemedText
-                        type="small"
-                        numberOfLines={1}
-                        style={[current && { color: theme.accent }, !current && c.read && { color: theme.textSecondary }]}>
-                        {c.name}
-                      </ThemedText>
-                      <ThemedText type="small" themeColor="textSecondary" numberOfLines={1} style={styles.chapterSub}>
-                        {[c.group, c.date ? relativeTime(c.date) : undefined].filter(Boolean).join(' · ')}
-                      </ThemedText>
-                    </View>
-                    {current && (
-                      <ThemedText type="small" style={{ color: theme.accent }}>
-                        Reading
-                      </ThemedText>
-                    )}
-                  </Pressable>
-                );
-              })}
-          {hiddenCount > 0 && (
-            <Pressable
-              testID="series-reader.chapters.show-all"
-              onPress={() => setChaptersExpanded(true)}
-              accessibilityRole="button"
-              style={({ pressed }) => [styles.showAll, pressed && styles.chapterRowPressed]}>
-              <ThemedText type="small" style={{ color: theme.accent }}>
-                Show all {chapters?.length}
-              </ThemedText>
-            </Pressable>
-          )}
-        </View>
-      ) : null}
-
-      {relatedGroups?.length ? (
-        <View style={styles.related}>
-          {relatedGroups.map(
-            (group, i) =>
-              group.items.length > 0 && (
-                <Rail
-                  key={`${group.label}-${i}`}
-                  section={{ id: `related-${i}`, title: group.label, kind: 'regular', items: group.items }}
-                  viewportWidth={width}
-                  bridge={series?.bridge}
-                  bridgeId={bridgeId}
-                />
-              ),
-          )}
-        </View>
-      ) : needsRelatedFetch && relatedLoading ? (
-        <View style={styles.related}>
-          <RailSkeleton viewportWidth={width} />
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#000',
   },
   readerCell: {
     backgroundColor: READER_BACKDROP,
@@ -1035,14 +1039,40 @@ const styles = StyleSheet.create({
   loadingText: {
     color: '#fff',
   },
-  detailsWrap: {
+  dim: {
+    backgroundColor: '#000',
+  },
+  detailsCard: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    borderRadius: CARD_RADIUS,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+  },
+  detailsCardInner: {
+    flex: 1,
+  },
+  grabber: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  grabberPill: {
+    paddingVertical: Spacing.one,
+    paddingHorizontal: Spacing.four,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  detailsHintWrap: {
     position: 'absolute',
     left: 0,
     right: 0,
     alignItems: 'center',
     zIndex: 2,
   },
-  detailsPill: {
+  detailsHintPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.one,
@@ -1051,91 +1081,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: 'rgba(0,0,0,0.55)',
   },
-  detailsLabel: {
+  detailsHintLabel: {
     color: '#fff',
-  },
-  infoPanel: {
-    overflow: 'hidden',
-  },
-  info: {
-    paddingHorizontal: Spacing.four,
-    paddingTop: Spacing.four,
-    gap: Spacing.four,
-  },
-  infoTitle: {
-    // Matches series.tsx's title treatment (h2-ish, not the 32px subtitle).
-    fontSize: 24,
-    lineHeight: 30,
-    fontWeight: '700',
-  },
-  tagsBlock: {
-    gap: Spacing.two,
-  },
-  metaGrid: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: Spacing.two,
-    paddingVertical: Spacing.three,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  metaCell: {
-    flex: 1,
-    gap: Spacing.half,
-  },
-  metaLabel: {
-    fontSize: 11,
-    letterSpacing: 0.5,
-  },
-  description: {
-    fontSize: 14,
-    lineHeight: 21,
-  },
-  chaptersHeading: {
-    fontSize: 11,
-    letterSpacing: 0.5,
-    marginBottom: Spacing.two,
-  },
-  chapterRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    paddingVertical: Spacing.two,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  chapterRowPressed: {
-    opacity: 0.6,
-  },
-  chapterRowText: {
-    flex: 1,
-    gap: 2,
-  },
-  chapterSub: {
-    fontSize: 12,
-  },
-  skelChapterRow: {
-    height: 40,
-    borderRadius: 6,
-    marginBottom: Spacing.one,
-  },
-  showAll: {
-    paddingVertical: Spacing.two,
-    alignItems: 'center',
-  },
-  related: {
-    gap: Spacing.two,
-  },
-  skelChips: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.one,
-  },
-  skelChip: {
-    height: 22,
-    borderRadius: 999,
-  },
-  skelLine: {
-    height: 13,
-    borderRadius: 6,
   },
 });

@@ -40,7 +40,7 @@ import { ASPECT_TRANSITION_MS, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { resetPreferredGroup } from '@/lib/preferred-group';
 import { tagPaletteFor } from '@/lib/tag-colors';
 import { testId } from '@/lib/test-id';
-import { type SeriesDetail, type TagGroup } from '@/data/types';
+import { type Chapter, type SeriesDetail, type TagGroup } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useFavorite } from '@/hooks/use-favorite';
@@ -315,8 +315,13 @@ export default function SeriesScreen() {
 }
 
 /** Two-column (large) / stacked (small) series detail — only rendered once the
- *  real (or mock) fetch has resolved, so it never has to handle a null series. */
-function SeriesBody({
+ *  real (or mock) fetch has resolved, so it never has to handle a null series.
+ *
+ *  Exported: the experimental series-reader page (`app/series-reader.tsx`) renders this exact
+ *  component as its details panel, so the two screens can never drift apart. The `topInset` /
+ *  `onStartReading` / `onOpenChapter` / `onOpenPage` props exist for that embedding and default
+ *  to this screen's behavior. */
+export function SeriesBody({
   series,
   bridgeId,
   isLarge,
@@ -329,6 +334,10 @@ function SeriesBody({
   detailStarted,
   coverAspect,
   onCoverLoad,
+  topInset,
+  onStartReading,
+  onOpenChapter,
+  onOpenPage,
   sharedValues,
   onScrollEndDrag,
   wrapperStyle,
@@ -354,6 +363,16 @@ function SeriesBody({
   /** The hero cover's live aspect + its measurer — owned by SeriesScreen (see there). */
   coverAspect: number;
   onCoverLoad: (e: ImageLoadEventData) => void;
+  /** Top inset for the owning scroller — defaults to this screen's overlaying TopBar height.
+   *  The series-reader embedding passes its own (its details card has no top bar). */
+  topInset?: number;
+  /** Replaces the Read button / cover tap's "open `/reader` at the resume point" — the
+   *  series-reader embedding returns to its own in-place reader instead. */
+  onStartReading?: () => void;
+  /** See ChapterScrollList / PageThumbList: hand a tapped chapter version / page thumbnail to the
+   *  caller's in-place reader instead of pushing `/reader`. */
+  onOpenChapter?: (version: Chapter) => void;
+  onOpenPage?: (pageIndex: number) => void;
   /** Pull-to-refresh wiring owned by SeriesScreen, threaded to whichever list owns the scroll. */
   sharedValues?: { scrollOffset: SharedValue<number> };
   onScrollEndDrag?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
@@ -444,7 +463,7 @@ function SeriesBody({
   const {
     label: readingLabel,
     resume: resumeEntry,
-    start: startReading,
+    start: startReadingDefault,
   } = useStartReading({
     bridgeId,
     seriesId: series.id,
@@ -452,6 +471,9 @@ function SeriesBody({
     direct,
     readLabel,
   });
+  // The series-reader embedding swaps the push-to-/reader for a return to its in-place reader
+  // (which resolved the same resume point itself); this screen keeps the default.
+  const startReading = onStartReading ?? startReadingDefault;
   // The play glyph leads a RESUME (and the bare "Read" fallback); a bridge's own readLabel is shown
   // as it comes.
   const primaryLabel = !resumeEntry && readLabel ? readLabel : `▶  ${readingLabel}`;
@@ -676,7 +698,8 @@ function SeriesBody({
   // chapter list is the screen's own virtualized scroller (`ChapterScrollList` below), which takes
   // this block as its header; direct series render `contentEl` inside the page-thumb list header.
 
-  const topBarInset = useTopBarInset();
+  const defaultTopInset = useTopBarInset();
+  const topBarInset = topInset ?? defaultTopInset;
   // The web-only sticky cover column is a two-column-hero affordance — a direct series' hero lives
   // inside the page list's header, where position:sticky doesn't apply, so don't ask for it there.
   const heroSticky = sticky && !direct;
@@ -751,6 +774,7 @@ function SeriesBody({
         bridgeId={bridgeId}
         header={<View style={styles.innerNoPad}>{heroBlock}</View>}
         footer={relatedRailsEl}
+        onOpenPage={onOpenPage}
         sharedValues={sharedValues}
         onScrollEndDrag={onScrollEndDrag}
         wrapperStyle={wrapperStyle}
@@ -794,6 +818,7 @@ function SeriesBody({
       footer={relatedRailsEl}
       isLarge={isLarge}
       topInset={topBarInset}
+      onOpenChapter={onOpenChapter}
       sharedValues={sharedValues}
       onScrollEndDrag={onScrollEndDrag}
       wrapperStyle={wrapperStyle}

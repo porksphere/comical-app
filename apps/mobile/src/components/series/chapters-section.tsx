@@ -347,6 +347,7 @@ export function ChapterScrollList({
   footer,
   isLarge,
   topInset = 0,
+  onOpenChapter,
   sharedValues,
   onScrollEndDrag,
   wrapperStyle,
@@ -368,6 +369,10 @@ export function ChapterScrollList({
   isLarge: boolean;
   /** Height of the overlaying top bar, so the first content clears it (and scrolls under its frost). */
   topInset?: number;
+  /** When set, opening a chapter version is handed HERE instead of pushing `/reader` (the
+   *  preferred-group side effect still applies first). Used by the experimental series-reader
+   *  page, whose details panel feeds its own in-place reader rather than navigating. */
+  onOpenChapter?: (version: Chapter) => void;
 } & PullListWiring) {
   const theme = useTheme();
   const router = useRouter();
@@ -448,9 +453,13 @@ export function ChapterScrollList({
   }, [grouped, tab, asc]);
 
   // Open a specific version: remember its group as the preferred source, then route
-  // to the reader for that copy.
+  // to the reader for that copy — or hand it to the caller's in-place reader when overridden.
   const openVersion = (v: Chapter) => {
     setPreferredGroup(v.group);
+    if (onOpenChapter) {
+      onOpenChapter(v);
+      return;
+    }
     router.push({
       pathname: '/reader',
       params: {
@@ -1120,6 +1129,7 @@ export function PageThumbList({
   header,
   footer,
   topInset = 0,
+  onOpenPage,
   sharedValues,
   onScrollEndDrag,
   wrapperStyle,
@@ -1137,6 +1147,9 @@ export function PageThumbList({
   /** Related-series rails — the list footer, below the grid and the "Show all"
    *  button (while collapsed). */
   footer?: ReactElement | null;
+  /** When set, tapping a page thumbnail is handed HERE instead of pushing `/reader` — same
+   *  in-place-reader override as ChapterScrollList's `onOpenChapter`. */
+  onOpenPage?: (pageIndex: number) => void;
 } & PullListWiring) {
   const theme = useTheme();
   const router = useRouter();
@@ -1262,12 +1275,16 @@ export function PageThumbList({
             bridgeId={bridgeId}
             page={item.pageIndex + 1}
             width={tileW}
-            onPress={() =>
+            onPress={() => {
+              if (onOpenPage) {
+                onOpenPage(item.pageIndex);
+                return;
+              }
               router.push({
                 pathname: '/reader',
                 params: { seed, title, direct: '1', start: String(item.pageIndex), ...(bridgeId ? { bridgeId } : {}) },
-              })
-            }
+              });
+            }}
           />
         </View>
       )}

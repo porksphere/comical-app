@@ -1,14 +1,16 @@
 # EXPERIMENTAL series reader page (app/series-reader.tsx): with the Settings → General →
 # "Series reader page" toggle on, tapping ANY series card opens the reader-first page — pages up
-# immediately (resume-or-first-chapter resolved on the spot), series info + chapter list one
-# swipe away — instead of the /series detail screen.
+# immediately (resume-or-first-chapter resolved on the spot), and the series details live on a
+# screen-sized card revealed over the reader. The card renders series.tsx's REAL SeriesBody, so
+# its selectors are the series screen's own (series.action.read, series.chapter.*).
 #
 # Journey: enable the toggle -> Browse -> tap a card (the default mock bridge is chaptered, so
 # this exercises the chapter-resolution path) -> assert the reader chrome came up directly ->
-# reveal the info via the chrome's Details pill -> tap a chapter row -> back in the reader.
-# (The pill, not a swipe, is the reveal step here: it's the guaranteed path — a fit-width page
-# taller than the viewport takes vertical drags for its own content-pan — and it gives this flow
-# a deterministic tap target.)
+# reveal the details card via the chrome's Details pill -> assert the real series content ->
+# tap a chapter row -> the card slides away and the reader is back on that chapter.
+# (The pill, not a swipe, is the reveal step: it's the guaranteed path — a fit-width page taller
+# than the viewport takes vertical drags for its own content-pan — and it gives this flow a
+# deterministic tap target.)
 #
 # Selectors (confirmed against source):
 #   - settings category:  settings.category.general               (app/(tabs)/settings.tsx)
@@ -18,9 +20,9 @@
 #   - series cards:       series-card.<seriesId>                  (components/series-card.tsx)
 #   - reader back:        reader.toolbar.back                     (components/reader/reader-toolbar.tsx)
 #   - Details pill:       series-reader.details                   (app/series-reader.tsx DetailsHint)
-#   - info section:       series-reader.info                      (app/series-reader.tsx)
-#   - chapter rows:       series-reader.chapter.<key>             (app/series-reader.tsx; chapter ids
-#                         slug into extra dot-segments, so match the prefix broadly)
+#   - card content:       series.action.read                      (SeriesBody's Read button)
+#   - chapter rows:       series.chapter.<key>                    (components/series/chapters-section.tsx;
+#                         a key like "1.5" slugs into extra dot-segments — match the prefix broadly)
 appId: com.porksphere.comical
 ---
 - launchApp
@@ -48,20 +50,21 @@ appId: com.porksphere.comical
 - assertVisible:
     id: "reader.toolbar.back"
 
-# Reveal the info half (tags/meta/description/chapters/related) via the Details pill.
+# Reveal the details card: it renders the series screen's own body (cover, action column, tags,
+# chapters, rails), so asserting its Read button proves the real content is up.
 - tapOn:
     id: "series-reader.details"
 - assertVisible:
-    id: "series-reader.info"
+    id: "series.action.read"
 
-# Tapping a chapter row hands it to the reader and scrolls back up into it.
+# Tapping a chapter row hands it to the in-place reader — the card slides away.
 - scrollUntilVisible:
     element:
-      id: "series-reader\\.chapter\\..*"
+      id: "series\\.chapter\\..*"
     direction: DOWN
     timeout: 20000
 - tapOn:
-    id: "series-reader\\.chapter\\..*"
+    id: "series\\.chapter\\..*"
     index: 0
 - assertVisible:
     id: "reader.toolbar.back"
