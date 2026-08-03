@@ -16,7 +16,18 @@ import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-na
  * but deliberately screen-agnostic — any screen that swaps its top chrome between modes should
  * render one of these instead of conditionally mounting different bars.
  */
-export function TopBarSwitch({ mode, bars }: { mode: string; bars: Record<string, ReactNode> }) {
+export function TopBarSwitch({
+  mode,
+  bars,
+  persistent,
+}: {
+  mode: string;
+  bars: Record<string, ReactNode>;
+  /** Chrome that belongs IDENTICALLY to every mode (e.g. a back button that must not blink or
+   *  move through the handoff): stacked above the crossfading layers and never faded by the
+   *  switch — the element itself decides any state of its own. */
+  persistent?: ReactNode;
+}) {
   return (
     <View style={styles.slot} pointerEvents="box-none">
       {Object.entries(bars).map(([key, node]) => (
@@ -24,6 +35,11 @@ export function TopBarSwitch({ mode, bars }: { mode: string; bars: Record<string
           {node}
         </BarLayer>
       ))}
+      {persistent != null && (
+        <View style={styles.layer} pointerEvents="box-none">
+          {persistent}
+        </View>
+      )}
     </View>
   );
 }

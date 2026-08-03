@@ -18,8 +18,8 @@
 #   - back from General:  top-bar.back                            (components/top-bar.tsx)
 #   - series cards:       series-card.<seriesId>                  (components/series-card.tsx)
 #   - reader strip band:  series-reader.header-band               (app/series-reader.tsx — the
-#                         strip's touch surface at the top of the details page)
-#   - reader back:        reader.toolbar.back                     (components/reader/reader-toolbar.tsx)
+#                         strip's touch surface at the top of the details page; UNMOUNTED while
+#                         the reader is expanded, so its absence proves the mode)
 #   - Details pill:       series-reader.details                   (app/series-reader.tsx)
 #   - details content:    series.action.read                      (SeriesBody's Read button)
 #   - chapter rows:       series.chapter.<key>                    (components/series/chapters-section.tsx;
@@ -51,11 +51,12 @@ appId: com.porksphere.comical
 - assertVisible:
     id: "series.action.read"
 
-# Tapping the reader strip expands the reader full screen (the details slide down away).
+# Tapping the reader strip expands the reader full screen (the details slide down away; the
+# strip band unmounts — its absence is the deterministic expanded-mode signal).
 - tapOn:
     id: "series-reader.header-band"
-- assertVisible:
-    id: "reader.toolbar.back"
+- assertNotVisible:
+    id: "series-reader.header-band"
 
 # The Details pill collapses back to the details page.
 - tapOn:
@@ -72,5 +73,5 @@ appId: com.porksphere.comical
 - tapOn:
     id: "series\\.chapter\\..*"
     index: 0
-- assertVisible:
-    id: "reader.toolbar.back"
+- assertNotVisible:
+    id: "series-reader.header-band"

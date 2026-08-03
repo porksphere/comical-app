@@ -6,8 +6,8 @@
 #     "General", "Browse"), not tab.*/settings.category.* — icon rows set aria-label, which wins.
 #   - back out of General via "Go back" (the TopBar back button's aria-label).
 #   - the toggle has no competing accessibilityLabel, so its testID works.
-#   - the reader strip band taps on "Read full screen", the reader back asserts on "Close reader"
-#     (reader.toolbar.back's aria-label), the Details pill taps on "Show series details" —
+#   - the reader strip band taps on "Read full screen" (and its disappearance proves the reader
+#     expanded — the band unmounts then), the Details pill taps on "Show series details" —
 #     aria-label wins.
 #   - the details render series.tsx's real SeriesBody; "series.action.read" (no competing label —
 #     same anchor browse-to-reader.yaml uses) proves the real series content is up.
@@ -39,11 +39,11 @@ url: http://localhost:4000/comical-app
 - assertVisible:
     id: "series.action.read"
 
-# Tapping the reader strip expands the reader full screen.
+# Tapping the reader strip expands the reader full screen (the strip band unmounts).
 - tapOn:
     id: "Read full screen"
-- assertVisible:
-    id: "Close reader"
+- assertNotVisible:
+    id: "Read full screen"
 
 # The Details pill collapses back to the details page.
 - tapOn:

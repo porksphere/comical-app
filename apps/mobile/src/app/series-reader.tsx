@@ -294,13 +294,19 @@ export default function SeriesReaderScreen() {
   // native paged reader can stitch them into ONE flat pager — swiping across a chapter boundary
   // is then an ordinary page turn with an in-place relabel, no remount.
   const stitched = !IS_WEB && settings.mode === 'paged' && !isDirect;
+  // The committed side of the reveal (declared up here — the stitching queries below gate on
+  // it). The screen opens ON the details; see the reveal section further down.
+  const [detailsActive, setDetailsActive] = useState(true);
+  // Deferred while the details are up (standby): the strip needs nothing beyond its visible
+  // page, and a window prepend arriving under the strip re-anchors the pager — a visible pop on
+  // an otherwise settled image. Expanding enables them and the window builds for real reading.
   const { data: prevPages } = useQuery({
     ...chapterPagesQuery(ds, mock, bridgeId ?? '', id ?? '', prevChapter?.id ?? ''),
-    enabled: stitched && !!id && !!prevChapter,
+    enabled: stitched && !detailsActive && !!id && !!prevChapter,
   });
   const { data: nextPages } = useQuery({
     ...chapterPagesQuery(ds, mock, bridgeId ?? '', id ?? '', nextChapter?.id ?? ''),
-    enabled: stitched && !!id && !!nextChapter,
+    enabled: stitched && !detailsActive && !!id && !!nextChapter,
   });
 
   // The stitched window — reader.tsx's run, verbatim in behavior: a segment only joins once its
@@ -416,7 +422,6 @@ export default function SeriesReaderScreen() {
   // for everything JS-side (gesture enabling, back handling, status bar). The screen opens ON
   // the details (reader collapsed to the strip).
   const progress = useSharedValue(1);
-  const [detailsActive, setDetailsActive] = useState(true);
   // The details page's internal scroll offset (SeriesBody's list writes it on the UI thread via
   // the same `sharedValues` wiring pull-to-refresh uses) — drives the strip occlusion, the top
   // bar's scroll crossfade, and the pull-past-top reveal.
@@ -689,9 +694,32 @@ export default function SeriesReaderScreen() {
   const headerBarStyle = useAnimatedStyle(() => ({
     opacity: interpolate(detailsScrollOffset.value, [barOnOffset - 24, barOnOffset + 16], [0, 1], Extrapolation.CLAMP),
   }), [barOnOffset]);
-  const headerBackStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(detailsScrollOffset.value, [barOnOffset - 24, barOnOffset + 16], [1, 0], Extrapolation.CLAMP),
-  }), [barOnOffset]);
+  // The PERSISTENT back button (TopBarSwitch's `persistent` slot): the same chevron serves both
+  // modes from the same spot — it never fades or moves through the details⇄reader handoff, only
+  // its COLOR crossfades (theme text over the details, white over the page). In reader mode it
+  // follows the auto-hiding chrome (via the shared-value mirror) and a dismissal's chrome curve.
+  const chromeVisibleSV = useSharedValue(1);
+  useEffect(() => {
+    chromeVisibleSV.set(withTiming(chromeVisible ? 1 : 0, { duration: 200 }));
+  }, [chromeVisible, chromeVisibleSV]);
+  const backPersistStyle = useAnimatedStyle(() => {
+    const dismissFade = interpolate(
+      Math.min(1, Math.hypot(dismissX.value, dismissY.value) / span),
+      [0, 0.6],
+      [1, 0],
+      Extrapolation.CLAMP,
+    );
+    // Details side is always-on; reader side follows the chrome. max() keeps it solid through
+    // the transition instead of dipping.
+    const detailsSide = interpolate(progress.value, [0.4, 0.8], [0, 1], Extrapolation.CLAMP);
+    return { opacity: Math.max(detailsSide, chromeVisibleSV.value) * dismissFade };
+  }, [span]);
+  const backThemeIconStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(progress.value, [0.3, 0.7], [0, 1], Extrapolation.CLAMP),
+  }));
+  const backWhiteIconStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(progress.value, [0.3, 0.7], [1, 0], Extrapolation.CLAMP),
+  }));
 
   // The reader FRAME travels only for the strip centering: while collapsed it rises by half its
   // hidden height so the strip window shows the page's vertical CENTER (not its top edge),
@@ -914,9 +942,13 @@ export default function SeriesReaderScreen() {
             </>
           ) : !readerReady ? (
             <>
-              <View style={styles.centerFill}>
-                <ThemedText style={styles.loadingText}>Loading…</ThemedText>
-              </View>
+              {/* No "Loading…" while the details are up — the strip is a quiet background there
+                  (the per-page % indicator, once pages exist, is ReaderPage's and stays). */}
+              {!detailsActive && (
+                <View style={styles.centerFill}>
+                  <ThemedText style={styles.loadingText}>Loading…</ThemedText>
+                </View>
+              )}
               {dimOverlays}
             </>
           ) : (
@@ -993,47 +1025,55 @@ export default function SeriesReaderScreen() {
       )}
 
       {/* ONE statically-stuck top-bar slot serving BOTH modes — TopBarSwitch keeps the details
-          bar (shared TopBar: transparent over the strip with a floating back button, opaque once
-          scrolled) and the reader's untouched ReaderToolbar mounted together and CROSSFADES
-          between them as the mode flips, so the bar reads as a single element whose title/icons
-          dissolve over (the X/Reddit morphing-header treatment). Above the band overlay so its
-          taps win. */}
+          bar (shared TopBar, back-less: transparent over the strip, opaque once scrolled) and
+          the reader's transparent ReaderToolbar (also back-less) mounted together and CROSSFADES
+          between them as the mode flips, while the PERSISTENT back chevron sits above both, in
+          one spot, never fading — only its color dissolves with the mode (the X/Reddit
+          morphing-header treatment). Above the band overlay so its taps win. */}
       {(
         <TopBarSwitch
           mode={detailsActive ? 'details' : 'reader'}
+          persistent={
+            <Animated.View
+              pointerEvents={detailsActive || chromeVisible ? 'box-none' : 'none'}
+              style={[styles.headerBackWrap, { top: insets.top, height: topBarHeight }, backPersistStyle]}>
+              <Pressable
+                testID="series-reader.header-back"
+                onPress={goBack}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel="Go back"
+                style={styles.headerBackBtn}>
+                <Animated.View style={backWhiteIconStyle}>
+                  <ChevronLeftIcon color="#fff" />
+                </Animated.View>
+                <Animated.View style={[StyleSheet.absoluteFill, styles.headerBackBtn, backThemeIconStyle]}>
+                  <ChevronLeftIcon color={theme.text} />
+                </Animated.View>
+              </Pressable>
+            </Animated.View>
+          }
           bars={{
             details: (
-              <>
-                <Animated.View
-                  testID="series-reader.header-topbar"
-                  pointerEvents={barSolid ? 'box-none' : 'none'}
-                  style={[styles.headerBarWrap, headerBarStyle]}>
-                  <TopBar title={headerBarTitle} onBack={goBack} />
-                </Animated.View>
-                <Animated.View
-                  pointerEvents={barSolid ? 'none' : 'box-none'}
-                  style={[styles.headerBackWrap, { top: insets.top, height: topBarHeight }, headerBackStyle]}>
-                  <Pressable
-                    testID="series-reader.header-back"
-                    onPress={goBack}
-                    hitSlop={12}
-                    accessibilityRole="button"
-                    accessibilityLabel="Go back"
-                    style={styles.headerBackBtn}>
-                    <ChevronLeftIcon color={theme.text} />
-                  </Pressable>
-                </Animated.View>
-              </>
+              <Animated.View
+                testID="series-reader.header-topbar"
+                pointerEvents={barSolid ? 'box-none' : 'none'}
+                style={[styles.headerBarWrap, headerBarStyle]}>
+                {/* left: an empty slot — the persistent chevron above IS the back button. */}
+                <TopBar title={headerBarTitle} left={<View />} />
+              </Animated.View>
             ),
             reader: (
-              // The reader's own fully transparent toolbar, exactly as /reader has it — its
-              // auto-hide rides `visible`, and a dismissal fades it on the old reader's curve.
+              // The reader's own fully transparent toolbar, as /reader has it (minus its back —
+              // the persistent chevron above serves both modes) — its auto-hide rides `visible`,
+              // and a dismissal fades it on the old reader's curve.
               <Animated.View pointerEvents="box-none" style={chromeDismissStyle}>
                 <ReaderToolbar
                   title={seriesTitle}
                   subtitle={target?.chapterName ?? ''}
                   visible={chromeVisible}
                   onBack={goBack}
+                  hideBack
                   right={
                     <SettingsControl
                       bridgeId={bridgeId}
