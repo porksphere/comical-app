@@ -448,6 +448,10 @@ export default function SeriesReaderScreen() {
   const dismissX = useSharedValue(0);
   const dismissY = useSharedValue(0);
   const dismissing = useSharedValue(false);
+  // The iOS pull-past-top follow (the reaction below): whether it currently owns `progress`,
+  // and where `progress` stood when the pull engaged (the pull maps relative to it).
+  const pullEngagedSV = useSharedValue(false);
+  const pullStartSV = useSharedValue(1);
 
   // JS-side half of a commit — deliberately closes over nothing but state setters (no shared
   // values, no timer refs), so the gesture worklets can `runOnJS` it; the worklets animate
@@ -464,25 +468,50 @@ export default function SeriesReaderScreen() {
   const setRevealed = useCallback(
     (to: 0 | 1) => {
       detailsActiveSV.set(to === 1);
+      pullEngagedSV.set(false); // the commit animation owns `progress` — stop any live pull-follow
       progress.set(withTiming(to, { duration: 240, easing: Easing.out(Easing.cubic) }));
       commitReveal(to);
     },
-    [progress, detailsActiveSV, commitReveal],
+    [progress, detailsActiveSV, pullEngagedSV, commitReveal],
   );
 
   // The collapsed reader strip is the top of the details PAGE, so its reveal is the page's own
   // overscroll — any pull past the top rides the native rubber-band down, with the whole page
   // (background sheet + content, see headerSheetBgStyle) following the finger and the reader
   // fading in above. No arming/freeze: the content moving WITH the pull is the point.
+  //
+  // Like the pans, the follow is RELATIVE: it engages only when the offset crosses past the top
+  // (capturing `progress` where it stands, so a pull that begins mid-animation continues the
+  // motion instead of snapping to the absolute position), and a release that didn't commit
+  // ANIMATES back to the details rather than hard-setting. Without the engage gate, the
+  // rubber-band bounce still settling after a pull-commit would stomp a quick follow-up
+  // collapse animation — the "completes instantly" chop.
   const headerSpan = Math.max(1, height - (insets.top + HEADER_BAND));
   useAnimatedReaction(
     () => detailsScrollOffset.value,
     (off, prevOff) => {
-      if (!IS_IOS || !detailsActiveSV.value) return;
-      if (off < 0) progress.set(Math.max(0, Math.min(1, 1 + off / headerSpan)));
-      else if ((prevOff ?? 0) < 0) progress.set(1);
+      if (!IS_IOS) return;
+      if (!detailsActiveSV.value) {
+        // A commit's animation owns `progress` now; the leftover bounce must not re-engage.
+        pullEngagedSV.set(false);
+        return;
+      }
+      if (off < 0) {
+        if ((prevOff ?? 0) >= 0) {
+          pullEngagedSV.set(true);
+          pullStartSV.set(progress.value);
+        }
+        if (pullEngagedSV.value) {
+          progress.set(Math.max(0, Math.min(1, pullStartSV.value + off / headerSpan)));
+        }
+      } else if (pullEngagedSV.value) {
+        pullEngagedSV.set(false);
+        if (progress.value < 1) {
+          progress.set(withTiming(1, { duration: 240, easing: Easing.out(Easing.cubic) }));
+        }
+      }
     },
-    [headerSpan, detailsScrollOffset, detailsActiveSV, progress],
+    [headerSpan, detailsScrollOffset, detailsActiveSV, pullEngagedSV, pullStartSV, progress],
   );
   const onDetailsScrollEndDrag = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
