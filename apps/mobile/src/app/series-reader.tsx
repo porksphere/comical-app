@@ -301,16 +301,24 @@ export default function SeriesReaderScreen() {
   // The committed side of the reveal (declared up here — the stitching queries below gate on
   // it). The screen opens ON the details; see the reveal section further down.
   const [detailsActive, setDetailsActive] = useState(true);
+  // `detailsActive`, but lagging past the 240ms reveal/collapse animation: the HEAVY mode flips
+  // (the standby render window, the adjacent-chapter fetches) key off THIS, so page cells mount
+  // and lists re-window after the transition has finished instead of chopping it mid-flight.
+  const [detailsSettled, setDetailsSettled] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setDetailsSettled(detailsActive), 300);
+    return () => clearTimeout(t);
+  }, [detailsActive]);
   // Deferred while the details are up (standby): the strip needs nothing beyond its visible
   // page, and a window prepend arriving under the strip re-anchors the pager — a visible pop on
   // an otherwise settled image. Expanding enables them and the window builds for real reading.
   const { data: prevPages } = useQuery({
     ...chapterPagesQuery(ds, mock, bridgeId ?? '', id ?? '', prevChapter?.id ?? ''),
-    enabled: stitched && !detailsActive && !!id && !!prevChapter,
+    enabled: stitched && !detailsSettled && !!id && !!prevChapter,
   });
   const { data: nextPages } = useQuery({
     ...chapterPagesQuery(ds, mock, bridgeId ?? '', id ?? '', nextChapter?.id ?? ''),
-    enabled: stitched && !detailsActive && !!id && !!nextChapter,
+    enabled: stitched && !detailsSettled && !!id && !!nextChapter,
   });
 
   // The stitched window — reader.tsx's run, verbatim in behavior: a segment only joins once its
@@ -518,6 +526,11 @@ export default function SeriesReaderScreen() {
   // gesture that begins while the page hasn't fully settled from a previous dismiss drag is
   // always a dismiss gesture — only a settled page reveals the details on a swipe.
   const gestureMode = useSharedValue<0 | 1 | 2>(0); // 0 undecided, 1 reveal, 2 dismiss
+  // Where `progress` stood when the gesture locked — drags map RELATIVE to it, so a gesture that
+  // begins mid-animation continues the motion from where it is instead of snapping to the drag's
+  // absolute position (the "fast-forward" chop under quick successive swipes).
+  const progressStartSV = useSharedValue(0);
+  const panBeganSV = useSharedValue(false);
   const collapsePan = useMemo(() => {
     const dismissSpan = settings.mode === 'paged' ? height : width;
     const span = settings.mode === 'paged' ? headerSpan : width;
@@ -537,11 +550,13 @@ export default function SeriesReaderScreen() {
           if (gestureMode.value === 0) {
             const settled = Math.hypot(dismissX.value, dismissY.value) <= 1;
             if (!settled) gestureMode.set(2);
-            else if (Math.abs(cross) >= 2) gestureMode.set(cross <= 0 ? 1 : 2);
-            else return; // no meaningful movement yet
+            else if (Math.abs(cross) >= 2) {
+              gestureMode.set(cross <= 0 ? 1 : 2);
+              progressStartSV.set(progress.value);
+            } else return; // no meaningful movement yet
           }
           if (gestureMode.value === 1) {
-            progress.set(Math.min(1, Math.max(0, -cross) / span));
+            progress.set(Math.min(1, Math.max(0, progressStartSV.value + -cross / span)));
             return;
           }
           // SwipeDismiss's follow, verbatim: both axes, unclamped.
@@ -594,7 +609,7 @@ export default function SeriesReaderScreen() {
       else pan.activeOffsetX([-20, 20]).failOffsetY([-15, 15]);
       return pan;
     }
-  }, [settings.mode, collapseEnabled, width, height, headerSpan, gestureMode, progress, dismissX, dismissY, dismissing, detailsActiveSV, commitReveal, goBack]);
+  }, [settings.mode, collapseEnabled, width, height, headerSpan, gestureMode, progressStartSV, progress, dismissX, dismissY, dismissing, detailsActiveSV, commitReveal, goBack]);
 
   // Band pan. The strip (the reader band at the top of the details page) expands the reader the
   // same way the page's own overscroll does: a tap, or a DOWNWARD drag that slides the whole
@@ -606,7 +621,11 @@ export default function SeriesReaderScreen() {
       .failOffsetX([-15, 15])
       .onUpdate((e) => {
         if (!detailsActiveSV.value) return;
-        progress.set(Math.max(0, Math.min(1, 1 - e.translationY / headerSpan)));
+        if (!panBeganSV.value) {
+          panBeganSV.set(true);
+          progressStartSV.set(progress.value);
+        }
+        progress.set(Math.max(0, Math.min(1, progressStartSV.value - e.translationY / headerSpan)));
       })
       .onEnd((e) => {
         if (!detailsActiveSV.value) return;
@@ -614,8 +633,11 @@ export default function SeriesReaderScreen() {
         detailsActiveSV.set(!open);
         progress.set(withTiming(open ? 0 : 1, { duration: 240, easing: Easing.out(Easing.cubic) }));
         runOnJS(commitReveal)(open ? 0 : 1);
+      })
+      .onFinalize(() => {
+        panBeganSV.set(false);
       });
-  }, [detailsActive, headerSpan, progress, detailsActiveSV, commitReveal]);
+  }, [detailsActive, headerSpan, panBeganSV, progressStartSV, progress, detailsActiveSV, commitReveal]);
 
   // Reveal pan — on the details layer, for platforms without the native rubber-band (the iOS
   // path is the reaction above). The details page always reveals the reader by moving DOWN,
@@ -655,7 +677,11 @@ export default function SeriesReaderScreen() {
         // rebuilt-disabled recognizer live, and a stale details pan must never act while the
         // reader owns the screen.
         if (!detailsActiveSV.value) return;
-        progress.set(Math.max(0, Math.min(1, 1 - e.translationY / headerSpan)));
+        if (!panBeganSV.value) {
+          panBeganSV.set(true);
+          progressStartSV.set(progress.value);
+        }
+        progress.set(Math.max(0, Math.min(1, progressStartSV.value - e.translationY / headerSpan)));
       })
       .onEnd((e) => {
         if (!detailsActiveSV.value) return;
@@ -663,8 +689,11 @@ export default function SeriesReaderScreen() {
         detailsActiveSV.set(!close);
         progress.set(withTiming(close ? 0 : 1, { duration: 240, easing: Easing.out(Easing.cubic) }));
         runOnJS(commitReveal)(close ? 0 : 1);
+      })
+      .onFinalize(() => {
+        panBeganSV.set(false);
       });
-  }, [detailsActive, headerSpan, progress, touchStartX, touchStartY, detailsScrollOffset, detailsActiveSV, commitReveal]);
+  }, [detailsActive, headerSpan, panBeganSV, progressStartSV, progress, touchStartX, touchStartY, detailsScrollOffset, detailsActiveSV, commitReveal]);
 
   // Edge back-swipe (details mode): the native stack's pop gesture, recreated — the route is a
   // contained transparent modal (needed for the reader's dismissal reveal), which doesn't get the
@@ -675,6 +704,8 @@ export default function SeriesReaderScreen() {
   const edgeX = useSharedValue(0);
   const edgeStartX = useSharedValue(0);
   const edgeStartY = useSharedValue(0);
+  const edgeActiveSV = useSharedValue(false);
+  const edgeCommitting = useSharedValue(false);
   const edgePan = useMemo(() => {
     return Gesture.Pan()
       .enabled(detailsActive)
@@ -683,8 +714,13 @@ export default function SeriesReaderScreen() {
         const t = e.allTouches[0]!;
         edgeStartX.set(t.x);
         edgeStartY.set(t.y);
+        edgeCommitting.set(false);
       })
       .onTouchesMove((e, mgr) => {
+        // Pre-activation gatekeeping ONLY. Once the drag is live it must stay live — failing it
+        // mid-gesture (a finger that angles downward while sliding) cancelled the pan with the
+        // screen stuck part-slid, no spring back, no reversal.
+        if (edgeActiveSV.value) return;
         if (edgeStartX.get() > EDGE_BACK_PX) {
           mgr.fail();
           return;
@@ -700,11 +736,13 @@ export default function SeriesReaderScreen() {
       })
       .onUpdate((e) => {
         if (!detailsActiveSV.value) return;
+        edgeActiveSV.set(true);
         edgeX.set(Math.max(0, e.translationX));
       })
       .onEnd((e) => {
         if (!detailsActiveSV.value) return;
         if (edgeX.value > width * 0.3 || e.velocityX > FLICK_VELOCITY) {
+          edgeCommitting.set(true);
           edgeX.set(
             withTiming(width, { duration: EXIT_MS }, (finished) => {
               if (finished) runOnJS(goBack)();
@@ -713,8 +751,13 @@ export default function SeriesReaderScreen() {
         } else {
           edgeX.set(withSpring(0, SPRING_BACK));
         }
+      })
+      .onFinalize(() => {
+        edgeActiveSV.set(false);
+        // A cancelled drag never reaches onEnd — don't leave the screen part-slid.
+        if (!edgeCommitting.value) edgeX.set(withSpring(0, SPRING_BACK));
       });
-  }, [detailsActive, width, edgeX, edgeStartX, edgeStartY, detailsActiveSV, goBack]);
+  }, [detailsActive, width, edgeX, edgeStartX, edgeStartY, edgeActiveSV, edgeCommitting, detailsActiveSV, goBack]);
   const detailsGestures = useMemo(() => Gesture.Race(edgePan, returnPan), [edgePan, returnPan]);
   // The whole screen rides the edge swipe (details, strip, bars alike) — the classic pop look.
   const screenSlideStyle = useAnimatedStyle(() => ({ transform: [{ translateX: edgeX.value }] }));
@@ -1051,9 +1094,10 @@ export default function SeriesReaderScreen() {
               pageStyle={pageDismissStyle}
               chromeStyle={chromeDismissStyle}
               // Details mode: the reader is a decorative background strip — load ONLY the page
-              // on screen (no warm-ahead, render window of 1). Expanding flips this and the
-              // normal prefetch pipeline resumes.
-              standby={detailsActive}
+              // on screen (no warm-ahead, render window of 1). Expanding flips this (a beat
+              // after the transition settles — see detailsSettled) and the normal prefetch
+              // pipeline resumes.
+              standby={detailsSettled}
             />
           )}
             {/* Bottom chrome extras that fade with a dismissal instead of traveling with the
