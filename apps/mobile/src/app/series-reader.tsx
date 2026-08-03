@@ -135,6 +135,12 @@ const READER_EDGE = 'rgba(255,255,255,0.25)';
 // faded-out background-image band forming the TOP OF THE DETAILS PAGE (it scrolls away under the
 // content like any page header, it is not fixed chrome).
 const HEADER_BAND = 200;
+// The strip-to-details seam gradient's height. It's tall on purpose: the transition is CENTERED
+// ON THE SERIES TITLE — the title (the page's first element) renders mid-gradient over the fading
+// strip, X-hero style, so the content top inset is derived from this (see headerTopInset).
+const SHEET_FADE_H = 120;
+// Half the title's ~40pt first line — positions the title's CENTER at the gradient's center.
+const TITLE_MID = 20;
 // The details-content fade (and the reader's matching tint) complete within this fraction of the
 // travel — weighted toward the START of a reveal and, symmetrically, the END of a hide.
 const FADE_WINDOW = 0.4;
@@ -659,6 +665,9 @@ export default function SeriesReaderScreen() {
   // below. The details layer itself is full-screen (the strip is page, not chrome), so there's no
   // hidden tail to compensate.
   const bandH = insets.top + HEADER_BAND;
+  // Header content starts high enough that the series title's center lands on the seam gradient's
+  // center — the strip fades into the details THROUGH the title.
+  const headerTopInset = bandH - SHEET_FADE_H / 2 - TITLE_MID;
   const detailsBottomInset = isHeader ? 0 : detailsSlack;
   const cardRadius = screenCornerRadius(insets.bottom);
 
@@ -835,7 +844,7 @@ export default function SeriesReaderScreen() {
                   cover={cover}
                   isDirect={isDirect}
                   width={width}
-                  topInset={bandH + Spacing.five}
+                  topInset={headerTopInset}
                   bottomInset={detailsBottomInset}
                   sharedValues={sharedValues}
                   onScrollBeginDrag={onDetailsScrollBeginDrag}
@@ -960,12 +969,13 @@ export default function SeriesReaderScreen() {
           )}
             {/* The reader's tint, matched to the details fade — separates the lifting card. */}
             <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.readerTint, readerTintStyle]} />
-            {/* Header variant: the collapsed strip's heavy fade — the reader as a muted
-                background image behind the band. */}
+            {/* Header variant: the collapsed strip's heavy fade — toward the THEME background
+                (not black), so the strip reads as a faded-out image and the title over the seam
+                stays legible in both themes. */}
             {isHeader && (
               <Animated.View
                 pointerEvents="none"
-                style={[StyleSheet.absoluteFill, styles.readerTint, headerReaderFadeStyle]}
+                style={[StyleSheet.absoluteFill, { backgroundColor: theme.background }, headerReaderFadeStyle]}
               />
             )}
             {/* Separating hairlines, only where a seam exists, following the card's SHAPE — each is
@@ -1071,7 +1081,9 @@ export default function SeriesReaderScreen() {
           strip (headerBandStyle), so it scrolls off with the page and never blocks content. */}
       {headerPans && detailsActive && (
         <GestureDetector gesture={headerPans.bandPan}>
-          <Animated.View style={[styles.dockBand, { height: bandH }, headerBandStyle]}>
+          {/* Ends where the content starts (the title reaches up into the seam), so it never
+              covers anything tappable. */}
+          <Animated.View style={[styles.dockBand, { height: headerTopInset }, headerBandStyle]}>
             <Pressable
               testID="series-reader.header-band"
               onPress={() => setRevealed(0)}
@@ -1575,14 +1587,14 @@ const styles = StyleSheet.create({
     shadowOpacity: 0,
     elevation: 0,
   },
-  // Header variant's seam: hangs above the details sheet's top edge, fading the reader strip
-  // down into the sheet.
+  // Header variant's seam: hangs above the details page background's top edge, fading the reader
+  // strip down into the page — tall enough that the series title sits at its center.
   sheetFade: {
     position: 'absolute',
-    top: -56,
+    top: -SHEET_FADE_H,
     left: 0,
     right: 0,
-    height: 56,
+    height: SHEET_FADE_H,
   },
   // Seam hairlines as border "caps"/outline so they trace the rounded corners, drawn as overlays
   // so their visibility can follow the card's travel (a static border can't fade per-edge).
