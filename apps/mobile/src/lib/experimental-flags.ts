@@ -9,9 +9,9 @@ import { persisted$ } from '@/lib/observable';
  *
  * ── Series reader page ───────────────────────────────────────────────────────
  * When on, tapping a series card anywhere (browse, search, rails, library) opens `/series-reader`
- * — a screen that starts straight in the reader, with the series info (tags, meta, description,
- * chapter list, related rails) revealed by scrolling past the pages — instead of the `/series`
- * detail screen. Off by default.
+ * — one screen holding both the series details and an in-place reader, with the pages as a faded
+ * strip forming the top of the details page — instead of the `/series` detail screen. Off by
+ * default.
  *
  * The whole experiment is:
  *   - this flag,
@@ -23,18 +23,8 @@ import { persisted$ } from '@/lib/observable';
  * `safeStringify` hands a falsy value to AsyncStorage unstringified, which crashes native
  * RNCAsyncStorage when the toggle is off. An object is always truthy → serialized.
  */
-export type SeriesReaderVariant = 'card' | 'header';
-
 export const seriesReaderPage$ = persisted$('comical:experimental-series-reader', {
   enabled: false,
-  /** Which layout /series-reader uses:
-   *  - 'card':   the reader is the top layer (shadowed, device-cornered card docked below the safe
-   *              area) and swipes away to reveal the details beneath — opens reading.
-   *  - 'header': the reader sits as a faded strip forming the TOP of the details page (it scrolls
-   *              away with the content); pulling the page down past its top — or tapping the strip
-   *              — expands the reader full screen as the details slide down away. Opens on the
-   *              details. */
-  variant: 'card' as SeriesReaderVariant,
 });
 
 /** Reactive read via `useSyncExternalStore` — NOT a bare `use$()`; see perf-flags.ts for why
@@ -44,13 +34,5 @@ export function useSeriesReaderPage(): boolean {
     (onStoreChange) => seriesReaderPage$.enabled.onChange(onStoreChange),
     () => seriesReaderPage$.enabled.peek(),
     () => seriesReaderPage$.enabled.peek(),
-  );
-}
-
-export function useSeriesReaderVariant(): SeriesReaderVariant {
-  return useSyncExternalStore(
-    (onStoreChange) => seriesReaderPage$.variant.onChange(onStoreChange),
-    () => seriesReaderPage$.variant.peek() ?? 'card',
-    () => seriesReaderPage$.variant.peek() ?? 'card',
   );
 }

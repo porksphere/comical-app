@@ -1,16 +1,15 @@
 # EXPERIMENTAL series reader page (app/series-reader.tsx): with the Settings → General →
-# "Series reader page" toggle on, tapping ANY series card opens the reader-first page — pages up
-# immediately (resume-or-first-chapter resolved on the spot), and the series details live on a
-# screen-sized card revealed over the reader. The card renders series.tsx's REAL SeriesBody, so
-# its selectors are the series screen's own (series.action.read, series.chapter.*).
+# "Series reader page" toggle on, tapping ANY series card opens the combined page — the series
+# details up first, with the reader as a faded strip forming the top of the page, expandable to
+# full screen. The details render series.tsx's REAL SeriesBody, so its selectors are the series
+# screen's own (series.action.read, series.chapter.*).
 #
 # Journey: enable the toggle -> Browse -> tap a card (the default mock bridge is chaptered, so
-# this exercises the chapter-resolution path) -> assert the reader chrome came up directly ->
-# reveal the details via the docked details sliver at the top (the reader slides away) -> assert
-# the real series content -> tap a chapter row -> the reader slides back on that chapter.
-# (The dock tap, not a swipe, is the reveal step: it's the guaranteed path — a fit-width page
-# taller than the viewport takes vertical drags for its own content-pan — and it gives this flow
-# a deterministic tap target.)
+# this exercises the chapter-resolution path) -> assert the DETAILS came up (Read button) -> tap
+# the reader strip to expand the reader full screen -> collapse back via the Details pill ->
+# tap a chapter row -> the reader expands again on that chapter.
+# (The strip tap, not a swipe, is the expand step: it's the guaranteed path and a deterministic
+# tap target; the drag reveal is covered by dev-side Playwright runs.)
 #
 # Selectors (confirmed against source):
 #   - settings category:  settings.category.general               (app/(tabs)/settings.tsx)
@@ -18,10 +17,11 @@
 #                         settings.toggle.<slug(label)> — settings-fields.tsx)
 #   - back from General:  top-bar.back                            (components/top-bar.tsx)
 #   - series cards:       series-card.<seriesId>                  (components/series-card.tsx)
+#   - reader strip band:  series-reader.header-band               (app/series-reader.tsx — the
+#                         strip's touch surface at the top of the details page)
 #   - reader back:        reader.toolbar.back                     (components/reader/reader-toolbar.tsx)
-#   - details dock:       series-reader.details-dock              (app/series-reader.tsx — the docked
-#                         sliver above the reader card; paged mode's reveal affordance)
-#   - card content:       series.action.read                      (SeriesBody's Read button)
+#   - Details pill:       series-reader.details                   (app/series-reader.tsx)
+#   - details content:    series.action.read                      (SeriesBody's Read button)
 #   - chapter rows:       series.chapter.<key>                    (components/series/chapters-section.tsx;
 #                         a key like "1.5" slugs into extra dot-segments — match the prefix broadly)
 appId: com.porksphere.comical
@@ -42,23 +42,28 @@ appId: com.porksphere.comical
 - tapOn:
     id: "top-bar.back"
 
-# A card tap lands straight in the reader — the reader toolbar, with no series detail screen in
-# between. Maestro taps the first match when several cards resolve.
+# A card tap lands on the DETAILS (reader strip on top): the series screen's own body — the Read
+# button proves the real content is up. Maestro taps the first match when several cards resolve.
 - tapOn:
     id: "tab.browse"
 - tapOn:
     id: "series-card\\..*"
 - assertVisible:
+    id: "series.action.read"
+
+# Tapping the reader strip expands the reader full screen (the details slide down away).
+- tapOn:
+    id: "series-reader.header-band"
+- assertVisible:
     id: "reader.toolbar.back"
 
-# Reveal the details (the reader card slides away): they render the series screen's own body
-# (cover, action column, tags, chapters, rails) — the Read button proves the real content is up.
+# The Details pill collapses back to the details page.
 - tapOn:
-    id: "series-reader.details-dock"
+    id: "series-reader.details"
 - assertVisible:
     id: "series.action.read"
 
-# Tapping a chapter row hands it to the in-place reader — the reader card slides back over.
+# Tapping a chapter row hands it to the in-place reader — the reader expands again.
 - scrollUntilVisible:
     element:
       id: "series\\.chapter\\..*"

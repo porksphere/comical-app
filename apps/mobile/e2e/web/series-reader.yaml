@@ -1,17 +1,18 @@
 # Same journey as ../mobile/series-reader.yaml (enable the experimental toggle -> Browse -> card
-# tap lands straight in the reader -> Details pill reveals the details card), kept in sync by
-# hand, with the usual web quirks (see ../README.md):
+# tap lands on the details with the reader strip on top -> strip tap expands the reader ->
+# Details pill collapses back), kept in sync by hand, with the usual web quirks (see ../README.md):
 #
 #   - tab bar + settings category rows are selected by their accessibilityLabel ("Settings",
 #     "General", "Browse"), not tab.*/settings.category.* — icon rows set aria-label, which wins.
 #   - back out of General via "Go back" (the TopBar back button's aria-label).
 #   - the toggle has no competing accessibilityLabel, so its testID works.
-#   - reader back asserts on "Close reader" (reader.toolbar.back's aria-label), the Details pill
-#     taps on "Show series details", the card's grab-handle on "Back to reader" — aria-label wins.
+#   - the reader strip band taps on "Read full screen", the reader back asserts on "Close reader"
+#     (reader.toolbar.back's aria-label), the Details pill taps on "Show series details" —
+#     aria-label wins.
 #   - the details render series.tsx's real SeriesBody; "series.action.read" (no competing label —
 #     same anchor browse-to-reader.yaml uses) proves the real series content is up.
 #   - the chapter-row round-trip stays mobile-only: reaching rows below the fold needs scrolling
-#     the card's internal list, which Maestro-web can't drive in this app's locked-window layout
+#     the page's internal list, which Maestro-web can't drive in this app's locked-window layout
 #     (see browse-to-reader.yaml's header).
 #   - no scrollUntilVisible before the toggle: General's list is short enough at the CI viewport,
 #     and Maestro-web's element scrolling is a no-op in this app anyway (window scroll is locked).
@@ -29,23 +30,23 @@ url: http://localhost:4000/comical-app
 - tapOn:
     id: "Go back"
 
-# A card tap lands straight in the reader — no series detail screen in between.
+# A card tap lands on the DETAILS (reader strip on top) — the Read button proves the real
+# SeriesBody is up.
 - tapOn:
     id: "Browse"
 - tapOn:
     id: "series-card\\..*"
 - assertVisible:
+    id: "series.action.read"
+
+# Tapping the reader strip expands the reader full screen.
+- tapOn:
+    id: "Read full screen"
+- assertVisible:
     id: "Close reader"
 
-# Reveal the details via the Details pill — the reader card slides away (web can't swipe over the
-# pager; the pill is the guaranteed path). The Read button proves the real SeriesBody is up.
+# The Details pill collapses back to the details page.
 - tapOn:
     id: "Show series details"
 - assertVisible:
     id: "series.action.read"
-
-# The grab-handle returns to the reader.
-- tapOn:
-    id: "Back to reader"
-- assertVisible:
-    id: "Close reader"
