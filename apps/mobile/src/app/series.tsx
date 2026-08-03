@@ -81,7 +81,8 @@ function SeriesCoverBox({ aspect, children }: { aspect: number; children: ReactN
 // truncate the combined string could clip the bridge name off the front entirely.
 const TOP_BAR_TITLE_MAX_CHARS = 40;
 
-function truncateTopBarTitle(t: string): string {
+/** Exported for `/series-reader`, whose details top bar mirrors this screen's title exactly. */
+export function truncateTopBarTitle(t: string): string {
   return t.length > TOP_BAR_TITLE_MAX_CHARS ? `${t.slice(0, TOP_BAR_TITLE_MAX_CHARS).trimEnd()}…` : t;
 }
 

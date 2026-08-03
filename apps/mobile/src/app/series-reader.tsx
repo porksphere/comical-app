@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image, type ImageLoadEventData } from 'expo-image';
 import { useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import {
   BackHandler,
   Platform,
@@ -40,6 +40,7 @@ import { WebtoonReader, type WebtoonReaderHandle } from '@/components/reader/web
 import { RetryBlock } from '@/components/retry-block';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { TopBar } from '@/components/top-bar';
 import { Spacing } from '@/constants/theme';
 import { resolveAssetSourceCached } from '@/data/api';
 import {
@@ -55,14 +56,14 @@ import { useDataSource, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type Chapter } from '@/data/types';
 import { useReaderSettings } from '@/hooks/use-reader-settings';
 import { useSeriesReaderVariant } from '@/lib/experimental-flags';
-import { LARGE_SCREEN_BREAKPOINT } from '@/hooks/use-responsive';
+import { LARGE_SCREEN_BREAKPOINT, useTopBarHeight } from '@/hooks/use-responsive';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { firstChapterInReadingOrder, getAdjacentChapter } from '@/lib/chapter-order';
 import { useRouter } from '@/lib/nav';
 import { getPreferredGroup, resetPreferredGroup, setPreferredGroup } from '@/lib/preferred-group';
 
-import { SeriesBody } from './series';
+import { SeriesBody, truncateTopBarTitle } from './series';
 
 // EXPERIMENTAL series reader page (Settings → General → Experimental). A series opened from a card
 // lands HERE instead of on `/series`: the reader is up immediately — same paged/webtoon readers,
@@ -519,7 +520,9 @@ export default function SeriesReaderScreen() {
             return;
           }
           const byFlick = crossVelocity > FLICK_VELOCITY;
-          if (!byFlick && cross < span * COMMIT_FRACTION) {
+          // The dismiss DECISION uses the full screen axis (dismissSpan), matching SwipeDismiss's
+          // DISMISS_FRACTION exactly — the reveal span only maps the opposite direction.
+          if (!byFlick && cross < dismissSpan * COMMIT_FRACTION) {
             dismissX.set(withSpring(0, SPRING_BACK));
             dismissY.set(withSpring(0, SPRING_BACK));
             return;
@@ -544,7 +547,8 @@ export default function SeriesReaderScreen() {
       else pan.activeOffsetX([-20, 20]).failOffsetY([-15, 15]);
       return pan;
     };
-    const cardSpan = settings.mode === 'paged' ? height : width;
+    const dismissSpan = settings.mode === 'paged' ? height : width;
+    const cardSpan = dismissSpan;
     const collapseSpan = settings.mode === 'paged' ? headerSpan : width;
     return [buildPan(revealEnabled, cardSpan), buildPan(revealEnabled, cardSpan), buildPan(headerCollapseEnabled, collapseSpan)];
   }, [settings.mode, revealEnabled, headerCollapseEnabled, width, height, headerSpan, progress, dismissX, dismissY, dismissing, detailsActiveSV, commitReveal, goBack]);
@@ -648,6 +652,32 @@ export default function SeriesReaderScreen() {
   // center — the strip fades into the details THROUGH the title.
   const headerTopInset = bandH - SHEET_FADE_H / 2 - TITLE_MID;
   const detailsBottomInset = isHeader ? 0 : detailsSlack;
+
+  // ── Header variant's details top bar — the SHARED TopBar, crossfaded with scroll ─────────────
+  // Over the strip it's fully transparent (just a floating back button, matching TopBar's own
+  // button position); once the content scrolls up to meet the bar it crossfades to the standard
+  // opaque TopBar (`Bridge / Title`, exactly series.tsx's). `barSolid` mirrors the crossfade for
+  // pointer routing, so whichever layer is visible is the one that takes taps.
+  const topBarHeight = useTopBarHeight();
+  const barOnOffset = Math.max(1, headerTopInset - (insets.top + topBarHeight));
+  const [barSolid, setBarSolid] = useState(false);
+  useAnimatedReaction(
+    () => detailsScrollOffset.value > barOnOffset - 4,
+    (solid, prev) => {
+      if (isHeader && solid !== prev) runOnJS(setBarSolid)(solid);
+    },
+    [isHeader, barOnOffset],
+  );
+  const headerBarStyle = useAnimatedStyle(() => ({
+    opacity:
+      interpolate(detailsScrollOffset.value, [barOnOffset - 24, barOnOffset + 16], [0, 1], Extrapolation.CLAMP) *
+      interpolate(progress.value, [0.6, 1], [0, 1], Extrapolation.CLAMP),
+  }), [barOnOffset]);
+  const headerBackStyle = useAnimatedStyle(() => ({
+    opacity:
+      interpolate(detailsScrollOffset.value, [barOnOffset - 24, barOnOffset + 16], [1, 0], Extrapolation.CLAMP) *
+      interpolate(progress.value, [0.6, 1], [0, 1], Extrapolation.CLAMP),
+  }), [barOnOffset]);
   const cardRadius = screenCornerRadius(insets.bottom);
 
   // The reader card travels on the reveal axis (up in paged mode, right in webtoon). A dismissal
@@ -657,31 +687,44 @@ export default function SeriesReaderScreen() {
   // a curve weighted toward the front of a reveal / the end of a hide (complete within
   // FADE_WINDOW of the travel), matched by a slight tint on the reader.
   const span = settings.mode === 'paged' ? height : width;
+  // The reader FRAME travels only for the reveal (card variant) / the strip centering (header
+  // variant). A dismissal does NOT move it: exactly like SwipeDismiss, only the PAGE subtree
+  // travels (pageDismissStyle below) while the reader's dark surface fades IN PLACE
+  // (dismissFadeStyle on the surface layer) — the page pulls away over the screen behind, it
+  // doesn't drag a black rectangle along.
   const readerCardStyle = useAnimatedStyle(() => {
-    const dx = dismissX.value;
-    const dy = dismissY.value;
-    const dist = Math.hypot(dx, dy);
-    const scale = interpolate(dist, [0, span * SCALE_SPAN_FRACTION], [1, MIN_SCALE], Extrapolation.CLAMP);
     if (isHeader) {
-      // Header variant: the reader is the backdrop; while collapsed it rises by half its hidden
-      // height so the strip window shows the page's vertical CENTER (not its top edge), sliding
-      // back to natural position as it expands. The dismiss offsets/shrink are the SAME
-      // SwipeDismiss behavior as the card variant (see the shared pan build).
-      return {
-        transform: [
-          { translateX: dx },
-          { translateY: (-(height - bandH) / 2) * progress.value + dy },
-          { scale },
-        ],
-      };
+      // While collapsed the reader rises by half its hidden height so the strip window shows the
+      // page's vertical CENTER (not its top edge), sliding back to natural position as it expands.
+      return { transform: [{ translateY: (-(height - bandH) / 2) * progress.value }] };
     }
     const p = progress.value;
     const baseX = settings.mode === 'paged' ? 0 : p * width;
     const baseY = settings.mode === 'paged' ? -p * height : 0;
+    return { transform: [{ translateX: baseX }, { translateY: baseY }] };
+  }, [isHeader, settings.mode, width, height, bandH]);
+  // SwipeDismiss's page transform, verbatim: 2D finger follow, then scale (after the translate,
+  // so the page shrinks toward its own moved centre) with distance, staying fully opaque.
+  const pageDismissStyle = useAnimatedStyle(() => {
+    const dist = Math.hypot(dismissX.value, dismissY.value);
     return {
-      transform: [{ translateX: baseX + dx }, { translateY: baseY + dy }, { scale }],
+      transform: [
+        { translateX: dismissX.value },
+        { translateY: dismissY.value },
+        { scale: interpolate(dist, [0, span * SCALE_SPAN_FRACTION], [1, MIN_SCALE], Extrapolation.CLAMP) },
+      ],
     };
-  }, [isHeader, settings.mode, width, height, bandH, span]);
+  }, [span]);
+  // reader.tsx's chromeFadeStyle curve: the toolbar/navigator/pills fade with dismissal progress
+  // instead of traveling with the page.
+  const chromeDismissStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      Math.min(1, Math.hypot(dismissX.value, dismissY.value) / span),
+      [0, 0.6],
+      [1, 0],
+      Extrapolation.CLAMP,
+    ),
+  }), [span]);
   // Header variant, three coupled pieces:
   //  - headerLayerStyle: the whole details layer (background sheet + content) slides DOWN and off
   //    the screen as the reader expands — the details scroll down out of visibility.
@@ -724,7 +767,7 @@ export default function SeriesReaderScreen() {
   // docked details, but the bottom edge (and webtoon's sides) sit flush with the screen at rest —
   // those fade in the instant the card starts traveling and are gone when it's fully active.
   const travelEdgeStyle = useAnimatedStyle(() => ({
-    opacity: Math.min(1, Math.max(progress.value * 20, Math.hypot(dismissX.value, dismissY.value) / 40)),
+    opacity: Math.min(1, progress.value * 20),
   }));
   const detailsContentStyle = useAnimatedStyle(() => {
     const reveal = Math.min(1, progress.value / FADE_WINDOW);
@@ -780,6 +823,14 @@ export default function SeriesReaderScreen() {
   const scheme = useActiveColorScheme();
   const seriesTitle = series?.title ?? title ?? id ?? 'Reader';
   const author = series?.meta?.find((m) => m.label === 'AUTHOR')?.value;
+  // Same "<Bridge> / <Title>" the /series TopBar shows (shared truncation rule).
+  const topBarSeries = series?.title ?? title;
+  const topBarBridgeName = series?.bridge ?? bridge;
+  const headerBarTitle = topBarSeries
+    ? topBarBridgeName
+      ? `${topBarBridgeName} / ${truncateTopBarTitle(topBarSeries)}`
+      : truncateTopBarTitle(topBarSeries)
+    : (topBarBridgeName ?? '');
 
   // The reveal tint + the header strip's heavy fade, over the PAGES but UNDER the bottom chrome —
   // they render inside ReaderPane between the readers and the navigator/pill (or after the
@@ -920,9 +971,14 @@ export default function SeriesReaderScreen() {
         </Animated.View>
       </GestureDetector>
 
-      {/* SwipeDismiss's dark backdrop: appears with the first pixels of a dismiss drag and fades
-          in place as the page travels, revealing the screen this one was opened over. */}
-      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.dismissBackdrop, dismissBackdropStyle]} />
+      {/* Card variant only: a dark cover over the DETAILS layer that appears with the first
+          pixels of a dismiss drag and fades in place — the old reader had browse directly
+          beneath, this variant has the details, so they're hidden while the page travels. The
+          header variant's details are already off screen and the reader's own fading surface IS
+          the SwipeDismiss backdrop, so an extra layer would double the dim. */}
+      {!isHeader && (
+        <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.dismissBackdrop, dismissBackdropStyle]} />
+      )}
 
       {/* Top layer: the reader as a shadowed, device-cornered card — the thing you swipe away —
           docked below the safe area in paged mode so the details stay slightly visible above it.
@@ -941,6 +997,9 @@ export default function SeriesReaderScreen() {
             readerCardStyle,
           ]}>
           <View style={[styles.readerClip, { borderRadius: isHeader ? 0 : cardRadius }]}>
+          {/* The reader's dark surface — SwipeDismiss's static backdrop: it never moves with a
+              dismissal, fading in place with distance while the page travels over it. */}
+          <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.readerSurface, dismissFadeStyle]} />
           {error ? (
             <>
               <View style={styles.centerFill}>
@@ -987,6 +1046,8 @@ export default function SeriesReaderScreen() {
               onZoomChange={setReaderZoomed}
               onScrubActive={onScrubActive}
               overlay={dimOverlays}
+              pageStyle={pageDismissStyle}
+              chromeStyle={chromeDismissStyle}
             />
           )}
             {/* Separating hairlines, only where a seam exists, following the card's SHAPE — each is
@@ -1039,33 +1100,37 @@ export default function SeriesReaderScreen() {
                 ]}
               />
             )}
-            {/* Card variant: webtoon keeps the floating Details pill (paged's affordance is the
-                docked sliver). Header variant: the pill is the guaranteed collapse path in both
-                modes (webtoon's expanded reader owns vertical drags). */}
-            {(settings.mode === 'webtoon' || isHeader) && (
-              <DetailsHint mode={settings.mode} visible={chromeVisible && !detailsActive} onPress={() => setRevealed(1)} />
-            )}
-            {/* Toolbar outside the loaded branch, like reader.tsx: back + settings stay reachable
-                while pages are loading or the fetch failed. Series title on top, chapter beneath. */}
-            <ReaderToolbar
-              title={seriesTitle}
-              subtitle={target?.chapterName ?? ''}
-              visible={chromeVisible && !(isHeader && detailsActive)}
-              // The card variant's docked card already clears the notch — don't duck it twice.
-              // (Header variant's reader is truly full screen, so it keeps the default inset.)
-              topInset={!isHeader && settings.mode === 'paged' ? 0 : undefined}
-              onBack={goBack}
-              right={
-                <SettingsControl
-                  bridgeId={bridgeId}
-                  seriesId={id}
-                  title={seriesTitle}
-                  thumbnailUrl={series?.cover}
-                  author={author}
-                  direct={isDirect}
-                />
-              }
-            />
+            {/* Top chrome fades with a dismissal (chromeDismissStyle) instead of traveling with
+                the page — reader.tsx's chrome treatment. */}
+            <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, chromeDismissStyle]}>
+              {/* Card variant: webtoon keeps the floating Details pill (paged's affordance is the
+                  docked sliver). Header variant: the pill is the guaranteed collapse path in both
+                  modes (webtoon's expanded reader owns vertical drags). */}
+              {(settings.mode === 'webtoon' || isHeader) && (
+                <DetailsHint mode={settings.mode} visible={chromeVisible && !detailsActive} onPress={() => setRevealed(1)} />
+              )}
+              {/* Toolbar outside the loaded branch, like reader.tsx: back + settings stay reachable
+                  while pages are loading or the fetch failed. Series title on top, chapter beneath. */}
+              <ReaderToolbar
+                title={seriesTitle}
+                subtitle={target?.chapterName ?? ''}
+                visible={chromeVisible && !(isHeader && detailsActive)}
+                // The card variant's docked card already clears the notch — don't duck it twice.
+                // (Header variant's reader is truly full screen, so it keeps the default inset.)
+                topInset={!isHeader && settings.mode === 'paged' ? 0 : undefined}
+                onBack={goBack}
+                right={
+                  <SettingsControl
+                    bridgeId={bridgeId}
+                    seriesId={id}
+                    title={seriesTitle}
+                    thumbnailUrl={series?.cover}
+                    author={author}
+                    direct={isDirect}
+                  />
+                }
+              />
+            </Animated.View>
           </View>
         </Animated.View>
       </GestureDetector>
@@ -1104,6 +1169,34 @@ export default function SeriesReaderScreen() {
             />
           </Animated.View>
         </GestureDetector>
+      )}
+
+      {/* Header variant, details mode: the shared TopBar, above the band overlay so its taps win.
+          Transparent over the strip (only the floating back button shows), the standard opaque
+          bar once scrolled — see headerBarStyle/headerBackStyle. Both fade away as the reader
+          expands (the ReaderToolbar takes over there). */}
+      {isHeader && detailsActive && (
+        <>
+          <Animated.View
+            testID="series-reader.header-topbar"
+            pointerEvents={barSolid ? 'box-none' : 'none'}
+            style={[styles.headerBarWrap, headerBarStyle]}>
+            <TopBar title={headerBarTitle} onBack={goBack} />
+          </Animated.View>
+          <Animated.View
+            pointerEvents={barSolid ? 'none' : 'box-none'}
+            style={[styles.headerBackWrap, { top: insets.top, height: topBarHeight }, headerBackStyle]}>
+            <Pressable
+              testID="series-reader.header-back"
+              onPress={goBack}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+              style={styles.headerBackBtn}>
+              <ChevronLeftIcon color={theme.text} />
+            </Pressable>
+          </Animated.View>
+        </>
       )}
     </View>
   );
@@ -1267,6 +1360,11 @@ const ReaderPane = forwardRef<
     /** Rendered between the readers and the bottom chrome — the screen's reveal tint/fade layers
      *  go here, so they dim the PAGES without washing out the navigator/pill. */
     overlay?: ReactNode;
+    /** Animated transform for the PAGE subtree only — SwipeDismiss's travel. The tints and chrome
+     *  deliberately DON'T ride it: the page pulls away alone while everything else fades. */
+    pageStyle?: ComponentProps<typeof Animated.View>['style'];
+    /** Animated fade for the bottom chrome during a dismissal (reader.tsx's chromeFadeStyle). */
+    chromeStyle?: ComponentProps<typeof Animated.View>['style'];
   }
 >(function ReaderPane(
   {
@@ -1293,6 +1391,8 @@ const ReaderPane = forwardRef<
     onZoomChange,
     onScrubActive,
     overlay,
+    pageStyle,
+    chromeStyle,
   },
   ref,
 ) {
@@ -1455,6 +1555,8 @@ const ReaderPane = forwardRef<
 
   return (
     <>
+      {/* The page subtree — the ONLY thing a dismissal moves (see pageStyle). */}
+      <Animated.View testID="series-reader.page-wrap" style={[styles.pageWrap, pageStyle]}>
       {settings.mode === 'paged' ? (
         <PagedReader
           ref={pagedRef}
@@ -1504,10 +1606,13 @@ const ReaderPane = forwardRef<
           }
         />
       )}
+      </Animated.View>
 
       {/* Tint/fade layers over the pages, under the chrome below. */}
       {overlay}
 
+      {/* Bottom chrome — fades with a dismissal instead of traveling (chromeStyle). */}
+      <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, chromeStyle]}>
       {IS_WEB ? (
         <ProgressPill
           current={currentPage}
@@ -1538,6 +1643,7 @@ const ReaderPane = forwardRef<
           onScrubPage={warmAround}
         />
       )}
+      </Animated.View>
     </>
   );
 });
@@ -1589,11 +1695,12 @@ const styles = StyleSheet.create({
   },
   // The reader card's two halves: the outer view owns the shadow + travel (no clipping — iOS
   // shadows die under overflow: hidden), the inner clips content to the device-matched corners.
+  // No background on the frame halves: the dark reader surface is a SEPARATE fading layer inside
+  // the clip (readerSurface), so a dismissal can dissolve it in place while only the page travels.
   readerShadow: {
     position: 'absolute',
     top: 0,
     left: 0,
-    backgroundColor: READER_BACKDROP,
     shadowColor: '#000',
     shadowOpacity: 0.45,
     shadowRadius: 24,
@@ -1602,8 +1709,31 @@ const styles = StyleSheet.create({
   },
   readerClip: {
     flex: 1,
-    backgroundColor: READER_BACKDROP,
     overflow: 'hidden',
+  },
+  readerSurface: {
+    backgroundColor: READER_BACKDROP,
+  },
+  pageWrap: {
+    flex: 1,
+  },
+  // Header variant's top-bar crossfade layers (see headerBarStyle/headerBackStyle): above the
+  // band overlay (zIndex 3) so whichever is visible takes the taps.
+  headerBarWrap: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 4,
+  },
+  headerBackWrap: {
+    position: 'absolute',
+    left: Spacing.three,
+    zIndex: 4,
+    justifyContent: 'center',
+  },
+  headerBackBtn: {
+    justifyContent: 'center',
   },
   // Header variant: the reader is a flat, static backdrop — no lift shadow.
   readerFlat: {
