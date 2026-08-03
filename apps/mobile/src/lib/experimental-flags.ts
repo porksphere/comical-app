@@ -30,8 +30,10 @@ export const seriesReaderPage$ = persisted$('comical:experimental-series-reader'
   /** Which layout /series-reader uses:
    *  - 'card':   the reader is the top layer (shadowed, device-cornered card docked below the safe
    *              area) and swipes away to reveal the details beneath — opens reading.
-   *  - 'header': the reader sits as a SHORT, faded strip above the details (background-image-like),
-   *              and expands to full screen on demand — opens on the details. */
+   *  - 'header': the reader sits as a faded strip forming the TOP of the details page (it scrolls
+   *              away with the content); pulling the page down past its top — or tapping the strip
+   *              — expands the reader full screen as the details slide down away. Opens on the
+   *              details. */
   variant: 'card' as SeriesReaderVariant,
 });
 

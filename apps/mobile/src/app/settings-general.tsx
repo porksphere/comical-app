@@ -47,7 +47,7 @@ const SERIES_READER_LAYOUT_OPTIONS: SettingsOption<SeriesReaderVariant>[] = [
   {
     value: 'header',
     label: 'Reader as header',
-    description: 'Opens on the details, with the pages as a short faded strip on top — tap or swipe it up to read full screen.',
+    description: 'Opens on the details, with the pages as a faded strip topping the page — tap it or pull the details down to read full screen.',
   },
 ];
 

@@ -131,9 +131,10 @@ const SPRING_BACK = { duration: 300, dampingRatio: 1 } as const;
 // The reader card's separating edge over the (always-dark-or-light) details — a light hairline
 // reads on the dark reader surface in both themes.
 const READER_EDGE = 'rgba(255,255,255,0.25)';
-// Header variant: the visible height of the collapsed reader strip (below the safe area) — "quite
-// short, almost like a faded out background image".
-const HEADER_BAND = 120;
+// Header variant: the visible height of the collapsed reader strip (below the safe area) — a
+// faded-out background-image band forming the TOP OF THE DETAILS PAGE (it scrolls away under the
+// content like any page header, it is not fixed chrome).
+const HEADER_BAND = 200;
 // The details-content fade (and the reader's matching tint) complete within this fraction of the
 // travel — weighted toward the START of a reveal and, symmetrically, the END of a hide.
 const FADE_WINDOW = 0.4;
@@ -412,19 +413,34 @@ export default function SeriesReaderScreen() {
     },
     [detailsActive, isHeader, pullArmedSV],
   );
+  // Header variant: the collapsed reader strip is the top of the details PAGE, so its reveal is
+  // the page's own overscroll — any pull past the top rides the native rubber-band down, with the
+  // whole page (background sheet + content, see headerSheetBgStyle) following the finger and the
+  // reader fading in above. No arming/freeze here: the content moving WITH the pull is the point.
+  const headerSpan = Math.max(1, height - (insets.top + HEADER_BAND));
   useAnimatedReaction(
     () => detailsScrollOffset.value,
     (off, prevOff) => {
-      if (!IS_IOS || isHeader) return;
+      if (!IS_IOS) return;
+      if (isHeader) {
+        if (!detailsActiveSV.value) return;
+        if (off < 0) progress.set(Math.max(0, Math.min(1, 1 + off / headerSpan)));
+        else if ((prevOff ?? 0) < 0) progress.set(1);
+        return;
+      }
       if (pullArmedSV.value && off >= -0.5 && (prevOff ?? 0) < -0.5) pullArmedSV.set(false);
       if (!detailsActiveSV.value || !pullArmedSV.value) return;
       if (off < 0) progress.set(Math.max(0, Math.min(1, 1 + off / height)));
     },
-    [height, isHeader, detailsScrollOffset, detailsActiveSV, pullArmedSV, progress],
+    [height, headerSpan, isHeader, detailsScrollOffset, detailsActiveSV, pullArmedSV, progress],
   );
   const onDetailsScrollEndDrag = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      if (!IS_IOS || !detailsActive || isHeader) return;
+      if (!IS_IOS || !detailsActive) return;
+      if (isHeader) {
+        if (e.nativeEvent.contentOffset.y <= -PULL_COMMIT_PX) setRevealed(0);
+        return;
+      }
       if (!pullArmedSV.get()) return;
       if (e.nativeEvent.contentOffset.y <= -PULL_COMMIT_PX) setRevealed(0);
     },
@@ -517,10 +533,11 @@ export default function SeriesReaderScreen() {
     return [buildPan(), buildPan()];
   }, [settings.mode, revealEnabled, width, height, progress, dismissX, dismissY, dismissing, detailsActiveSV, commitReveal, goBack]);
 
-  // Header-variant pans. The BAND (the collapsed reader strip) expands: a tap or an upward drag
-  // pushes the details sheet up and away, following the finger. The expanded reader collapses
-  // back on the cross axis of its scroll: drag down (paged) / rightward (webtoon) slides the
-  // details back in from the top. Same hysteresis as everything else.
+  // Header-variant pans. The BAND (the reader strip at the top of the details page) expands the
+  // reader the same way the page's own overscroll does: a tap, or a DOWNWARD drag that slides the
+  // whole details page down under the finger. The expanded reader collapses back by pushing the
+  // details up from the bottom: drag up (paged) / rightward (webtoon, the cross axis of its
+  // scroll). Same hysteresis as everything else.
   const headerCollapseEnabled = isHeader && !detailsActive && !readerZoomed && !scrubbing;
   const headerPans = useMemo(() => {
     if (!isHeader) return null;
@@ -529,10 +546,10 @@ export default function SeriesReaderScreen() {
       .activeOffsetY([-20, 20])
       .failOffsetX([-15, 15])
       .onUpdate((e) => {
-        progress.set(Math.max(0, Math.min(1, 1 + e.translationY / height)));
+        progress.set(Math.max(0, Math.min(1, 1 - e.translationY / headerSpan)));
       })
       .onEnd((e) => {
-        const open = -e.translationY / height > COMMIT_FRACTION || e.velocityY < -FLICK_VELOCITY;
+        const open = e.translationY / headerSpan > COMMIT_FRACTION || e.velocityY > FLICK_VELOCITY;
         detailsActiveSV.set(!open);
         progress.set(withTiming(open ? 0 : 1, { duration: 240, easing: Easing.out(Easing.cubic) }));
         runOnJS(commitReveal)(open ? 0 : 1);
@@ -544,10 +561,10 @@ export default function SeriesReaderScreen() {
             .activeOffsetY([-20, 20])
             .failOffsetX([-15, 15])
             .onUpdate((e) => {
-              progress.set(Math.max(0, Math.min(1, e.translationY / height)));
+              progress.set(Math.max(0, Math.min(1, -e.translationY / headerSpan)));
             })
             .onEnd((e) => {
-              const close = e.translationY / height > COMMIT_FRACTION || e.velocityY > FLICK_VELOCITY;
+              const close = -e.translationY / headerSpan > COMMIT_FRACTION || e.velocityY < -FLICK_VELOCITY;
               detailsActiveSV.set(close);
               progress.set(withTiming(close ? 1 : 0, { duration: 240, easing: Easing.out(Easing.cubic) }));
               runOnJS(commitReveal)(close ? 1 : 0);
@@ -566,7 +583,7 @@ export default function SeriesReaderScreen() {
               runOnJS(commitReveal)(close ? 1 : 0);
             });
     return { bandPan, collapsePan };
-  }, [isHeader, detailsActive, headerCollapseEnabled, settings.mode, width, height, progress, detailsActiveSV, commitReveal]);
+  }, [isHeader, detailsActive, headerCollapseEnabled, settings.mode, width, headerSpan, progress, detailsActiveSV, commitReveal]);
 
   // Return pan — on the details layer. Paged mode shares the vertical axis with the details' own
   // scroller, so it activates MANUALLY: only a clearly-downward drag with the content at its top
@@ -577,7 +594,11 @@ export default function SeriesReaderScreen() {
   const touchStartX = useSharedValue(0);
   const touchStartY = useSharedValue(0);
   const returnPan = useMemo(() => {
-    return settings.mode === 'paged'
+    // Header variant: the details page always reveals the reader by moving DOWN, whatever the
+    // reader's own scroll mode — so the manual vertical pan applies in webtoon mode too.
+    const vertical = isHeader || settings.mode === 'paged';
+    const vSpan = isHeader ? headerSpan : height;
+    return vertical
       ? Gesture.Pan()
           .enabled(detailsActive && !IS_IOS)
           .manualActivation(true)
@@ -604,10 +625,10 @@ export default function SeriesReaderScreen() {
             }
           })
           .onUpdate((e) => {
-            progress.set(Math.max(0, Math.min(1, 1 - e.translationY / height)));
+            progress.set(Math.max(0, Math.min(1, 1 - e.translationY / vSpan)));
           })
           .onEnd((e) => {
-            const close = e.translationY / height > COMMIT_FRACTION || e.velocityY > FLICK_VELOCITY;
+            const close = e.translationY / vSpan > COMMIT_FRACTION || e.velocityY > FLICK_VELOCITY;
             detailsActiveSV.set(!close);
             progress.set(withTiming(close ? 0 : 1, { duration: 240, easing: Easing.out(Easing.cubic) }));
             runOnJS(commitReveal)(close ? 0 : 1);
@@ -625,7 +646,7 @@ export default function SeriesReaderScreen() {
             progress.set(withTiming(close ? 0 : 1, { duration: 240, easing: Easing.out(Easing.cubic) }));
             runOnJS(commitReveal)(close ? 0 : 1);
           });
-  }, [settings.mode, detailsActive, width, height, progress, touchStartX, touchStartY, detailsScrollOffset, detailsActiveSV, commitReveal]);
+  }, [settings.mode, isHeader, headerSpan, detailsActive, width, height, progress, touchStartX, touchStartY, detailsScrollOffset, detailsActiveSV, commitReveal]);
 
   // Geometry: in paged mode the reader card is DOCKED below the safe area — the details stay
   // visible in the top band (their own affordance, replacing the floating Details pill), and the
@@ -634,11 +655,11 @@ export default function SeriesReaderScreen() {
   const dockInset = settings.mode === 'paged' && !isHeader ? Math.max(insets.top, 24) : 0;
   const readerH = height - dockInset;
   const detailsSlack = IS_IOS && settings.mode === 'paged' && !isHeader ? PULL_SLACK : 0;
-  // Header variant: the collapsed reader strip's height, and the sheet geometry hanging below it.
+  // Header variant: the reader strip's height — the top-of-page band the details content starts
+  // below. The details layer itself is full-screen (the strip is page, not chrome), so there's no
+  // hidden tail to compensate.
   const bandH = insets.top + HEADER_BAND;
-  // The sheet is screen-height but sits bandH down — compensate the hidden tail as bottom padding
-  // (same bottomInset mechanism as the pull slack) so its scroll extent stays honest.
-  const detailsBottomInset = isHeader ? bandH : detailsSlack;
+  const detailsBottomInset = isHeader ? 0 : detailsSlack;
   const cardRadius = screenCornerRadius(insets.bottom);
 
   // The reader card travels on the reveal axis (up in paged mode, right in webtoon). A dismissal
@@ -649,7 +670,12 @@ export default function SeriesReaderScreen() {
   // FADE_WINDOW of the travel), matched by a slight tint on the reader.
   const span = settings.mode === 'paged' ? height : width;
   const readerCardStyle = useAnimatedStyle(() => {
-    if (isHeader) return { transform: [] }; // header variant: the reader is a static backdrop
+    if (isHeader) {
+      // Header variant: the reader is the backdrop; while collapsed it rises by half its hidden
+      // height so the strip window shows the page's vertical CENTER (not its top edge), sliding
+      // back to natural position as it expands.
+      return { transform: [{ translateY: (-(height - bandH) / 2) * progress.value }] };
+    }
     const p = progress.value;
     const dx = dismissX.value;
     const dy = dismissY.value;
@@ -660,14 +686,38 @@ export default function SeriesReaderScreen() {
     return {
       transform: [{ translateX: baseX + dx }, { translateY: baseY + dy }, { scale }],
     };
-  }, [isHeader, settings.mode, width, height, span]);
-  // Header variant: the details as a SHEET hanging below the band, sliding up and off (past its
-  // own height plus the band) as the reader expands; and the collapsed reader's heavy fade —
-  // "almost like a faded out background image".
-  const headerSheetStyle = useAnimatedStyle(
-    () => ({ transform: [{ translateY: -(1 - progress.value) * (height + bandH) }] }),
-    [height, bandH],
+  }, [isHeader, settings.mode, width, height, bandH, span]);
+  // Header variant, three coupled pieces:
+  //  - headerLayerStyle: the whole details layer (background sheet + content) slides DOWN and off
+  //    the screen as the reader expands — the details scroll down out of visibility.
+  //  - headerSheetBgStyle: the opaque page background (whose top edge + gradient seam IS the strip
+  //    boundary) rides the list's own scroll offset, so the strip behaves as the top of the page:
+  //    scrolling down slides the page up over the strip until the seam parks at the screen top;
+  //    pulling past the top (negative offset, the native rubber-band) slides the page down 1:1
+  //    with the finger, growing the strip — the gradual reveal.
+  //  - headerBandStyle: the strip's touch overlay follows the same occlusion, so it never blocks
+  //    content once the seam has scrolled past it.
+  const headerLayerStyle = useAnimatedStyle(() => {
+    const off = detailsScrollOffset.value;
+    // Travel far enough to clear the screen from wherever the page's visible top currently sits:
+    // at rest that's the seam (bandH), when scrolled the content reaches the screen top (bandH of
+    // extra travel, matching how far the seam has parked).
+    const travel = height - bandH + Math.min(Math.max(off, 0), bandH);
+    // The `min(off, 0)` term cancels the layer's share of an ACTIVE iOS pull: while the native
+    // rubber-band is moving the content (and headerSheetBgStyle the seam) down 1:1 already, the
+    // pull-driven progress must not ALSO move the layer — only the commit animation (progress
+    // moving past the finger-tracked value while the bounce returns to 0) takes it off screen.
+    return { transform: [{ translateY: (1 - progress.value) * travel + Math.min(off, 0) }] };
+  }, [height, bandH]);
+  const headerSheetBgStyle = useAnimatedStyle(
+    () => ({ transform: [{ translateY: -Math.min(detailsScrollOffset.value, bandH) }] }),
+    [bandH],
   );
+  const headerBandStyle = useAnimatedStyle(
+    () => ({ transform: [{ translateY: -Math.min(Math.max(detailsScrollOffset.value, 0), bandH) }] }),
+    [bandH],
+  );
+  // The collapsed reader's heavy fade — "almost like a faded out background image".
   const headerReaderFadeStyle = useAnimatedStyle(() => ({ opacity: 0.55 * progress.value }));
   const readerTintStyle = useAnimatedStyle(() => ({
     opacity: 0.18 * Math.min(1, progress.value / FADE_WINDOW),
@@ -748,22 +798,55 @@ export default function SeriesReaderScreen() {
       <GestureDetector gesture={returnPan}>
         <Animated.View
           testID="series-reader.details-card"
+          // Header variant, expanded reader: the (translated-off) layer must not swallow touches
+          // meant for the reader beneath it.
+          pointerEvents={isHeader && !detailsActive ? 'none' : 'auto'}
           style={[
             styles.detailsLayer,
             { width, height },
-            // Header variant: the details are a sheet hanging below the reader strip, in FRONT of
-            // the (static) reader; card variant: the base layer behind the traveling card.
-            isHeader ? [{ top: bandH, zIndex: 2 }, headerSheetStyle] : dismissFadeStyle,
+            // Header variant: the full-screen details PAGE in front of the (static) reader — its
+            // opaque background starts at the band, so the strip is the top of the page; the whole
+            // layer slides down and off as the reader expands. Card variant: the base layer behind
+            // the traveling card.
+            isHeader ? [styles.headerLayer, headerLayerStyle] : dismissFadeStyle,
           ]}>
-          {/* Header variant's seam: the reader strip fades down into the sheet — a gradient
-              hanging just above the sheet's top edge, traveling with it. */}
-          {isHeader && (
-            <LinearGradient
-              colors={['transparent', theme.background]}
-              style={styles.sheetFade}
-              pointerEvents="none"
-            />
-          )}
+          {isHeader ? (
+            <>
+              {/* The page's opaque background + gradient seam — the strip boundary. It rides the
+                  list's scroll offset (see headerSheetBgStyle) so it scrolls away under the
+                  content like any page header, and grows the strip under a pull past the top. */}
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.headerSheetBg,
+                  { top: bandH, height, backgroundColor: theme.background },
+                  headerSheetBgStyle,
+                ]}>
+                <LinearGradient colors={['transparent', theme.background]} style={styles.sheetFade} />
+              </Animated.View>
+              {/* The content scrolls over the transparent strip window — SeriesBody itself paints
+                  no background, so the faded reader shows through above the seam. */}
+              <Animated.View style={[styles.detailsContent, detailsContentStyle]}>
+                <SeriesDetailsHost
+                  bridgeId={bridgeId}
+                  id={id}
+                  title={title}
+                  bridge={bridge}
+                  cover={cover}
+                  isDirect={isDirect}
+                  width={width}
+                  topInset={bandH + Spacing.five}
+                  bottomInset={detailsBottomInset}
+                  sharedValues={sharedValues}
+                  onScrollBeginDrag={onDetailsScrollBeginDrag}
+                  onScrollEndDrag={onDetailsScrollEndDrag}
+                  onStartReading={startReadingFromDetails}
+                  onOpenChapter={openChapterFromDetails}
+                  onOpenPage={openPageFromDetails}
+                />
+              </Animated.View>
+            </>
+          ) : (
           <ThemedView style={styles.detailsInner}>
             <Animated.View
               style={[
@@ -781,7 +864,6 @@ export default function SeriesReaderScreen() {
                 cover={cover}
                 isDirect={isDirect}
                 width={width}
-                topInset={isHeader ? Spacing.five : undefined}
                 bottomInset={detailsBottomInset}
                 sharedValues={sharedValues}
                 onScrollBeginDrag={onDetailsScrollBeginDrag}
@@ -794,7 +876,6 @@ export default function SeriesReaderScreen() {
             {/* Grab-handle: tap (or drag) to bring the reader back — it returns from the top in
                 paged mode, from the right in webtoon. (Header variant's affordance is the reader
                 strip itself, so no grab-handle there.) */}
-            {!isHeader && (
             <Pressable
               testID="series-reader.details-grabber"
               onPress={() => setRevealed(0)}
@@ -810,8 +891,8 @@ export default function SeriesReaderScreen() {
                 )}
               </ThemedView>
             </Pressable>
-            )}
           </ThemedView>
+          )}
         </Animated.View>
       </GestureDetector>
 
@@ -985,11 +1066,12 @@ export default function SeriesReaderScreen() {
         </GestureDetector>
       )}
 
-      {/* Header variant: the collapsed reader strip's touch surface — tap to read full screen, or
-          drag up to push the details sheet away under the finger. */}
+      {/* Header variant: the reader strip's touch surface — tap to read full screen, or drag DOWN
+          to slide the details page away under the finger. It rides the same occlusion as the
+          strip (headerBandStyle), so it scrolls off with the page and never blocks content. */}
       {headerPans && detailsActive && (
         <GestureDetector gesture={headerPans.bandPan}>
-          <View style={[styles.dockBand, { height: bandH }]}>
+          <Animated.View style={[styles.dockBand, { height: bandH }, headerBandStyle]}>
             <Pressable
               testID="series-reader.header-band"
               onPress={() => setRevealed(0)}
@@ -997,7 +1079,7 @@ export default function SeriesReaderScreen() {
               accessibilityLabel="Read full screen"
               style={StyleSheet.absoluteFill}
             />
-          </View>
+          </Animated.View>
         </GestureDetector>
       )}
     </View>
@@ -1032,8 +1114,8 @@ function SeriesDetailsHost({
   cover?: string;
   isDirect: boolean;
   width: number;
-  /** Overrides the default content top inset (safe area + breathing room) — the header variant's
-   *  sheet already hangs below the reader strip, so it only needs the breathing room. */
+  /** Overrides the default content top inset (safe area + breathing room) — the header variant
+   *  passes the full strip height, so the content starts below the reader band. */
   topInset?: number;
   /** Extra list bottom padding matching the screen's below-screen overdraw, keeping scroll extent honest. */
   bottomInset?: number;
@@ -1541,6 +1623,19 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     left: 0,
+  },
+  // Header variant: the details layer sits in FRONT of the (static) reader backdrop, transparent
+  // above its page background so the reader strip shows through.
+  headerLayer: {
+    zIndex: 2,
+    backgroundColor: 'transparent',
+  },
+  // The details page's opaque fill — its animated top edge (plus the seam gradient hanging above
+  // it) IS the strip boundary.
+  headerSheetBg: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
   },
   detailsInner: {
     flex: 1,
