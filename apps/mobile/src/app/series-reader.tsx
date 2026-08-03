@@ -41,6 +41,7 @@ import { RetryBlock } from '@/components/retry-block';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
+import { TopBarSwitch } from '@/components/top-bar-switch';
 import { Spacing } from '@/constants/theme';
 import { resolveAssetSourceCached } from '@/data/api';
 import {
@@ -782,15 +783,13 @@ export default function SeriesReaderScreen() {
     },
     [isHeader, barOnOffset],
   );
+  // Only the SCROLL crossfade lives here — the details⇄reader mode handoff is TopBarSwitch's
+  // (the bar slot stays statically stuck on top and dissolves between the two faces).
   const headerBarStyle = useAnimatedStyle(() => ({
-    opacity:
-      interpolate(detailsScrollOffset.value, [barOnOffset - 24, barOnOffset + 16], [0, 1], Extrapolation.CLAMP) *
-      interpolate(progress.value, [0.6, 1], [0, 1], Extrapolation.CLAMP),
+    opacity: interpolate(detailsScrollOffset.value, [barOnOffset - 24, barOnOffset + 16], [0, 1], Extrapolation.CLAMP),
   }), [barOnOffset]);
   const headerBackStyle = useAnimatedStyle(() => ({
-    opacity:
-      interpolate(detailsScrollOffset.value, [barOnOffset - 24, barOnOffset + 16], [1, 0], Extrapolation.CLAMP) *
-      interpolate(progress.value, [0.6, 1], [0, 1], Extrapolation.CLAMP),
+    opacity: interpolate(detailsScrollOffset.value, [barOnOffset - 24, barOnOffset + 16], [1, 0], Extrapolation.CLAMP),
   }), [barOnOffset]);
   const cardRadius = screenCornerRadius(insets.bottom);
 
@@ -1166,6 +1165,10 @@ export default function SeriesReaderScreen() {
               overlay={dimOverlays}
               pageStyle={pageDismissStyle}
               chromeStyle={chromeDismissStyle}
+              // Header variant, details mode: the reader is a decorative background strip — load
+              // ONLY the page on screen (no warm-ahead, render window of 1). Expanding flips this
+              // and the normal prefetch pipeline resumes.
+              standby={isHeader && detailsActive}
             />
           )}
             {/* Separating hairlines, only where a seam exists, following the card's SHAPE — each is
@@ -1227,29 +1230,29 @@ export default function SeriesReaderScreen() {
               {(settings.mode === 'webtoon' || isHeader) && (
                 <DetailsHint mode={settings.mode} visible={chromeVisible && !detailsActive} onPress={() => setRevealed(1)} />
               )}
-              {/* Toolbar outside the loaded branch, like reader.tsx: back + settings stay
-                  reachable while pages are loading or the fetch failed. This is the reader's own
-                  fully transparent chrome, untouched — in the header variant it only exists while
-                  the reader is EXPANDED (the details mode's bar is the shared TopBar). */}
-              <ReaderToolbar
-                title={seriesTitle}
-                subtitle={target?.chapterName ?? ''}
-                visible={chromeVisible && !(isHeader && detailsActive)}
-                // The card variant's docked card already clears the notch — don't duck it twice.
-                // (Header variant's reader is truly full screen, so it keeps the default inset.)
-                topInset={!isHeader && settings.mode === 'paged' ? 0 : undefined}
-                onBack={goBack}
-                right={
-                  <SettingsControl
-                    bridgeId={bridgeId}
-                    seriesId={id}
-                    title={seriesTitle}
-                    thumbnailUrl={series?.cover}
-                    author={author}
-                    direct={isDirect}
-                  />
-                }
-              />
+              {/* Card variant's toolbar, outside the loaded branch like reader.tsx: back +
+                  settings stay reachable while pages are loading or the fetch failed. (The
+                  header variant's top chrome lives in the TopBarSwitch slot at the root.) */}
+              {!isHeader && (
+                <ReaderToolbar
+                  title={seriesTitle}
+                  subtitle={target?.chapterName ?? ''}
+                  visible={chromeVisible}
+                  // The docked card already clears the notch in paged mode — don't duck it twice.
+                  topInset={settings.mode === 'paged' ? 0 : undefined}
+                  onBack={goBack}
+                  right={
+                    <SettingsControl
+                      bridgeId={bridgeId}
+                      seriesId={id}
+                      title={seriesTitle}
+                      thumbnailUrl={series?.cover}
+                      author={author}
+                      direct={isDirect}
+                    />
+                  }
+                />
+              )}
             </Animated.View>
           </View>
         </Animated.View>
@@ -1291,33 +1294,63 @@ export default function SeriesReaderScreen() {
         </GestureDetector>
       )}
 
-      {/* Header variant, details mode: the shared TopBar, above the band overlay so its taps win.
-          Transparent over the strip (only the floating back button shows), the standard opaque
-          bar once scrolled — see headerBarStyle/headerBackStyle. It fades out through an expand;
-          the expanded reader's chrome is the reader's own untouched ReaderToolbar in the same
-          slot, so the transition reads as one bar swapping content. */}
-      {isHeader && detailsActive && (
-        <>
-          <Animated.View
-            testID="series-reader.header-topbar"
-            pointerEvents={barSolid ? 'box-none' : 'none'}
-            style={[styles.headerBarWrap, headerBarStyle]}>
-            <TopBar title={headerBarTitle} onBack={goBack} />
-          </Animated.View>
-          <Animated.View
-            pointerEvents={barSolid ? 'none' : 'box-none'}
-            style={[styles.headerBackWrap, { top: insets.top, height: topBarHeight }, headerBackStyle]}>
-            <Pressable
-              testID="series-reader.header-back"
-              onPress={goBack}
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel="Go back"
-              style={styles.headerBackBtn}>
-              <ChevronLeftIcon color={theme.text} />
-            </Pressable>
-          </Animated.View>
-        </>
+      {/* Header variant: ONE statically-stuck top-bar slot serving BOTH modes — TopBarSwitch
+          keeps the details bar (shared TopBar: transparent over the strip with a floating back
+          button, opaque once scrolled) and the reader's untouched ReaderToolbar mounted together
+          and CROSSFADES between them as the mode flips, so the bar reads as a single element
+          whose title/icons dissolve over (the X/Reddit morphing-header treatment). Above the
+          band overlay so its taps win. */}
+      {isHeader && (
+        <TopBarSwitch
+          mode={detailsActive ? 'details' : 'reader'}
+          bars={{
+            details: (
+              <>
+                <Animated.View
+                  testID="series-reader.header-topbar"
+                  pointerEvents={barSolid ? 'box-none' : 'none'}
+                  style={[styles.headerBarWrap, headerBarStyle]}>
+                  <TopBar title={headerBarTitle} onBack={goBack} />
+                </Animated.View>
+                <Animated.View
+                  pointerEvents={barSolid ? 'none' : 'box-none'}
+                  style={[styles.headerBackWrap, { top: insets.top, height: topBarHeight }, headerBackStyle]}>
+                  <Pressable
+                    testID="series-reader.header-back"
+                    onPress={goBack}
+                    hitSlop={12}
+                    accessibilityRole="button"
+                    accessibilityLabel="Go back"
+                    style={styles.headerBackBtn}>
+                    <ChevronLeftIcon color={theme.text} />
+                  </Pressable>
+                </Animated.View>
+              </>
+            ),
+            reader: (
+              // The reader's own fully transparent toolbar, exactly as /reader has it — its
+              // auto-hide rides `visible`, and a dismissal fades it on the old reader's curve.
+              <Animated.View pointerEvents="box-none" style={chromeDismissStyle}>
+                <ReaderToolbar
+                  title={seriesTitle}
+                  subtitle={target?.chapterName ?? ''}
+                  visible={chromeVisible}
+                  onBack={goBack}
+                  right={
+                    <SettingsControl
+                      bridgeId={bridgeId}
+                      seriesId={id}
+                      title={seriesTitle}
+                      thumbnailUrl={series?.cover}
+                      author={author}
+                      direct={isDirect}
+                    />
+                  }
+                />
+              </Animated.View>
+            ),
+          }}
+        />
       )}
     </View>
   );
@@ -1493,6 +1526,10 @@ const ReaderPane = forwardRef<
     pageStyle?: ComponentProps<typeof Animated.View>['style'];
     /** Animated fade for the bottom chrome during a dismissal (reader.tsx's chromeFadeStyle). */
     chromeStyle?: ComponentProps<typeof Animated.View>['style'];
+    /** True while the reader is parked as a decorative background (the header variant's collapsed
+     *  strip): suspends the warm-ahead prefetch and shrinks the pager's render window to the
+     *  visible page, so only the single page on screen is requested. */
+    standby?: boolean;
   }
 >(function ReaderPane(
   {
@@ -1523,6 +1560,7 @@ const ReaderPane = forwardRef<
     overlay,
     pageStyle,
     chromeStyle,
+    standby,
   },
   ref,
 ) {
@@ -1693,8 +1731,10 @@ const ReaderPane = forwardRef<
     [pages, settings.prefetchAhead],
   );
   useEffect(() => {
-    if (pages.length) warmAround(currentPage);
-  }, [pages, currentPage, warmAround]);
+    // Standby (the collapsed strip) loads nothing beyond the visible page; the flip back to
+    // active re-runs this and warms the neighbourhood immediately.
+    if (!standby && pages.length) warmAround(currentPage);
+  }, [standby, pages, currentPage, warmAround]);
 
   // ── Progress recording — reader.tsx's rules: a library series records chapter progress, anything
   // else (including a direct series) goes to the reading log under the DIRECT_CHAPTER_ID sentinel. ──
@@ -1795,6 +1835,7 @@ const ReaderPane = forwardRef<
           onVisiblePageChange={IS_WEB ? undefined : stitched ? handleFlatVisiblePage : setCurrent}
           scrubTarget={scrubFlat}
           scrubbing={scrubbing}
+          standby={standby}
           onPrev={turnPrev}
           onNext={turnNext}
           onToggleChrome={onToggleChrome}

@@ -45,6 +45,10 @@ type Props = {
   onPrev: () => void;
   onNext: () => void;
   onToggleChrome: () => void;
+  /** True while the pager is parked as a DECORATIVE background (the series-reader's collapsed
+   *  strip): shrinks the mounted-image radius to the visible page only, so neighbouring pages
+   *  aren't requested until the reader becomes primary again. (Mirrors the native prop.) */
+  standby?: boolean;
 };
 
 /**
@@ -115,7 +119,7 @@ const PINCH_COMMIT = 1.2;
 type Mode = 'idle' | 'swipe' | 'pan' | 'pinch' | 'content-pan';
 
 export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedReader(
-  { pages, width, height, rtl, pageFit, initialPage, onPageChange, onPrev, onNext, onToggleChrome },
+  { pages, width, height, rtl, pageFit, initialPage, onPageChange, onPrev, onNext, onToggleChrome, standby },
   ref,
 ) {
   const n = pages.length;
@@ -760,7 +764,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         {data.map((item, i) => {
           // Only pages within the window mount an image (lazy fetch + bounded
           // memory); the rest are empty placeholders that still hold the slot.
-          const near = Math.abs(i - index) <= RENDER_RADIUS;
+          // Standby (a decorative background strip) keeps only the page ON screen.
+          const near = Math.abs(i - index) <= (standby ? 0 : RENDER_RADIUS);
           return (
             <div key={item.key} style={cellStyle(width, height)}>
               <div

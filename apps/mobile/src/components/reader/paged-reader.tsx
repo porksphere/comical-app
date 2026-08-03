@@ -76,6 +76,10 @@ type Props = {
    *  single biggest source of stutter in a long scrub, and mid-drag nothing
    *  reads its results. */
   scrubbing?: boolean;
+  /** True while the pager is parked as a DECORATIVE background (the series-reader's collapsed
+   *  strip): shrinks the virtualization window to the visible page only, so neighbouring pages
+   *  aren't mounted — or their images requested — until the reader becomes primary again. */
+  standby?: boolean;
 };
 
 /**
@@ -112,6 +116,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     onZoomChange,
     scrubTarget,
     scrubbing,
+    standby,
   },
   ref,
 ) {
@@ -303,7 +308,9 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         initialNumToRender={1}
         maxToRenderPerBatch={scrubbing ? 5 : 2}
         updateCellsBatchingPeriod={scrubbing ? 16 : 50}
-        windowSize={5}
+        // Standby (a decorative background strip) keeps the window to the ON-SCREEN page only —
+        // no neighbour cells mounted, no neighbour images requested.
+        windowSize={standby ? 1 : 5}
         onMomentumScrollEnd={onMomentumEnd}
         onScrollToIndexFailed={() => {}}
         viewabilityConfig={VIEWABILITY_CONFIG}
