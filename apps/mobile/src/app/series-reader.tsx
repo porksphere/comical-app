@@ -89,11 +89,11 @@ import { SeriesBody, truncateTopBarTitle } from './series';
 // `onOpenChapter` (chapter row → swap the reader pane's chapter and return to it), `onOpenPage`
 // (direct-series thumbnail → jump the pane to that page and return).
 //
-// Chaptered series read chapter-by-chapter: the screen resolves resume-or-first-chapter itself
-// (same history lookup as useStartReading), and the navigator's skip buttons / falling off either
-// end of a chapter swap chapters in place. Unlike /reader there's NO cross-chapter stitching — a
-// boundary crossing remounts the reader pane (the pre-stitching /reader behavior), the
-// simplicity/fidelity trade this experiment deliberately makes.
+// Chaptered series: the screen resolves resume-or-first-chapter itself (same history lookup as
+// useStartReading). The NATIVE PAGED reader stitches adjacent chapters into one flat pager
+// (reader.tsx's window, ported — see the `run` machinery), so swiping across a boundary is an
+// ordinary page turn with an in-place relabel. Explicit jumps (chapter rows, skip buttons) and
+// web/webtoon crossings remount the pane seeded at the landing page instead.
 //
 // Removal list for the whole experiment: this file + `lib/experimental-flags.ts`, the Settings row
 // in `settings-general.tsx`, the `buildHref` target switch in `series-card.tsx`, this route's
@@ -175,6 +175,11 @@ function warmPrefetch(pages: string[]): void {
 /** What the reader pane is pointed at: a chapter (chaptered series) or the series itself (direct).
  *  `start: 'last'` = land on the final page (arriving from the NEXT chapter's "previous"). */
 type ReadTarget = { chapterId?: string; chapterName?: string; start: number | 'last' };
+
+/** One chapter's worth of pages inside the native pager's stitched flat list (reader.tsx's
+ *  Segment — the same stitching, ported so a boundary swipe here is the same ordinary page turn
+ *  it is on /reader instead of a bounce-and-remount). */
+type Segment = { id: string; name?: string; pages: string[] };
 
 export default function SeriesReaderScreen() {
   const ds = useDataSource();
@@ -295,14 +300,88 @@ export default function SeriesReaderScreen() {
   );
   // `landing` defaults to whichever keeps PAGING continuous (same rule as reader.tsx): forward
   // lands on page 1, backward on the last page. The navigator's skip buttons pass 'first'.
+  // This is the EXPLICIT-jump path (skip buttons, webtoon advance, cold-window edge fallbacks) —
+  // it bumps `jumpNonce` so the pane remounts seeded at the landing page. Stitched paged
+  // crossings never come through here; they relabel in place (see relabelFromPager).
+  const [jumpNonce, setJumpNonce] = useState(0);
   const goAdjacentChapter = useCallback(
     (delta: 1 | -1, landing: 'first' | 'last' = delta === 1 ? 'first' : 'last') => {
       const chapterTo = delta === 1 ? nextChapter : prevChapter;
       if (!chapterTo) return;
+      setJumpNonce((n) => n + 1);
       setOverride({ chapterId: chapterTo.id, chapterName: chapterTo.name, start: landing === 'last' ? 'last' : 0 });
     },
     [nextChapter, prevChapter],
   );
+
+  // ── Stitching (native paged mode): reader.tsx's window, ported ───────────
+  // Adjacent chapters' page lists, subscribed eagerly (cache-first; a list is just URLs) so the
+  // native paged reader can stitch them into ONE flat pager — swiping across a chapter boundary
+  // is then an ordinary page turn with an in-place relabel, no remount.
+  const stitched = !IS_WEB && settings.mode === 'paged' && !isDirect;
+  const { data: prevPages } = useQuery({
+    ...chapterPagesQuery(ds, mock, bridgeId ?? '', id ?? '', prevChapter?.id ?? ''),
+    enabled: stitched && !!id && !!prevChapter,
+  });
+  const { data: nextPages } = useQuery({
+    ...chapterPagesQuery(ds, mock, bridgeId ?? '', id ?? '', nextChapter?.id ?? ''),
+    enabled: stitched && !!id && !!nextChapter,
+  });
+
+  // The stitched window — reader.tsx's run, verbatim in behavior: a segment only joins once its
+  // pages are loaded (no holes); it only ever GROWS during one continuous run (appending at the
+  // tail keeps the pager's offset valid; see reader.tsx for the head-drop black-flash history);
+  // landing outside the run starts a fresh one, bumping `runKey` so the pane remounts and seeds
+  // from `start` instead of re-anchoring.
+  const [run, setRun] = useState<{ key: number; segs: Segment[] }>({ key: 0, segs: [] });
+  const { segments, runKey } = useMemo(() => {
+    if (!pages || !stitched) return { segments: [] as Segment[], runKey: run.key };
+    const currentId = targetChapterId ?? DIRECT_CHAPTER_ID;
+    const prevSeg: Segment | null =
+      targetChapterId && prevChapter && prevPages?.length
+        ? { id: prevChapter.id, name: prevChapter.name, pages: prevPages }
+        : null;
+    const nextSeg: Segment | null =
+      targetChapterId && nextChapter && nextPages?.length
+        ? { id: nextChapter.id, name: nextChapter.name, pages: nextPages }
+        : null;
+
+    const at = run.segs.findIndex((s) => s.id === currentId);
+    if (at === -1) {
+      const segs: Segment[] = [];
+      if (prevSeg) segs.push(prevSeg);
+      segs.push({ id: currentId, name: target?.chapterName, pages });
+      if (nextSeg) segs.push(nextSeg);
+      // Bump the key only when there was a real run to leave, so the very first window doesn't
+      // count as a remount.
+      return { segments: segs, runKey: run.key + (run.segs.length ? 1 : 0) };
+    }
+    // Extend, never drop.
+    const stale = run.segs[at]!;
+    const refreshCurrent = stale.pages !== pages || stale.name !== target?.chapterName;
+    const addPrev = !!prevSeg && at === 0;
+    const addNext = !!nextSeg && run.segs[run.segs.length - 1]!.id === currentId;
+    if (!refreshCurrent && !addPrev && !addNext) return { segments: run.segs, runKey: run.key };
+    const segs = run.segs.slice();
+    if (refreshCurrent) segs[at] = { id: currentId, name: target?.chapterName, pages };
+    if (addPrev) segs.unshift(prevSeg);
+    if (addNext) segs.push(nextSeg);
+    return { segments: segs, runKey: run.key };
+  }, [run, pages, stitched, targetChapterId, target?.chapterName, prevChapter, prevPages, nextChapter, nextPages]);
+  // Catch the run state up DURING render (React's adjust-state-on-render pattern — the merge
+  // above returns `run.segs` by identity when there's nothing to add, which is what stops this
+  // from looping). `!pages` (a chapter still loading) renders no window at all, but must not wipe
+  // the run — the pager is unmounted then and comes back to the same one.
+  if (pages && stitched && (segments !== run.segs || runKey !== run.key)) {
+    setRun({ key: runKey, segs: segments });
+  }
+
+  // A stitched crossing settled: flush of the OLD chapter's progress already happened in the pane;
+  // this just relabels which chapter is "current" WITHOUT remounting (the pane's key is the run,
+  // not the chapter, and the window merge above finds the new current already in `run.segs`).
+  const relabelFromPager = useCallback((chapterId: string, chapterName: string | undefined, page: number) => {
+    setOverride({ chapterId, chapterName, start: page });
+  }, []);
 
   // ── Chrome auto-hide (reader.tsx's scheme, minus the swipe-dismiss guards) ──
   const [chromeVisible, setChromeVisible] = useState(true);
@@ -823,6 +902,7 @@ export default function SeriesReaderScreen() {
   const openChapterFromDetails = useCallback(
     (v: Chapter) => {
       if (v.id !== targetChapterId) {
+        setJumpNonce((n) => n + 1); // explicit jump — remount seeded at the target, even in-window
         setOverride({
           chapterId: v.id,
           chapterName: v.name,
@@ -1039,11 +1119,15 @@ export default function SeriesReaderScreen() {
             </>
           ) : (
             <ReaderPane
-              // Chapter navigation swaps the pane wholesale — position state, records, and the
-              // pager all belong to exactly one chapter (or the direct page list).
-              key={target.chapterId ?? DIRECT_CHAPTER_ID}
+              // Stitched native paged mode is keyed by the RUN (plus the explicit-jump nonce), so
+              // a boundary crossing's relabel does NOT remount it — only leaving the run (chapter
+              // list tap, skip button, cold-window fallback) does. Web/webtoon stay keyed by
+              // chapter (their crossings are the remount path).
+              key={stitched ? `run:${runKey}:${jumpNonce}` : `${target.chapterId ?? DIRECT_CHAPTER_ID}:${jumpNonce}`}
               ref={paneRef}
               pages={pages}
+              segments={segments}
+              onRelabel={relabelFromPager}
               start={target.start}
               width={width}
               height={readerH}
@@ -1366,15 +1450,22 @@ function SeriesDetailsHost({
 
 type ReaderPaneHandle = { goTo: (index: number, animated?: boolean) => void };
 
-/** The reader itself + its bottom chrome, keyed to ONE chapter (or the direct page list) and
- *  mounted only once its pages are in — so the start position seeds `useState`/`useRef` directly
- *  at mount (the same reason reader.tsx's pagers seed from `initialPage` exactly once). A trim of
- *  reader.tsx's body: chapter changes swap the whole pane (no cross-chapter stitching), and the
- *  unmount flush records the outgoing chapter's final position. */
+/** The reader itself + its bottom chrome, keyed to ONE RUN (the stitched window — native paged)
+ *  or one chapter (web/webtoon/direct), and mounted only once its pages are in — so the start
+ *  position seeds `useState`/`useRef` directly at mount (the same reason reader.tsx's pagers seed
+ *  from `initialPage` exactly once). A trim of reader.tsx's body: stitched crossings relabel in
+ *  place through `onRelabel`; explicit jumps swap the whole pane; the unmount flush records the
+ *  outgoing chapter's final position. */
 const ReaderPane = forwardRef<
   ReaderPaneHandle,
   {
     pages: string[];
+    /** The stitched window ([prev?, current, next?]) for the NATIVE PAGED reader — empty for
+     *  web/webtoon/direct, which read per-chapter. See the screen's run machinery. */
+    segments: Segment[];
+    /** A stitched crossing settled on a page of a NEIGHBOURING segment: the screen relabels which
+     *  chapter is "current" in place (no remount — the pane is keyed by the run). */
+    onRelabel: (chapterId: string, chapterName: string | undefined, page: number) => void;
     /** First page to show — `'last'` lands on the final page (arriving backward from the next chapter). */
     start: number | 'last';
     width: number;
@@ -1414,6 +1505,8 @@ const ReaderPane = forwardRef<
 >(function ReaderPane(
   {
     pages,
+    segments,
+    onRelabel,
     start,
     width,
     height,
@@ -1462,33 +1555,122 @@ const ReaderPane = forwardRef<
     [pages, chapterId],
   );
 
+  // ── Stitched flat pager (native paged, chaptered) — reader.tsx's mappings ──
+  // Declared early (a noop until the record section below fills it) so the flat handlers can
+  // flush the outgoing chapter's progress at a crossing.
+  const recordRef = useRef<() => void>(() => {});
+  const stitched = !IS_WEB && settings.mode === 'paged' && segments.length > 0;
+  const flatItems: ReaderPageItem[] = useMemo(
+    () => segments.flatMap((s) => s.pages.map((uri, i) => ({ uri, key: `${s.id}:${i}`, pageNumber: i + 1 }))),
+    [segments],
+  );
+  // Flat index of the current chapter's page 0 (how many stitched pages precede it).
+  const prefixLen = useMemo(() => {
+    const currentId = chapterId ?? DIRECT_CHAPTER_ID;
+    let acc = 0;
+    for (const s of segments) {
+      if (s.id === currentId) break;
+      acc += s.pages.length;
+    }
+    return acc;
+  }, [segments, chapterId]);
+  // Which stitched segment a flat pager index falls in, and the page within it.
+  const locateFlat = useCallback(
+    (flat: number) => {
+      let acc = 0;
+      for (const s of segments) {
+        if (flat < acc + s.pages.length) return { segment: s, page: flat - acc };
+        acc += s.pages.length;
+      }
+      return null;
+    },
+    [segments],
+  );
+  // The page merely *scrolling past* (viewability), carried with its own segment so the counter
+  // reads against the right chapter mid-crossing — display only, nothing writes off it.
+  const [visibleSeg, setVisibleSeg] = useState<{ id: string; page: number; total: number } | null>(null);
+  // The settled page. Same chapter: plain bookkeeping. A NEIGHBOURING segment: flush the old
+  // chapter's progress, then relabel in place — the swipe that carried the user across stays
+  // seamless (no remount; the pane is keyed by the run).
+  const handleFlatPageChange = useCallback(
+    (flat: number) => {
+      const loc = locateFlat(flat);
+      if (!loc) return;
+      if (loc.segment.id === (chapterId ?? DIRECT_CHAPTER_ID)) {
+        setCurrent(loc.page);
+        return;
+      }
+      recordRef.current(); // the outgoing chapter's final settled position
+      setCurrent(loc.page);
+      onRelabel(loc.segment.id, loc.segment.name, loc.page);
+    },
+    [locateFlat, chapterId, setCurrent, onRelabel],
+  );
+  const handleFlatVisiblePage = useCallback(
+    (flat: number) => {
+      const loc = locateFlat(flat);
+      if (!loc) return;
+      setVisibleSeg({ id: loc.segment.id, page: loc.page, total: loc.segment.pages.length });
+      if (loc.segment.id === (chapterId ?? DIRECT_CHAPTER_ID)) setCurrent(loc.page);
+    },
+    [locateFlat, chapterId, setCurrent],
+  );
+  // What the bottom chrome shows: the committed page, or — while a swipe carries a neighbouring
+  // segment's page across the screen — that page against ITS chapter's length.
+  const shown = useMemo(() => {
+    const v = stitched && visibleSeg && segments.some((s) => s.id === visibleSeg.id) ? visibleSeg : null;
+    return { page: v?.page ?? currentPage, total: v?.total ?? pages.length };
+  }, [stitched, visibleSeg, segments, currentPage, pages]);
+
+  // Chapter-local page index in; the stitched pager takes the flat index.
   const goTo = useCallback(
     (index: number, animated = true) => {
       const clamped = Math.max(0, Math.min(pages.length - 1, index));
       setCurrent(clamped);
-      if (settings.mode === 'paged') pagedRef.current?.goToPage(clamped, animated);
+      if (settings.mode === 'paged') pagedRef.current?.goToPage(stitched ? prefixLen + clamped : clamped, animated);
       else webtoonRef.current?.goToPage(clamped);
     },
-    [pages, settings.mode, setCurrent],
+    [pages, settings.mode, setCurrent, stitched, prefixLen],
   );
   // The details card's page-thumbnail taps jump the mounted pane directly (see openPageFromDetails).
   useImperativeHandle(ref, () => ({ goTo }), [goTo]);
-  // Boundary page-turns fall through to the adjacent chapter (chaptered only), same as reader.tsx's
-  // route-level fallback — there's no stitched window here, so this is the only crossing.
+  // Where a scrub release lands: name the landing page immediately (viewability is suppressed
+  // during the drag), so the chrome is correct in the same commit — reader.tsx's seekTo.
+  const seekTo = useCallback(
+    (index: number) => {
+      goTo(index, true);
+      if (stitched) handleFlatVisiblePage(prefixLen + index);
+    },
+    [goTo, stitched, prefixLen, handleFlatVisiblePage],
+  );
+  // Boundary page-turns: prefer stepping within the stitched flat list (the same seamless relabel
+  // path a swipe crossing takes); the explicit-jump fallback only covers a cold window (adjacent
+  // pages not loaded yet) — or web/webtoon, whose readers aren't stitched.
   const turnPrev = useCallback(() => {
-    if (currentRef.current <= 0) {
-      if (chaptered && hasPrevChapter) onCrossChapter(-1);
+    if (currentRef.current > 0) {
+      goTo(currentRef.current - 1, false);
       return;
     }
-    goTo(currentRef.current - 1, false);
-  }, [goTo, chaptered, hasPrevChapter, onCrossChapter]);
+    if (stitched && prefixLen > 0) {
+      handleFlatPageChange(prefixLen - 1);
+      pagedRef.current?.goToPage(prefixLen - 1, false);
+      return;
+    }
+    if (chaptered && hasPrevChapter) onCrossChapter(-1);
+  }, [goTo, stitched, prefixLen, handleFlatPageChange, chaptered, hasPrevChapter, onCrossChapter]);
   const turnNext = useCallback(() => {
-    if (currentRef.current >= pages.length - 1) {
-      if (chaptered && hasNextChapter) onCrossChapter(1);
+    if (currentRef.current < pages.length - 1) {
+      goTo(currentRef.current + 1, false);
       return;
     }
-    goTo(currentRef.current + 1, false);
-  }, [goTo, pages, chaptered, hasNextChapter, onCrossChapter]);
+    const nextFlat = prefixLen + pages.length;
+    if (stitched && nextFlat < flatItems.length) {
+      handleFlatPageChange(nextFlat);
+      pagedRef.current?.goToPage(nextFlat, false);
+      return;
+    }
+    if (chaptered && hasNextChapter) onCrossChapter(1);
+  }, [goTo, stitched, prefixLen, pages, flatItems.length, handleFlatPageChange, chaptered, hasNextChapter, onCrossChapter]);
   const atLastPage = useCallback(() => currentRef.current >= pages.length - 1, [pages]);
 
   // ── Scrubber (same UI-thread path as reader.tsx; offset 0 — nothing stitched) ──
@@ -1504,10 +1686,10 @@ const ReaderPane = forwardRef<
   const scrubTo = useCallback(
     (position: number) => {
       const clamped = Math.max(0, Math.min(pages.length - 1, position));
-      if (settings.mode === 'paged') pagedRef.current?.scrubTo(clamped);
+      if (settings.mode === 'paged') pagedRef.current?.scrubTo(stitched ? prefixLen + clamped : clamped);
       else webtoonRef.current?.goToPage(Math.round(clamped), false);
     },
-    [pages, settings.mode],
+    [pages, settings.mode, stitched, prefixLen],
   );
 
   // ── Warm-ahead ──
@@ -1563,7 +1745,8 @@ const ReaderPane = forwardRef<
       .then(invalidateHistory)
       .catch(() => {});
   }, [bridgeId, seriesId, pages, inLibrary, chapterId, chapterName, seriesTitle, seriesCover, ds, mock, queryClient]);
-  const recordRef = useRef(record);
+  // recordRef itself is declared up with the stitched mappings (the flat crossing flushes through
+  // it); this keeps it pointing at the latest closure.
   useEffect(() => {
     recordRef.current = record;
   }, [record]);
@@ -1605,27 +1788,25 @@ const ReaderPane = forwardRef<
       {settings.mode === 'paged' ? (
         <PagedReader
           ref={pagedRef}
-          pages={items}
+          // Stitched: the whole window as ONE flat pager, so a boundary swipe is an ordinary page
+          // turn (position reports come back flat and get located/relabeled above). Web keeps
+          // per-chapter pages (its pager hands boundary turns to onPrev/onNext itself).
+          pages={stitched ? flatItems : items}
           width={width}
           height={height}
           rtl={settings.direction === 'rtl'}
           pageFit={settings.pageFit}
-          initialPage={startIndex}
-          onPageChange={setCurrent}
-          // Keep the counter live during fast flicks (display-only elsewhere; here the committed
-          // and visible page are the same thing — one chapter, nothing to relabel).
-          onVisiblePageChange={IS_WEB ? undefined : setCurrent}
+          initialPage={stitched ? prefixLen + startIndex : startIndex}
+          onPageChange={stitched ? handleFlatPageChange : setCurrent}
+          // Keep the counter live during fast flicks — against the segment the page belongs to
+          // when stitched (a crossing must count against the chapter being entered).
+          onVisiblePageChange={IS_WEB ? undefined : stitched ? handleFlatVisiblePage : setCurrent}
           scrubTarget={scrubFlat}
           scrubbing={scrubbing}
           onPrev={turnPrev}
           onNext={turnNext}
           onToggleChrome={onToggleChrome}
           onZoomChange={onZoomChange}
-          // No stitching here (see the screen header comment), so a swipe released past either
-          // edge of the chapter is the paged reader's chapter crossing — the same continuation
-          // /reader gets from its stitched window.
-          onOverscrollPrev={chaptered && hasPrevChapter ? () => onCrossChapter(-1) : undefined}
-          onOverscrollNext={chaptered && hasNextChapter ? () => onCrossChapter(1) : undefined}
         />
       ) : (
         <WebtoonReader
@@ -1671,8 +1852,10 @@ const ReaderPane = forwardRef<
         />
       ) : (
         <ChapterNavigator
-          page={currentPage}
-          total={pages.length}
+          // `shown`, not the committed page: mid-crossing the counter reads the entering
+          // chapter's page/length, turning over WITH the swipe (reader.tsx's treatment).
+          page={shown.page}
+          total={shown.total}
           rtl={settings.mode === 'paged' && settings.direction === 'rtl'}
           visible={chromeVisible}
           chaptered={chaptered}
@@ -1682,8 +1865,8 @@ const ReaderPane = forwardRef<
           onNextChapter={() => onSkipChapter(1)}
           onScrub={scrubTo}
           scrubTarget={settings.mode === 'paged' ? scrubFlat : undefined}
-          offset={0}
-          onSeek={goTo}
+          offset={stitched ? prefixLen : 0}
+          onSeek={seekTo}
           onScrubbingChange={handleScrubbing}
           onScrubPage={warmAround}
         />

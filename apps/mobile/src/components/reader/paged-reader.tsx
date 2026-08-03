@@ -61,13 +61,6 @@ type Props = {
   onVisiblePageChange?: (logical: number) => void;
   onPrev: () => void;
   onNext: () => void;
-  /** A drag RELEASED past the first/last page's edge (reading order — the RTL flip is applied
-   *  here), riding the pager's rubber-band. Screens that don't stitch chapters (series-reader)
-   *  cross to the adjacent chapter on it, so swiping off a chapter's end keeps reading. iOS only
-   *  in practice: Android's pager clamps at the edges, so its offset never travels past (tap
-   *  zones and the navigator's skip buttons still cross there). */
-  onOverscrollPrev?: () => void;
-  onOverscrollNext?: () => void;
   onToggleChrome: () => void;
   /** Fires when the visible page's pinch-zoom state changes — the reader screen
    *  disables its swipe-away gesture while zoomed (a one-finger drag pans then). */
@@ -115,8 +108,6 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     onVisiblePageChange,
     onPrev,
     onNext,
-    onOverscrollPrev,
-    onOverscrollNext,
     onToggleChrome,
     onZoomChange,
     scrubTarget,
@@ -170,17 +161,6 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   const onMomentumEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const physical = Math.round(e.nativeEvent.contentOffset.x / width);
     onPageChange(toLogical(Math.max(0, Math.min(n - 1, physical))));
-  };
-
-  // Edge overscroll (see the prop docs): a release with the offset rubber-banded past either end
-  // of the content. Physical start = reading END under RTL (the data array is reversed above).
-  const EDGE_OVERSCROLL_PX = 60;
-  const onScrollDragEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    if (!onOverscrollPrev && !onOverscrollNext) return;
-    const x = e.nativeEvent.contentOffset.x;
-    const maxOffset = (n - 1) * width;
-    if (x <= -EDGE_OVERSCROLL_PX) (rtl ? onOverscrollNext : onOverscrollPrev)?.();
-    else if (x >= maxOffset + EDGE_OVERSCROLL_PX) (rtl ? onOverscrollPrev : onOverscrollNext)?.();
   };
 
   // Reported live from viewability below. Kept in a ref because that callback has
@@ -325,7 +305,6 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         updateCellsBatchingPeriod={scrubbing ? 16 : 50}
         windowSize={5}
         onMomentumScrollEnd={onMomentumEnd}
-        onScrollEndDrag={onScrollDragEnd}
         onScrollToIndexFailed={() => {}}
         viewabilityConfig={VIEWABILITY_CONFIG}
         onViewableItemsChanged={onViewableItemsChanged}
