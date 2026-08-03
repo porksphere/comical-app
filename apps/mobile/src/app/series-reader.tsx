@@ -496,16 +496,19 @@ export default function SeriesReaderScreen() {
         .onUpdate((e) => {
           if (dismissing.value) return;
           const cross = settings.mode === 'paged' ? e.translationY : -e.translationX;
-          if (cross <= 0) {
-            // Reveal direction: the reader rides its axis toward the details.
-            progress.set(Math.min(1, -cross / span));
-            dismissX.set(0);
-            dismissY.set(0);
+          // Reveal side: progress from the cross-axis travel. Dismiss side: SwipeDismiss's free 2D
+          // follow. The two meet CONTINUOUSLY at cross = 0 — the dismiss's cross-axis component is
+          // clamped to its own side and the off-axis follow ramps in over the first 40px of
+          // dismiss travel, so a drag that wanders back over the boundary eases the page home
+          // instead of popping its accumulated side offset to zero in one frame.
+          progress.set(Math.min(1, Math.max(0, -cross) / span));
+          const engage = Math.min(1, Math.max(0, cross) / 40);
+          if (settings.mode === 'paged') {
+            dismissY.set(Math.max(0, e.translationY));
+            dismissX.set(e.translationX * engage);
           } else {
-            // Dismiss direction: free 2D follow under the finger (SwipeDismiss behavior).
-            dismissX.set(e.translationX);
-            dismissY.set(e.translationY);
-            progress.set(0);
+            dismissX.set(Math.min(0, e.translationX));
+            dismissY.set(e.translationY * engage);
           }
         })
         .onEnd((e) => {
@@ -653,11 +656,17 @@ export default function SeriesReaderScreen() {
   const headerTopInset = bandH - SHEET_FADE_H / 2 - TITLE_MID;
   const detailsBottomInset = isHeader ? 0 : detailsSlack;
 
-  // ── Header variant's details top bar — the SHARED TopBar, crossfaded with scroll ─────────────
-  // Over the strip it's fully transparent (just a floating back button, matching TopBar's own
-  // button position); once the content scrolls up to meet the bar it crossfades to the standard
-  // opaque TopBar (`Bridge / Title`, exactly series.tsx's). `barSolid` mirrors the crossfade for
-  // pointer routing, so whichever layer is visible is the one that takes taps.
+  // ── Header variant's ONE top bar — the SHARED TopBar, persistent across BOTH modes ───────────
+  // The same mounted bar serves the details AND the expanded reader; only its CONTENT changes
+  // (details: `Bridge / Title`; reader: the chapter, plus the settings gear on the right). Its
+  // opacity is mode-driven: in details it's transparent over the strip (just a floating back
+  // button, matching TopBar's own button position) and crossfades to the standard opaque bar as
+  // the content scrolls up to meet it; in the reader it follows the auto-hiding chrome. Both
+  // blend through the expand/collapse travel and fade with a dismissal. `barSolid`/`barInteractive`
+  // mirror the fades for pointer routing, so whichever layer is visible is the one taking taps.
+  // The dismissal curves' travel span (the reader's cross axis) — used by the bar fade below and
+  // the page/backdrop/chrome styles further down.
+  const span = settings.mode === 'paged' ? height : width;
   const topBarHeight = useTopBarHeight();
   const barOnOffset = Math.max(1, headerTopInset - (insets.top + topBarHeight));
   const [barSolid, setBarSolid] = useState(false);
@@ -668,11 +677,26 @@ export default function SeriesReaderScreen() {
     },
     [isHeader, barOnOffset],
   );
-  const headerBarStyle = useAnimatedStyle(() => ({
-    opacity:
-      interpolate(detailsScrollOffset.value, [barOnOffset - 24, barOnOffset + 16], [0, 1], Extrapolation.CLAMP) *
-      interpolate(progress.value, [0.6, 1], [0, 1], Extrapolation.CLAMP),
-  }), [barOnOffset]);
+  // UI-thread mirror of the auto-hiding chrome, so the bar's worklet can follow it.
+  const chromeVisibleSV = useSharedValue(1);
+  useEffect(() => {
+    chromeVisibleSV.set(withTiming(chromeVisible ? 1 : 0, { duration: 200 }));
+  }, [chromeVisible, chromeVisibleSV]);
+  const headerBarStyle = useAnimatedStyle(() => {
+    const dismissFade = interpolate(
+      Math.min(1, Math.hypot(dismissX.value, dismissY.value) / span),
+      [0, 0.6],
+      [1, 0],
+      Extrapolation.CLAMP,
+    );
+    const base = detailsActiveSV.value
+      ? // Details: transparent over the strip → solid once scrolled; fades out through an expand.
+        interpolate(detailsScrollOffset.value, [barOnOffset - 24, barOnOffset + 16], [0, 1], Extrapolation.CLAMP) *
+        interpolate(progress.value, [0.6, 1], [0, 1], Extrapolation.CLAMP)
+      : // Reader: the auto-hiding chrome's bar; fades in as the expand travel completes.
+        chromeVisibleSV.value * interpolate(progress.value, [0, 0.4], [1, 0], Extrapolation.CLAMP);
+    return { opacity: base * dismissFade };
+  }, [barOnOffset, span]);
   const headerBackStyle = useAnimatedStyle(() => ({
     opacity:
       interpolate(detailsScrollOffset.value, [barOnOffset - 24, barOnOffset + 16], [1, 0], Extrapolation.CLAMP) *
@@ -686,7 +710,6 @@ export default function SeriesReaderScreen() {
   // dismissal backdrop below fades in place over a full span. The details content fades in/out on
   // a curve weighted toward the front of a reveal / the end of a hide (complete within
   // FADE_WINDOW of the travel), matched by a slight tint on the reader.
-  const span = settings.mode === 'paged' ? height : width;
   // The reader FRAME travels only for the reveal (card variant) / the strip centering (header
   // variant). A dismissal does NOT move it: exactly like SwipeDismiss, only the PAGE subtree
   // travels (pageDismissStyle below) while the reader's dark surface fades IN PLACE
@@ -1109,27 +1132,29 @@ export default function SeriesReaderScreen() {
               {(settings.mode === 'webtoon' || isHeader) && (
                 <DetailsHint mode={settings.mode} visible={chromeVisible && !detailsActive} onPress={() => setRevealed(1)} />
               )}
-              {/* Toolbar outside the loaded branch, like reader.tsx: back + settings stay reachable
-                  while pages are loading or the fetch failed. Series title on top, chapter beneath. */}
-              <ReaderToolbar
-                title={seriesTitle}
-                subtitle={target?.chapterName ?? ''}
-                visible={chromeVisible && !(isHeader && detailsActive)}
-                // The card variant's docked card already clears the notch — don't duck it twice.
-                // (Header variant's reader is truly full screen, so it keeps the default inset.)
-                topInset={!isHeader && settings.mode === 'paged' ? 0 : undefined}
-                onBack={goBack}
-                right={
-                  <SettingsControl
-                    bridgeId={bridgeId}
-                    seriesId={id}
-                    title={seriesTitle}
-                    thumbnailUrl={series?.cover}
-                    author={author}
-                    direct={isDirect}
-                  />
-                }
-              />
+              {/* Card variant's top chrome — outside the loaded branch, like reader.tsx: back +
+                  settings stay reachable while pages are loading or the fetch failed. (The header
+                  variant's top chrome is the shared TopBar below, persistent across both modes.) */}
+              {!isHeader && (
+                <ReaderToolbar
+                  title={seriesTitle}
+                  subtitle={target?.chapterName ?? ''}
+                  visible={chromeVisible}
+                  // The docked card already clears the notch in paged mode — don't duck it twice.
+                  topInset={settings.mode === 'paged' ? 0 : undefined}
+                  onBack={goBack}
+                  right={
+                    <SettingsControl
+                      bridgeId={bridgeId}
+                      seriesId={id}
+                      title={seriesTitle}
+                      thumbnailUrl={series?.cover}
+                      author={author}
+                      direct={isDirect}
+                    />
+                  }
+                />
+              )}
             </Animated.View>
           </View>
         </Animated.View>
@@ -1171,31 +1196,51 @@ export default function SeriesReaderScreen() {
         </GestureDetector>
       )}
 
-      {/* Header variant, details mode: the shared TopBar, above the band overlay so its taps win.
-          Transparent over the strip (only the floating back button shows), the standard opaque
-          bar once scrolled — see headerBarStyle/headerBackStyle. Both fade away as the reader
-          expands (the ReaderToolbar takes over there). */}
-      {isHeader && detailsActive && (
+      {/* Header variant: the ONE shared TopBar, mounted across BOTH modes — its content swaps in
+          place (details: `Bridge / Title`; reader: chapter + settings gear) instead of hiding one
+          bar and showing another. Above the band overlay so its taps win. Opacity per
+          headerBarStyle: strip-transparent → scroll-solid in details, auto-hiding chrome in the
+          reader, blended through the expand travel. */}
+      {isHeader && (
         <>
           <Animated.View
             testID="series-reader.header-topbar"
-            pointerEvents={barSolid ? 'box-none' : 'none'}
+            pointerEvents={(detailsActive ? barSolid : chromeVisible) ? 'box-none' : 'none'}
             style={[styles.headerBarWrap, headerBarStyle]}>
-            <TopBar title={headerBarTitle} onBack={goBack} />
+            <TopBar
+              title={detailsActive ? headerBarTitle : (target?.chapterName || truncateTopBarTitle(seriesTitle))}
+              onBack={goBack}
+              right={
+                !detailsActive ? (
+                  <SettingsControl
+                    bridgeId={bridgeId}
+                    seriesId={id}
+                    title={seriesTitle}
+                    thumbnailUrl={series?.cover}
+                    author={author}
+                    direct={isDirect}
+                  />
+                ) : undefined
+              }
+            />
           </Animated.View>
-          <Animated.View
-            pointerEvents={barSolid ? 'none' : 'box-none'}
-            style={[styles.headerBackWrap, { top: insets.top, height: topBarHeight }, headerBackStyle]}>
-            <Pressable
-              testID="series-reader.header-back"
-              onPress={goBack}
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel="Go back"
-              style={styles.headerBackBtn}>
-              <ChevronLeftIcon color={theme.text} />
-            </Pressable>
-          </Animated.View>
+          {/* The transparent-over-strip state's floating back button (details mode only — the
+              reader's transparent state is hidden chrome, where nothing should be tappable). */}
+          {detailsActive && (
+            <Animated.View
+              pointerEvents={barSolid ? 'none' : 'box-none'}
+              style={[styles.headerBackWrap, { top: insets.top, height: topBarHeight }, headerBackStyle]}>
+              <Pressable
+                testID="series-reader.header-back"
+                onPress={goBack}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel="Go back"
+                style={styles.headerBackBtn}>
+                <ChevronLeftIcon color={theme.text} />
+              </Pressable>
+            </Animated.View>
+          )}
         </>
       )}
     </View>
