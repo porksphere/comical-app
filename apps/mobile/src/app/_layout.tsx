@@ -115,6 +115,13 @@ function RootNavigation() {
           <Stack.Screen name="series" options={{ headerShown: false }} />
           {/* Search renders its own top bar (search field + back button), so hide the native one. */}
           <Stack.Screen name="search" options={{ headerShown: false }} />
+          {/* The SAME Search screen, presentable on top of the series-reader modal (a plain card
+              can't stack over a transparent modal — see app/search-modal.tsx). Slide-in so it
+              still reads as an ordinary pushed page. Remove with the series-reader experiment. */}
+          <Stack.Screen
+            name="search-modal"
+            options={{ headerShown: false, animation: 'slide_from_right', presentation: 'containedTransparentModal' }}
+          />
           {/* Custom-lists manager (create/rename/reorder/delete), pushed from the Library selector. */}
           <Stack.Screen name="manage-lists" options={{ headerShown: false }} />
           <Stack.Screen name="results" options={{ headerShown: false }} />

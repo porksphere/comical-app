@@ -336,6 +336,7 @@ export function SeriesBody({
   coverAspect,
   onCoverLoad,
   topInset,
+  searchRoute = '/search',
   onStartReading,
   onOpenChapter,
   onOpenPage,
@@ -367,6 +368,10 @@ export function SeriesBody({
   /** Top inset for the owning scroller — defaults to this screen's overlaying TopBar height.
    *  The series-reader embedding passes its own (its details card has no top bar). */
   topInset?: number;
+  /** Where tag chips and the Author/Artist/Type meta cells send their search intent. The
+   *  series-reader embedding (a contained transparent modal, which a plain card can't stack
+   *  over) points this at its modal-compatible twin route `/search-modal`. */
+  searchRoute?: '/search' | '/search-modal';
   /** Replaces the Read button / cover tap's "open `/reader` at the resume point" — the
    *  series-reader embedding returns to its own in-place reader instead. */
   onStartReading?: () => void;
@@ -621,7 +626,7 @@ export function SeriesBody({
     const intent = tagSearchIntent(group, index, { bridgeId });
     if (!intent) return;
     setSearchIntent(intent);
-    router.push('/search');
+    router.push(searchRoute);
   };
 
   // Same idea for the Author/Artist/Type meta cells: Search will try to route the
@@ -630,7 +635,7 @@ export function SeriesBody({
   const onMetaPress = (metaKey: 'author' | 'artist' | 'type', value: string) => {
     if (!bridgeId) return;
     setSearchIntent({ bridgeId, kind: 'meta', metaKey, value });
-    router.push('/search');
+    router.push(searchRoute);
   };
 
   // One colour per tag group, computed over the whole list at once (a group's hue depends on the

@@ -95,9 +95,10 @@ import { SeriesBody, truncateTopBarTitle } from './series';
 // Removal list for the whole experiment: this file + `lib/experimental-flags.ts`, the Settings row
 // in `settings-general.tsx`, the `buildHref` target switch in `series-card.tsx`, this route's
 // Stack.Screen entry in `_layout.tsx`, the default-preserving embedding props on `series.tsx`'s
-// SeriesBody (`topInset`/`onStartReading`/`onOpenChapter`/`onOpenPage` + `truncateTopBarTitle`
-// export) and `chapters-section.tsx`'s `onOpenChapter`/`onOpenPage`, the `standby` prop on the
-// paged readers, and `components/top-bar-switch.tsx` if nothing else has adopted it yet.
+// SeriesBody (`topInset`/`searchRoute`/`onStartReading`/`onOpenChapter`/`onOpenPage` +
+// `truncateTopBarTitle` export) and `chapters-section.tsx`'s `onOpenChapter`/`onOpenPage`, the
+// `standby` prop on the paged readers, `app/search-modal.tsx` (+ its Stack.Screen entry), and
+// `components/top-bar-switch.tsx` if nothing else has adopted it yet.
 
 const CHROME_HIDE_MS = 3000;
 // Same CI-speed override as reader.tsx: Maestro steps can outlast the auto-hide, and hidden chrome
@@ -115,6 +116,9 @@ const FLICK_VELOCITY = 900;
 // The reveal pull: how far past the details list's top the rubber-band must be pulled, at
 // release, to expand the reader. Roughly usePullToRefresh's trigger feel.
 const PULL_COMMIT_PX = 80;
+// How far from the LEFT edge a touch may start and still count as the back-swipe (the native
+// stack pop gesture, recreated — a transparent modal doesn't get the real one).
+const EDGE_BACK_PX = 30;
 // The dismissal is the old reader's SwipeDismiss, verbatim: the page follows the finger in BOTH
 // axes, shrinks with distance, and the dark backdrop fades in place over a full span while the
 // page stays solid; release past DISMISS_FRACTION/flick flings it out along its own direction.
@@ -662,6 +666,59 @@ export default function SeriesReaderScreen() {
       });
   }, [detailsActive, headerSpan, progress, touchStartX, touchStartY, detailsScrollOffset, detailsActiveSV, commitReveal]);
 
+  // Edge back-swipe (details mode): the native stack's pop gesture, recreated — the route is a
+  // contained transparent modal (needed for the reader's dismissal reveal), which doesn't get the
+  // real one. A drag that STARTS within EDGE_BACK_PX of the left edge and moves clearly
+  // rightward slides the WHOLE screen off under the finger (over the browse grid beneath — the
+  // root is transparent) and pops on a deep release or flick; vertical drags and the related
+  // rails' own horizontal scrollers fail it fast. Raced with the reveal pan on the same layer.
+  const edgeX = useSharedValue(0);
+  const edgeStartX = useSharedValue(0);
+  const edgeStartY = useSharedValue(0);
+  const edgePan = useMemo(() => {
+    return Gesture.Pan()
+      .enabled(detailsActive)
+      .manualActivation(true)
+      .onTouchesDown((e) => {
+        const t = e.allTouches[0]!;
+        edgeStartX.set(t.x);
+        edgeStartY.set(t.y);
+      })
+      .onTouchesMove((e, mgr) => {
+        if (edgeStartX.get() > EDGE_BACK_PX) {
+          mgr.fail();
+          return;
+        }
+        const t = e.allTouches[0]!;
+        const dx = t.x - edgeStartX.get();
+        const dy = t.y - edgeStartY.get();
+        if (Math.abs(dy) > 16 && Math.abs(dy) > dx) {
+          mgr.fail();
+          return;
+        }
+        if (dx > 16) mgr.activate();
+      })
+      .onUpdate((e) => {
+        if (!detailsActiveSV.value) return;
+        edgeX.set(Math.max(0, e.translationX));
+      })
+      .onEnd((e) => {
+        if (!detailsActiveSV.value) return;
+        if (edgeX.value > width * 0.3 || e.velocityX > FLICK_VELOCITY) {
+          edgeX.set(
+            withTiming(width, { duration: EXIT_MS }, (finished) => {
+              if (finished) runOnJS(goBack)();
+            }),
+          );
+        } else {
+          edgeX.set(withSpring(0, SPRING_BACK));
+        }
+      });
+  }, [detailsActive, width, edgeX, edgeStartX, edgeStartY, detailsActiveSV, goBack]);
+  const detailsGestures = useMemo(() => Gesture.Race(edgePan, returnPan), [edgePan, returnPan]);
+  // The whole screen rides the edge swipe (details, strip, bars alike) — the classic pop look.
+  const screenSlideStyle = useAnimatedStyle(() => ({ transform: [{ translateX: edgeX.value }] }));
+
   // Geometry: the reader strip's height — the top-of-page band the details content starts below.
   // The details layer itself is full-screen (the strip is page, not chrome).
   const bandH = insets.top + HEADER_BAND;
@@ -871,11 +928,15 @@ export default function SeriesReaderScreen() {
         hidden={settings.mode !== 'paged' && !chromeVisible && !detailsActive}
       />
 
+      {/* Everything rides the edge back-swipe together — the classic pop look over the browse
+          grid showing through the transparent root. */}
+      <Animated.View style={[styles.screenSlide, screenSlideStyle]}>
+
       {/* The details PAGE, in front of the (static) reader: a full-screen layer whose opaque
           background starts at the band, so the strip is the top of the page; the whole layer
           slides down and off as the reader expands. When the reader is expanded, the
           (translated-off) layer must not swallow touches meant for the reader beneath it. */}
-      <GestureDetector gesture={returnPan}>
+      <GestureDetector gesture={detailsGestures}>
         <Animated.View
           testID="series-reader.details-card"
           pointerEvents={detailsActive ? 'auto' : 'none'}
@@ -1090,6 +1151,7 @@ export default function SeriesReaderScreen() {
           }}
         />
       )}
+      </Animated.View>
     </View>
   );
 }
@@ -1195,6 +1257,8 @@ function SeriesDetailsHost({
       // The screen's own layout clears the notch (the strip band), so only breathing room is
       // added when no explicit inset comes through.
       topInset={topInset ?? insets.top + Spacing.five}
+      // Tags/meta search out through the modal-compatible twin route (see app/search-modal.tsx).
+      searchRoute="/search-modal"
       onStartReading={onStartReading}
       onOpenChapter={onOpenChapter}
       onOpenPage={onOpenPage}
@@ -1684,6 +1748,10 @@ const styles = StyleSheet.create({
     // Transparent: the route is a contained transparent modal — the details layer is the opaque
     // fill, and a dismissal fades it out over the screen beneath (see dismissFadeStyle).
     backgroundColor: 'transparent',
+  },
+  // The edge back-swipe's ride (see screenSlideStyle).
+  screenSlide: {
+    flex: 1,
   },
   // The reader's frame + clip. No background on either: the dark reader surface is a SEPARATE
   // fading layer inside the clip (readerSurface), so a dismissal can dissolve it in place while
