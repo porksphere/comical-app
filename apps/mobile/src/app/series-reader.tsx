@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image, type ImageLoadEventData } from 'expo-image';
 import { useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   BackHandler,
   Platform,
@@ -468,27 +468,35 @@ export default function SeriesReaderScreen() {
     return () => sub.remove();
   }, [detailsActive, isHeader, setRevealed]);
 
-  // The pop back to browse, shared by the dismiss worklets (ref-free for runOnJS).
-  const goBack = useCallback(() => router.back(), [router]);
+  // The pop back to browse, shared by the dismiss worklets and the toolbar (ref-free for
+  // runOnJS). Deep-linked/full-page-loaded entries (web) have no back stack — land on the
+  // browse tabs instead of dead-ending.
+  const goBack = useCallback(() => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/');
+  }, [router]);
 
   // Reveal/dismiss pan — wraps the reader, on the cross axis of its scroll: the reveal direction
-  // (up in paged, right in webtoon) throws the reader off the details; the opposite direction IS
-  // the old reader's SwipeDismiss — free 2D finger-follow, distance shrink, backdrop fade, fling
-  // exit, spring-back cancel — popping back to the screen this one was opened over (the route is
-  // a contained transparent modal). Built inside useMemo like chapter-navigator's pan (the React
-  // Compiler lint can't tell worklets from render code). `buildPan` runs twice — a gesture
-  // instance attaches to one detector only, and the docked details sliver carries its own copy.
+  // (up in paged, right in webtoon) throws the reader toward the details; the opposite direction
+  // IS the old reader's SwipeDismiss — free 2D finger-follow, distance shrink, backdrop fade,
+  // fling exit, spring-back cancel — popping back to the screen this one was opened over (the
+  // route is a contained transparent modal). ONE build serves BOTH variants (the header's
+  // expanded reader shares the exact same physics — up/right slides the details in, down/left
+  // dismisses the page); they differ only in which enable flag and travel span they get. Built
+  // inside useMemo like chapter-navigator's pan (the React Compiler lint can't tell worklets from
+  // render code). `buildPan` runs per detector — a gesture instance attaches to one detector
+  // only, so the docked details sliver carries its own copy.
   const revealEnabled = !isHeader && !detailsActive && !readerZoomed && !scrubbing;
-  const [revealPan, dockPan] = useMemo(() => {
-    const span = settings.mode === 'paged' ? height : width;
-    const buildPan = () => {
+  const headerCollapseEnabled = isHeader && !detailsActive && !readerZoomed && !scrubbing;
+  const [revealPan, dockPan, headerCollapsePan] = useMemo(() => {
+    const buildPan = (enabled: boolean, span: number) => {
       const pan = Gesture.Pan()
-        .enabled(revealEnabled)
+        .enabled(enabled)
         .onUpdate((e) => {
           if (dismissing.value) return;
           const cross = settings.mode === 'paged' ? e.translationY : -e.translationX;
           if (cross <= 0) {
-            // Reveal direction: the card rides its axis toward the details.
+            // Reveal direction: the reader rides its axis toward the details.
             progress.set(Math.min(1, -cross / span));
             dismissX.set(0);
             dismissY.set(0);
@@ -536,18 +544,18 @@ export default function SeriesReaderScreen() {
       else pan.activeOffsetX([-20, 20]).failOffsetY([-15, 15]);
       return pan;
     };
-    return [buildPan(), buildPan()];
-  }, [settings.mode, revealEnabled, width, height, progress, dismissX, dismissY, dismissing, detailsActiveSV, commitReveal, goBack]);
+    const cardSpan = settings.mode === 'paged' ? height : width;
+    const collapseSpan = settings.mode === 'paged' ? headerSpan : width;
+    return [buildPan(revealEnabled, cardSpan), buildPan(revealEnabled, cardSpan), buildPan(headerCollapseEnabled, collapseSpan)];
+  }, [settings.mode, revealEnabled, headerCollapseEnabled, width, height, headerSpan, progress, dismissX, dismissY, dismissing, detailsActiveSV, commitReveal, goBack]);
 
-  // Header-variant pans. The BAND (the reader strip at the top of the details page) expands the
-  // reader the same way the page's own overscroll does: a tap, or a DOWNWARD drag that slides the
-  // whole details page down under the finger. The expanded reader collapses back by pushing the
-  // details up from the bottom: drag up (paged) / rightward (webtoon, the cross axis of its
-  // scroll). Same hysteresis as everything else.
-  const headerCollapseEnabled = isHeader && !detailsActive && !readerZoomed && !scrubbing;
-  const headerPans = useMemo(() => {
+  // Header-variant band pan. The strip (the reader band at the top of the details page) expands
+  // the reader the same way the page's own overscroll does: a tap, or a DOWNWARD drag that slides
+  // the whole details page down under the finger. (The expanded reader's gestures are the shared
+  // reveal/dismiss pan above — headerCollapsePan.)
+  const bandPan = useMemo(() => {
     if (!isHeader) return null;
-    const bandPan = Gesture.Pan()
+    return Gesture.Pan()
       .enabled(detailsActive)
       .activeOffsetY([-20, 20])
       .failOffsetX([-15, 15])
@@ -560,36 +568,7 @@ export default function SeriesReaderScreen() {
         progress.set(withTiming(open ? 0 : 1, { duration: 240, easing: Easing.out(Easing.cubic) }));
         runOnJS(commitReveal)(open ? 0 : 1);
       });
-    const collapsePan =
-      settings.mode === 'paged'
-        ? Gesture.Pan()
-            .enabled(headerCollapseEnabled)
-            .activeOffsetY([-20, 20])
-            .failOffsetX([-15, 15])
-            .onUpdate((e) => {
-              progress.set(Math.max(0, Math.min(1, -e.translationY / headerSpan)));
-            })
-            .onEnd((e) => {
-              const close = -e.translationY / headerSpan > COMMIT_FRACTION || e.velocityY < -FLICK_VELOCITY;
-              detailsActiveSV.set(close);
-              progress.set(withTiming(close ? 1 : 0, { duration: 240, easing: Easing.out(Easing.cubic) }));
-              runOnJS(commitReveal)(close ? 1 : 0);
-            })
-        : Gesture.Pan()
-            .enabled(headerCollapseEnabled)
-            .activeOffsetX([-20, 20])
-            .failOffsetY([-15, 15])
-            .onUpdate((e) => {
-              progress.set(Math.max(0, Math.min(1, e.translationX / width)));
-            })
-            .onEnd((e) => {
-              const close = e.translationX / width > COMMIT_FRACTION || e.velocityX > FLICK_VELOCITY;
-              detailsActiveSV.set(close);
-              progress.set(withTiming(close ? 1 : 0, { duration: 240, easing: Easing.out(Easing.cubic) }));
-              runOnJS(commitReveal)(close ? 1 : 0);
-            });
-    return { bandPan, collapsePan };
-  }, [isHeader, detailsActive, headerCollapseEnabled, settings.mode, width, headerSpan, progress, detailsActiveSV, commitReveal]);
+  }, [isHeader, detailsActive, headerSpan, progress, detailsActiveSV, commitReveal]);
 
   // Return pan — on the details layer. Paged mode shares the vertical axis with the details' own
   // scroller, so it activates MANUALLY: only a clearly-downward drag with the content at its top
@@ -679,17 +658,24 @@ export default function SeriesReaderScreen() {
   // FADE_WINDOW of the travel), matched by a slight tint on the reader.
   const span = settings.mode === 'paged' ? height : width;
   const readerCardStyle = useAnimatedStyle(() => {
-    if (isHeader) {
-      // Header variant: the reader is the backdrop; while collapsed it rises by half its hidden
-      // height so the strip window shows the page's vertical CENTER (not its top edge), sliding
-      // back to natural position as it expands.
-      return { transform: [{ translateY: (-(height - bandH) / 2) * progress.value }] };
-    }
-    const p = progress.value;
     const dx = dismissX.value;
     const dy = dismissY.value;
     const dist = Math.hypot(dx, dy);
     const scale = interpolate(dist, [0, span * SCALE_SPAN_FRACTION], [1, MIN_SCALE], Extrapolation.CLAMP);
+    if (isHeader) {
+      // Header variant: the reader is the backdrop; while collapsed it rises by half its hidden
+      // height so the strip window shows the page's vertical CENTER (not its top edge), sliding
+      // back to natural position as it expands. The dismiss offsets/shrink are the SAME
+      // SwipeDismiss behavior as the card variant (see the shared pan build).
+      return {
+        transform: [
+          { translateX: dx },
+          { translateY: (-(height - bandH) / 2) * progress.value + dy },
+          { scale },
+        ],
+      };
+    }
+    const p = progress.value;
     const baseX = settings.mode === 'paged' ? 0 : p * width;
     const baseY = settings.mode === 'paged' ? -p * height : 0;
     return {
@@ -708,10 +694,13 @@ export default function SeriesReaderScreen() {
   //    content once the seam has scrolled past it.
   const headerLayerStyle = useAnimatedStyle(() => {
     const off = detailsScrollOffset.value;
-    // Travel far enough to clear the screen from wherever the page's visible top currently sits:
-    // at rest that's the seam (bandH), when scrolled the content reaches the screen top (bandH of
-    // extra travel, matching how far the seam has parked).
-    const travel = height - bandH + Math.min(Math.max(off, 0), bandH);
+    // Travel far enough to clear the screen from wherever the page's TOPMOST visible artifact
+    // currently sits. At rest that's the seam gradient's upper edge (bandH - SHEET_FADE_H — the
+    // title reaches up into the seam, so clearing only the background's top would leave the title
+    // and half the gradient peeking at the bottom of the expanded reader); when scrolled, the
+    // seam parks at the screen top and the travel saturates at the full height.
+    const seamTopRest = bandH - SHEET_FADE_H;
+    const travel = height - seamTopRest + Math.min(Math.max(off, 0), seamTopRest);
     // The `min(off, 0)` term cancels the layer's share of an ACTIVE iOS pull: while the native
     // rubber-band is moving the content (and headerSheetBgStyle the seam) down 1:1 already, the
     // pull-driven progress must not ALSO move the layer — only the commit animation (progress
@@ -792,6 +781,25 @@ export default function SeriesReaderScreen() {
   const seriesTitle = series?.title ?? title ?? id ?? 'Reader';
   const author = series?.meta?.find((m) => m.label === 'AUTHOR')?.value;
 
+  // The reveal tint + the header strip's heavy fade, over the PAGES but UNDER the bottom chrome —
+  // they render inside ReaderPane between the readers and the navigator/pill (or after the
+  // error/loading placeholder), so a partial reveal never washes out the scrubber and skip
+  // buttons the way it briefly did when these sat above the whole pane.
+  const dimOverlays = (
+    <>
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.readerTint, readerTintStyle]} />
+      {/* Header variant: the collapsed strip's heavy fade — toward the THEME background (not
+          black), so the strip reads as a faded-out image and the title over the seam stays
+          legible in both themes. */}
+      {isHeader && (
+        <Animated.View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, { backgroundColor: theme.background }, headerReaderFadeStyle]}
+        />
+      )}
+    </>
+  );
+
   return (
     // Plain (transparent) root — the route is a contained transparent modal, so a dismissal can
     // fade the layers out over the screen beneath. The details layer supplies the opaque fill.
@@ -831,7 +839,14 @@ export default function SeriesReaderScreen() {
                   { top: bandH, height, backgroundColor: theme.background },
                   headerSheetBgStyle,
                 ]}>
-                <LinearGradient colors={['transparent', theme.background]} style={styles.sheetFade} />
+                {/* Ease-in stops: a two-stop linear gradient shows a visible edge where it starts
+                    over the reader — ramp in slowly at the top so the strip melts into the page.
+                    (theme.background is 6-digit hex, so alpha suffixes compose.) */}
+                <LinearGradient
+                  colors={[`${theme.background}00`, `${theme.background}2E`, `${theme.background}9E`, theme.background]}
+                  locations={[0, 0.45, 0.78, 1]}
+                  style={styles.sheetFade}
+                />
               </Animated.View>
               {/* The content scrolls over the transparent strip window — SeriesBody itself paints
                   no background, so the faded reader shows through above the seam. */}
@@ -916,7 +931,7 @@ export default function SeriesReaderScreen() {
           disable it), matching how SwipeDismiss wraps the readers on /reader. Shadow lives on an
           outer, non-clipping view (iOS shadows don't survive overflow: hidden); the inner view
           clips to the corners. */}
-      <GestureDetector gesture={headerPans ? headerPans.collapsePan : revealPan}>
+      <GestureDetector gesture={isHeader ? headerCollapsePan : revealPan}>
         <Animated.View
           testID="series-reader.reader-card"
           style={[
@@ -927,13 +942,19 @@ export default function SeriesReaderScreen() {
           ]}>
           <View style={[styles.readerClip, { borderRadius: isHeader ? 0 : cardRadius }]}>
           {error ? (
-            <View style={styles.centerFill}>
-              <RetryBlock message={error} onRetry={refetch} />
-            </View>
+            <>
+              <View style={styles.centerFill}>
+                <RetryBlock message={error} onRetry={refetch} />
+              </View>
+              {dimOverlays}
+            </>
           ) : !readerReady ? (
-            <View style={styles.centerFill}>
-              <ThemedText style={styles.loadingText}>Loading…</ThemedText>
-            </View>
+            <>
+              <View style={styles.centerFill}>
+                <ThemedText style={styles.loadingText}>Loading…</ThemedText>
+              </View>
+              {dimOverlays}
+            </>
           ) : (
             <ReaderPane
               // Chapter navigation swaps the pane wholesale — position state, records, and the
@@ -965,19 +986,9 @@ export default function SeriesReaderScreen() {
               onHoldChrome={holdChrome}
               onZoomChange={setReaderZoomed}
               onScrubActive={onScrubActive}
+              overlay={dimOverlays}
             />
           )}
-            {/* The reader's tint, matched to the details fade — separates the lifting card. */}
-            <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.readerTint, readerTintStyle]} />
-            {/* Header variant: the collapsed strip's heavy fade — toward the THEME background
-                (not black), so the strip reads as a faded-out image and the title over the seam
-                stays legible in both themes. */}
-            {isHeader && (
-              <Animated.View
-                pointerEvents="none"
-                style={[StyleSheet.absoluteFill, { backgroundColor: theme.background }, headerReaderFadeStyle]}
-              />
-            )}
             {/* Separating hairlines, only where a seam exists, following the card's SHAPE — each is
                 a border "cap" that traces the edge THROUGH its rounded corners. Paged: the top cap
                 always shows (it permanently meets the docked details); the bottom cap only while
@@ -1043,7 +1054,7 @@ export default function SeriesReaderScreen() {
               // The card variant's docked card already clears the notch — don't duck it twice.
               // (Header variant's reader is truly full screen, so it keeps the default inset.)
               topInset={!isHeader && settings.mode === 'paged' ? 0 : undefined}
-              onBack={() => router.back()}
+              onBack={goBack}
               right={
                 <SettingsControl
                   bridgeId={bridgeId}
@@ -1079,8 +1090,8 @@ export default function SeriesReaderScreen() {
       {/* Header variant: the reader strip's touch surface — tap to read full screen, or drag DOWN
           to slide the details page away under the finger. It rides the same occlusion as the
           strip (headerBandStyle), so it scrolls off with the page and never blocks content. */}
-      {headerPans && detailsActive && (
-        <GestureDetector gesture={headerPans.bandPan}>
+      {bandPan && detailsActive && (
+        <GestureDetector gesture={bandPan}>
           {/* Ends where the content starts (the title reaches up into the seam), so it never
               covers anything tappable. */}
           <Animated.View style={[styles.dockBand, { height: headerTopInset }, headerBandStyle]}>
@@ -1253,6 +1264,9 @@ const ReaderPane = forwardRef<
     onZoomChange: (zoomed: boolean) => void;
     /** A scrub drag started/ended — the screen also freezes its reveal pan for the duration. */
     onScrubActive: (active: boolean) => void;
+    /** Rendered between the readers and the bottom chrome — the screen's reveal tint/fade layers
+     *  go here, so they dim the PAGES without washing out the navigator/pill. */
+    overlay?: ReactNode;
   }
 >(function ReaderPane(
   {
@@ -1278,6 +1292,7 @@ const ReaderPane = forwardRef<
     onHoldChrome,
     onZoomChange,
     onScrubActive,
+    overlay,
   },
   ref,
 ) {
@@ -1459,6 +1474,11 @@ const ReaderPane = forwardRef<
           onNext={turnNext}
           onToggleChrome={onToggleChrome}
           onZoomChange={onZoomChange}
+          // No stitching here (see the screen header comment), so a swipe released past either
+          // edge of the chapter is the paged reader's chapter crossing — the same continuation
+          // /reader gets from its stitched window.
+          onOverscrollPrev={chaptered && hasPrevChapter ? () => onCrossChapter(-1) : undefined}
+          onOverscrollNext={chaptered && hasNextChapter ? () => onCrossChapter(1) : undefined}
         />
       ) : (
         <WebtoonReader
@@ -1484,6 +1504,9 @@ const ReaderPane = forwardRef<
           }
         />
       )}
+
+      {/* Tint/fade layers over the pages, under the chrome below. */}
+      {overlay}
 
       {IS_WEB ? (
         <ProgressPill
