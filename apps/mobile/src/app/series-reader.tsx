@@ -568,43 +568,59 @@ export default function SeriesReaderScreen() {
   // only, so the docked details sliver carries its own copy.
   const revealEnabled = !isHeader && !detailsActive && !readerZoomed && !scrubbing;
   const headerCollapseEnabled = isHeader && !detailsActive && !readerZoomed && !scrubbing;
+  // Each GESTURE is one thing, decided at activation and locked: a drag that sets off toward the
+  // details is a reveal (progress only); anything else is a SwipeDismiss gesture VERBATIM — free
+  // 2D follow in BOTH directions (swiping back past the origin carries the page out the other
+  // side, exactly like the old reader), released on SwipeDismiss's own |cross| decision. A new
+  // gesture that begins while the page hasn't fully settled from a previous dismiss drag is
+  // always a dismiss gesture — only a settled page reveals the details on a swipe.
+  const gestureMode = useSharedValue<0 | 1 | 2>(0); // 0 undecided, 1 reveal, 2 dismiss
   const [revealPan, dockPan, headerCollapsePan] = useMemo(() => {
+    const dismissSpan = settings.mode === 'paged' ? height : width;
     const buildPan = (enabled: boolean, span: number) => {
       const pan = Gesture.Pan()
         .enabled(enabled)
         .onUpdate((e) => {
-          if (dismissing.value) return;
+          // detailsActiveSV double-checks `enabled` INSIDE the worklet — RNGH web can keep a
+          // rebuilt-disabled recognizer live, and a stale reader pan must never act while the
+          // details own the screen (and vice versa for returnPan below).
+          if (dismissing.value || detailsActiveSV.value) return;
           const cross = settings.mode === 'paged' ? e.translationY : -e.translationX;
-          // Reveal side: progress from the cross-axis travel. Dismiss side: SwipeDismiss's free 2D
-          // follow. The two meet CONTINUOUSLY at cross = 0 — the dismiss's cross-axis component is
-          // clamped to its own side and the off-axis follow ramps in over the first 40px of
-          // dismiss travel, so a drag that wanders back over the boundary eases the page home
-          // instead of popping its accumulated side offset to zero in one frame.
-          progress.set(Math.min(1, Math.max(0, -cross) / span));
-          const engage = Math.min(1, Math.max(0, cross) / 40);
-          if (settings.mode === 'paged') {
-            dismissY.set(Math.max(0, e.translationY));
-            dismissX.set(e.translationX * engage);
-          } else {
-            dismissX.set(Math.min(0, e.translationX));
-            dismissY.set(e.translationY * engage);
+          // Lock the gesture's mode at the first REAL movement (web fires its opening updates
+          // with translation 0 — deciding on that frame mislabels every drag). A gesture
+          // beginning while the page hasn't settled from a previous dismiss drag is always a
+          // dismiss gesture.
+          if (gestureMode.value === 0) {
+            const settled = Math.hypot(dismissX.value, dismissY.value) <= 1;
+            if (!settled) gestureMode.set(2);
+            else if (Math.abs(cross) >= 2) gestureMode.set(cross <= 0 ? 1 : 2);
+            else return; // no meaningful movement yet
           }
+          if (gestureMode.value === 1) {
+            progress.set(Math.min(1, Math.max(0, -cross) / span));
+            return;
+          }
+          // SwipeDismiss's follow, verbatim: both axes, unclamped.
+          dismissX.set(e.translationX);
+          dismissY.set(e.translationY);
         })
         .onEnd((e) => {
-          if (dismissing.value) return;
-          const cross = settings.mode === 'paged' ? e.translationY : -e.translationX;
-          const crossVelocity = settings.mode === 'paged' ? e.velocityY : -e.velocityX;
-          if (cross <= 0) {
+          if (dismissing.value || detailsActiveSV.value) return;
+          if (gestureMode.value === 1) {
+            const cross = settings.mode === 'paged' ? e.translationY : -e.translationX;
+            const crossVelocity = settings.mode === 'paged' ? e.velocityY : -e.velocityX;
             const open = -cross / span > COMMIT_FRACTION || crossVelocity < -FLICK_VELOCITY;
             detailsActiveSV.set(open);
             progress.set(withTiming(open ? 1 : 0, { duration: 240, easing: Easing.out(Easing.cubic) }));
             runOnJS(commitReveal)(open ? 1 : 0);
             return;
           }
-          const byFlick = crossVelocity > FLICK_VELOCITY;
-          // The dismiss DECISION uses the full screen axis (dismissSpan), matching SwipeDismiss's
-          // DISMISS_FRACTION exactly — the reveal span only maps the opposite direction.
-          if (!byFlick && cross < dismissSpan * COMMIT_FRACTION) {
+          // SwipeDismiss's release decision, verbatim: the cross-axis OFFSET (either direction)
+          // past a quarter of the screen, or a fast flick, dismisses; anything less springs back.
+          const crossOffset = settings.mode === 'paged' ? dismissY.value : dismissX.value;
+          const crossVelocityRaw = settings.mode === 'paged' ? e.velocityY : e.velocityX;
+          const byFlick = Math.abs(crossVelocityRaw) > FLICK_VELOCITY;
+          if (!byFlick && Math.abs(crossOffset) < dismissSpan * COMMIT_FRACTION) {
             dismissX.set(withSpring(0, SPRING_BACK));
             dismissY.set(withSpring(0, SPRING_BACK));
             return;
@@ -624,16 +640,20 @@ export default function SeriesReaderScreen() {
               if (finished) runOnJS(goBack)();
             }),
           );
+        })
+        // Always fires once the gesture resolves (release OR cancel) — the next gesture decides
+        // its own mode fresh.
+        .onFinalize(() => {
+          gestureMode.set(0);
         });
       if (settings.mode === 'paged') pan.activeOffsetY([-20, 20]).failOffsetX([-15, 15]);
       else pan.activeOffsetX([-20, 20]).failOffsetY([-15, 15]);
       return pan;
     };
-    const dismissSpan = settings.mode === 'paged' ? height : width;
     const cardSpan = dismissSpan;
     const collapseSpan = settings.mode === 'paged' ? headerSpan : width;
     return [buildPan(revealEnabled, cardSpan), buildPan(revealEnabled, cardSpan), buildPan(headerCollapseEnabled, collapseSpan)];
-  }, [settings.mode, revealEnabled, headerCollapseEnabled, width, height, headerSpan, progress, dismissX, dismissY, dismissing, detailsActiveSV, commitReveal, goBack]);
+  }, [settings.mode, revealEnabled, headerCollapseEnabled, width, height, headerSpan, gestureMode, progress, dismissX, dismissY, dismissing, detailsActiveSV, commitReveal, goBack]);
 
   // Header-variant band pan. The strip (the reader band at the top of the details page) expands
   // the reader the same way the page's own overscroll does: a tap, or a DOWNWARD drag that slides
@@ -646,9 +666,11 @@ export default function SeriesReaderScreen() {
       .activeOffsetY([-20, 20])
       .failOffsetX([-15, 15])
       .onUpdate((e) => {
+        if (!detailsActiveSV.value) return;
         progress.set(Math.max(0, Math.min(1, 1 - e.translationY / headerSpan)));
       })
       .onEnd((e) => {
+        if (!detailsActiveSV.value) return;
         const open = e.translationY / headerSpan > COMMIT_FRACTION || e.velocityY > FLICK_VELOCITY;
         detailsActiveSV.set(!open);
         progress.set(withTiming(open ? 0 : 1, { duration: 240, easing: Easing.out(Easing.cubic) }));
@@ -696,9 +718,12 @@ export default function SeriesReaderScreen() {
             }
           })
           .onUpdate((e) => {
+            // Same stale-recognizer guard as the reader pan, in the other direction.
+            if (!detailsActiveSV.value) return;
             progress.set(Math.max(0, Math.min(1, 1 - e.translationY / vSpan)));
           })
           .onEnd((e) => {
+            if (!detailsActiveSV.value) return;
             const close = e.translationY / vSpan > COMMIT_FRACTION || e.velocityY > FLICK_VELOCITY;
             detailsActiveSV.set(!close);
             progress.set(withTiming(close ? 0 : 1, { duration: 240, easing: Easing.out(Easing.cubic) }));
@@ -709,9 +734,11 @@ export default function SeriesReaderScreen() {
           .activeOffsetX([-20, 20])
           .failOffsetY([-15, 15])
           .onUpdate((e) => {
+            if (!detailsActiveSV.value) return;
             progress.set(Math.max(0, Math.min(1, 1 + e.translationX / width)));
           })
           .onEnd((e) => {
+            if (!detailsActiveSV.value) return;
             const close = -e.translationX / width > COMMIT_FRACTION || e.velocityX < -FLICK_VELOCITY;
             detailsActiveSV.set(!close);
             progress.set(withTiming(close ? 0 : 1, { duration: 240, easing: Easing.out(Easing.cubic) }));
@@ -735,16 +762,15 @@ export default function SeriesReaderScreen() {
   const headerTopInset = bandH - SHEET_FADE_H / 2 - TITLE_MID;
   const detailsBottomInset = isHeader ? 0 : detailsSlack;
 
-  // ── Header variant's ONE top bar — the SHARED TopBar, persistent across BOTH modes ───────────
-  // The same mounted bar serves the details AND the expanded reader; only its CONTENT changes
-  // (details: `Bridge / Title`; reader: the chapter, plus the settings gear on the right). Its
-  // opacity is mode-driven: in details it's transparent over the strip (just a floating back
-  // button, matching TopBar's own button position) and crossfades to the standard opaque bar as
-  // the content scrolls up to meet it; in the reader it follows the auto-hiding chrome. Both
-  // blend through the expand/collapse travel and fade with a dismissal. `barSolid`/`barInteractive`
-  // mirror the fades for pointer routing, so whichever layer is visible is the one taking taps.
-  // The dismissal curves' travel span (the reader's cross axis) — used by the bar fade below and
-  // the page/backdrop/chrome styles further down.
+  // ── Header variant's details top bar — the SHARED TopBar, crossfaded with scroll ─────────────
+  // DETAILS MODE ONLY: transparent over the strip (just a floating back button, matching TopBar's
+  // own button position), crossfading to the standard opaque bar as the content scrolls up to
+  // meet it, and fading out through an expand. The EXPANDED reader keeps the old reader's own
+  // ReaderToolbar untouched — fully transparent chrome, exactly the pre-experiment look; the two
+  // occupy the same slot and fade through the transition, so it reads as one bar swapping its
+  // content. `barSolid` mirrors the crossfade for pointer routing.
+  // The dismissal curves' travel span (the reader's cross axis) — used by the page/backdrop/
+  // chrome styles further down.
   const span = settings.mode === 'paged' ? height : width;
   const topBarHeight = useTopBarHeight();
   const barOnOffset = Math.max(1, headerTopInset - (insets.top + topBarHeight));
@@ -756,26 +782,11 @@ export default function SeriesReaderScreen() {
     },
     [isHeader, barOnOffset],
   );
-  // UI-thread mirror of the auto-hiding chrome, so the bar's worklet can follow it.
-  const chromeVisibleSV = useSharedValue(1);
-  useEffect(() => {
-    chromeVisibleSV.set(withTiming(chromeVisible ? 1 : 0, { duration: 200 }));
-  }, [chromeVisible, chromeVisibleSV]);
-  const headerBarStyle = useAnimatedStyle(() => {
-    const dismissFade = interpolate(
-      Math.min(1, Math.hypot(dismissX.value, dismissY.value) / span),
-      [0, 0.6],
-      [1, 0],
-      Extrapolation.CLAMP,
-    );
-    const base = detailsActiveSV.value
-      ? // Details: transparent over the strip → solid once scrolled; fades out through an expand.
-        interpolate(detailsScrollOffset.value, [barOnOffset - 24, barOnOffset + 16], [0, 1], Extrapolation.CLAMP) *
-        interpolate(progress.value, [0.6, 1], [0, 1], Extrapolation.CLAMP)
-      : // Reader: the auto-hiding chrome's bar; fades in as the expand travel completes.
-        chromeVisibleSV.value * interpolate(progress.value, [0, 0.4], [1, 0], Extrapolation.CLAMP);
-    return { opacity: base * dismissFade };
-  }, [barOnOffset, span]);
+  const headerBarStyle = useAnimatedStyle(() => ({
+    opacity:
+      interpolate(detailsScrollOffset.value, [barOnOffset - 24, barOnOffset + 16], [0, 1], Extrapolation.CLAMP) *
+      interpolate(progress.value, [0.6, 1], [0, 1], Extrapolation.CLAMP),
+  }), [barOnOffset]);
   const headerBackStyle = useAnimatedStyle(() => ({
     opacity:
       interpolate(detailsScrollOffset.value, [barOnOffset - 24, barOnOffset + 16], [1, 0], Extrapolation.CLAMP) *
@@ -1216,29 +1227,29 @@ export default function SeriesReaderScreen() {
               {(settings.mode === 'webtoon' || isHeader) && (
                 <DetailsHint mode={settings.mode} visible={chromeVisible && !detailsActive} onPress={() => setRevealed(1)} />
               )}
-              {/* Card variant's top chrome — outside the loaded branch, like reader.tsx: back +
-                  settings stay reachable while pages are loading or the fetch failed. (The header
-                  variant's top chrome is the shared TopBar below, persistent across both modes.) */}
-              {!isHeader && (
-                <ReaderToolbar
-                  title={seriesTitle}
-                  subtitle={target?.chapterName ?? ''}
-                  visible={chromeVisible}
-                  // The docked card already clears the notch in paged mode — don't duck it twice.
-                  topInset={settings.mode === 'paged' ? 0 : undefined}
-                  onBack={goBack}
-                  right={
-                    <SettingsControl
-                      bridgeId={bridgeId}
-                      seriesId={id}
-                      title={seriesTitle}
-                      thumbnailUrl={series?.cover}
-                      author={author}
-                      direct={isDirect}
-                    />
-                  }
-                />
-              )}
+              {/* Toolbar outside the loaded branch, like reader.tsx: back + settings stay
+                  reachable while pages are loading or the fetch failed. This is the reader's own
+                  fully transparent chrome, untouched — in the header variant it only exists while
+                  the reader is EXPANDED (the details mode's bar is the shared TopBar). */}
+              <ReaderToolbar
+                title={seriesTitle}
+                subtitle={target?.chapterName ?? ''}
+                visible={chromeVisible && !(isHeader && detailsActive)}
+                // The card variant's docked card already clears the notch — don't duck it twice.
+                // (Header variant's reader is truly full screen, so it keeps the default inset.)
+                topInset={!isHeader && settings.mode === 'paged' ? 0 : undefined}
+                onBack={goBack}
+                right={
+                  <SettingsControl
+                    bridgeId={bridgeId}
+                    seriesId={id}
+                    title={seriesTitle}
+                    thumbnailUrl={series?.cover}
+                    author={author}
+                    direct={isDirect}
+                  />
+                }
+              />
             </Animated.View>
           </View>
         </Animated.View>
@@ -1280,51 +1291,32 @@ export default function SeriesReaderScreen() {
         </GestureDetector>
       )}
 
-      {/* Header variant: the ONE shared TopBar, mounted across BOTH modes — its content swaps in
-          place (details: `Bridge / Title`; reader: chapter + settings gear) instead of hiding one
-          bar and showing another. Above the band overlay so its taps win. Opacity per
-          headerBarStyle: strip-transparent → scroll-solid in details, auto-hiding chrome in the
-          reader, blended through the expand travel. */}
-      {isHeader && (
+      {/* Header variant, details mode: the shared TopBar, above the band overlay so its taps win.
+          Transparent over the strip (only the floating back button shows), the standard opaque
+          bar once scrolled — see headerBarStyle/headerBackStyle. It fades out through an expand;
+          the expanded reader's chrome is the reader's own untouched ReaderToolbar in the same
+          slot, so the transition reads as one bar swapping content. */}
+      {isHeader && detailsActive && (
         <>
           <Animated.View
             testID="series-reader.header-topbar"
-            pointerEvents={(detailsActive ? barSolid : chromeVisible) ? 'box-none' : 'none'}
+            pointerEvents={barSolid ? 'box-none' : 'none'}
             style={[styles.headerBarWrap, headerBarStyle]}>
-            <TopBar
-              title={detailsActive ? headerBarTitle : (target?.chapterName || truncateTopBarTitle(seriesTitle))}
-              onBack={goBack}
-              right={
-                !detailsActive ? (
-                  <SettingsControl
-                    bridgeId={bridgeId}
-                    seriesId={id}
-                    title={seriesTitle}
-                    thumbnailUrl={series?.cover}
-                    author={author}
-                    direct={isDirect}
-                  />
-                ) : undefined
-              }
-            />
+            <TopBar title={headerBarTitle} onBack={goBack} />
           </Animated.View>
-          {/* The transparent-over-strip state's floating back button (details mode only — the
-              reader's transparent state is hidden chrome, where nothing should be tappable). */}
-          {detailsActive && (
-            <Animated.View
-              pointerEvents={barSolid ? 'none' : 'box-none'}
-              style={[styles.headerBackWrap, { top: insets.top, height: topBarHeight }, headerBackStyle]}>
-              <Pressable
-                testID="series-reader.header-back"
-                onPress={goBack}
-                hitSlop={12}
-                accessibilityRole="button"
-                accessibilityLabel="Go back"
-                style={styles.headerBackBtn}>
-                <ChevronLeftIcon color={theme.text} />
-              </Pressable>
-            </Animated.View>
-          )}
+          <Animated.View
+            pointerEvents={barSolid ? 'none' : 'box-none'}
+            style={[styles.headerBackWrap, { top: insets.top, height: topBarHeight }, headerBackStyle]}>
+            <Pressable
+              testID="series-reader.header-back"
+              onPress={goBack}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+              style={styles.headerBackBtn}>
+              <ChevronLeftIcon color={theme.text} />
+            </Pressable>
+          </Animated.View>
         </>
       )}
     </View>
