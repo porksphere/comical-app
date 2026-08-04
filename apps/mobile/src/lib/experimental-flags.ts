@@ -63,26 +63,38 @@ export function useSeriesSubPath(): (path: SeriesSubPath) => SeriesSubPath | `/s
 }
 
 /**
- * True anywhere inside the /series-reader nested stack (provided by `app/series-reader/_layout.tsx`).
- * Series cards read this instead of `usePathname` — cards are render-cost-sensitive, and a context
- * whose value never changes doesn't re-render them on every navigation the way the pathname hook
- * would. With it set, a card tap DRILLS the series inside the stack (`/series-reader/related`, an
- * ordinary pushed card) rather than stacking a second transparent modal — two stacked
- * contained-transparent-modals lose the middle screen's view on iOS (UIKit re-roots the
- * OverCurrentContext presentation at the react root), which showed the tab root behind a dismissal
- * and replayed the parent series' enter animation after it. Remove with the experiment.
+ * Present anywhere inside the /series-reader nested stack (provided by
+ * `app/series-reader/_layout.tsx`), null everywhere else. Series cards read this instead of
+ * `usePathname` — cards are render-cost-sensitive, and a context whose value never changes
+ * doesn't re-render them on every navigation the way the pathname hook would. `drillSeries` is a
+ * ref the combined page's screen fills with its layer-push (see SeriesReaderScreen): a drilled
+ * series renders as a plain sibling LAYER inside that one screen, because navigation can't do
+ * this on iOS — a second contained transparent modal loses the middle screen's view (UIKit
+ * re-roots the OverCurrentContext presentation at the react root), and a covered nested card is
+ * detached by UINavigationController — while a sibling view keeps the parent series LIVE beneath
+ * the drilled one for its dismissal gestures. Remove with the experiment.
  */
 export const InSeriesReaderStack = createContext(false);
 
+/** The layer-push handler, registered by the mounted SeriesReaderScreen (there is at most one —
+ *  drilled series are layers inside it, never a second modal). A hand-rolled module singleton on
+ *  purpose (like lib/tab-bar-visibility): the React Compiler forbids mutating a context-carried
+ *  ref, and this is a callback hand-off, not state anything renders from. */
+let drillSeriesHandler: ((params: Record<string, string>) => void) | null = null;
+export function registerDrillSeries(fn: (params: Record<string, string>) => void): () => void {
+  drillSeriesHandler = fn;
+  return () => {
+    if (drillSeriesHandler === fn) drillSeriesHandler = null;
+  };
+}
+
 /**
  * The drill itself, for series cards: null outside the series-reader stack (callers fall back to
- * their normal `router.push`), otherwise a function that pushes the `related` twin (the same
- * combined page as an ordinary card) INSIDE the nested stack. Deliberately a raw PUSH action
- * dispatched on the nearest navigator — the nested stack — rather than `router.push` with the
- * absolute path: expo-router resolves an absolute push at the ROOT, minting a whole new
- * /series-reader modal whose nested state holds only `related` (the two-stacked-modals bug
- * again, with the parent screen gone from under it). Shares the nav-guard claim so a double tap
- * still can't fire twice. Remove with the experiment.
+ * their normal `router.push`), otherwise a function that hands the tapped series to the combined
+ * page's layer stack. From the nested search/downloads sub-pages it first pops the nested stack
+ * back to the combined page (the layers live on that screen), so the result slides in over the
+ * series context you came from. Shares the nav-guard claim so a double tap can't fire twice.
+ * Remove with the experiment.
  */
 export function useDrillRelatedSeries(): ((params: Record<string, string>) => void) | null {
   const inStack = useContext(InSeriesReaderStack);
@@ -90,8 +102,12 @@ export function useDrillRelatedSeries(): ((params: Record<string, string>) => vo
   return useMemo(() => {
     if (!inStack) return null;
     return (params: Record<string, string>) => {
-      if (!claimNavigation(navTargetKey({ pathname: '/series-reader/related', params }))) return;
-      navigation.dispatch({ type: 'PUSH', payload: { name: 'related', params } });
+      if (!claimNavigation(navTargetKey({ pathname: '/series-reader', params }))) return;
+      // Only when actually ON a sub-page — from the combined page itself the nested stack is at
+      // its root and the stack router rejects POP_TO_TOP (a noisy dev warning).
+      const state = navigation.getState();
+      if (state && state.index > 0) navigation.dispatch({ type: 'POP_TO_TOP' });
+      drillSeriesHandler?.(params);
     };
   }, [inStack, navigation]);
 }

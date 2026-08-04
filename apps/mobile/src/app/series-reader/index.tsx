@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image, type ImageLoadEventData } from 'expo-image';
-import { useLocalSearchParams, useNavigation } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import {
@@ -62,6 +62,7 @@ import { firstChapterInReadingOrder, getAdjacentChapter } from '@/lib/chapter-or
 import { useRouter } from '@/lib/nav';
 import { getPreferredGroup, resetPreferredGroup, setPreferredGroup } from '@/lib/preferred-group';
 
+import { registerDrillSeries } from '@/lib/experimental-flags';
 import { SeriesBody, truncateTopBarTitle } from '../series';
 
 // EXPERIMENTAL series reader page (Settings → General → Experimental). A series opened from a card
@@ -94,9 +95,10 @@ import { SeriesBody, truncateTopBarTitle } from '../series';
 //
 // Removal list for the whole experiment: this `app/series-reader/` DIRECTORY (this file, the
 // nested-stack `_layout.tsx`, and the search/series-downloads/downloads twin routes) +
-// `lib/experimental-flags.ts` (the flag AND `useSeriesSubPath` — unwrap its call sites in
+// `lib/experimental-flags.ts` (the flag, `useSeriesSubPath` — unwrap its call sites in
 // `series.tsx`, `series/download-button.tsx`, `reader/settings-panel.tsx`, `downloads.tsx` back
-// to the plain paths), the Settings row in `settings-general.tsx`, the `buildHref` target switch
+// to the plain paths — and `InSeriesReaderStack`/`useDrillRelatedSeries` with the drill branch
+// in `series-card.tsx`), the Settings row in `settings-general.tsx`, the `buildHref` target switch
 // in `series-card.tsx`, this route's Stack.Screen entry in `_layout.tsx`, the default-preserving
 // embedding props on `series.tsx`'s SeriesBody (`topInset`/`onStartReading`/`onOpenChapter`/
 // `onOpenPage` + `truncateTopBarTitle` export) and `chapters-section.tsx`'s
@@ -167,11 +169,44 @@ type ReadTarget = { chapterId?: string; chapterName?: string; start: number | 'l
  *  it is on /reader instead of a bounce-and-remount). */
 type Segment = { id: string; name?: string; pages: string[] };
 
-/** `drilled`: this instance is the `related` card INSIDE the nested stack (a series opened from a
- *  series) rather than the modal's root. The only behavioral difference: the hand-rolled edge
- *  back-swipe stays off — a real card has the native edge gesture, and two recognizers on the
- *  same edge fight each other. (See related.tsx.) */
-export default function SeriesReaderScreen({ drilled = false }: { drilled?: boolean }) {
+/** Same params a series card forwards to `/series` (see series-card.tsx buildHref) — including
+ *  the percent-encoded bridge name / cover, decoded the same way series.tsx does. */
+type SeriesReaderParams = {
+  id?: string;
+  title?: string;
+  bridge?: string;
+  bridgeId?: string;
+  cover?: string;
+  /** '1' for a direct (chapterless) series — its pages ARE the series. */
+  direct?: string;
+};
+
+/**
+ * One series instance. The SCREEN (`SeriesReaderScreen` below) renders a base instance for the
+ * route's own params plus a LAYER per drilled series (a series opened from a series — related
+ * rails, nested search results), stacked as plain sibling views inside this one screen.
+ *
+ * Layers, not navigation, on purpose: the modal is a contained transparent modal, and iOS can
+ * neither stack a second one on top (UIKit re-roots the presentation and drops the middle
+ * screen's view — the dismissal showed the root tabs) nor keep a covered nested CARD's view
+ * alive (UINavigationController detaches it — the dismissal showed a flat backdrop). Sibling
+ * views can't be detached by anyone, so the parent series is GUARANTEED live beneath a drilled
+ * one: the page-view swipe-away and the edge back-swipe both reveal it for real, exactly like
+ * the top-level gestures reveal the browse grid.
+ *
+ * `depth` 0 is the modal root (leaving = popping the route); a deeper instance slides in over
+ * its parent riding the SAME edgeX shared value the edge back-swipe drags, and leaves via
+ * `onPopLayer` once it has animated (or flown) out.
+ */
+function SeriesReaderInstance({
+  params,
+  depth,
+  onPopLayer,
+}: {
+  params: SeriesReaderParams;
+  depth: number;
+  onPopLayer: () => void;
+}) {
   const ds = useDataSource();
   const router = useRouter();
   const theme = useTheme();
@@ -180,17 +215,7 @@ export default function SeriesReaderScreen({ drilled = false }: { drilled?: bool
   const mock = useMockActive();
   const [settings] = useReaderSettings();
 
-  // Same params a series card forwards to `/series` (see series-card.tsx buildHref) — including the
-  // percent-encoded bridge name / cover, decoded the same way series.tsx does.
-  const { id, title, bridge: bridgeParam, bridgeId, cover: coverParam, direct } = useLocalSearchParams<{
-    id?: string;
-    title?: string;
-    bridge?: string;
-    bridgeId?: string;
-    cover?: string;
-    /** '1' for a direct (chapterless) series — its pages ARE the series. */
-    direct?: string;
-  }>();
+  const { id, title, bridge: bridgeParam, bridgeId, cover: coverParam, direct } = params;
   const bridge = bridgeParam ? decodeURIComponent(bridgeParam) : undefined;
   const cover = coverParam ? decodeURIComponent(coverParam) : undefined;
   const isDirect = direct === '1';
@@ -532,45 +557,19 @@ export default function SeriesReaderScreen({ drilled = false }: { drilled?: bool
     [detailsActive, detailsActiveSV, setRevealed],
   );
 
-  // Android hardware back steps back HOME (the details) before popping: reader expanded → back
-  // collapses it. (Android-only API — react-native-web's BackHandler stub rejects addEventListener.)
-  useEffect(() => {
-    if (Platform.OS !== 'android') return;
-    if (detailsActive) return;
-    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      setRevealed(1);
-      return true;
-    });
-    return () => sub.remove();
-  }, [detailsActive, setRevealed]);
-
-  // The pop back to browse, shared by the dismiss worklets and the toolbar (ref-free for
-  // runOnJS). Deep-linked/full-page-loaded entries (web) have no back stack — land on the
-  // browse tabs instead of dead-ending.
+  // Leaving this instance. The modal ROOT pops the route (deep-linked/full-page-loaded entries
+  // on web have no back stack — land on the browse tabs instead of dead-ending). A drilled
+  // LAYER never touches navigation: it animates out on the same edgeX the edge swipe drags
+  // (closeLayer — chevron/hardware back), or is removed outright once a gesture has already
+  // carried it offscreen / flown the page out (leaveNow — the parent series is live beneath).
   const goBack = useCallback(() => {
     if (router.canGoBack()) router.back();
     else router.replace('/');
   }, [router]);
-  // The SwipeDismiss commit's pop. On the modal root it's `goBack` unchanged: the route is
-  // transparent, so the page flew out over the LIVE screen beneath and the pop is invisible. A
-  // DRILLED instance is an opaque nested card — the parent series' view is detached beneath it
-  // (UINavigationController behavior), so the page flies out over this card's own backdrop
-  // instead; the pop then DISSOLVES the backdrop into the parent, not the native slide (which
-  // read as a second, unrelated animation after the gesture). The slide stays for the
-  // chevron/edge pops. Native only: expo-router's web navigator chokes on the animation option
-  // mid-pop (the pop silently never happens), and web has no pop animation to replace anyway.
-  const navigation = useNavigation();
-  const goBackFromDismiss = useCallback(() => {
-    if (drilled && !IS_WEB) {
-      navigation.setOptions({ animation: 'fade', animationDuration: 220 });
-      // setOptions reaches the native screen on the NEXT commit — popping synchronously still
-      // ran the old slide (observed on-device as a stray swipe-away at the gesture's end). The
-      // screen is just the static backdrop by now, so a two-frame wait is invisible.
-      requestAnimationFrame(() => requestAnimationFrame(() => goBack()));
-      return;
-    }
-    goBack();
-  }, [drilled, navigation, goBack]);
+  const leaveNow = useCallback(() => {
+    if (depth > 0) onPopLayer();
+    else goBack();
+  }, [depth, onPopLayer, goBack]);
 
   // Collapse/dismiss pan — wraps the expanded reader, on the cross axis of its scroll: the
   // collapse direction (up in paged, right in webtoon) slides the details back in; the opposite
@@ -656,7 +655,7 @@ export default function SeriesReaderScreen({ drilled = false }: { drilled?: bool
           dismissX.set(withTiming(dismissX.value + dirX * exit, { duration: EXIT_MS }));
           dismissY.set(
             withTiming(dismissY.value + dirY * exit, { duration: EXIT_MS }, (finished) => {
-              if (finished) runOnJS(goBackFromDismiss)();
+              if (finished) runOnJS(leaveNow)();
             }),
           );
         })
@@ -669,7 +668,7 @@ export default function SeriesReaderScreen({ drilled = false }: { drilled?: bool
       else pan.activeOffsetX([-20, 20]).failOffsetY([-15, 15]);
       return pan;
     }
-  }, [settings.mode, collapseEnabled, width, height, headerSpan, gestureMode, progressStartSV, progress, dismissX, dismissY, dismissing, detailsActiveSV, commitReveal, goBackFromDismiss]);
+  }, [settings.mode, collapseEnabled, width, height, headerSpan, gestureMode, progressStartSV, progress, dismissX, dismissY, dismissing, detailsActiveSV, commitReveal, leaveNow]);
 
   // Band pan. The strip (the reader band at the top of the details page) expands the reader the
   // same way the page's own overscroll does: a tap, or a DOWNWARD drag that slides the whole
@@ -758,19 +757,50 @@ export default function SeriesReaderScreen({ drilled = false }: { drilled?: bool
   // Edge back-swipe (details mode): the native stack's pop gesture, recreated — the route is a
   // contained transparent modal (needed for the reader's dismissal reveal), which doesn't get the
   // real one. A drag that STARTS within EDGE_BACK_PX of the left edge and moves clearly
-  // rightward slides the WHOLE screen off under the finger (over the browse grid beneath — the
-  // root is transparent) and pops on a deep release or flick; vertical drags and the related
-  // rails' own horizontal scrollers fail it fast. Raced with the reveal pan on the same layer.
-  const edgeX = useSharedValue(0);
+  // rightward slides the WHOLE instance off under the finger — over the browse grid (modal root)
+  // or the LIVE parent series (a drilled layer, which is a plain sibling view) — and pops on a
+  // deep release or flick; vertical drags and the related rails' own horizontal scrollers fail
+  // it fast. Raced with the reveal pan on the same layer. `edgeX` doubles as the drilled layer's
+  // slide-in/out position: it mounts at `width` and animates home (below).
+  const edgeX = useSharedValue(depth > 0 ? width : 0);
   const edgeStartX = useSharedValue(0);
   const edgeStartY = useSharedValue(0);
   const edgeActiveSV = useSharedValue(false);
   const edgeCommitting = useSharedValue(false);
+  useEffect(() => {
+    if (depth === 0) return;
+    edgeX.set(withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    // Mount-only entrance — edgeX is stable; the drilled instance never changes depth.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // The chevron / hardware-back exit for a drilled layer: slide back out, then remove.
+  const closeLayer = useCallback(() => {
+    edgeCommitting.set(true);
+    edgeX.set(
+      withTiming(width, { duration: 220, easing: Easing.in(Easing.cubic) }, (finished) => {
+        if (finished) runOnJS(onPopLayer)();
+      }),
+    );
+  }, [edgeX, edgeCommitting, width, onPopLayer]);
+
+  // Android hardware back steps back HOME (the details) before popping: reader expanded → back
+  // collapses it; a drilled layer with its details up slides back out to its parent series.
+  // Layer handlers register after their parent's (mounted later), so BackHandler's LIFO order
+  // naturally gives the topmost instance the event. (Android-only API — react-native-web's
+  // BackHandler stub rejects addEventListener.)
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    if (detailsActive && depth === 0) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (!detailsActive) setRevealed(1);
+      else closeLayer();
+      return true;
+    });
+    return () => sub.remove();
+  }, [detailsActive, depth, setRevealed, closeLayer]);
   const edgePan = useMemo(() => {
     return Gesture.Pan()
-      // A DRILLED instance is a real nested-stack card with the NATIVE edge gesture — this
-      // recreation exists only for the modal root, which has none (see the `drilled` prop).
-      .enabled(detailsActive && !drilled)
+      .enabled(detailsActive)
       .manualActivation(true)
       .onTouchesDown((e) => {
         const t = e.allTouches[0]!;
@@ -807,7 +837,7 @@ export default function SeriesReaderScreen({ drilled = false }: { drilled?: bool
           edgeCommitting.set(true);
           edgeX.set(
             withTiming(width, { duration: EXIT_MS }, (finished) => {
-              if (finished) runOnJS(goBack)();
+              if (finished) runOnJS(leaveNow)();
             }),
           );
         } else {
@@ -819,7 +849,7 @@ export default function SeriesReaderScreen({ drilled = false }: { drilled?: bool
         // A cancelled drag never reaches onEnd — don't leave the screen part-slid.
         if (!edgeCommitting.value) edgeX.set(withSpring(0, SPRING_BACK));
       });
-  }, [detailsActive, drilled, width, edgeX, edgeStartX, edgeStartY, edgeActiveSV, edgeCommitting, detailsActiveSV, goBack]);
+  }, [detailsActive, width, edgeX, edgeStartX, edgeStartY, edgeActiveSV, edgeCommitting, detailsActiveSV, leaveNow]);
   // iOS pull release, caught ON the UI thread. The commit used to ride onScrollEndDrag alone,
   // which reaches JS a frame or two AFTER the rubber-band bounce starts — and in that window the
   // engaged follow tracked the bounce BACKWARD, so the details visibly jumped against the
@@ -1237,7 +1267,9 @@ export default function SeriesReaderScreen({ drilled = false }: { drilled?: bool
               style={[styles.headerBackWrap, { top: insets.top, height: topBarHeight }, backPersistStyle]}>
               <Pressable
                 testID="series-reader.header-back"
-                onPress={goBack}
+                // A drilled layer's chevron slides it back out to the parent series; the modal
+                // root's pops the route.
+                onPress={depth > 0 ? closeLayer : goBack}
                 hitSlop={12}
                 accessibilityRole="button"
                 accessibilityLabel="Go back"
@@ -1289,6 +1321,42 @@ export default function SeriesReaderScreen({ drilled = false }: { drilled?: bool
         />
       )}
       </Animated.View>
+    </View>
+  );
+}
+
+/**
+ * The route component: the base series instance for the route's params, plus one LAYER per
+ * drilled series (see SeriesReaderInstance's header for why layers, not navigation). The drill
+ * itself arrives through the nested layout's context ref — series cards anywhere inside the
+ * series-reader stack call it (popping the nested stack back to this screen first when they're
+ * on the search/downloads sub-pages, see useDrillRelatedSeries). Only the topmost instance takes
+ * touches; the ones beneath stay live purely as the see-through under its gestures.
+ */
+export default function SeriesReaderScreen() {
+  const params = useLocalSearchParams<SeriesReaderParams>();
+  const [drills, setDrills] = useState<{ key: number; params: SeriesReaderParams }[]>([]);
+  const nextKey = useRef(1);
+  const drill = useCallback((p: Record<string, string>) => {
+    setDrills((d) => [...d, { key: nextKey.current++, params: p as SeriesReaderParams }]);
+  }, []);
+  const popLayer = useCallback(() => {
+    setDrills((d) => d.slice(0, -1));
+  }, []);
+  useEffect(() => registerDrillSeries(drill), [drill]);
+  return (
+    <View style={styles.container}>
+      <View style={styles.container} pointerEvents={drills.length === 0 ? 'auto' : 'none'}>
+        <SeriesReaderInstance params={params} depth={0} onPopLayer={popLayer} />
+      </View>
+      {drills.map((d, i) => (
+        <View
+          key={d.key}
+          style={StyleSheet.absoluteFill}
+          pointerEvents={i === drills.length - 1 ? 'auto' : 'none'}>
+          <SeriesReaderInstance params={d.params} depth={i + 1} onPopLayer={popLayer} />
+        </View>
+      ))}
     </View>
   );
 }
