@@ -56,10 +56,9 @@ const SHADOW_PEAK_OPACITY = 0.16;
  * (see search-intent.ts) is consumed on mount and applied against the intent's bridge.
  */
 /** EXPERIMENTAL series-reader embedding (see SearchLayer in app/series-reader/index.tsx): the
- *  same screen mounted as an in-screen LAYER instead of a pushed route. `onBack` replaces the
- *  router pop (the layer slides itself out), and the back button renders as a SPACER — the layer
- *  hosts a statically-stuck chevron in the same spot, shared with the series bars beneath.
- *  Remove with the experiment (the route path passes nothing). */
+ *  same screen mounted as an in-screen LAYER instead of a pushed route — `onBack` replaces the
+ *  router pop (the layer slides itself out). Remove with the experiment (the route path passes
+ *  nothing). */
 export type SearchEmbedded = { onBack: () => void };
 
 export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded } = {}) {
@@ -362,22 +361,16 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
           frost only ever carries content, never chrome. */}
       <BarSurface style={[styles.topBar, topBarShadowStyle]}>
         <View style={[styles.topBarRow, { height: barHeight }]}>
-          {embedded ? (
-            // The series-reader layer hosts the statically-stuck chevron (shared with the series
-            // bars beneath) — this spacer only holds the slot open.
-            <View style={styles.backButton} />
-          ) : (
-            <Pressable
-              testID="search.back"
-              onPress={goBack}
-              hitSlop={12}
-              android_ripple={{ color: theme.backgroundSelected, borderless: true }}
-              accessibilityRole="button"
-              accessibilityLabel="Go back"
-              style={styles.backButton}>
-              <ChevronLeftIcon color={theme.text} />
-            </Pressable>
-          )}
+          <Pressable
+            testID="search.back"
+            onPress={goBack}
+            hitSlop={12}
+            android_ripple={{ color: theme.backgroundSelected, borderless: true }}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+            style={styles.backButton}>
+            <ChevronLeftIcon color={theme.text} />
+          </Pressable>
           <View style={styles.searchWrap}>
             <SearchField
               testID="search.field"

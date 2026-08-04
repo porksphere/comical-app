@@ -765,9 +765,6 @@ function SeriesReaderInstance({
   // it fast. Raced with the reveal pan on the same layer. `edgeX` doubles as the drilled layer's
   // slide-in/out position: it mounts at `width` and animates home (below).
   const edgeX = useSharedValue(depth > 0 ? width : 0);
-  const edgeStartX = useSharedValue(0);
-  const edgeStartY = useSharedValue(0);
-  const edgeActiveSV = useSharedValue(false);
   const edgeCommitting = useSharedValue(false);
   useEffect(() => {
     if (depth === 0) return;
@@ -803,34 +800,18 @@ function SeriesReaderInstance({
   const edgePan = useMemo(() => {
     return Gesture.Pan()
       .enabled(detailsActive)
-      .manualActivation(true)
-      .onTouchesDown((e) => {
-        const t = e.allTouches[0]!;
-        edgeStartX.set(t.x);
-        edgeStartY.set(t.y);
-        edgeCommitting.set(false);
-      })
-      .onTouchesMove((e, mgr) => {
-        // Pre-activation gatekeeping ONLY. Once the drag is live it must stay live — failing it
-        // mid-gesture (a finger that angles downward while sliding) cancelled the pan with the
-        // screen stuck part-slid, no spring back, no reversal.
-        if (edgeActiveSV.value) return;
-        if (edgeStartX.get() > EDGE_BACK_PX) {
-          mgr.fail();
-          return;
-        }
-        const t = e.allTouches[0]!;
-        const dx = t.x - edgeStartX.get();
-        const dy = t.y - edgeStartY.get();
-        if (Math.abs(dy) > 16 && Math.abs(dy) > dx) {
-          mgr.fail();
-          return;
-        }
-        if (dx > 16) mgr.activate();
-      })
+      // NATIVE activation criteria, no manual touch choreography: `hitSlop` confines where the
+      // gesture can BEGIN to the left-edge strip, and activeOffset/failOffset decide activation
+      // inside RNGH's native core. The previous manual-activation version drove activation from
+      // onTouchesDown/Move worklet callbacks — a touch-event stream iOS recognizer interplay
+      // (the nested stack's pop recognizers, the scroll view) can delay or cancel, which is how
+      // the edge swipe silently died on device while staying green on web.
+      .hitSlop({ left: 0, width: EDGE_BACK_PX })
+      .activeOffsetX(16)
+      .failOffsetX(-8)
+      .failOffsetY([-14, 14])
       .onUpdate((e) => {
         if (!detailsActiveSV.value) return;
-        edgeActiveSV.set(true);
         edgeX.set(Math.max(0, e.translationX));
       })
       .onEnd((e) => {
@@ -847,11 +828,11 @@ function SeriesReaderInstance({
         }
       })
       .onFinalize(() => {
-        edgeActiveSV.set(false);
         // A cancelled drag never reaches onEnd — don't leave the screen part-slid.
         if (!edgeCommitting.value) edgeX.set(withSpring(0, SPRING_BACK));
+        edgeCommitting.set(false);
       });
-  }, [detailsActive, width, edgeX, edgeStartX, edgeStartY, edgeActiveSV, edgeCommitting, detailsActiveSV, leaveNow]);
+  }, [detailsActive, width, edgeX, edgeCommitting, detailsActiveSV, leaveNow]);
   // iOS pull release, caught ON the UI thread. The commit used to ride onScrollEndDrag alone,
   // which reaches JS a frame or two AFTER the rubber-band bounce starts — and in that window the
   // engaged follow tracked the bounce BACKWARD, so the details visibly jumped against the
@@ -881,12 +862,6 @@ function SeriesReaderInstance({
   );
   // The whole screen rides the edge swipe (details, strip, bars alike) — the classic pop look.
   const screenSlideStyle = useAnimatedStyle(() => ({ transform: [{ translateX: edgeX.value }] }));
-  // A drilled layer's top bar doesn't ride the slide — it fades on the same edgeX instead
-  // (entrance, edge swipe, and closeLayer all drive it), over the parent's identical bar.
-  const layerBarFadeStyle = useAnimatedStyle(
-    () => ({ opacity: 1 - Math.min(1, Math.max(0, edgeX.value / width)) }),
-    [width],
-  );
 
   // Geometry: the reader strip's height — the top-of-page band the details content starts below.
   // The details layer itself is full-screen (the strip is page, not chrome).
@@ -1331,20 +1306,10 @@ function SeriesReaderInstance({
         </GestureDetector>
       )}
 
-      {/* ONE statically-stuck top-bar slot serving BOTH modes (see `topChrome` above). The modal
-          ROOT's bar rides the edge swipe with the rest of the screen (the classic pop look);
-          a DRILLED layer's renders OUTSIDE the slide below, so the bar never moves. */}
-      {depth === 0 && topChrome}
+      {/* ONE statically-stuck top-bar slot serving BOTH modes (see `topChrome` above) — every
+          instance's bar rides its own slide (drill entrance, edge swipe, dismissal alike). */}
+      {topChrome}
       </Animated.View>
-      {/* A drilled layer's bar: statically stuck while the layer's CONTENT slides — it fades on
-          edgeX instead (entrance, edge swipe, closeLayer alike). The parent's identical chevron
-          sits beneath at full opacity, so only the TITLE visibly crossfades: one continuous bar
-          across the series-from-series navigation. */}
-      {depth > 0 && (
-        <Animated.View pointerEvents="box-none" style={[styles.layerBarWrap, layerBarFadeStyle]}>
-          {topChrome}
-        </Animated.View>
-      )}
     </View>
   );
 }
@@ -1413,9 +1378,6 @@ function SearchLayer({ onPopLayer }: { onPopLayer: () => void }) {
   const insets = useSafeAreaInsets();
   const topBarHeight = useTopBarHeight();
   const edgeX = useSharedValue(width);
-  const edgeStartX = useSharedValue(0);
-  const edgeStartY = useSharedValue(0);
-  const edgeActiveSV = useSharedValue(false);
   const edgeCommitting = useSharedValue(false);
   useEffect(() => {
     edgeX.set(withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
@@ -1438,33 +1400,14 @@ function SearchLayer({ onPopLayer }: { onPopLayer: () => void }) {
     });
     return () => sub.remove();
   }, [closeLayer]);
-  // The edge back-swipe — the instance rig's recipe, minus the details/reader mode gating.
+  // The edge back-swipe — the instance rig's recipe (native activation criteria, see there).
   const edgePan = useMemo(() => {
     return Gesture.Pan()
-      .manualActivation(true)
-      .onTouchesDown((e) => {
-        const t = e.allTouches[0]!;
-        edgeStartX.set(t.x);
-        edgeStartY.set(t.y);
-        edgeCommitting.set(false);
-      })
-      .onTouchesMove((e, mgr) => {
-        if (edgeActiveSV.value) return;
-        if (edgeStartX.get() > EDGE_BACK_PX) {
-          mgr.fail();
-          return;
-        }
-        const t = e.allTouches[0]!;
-        const dx = t.x - edgeStartX.get();
-        const dy = t.y - edgeStartY.get();
-        if (Math.abs(dy) > 16 && Math.abs(dy) > dx) {
-          mgr.fail();
-          return;
-        }
-        if (dx > 16) mgr.activate();
-      })
+      .hitSlop({ left: 0, width: EDGE_BACK_PX })
+      .activeOffsetX(16)
+      .failOffsetX(-8)
+      .failOffsetY([-14, 14])
       .onUpdate((e) => {
-        edgeActiveSV.set(true);
         edgeX.set(Math.max(0, e.translationX));
       })
       .onEnd((e) => {
@@ -1480,15 +1423,11 @@ function SearchLayer({ onPopLayer }: { onPopLayer: () => void }) {
         }
       })
       .onFinalize(() => {
-        edgeActiveSV.set(false);
         if (!edgeCommitting.value) edgeX.set(withSpring(0, SPRING_BACK));
+        edgeCommitting.set(false);
       });
-  }, [width, edgeX, edgeStartX, edgeStartY, edgeActiveSV, edgeCommitting, onPopLayer]);
+  }, [width, edgeX, edgeCommitting, onPopLayer]);
   const slideStyle = useAnimatedStyle(() => ({ transform: [{ translateX: edgeX.value }] }));
-  const barFadeStyle = useAnimatedStyle(
-    () => ({ opacity: 1 - Math.min(1, Math.max(0, edgeX.value / width)) }),
-    [width],
-  );
   const embedded = useMemo(() => ({ onBack: closeLayer }), [closeLayer]);
   return (
     <View style={styles.container}>
@@ -1497,22 +1436,6 @@ function SearchLayer({ onPopLayer }: { onPopLayer: () => void }) {
           <SearchScreen embedded={embedded} />
         </Animated.View>
       </GestureDetector>
-      {/* The statically-stuck shared chevron over the sliding content (the search bar's own back
-          is a spacer in embedded mode) — same spot and color as the series details chevron
-          beneath, fading on edgeX like a drilled layer's bar. */}
-      <Animated.View pointerEvents="box-none" style={[styles.layerBarWrap, barFadeStyle]}>
-        <View style={[styles.headerBackWrap, { top: insets.top, height: topBarHeight }]}>
-          <Pressable
-            testID="series-reader.search-back"
-            onPress={closeLayer}
-            hitSlop={12}
-            accessibilityRole="button"
-            accessibilityLabel="Go back"
-            style={styles.headerBackBtn}>
-            <ChevronLeftIcon color={theme.text} />
-          </Pressable>
-        </View>
-      </Animated.View>
     </View>
   );
 }
@@ -2111,15 +2034,6 @@ const styles = StyleSheet.create({
   // The edge back-swipe's ride (see screenSlideStyle).
   screenSlide: {
     flex: 1,
-  },
-  // A drilled layer's statically-stuck top-bar host (see layerBarFadeStyle) — a zero-impact
-  // absolute shell; TopBarSwitch inside positions itself.
-  layerBarWrap: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
   },
   // The reader's frame + clip. No background on either: the dark reader surface is a SEPARATE
   // static full-screen layer BEHIND the frame (readerSurface), so it keeps covering the screen
