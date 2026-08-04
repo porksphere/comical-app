@@ -72,13 +72,21 @@ import { SeriesBody, truncateTopBarTitle } from '../series';
 //
 // It opens ON THE DETAILS, with the reader as a faded strip forming the TOP OF THE PAGE — not
 // fixed chrome: the strip scrolls away under the content like any page header, through a tall
-// gradient seam centered on the series title. Pulling the page down past its top gradually
-// reveals the reader (the iOS rubber-band moves content and seam 1:1 with the finger while the
-// reader fades in above; a deep release commits, and Android/web get the same follow via a
-// manual pan); a strip tap expands too. Expanding slides the details DOWN out of visibility; in
-// the expanded reader, drag up (paged) / right (webtoon) or the Details pill brings them back,
-// and drag down / left is SwipeDismiss verbatim (mode-locked per gesture — see the pan build)
-// popping back to browse. One TopBarSwitch slot crossfades the top chrome between the modes.
+// gradient seam centered on the series title. The reader itself is already FULL-SCREEN beneath
+// that layer (the strip is its window), so revealing it is only ever a matter of moving the
+// details layer off — and the axis follows the reader's own, so the transition matches the
+// gestures on both sides (see `horizontalReveal`):
+//   - PAGED: pull the page down past its top and the details slide DOWN out of visibility (the
+//     iOS rubber-band moves content and seam 1:1 with the finger while the reader fades in
+//     above; a deep release commits, and Android/web get the same follow via a manual pan).
+//   - WEBTOON: a leftward drag anywhere on the details (or on the strip) slides them LEFT off
+//     the screen under the finger — vertical belongs to the scroll there, and the collapse is
+//     already a rightward drag. A pull past the top still rubber-bands the strip open as an
+//     affordance, but never commits (that would fling the details along the wrong axis).
+// A strip tap expands in both. In the expanded reader, drag up (paged) / right (webtoon) or the
+// Details pill brings the details back, and drag down / left is SwipeDismiss verbatim
+// (mode-locked per gesture — see the pan build) popping back to browse. One TopBarSwitch slot
+// crossfades the top chrome between the modes.
 //
 // The details render series.tsx's OWN `SeriesBody` — cover hero, action column, tag/meta/
 // description, the real chapter list (downloads, versions, read state), page-thumb grid, related
@@ -529,10 +537,20 @@ function SeriesReaderInstance({
   // rubber-band bounce still settling after a pull-commit would stomp a quick follow-up
   // collapse animation — the "completes instantly" chop.
   const headerSpan = Math.max(1, height - (insets.top + HEADER_BAND));
+  // WEBTOON (vertical-scroll) mode reveals HORIZONTALLY: the details exit LEFT off the screen,
+  // uncovering the reader that already sits full-screen beneath (the strip is its window) —
+  // vertical finger language belongs to the scroll there, and the collapse gesture is already a
+  // rightward drag, so the transition axis finally matches the gestures. Paged mode keeps the
+  // vertical slide-down. This flag branches the details layer's transform (headerLayerStyle),
+  // the strip band's drag axis (bandPan), swaps the vertical reveal pan for a leftward one
+  // (makeRevealPan, below), and turns the vertical pull off as a REVEAL entirely — both its
+  // finger-follow (this reaction) and its release commit (onDetailsScrollEndDrag). The strip
+  // still rubber-bands open under a pull; it just no longer moves or commits the transition.
+  const horizontalReveal = settings.mode !== 'paged';
   useAnimatedReaction(
     () => detailsScrollOffset.value,
     (off, prevOff) => {
-      if (!IS_IOS) return;
+      if (!IS_IOS || horizontalReveal) return;
       if (!detailsActiveSV.value) {
         // A commit's animation owns `progress` now; the leftover bounce must not re-engage.
         pullEngagedSV.set(false);
@@ -553,18 +571,24 @@ function SeriesReaderInstance({
         }
       }
     },
-    [headerSpan, detailsScrollOffset, detailsActiveSV, pullEngagedSV, pullStartSV, progress],
+    [headerSpan, detailsScrollOffset, detailsActiveSV, pullEngagedSV, pullStartSV, progress, horizontalReveal],
   );
   const onDetailsScrollEndDrag = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       if (!IS_IOS || !detailsActive) return;
+      // Horizontal-reveal mode: a pull past the top still rubber-bands the strip open (the
+      // affordance that says "there's a page up here" — headerSheetBgStyle rides the offset), but
+      // it does NOT commit. Committing on a downward release would fling the details LEFT, the
+      // exact axis mismatch this mode exists to remove; the leftward swipe, the strip tap and the
+      // Details pill are the reveal.
+      if (horizontalReveal) return;
       // The UI-thread release watcher (pullReleaseWatch below) usually lands this commit first;
       // the shared-value mirror is already false then — don't restart its animation. This JS
       // path remains the full fallback when those touches weren't observed.
       if (!detailsActiveSV.get()) return;
       if (e.nativeEvent.contentOffset.y <= -PULL_COMMIT_PX) setRevealed(0);
     },
-    [detailsActive, detailsActiveSV, setRevealed],
+    [detailsActive, detailsActiveSV, setRevealed, horizontalReveal],
   );
 
   // Leaving this instance. The modal ROOT pops the route (deep-linked/full-page-loaded entries
@@ -684,21 +708,26 @@ function SeriesReaderInstance({
   // same way the page's own overscroll does: a tap, or a DOWNWARD drag that slides the whole
   // details page down under the finger. (The expanded reader's gestures are collapsePan above.)
   const bandPan = useMemo(() => {
-    return Gesture.Pan()
+    // The drag axis follows the reveal axis: paged drags the strip DOWN (the details slide down
+    // away); horizontal-reveal (webtoon) drags it LEFT (the details exit left). Same relative
+    // follow + commit either way.
+    const span = horizontalReveal ? width : headerSpan;
+    const pan = Gesture.Pan()
       .enabled(detailsActive)
-      .activeOffsetY([-20, 20])
-      .failOffsetX([-15, 15])
       .onUpdate((e) => {
         if (!detailsActiveSV.value) return;
         if (!panBeganSV.value) {
           panBeganSV.set(true);
           progressStartSV.set(progress.value);
         }
-        progress.set(Math.max(0, Math.min(1, progressStartSV.value - e.translationY / headerSpan)));
+        const toward = horizontalReveal ? -e.translationX : e.translationY;
+        progress.set(Math.max(0, Math.min(1, progressStartSV.value - toward / span)));
       })
       .onEnd((e) => {
         if (!detailsActiveSV.value) return;
-        const open = e.translationY / headerSpan > COMMIT_FRACTION || e.velocityY > FLICK_VELOCITY;
+        const toward = horizontalReveal ? -e.translationX : e.translationY;
+        const towardVelocity = horizontalReveal ? -e.velocityX : e.velocityY;
+        const open = toward / span > COMMIT_FRACTION || towardVelocity > FLICK_VELOCITY;
         detailsActiveSV.set(!open);
         progress.set(withTiming(open ? 0 : 1, { duration: 240, easing: Easing.out(Easing.cubic) }));
         runOnJS(commitReveal)(open ? 0 : 1);
@@ -706,18 +735,23 @@ function SeriesReaderInstance({
       .onFinalize(() => {
         panBeganSV.set(false);
       });
-  }, [detailsActive, headerSpan, panBeganSV, progressStartSV, progress, detailsActiveSV, commitReveal]);
+    if (horizontalReveal) pan.activeOffsetX(-20).failOffsetX(12).failOffsetY([-15, 15]);
+    else pan.activeOffsetY([-20, 20]).failOffsetX([-15, 15]);
+    return pan;
+  }, [detailsActive, headerSpan, width, horizontalReveal, panBeganSV, progressStartSV, progress, detailsActiveSV, commitReveal]);
 
   // Reveal pan — on the details layer, for platforms without the native rubber-band (the iOS
-  // path is the reaction above). The details page always reveals the reader by moving DOWN,
-  // whatever the reader's own scroll mode; it shares the vertical axis with the details' own
-  // scroller, so it activates MANUALLY: only a clearly-downward drag with the content at its top
-  // pulls the page down; everything else fails fast and the list scrolls.
+  // path is the reaction above). PAGED mode only (webtoon's reveal is makeRevealPan's leftward
+  // drag): the details page reveals the reader by moving DOWN, sharing the vertical axis with
+  // the details' own scroller, so it activates MANUALLY — only a clearly-downward drag with the
+  // content at its top pulls the page down; everything else fails fast and the list scrolls.
   const touchStartX = useSharedValue(0);
   const touchStartY = useSharedValue(0);
   const returnPan = useMemo(() => {
+    // Horizontal-reveal mode has no vertical pull-reveal (a downward drag must not slide the
+    // page sideways) — the leftward reveal pan below is its gesture.
     return Gesture.Pan()
-      .enabled(detailsActive && !IS_IOS)
+      .enabled(detailsActive && !IS_IOS && !horizontalReveal)
       .manualActivation(true)
       .onTouchesDown((e) => {
         const t = e.allTouches[0]!;
@@ -762,7 +796,7 @@ function SeriesReaderInstance({
       .onFinalize(() => {
         panBeganSV.set(false);
       });
-  }, [detailsActive, headerSpan, panBeganSV, progressStartSV, progress, touchStartX, touchStartY, detailsScrollOffset, detailsActiveSV, commitReveal]);
+  }, [detailsActive, headerSpan, panBeganSV, progressStartSV, progress, touchStartX, touchStartY, detailsScrollOffset, detailsActiveSV, commitReveal, horizontalReveal]);
 
   // Back-swipe (details mode): the native stack's pop gesture, recreated — the route is a
   // contained transparent modal (needed for the reader's dismissal reveal), which doesn't get
@@ -858,10 +892,52 @@ function SeriesReaderInstance({
       });
   }, [width, edgeX, edgeCommitting, detailsActiveSV, leaveNow]);
   const edgePan = useMemo(() => makeBackSwipePan().enabled(detailsActive), [makeBackSwipePan, detailsActive]);
-  const detailsScrollGesture = useMemo(
-    () => (IS_WEB ? undefined : Gesture.Simultaneous(Gesture.Native(), makeBackSwipePan())),
-    [makeBackSwipePan],
+  // The horizontal-reveal counterpart of the back-swipe: a decisive LEFTWARD drag anywhere on the
+  // details slides them off to the left under the finger, revealing the reader beneath (webtoon
+  // mode only — see horizontalReveal). Same relative-follow + commit recipe as bandPan; same
+  // two-attachment story as makeBackSwipePan (a screen-level copy for the chrome, a copy riding
+  // the list's scroller in the Simultaneous composition below). Opposite activation directions
+  // keep it and the back-swipe from ever competing for one drag.
+  const makeRevealPan = useCallback(() => {
+    return Gesture.Pan()
+      .activeOffsetX(-20)
+      .failOffsetX(12)
+      .failOffsetY([-14, 14])
+      .onUpdate((e) => {
+        if (!detailsActiveSV.value) return;
+        if (!panBeganSV.value) {
+          panBeganSV.set(true);
+          progressStartSV.set(progress.value);
+        }
+        progress.set(Math.max(0, Math.min(1, progressStartSV.value + e.translationX / width)));
+      })
+      .onEnd((e) => {
+        if (!detailsActiveSV.value) return;
+        const open = -e.translationX / width > COMMIT_FRACTION || -e.velocityX > FLICK_VELOCITY;
+        detailsActiveSV.set(!open);
+        progress.set(withTiming(open ? 0 : 1, { duration: 240, easing: Easing.out(Easing.cubic) }));
+        runOnJS(commitReveal)(open ? 0 : 1);
+      })
+      .onFinalize(() => {
+        // A cancelled drag never reaches onEnd — don't leave the details part-slid. (After a
+        // commit detailsActiveSV is already false; after a spring-back this re-issues the same
+        // animation target.)
+        if (panBeganSV.value && detailsActiveSV.value && progress.value < 1) {
+          progress.set(withTiming(1, { duration: 240, easing: Easing.out(Easing.cubic) }));
+        }
+        panBeganSV.set(false);
+      });
+  }, [width, detailsActiveSV, panBeganSV, progressStartSV, progress, commitReveal]);
+  const revealPan = useMemo(
+    () => (horizontalReveal ? makeRevealPan().enabled(detailsActive) : null),
+    [horizontalReveal, makeRevealPan, detailsActive],
   );
+  const detailsScrollGesture = useMemo(() => {
+    if (IS_WEB) return undefined;
+    return horizontalReveal
+      ? Gesture.Simultaneous(Gesture.Native(), makeBackSwipePan(), makeRevealPan())
+      : Gesture.Simultaneous(Gesture.Native(), makeBackSwipePan());
+  }, [makeBackSwipePan, makeRevealPan, horizontalReveal]);
   // iOS pull release, caught ON the UI thread. The commit used to ride onScrollEndDrag alone,
   // which reaches JS a frame or two AFTER the rubber-band bounce starts — and in that window the
   // engaged follow tracked the bounce BACKWARD, so the details visibly jumped against the
@@ -886,8 +962,11 @@ function SeriesReaderInstance({
       });
   }, [detailsActive, detailsActiveSV, pullEngagedSV, detailsScrollOffset, progress, commitReveal]);
   const detailsGestures = useMemo(
-    () => Gesture.Race(edgePan, returnPan, pullReleaseWatch),
-    [edgePan, returnPan, pullReleaseWatch],
+    () =>
+      revealPan
+        ? Gesture.Race(edgePan, returnPan, pullReleaseWatch, revealPan)
+        : Gesture.Race(edgePan, returnPan, pullReleaseWatch),
+    [edgePan, returnPan, pullReleaseWatch, revealPan],
   );
   // The whole screen rides the edge swipe (details, strip, bars alike) — the classic pop look.
   const screenSlideStyle = useAnimatedStyle(() => ({ transform: [{ translateX: edgeX.value }] }));
@@ -994,6 +1073,12 @@ function SeriesReaderInstance({
   //  - headerBandStyle: the strip's touch overlay follows the same occlusion, so it never blocks
   //    content once the seam has scrolled past it.
   const headerLayerStyle = useAnimatedStyle(() => {
+    // HORIZONTAL reveal (webtoon): the layer exits LEFT — one clean full-width travel, no
+    // seam/scroll arithmetic (nothing peeks past the left edge the way the title peeked past the
+    // bottom) and no pull term (the vertical pull-follow is off in this mode).
+    if (horizontalReveal) {
+      return { transform: [{ translateX: -(1 - progress.value) * width }] };
+    }
     const off = detailsScrollOffset.value;
     // Travel far enough to clear the screen from wherever the page's TOPMOST visible artifact
     // currently sits. At rest that's the seam gradient's upper edge (bandH - SHEET_FADE_H — the
@@ -1007,7 +1092,7 @@ function SeriesReaderInstance({
     // pull-driven progress must not ALSO move the layer — only the commit animation (progress
     // moving past the finger-tracked value while the bounce returns to 0) takes it off screen.
     return { transform: [{ translateY: (1 - progress.value) * travel + Math.min(off, 0) }] };
-  }, [height, bandH]);
+  }, [height, width, bandH, horizontalReveal]);
   const headerSheetBgStyle = useAnimatedStyle(
     () => ({ transform: [{ translateY: -Math.min(detailsScrollOffset.value, bandH) }] }),
     [bandH],
@@ -1178,8 +1263,10 @@ function SeriesReaderInstance({
 
       {/* The details PAGE, in front of the (static) reader: a full-screen layer whose opaque
           background starts at the band, so the strip is the top of the page; the whole layer
-          slides down and off as the reader expands. When the reader is expanded, the
-          (translated-off) layer must not swallow touches meant for the reader beneath it. */}
+          slides off as the reader expands — DOWN in paged mode, LEFT in webtoon (see
+          horizontalReveal), uncovering the reader that is already full-screen beneath it. When
+          the reader is expanded, the (translated-off) layer must not swallow touches meant for
+          the reader beneath it. */}
       <GestureDetector gesture={detailsGestures}>
         <Animated.View
           testID="series-reader.details-card"
@@ -1318,9 +1405,10 @@ function SeriesReaderInstance({
         </Animated.View>
       </GestureDetector>
 
-      {/* The reader strip's touch surface — tap to read full screen, or drag DOWN to slide the
-          details page away under the finger. It rides the same occlusion as the strip
-          (headerBandStyle), so it scrolls off with the page and never blocks content. */}
+      {/* The reader strip's touch surface — tap to read full screen, or drag the details page
+          away under the finger (DOWN in paged, LEFT in webtoon — see horizontalReveal). It rides
+          the same occlusion as the strip (headerBandStyle), so it scrolls off with the page and
+          never blocks content. */}
       {detailsActive && (
         <GestureDetector gesture={bandPan}>
           {/* Ends where the content starts (the title reaches up into the seam), so it never
