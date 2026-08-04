@@ -125,7 +125,6 @@ const FLICK_VELOCITY = 900;
 const PULL_COMMIT_PX = 80;
 // How far from the LEFT edge a touch may start and still count as the back-swipe (the native
 // stack pop gesture, recreated — a transparent modal doesn't get the real one).
-const EDGE_BACK_PX = 30;
 // The dismissal is the old reader's SwipeDismiss, verbatim: the page follows the finger in BOTH
 // axes, shrinks with distance, and the dark backdrop fades in place over a full span while the
 // page stays solid; release past DISMISS_FRACTION/flick flings it out along its own direction.
@@ -756,14 +755,14 @@ function SeriesReaderInstance({
       });
   }, [detailsActive, headerSpan, panBeganSV, progressStartSV, progress, touchStartX, touchStartY, detailsScrollOffset, detailsActiveSV, commitReveal]);
 
-  // Edge back-swipe (details mode): the native stack's pop gesture, recreated — the route is a
-  // contained transparent modal (needed for the reader's dismissal reveal), which doesn't get the
-  // real one. A drag that STARTS within EDGE_BACK_PX of the left edge and moves clearly
-  // rightward slides the WHOLE instance off under the finger — over the browse grid (modal root)
-  // or the LIVE parent series (a drilled layer, which is a plain sibling view) — and pops on a
-  // deep release or flick; vertical drags and the related rails' own horizontal scrollers fail
-  // it fast. Raced with the reveal pan on the same layer. `edgeX` doubles as the drilled layer's
-  // slide-in/out position: it mounts at `width` and animates home (below).
+  // Back-swipe (details mode): the native stack's pop gesture, recreated — the route is a
+  // contained transparent modal (needed for the reader's dismissal reveal), which doesn't get
+  // the real one. A decisive rightward drag ANYWHERE on the details (full-surface, like the
+  // platform's full-screen pop — see the criteria on the pan) slides the WHOLE instance off
+  // under the finger — over the browse grid (modal root) or the LIVE parent series (a drilled
+  // layer, a plain sibling view) — and pops on a deep release or flick. Raced with the reveal
+  // pan on the same layer. `edgeX` doubles as the drilled layer's slide-in/out position: it
+  // mounts at `width` and animates home (below).
   const edgeX = useSharedValue(depth > 0 ? width : 0);
   const edgeCommitting = useSharedValue(false);
   useEffect(() => {
@@ -800,15 +799,20 @@ function SeriesReaderInstance({
   const edgePan = useMemo(() => {
     return Gesture.Pan()
       .enabled(detailsActive)
-      // NATIVE activation criteria, no manual touch choreography: `hitSlop` confines where the
-      // gesture can BEGIN to the left-edge strip, and activeOffset/failOffset decide activation
-      // inside RNGH's native core. The previous manual-activation version drove activation from
-      // onTouchesDown/Move worklet callbacks — a touch-event stream iOS recognizer interplay
-      // (the nested stack's pop recognizers, the scroll view) can delay or cancel, which is how
-      // the edge swipe silently died on device while staying green on web.
-      .hitSlop({ left: 0, width: EDGE_BACK_PX })
-      .activeOffsetX(16)
-      .failOffsetX(-8)
+      // NATIVE activation criteria, no manual touch choreography: activeOffset/failOffset decide
+      // activation inside RNGH's native core. (The previous manual-activation version drove
+      // activation from onTouchesDown/Move worklet callbacks — a touch-event stream iOS
+      // recognizer interplay can delay or cancel, which is how the edge swipe silently died on
+      // device while staying green on web.)
+      //
+      // FULL-SURFACE, not edge-only: a decisive rightward drag anywhere on the details goes
+      // back, the way the platform's full-screen pop does. Anything horizontal underneath keeps
+      // winning on its own turf — RNGH swipeables (chapter-row actions) activate on tighter
+      // offsets and cancel this pan, and a horizontal scroller (related rails) that starts
+      // scrolling cancels the touch stream outright — while the vertical list never claims a
+      // horizontal drag. failOffsetY keeps vertical scrolling winning fast.
+      .activeOffsetX(20)
+      .failOffsetX(-12)
       .failOffsetY([-14, 14])
       .onUpdate((e) => {
         if (!detailsActiveSV.value) return;
@@ -1373,10 +1377,7 @@ export default function SeriesReaderScreen() {
  * drill further series layers on top (useDrillRelatedSeries works unchanged inside).
  */
 function SearchLayer({ onPopLayer }: { onPopLayer: () => void }) {
-  const theme = useTheme();
   const { width } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
-  const topBarHeight = useTopBarHeight();
   const edgeX = useSharedValue(width);
   const edgeCommitting = useSharedValue(false);
   useEffect(() => {
@@ -1400,12 +1401,13 @@ function SearchLayer({ onPopLayer }: { onPopLayer: () => void }) {
     });
     return () => sub.remove();
   }, [closeLayer]);
-  // The edge back-swipe — the instance rig's recipe (native activation criteria, see there).
+  // The back-swipe — the instance rig's recipe (full-surface, native activation criteria; the
+  // search's own horizontal pieces, the filter chips, claim their touches the same way the
+  // details rails do).
   const edgePan = useMemo(() => {
     return Gesture.Pan()
-      .hitSlop({ left: 0, width: EDGE_BACK_PX })
-      .activeOffsetX(16)
-      .failOffsetX(-8)
+      .activeOffsetX(20)
+      .failOffsetX(-12)
       .failOffsetY([-14, 14])
       .onUpdate((e) => {
         edgeX.set(Math.max(0, e.translationX));
