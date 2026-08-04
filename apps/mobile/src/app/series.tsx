@@ -31,6 +31,7 @@ import { TopBar, useTopBarInset } from '@/components/top-bar';
 import { BarContentGap, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { relativeTime } from '@/data/mock';
 import { setSearchIntent, tagSearchIntent } from '@/data/search-intent';
+import { useSeriesSubPath } from '@/lib/experimental-flags';
 import { queryKeys, relatedGroupsQuery, seriesDetailQuery, seriesListQuery } from '@/data/queries';
 import { queryClient } from '@/data/query-client';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
@@ -336,7 +337,6 @@ export function SeriesBody({
   coverAspect,
   onCoverLoad,
   topInset,
-  searchRoute = '/search',
   onStartReading,
   onOpenChapter,
   onOpenPage,
@@ -368,10 +368,6 @@ export function SeriesBody({
   /** Top inset for the owning scroller — defaults to this screen's overlaying TopBar height.
    *  The series-reader embedding passes its own (its details card has no top bar). */
   topInset?: number;
-  /** Where tag chips and the Author/Artist/Type meta cells send their search intent. The
-   *  series-reader embedding (a contained transparent modal, which a plain card can't stack
-   *  over) points this at its modal-compatible twin route `/search-modal`. */
-  searchRoute?: '/search' | '/search-modal';
   /** Replaces the Read button / cover tap's "open `/reader` at the resume point" — the
    *  series-reader embedding returns to its own in-place reader instead. */
   onStartReading?: () => void;
@@ -621,12 +617,15 @@ export function SeriesBody({
   // `push('/search')` overlays the Search screen on top of this pushed Series
   // screen, so its back arrow returns here. Search consumes the stashed intent on
   // mount (see search.tsx) and applies it against the intent's bridge.
+  // (`toSubPath` routes it into the series-reader's nested stack when this body is
+  // embedded there — see useSeriesSubPath.)
+  const toSubPath = useSeriesSubPath();
   const onTagPress = (group: TagGroup, index: number) => {
     if (!bridgeId) return;
     const intent = tagSearchIntent(group, index, { bridgeId });
     if (!intent) return;
     setSearchIntent(intent);
-    router.push(searchRoute);
+    router.push(toSubPath('/search'));
   };
 
   // Same idea for the Author/Artist/Type meta cells: Search will try to route the
@@ -635,7 +634,7 @@ export function SeriesBody({
   const onMetaPress = (metaKey: 'author' | 'artist' | 'type', value: string) => {
     if (!bridgeId) return;
     setSearchIntent({ bridgeId, kind: 'meta', metaKey, value });
-    router.push(searchRoute);
+    router.push(toSubPath('/search'));
   };
 
   // One colour per tag group, computed over the whole list at once (a group's hue depends on the

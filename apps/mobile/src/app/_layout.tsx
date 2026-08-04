@@ -115,13 +115,6 @@ function RootNavigation() {
           <Stack.Screen name="series" options={{ headerShown: false }} />
           {/* Search renders its own top bar (search field + back button), so hide the native one. */}
           <Stack.Screen name="search" options={{ headerShown: false }} />
-          {/* The SAME Search screen, presentable on top of the series-reader modal (a plain card
-              can't stack over a transparent modal — see app/search-modal.tsx). Slide-in so it
-              still reads as an ordinary pushed page. Remove with the series-reader experiment. */}
-          <Stack.Screen
-            name="search-modal"
-            options={{ headerShown: false, animation: 'slide_from_right', presentation: 'containedTransparentModal' }}
-          />
           {/* Custom-lists manager (create/rename/reorder/delete), pushed from the Library selector. */}
           <Stack.Screen name="manage-lists" options={{ headerShown: false }} />
           <Stack.Screen name="results" options={{ headerShown: false }} />
@@ -138,11 +131,12 @@ function RootNavigation() {
             name="reader"
             options={{ headerShown: false, animation: 'fade', presentation: 'containedTransparentModal' }}
           />
-          {/* EXPERIMENTAL series reader page (Settings → General → Experimental): a series opened
-              from a card lands straight in its reader, details docked beneath. A contained
-              transparent modal like /reader, so the swipe-down (paged) / swipe-left (webtoon)
-              dismissal can fade the screen out over the browse grid it was opened from. Remove
-              with the experiment — see app/series-reader.tsx for the full removal list. */}
+          {/* EXPERIMENTAL series reader page (Settings → General → Experimental): the combined
+              series details + in-place reader. A contained transparent modal like /reader, so
+              its dismissal can fade the screen out over the browse grid it was opened from. The
+              route is a DIRECTORY hosting its own nested stack — sub-pages (search, downloads)
+              push as real cards inside the modal (see app/series-reader/_layout.tsx). Remove
+              with the experiment — see app/series-reader/index.tsx for the full removal list. */}
           <Stack.Screen
             name="series-reader"
             options={{ headerShown: false, animation: 'fade', presentation: 'containedTransparentModal' }}

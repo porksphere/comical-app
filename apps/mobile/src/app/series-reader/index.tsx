@@ -62,7 +62,7 @@ import { firstChapterInReadingOrder, getAdjacentChapter } from '@/lib/chapter-or
 import { useRouter } from '@/lib/nav';
 import { getPreferredGroup, resetPreferredGroup, setPreferredGroup } from '@/lib/preferred-group';
 
-import { SeriesBody, truncateTopBarTitle } from './series';
+import { SeriesBody, truncateTopBarTitle } from '../series';
 
 // EXPERIMENTAL series reader page (Settings → General → Experimental). A series opened from a card
 // lands HERE instead of on `/series`: one screen holding BOTH the series details and the reader
@@ -92,12 +92,15 @@ import { SeriesBody, truncateTopBarTitle } from './series';
 // web/webtoon crossings remount the pane seeded at the landing page instead. While the details
 // are up the reader is in STANDBY — only the single visible strip page is requested.
 //
-// Removal list for the whole experiment: this file + `lib/experimental-flags.ts`, the Settings row
-// in `settings-general.tsx`, the `buildHref` target switch in `series-card.tsx`, this route's
-// Stack.Screen entry in `_layout.tsx`, the default-preserving embedding props on `series.tsx`'s
-// SeriesBody (`topInset`/`searchRoute`/`onStartReading`/`onOpenChapter`/`onOpenPage` +
-// `truncateTopBarTitle` export) and `chapters-section.tsx`'s `onOpenChapter`/`onOpenPage`, the
-// `standby` prop on the paged readers, `app/search-modal.tsx` (+ its Stack.Screen entry), and
+// Removal list for the whole experiment: this `app/series-reader/` DIRECTORY (this file, the
+// nested-stack `_layout.tsx`, and the search/series-downloads/downloads twin routes) +
+// `lib/experimental-flags.ts` (the flag AND `useSeriesSubPath` — unwrap its call sites in
+// `series.tsx`, `series/download-button.tsx`, `reader/settings-panel.tsx`, `downloads.tsx` back
+// to the plain paths), the Settings row in `settings-general.tsx`, the `buildHref` target switch
+// in `series-card.tsx`, this route's Stack.Screen entry in `_layout.tsx`, the default-preserving
+// embedding props on `series.tsx`'s SeriesBody (`topInset`/`onStartReading`/`onOpenChapter`/
+// `onOpenPage` + `truncateTopBarTitle` export) and `chapters-section.tsx`'s
+// `onOpenChapter`/`onOpenPage`, the `standby` prop on the paged readers, and
 // `components/top-bar-switch.tsx` if nothing else has adopted it yet.
 
 const CHROME_HIDE_MS = 3000;
@@ -1365,8 +1368,6 @@ function SeriesDetailsHost({
       // The screen's own layout clears the notch (the strip band), so only breathing room is
       // added when no explicit inset comes through.
       topInset={topInset ?? insets.top + Spacing.five}
-      // Tags/meta search out through the modal-compatible twin route (see app/search-modal.tsx).
-      searchRoute="/search-modal"
       onStartReading={onStartReading}
       onOpenChapter={onOpenChapter}
       onOpenPage={onOpenPage}

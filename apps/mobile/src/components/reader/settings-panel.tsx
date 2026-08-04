@@ -15,6 +15,7 @@ import { downloadsScreenRoute } from '@/data/downloads/nav';
 import { queryKeys } from '@/data/queries';
 import { useFavorite } from '@/hooks/use-favorite';
 import { useLibrary } from '@/hooks/use-library';
+import { useSeriesSubPath } from '@/lib/experimental-flags';
 import { useRouter } from '@/lib/nav';
 import {
   useReaderSettings,
@@ -230,10 +231,13 @@ function SeriesActionsRow({
   const dlInProgress = dlState !== undefined && dlState !== 'complete';
   const downloadLabel = dlComplete ? '✓  Downloaded' : dlInProgress ? 'Downloading' : '⤓  Download';
 
+  // `toSubPath` keeps these pushes inside the series-reader's nested stack when this panel is
+  // opened from that page's in-place reader — see useSeriesSubPath.
+  const toSubPath = useSeriesSubPath();
   const openSeriesDownloads = (select: boolean) => {
     closeTop(); // close the reader sheet before pushing the download screen over the reader
     router.push({
-      pathname: '/series-downloads',
+      pathname: toSubPath('/series-downloads'),
       params: {
         bridgeId,
         id: seriesId,
@@ -253,7 +257,8 @@ function SeriesActionsRow({
       // whole download (see downloads/nav.ts).
       if (direct) {
         closeTop(); // close the reader sheet before pushing over the reader, as openSeriesDownloads does
-        router.push(downloadsScreenRoute(bridgeId, seriesId));
+        const route = downloadsScreenRoute(bridgeId, seriesId);
+        router.push({ ...route, pathname: toSubPath(route.pathname) });
         return;
       }
       return openSeriesDownloads(false);
