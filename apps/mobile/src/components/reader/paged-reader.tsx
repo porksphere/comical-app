@@ -308,27 +308,34 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         initialNumToRender={1}
         maxToRenderPerBatch={scrubbing ? 5 : 2}
         updateCellsBatchingPeriod={scrubbing ? 16 : 50}
-        // Standby (a decorative background strip) keeps the window to the ON-SCREEN page only —
-        // no neighbour cells mounted, no neighbour images requested.
-        windowSize={standby ? 1 : 5}
+        windowSize={5}
         onMomentumScrollEnd={onMomentumEnd}
         onScrollToIndexFailed={() => {}}
         viewabilityConfig={VIEWABILITY_CONFIG}
         onViewableItemsChanged={onViewableItemsChanged}
-        renderItem={({ item, index }) => (
-          <ZoomablePage
-            uri={item.uri}
-            page={item.pageNumber}
-            width={width}
-            height={height}
-            pageFit={pageFit}
-            active={index === activeIndex}
-            onLeft={leftAction}
-            onRight={rightAction}
-            onToggleChrome={onToggleChrome}
-            onZoomChange={handleZoomChange}
-          />
-        )}
+        renderItem={({ item, index }) =>
+          // Standby (a decorative background strip): NEIGHBOUR cells hold their slot but mount no
+          // page — no neighbour images requested. Gated per cell rather than by dropping
+          // `windowSize` to 1: flipping windowSize on the live list re-ran virtualization right
+          // as the reader expanded, which could flash the visible page. The on-screen cell
+          // renders identically in both states, so standby lifting is invisible.
+          standby && index !== activeIndex ? (
+            <View style={{ width, height }} />
+          ) : (
+            <ZoomablePage
+              uri={item.uri}
+              page={item.pageNumber}
+              width={width}
+              height={height}
+              pageFit={pageFit}
+              active={index === activeIndex}
+              onLeft={leftAction}
+              onRight={rightAction}
+              onToggleChrome={onToggleChrome}
+              onZoomChange={handleZoomChange}
+            />
+          )
+        }
       />
     </View>
   );
