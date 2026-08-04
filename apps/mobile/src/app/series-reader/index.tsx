@@ -167,7 +167,11 @@ type ReadTarget = { chapterId?: string; chapterName?: string; start: number | 'l
  *  it is on /reader instead of a bounce-and-remount). */
 type Segment = { id: string; name?: string; pages: string[] };
 
-export default function SeriesReaderScreen() {
+/** `drilled`: this instance is the `related` card INSIDE the nested stack (a series opened from a
+ *  series) rather than the modal's root. The only behavioral difference: the hand-rolled edge
+ *  back-swipe stays off — a real card has the native edge gesture, and two recognizers on the
+ *  same edge fight each other. (See related.tsx.) */
+export default function SeriesReaderScreen({ drilled = false }: { drilled?: boolean }) {
   const ds = useDataSource();
   const router = useRouter();
   const theme = useTheme();
@@ -744,7 +748,9 @@ export default function SeriesReaderScreen() {
   const edgeCommitting = useSharedValue(false);
   const edgePan = useMemo(() => {
     return Gesture.Pan()
-      .enabled(detailsActive)
+      // A DRILLED instance is a real nested-stack card with the NATIVE edge gesture — this
+      // recreation exists only for the modal root, which has none (see the `drilled` prop).
+      .enabled(detailsActive && !drilled)
       .manualActivation(true)
       .onTouchesDown((e) => {
         const t = e.allTouches[0]!;
@@ -793,7 +799,7 @@ export default function SeriesReaderScreen() {
         // A cancelled drag never reaches onEnd — don't leave the screen part-slid.
         if (!edgeCommitting.value) edgeX.set(withSpring(0, SPRING_BACK));
       });
-  }, [detailsActive, width, edgeX, edgeStartX, edgeStartY, edgeActiveSV, edgeCommitting, detailsActiveSV, goBack]);
+  }, [detailsActive, drilled, width, edgeX, edgeStartX, edgeStartY, edgeActiveSV, edgeCommitting, detailsActiveSV, goBack]);
   // iOS pull release, caught ON the UI thread. The commit used to ride onScrollEndDrag alone,
   // which reaches JS a frame or two AFTER the rubber-band bounce starts — and in that window the
   // engaged follow tracked the bounce BACKWARD, so the details visibly jumped against the

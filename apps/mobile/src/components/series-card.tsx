@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { Easing, type AnimatedStyle, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
@@ -14,7 +14,7 @@ import { useIsCompact } from '@/hooks/use-responsive';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
-import { useSeriesReaderPage } from '@/lib/experimental-flags';
+import { InSeriesReaderStack, useSeriesReaderPage } from '@/lib/experimental-flags';
 import { Link, router } from '@/lib/nav';
 import { useLightCards } from '@/lib/perf-flags';
 import { testId } from '@/lib/test-id';
@@ -271,6 +271,11 @@ export function SeriesCard({
   // EXPERIMENTAL (Settings → General → Experimental): tapping a series card opens the
   // reader-first `/series-reader` page instead of `/series` — see lib/experimental-flags.
   const seriesReaderPage = useSeriesReaderPage();
+  // Inside the series-reader's OWN stack (related rails, its nested search results), the card
+  // drills the series in as an ordinary pushed card instead of stacking a second transparent
+  // modal — see InSeriesReaderStack. A context read, not usePathname: its value never changes,
+  // so cards don't re-render on every navigation.
+  const inSeriesReaderStack = useContext(InSeriesReaderStack);
   const [loaded, setLoaded] = useState(() => resolvedCoverIds.has(entry.id));
   const [truncated, setTruncated] = useState(false);
   // True while masking a scope swap (see the recycle-safety block): the shared `Skeleton` is only
@@ -618,9 +623,14 @@ export function SeriesCard({
         // yet there, so equivalent to a plain push).
         const buildHref = () => ({
           // EXPERIMENTAL: with the "Series reader page" toggle on, a series opens reader-first
-          // (`/series-reader`, which takes the same params) instead of on the detail screen.
+          // (`/series-reader`, which takes the same params) instead of on the detail screen —
+          // and from WITHIN that page's stack, as its drilled-in card twin (see related.tsx).
           // Remove this ternary (keeping '/series') with the experiment.
-          pathname: seriesReaderPage ? ('/series-reader' as const) : ('/series' as const),
+          pathname: seriesReaderPage
+            ? inSeriesReaderStack
+              ? ('/series-reader/related' as const)
+              : ('/series-reader' as const)
+            : ('/series' as const),
           params: {
             id: entry.id,
             title: entry.title,

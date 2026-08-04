@@ -1,5 +1,5 @@
 import { usePathname } from 'expo-router';
-import { useCallback, useSyncExternalStore } from 'react';
+import { createContext, useCallback, useSyncExternalStore } from 'react';
 
 import { persisted$ } from '@/lib/observable';
 
@@ -60,3 +60,15 @@ export function useSeriesSubPath(): (path: SeriesSubPath) => SeriesSubPath | `/s
     [inSeriesReader],
   );
 }
+
+/**
+ * True anywhere inside the /series-reader nested stack (provided by `app/series-reader/_layout.tsx`).
+ * Series cards read this instead of `usePathname` — cards are render-cost-sensitive, and a context
+ * whose value never changes doesn't re-render them on every navigation the way the pathname hook
+ * would. With it set, a card tap DRILLS the series inside the stack (`/series-reader/related`, an
+ * ordinary pushed card) rather than stacking a second transparent modal — two stacked
+ * contained-transparent-modals lose the middle screen's view on iOS (UIKit re-roots the
+ * OverCurrentContext presentation at the react root), which showed the tab root behind a dismissal
+ * and replayed the parent series' enter animation after it. Remove with the experiment.
+ */
+export const InSeriesReaderStack = createContext(false);
