@@ -186,4 +186,7 @@ function RootNavigation() {
   );
 }
 
-export default Sentry.wrap(RootLayout);
+// Touch breadcrumbs stay on, but the per-touch fiber-tree walk is cut to the touched component
+// alone: at the default depth (20 levels) the boundary's _onTouchStart costs ~20ms of JS on every
+// touch-down — right when a page-swipe gesture needs the thread.
+export default Sentry.wrap(RootLayout, { touchEventBoundaryProps: { maxComponentTreeSize: 1 } });

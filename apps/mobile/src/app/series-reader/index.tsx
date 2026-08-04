@@ -244,6 +244,15 @@ function SeriesReaderInstance({
   const { data: listData } = useQuery(seriesListQuery(ds, mock, bridgeId ?? '', id ?? '', false, !isDirect));
   const chapters = listData?.chapters;
 
+  // Library membership — picks the reader pane's progress-recording path (library series →
+  // chapter progress, everything else → the reading log). The query lives HERE, not in the pane:
+  // the pane re-renders on every page sweep, and useQuery's per-render subscription work (query
+  // key hashing) is measurable at that cadence.
+  const { data: inLibrary } = useQuery({
+    ...inLibraryQuery(ds, mock, bridgeId ?? '', id ?? ''),
+    retry: false,
+  });
+
   // ── Where does reading start? ────────────────────────────────────────────
   // Resume from the reading history (same lookup as useStartReading — resolved here, not at the
   // card tap, so cards in recycled lists never subscribe to history), else the first chapter in
@@ -1279,6 +1288,7 @@ function SeriesReaderInstance({
               // after the transition settles — see detailsSettled) and the normal prefetch
               // pipeline resumes.
               standby={detailsSettled}
+              inLibrary={inLibrary}
             />
           )}
             {/* Bottom chrome extras that fade with a dismissal instead of traveling with the
@@ -1609,6 +1619,9 @@ const ReaderPane = forwardRef<
      *  suspends the warm-ahead prefetch and shrinks the pager's render window to the visible
      *  page, so only the single page on screen is requested. */
     standby?: boolean;
+    /** Library membership (undefined while still resolving) — picks the progress-recording path.
+     *  Queried by the screen, not here: this pane re-renders every page sweep. */
+    inLibrary?: boolean;
   }
 >(function ReaderPane(
   {
@@ -1640,6 +1653,7 @@ const ReaderPane = forwardRef<
     pageStyle,
     chromeStyle,
     standby,
+    inLibrary,
   },
   ref,
 ) {
@@ -1815,12 +1829,9 @@ const ReaderPane = forwardRef<
     if (!standby && pages.length) warmAround(currentPage);
   }, [standby, pages, currentPage, warmAround]);
 
-  // ── Progress recording — reader.tsx's rules: a library series records chapter progress, anything
-  // else (including a direct series) goes to the reading log under the DIRECT_CHAPTER_ID sentinel. ──
-  const { data: inLibrary } = useQuery({
-    ...inLibraryQuery(ds, mock, bridgeId ?? '', seriesId ?? ''),
-    retry: false,
-  });
+  // ── Progress recording — reader.tsx's rules: a library series (inLibrary, queried by the
+  // screen) records chapter progress, anything else (including a direct series) goes to the
+  // reading log under the DIRECT_CHAPTER_ID sentinel. ──
   const record = useCallback(() => {
     if (!bridgeId || !seriesId || !pages.length || inLibrary === undefined) return;
     const lastPage = currentRef.current;
