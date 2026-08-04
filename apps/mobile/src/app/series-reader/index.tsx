@@ -555,13 +555,20 @@ export default function SeriesReaderScreen({ drilled = false }: { drilled?: bool
   // transparent, so the page flew out over the LIVE screen beneath and the pop is invisible. A
   // DRILLED instance is an opaque nested card — the parent series' view is detached beneath it
   // (UINavigationController behavior), so the page flies out over this card's own backdrop
-  // instead; the pop must then be a CUT to the parent, not the native slide (which read as a
-  // second, unrelated animation after the gesture). The slide stays for the chevron/edge pops.
+  // instead; the pop then DISSOLVES the backdrop into the parent, not the native slide (which
+  // read as a second, unrelated animation after the gesture). The slide stays for the
+  // chevron/edge pops. Native only: expo-router's web navigator chokes on the animation option
+  // mid-pop (the pop silently never happens), and web has no pop animation to replace anyway.
   const navigation = useNavigation();
   const goBackFromDismiss = useCallback(() => {
-    // Native only: expo-router's web navigator chokes on the animation option mid-pop (the pop
-    // silently never happens), and web has no pop animation to suppress in the first place.
-    if (drilled && !IS_WEB) navigation.setOptions({ animation: 'none' });
+    if (drilled && !IS_WEB) {
+      navigation.setOptions({ animation: 'fade', animationDuration: 220 });
+      // setOptions reaches the native screen on the NEXT commit — popping synchronously still
+      // ran the old slide (observed on-device as a stray swipe-away at the gesture's end). The
+      // screen is just the static backdrop by now, so a two-frame wait is invisible.
+      requestAnimationFrame(() => requestAnimationFrame(() => goBack()));
+      return;
+    }
     goBack();
   }, [drilled, navigation, goBack]);
 
