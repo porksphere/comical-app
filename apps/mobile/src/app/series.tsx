@@ -14,6 +14,7 @@ import {
   type NativeSyntheticEvent,
   type ViewStyle,
 } from 'react-native';
+import type { NativeGesture } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -343,6 +344,7 @@ export function SeriesBody({
   sharedValues,
   onScrollEndDrag,
   wrapperStyle,
+  scrollGesture,
 }: {
   series: SeriesDetail;
   bridgeId?: string;
@@ -379,6 +381,9 @@ export function SeriesBody({
   sharedValues?: { scrollOffset: SharedValue<number> };
   onScrollEndDrag?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   wrapperStyle?: Parameters<typeof Animated.View>[0]['style'];
+  /** Mounted on whichever list owns the scroll — the series-reader embedding's back-swipe iOS
+   *  interop (see `RecyclerList.scrollGesture`). The classic route passes nothing. */
+  scrollGesture?: NativeGesture;
 }) {
   const ds = useDataSource();
   const router = useRouter();
@@ -787,6 +792,7 @@ export function SeriesBody({
         sharedValues={sharedValues}
         onScrollEndDrag={onScrollEndDrag}
         wrapperStyle={wrapperStyle}
+        scrollGesture={scrollGesture}
       />
     );
   }
@@ -831,6 +837,7 @@ export function SeriesBody({
       sharedValues={sharedValues}
       onScrollEndDrag={onScrollEndDrag}
       wrapperStyle={wrapperStyle}
+      scrollGesture={scrollGesture}
     />
   );
 }

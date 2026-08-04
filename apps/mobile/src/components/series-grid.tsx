@@ -1,6 +1,7 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
 import type { ReactElement, RefObject } from 'react';
 import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import type { NativeGesture } from 'react-native-gesture-handler';
 import Animated, { type SharedValue } from 'react-native-reanimated';
 
 import { RecyclerList } from '@/components/recycler-list';
@@ -61,6 +62,7 @@ export function SeriesGrid({
   onEndReached,
   onScrollEndDrag,
   wrapperStyle,
+  scrollGesture,
 }: {
   /** The series to show. Exactly what gets rendered — the grid adds nothing to it. */
   items: SeriesGridItem[];
@@ -91,6 +93,8 @@ export function SeriesGrid({
   onScrollEndDrag?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   /** Animated styles for the list wrapper — e.g. the pull-to-refresh content shift and the dim. */
   wrapperStyle?: Parameters<typeof Animated.View>[0]['style'];
+  /** Passed through to `RecyclerList` — see the doc there (an over-the-list back-swipe's iOS interop). */
+  scrollGesture?: NativeGesture;
 }) {
   const { numColumns, sidePad, cardWidth } = useGridLayout();
   const { subOf } = useBridgeMap();
@@ -123,6 +127,7 @@ export function SeriesGrid({
       onEndReached={onEndReached}
       onScrollEndDrag={onScrollEndDrag}
       wrapperStyle={wrapperStyle}
+      scrollGesture={scrollGesture}
       renderItem={({ item, index }) => (
         // Both dimensions are FIXED — cellHeight above, and cardWidth (from useGridLayout). The width is
         // what lets a short final row simply end instead of stretching its cards across the row.

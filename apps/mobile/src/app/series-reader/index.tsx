@@ -13,7 +13,7 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, type NativeGesture } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
   Extrapolation,
@@ -805,8 +805,19 @@ function SeriesReaderInstance({
     });
     return () => sub.remove();
   }, [detailsActive, depth, setRevealed, closeLayer]);
+  // Why the back-swipe was DEAD on device while green on web: the details list is a native scroll
+  // view, and a UIScrollView's own pan recognizer begins on ~10px of movement in ANY direction —
+  // before this pan's 20px horizontal activation — at which point UIKit force-fails every
+  // recognizer not allowed to run simultaneously. RNGH's delegate only grants that simultaneity
+  // when the scroll view's raw pan resolves to a NativeViewGestureHandler it knows (see
+  // RNGestureHandler.mm findGestureHandlerByRecognizer), so one is mounted ON the scroller
+  // (threaded down to whichever list owns the scroll — PullListWiring.scrollGesture) and this pan
+  // recognizes simultaneously with it. The scroll view has nothing to scroll horizontally, so
+  // during a committed back-swipe it just idles while the pan drives the slide; vertical scrolls
+  // still win outright through failOffsetY. Web needs none of this (no native recognizers).
+  const detailsScrollGesture = useMemo(() => (IS_WEB ? undefined : Gesture.Native()), []);
   const edgePan = useMemo(() => {
-    return Gesture.Pan()
+    const pan = Gesture.Pan()
       .enabled(detailsActive)
       // NATIVE activation criteria, no manual touch choreography: activeOffset/failOffset decide
       // activation inside RNGH's native core. (The previous manual-activation version drove
@@ -845,7 +856,9 @@ function SeriesReaderInstance({
         if (!edgeCommitting.value) edgeX.set(withSpring(0, SPRING_BACK));
         edgeCommitting.set(false);
       });
-  }, [detailsActive, width, edgeX, edgeCommitting, detailsActiveSV, leaveNow]);
+    if (detailsScrollGesture) pan.simultaneousWithExternalGesture(detailsScrollGesture);
+    return pan;
+  }, [detailsActive, width, edgeX, edgeCommitting, detailsActiveSV, leaveNow, detailsScrollGesture]);
   // iOS pull release, caught ON the UI thread. The commit used to ride onScrollEndDrag alone,
   // which reaches JS a frame or two AFTER the rubber-band bounce starts — and in that window the
   // engaged follow tracked the bounce BACKWARD, so the details visibly jumped against the
@@ -1205,6 +1218,7 @@ function SeriesReaderInstance({
               onStartReading={startReadingFromDetails}
               onOpenChapter={openChapterFromDetails}
               onOpenPage={openPageFromDetails}
+              scrollGesture={detailsScrollGesture}
             />
           </Animated.View>
         </Animated.View>
@@ -1413,9 +1427,12 @@ function SearchLayer({ onPopLayer }: { onPopLayer: () => void }) {
   }, [closeLayer]);
   // The back-swipe — the instance rig's recipe (full-surface, native activation criteria; the
   // search's own horizontal pieces, the filter chips, claim their touches the same way the
-  // details rails do).
+  // details rails do). Same iOS scroll interop as the instance's detailsScrollGesture: without a
+  // NativeViewGestureHandler on the results scroller, its UIScrollView pan force-fails this one
+  // before it can activate.
+  const scrollGesture = useMemo(() => (IS_WEB ? undefined : Gesture.Native()), []);
   const edgePan = useMemo(() => {
-    return Gesture.Pan()
+    const pan = Gesture.Pan()
       .activeOffsetX(20)
       .failOffsetX(-12)
       .failOffsetY([-14, 14])
@@ -1438,9 +1455,11 @@ function SearchLayer({ onPopLayer }: { onPopLayer: () => void }) {
         if (!edgeCommitting.value) edgeX.set(withSpring(0, SPRING_BACK));
         edgeCommitting.set(false);
       });
-  }, [width, edgeX, edgeCommitting, onPopLayer]);
+    if (scrollGesture) pan.simultaneousWithExternalGesture(scrollGesture);
+    return pan;
+  }, [width, edgeX, edgeCommitting, onPopLayer, scrollGesture]);
   const slideStyle = useAnimatedStyle(() => ({ transform: [{ translateX: edgeX.value }] }));
-  const embedded = useMemo(() => ({ onBack: closeLayer }), [closeLayer]);
+  const embedded = useMemo(() => ({ onBack: closeLayer, scrollGesture }), [closeLayer, scrollGesture]);
   return (
     <View style={styles.container}>
       <GestureDetector gesture={edgePan}>
@@ -1470,6 +1489,7 @@ function SeriesDetailsHost({
   onStartReading,
   onOpenChapter,
   onOpenPage,
+  scrollGesture,
 }: {
   bridgeId?: string;
   id?: string;
@@ -1487,6 +1507,8 @@ function SeriesDetailsHost({
   onStartReading: () => void;
   onOpenChapter: (version: Chapter) => void;
   onOpenPage: (pageIndex: number) => void;
+  /** The instance's `detailsScrollGesture` — mounted on SeriesBody's scroller (see the edgePan). */
+  scrollGesture?: NativeGesture;
 }) {
   const ds = useDataSource();
   const mock = useMockActive();
@@ -1558,6 +1580,7 @@ function SeriesDetailsHost({
       onOpenPage={onOpenPage}
       sharedValues={sharedValues}
       onScrollEndDrag={onScrollEndDrag}
+      scrollGesture={scrollGesture}
     />
   );
 }

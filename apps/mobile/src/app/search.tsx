@@ -3,6 +3,7 @@ import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
+import type { NativeGesture } from 'react-native-gesture-handler';
 import { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -59,7 +60,14 @@ const SHADOW_PEAK_OPACITY = 0.16;
  *  same screen mounted as an in-screen LAYER instead of a pushed route — `onBack` replaces the
  *  router pop (the layer slides itself out). Remove with the experiment (the route path passes
  *  nothing). */
-export type SearchEmbedded = { onBack: () => void };
+export type SearchEmbedded = {
+  onBack: () => void;
+  /** The layer's back-swipe pan is `simultaneousWithExternalGesture` with this `Gesture.Native()`;
+   *  mounting it on the results scroller is what lets that pan activate over it on iOS at all (the
+   *  scroll view's own recognizer force-fails a plain foreign pan otherwise — see the series-reader's
+   *  detailsScrollGesture). */
+  scrollGesture?: NativeGesture;
+};
 
 export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded } = {}) {
   const ds = useDataSource();
@@ -130,13 +138,28 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
 
   // Pending tag/meta intent, resolved once this bridge's filter defs have loaded (`filtersSettled`) —
   // seeded from the mount intent, then cleared. Reuses the pure resolvers + their tests.
-  const [pendingTag, setPendingTag] = useState<TagIntent | null>(
+  //
+  // Each pending intent CARRIES ITS TARGET BRIDGE, and the resolve effects below wait for the
+  // resolved `bridgeId` to actually BE that bridge. Without the guard, the mount-pass effects run
+  // with the pre-`setBridge` selection still resolved — and when that's a bridge whose filters are
+  // already "settled", the intent is consumed against the WRONG bridge's defs and lost. The
+  // deterministic case: first tag tap after a relaunch, when the in-memory selection is still null
+  // and resolves to the capability-less Comical aggregate, whose empty filter defs settle
+  // instantly — the search mounted blank.
+  const [pendingTag, setPendingTag] = useState<(TagIntent & { bridgeId: string }) | null>(
     initialIntent?.kind === 'tag'
-      ? { filterKey: initialIntent.filterKey, tagId: initialIntent.tagId, label: initialIntent.label }
+      ? {
+          bridgeId: initialIntent.bridgeId,
+          filterKey: initialIntent.filterKey,
+          tagId: initialIntent.tagId,
+          label: initialIntent.label,
+        }
       : null,
   );
-  const [pendingMeta, setPendingMeta] = useState<MetaIntent | null>(
-    initialIntent?.kind === 'meta' ? { metaKey: initialIntent.metaKey, value: initialIntent.value } : null,
+  const [pendingMeta, setPendingMeta] = useState<(MetaIntent & { bridgeId: string }) | null>(
+    initialIntent?.kind === 'meta'
+      ? { bridgeId: initialIntent.bridgeId, metaKey: initialIntent.metaKey, value: initialIntent.value }
+      : null,
   );
 
   // An intent can also arrive while Search is ALREADY mounted: cards in the results grid below carry
@@ -175,16 +198,19 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
         setQuery(intent.kind === 'query' ? intent.query : '');
         setPendingTag(
           intent.kind === 'tag'
-            ? { filterKey: intent.filterKey, tagId: intent.tagId, label: intent.label }
+            ? { bridgeId: intent.bridgeId, filterKey: intent.filterKey, tagId: intent.tagId, label: intent.label }
             : null,
         );
-        setPendingMeta(intent.kind === 'meta' ? { metaKey: intent.metaKey, value: intent.value } : null);
+        setPendingMeta(
+          intent.kind === 'meta' ? { bridgeId: intent.bridgeId, metaKey: intent.metaKey, value: intent.value } : null,
+        );
       }),
     [setBridge, setFilterValues, setSortValue],
   );
 
   useEffect(() => {
-    if (!pendingTag || !bridgeId || !filtersSettled) return;
+    // The bridge match is what makes the mount-time race safe — see the pending state above.
+    if (!pendingTag || bridgeId !== pendingTag.bridgeId || !filtersSettled) return;
     const res = resolveTagIntent(filterDefs, pendingTag);
     if (res) {
       // Seed the id→label hint so the trigger/editor show the tag's name (a live-search filter has no
@@ -196,7 +222,7 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
   }, [pendingTag, filterDefs, filtersSettled, bridgeId, setLabelHints, setFilterValues]);
 
   useEffect(() => {
-    if (!pendingMeta || !bridgeId || !filtersSettled) return;
+    if (!pendingMeta || bridgeId !== pendingMeta.bridgeId || !filtersSettled) return;
     // Prefer the bridge's own field for that meta key, else fall back to a free-text search.
     const res = resolveMetaIntent(filterDefs, pendingMeta);
     if (res.kind === 'filter') setFilterValues((prev) => ({ ...prev, [res.defId]: res.value }));
@@ -416,6 +442,7 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
                 onScroll={onListScroll}
                 onScrollEndDrag={pull.onScrollEndDrag}
                 wrapperStyle={pull.listStyle}
+                scrollGesture={embedded?.scrollGesture}
               />
             ) : (
               <SeriesGrid
@@ -436,6 +463,7 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
                 onScrollEndDrag={pull.onScrollEndDrag}
                 // The pull-to-refresh content shift and the re-search dim both ride the list wrapper.
                 wrapperStyle={[pull.listStyle, listDimStyle]}
+                scrollGesture={embedded?.scrollGesture}
               />
             ))}
           {ready && filterBar}

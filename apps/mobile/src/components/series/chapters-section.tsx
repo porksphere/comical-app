@@ -1,5 +1,6 @@
 import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import { useQuery } from '@tanstack/react-query';
+import { GestureDetector, type NativeGesture } from 'react-native-gesture-handler';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
@@ -312,6 +313,11 @@ type PullListWiring = {
   sharedValues?: { scrollOffset: SharedValue<number> };
   onScrollEndDrag?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   wrapperStyle?: Parameters<typeof Animated.View>[0]['style'];
+  /** A `Gesture.Native()` to mount ON this scroller — see `RecyclerList.scrollGesture` for the full
+   *  story (the series-reader's back-swipe pan can only recognize simultaneously with the scroll
+   *  view on iOS when a NativeViewGestureHandler sits on it). Omitted everywhere but the
+   *  series-reader embedding. */
+  scrollGesture?: NativeGesture;
 };
 
 /** Shared list props that arm an `AnimatedLegendList` for the house pull-to-refresh. Spread onto the
@@ -351,6 +357,7 @@ export function ChapterScrollList({
   sharedValues,
   onScrollEndDrag,
   wrapperStyle,
+  scrollGesture,
 }: {
   chapters?: Chapter[];
   /** The deferred chapter list is still fetching (see series.tsx + getSeriesList) — show a
@@ -710,7 +717,11 @@ export function ChapterScrollList({
   // Wrapped in an Animated.View that carries `wrapperStyle` — the pull-to-refresh content shift the
   // series screen drives (see series.tsx / usePullToRefresh). The screen owns the spinner + touch
   // handlers; this scroller only feeds its scroll offset up and rides the shift.
-  return <Animated.View style={[styles.chapterList, wrapperStyle]}>{list}</Animated.View>;
+  return (
+    <Animated.View style={[styles.chapterList, wrapperStyle]}>
+      {scrollGesture ? <GestureDetector gesture={scrollGesture}>{list}</GestureDetector> : list}
+    </Animated.View>
+  );
 }
 
 /**
@@ -1133,6 +1144,7 @@ export function PageThumbList({
   sharedValues,
   onScrollEndDrag,
   wrapperStyle,
+  scrollGesture,
 }: {
   thumbs: (PageThumbSource | null)[];
   /** The deferred page list is still fetching — show a skeleton in the header. */
@@ -1290,7 +1302,11 @@ export function PageThumbList({
       )}
     />
   );
-  return <Animated.View style={[styles.pageList, wrapperStyle]}>{list}</Animated.View>;
+  return (
+    <Animated.View style={[styles.pageList, wrapperStyle]}>
+      {scrollGesture ? <GestureDetector gesture={scrollGesture}>{list}</GestureDetector> : list}
+    </Animated.View>
+  );
 }
 
 // Cross-instance cache of page thumbnails that have already resolved at least once this

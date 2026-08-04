@@ -1,6 +1,7 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
 import type { ReactElement, RefObject } from 'react';
 import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import type { NativeGesture } from 'react-native-gesture-handler';
 import type Animated from 'react-native-reanimated';
 import { type SharedValue } from 'react-native-reanimated';
 
@@ -76,6 +77,7 @@ export function ContentFeed({
   onEndReached,
   onScrollEndDrag,
   wrapperStyle,
+  scrollGesture,
 }: {
   rows: ContentRow[];
   /** Feeds the list `key` and the terminal cards' recycle `cohort` (reset on scope change). */
@@ -96,6 +98,8 @@ export function ContentFeed({
   onEndReached?: () => void;
   onScrollEndDrag?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   wrapperStyle?: Parameters<typeof Animated.View>[0]['style'];
+  /** Passed through to `RecyclerList` — see the doc there (an over-the-list back-swipe's iOS interop). */
+  scrollGesture?: NativeGesture;
 }) {
   const { numColumns, cardWidth, railViewport, width } = useGridLayout();
   const wide = useIsLargeScreen();
@@ -172,6 +176,7 @@ export function ContentFeed({
       onEndReached={onEndReached}
       onScrollEndDrag={onScrollEndDrag}
       wrapperStyle={wrapperStyle}
+      scrollGesture={scrollGesture}
       renderItem={({ item }) => {
         switch (item.type) {
           case 'sectionHead':
