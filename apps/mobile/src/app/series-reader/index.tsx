@@ -159,6 +159,16 @@ const SHEET_FADE_H = 120;
 const TRAILING_SHADOW_W = 28;
 const TRAILING_SHADOW = '#00000059';
 const TRAILING_SHADOW_CLEAR = '#00000000';
+// The shadow's fade-out across the seam, sampled from the seam gradient's OWN alpha curve (stops
+// [0, .45, .78, 1] → [0, .18, .62, 1]), so the shadow dies exactly as the card casting it does.
+// STEPPED because a linear gradient ramps on ONE axis and this strip needs two (horizontal
+// falloff × vertical fade): each band is the same horizontal gradient at a lower opacity. The
+// first attempt used a single diagonal instead, which looked like a floating rectangle — a
+// diagonal's iso-lines are straight, so its whole right edge stayed dark rather than falling off.
+// Steps here are ≤0.06 in alpha on an already-soft shadow, below the banding threshold; doing it
+// exactly would mean a mask, i.e. taking on @react-native-masked-view as a real dependency.
+const TRAILING_SHADOW_SEAM_STEPS = [0.02, 0.06, 0.1, 0.14, 0.18, 0.31, 0.45, 0.58, 0.74, 0.91];
+const TRAILING_SHADOW_STEP_H = SHEET_FADE_H / TRAILING_SHADOW_SEAM_STEPS.length;
 // Half the title's ~40pt first line — positions the title's CENTER at the gradient's center.
 const TITLE_MID = 20;
 // The details-content fade (and the reader's matching tint) complete within this fraction of the
@@ -362,6 +372,13 @@ function SeriesReaderInstance({
   // The committed side of the reveal (declared up here — the stitching queries below gate on
   // it). The screen opens ON the details; see the reveal section further down.
   const [detailsActive, setDetailsActive] = useState(true);
+  // True while a horizontal details gesture (back-swipe or webtoon reveal) is ACTIVE. The pans
+  // ride the details scroller's own detector, simultaneous with it — that's the only way they
+  // activate over a UIScrollView at all (see makeBackSwipePan) — but simultaneous means the list
+  // happily keeps scrolling underneath a swipe that is carrying the whole page away. Freezing
+  // the scroller for the duration is the standard fix: one re-render as the gesture takes over,
+  // and iOS drops its in-flight tracking the moment scrolling is disabled.
+  const [swipeLocked, setSwipeLocked] = useState(false);
   // `detailsActive`, but lagging past the 240ms reveal/collapse animation: the HEAVY mode flips
   // (the standby render window, the adjacent-chapter fetches) key off THIS, so page cells mount
   // and lists re-window after the transition has finished instead of chopping it mid-flight.
@@ -879,6 +896,10 @@ function SeriesReaderInstance({
       .activeOffsetX(20)
       .failOffsetX(-12)
       .failOffsetY([-CROSS_AXIS_FAIL_PX, CROSS_AXIS_FAIL_PX])
+      // Activation = this gesture owns the screen; the list must stop scrolling under it.
+      .onStart(() => {
+        if (detailsActiveSV.value) runOnJS(setSwipeLocked)(true);
+      })
       .onUpdate((e) => {
         if (!detailsActiveSV.value) return;
         edgeX.set(Math.max(0, e.translationX));
@@ -900,6 +921,7 @@ function SeriesReaderInstance({
         // A cancelled drag never reaches onEnd — don't leave the screen part-slid.
         if (!edgeCommitting.value) edgeX.set(withSpring(0, SPRING_BACK));
         edgeCommitting.set(false);
+        runOnJS(setSwipeLocked)(false);
       });
   }, [width, edgeX, edgeCommitting, detailsActiveSV, leaveNow]);
   const edgePan = useMemo(() => makeBackSwipePan().enabled(detailsActive), [makeBackSwipePan, detailsActive]);
@@ -914,6 +936,10 @@ function SeriesReaderInstance({
       .activeOffsetX(-20)
       .failOffsetX(12)
       .failOffsetY([-CROSS_AXIS_FAIL_PX, CROSS_AXIS_FAIL_PX])
+      // See the back-swipe's: an active reveal owns the screen, so freeze the list under it.
+      .onStart(() => {
+        if (detailsActiveSV.value) runOnJS(setSwipeLocked)(true);
+      })
       .onUpdate((e) => {
         if (!detailsActiveSV.value) return;
         if (!panBeganSV.value) {
@@ -937,6 +963,7 @@ function SeriesReaderInstance({
           progress.set(withTiming(1, { duration: 240, easing: Easing.out(Easing.cubic) }));
         }
         panBeganSV.set(false);
+        runOnJS(setSwipeLocked)(false);
       });
   }, [width, detailsActiveSV, panBeganSV, progressStartSV, progress, commitReveal]);
   const revealPan = useMemo(
@@ -1311,8 +1338,10 @@ function SeriesReaderInstance({
                 Two pieces, meeting at the fill's top edge:
                   · body — below the seam, where the card is solid: a flat horizontal falloff.
                   · seam — over the 120px gradient, where the card fades into the strip: the
-                    same falloff ramped diagonally to transparent at the top, so the shadow
-                    dissolves upward on the seam's own curve instead of stopping dead.
+                    same falloff in bands of falling opacity (TRAILING_SHADOW_SEAM_STEPS), so
+                    the shadow dissolves upward on the seam's own curve instead of stopping
+                    dead — and, unlike the diagonal this replaced, actually reaching zero along
+                    its outer edge instead of reading as a floating rectangle.
                 Horizontal reveal only; in paged mode the layer leaves downward and this column
                 never enters the screen. */}
             {horizontalReveal && (
@@ -1324,13 +1353,23 @@ function SeriesReaderInstance({
                   end={{ x: 1, y: 0.5 }}
                   style={styles.trailingShadowBody}
                 />
-                <LinearGradient
-                  pointerEvents="none"
-                  colors={[TRAILING_SHADOW_CLEAR, TRAILING_SHADOW]}
-                  start={{ x: 1, y: 0 }}
-                  end={{ x: 0, y: 1 }}
-                  style={styles.trailingShadowSeam}
-                />
+                {TRAILING_SHADOW_SEAM_STEPS.map((stepOpacity, i) => (
+                  <LinearGradient
+                    key={i}
+                    pointerEvents="none"
+                    colors={[TRAILING_SHADOW, TRAILING_SHADOW_CLEAR]}
+                    start={{ x: 0, y: 0.5 }}
+                    end={{ x: 1, y: 0.5 }}
+                    style={[
+                      styles.trailingShadowSeam,
+                      {
+                        opacity: stepOpacity,
+                        top: -SHEET_FADE_H + i * TRAILING_SHADOW_STEP_H,
+                        height: TRAILING_SHADOW_STEP_H,
+                      },
+                    ]}
+                  />
+                ))}
               </>
             )}
           </Animated.View>
@@ -1352,6 +1391,7 @@ function SeriesReaderInstance({
               onOpenChapter={openChapterFromDetails}
               onOpenPage={openPageFromDetails}
               scrollGesture={detailsScrollGesture}
+              scrollEnabled={!swipeLocked}
             />
           </Animated.View>
         </Animated.View>
@@ -1627,6 +1667,7 @@ function SeriesDetailsHost({
   onOpenChapter,
   onOpenPage,
   scrollGesture,
+  scrollEnabled,
 }: {
   bridgeId?: string;
   id?: string;
@@ -1646,6 +1687,8 @@ function SeriesDetailsHost({
   onOpenPage: (pageIndex: number) => void;
   /** The instance's `detailsScrollGesture` — mounted on SeriesBody's scroller (see makeBackSwipePan). */
   scrollGesture?: ComposedGesture;
+  /** False while a horizontal details gesture is active, so the list can't scroll under it. */
+  scrollEnabled?: boolean;
 }) {
   const ds = useDataSource();
   const mock = useMockActive();
@@ -1718,6 +1761,7 @@ function SeriesDetailsHost({
       sharedValues={sharedValues}
       onScrollEndDrag={onScrollEndDrag}
       scrollGesture={scrollGesture}
+      scrollEnabled={scrollEnabled}
     />
   );
 }
@@ -2307,11 +2351,10 @@ const styles = StyleSheet.create({
     bottom: 0,
     width: TRAILING_SHADOW_W,
   },
+  // One band of the stepped seam fade — its `top`/`height`/`opacity` come from the map.
   trailingShadowSeam: {
     position: 'absolute',
     left: '100%',
-    top: -SHEET_FADE_H,
-    height: SHEET_FADE_H,
     width: TRAILING_SHADOW_W,
   },
   detailsHintWrap: {

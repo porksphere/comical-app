@@ -318,6 +318,10 @@ type PullListWiring = {
    *  the scroller's own detector to survive the scroll view's recognizer). Omitted everywhere
    *  but the series-reader embedding. */
   scrollGesture?: ComposedGesture;
+  /** False while a screen-level horizontal gesture (the series-reader's back-swipe / reveal) is
+   *  ACTIVE: simultaneity lets that pan run alongside this scroller, which otherwise keeps
+   *  scrolling under a swipe that's carrying the whole page away. Omitted everywhere else. */
+  scrollEnabled?: boolean;
 };
 
 /** Shared list props that arm an `AnimatedLegendList` for the house pull-to-refresh. Spread onto the
@@ -358,6 +362,7 @@ export function ChapterScrollList({
   onScrollEndDrag,
   wrapperStyle,
   scrollGesture,
+  scrollEnabled,
 }: {
   chapters?: Chapter[];
   /** The deferred chapter list is still fetching (see series.tsx + getSeriesList) — show a
@@ -671,6 +676,7 @@ export function ChapterScrollList({
   const list = (
     <AnimatedLegendList
       style={styles.chapterList}
+      scrollEnabled={scrollEnabled}
       sharedValues={sharedValues}
       onScrollEndDrag={onScrollEndDrag}
       {...pullScrollProps}
@@ -1145,6 +1151,7 @@ export function PageThumbList({
   onScrollEndDrag,
   wrapperStyle,
   scrollGesture,
+  scrollEnabled,
 }: {
   thumbs: (PageThumbSource | null)[];
   /** The deferred page list is still fetching — show a skeleton in the header. */
@@ -1204,6 +1211,7 @@ export function PageThumbList({
   const list = (
     <AnimatedLegendList
       style={styles.pageList}
+      scrollEnabled={scrollEnabled}
       sharedValues={sharedValues}
       onScrollEndDrag={onScrollEndDrag}
       {...pullScrollProps}

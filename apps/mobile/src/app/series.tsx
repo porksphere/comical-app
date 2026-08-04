@@ -345,6 +345,7 @@ export function SeriesBody({
   onScrollEndDrag,
   wrapperStyle,
   scrollGesture,
+  scrollEnabled,
 }: {
   series: SeriesDetail;
   bridgeId?: string;
@@ -384,6 +385,9 @@ export function SeriesBody({
   /** Mounted on whichever list owns the scroll — the series-reader embedding's back-swipe iOS
    *  interop (see `RecyclerList.scrollGesture`). The classic route passes nothing. */
   scrollGesture?: ComposedGesture;
+  /** False while the series-reader's horizontal gesture is active — freezes whichever list owns
+   *  the scroll so it can't scroll under the swipe. The classic route passes nothing. */
+  scrollEnabled?: boolean;
 }) {
   const ds = useDataSource();
   const router = useRouter();
@@ -793,6 +797,7 @@ export function SeriesBody({
         onScrollEndDrag={onScrollEndDrag}
         wrapperStyle={wrapperStyle}
         scrollGesture={scrollGesture}
+        scrollEnabled={scrollEnabled}
       />
     );
   }
@@ -838,6 +843,7 @@ export function SeriesBody({
       onScrollEndDrag={onScrollEndDrag}
       wrapperStyle={wrapperStyle}
       scrollGesture={scrollGesture}
+      scrollEnabled={scrollEnabled}
     />
   );
 }
