@@ -128,6 +128,12 @@ const READER_BACKDROP = '#0f0f0f';
 // to commit to the other view; anything less springs back to the active one.
 const COMMIT_FRACTION = 0.25;
 const FLICK_VELOCITY = 900;
+// How much VERTICAL drift a horizontal details gesture (back-swipe, webtoon reveal) tolerates
+// before it fails and the list keeps the drag. Deliberately looser than the 20px it activates
+// horizontally at: the details are a tall scroller, so real swipes there arc — a tight window
+// made the gesture land only for unusually straight drags, which read as "works sometimes,
+// mostly not over the chapter list". Still well under a scroll's own vertical intent.
+const CROSS_AXIS_FAIL_PX = 24;
 // The reveal pull: how far past the details list's top the rubber-band must be pulled, at
 // release, to expand the reader. Roughly usePullToRefresh's trigger feel.
 const PULL_COMMIT_PX = 80;
@@ -867,7 +873,7 @@ function SeriesReaderInstance({
     return Gesture.Pan()
       .activeOffsetX(20)
       .failOffsetX(-12)
-      .failOffsetY([-14, 14])
+      .failOffsetY([-CROSS_AXIS_FAIL_PX, CROSS_AXIS_FAIL_PX])
       .onUpdate((e) => {
         if (!detailsActiveSV.value) return;
         edgeX.set(Math.max(0, e.translationX));
@@ -902,7 +908,7 @@ function SeriesReaderInstance({
     return Gesture.Pan()
       .activeOffsetX(-20)
       .failOffsetX(12)
-      .failOffsetY([-14, 14])
+      .failOffsetY([-CROSS_AXIS_FAIL_PX, CROSS_AXIS_FAIL_PX])
       .onUpdate((e) => {
         if (!detailsActiveSV.value) return;
         if (!panBeganSV.value) {
@@ -1291,6 +1297,21 @@ function SeriesReaderInstance({
               style={styles.sheetFade}
             />
           </Animated.View>
+          {/* The exiting card's SHADOW, cast on the reader it uncovers — the native push
+              treatment. It hangs just OUTSIDE the layer's right edge (left: '100%', nothing
+              clips it), so at rest it sits off-screen and costs nothing; as the layer slides
+              left it rides along, turning what was a hard vertical cut between the details and
+              the page into a soft falloff. Horizontal reveal only — in paged mode the layer
+              leaves downward and this strip never enters the screen. */}
+          {horizontalReveal && (
+            <LinearGradient
+              pointerEvents="none"
+              colors={['#00000059', '#00000000']}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={styles.trailingShadow}
+            />
+          )}
           {/* The content scrolls over the transparent strip window — SeriesBody itself paints
               no background, so the faded reader shows through above the seam. */}
           <Animated.View style={[styles.detailsContent, detailsContentStyle]}>
@@ -2253,6 +2274,15 @@ const styles = StyleSheet.create({
   },
   detailsContent: {
     flex: 1,
+  },
+  // Hangs off the details layer's right edge (see the render) — the exiting card's shadow on the
+  // reader below it.
+  trailingShadow: {
+    position: 'absolute',
+    left: '100%',
+    top: 0,
+    bottom: 0,
+    width: 28,
   },
   detailsHintWrap: {
     position: 'absolute',
