@@ -20,7 +20,17 @@ export default function SeriesReaderLayout() {
   return (
     <InSeriesReaderStack.Provider value={true}>
       <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="index" options={{ contentStyle: { backgroundColor: 'transparent' } }} />
+        <Stack.Screen
+          name="index"
+          options={{
+            contentStyle: { backgroundColor: 'transparent' },
+            // The stack ROOT has nothing to pop natively, but on iOS the UINavigationController's
+            // edge-pop recognizers still sit over it and swallow left-edge touches before the
+            // page's own edge back-swipe rig (which dismisses the modal / pops a drilled layer)
+            // ever sees them. Disabled here; the sub-pages keep their own native gesture.
+            gestureEnabled: false,
+          }}
+        />
         <Stack.Screen name="search" />
         <Stack.Screen name="series-downloads" />
         <Stack.Screen name="downloads" />

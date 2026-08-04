@@ -879,6 +879,12 @@ function SeriesReaderInstance({
   );
   // The whole screen rides the edge swipe (details, strip, bars alike) — the classic pop look.
   const screenSlideStyle = useAnimatedStyle(() => ({ transform: [{ translateX: edgeX.value }] }));
+  // A drilled layer's top bar doesn't ride the slide — it fades on the same edgeX instead
+  // (entrance, edge swipe, and closeLayer all drive it), over the parent's identical bar.
+  const layerBarFadeStyle = useAnimatedStyle(
+    () => ({ opacity: 1 - Math.min(1, Math.max(0, edgeX.value / width)) }),
+    [width],
+  );
 
   // Geometry: the reader strip's height — the top-of-page band the details content starts below.
   // The details layer itself is full-screen (the strip is page, not chrome).
@@ -1080,6 +1086,77 @@ function SeriesReaderInstance({
     </>
   );
 
+  // ONE statically-stuck top-bar slot serving BOTH modes — TopBarSwitch keeps the details bar
+  // (shared TopBar, back-less: transparent over the strip, opaque once scrolled) and the
+  // reader's transparent ReaderToolbar (also back-less) mounted together and CROSSFADES between
+  // them as the mode flips, while the PERSISTENT back chevron sits above both, in one spot,
+  // never fading — only its color dissolves with the mode (the X/Reddit morphing-header
+  // treatment). Above the band overlay so its taps win. Rendered in one of two spots below:
+  // inside the edge-swipe slide for the modal root, outside it (fading, statically stuck) for a
+  // drilled layer.
+  const topChrome = (
+    <TopBarSwitch
+          mode={detailsActive ? 'details' : 'reader'}
+          persistent={
+            <Animated.View
+              pointerEvents={detailsActive || chromeVisible ? 'box-none' : 'none'}
+              style={[styles.headerBackWrap, { top: insets.top, height: topBarHeight }, backPersistStyle]}>
+              <Pressable
+                testID="series-reader.header-back"
+                // A drilled layer's chevron slides it back out to the parent series; the modal
+                // root's pops the route.
+                onPress={depth > 0 ? closeLayer : goBack}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel="Go back"
+                style={styles.headerBackBtn}>
+                <Animated.View style={backWhiteIconStyle}>
+                  <ChevronLeftIcon color="#fff" />
+                </Animated.View>
+                <Animated.View style={[StyleSheet.absoluteFill, styles.headerBackBtn, backThemeIconStyle]}>
+                  <ChevronLeftIcon color={theme.text} />
+                </Animated.View>
+              </Pressable>
+            </Animated.View>
+          }
+          bars={{
+            details: (
+              <Animated.View
+                testID="series-reader.header-topbar"
+                pointerEvents={barSolid ? 'box-none' : 'none'}
+                style={[styles.headerBarWrap, headerBarStyle]}>
+                {/* left: an empty slot — the persistent chevron above IS the back button. */}
+                <TopBar title={headerBarTitle} left={<View />} />
+              </Animated.View>
+            ),
+            reader: (
+              // The reader's own fully transparent toolbar, as /reader has it (minus its back —
+              // the persistent chevron above serves both modes) — its auto-hide rides `visible`,
+              // and a dismissal fades it on the old reader's curve.
+              <Animated.View pointerEvents="box-none" style={chromeDismissStyle}>
+                <ReaderToolbar
+                  title={seriesTitle}
+                  subtitle={target?.chapterName ?? ''}
+                  visible={chromeVisible}
+                  onBack={goBack}
+                  hideBack
+                  right={
+                    <SettingsControl
+                      bridgeId={bridgeId}
+                      seriesId={id}
+                      title={seriesTitle}
+                      thumbnailUrl={series?.cover}
+                      author={author}
+                      direct={isDirect}
+                    />
+                  }
+                />
+              </Animated.View>
+            ),
+          }}
+        />
+  );
+
   return (
     // Plain (transparent) root — the route is a contained transparent modal, so a dismissal can
     // fade the layers out over the screen beneath. The details layer supplies the opaque fill.
@@ -1252,75 +1329,20 @@ function SeriesReaderInstance({
         </GestureDetector>
       )}
 
-      {/* ONE statically-stuck top-bar slot serving BOTH modes — TopBarSwitch keeps the details
-          bar (shared TopBar, back-less: transparent over the strip, opaque once scrolled) and
-          the reader's transparent ReaderToolbar (also back-less) mounted together and CROSSFADES
-          between them as the mode flips, while the PERSISTENT back chevron sits above both, in
-          one spot, never fading — only its color dissolves with the mode (the X/Reddit
-          morphing-header treatment). Above the band overlay so its taps win. */}
-      {(
-        <TopBarSwitch
-          mode={detailsActive ? 'details' : 'reader'}
-          persistent={
-            <Animated.View
-              pointerEvents={detailsActive || chromeVisible ? 'box-none' : 'none'}
-              style={[styles.headerBackWrap, { top: insets.top, height: topBarHeight }, backPersistStyle]}>
-              <Pressable
-                testID="series-reader.header-back"
-                // A drilled layer's chevron slides it back out to the parent series; the modal
-                // root's pops the route.
-                onPress={depth > 0 ? closeLayer : goBack}
-                hitSlop={12}
-                accessibilityRole="button"
-                accessibilityLabel="Go back"
-                style={styles.headerBackBtn}>
-                <Animated.View style={backWhiteIconStyle}>
-                  <ChevronLeftIcon color="#fff" />
-                </Animated.View>
-                <Animated.View style={[StyleSheet.absoluteFill, styles.headerBackBtn, backThemeIconStyle]}>
-                  <ChevronLeftIcon color={theme.text} />
-                </Animated.View>
-              </Pressable>
-            </Animated.View>
-          }
-          bars={{
-            details: (
-              <Animated.View
-                testID="series-reader.header-topbar"
-                pointerEvents={barSolid ? 'box-none' : 'none'}
-                style={[styles.headerBarWrap, headerBarStyle]}>
-                {/* left: an empty slot — the persistent chevron above IS the back button. */}
-                <TopBar title={headerBarTitle} left={<View />} />
-              </Animated.View>
-            ),
-            reader: (
-              // The reader's own fully transparent toolbar, as /reader has it (minus its back —
-              // the persistent chevron above serves both modes) — its auto-hide rides `visible`,
-              // and a dismissal fades it on the old reader's curve.
-              <Animated.View pointerEvents="box-none" style={chromeDismissStyle}>
-                <ReaderToolbar
-                  title={seriesTitle}
-                  subtitle={target?.chapterName ?? ''}
-                  visible={chromeVisible}
-                  onBack={goBack}
-                  hideBack
-                  right={
-                    <SettingsControl
-                      bridgeId={bridgeId}
-                      seriesId={id}
-                      title={seriesTitle}
-                      thumbnailUrl={series?.cover}
-                      author={author}
-                      direct={isDirect}
-                    />
-                  }
-                />
-              </Animated.View>
-            ),
-          }}
-        />
-      )}
+      {/* ONE statically-stuck top-bar slot serving BOTH modes (see `topChrome` above). The modal
+          ROOT's bar rides the edge swipe with the rest of the screen (the classic pop look);
+          a DRILLED layer's renders OUTSIDE the slide below, so the bar never moves. */}
+      {depth === 0 && topChrome}
       </Animated.View>
+      {/* A drilled layer's bar: statically stuck while the layer's CONTENT slides — it fades on
+          edgeX instead (entrance, edge swipe, closeLayer alike). The parent's identical chevron
+          sits beneath at full opacity, so only the TITLE visibly crossfades: one continuous bar
+          across the series-from-series navigation. */}
+      {depth > 0 && (
+        <Animated.View pointerEvents="box-none" style={[styles.layerBarWrap, layerBarFadeStyle]}>
+          {topChrome}
+        </Animated.View>
+      )}
     </View>
   );
 }
@@ -1955,6 +1977,15 @@ const styles = StyleSheet.create({
   // The edge back-swipe's ride (see screenSlideStyle).
   screenSlide: {
     flex: 1,
+  },
+  // A drilled layer's statically-stuck top-bar host (see layerBarFadeStyle) — a zero-impact
+  // absolute shell; TopBarSwitch inside positions itself.
+  layerBarWrap: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
   },
   // The reader's frame + clip. No background on either: the dark reader surface is a SEPARATE
   // static full-screen layer BEHIND the frame (readerSurface), so it keeps covering the screen
