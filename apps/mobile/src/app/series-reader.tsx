@@ -516,9 +516,13 @@ export default function SeriesReaderScreen() {
   const onDetailsScrollEndDrag = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       if (!IS_IOS || !detailsActive) return;
+      // The UI-thread release watcher (pullReleaseWatch below) usually lands this commit first;
+      // the shared-value mirror is already false then — don't restart its animation. This JS
+      // path remains the full fallback when those touches weren't observed.
+      if (!detailsActiveSV.get()) return;
       if (e.nativeEvent.contentOffset.y <= -PULL_COMMIT_PX) setRevealed(0);
     },
-    [detailsActive, setRevealed],
+    [detailsActive, detailsActiveSV, setRevealed],
   );
 
   // Android hardware back steps back HOME (the details) before popping: reader expanded → back
@@ -787,7 +791,33 @@ export default function SeriesReaderScreen() {
         if (!edgeCommitting.value) edgeX.set(withSpring(0, SPRING_BACK));
       });
   }, [detailsActive, width, edgeX, edgeStartX, edgeStartY, edgeActiveSV, edgeCommitting, detailsActiveSV, goBack]);
-  const detailsGestures = useMemo(() => Gesture.Race(edgePan, returnPan), [edgePan, returnPan]);
+  // iOS pull release, caught ON the UI thread. The commit used to ride onScrollEndDrag alone,
+  // which reaches JS a frame or two AFTER the rubber-band bounce starts — and in that window the
+  // engaged follow tracked the bounce BACKWARD, so the details visibly jumped against the
+  // commit's direction before animating away. This observer never activates (manual activation,
+  // no activate() call) — it just watches the touches the details list is scrolling with, and on
+  // the release of a committed-depth pull starts the commit animation in the same frame.
+  // onScrollEndDrag stays as the fallback for the same commit (see onDetailsScrollEndDrag's
+  // detailsActiveSV guard); if iOS ever stops delivering these touches mid-scroll, behavior
+  // degrades to exactly the old path.
+  const pullReleaseWatch = useMemo(() => {
+    return Gesture.Pan()
+      .enabled(detailsActive && IS_IOS)
+      .manualActivation(true)
+      .onTouchesUp(() => {
+        if (!detailsActiveSV.value || !pullEngagedSV.value) return;
+        if (detailsScrollOffset.value <= -PULL_COMMIT_PX) {
+          pullEngagedSV.set(false);
+          detailsActiveSV.set(false);
+          progress.set(withTiming(0, { duration: 240, easing: Easing.out(Easing.cubic) }));
+          runOnJS(commitReveal)(0);
+        }
+      });
+  }, [detailsActive, detailsActiveSV, pullEngagedSV, detailsScrollOffset, progress, commitReveal]);
+  const detailsGestures = useMemo(
+    () => Gesture.Race(edgePan, returnPan, pullReleaseWatch),
+    [edgePan, returnPan, pullReleaseWatch],
+  );
   // The whole screen rides the edge swipe (details, strip, bars alike) — the classic pop look.
   const screenSlideStyle = useAnimatedStyle(() => ({ transform: [{ translateX: edgeX.value }] }));
 
@@ -1054,18 +1084,23 @@ export default function SeriesReaderScreen() {
         </Animated.View>
       </GestureDetector>
 
+      {/* The reader's dark surface — SwipeDismiss's static backdrop: full screen, never moving,
+          fading in place while a dismissal carries the page over it. It lives OUTSIDE the
+          strip-centering frame below: inside it, the surface rode the frame's translate up with
+          the reader and uncovered the screen bottom at low progress — the underlying screen
+          showed through the seam gradient as a dark bar whenever a drag held the transition
+          near the reader side. */}
+      <Animated.View pointerEvents="none" style={[styles.readerSurface, { width, height }, dismissFadeStyle]} />
+
       {/* The reader, beneath the details: full screen, with SwipeDismiss's layering inside —
-          static fading surface, traveling page subtree, fading chrome. The collapse/dismiss pan
-          wraps the whole cell (the scrubber and a zoomed page disable it), matching how
-          SwipeDismiss wraps the readers on /reader. */}
+          static fading surface (above), traveling page subtree, fading chrome. The collapse/
+          dismiss pan wraps the whole cell (the scrubber and a zoomed page disable it), matching
+          how SwipeDismiss wraps the readers on /reader. */}
       <GestureDetector gesture={collapsePan}>
         <Animated.View
           testID="series-reader.reader-card"
           style={[styles.readerFrame, { top: 0, width, height }, readerCardStyle]}>
           <View style={styles.readerClip}>
-          {/* The reader's dark surface — SwipeDismiss's static backdrop: it never moves with a
-              dismissal, fading in place with distance while the page travels over it. */}
-          <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.readerSurface, dismissFadeStyle]} />
           {error ? (
             <>
               <View style={styles.centerFill}>
@@ -1827,8 +1862,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   // The reader's frame + clip. No background on either: the dark reader surface is a SEPARATE
-  // fading layer inside the clip (readerSurface), so a dismissal can dissolve it in place while
-  // only the page travels.
+  // static full-screen layer BEHIND the frame (readerSurface), so it keeps covering the screen
+  // while the strip-centering translate moves the frame, and a dismissal can dissolve it in
+  // place while only the page travels.
   readerFrame: {
     position: 'absolute',
     top: 0,
@@ -1839,6 +1875,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   readerSurface: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
     backgroundColor: READER_BACKDROP,
   },
   pageWrap: {
