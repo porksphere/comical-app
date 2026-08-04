@@ -154,6 +154,11 @@ const HEADER_BAND = 200;
 // ON THE SERIES TITLE — the title (the page's first element) renders mid-gradient over the fading
 // strip, X-hero style, so the content top inset is derived from this (see headerTopInset).
 const SHEET_FADE_H = 120;
+// The exiting details card's shadow on the reader it uncovers (horizontal reveal) — width, and
+// its darkest/clear stops. Kept as an 8-digit hex pair so both gradients read the same colour.
+const TRAILING_SHADOW_W = 28;
+const TRAILING_SHADOW = '#00000059';
+const TRAILING_SHADOW_CLEAR = '#00000000';
 // Half the title's ~40pt first line — positions the title's CENTER at the gradient's center.
 const TITLE_MID = 20;
 // The details-content fade (and the reader's matching tint) complete within this fraction of the
@@ -1296,22 +1301,39 @@ function SeriesReaderInstance({
               locations={[0, 0.45, 0.78, 1]}
               style={styles.sheetFade}
             />
+            {/* The exiting card's SHADOW, cast on the reader it uncovers — the native push
+                treatment, turning what was a hard vertical cut into a soft falloff. It lives in
+                HERE, with the opaque fill, rather than on the details layer: the card's real
+                edge is only where the page is actually opaque, so a full-height strip hung a
+                shadow beside the transparent strip window too — a dark bar floating next to
+                see-through content. As a child it also rides the same scroll translate, so the
+                shadow's top tracks the seam as the page scrolls under the band.
+                Two pieces, meeting at the fill's top edge:
+                  · body — below the seam, where the card is solid: a flat horizontal falloff.
+                  · seam — over the 120px gradient, where the card fades into the strip: the
+                    same falloff ramped diagonally to transparent at the top, so the shadow
+                    dissolves upward on the seam's own curve instead of stopping dead.
+                Horizontal reveal only; in paged mode the layer leaves downward and this column
+                never enters the screen. */}
+            {horizontalReveal && (
+              <>
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={[TRAILING_SHADOW, TRAILING_SHADOW_CLEAR]}
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                  style={styles.trailingShadowBody}
+                />
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={[TRAILING_SHADOW_CLEAR, TRAILING_SHADOW]}
+                  start={{ x: 1, y: 0 }}
+                  end={{ x: 0, y: 1 }}
+                  style={styles.trailingShadowSeam}
+                />
+              </>
+            )}
           </Animated.View>
-          {/* The exiting card's SHADOW, cast on the reader it uncovers — the native push
-              treatment. It hangs just OUTSIDE the layer's right edge (left: '100%', nothing
-              clips it), so at rest it sits off-screen and costs nothing; as the layer slides
-              left it rides along, turning what was a hard vertical cut between the details and
-              the page into a soft falloff. Horizontal reveal only — in paged mode the layer
-              leaves downward and this strip never enters the screen. */}
-          {horizontalReveal && (
-            <LinearGradient
-              pointerEvents="none"
-              colors={['#00000059', '#00000000']}
-              start={{ x: 0, y: 0.5 }}
-              end={{ x: 1, y: 0.5 }}
-              style={styles.trailingShadow}
-            />
-          )}
           {/* The content scrolls over the transparent strip window — SeriesBody itself paints
               no background, so the faded reader shows through above the seam. */}
           <Animated.View style={[styles.detailsContent, detailsContentStyle]}>
@@ -2275,14 +2297,22 @@ const styles = StyleSheet.create({
   detailsContent: {
     flex: 1,
   },
-  // Hangs off the details layer's right edge (see the render) — the exiting card's shadow on the
-  // reader below it.
-  trailingShadow: {
+  // The two halves of the exiting card's shadow (see the render). Both hang off the OPAQUE
+  // fill's right edge — `left: '100%'` inside headerSheetBg, which clips nothing (the seam
+  // gradient already hangs above it the same way).
+  trailingShadowBody: {
     position: 'absolute',
     left: '100%',
     top: 0,
     bottom: 0,
-    width: 28,
+    width: TRAILING_SHADOW_W,
+  },
+  trailingShadowSeam: {
+    position: 'absolute',
+    left: '100%',
+    top: -SHEET_FADE_H,
+    height: SHEET_FADE_H,
+    width: TRAILING_SHADOW_W,
   },
   detailsHintWrap: {
     position: 'absolute',
