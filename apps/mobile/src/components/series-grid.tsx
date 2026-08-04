@@ -1,7 +1,7 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
 import type { ReactElement, RefObject } from 'react';
 import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
-import type { NativeGesture } from 'react-native-gesture-handler';
+import type { ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { type SharedValue } from 'react-native-reanimated';
 
 import { RecyclerList } from '@/components/recycler-list';
@@ -94,7 +94,7 @@ export function SeriesGrid({
   /** Animated styles for the list wrapper — e.g. the pull-to-refresh content shift and the dim. */
   wrapperStyle?: Parameters<typeof Animated.View>[0]['style'];
   /** Passed through to `RecyclerList` — see the doc there (an over-the-list back-swipe's iOS interop). */
-  scrollGesture?: NativeGesture;
+  scrollGesture?: ComposedGesture;
 }) {
   const { numColumns, sidePad, cardWidth } = useGridLayout();
   const { subOf } = useBridgeMap();

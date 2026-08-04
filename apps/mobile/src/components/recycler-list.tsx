@@ -2,7 +2,7 @@ import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import type { LegendListRef } from '@legendapp/list/react-native';
 import type { ReactElement, RefObject } from 'react';
 import { Platform, StyleSheet, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
-import { GestureDetector, type NativeGesture } from 'react-native-gesture-handler';
+import { GestureDetector, type ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { type SharedValue } from 'react-native-reanimated';
 
 import { notifyScrollBeginDrag, notifyScrollEndDrag, notifyScrollRest } from '@/lib/scroll-release';
@@ -88,14 +88,14 @@ export function RecyclerList<T>({
    *  Applied to a wrapping Animated.View rather than the list's own `style` (not typed for a
    *  Reanimated style). */
   wrapperStyle?: Parameters<typeof Animated.View>[0]['style'];
-  /** A `Gesture.Native()` to mount ON the list's scroll view (the list's root native view — the
-   *  detector's `findNodeHandle` resolves straight to it). A screen-level pan that must activate
-   *  OVER this scroller on iOS (the series-reader's back-swipe) marks itself
-   *  `simultaneousWithExternalGesture(scrollGesture)`: without the native handler on the scroll
-   *  view, the scroll view's own recognizer beginning (~10px, any direction) force-fails a foreign
-   *  RNGH pan before its activation distance — RNGH only grants simultaneity when the scroll pan
-   *  resolves to a NativeViewGestureHandler it knows. Native-only concern; callers omit it on web. */
-  scrollGesture?: NativeGesture;
+  /** A composed `Gesture.Simultaneous(Gesture.Native(), <pan>)` to mount ON the list's scroll
+   *  view (the list's root native view — the detector's `findNodeHandle` resolves straight to
+   *  it). This is how a screen-level gesture (the series-reader's back-swipe) gets to activate
+   *  OVER this scroller on iOS: the scroll view's own recognizer begins on ~10px of movement in
+   *  any direction and force-fails foreign recognizers, so the pan must ride the scroller's own
+   *  detector, composed simultaneous with a Native handler RNGH resolves the raw scroll pan to.
+   *  Native-only concern; callers omit it on web. */
+  scrollGesture?: ComposedGesture;
 }) {
   // LegendList's web build resets its render state *during* render on an empty→non-empty data swap
   // after it has held data ("Cannot update a component while rendering a different component"). Fold

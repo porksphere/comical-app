@@ -3,7 +3,7 @@ import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import type { NativeGesture } from 'react-native-gesture-handler';
+import type { ComposedGesture } from 'react-native-gesture-handler';
 import { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -62,11 +62,11 @@ const SHADOW_PEAK_OPACITY = 0.16;
  *  nothing). */
 export type SearchEmbedded = {
   onBack: () => void;
-  /** The layer's back-swipe pan is `simultaneousWithExternalGesture` with this `Gesture.Native()`;
-   *  mounting it on the results scroller is what lets that pan activate over it on iOS at all (the
-   *  scroll view's own recognizer force-fails a plain foreign pan otherwise — see the series-reader's
-   *  detailsScrollGesture). */
-  scrollGesture?: NativeGesture;
+  /** The layer's back-swipe pan composed with a `Gesture.Native()` (`Gesture.Simultaneous`), to
+   *  mount on the results scroller: on iOS the scroll view's own recognizer force-fails a foreign
+   *  pan before its activation distance, so the pan must ride the scroller's own detector — see
+   *  the series-reader's makeBackSwipePan. */
+  scrollGesture?: ComposedGesture;
 };
 
 export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded } = {}) {

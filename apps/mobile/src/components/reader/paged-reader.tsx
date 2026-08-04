@@ -255,6 +255,14 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     if (index < 0 || index === anchor.index) return;
     anchorRef.current = { key: anchor.key, index };
     listRef.current?.scrollToOffset({ offset: index * width, animated: false });
+    // `activeIndex` must shift with the anchor: viewability tracks items by KEY, and the visible
+    // item's key hasn't changed — so no viewability callback fires for this correction, and the
+    // state would keep pointing a whole chapter away. Harmless while every window cell renders,
+    // but in STANDBY (the collapsed strip) the placeholder branch blanks every cell EXCEPT
+    // `activeIndex` — with it stale, the strip blanked the very page it was showing (a black band
+    // until the next real page turn re-synced it). First-boot-only in practice: a warm cache
+    // delivers the neighbour chapters before mount, so nothing prepends late.
+    setActiveIndex(index);
     // `listRef` is stable (an animated ref, which the lint rule can't tell from a
     // plain one); it's listed only to keep exhaustive-deps quiet.
   }, [data, width, listRef]);

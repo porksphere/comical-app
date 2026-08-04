@@ -14,7 +14,7 @@ import {
   type NativeSyntheticEvent,
   type ViewStyle,
 } from 'react-native';
-import type { NativeGesture } from 'react-native-gesture-handler';
+import type { ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -383,7 +383,7 @@ export function SeriesBody({
   wrapperStyle?: Parameters<typeof Animated.View>[0]['style'];
   /** Mounted on whichever list owns the scroll — the series-reader embedding's back-swipe iOS
    *  interop (see `RecyclerList.scrollGesture`). The classic route passes nothing. */
-  scrollGesture?: NativeGesture;
+  scrollGesture?: ComposedGesture;
 }) {
   const ds = useDataSource();
   const router = useRouter();

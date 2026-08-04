@@ -1,6 +1,6 @@
 import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import { useQuery } from '@tanstack/react-query';
-import { GestureDetector, type NativeGesture } from 'react-native-gesture-handler';
+import { GestureDetector, type ComposedGesture } from 'react-native-gesture-handler';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
@@ -313,11 +313,11 @@ type PullListWiring = {
   sharedValues?: { scrollOffset: SharedValue<number> };
   onScrollEndDrag?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   wrapperStyle?: Parameters<typeof Animated.View>[0]['style'];
-  /** A `Gesture.Native()` to mount ON this scroller — see `RecyclerList.scrollGesture` for the full
-   *  story (the series-reader's back-swipe pan can only recognize simultaneously with the scroll
-   *  view on iOS when a NativeViewGestureHandler sits on it). Omitted everywhere but the
-   *  series-reader embedding. */
-  scrollGesture?: NativeGesture;
+  /** A composed `Gesture.Simultaneous(Gesture.Native(), <back-swipe pan>)` to mount ON this
+   *  scroller — see `RecyclerList.scrollGesture` for the full story (on iOS the pan must ride
+   *  the scroller's own detector to survive the scroll view's recognizer). Omitted everywhere
+   *  but the series-reader embedding. */
+  scrollGesture?: ComposedGesture;
 };
 
 /** Shared list props that arm an `AnimatedLegendList` for the house pull-to-refresh. Spread onto the

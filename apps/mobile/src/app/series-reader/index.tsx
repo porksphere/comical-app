@@ -13,7 +13,7 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
-import { Gesture, GestureDetector, type NativeGesture } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, type ComposedGesture } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
   Extrapolation,
@@ -805,32 +805,32 @@ function SeriesReaderInstance({
     });
     return () => sub.remove();
   }, [detailsActive, depth, setRevealed, closeLayer]);
-  // Why the back-swipe was DEAD on device while green on web: the details list is a native scroll
-  // view, and a UIScrollView's own pan recognizer begins on ~10px of movement in ANY direction —
-  // before this pan's 20px horizontal activation — at which point UIKit force-fails every
-  // recognizer not allowed to run simultaneously. RNGH's delegate only grants that simultaneity
-  // when the scroll view's raw pan resolves to a NativeViewGestureHandler it knows (see
-  // RNGestureHandler.mm findGestureHandlerByRecognizer), so one is mounted ON the scroller
-  // (threaded down to whichever list owns the scroll — PullListWiring.scrollGesture) and this pan
-  // recognizes simultaneously with it. The scroll view has nothing to scroll horizontally, so
-  // during a committed back-swipe it just idles while the pan drives the slide; vertical scrolls
-  // still win outright through failOffsetY. Web needs none of this (no native recognizers).
-  const detailsScrollGesture = useMemo(() => (IS_WEB ? undefined : Gesture.Native()), []);
-  const edgePan = useMemo(() => {
-    const pan = Gesture.Pan()
-      .enabled(detailsActive)
-      // NATIVE activation criteria, no manual touch choreography: activeOffset/failOffset decide
-      // activation inside RNGH's native core. (The previous manual-activation version drove
-      // activation from onTouchesDown/Move worklet callbacks — a touch-event stream iOS
-      // recognizer interplay can delay or cancel, which is how the edge swipe silently died on
-      // device while staying green on web.)
-      //
-      // FULL-SURFACE, not edge-only: a decisive rightward drag anywhere on the details goes
-      // back, the way the platform's full-screen pop does. Anything horizontal underneath keeps
-      // winning on its own turf — RNGH swipeables (chapter-row actions) activate on tighter
-      // offsets and cancel this pan, and a horizontal scroller (related rails) that starts
-      // scrolling cancels the touch stream outright — while the vertical list never claims a
-      // horizontal drag. failOffsetY keeps vertical scrolling winning fast.
+  // ONE back-swipe recipe, built twice. NATIVE activation criteria, no manual touch
+  // choreography: activeOffset/failOffset decide activation inside RNGH's native core, and it's
+  // FULL-SURFACE, not edge-only — a decisive rightward drag anywhere on the details goes back,
+  // the way the platform's full-screen pop does. Anything horizontal underneath keeps winning on
+  // its own turf (a horizontal rail that starts scrolling cancels the touch stream outright),
+  // and failOffsetY keeps vertical scrolling winning fast.
+  //
+  // WHY TWICE: the details surface is almost entirely a native vertical scroll view, whose own
+  // pan recognizer begins on ~10px of movement in ANY direction — before this pan's 20px
+  // horizontal activation — and UIKit then force-fails every recognizer not allowed to run
+  // simultaneously with it. A cross-detector `simultaneousWithExternalGesture` relation from the
+  // screen-level pan to a Native handler on the list did NOT reliably bind on device, so the
+  // simultaneity is declared where RNGH is built to honor it: `detailsScrollGesture` below is
+  // `Gesture.Simultaneous(Gesture.Native(), <this same pan>)` attached BY the list's own
+  // detector (threaded down via PullListWiring.scrollGesture) — one detector, both tags assigned
+  // in one attach, the relation internal to the composition. The scroll view idles horizontally
+  // (nothing to scroll that way) while the pan drives the slide. The screen-level copy still
+  // covers the non-scroll chrome. Web keeps only the screen-level pan (no native recognizers to
+  // fight — and it was already green there).
+  //
+  // The list copy carries NO `.enabled(detailsActive)` gate — the details card wrapper drops
+  // pointerEvents while the reader owns the screen, the worklets all re-check `detailsActiveSV`,
+  // and leaving the gate off keeps the composed gesture's identity stable across expand/collapse
+  // (no re-attach churn through the list subtree).
+  const makeBackSwipePan = useCallback(() => {
+    return Gesture.Pan()
       .activeOffsetX(20)
       .failOffsetX(-12)
       .failOffsetY([-14, 14])
@@ -856,9 +856,12 @@ function SeriesReaderInstance({
         if (!edgeCommitting.value) edgeX.set(withSpring(0, SPRING_BACK));
         edgeCommitting.set(false);
       });
-    if (detailsScrollGesture) pan.simultaneousWithExternalGesture(detailsScrollGesture);
-    return pan;
-  }, [detailsActive, width, edgeX, edgeCommitting, detailsActiveSV, leaveNow, detailsScrollGesture]);
+  }, [width, edgeX, edgeCommitting, detailsActiveSV, leaveNow]);
+  const edgePan = useMemo(() => makeBackSwipePan().enabled(detailsActive), [makeBackSwipePan, detailsActive]);
+  const detailsScrollGesture = useMemo(
+    () => (IS_WEB ? undefined : Gesture.Simultaneous(Gesture.Native(), makeBackSwipePan())),
+    [makeBackSwipePan],
+  );
   // iOS pull release, caught ON the UI thread. The commit used to ride onScrollEndDrag alone,
   // which reaches JS a frame or two AFTER the rubber-band bounce starts — and in that window the
   // engaged follow tracked the bounce BACKWARD, so the details visibly jumped against the
@@ -1427,12 +1430,12 @@ function SearchLayer({ onPopLayer }: { onPopLayer: () => void }) {
   }, [closeLayer]);
   // The back-swipe — the instance rig's recipe (full-surface, native activation criteria; the
   // search's own horizontal pieces, the filter chips, claim their touches the same way the
-  // details rails do). Same iOS scroll interop as the instance's detailsScrollGesture: without a
-  // NativeViewGestureHandler on the results scroller, its UIScrollView pan force-fails this one
-  // before it can activate.
-  const scrollGesture = useMemo(() => (IS_WEB ? undefined : Gesture.Native()), []);
-  const edgePan = useMemo(() => {
-    const pan = Gesture.Pan()
+  // details rails do). Built twice for the same reason as the instance's makeBackSwipePan: the
+  // screen-level copy covers the chrome, and a second copy rides the results scroller composed
+  // with a Native handler (`Gesture.Simultaneous`, one detector — see there for why the
+  // cross-detector relation isn't trusted).
+  const makeBackSwipePan = useCallback(() => {
+    return Gesture.Pan()
       .activeOffsetX(20)
       .failOffsetX(-12)
       .failOffsetY([-14, 14])
@@ -1455,9 +1458,12 @@ function SearchLayer({ onPopLayer }: { onPopLayer: () => void }) {
         if (!edgeCommitting.value) edgeX.set(withSpring(0, SPRING_BACK));
         edgeCommitting.set(false);
       });
-    if (scrollGesture) pan.simultaneousWithExternalGesture(scrollGesture);
-    return pan;
-  }, [width, edgeX, edgeCommitting, onPopLayer, scrollGesture]);
+  }, [width, edgeX, edgeCommitting, onPopLayer]);
+  const edgePan = useMemo(() => makeBackSwipePan(), [makeBackSwipePan]);
+  const scrollGesture = useMemo(
+    () => (IS_WEB ? undefined : Gesture.Simultaneous(Gesture.Native(), makeBackSwipePan())),
+    [makeBackSwipePan],
+  );
   const slideStyle = useAnimatedStyle(() => ({ transform: [{ translateX: edgeX.value }] }));
   const embedded = useMemo(() => ({ onBack: closeLayer, scrollGesture }), [closeLayer, scrollGesture]);
   return (
@@ -1507,8 +1513,8 @@ function SeriesDetailsHost({
   onStartReading: () => void;
   onOpenChapter: (version: Chapter) => void;
   onOpenPage: (pageIndex: number) => void;
-  /** The instance's `detailsScrollGesture` — mounted on SeriesBody's scroller (see the edgePan). */
-  scrollGesture?: NativeGesture;
+  /** The instance's `detailsScrollGesture` — mounted on SeriesBody's scroller (see makeBackSwipePan). */
+  scrollGesture?: ComposedGesture;
 }) {
   const ds = useDataSource();
   const mock = useMockActive();
