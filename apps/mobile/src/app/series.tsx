@@ -31,7 +31,7 @@ import { TopBar, useTopBarInset } from '@/components/top-bar';
 import { BarContentGap, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { relativeTime } from '@/data/mock';
 import { setSearchIntent, tagSearchIntent } from '@/data/search-intent';
-import { useSeriesSubPath } from '@/lib/experimental-flags';
+import { useOpenSearchLayer } from '@/lib/experimental-flags';
 import { queryKeys, relatedGroupsQuery, seriesDetailQuery, seriesListQuery } from '@/data/queries';
 import { queryClient } from '@/data/query-client';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
@@ -616,16 +616,20 @@ export function SeriesBody({
   //
   // `push('/search')` overlays the Search screen on top of this pushed Series
   // screen, so its back arrow returns here. Search consumes the stashed intent on
-  // mount (see search.tsx) and applies it against the intent's bridge.
-  // (`toSubPath` routes it into the series-reader's nested stack when this body is
-  // embedded there — see useSeriesSubPath.)
-  const toSubPath = useSeriesSubPath();
+  // mount (see search.tsx) and applies it against the intent's bridge. Inside the
+  // series-reader the same intent opens as an in-screen LAYER instead — sliding in
+  // over this page with the shared chevron statically stuck (see useOpenSearchLayer).
+  const openSearchLayer = useOpenSearchLayer();
+  const openSearch = () => {
+    if (openSearchLayer) openSearchLayer();
+    else router.push('/search');
+  };
   const onTagPress = (group: TagGroup, index: number) => {
     if (!bridgeId) return;
     const intent = tagSearchIntent(group, index, { bridgeId });
     if (!intent) return;
     setSearchIntent(intent);
-    router.push(toSubPath('/search'));
+    openSearch();
   };
 
   // Same idea for the Author/Artist/Type meta cells: Search will try to route the
@@ -634,7 +638,7 @@ export function SeriesBody({
   const onMetaPress = (metaKey: 'author' | 'artist' | 'type', value: string) => {
     if (!bridgeId) return;
     setSearchIntent({ bridgeId, kind: 'meta', metaKey, value });
-    router.push(toSubPath('/search'));
+    openSearch();
   };
 
   // One colour per tag group, computed over the whole list at once (a group's hue depends on the

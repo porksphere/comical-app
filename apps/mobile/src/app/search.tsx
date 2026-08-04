@@ -22,7 +22,7 @@ import { ThemedView } from '@/components/themed-view';
 import { BarContentGap, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { useDedupedPages } from '@/data/grid-pages';
 import { fetchBrowseScope, nextGridCursor, NO_CURSOR, queryKeys, type BrowseScope } from '@/data/queries';
-import { subscribeSearchIntent, takeSearchIntent } from '@/data/search-intent';
+import { clearSearchIntent, peekSearchIntent, subscribeSearchIntent, takeSearchIntent } from '@/data/search-intent';
 import { COMICAL_BRIDGE_ID, isComicalBridge, useSelectedBridge } from '@/data/selected-bridge';
 import { useDataSource, useMockActive } from '@/data/source';
 import type { Bridge } from '@/data/types';
@@ -55,7 +55,14 @@ const SHADOW_PEAK_OPACITY = 0.16;
  * query + filter/sort state (`useBridgeFilters`). A Series→Search tag/meta intent
  * (see search-intent.ts) is consumed on mount and applied against the intent's bridge.
  */
-export default function SearchScreen() {
+/** EXPERIMENTAL series-reader embedding (see SearchLayer in app/series-reader/index.tsx): the
+ *  same screen mounted as an in-screen LAYER instead of a pushed route. `onBack` replaces the
+ *  router pop (the layer slides itself out), and the back button renders as a SPACER — the layer
+ *  hosts a statically-stuck chevron in the same spot, shared with the series bars beneath.
+ *  Remove with the experiment (the route path passes nothing). */
+export type SearchEmbedded = { onBack: () => void };
+
+export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded } = {}) {
   const ds = useDataSource();
   const mock = useMockActive();
   const theme = useTheme();
@@ -70,7 +77,13 @@ export default function SearchScreen() {
   // Take the one-shot Series→Search intent exactly once (lazy initializer), before the first render
   // reads it. `query` seeds directly from a `query` intent; `tag`/`meta` are stashed and applied
   // once this bridge's filter defs settle (below), mirroring the old Browse focus-effect flow.
-  const [initialIntent] = useState(() => takeSearchIntent());
+  const [initialIntent] = useState(() => peekSearchIntent());
+  // Consume it AFTER mount: a consuming read in the initializer loses the intent under
+  // StrictMode's double invocation (see peekSearchIntent).
+  useEffect(() => {
+    clearSearchIntent(initialIntent);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initialIntent is mount-stable
+  }, []);
 
   const {
     currentBridge,
@@ -299,7 +312,8 @@ export default function SearchScreen() {
 
   const goBack = () => {
     hapticImpactLight();
-    router.back();
+    if (embedded) embedded.onBack();
+    else router.back();
   };
 
   // Empty-state body shown when the grid has no items: a retry on error, a first-load skeleton, or
@@ -348,16 +362,22 @@ export default function SearchScreen() {
           frost only ever carries content, never chrome. */}
       <BarSurface style={[styles.topBar, topBarShadowStyle]}>
         <View style={[styles.topBarRow, { height: barHeight }]}>
-          <Pressable
-            testID="search.back"
-            onPress={goBack}
-            hitSlop={12}
-            android_ripple={{ color: theme.backgroundSelected, borderless: true }}
-            accessibilityRole="button"
-            accessibilityLabel="Go back"
-            style={styles.backButton}>
-            <ChevronLeftIcon color={theme.text} />
-          </Pressable>
+          {embedded ? (
+            // The series-reader layer hosts the statically-stuck chevron (shared with the series
+            // bars beneath) — this spacer only holds the slot open.
+            <View style={styles.backButton} />
+          ) : (
+            <Pressable
+              testID="search.back"
+              onPress={goBack}
+              hitSlop={12}
+              android_ripple={{ color: theme.backgroundSelected, borderless: true }}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+              style={styles.backButton}>
+              <ChevronLeftIcon color={theme.text} />
+            </Pressable>
+          )}
           <View style={styles.searchWrap}>
             <SearchField
               testID="search.field"

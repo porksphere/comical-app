@@ -40,8 +40,10 @@ export function useSeriesReaderPage(): boolean {
   );
 }
 
-/** The sub-pages a series page (or its reader) can push. */
-type SeriesSubPath = '/search' | '/series-downloads' | '/downloads';
+/** The sub-pages a series page (or its reader) can push. (Tag/author/type SEARCH is not one of
+ *  them anymore — inside the series-reader it opens as an in-screen layer, see
+ *  useOpenSearchLayer.) */
+type SeriesSubPath = '/series-downloads' | '/downloads';
 
 /**
  * EXPERIMENTAL series-reader companion: `/series-reader` is a contained transparent modal, and
@@ -86,6 +88,34 @@ export function registerDrillSeries(fn: (params: Record<string, string>) => void
   return () => {
     if (drillSeriesHandler === fn) drillSeriesHandler = null;
   };
+}
+
+/** Same hand-off for the SEARCH layer (tag/author/type intents — see SearchLayer in
+ *  app/series-reader/index.tsx). */
+let openSearchLayerHandler: (() => void) | null = null;
+export function registerOpenSearchLayer(fn: () => void): () => void {
+  openSearchLayerHandler = fn;
+  return () => {
+    if (openSearchLayerHandler === fn) openSearchLayerHandler = null;
+  };
+}
+
+/**
+ * Tag/author/type search, for the series details: null outside the series-reader stack (callers
+ * fall back to pushing /search), otherwise a function that opens the search as an in-screen
+ * LAYER over the series — sliding in with the statically-stuck shared chevron, the parent live
+ * beneath, and its result cards drilling further layers. The caller stashes the search intent
+ * first (setSearchIntent), exactly like the route path. Remove with the experiment.
+ */
+export function useOpenSearchLayer(): (() => void) | null {
+  const inStack = useContext(InSeriesReaderStack);
+  return useMemo(() => {
+    if (!inStack) return null;
+    return () => {
+      if (!claimNavigation(navTargetKey('/series-reader#search'))) return;
+      openSearchLayerHandler?.();
+    };
+  }, [inStack]);
 }
 
 /**

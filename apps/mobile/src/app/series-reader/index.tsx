@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image, type ImageLoadEventData } from 'expo-image';
 import { useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import {
   BackHandler,
   Platform,
@@ -62,7 +62,8 @@ import { firstChapterInReadingOrder, getAdjacentChapter } from '@/lib/chapter-or
 import { useRouter } from '@/lib/nav';
 import { getPreferredGroup, resetPreferredGroup, setPreferredGroup } from '@/lib/preferred-group';
 
-import { registerDrillSeries } from '@/lib/experimental-flags';
+import { registerDrillSeries, registerOpenSearchLayer } from '@/lib/experimental-flags';
+import SearchScreen from '../search';
 import { SeriesBody, truncateTopBarTitle } from '../series';
 
 // EXPERIMENTAL series reader page (Settings → General → Experimental). A series opened from a card
@@ -94,11 +95,12 @@ import { SeriesBody, truncateTopBarTitle } from '../series';
 // are up the reader is in STANDBY — only the single visible strip page is requested.
 //
 // Removal list for the whole experiment: this `app/series-reader/` DIRECTORY (this file, the
-// nested-stack `_layout.tsx`, and the search/series-downloads/downloads twin routes) +
+// nested-stack `_layout.tsx`, and the series-downloads/downloads twin routes) +
 // `lib/experimental-flags.ts` (the flag, `useSeriesSubPath` — unwrap its call sites in
 // `series.tsx`, `series/download-button.tsx`, `reader/settings-panel.tsx`, `downloads.tsx` back
-// to the plain paths — and `InSeriesReaderStack`/`useDrillRelatedSeries` with the drill branch
-// in `series-card.tsx`), the Settings row in `settings-general.tsx`, the `buildHref` target switch
+// to the plain paths — `InSeriesReaderStack`/`useDrillRelatedSeries` with the drill branch in
+// `series-card.tsx`, and `useOpenSearchLayer` with its branch in `series.tsx` + the `embedded`
+// prop on `search.tsx`), the Settings row in `settings-general.tsx`, the `buildHref` target switch
 // in `series-card.tsx`, this route's Stack.Screen entry in `_layout.tsx`, the default-preserving
 // embedding props on `series.tsx`'s SeriesBody (`topInset`/`onStartReading`/`onOpenChapter`/
 // `onOpenPage` + `truncateTopBarTitle` export) and `chapters-section.tsx`'s
@@ -1355,30 +1357,162 @@ function SeriesReaderInstance({
  * on the search/downloads sub-pages, see useDrillRelatedSeries). Only the topmost instance takes
  * touches; the ones beneath stay live purely as the see-through under its gestures.
  */
+type DrillEntry = { key: number } & ({ kind: 'series'; params: SeriesReaderParams } | { kind: 'search' });
+
+// memo: pushing/popping a layer re-renders the wrapper below — without this, every mounted
+// instance (each a whole series page) re-renders along with it for nothing.
+const MemoSeriesReaderInstance = memo(SeriesReaderInstance);
+
 export default function SeriesReaderScreen() {
   const params = useLocalSearchParams<SeriesReaderParams>();
-  const [drills, setDrills] = useState<{ key: number; params: SeriesReaderParams }[]>([]);
+  const [drills, setDrills] = useState<DrillEntry[]>([]);
   const nextKey = useRef(1);
   const drill = useCallback((p: Record<string, string>) => {
-    setDrills((d) => [...d, { key: nextKey.current++, params: p as SeriesReaderParams }]);
+    setDrills((d) => [...d, { key: nextKey.current++, kind: 'series', params: p as SeriesReaderParams }]);
+  }, []);
+  const openSearch = useCallback(() => {
+    setDrills((d) => [...d, { key: nextKey.current++, kind: 'search' }]);
   }, []);
   const popLayer = useCallback(() => {
     setDrills((d) => d.slice(0, -1));
   }, []);
   useEffect(() => registerDrillSeries(drill), [drill]);
+  useEffect(() => registerOpenSearchLayer(openSearch), [openSearch]);
   return (
     <View style={styles.container}>
       <View style={styles.container} pointerEvents={drills.length === 0 ? 'auto' : 'none'}>
-        <SeriesReaderInstance params={params} depth={0} onPopLayer={popLayer} />
+        <MemoSeriesReaderInstance params={params} depth={0} onPopLayer={popLayer} />
       </View>
       {drills.map((d, i) => (
         <View
           key={d.key}
           style={StyleSheet.absoluteFill}
           pointerEvents={i === drills.length - 1 ? 'auto' : 'none'}>
-          <SeriesReaderInstance params={d.params} depth={i + 1} onPopLayer={popLayer} />
+          {d.kind === 'series' ? (
+            <MemoSeriesReaderInstance params={d.params} depth={i + 1} onPopLayer={popLayer} />
+          ) : (
+            <SearchLayer onPopLayer={popLayer} />
+          )}
         </View>
       ))}
+    </View>
+  );
+}
+
+/**
+ * The tag/author/type search as a LAYER over the series instances — the same mechanics as a
+ * drilled series (slide-in riding edgeX, the edge back-swipe rig, Android hardware back), with
+ * the search screen embedded (its back button becomes a spacer) and the shared chevron rendered
+ * statically stuck above the slide, fading on edgeX — in the exact spot the series bars beneath
+ * keep theirs, so the chevron never moves through the navigation. The search's result cards
+ * drill further series layers on top (useDrillRelatedSeries works unchanged inside).
+ */
+function SearchLayer({ onPopLayer }: { onPopLayer: () => void }) {
+  const theme = useTheme();
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const topBarHeight = useTopBarHeight();
+  const edgeX = useSharedValue(width);
+  const edgeStartX = useSharedValue(0);
+  const edgeStartY = useSharedValue(0);
+  const edgeActiveSV = useSharedValue(false);
+  const edgeCommitting = useSharedValue(false);
+  useEffect(() => {
+    edgeX.set(withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    // Mount-only entrance — edgeX is stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const closeLayer = useCallback(() => {
+    edgeCommitting.set(true);
+    edgeX.set(
+      withTiming(width, { duration: 220, easing: Easing.in(Easing.cubic) }, (finished) => {
+        if (finished) runOnJS(onPopLayer)();
+      }),
+    );
+  }, [edgeX, edgeCommitting, width, onPopLayer]);
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      closeLayer();
+      return true;
+    });
+    return () => sub.remove();
+  }, [closeLayer]);
+  // The edge back-swipe — the instance rig's recipe, minus the details/reader mode gating.
+  const edgePan = useMemo(() => {
+    return Gesture.Pan()
+      .manualActivation(true)
+      .onTouchesDown((e) => {
+        const t = e.allTouches[0]!;
+        edgeStartX.set(t.x);
+        edgeStartY.set(t.y);
+        edgeCommitting.set(false);
+      })
+      .onTouchesMove((e, mgr) => {
+        if (edgeActiveSV.value) return;
+        if (edgeStartX.get() > EDGE_BACK_PX) {
+          mgr.fail();
+          return;
+        }
+        const t = e.allTouches[0]!;
+        const dx = t.x - edgeStartX.get();
+        const dy = t.y - edgeStartY.get();
+        if (Math.abs(dy) > 16 && Math.abs(dy) > dx) {
+          mgr.fail();
+          return;
+        }
+        if (dx > 16) mgr.activate();
+      })
+      .onUpdate((e) => {
+        edgeActiveSV.set(true);
+        edgeX.set(Math.max(0, e.translationX));
+      })
+      .onEnd((e) => {
+        if (edgeX.value > width * 0.3 || e.velocityX > FLICK_VELOCITY) {
+          edgeCommitting.set(true);
+          edgeX.set(
+            withTiming(width, { duration: EXIT_MS }, (finished) => {
+              if (finished) runOnJS(onPopLayer)();
+            }),
+          );
+        } else {
+          edgeX.set(withSpring(0, SPRING_BACK));
+        }
+      })
+      .onFinalize(() => {
+        edgeActiveSV.set(false);
+        if (!edgeCommitting.value) edgeX.set(withSpring(0, SPRING_BACK));
+      });
+  }, [width, edgeX, edgeStartX, edgeStartY, edgeActiveSV, edgeCommitting, onPopLayer]);
+  const slideStyle = useAnimatedStyle(() => ({ transform: [{ translateX: edgeX.value }] }));
+  const barFadeStyle = useAnimatedStyle(
+    () => ({ opacity: 1 - Math.min(1, Math.max(0, edgeX.value / width)) }),
+    [width],
+  );
+  const embedded = useMemo(() => ({ onBack: closeLayer }), [closeLayer]);
+  return (
+    <View style={styles.container}>
+      <GestureDetector gesture={edgePan}>
+        <Animated.View style={[styles.screenSlide, slideStyle]}>
+          <SearchScreen embedded={embedded} />
+        </Animated.View>
+      </GestureDetector>
+      {/* The statically-stuck shared chevron over the sliding content (the search bar's own back
+          is a spacer in embedded mode) — same spot and color as the series details chevron
+          beneath, fading on edgeX like a drilled layer's bar. */}
+      <Animated.View pointerEvents="box-none" style={[styles.layerBarWrap, barFadeStyle]}>
+        <View style={[styles.headerBackWrap, { top: insets.top, height: topBarHeight }]}>
+          <Pressable
+            testID="series-reader.search-back"
+            onPress={closeLayer}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+            style={styles.headerBackBtn}>
+            <ChevronLeftIcon color={theme.text} />
+          </Pressable>
+        </View>
+      </Animated.View>
     </View>
   );
 }
