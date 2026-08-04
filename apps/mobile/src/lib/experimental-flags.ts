@@ -1,6 +1,7 @@
-import { usePathname } from 'expo-router';
-import { createContext, useCallback, useSyncExternalStore } from 'react';
+import { useNavigation, usePathname } from 'expo-router';
+import { createContext, useCallback, useContext, useMemo, useSyncExternalStore } from 'react';
 
+import { claimNavigation, navTargetKey } from '@/lib/nav-guard';
 import { persisted$ } from '@/lib/observable';
 
 /**
@@ -72,3 +73,25 @@ export function useSeriesSubPath(): (path: SeriesSubPath) => SeriesSubPath | `/s
  * and replayed the parent series' enter animation after it. Remove with the experiment.
  */
 export const InSeriesReaderStack = createContext(false);
+
+/**
+ * The drill itself, for series cards: null outside the series-reader stack (callers fall back to
+ * their normal `router.push`), otherwise a function that pushes the `related` twin (the same
+ * combined page as an ordinary card) INSIDE the nested stack. Deliberately a raw PUSH action
+ * dispatched on the nearest navigator — the nested stack — rather than `router.push` with the
+ * absolute path: expo-router resolves an absolute push at the ROOT, minting a whole new
+ * /series-reader modal whose nested state holds only `related` (the two-stacked-modals bug
+ * again, with the parent screen gone from under it). Shares the nav-guard claim so a double tap
+ * still can't fire twice. Remove with the experiment.
+ */
+export function useDrillRelatedSeries(): ((params: Record<string, string>) => void) | null {
+  const inStack = useContext(InSeriesReaderStack);
+  const navigation = useNavigation();
+  return useMemo(() => {
+    if (!inStack) return null;
+    return (params: Record<string, string>) => {
+      if (!claimNavigation(navTargetKey({ pathname: '/series-reader/related', params }))) return;
+      navigation.dispatch({ type: 'PUSH', payload: { name: 'related', params } });
+    };
+  }, [inStack, navigation]);
+}

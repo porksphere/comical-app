@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { Easing, type AnimatedStyle, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
@@ -14,7 +14,7 @@ import { useIsCompact } from '@/hooks/use-responsive';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
-import { InSeriesReaderStack, useSeriesReaderPage } from '@/lib/experimental-flags';
+import { useDrillRelatedSeries, useSeriesReaderPage } from '@/lib/experimental-flags';
 import { Link, router } from '@/lib/nav';
 import { useLightCards } from '@/lib/perf-flags';
 import { testId } from '@/lib/test-id';
@@ -273,9 +273,9 @@ export function SeriesCard({
   const seriesReaderPage = useSeriesReaderPage();
   // Inside the series-reader's OWN stack (related rails, its nested search results), the card
   // drills the series in as an ordinary pushed card instead of stacking a second transparent
-  // modal — see InSeriesReaderStack. A context read, not usePathname: its value never changes,
-  // so cards don't re-render on every navigation.
-  const inSeriesReaderStack = useContext(InSeriesReaderStack);
+  // modal — see useDrillRelatedSeries. Context + navigation reads only — cards don't re-render
+  // on every navigation the way a pathname hook would make them.
+  const drillRelated = useDrillRelatedSeries();
   const [loaded, setLoaded] = useState(() => resolvedCoverIds.has(entry.id));
   const [truncated, setTruncated] = useState(false);
   // True while masking a scope swap (see the recycle-safety block): the shared `Skeleton` is only
@@ -621,37 +621,35 @@ export function SeriesCard({
         // related/recommended series from within a series-detail screen replaced the current screen
         // instead of drilling in. Also correct from Browse/Library/History (no `/series` on the stack
         // yet there, so equivalent to a plain push).
+        const buildParams = () => ({
+          id: entry.id,
+          title: entry.title,
+          // Percent-encoded: expo-router's web href resolution breaks when a route param value
+          // contains literal parentheses (real bridge display names commonly do, e.g.
+          // "Illustration Gallery (Demo)"). `encodeURIComponent` alone doesn't touch '(' ')' —
+          // they're in its unreserved set — so escape them explicitly. Decoded back in series.tsx
+          // with a single `decodeURIComponent` (which handles %28/%29 like any percent-escape).
+          ...(bridge
+            ? { bridge: encodeURIComponent(bridge).replace(/\(/g, '%28').replace(/\)/g, '%29') }
+            : {}),
+          // Forward the cover the browse grid already has so the series screen can paint it
+          // instantly from expo-image's cache (see series.tsx skeleton), rather than shimmering
+          // until the full detail query resolves. Same paren escaping — cover URLs may contain '()'.
+          ...(entry.cover
+            ? { cover: encodeURIComponent(entry.cover).replace(/\(/g, '%28').replace(/\)/g, '%29') }
+            : {}),
+          ...(bridgeId ? { bridgeId } : {}),
+          ...(direct ? { direct: '1' } : {}),
+        });
         const buildHref = () => ({
           // EXPERIMENTAL: with the "Series reader page" toggle on, a series opens reader-first
-          // (`/series-reader`, which takes the same params) instead of on the detail screen —
-          // and from WITHIN that page's stack, as its drilled-in card twin (see related.tsx).
+          // (`/series-reader`, which takes the same params) instead of on the detail screen.
           // Remove this ternary (keeping '/series') with the experiment.
-          pathname: seriesReaderPage
-            ? inSeriesReaderStack
-              ? ('/series-reader/related' as const)
-              : ('/series-reader' as const)
-            : ('/series' as const),
-          params: {
-            id: entry.id,
-            title: entry.title,
-            // Percent-encoded: expo-router's web href resolution breaks when a route param value
-            // contains literal parentheses (real bridge display names commonly do, e.g.
-            // "Illustration Gallery (Demo)"). `encodeURIComponent` alone doesn't touch '(' ')' —
-            // they're in its unreserved set — so escape them explicitly. Decoded back in series.tsx
-            // with a single `decodeURIComponent` (which handles %28/%29 like any percent-escape).
-            ...(bridge
-              ? { bridge: encodeURIComponent(bridge).replace(/\(/g, '%28').replace(/\)/g, '%29') }
-              : {}),
-            // Forward the cover the browse grid already has so the series screen can paint it
-            // instantly from expo-image's cache (see series.tsx skeleton), rather than shimmering
-            // until the full detail query resolves. Same paren escaping — cover URLs may contain '()'.
-            ...(entry.cover
-              ? { cover: encodeURIComponent(entry.cover).replace(/\(/g, '%28').replace(/\)/g, '%29') }
-              : {}),
-            ...(bridgeId ? { bridgeId } : {}),
-            ...(direct ? { direct: '1' } : {}),
-          },
+          pathname: seriesReaderPage ? ('/series-reader' as const) : ('/series' as const),
+          params: buildParams(),
         });
+        // The drill (inside the series-reader stack) dispatches on the NESTED navigator — no href.
+        const open = () => (drillRelated ? drillRelated(buildParams()) : router.push(buildHref()));
         const pressable = (
           <Pressable
             testID={testId('series-card', entry.id)}
@@ -669,7 +667,9 @@ export function SeriesCard({
             // open-in-new-tab / a crawlable href); on native we navigate imperatively so each card
             // doesn't mount an expo-router <Link> — its per-render router hooks were a top scroll cost
             // (createTask/ExpoLink), and native has no anchor semantics to preserve anyway.
-            onPress={isWeb ? undefined : () => router.push(buildHref())}
+            // A DRILL (inside the series-reader stack) is imperative on web too — it targets the
+            // nested navigator, which an anchor href can't express (see useDrillRelatedSeries).
+            onPress={isWeb && !drillRelated ? undefined : open}
             // Native long-press opens the shared quick-actions menu; undefined on web (which uses the
             // hover 3-dot instead). A long-press suppresses the tap, so it never also navigates.
             onLongPress={onLongPress}
@@ -683,9 +683,10 @@ export function SeriesCard({
             )}
           </Pressable>
         );
-        // Web keeps the real anchor (asChild clones it onto the Pressable); native renders the
-        // Pressable directly and pushes imperatively on press.
-        return isWeb ? (
+        // Web keeps the real anchor (asChild clones it onto the Pressable); native — and a drill,
+        // whose nested-navigator target no anchor href can express — renders the Pressable
+        // directly and navigates imperatively on press.
+        return isWeb && !drillRelated ? (
           // eslint-disable-next-line comical/require-test-id -- asChild: clones onto the Pressable, which carries the testID.
           <Link push href={buildHref()} asChild>
             {pressable}

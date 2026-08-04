@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image, type ImageLoadEventData } from 'expo-image';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useNavigation } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import {
@@ -551,6 +551,19 @@ export default function SeriesReaderScreen({ drilled = false }: { drilled?: bool
     if (router.canGoBack()) router.back();
     else router.replace('/');
   }, [router]);
+  // The SwipeDismiss commit's pop. On the modal root it's `goBack` unchanged: the route is
+  // transparent, so the page flew out over the LIVE screen beneath and the pop is invisible. A
+  // DRILLED instance is an opaque nested card — the parent series' view is detached beneath it
+  // (UINavigationController behavior), so the page flies out over this card's own backdrop
+  // instead; the pop must then be a CUT to the parent, not the native slide (which read as a
+  // second, unrelated animation after the gesture). The slide stays for the chevron/edge pops.
+  const navigation = useNavigation();
+  const goBackFromDismiss = useCallback(() => {
+    // Native only: expo-router's web navigator chokes on the animation option mid-pop (the pop
+    // silently never happens), and web has no pop animation to suppress in the first place.
+    if (drilled && !IS_WEB) navigation.setOptions({ animation: 'none' });
+    goBack();
+  }, [drilled, navigation, goBack]);
 
   // Collapse/dismiss pan — wraps the expanded reader, on the cross axis of its scroll: the
   // collapse direction (up in paged, right in webtoon) slides the details back in; the opposite
@@ -636,7 +649,7 @@ export default function SeriesReaderScreen({ drilled = false }: { drilled?: bool
           dismissX.set(withTiming(dismissX.value + dirX * exit, { duration: EXIT_MS }));
           dismissY.set(
             withTiming(dismissY.value + dirY * exit, { duration: EXIT_MS }, (finished) => {
-              if (finished) runOnJS(goBack)();
+              if (finished) runOnJS(goBackFromDismiss)();
             }),
           );
         })
@@ -649,7 +662,7 @@ export default function SeriesReaderScreen({ drilled = false }: { drilled?: bool
       else pan.activeOffsetX([-20, 20]).failOffsetY([-15, 15]);
       return pan;
     }
-  }, [settings.mode, collapseEnabled, width, height, headerSpan, gestureMode, progressStartSV, progress, dismissX, dismissY, dismissing, detailsActiveSV, commitReveal, goBack]);
+  }, [settings.mode, collapseEnabled, width, height, headerSpan, gestureMode, progressStartSV, progress, dismissX, dismissY, dismissing, detailsActiveSV, commitReveal, goBackFromDismiss]);
 
   // Band pan. The strip (the reader band at the top of the details page) expands the reader the
   // same way the page's own overscroll does: a tap, or a DOWNWARD drag that slides the whole
