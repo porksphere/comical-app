@@ -20,17 +20,30 @@ import { makeMutable, useAnimatedStyle } from 'react-native-reanimated';
  * layers sit inside the same modal, over each other, never over the tabs) and resets it on
  * unmount, so nothing can strand the backdrop dimmed.
  *
- * DIM ONLY — the parallax that used to live here is gone. The page now grows out of the card it
- * was opened from instead of sliding in from the edge, so it isn't going anywhere sideways, and
- * shoving the grid left under something expanding in place read as a second, contradictory motion.
+ * The treatment is the one react-native-screen-transitions' navigation zoom gives the screen it
+ * opens over — a small scale-down plus a dim, NOT the sideways parallax a push gets. The page
+ * expands in place out of one of this screen's own cards, so moving the grid laterally under it
+ * read as a second, contradictory motion.
  *
  * Remove with the experiment: this file, its writer, and the wrapper in `components/app-tabs.tsx`.
  */
 export const seriesReaderDim = makeMutable(0);
 
-/** Peak dim at full cover — the depth cue. Deliberately subtle: the page on top is already opaque,
- *  so this only has to keep the backdrop from looking like it's at the same elevation. */
+/** Peak dim at full cover. The library's own `ZOOM_BACKDROP_MAX_OPACITY` is 0.45, but that is a
+ *  backdrop BETWEEN two opaque screens; here it lands on the tab bar and the grid, which stay
+ *  partly visible through the transparent modal for the first quarter of the travel — so it is
+ *  kept subtle enough not to read as the lights going out. */
 export const BACKDROP_DIM_MAX = 0.14;
+/** `ZOOM_BACKGROUND_SCALE` — how far the screen underneath shrinks at full cover. */
+const BACKDROP_SCALE_MIN = 0.9375;
+
+/** The backdrop's scale-down. Safe to mount anywhere — it rests at 1 whenever no series page is
+ *  open, and the shared value is reset on that page's unmount. */
+export function useSeriesReaderBackdropStyle() {
+  return useAnimatedStyle(() => ({
+    transform: [{ scale: 1 - (1 - BACKDROP_SCALE_MIN) * seriesReaderDim.value }],
+  }));
+}
 
 /** The dim, for an absolutely-positioned overlay over the backdrop. Safe to mount anywhere — it
  *  rests fully transparent whenever no series page is open, and is reset on that page's unmount. */
