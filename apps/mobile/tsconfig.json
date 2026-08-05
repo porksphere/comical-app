@@ -7,9 +7,6 @@
       "@/*": [
         "./src/*"
       ],
-      "react-native-screen-transitions": [
-        "../../node_modules/react-native-screen-transitions/lib/typescript/shared/index.d.ts"
-      ],
       "@/assets/*": [
         "./assets/*"
       ],
