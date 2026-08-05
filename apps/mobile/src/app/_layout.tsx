@@ -136,10 +136,16 @@ function RootNavigation() {
               its dismissal can fade the screen out over the browse grid it was opened from. The
               route is a DIRECTORY hosting its own nested stack — sub-pages (search, downloads)
               push as real cards inside the modal (see app/series-reader/_layout.tsx). Remove
-              with the experiment — see app/series-reader/index.tsx for the full removal list. */}
+              with the experiment — see app/series-reader/index.tsx for the full removal list.
+
+              `animation: 'none'` because the SCREEN animates itself: it mounts off-screen right
+              and slides home on its own `edgeX` — the very value the back-swipe drags — so
+              opening and closing are the same motion. A native modal can't do that: its
+              animation comes from UIModalTransitionStyle, which offers no horizontal push. Every
+              exit (swipe, chevron, hardware back) likewise animates before popping the route. */}
           <Stack.Screen
             name="series-reader"
-            options={{ headerShown: false, animation: 'fade', presentation: 'containedTransparentModal' }}
+            options={{ headerShown: false, animation: 'none', presentation: 'containedTransparentModal' }}
           />
           {/* These render their own <TopBar> (matching series.tsx), so the native
               stack header is hidden here too. The Settings tab is only a table of

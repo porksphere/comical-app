@@ -832,41 +832,47 @@ function SeriesReaderInstance({
   // platform's full-screen pop — see the criteria on the pan) slides the WHOLE instance off
   // under the finger — over the browse grid (modal root) or the LIVE parent series (a drilled
   // layer, a plain sibling view) — and pops on a deep release or flick. Raced with the reveal
-  // pan on the same layer. `edgeX` doubles as the drilled layer's slide-in/out position: it
-  // mounts at `width` and animates home (below).
-  const edgeX = useSharedValue(depth > 0 ? width : 0);
+  // pan on the same layer. `edgeX` doubles as the SLIDE-IN/OUT position for the whole instance:
+  // it mounts off-screen right and animates home (below) — for a drilled layer AND for the modal
+  // root, whose route sets `animation: 'none'` precisely so this owns the entrance. That's what
+  // makes opening symmetric with the back-swipe that closes it; iOS can't do it natively, since
+  // a modal presentation's animation comes from UIModalTransitionStyle, which has no horizontal
+  // push (only coverVertical / crossDissolve / flip).
+  const edgeX = useSharedValue(width);
   const edgeCommitting = useSharedValue(false);
   useEffect(() => {
-    if (depth === 0) return;
     edgeX.set(withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
-    // Mount-only entrance — edgeX is stable; the drilled instance never changes depth.
+    // Mount-only entrance — edgeX is stable; an instance never changes depth.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // The chevron / hardware-back exit for a drilled layer: slide back out, then remove.
+  // The chevron / hardware-back exit, for a drilled layer AND the modal root: slide out the way
+  // the back-swipe does, then leave (leaveNow pops the layer, or the route when depth 0). The
+  // route's `animation: 'none'` means this IS the exit animation — without it a tapped back
+  // would just blink the screen away.
   const closeLayer = useCallback(() => {
     edgeCommitting.set(true);
     edgeX.set(
       withTiming(width, { duration: 220, easing: Easing.in(Easing.cubic) }, (finished) => {
-        if (finished) runOnJS(onPopLayer)();
+        if (finished) runOnJS(leaveNow)();
       }),
     );
-  }, [edgeX, edgeCommitting, width, onPopLayer]);
+  }, [edgeX, edgeCommitting, width, leaveNow]);
 
-  // Android hardware back steps back HOME (the details) before popping: reader expanded → back
-  // collapses it; a drilled layer with its details up slides back out to its parent series.
+  // Android hardware back steps back HOME (the details) before leaving: reader expanded → back
+  // collapses it; details up → the instance slides out (a drilled layer back to its parent
+  // series, the root back to whatever it was opened over).
   // Layer handlers register after their parent's (mounted later), so BackHandler's LIFO order
   // naturally gives the topmost instance the event. (Android-only API — react-native-web's
   // BackHandler stub rejects addEventListener.)
   useEffect(() => {
     if (Platform.OS !== 'android') return;
-    if (detailsActive && depth === 0) return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       if (!detailsActive) setRevealed(1);
       else closeLayer();
       return true;
     });
     return () => sub.remove();
-  }, [detailsActive, depth, setRevealed, closeLayer]);
+  }, [detailsActive, setRevealed, closeLayer]);
   // ONE back-swipe recipe, built twice. NATIVE activation criteria, no manual touch
   // choreography: activeOffset/failOffset decide activation inside RNGH's native core, and it's
   // FULL-SURFACE, not edge-only — a decisive rightward drag anywhere on the details goes back,
@@ -1234,7 +1240,7 @@ function SeriesReaderInstance({
                 testID="series-reader.header-back"
                 // A drilled layer's chevron slides it back out to the parent series; the modal
                 // root's pops the route.
-                onPress={depth > 0 ? closeLayer : goBack}
+                onPress={closeLayer}
                 hitSlop={12}
                 accessibilityRole="button"
                 accessibilityLabel="Go back"
