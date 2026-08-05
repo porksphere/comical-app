@@ -19,7 +19,7 @@ import { DesktopTopBarHeight, MaxTopLevelWidth, Spacing } from '@/constants/them
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
-import { useSeriesReaderBackdropDimStyle, useSeriesReaderBackdropStyle } from '@/lib/series-reader-backdrop';
+import { useSeriesReaderBackdropDimStyle } from '@/lib/series-reader-backdrop';
 import { notifyScrollActivity, subscribeScrollPhase } from '@/lib/scroll-release';
 import { COMMIT_DISTANCE, SETTLE_MS } from '@/lib/slide-step';
 import {
@@ -267,18 +267,17 @@ export default function AppTabs() {
     [isMobile, reveal],
   );
 
-  // See the wrapper below — both rest at identity/transparent unless the series page is open.
-  const seriesReaderBackdropStyle = useSeriesReaderBackdropStyle();
+  // See the wrapper below — rests fully transparent unless the series page is open.
   const seriesReaderBackdropDim = useSeriesReaderBackdropDimStyle();
 
   return (
     // EXPERIMENTAL series-reader companion: the tabs are what that page usually opens OVER, and a
-    // transparent modal can't make its backdrop parallax the way a native push does — so the page
+    // transparent modal can't dim its backdrop the way a native presentation does — so the page
     // drives it from here instead (see lib/series-reader-backdrop.ts). The wrapper sits OUTSIDE
     // `Tabs` on purpose: `Tabs` walks its own children to discover triggers, so nothing may come
-    // between it and them. At rest the transform is identity and the dim is fully transparent, so
-    // with the experiment off this is an inert extra view. Remove with the experiment.
-    <Animated.View style={[styles.tabs, seriesReaderBackdropStyle]}>
+    // between it and them. At rest the dim is fully transparent, so with the experiment off this
+    // is an inert extra view. Remove with the experiment.
+    <View style={styles.tabs}>
       <Tabs style={styles.tabs}>
         <TabSlot style={styles.slot} />
 
@@ -334,10 +333,9 @@ export default function AppTabs() {
         </TabList>
       )}
       </Tabs>
-      {/* The dim that rides with the parallax — inert (opacity 0) whenever no series page is
-          open, and never interactive. */}
+      {/* The dim under an open series page — inert (opacity 0) whenever none is, never interactive. */}
       <Animated.View pointerEvents="none" style={[styles.backdropDim, seriesReaderBackdropDim]} />
-    </Animated.View>
+    </View>
   );
 }
 

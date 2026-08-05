@@ -315,18 +315,24 @@ export function SeriesCard({
   // non-scaling held scrim on the cover — see the ring/peek/scrim below.
   const isWeb = Platform.OS === 'web';
 
-  // EXPERIMENTAL (series-reader page): the card's own on-screen box, handed to `/series-reader` so
-  // it can grow out of this card instead of sliding in from the edge — see lib/series-zoom. Taken
-  // on press-IN, not press: `measureInWindow` answers asynchronously, so measuring at press would
-  // put a native round trip in front of the navigation. Not on web (no zoom entrance there), and
-  // not for a drill (a drilled series is an in-tree layer over its parent, not an open over a grid).
-  const cardRef = useRef<ViewType>(null);
+  // EXPERIMENTAL (series-reader page): this card's COVER box, in window coordinates, handed to
+  // `/series-reader` so the page can grow out of it — see lib/series-zoom. The cover, not the whole
+  // card: the page's arriving frame is matched to this rect exactly, and matching the card
+  // (cover + title + sub) would have it overlap the title text and crop the cover differently than
+  // the card does. Measured off the box itself rather than derived from `coverAspect`, so it's
+  // right no matter which aspect the card happens to be showing at press time.
+  //
+  // Taken on press-IN, not press: `measureInWindow` answers asynchronously, so measuring at press
+  // would put a native round trip in front of the navigation. A drill (a related-rail card inside
+  // the series page) captures too — those layers zoom exactly like a top-level open. Web has no
+  // zoom entrance, so it doesn't measure at all.
+  const coverRef = useRef<ViewType>(null);
   const captureZoomOrigin = useCallback(() => {
-    if (isWeb || !seriesReaderPage || drillRelated) return;
-    cardRef.current?.measureInWindow((x, y, w, h) => {
+    if (isWeb || !seriesReaderPage) return;
+    coverRef.current?.measureInWindow((x, y, w, h) => {
       if (w > 0 && h > 0) setZoomOrigin(entry.id, { x, y, width: w, height: h });
     });
-  }, [isWeb, seriesReaderPage, drillRelated, entry.id]);
+  }, [isWeb, seriesReaderPage, entry.id]);
 
   // The quick-actions menu is only offered when there's a real bridge to act against (`bridgeId` —
   // absent in mock mode). Its status queries no longer touch the card at all: they run inside the
@@ -598,6 +604,8 @@ export function SeriesCard({
           // `coverHidden` blanks just the cover while THIS card's long-press menu is open (its lifted
           // preview is a copy) — the title below stays visible under the dim.
           <View
+            // The zoom entrance's source rect is measured off THIS box — see captureZoomOrigin.
+            ref={coverRef}
             style={[styles.coverBoxClip, { aspectRatio: coverAspect }, coverHidden && styles.coverHidden]}
             onLayout={shrink.onCoverLayout}>
             {coverContents}
@@ -666,9 +674,6 @@ export function SeriesCard({
         const open = () => (drillRelated ? drillRelated(buildParams()) : router.push(buildHref()));
         const pressable = (
           <Pressable
-            // Native only: the web branch below hands this element to <Link asChild>, whose Slot
-            // owns the clone (and web has no zoom entrance to measure for anyway).
-            ref={isWeb ? undefined : cardRef}
             testID={testId('series-card', entry.id)}
             // Flat single style object: as the `asChild` of <Link> (web), the Pressable is cloned by
             // expo-router's <Slot>, which rejects array styles.
