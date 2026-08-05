@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Image, type ImageLoadEventData } from 'expo-image';
 import { useLocalSearchParams } from 'expo-router';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Platform,
   Pressable,
@@ -69,13 +69,38 @@ function clampHeroAspect(ratio?: number | null): number {
  *  current aspect (no mount animation — the skeleton⇄body swap must not replay the resize) and
  *  eases to a new one over `ASPECT_TRANSITION_MS`, matching the cards' box-settle. The box clips
  *  and rounds; the child image/skeleton just fills it. */
-function SeriesCoverBox({ aspect, children }: { aspect: number; children: ReactNode }) {
+function SeriesCoverBox({
+  aspect,
+  children,
+  onRect,
+}: {
+  aspect: number;
+  children: ReactNode;
+  /** Reports this box's window rect on layout. Only the series-reader experiment passes it — it
+   *  is the destination bound its zoom transition aligns the tapped card to (see there). */
+  onRect?: (rect: { x: number; y: number; width: number; height: number }) => void;
+}) {
   const aspectSV = useSharedValue(aspect);
   useEffect(() => {
     aspectSV.set(withTiming(aspect, { duration: ASPECT_TRANSITION_MS }));
   }, [aspect, aspectSV]);
   const boxStyle = useAnimatedStyle(() => ({ aspectRatio: aspectSV.value }));
-  return <Animated.View style={[styles.coverBox, boxStyle]}>{children}</Animated.View>;
+  const boxRef = useRef<View>(null);
+  // `onRect` is a stable callback at its one call site, so depending on it directly (rather than
+  // latching it in a ref during render) costs nothing and keeps the ref rules happy.
+  const reportRect = useCallback(() => {
+    boxRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => {
+      if (w > 0 && h > 0) onRect?.({ x, y, width: w, height: h });
+    });
+  }, [onRect]);
+  return (
+    <Animated.View
+      ref={boxRef}
+      onLayout={onRect ? reportRect : undefined}
+      style={[styles.coverBox, boxStyle]}>
+      {children}
+    </Animated.View>
+  );
 }
 
 // Conservative cap on the top bar's "<Bridge> / <Title>" title portion — some
@@ -346,6 +371,7 @@ export function SeriesBody({
   wrapperStyle,
   scrollGesture,
   scrollEnabled,
+  onHeroCoverRect,
 }: {
   series: SeriesDetail;
   bridgeId?: string;
@@ -368,6 +394,9 @@ export function SeriesBody({
   /** The hero cover's live aspect + its measurer — owned by SeriesScreen (see there). */
   coverAspect: number;
   onCoverLoad: (e: ImageLoadEventData) => void;
+  /** Reports the hero cover's window rect on layout. Only the series-reader experiment passes it,
+   *  as the destination bound for its zoom transition; `/series` leaves it off and nothing measures. */
+  onHeroCoverRect?: (rect: { x: number; y: number; width: number; height: number }) => void;
   /** Top inset for the owning scroller — defaults to this screen's overlaying TopBar height.
    *  The series-reader embedding passes its own (its details card has no top bar). */
   topInset?: number;
@@ -504,7 +533,7 @@ export function SeriesBody({
       onPress={startReading}
       accessibilityRole="button"
       accessibilityLabel={primaryLabel}>
-      <SeriesCoverBox aspect={coverAspect}>
+      <SeriesCoverBox aspect={coverAspect} onRect={onHeroCoverRect}>
         {resolvedCover ? (
           <Image
             source={{ uri: resolvedCover }}

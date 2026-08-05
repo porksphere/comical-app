@@ -65,7 +65,7 @@ import { getPreferredGroup, resetPreferredGroup, setPreferredGroup } from '@/lib
 
 import { registerDrillSeries, registerOpenSearchLayer } from '@/lib/experimental-flags';
 import { seriesReaderDim } from '@/lib/series-reader-backdrop';
-import { takeZoomOrigin } from '@/lib/series-zoom';
+import { takeZoomOrigin, type ZoomOrigin } from '@/lib/series-zoom';
 import SearchScreen from '../search';
 import { SeriesBody, truncateTopBarTitle } from '../series';
 
@@ -186,6 +186,10 @@ const NO_ORIGIN_SCALE = 0.92;
 // Matches the card cover's own `borderRadius` (series-card.tsx `coverBoxClip`) — the radius the
 // mask starts at before easing out to a square full screen.
 const ZOOM_CORNER_RADIUS = 10;
+// How long the entrance will wait for the destination page to report its hero cover's rect before
+// giving up and using the computed fallback target. Invisible while it waits — the page is still
+// at opacity 0, so all that shows is the untouched grid.
+const ZOOM_BOUND_WAIT_MS = 220;
 // Wall-clock backstop for a collapse whose animation callback never arrives (see closeLayer).
 // Generous: the close spring is stiff but a spring has no fixed duration to key off.
 const ZOOM_OUT_BACKSTOP_MS = 900;
@@ -895,12 +899,44 @@ function SeriesReaderInstance({
   // The source rect this page aligns itself to. No image is needed — unlike a classic shared
   // element, nothing is copied or flown; the page is its own transition subject (see zoomMaskStyle).
   const hero = zoomOrigin;
+  // …and the DESTINATION BOUND: this page's own hero cover, measured. The library takes this from a
+  // `Transition.Boundary.View` in the destination screen and its whole zoom is built around the
+  // pairing — the destination's copy of the picture is what lands on the tapped card, which is why
+  // its demo reads as the thumbnail itself expanding. Aligning to anything else (the reader band,
+  // as the first cut of this port did) puts unrelated content in the card-shaped window and the
+  // connection to the thumbnail is lost.
   // 0 = the thumbnail is sitting on its card and the page is invisible, 1 = the page is up and
   // the thumbnail is gone.
   const zoom = useSharedValue(0);
-  useEffect(() => {
+  const [destBound, setDestBound] = useState<ZoomOrigin | null>(null);
+  // The entrance waits for that measurement — the library does the same, holding the pair until
+  // both ends have reported. Invisible here: the page is at opacity 0 until the spring starts, so
+  // a frame or two of waiting just shows the untouched grid. A deadline caps it, after which the
+  // transition falls back to the library's own no-destination behaviour (see zoomGeom).
+  const zoomStartedRef = useRef(false);
+  const startZoom = useCallback(() => {
+    if (zoomStartedRef.current) return;
+    zoomStartedRef.current = true;
     zoom.set(withSpring(1, ZOOM_IN_SPRING));
-    // Mount-only entrance — `zoom` is stable, and an instance never changes its origin.
+  }, [zoom]);
+  const onHeroCoverRect = useCallback((rect: ZoomOrigin) => {
+    // Only the FIRST report, and only before the geometry is committed: the cover box re-lays out
+    // as its aspect settles, and moving the destination mid-flight would visibly jump.
+    if (zoomStartedRef.current) return;
+    setDestBound((prev) => prev ?? rect);
+  }, []);
+  useEffect(() => {
+    if (destBound) startZoom();
+  }, [destBound, startZoom]);
+  useEffect(() => {
+    // No source rect at all (deep link, web): nothing to align to, so don't wait for anything.
+    if (!zoomOrigin) {
+      startZoom();
+      return;
+    }
+    const t = setTimeout(startZoom, ZOOM_BOUND_WAIT_MS);
+    return () => clearTimeout(t);
+    // Mount-only entrance — `zoomOrigin` never changes for an instance.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -1113,26 +1149,41 @@ function SeriesReaderInstance({
   // band), so it contains — which is exactly why the mask is not optional.
   const zoomGeom = useMemo(() => {
     if (!hero) return null;
-    // The destination bound: the band the reader strip occupies at the top of this page. The
-    // library takes this from a measured `Transition.Boundary.View`; ours is fixed by layout.
-    const end = { x: 0, y: 0, width, height: bandH };
+    // With a measured destination bound this is the library's `target: 'bound'` — align the two
+    // rects centre to centre. Without one it falls back to `getZoomContentTarget`'s computed
+    // target: a virtual destination that keeps ONE edge attached to the source, so a wide source
+    // fills the destination's width and follows its top edge while a narrow one fills the height
+    // and follows the leading edge. Anchors follow `getZoomContentAnchor` accordingly.
+    const sourceAspect = hero.width / hero.height;
+    const screenAspect = width / height;
+    const narrow = sourceAspect < screenAspect;
+    const end: ZoomOrigin = destBound
+      ? destBound
+      : narrow
+        ? { x: 0, y: 0, width: sourceAspect * height, height }
+        : { x: 0, y: 0, width, height: (hero.height / hero.width) * width };
+    const anchor: 'center' | 'top' | 'leading' = destBound ? 'center' : narrow ? 'leading' : 'top';
+
     const sx = hero.width / end.width;
     const sy = hero.height / end.height;
-    const aspectDifference = Math.abs(hero.width / hero.height - end.width / end.height);
+    const aspectDifference = Math.abs(sourceAspect - end.width / end.height);
     const s = aspectDifference < ZOOM_ASPECT_EPSILON ? Math.max(sx, sy) : Math.min(sx, sy);
-    // Anchor 'center' — what `target: 'bound'` selects.
-    const startAnchorX = hero.x + hero.width / 2;
-    const startAnchorY = hero.y + hero.height / 2;
-    const endAnchorX = end.x + end.width / 2;
-    const endAnchorY = end.y + end.height / 2;
+
+    // getAnchorPoint, for the three anchors this transition can pick.
+    const anchorOf = (b: ZoomOrigin) => ({
+      x: anchor === 'leading' ? b.x : b.x + b.width / 2,
+      y: anchor === 'top' ? b.y : b.y + b.height / 2,
+    });
+    const startAnchor = anchorOf(hero);
+    const endAnchor = anchorOf(end);
     const screenCenterX = width / 2;
     const screenCenterY = height / 2;
     return {
       s,
-      tx: startAnchorX - (screenCenterX + (endAnchorX - screenCenterX) * s),
-      ty: startAnchorY - (screenCenterY + (endAnchorY - screenCenterY) * s),
+      tx: startAnchor.x - (screenCenterX + (endAnchor.x - screenCenterX) * s),
+      ty: startAnchor.y - (screenCenterY + (endAnchor.y - screenCenterY) * s),
     };
-  }, [hero, width, height, bandH]);
+  }, [hero, destBound, width, height]);
 
   // THE MASK. Grows from the source rect to the whole screen, carrying the card's corner radius
   // out to 0. In the library this lives INSIDE the transformed content and undoes the content
@@ -1603,6 +1654,7 @@ function SeriesReaderInstance({
               onOpenPage={openPageFromDetails}
               scrollGesture={detailsScrollGesture}
               scrollEnabled={!swipeLocked}
+              onHeroCoverRect={onHeroCoverRect}
             />
           </Animated.View>
         </Animated.View>
@@ -1926,6 +1978,7 @@ function SeriesDetailsHost({
   onOpenPage,
   scrollGesture,
   scrollEnabled,
+  onHeroCoverRect,
 }: {
   bridgeId?: string;
   id?: string;
@@ -1943,6 +1996,8 @@ function SeriesDetailsHost({
   onStartReading: () => void;
   onOpenChapter: (version: Chapter) => void;
   onOpenPage: (pageIndex: number) => void;
+  /** Reports the details page's hero cover rect — the zoom's destination bound (see zoomGeom). */
+  onHeroCoverRect?: (rect: ZoomOrigin) => void;
   /** The instance's `detailsScrollGesture` — mounted on SeriesBody's scroller (see makeBackSwipePan). */
   scrollGesture?: ComposedGesture;
   /** False while a horizontal details gesture is active, so the list can't scroll under it. */
@@ -2020,6 +2075,7 @@ function SeriesDetailsHost({
       onScrollEndDrag={onScrollEndDrag}
       scrollGesture={scrollGesture}
       scrollEnabled={scrollEnabled}
+      onHeroCoverRect={onHeroCoverRect}
     />
   );
 }
