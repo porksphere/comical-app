@@ -24,6 +24,7 @@ import Animated, {
   useSharedValue,
   withSpring,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -63,6 +64,7 @@ import { useRouter } from '@/lib/nav';
 import { getPreferredGroup, resetPreferredGroup, setPreferredGroup } from '@/lib/preferred-group';
 
 import { registerDrillSeries, registerOpenSearchLayer } from '@/lib/experimental-flags';
+import { seriesReaderCover } from '@/lib/series-reader-backdrop';
 import SearchScreen from '../search';
 import { SeriesBody, truncateTopBarTitle } from '../series';
 
@@ -156,6 +158,9 @@ const HEADER_BAND = 200;
 const SHEET_FADE_H = 120;
 // The exiting details card's shadow on the reader it uncovers (horizontal reveal) — width, and
 // its darkest/clear stops. Kept as an 8-digit hex pair so both gradients read the same colour.
+// How far an item drifts left as the layer above it arrives, as a fraction of screen width —
+// matched to the backdrop's own parallax so a drill and an open read as the same gesture.
+const LAYER_PARALLAX_FRACTION = 0.25;
 const TRAILING_SHADOW_W = 28;
 const TRAILING_SHADOW = '#00000059';
 const TRAILING_SHADOW_CLEAR = '#00000000';
@@ -232,10 +237,18 @@ function SeriesReaderInstance({
   params,
   depth,
   onPopLayer,
+  coverSV,
+  isTop,
 }: {
   params: SeriesReaderParams;
   depth: number;
   onPopLayer: () => void;
+  /** Where a LAYER publishes how much it covers the instance beneath it — SeriesReaderScreen's
+   *  `layerCover`, which drives that instance's parallax. Unset for the modal root, which drives
+   *  the tabs behind the whole modal instead (see the reaction). */
+  coverSV?: SharedValue<number>;
+  /** Whether this is the topmost layer, i.e. the one actually moving. */
+  isTop?: boolean;
 }) {
   const ds = useDataSource();
   const router = useRouter();
@@ -1166,6 +1179,39 @@ function SeriesReaderInstance({
     return { opacity: interpolate(dist, [0, span], [1, 0], Extrapolation.CLAMP) };
   }, [span]);
 
+  // ── The BACKDROP's half of the push (see lib/series-reader-backdrop.ts) ──────────────────────
+  // How much of the screen this page currently covers, which is what the screen underneath
+  // parallaxes against. Both ways out have to count, or the backdrop would sit shoved aside while
+  // the page is visibly gone: the edge slide (edgeX) and the reader's swipe-away, which never
+  // touches edgeX and instead flings the page along its own vector — the same distance/span the
+  // backdrop fade above uses, so the two agree frame for frame.
+  // Depth 0 ONLY: a drilled layer's backdrop is its parent series, which is a sibling view inside
+  // this same modal and parallaxes in-tree (see SeriesReaderScreen) — the tabs are still behind
+  // the whole modal and must not move again for it.
+  useAnimatedReaction(
+    () => {
+      const slid = 1 - Math.min(1, Math.max(0, edgeX.value / width));
+      const flung = Math.min(1, Math.hypot(dismissX.value, dismissY.value) / span);
+      return slid * (1 - flung);
+    },
+    (cover) => {
+      // The modal ROOT drives the tabs behind the whole modal; a LAYER drives the sibling
+      // instance beneath it (SeriesReaderScreen's layerCover) — and only while it's the top one,
+      // so a layer never publishes the parallax it is itself sitting still under.
+      if (depth === 0) seriesReaderCover.set(cover);
+      else if (isTop && coverSV) coverSV.set(cover);
+    },
+    [depth, width, span, isTop, coverSV],
+  );
+  // Belt and braces: nothing may strand the backdrop off-centre if this screen goes away without
+  // its exit animation finishing (a deep link replacing the route, a dev reload).
+  useEffect(() => {
+    if (depth > 0) return;
+    return () => {
+      seriesReaderCover.set(0);
+    };
+  }, [depth]);
+
   // ── Details-card intents, routed back into the in-place reader ───────────
   const paneRef = useRef<ReaderPaneHandle>(null);
   const openChapterFromDetails = useCallback(
@@ -1538,6 +1584,7 @@ const MemoSeriesReaderInstance = memo(SeriesReaderInstance);
 
 export default function SeriesReaderScreen() {
   const params = useLocalSearchParams<SeriesReaderParams>();
+  const { width } = useWindowDimensions();
   const [drills, setDrills] = useState<DrillEntry[]>([]);
   const nextKey = useRef(1);
   const drill = useCallback((p: Record<string, string>) => {
@@ -1551,22 +1598,46 @@ export default function SeriesReaderScreen() {
   }, []);
   useEffect(() => registerDrillSeries(drill), [drill]);
   useEffect(() => registerOpenSearchLayer(openSearch), [openSearch]);
+  // The IN-TREE half of the push parallax: how much the topmost LAYER covers what's under it
+  // (0 off-screen, 1 fully arrived). The layer publishes it; everything beneath drifts left
+  // against it, the way UIKit moves an outgoing screen — see lib/series-reader-backdrop.ts for
+  // why the tabs behind the whole modal need a module-level value while this one can just be a
+  // prop. Only the TOPMOST layer writes, and only NON-top items read, so nothing drives itself.
+  //
+  // One value serves any depth even though it only ever describes the top layer: the sole item a
+  // reader can see beneath the top one is the item directly beneath it. Deeper items are fully
+  // covered, so their reading it is invisible either way.
+  const layerCover = useSharedValue(0);
+  const layerParallax = useAnimatedStyle(
+    () => ({ transform: [{ translateX: -LAYER_PARALLAX_FRACTION * width * layerCover.value }] }),
+    [width],
+  );
+  const top = drills.length - 1;
   return (
     <View style={styles.container}>
-      <View style={styles.container} pointerEvents={drills.length === 0 ? 'auto' : 'none'}>
+      <Animated.View
+        style={[styles.container, layerParallax]}
+        pointerEvents={drills.length === 0 ? 'auto' : 'none'}>
         <MemoSeriesReaderInstance params={params} depth={0} onPopLayer={popLayer} />
-      </View>
+      </Animated.View>
       {drills.map((d, i) => (
-        <View
+        <Animated.View
           key={d.key}
-          style={StyleSheet.absoluteFill}
-          pointerEvents={i === drills.length - 1 ? 'auto' : 'none'}>
+          // The top layer is the one moving; it must not also ride the parallax it publishes.
+          style={i === top ? StyleSheet.absoluteFill : [StyleSheet.absoluteFill, layerParallax]}
+          pointerEvents={i === top ? 'auto' : 'none'}>
           {d.kind === 'series' ? (
-            <MemoSeriesReaderInstance params={d.params} depth={i + 1} onPopLayer={popLayer} />
+            <MemoSeriesReaderInstance
+              params={d.params}
+              depth={i + 1}
+              onPopLayer={popLayer}
+              coverSV={layerCover}
+              isTop={i === top}
+            />
           ) : (
-            <SearchLayer onPopLayer={popLayer} />
+            <SearchLayer onPopLayer={popLayer} coverSV={layerCover} isTop={i === top} />
           )}
-        </View>
+        </Animated.View>
       ))}
     </View>
   );
@@ -1580,7 +1651,16 @@ export default function SeriesReaderScreen() {
  * keep theirs, so the chevron never moves through the navigation. The search's result cards
  * drill further series layers on top (useDrillRelatedSeries works unchanged inside).
  */
-function SearchLayer({ onPopLayer }: { onPopLayer: () => void }) {
+function SearchLayer({
+  onPopLayer,
+  coverSV,
+  isTop,
+}: {
+  onPopLayer: () => void;
+  /** See SeriesReaderInstance's — the parallax this layer drives on the series beneath it. */
+  coverSV?: SharedValue<number>;
+  isTop?: boolean;
+}) {
   const { width } = useWindowDimensions();
   const edgeX = useSharedValue(width);
   const edgeCommitting = useSharedValue(false);
@@ -1589,6 +1669,14 @@ function SearchLayer({ onPopLayer }: { onPopLayer: () => void }) {
     // Mount-only entrance — edgeX is stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // No swipe-away here (the search has no reader to fling), so coverage is purely the slide.
+  useAnimatedReaction(
+    () => 1 - Math.min(1, Math.max(0, edgeX.value / width)),
+    (cover) => {
+      if (isTop && coverSV) coverSV.set(cover);
+    },
+    [width, isTop, coverSV],
+  );
   const closeLayer = useCallback(() => {
     edgeCommitting.set(true);
     edgeX.set(
