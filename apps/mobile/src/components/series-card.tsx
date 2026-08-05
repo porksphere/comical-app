@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
+import { Platform, Pressable, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type View as ViewType, type ViewStyle } from 'react-native';
 import Animated, { Easing, type AnimatedStyle, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { CardBadge, UnreadBadge } from '@/components/card-badge';
@@ -17,6 +17,7 @@ import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/
 import { useDrillRelatedSeries, useSeriesReaderPage } from '@/lib/experimental-flags';
 import { Link, router } from '@/lib/nav';
 import { useLightCards } from '@/lib/perf-flags';
+import { setZoomOrigin } from '@/lib/series-zoom';
 import { testId } from '@/lib/test-id';
 
 // Shared cover card used by both the browse grid and the rails. `size` picks the
@@ -313,6 +314,19 @@ export function SeriesCard({
   // there, and its own lifted preview would fight an inline ring/popover) in favor of a subtle
   // non-scaling held scrim on the cover — see the ring/peek/scrim below.
   const isWeb = Platform.OS === 'web';
+
+  // EXPERIMENTAL (series-reader page): the card's own on-screen box, handed to `/series-reader` so
+  // it can grow out of this card instead of sliding in from the edge — see lib/series-zoom. Taken
+  // on press-IN, not press: `measureInWindow` answers asynchronously, so measuring at press would
+  // put a native round trip in front of the navigation. Not on web (no zoom entrance there), and
+  // not for a drill (a drilled series is an in-tree layer over its parent, not an open over a grid).
+  const cardRef = useRef<ViewType>(null);
+  const captureZoomOrigin = useCallback(() => {
+    if (isWeb || !seriesReaderPage || drillRelated) return;
+    cardRef.current?.measureInWindow((x, y, w, h) => {
+      if (w > 0 && h > 0) setZoomOrigin(entry.id, { x, y, width: w, height: h });
+    });
+  }, [isWeb, seriesReaderPage, drillRelated, entry.id]);
 
   // The quick-actions menu is only offered when there's a real bridge to act against (`bridgeId` —
   // absent in mock mode). Its status queries no longer touch the card at all: they run inside the
@@ -652,6 +666,9 @@ export function SeriesCard({
         const open = () => (drillRelated ? drillRelated(buildParams()) : router.push(buildHref()));
         const pressable = (
           <Pressable
+            // Native only: the web branch below hands this element to <Link asChild>, whose Slot
+            // owns the clone (and web has no zoom entrance to measure for anyway).
+            ref={isWeb ? undefined : cardRef}
             testID={testId('series-card', entry.id)}
             // Flat single style object: as the `asChild` of <Link> (web), the Pressable is cloned by
             // expo-router's <Slot>, which rejects array styles.
@@ -673,7 +690,12 @@ export function SeriesCard({
             // Native long-press opens the shared quick-actions menu; undefined on web (which uses the
             // hover 3-dot instead). A long-press suppresses the tap, so it never also navigates.
             onLongPress={onLongPress}
-            {...handlers}>
+            {...handlers}
+            // After the spread so it wins, and calls through to the held-state's own press-in.
+            onPressIn={() => {
+              handlers.onPressIn();
+              captureZoomOrigin();
+            }}>
             {/* Shrink illusion only when Lightweight is off: wrap in CoverShrink (owns the reanimated
                 hooks + supplies real animated styles); otherwise render plainly with a no-op API. */}
             {lightCards ? (

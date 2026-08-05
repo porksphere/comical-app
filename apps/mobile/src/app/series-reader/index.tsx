@@ -64,7 +64,8 @@ import { useRouter } from '@/lib/nav';
 import { getPreferredGroup, resetPreferredGroup, setPreferredGroup } from '@/lib/preferred-group';
 
 import { registerDrillSeries, registerOpenSearchLayer } from '@/lib/experimental-flags';
-import { seriesReaderCover } from '@/lib/series-reader-backdrop';
+import { seriesReaderCover, seriesReaderDim } from '@/lib/series-reader-backdrop';
+import { takeZoomOrigin } from '@/lib/series-zoom';
 import SearchScreen from '../search';
 import { SeriesBody, truncateTopBarTitle } from '../series';
 
@@ -161,6 +162,21 @@ const SHEET_FADE_H = 120;
 // How far an item drifts left as the layer above it arrives, as a fraction of screen width —
 // matched to the backdrop's own parallax so a drill and an open read as the same gesture.
 const LAYER_PARALLAX_FRACTION = 0.25;
+// ── The ZOOM entrance (see lib/series-zoom) ──────────────────────────────────────────────────
+// Opened from a card whose box we know, the page grows out of that box instead of sliding in from
+// the edge — the gallery treatment, and the same thing react-native-screen-transitions' zoom does
+// with its Bounds "content" method: the destination screen is scaled and offset so its top-left
+// sits on the source rect at progress 0, then eased to identity.
+// Critically damped and a little longer than the slide — the page travels much further here, and
+// an overshoot on a full-screen grow reads as bounce rather than depth.
+const ZOOM_IN_SPRING = { duration: 420, dampingRatio: 1 } as const;
+const ZOOM_OUT_MS = 240;
+// The page is a scaled-down rectangle of chrome at progress 0, not a copy of the card's cover, so
+// it fades in over the first slice of the grow rather than popping in on top of its own source.
+const ZOOM_FADE_IN = 0.18;
+// Matches the card cover's own `borderRadius` (series-card.tsx `coverBoxClip`). Divided by the
+// live scale so the CORNER stays 10pt on screen while the page it belongs to is still shrunk.
+const ZOOM_CORNER_RADIUS = 10;
 const TRAILING_SHADOW_W = 28;
 const TRAILING_SHADOW = '#00000059';
 const TRAILING_SHADOW_CLEAR = '#00000000';
@@ -851,25 +867,45 @@ function SeriesReaderInstance({
   // makes opening symmetric with the back-swipe that closes it; iOS can't do it natively, since
   // a modal presentation's animation comes from UIModalTransitionStyle, which has no horizontal
   // push (only coverVertical / crossDissolve / flip).
-  const edgeX = useSharedValue(width);
+  //
+  // UNLESS the card we were opened from told us where it is (lib/series-zoom): then the entrance
+  // is the ZOOM below and `edgeX` starts home at 0, still owning the back-swipe. Depth 0 only —
+  // a drilled layer is opened from a card inside THIS modal, over its own parent series, which is
+  // a push, not an open. Consumed in a state initializer so it's known on the first render (a
+  // frame later would mean starting the grow from the wrong geometry), and remembered for the
+  // whole lifetime so the exit can shrink back into the same box.
+  const [zoomOrigin] = useState(() => (depth === 0 && !IS_WEB ? takeZoomOrigin(id) : null));
+  const edgeX = useSharedValue(zoomOrigin ? 0 : width);
   const edgeCommitting = useSharedValue(false);
+  // 0 = collapsed into the source card's box, 1 = the full screen. Inert (pinned at 1) with no
+  // origin, so every style below is a no-op on the slide path.
+  const zoom = useSharedValue(zoomOrigin ? 0 : 1);
   useEffect(() => {
-    edgeX.set(withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
-    // Mount-only entrance — edgeX is stable; an instance never changes depth.
+    if (zoomOrigin) zoom.set(withSpring(1, ZOOM_IN_SPRING));
+    else edgeX.set(withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    // Mount-only entrance — edgeX/zoom are stable; an instance never changes depth or origin.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // The chevron / hardware-back exit, for a drilled layer AND the modal root: slide out the way
-  // the back-swipe does, then leave (leaveNow pops the layer, or the route when depth 0). The
-  // route's `animation: 'none'` means this IS the exit animation — without it a tapped back
-  // would just blink the screen away.
+  // The chevron / hardware-back exit, for a drilled layer AND the modal root: shrink back into the
+  // card we came from, or (no origin) slide out the way the back-swipe does, then leave (leaveNow
+  // pops the layer, or the route when depth 0). The route's `animation: 'none'` means this IS the
+  // exit animation — without it a tapped back would just blink the screen away.
   const closeLayer = useCallback(() => {
     edgeCommitting.set(true);
-    edgeX.set(
-      withTiming(width, { duration: 220, easing: Easing.in(Easing.cubic) }, (finished) => {
-        if (finished) runOnJS(leaveNow)();
-      }),
-    );
-  }, [edgeX, edgeCommitting, width, leaveNow]);
+    if (zoomOrigin) {
+      zoom.set(
+        withTiming(0, { duration: ZOOM_OUT_MS, easing: Easing.in(Easing.cubic) }, (finished) => {
+          if (finished) runOnJS(leaveNow)();
+        }),
+      );
+    } else {
+      edgeX.set(
+        withTiming(width, { duration: 220, easing: Easing.in(Easing.cubic) }, (finished) => {
+          if (finished) runOnJS(leaveNow)();
+        }),
+      );
+    }
+  }, [edgeX, edgeCommitting, zoom, zoomOrigin, width, leaveNow]);
 
   // Android hardware back steps back HOME (the details) before leaving: reader expanded → back
   // collapses it; details up → the instance slides out (a drilled layer back to its parent
@@ -1025,8 +1061,29 @@ function SeriesReaderInstance({
         : Gesture.Race(edgePan, returnPan, pullReleaseWatch),
     [edgePan, returnPan, pullReleaseWatch, revealPan],
   );
-  // The whole screen rides the edge swipe (details, strip, bars alike) — the classic pop look.
-  const screenSlideStyle = useAnimatedStyle(() => ({ transform: [{ translateX: edgeX.value }] }));
+  // The whole screen rides the edge swipe (details, strip, bars alike) — the classic pop look —
+  // and, when it was opened from a known card, the zoom that grew it out of that card.
+  //
+  // The zoom is one uniform scale plus a translate, derived every frame rather than interpolated
+  // stop-to-stop: at progress q the screen is scaled so its width matches the source rect's
+  // (lerped to 1) and offset so its top-left sits on the rect's (lerped to the origin). The
+  // `- size·(1-s)/2` terms undo React Native's centre transform origin, which would otherwise put
+  // the scaled screen in the middle rather than at the rect. `edgeX` adds on top, so a back-swipe
+  // out of a zoomed-in page still slides normally.
+  const screenSlideStyle = useAnimatedStyle(() => {
+    if (!zoomOrigin) return { transform: [{ translateX: edgeX.value }] };
+    const q = zoom.value;
+    const scale = zoomOrigin.width / width + (1 - zoomOrigin.width / width) * q;
+    return {
+      transform: [
+        { translateX: zoomOrigin.x * (1 - q) - (width * (1 - scale)) / 2 + edgeX.value },
+        { translateY: zoomOrigin.y * (1 - q) - (height * (1 - scale)) / 2 },
+        { scale },
+      ],
+      opacity: Math.min(1, q / ZOOM_FADE_IN),
+      borderRadius: (ZOOM_CORNER_RADIUS * (1 - q)) / scale,
+    };
+  }, [zoomOrigin, width, height]);
 
   // Geometry: the reader strip's height — the top-of-page band the details content starts below.
   // The details layer itself is full-screen (the strip is page, not chrome).
@@ -1188,20 +1245,26 @@ function SeriesReaderInstance({
   // Depth 0 ONLY: a drilled layer's backdrop is its parent series, which is a sibling view inside
   // this same modal and parallaxes in-tree (see SeriesReaderScreen) — the tabs are still behind
   // the whole modal and must not move again for it.
+  // A zoom entrance counts here too: the page covers the screen in proportion to how far it has
+  // grown out of its card. It drives the DIM only, never the parallax — see the two-value split in
+  // lib/series-reader-backdrop.
   useAnimatedReaction(
     () => {
       const slid = 1 - Math.min(1, Math.max(0, edgeX.value / width));
+      const grown = zoomOrigin ? zoom.value : 1;
       const flung = Math.min(1, Math.hypot(dismissX.value, dismissY.value) / span);
-      return slid * (1 - flung);
+      return slid * grown * (1 - flung);
     },
     (cover) => {
       // The modal ROOT drives the tabs behind the whole modal; a LAYER drives the sibling
       // instance beneath it (SeriesReaderScreen's layerCover) — and only while it's the top one,
       // so a layer never publishes the parallax it is itself sitting still under.
-      if (depth === 0) seriesReaderCover.set(cover);
-      else if (isTop && coverSV) coverSV.set(cover);
+      if (depth === 0) {
+        seriesReaderDim.set(cover);
+        if (!zoomOrigin) seriesReaderCover.set(cover);
+      } else if (isTop && coverSV) coverSV.set(cover);
     },
-    [depth, width, span, isTop, coverSV],
+    [depth, width, span, isTop, coverSV, zoomOrigin],
   );
   // Belt and braces: nothing may strand the backdrop off-centre if this screen goes away without
   // its exit animation finishing (a deep link replacing the route, a dev reload).
@@ -1209,6 +1272,7 @@ function SeriesReaderInstance({
     if (depth > 0) return;
     return () => {
       seriesReaderCover.set(0);
+      seriesReaderDim.set(0);
     };
   }, [depth]);
 
@@ -1348,8 +1412,11 @@ function SeriesReaderInstance({
       />
 
       {/* Everything rides the edge back-swipe together — the classic pop look over the browse
-          grid showing through the transparent root. */}
-      <Animated.View style={[styles.screenSlide, screenSlideStyle]}>
+          grid showing through the transparent root — and the zoom entrance, when we know which
+          card we grew out of. The clip is what lets that entrance carry the card's rounded
+          corners (screenSlideStyle animates the radius); it costs nothing on the slide path, and
+          nothing visible ever leaves these bounds anyway — they're the window. */}
+      <Animated.View style={[styles.screenSlide, zoomOrigin ? styles.screenClip : null, screenSlideStyle]}>
 
       {/* The details PAGE, in front of the (static) reader: a full-screen layer whose opaque
           background starts at the band, so the strip is the top of the page; the whole layer
@@ -2345,6 +2412,10 @@ const styles = StyleSheet.create({
   // The edge back-swipe's ride (see screenSlideStyle).
   screenSlide: {
     flex: 1,
+  },
+  // Zoom entrance only: gives the animated corner radius something to actually round.
+  screenClip: {
+    overflow: 'hidden',
   },
   // The reader's frame + clip. No background on either: the dark reader surface is a SEPARATE
   // static full-screen layer BEHIND the frame (readerSurface), so it keeps covering the screen
