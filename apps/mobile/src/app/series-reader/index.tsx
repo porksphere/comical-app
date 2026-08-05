@@ -165,23 +165,29 @@ const SHEET_FADE_H = 120;
 // in SeriesReaderScreen.
 const LAYER_PARALLAX_FRACTION = 0.25;
 // ── The ZOOM entrance (see lib/series-zoom) ──────────────────────────────────────────────────
-// The page grows out of the cover of the card it was opened from and collapses back into it —
-// the gallery treatment. Nothing about a series open slides any more.
-// Critically damped and a little longer than a slide would be: the page travels much further
-// here, and an overshoot on a full-screen grow reads as bounce rather than depth.
+// THE THUMBNAIL is what travels: the tapped card's cover lifts off the grid and grows to the size
+// it would be at full screen width, and the page materialises around it. Not the page itself —
+// scaling that just produced a miniature UI, which reads as a shrunken screenshot rather than a
+// picture opening. The cover keeps ONE aspect ratio the whole way (the card's cover box and the
+// destination box are the same shape by construction), so the flight is a plain uniform scale plus
+// translate: no distortion, no crop drift, no per-frame layout.
+//
+// Critically damped and a little longer than a slide would be: the thumbnail travels much further
+// than a screen edge, and an overshoot on a grow this large reads as bounce rather than depth.
 const ZOOM_IN_SPRING = { duration: 420, dampingRatio: 1 } as const;
-// The close is a shade quicker than the open and eases OUT of the screen rather than into it —
-// the same asymmetry a native dismissal has, and it keeps the collapse from feeling reluctant.
-const ZOOM_OUT_MS = 300;
+// The close is a shade quicker than the open — the same asymmetry a native dismissal has, and it
+// keeps the collapse from feeling reluctant.
+const ZOOM_OUT_MS = 280;
 const ZOOM_OUT_EASING = Easing.inOut(Easing.cubic);
-// Where the source cover hands over to the real page. Centred on the flight so neither end shows
-// a cross-fade happening: at 0 the cover is all you see, by 0.55 the page is.
-const ZOOM_COVER_FADE = [0.12, 0.55];
-// No source card (deep link, web, a card recycled away before we could measure it): zoom out of a
-// slightly inset copy of the screen instead. Still a zoom, still not a slide.
-const NO_ORIGIN_INSET = 0.92;
-// Only the no-origin fallback fades in, over this fraction of the flight.
-const ZOOM_FADE_IN = 0.4;
+// The page fades in AROUND the growing thumbnail (the grid is still visible through the
+// transparent modal for the first half of the flight, which is what makes it read as a lift off
+// the grid rather than a screen arriving)…
+const ZOOM_PAGE_FADE = [0, 0.5];
+// …and once the page is solid the thumbnail hands over to it.
+const ZOOM_HERO_FADE = [0.5, 0.88];
+// No source card (deep link, web, a card recycled away before we could measure it): there is no
+// thumbnail to fly, so the page itself does a small centred zoom instead. Still not a slide.
+const NO_ORIGIN_SCALE = 0.92;
 // Matches the card cover's own `borderRadius` (series-card.tsx `coverBoxClip`).
 const ZOOM_CORNER_RADIUS = 10;
 const TRAILING_SHADOW_W = 28;
@@ -660,6 +666,29 @@ function SeriesReaderInstance({
     if (depth > 0) onPopLayer();
     else goBack();
   }, [depth, onPopLayer, goBack]);
+  // EVERY exit animation ends here rather than calling `leaveNow` directly, because an animation
+  // callback is not a promise that it ran: reanimated reports `finished: false` for a curve that
+  // got interrupted, and an exit that reached its end state without leaving stranded the page —
+  // mounted, invisible or shrunk, and still swallowing touches. So the exits below fire this
+  // whether or not the curve finished, AND arm a wall-clock backstop, and this makes the extra
+  // calls harmless.
+  const leftRef = useRef(false);
+  const leaveOnce = useCallback(() => {
+    if (leftRef.current) return;
+    leftRef.current = true;
+    leaveNow();
+  }, [leaveNow]);
+  // True from the moment an exit starts: the page stops taking touches immediately, so nothing
+  // can be tapped on a page that is on its way out (or, if a leave ever does fail, on one that is
+  // stuck). Also what keeps a half-faded page from eating taps meant for the grid behind it.
+  const [leaving, setLeaving] = useState(false);
+  const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (leaveTimer.current) clearTimeout(leaveTimer.current);
+    },
+    [],
+  );
 
   // Collapse/dismiss pan — wraps the expanded reader, on the cross axis of its scroll: the
   // collapse direction (up in paged, right in webtoon) slides the details back in; the opposite
@@ -864,20 +893,15 @@ function SeriesReaderInstance({
   // starting the grow from the wrong geometry — and remembered for the instance's whole lifetime,
   // so the exit collapses back into the same box.
   const [zoomOrigin] = useState(() => (IS_WEB ? null : takeZoomOrigin(id)));
-  // With no source card (a deep link, the web, a card that had already been recycled away) there
-  // is still no slide: the page zooms out of a slightly inset copy of the screen instead, which
-  // is the same motion with nothing to match. Screen-shaped, so the frame math below stays uniform.
-  const from = useMemo(
-    () =>
-      zoomOrigin ?? {
-        x: (width * (1 - NO_ORIGIN_INSET)) / 2,
-        y: (height * (1 - NO_ORIGIN_INSET)) / 2,
-        width: width * NO_ORIGIN_INSET,
-        height: height * NO_ORIGIN_INSET,
-      },
-    [zoomOrigin, width, height],
-  );
-  // 0 = collapsed onto `from`, 1 = the full screen.
+  // Whether there IS a thumbnail to fly — a rect with no picture, or a picture with nowhere to
+  // start from, falls back to the centred page zoom below. Decided ONCE, at mount, from inputs
+  // that are already settled: the resolved URI is derived separately and can (rarely, for a
+  // Referer-gated cover nobody has resolved yet) arrive a beat later, and letting that flip the
+  // decision mid-flight would swap entrances halfway through the animation.
+  const [hero] = useState(() => (cover ? zoomOrigin : null));
+  const heroUri = useResolvedAsset(cover);
+  // 0 = the thumbnail is sitting on its card and the page is invisible, 1 = the page is up and
+  // the thumbnail is gone.
   const zoom = useSharedValue(0);
   useEffect(() => {
     zoom.set(withSpring(1, ZOOM_IN_SPRING));
@@ -900,13 +924,20 @@ function SeriesReaderInstance({
   // route's `animation: 'none'` means this IS the exit animation — without it a tapped back would
   // just blink the screen away.
   const closeLayer = useCallback(() => {
+    if (leftRef.current) return;
+    setLeaving(true);
     edgeCommitting.set(true);
     zoom.set(
-      withTiming(0, { duration: ZOOM_OUT_MS, easing: ZOOM_OUT_EASING }, (finished) => {
-        if (finished) runOnJS(leaveNow)();
+      withTiming(0, { duration: ZOOM_OUT_MS, easing: ZOOM_OUT_EASING }, () => {
+        // Deliberately NOT gated on `finished` — see leaveOnce. Nothing else drives `zoom` down,
+        // so an interrupted collapse is still a collapse, and staying is never the right answer.
+        runOnJS(leaveOnce)();
       }),
     );
-  }, [edgeCommitting, zoom, leaveNow]);
+    // …and if that callback never arrives at all, leave anyway a beat after the curve was due.
+    if (leaveTimer.current) clearTimeout(leaveTimer.current);
+    leaveTimer.current = setTimeout(leaveOnce, ZOOM_OUT_MS + 150);
+  }, [edgeCommitting, zoom, leaveOnce]);
 
   // Android hardware back steps back HOME (the details) before leaving: reader expanded → back
   // collapses it; details up → the instance slides out (a drilled layer back to its parent
@@ -1062,61 +1093,43 @@ function SeriesReaderInstance({
         : Gesture.Race(edgePan, returnPan, pullReleaseWatch),
     [edgePan, returnPan, pullReleaseWatch, revealPan],
   );
-  // ── The zoom's two transforms ────────────────────────────────────────────────────────────────
-  // At progress q the page occupies a FRAME lerped from the source card's cover box to the whole
-  // screen, and its content is scaled UNIFORMLY (by the frame's width ratio) and cropped to that
-  // frame — the aspect-fill a gallery does, not a squash. The naive "scale the screen uniformly
-  // and put its corner on the card" is what this replaces: the screen is far taller than a card,
-  // so the thing that appeared over the card was a tall rectangle overhanging it, and on the way
-  // out the page shrank to that same wrong shape instead of landing ON the card.
-  //
-  // Two nested views get it with transforms alone — no per-frame layout:
-  //   · FRAME (clips): scaled NON-uniformly, (fw/W, fh/H). Its clip rect is its own untransformed
-  //     bounds, so on screen it crops to exactly fw × fh — the card's box at q = 0.
-  //   · CONTENT: counter-scaled in Y by (fw/W)/(fh/H). Multiplied by the frame's own scale that
-  //     lands at (fw/W, fw/W) — uniform. So the page keeps its proportions at every q; only the
-  //     window onto it changes shape.
-  // Both are anchored top-left (`transformOrigin`) so the translate is plain pixels and the two
-  // scales compose without a centring correction. `edgeX` rides the frame's translate, so the
-  // back-swipe still slides the page bodily under the finger.
-  const zoomFrameStyle = useAnimatedStyle(() => {
+  // ── The zoom, in two layers ──────────────────────────────────────────────────────────────────
+  // THE PAGE only fades. It is never scaled or cropped — that was the mistake the last pass made
+  // in two different ways (first a uniform screen scale, then a frame-matched crop), and both
+  // read as a miniature user interface rather than a picture opening. It stays full size, and the
+  // grid behind the transparent modal shows through it for the first half of the flight, which is
+  // what makes the open read as something lifting OFF the grid instead of a screen arriving.
+  // `edgeX` still rides here — that's the back-swipe dragging the page bodily under a finger.
+  const zoomPageStyle = useAnimatedStyle(() => {
     const q = zoom.value;
-    const sx = (from.width + (width - from.width) * q) / width;
-    const sy = (from.height + (height - from.height) * q) / height;
     return {
+      opacity: interpolate(q, ZOOM_PAGE_FADE, [0, 1], Extrapolation.CLAMP),
       transform: [
-        { translateX: from.x * (1 - q) + edgeX.value },
-        { translateY: from.y * (1 - q) },
-        { scaleX: sx },
-        { scaleY: sy },
+        { translateX: edgeX.value },
+        // With a thumbnail flying, the page holds still and lets it carry the motion; with no
+        // thumbnail to fly, this small centred zoom is the whole entrance.
+        { scale: hero ? 1 : NO_ORIGIN_SCALE + (1 - NO_ORIGIN_SCALE) * q },
       ],
-      // Drawn in the frame's own space, so divide out the scale to keep the corner at a constant
-      // on-screen radius (the card's). The non-uniform scale makes it a slightly oval corner
-      // mid-flight; at the sizes involved that isn't visible.
-      borderRadius: (ZOOM_CORNER_RADIUS * (1 - q)) / sx,
-      // Only the no-origin fallback fades — with a real source card the cover overlay below is
-      // already an exact copy of what's underneath, so a fade would just make it translucent.
-      opacity: zoomOrigin ? 1 : Math.min(1, q / ZOOM_FADE_IN),
     };
-  }, [from, zoomOrigin, width, height]);
-  const zoomContentStyle = useAnimatedStyle(() => {
+  }, [hero]);
+  // THE THUMBNAIL is the moving part: the tapped card's cover, flown from its box on the grid to
+  // the box it occupies at full screen width. Those two boxes are the same SHAPE — the source is
+  // the card's cover box and the destination is `width` wide at that box's aspect — so this is a
+  // plain uniform scale plus a translate, anchored top-left. Nothing distorts, the crop never
+  // drifts, and no layout runs per frame. It stays opaque until the page beneath is solid, then
+  // hands over.
+  const heroBoxHeight = hero ? (width * hero.height) / hero.width : 0;
+  const heroStyle = useAnimatedStyle(() => {
+    if (!hero) return { opacity: 0 };
     const q = zoom.value;
-    const sx = (from.width + (width - from.width) * q) / width;
-    const sy = (from.height + (height - from.height) * q) / height;
-    return { transform: [{ scaleY: sx / sy }] };
-  }, [from, width, height]);
-  // The hand-off itself: the source card's cover, drawn at the top of the content in exactly the
-  // box the frame crops to at q = 0 — same image, same aspect-fill, same rounded corners — so the
-  // first frame of an open is pixel-identical to the card it grew out of, and the last frame of a
-  // close lands back on it. It cross-dissolves into the real page over the middle of the flight,
-  // which is what makes the motion read as the thumbnail becoming the page rather than a
-  // screenshot flying around. Sized in CONTENT space (width `width`, the card's aspect), so the
-  // uniform content scale puts it exactly on the card.
-  const zoomCoverStyle = useAnimatedStyle(
-    () => ({ opacity: interpolate(zoom.value, ZOOM_COVER_FADE, [1, 0], Extrapolation.CLAMP) }),
-    [],
-  );
-  const zoomCoverUri = useResolvedAsset(cover);
+    const scale = hero.width / width + (1 - hero.width / width) * q;
+    return {
+      transform: [{ translateX: hero.x * (1 - q) }, { translateY: hero.y * (1 - q) }, { scale }],
+      // Divided by the live scale so the corner reads a constant 10pt on screen — the card's own.
+      borderRadius: (ZOOM_CORNER_RADIUS * (1 - q)) / scale,
+      opacity: interpolate(q, ZOOM_HERO_FADE, [1, 0], Extrapolation.CLAMP),
+    };
+  }, [hero, width]);
 
   // Geometry: the reader strip's height — the top-of-page band the details content starts below.
   // The details layer itself is full-screen (the strip is page, not chrome).
@@ -1432,13 +1445,11 @@ function SeriesReaderInstance({
         hidden={settings.mode !== 'paged' && !chromeVisible && !detailsActive}
       />
 
-      {/* The zoom's FRAME: the window the page is seen through, lerped from the source card's
-          cover box to the whole screen (and carrying the back-swipe's slide). It clips, which is
-          what crops the page to the card's shape on the way in and out — see zoomFrameStyle. */}
-      <Animated.View style={[styles.zoomFrame, zoomFrameStyle]}>
-      {/* …and the CONTENT, counter-scaled so the page inside that window keeps its proportions
-          at every point of the flight. Everything below is unchanged by the zoom. */}
-      <Animated.View style={[styles.zoomContent, zoomContentStyle]}>
+      {/* The PAGE — full size at every point of the transition, fading in around the flying
+          thumbnail and carrying the back-swipe's slide (see zoomPageStyle). `leaving` drops its
+          touches the instant an exit starts, so a page on its way out can't be tapped and can't
+          swallow a tap meant for the grid behind it. */}
+      <Animated.View style={[styles.zoomPage, zoomPageStyle]} pointerEvents={leaving ? 'none' : 'auto'}>
 
       {/* The details PAGE, in front of the (static) reader: a full-screen layer whose opaque
           background starts at the band, so the strip is the top of the page; the whole layer
@@ -1653,20 +1664,18 @@ function SeriesReaderInstance({
           instance's bar rides its own slide (drill entrance, edge swipe, dismissal alike). */}
       {topChrome}
 
-      {/* The zoom's hand-off: the source card's cover, laid over the page in exactly the box the
-          frame crops to at rest — so the transition begins and ends on something pixel-identical
-          to the card, and the page cross-dissolves in over the middle of the flight. Over
-          everything else on purpose, and never interactive. Skipped without a source card (the
-          fallback zoom has nothing to match) or a cover to draw. */}
-      {zoomOrigin && zoomCoverUri && (
-        <Animated.View
-          pointerEvents="none"
-          style={[styles.zoomCover, { height: (width * zoomOrigin.height) / zoomOrigin.width }, zoomCoverStyle]}>
-          <Image source={{ uri: zoomCoverUri }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" />
+      </Animated.View>
+
+      {/* THE FLYING THUMBNAIL — a SIBLING of the page, not a child, so it neither fades with it
+          nor rides its slide: it is the one thing actually moving. Sized at its DESTINATION (full
+          width, the card's aspect) and scaled down onto the card by heroStyle, so the first frame
+          of an open and the last frame of a close are pixel-identical to the card on the grid.
+          Never interactive. */}
+      {hero && heroUri && (
+        <Animated.View pointerEvents="none" style={[styles.hero, { height: heroBoxHeight }, heroStyle]}>
+          <Image source={{ uri: heroUri }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" />
         </Animated.View>
       )}
-      </Animated.View>
-      </Animated.View>
     </View>
   );
 }
@@ -2447,30 +2456,25 @@ const styles = StyleSheet.create({
     // fill, and a dismissal fades it out over the screen beneath (see dismissFadeStyle).
     backgroundColor: 'transparent',
   },
-  // The zoom's window (see zoomFrameStyle) — also what the back-swipe slides. `overflow: hidden`
-  // is what crops the page to the frame's shape; at rest the frame IS the window, so it clips
-  // nothing that was ever visible.
-  zoomFrame: {
+  // The whole page — everything but the flying thumbnail. Fades and rides the back-swipe; never
+  // scales or clips (see zoomPageStyle).
+  zoomPage: {
     flex: 1,
-    overflow: 'hidden',
-    transformOrigin: 'top left',
-  },
-  // The page inside that window, counter-scaled so it never squashes (see zoomContentStyle).
-  zoomContent: {
-    flex: 1,
-    transformOrigin: 'top left',
   },
   // The SEARCH layer's slide-in ride — the one layer that still arrives as a push (see SearchLayer).
   searchSlide: {
     flex: 1,
   },
-  // The source card's cover, in CONTENT space: full width, the card's aspect, pinned to the top —
-  // which the uniform content scale lands exactly on the card at rest.
-  zoomCover: {
+  // The flying thumbnail, laid out at its DESTINATION box (full width at the card's aspect, top
+  // of the screen) and scaled onto the card by heroStyle. Top-left origin so that scale and the
+  // translate compose without a centring correction; clipped so the animated corner rounds.
+  hero: {
     position: 'absolute',
     top: 0,
     left: 0,
-    right: 0,
+    width: '100%',
+    overflow: 'hidden',
+    transformOrigin: 'top left',
   },
   // The reader's frame + clip. No background on either: the dark reader surface is a SEPARATE
   // static full-screen layer BEHIND the frame (readerSurface), so it keeps covering the screen
