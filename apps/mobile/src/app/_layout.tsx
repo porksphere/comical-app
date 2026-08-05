@@ -27,7 +27,7 @@ Sentry.init({
    ESM hoisting), so this ordering is what actually keeps Sentry.init the
    first thing to run. */
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
@@ -40,6 +40,7 @@ import { ListPickerHost } from '@/components/list-picker';
 import { OverlayProvider } from '@/components/overlay/overlay';
 import { SeriesCardContextMenuHost } from '@/components/series-card-context-menu';
 import { ToastHost } from '@/components/toast';
+import { Stack } from '@/components/transition-stack';
 import { installActivityAutoCheck } from '@/data/activity/auto-check';
 import { startEmbeddedRuntime } from '@/data/embedded/startup';
 import { installAppUpdateAutoCheck } from '@/data/use-app-update';
