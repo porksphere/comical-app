@@ -67,7 +67,8 @@ import { useRouter } from '@/lib/nav';
 import { getPreferredGroup, resetPreferredGroup, setPreferredGroup } from '@/lib/preferred-group';
 
 import { backSwipePan } from '@/lib/back-swipe';
-import { IOS_CARD_SHADOW, IOS_CARD_SPRING, IOS_PARALLAX_FRACTION, iosPopCommitted } from '@/lib/ios-card-pop';
+import { releaseCommitted, releaseCommittedEitherWay } from '@/lib/gesture-release';
+import { IOS_CARD_SHADOW, IOS_CARD_SPRING, IOS_PARALLAX_FRACTION, IOS_POP_COMMIT_FRACTION } from '@/lib/ios-card-pop';
 import { registerDrillSeries, registerOpenSearchLayer } from '@/lib/series-nav';
 import { seriesReaderDim } from '@/lib/series-backdrop';
 import { holdZoomingSeries, takeZoomOrigin, type ZoomRect } from '@/lib/series-zoom';
@@ -123,8 +124,20 @@ const IS_IOS = Platform.OS === 'ios';
 const READER_BACKDROP = '#0f0f0f';
 // Reveal hysteresis: the drag must cover this fraction of the axis (or flick past FLICK_VELOCITY)
 // to commit to the other view; anything less springs back to the active one.
+//
+// The REVEALS deliberately keep this distance-OR-flick pair while the DISMISSALS have moved to the
+// projected release below. They are not the same question. A reveal picks which of two sides of
+// one screen you end up on — both outcomes are cheap and instantly reversible, so a low bar and a
+// hard flick cutoff are fine, and the current feel was signed off as-is. A dismissal throws the
+// screen away; it should read the gesture's momentum, and it is the one users compare against the
+// system's own back-swipe.
 const COMMIT_FRACTION = 0.25;
 const FLICK_VELOCITY = 900;
+// How far a dismissal must be PROJECTED to have committed — the midpoint of its travel, matching
+// what a pushed card does (IOS_POP_COMMIT_FRACTION). Higher than the reveals' 0.25 on purpose:
+// once velocity counts for its real worth instead of being a 900px/s cliff, a quarter of the
+// screen is a hair-trigger — a barely-moving release would clear it.
+const DISMISS_COMMIT_FRACTION = 0.5;
 // The reveal pull: how far past the details list's top the rubber-band must be pulled, at
 // release, to expand the reader. Roughly usePullToRefresh's trigger feel.
 const PULL_COMMIT_PX = 80;
@@ -908,12 +921,11 @@ function SeriesReaderInstance({
             runOnJS(commitReveal)(open ? 1 : 0);
             return;
           }
-          // The release decision: the cross-axis OFFSET (either direction) past a quarter of the
-          // screen, or a fast flick, dismisses; anything less springs back.
+          // The release decision — the shared projection (lib/gesture-release), judged along the
+          // direction the page actually travelled, since this one can be thrown off either side.
           const crossOffset = settings.mode === 'paged' ? dragY.value : dragX.value;
           const crossVelocityRaw = settings.mode === 'paged' ? e.velocityY : e.velocityX;
-          const byFlick = Math.abs(crossVelocityRaw) > FLICK_VELOCITY;
-          if (!byFlick && Math.abs(crossOffset) < dismissSpan * COMMIT_FRACTION) {
+          if (!releaseCommittedEitherWay(crossOffset, crossVelocityRaw, dismissSpan * DISMISS_COMMIT_FRACTION)) {
             zoomClosing.set(false);
             zoom.set(withSpring(1, SPRING_BACK));
             dragX.set(withSpring(0, SPRING_BACK));
@@ -1220,7 +1232,7 @@ function SeriesReaderInstance({
       })
       .onEnd((e) => {
         if (!detailsActiveSV.value) return;
-        if (e.translationX > width * COMMIT_FRACTION || e.velocityX > FLICK_VELOCITY) {
+        if (releaseCommitted(e.translationX, e.velocityX, width * DISMISS_COMMIT_FRACTION)) {
           // Finish from exactly where the finger left it — the spring starts at the current value,
           // so there is no seam between the dragged part and the animated part.
           edgeCommitting.set(true);
@@ -2194,8 +2206,8 @@ function SearchLayer({
         edgeX.set(Math.max(0, e.translationX));
       })
       .onEnd((e) => {
-        // Where the swipe was HEADED, not where it stopped — see lib/ios-card-pop.
-        if (iosPopCommitted(e.translationX, e.velocityX, width)) slideOut(e.velocityX);
+        // Where the swipe was HEADED, not where it stopped — see lib/gesture-release.
+        if (releaseCommitted(e.translationX, e.velocityX, width * IOS_POP_COMMIT_FRACTION)) slideOut(e.velocityX);
         else settle(e.velocityX);
       })
       .onFinalize(() => {
