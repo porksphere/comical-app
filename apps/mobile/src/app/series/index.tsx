@@ -1792,7 +1792,7 @@ function SeriesReaderInstance({
               pointerEvents={detailsActive || chromeVisible ? 'box-none' : 'none'}
               style={[styles.headerBackWrap, { top: insets.top, height: topBarHeight }, backPersistStyle]}>
               <Pressable
-                testID="series page.header-back"
+                testID="series-page.header-back"
                 // A drilled layer's chevron slides it back out to the parent series; the modal
                 // root's pops the route.
                 onPress={closeLayer}
@@ -1812,7 +1812,7 @@ function SeriesReaderInstance({
           bars={{
             details: (
               <Animated.View
-                testID="series page.header-topbar"
+                testID="series-page.header-topbar"
                 pointerEvents={barSolid ? 'box-none' : 'none'}
                 style={[styles.headerBarWrap, headerBarStyle]}>
                 {/* left: an empty slot — the persistent chevron above IS the back button. */}
@@ -1892,7 +1892,7 @@ function SeriesReaderInstance({
           the reader beneath it. */}
       <GestureDetector gesture={detailsGestures}>
         <Animated.View
-          testID="series page.details-card"
+          testID="series-page.details-card"
           pointerEvents={detailsActive ? 'auto' : 'none'}
           style={[styles.detailsLayer, { width, height }, styles.headerLayer, headerLayerStyle]}>
           {/* The page's opaque background + gradient seam — the strip boundary. It rides the
@@ -1953,7 +1953,7 @@ function SeriesReaderInstance({
           how SwipeDismiss wraps the readers on /reader. */}
       <GestureDetector gesture={collapsePan}>
         <Animated.View
-          testID="series page.reader-card"
+          testID="series-page.reader-card"
           style={[styles.readerFrame, { top: 0, width, height }, readerCardStyle]}>
           <View style={styles.readerClip}>
           {error ? (
@@ -2040,7 +2040,7 @@ function SeriesReaderInstance({
               covers anything tappable. */}
           <Animated.View style={[styles.dockBand, { height: headerTopInset }, headerBandStyle]}>
             <Pressable
-              testID="series page.header-band"
+              testID="series-page.header-band"
               onPress={() => setRevealed(0)}
               accessibilityRole="button"
               accessibilityLabel="Read full screen"
@@ -2729,7 +2729,7 @@ const ReaderPane = forwardRef<
   return (
     <>
       {/* The page subtree — the ONLY thing a dismissal moves (see pageStyle). */}
-      <Animated.View testID="series page.page-wrap" style={[styles.pageWrap, pageStyle]}>
+      <Animated.View testID="series-page.page-wrap" style={[styles.pageWrap, pageStyle]}>
       {settings.mode === 'paged' ? (
         <PagedReader
           ref={pagedRef}
@@ -2844,7 +2844,7 @@ function DetailsHint({
       pointerEvents={visible ? 'box-none' : 'none'}
       style={[styles.detailsHintWrap, { bottom: insets.bottom + Spacing.two + 48 }, style]}>
       <Pressable
-        testID="series page.details"
+        testID="series-page.details"
         onPress={onPress}
         hitSlop={8}
         accessibilityRole="button"

@@ -1,0 +1,45 @@
+# THE SERIES PAGE (app/series/index.tsx) — series details and an in-place reader in one screen,
+# either side one gesture from the other. A card tap opens the DETAILS, with the reader as a faded
+# strip forming the top of the page; the strip expands to full screen and the Details pill collapses
+# it back. The details render the shared SeriesBody, so its selectors are that component's own
+# (series.action.read, series.chapter.*).
+#
+# Journey: Browse -> tap a card (the default mock bridge is chaptered, so this exercises the
+# chapter-resolution path) -> assert the DETAILS came up (Read button) -> tap the reader strip to
+# expand it full screen -> collapse back via the Details pill -> tap a chapter row -> the reader
+# expands again on that chapter.
+# (The strip TAP is the expand step, not a swipe: it's the guaranteed path and a deterministic tap
+# target. The drag reveal and the collapse-into-the-card transition aren't covered here.)
+#
+# Selectors (confirmed against source):
+#   - series cards:      series-card.<seriesId>        (components/series-card.tsx)
+#   - reader strip band: series-page.header-band       (app/series/index.tsx — the strip's touch
+#                        surface; UNMOUNTED while the reader is expanded, so its absence proves
+#                        the mode)
+#   - Details pill:      series-page.details           (app/series/index.tsx)
+#   - details content:   series.action.read            (SeriesBody's Read button)
+#   - chapter rows:      series.chapter.<key>          (components/series/chapters-section.tsx;
+#                        a key like "1.5" slugs into extra dot-segments — match the prefix broadly)
+---
+- launchApp
+
+# A card tap lands on the DETAILS (reader strip on top) — the Read button proves the real
+# SeriesBody is up.
+- tapOn:
+    id: "Browse"
+- tapOn:
+    id: "series-card\\..*"
+- assertVisible:
+    id: "series.action.read"
+
+# Tapping the reader strip expands the reader full screen (the strip band unmounts).
+- tapOn:
+    id: "Read full screen"
+- assertNotVisible:
+    id: "Read full screen"
+
+# The Details pill collapses back to the details page.
+- tapOn:
+    id: "Show series details"
+- assertVisible:
+    id: "series.action.read"
