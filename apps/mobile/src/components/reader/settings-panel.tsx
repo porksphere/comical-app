@@ -82,7 +82,7 @@ export function SettingsControl({
 /** Reader settings content, rendered inside the overlay (sheet or popover).
  *  Note: the overlay panel follows the app's theme (`useTheme`), so under a
  *  light appearance it renders light while the reader keeps its own always-dark
- *  viewing surface (see `reader.tsx`) — an intentional split, matching how media
+ *  viewing surface — an intentional split, matching how media
  *  readers stay dark for immersion while their controls track the app theme. */
 function SettingsContent({
   bridgeId,

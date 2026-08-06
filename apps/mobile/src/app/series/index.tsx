@@ -71,9 +71,10 @@ import { holdZoomingSeries, takeZoomOrigin, type ZoomRect } from '@/lib/series-z
 import SearchScreen from '../search';
 import { SeriesBody, truncateTopBarTitle } from '@/components/series/series-body';
 
-// EXPERIMENTAL series reader page (Settings → General → Experimental). A series opened from a card
-// lands HERE instead of on `/series`: one screen holding BOTH the series details and the reader
-// (same paged/webtoon readers, chrome, scrubber, and progress recording as `/reader`).
+// THE series page: one screen holding BOTH the series details and the reader, either side one
+// gesture from the other. Everything that opens a series or opens reading opens this — a browse
+// card, a History or Activity row, the card long-press menu's Read, a chapter row, a page
+// thumbnail — differing only in which side it lands on. There is no separate reader route.
 //
 // It opens ON THE DETAILS, with the reader as a faded strip forming the TOP OF THE PAGE — not
 // fixed chrome: the strip scrolls away under the content like any page header, through a tall
@@ -94,41 +95,28 @@ import { SeriesBody, truncateTopBarTitle } from '@/components/series/series-body
 // same collapse into the source card the chevron does (mode-locked per gesture — see the pan
 // build). One TopBarSwitch slot crossfades the top chrome between the modes.
 //
-// The details render series.tsx's OWN `SeriesBody` — cover hero, action column, tag/meta/
-// description, the real chapter list (downloads, versions, read state), page-thumb grid, related
-// rails — so the two screens cannot drift. Three override props route its intents back into this
-// screen instead of pushing routes: `onStartReading` (Read button → expand the in-place reader),
-// `onOpenChapter` (chapter row → swap the reader pane's chapter and expand), `onOpenPage`
-// (direct-series thumbnail → jump the pane to that page and expand).
+// The details are `SeriesBody` (components/series/series-body.tsx) — cover hero, action column,
+// tag/meta/description, the real chapter list (downloads, versions, read state), page-thumb grid,
+// related rails. Three props route its intents back into this screen rather than anywhere else:
+// `onStartReading` (Read button → expand the in-place reader), `onOpenChapter` (chapter row →
+// swap the reader pane's chapter and expand), `onOpenPage` (direct-series thumbnail → jump the
+// pane to that page and expand).
 //
 // Chaptered series: the screen resolves resume-or-first-chapter itself (same history lookup as
 // useStartReading). The NATIVE PAGED reader stitches adjacent chapters into one flat pager
-// (reader.tsx's window, ported — see the `run` machinery), so swiping across a boundary is an
+// (see the `run` machinery), so swiping across a boundary is an
 // ordinary page turn with an in-place relabel. Explicit jumps (chapter rows, skip buttons) and
 // web/webtoon crossings remount the pane seeded at the landing page instead. While the details
 // are up the reader is in STANDBY — only the single visible strip page is requested.
-//
-// Removal list for the whole experiment: this `app/series/` DIRECTORY (this file, the
-// nested-stack `_layout.tsx`, and the series-downloads/downloads twin routes) +
-// `lib/experimental-flags.ts` (the flag, `useSeriesSubPath` — unwrap its call sites in
-// `series.tsx`, `series/download-button.tsx`, `reader/settings-panel.tsx`, `downloads.tsx` back
-// to the plain paths — `InSeriesPageStack`/`useDrillRelatedSeries` with the drill branch in
-// `series-card.tsx`, and `useOpenSearchLayer` with its branch in `series.tsx` + the `embedded`
-// prop on `search.tsx`), the Settings row in `settings-general.tsx`, the `buildHref` target switch
-// in `series-card.tsx`, this route's Stack.Screen entry in `_layout.tsx`, the default-preserving
-// embedding props on `series.tsx`'s SeriesBody (`topInset`/`onStartReading`/`onOpenChapter`/
-// `onOpenPage` + `truncateTopBarTitle` export) and `chapters-section.tsx`'s
-// `onOpenChapter`/`onOpenPage`, the `standby` prop on the paged readers, and
-// `components/top-bar-switch.tsx` if nothing else has adopted it yet.
 
 const CHROME_HIDE_MS = 3000;
-// Same CI-speed override as reader.tsx: Maestro steps can outlast the auto-hide, and hidden chrome
-// drops out of the accessibility tree.
+// CI-speed override: Maestro steps can outlast the auto-hide, and hidden chrome drops out of the
+// accessibility tree.
 const CHROME_AUTO_HIDE = process.env.EXPO_PUBLIC_COMICAL_DEMO_FAST !== '1';
 const WARM_BEHIND = 2;
 const IS_WEB = Platform.OS === 'web';
 const IS_IOS = Platform.OS === 'ios';
-// The reader surface's tone — matches reader.tsx's backdrop (`#reader-view`'s #0f0f0f, not pure black).
+// The reader surface's tone (the reference's `#reader-view`: #0f0f0f, not pure black).
 const READER_BACKDROP = '#0f0f0f';
 // Reveal hysteresis: the drag must cover this fraction of the axis (or flick past FLICK_VELOCITY)
 // to commit to the other view; anything less springs back to the active one.
@@ -289,8 +277,8 @@ const TITLE_MID = 20;
 // travel — weighted toward the START of a reveal and, symmetrically, the END of a hide.
 const FADE_WINDOW = 0.4;
 
-// Warm expo-image's cache around the read position — a trimmed copy of reader.tsx's warmPrefetch
-// (same dedup memo, same "resolve then prefetch only http(s)" rule; see there for the reasoning).
+// Warm expo-image's cache around the read position. Deduped through a module-level memo, and only
+// http(s) sources are prefetched — a resolved local/data URI is already there.
 const warmed = new Set<string>();
 const WARM_MEMO_MAX = 2000;
 function warmPrefetch(pages: string[]): void {
@@ -308,9 +296,8 @@ function warmPrefetch(pages: string[]): void {
  *  `start: 'last'` = land on the final page (arriving from the NEXT chapter's "previous"). */
 type ReadTarget = { chapterId?: string; chapterName?: string; start: number | 'last' };
 
-/** One chapter's worth of pages inside the native pager's stitched flat list (reader.tsx's
- *  Segment — the same stitching, ported so a boundary swipe here is the same ordinary page turn
- *  it is on /reader instead of a bounce-and-remount). */
+/** One chapter's worth of pages inside the native pager's stitched flat list — what makes a
+ *  boundary swipe an ordinary page turn instead of a bounce-and-remount. */
 type Segment = { id: string; name?: string; pages: string[] };
 
 /** Same params a series card forwards to `/series` (see series-card.tsx buildHref) — including
@@ -447,7 +434,7 @@ function SeriesReaderInstance({
   const target = override ?? derivedTarget;
   const targetChapterId = target?.chapterId;
 
-  // Keep next/prev chapter following the same scanlation group (mirrors reader.tsx).
+  // Keep next/prev chapter following the same scanlation group.
   useEffect(() => {
     if (!targetChapterId) return;
     const group = chapters?.find((c) => c.id === targetChapterId)?.group;
@@ -515,7 +502,7 @@ function SeriesReaderInstance({
     () => (currentChapter && chapters ? getAdjacentChapter(chapters, currentChapter, -1, getPreferredGroup()) : null),
     [chapters, currentChapter],
   );
-  // `landing` defaults to whichever keeps PAGING continuous (same rule as reader.tsx): forward
+  // `landing` defaults to whichever keeps PAGING continuous: forward
   // lands on page 1, backward on the last page. The navigator's skip buttons pass 'first'.
   // This is the EXPLICIT-jump path (skip buttons, webtoon advance, cold-window edge fallbacks) —
   // it bumps `jumpNonce` so the pane remounts seeded at the landing page. Stitched paged
@@ -531,7 +518,7 @@ function SeriesReaderInstance({
     [nextChapter, prevChapter],
   );
 
-  // ── Stitching (native paged mode): reader.tsx's window, ported ───────────
+  // ── Stitching (native paged mode): the pager's window ────────────────────
   // Adjacent chapters' page lists, subscribed eagerly (cache-first; a list is just URLs) so the
   // native paged reader can stitch them into ONE flat pager — swiping across a chapter boundary
   // is then an ordinary page turn with an in-place relabel, no remount.
@@ -566,9 +553,9 @@ function SeriesReaderInstance({
     enabled: stitched && !detailsSettled && !!id && !!nextChapter,
   });
 
-  // The stitched window — reader.tsx's run, verbatim in behavior: a segment only joins once its
-  // pages are loaded (no holes); it only ever GROWS during one continuous run (appending at the
-  // tail keeps the pager's offset valid; see reader.tsx for the head-drop black-flash history);
+  // The stitched window — the RUN: a segment only joins once its pages are loaded (no holes); it
+  // only ever GROWS during one continuous run (appending at the tail keeps the pager's offset
+  // valid — dropping from the HEAD instead shifts every offset and flashes the pager black);
   // landing outside the run starts a fresh one, bumping `runKey` so the pane remounts and seeds
   // from `start` instead of re-anchoring.
   const [run, setRun] = useState<{ key: number; segs: Segment[] }>({ key: 0, segs: [] });
@@ -621,7 +608,7 @@ function SeriesReaderInstance({
     setOverride({ chapterId, chapterName, start: page });
   }, []);
 
-  // ── Chrome auto-hide (reader.tsx's scheme, minus the swipe-dismiss guards) ──
+  // ── Chrome auto-hide ───────────────────────────────────────────────────────
   const [chromeVisible, setChromeVisible] = useState(true);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chromeHeldRef = useRef(false);
@@ -861,15 +848,15 @@ function SeriesReaderInstance({
   // collapse direction (up in paged, right in webtoon) slides the details back in; the opposite
   // direction dismisses — and that dismissal now runs THE SAME GALLERY COLLAPSE the back-swipe and
   // the chevron run: mask closing onto the card, page cross-fading out, the thumbnail copy fading
-  // in and landing on it. What it keeps from SwipeDismiss is the part that made it feel good — a
-  // free, unclamped 2D finger-follow and the same cross-axis release decision — and what it drops
-  // is the fling out along the gesture's own vector, which had nowhere to land. Built inside
+  // in and landing on it. The finger-follow is free and unclamped in 2D and the release decision
+  // reads the cross-axis offset alone — what a dismissal must NOT do is fling out along the
+  // gesture's own vector, which had nowhere to land. Built inside
   // useMemo like chapter-navigator's pan (the React Compiler lint can't tell worklets from render
   // code).
   const collapseEnabled = !detailsActive && !readerZoomed && !scrubbing;
   // Each GESTURE is one thing, decided at activation and locked: a drag that sets off toward the
   // details is a reveal (progress only, and paged only); anything else is a dismiss — a free 2D
-  // follow in BOTH directions, released on SwipeDismiss's own |cross| decision, driving the
+  // follow in BOTH directions, released on the |cross| decision below, driving the
   // collapse. A new gesture that begins while the page hasn't settled from a previous dismiss drag
   // is always a dismiss — only a settled page reveals the details on a swipe.
   const gestureMode = useSharedValue<0 | 1 | 2>(0); // 0 undecided, 1 reveal, 2 dismiss
@@ -911,9 +898,9 @@ function SeriesReaderInstance({
             progress.set(Math.min(1, Math.max(0, progressStartSV.value + -cross / span)));
             return;
           }
-          // SwipeDismiss's follow, verbatim: both axes, unclamped — feeding the collapse instead
-          // of a fling. Distance in ANY direction drives it, since unlike the back-swipe this
-          // gesture has no single axis to measure along.
+          // The follow: both axes, unclamped — feeding the collapse instead of a fling. Distance
+          // in ANY direction drives it, since unlike the back-swipe this gesture has no single
+          // axis to measure along.
           zoomClosing.set(true);
           zoom.set(
             1 - Math.min(1, Math.hypot(e.translationX, e.translationY) / (dismissSpan * ZOOM_DRAG_TRAVEL)),
@@ -932,8 +919,8 @@ function SeriesReaderInstance({
             runOnJS(commitReveal)(open ? 1 : 0);
             return;
           }
-          // SwipeDismiss's release decision, verbatim: the cross-axis OFFSET (either direction)
-          // past a quarter of the screen, or a fast flick, dismisses; anything less springs back.
+          // The release decision: the cross-axis OFFSET (either direction) past a quarter of the
+          // screen, or a fast flick, dismisses; anything less springs back.
           const crossOffset = settings.mode === 'paged' ? dragY.value : dragX.value;
           const crossVelocityRaw = settings.mode === 'paged' ? e.velocityY : e.velocityX;
           const byFlick = Math.abs(crossVelocityRaw) > FLICK_VELOCITY;
@@ -1778,8 +1765,8 @@ function SeriesReaderInstance({
               </Animated.View>
             ),
             reader: (
-              // The reader's own fully transparent toolbar, as /reader has it (minus its back —
-              // the persistent chevron above serves both modes); its auto-hide rides `visible`.
+              // The reader's own fully transparent toolbar (with no back of its own — the
+              // persistent chevron above serves both modes); its auto-hide rides `visible`.
               <View pointerEvents="box-none">
                 <ReaderToolbar
                   title={seriesTitle}
@@ -1896,7 +1883,7 @@ function SeriesReaderInstance({
         </Animated.View>
       </GestureDetector>
 
-      {/* The reader's dark surface — SwipeDismiss's static backdrop: full screen, never moving,
+      {/* The reader's dark surface — static: full screen, never moving,
           fading in place while a dismissal carries the page over it. It lives OUTSIDE the
           strip-centering frame below: inside it, the surface rode the frame's translate up with
           the reader and uncovered the screen bottom at low progress — the underlying screen
@@ -1904,10 +1891,9 @@ function SeriesReaderInstance({
           near the reader side. */}
       {detailsActive && <Animated.View pointerEvents="none" style={[styles.readerSurface, { width, height }]} />}
 
-      {/* The reader, beneath the details: full screen, with SwipeDismiss's layering inside —
-          static fading surface (above), traveling page subtree, fading chrome. The collapse/
-          dismiss pan wraps the whole cell (the scrubber and a zoomed page disable it), matching
-          how SwipeDismiss wraps the readers on /reader. */}
+      {/* The reader, beneath the details: full screen, in three layers — a static fading surface
+          above, the traveling page subtree, and the chrome that fades with it. The collapse/
+          dismiss pan wraps the whole cell (the scrubber and a zoomed page disable it). */}
       <GestureDetector gesture={collapsePan}>
         <Animated.View
           testID="series-page.reader-card"
@@ -2343,10 +2329,9 @@ type ReaderPaneHandle = { goTo: (index: number, animated?: boolean) => void };
 
 /** The reader itself + its bottom chrome, keyed to ONE RUN (the stitched window — native paged)
  *  or one chapter (web/webtoon/direct), and mounted only once its pages are in — so the start
- *  position seeds `useState`/`useRef` directly at mount (the same reason reader.tsx's pagers seed
- *  from `initialPage` exactly once). A trim of reader.tsx's body: stitched crossings relabel in
- *  place through `onRelabel`; explicit jumps swap the whole pane; the unmount flush records the
- *  outgoing chapter's final position. */
+ *  position seeds `useState`/`useRef` directly at mount (the pagers read `initialPage` exactly
+ *  once). Stitched crossings relabel in place through `onRelabel`; explicit jumps swap the whole
+ *  pane; the unmount flush records the outgoing chapter's final position. */
 const ReaderPane = forwardRef<
   ReaderPaneHandle,
   {
@@ -2379,7 +2364,7 @@ const ReaderPane = forwardRef<
     chromeVisible: boolean;
     onToggleChrome: () => void;
     onShowChrome: () => void;
-    /** Chrome-hold (see reader.tsx's holdChrome): suspend auto-hide while a control is in use. */
+    /** Chrome-hold: suspend auto-hide while a control is in use. */
     onHoldChrome: (hold: boolean) => void;
     onZoomChange: (zoomed: boolean) => void;
     /** A scrub drag started/ended — the screen also freezes its reveal pan for the duration. */
@@ -2387,11 +2372,6 @@ const ReaderPane = forwardRef<
     /** Rendered between the readers and the bottom chrome — the screen's reveal tint/fade layers
      *  go here, so they dim the PAGES without washing out the navigator/pill. */
     overlay?: ReactNode;
-    /** Animated transform for the PAGE subtree only — SwipeDismiss's travel. The tints and chrome
-     *  deliberately DON'T ride it: the page pulls away alone while everything else fades. */
-
-    /** Animated fade for the bottom chrome during a dismissal (reader.tsx's chromeFadeStyle). */
-
     /** True while the reader is parked as a decorative background (the collapsed strip):
      *  suspends the warm-ahead prefetch and shrinks the pager's render window to the visible
      *  page, so only the single page on screen is requested. */
@@ -2453,7 +2433,7 @@ const ReaderPane = forwardRef<
     [pages, chapterId],
   );
 
-  // ── Stitched flat pager (native paged, chaptered) — reader.tsx's mappings ──
+  // ── Stitched flat pager (native paged, chaptered) ──────────────────────────
   // Declared early (a noop until the record section below fills it) so the flat handlers can
   // flush the outgoing chapter's progress at a crossing.
   const recordRef = useRef<() => void>(() => {});
@@ -2533,7 +2513,7 @@ const ReaderPane = forwardRef<
   // The details card's page-thumbnail taps jump the mounted pane directly (see openPageFromDetails).
   useImperativeHandle(ref, () => ({ goTo }), [goTo]);
   // Where a scrub release lands: name the landing page immediately (viewability is suppressed
-  // during the drag), so the chrome is correct in the same commit — reader.tsx's seekTo.
+  // during the drag), so the chrome is correct in the same commit.
   const seekTo = useCallback(
     (index: number) => {
       goTo(index, true);
@@ -2571,7 +2551,7 @@ const ReaderPane = forwardRef<
   }, [goTo, stitched, prefixLen, pages, flatItems.length, handleFlatPageChange, chaptered, hasNextChapter, onCrossChapter]);
   const atLastPage = useCallback(() => currentRef.current >= pages.length - 1, [pages]);
 
-  // ── Scrubber (same UI-thread path as reader.tsx; offset 0 — nothing stitched) ──
+  // ── Scrubber (UI-thread throughout; offset 0 — nothing stitched) ───────────
   const scrubFlat = useSharedValue(-1);
   const [scrubbing, setScrubbing] = useState(false);
   const handleScrubbing = useCallback(
@@ -2604,9 +2584,9 @@ const ReaderPane = forwardRef<
     if (!standby && pages.length) warmAround(currentPage);
   }, [standby, pages, currentPage, warmAround]);
 
-  // ── Progress recording — reader.tsx's rules: a library series (inLibrary, queried by the
-  // screen) records chapter progress, anything else (including a direct series) goes to the
-  // reading log under the DIRECT_CHAPTER_ID sentinel. ──
+  // ── Progress recording: a library series (inLibrary, queried by the screen) records chapter
+  // progress; anything else (including a direct series) goes to the reading log under the
+  // DIRECT_CHAPTER_ID sentinel. ──
   const record = useCallback(() => {
     if (!bridgeId || !seriesId || !pages.length || inLibrary === undefined) return;
     const lastPage = currentRef.current;
@@ -2648,14 +2628,14 @@ const ReaderPane = forwardRef<
     recordRef.current = record;
   }, [record]);
   // Debounced on page settle + flushed on unmount (leaving the screen AND chapter swaps — the pane
-  // is keyed by chapter), like reader.tsx.
+  // is keyed by chapter).
   useEffect(() => {
     const t = setTimeout(() => recordRef.current(), 1500);
     return () => clearTimeout(t);
   }, [currentPage]);
   useEffect(() => () => recordRef.current(), []);
 
-  // ── Web keyboard nav (single-step version of reader.tsx's; no held-key repeat) ──
+  // ── Web keyboard nav (single-step; no held-key repeat) ─────────────────────
   useEffect(() => {
     if (!IS_WEB || typeof window === 'undefined') return;
     const onKey = (e: KeyboardEvent) => {
@@ -2717,8 +2697,8 @@ const ReaderPane = forwardRef<
           onPageChange={setCurrent}
           onToggleChrome={onToggleChrome}
           onZoomChange={onZoomChange}
-          // Same pairing as reader.tsx: the continuous strip advances via its end sentinel, the
-          // fit-page variant via the end-reached + last-page check.
+          // The continuous strip advances via its end sentinel, the fit-page variant via the
+          // end-reached + last-page check.
           nextChapterName={chaptered ? nextChapterName : undefined}
           onAdvance={chaptered && hasNextChapter ? () => onCrossChapter(1) : undefined}
           onEndReached={
@@ -2751,7 +2731,7 @@ const ReaderPane = forwardRef<
       ) : (
         <ChapterNavigator
           // `shown`, not the committed page: mid-crossing the counter reads the entering
-          // chapter's page/length, turning over WITH the swipe (reader.tsx's treatment).
+          // chapter's page/length, turning over WITH the swipe.
           page={shown.page}
           total={shown.total}
           rtl={settings.mode === 'paged' && settings.direction === 'rtl'}

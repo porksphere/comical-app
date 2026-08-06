@@ -276,10 +276,11 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     <View style={{ width, height }}>
       {/* Nothing full-screen is painted here on purpose. A virtualized list draws NOTHING where it
           hasn't mounted a cell, so a scrub that outruns virtualization shows whatever is behind the
-          list — which is SwipeDismiss's STATIC backdrop, deliberately tinted to the same composite
-          an unloaded page shows (PAGED_BACKDROP, see reader-page.tsx). A fill here used to provide
-          that tint, but this subtree is the part that translates/scales during swipe-to-dismiss, so
-          any full-screen fill inside it reads as the background travelling with the page. */}
+          list — which is the screen's STATIC reader surface, deliberately tinted to the same
+          composite an unloaded page shows (PAGED_BACKDROP, see reader-page.tsx). A fill here used
+          to provide that tint, but this subtree is the part that translates/scales during a
+          swipe-away, so any full-screen fill inside it reads as the background travelling with
+          the page. */}
       <FlatList
         ref={listRef}
         // Sized explicitly: it used to BE this component's root and take the size

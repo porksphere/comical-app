@@ -1,7 +1,18 @@
-# Verifies the reader's swipe-away dismissal (see components/reader/swipe-dismiss.tsx).
-# Default settings = paged (horizontal) mode, so the dismiss axis is VERTICAL:
-#   1. a small, slow vertical drag must NOT dismiss (below distance + flick thresholds),
-#   2. a big fast vertical swipe must slide the page away and close the reader.
+# Verifies the expanded reader's swipe-away dismissal — the gallery collapse that takes the whole
+# series page back into the card it was opened from (see `collapsePan` in app/series/index.tsx).
+#
+# Default settings = paged (horizontal) mode, so the reader's cross axis is VERTICAL, and the two
+# vertical directions do DIFFERENT things there:
+#   • UP   reveals the details (they slide back in over the reader) — covered by series-page.yaml.
+#   • DOWN is a dismissal, because it isn't the reveal: every drag that isn't the reveal collapses.
+# So this flow drags DOWN:
+#   1. a small, slow downward drag must NOT dismiss (below the 25% distance and 900px/s flick
+#      thresholds) — the page springs back and the reader stays put,
+#   2. a big fast downward swipe must collapse the page away entirely, landing back on Browse.
+#
+# Landing on BROWSE (not on the series details) is the point of the assertion at the end: details
+# and reader are one screen now, so dismissing the reader dismisses the series page with it.
+#
 # Mobile-only: web/Chromium's pointer-based swipe simulation isn't verified to drive this
 # gesture-threshold logic faithfully — see ../README.md's "Gesture-only flows" ground rule.
 appId: com.porksphere.comical
@@ -33,22 +44,22 @@ appId: com.porksphere.comical
 # flick thresholds) — the page must spring back, reader still open. NB: assert on
 # the always-present tap zones, not the toolbar — chrome auto-hides after 3s.
 - swipe:
-    start: 50%, 55%
-    end: 50%, 45%
+    start: 50%, 45%
+    end: 50%, 55%
     duration: 1000
 - assertVisible:
     id: "reader.control.next"
 
-# Big fast swipe up — the page follows, fades, and the reader dismisses.
+# Big fast swipe DOWN — the page follows the finger, shrinks toward the card, and the whole
+# series page collapses out.
 - swipe:
-    start: 50%, 75%
-    end: 50%, 15%
+    start: 50%, 25%
+    end: 50%, 85%
     duration: 250
 
-# Back on the series screen — assert on the chapter list, not `series.cover`:
-# the screen kept its scroll position from before entering the reader, so the
-# cover sits above the fold.
+# Back on the Browse grid the card was tapped from — the reader is gone, and so is the series
+# page that held it.
 - assertNotVisible:
     id: "reader.control.next"
 - assertVisible:
-    id: "series\\.chapter\\..*"
+    id: "series-card\\..*"

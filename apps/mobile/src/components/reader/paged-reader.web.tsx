@@ -32,9 +32,9 @@ export type PagedReaderHandle = {
 };
 
 type Props = {
-  /** Per-chapter on web (reader.tsx doesn't stitch here): this pager hands a
-   *  swipe past the last/first page to onNext/onPrev (see finalizeSwipe), so
-   *  chapter transitions stay route-level. Item shape shared with native. */
+  /** Per-chapter on web (nothing is stitched here): this pager hands a swipe
+   *  past the last/first page to onNext/onPrev (see finalizeSwipe), so chapter
+   *  transitions stay the screen's business. Item shape shared with native. */
   pages: ReaderPageItem[];
   width: number;
   height: number;
@@ -75,7 +75,7 @@ type Props = {
  *
  * Pages live in an absolutely-positioned flex row translated via a CSS
  * transform; zoom is a transform on the current page's inner wrapper, so the
- * toolbar / progress pill / settings (siblings in reader.tsx) never move.
+ * toolbar / progress pill / settings (siblings on the series page) never move.
  *
  * RTL: the data array is reversed and logical↔physical mapping keeps "next" =
  * reading order +1. Gestures move the track in PHYSICAL terms regardless of
@@ -357,9 +357,9 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   );
 
   // `initialPage` only seeds `index`'s initial state (read once, at mount) —
-  // but reader.tsx's own `currentPage` briefly starts at 0 before its
-  // pages-loaded effect corrects it to the real requested start index (see
-  // reader.tsx's `startIndex` effect), and this component mounts in that same
+  // but the screen's own `currentPage` briefly starts at 0 before its
+  // pages-loaded effect corrects it to the real requested start index, and
+  // this component mounts in that same
   // window (gated behind `!pages`). Re-sync whenever `initialPage` changes and
   // no longer matches our own index — a mismatch only really happens from that
   // external correction (or an imperative `goToPage`, which already keeps

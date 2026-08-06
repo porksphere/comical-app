@@ -201,19 +201,19 @@ export function SeriesBody({
   /** The hero cover's live aspect + its measurer — owned by SeriesScreen (see there). */
   coverAspect: number;
   onCoverLoad: (e: ImageLoadEventData) => void;
-  /** Reports the hero cover's window rect on layout. Only the series page passes it,
-   *  as the destination bound for its zoom transition; `/series` leaves it off and nothing measures. */
+  /** Reports the hero cover's window rect on layout — the destination bound for the page's zoom
+   *  transition. */
   onHeroCoverRect?: (rect: { x: number; y: number; width: number; height: number }) => void;
   /** Top inset for the owning scroller — defaults to this screen's overlaying TopBar height.
    *  The series page passes its own (its details card has no top bar). */
   topInset?: number;
-  /** Replaces the Read button / cover tap's "open `/reader` at the resume point" — the
-   *  series page returns to its own in-place reader instead. */
-  onStartReading?: () => void;
-  /** See ChapterScrollList / PageThumbList: hand a tapped chapter version / page thumbnail to the
-   *  caller's in-place reader instead of pushing `/reader`. */
-  onOpenChapter?: (version: Chapter) => void;
-  onOpenPage?: (pageIndex: number) => void;
+  /** What the Read button / cover tap does: expand the page's own in-place reader at the resume
+   *  point. Nothing is pushed — the reader is the other half of this same screen. */
+  onStartReading: () => void;
+  /** See ChapterScrollList / PageThumbList: hand a tapped chapter version / page thumbnail to that
+   *  same in-place reader. */
+  onOpenChapter: (version: Chapter) => void;
+  onOpenPage: (pageIndex: number) => void;
   /** Pull-to-refresh wiring owned by SeriesScreen, threaded to whichever list owns the scroll. */
   sharedValues?: { scrollOffset: SharedValue<number> };
   onScrollEndDrag?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
@@ -303,24 +303,21 @@ export function SeriesBody({
     ...(author ? { author } : {})
   }));
 
-  // Resume point + the push that opens it — shared with the card long-press menu's Read row, so the
-  // two can't resume at different places (see useStartReading).
-  // Read no longer waits on the deferred chapter list: with no resume point it hands the reader an
-  // unspecified chapter and the reader picks the first one itself, so the button is live immediately.
-  const {
-    label: readingLabel,
-    resume: resumeEntry,
-    start: startReadingDefault
-  } = useStartReading({
+  // What Read is CALLED — the resume point's own chapter name, resolved from the cached history.
+  // Shared with the card long-press menu's Read row (see useStartReading) so the two can't name
+  // different places; the menu's copy also owns the push, while here the button just expands the
+  // page's own reader, which resolved the same resume point itself.
+  //
+  // Read never waits on the deferred chapter list: with no resume point the reader is handed an
+  // unspecified chapter and picks the first one itself, so the button is live immediately.
+  const { label: readingLabel, resume: resumeEntry } = useStartReading({
     bridgeId,
     seriesId: series.id,
     title: series.title,
     direct,
     readLabel
   });
-  // The series page swaps the push-to-/reader for a return to its in-place reader
-  // (which resolved the same resume point itself); this screen keeps the default.
-  const startReading = onStartReading ?? startReadingDefault;
+  const startReading = onStartReading;
   // The play glyph leads a RESUME (and the bare "Read" fallback); a bridge's own readLabel is shown
   // as it comes.
   const primaryLabel = !resumeEntry && readLabel ? readLabel : `▶  ${readingLabel}`;
@@ -624,7 +621,6 @@ export function SeriesBody({
         thumbs={pageThumbs ?? []}
         loading={loading || listLoading || !listReady}
         seed={series.id}
-        title={series.title}
         bridgeId={bridgeId}
         header={<View style={styles.innerNoPad}>{heroBlock}</View>}
         footer={relatedRailsEl}

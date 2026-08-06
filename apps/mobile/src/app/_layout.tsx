@@ -115,24 +115,20 @@ function RootNavigation() {
           {/* Custom-lists manager (create/rename/reorder/delete), pushed from the Library selector. */}
           <Stack.Screen name="manage-lists" options={{ headerShown: false }} />
           <Stack.Screen name="results" options={{ headerShown: false }} />
-          {/* Full-screen page reader; its own dark chrome, fade in/out. A
-              *contained* transparent modal so the screen it was opened from stays
-              rendered underneath — the reader's own dark backdrop covers it at
-              rest and fades out under a swipe-away, revealing it (see reader.tsx).
-              `contained…` (not plain `transparentModal`) keeps the reader inside
-              the JS-managed container instead of a separate native modal VC, so
-              the app-root overlays (the reader settings sheet) still render ABOVE
-              it — a plain transparentModal presented them behind the reader,
-              making the settings gear look dead on iOS. */}
-          <Stack.Screen
-            name="reader"
-            options={{ headerShown: false, animation: 'fade', presentation: 'containedTransparentModal' }}
-          />
-          {/* THE series page: details + an in-place reader, either side one gesture from the
-              other. A contained transparent modal like /reader, so its dismissal can collapse
-              back into the card it was opened from and reveal the grid underneath. The route is a
-              DIRECTORY hosting its own nested stack — sub-pages (downloads) push as real cards
-              inside the modal (see app/series/_layout.tsx).
+          {/* THE series page — and the only reader there is: details and pages are one screen,
+              either side one gesture from the other. Everything that used to push a standalone
+              /reader (a History row, the card menu's Read, a chapter row, a page thumbnail) opens
+              THIS, on whichever side it means.
+
+              A *contained* transparent modal, so the screen it was opened from stays rendered
+              underneath — the reader's own dark backdrop covers it at rest and fades out under a
+              swipe-away, revealing it — and so its dismissal can collapse back into the card it
+              was opened from. `contained…` (not plain `transparentModal`) keeps it inside the
+              JS-managed container instead of a separate native modal VC, so the app-root overlays
+              (the reader settings sheet) still render ABOVE it; a plain transparentModal presented
+              them behind, which made the settings gear look dead on iOS. The route is a DIRECTORY
+              hosting its own nested stack — sub-pages (downloads) push as real cards inside the
+              modal (see app/series/_layout.tsx).
 
               `animation: 'none'` because the SCREEN animates itself: it grows out of that card's
               cover and collapses back into it, and every exit (swipe, chevron, hardware back)

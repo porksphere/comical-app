@@ -42,7 +42,7 @@ const RETRY_DELAYS_MS = [1000, 2000, 4000];
  * gesture instead of blending into the backdrop behind it. A low-alpha fill lets that show
  * through. It's fine ON A PAGE (a page-sized tint moving with the page it belongs to is the page
  * moving); what must never exist is a full-SCREEN fill inside the pager, since that whole subtree
- * translates/scales during swipe-to-dismiss while the backdrop stays put (see SwipeDismiss).
+ * translates/scales during a swipe-away while the backdrop stays put.
  */
 export const PAGE_SURFACE = 'rgba(31,31,36,0.18)';
 
