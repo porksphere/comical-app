@@ -1387,15 +1387,28 @@ function SeriesReaderInstance({
     // target: a virtual destination that keeps ONE edge attached to the source, so a wide source
     // fills the destination's width and follows its top edge while a narrow one fills the height
     // and follows the leading edge. Anchors follow `getZoomContentAnchor` accordingly.
+    // WHICH bound depends on what is actually on screen. The measured hero cover is only the
+    // right destination while the DETAILS are up — that is where the picture lives, and landing on
+    // it is what makes the transition a shared element. Collapsing out of the expanded READER it
+    // is the wrong answer twice over: the details are slid away, so that rect corresponds to
+    // nothing visible, and it is a fixed small box, so the copy sat at one static size over a
+    // full-screen page instead of shrinking with it.
+    //
+    // So the reader uses the computed target instead, which is defined RELATIVE to the screen —
+    // full width at the source thumbnail's aspect. The copy is then a constant fraction of the
+    // page and scales with it all the way down into the card, which is what "swiping the page
+    // away" should look like. (It also collapses much further: the page scales to roughly the
+    // card's width fraction rather than the ~0.91 a details-sized bound gives.)
+    const bound = detailsActive ? destBound : null;
     const sourceAspect = hero.width / hero.height;
     const screenAspect = width / height;
     const narrow = sourceAspect < screenAspect;
-    const end: ZoomOrigin = destBound
-      ? destBound
+    const end: ZoomOrigin = bound
+      ? bound
       : narrow
         ? { x: 0, y: 0, width: sourceAspect * height, height }
         : { x: 0, y: 0, width, height: (hero.height / hero.width) * width };
-    const anchor: 'center' | 'top' | 'leading' = destBound ? 'center' : narrow ? 'leading' : 'top';
+    const anchor: 'center' | 'top' | 'leading' = bound ? 'center' : narrow ? 'leading' : 'top';
 
     const sx = hero.width / end.width;
     const sy = hero.height / end.height;
@@ -1417,7 +1430,9 @@ function SeriesReaderInstance({
       tx: startAnchor.x - (screenCenterX + (endAnchor.x - screenCenterX) * s),
       ty: startAnchor.y - (screenCenterY + (endAnchor.y - screenCenterY) * s),
     };
-  }, [hero, destBound, width, height]);
+    // `detailsActive` is COMMITTED state, so it only flips when a reveal or collapse finishes —
+    // never mid-flight, which is what would make swapping the bound visible.
+  }, [hero, destBound, detailsActive, width, height]);
 
   // THE MASK. Grows from the source rect to the whole screen, carrying the card's corner radius
   // out to 0. In the library this lives INSIDE the transformed content and undoes the content
