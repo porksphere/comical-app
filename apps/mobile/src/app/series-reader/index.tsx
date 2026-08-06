@@ -1402,13 +1402,20 @@ function SeriesReaderInstance({
     const bound = detailsActive ? destBound : null;
     const sourceAspect = hero.width / hero.height;
     const screenAspect = width / height;
-    const narrow = sourceAspect < screenAspect;
-    const end: ZoomOrigin = bound
-      ? bound
-      : narrow
-        ? { x: 0, y: 0, width: sourceAspect * height, height }
-        : { x: 0, y: 0, width, height: (hero.height / hero.width) * width };
-    const anchor: 'center' | 'top' | 'leading' = bound ? 'center' : narrow ? 'leading' : 'top';
+    // The computed target is CENTRED on the page. `getZoomContentTarget` pins it to an edge
+    // instead — top for a wide source, leading for a narrow one — which suits a gallery, where the
+    // destination really does start at the top of its screen. Here it has no counterpart in the
+    // layout at all: it stands in for the page as a whole, so anything but centred reads as the
+    // copy sitting off to one side of the thing it is supposed to be standing in for.
+    const fitToWidth = sourceAspect >= screenAspect;
+    const fitW = fitToWidth ? width : sourceAspect * height;
+    const fitH = fitToWidth ? (hero.height / hero.width) * width : height;
+    const end: ZoomOrigin = bound ?? {
+      x: (width - fitW) / 2,
+      y: (height - fitH) / 2,
+      width: fitW,
+      height: fitH,
+    };
 
     const sx = hero.width / end.width;
     const sy = hero.height / end.height;
@@ -1416,10 +1423,9 @@ function SeriesReaderInstance({
     const s = aspectDifference < ZOOM_ASPECT_EPSILON ? Math.max(sx, sy) : Math.min(sx, sy);
 
     // getAnchorPoint, for the three anchors this transition can pick.
-    const anchorOf = (b: ZoomOrigin) => ({
-      x: anchor === 'leading' ? b.x : b.x + b.width / 2,
-      y: anchor === 'top' ? b.y : b.y + b.height / 2,
-    });
+    // Centre-to-centre either way now — the measured bound always used it, and the computed one
+    // is centred by construction above.
+    const anchorOf = (b: ZoomOrigin) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
     const startAnchor = anchorOf(hero);
     const endAnchor = anchorOf(end);
     const screenCenterX = width / 2;
