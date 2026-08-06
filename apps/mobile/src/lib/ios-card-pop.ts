@@ -32,11 +32,6 @@ export const IOS_CARD_SPRING = {
 /** How far the screen UNDERNEATH drifts while a card covers it (`forHorizontalIOS`: -30%, not -100%). */
 export const IOS_PARALLAX_FRACTION = 0.3;
 
-/** Where a pushed card is considered gone: past the midpoint of its own travel. Fed to
- *  `releaseCommitted` — see lib/gesture-release for why that is a projection and not a pair of
- *  independent distance/velocity tests. */
-export const IOS_POP_COMMIT_FRACTION = 0.5;
-
 /**
  * The shadow UIKit draws down the leading edge of a pushed card, over the screen it covers. Without
  * it the card reads as a flat swap rather than something on top.

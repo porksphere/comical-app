@@ -68,7 +68,7 @@ import { getPreferredGroup, resetPreferredGroup, setPreferredGroup } from '@/lib
 
 import { backSwipePan } from '@/lib/back-swipe';
 import { releaseCommitted, releaseCommittedEitherWay } from '@/lib/gesture-release';
-import { IOS_CARD_SHADOW, IOS_CARD_SPRING, IOS_PARALLAX_FRACTION, IOS_POP_COMMIT_FRACTION } from '@/lib/ios-card-pop';
+import { IOS_CARD_SHADOW, IOS_CARD_SPRING, IOS_PARALLAX_FRACTION } from '@/lib/ios-card-pop';
 import { registerDrillSeries, registerOpenSearchLayer } from '@/lib/series-nav';
 import { seriesReaderDim } from '@/lib/series-backdrop';
 import { holdZoomingSeries, takeZoomOrigin, type ZoomRect } from '@/lib/series-zoom';
@@ -122,21 +122,22 @@ const IS_WEB = Platform.OS === 'web';
 const IS_IOS = Platform.OS === 'ios';
 // The reader surface's tone (the reference's `#reader-view`: #0f0f0f, not pure black).
 const READER_BACKDROP = '#0f0f0f';
-// Reveal hysteresis: the drag must cover this fraction of the axis (or flick past FLICK_VELOCITY)
-// to commit to the other view; anything less springs back to the active one.
+// How far a release must be PROJECTED (see lib/gesture-release — every commit decision on this
+// screen and in the search layer now asks the same question) before it counts as committed.
 //
-// The REVEALS deliberately keep this distance-OR-flick pair while the DISMISSALS have moved to the
-// projected release below. They are not the same question. A reveal picks which of two sides of
-// one screen you end up on — both outcomes are cheap and instantly reversible, so a low bar and a
-// hard flick cutoff are fine, and the current feel was signed off as-is. A dismissal throws the
-// screen away; it should read the gesture's momentum, and it is the one users compare against the
-// system's own back-swipe.
-const COMMIT_FRACTION = 0.25;
-const FLICK_VELOCITY = 900;
-// How far a dismissal must be PROJECTED to have committed — the midpoint of its travel, matching
-// what a pushed card does (IOS_POP_COMMIT_FRACTION). Higher than the reveals' 0.25 on purpose:
-// once velocity counts for its real worth instead of being a 900px/s cliff, a quarter of the
-// screen is a hair-trigger — a barely-moving release would clear it.
+// Two values, because there are two kinds of decision here and they deserve different bars:
+//
+//   REVEAL — which of the two sides of this ONE screen you end up on. Both outcomes are cheap and
+//     instantly reversible, so the bar stays low: a quarter of the travel. Combined with a real
+//     momentum term that means a release still moving toward the other side takes you there, which
+//     is what a two-state toggle should do and what the old flick cutoff kept refusing to do — a
+//     quick flick under 900px/s used to be ignored entirely.
+//
+//   DISMISS — throwing the screen away. Half the travel, matching a pushed card, and NOT a matter
+//     of taste: once velocity counts for its real worth instead of being a cliff, a quarter is a
+//     hair-trigger that a barely-moving release would clear. A reveal can afford to be wrong; a
+//     dismissal cannot.
+const REVEAL_COMMIT_FRACTION = 0.25;
 const DISMISS_COMMIT_FRACTION = 0.5;
 // The reveal pull: how far past the details list's top the rubber-band must be pulled, at
 // release, to expand the reader. Roughly usePullToRefresh's trigger feel.
@@ -915,7 +916,9 @@ function SeriesReaderInstance({
           if (gestureMode.value === 1) {
             const cross = settings.mode === 'paged' ? e.translationY : -e.translationX;
             const crossVelocity = settings.mode === 'paged' ? e.velocityY : -e.velocityX;
-            const open = -cross / span > COMMIT_FRACTION || crossVelocity < -FLICK_VELOCITY;
+            // Same projected release as everywhere else, along the direction that OPENS the
+            // details (which is negative `cross`).
+            const open = releaseCommitted(-cross, -crossVelocity, span * REVEAL_COMMIT_FRACTION);
             detailsActiveSV.set(open);
             progress.set(withTiming(open ? 1 : 0, { duration: 240, easing: Easing.out(Easing.cubic) }));
             runOnJS(commitReveal)(open ? 1 : 0);
@@ -1007,7 +1010,7 @@ function SeriesReaderInstance({
         if (!detailsActiveSV.value) return;
         const toward = e.translationY;
         const towardVelocity = e.velocityY;
-        const open = toward / span > COMMIT_FRACTION || towardVelocity > FLICK_VELOCITY;
+        const open = releaseCommitted(toward, towardVelocity, span * REVEAL_COMMIT_FRACTION);
         detailsActiveSV.set(!open);
         progress.set(withTiming(open ? 0 : 1, { duration: 240, easing: Easing.out(Easing.cubic) }));
         runOnJS(commitReveal)(open ? 0 : 1);
@@ -1067,7 +1070,7 @@ function SeriesReaderInstance({
       })
       .onEnd((e) => {
         if (!detailsActiveSV.value) return;
-        const close = e.translationY / headerSpan > COMMIT_FRACTION || e.velocityY > FLICK_VELOCITY;
+        const close = releaseCommitted(e.translationY, e.velocityY, headerSpan * REVEAL_COMMIT_FRACTION);
         detailsActiveSV.set(!close);
         progress.set(withTiming(close ? 0 : 1, { duration: 240, easing: Easing.out(Easing.cubic) }));
         runOnJS(commitReveal)(close ? 0 : 1);
@@ -2207,7 +2210,9 @@ function SearchLayer({
       })
       .onEnd((e) => {
         // Where the swipe was HEADED, not where it stopped — see lib/gesture-release.
-        if (releaseCommitted(e.translationX, e.velocityX, width * IOS_POP_COMMIT_FRACTION)) slideOut(e.velocityX);
+        // A card pop IS a dismissal, so it takes the same bar — half the travel, which is also
+        // what react-navigation uses for this exact transition.
+        if (releaseCommitted(e.translationX, e.velocityX, width * DISMISS_COMMIT_FRACTION)) slideOut(e.velocityX);
         else settle(e.velocityX);
       })
       .onFinalize(() => {
