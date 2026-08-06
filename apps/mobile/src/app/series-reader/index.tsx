@@ -227,6 +227,10 @@ const ZOOM_DRAG_TRAVEL = 0.9;
 // gesture that only caught unusually straight swipes — a real swipe across a tall scrolling page
 // arcs, and an absolute cross-axis budget fails it long before it has shown its intent.
 const BACK_DECIDE_PX = 14;
+// …and how much MORE horizontal than vertical it has to be. 1 (any rightward lean) was too
+// forgiving — a diagonal flick off a scrolling list read as a dismissal. This is roughly a 30°
+// cone off horizontal.
+const BACK_DOMINANCE = 1.75;
 
 /** `resolveZoomPrimaryDragTranslation` — exponential resistance along the drag's own axis. */
 function zoomPrimaryDrag(translation: number, dimension: number): number {
@@ -1139,7 +1143,7 @@ function SeriesReaderInstance({
         }
         const dx = t.absoluteX - backStartX.value;
         const dy = Math.abs(t.absoluteY - backStartY.value);
-        if (dx > BACK_DECIDE_PX && dx > dy) {
+        if (dx > BACK_DECIDE_PX && dx > dy * BACK_DOMINANCE) {
           backDecided.set(1);
           manager.activate();
         } else if (dy > BACK_DECIDE_PX || dx < -BACK_DECIDE_PX) {
@@ -1351,9 +1355,10 @@ function SeriesReaderInstance({
   // result with none of the compensation math — at the cost of the page needing to undo the
   // mask's own offset (see zoomPageStyle).
   const zoomMaskStyle = useAnimatedStyle(() => {
-    if (!hero) return {};
-    // Before arming: the whole screen, so nothing is clipped while the destination is measured.
-    if (!zoomArmed.value) {
+    // Always explicit numbers, never a percentage fallback from the stylesheet — a mask that is
+    // sometimes laid out and sometimes transformed is how the two halves get to disagree.
+    // No source rect, or not yet armed: the whole screen, so nothing is clipped.
+    if (!hero || !zoomArmed.value) {
       return { left: 0, top: 0, width, height, borderRadius: 0, borderCurve: 'continuous' as const };
     }
     // Clamped at the bottom: the close spring is underdamped (damping ratio ~0.85, the library's
@@ -1362,8 +1367,11 @@ function SeriesReaderInstance({
     // spring is heavily overdamped and never passes 1.
     const q = Math.max(0, zoom.value);
     return {
-      left: hero.x * (1 - q),
-      top: hero.y * (1 - q),
+      // The drag moves the MASK, not the page inside it. Both have to travel together or the page
+      // slides out from under its own window — a rectangle of page hanging in the wrong place,
+      // which is exactly what a dragged mask-less collapse looked like.
+      left: hero.x * (1 - q) + dragX.value,
+      top: hero.y * (1 - q) + dragY.value,
       width: hero.width + (width - hero.width) * q,
       height: hero.height + (height - hero.height) * q,
       borderRadius: ZOOM_CORNER_RADIUS * (1 - q),
@@ -1407,15 +1415,14 @@ function SeriesReaderInstance({
     // let go of a dismissal it becomes the finishing Bézier instead — from the scale the page was
     // released at, down to the collapsed scale, biased by the release velocity.
     const scale = zoomGeom.s + (1 - zoomGeom.s) * q;
-    // The follow is NOT weighted by the collapse: the page goes where the finger goes, full stop,
-    // and the release springs it home from wherever that was (see the pan). Weighting it meant the
-    // page stopped following as soon as the drag got going, which read as it not following at all.
-    const followX = dragX.value;
-    const followY = dragY.value;
+    // NOTE the compensation uses the UNDRAGGED mask origin. The mask sits at `maskLeft + dragX`
+    // and the page at `T - maskLeft` inside it, which puts the page at `T + dragX` in window
+    // space: mask and content displaced by exactly the same amount, so the window keeps framing
+    // the same part of the page however far it is dragged.
     return {
       transform: [
-        { translateX: zoomGeom.tx * (1 - q) - maskLeft + followX },
-        { translateY: zoomGeom.ty * (1 - q) - maskTop + followY },
+        { translateX: zoomGeom.tx * (1 - q) - maskLeft },
+        { translateY: zoomGeom.ty * (1 - q) - maskTop },
         { scale },
       ],
     };
@@ -2800,13 +2807,9 @@ const styles = StyleSheet.create({
   // The zoom's window (see zoomMaskStyle). Absolutely positioned because its whole box is
   // animated; `overflow: hidden` is what makes it a mask rather than just a rounded outline.
   zoomMask: {
+    // Box comes entirely from zoomMaskStyle (always explicit numbers) — nothing here, so a
+    // percentage base can never race the animated one.
     position: 'absolute',
-    // The resting box, which is also what the no-source-rect fallback keeps: the whole screen.
-    // zoomMaskStyle overrides all four while a zoom is in play.
-    top: 0,
-    left: 0,
-    width: '100%',
-    height: '100%',
     overflow: 'hidden',
   },
   // The page inside that window — pinned to the SCREEN's size at the call site, never the mask's,
