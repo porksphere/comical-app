@@ -262,7 +262,7 @@ export function SeriesCardContextMenuHost() {
 }
 
 function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
-  const { entry, bridgeId, bridge, direct, coverAspect, rect } = req;
+  const { entry, bridgeId, bridge, direct, coverAspect, rect, zoomSource } = req;
   // The VISUAL corner radius the preview starts at (matches the source it lifts from); it morphs to the
   // resting radius (REST_COVER_RADIUS) as it opens. Defaults to that resting radius (a card cover).
   const startRadius = req.startRadius ?? REST_COVER_RADIUS;
@@ -1065,9 +1065,10 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // `rect` is the whole CARD, title included, so its height is not the cover's. The cover's is the
   // same number the lifted preview derives (see `coverH`): the width over the capped aspect.
   const handOffZoom = useCallback(() => {
+    if (zoomSource === undefined) return; // web, or a caller with no zoom entrance
     const coverHeight = rect.width / clampThumbAspect(coverAspect ?? DEFAULT_THUMB_ASPECT);
-    setZoomOrigin(entry.id, { x: rect.x, y: rect.y, width: rect.width, height: coverHeight, radius: startRadius });
-  }, [rect.x, rect.y, rect.width, coverAspect, entry.id, startRadius]);
+    setZoomOrigin(entry.id, zoomSource, { x: rect.x, y: rect.y, width: rect.width, height: coverHeight, radius: startRadius });
+  }, [rect.x, rect.y, rect.width, coverAspect, entry.id, startRadius, zoomSource]);
 
   // Tapping a page in the rail opens the series page READER-FIRST at that page — the same screen
   // the Read row opens, and the same one a History row opens; the details are one swipe below it.

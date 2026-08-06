@@ -1085,10 +1085,10 @@ function SeriesReaderInstance({
   // Consumed in a state initializer so it's known on the FIRST render — a frame later would mean
   // starting the grow from the wrong geometry — and remembered for the instance's whole lifetime,
   // so the exit collapses back into the same box.
-  const [zoomOrigin] = useState(() => (IS_WEB ? null : takeZoomOrigin(id)));
+  const [zoomSource] = useState(() => (IS_WEB ? null : takeZoomOrigin(id)));
   // The source rect this page aligns itself to. No image is needed — unlike a classic shared
   // element, nothing is copied or flown; the page is its own transition subject (see zoomMaskStyle).
-  const hero = zoomOrigin;
+  const hero = zoomSource?.origin ?? null;
   const [destBound, setDestBound] = useState<ZoomRect | null>(null);
   const zoomStartedRef = useRef(false);
   // Blanking the source card is tied to ARMING, not to mount: the wait for the destination
@@ -1101,10 +1101,11 @@ function SeriesReaderInstance({
   const startZoom = useCallback(() => {
     if (zoomStartedRef.current) return;
     zoomStartedRef.current = true;
-    if (zoomOrigin && id) zoomReleaseRef.current = holdZoomingSeries(id);
+    // Blank the ONE card this grew out of — not every card showing this series (see the module).
+    if (zoomSource && id) zoomReleaseRef.current = holdZoomingSeries(id, zoomSource.source);
     zoomArmed.set(true);
     zoom.set(withSpring(1, ZOOM_IN_SPRING));
-  }, [zoom, zoomArmed, zoomOrigin, id]);
+  }, [zoom, zoomArmed, zoomSource, id]);
   const onHeroCoverRect = useCallback((rect: ZoomRect) => {
     // Only the FIRST report, and only before the geometry is committed: the cover box re-lays out
     // as its aspect settles, and moving the destination mid-flight would visibly jump.
@@ -1120,13 +1121,13 @@ function SeriesReaderInstance({
     // off-screen at progress 0, so its hero cover would measure a rect that isn't on screen. The
     // computed fallback target — derived from the source rect alone — is the right destination
     // when the destination has nothing to show.
-    if (!zoomOrigin || readerFirst) {
+    if (!zoomSource || readerFirst) {
       startZoom();
       return;
     }
     const t = setTimeout(startZoom, ZOOM_BOUND_WAIT_MS);
     return () => clearTimeout(t);
-    // Mount-only entrance — `zoomOrigin` never changes for an instance.
+    // Mount-only entrance — `zoomSource` never changes for an instance.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -2154,22 +2155,63 @@ function SearchLayer({
     });
     return () => sub.remove();
   }, [closeLayer]);
-  // The back-swipe — the instance rig's recipe (full-surface, native activation criteria; the
-  // search's own horizontal pieces, the filter chips, claim their touches the same way the
-  // details rails do). Built twice for the same reason as the instance's makeBackSwipePan: the
-  // screen-level copy covers the chrome, and a second copy rides the results scroller composed
-  // with a Native handler (`Gesture.Simultaneous`, one detector — see there for why the
-  // cross-detector relation isn't trusted).
+  // The back-swipe — the instance rig's recipe, and now actually it: this copy was left on the
+  // absolute activeOffsetX/failOffsetY budgets the instance's pan used to have, so a drag that the
+  // series page happily accepted (any real thumb arc — 14px of vertical is nothing) was killed
+  // here before it moved anything. That mismatch is what made this layer feel hand-rolled next to
+  // the rest of the app; the criteria below are the instance's, verbatim.
+  //
+  // Built twice for the same reason as the instance's makeBackSwipePan: the screen-level copy
+  // covers the chrome, and a second copy rides the results scroller composed with a Native handler
+  // (`Gesture.Simultaneous`, one detector — see there for why the cross-detector relation isn't
+  // trusted). Which is also why the per-copy `ranHere` and the one-way `edgeCommitting` come
+  // across: both copies see the same touches and both reach onFinalize, so the loser could
+  // otherwise settle a drag the winner is driving — or undo a commit it just made, cancelling the
+  // exit and leaving the layer parked half off-screen, since a cancelled `withTiming` never runs
+  // its callback and the pop would simply never happen.
+  const backStartX = useSharedValue(0);
+  const backStartY = useSharedValue(0);
+  const backDecided = useSharedValue(0);
   const makeBackSwipePan = useCallback(() => {
+    const ranHere = makeMutable(false);
+    const settle = () => {
+      'worklet';
+      edgeX.set(withSpring(0, SPRING_BACK));
+    };
     return Gesture.Pan()
-      .activeOffsetX(20)
-      .failOffsetX(-12)
-      .failOffsetY([-14, 14])
+      // Manual activation, so the decision can be a RATIO rather than the absolute cross-axis
+      // budget activeOffsetX/failOffsetY can express (see BACK_ACTIVATE_PX).
+      .manualActivation(true)
+      .onTouchesDown((e) => {
+        const t = e.allTouches[0];
+        if (!t) return;
+        backStartX.set(t.absoluteX);
+        backStartY.set(t.absoluteY);
+        backDecided.set(0);
+      })
+      .onTouchesMove((e, manager) => {
+        if (backDecided.value !== 0) return;
+        const t = e.allTouches[0];
+        if (!t) return;
+        const dx = t.absoluteX - backStartX.value;
+        const dy = Math.abs(t.absoluteY - backStartY.value);
+        if (dx > BACK_ACTIVATE_PX && dx > dy * BACK_DOMINANCE) {
+          backDecided.set(1);
+          manager.activate();
+        } else if ((dy > BACK_FAIL_PX && dy > dx) || dx < -BACK_FAIL_PX) {
+          // Vertical intent (the results grid scrolls), or a leftward drag, which is nothing here.
+          backDecided.set(-1);
+          manager.fail();
+        }
+      })
+      .onStart(() => {
+        ranHere.set(true);
+      })
       .onUpdate((e) => {
         edgeX.set(Math.max(0, e.translationX));
       })
       .onEnd((e) => {
-        if (edgeX.value > width * 0.3 || e.velocityX > FLICK_VELOCITY) {
+        if (e.translationX > width * COMMIT_FRACTION || e.velocityX > FLICK_VELOCITY) {
           edgeCommitting.set(true);
           edgeX.set(
             withTiming(width, { duration: EXIT_MS }, (finished) => {
@@ -2177,21 +2219,28 @@ function SearchLayer({
             }),
           );
         } else {
-          edgeX.set(withSpring(0, SPRING_BACK));
+          settle();
         }
       })
       .onFinalize(() => {
-        if (!edgeCommitting.value) edgeX.set(withSpring(0, SPRING_BACK));
-        edgeCommitting.set(false);
+        // Only the copy that was DRIVING settles a cancelled drag, and never over a commit —
+        // `edgeCommitting` is one-way for this layer's whole life, exactly as on the instance.
+        if (ranHere.value && !edgeCommitting.value) settle();
+        ranHere.set(false);
       });
-  }, [width, edgeX, edgeCommitting, onPopLayer]);
+  }, [width, edgeX, edgeCommitting, backStartX, backStartY, backDecided, onPopLayer]);
   const edgePan = useMemo(() => makeBackSwipePan(), [makeBackSwipePan]);
   const scrollGesture = useMemo(
     () => (IS_WEB ? undefined : Gesture.Simultaneous(Gesture.Native(), makeBackSwipePan())),
     [makeBackSwipePan],
   );
   const slideStyle = useAnimatedStyle(() => ({ transform: [{ translateX: edgeX.value }] }));
-  const embedded = useMemo(() => ({ onBack: closeLayer, scrollGesture }), [closeLayer, scrollGesture]);
+  // `isTop` matters for more than looks: it is how the embedded search knows to ignore an intent
+  // meant for a layer above it (see the subscription in search.tsx).
+  const embedded = useMemo(
+    () => ({ onBack: closeLayer, scrollGesture, isTop: !!isTop }),
+    [closeLayer, scrollGesture, isTop],
+  );
   return (
     <View style={styles.container}>
       <GestureDetector gesture={edgePan}>

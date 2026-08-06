@@ -67,6 +67,10 @@ export type SearchEmbedded = {
    *  pan before its activation distance, so the pan must ride the scroller's own detector — see
    *  the series page's makeBackSwipePan. */
   scrollGesture?: ComposedGesture;
+  /** Whether this embedded copy is the TOP layer. Layers are sibling views on ONE route, so
+   *  react-navigation reports every one of them focused — the host has to say which is live.
+   *  See the intent subscription below, which is what this exists for. */
+  isTop?: boolean;
 };
 
 export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded } = {}) {
@@ -172,6 +176,13 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
   // screen to mount on an empty `takeSearchIntent()`. Unfocused, we ignore it and let the push consume
   // it on mount.
   //
+  // Focus alone is not enough INSIDE the series page, and that is a real bug this fixes rather than
+  // a hypothetical: the page's layers (search, drilled series, another search…) are sibling views on
+  // ONE route, so react-navigation calls every one of them focused. Browse → series → search →
+  // series → tag chip therefore had the BURIED search — still mounted two layers down — answer the
+  // subscription and quietly re-search itself, while the search layer the chip opened mounted on an
+  // empty intent and showed nothing. `isTop` is the host telling us which layer is actually live.
+  //
   // Seed the same three paths as mount — but clear the existing query/filters/sort first, so the tap
   // lands on a clean slate exactly as it would on a freshly-pushed Search. Without that, the new tag
   // would MERGE into whatever refinement is already on screen (the filters hook only self-resets on a
@@ -186,10 +197,17 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
       };
     }, []),
   );
+  // Mirrored into a ref rather than read from the closure: the subscription is set up once (its
+  // deps are all stable setters), so a captured `embedded` would freeze at whatever was true when
+  // this screen mounted — which is exactly "I am on top", the wrong answer forever after.
+  const topRef = useRef(true);
+  useEffect(() => {
+    topRef.current = embedded ? !!embedded.isTop : true;
+  });
   useEffect(
     () =>
       subscribeSearchIntent(() => {
-        if (!focusedRef.current) return;
+        if (!focusedRef.current || !topRef.current) return;
         const intent = takeSearchIntent();
         if (!intent) return;
         setBridge(intent.bridgeId);

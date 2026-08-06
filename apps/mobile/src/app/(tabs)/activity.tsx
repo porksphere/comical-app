@@ -8,7 +8,7 @@ import Animated, { useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HistoryRow } from '@/components/history-row';
-import { setZoomOrigin, useIsZoomingSeries } from '@/lib/series-zoom';
+import { newZoomSourceKey, setZoomOrigin, useIsZoomingSeries } from '@/lib/series-zoom';
 import { encodeSeriesParam } from '@/lib/series-nav';
 import { CheckIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { PullIndicator } from '@/components/pull-indicator';
@@ -343,11 +343,14 @@ function ActivityItem({
   // would put a native round trip in front of the navigation. And while its copy is in the air the
   // original blanks, reusing `coverHidden` — the same slot, and the same reason, as the long-press
   // preview's lifted copy.
-  const zoomFlying = useIsZoomingSeries(item.seriesId);
+  // Keyed to this ROW, not to the series — see newZoomSourceKey (another copy of the same series
+  // elsewhere on screen is not what the page collapses into, and must keep its thumbnail).
+  const [zoomSource] = useState(newZoomSourceKey);
+  const zoomFlying = useIsZoomingSeries(item.seriesId, zoomSource);
   const captureZoomOrigin = () => {
     thumbRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => {
       // radius 6 — HistoryRow's `thumb` corner, which is not the grid card's 10.
-      if (w > 0 && h > 0) setZoomOrigin(item.seriesId, { x, y, width: w, height: h, radius: 6 });
+      if (w > 0 && h > 0) setZoomOrigin(item.seriesId, zoomSource, { x, y, width: w, height: h, radius: 6 });
     });
   };
   const renderRow = (coverHidden: boolean) => (
@@ -389,6 +392,7 @@ function ActivityItem({
           direct={direct}
           coverAspect={2 / 3}
           startRadius={6} // matches HistoryRow's thumbnail corner
+          zoomSource={zoomSource}
           measureRef={thumbRef}>
           {({ hidden }) => renderRow(hidden)}
         </SeriesCardMenu>

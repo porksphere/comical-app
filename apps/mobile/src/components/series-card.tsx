@@ -17,7 +17,7 @@ import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/
 import { encodeSeriesParam, useDrillRelatedSeries } from '@/lib/series-nav';
 import { Link, router } from '@/lib/nav';
 import { useLightCards } from '@/lib/perf-flags';
-import { setZoomOrigin, useIsZoomingSeries } from '@/lib/series-zoom';
+import { newZoomSourceKey, setZoomOrigin, useIsZoomingSeries } from '@/lib/series-zoom';
 import { testId } from '@/lib/test-id';
 
 // Shared cover card used by both the browse grid and the rails. `size` picks the
@@ -323,18 +323,24 @@ export function SeriesCard({
   // would put a native round trip in front of the navigation. A drill (a related-rail card inside
   // the series page) captures too — those layers zoom exactly like a top-level open. Web has no
   // zoom entrance, so it doesn't measure at all.
-  // While this series' zoom transition is in the air it flies a COPY of this cover, so the
+  // While a zoom this card is the SOURCE of is in the air it flies a COPY of this cover, so the
   // original blanks — same treatment (and same reason) as the long-press menu's lifted preview
   // below. A selector read: the whole grid subscribes, only the one card whose flag flips renders.
-  const zoomFlying = useIsZoomingSeries(entry.id);
+  //
+  // Keyed to this card, not to the series: the same series can be showing somewhere else at the
+  // same time (most obviously in a search LAYER opened from its own page), and those copies are
+  // not what the page collapses into — see newZoomSourceKey. Per INSTANCE, so a recycled card
+  // carries its key across entries; the id is compared alongside it.
+  const [zoomSource] = useState(newZoomSourceKey);
+  const zoomFlying = useIsZoomingSeries(entry.id, zoomSource);
   const coverRef = useRef<ViewType>(null);
   const captureZoomOrigin = useCallback(() => {
     if (isWeb) return;
     coverRef.current?.measureInWindow((x, y, w, h) => {
       // CARD_COVER_RADIUS, matching `coverBoxClip` / `coverClip` below.
-      if (w > 0 && h > 0) setZoomOrigin(entry.id, { x, y, width: w, height: h, radius: 10 });
+      if (w > 0 && h > 0) setZoomOrigin(entry.id, zoomSource, { x, y, width: w, height: h, radius: 10 });
     });
-  }, [isWeb, entry.id]);
+  }, [isWeb, entry.id, zoomSource]);
 
   // The quick-actions menu is only offered when there's a real bridge to act against (`bridgeId` —
   // absent in mock mode). Its status queries no longer touch the card at all: they run inside the
@@ -632,7 +638,8 @@ export function SeriesCard({
       bridge={bridge}
       entry={entry}
       direct={direct}
-      coverAspect={coverAspect}>
+      coverAspect={coverAspect}
+      zoomSource={zoomSource}>
       {({ onLongPress, hidden }) => {
         // Built LAZILY (only when actually navigating) — NOT per render. This object plus its
         // encodeURIComponent/.replace string churn was allocated for every card on every render, so a

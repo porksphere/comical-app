@@ -3,6 +3,7 @@ import { useSyncExternalStore } from 'react';
 import { makeMutable } from 'react-native-reanimated';
 
 import type { SeriesEntry } from '@/data/types';
+import type { ZoomSourceKey } from '@/lib/series-zoom';
 
 /** On-screen rect of the pressed card (window coords, from `measureInWindow`). */
 export type CardRect = { x: number; y: number; width: number; height: number };
@@ -21,6 +22,9 @@ export type SeriesCardMenuRequest = {
    *  card cover is 10; a smaller thumbnail like History's is 6). It morphs to the resting radius (10)
    *  as the preview opens. Defaults to 10. */
   startRadius?: number;
+  /** The pressed card's own zoom-source key, so a navigating menu row can hand the series page a
+   *  zoom that blanks THAT card and no other copy of the same series (see lib/series-zoom). */
+  zoomSource?: ZoomSourceKey;
   rect: CardRect;
   /** Called when the menu finishes closing — the source card uses it to un-hide itself (it hides
    *  while the menu is open so it doesn't show behind the lifted preview). */

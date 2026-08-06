@@ -6,7 +6,7 @@ import { use$ } from '@legendapp/state/react';
  * the series page can grow out of it (and shrink back into it) the way a photo grid opens a photo.
  *
  * A one-slot module-level hand-off, not context or a store, for the same reason
- * `lib/series page-backdrop.ts` is: the writer (a card in a recycled grid) and the reader (a
+ * `lib/series-backdrop.ts` is: the writer (a card in a recycled grid) and the reader (a
  * modal route that is not its descendant) share no provider, and the value has to be readable
  * SYNCHRONOUSLY in the destination's first render — a state update would land a frame late, i.e.
  * after the entrance has already started from the wrong geometry.
@@ -28,7 +28,29 @@ import { use$ } from '@legendapp/state/react';
 export type ZoomRect = { x: number; y: number; width: number; height: number };
 export type ZoomOrigin = ZoomRect & { radius: number };
 
-type Capture = { id: string; origin: ZoomOrigin; at: number };
+/**
+ * Which CARD a capture came from — not which series. One series can be on screen in several places
+ * at once (a browse grid under an open series page, a related rail, the results of a search LAYER
+ * inside that very page), and only ONE of them is the box the page grew out of and will collapse
+ * back into. That one blanks its cover; the others must keep showing theirs.
+ *
+ * Keying the blank on the series id alone got this wrong in exactly the case the layers create:
+ * open series X, tap one of its tags, and X's own card in the search results came up with a hole
+ * where its cover should be — blanked on behalf of a page it had nothing to do with.
+ *
+ * An opaque counter, handed out per card instance (`newZoomSourceKey`). Compared alongside the id,
+ * so a recycled card that has moved on to another entry doesn't answer for its predecessor.
+ */
+export type ZoomSourceKey = number;
+let nextSourceKey = 1;
+export function newZoomSourceKey(): ZoomSourceKey {
+  return nextSourceKey++;
+}
+
+type Capture = { id: string; source: ZoomSourceKey; origin: ZoomOrigin; at: number };
+
+/** A consumed capture: where to grow from, and which card to blank while doing it. */
+export type TakenZoom = { origin: ZoomOrigin; source: ZoomSourceKey };
 
 /** Beyond this, a captured rect is assumed to belong to some earlier, abandoned press. */
 const MAX_AGE_MS = 1500;
@@ -39,21 +61,23 @@ let pending: Capture | null = null;
 let taken: Capture | null = null;
 
 /** Called from a series card's press-in. Overwrites any earlier capture — the newest press wins. */
-export function setZoomOrigin(id: string, origin: ZoomOrigin): void {
-  pending = { id, origin, at: Date.now() };
+export function setZoomOrigin(id: string, source: ZoomSourceKey, origin: ZoomOrigin): void {
+  pending = { id, source, origin, at: Date.now() };
 }
 
 /** Consumes the pending capture, but only if it was made for THIS series and recently enough.
  *  Returns null otherwise — the caller then falls back to its non-zoom entrance. */
-export function takeZoomOrigin(id: string | undefined): ZoomOrigin | null {
+export function takeZoomOrigin(id: string | undefined): TakenZoom | null {
   if (!id) return null;
   const now = Date.now();
-  if (taken && taken.id === id && now - taken.at <= MAX_AGE_MS) return taken.origin;
+  if (taken && taken.id === id && now - taken.at <= MAX_AGE_MS) {
+    return { origin: taken.origin, source: taken.source };
+  }
   const capture = pending;
   pending = null;
   if (!capture || capture.id !== id || now - capture.at > MAX_AGE_MS) return null;
   taken = capture;
-  return capture.origin;
+  return { origin: capture.origin, source: capture.source };
 }
 
 /**
@@ -69,22 +93,26 @@ export function takeZoomOrigin(id: string | undefined): ZoomOrigin | null {
  * In-memory Legend State per the repo's split — a card reads it through a SELECTOR, so a grid of
  * them subscribes but only the one card whose boolean actually flips re-renders.
  */
-const zoomingSeries$ = observable<Record<string, number>>({});
+const zoomingSources$ = observable<Record<string, number>>({});
+const slot = (id: string, source: ZoomSourceKey) => `${source}\u0000${id}`;
 
-/** Marks `id` as flying; returns the matching release. Safe to call for an id already flying. */
-export function holdZoomingSeries(id: string): () => void {
-  zoomingSeries$[id].set((n) => (n ?? 0) + 1);
+/** Marks one card as flown-from; returns the matching release. A count, because the same card can
+ *  be the source of two live pages (open a series, drill the same one from its related rail). */
+export function holdZoomingSeries(id: string, source: ZoomSourceKey): () => void {
+  const key = slot(id, source);
+  zoomingSources$[key].set((n) => (n ?? 0) + 1);
   let released = false;
   return () => {
     if (released) return;
     released = true;
-    const next = (zoomingSeries$[id].peek() ?? 1) - 1;
-    if (next > 0) zoomingSeries$[id].set(next);
-    else zoomingSeries$[id].delete();
+    const next = (zoomingSources$[key].peek() ?? 1) - 1;
+    if (next > 0) zoomingSources$[key].set(next);
+    else zoomingSources$[key].delete();
   };
 }
 
-/** Whether this series' card should blank its cover right now. */
-export function useIsZoomingSeries(id: string): boolean {
-  return use$(() => !!zoomingSeries$[id].get());
+/** Whether THIS card should blank its cover right now. */
+export function useIsZoomingSeries(id: string, source: ZoomSourceKey): boolean {
+  const key = slot(id, source);
+  return use$(() => !!zoomingSources$[key].get());
 }
