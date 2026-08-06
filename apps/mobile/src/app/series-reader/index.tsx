@@ -218,7 +218,15 @@ const ZOOM_CROSS_AXIS_DRAG_RESISTANCE = 0.05;
 // How far the finger has to travel, as a fraction of screen width, to drive the collapse all the
 // way home. The commit threshold is much lower — this only sets how fast the page shrinks under
 // a drag that keeps going.
-const ZOOM_DRAG_TRAVEL = 0.65;
+const ZOOM_DRAG_TRAVEL = 0.9;
+// Back-swipe activation. Full-surface pop gestures (FDFullscreenPopGesture and the apps that ship
+// the same idea) don't budget the cross axis at all — they ask one question, "is this drag going
+// right?", and let the scroll view win on its own turf by ordering. Ours can't be quite that
+// blunt (it runs SIMULTANEOUSLY with the scroll view rather than ahead of it), so it asks for
+// rightward DOMINANCE instead: more horizontal travel than vertical. That is the fix for a
+// gesture that only caught unusually straight swipes — a real swipe across a tall scrolling page
+// arcs, and an absolute cross-axis budget fails it long before it has shown its intent.
+const BACK_DECIDE_PX = 14;
 
 /** `resolveZoomPrimaryDragTranslation` — exponential resistance along the drag's own axis. */
 function zoomPrimaryDrag(translation: number, dimension: number): number {
@@ -1034,6 +1042,11 @@ function SeriesReaderInstance({
   //    collapse, so a page released well off to the side still lands exactly on its card.
   const dragX = useSharedValue(0);
   const dragY = useSharedValue(0);
+  // Where the touch started, and whether this touch stream has already been ruled in or out — the
+  // manual activation's working state (see BACK_DECIDE_PX).
+  const backStartX = useSharedValue(0);
+  const backStartY = useSharedValue(0);
+  const backDecided = useSharedValue(0);
   const edgeCommitting = useSharedValue(false);
   // The chevron / hardware-back exit, for a drilled layer AND the modal root: shrink back into the
   // card we came from, then leave (leaveNow pops the layer, or the route when depth 0). The
@@ -1069,12 +1082,13 @@ function SeriesReaderInstance({
     });
     return () => sub.remove();
   }, [detailsActive, setRevealed, closeLayer]);
-  // ONE back-swipe recipe, built twice. NATIVE activation criteria, no manual touch
-  // choreography: activeOffset/failOffset decide activation inside RNGH's native core, and it's
-  // FULL-SURFACE, not edge-only — a decisive rightward drag anywhere on the details goes back,
-  // the way the platform's full-screen pop does. Anything horizontal underneath keeps winning on
-  // its own turf (a horizontal rail that starts scrolling cancels the touch stream outright),
-  // and failOffsetY keeps vertical scrolling winning fast.
+  // ONE back-swipe recipe, built twice. FULL-SURFACE, not edge-only — a rightward drag anywhere on
+  // the details goes back, the way a full-screen pop gesture does. Activation is decided by
+  // DOMINANCE in onTouchesMove (see BACK_DECIDE_PX) rather than by activeOffset/failOffset, which
+  // can only express an absolute cross-axis budget; a real swipe across a tall scrolling page arcs
+  // well past any such budget before it has shown its intent. Anything horizontal underneath still
+  // keeps winning on its own turf — a horizontal rail that starts scrolling cancels the touch
+  // stream outright, so this never sees the rest of it.
   //
   // WHY TWICE: the details surface is almost entirely a native vertical scroll view, whose own
   // pan recognizer begins on ~10px of movement in ANY direction — before this pan's 20px
@@ -1102,9 +1116,38 @@ function SeriesReaderInstance({
       dragY.set(withSpring(0, SPRING_BACK));
     };
     return Gesture.Pan()
-      .activeOffsetX(20)
-      .failOffsetX(-12)
-      .failOffsetY([-CROSS_AXIS_FAIL_PX, CROSS_AXIS_FAIL_PX])
+      // Manual activation, so the decision can be a RATIO rather than the absolute cross-axis
+      // budget activeOffsetX/failOffsetY can express (see BACK_DECIDE_PX). Same mechanism
+      // pullReleaseWatch already uses on this screen to watch touches the list is scrolling with,
+      // so it is known to keep receiving them alongside the native scroll view.
+      .manualActivation(true)
+      .onTouchesDown((e) => {
+        const t = e.allTouches[0];
+        if (!t) return;
+        backStartX.set(t.absoluteX);
+        backStartY.set(t.absoluteY);
+        backDecided.set(0);
+      })
+      .onTouchesMove((e, manager) => {
+        if (backDecided.value !== 0) return;
+        const t = e.allTouches[0];
+        if (!t) return;
+        if (!detailsActiveSV.value) {
+          backDecided.set(-1);
+          manager.fail();
+          return;
+        }
+        const dx = t.absoluteX - backStartX.value;
+        const dy = Math.abs(t.absoluteY - backStartY.value);
+        if (dx > BACK_DECIDE_PX && dx > dy) {
+          backDecided.set(1);
+          manager.activate();
+        } else if (dy > BACK_DECIDE_PX || dx < -BACK_DECIDE_PX) {
+          // Vertical intent, or a leftward drag (which belongs to the webtoon reveal).
+          backDecided.set(-1);
+          manager.fail();
+        }
+      })
       // Activation = this gesture owns the screen; the list must stop scrolling under it.
       .onStart(() => {
         if (!detailsActiveSV.value) return;
@@ -1125,11 +1168,15 @@ function SeriesReaderInstance({
           // so there is no seam between the dragged part and the animated part.
           edgeCommitting.set(true);
           runOnJS(setLeaving)(true);
+          // Resume from exactly where it was slid to: the collapse and the follow both spring from
+          // their current values, so the page carries on from that spot into the card.
           zoom.set(
             withSpring(0, ZOOM_OUT_SPRING, () => {
               runOnJS(leaveOnce)();
             }),
           );
+          dragX.set(withSpring(0, ZOOM_OUT_SPRING));
+          dragY.set(withSpring(0, ZOOM_OUT_SPRING));
         } else {
           settle();
         }
@@ -1140,7 +1187,20 @@ function SeriesReaderInstance({
         edgeCommitting.set(false);
         runOnJS(setSwipeLocked)(false);
       });
-  }, [width, height, dragX, dragY, edgeCommitting, detailsActiveSV, zoom, zoomClosing, leaveOnce]);
+  }, [
+    width,
+    height,
+    dragX,
+    dragY,
+    backStartX,
+    backStartY,
+    backDecided,
+    edgeCommitting,
+    detailsActiveSV,
+    zoom,
+    zoomClosing,
+    leaveOnce,
+  ]);
   const edgePan = useMemo(() => makeBackSwipePan().enabled(detailsActive), [makeBackSwipePan, detailsActive]);
   // The horizontal-reveal counterpart of the back-swipe: a decisive LEFTWARD drag anywhere on the
   // details slides them off to the left under the finger, revealing the reader beneath (webtoon
@@ -1335,8 +1395,8 @@ function SeriesReaderInstance({
       // shape per view, and this branch and the unarmed one above can both run for one instance.
       return {
         transform: [
-          { translateX: dragX.value * q },
-          { translateY: dragY.value * q },
+          { translateX: dragX.value },
+          { translateY: dragY.value },
           { scale: NO_ORIGIN_SCALE + (1 - NO_ORIGIN_SCALE) * q },
         ],
       };
@@ -1347,11 +1407,11 @@ function SeriesReaderInstance({
     // let go of a dismissal it becomes the finishing Bézier instead — from the scale the page was
     // released at, down to the collapsed scale, biased by the release velocity.
     const scale = zoomGeom.s + (1 - zoomGeom.s) * q;
-    // The follow is weighted by how open the page still is, so it is at full strength under an
-    // early drag and gone by the time the collapse lands — which is what puts a page released well
-    // off to the side back onto its card instead of beside it.
-    const followX = dragX.value * q;
-    const followY = dragY.value * q;
+    // The follow is NOT weighted by the collapse: the page goes where the finger goes, full stop,
+    // and the release springs it home from wherever that was (see the pan). Weighting it meant the
+    // page stopped following as soon as the drag got going, which read as it not following at all.
+    const followX = dragX.value;
+    const followY = dragY.value;
     return {
       transform: [
         { translateX: zoomGeom.tx * (1 - q) - maskLeft + followX },
