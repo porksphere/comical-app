@@ -1114,6 +1114,10 @@ function SeriesReaderInstance({
   // The source rect this page aligns itself to. No image is needed — unlike a classic shared
   // element, nothing is copied or flown; the page is its own transition subject (see zoomMaskStyle).
   const hero = zoomSource?.origin ?? null;
+  // The tapped card's shape, handed to the details so its hero cover opens at the same aspect —
+  // which is what keeps the zoom's destination bound honest for a bridge whose covers aren't 2:3.
+  // See `coverAspect` in SeriesDetailsHost.
+  const heroAspectSeed = hero && hero.height > 0 ? hero.width / hero.height : undefined;
   const [destBound, setDestBound] = useState<ZoomRect | null>(null);
   const zoomStartedRef = useRef(false);
   // Blanking the source card is tied to ARMING, not to mount: the wait for the destination
@@ -1440,9 +1444,28 @@ function SeriesReaderInstance({
     const endAnchor = anchorOf(end);
     const screenCenterX = width / 2;
     const screenCenterY = height / 2;
+    // Where to lay the FLYING COPY out. Not `end` — `end` only lands on the card when the two
+    // rects share an aspect, because the page carries a single uniform scale and a scalar cannot
+    // reshape a rectangle. The copy's job is to be indistinguishable from the card at q = 0 (the
+    // last frames of a collapse, where it is the only thing still opaque), so it is sized to
+    // become the source rect exactly: `hero.size / s`, centred on `end`. When the aspects agree
+    // this IS `end` — s is then hero.width/end.width and the two expressions coincide — so the
+    // common case is untouched and the mismatched one stops being a mismatch.
+    //
+    // The trade lands on the other end: with genuinely different aspects the copy no longer
+    // matches the details hero at q = 1. That end is free — the copy is fully transparent by 0.32
+    // opening and doesn't start showing until 0.7 closing (see the fade ranges).
+    const thumbW = hero.width / s;
+    const thumbH = hero.height / s;
     return {
       s,
       end,
+      thumb: {
+        x: endAnchor.x - thumbW / 2,
+        y: endAnchor.y - thumbH / 2,
+        width: thumbW,
+        height: thumbH,
+      },
       tx: startAnchor.x - (screenCenterX + (endAnchor.x - screenCenterX) * s),
       ty: startAnchor.y - (screenCenterY + (endAnchor.y - screenCenterY) * s),
     };
@@ -1904,6 +1927,7 @@ function SeriesReaderInstance({
               scrollGesture={detailsScrollGesture}
               scrollEnabled={!swipeLocked}
               onHeroCoverRect={onHeroCoverRect}
+              coverAspectSeed={heroAspectSeed}
             />
           </Animated.View>
         </Animated.View>
@@ -2036,10 +2060,10 @@ function SeriesReaderInstance({
           style={[
             styles.zoomThumb,
             {
-              left: zoomGeom.end.x,
-              top: zoomGeom.end.y,
-              width: zoomGeom.end.width,
-              height: zoomGeom.end.height,
+              left: zoomGeom.thumb.x,
+              top: zoomGeom.thumb.y,
+              width: zoomGeom.thumb.width,
+              height: zoomGeom.thumb.height,
             },
             zoomThumbStyle,
           ]}>
@@ -2319,6 +2343,7 @@ function SeriesDetailsHost({
   scrollGesture,
   scrollEnabled,
   onHeroCoverRect,
+  coverAspectSeed,
 }: {
   bridgeId?: string;
   id?: string;
@@ -2336,6 +2361,8 @@ function SeriesDetailsHost({
   onStartReading: () => void;
   onOpenChapter: (version: Chapter) => void;
   onOpenPage: (pageIndex: number) => void;
+  /** The tapped card's aspect, so the hero starts the right shape — see the note on `coverAspect`. */
+  coverAspectSeed?: number;
   /** Reports the details page's hero cover rect — the zoom's destination bound (see zoomGeom). */
   onHeroCoverRect?: (rect: ZoomRect) => void;
   /** The instance's `detailsScrollGesture` — mounted on SeriesBody's scroller (see makeBackSwipePan). */
@@ -2361,8 +2388,14 @@ function SeriesDetailsHost({
     }),
   );
 
-  // The hero cover's measured aspect — same clamp + wiggle filter as SeriesScreen's onCoverLoad.
-  const [coverAspect, setCoverAspect] = useState(DEFAULT_THUMB_ASPECT);
+  // The hero cover's measured aspect. SEEDED from the card this page grew out of rather than from
+  // the flat 2:3 placeholder, because this box is the zoom's DESTINATION BOUND and that bound is
+  // latched on its first layout — a bridge whose covers aren't 2:3 therefore had a source rect at
+  // the real shape aligning to a destination still sitting at the placeholder's, and a single
+  // uniform scale cannot map one rectangle onto a differently-proportioned one. The card already
+  // knows the answer (its own cover has loaded; that is how you could see it to tap it), so start
+  // where it is. `onCoverLoad` still corrects it if the detail cover genuinely differs.
+  const [coverAspect, setCoverAspect] = useState(() => coverAspectSeed ?? DEFAULT_THUMB_ASPECT);
   const onCoverLoad = (e: ImageLoadEventData) => {
     const src = e.source;
     if (!src?.width || !src.height) return;
