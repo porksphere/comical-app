@@ -87,7 +87,25 @@ export default function HistoryScreen() {
   // screen straight into the reader instead of the standalone /reader — see `resume`/`read` below.
   const seriesReaderPage = useSeriesReaderPage();
 
-  const openDetail = (h: HistoryEntry) =>
+  // The 3-dot opens the SERIES side of the same combined page — no `reader` param, so it lands on
+  // the details with the reader as the strip, which is exactly a browse open. Same zoom off this
+  // row's thumbnail; the only difference from `resume` below is which side it opens on.
+  const openDetail = (h: HistoryEntry) => {
+    if (seriesReaderPage) {
+      const enc = (v: string) => encodeURIComponent(v).replace(/\(/g, '%28').replace(/\)/g, '%29');
+      router.push({
+        pathname: '/series-reader',
+        params: {
+          id: h.seriesId,
+          title: h.title,
+          bridge: enc(nameOf(h.bridgeId)),
+          bridgeId: h.bridgeId,
+          ...(h.thumbnailUrl ? { cover: enc(h.thumbnailUrl) } : {}),
+          ...(directOf(h.bridgeId) ? { direct: '1' } : {}),
+        },
+      });
+      return;
+    }
     router.push({
       pathname: '/series',
       params: {
@@ -98,6 +116,7 @@ export default function HistoryScreen() {
         ...(directOf(h.bridgeId) ? { direct: '1' } : {}),
       },
     });
+  };
 
   const resume = (h: HistoryEntry) => {
     const isDirect = h.chapterId === DIRECT_CHAPTER_ID || !h.chapterId;
@@ -244,6 +263,7 @@ function HistoryItem({
       onPress={onResume}
       onPressIn={captureZoomOrigin}
       onMore={onOpenDetail}
+      onMorePressIn={captureZoomOrigin}
       actions={[]}
       thumbRef={thumbRef}
       coverHidden={coverHidden || zoomFlying}

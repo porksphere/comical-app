@@ -198,7 +198,24 @@ export default function ActivityScreen() {
   // screen straight into the reader instead of the standalone /reader — see `resume`/`read` below.
   const seriesReaderPage = useSeriesReaderPage();
 
-  const openDetail = (g: SeriesActivity) =>
+  // See history.tsx's `openDetail` — the same control, opening the same combined page on its
+  // details side.
+  const openDetail = (g: SeriesActivity) => {
+    if (seriesReaderPage) {
+      const enc = (v: string) => encodeURIComponent(v).replace(/\(/g, '%28').replace(/\)/g, '%29');
+      router.push({
+        pathname: '/series-reader',
+        params: {
+          id: g.seriesId,
+          title: g.title,
+          bridge: enc(nameOf(g.bridgeId)),
+          bridgeId: g.bridgeId,
+          ...(g.thumbnailUrl ? { cover: enc(g.thumbnailUrl) } : {}),
+          ...(directOf(g.bridgeId) ? { direct: '1' } : {}),
+        },
+      });
+      return;
+    }
     router.push({
       pathname: '/series',
       params: {
@@ -209,6 +226,7 @@ export default function ActivityScreen() {
         ...(directOf(g.bridgeId) ? { direct: '1' } : {}),
       },
     });
+  };
 
   const read = (g: SeriesActivity) => {
     // See history.tsx's `resume` — same experiment, same reasoning.
@@ -376,6 +394,7 @@ function ActivityItem({
       onPress={onRead}
       onPressIn={captureZoomOrigin}
       onMore={onOpenDetail}
+      onMorePressIn={captureZoomOrigin}
       actions={[]}
       thumbRef={thumbRef}
       coverHidden={coverHidden || zoomFlying}

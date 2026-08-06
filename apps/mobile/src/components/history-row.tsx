@@ -32,6 +32,7 @@ export function HistoryRow({
   onPress,
   onPressIn,
   onMore,
+  onMorePressIn,
   actions,
   dimmed,
   unread,
@@ -49,6 +50,9 @@ export function HistoryRow({
   onPressIn?: () => void;
   /** When set, a trailing 3-dot button (e.g. History → open the series page). */
   onMore?: () => void;
+  /** Press-DOWN on that button — same reason as `onPressIn`: the zoom transition needs the
+   *  thumbnail's rect measured before navigation, not a frame after it. */
+  onMorePressIn?: () => void;
   actions: RowAction[];
   /** Render at reduced opacity (an already-read activity item). */
   dimmed?: boolean;
@@ -119,6 +123,7 @@ export function HistoryRow({
           <Pressable
             testID={testId(base, 'more')}
             onPress={onMore}
+            onPressIn={onMorePressIn}
             hitSlop={6}
             accessibilityRole="button"
             accessibilityLabel="Open series"
