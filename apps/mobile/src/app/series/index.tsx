@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image, type ImageLoadEventData } from 'expo-image';
 import { useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   BackHandler,
   Platform,
@@ -88,10 +88,11 @@ import { SeriesBody, truncateTopBarTitle } from '@/components/series/series-body
 //     the screen under the finger — vertical belongs to the scroll there, and the collapse is
 //     already a rightward drag. A pull past the top still rubber-bands the strip open as an
 //     affordance, but never commits (that would fling the details along the wrong axis).
-// A strip tap expands in both. In the expanded reader, drag up (paged) / right (webtoon) or the
-// Details pill brings the details back, and drag down / left is SwipeDismiss verbatim
-// (mode-locked per gesture — see the pan build) popping back to browse. One TopBarSwitch slot
-// crossfades the top chrome between the modes.
+// A strip tap expands in both. In the expanded reader, drag up (paged) or the Details pill brings
+// the details back — webtoon reveals by BUTTON ONLY, since a horizontal drag that revealed would
+// be the one gesture here going somewhere other than out. Any other drag dismisses, running the
+// same collapse into the source card the chevron does (mode-locked per gesture — see the pan
+// build). One TopBarSwitch slot crossfades the top chrome between the modes.
 //
 // The details render series.tsx's OWN `SeriesBody` — cover hero, action column, tag/meta/
 // description, the real chapter list (downloads, versions, read state), page-thumb grid, related
@@ -138,12 +139,8 @@ const FLICK_VELOCITY = 900;
 const PULL_COMMIT_PX = 80;
 // How far from the LEFT edge a touch may start and still count as the back-swipe (the native
 // stack pop gesture, recreated — a transparent modal doesn't get the real one).
-// The dismissal is the old reader's SwipeDismiss, verbatim: the page follows the finger in BOTH
-// axes, shrinks with distance, and the dark backdrop fades in place over a full span while the
-// page stays solid; release past DISMISS_FRACTION/flick flings it out along its own direction.
+// How long the SEARCH layer takes to slide out — the one thing here that still leaves sideways.
 const EXIT_MS = 180;
-const MIN_SCALE = 0.45;
-const SCALE_SPAN_FRACTION = 0.7;
 const SPRING_BACK = { duration: 300, dampingRatio: 1 } as const;
 // The visible height of the collapsed reader strip (below the safe area) — a faded-out
 // background-image band forming the TOP OF THE DETAILS PAGE (it scrolls away under the content
@@ -695,11 +692,9 @@ function SeriesReaderInstance({
   // UI-thread mirror of `detailsActive`, for the worklets below (the iOS pull-follow must stop the
   // instant a commit animation takes over `progress`).
   const detailsActiveSV = useSharedValue(!readerFirst);
-  // Dismissal offsets — the old reader's swipe-away: the page follows the finger in BOTH axes
-  // while the surface fades, and a commit flings it out along its own direction. `dismissing`
-  // freezes the gesture once the exit animation owns the offsets.
-  const dismissX = useSharedValue(0);
-  const dismissY = useSharedValue(0);
+  // `dismissing` freezes the collapse pan once an exit animation owns the transition. (It used to
+  // sit beside `dismissX`/`dismissY`, the old swipe-away's 2D offsets; the swipe-away drives the
+  // collapse itself now, so those are gone and this is what's left of that trio.)
   const dismissing = useSharedValue(false);
   // The iOS pull-past-top follow (the reaction below): whether it currently owns `progress`,
   // and where `progress` stood when the pull engaged (the pull maps relative to it).
@@ -876,11 +871,10 @@ function SeriesReaderInstance({
   // code).
   const collapseEnabled = !detailsActive && !readerZoomed && !scrubbing;
   // Each GESTURE is one thing, decided at activation and locked: a drag that sets off toward the
-  // details is a reveal (progress only); anything else is a SwipeDismiss gesture VERBATIM — free
-  // 2D follow in BOTH directions (swiping back past the origin carries the page out the other
-  // side, exactly like the old reader), released on SwipeDismiss's own |cross| decision. A new
-  // gesture that begins while the page hasn't fully settled from a previous dismiss drag is
-  // always a dismiss gesture — only a settled page reveals the details on a swipe.
+  // details is a reveal (progress only, and paged only); anything else is a dismiss — a free 2D
+  // follow in BOTH directions, released on SwipeDismiss's own |cross| decision, driving the
+  // collapse. A new gesture that begins while the page hasn't settled from a previous dismiss drag
+  // is always a dismiss — only a settled page reveals the details on a swipe.
   const gestureMode = useSharedValue<0 | 1 | 2>(0); // 0 undecided, 1 reveal, 2 dismiss
   // Where `progress` stood when the gesture locked — drags map RELATIVE to it, so a gesture that
   // begins mid-animation continues the motion from where it is instead of snapping to the drag's
@@ -1569,9 +1563,6 @@ function SeriesReaderInstance({
   // ReaderToolbar untouched — fully transparent chrome, exactly the pre-experiment look; the two
   // occupy the same slot and fade through the transition, so it reads as one bar swapping its
   // content. `barSolid` mirrors the crossfade for pointer routing.
-  // The dismissal curves' travel span (the reader's cross axis) — used by the page/backdrop/
-  // chrome styles further down.
-  const span = settings.mode === 'paged' ? height : width;
   const topBarHeight = useTopBarHeight();
   const barOnOffset = Math.max(1, headerTopInset - (insets.top + topBarHeight));
   const [barSolid, setBarSolid] = useState(false);
@@ -1596,17 +1587,11 @@ function SeriesReaderInstance({
     chromeVisibleSV.set(withTiming(chromeVisible ? 1 : 0, { duration: 200 }));
   }, [chromeVisible, chromeVisibleSV]);
   const backPersistStyle = useAnimatedStyle(() => {
-    const dismissFade = interpolate(
-      Math.min(1, Math.hypot(dismissX.value, dismissY.value) / span),
-      [0, 0.6],
-      [1, 0],
-      Extrapolation.CLAMP,
-    );
     // Details side is always-on; reader side follows the chrome. max() keeps it solid through
     // the transition instead of dipping.
     const detailsSide = interpolate(progress.value, [0.4, 0.8], [0, 1], Extrapolation.CLAMP);
-    return { opacity: Math.max(detailsSide, chromeVisibleSV.value) * dismissFade };
-  }, [span]);
+    return { opacity: Math.max(detailsSide, chromeVisibleSV.value) };
+  });
   const backThemeIconStyle = useAnimatedStyle(() => ({
     opacity: interpolate(progress.value, [0.3, 0.7], [0, 1], Extrapolation.CLAMP),
   }));
@@ -1616,36 +1601,12 @@ function SeriesReaderInstance({
 
   // The reader FRAME travels only for the strip centering: while collapsed it rises by half its
   // hidden height so the strip window shows the page's vertical CENTER (not its top edge),
-  // sliding back to natural position as it expands. A dismissal does NOT move it: exactly like
-  // SwipeDismiss, only the PAGE subtree travels (pageDismissStyle below) while the reader's dark
-  // surface fades IN PLACE (dismissFadeStyle on the surface layer) — the page pulls away over
-  // the screen behind, it doesn't drag a black rectangle along.
+  // sliding back to natural position as it expands. A dismissal does not move it either — the
+  // collapse moves the whole page, and the reader's dark surface stays put and fades.
   const readerCardStyle = useAnimatedStyle(
     () => ({ transform: [{ translateY: (-(height - bandH) / 2) * progress.value }] }),
     [height, bandH],
   );
-  // SwipeDismiss's page transform, verbatim: 2D finger follow, then scale (after the translate,
-  // so the page shrinks toward its own moved centre) with distance, staying fully opaque.
-  const pageDismissStyle = useAnimatedStyle(() => {
-    const dist = Math.hypot(dismissX.value, dismissY.value);
-    return {
-      transform: [
-        { translateX: dismissX.value },
-        { translateY: dismissY.value },
-        { scale: interpolate(dist, [0, span * SCALE_SPAN_FRACTION], [1, MIN_SCALE], Extrapolation.CLAMP) },
-      ],
-    };
-  }, [span]);
-  // reader.tsx's chromeFadeStyle curve: the toolbar/navigator/pills fade with dismissal progress
-  // instead of traveling with the page.
-  const chromeDismissStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(
-      Math.min(1, Math.hypot(dismissX.value, dismissY.value) / span),
-      [0, 0.6],
-      [1, 0],
-      Extrapolation.CLAMP,
-    ),
-  }), [span]);
   // The details page's motion, three coupled pieces:
   //  - headerLayerStyle: the whole details layer (background sheet + content) slides DOWN and off
   //    the screen as the reader expands — the details scroll down out of visibility.
@@ -1697,20 +1658,19 @@ function SeriesReaderInstance({
   // ── The BACKDROP's dim (see lib/series-backdrop.ts) ───────────────────────────────────
   // How much of the screen this page currently covers. All three ways it can be less than fully
   // covering have to count, or the backdrop would sit dimmed while the page is visibly gone: the
-  // zoom — which now covers the back-swipe too, since a dismissal drag moves that same value —
-  // and the reader's swipe-away, which doesn't, and instead flings the page along its own vector
-  // over the same distance/span the backdrop fade above uses, so the two agree frame for frame.
+  // `zoom` alone, now that BOTH dismiss gestures drive it — the back-swipe and the reader's
+  // swipe-away. This used to carry a second term for the swipe-away, which flung the page along
+  // its own vector without touching `zoom`; there is no such vector any more.
   // Depth 0 ONLY: a drilled layer sits over its parent series inside this same modal, and the tabs
   // behind the whole modal must not respond twice to what is, to them, one open page.
   useAnimatedReaction(
     () => {
-      const flung = Math.min(1, Math.hypot(dismissX.value, dismissY.value) / span);
-      return zoom.value * (1 - flung);
+      return zoom.value;
     },
     (covered) => {
       if (depth === 0) seriesReaderDim.set(covered);
     },
-    [depth, width, span],
+    [depth],
   );
   // Belt and braces: nothing may strand the backdrop dimmed if this screen goes away without its
   // exit animation finishing (a deep link replacing the route, a dev reload).
@@ -1821,9 +1781,8 @@ function SeriesReaderInstance({
             ),
             reader: (
               // The reader's own fully transparent toolbar, as /reader has it (minus its back —
-              // the persistent chevron above serves both modes) — its auto-hide rides `visible`,
-              // and a dismissal fades it on the old reader's curve.
-              <Animated.View pointerEvents="box-none" style={chromeDismissStyle}>
+              // the persistent chevron above serves both modes); its auto-hide rides `visible`.
+              <View pointerEvents="box-none">
                 <ReaderToolbar
                   title={seriesTitle}
                   subtitle={target?.chapterName ?? ''}
@@ -1841,7 +1800,7 @@ function SeriesReaderInstance({
                     />
                   }
                 />
-              </Animated.View>
+              </View>
             ),
           }}
         />
@@ -2010,8 +1969,6 @@ function SeriesReaderInstance({
               onZoomChange={setReaderZoomed}
               onScrubActive={onScrubActive}
               overlay={dimOverlays}
-              pageStyle={pageDismissStyle}
-              chromeStyle={chromeDismissStyle}
               // Details mode: the reader is a decorative background strip — load ONLY the page
               // on screen (no warm-ahead, render window of 1). Expanding flips this (a beat
               // after the transition settles — see detailsSettled) and the normal prefetch
@@ -2020,12 +1977,11 @@ function SeriesReaderInstance({
               inLibrary={inLibrary}
             />
           )}
-            {/* Bottom chrome extras that fade with a dismissal instead of traveling with the
-                page — reader.tsx's chrome treatment. The pill is the guaranteed collapse path in
-                both modes (webtoon's expanded reader owns vertical drags). */}
-            <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, chromeDismissStyle]}>
-              <DetailsHint mode={settings.mode} visible={chromeVisible && !detailsActive} onPress={() => setRevealed(1)} />
-            </Animated.View>
+            {/* The Details pill — the guaranteed collapse path in both modes (webtoon's expanded
+                reader owns vertical drags, and no longer reveals by dragging at all). */}
+            <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+              <DetailsHint visible={chromeVisible && !detailsActive} onPress={() => setRevealed(1)} />
+            </View>
           </View>
         </Animated.View>
       </GestureDetector>
@@ -2435,9 +2391,9 @@ const ReaderPane = forwardRef<
     overlay?: ReactNode;
     /** Animated transform for the PAGE subtree only — SwipeDismiss's travel. The tints and chrome
      *  deliberately DON'T ride it: the page pulls away alone while everything else fades. */
-    pageStyle?: ComponentProps<typeof Animated.View>['style'];
+
     /** Animated fade for the bottom chrome during a dismissal (reader.tsx's chromeFadeStyle). */
-    chromeStyle?: ComponentProps<typeof Animated.View>['style'];
+
     /** True while the reader is parked as a decorative background (the collapsed strip):
      *  suspends the warm-ahead prefetch and shrinks the pager's render window to the visible
      *  page, so only the single page on screen is requested. */
@@ -2473,8 +2429,6 @@ const ReaderPane = forwardRef<
     onZoomChange,
     onScrubActive,
     overlay,
-    pageStyle,
-    chromeStyle,
     standby,
     inLibrary,
   },
@@ -2728,8 +2682,8 @@ const ReaderPane = forwardRef<
 
   return (
     <>
-      {/* The page subtree — the ONLY thing a dismissal moves (see pageStyle). */}
-      <Animated.View testID="series-page.page-wrap" style={[styles.pageWrap, pageStyle]}>
+      {/* The page subtree. */}
+      <Animated.View testID="series-page.page-wrap" style={styles.pageWrap}>
       {settings.mode === 'paged' ? (
         <PagedReader
           ref={pagedRef}
@@ -2783,8 +2737,8 @@ const ReaderPane = forwardRef<
       {/* Tint/fade layers over the pages, under the chrome below. */}
       {overlay}
 
-      {/* Bottom chrome — fades with a dismissal instead of traveling (chromeStyle). */}
-      <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, chromeStyle]}>
+      {/* Bottom chrome — sits still while the page travels. */}
+      <Animated.View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
       {IS_WEB ? (
         <ProgressPill
           current={currentPage}
@@ -2827,11 +2781,9 @@ const ReaderPane = forwardRef<
  *  the web pager owns its whole touch surface, and an overflowing fit-width page's content-pan
  *  (rightly) takes vertical drags in paged mode. */
 function DetailsHint({
-  mode,
   visible,
   onPress,
 }: {
-  mode: 'paged' | 'webtoon';
   visible: boolean;
   onPress: () => void;
 }) {
