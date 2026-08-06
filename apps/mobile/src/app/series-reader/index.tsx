@@ -913,12 +913,21 @@ function SeriesReaderInstance({
   // both ends have reported. Invisible here: the page is at opacity 0 until the spring starts, so
   // a frame or two of waiting just shows the untouched grid. A deadline caps it, after which the
   // transition falls back to the library's own no-destination behaviour (see zoomGeom).
+  //
+  // ARMING matters as much as waiting. `measureInWindow` reports a view's rect AFTER every
+  // ancestor transform, so measuring the cover while the page is already scaled hands back a
+  // shrunken rect — and a destination smaller than the source inverts the scale, which is the page
+  // starting large and settling down to its real size. So the page stays at IDENTITY (invisible,
+  // opacity 0) until the bound is in; only then do the transform and the mask engage. That is what
+  // the library means by keeping a component at its base layout for pre-animation measurement.
+  const zoomArmed = useSharedValue(false);
   const zoomStartedRef = useRef(false);
   const startZoom = useCallback(() => {
     if (zoomStartedRef.current) return;
     zoomStartedRef.current = true;
+    zoomArmed.set(true);
     zoom.set(withSpring(1, ZOOM_IN_SPRING));
-  }, [zoom]);
+  }, [zoom, zoomArmed]);
   const onHeroCoverRect = useCallback((rect: ZoomOrigin) => {
     // Only the FIRST report, and only before the geometry is committed: the cover box re-lays out
     // as its aspect settles, and moving the destination mid-flight would visibly jump.
@@ -1192,6 +1201,10 @@ function SeriesReaderInstance({
   // mask's own offset (see zoomPageStyle).
   const zoomMaskStyle = useAnimatedStyle(() => {
     if (!hero) return {};
+    // Before arming: the whole screen, so nothing is clipped while the destination is measured.
+    if (!zoomArmed.value) {
+      return { left: 0, top: 0, width, height, borderRadius: 0, borderCurve: 'continuous' as const };
+    }
     // Clamped at the bottom: the close spring is underdamped (damping ratio ~0.85, the library's
     // own figure) and undershoots 0 by a percent or two, which on a raw lerp would mean a mask
     // narrower than the card — and briefly a NEGATIVE width. The top needs no clamp: the open
@@ -1220,11 +1233,21 @@ function SeriesReaderInstance({
   // `edgeX` adds on top — that's the back-swipe dragging the page bodily under a finger.
   const zoomPageStyle = useAnimatedStyle(() => {
     const q = Math.max(0, zoom.value); // see zoomMaskStyle
+    // Before arming: base layout, so the destination cover measures its true untransformed rect.
+    if (!zoomArmed.value) {
+      return { opacity: 0, transform: [{ translateX: edgeX.value }, { translateY: 0 }, { scale: 1 }] };
+    }
     if (!zoomGeom || !hero) {
       // No source rect (deep link, web): no mask, no alignment — just the small centred zoom.
+      // Same three transform entries as every other branch: reanimated wants one stable style
+      // shape per view, and this branch and the unarmed one above can both run for one instance.
       return {
         opacity: interpolate(q, ZOOM_CONTENT_FADE, [0, 1], Extrapolation.CLAMP),
-        transform: [{ translateX: edgeX.value }, { scale: NO_ORIGIN_SCALE + (1 - NO_ORIGIN_SCALE) * q }],
+        transform: [
+          { translateX: edgeX.value },
+          { translateY: 0 },
+          { scale: NO_ORIGIN_SCALE + (1 - NO_ORIGIN_SCALE) * q },
+        ],
       };
     }
     const s = zoomGeom.s + (1 - zoomGeom.s) * q;
