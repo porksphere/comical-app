@@ -814,12 +814,57 @@ function SeriesReaderInstance({
     return () => clearTimeout(t);
   }, [leaving, leaveOnce]);
 
+  // ── The zoom's shared values ────────────────────────────────────────────────────────────────
+  // Hoisted above the gestures because BOTH of them drive the collapse now: the back-swipe and
+  // the expanded reader's dismiss. Their comments live with the machinery that reads them.
+  // …and the DESTINATION BOUND: this page's own hero cover, measured. The library takes this from a
+  // `Transition.Boundary.View` in the destination screen and its whole zoom is built around the
+  // pairing — the destination's copy of the picture is what lands on the tapped card, which is why
+  // its demo reads as the thumbnail itself expanding. Aligning to anything else (the reader band,
+  // as the first cut of this port did) puts unrelated content in the card-shaped window and the
+  // connection to the thumbnail is lost.
+  // 0 = the thumbnail is sitting on its card and the page is invisible, 1 = the page is up and
+  // the thumbnail is gone.
+  const zoom = useSharedValue(0);
+  // The entrance waits for that measurement — the library does the same, holding the pair until
+  // both ends have reported. Invisible here: the page is at opacity 0 until the spring starts, so
+  // a frame or two of waiting just shows the untouched grid. A deadline caps it, after which the
+  // transition falls back to the library's own no-destination behaviour (see zoomGeom).
+  //
+  // ARMING matters as much as waiting. `measureInWindow` reports a view's rect AFTER every
+  // ancestor transform, so measuring the cover while the page is already scaled hands back a
+  // shrunken rect — and a destination smaller than the source inverts the scale, which is the page
+  // starting large and settling down to its real size. So the page stays at IDENTITY (invisible,
+  // opacity 0) until the bound is in; only then do the transform and the mask engage. That is what
+  // the library means by keeping a component at its base layout for pre-animation measurement.
+  const zoomArmed = useSharedValue(false);
+  // Which set of cross-fade ranges is in play (see the constants) — an exit uses different ones.
+  const zoomClosing = useSharedValue(false);
+  // Back-swipe (details mode): the native stack's pop gesture, recreated — the route is a
+  // contained transparent modal (needed for the reader's dismissal reveal), which doesn't get
+  // the real one. A decisive rightward drag ANYWHERE on the details (full-surface, like the
+  // platform's full-screen pop) starts the COLLAPSE under the finger, and on release finishes it
+  // from wherever it got to. It no longer slides the page off sideways: the drag scales the page
+  // down in place, with resistance on the drag axis and a loose follow on the cross axis, exactly
+  // as the reader's own swipe-away treats a page — and then hands that scale straight into the
+  // gallery collapse. See the drag helpers above; this is the library's zoom/drag.ts model.
+  //
+  //  · zoom itself is what the finger moves — 1 open, 0 collapsed onto the card.
+  //  · dragX/dragY — the resisted follow, added to the page's transform and faded out by the
+  //    collapse, so a page released well off to the side still lands exactly on its card.
+  const dragX = useSharedValue(0);
+  const dragY = useSharedValue(0);
+  const edgeCommitting = useSharedValue(false);
+
   // Collapse/dismiss pan — wraps the expanded reader, on the cross axis of its scroll: the
   // collapse direction (up in paged, right in webtoon) slides the details back in; the opposite
-  // direction IS the old reader's SwipeDismiss — free 2D finger-follow, distance shrink, surface
-  // fade, fling exit, spring-back cancel — popping back to the screen this one was opened over
-  // (the route is a contained transparent modal). Built inside useMemo like chapter-navigator's
-  // pan (the React Compiler lint can't tell worklets from render code).
+  // direction dismisses — and that dismissal now runs THE SAME GALLERY COLLAPSE the back-swipe and
+  // the chevron run: mask closing onto the card, page cross-fading out, the thumbnail copy fading
+  // in and landing on it. What it keeps from SwipeDismiss is the part that made it feel good — a
+  // free, unclamped 2D finger-follow and the same cross-axis release decision — and what it drops
+  // is the fling out along the gesture's own vector, which had nowhere to land. Built inside
+  // useMemo like chapter-navigator's pan (the React Compiler lint can't tell worklets from render
+  // code).
   const collapseEnabled = !detailsActive && !readerZoomed && !scrubbing;
   // Each GESTURE is one thing, decided at activation and locked: a drag that sets off toward the
   // details is a reveal (progress only); anything else is a SwipeDismiss gesture VERBATIM — free
@@ -850,7 +895,7 @@ function SeriesReaderInstance({
           // beginning while the page hasn't settled from a previous dismiss drag is always a
           // dismiss gesture.
           if (gestureMode.value === 0) {
-            const settled = Math.hypot(dismissX.value, dismissY.value) <= 1;
+            const settled = zoom.value > 0.999 && Math.hypot(dragX.value, dragY.value) <= 1;
             if (!settled) gestureMode.set(2);
             else if (Math.abs(cross) >= 2) {
               gestureMode.set(cross <= 0 ? 1 : 2);
@@ -861,9 +906,15 @@ function SeriesReaderInstance({
             progress.set(Math.min(1, Math.max(0, progressStartSV.value + -cross / span)));
             return;
           }
-          // SwipeDismiss's follow, verbatim: both axes, unclamped.
-          dismissX.set(e.translationX);
-          dismissY.set(e.translationY);
+          // SwipeDismiss's follow, verbatim: both axes, unclamped — feeding the collapse instead
+          // of a fling. Distance in ANY direction drives it, since unlike the back-swipe this
+          // gesture has no single axis to measure along.
+          zoomClosing.set(true);
+          zoom.set(
+            1 - Math.min(1, Math.hypot(e.translationX, e.translationY) / (dismissSpan * ZOOM_DRAG_TRAVEL)),
+          );
+          dragX.set(e.translationX);
+          dragY.set(e.translationY);
         })
         .onEnd((e) => {
           if (dismissing.value || detailsActiveSV.value) return;
@@ -878,40 +929,67 @@ function SeriesReaderInstance({
           }
           // SwipeDismiss's release decision, verbatim: the cross-axis OFFSET (either direction)
           // past a quarter of the screen, or a fast flick, dismisses; anything less springs back.
-          const crossOffset = settings.mode === 'paged' ? dismissY.value : dismissX.value;
+          const crossOffset = settings.mode === 'paged' ? dragY.value : dragX.value;
           const crossVelocityRaw = settings.mode === 'paged' ? e.velocityY : e.velocityX;
           const byFlick = Math.abs(crossVelocityRaw) > FLICK_VELOCITY;
           if (!byFlick && Math.abs(crossOffset) < dismissSpan * COMMIT_FRACTION) {
-            dismissX.set(withSpring(0, SPRING_BACK));
-            dismissY.set(withSpring(0, SPRING_BACK));
+            zoomClosing.set(false);
+            zoom.set(withSpring(1, SPRING_BACK));
+            dragX.set(withSpring(0, SPRING_BACK));
+            dragY.set(withSpring(0, SPRING_BACK));
             return;
           }
-          // Fling out along the gesture's own direction (velocity for a flick, accumulated travel
-          // otherwise) across a full screen diagonal — SwipeDismiss's exit, verbatim.
+          // …and the collapse finishes from wherever the drag left it, into the card. Same springs,
+          // same velocity handoff and the same one-way `edgeCommitting` latch as the back-swipe —
+          // see there for why a committed collapse must never be settled back.
           dismissing.set(true);
-          let dirX = byFlick ? e.velocityX : dismissX.value;
-          let dirY = byFlick ? e.velocityY : dismissY.value;
-          const len = Math.hypot(dirX, dirY) || 1;
-          dirX /= len;
-          dirY /= len;
-          const exit = Math.hypot(width, height);
-          dismissX.set(withTiming(dismissX.value + dirX * exit, { duration: EXIT_MS }));
-          dismissY.set(
-            withTiming(dismissY.value + dirY * exit, { duration: EXIT_MS }, (finished) => {
-              if (finished) runOnJS(leaveNow)();
+          edgeCommitting.set(true);
+          runOnJS(setLeaving)(true);
+          const throwSpeed =
+            Math.hypot(e.velocityX, e.velocityY) / Math.max(1, dismissSpan * ZOOM_DRAG_TRAVEL);
+          zoom.set(
+            withSpring(0, { ...ZOOM_OUT_SPRING, velocity: -throwSpeed }, () => {
+              runOnJS(leaveOnce)();
             }),
           );
+          dragX.set(withSpring(0, ZOOM_OUT_SPRING));
+          dragY.set(withSpring(0, ZOOM_OUT_SPRING));
         })
         // Always fires once the gesture resolves (release OR cancel) — the next gesture decides
         // its own mode fresh.
         .onFinalize(() => {
+          // A cancelled dismiss drag never reaches onEnd — don't leave the page part-collapsed.
+          if (gestureMode.value === 2 && !edgeCommitting.value) {
+            zoomClosing.set(false);
+            zoom.set(withSpring(1, SPRING_BACK));
+            dragX.set(withSpring(0, SPRING_BACK));
+            dragY.set(withSpring(0, SPRING_BACK));
+          }
           gestureMode.set(0);
         });
       if (settings.mode === 'paged') pan.activeOffsetY([-20, 20]).failOffsetX([-15, 15]);
       else pan.activeOffsetX([-20, 20]).failOffsetY([-15, 15]);
       return pan;
     }
-  }, [settings.mode, collapseEnabled, width, height, headerSpan, gestureMode, progressStartSV, progress, dismissX, dismissY, dismissing, detailsActiveSV, commitReveal, leaveNow]);
+  }, [
+    settings.mode,
+    collapseEnabled,
+    width,
+    height,
+    headerSpan,
+    gestureMode,
+    progressStartSV,
+    progress,
+    dismissing,
+    detailsActiveSV,
+    commitReveal,
+    zoom,
+    zoomClosing,
+    dragX,
+    dragY,
+    edgeCommitting,
+    leaveOnce,
+  ]);
 
   // Band pan. The strip (the reader band at the top of the details page) expands the reader the
   // same way the page's own overscroll does: a tap, or a DOWNWARD drag that slides the whole
@@ -1020,30 +1098,7 @@ function SeriesReaderInstance({
   // The source rect this page aligns itself to. No image is needed — unlike a classic shared
   // element, nothing is copied or flown; the page is its own transition subject (see zoomMaskStyle).
   const hero = zoomOrigin;
-  // …and the DESTINATION BOUND: this page's own hero cover, measured. The library takes this from a
-  // `Transition.Boundary.View` in the destination screen and its whole zoom is built around the
-  // pairing — the destination's copy of the picture is what lands on the tapped card, which is why
-  // its demo reads as the thumbnail itself expanding. Aligning to anything else (the reader band,
-  // as the first cut of this port did) puts unrelated content in the card-shaped window and the
-  // connection to the thumbnail is lost.
-  // 0 = the thumbnail is sitting on its card and the page is invisible, 1 = the page is up and
-  // the thumbnail is gone.
-  const zoom = useSharedValue(0);
   const [destBound, setDestBound] = useState<ZoomOrigin | null>(null);
-  // The entrance waits for that measurement — the library does the same, holding the pair until
-  // both ends have reported. Invisible here: the page is at opacity 0 until the spring starts, so
-  // a frame or two of waiting just shows the untouched grid. A deadline caps it, after which the
-  // transition falls back to the library's own no-destination behaviour (see zoomGeom).
-  //
-  // ARMING matters as much as waiting. `measureInWindow` reports a view's rect AFTER every
-  // ancestor transform, so measuring the cover while the page is already scaled hands back a
-  // shrunken rect — and a destination smaller than the source inverts the scale, which is the page
-  // starting large and settling down to its real size. So the page stays at IDENTITY (invisible,
-  // opacity 0) until the bound is in; only then do the transform and the mask engage. That is what
-  // the library means by keeping a component at its base layout for pre-animation measurement.
-  const zoomArmed = useSharedValue(false);
-  // Which set of cross-fade ranges is in play (see the constants) — an exit uses different ones.
-  const zoomClosing = useSharedValue(false);
   const zoomStartedRef = useRef(false);
   // Blanking the source card is tied to ARMING, not to mount: the wait for the destination
   // measurement happens with everything here invisible, and a card blanked during it would just be
@@ -1080,26 +1135,11 @@ function SeriesReaderInstance({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Back-swipe (details mode): the native stack's pop gesture, recreated — the route is a
-  // contained transparent modal (needed for the reader's dismissal reveal), which doesn't get
-  // the real one. A decisive rightward drag ANYWHERE on the details (full-surface, like the
-  // platform's full-screen pop) starts the COLLAPSE under the finger, and on release finishes it
-  // from wherever it got to. It no longer slides the page off sideways: the drag scales the page
-  // down in place, with resistance on the drag axis and a loose follow on the cross axis, exactly
-  // as the reader's own swipe-away treats a page — and then hands that scale straight into the
-  // gallery collapse. See the drag helpers above; this is the library's zoom/drag.ts model.
-  //
-  //  · zoom itself is what the finger moves — 1 open, 0 collapsed onto the card.
-  //  · dragX/dragY — the resisted follow, added to the page's transform and faded out by the
-  //    collapse, so a page released well off to the side still lands exactly on its card.
-  const dragX = useSharedValue(0);
-  const dragY = useSharedValue(0);
   // Where the touch started, and whether this touch stream has already been ruled in or out — the
   // manual activation's working state (see BACK_DECIDE_PX).
   const backStartX = useSharedValue(0);
   const backStartY = useSharedValue(0);
   const backDecided = useSharedValue(0);
-  const edgeCommitting = useSharedValue(false);
   // The chevron / hardware-back exit, for a drilled layer AND the modal root: shrink back into the
   // card we came from, then leave (leaveNow pops the layer, or the route when depth 0). The
   // route's `animation: 'none'` means this IS the exit animation — without it a tapped back would
