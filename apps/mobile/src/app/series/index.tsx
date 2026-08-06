@@ -20,6 +20,7 @@ import Animated, {
   Extrapolation,
   interpolate,
   runOnJS,
+  runOnUI,
   useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
@@ -127,8 +128,6 @@ const FLICK_VELOCITY = 900;
 const PULL_COMMIT_PX = 80;
 // How far from the LEFT edge a touch may start and still count as the back-swipe (the native
 // stack pop gesture, recreated — a transparent modal doesn't get the real one).
-// How long the SEARCH layer takes to slide out — the one thing here that still leaves sideways.
-const EXIT_MS = 180;
 const SPRING_BACK = { duration: 300, dampingRatio: 1 } as const;
 // The visible height of the collapsed reader strip (below the safe area) — a faded-out
 // background-image band forming the TOP OF THE DETAILS PAGE (it scrolls away under the content
@@ -138,7 +137,33 @@ const HEADER_BAND = 200;
 // ON THE SERIES TITLE — the title (the page's first element) renders mid-gradient over the fading
 // strip, X-hero style, so the content top inset is derived from this (see headerTopInset).
 const SHEET_FADE_H = 120;
-const LAYER_PARALLAX_FRACTION = 0.25;
+// ── The SEARCH layer's slide — UIKit's card push/pop, reproduced ─────────────
+// It's the one thing on this screen that still leaves sideways, and it has to read as the same
+// push the rest of the app gets natively. All three numbers are react-navigation's, which is the
+// best-tested model of UIKit's card transition available to copy.
+//
+// How far the screen UNDERNEATH drifts while the layer covers it (CardStyleInterpolators'
+// `forHorizontalIOS`: the outgoing screen travels to -30% of the width, not all the way).
+const LAYER_PARALLAX_FRACTION = 0.3;
+// `TransitionIOSSpec`. A SPRING, and that is the whole point of it: a released swipe carries the
+// velocity it was thrown with into the animation and decelerates out of it, instead of handing a
+// fixed duration/easing curve a value to interpolate from — which is what a `withTiming` release
+// does, and what makes it feel like a playback rather than a continuation.
+const IOS_CARD_SPRING = {
+  stiffness: 1000,
+  damping: 500,
+  mass: 3,
+  overshootClamping: true,
+  restDisplacementThreshold: 0.01,
+  restSpeedThreshold: 0.01,
+} as const;
+// How far a release is PROJECTED along its own velocity before deciding whether it committed —
+// react-navigation's GESTURE_VELOCITY_IMPACT, in seconds. This is the momentum the swipe was
+// missing: the old rule was distance OR a hard 900px/s cutoff, so everything slower than a proper
+// flick contributed exactly nothing and a fast, short throw simply snapped back. Now velocity and
+// distance are the same currency — 900px/s buys 270px of travel toward the threshold — which is
+// how UIKit decides, and why a flick from anywhere on the screen there completes the pop.
+const IOS_VELOCITY_IMPACT = 0.3;
 // ── The ZOOM entrance (see lib/series-zoom) ──────────────────────────────────────────────────
 // A port of react-native-screen-transitions' `navigation.zoom({ target: 'bound' })` — the
 // transition React Navigation's "building custom screen transitions" post demonstrates. See
@@ -2124,10 +2149,11 @@ function SearchLayer({
   isTop?: boolean;
 }) {
   const { width } = useWindowDimensions();
+  const theme = useTheme();
   const edgeX = useSharedValue(width);
   const edgeCommitting = useSharedValue(false);
   useEffect(() => {
-    edgeX.set(withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }));
+    edgeX.set(withSpring(0, IOS_CARD_SPRING));
     // Mount-only entrance — edgeX is stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -2139,14 +2165,36 @@ function SearchLayer({
     },
     [width, isTop, coverSV],
   );
+  // Both exits (the chevron/hardware back below, and a committed swipe) run through here, so the
+  // button and the gesture leave on the same curve — as they do on a native stack, where the pop
+  // animation doesn't know which one asked for it.
+  //
+  // `edgeCommitting` is the guard, and it is the right one for two jobs at once: it already means
+  // "this layer is leaving" and is one-way for the layer's whole life, so checking it here makes a
+  // second exit a no-op — the chevron tapped during a committed swipe, or both copies of the pan
+  // committing off the same touch — and exactly one spring exists, hence exactly one pop.
+  // `onPopLayer` slices this layer off the stack; a second call would take another layer with it.
+  //
+  // And the pop fires REGARDLESS of `finished`. A cancelled animation reports finished:false, and
+  // a callback that leaves only on true would strand the layer off-screen — mounted, invisible,
+  // still in `drills`. That exact shape is what made the series page's release end instantly, in
+  // the other direction.
+  const slideOut = useCallback(
+    (velocity: number) => {
+      'worklet';
+      if (edgeCommitting.value) return;
+      edgeCommitting.set(true);
+      edgeX.set(
+        withSpring(width, { ...IOS_CARD_SPRING, velocity }, () => {
+          runOnJS(onPopLayer)();
+        }),
+      );
+    },
+    [edgeX, edgeCommitting, width, onPopLayer],
+  );
   const closeLayer = useCallback(() => {
-    edgeCommitting.set(true);
-    edgeX.set(
-      withTiming(width, { duration: 220, easing: Easing.in(Easing.cubic) }, (finished) => {
-        if (finished) runOnJS(onPopLayer)();
-      }),
-    );
-  }, [edgeX, edgeCommitting, width, onPopLayer]);
+    runOnUI(slideOut)(0);
+  }, [slideOut]);
   useEffect(() => {
     if (Platform.OS !== 'android') return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -2166,17 +2214,18 @@ function SearchLayer({
   // (`Gesture.Simultaneous`, one detector — see there for why the cross-detector relation isn't
   // trusted). Which is also why the per-copy `ranHere` and the one-way `edgeCommitting` come
   // across: both copies see the same touches and both reach onFinalize, so the loser could
-  // otherwise settle a drag the winner is driving — or undo a commit it just made, cancelling the
-  // exit and leaving the layer parked half off-screen, since a cancelled `withTiming` never runs
-  // its callback and the pop would simply never happen.
+  // otherwise settle a drag the winner is driving — or undo a commit it just made, dragging the
+  // layer back on screen after it had already been sliced off the stack.
   const backStartX = useSharedValue(0);
   const backStartY = useSharedValue(0);
   const backDecided = useSharedValue(0);
   const makeBackSwipePan = useCallback(() => {
     const ranHere = makeMutable(false);
-    const settle = () => {
+    // The cancel carries the release velocity too — let go while still moving right and the
+    // screen eases out of that motion before coming back, rather than reversing on the spot.
+    const settle = (velocity: number) => {
       'worklet';
-      edgeX.set(withSpring(0, SPRING_BACK));
+      edgeX.set(withSpring(0, { ...IOS_CARD_SPRING, velocity }));
     };
     return Gesture.Pan()
       // Manual activation, so the decision can be a RATIO rather than the absolute cross-axis
@@ -2211,24 +2260,21 @@ function SearchLayer({
         edgeX.set(Math.max(0, e.translationX));
       })
       .onEnd((e) => {
-        if (e.translationX > width * COMMIT_FRACTION || e.velocityX > FLICK_VELOCITY) {
-          edgeCommitting.set(true);
-          edgeX.set(
-            withTiming(width, { duration: EXIT_MS }, (finished) => {
-              if (finished) runOnJS(onPopLayer)();
-            }),
-          );
-        } else {
-          settle();
-        }
+        // Where the swipe was HEADED, not where it stopped — see IOS_VELOCITY_IMPACT. Half the
+        // screen is a long way on distance alone, and deliberately so: velocity is what carries a
+        // real swipe over it, which is why a lazy drag past the middle and a quick flick from the
+        // edge both commit, and a hesitant one that stops dead does not.
+        const projected = e.translationX + e.velocityX * IOS_VELOCITY_IMPACT;
+        if (projected > width / 2) slideOut(e.velocityX);
+        else settle(e.velocityX);
       })
       .onFinalize(() => {
         // Only the copy that was DRIVING settles a cancelled drag, and never over a commit —
         // `edgeCommitting` is one-way for this layer's whole life, exactly as on the instance.
-        if (ranHere.value && !edgeCommitting.value) settle();
+        if (ranHere.value && !edgeCommitting.value) settle(0);
         ranHere.set(false);
       });
-  }, [width, edgeX, edgeCommitting, backStartX, backStartY, backDecided, onPopLayer]);
+  }, [width, edgeX, edgeCommitting, backStartX, backStartY, backDecided, slideOut]);
   const edgePan = useMemo(() => makeBackSwipePan(), [makeBackSwipePan]);
   const scrollGesture = useMemo(
     () => (IS_WEB ? undefined : Gesture.Simultaneous(Gesture.Native(), makeBackSwipePan())),
@@ -2244,7 +2290,7 @@ function SearchLayer({
   return (
     <View style={styles.container}>
       <GestureDetector gesture={edgePan}>
-        <Animated.View style={[styles.searchSlide, slideStyle]}>
+        <Animated.View style={[styles.searchSlide, { backgroundColor: theme.background }, slideStyle]}>
           <SearchScreen embedded={embedded} />
         </Animated.View>
       </GestureDetector>
@@ -2876,6 +2922,23 @@ const styles = StyleSheet.create({
   // The SEARCH layer's slide-in ride — the one layer that still arrives as a push (see SearchLayer).
   searchSlide: {
     flex: 1,
+    // The shadow UIKit draws down the leading edge of a pushed card, over the screen it covers.
+    // Without it the layer reads as a flat swap rather than something on top, which is half of why
+    // this slide didn't look native. iOS only: Android's `elevation` is omnidirectional and its
+    // own push transition doesn't carry this at all.
+    //
+    // The opaque fill is load-bearing, not decoration — a shadow on a view with no background
+    // makes iOS derive the shape from the subtree's alpha every frame of the drag, and this view
+    // is the size of the screen. With it, the shadow is a rectangle it can cache.
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: -3, height: 0 },
+        shadowOpacity: 0.18,
+        shadowRadius: 12,
+      },
+      default: {},
+    }),
   },
   // The reader's frame + clip. No background on either: the dark reader surface is a SEPARATE
   // static full-screen layer BEHIND the frame (readerSurface), so it keeps covering the screen
