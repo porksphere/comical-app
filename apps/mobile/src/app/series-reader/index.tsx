@@ -199,6 +199,56 @@ const ZOOM_CORNER_RADIUS = 10;
 // giving up and using the computed fallback target. Invisible while it waits — the page is still
 // at opacity 0, so all that shows is the untouched grid.
 const ZOOM_BOUND_WAIT_MS = 220;
+// The DRAG. A dismissal drag doesn't slide the page off — it runs the COLLAPSE under the finger:
+// the same mask, transform and cross-fade the chevron plays, just with its progress on the end of
+// a thumb, finishing from wherever it was let go.
+//
+// The follow is the library's zoom/drag.ts resistance, verbatim — a rubber-banded travel along the
+// drag axis and a loose one across it. What is NOT ported is that file's separate shrink
+// (`resolveZoomDragScale`) and release curve (`resolveZoomDismissContentScale`): those exist
+// because there the transition progress stays pinned at 1 for the whole drag, so the shrink has to
+// be a second, parallel scale that a Bézier then hands back to the collapse. Driving the progress
+// directly makes both unnecessary — and here actively wrong, since our collapsed content scale is
+// ~0.91, above that file's 0.5 drag floor, so the two would fight over which way to scale.
+const ZOOM_PRIMARY_DRAG_TRANSLATION_SCALE = 0.8;
+const ZOOM_PRIMARY_DRAG_RESISTANCE = 2;
+const ZOOM_HORIZONTAL_DRAG_DISTANCE_SCALE = 1.5;
+const ZOOM_CROSS_AXIS_DRAG_TRANSLATION_SCALE = 0.35;
+const ZOOM_CROSS_AXIS_DRAG_RESISTANCE = 0.05;
+// How far the finger has to travel, as a fraction of screen width, to drive the collapse all the
+// way home. The commit threshold is much lower — this only sets how fast the page shrinks under
+// a drag that keeps going.
+const ZOOM_DRAG_TRAVEL = 0.65;
+
+/** `resolveZoomPrimaryDragTranslation` — exponential resistance along the drag's own axis. */
+function zoomPrimaryDrag(translation: number, dimension: number): number {
+  'worklet';
+  const direction = translation < 0 ? -1 : 1;
+  const baseDistance = Math.max(1, dimension);
+  const normalized = Math.abs(translation) / baseDistance;
+  const resistance = ZOOM_PRIMARY_DRAG_RESISTANCE * 0.85;
+  const resisted = (baseDistance * (1 - Math.exp(-resistance * normalized))) / resistance;
+  return direction * Math.min(baseDistance, resisted * ZOOM_PRIMARY_DRAG_TRANSLATION_SCALE);
+}
+
+/** `resolveZoomHorizontalDragTranslation` — the primary axis, when that axis is horizontal. */
+function zoomHorizontalDrag(translation: number, dimension: number): number {
+  'worklet';
+  return zoomPrimaryDrag(translation, dimension) * ZOOM_HORIZONTAL_DRAG_DISTANCE_SCALE;
+}
+
+/** `resolveZoomCrossAxisDragTranslation` — the off-axis, which follows loosely and never leads. */
+function zoomCrossAxisDrag(translation: number, dimension: number): number {
+  'worklet';
+  const direction = translation < 0 ? -1 : 1;
+  const baseDistance = Math.max(1, dimension);
+  const normalized = Math.abs(translation) / baseDistance;
+  const resisted =
+    (baseDistance * (1 - Math.exp(-ZOOM_CROSS_AXIS_DRAG_RESISTANCE * normalized))) /
+    ZOOM_CROSS_AXIS_DRAG_RESISTANCE;
+  return direction * Math.min(baseDistance, resisted * ZOOM_CROSS_AXIS_DRAG_TRANSLATION_SCALE);
+}
+
 // Wall-clock backstop for a collapse whose animation callback never arrives (see closeLayer).
 // Generous: the close spring is stiff but a spring has no fixed duration to key off.
 const ZOOM_OUT_BACKSTOP_MS = 900;
@@ -667,9 +717,9 @@ function SeriesReaderInstance({
 
   // Leaving this instance. The modal ROOT pops the route (deep-linked/full-page-loaded entries
   // on web have no back stack — land on the browse tabs instead of dead-ending). A drilled
-  // LAYER never touches navigation: it animates out on the same edgeX the edge swipe drags
+  // LAYER never touches navigation: it collapses on the same `zoom` the back-swipe drags
   // (closeLayer — chevron/hardware back), or is removed outright once a gesture has already
-  // carried it offscreen / flown the page out (leaveNow — the parent series is live beneath).
+  // collapsed it / flown the page out (leaveNow — the parent series is live beneath).
   const goBack = useCallback(() => {
     if (router.canGoBack()) router.back();
     else router.replace('/');
@@ -684,23 +734,25 @@ function SeriesReaderInstance({
   // mounted, invisible or shrunk, and still swallowing touches. So the exits below fire this
   // whether or not the curve finished, AND arm a wall-clock backstop, and this makes the extra
   // calls harmless.
-  const leftRef = useRef(false);
+  // A shared value rather than a ref on purpose: the back-swipe builds its pan DURING render (see
+  // detailsScrollGesture), so anything that pan's worklets reach must not touch a React ref.
+  const leftSV = useSharedValue(false);
   const leaveOnce = useCallback(() => {
-    if (leftRef.current) return;
-    leftRef.current = true;
+    if (leftSV.get()) return;
+    leftSV.set(true);
     leaveNow();
-  }, [leaveNow]);
+  }, [leftSV, leaveNow]);
   // True from the moment an exit starts: the page stops taking touches immediately, so nothing
   // can be tapped on a page that is on its way out (or, if a leave ever does fail, on one that is
   // stuck). Also what keeps a half-faded page from eating taps meant for the grid behind it.
   const [leaving, setLeaving] = useState(false);
-  const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(
-    () => () => {
-      if (leaveTimer.current) clearTimeout(leaveTimer.current);
-    },
-    [],
-  );
+  // …and the wall-clock backstop hangs off that same flag, so it covers every exit — the chevron,
+  // hardware back, and a released dismissal drag — with one timer and no ref to reach.
+  useEffect(() => {
+    if (!leaving) return;
+    const t = setTimeout(leaveOnce, ZOOM_OUT_BACKSTOP_MS);
+    return () => clearTimeout(t);
+  }, [leaving, leaveOnce]);
 
   // Collapse/dismiss pan — wraps the expanded reader, on the cross axis of its scroll: the
   // collapse direction (up in paged, right in webtoon) slides the details back in; the opposite
@@ -971,19 +1023,24 @@ function SeriesReaderInstance({
   // Back-swipe (details mode): the native stack's pop gesture, recreated — the route is a
   // contained transparent modal (needed for the reader's dismissal reveal), which doesn't get
   // the real one. A decisive rightward drag ANYWHERE on the details (full-surface, like the
-  // platform's full-screen pop — see the criteria on the pan) slides the WHOLE instance off
-  // under the finger — over the browse grid (modal root) or the LIVE parent series (a drilled
-  // layer, a plain sibling view) — and pops on a deep release or flick. Raced with the reveal
-  // pan on the same layer. This is the ONE place the page still travels sideways: it has to,
-  // because it's tracking a finger. Everything that isn't finger-tracked is the zoom.
-  const edgeX = useSharedValue(0);
+  // platform's full-screen pop) starts the COLLAPSE under the finger, and on release finishes it
+  // from wherever it got to. It no longer slides the page off sideways: the drag scales the page
+  // down in place, with resistance on the drag axis and a loose follow on the cross axis, exactly
+  // as the reader's own swipe-away treats a page — and then hands that scale straight into the
+  // gallery collapse. See the drag helpers above; this is the library's zoom/drag.ts model.
+  //
+  //  · zoom itself is what the finger moves — 1 open, 0 collapsed onto the card.
+  //  · dragX/dragY — the resisted follow, added to the page's transform and faded out by the
+  //    collapse, so a page released well off to the side still lands exactly on its card.
+  const dragX = useSharedValue(0);
+  const dragY = useSharedValue(0);
   const edgeCommitting = useSharedValue(false);
   // The chevron / hardware-back exit, for a drilled layer AND the modal root: shrink back into the
   // card we came from, then leave (leaveNow pops the layer, or the route when depth 0). The
   // route's `animation: 'none'` means this IS the exit animation — without it a tapped back would
   // just blink the screen away.
   const closeLayer = useCallback(() => {
-    if (leftRef.current) return;
+    if (leftSV.get()) return;
     setLeaving(true);
     zoomClosing.set(true);
     edgeCommitting.set(true);
@@ -994,10 +1051,8 @@ function SeriesReaderInstance({
         runOnJS(leaveOnce)();
       }),
     );
-    // …and if that callback never arrives at all, leave anyway a beat after the curve was due.
-    if (leaveTimer.current) clearTimeout(leaveTimer.current);
-    leaveTimer.current = setTimeout(leaveOnce, ZOOM_OUT_BACKSTOP_MS);
-  }, [edgeCommitting, zoom, zoomClosing, leaveOnce]);
+    // (If that callback never arrives at all, the `leaving` backstop above still fires.)
+  }, [leftSV, edgeCommitting, zoom, zoomClosing, leaveOnce]);
 
   // Android hardware back steps back HOME (the details) before leaving: reader expanded → back
   // collapses it; details up → the instance slides out (a drilled layer back to its parent
@@ -1039,38 +1094,53 @@ function SeriesReaderInstance({
   // and leaving the gate off keeps the composed gesture's identity stable across expand/collapse
   // (no re-attach churn through the list subtree).
   const makeBackSwipePan = useCallback(() => {
+    const settle = () => {
+      'worklet';
+      zoomClosing.set(false);
+      zoom.set(withSpring(1, SPRING_BACK));
+      dragX.set(withSpring(0, SPRING_BACK));
+      dragY.set(withSpring(0, SPRING_BACK));
+    };
     return Gesture.Pan()
       .activeOffsetX(20)
       .failOffsetX(-12)
       .failOffsetY([-CROSS_AXIS_FAIL_PX, CROSS_AXIS_FAIL_PX])
       // Activation = this gesture owns the screen; the list must stop scrolling under it.
       .onStart(() => {
-        if (detailsActiveSV.value) runOnJS(setSwipeLocked)(true);
+        if (!detailsActiveSV.value) return;
+        runOnJS(setSwipeLocked)(true);
+        // A drag IS a collapse, so it uses the collapse's cross-fade ranges from the first frame.
+        zoomClosing.set(true);
       })
       .onUpdate((e) => {
         if (!detailsActiveSV.value) return;
-        edgeX.set(Math.max(0, e.translationX));
+        zoom.set(1 - Math.min(1, Math.max(0, e.translationX / (width * ZOOM_DRAG_TRAVEL))));
+        dragX.set(zoomHorizontalDrag(e.translationX, width));
+        dragY.set(zoomCrossAxisDrag(e.translationY, height));
       })
       .onEnd((e) => {
         if (!detailsActiveSV.value) return;
-        if (edgeX.value > width * 0.3 || e.velocityX > FLICK_VELOCITY) {
+        if (e.translationX > width * COMMIT_FRACTION || e.velocityX > FLICK_VELOCITY) {
+          // Finish from exactly where the finger left it — the spring starts at the current value,
+          // so there is no seam between the dragged part and the animated part.
           edgeCommitting.set(true);
-          edgeX.set(
-            withTiming(width, { duration: EXIT_MS }, (finished) => {
-              if (finished) runOnJS(leaveNow)();
+          runOnJS(setLeaving)(true);
+          zoom.set(
+            withSpring(0, ZOOM_OUT_SPRING, () => {
+              runOnJS(leaveOnce)();
             }),
           );
         } else {
-          edgeX.set(withSpring(0, SPRING_BACK));
+          settle();
         }
       })
       .onFinalize(() => {
-        // A cancelled drag never reaches onEnd — don't leave the screen part-slid.
-        if (!edgeCommitting.value) edgeX.set(withSpring(0, SPRING_BACK));
+        // A cancelled drag never reaches onEnd — don't leave the page part-collapsed.
+        if (!edgeCommitting.value) settle();
         edgeCommitting.set(false);
         runOnJS(setSwipeLocked)(false);
       });
-  }, [width, edgeX, edgeCommitting, detailsActiveSV, leaveNow]);
+  }, [width, height, dragX, dragY, edgeCommitting, detailsActiveSV, zoom, zoomClosing, leaveOnce]);
   const edgePan = useMemo(() => makeBackSwipePan().enabled(detailsActive), [makeBackSwipePan, detailsActive]);
   // The horizontal-reveal counterpart of the back-swipe: a decisive LEFTWARD drag anywhere on the
   // details slides them off to the left under the finger, revealing the reader beneath (webtoon
@@ -1251,12 +1321,13 @@ function SeriesReaderInstance({
   // the page is screen-sized its own centre is numerically the screen centre, which makes that
   // displacement a pure translation, and a window-space "scale s about the screen centre, then
   // translate T" is reproduced locally by translating T - M.
-  // `edgeX` adds on top — that's the back-swipe dragging the page bodily under a finger.
+  // The back-swipe's drag rides here too: its follow adds to the translate and its shrink
+  // multiplies the scale, so a dismissal drag and the collapse it hands into are one motion.
   const zoomPageStyle = useAnimatedStyle(() => {
     const q = Math.max(0, zoom.value); // see zoomMaskStyle
     // Before arming: base layout, so the destination cover measures its true untransformed rect.
     if (!zoomArmed.value) {
-      return { transform: [{ translateX: edgeX.value }, { translateY: 0 }, { scale: 1 }] };
+      return { transform: [{ translateX: 0 }, { translateY: 0 }, { scale: 1 }] };
     }
     if (!zoomGeom || !hero) {
       // No source rect (deep link, web): no mask, no alignment — just the small centred zoom.
@@ -1264,20 +1335,28 @@ function SeriesReaderInstance({
       // shape per view, and this branch and the unarmed one above can both run for one instance.
       return {
         transform: [
-          { translateX: edgeX.value },
-          { translateY: 0 },
+          { translateX: dragX.value * q },
+          { translateY: dragY.value * q },
           { scale: NO_ORIGIN_SCALE + (1 - NO_ORIGIN_SCALE) * q },
         ],
       };
     }
-    const s = zoomGeom.s + (1 - zoomGeom.s) * q;
     const maskLeft = hero.x * (1 - q);
     const maskTop = hero.y * (1 - q);
+    // Scale: normally the base content scale modulated by the drag's shrink. Once the finger has
+    // let go of a dismissal it becomes the finishing Bézier instead — from the scale the page was
+    // released at, down to the collapsed scale, biased by the release velocity.
+    const scale = zoomGeom.s + (1 - zoomGeom.s) * q;
+    // The follow is weighted by how open the page still is, so it is at full strength under an
+    // early drag and gone by the time the collapse lands — which is what puts a page released well
+    // off to the side back onto its card instead of beside it.
+    const followX = dragX.value * q;
+    const followY = dragY.value * q;
     return {
       transform: [
-        { translateX: zoomGeom.tx * (1 - q) - maskLeft + edgeX.value },
-        { translateY: zoomGeom.ty * (1 - q) - maskTop },
-        { scale: s },
+        { translateX: zoomGeom.tx * (1 - q) - maskLeft + followX },
+        { translateY: zoomGeom.ty * (1 - q) - maskTop + followY },
+        { scale },
       ],
     };
   }, [zoomGeom, hero]);
@@ -1459,16 +1538,15 @@ function SeriesReaderInstance({
   // ── The BACKDROP's dim (see lib/series-reader-backdrop.ts) ───────────────────────────────────
   // How much of the screen this page currently covers. All three ways it can be less than fully
   // covering have to count, or the backdrop would sit dimmed while the page is visibly gone: the
-  // zoom (grown out of / collapsed into its card), the back-swipe (edgeX), and the reader's
-  // swipe-away, which touches neither and instead flings the page along its own vector — the same
-  // distance/span the backdrop fade above uses, so the two agree frame for frame.
+  // zoom — which now covers the back-swipe too, since a dismissal drag moves that same value —
+  // and the reader's swipe-away, which doesn't, and instead flings the page along its own vector
+  // over the same distance/span the backdrop fade above uses, so the two agree frame for frame.
   // Depth 0 ONLY: a drilled layer sits over its parent series inside this same modal, and the tabs
   // behind the whole modal must not respond twice to what is, to them, one open page.
   useAnimatedReaction(
     () => {
-      const slid = 1 - Math.min(1, Math.max(0, edgeX.value / width));
       const flung = Math.min(1, Math.hypot(dismissX.value, dismissY.value) / span);
-      return zoom.value * slid * (1 - flung);
+      return zoom.value * (1 - flung);
     },
     (covered) => {
       if (depth === 0) seriesReaderDim.set(covered);
