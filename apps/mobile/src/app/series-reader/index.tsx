@@ -396,7 +396,7 @@ function SeriesReaderInstance({
   // Series detail for the toolbar/settings gear (placeholder-seeded from the forwarded
   // title+cover). The details card's SeriesDetailsHost subscribes to this same query key, so this
   // costs one fetch total.
-  const { data: series = null } = useQuery(
+  const { data: series = null, isPending: detailPending } = useQuery(
     seriesDetailQuery(ds, mock, bridgeId ?? '', id ?? '', {
       direct: isDirect,
       bridgeName: bridge ?? 'Library',
@@ -404,6 +404,16 @@ function SeriesReaderInstance({
       cover,
     }),
   );
+  // The DETAILS GO FIRST. Page images used to win the race and paint the strip while the tags and
+  // description were still blank, which reads backwards on a screen that opens ON the details —
+  // the reader is a background band there, not the thing being waited for. On device this is a
+  // real ordering problem rather than a cosmetic one: the on-device runtime serves requests
+  // through one in-process transport, so a page list (and then its images) queued alongside the
+  // detail request genuinely delays it.
+  //
+  // `isPending`, not `isSuccess`: this must also open on a detail that FAILED, or a bridge with a
+  // flaky detail endpoint would leave the reader permanently empty. Settled either way is enough.
+  const detailSettled = !detailPending;
 
   // Chapter list (chaptered series only) — drives resume-or-first resolution and prev/next
   // adjacency for the reader pane. (The details card's own list rendering — read state, downloads,
@@ -468,7 +478,7 @@ function SeriesReaderInstance({
     ...(targetChapterId
       ? chapterPagesQuery(ds, mock, bridgeId ?? '', id ?? '', targetChapterId)
       : directPagesQuery(ds, mock, bridgeId ?? '', id ?? '')),
-    enabled: !!target && !!id,
+    enabled: !!target && !!id && detailSettled,
   });
   const error = queryError ? (queryError as Error).message || 'Failed to load pages' : null;
   const readerReady = !!target && !!pages;
@@ -530,11 +540,11 @@ function SeriesReaderInstance({
   // an otherwise settled image. Expanding enables them and the window builds for real reading.
   const { data: prevPages } = useQuery({
     ...chapterPagesQuery(ds, mock, bridgeId ?? '', id ?? '', prevChapter?.id ?? ''),
-    enabled: stitched && !detailsSettled && !!id && !!prevChapter,
+    enabled: stitched && !detailsSettled && !!id && !!prevChapter && detailSettled,
   });
   const { data: nextPages } = useQuery({
     ...chapterPagesQuery(ds, mock, bridgeId ?? '', id ?? '', nextChapter?.id ?? ''),
-    enabled: stitched && !detailsSettled && !!id && !!nextChapter,
+    enabled: stitched && !detailsSettled && !!id && !!nextChapter && detailSettled,
   });
 
   // The stitched window — reader.tsx's run, verbatim in behavior: a segment only joins once its
