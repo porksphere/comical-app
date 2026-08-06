@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { Gesture, GestureDetector, type ComposedGesture } from 'react-native-gesture-handler';
 import Animated, {
+  makeMutable,
   Easing,
   Extrapolation,
   interpolate,
@@ -1141,6 +1142,12 @@ function SeriesReaderInstance({
   // and leaving the gate off keeps the composed gesture's identity stable across expand/collapse
   // (no re-attach churn through the list subtree).
   const makeBackSwipePan = useCallback(() => {
+    // PER-COPY activation flag. This recipe is built twice (see below) and the two copies share
+    // every other shared value, which is fine for state that describes the gesture — but not for
+    // "did I run it". Both copies see the same touch stream, so the one that LOSES also reaches
+    // onFinalize, and without this it would settle a drag the other one is still driving, or undo
+    // a commit the other one just made.
+    const ranHere = makeMutable(false);
     const settle = () => {
       'worklet';
       zoomClosing.set(false);
@@ -1184,6 +1191,7 @@ function SeriesReaderInstance({
       // Activation = this gesture owns the screen; the list must stop scrolling under it.
       .onStart(() => {
         if (!detailsActiveSV.value) return;
+        ranHere.set(true);
         runOnJS(setSwipeLocked)(true);
         // A drag IS a collapse, so it uses the collapse's cross-fade ranges from the first frame.
         zoomClosing.set(true);
@@ -1222,9 +1230,15 @@ function SeriesReaderInstance({
         }
       })
       .onFinalize(() => {
-        // A cancelled drag never reaches onEnd — don't leave the page part-collapsed.
-        if (!edgeCommitting.value) settle();
-        edgeCommitting.set(false);
+        // A cancelled drag never reaches onEnd — don't leave the page part-collapsed. But ONLY if
+        // this copy is the one that was driving, and only if nothing has committed: `settle` writes
+        // `zoom`, so running it against a committed collapse cancels that spring, and a cancelled
+        // spring still fires its callback — which leaves. That is the release finishing instantly.
+        if (ranHere.value && !edgeCommitting.value) settle();
+        ranHere.set(false);
+        // NOTE: `edgeCommitting` is deliberately NOT cleared. It means "this instance is leaving",
+        // which is a one-way door — clearing it let a second onFinalize (the other copy's, whose
+        // ordering is not guaranteed) fall through to `settle` after the commit.
         runOnJS(setSwipeLocked)(false);
       });
   }, [
