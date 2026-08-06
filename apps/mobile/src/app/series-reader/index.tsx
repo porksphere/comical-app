@@ -396,7 +396,11 @@ function SeriesReaderInstance({
   // Series detail for the toolbar/settings gear (placeholder-seeded from the forwarded
   // title+cover). The details card's SeriesDetailsHost subscribes to this same query key, so this
   // costs one fetch total.
-  const { data: series = null, isPending: detailPending } = useQuery(
+  const {
+    data: series = null,
+    isFetching: detailFetching,
+    isPlaceholderData: detailIsPlaceholder,
+  } = useQuery(
     seriesDetailQuery(ds, mock, bridgeId ?? '', id ?? '', {
       direct: isDirect,
       bridgeName: bridge ?? 'Library',
@@ -404,16 +408,20 @@ function SeriesReaderInstance({
       cover,
     }),
   );
-  // The DETAILS GO FIRST. Page images used to win the race and paint the strip while the tags and
-  // description were still blank, which reads backwards on a screen that opens ON the details —
-  // the reader is a background band there, not the thing being waited for. On device this is a
-  // real ordering problem rather than a cosmetic one: the on-device runtime serves requests
-  // through one in-process transport, so a page list (and then its images) queued alongside the
-  // detail request genuinely delays it.
+  // The DETAILS GO FIRST — enqueued first, not waited on. Page images were winning the race and
+  // painting the strip while the tags and description were still blank, which reads backwards on a
+  // screen that opens ON the details: the reader is a background band there, not the thing being
+  // waited for. On device that ordering is real rather than cosmetic, since the on-device runtime
+  // serves everything through one in-process transport, so whatever is queued first is served
+  // first.
   //
-  // `isPending`, not `isSuccess`: this must also open on a detail that FAILED, or a bridge with a
-  // flaky detail endpoint would leave the reader permanently empty. Settled either way is enough.
-  const detailSettled = !detailPending;
+  // This is `/series`'s own `detailStarted` rule, verbatim: true once the detail request is IN
+  // FLIGHT (or already has real data), not once it has finished. The pages query can therefore
+  // only turn on in a render where the detail fetch has already been dispatched — which puts it
+  // behind detail in the queue by construction, without making it wait for the answer. Gating on
+  // completion instead would stall the reader on a slow detail endpoint, and strand it entirely
+  // on a failing one.
+  const detailStarted = detailFetching || !detailIsPlaceholder;
 
   // Chapter list (chaptered series only) — drives resume-or-first resolution and prev/next
   // adjacency for the reader pane. (The details card's own list rendering — read state, downloads,
@@ -478,7 +486,7 @@ function SeriesReaderInstance({
     ...(targetChapterId
       ? chapterPagesQuery(ds, mock, bridgeId ?? '', id ?? '', targetChapterId)
       : directPagesQuery(ds, mock, bridgeId ?? '', id ?? '')),
-    enabled: !!target && !!id && detailSettled,
+    enabled: !!target && !!id && detailStarted,
   });
   const error = queryError ? (queryError as Error).message || 'Failed to load pages' : null;
   const readerReady = !!target && !!pages;
@@ -540,11 +548,11 @@ function SeriesReaderInstance({
   // an otherwise settled image. Expanding enables them and the window builds for real reading.
   const { data: prevPages } = useQuery({
     ...chapterPagesQuery(ds, mock, bridgeId ?? '', id ?? '', prevChapter?.id ?? ''),
-    enabled: stitched && !detailsSettled && !!id && !!prevChapter && detailSettled,
+    enabled: stitched && !detailsSettled && !!id && !!prevChapter,
   });
   const { data: nextPages } = useQuery({
     ...chapterPagesQuery(ds, mock, bridgeId ?? '', id ?? '', nextChapter?.id ?? ''),
-    enabled: stitched && !detailsSettled && !!id && !!nextChapter && detailSettled,
+    enabled: stitched && !detailsSettled && !!id && !!nextChapter,
   });
 
   // The stitched window — reader.tsx's run, verbatim in behavior: a segment only joins once its
