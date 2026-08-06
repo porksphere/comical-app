@@ -272,12 +272,12 @@ export default function AppTabs() {
   const seriesReaderBackdropDim = useSeriesReaderBackdropDimStyle();
 
   return (
-    // The tabs are what that page usually opens OVER, and a
-    // transparent modal can't scale or dim its backdrop the way a native presentation does — so
-    // the page drives it from here instead (see lib/series page-backdrop.ts). The wrapper sits
-    // OUTSIDE `Tabs` on purpose: `Tabs` walks its own children to discover triggers, so nothing
-    // may come between it and them. At rest the transform is identity and the dim is fully
-    // transparent, so with the experiment off this is an inert extra view. Remove with it.
+    // The tabs are what the series page usually opens OVER, and a transparent modal can't scale
+    // or dim its backdrop the way a native presentation does — so the page drives it from here
+    // instead (see lib/series-backdrop.ts). The wrapper sits OUTSIDE `Tabs` on purpose: `Tabs`
+    // walks its own children to discover triggers, so nothing may come between it and them. With
+    // no series page open the transform is identity and the dim fully transparent, so this costs
+    // nothing at rest.
     <Animated.View style={[styles.tabs, seriesReaderBackdropStyle]}>
       <Tabs style={styles.tabs}>
         <TabSlot style={styles.slot} />
