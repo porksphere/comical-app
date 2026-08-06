@@ -19,8 +19,14 @@ import { use$ } from '@legendapp/state/react';
  *
  */
 
-/** A card's on-screen box, in WINDOW coordinates (what `measureInWindow` reports). */
-export type ZoomOrigin = { x: number; y: number; width: number; height: number };
+/** A thumbnail's on-screen box, in WINDOW coordinates (what `measureInWindow` reports), plus the
+ *  corner radius it is drawn with. The RADIUS travels with the rect because the transition draws
+ *  a copy of that thumbnail and has to match it: a grid card's cover is rounded 10, a History or
+ *  Activity row's is rounded 6, and a copy that assumed one of them was visibly wrong on the
+ *  other at the moment it landed. (The library reads the same thing off the source element's own
+ *  styles — `getSourceBorderRadius`.) */
+export type ZoomRect = { x: number; y: number; width: number; height: number };
+export type ZoomOrigin = ZoomRect & { radius: number };
 
 type Capture = { id: string; origin: ZoomOrigin; at: number };
 

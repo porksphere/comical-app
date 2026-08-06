@@ -67,7 +67,7 @@ import { getPreferredGroup, resetPreferredGroup, setPreferredGroup } from '@/lib
 
 import { registerDrillSeries, registerOpenSearchLayer } from '@/lib/series-nav';
 import { seriesReaderDim } from '@/lib/series-backdrop';
-import { holdZoomingSeries, takeZoomOrigin, type ZoomOrigin } from '@/lib/series-zoom';
+import { holdZoomingSeries, takeZoomOrigin, type ZoomRect } from '@/lib/series-zoom';
 import SearchScreen from '../search';
 import { SeriesBody, truncateTopBarTitle } from '@/components/series/series-body';
 
@@ -210,9 +210,6 @@ const ZOOM_ASPECT_EPSILON = 0.1;
 // No source card (deep link, web, a card recycled away before we could measure it): there is no
 // rect to align to, so the page does a small centred zoom instead. Still not a slide.
 const NO_ORIGIN_SCALE = 0.92;
-// Matches the card cover's own `borderRadius` (series-card.tsx `coverBoxClip`) — the radius the
-// mask starts at before easing out to a square full screen.
-const ZOOM_CORNER_RADIUS = 10;
 // How long the entrance will wait for the destination page to report its hero cover's rect before
 // giving up and using the computed fallback target. Invisible while it waits — the page is still
 // at opacity 0, so all that shows is the untouched grid.
@@ -1105,7 +1102,7 @@ function SeriesReaderInstance({
   // The source rect this page aligns itself to. No image is needed — unlike a classic shared
   // element, nothing is copied or flown; the page is its own transition subject (see zoomMaskStyle).
   const hero = zoomOrigin;
-  const [destBound, setDestBound] = useState<ZoomOrigin | null>(null);
+  const [destBound, setDestBound] = useState<ZoomRect | null>(null);
   const zoomStartedRef = useRef(false);
   // Blanking the source card is tied to ARMING, not to mount: the wait for the destination
   // measurement happens with everything here invisible, and a card blanked during it would just be
@@ -1121,7 +1118,7 @@ function SeriesReaderInstance({
     zoomArmed.set(true);
     zoom.set(withSpring(1, ZOOM_IN_SPRING));
   }, [zoom, zoomArmed, zoomOrigin, id]);
-  const onHeroCoverRect = useCallback((rect: ZoomOrigin) => {
+  const onHeroCoverRect = useCallback((rect: ZoomRect) => {
     // Only the FIRST report, and only before the geometry is committed: the cover box re-lays out
     // as its aspect settles, and moving the destination mid-flight would visibly jump.
     if (zoomStartedRef.current) return;
@@ -1410,7 +1407,7 @@ function SeriesReaderInstance({
     const fitToWidth = sourceAspect >= screenAspect;
     const fitW = fitToWidth ? width : sourceAspect * height;
     const fitH = fitToWidth ? (hero.height / hero.width) * width : height;
-    const end: ZoomOrigin = bound ?? {
+    const end: ZoomRect = bound ?? {
       x: (width - fitW) / 2,
       y: (height - fitH) / 2,
       width: fitW,
@@ -1425,7 +1422,7 @@ function SeriesReaderInstance({
     // getAnchorPoint, for the three anchors this transition can pick.
     // Centre-to-centre either way now — the measured bound always used it, and the computed one
     // is centred by construction above.
-    const anchorOf = (b: ZoomOrigin) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
+    const anchorOf = (b: ZoomRect) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
     const startAnchor = anchorOf(hero);
     const endAnchor = anchorOf(end);
     const screenCenterX = width / 2;
@@ -1465,7 +1462,7 @@ function SeriesReaderInstance({
       top: hero.y * (1 - q) + dragY.value,
       width: hero.width + (width - hero.width) * q,
       height: hero.height + (height - hero.height) * q,
-      borderRadius: ZOOM_CORNER_RADIUS * (1 - q),
+      borderRadius: hero.radius * (1 - q),
       borderCurve: 'continuous' as const,
     };
   }, [hero, width, height]);
@@ -1537,17 +1534,18 @@ function SeriesReaderInstance({
     return { opacity: interpolate(q, range, [0, 1], Extrapolation.CLAMP) };
   });
   const zoomThumbStyle = useAnimatedStyle(() => {
-    if (!zoomArmed.value) return { opacity: 0, borderRadius: ZOOM_CORNER_RADIUS };
+    if (!zoomArmed.value) return { opacity: 0, borderRadius: hero ? hero.radius : 0 };
     const q = Math.max(0, zoom.value);
     const range = zoomClosing.value ? ZOOM_THUMB_FADE_CLOSE : ZOOM_THUMB_FADE_OPEN;
-    // The copy has to READ as the card it came off, and the card's corner is 10pt on screen. This
+    // The copy has to READ as the thumbnail it came off, corner included — 10pt on a grid card, 6
+    // on a History/Activity row (see ZoomOrigin). This
     // rect rides the page's transform, so divide that scale out to hold the on-screen radius
     // steady rather than letting it grow with the page. (The library gets this for free: it moves
     // the real source view, which simply keeps its own radius under the tracked scale.)
     const s = zoomGeom ? zoomGeom.s + (1 - zoomGeom.s) * q : 1;
     return {
       opacity: interpolate(q, range, [1, 0], Extrapolation.CLAMP),
-      borderRadius: ZOOM_CORNER_RADIUS / Math.max(s, 0.01),
+      borderRadius: (hero ? hero.radius : 0) / Math.max(s, 0.01),
     };
   }, [zoomGeom]);
   const zoomThumbUri = useResolvedAsset(cover);
@@ -2258,7 +2256,7 @@ function SeriesDetailsHost({
   onOpenChapter: (version: Chapter) => void;
   onOpenPage: (pageIndex: number) => void;
   /** Reports the details page's hero cover rect — the zoom's destination bound (see zoomGeom). */
-  onHeroCoverRect?: (rect: ZoomOrigin) => void;
+  onHeroCoverRect?: (rect: ZoomRect) => void;
   /** The instance's `detailsScrollGesture` — mounted on SeriesBody's scroller (see makeBackSwipePan). */
   scrollGesture?: ComposedGesture;
   /** False while a horizontal details gesture is active, so the list can't scroll under it. */

@@ -347,7 +347,8 @@ function ActivityItem({
   const zoomFlying = useIsZoomingSeries(item.seriesId);
   const captureZoomOrigin = () => {
     thumbRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => {
-      if (w > 0 && h > 0) setZoomOrigin(item.seriesId, { x, y, width: w, height: h });
+      // radius 6 — HistoryRow's `thumb` corner, which is not the grid card's 10.
+      if (w > 0 && h > 0) setZoomOrigin(item.seriesId, { x, y, width: w, height: h, radius: 6 });
     });
   };
   const renderRow = (coverHidden: boolean) => (

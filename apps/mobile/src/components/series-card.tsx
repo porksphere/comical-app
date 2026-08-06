@@ -331,7 +331,8 @@ export function SeriesCard({
   const captureZoomOrigin = useCallback(() => {
     if (isWeb) return;
     coverRef.current?.measureInWindow((x, y, w, h) => {
-      if (w > 0 && h > 0) setZoomOrigin(entry.id, { x, y, width: w, height: h });
+      // CARD_COVER_RADIUS, matching `coverBoxClip` / `coverClip` below.
+      if (w > 0 && h > 0) setZoomOrigin(entry.id, { x, y, width: w, height: h, radius: 10 });
     });
   }, [isWeb, entry.id]);
 
