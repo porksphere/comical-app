@@ -1,3 +1,6 @@
+import { observable } from '@legendapp/state';
+import { use$ } from '@legendapp/state/react';
+
 /**
  * EXPERIMENTAL series-reader companion: the SOURCE RECT of the card a series was opened from, so
  * `/series-reader` can grow out of it (and shrink back into it) the way a photo grid opens a photo.
@@ -47,4 +50,37 @@ export function takeZoomOrigin(id: string | undefined): ZoomOrigin | null {
   if (!capture || capture.id !== id || now - capture.at > MAX_AGE_MS) return null;
   taken = capture;
   return capture.origin;
+}
+
+/**
+ * Which series are currently mid-zoom, by id (a count, because a drilled layer can be flying while
+ * its parent still is). While a series is in here its card BLANKS ITS COVER — the transition flies
+ * a copy of that cover, and leaving the original showing means two of them: visibly so on the way
+ * back, where the page is half-transparent for most of the collapse and the grid shows straight
+ * through it while the copy is still in the air.
+ *
+ * Exactly the treatment the long-press menu already gets (`SeriesCardMenu`'s `hidden` → the card's
+ * `coverHidden`), for exactly the same reason, and what the library does with `shouldHideSource`.
+ *
+ * In-memory Legend State per the repo's split — a card reads it through a SELECTOR, so a grid of
+ * them subscribes but only the one card whose boolean actually flips re-renders.
+ */
+const zoomingSeries$ = observable<Record<string, number>>({});
+
+/** Marks `id` as flying; returns the matching release. Safe to call for an id already flying. */
+export function holdZoomingSeries(id: string): () => void {
+  zoomingSeries$[id].set((n) => (n ?? 0) + 1);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const next = (zoomingSeries$[id].peek() ?? 1) - 1;
+    if (next > 0) zoomingSeries$[id].set(next);
+    else zoomingSeries$[id].delete();
+  };
+}
+
+/** Whether this series' card should blank its cover right now. */
+export function useIsZoomingSeries(id: string): boolean {
+  return use$(() => !!zoomingSeries$[id].get());
 }

@@ -66,7 +66,7 @@ import { getPreferredGroup, resetPreferredGroup, setPreferredGroup } from '@/lib
 
 import { registerDrillSeries, registerOpenSearchLayer } from '@/lib/experimental-flags';
 import { seriesReaderDim } from '@/lib/series-reader-backdrop';
-import { takeZoomOrigin, type ZoomOrigin } from '@/lib/series-zoom';
+import { holdZoomingSeries, takeZoomOrigin, type ZoomOrigin } from '@/lib/series-zoom';
 import SearchScreen from '../search';
 import { SeriesBody, truncateTopBarTitle } from '../series';
 
@@ -933,12 +933,20 @@ function SeriesReaderInstance({
   // Which set of cross-fade ranges is in play (see the constants) — an exit uses different ones.
   const zoomClosing = useSharedValue(false);
   const zoomStartedRef = useRef(false);
+  // Blanking the source card is tied to ARMING, not to mount: the wait for the destination
+  // measurement happens with everything here invisible, and a card blanked during it would just be
+  // a hole in the grid. From arming on it stays blanked for this page's whole life — the copy
+  // stands in for it, and the collapse spends most of its length with a half-transparent page over
+  // the live grid, which is where showing both would be obvious.
+  const zoomReleaseRef = useRef<(() => void) | null>(null);
+  useEffect(() => () => zoomReleaseRef.current?.(), []);
   const startZoom = useCallback(() => {
     if (zoomStartedRef.current) return;
     zoomStartedRef.current = true;
+    if (zoomOrigin && id) zoomReleaseRef.current = holdZoomingSeries(id);
     zoomArmed.set(true);
     zoom.set(withSpring(1, ZOOM_IN_SPRING));
-  }, [zoom, zoomArmed]);
+  }, [zoom, zoomArmed, zoomOrigin, id]);
   const onHeroCoverRect = useCallback((rect: ZoomOrigin) => {
     // Only the FIRST report, and only before the geometry is committed: the cover box re-lays out
     // as its aspect settles, and moving the destination mid-flight would visibly jump.
@@ -1285,11 +1293,19 @@ function SeriesReaderInstance({
     return { opacity: interpolate(q, range, [0, 1], Extrapolation.CLAMP) };
   });
   const zoomThumbStyle = useAnimatedStyle(() => {
-    if (!zoomArmed.value) return { opacity: 0 };
+    if (!zoomArmed.value) return { opacity: 0, borderRadius: ZOOM_CORNER_RADIUS };
     const q = Math.max(0, zoom.value);
     const range = zoomClosing.value ? ZOOM_THUMB_FADE_CLOSE : ZOOM_THUMB_FADE_OPEN;
-    return { opacity: interpolate(q, range, [1, 0], Extrapolation.CLAMP) };
-  });
+    // The copy has to READ as the card it came off, and the card's corner is 10pt on screen. This
+    // rect rides the page's transform, so divide that scale out to hold the on-screen radius
+    // steady rather than letting it grow with the page. (The library gets this for free: it moves
+    // the real source view, which simply keeps its own radius under the tracked scale.)
+    const s = zoomGeom ? zoomGeom.s + (1 - zoomGeom.s) * q : 1;
+    return {
+      opacity: interpolate(q, range, [1, 0], Extrapolation.CLAMP),
+      borderRadius: ZOOM_CORNER_RADIUS / Math.max(s, 0.01),
+    };
+  }, [zoomGeom]);
   const zoomThumbUri = useResolvedAsset(cover);
 
   // Content starts high enough that the series title's center lands on the seam gradient's
@@ -2667,6 +2683,9 @@ const styles = StyleSheet.create({
   zoomThumb: {
     position: 'absolute',
     overflow: 'hidden',
+    // The card's own cover backing (series-card.tsx `coverBoxClip`), so a cover that hasn't
+    // decoded yet reads as the same grey plate rather than a hole onto the page underneath.
+    backgroundColor: 'rgba(128,128,128,0.15)',
   },
   // The SEARCH layer's slide-in ride — the one layer that still arrives as a push (see SearchLayer).
   searchSlide: {

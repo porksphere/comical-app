@@ -17,7 +17,7 @@ import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/
 import { useDrillRelatedSeries, useSeriesReaderPage } from '@/lib/experimental-flags';
 import { Link, router } from '@/lib/nav';
 import { useLightCards } from '@/lib/perf-flags';
-import { setZoomOrigin } from '@/lib/series-zoom';
+import { setZoomOrigin, useIsZoomingSeries } from '@/lib/series-zoom';
 import { testId } from '@/lib/test-id';
 
 // Shared cover card used by both the browse grid and the rails. `size` picks the
@@ -326,6 +326,10 @@ export function SeriesCard({
   // would put a native round trip in front of the navigation. A drill (a related-rail card inside
   // the series page) captures too — those layers zoom exactly like a top-level open. Web has no
   // zoom entrance, so it doesn't measure at all.
+  // While this series' zoom transition is in the air it flies a COPY of this cover, so the
+  // original blanks — same treatment (and same reason) as the long-press menu's lifted preview
+  // below. A selector read: the whole grid subscribes, only the one card whose flag flips renders.
+  const zoomFlying = useIsZoomingSeries(entry.id);
   const coverRef = useRef<ViewType>(null);
   const captureZoomOrigin = useCallback(() => {
     if (isWeb || !seriesReaderPage) return;
@@ -704,9 +708,11 @@ export function SeriesCard({
             {/* Shrink illusion only when Lightweight is off: wrap in CoverShrink (owns the reanimated
                 hooks + supplies real animated styles); otherwise render plainly with a no-op API. */}
             {lightCards ? (
-              renderCardBody(NOOP_SHRINK, hidden)
+              renderCardBody(NOOP_SHRINK, hidden || zoomFlying)
             ) : (
-              <CoverShrink entryId={entry.id}>{(shrink) => renderCardBody(shrink, hidden)}</CoverShrink>
+              <CoverShrink entryId={entry.id}>
+                {(shrink) => renderCardBody(shrink, hidden || zoomFlying)}
+              </CoverShrink>
             )}
           </Pressable>
         );
@@ -809,8 +815,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Blanks just the cover while this card's long-press menu is open — its lifted preview is a copy, so
-  // showing the source cover too would double it. Layout is preserved; only the cover goes invisible.
+  // Blanks just the cover while this card's long-press menu is open, or while its zoom transition
+  // is flying — both show a COPY of it, so leaving the original visible would double it. Layout is
+  // preserved; only the cover goes invisible.
   coverHidden: {
     opacity: 0,
   },
