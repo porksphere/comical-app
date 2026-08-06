@@ -33,6 +33,10 @@ export default function SeriesReaderLayout() {
         />
         <Stack.Screen name="series-downloads" />
         <Stack.Screen name="downloads" />
+        {/* Only ever pushed while the `nativeSearchStack` experiment is on — otherwise the search
+            opens as an in-screen layer on the index screen and this route is never navigated to.
+            See lib/experimental.ts. */}
+        <Stack.Screen name="search" />
       </Stack>
     </InSeriesPageStack.Provider>
   );

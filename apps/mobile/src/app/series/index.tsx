@@ -2792,6 +2792,7 @@ const ReaderPane = forwardRef<
           onPageChange={setCurrent}
           onToggleChrome={onToggleChrome}
           onZoomChange={onZoomChange}
+          standby={standby}
           // The continuous strip advances via its end sentinel, the fit-page variant via the
           // end-reached + last-page check.
           nextChapterName={chaptered ? nextChapterName : undefined}

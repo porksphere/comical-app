@@ -33,6 +33,8 @@ type Props = {
   width: number;
   height: number;
   pageFit: PageFit;
+  /** Cross-fade override for this page — see ReaderPage's `fadeMs`. */
+  fadeMs?: number;
   /** Whether this is the page currently in view; losing focus resets the zoom. */
   active: boolean;
   onLeft: () => void;
@@ -62,6 +64,7 @@ export function ZoomablePage({
   width,
   height,
   pageFit,
+  fadeMs,
   active,
   onLeft,
   onRight,
@@ -168,6 +171,7 @@ export function ZoomablePage({
         <Animated.View style={[{ width, height }, animatedStyle]}>
           <Animated.View style={[{ width }, contentPanStyle]}>
             <ReaderPage
+              fadeMs={fadeMs}
               uri={uri}
               page={page}
               fit={pageFit === 'fit-width' ? 'width' : 'contain'}

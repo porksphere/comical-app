@@ -1,6 +1,8 @@
 import { useNavigation, usePathname } from 'expo-router';
 import { createContext, useCallback, useContext, useMemo } from 'react';
 
+import { useNativeSearchStack } from '@/lib/experimental';
+import { router } from '@/lib/nav';
 import { claimNavigation, navTargetKey } from '@/lib/nav-guard';
 
 /** The sub-pages a series page (or its reader) can push. (Tag/author/type SEARCH is not one of
@@ -101,13 +103,19 @@ export function registerOpenSearchLayer(fn: () => void): () => void {
  */
 export function useOpenSearchLayer(): (() => void) | null {
   const inStack = useContext(InSeriesPageStack);
+  // EXPERIMENT (temporary — see lib/experimental.ts): open it as a real nested-stack push instead,
+  // so the native edge-pop can be compared against the layer's hand-rolled one. The module-level
+  // `router`, not `useRouter()` — a hook-returned one isn't a stable dep and the compiler drops
+  // the memo over it.
+  const native = useNativeSearchStack();
   return useMemo(() => {
     if (!inStack) return null;
+    if (native) return () => router.push('/series/search');
     return () => {
       if (!claimNavigation(navTargetKey('/series#search'))) return;
       openSearchLayerHandler?.();
     };
-  }, [inStack]);
+  }, [inStack, native]);
 }
 
 /**

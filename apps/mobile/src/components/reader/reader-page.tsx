@@ -55,6 +55,11 @@ export const PAGE_SURFACE = 'rgba(31,31,36,0.18)';
  *  while only the pages themselves move during a swipe. */
 export const PAGED_BACKDROP = '#121213';
 
+/** The cross-fade for a page that is STANDING rather than being turned to — the series page's
+ *  collapsed strip. Short on purpose: long enough that the page arrives rather than appears, short
+ *  enough that it is over before you have read the title under it. */
+export const STANDBY_FADE_MS = 180;
+
 type LoadEvent = { source?: { width?: number; height?: number } | null };
 
 export function ReaderPage({
@@ -65,12 +70,17 @@ export function ReaderPage({
   height,
   onLoadDims,
   onFailedChange,
+  fadeMs,
 }: {
   uri: string;
   page: number;
   fit: 'contain' | 'width';
   width: number;
   height?: number;
+  /** Override the cross-fade below. The series page's strip passes STANDBY_FADE_MS: it holds ONE
+   *  standing page with no turns to keep instant, so the rule below doesn't apply to it and a page
+   *  that simply appears there reads as a pop next to the details settling in around it. */
+  fadeMs?: number;
   /** Fires with the image's real pixel dimensions once it loads — lets a caller
    *  (webtoon mode's scroll-to-index estimate) refine its height guess for
    *  still-unloaded pages instead of relying solely on `DEFAULT_ASPECT`. */
@@ -253,8 +263,9 @@ export function ReaderPage({
           // No cross-fade in paged mode. The page it fades UP FROM is the placeholder, so a page
           // that was actually ready still spent 150ms looking like one — the exact impression this
           // pass is trying to remove. Webtoon keeps it: rows arrive under a continuously moving
-          // scroll, where a hard swap is the more jarring of the two.
-          transition={fit === 'contain' ? 0 : 150}
+          // scroll, where a hard swap is the more jarring of the two. (Both are about PAGE TURNS;
+          // a caller holding one standing page overrides with `fadeMs`.)
+          transition={fadeMs ?? (fit === 'contain' ? 0 : 150)}
           // Hold animated pages (e.g. animated WebP) on their FIRST frame — do not autoplay. On iOS,
           // expo-image animates a WebP via a Core Animation keyframe animation that decodes each frame
           // on the MAIN THREAD inside the layer commit (Sentry COMICAL-APP-1E: CA::Transaction::commit

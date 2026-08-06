@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useReducer, useRef, useState } from 'react';
 
-import { ReaderPage } from '@/components/reader/reader-page';
+import { ReaderPage, STANDBY_FADE_MS } from '@/components/reader/reader-page';
 import {
   clamp,
   distance,
@@ -26,6 +26,8 @@ type Props = {
   initialPage: number;
   onPageChange: (index: number) => void;
   onToggleChrome: () => void;
+  /** See the native variant: the series page's strip cross-fades its standing page in. */
+  standby?: boolean;
 };
 
 /**
@@ -88,7 +90,7 @@ function isDesktopPointer(): boolean {
 }
 
 export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function WebtoonReader(
-  { pages, width, height, pageFit, initialPage, onPageChange, onToggleChrome },
+  { pages, width, height, pageFit, initialPage, onPageChange, onToggleChrome, standby },
   ref,
 ) {
   const n = pages.length;
@@ -558,6 +560,7 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
             >
               {isLoaded ? (
                 <ReaderPage
+                  fadeMs={standby ? STANDBY_FADE_MS : undefined}
                   uri={uri}
                   page={i + 1}
                   fit={paged ? 'contain' : 'width'}

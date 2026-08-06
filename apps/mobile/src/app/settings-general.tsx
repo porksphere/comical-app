@@ -20,6 +20,7 @@ import { isEmbeddedRuntimeAvailable, swapDataSourceMode, useEmbeddedEnabled } fr
 import { queryClient } from '@/data/query-client';
 import { useNsfwMode, type NsfwMode } from '@/data/source';
 import { useTheme, useThemePreference, type ThemePreference } from '@/hooks/use-theme';
+import { experimental$, useNativeSearchStack } from '@/lib/experimental';
 import { lightCards$, useLightCards } from '@/lib/perf-flags';
 
 const NSFW_MODE_OPTIONS: SettingsOption<NsfwMode>[] = [
@@ -50,6 +51,7 @@ export default function GeneralSettingsScreen() {
   const [onDevice, setOnDevice] = useEmbeddedEnabled();
   const [apiBase, setApiBaseOverride] = useApiBase();
   const lightCards = useLightCards();
+  const nativeSearchStack = useNativeSearchStack();
   const { wifiOnly, background } = useDownloadPrefs();
   const { open } = useOverlay();
   // The on-device runtime is only offered where a native bridge engine exists (iOS/Android with the
@@ -143,6 +145,17 @@ export default function GeneralSettingsScreen() {
               }}
             />
           )}
+        </SettingsSection>
+        {/* TEMPORARY — a live A/B for one open question, not a feature. Deletable in one commit
+            along with lib/experimental.ts, app/series/search.tsx and the branch in
+            useOpenSearchLayer; see that module for what to compare. */}
+        <SettingsSection>
+          <SettingsToggleRow
+            label="Native search stack"
+            description="Experiment: open a series' tag search as a pushed page with the system back-swipe, instead of an in-screen layer. Tapping a result closes the search."
+            value={nativeSearchStack}
+            onChange={(v) => experimental$.nativeSearchStack.set(v)}
+          />
         </SettingsSection>
       </ScrollView>
     </ThemedView>

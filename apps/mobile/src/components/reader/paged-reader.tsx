@@ -22,6 +22,7 @@ import {
   type SharedValue,
 } from 'react-native-reanimated';
 
+import { STANDBY_FADE_MS } from '@/components/reader/reader-page';
 import { ZoomablePage } from '@/components/reader/zoomable-page';
 import type { PageFit } from '@/hooks/use-reader-settings';
 
@@ -332,6 +333,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
             <View style={{ width, height }} />
           ) : (
             <ZoomablePage
+              // Standing page, not a turned one — see ReaderPage's `fadeMs`.
+              fadeMs={standby ? STANDBY_FADE_MS : undefined}
               uri={item.uri}
               page={item.pageNumber}
               width={width}

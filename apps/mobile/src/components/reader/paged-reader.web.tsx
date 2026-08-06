@@ -10,7 +10,7 @@ import {
 } from 'react';
 
 import type { ReaderPageItem } from '@/components/reader/paged-reader';
-import { ReaderPage } from '@/components/reader/reader-page';
+import { ReaderPage, STANDBY_FADE_MS } from '@/components/reader/reader-page';
 import {
   clamp,
   distance,
@@ -773,6 +773,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
                 style={zoomWrapperStyle(width, height, i === index && pageFit === 'fit-width' && contentOverflows)}>
                 {near ? (
                   <ReaderPage
+                    fadeMs={standby ? STANDBY_FADE_MS : undefined}
                     uri={item.uri}
                     page={item.pageNumber}
                     fit={pageFit === 'fit-width' ? 'width' : 'contain'}
