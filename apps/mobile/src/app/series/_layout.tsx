@@ -33,10 +33,27 @@ export default function SeriesReaderLayout() {
         />
         <Stack.Screen name="series-downloads" />
         <Stack.Screen name="downloads" />
-        {/* Only ever pushed while the `nativeSearchStack` experiment is on — otherwise the search
-            opens as an in-screen layer on the index screen and this route is never navigated to.
-            See lib/experimental.ts. */}
+        {/* Both only ever pushed while the `nativeSearchStack` experiment is on — otherwise the
+            search and a drilled series open as in-screen LAYERS on the index screen and neither
+            route is ever navigated to. See lib/experimental.ts. */}
         <Stack.Screen name="search" />
+        <Stack.Screen
+          name="related"
+          options={{
+            // Mirrors the modal root: transparent content and no native transition, because the
+            // SCREEN animates itself — it zooms out of the card that opened it and collapses back
+            // in. That is also what makes this a real test: if UIKit detaches the screen
+            // underneath, the transparent content has nothing behind it and the collapse plays
+            // over a flat backdrop instead of over the live parent series.
+            contentStyle: { backgroundColor: 'transparent' },
+            animation: 'none',
+            // The native edge-pop is deliberately OFF here, unlike on `search`. A drilled series
+            // already owns a back-swipe that drives its zoom collapse, and racing the two would
+            // make the experiment unreadable. Search is where the native gesture is the prize;
+            // here the only question under test is whether the parent stays alive.
+            gestureEnabled: false,
+          }}
+        />
       </Stack>
     </InSeriesPageStack.Provider>
   );

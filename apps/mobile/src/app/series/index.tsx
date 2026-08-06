@@ -327,7 +327,7 @@ type Segment = { id: string; name?: string; pages: string[] };
 
 /** Same params a series card forwards to `/series` (see series-card.tsx buildHref) — including
  *  the percent-encoded bridge name / cover, decoded the same way series.tsx does. */
-type SeriesReaderParams = {
+export type SeriesReaderParams = {
   id?: string;
   title?: string;
   bridge?: string;
@@ -364,7 +364,7 @@ type SeriesReaderParams = {
  * parent out of the card that opened it, exactly as the root zooms out of a card on the grid
  * behind the whole modal, and leaves via `onPopLayer` once it has collapsed (or flown) out.
  */
-function SeriesReaderInstance({
+export function SeriesReaderInstance({
   params,
   depth,
   onPopLayer,

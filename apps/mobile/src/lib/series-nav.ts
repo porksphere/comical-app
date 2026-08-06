@@ -1,7 +1,7 @@
 import { useNavigation, usePathname } from 'expo-router';
 import { createContext, useCallback, useContext, useMemo } from 'react';
 
-import { useNativeSearchStack } from '@/lib/experimental';
+import { experimental$, useNativeSearchStack } from '@/lib/experimental';
 import { router } from '@/lib/nav';
 import { claimNavigation, navTargetKey } from '@/lib/nav-guard';
 
@@ -79,6 +79,15 @@ export function registerDrillSeries(fn: (params: Record<string, string>) => void
  */
 export function drillSeriesFromOverlay(params: Record<string, string>): boolean {
   if (!drillSeriesHandler) return false;
+  // EXPERIMENT (temporary — lib/experimental.ts): with the nested stack on, a drilled series is a
+  // real push, so the overlay has to push too. Layering here would put the new series UNDERNEATH
+  // whatever card is currently on the nested stack. Read non-reactively — this isn't a hook.
+  if (experimental$.nativeSearchStack.peek()) {
+    if (claimNavigation(navTargetKey({ pathname: '/series/related', params }))) {
+      router.push({ pathname: '/series/related', params });
+    }
+    return true;
+  }
   // Shares the nav-guard claim with the in-tree drill, so a double commit can't fire twice.
   if (claimNavigation(navTargetKey({ pathname: '/series', params }))) drillSeriesHandler(params);
   return true;
@@ -129,15 +138,28 @@ export function useOpenSearchLayer(): (() => void) | null {
 export function useDrillRelatedSeries(): ((params: Record<string, string>) => void) | null {
   const inStack = useContext(InSeriesPageStack);
   const navigation = useNavigation();
-  return useMemo(() => {
-    if (!inStack) return null;
-    return (params: Record<string, string>) => {
+  // EXPERIMENT (temporary — lib/experimental.ts): push the series as a real card on the nested
+  // stack instead of adding a layer. This is the half of the experiment that actually tests the
+  // thing layers exist for — whether UIKit still detaches the screen a pushed card covers.
+  const native = useNativeSearchStack();
+  // Two whole callbacks picked between, rather than one useMemo that branches: `navigation` is not
+  // a dependency the React Compiler can prove stable, and a memo whose body forks over it is one
+  // it gives up on preserving (`react-hooks/preserve-manual-memoization`).
+  const asLayer = useCallback(
+    (params: Record<string, string>) => {
       if (!claimNavigation(navTargetKey({ pathname: '/series', params }))) return;
       // Only when actually ON a sub-page — from the combined page itself the nested stack is at
       // its root and the stack router rejects POP_TO_TOP (a noisy dev warning).
       const state = navigation.getState();
       if (state && state.index > 0) navigation.dispatch({ type: 'POP_TO_TOP' });
       drillSeriesHandler?.(params);
-    };
-  }, [inStack, navigation]);
+    },
+    [navigation],
+  );
+  const asRoute = useCallback((params: Record<string, string>) => {
+    if (!claimNavigation(navTargetKey({ pathname: '/series/related', params }))) return;
+    router.push({ pathname: '/series/related', params });
+  }, []);
+  if (!inStack) return null;
+  return native ? asRoute : asLayer;
 }

@@ -17,26 +17,33 @@ import { persisted$ } from '@/lib/observable';
 export const experimental$ = persisted$('comical:experimental', { nativeSearchStack: false });
 
 /**
- * Open the series page's tag/author/type search as a REAL PUSH on the modal's nested stack — a
- * native card with UIKit's own edge-pop — instead of the in-screen layer it normally is.
+ * Run the series page's in-screen LAYERS as real pushes on the modal's nested stack instead: the
+ * tag/author/type search becomes a native card with UIKit's own edge-pop (`app/series/search.tsx`),
+ * and a series drilled from a related rail or a search result becomes one too
+ * (`app/series/related.tsx`).
  *
- * The question this settles: the layers exist because navigation could not keep the parent screen
- * visible on iOS (a covered nested card is detached by UINavigationController, which is why an
- * earlier build of this branch had to dissolve a drilled series into its parent rather than reveal
- * it). The layer's back-swipe is therefore hand-rolled, and a hand-rolled gesture is a hand-rolled
- * gesture however carefully it is tuned. If react-native-screens no longer detaches, search can be
- * a route and get the real thing.
+ * THE QUESTION THIS SETTLES. Layers exist because navigation could not keep the parent screen
+ * visible on iOS: UINavigationController detaches a covered card's view, which is why an earlier
+ * build of this branch had to dissolve a drilled series into its parent instead of revealing it
+ * (see the dissolve-to-parent commit, whose message says "the screen is only the static backdrop
+ * by then"). The price of layers is that every gesture on them is hand-rolled, and a hand-rolled
+ * gesture is a hand-rolled gesture however carefully it is tuned. If react-native-screens no
+ * longer detaches, all of this can be routes.
  *
- * What to look at with it ON, in rough order of how quickly it should show up:
- *   - the edge-swipe on the search itself — this is the actual prize, UIKit's own interactive pop.
- *   - the top chrome: the layer keeps ONE chevron statically stuck across the whole modal, so it
- *     never moves through any navigation. A pushed card brings its own bar, so expect the chevron
+ * WHAT TO LOOK AT with it ON:
+ *   - The edge-swipe on the SEARCH — the prize, UIKit's own interactive pop, and the only place
+ *     the native gesture is left enabled.
+ *   - THE ACTUAL TEST: open a series, tap a tag, tap a result card, then collapse that drilled
+ *     series back out. Is the search you came from LIVE underneath it the whole way, or does the
+ *     collapse play over a flat backdrop? The drilled route is deliberately transparent with no
+ *     native transition, exactly like the modal root, so there is nothing to hide the answer. That
+ *     one observation is what the whole toggle exists for.
+ *   - The top chrome: the layer keeps ONE chevron statically stuck across the whole modal, so it
+ *     never moves through any navigation. Pushed cards bring their own bars, so expect the chevron
  *     to cross-fade or jump where it used to sit still.
- *   - tapping a result card. Drilled series are still LAYERS, and layers live on the stack's root
- *     screen — so the drill pops the search to get back down there, and the search you came from
- *     is gone. That is the cost this whole toggle is about; if it doesn't bother you, the route is
- *     worth finishing properly (drilled series as nested cards too, which is the case that used to
- *     detach).
+ *
+ * The drilled route keeps its own zoom collapse and has the native edge-pop turned OFF — racing
+ * the two would make the result unreadable, and the gesture was never the question there.
  *
  * Reactive read via `useSyncExternalStore` for the reason in perf-flags: a bare `use$` isn't
  * recognized as a hook by the React Compiler.

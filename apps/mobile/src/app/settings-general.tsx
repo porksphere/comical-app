@@ -151,8 +151,8 @@ export default function GeneralSettingsScreen() {
             useOpenSearchLayer; see that module for what to compare. */}
         <SettingsSection>
           <SettingsToggleRow
-            label="Native search stack"
-            description="Experiment: open a series' tag search as a pushed page with the system back-swipe, instead of an in-screen layer. Tapping a result closes the search."
+            label="Native nested stack"
+            description="Experiment: a series' tag search and any series opened from it become pushed pages instead of in-screen layers. Watch whether the page underneath stays visible while one is swiped away."
             value={nativeSearchStack}
             onChange={(v) => experimental$.nativeSearchStack.set(v)}
           />
