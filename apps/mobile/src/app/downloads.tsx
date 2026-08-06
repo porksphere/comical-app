@@ -54,7 +54,7 @@ import { hapticSelection } from '@/lib/haptics';
 import { testId } from '@/lib/test-id';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
-import { useSeriesSubPath } from '@/lib/experimental-flags';
+import { useSeriesSubPath } from '@/lib/series-nav';
 import { useRouter } from '@/lib/nav';
 import type { StorageUsageSeries } from '@comical/downloads';
 
@@ -260,8 +260,8 @@ export default function DownloadsScreen() {
       onConfirm: () => void deleteSelected(),
     });
 
-  // `toSubPath` keeps the row push inside the series-reader's nested stack when this screen is
-  // its /series-reader/downloads twin — see useSeriesSubPath.
+  // `toSubPath` keeps the row push inside the series page's nested stack when this screen is
+  // its /series page/downloads twin — see useSeriesSubPath.
   const toSubPath = useSeriesSubPath();
   const openSeries = (s: StorageUsageSeries) =>
     router.push({

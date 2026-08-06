@@ -65,8 +65,8 @@ import { firstChapterInReadingOrder, getAdjacentChapter } from '@/lib/chapter-or
 import { useRouter } from '@/lib/nav';
 import { getPreferredGroup, resetPreferredGroup, setPreferredGroup } from '@/lib/preferred-group';
 
-import { registerDrillSeries, registerOpenSearchLayer } from '@/lib/experimental-flags';
-import { seriesReaderDim } from '@/lib/series-reader-backdrop';
+import { registerDrillSeries, registerOpenSearchLayer } from '@/lib/series-nav';
+import { seriesReaderDim } from '@/lib/series-backdrop';
 import { holdZoomingSeries, takeZoomOrigin, type ZoomOrigin } from '@/lib/series-zoom';
 import SearchScreen from '../search';
 import { SeriesBody, truncateTopBarTitle } from '@/components/series/series-body';
@@ -107,11 +107,11 @@ import { SeriesBody, truncateTopBarTitle } from '@/components/series/series-body
 // web/webtoon crossings remount the pane seeded at the landing page instead. While the details
 // are up the reader is in STANDBY — only the single visible strip page is requested.
 //
-// Removal list for the whole experiment: this `app/series-reader/` DIRECTORY (this file, the
+// Removal list for the whole experiment: this `app/series/` DIRECTORY (this file, the
 // nested-stack `_layout.tsx`, and the series-downloads/downloads twin routes) +
 // `lib/experimental-flags.ts` (the flag, `useSeriesSubPath` — unwrap its call sites in
 // `series.tsx`, `series/download-button.tsx`, `reader/settings-panel.tsx`, `downloads.tsx` back
-// to the plain paths — `InSeriesReaderStack`/`useDrillRelatedSeries` with the drill branch in
+// to the plain paths — `InSeriesPageStack`/`useDrillRelatedSeries` with the drill branch in
 // `series-card.tsx`, and `useOpenSearchLayer` with its branch in `series.tsx` + the `embedded`
 // prop on `search.tsx`), the Settings row in `settings-general.tsx`, the `buildHref` target switch
 // in `series-card.tsx`, this route's Stack.Screen entry in `_layout.tsx`, the default-preserving
@@ -1694,7 +1694,7 @@ function SeriesReaderInstance({
     };
   });
 
-  // ── The BACKDROP's dim (see lib/series-reader-backdrop.ts) ───────────────────────────────────
+  // ── The BACKDROP's dim (see lib/series-backdrop.ts) ───────────────────────────────────
   // How much of the screen this page currently covers. All three ways it can be less than fully
   // covering have to count, or the backdrop would sit dimmed while the page is visibly gone: the
   // zoom — which now covers the back-swipe too, since a dismissal drag moves that same value —
@@ -1792,7 +1792,7 @@ function SeriesReaderInstance({
               pointerEvents={detailsActive || chromeVisible ? 'box-none' : 'none'}
               style={[styles.headerBackWrap, { top: insets.top, height: topBarHeight }, backPersistStyle]}>
               <Pressable
-                testID="series-reader.header-back"
+                testID="series page.header-back"
                 // A drilled layer's chevron slides it back out to the parent series; the modal
                 // root's pops the route.
                 onPress={closeLayer}
@@ -1812,7 +1812,7 @@ function SeriesReaderInstance({
           bars={{
             details: (
               <Animated.View
-                testID="series-reader.header-topbar"
+                testID="series page.header-topbar"
                 pointerEvents={barSolid ? 'box-none' : 'none'}
                 style={[styles.headerBarWrap, headerBarStyle]}>
                 {/* left: an empty slot — the persistent chevron above IS the back button. */}
@@ -1892,7 +1892,7 @@ function SeriesReaderInstance({
           the reader beneath it. */}
       <GestureDetector gesture={detailsGestures}>
         <Animated.View
-          testID="series-reader.details-card"
+          testID="series page.details-card"
           pointerEvents={detailsActive ? 'auto' : 'none'}
           style={[styles.detailsLayer, { width, height }, styles.headerLayer, headerLayerStyle]}>
           {/* The page's opaque background + gradient seam — the strip boundary. It rides the
@@ -1953,7 +1953,7 @@ function SeriesReaderInstance({
           how SwipeDismiss wraps the readers on /reader. */}
       <GestureDetector gesture={collapsePan}>
         <Animated.View
-          testID="series-reader.reader-card"
+          testID="series page.reader-card"
           style={[styles.readerFrame, { top: 0, width, height }, readerCardStyle]}>
           <View style={styles.readerClip}>
           {error ? (
@@ -2040,7 +2040,7 @@ function SeriesReaderInstance({
               covers anything tappable. */}
           <Animated.View style={[styles.dockBand, { height: headerTopInset }, headerBandStyle]}>
             <Pressable
-              testID="series-reader.header-band"
+              testID="series page.header-band"
               onPress={() => setRevealed(0)}
               accessibilityRole="button"
               accessibilityLabel="Read full screen"
@@ -2091,7 +2091,7 @@ function SeriesReaderInstance({
  * The route component: the base series instance for the route's params, plus one LAYER per
  * drilled series (see SeriesReaderInstance's header for why layers, not navigation). The drill
  * itself arrives through the nested layout's context ref — series cards anywhere inside the
- * series-reader stack call it (popping the nested stack back to this screen first when they're
+ * series page stack call it (popping the nested stack back to this screen first when they're
  * on the search/downloads sub-pages, see useDrillRelatedSeries). Only the topmost instance takes
  * touches; the ones beneath stay live purely as the see-through under its gestures.
  */
@@ -2122,7 +2122,7 @@ export default function SeriesReaderScreen() {
   // against it, the way UIKit moves an outgoing screen. Drilled SERIES layers no longer write it —
   // they zoom out of the card that opened them rather than sliding in, and a parent shoved sideways
   // under something expanding in place read as two contradictory motions (the same reason the tabs
-  // behind the whole modal lost their parallax — see lib/series-reader-backdrop.ts). Search still
+  // behind the whole modal lost their parallax — see lib/series-backdrop.ts). Search still
   // slides in from the edge, so it still gets the push treatment.
   //
   // One value serves any depth even though it only ever describes the top layer: the sole item a
@@ -2729,7 +2729,7 @@ const ReaderPane = forwardRef<
   return (
     <>
       {/* The page subtree — the ONLY thing a dismissal moves (see pageStyle). */}
-      <Animated.View testID="series-reader.page-wrap" style={[styles.pageWrap, pageStyle]}>
+      <Animated.View testID="series page.page-wrap" style={[styles.pageWrap, pageStyle]}>
       {settings.mode === 'paged' ? (
         <PagedReader
           ref={pagedRef}
@@ -2844,7 +2844,7 @@ function DetailsHint({
       pointerEvents={visible ? 'box-none' : 'none'}
       style={[styles.detailsHintWrap, { bottom: insets.bottom + Spacing.two + 48 }, style]}>
       <Pressable
-        testID="series-reader.details"
+        testID="series page.details"
         onPress={onPress}
         hitSlop={8}
         accessibilityRole="button"

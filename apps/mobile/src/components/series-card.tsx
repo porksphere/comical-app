@@ -14,7 +14,7 @@ import { useIsCompact } from '@/hooks/use-responsive';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
-import { useDrillRelatedSeries, useSeriesReaderPage } from '@/lib/experimental-flags';
+import { useDrillRelatedSeries } from '@/lib/series-nav';
 import { Link, router } from '@/lib/nav';
 import { useLightCards } from '@/lib/perf-flags';
 import { setZoomOrigin, useIsZoomingSeries } from '@/lib/series-zoom';
@@ -269,10 +269,7 @@ export function SeriesCard({
 }) {
   // Perf toggle (Settings → "Lightweight cards") — see lib/perf-flags.
   const lightCards = useLightCards();
-  // EXPERIMENTAL (Settings → General → Experimental): tapping a series card opens the
-  // reader-first `/series-reader` page instead of `/series` — see lib/experimental-flags.
-  const seriesReaderPage = useSeriesReaderPage();
-  // Inside the series-reader's OWN stack (related rails, its nested search results), the card
+  // Inside the series page's OWN stack (related rails, its nested search results), the card
   // drills the series in as an ordinary pushed card instead of stacking a second transparent
   // modal — see useDrillRelatedSeries. Context + navigation reads only — cards don't re-render
   // on every navigation the way a pathname hook would make them.
@@ -315,8 +312,8 @@ export function SeriesCard({
   // non-scaling held scrim on the cover — see the ring/peek/scrim below.
   const isWeb = Platform.OS === 'web';
 
-  // EXPERIMENTAL (series-reader page): this card's COVER box, in window coordinates, handed to
-  // `/series-reader` so the page can grow out of it — see lib/series-zoom. The cover, not the whole
+  // This card's COVER box, in window coordinates, handed to
+  // the series page so the page can grow out of it — see lib/series-zoom. The cover, not the whole
   // card: the page's arriving frame is matched to this rect exactly, and matching the card
   // (cover + title + sub) would have it overlap the title text and crop the cover differently than
   // the card does. Measured off the box itself rather than derived from `coverAspect`, so it's
@@ -332,11 +329,11 @@ export function SeriesCard({
   const zoomFlying = useIsZoomingSeries(entry.id);
   const coverRef = useRef<ViewType>(null);
   const captureZoomOrigin = useCallback(() => {
-    if (isWeb || !seriesReaderPage) return;
+    if (isWeb) return;
     coverRef.current?.measureInWindow((x, y, w, h) => {
       if (w > 0 && h > 0) setZoomOrigin(entry.id, { x, y, width: w, height: h });
     });
-  }, [isWeb, seriesReaderPage, entry.id]);
+  }, [isWeb, entry.id]);
 
   // The quick-actions menu is only offered when there's a real bridge to act against (`bridgeId` —
   // absent in mock mode). Its status queries no longer touch the card at all: they run inside the
@@ -668,13 +665,10 @@ export function SeriesCard({
           ...(direct ? { direct: '1' } : {}),
         });
         const buildHref = () => ({
-          // EXPERIMENTAL: with the "Series reader page" toggle on, a series opens reader-first
-          // (`/series-reader`, which takes the same params) instead of on the detail screen.
-          // Remove this ternary (keeping '/series') with the experiment.
-          pathname: seriesReaderPage ? ('/series-reader' as const) : ('/series' as const),
+          pathname: '/series' as const,
           params: buildParams(),
         });
-        // The drill (inside the series-reader stack) dispatches on the NESTED navigator — no href.
+        // The drill (inside the series page's nested stack) dispatches on the NESTED navigator — no href.
         const open = () => (drillRelated ? drillRelated(buildParams()) : router.push(buildHref()));
         const pressable = (
           <Pressable
@@ -693,7 +687,7 @@ export function SeriesCard({
             // open-in-new-tab / a crawlable href); on native we navigate imperatively so each card
             // doesn't mount an expo-router <Link> — its per-render router hooks were a top scroll cost
             // (createTask/ExpoLink), and native has no anchor semantics to preserve anyway.
-            // A DRILL (inside the series-reader stack) is imperative on web too — it targets the
+            // A DRILL (inside the series page's nested stack) is imperative on web too — it targets the
             // nested navigator, which an anchor href can't express (see useDrillRelatedSeries).
             onPress={isWeb && !drillRelated ? undefined : open}
             // Native long-press opens the shared quick-actions menu; undefined on web (which uses the

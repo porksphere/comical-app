@@ -43,7 +43,7 @@ import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useStartReading } from '@/hooks/use-start-reading';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS } from '@/lib/aspect-ratio';
-import { useOpenSearchLayer } from '@/lib/experimental-flags';
+import { useOpenSearchLayer } from '@/lib/series-nav';
 import { useRouter } from '@/lib/nav';
 import { tagPaletteFor } from '@/lib/tag-colors';
 import { testId } from '@/lib/test-id';
@@ -62,7 +62,7 @@ function SeriesCoverBox({
 }: {
   aspect: number;
   children: ReactNode;
-  /** Reports this box's window rect on layout. Only the series-reader experiment passes it — it
+  /** Reports this box's window rect on layout. Only the series page passes it — it
    *  is the destination bound its zoom transition aligns the tapped card to (see there). */
   onRect?: (rect: { x: number; y: number; width: number; height: number }) => void;
 }) {
@@ -94,7 +94,7 @@ function SeriesCoverBox({
 // truncate the combined string could clip the bridge name off the front entirely.
 const TOP_BAR_TITLE_MAX_CHARS = 40;
 
-/** Exported for `/series-reader`, whose details top bar mirrors this screen's title exactly. */
+/** Exported for the series page, whose details top bar and its reader toolbar share one title. */
 export function truncateTopBarTitle(t: string): string {
   return t.length > TOP_BAR_TITLE_MAX_CHARS ? `${t.slice(0, TOP_BAR_TITLE_MAX_CHARS).trimEnd()}…` : t;
 }
@@ -201,14 +201,14 @@ export function SeriesBody({
   /** The hero cover's live aspect + its measurer — owned by SeriesScreen (see there). */
   coverAspect: number;
   onCoverLoad: (e: ImageLoadEventData) => void;
-  /** Reports the hero cover's window rect on layout. Only the series-reader experiment passes it,
+  /** Reports the hero cover's window rect on layout. Only the series page passes it,
    *  as the destination bound for its zoom transition; `/series` leaves it off and nothing measures. */
   onHeroCoverRect?: (rect: { x: number; y: number; width: number; height: number }) => void;
   /** Top inset for the owning scroller — defaults to this screen's overlaying TopBar height.
-   *  The series-reader embedding passes its own (its details card has no top bar). */
+   *  The series page passes its own (its details card has no top bar). */
   topInset?: number;
   /** Replaces the Read button / cover tap's "open `/reader` at the resume point" — the
-   *  series-reader embedding returns to its own in-place reader instead. */
+   *  series page returns to its own in-place reader instead. */
   onStartReading?: () => void;
   /** See ChapterScrollList / PageThumbList: hand a tapped chapter version / page thumbnail to the
    *  caller's in-place reader instead of pushing `/reader`. */
@@ -218,10 +218,10 @@ export function SeriesBody({
   sharedValues?: { scrollOffset: SharedValue<number> };
   onScrollEndDrag?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   wrapperStyle?: Parameters<typeof Animated.View>[0]['style'];
-  /** Mounted on whichever list owns the scroll — the series-reader embedding's back-swipe iOS
+  /** Mounted on whichever list owns the scroll — the series page's back-swipe iOS
    *  interop (see `RecyclerList.scrollGesture`). The classic route passes nothing. */
   scrollGesture?: ComposedGesture;
-  /** False while the series-reader's horizontal gesture is active — freezes whichever list owns
+  /** False while the series page's horizontal gesture is active — freezes whichever list owns
    *  the scroll so it can't scroll under the swipe. The classic route passes nothing. */
   scrollEnabled?: boolean;
 }) {
@@ -318,7 +318,7 @@ export function SeriesBody({
     direct,
     readLabel
   });
-  // The series-reader embedding swaps the push-to-/reader for a return to its in-place reader
+  // The series page swaps the push-to-/reader for a return to its in-place reader
   // (which resolved the same resume point itself); this screen keeps the default.
   const startReading = onStartReading ?? startReadingDefault;
   // The play glyph leads a RESUME (and the bare "Read" fallback); a bridge's own readLabel is shown
@@ -462,7 +462,7 @@ export function SeriesBody({
   // `push('/search')` overlays the Search screen on top of this pushed Series
   // screen, so its back arrow returns here. Search consumes the stashed intent on
   // mount (see search.tsx) and applies it against the intent's bridge. Inside the
-  // series-reader the same intent opens as an in-screen LAYER instead — sliding in
+  // series page the same intent opens as an in-screen LAYER instead — sliding in
   // over this page with the shared chevron statically stuck (see useOpenSearchLayer).
   const openSearchLayer = useOpenSearchLayer();
   const openSearch = () => {

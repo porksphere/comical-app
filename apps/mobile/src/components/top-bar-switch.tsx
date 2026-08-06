@@ -12,7 +12,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-na
  * ordinary top-bar components that position themselves at the top of the screen (`TopBar`,
  * `ReaderToolbar`, …) — the slot is zero-height and box-none, purely a shared stacking position.
  *
- * FRAMEWORK PIECE: introduced for the experimental series-reader (details bar ⇄ reader toolbar),
+ * FRAMEWORK PIECE: introduced for the series page (details bar ⇄ reader toolbar),
  * but deliberately screen-agnostic — any screen that swaps its top chrome between modes should
  * render one of these instead of conditionally mounting different bars.
  */

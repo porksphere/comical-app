@@ -8,7 +8,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TrashIcon } from '@/components/icons/ui-icons';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { HistoryRow } from '@/components/history-row';
-import { useSeriesReaderPage } from '@/lib/experimental-flags';
 import { setZoomOrigin, useIsZoomingSeries } from '@/lib/series-zoom';
 import { RetryBlock } from '@/components/retry-block';
 import { SeriesCardMenu } from '@/components/series-card-menu';
@@ -83,36 +82,19 @@ export default function HistoryScreen() {
   // content width and the swipe-to-delete reaches the edge instead of being cut off inside a side inset.
   const sidePad = topLevelCenterInset(width);
 
-  // EXPERIMENTAL (Settings → General): with the series-reader page on, a row opens that combined
-  // screen straight into the reader instead of the standalone /reader — see `resume`/`read` below.
-  const seriesReaderPage = useSeriesReaderPage();
-
-  // The 3-dot opens the SERIES side of the same combined page — no `reader` param, so it lands on
+  // The 3-dot opens the SERIES side of that same page — no `reader` param, so it lands on
   // the details with the reader as the strip, which is exactly a browse open. Same zoom off this
   // row's thumbnail; the only difference from `resume` below is which side it opens on.
   const openDetail = (h: HistoryEntry) => {
-    if (seriesReaderPage) {
-      const enc = (v: string) => encodeURIComponent(v).replace(/\(/g, '%28').replace(/\)/g, '%29');
-      router.push({
-        pathname: '/series-reader',
-        params: {
-          id: h.seriesId,
-          title: h.title,
-          bridge: enc(nameOf(h.bridgeId)),
-          bridgeId: h.bridgeId,
-          ...(h.thumbnailUrl ? { cover: enc(h.thumbnailUrl) } : {}),
-          ...(directOf(h.bridgeId) ? { direct: '1' } : {}),
-        },
-      });
-      return;
-    }
+    const enc = (v: string) => encodeURIComponent(v).replace(/\(/g, '%28').replace(/\)/g, '%29');
     router.push({
       pathname: '/series',
       params: {
         id: h.seriesId,
         title: h.title,
-        bridge: nameOf(h.bridgeId),
+        bridge: enc(nameOf(h.bridgeId)),
         bridgeId: h.bridgeId,
+        ...(h.thumbnailUrl ? { cover: enc(h.thumbnailUrl) } : {}),
         ...(directOf(h.bridgeId) ? { direct: '1' } : {}),
       },
     });
@@ -120,37 +102,21 @@ export default function HistoryScreen() {
 
   const resume = (h: HistoryEntry) => {
     const isDirect = h.chapterId === DIRECT_CHAPTER_ID || !h.chapterId;
-    // EXPERIMENTAL: with the series-reader page on, resuming opens THAT screen straight into the
-    // reader rather than the standalone /reader — so a swipe up brings the series details in, and
-    // the whole thing collapses back into this row's thumbnail. The read position is passed
-    // explicitly (this row already knows it), which is also what lets that screen request the page
-    // ahead of the series detail.
-    if (seriesReaderPage) {
-      const enc = (v: string) => encodeURIComponent(v).replace(/\(/g, '%28').replace(/\)/g, '%29');
-      router.push({
-        pathname: '/series-reader',
-        params: {
-          id: h.seriesId,
-          title: h.title,
-          bridge: enc(nameOf(h.bridgeId)),
-          bridgeId: h.bridgeId,
-          reader: '1',
-          start: String(h.lastPage ?? 0),
-          ...(h.thumbnailUrl ? { cover: enc(h.thumbnailUrl) } : {}),
-          ...(isDirect ? { direct: '1' } : { chapterId: h.chapterId!, chapterName: h.chapterName ?? '' }),
-        },
-      });
-      return;
-    }
+    // A row is a "carry on reading" action, so it opens the series page straight into the READER
+    // — a swipe up brings the details in, and the whole thing collapses back into this row's
+    // thumbnail. The read position is passed explicitly (this row already knows it), which is also
+    // what lets that screen request the page ahead of the series detail.
+    const enc = (v: string) => encodeURIComponent(v).replace(/\(/g, '%28').replace(/\)/g, '%29');
     router.push({
-      pathname: '/reader',
+      pathname: '/series',
       params: {
-        seed: h.seriesId,
+        id: h.seriesId,
         title: h.title,
+        bridge: enc(nameOf(h.bridgeId)),
         bridgeId: h.bridgeId,
+        reader: '1',
         start: String(h.lastPage ?? 0),
-        // `direct` must be explicit: a missing chapterId no longer implies a chapterless series — it
-        // now means "start at the first chapter" (see reader.tsx).
+        ...(h.thumbnailUrl ? { cover: enc(h.thumbnailUrl) } : {}),
         ...(isDirect ? { direct: '1' } : { chapterId: h.chapterId!, chapterName: h.chapterName ?? '' }),
       },
     });
@@ -242,15 +208,13 @@ function HistoryItem({
   direct: boolean;
 }) {
   const thumbRef = useRef<View>(null);
-  // EXPERIMENTAL (series-reader page): the row's thumbnail is the zoom transition's source rect,
+  // The row's thumbnail is the zoom transition's source rect,
   // captured on press-IN because `measureInWindow` answers asynchronously — measuring at press
   // would put a native round trip in front of the navigation. And while its copy is in the air the
   // original blanks, reusing `coverHidden` — the same slot, and the same reason, as the long-press
   // preview's lifted copy.
-  const seriesReaderPage = useSeriesReaderPage();
   const zoomFlying = useIsZoomingSeries(item.seriesId);
   const captureZoomOrigin = () => {
-    if (!seriesReaderPage) return;
     thumbRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => {
       if (w > 0 && h > 0) setZoomOrigin(item.seriesId, { x, y, width: w, height: h });
     });

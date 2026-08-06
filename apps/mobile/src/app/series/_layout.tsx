@@ -1,6 +1,6 @@
 import { Stack } from 'expo-router';
 
-import { InSeriesReaderStack } from '@/lib/experimental-flags';
+import { InSeriesPageStack } from '@/lib/series-nav';
 
 // EXPERIMENTAL series reader page: the combined page is a CONTAINED TRANSPARENT MODAL (see the
 // root layout), and react-native-screens cannot push a plain root-stack card on top of a
@@ -19,7 +19,7 @@ import { InSeriesReaderStack } from '@/lib/experimental-flags';
 // Remove with the experiment — see index.tsx for the full removal list.
 export default function SeriesReaderLayout() {
   return (
-    <InSeriesReaderStack.Provider value={true}>
+    <InSeriesPageStack.Provider value={true}>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen
           name="index"
@@ -35,6 +35,6 @@ export default function SeriesReaderLayout() {
         <Stack.Screen name="series-downloads" />
         <Stack.Screen name="downloads" />
       </Stack>
-    </InSeriesReaderStack.Provider>
+    </InSeriesPageStack.Provider>
   );
 }

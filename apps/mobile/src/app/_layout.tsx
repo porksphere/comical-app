@@ -110,9 +110,6 @@ function RootNavigation() {
             pushed screen below hide the native header and render their own chrome. */}
         <Stack>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          {/* Series page renders its own static top bar (bridge name + back
-              button), so the native stack header is hidden here. */}
-          <Stack.Screen name="series" options={{ headerShown: false }} />
           {/* Search renders its own top bar (search field + back button), so hide the native one. */}
           <Stack.Screen name="search" options={{ headerShown: false }} />
           {/* Custom-lists manager (create/rename/reorder/delete), pushed from the Library selector. */}
@@ -131,20 +128,18 @@ function RootNavigation() {
             name="reader"
             options={{ headerShown: false, animation: 'fade', presentation: 'containedTransparentModal' }}
           />
-          {/* EXPERIMENTAL series reader page (Settings → General → Experimental): the combined
-              series details + in-place reader. A contained transparent modal like /reader, so
-              its dismissal can fade the screen out over the browse grid it was opened from. The
-              route is a DIRECTORY hosting its own nested stack — sub-pages (search, downloads)
-              push as real cards inside the modal (see app/series-reader/_layout.tsx). Remove
-              with the experiment — see app/series-reader/index.tsx for the full removal list.
+          {/* THE series page: details + an in-place reader, either side one gesture from the
+              other. A contained transparent modal like /reader, so its dismissal can collapse
+              back into the card it was opened from and reveal the grid underneath. The route is a
+              DIRECTORY hosting its own nested stack — sub-pages (downloads) push as real cards
+              inside the modal (see app/series/_layout.tsx).
 
-              `animation: 'none'` because the SCREEN animates itself: it mounts off-screen right
-              and slides home on its own `edgeX` — the very value the back-swipe drags — so
-              opening and closing are the same motion. A native modal can't do that: its
-              animation comes from UIModalTransitionStyle, which offers no horizontal push. Every
-              exit (swipe, chevron, hardware back) likewise animates before popping the route. */}
+              `animation: 'none'` because the SCREEN animates itself: it grows out of that card's
+              cover and collapses back into it, and every exit (swipe, chevron, hardware back)
+              plays that collapse before popping the route. A native modal can't do it — its
+              animation comes from UIModalTransitionStyle, which offers no such thing. */}
           <Stack.Screen
-            name="series-reader"
+            name="series"
             options={{ headerShown: false, animation: 'none', presentation: 'containedTransparentModal' }}
           />
           {/* These render their own <TopBar> (matching series.tsx), so the native

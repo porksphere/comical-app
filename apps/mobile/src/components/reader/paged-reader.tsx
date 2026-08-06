@@ -76,7 +76,7 @@ type Props = {
    *  single biggest source of stutter in a long scrub, and mid-drag nothing
    *  reads its results. */
   scrubbing?: boolean;
-  /** True while the pager is parked as a DECORATIVE background (the series-reader's collapsed
+  /** True while the pager is parked as a DECORATIVE background (the series page's collapsed
    *  strip): shrinks the virtualization window to the visible page only, so neighbouring pages
    *  aren't mounted — or their images requested — until the reader becomes primary again. */
   standby?: boolean;

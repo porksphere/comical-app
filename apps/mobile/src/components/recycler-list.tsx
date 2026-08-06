@@ -90,7 +90,7 @@ export function RecyclerList<T>({
   wrapperStyle?: Parameters<typeof Animated.View>[0]['style'];
   /** A composed `Gesture.Simultaneous(Gesture.Native(), <pan>)` to mount ON the list's scroll
    *  view (the list's root native view — the detector's `findNodeHandle` resolves straight to
-   *  it). This is how a screen-level gesture (the series-reader's back-swipe) gets to activate
+   *  it). This is how a screen-level gesture (the series page's back-swipe) gets to activate
    *  OVER this scroller on iOS: the scroll view's own recognizer begins on ~10px of movement in
    *  any direction and force-fails foreign recognizers, so the pan must ride the scroller's own
    *  detector, composed simultaneous with a Native handler RNGH resolves the raw scroll pan to.

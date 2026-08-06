@@ -1,13 +1,13 @@
 import { makeMutable, useAnimatedStyle } from 'react-native-reanimated';
 
 /**
- * EXPERIMENTAL series-reader companion: the DIM over whatever the combined page opens on top of.
+ * The DIM over whatever the combined page opens on top of.
  *
  * A contained transparent modal (that's what lets the reader's swipe-away dissolve and reveal
  * what's underneath) gets no say in how the screen beneath it is treated — a modal's animation on
  * iOS comes from `UIModalTransitionStyle`, which is cross-dissolve and flip only, with no
  * background treatment at all (see RNSScreen.mm's setStackAnimation). So the page animates itself
- * (the zoom in app/series-reader), and the backdrop's half is driven from here.
+ * (the zoom in app/series), and the backdrop's half is driven from here.
  *
  * A module-level shared value rather than context or a store, for the same reason
  * `lib/tab-bar-visibility.ts` is hand-rolled: this is one number, written by one screen, read by a
@@ -25,7 +25,6 @@ import { makeMutable, useAnimatedStyle } from 'react-native-reanimated';
  * expands in place out of one of this screen's own cards, so moving the grid laterally under it
  * read as a second, contradictory motion.
  *
- * Remove with the experiment: this file, its writer, and the wrapper in `components/app-tabs.tsx`.
  */
 export const seriesReaderDim = makeMutable(0);
 

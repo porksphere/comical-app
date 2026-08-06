@@ -316,9 +316,9 @@ type PullListWiring = {
   /** A composed `Gesture.Simultaneous(Gesture.Native(), <back-swipe pan>)` to mount ON this
    *  scroller — see `RecyclerList.scrollGesture` for the full story (on iOS the pan must ride
    *  the scroller's own detector to survive the scroll view's recognizer). Omitted everywhere
-   *  but the series-reader embedding. */
+   *  but the series page. */
   scrollGesture?: ComposedGesture;
-  /** False while a screen-level horizontal gesture (the series-reader's back-swipe / reveal) is
+  /** False while a screen-level horizontal gesture (the series page's back-swipe / reveal) is
    *  ACTIVE: simultaneity lets that pan run alongside this scroller, which otherwise keeps
    *  scrolling under a swipe that's carrying the whole page away. Omitted everywhere else. */
   scrollEnabled?: boolean;
@@ -382,7 +382,7 @@ export function ChapterScrollList({
   /** Height of the overlaying top bar, so the first content clears it (and scrolls under its frost). */
   topInset?: number;
   /** When set, opening a chapter version is handed HERE instead of pushing `/reader` (the
-   *  preferred-group side effect still applies first). Used by the experimental series-reader
+   *  preferred-group side effect still applies first). Used by the series page
    *  page, whose details panel feeds its own in-place reader rather than navigating. */
   onOpenChapter?: (version: Chapter) => void;
 } & PullListWiring) {

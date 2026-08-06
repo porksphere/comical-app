@@ -27,7 +27,7 @@ export function ReaderToolbar({
   /** Rendered in the slot opposite Back. Sized like the back button so the
    *  titles stay centred whether or not anything is passed. */
   right?: ReactNode;
-  /** The screen renders its OWN back button persisting across bar modes (series-reader's
+  /** The screen renders its OWN back button persisting across bar modes (series page's
    *  TopBarSwitch) — keep just the spacer here so the titles stay centred. */
   hideBack?: boolean;
 }) {

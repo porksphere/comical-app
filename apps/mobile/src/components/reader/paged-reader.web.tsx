@@ -45,7 +45,7 @@ type Props = {
   onPrev: () => void;
   onNext: () => void;
   onToggleChrome: () => void;
-  /** True while the pager is parked as a DECORATIVE background (the series-reader's collapsed
+  /** True while the pager is parked as a DECORATIVE background (the series page's collapsed
    *  strip): shrinks the mounted-image radius to the visible page only, so neighbouring pages
    *  aren't requested until the reader becomes primary again. (Mirrors the native prop.) */
   standby?: boolean;

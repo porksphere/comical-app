@@ -20,7 +20,6 @@ import { isEmbeddedRuntimeAvailable, swapDataSourceMode, useEmbeddedEnabled } fr
 import { queryClient } from '@/data/query-client';
 import { useNsfwMode, type NsfwMode } from '@/data/source';
 import { useTheme, useThemePreference, type ThemePreference } from '@/hooks/use-theme';
-import { seriesReaderPage$, useSeriesReaderPage } from '@/lib/experimental-flags';
 import { lightCards$, useLightCards } from '@/lib/perf-flags';
 
 const NSFW_MODE_OPTIONS: SettingsOption<NsfwMode>[] = [
@@ -51,7 +50,6 @@ export default function GeneralSettingsScreen() {
   const [onDevice, setOnDevice] = useEmbeddedEnabled();
   const [apiBase, setApiBaseOverride] = useApiBase();
   const lightCards = useLightCards();
-  const seriesReaderPage = useSeriesReaderPage();
   const { wifiOnly, background } = useDownloadPrefs();
   const { open } = useOverlay();
   // The on-device runtime is only offered where a native bridge engine exists (iOS/Android with the
@@ -145,17 +143,6 @@ export default function GeneralSettingsScreen() {
               }}
             />
           )}
-        </SettingsSection>
-
-        {/* Experiments live under their own heading so the switch reads as opt-in, not a stable
-            preference. Each row maps to one flag in lib/experimental-flags.ts. */}
-        <SettingsSection title="Experimental">
-          <SettingsToggleRow
-            label="Series reader page"
-            description="Replace the series page with a combined reader + details view."
-            value={seriesReaderPage}
-            onChange={(v) => seriesReaderPage$.enabled.set(v)}
-          />
         </SettingsSection>
       </ScrollView>
     </ThemedView>

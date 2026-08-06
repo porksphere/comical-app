@@ -2,11 +2,11 @@ import { observable } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
 
 /**
- * EXPERIMENTAL series-reader companion: the SOURCE RECT of the card a series was opened from, so
- * `/series-reader` can grow out of it (and shrink back into it) the way a photo grid opens a photo.
+ * The SOURCE RECT of the card a series was opened from, so
+ * the series page can grow out of it (and shrink back into it) the way a photo grid opens a photo.
  *
  * A one-slot module-level hand-off, not context or a store, for the same reason
- * `lib/series-reader-backdrop.ts` is: the writer (a card in a recycled grid) and the reader (a
+ * `lib/series page-backdrop.ts` is: the writer (a card in a recycled grid) and the reader (a
  * modal route that is not its descendant) share no provider, and the value has to be readable
  * SYNCHRONOUSLY in the destination's first render — a state update would land a frame late, i.e.
  * after the entrance has already started from the wrong geometry.
@@ -17,8 +17,6 @@ import { use$ } from '@legendapp/state/react';
  * from being applied to an unrelated open: the entry id must match the destination's, and the
  * capture must be recent.
  *
- * Remove with the experiment: this file, its writer in `components/series-card.tsx`, and the
- * `zoomOrigin` branch in `app/series-reader/index.tsx`.
  */
 
 /** A card's on-screen box, in WINDOW coordinates (what `measureInWindow` reports). */

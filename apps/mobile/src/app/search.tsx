@@ -56,7 +56,7 @@ const SHADOW_PEAK_OPACITY = 0.16;
  * query + filter/sort state (`useBridgeFilters`). A Series→Search tag/meta intent
  * (see search-intent.ts) is consumed on mount and applied against the intent's bridge.
  */
-/** EXPERIMENTAL series-reader embedding (see SearchLayer in app/series-reader/index.tsx): the
+/** EXPERIMENTAL series page embedding (see SearchLayer in app/series page/index.tsx): the
  *  same screen mounted as an in-screen LAYER instead of a pushed route — `onBack` replaces the
  *  router pop (the layer slides itself out). Remove with the experiment (the route path passes
  *  nothing). */
@@ -65,7 +65,7 @@ export type SearchEmbedded = {
   /** The layer's back-swipe pan composed with a `Gesture.Native()` (`Gesture.Simultaneous`), to
    *  mount on the results scroller: on iOS the scroll view's own recognizer force-fails a foreign
    *  pan before its activation distance, so the pan must ride the scroller's own detector — see
-   *  the series-reader's makeBackSwipePan. */
+   *  the series page's makeBackSwipePan. */
   scrollGesture?: ComposedGesture;
 };
 

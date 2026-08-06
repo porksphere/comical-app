@@ -45,7 +45,7 @@ export function HistoryRow({
   sub?: string;
   /** Tapping the thumbnail/body. */
   onPress: () => void;
-  /** Press-DOWN on the same target. The series-reader experiment measures the thumbnail here, so
+  /** Press-DOWN on the same target. The series page measures the thumbnail here, so
    *  the zoom transition has its source rect before navigation rather than a frame after it. */
   onPressIn?: () => void;
   /** When set, a trailing 3-dot button (e.g. History → open the series page). */
