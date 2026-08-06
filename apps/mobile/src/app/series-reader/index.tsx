@@ -172,8 +172,33 @@ const LAYER_PARALLAX_FRACTION = 0.25;
 //
 // Springs, from the library's `Specs.Zoom`. Very stiff and very heavily damped — the travel is
 // carried by the mask and the scale, not by bounce.
-const ZOOM_IN_SPRING = { stiffness: 1000, damping: 500, mass: 3, overshootClamping: false } as const;
-const ZOOM_OUT_SPRING = { stiffness: 1100, damping: 98, mass: 3, overshootClamping: false } as const;
+// `Specs.DefaultSpec` — heavily overdamped (damping ratio ~4.6), so the open unfolds rather than
+// springs. This is the spec the post configures for the opening direction.
+const ZOOM_IN_SPRING = {
+  stiffness: 1000,
+  damping: 500,
+  mass: 3,
+  overshootClamping: false,
+  // Reanimated's default is 2 — two UNITS PER SECOND, sized for springs on pixel values where
+  // velocities run in the hundreds. These drive a 0..1 progress whose entire travel is one unit,
+  // so the default lets the tail get cut off early. The library carries 0.02 on both specs,
+  // behind a @ts-expect-error for the Reanimated v3 types, which is how it fell out of the port.
+  restSpeedThreshold: 0.02,
+} as const;
+// `Specs.FlingSpec` — and this is the one that was wrong. The post configures the CLOSE direction
+// with FlingSpec, a deliberately loose spring; I had ported `Specs.Zoom.close` instead, which is
+// a different, much stiffer pair (1100/98/3, damping ratio 0.85, ω 19). Its envelope decays with
+// a ~60ms time constant, so a drag released at 70% of the way open finished the remaining travel
+// in about a tenth of a second — which is exactly "completes instantly". FlingSpec's ω is 13 on a
+// third of the mass, giving a ~85ms constant and roughly triple the visible travel time, with a
+// touch of overshoot (the mask clamps at 0, so an undershoot past the card can't show).
+const ZOOM_OUT_SPRING = {
+  damping: 23.5,
+  stiffness: 170,
+  mass: 1,
+  overshootClamping: false,
+  restSpeedThreshold: 0.02,
+} as const;
 // The cross-fade, verbatim from the library's four opacity ranges. The ARRIVING PAGE fades in
 // (`ZOOM_FOCUSED_ELEMENT_*`) while a COPY OF THE TAPPED THUMBNAIL, flying the same path, fades out
 // (`ZOOM_UNFOCUSED_ELEMENT_*` — there it is the real source element on the screen underneath,
@@ -226,11 +251,15 @@ const ZOOM_DRAG_TRAVEL = 0.9;
 // rightward DOMINANCE instead: more horizontal travel than vertical. That is the fix for a
 // gesture that only caught unusually straight swipes — a real swipe across a tall scrolling page
 // arcs, and an absolute cross-axis budget fails it long before it has shown its intent.
-const BACK_DECIDE_PX = 14;
-// …and how much MORE horizontal than vertical it has to be. 1 (any rightward lean) was too
-// forgiving — a diagonal flick off a scrolling list read as a dismissal. This is roughly a 30°
-// cone off horizontal.
-const BACK_DOMINANCE = 1.75;
+// Deciding at the FIRST sample that clears a low bar is what kept this feeling loose: the opening
+// millimetres of any drag are noise, so a vertical scroll with a little horizontal jitter could
+// clear a 14px/1.75:1 test before its real direction had shown at all. Two changes: the ACTIVATE
+// bar now wants real committed travel (24px) at a genuine 2:1, while the FAIL bar sits much lower
+// (12px) so vertical intent is ruled out early — a scroll is discarded at 12px of drift, well
+// before horizontal jitter could ever accumulate to 24.
+const BACK_ACTIVATE_PX = 24;
+const BACK_FAIL_PX = 12;
+const BACK_DOMINANCE = 2;
 
 /** `resolveZoomPrimaryDragTranslation` — exponential resistance along the drag's own axis. */
 function zoomPrimaryDrag(translation: number, dimension: number): number {
@@ -1143,10 +1172,10 @@ function SeriesReaderInstance({
         }
         const dx = t.absoluteX - backStartX.value;
         const dy = Math.abs(t.absoluteY - backStartY.value);
-        if (dx > BACK_DECIDE_PX && dx > dy * BACK_DOMINANCE) {
+        if (dx > BACK_ACTIVATE_PX && dx > dy * BACK_DOMINANCE) {
           backDecided.set(1);
           manager.activate();
-        } else if (dy > BACK_DECIDE_PX || dx < -BACK_DECIDE_PX) {
+        } else if ((dy > BACK_FAIL_PX && dy > dx) || dx < -BACK_FAIL_PX) {
           // Vertical intent, or a leftward drag (which belongs to the webtoon reveal).
           backDecided.set(-1);
           manager.fail();
@@ -1174,10 +1203,17 @@ function SeriesReaderInstance({
           runOnJS(setLeaving)(true);
           // Resume from exactly where it was slid to: the collapse and the follow both spring from
           // their current values, so the page carries on from that spot into the card.
+          // Hand the throw over too: the pan's velocity is in points per second, and `zoom` moves
+          // one unit per `width * ZOOM_DRAG_TRAVEL` points, so this is the same motion continuing
+          // rather than a fresh spring starting from rest at the release point.
           zoom.set(
-            withSpring(0, ZOOM_OUT_SPRING, () => {
-              runOnJS(leaveOnce)();
-            }),
+            withSpring(
+              0,
+              { ...ZOOM_OUT_SPRING, velocity: -e.velocityX / (width * ZOOM_DRAG_TRAVEL) },
+              () => {
+                runOnJS(leaveOnce)();
+              },
+            ),
           );
           dragX.set(withSpring(0, ZOOM_OUT_SPRING));
           dragY.set(withSpring(0, ZOOM_OUT_SPRING));
