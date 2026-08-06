@@ -56,6 +56,7 @@ import {
 import { useDataSource, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type Chapter } from '@/data/types';
 import { useReaderSettings } from '@/hooks/use-reader-settings';
+import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { LARGE_SCREEN_BREAKPOINT, useTopBarHeight } from '@/hooks/use-responsive';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
@@ -173,9 +174,17 @@ const LAYER_PARALLAX_FRACTION = 0.25;
 // carried by the mask and the scale, not by bounce.
 const ZOOM_IN_SPRING = { stiffness: 1000, damping: 500, mass: 3, overshootClamping: false } as const;
 const ZOOM_OUT_SPRING = { stiffness: 1100, damping: 98, mass: 3, overshootClamping: false } as const;
-// `ZOOM_FOCUSED_ELEMENT_OPEN_OPACITY_RANGE` — the arriving page fades in over the first quarter of
-// the travel, cross-fading with the real card still visible underneath the transparent modal.
-const ZOOM_CONTENT_FADE = [0, 0.28];
+// The cross-fade, verbatim from the library's four opacity ranges. The ARRIVING PAGE fades in
+// (`ZOOM_FOCUSED_ELEMENT_*`) while a COPY OF THE TAPPED THUMBNAIL, flying the same path, fades out
+// (`ZOOM_UNFOCUSED_ELEMENT_*` — there it is the real source element on the screen underneath,
+// transformed to track; from inside a modal we can't touch that view, so we fly a copy). The two
+// overlap: for the first third of an open you are looking at the thumbnail, not the page.
+// Close uses different ranges than open — the outgoing page holds longer and the thumbnail is
+// brought back earlier, so the picture is already there before the page dissolves off it.
+const ZOOM_CONTENT_FADE_OPEN = [0, 0.28];
+const ZOOM_CONTENT_FADE_CLOSE = [0.13, 0.7];
+const ZOOM_THUMB_FADE_OPEN = [0.08, 0.32];
+const ZOOM_THUMB_FADE_CLOSE = [0.7, 1];
 // `computeContentTransformGeometry`'s aspect rule: below this difference the source and the
 // destination bound are close enough to shape that the scale COVERS (max), above it the scale
 // CONTAINS (min) and the mask does the cropping instead.
@@ -921,6 +930,8 @@ function SeriesReaderInstance({
   // opacity 0) until the bound is in; only then do the transform and the mask engage. That is what
   // the library means by keeping a component at its base layout for pre-animation measurement.
   const zoomArmed = useSharedValue(false);
+  // Which set of cross-fade ranges is in play (see the constants) — an exit uses different ones.
+  const zoomClosing = useSharedValue(false);
   const zoomStartedRef = useRef(false);
   const startZoom = useCallback(() => {
     if (zoomStartedRef.current) return;
@@ -966,6 +977,7 @@ function SeriesReaderInstance({
   const closeLayer = useCallback(() => {
     if (leftRef.current) return;
     setLeaving(true);
+    zoomClosing.set(true);
     edgeCommitting.set(true);
     zoom.set(
       withSpring(0, ZOOM_OUT_SPRING, () => {
@@ -977,7 +989,7 @@ function SeriesReaderInstance({
     // …and if that callback never arrives at all, leave anyway a beat after the curve was due.
     if (leaveTimer.current) clearTimeout(leaveTimer.current);
     leaveTimer.current = setTimeout(leaveOnce, ZOOM_OUT_BACKSTOP_MS);
-  }, [edgeCommitting, zoom, leaveOnce]);
+  }, [edgeCommitting, zoom, zoomClosing, leaveOnce]);
 
   // Android hardware back steps back HOME (the details) before leaving: reader expanded → back
   // collapses it; details up → the instance slides out (a drilled layer back to its parent
@@ -1189,6 +1201,7 @@ function SeriesReaderInstance({
     const screenCenterY = height / 2;
     return {
       s,
+      end,
       tx: startAnchor.x - (screenCenterX + (endAnchor.x - screenCenterX) * s),
       ty: startAnchor.y - (screenCenterY + (endAnchor.y - screenCenterY) * s),
     };
@@ -1235,14 +1248,13 @@ function SeriesReaderInstance({
     const q = Math.max(0, zoom.value); // see zoomMaskStyle
     // Before arming: base layout, so the destination cover measures its true untransformed rect.
     if (!zoomArmed.value) {
-      return { opacity: 0, transform: [{ translateX: edgeX.value }, { translateY: 0 }, { scale: 1 }] };
+      return { transform: [{ translateX: edgeX.value }, { translateY: 0 }, { scale: 1 }] };
     }
     if (!zoomGeom || !hero) {
       // No source rect (deep link, web): no mask, no alignment — just the small centred zoom.
       // Same three transform entries as every other branch: reanimated wants one stable style
       // shape per view, and this branch and the unarmed one above can both run for one instance.
       return {
-        opacity: interpolate(q, ZOOM_CONTENT_FADE, [0, 1], Extrapolation.CLAMP),
         transform: [
           { translateX: edgeX.value },
           { translateY: 0 },
@@ -1254,7 +1266,6 @@ function SeriesReaderInstance({
     const maskLeft = hero.x * (1 - q);
     const maskTop = hero.y * (1 - q);
     return {
-      opacity: interpolate(q, ZOOM_CONTENT_FADE, [0, 1], Extrapolation.CLAMP),
       transform: [
         { translateX: zoomGeom.tx * (1 - q) - maskLeft + edgeX.value },
         { translateY: zoomGeom.ty * (1 - q) - maskTop },
@@ -1262,6 +1273,24 @@ function SeriesReaderInstance({
       ],
     };
   }, [zoomGeom, hero]);
+
+  // The two halves of the cross-fade. The page's own opacity is separated from its transform so
+  // the thumbnail copy can ride that same transform (it is a sibling INSIDE the transformed page,
+  // laid out at the destination bound — which means it starts life exactly on the tapped card and
+  // arrives exactly on the page's cover, with no geometry of its own to keep in sync).
+  const zoomContentFadeStyle = useAnimatedStyle(() => {
+    if (!zoomArmed.value) return { opacity: 0 };
+    const q = Math.max(0, zoom.value);
+    const range = zoomClosing.value ? ZOOM_CONTENT_FADE_CLOSE : ZOOM_CONTENT_FADE_OPEN;
+    return { opacity: interpolate(q, range, [0, 1], Extrapolation.CLAMP) };
+  });
+  const zoomThumbStyle = useAnimatedStyle(() => {
+    if (!zoomArmed.value) return { opacity: 0 };
+    const q = Math.max(0, zoom.value);
+    const range = zoomClosing.value ? ZOOM_THUMB_FADE_CLOSE : ZOOM_THUMB_FADE_OPEN;
+    return { opacity: interpolate(q, range, [1, 0], Extrapolation.CLAMP) };
+  });
+  const zoomThumbUri = useResolvedAsset(cover);
 
   // Content starts high enough that the series title's center lands on the seam gradient's
   // center — the strip fades into the details THROUGH the title.
@@ -1578,11 +1607,14 @@ function SeriesReaderInstance({
           cover box to the whole screen (see zoomMaskStyle). At rest it IS the screen, so it clips
           nothing that was ever visible. */}
       <Animated.View style={[styles.zoomMask, zoomMaskStyle]} pointerEvents={leaving ? 'none' : 'auto'}>
-      {/* …and THE PAGE inside it, scaled and aligned so its band lands on that card box, fading in
-          over the first quarter of the travel (see zoomPageStyle). `leaving` above drops touches
-          the instant an exit starts, so a page on its way out can't be tapped and can't swallow a
-          tap meant for the grid behind it. */}
+      {/* …THE PAGE inside it, scaled and aligned so its own cover lands on that card box (see
+          zoomPageStyle). Transform only — the fade lives on the wrapper below, so the thumbnail
+          copy further down can ride this same transform without fading with it. */}
       <Animated.View style={[styles.zoomPage, { width, height }, zoomPageStyle]}>
+      {/* …and the page's CONTENT, which is the half of the cross-fade that fades IN. `leaving`
+          drops touches the instant an exit starts, so a page on its way out can't be tapped and
+          can't swallow a tap meant for the grid behind it. */}
+      <Animated.View style={[StyleSheet.absoluteFill, zoomContentFadeStyle]}>
 
       {/* The details PAGE, in front of the (static) reader: a full-screen layer whose opaque
           background starts at the band, so the strip is the top of the page; the whole layer
@@ -1800,6 +1832,32 @@ function SeriesReaderInstance({
 
       </Animated.View>
 
+      {/* THE FLYING THUMBNAIL — the other half of the cross-fade, and the reason the motion reads
+          as a picture opening rather than a screen resizing. The library transforms the REAL
+          source element on the screen underneath to track this path; from inside a modal that view
+          is untouchable, so this is a copy of the same cover.
+          Laid out at the DESTINATION bound and left to ride the page's transform, which is what
+          keeps it honest: at rest that transform puts this rect exactly on the tapped card, and at
+          the end exactly on the page's own cover. No second geometry to drift out of sync. The
+          mask supplies the rounded card silhouette, so it needs no radius of its own. */}
+      {hero && zoomGeom && zoomThumbUri && (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.zoomThumb,
+            {
+              left: zoomGeom.end.x,
+              top: zoomGeom.end.y,
+              width: zoomGeom.end.width,
+              height: zoomGeom.end.height,
+            },
+            zoomThumbStyle,
+          ]}>
+          <Image source={{ uri: zoomThumbUri }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" />
+        </Animated.View>
+      )}
+
+      </Animated.View>
       </Animated.View>
     </View>
   );
@@ -2603,6 +2661,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     left: 0,
+  },
+  // The flying copy of the tapped cover — positioned at the destination bound INSIDE the page, so
+  // the page's own transform carries it from the card to that bound (see the render).
+  zoomThumb: {
+    position: 'absolute',
+    overflow: 'hidden',
   },
   // The SEARCH layer's slide-in ride — the one layer that still arrives as a push (see SearchLayer).
   searchSlide: {
