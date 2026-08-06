@@ -1680,12 +1680,6 @@ function SeriesReaderInstance({
       transform: [{ scale: 0.96 + 0.04 * reveal }],
     };
   });
-  // SwipeDismiss's static backdrop: the reader's dark surface fading in place with distance
-  // while the page travels over it — the end state hands cleanly back to the screen beneath.
-  const dismissFadeStyle = useAnimatedStyle(() => {
-    const dist = Math.hypot(dismissX.value, dismissY.value);
-    return { opacity: interpolate(dist, [0, span], [1, 0], Extrapolation.CLAMP) };
-  }, [span]);
 
   // ── The BACKDROP's dim (see lib/series-reader-backdrop.ts) ───────────────────────────────────
   // How much of the screen this page currently covers. All three ways it can be less than fully
@@ -1849,6 +1843,21 @@ function SeriesReaderInstance({
         hidden={settings.mode !== 'paged' && !chromeVisible && !detailsActive}
       />
 
+      {/* THE READER'S BACKDROP, while the reader is what's on screen: full screen, never moving,
+          fading IN PLACE as the collapse carries the page over it. Outside the mask on purpose —
+          inside it, it travelled and scaled along with everything else, which is a swipe-away
+          dragging its own background off with it. Details mode keeps its copy inside the page
+          (below), where the job is different: it is the dark backing that the transparent strip
+          window shows the reader through, so it has to move with the page it belongs to.
+          `detailsActive` is committed state, so this never swaps parents mid-collapse — and at
+          rest the two positions render identically (the page transform is identity there). */}
+      {!detailsActive && (
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.readerSurface, { width, height }, zoomContentFadeStyle]}
+        />
+      )}
+
       {/* THE MASK — the rounded window the page is seen through, growing from the tapped card's
           cover box to the whole screen (see zoomMaskStyle). At rest it IS the screen, so it clips
           nothing that was ever visible. */}
@@ -1923,7 +1932,7 @@ function SeriesReaderInstance({
           the reader and uncovered the screen bottom at low progress — the underlying screen
           showed through the seam gradient as a dark bar whenever a drag held the transition
           near the reader side. */}
-      <Animated.View pointerEvents="none" style={[styles.readerSurface, { width, height }, dismissFadeStyle]} />
+      {detailsActive && <Animated.View pointerEvents="none" style={[styles.readerSurface, { width, height }]} />}
 
       {/* The reader, beneath the details: full screen, with SwipeDismiss's layering inside —
           static fading surface (above), traveling page subtree, fading chrome. The collapse/
