@@ -38,6 +38,21 @@ export const BACK_ACTIVATE_PX = 24;
 export const BACK_FAIL_PX = 12;
 /** How many times more horizontal than vertical the travel must be. 3 ≈ within 18° of horizontal. */
 export const BACK_DOMINANCE = 3;
+/**
+ * Rightward travel after which an undominant drag is GIVEN UP ON rather than left pending.
+ *
+ * Without this the test has a band it can never decide. `ay > FAIL && ay > dx` only catches drags
+ * that are more vertical than horizontal, so a drag between the dominance angle and 45° satisfies
+ * NEITHER branch — not straight enough to activate, not steep enough to fail — and stays pending
+ * for as long as the finger moves. The gesture then does nothing at all: it never activates, and
+ * because activation is manual it never cleanly hands the touch back either.
+ *
+ * That band is exactly the swipe a person actually makes, and raising DOMINANCE from 2 widened it
+ * from 27°–45° to 18°–45°, which is what made the back-swipe "inconsistent" — not stricter, but
+ * silently dead over a third of the angles. Comfortably above ACTIVATE so a true horizontal swipe
+ * has always won by the time it is consulted.
+ */
+export const BACK_DECIDE_PX = 48;
 
 /** 1 = this is a back-swipe, -1 = it belongs to something else, 0 = not enough travel to say. */
 export type BackSwipeVerdict = 1 | -1 | 0;
@@ -52,6 +67,9 @@ export function decideBackSwipe(dx: number, dy: number): BackSwipeVerdict {
   if (dx > BACK_ACTIVATE_PX && dx > ay * BACK_DOMINANCE) return 1;
   // Vertical intent (the list underneath is scrolling), or a leftward drag, which is never this.
   if ((ay > BACK_FAIL_PX && ay > dx) || dx < -BACK_FAIL_PX) return -1;
+  // Gone far enough right to have shown its intent, and that intent is not dominantly horizontal.
+  // Hand it back rather than leaving it pending forever — see BACK_DECIDE_PX.
+  if (dx > BACK_DECIDE_PX) return -1;
   return 0;
 }
 

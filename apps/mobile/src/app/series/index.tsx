@@ -238,6 +238,25 @@ const ZOOM_CROSS_AXIS_DRAG_RESISTANCE = 0.05;
 // way home. The commit threshold is much lower — this only sets how fast the page shrinks under
 // a drag that keeps going.
 const ZOOM_DRAG_TRAVEL = 0.9;
+// The collapse carries on at the speed the finger was moving — but only up to a point, and this cap
+// is not cosmetic.
+//
+// `zoom` is a 0..1 progress over `span * ZOOM_DRAG_TRAVEL` points, so a release converts to
+// progress-per-second by dividing by ~350 on a phone. A hard flick at 3000px/s is therefore ~8.5
+// units/sec, which crosses the entire collapse in about a tenth of a second — and ZOOM_OUT_SPRING
+// is underdamped (ζ ≈ 0.9), so a velocity that large drives `zoom` straight THROUGH 0 into negative
+// within a frame or two. Every style reads `Math.max(0, zoom.value)`, so the animation is visually
+// finished before it has played: it reads as the page vanishing, not collapsing.
+//
+// This was always latent, but the old release rule only committed a flick above 900px/s, so it was
+// rare. Once the projected release (lib/gesture-release) started committing any decent throw, it
+// became the common case. 3.5 ≈ the rate of a brisk swipe across the full span, so an ordinary
+// release still continues at its own speed and only genuine flicks are reined in.
+const ZOOM_THROW_MAX = 3.5;
+function zoomThrowSpeed(pxPerSecond: number, span: number): number {
+  'worklet';
+  return Math.min(ZOOM_THROW_MAX, Math.abs(pxPerSecond) / Math.max(1, span * ZOOM_DRAG_TRAVEL));
+}
 // Back-swipe activation lives in lib/back-swipe.ts — shared with the SEARCH layer below, because
 // the one thing that must never differ between two surfaces both pretending to have a back-swipe
 // is what counts as one.
@@ -941,10 +960,11 @@ function SeriesReaderInstance({
           dismissing.set(true);
           edgeCommitting.set(true);
           runOnJS(setLeaving)(true);
-          const throwSpeed =
-            Math.hypot(e.velocityX, e.velocityY) / Math.max(1, dismissSpan * ZOOM_DRAG_TRAVEL);
+          const throwSpeed = zoomThrowSpeed(Math.hypot(e.velocityX, e.velocityY), dismissSpan);
           zoom.set(
-            withSpring(0, { ...ZOOM_OUT_SPRING, velocity: -throwSpeed }, () => {
+            // overshootClamping: there is nothing past "collapsed", so the spring must not travel
+            // through 0 and settle back up to it.
+            withSpring(0, { ...ZOOM_OUT_SPRING, overshootClamping: true, velocity: -throwSpeed }, () => {
               runOnJS(leaveOnce)();
             }),
           );
@@ -1248,7 +1268,7 @@ function SeriesReaderInstance({
           zoom.set(
             withSpring(
               0,
-              { ...ZOOM_OUT_SPRING, velocity: -e.velocityX / (width * ZOOM_DRAG_TRAVEL) },
+              { ...ZOOM_OUT_SPRING, overshootClamping: true, velocity: -zoomThrowSpeed(e.velocityX, width) },
               () => {
                 runOnJS(leaveOnce)();
               },
