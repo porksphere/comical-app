@@ -32,7 +32,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
 import { LinearGradient } from 'expo-linear-gradient';
 
-import { ChevronRightIcon, ChevronUpIcon } from '@/components/icons/ui-icons';
+import { ChevronUpIcon } from '@/components/icons/ui-icons';
 import { ChapterNavigator } from '@/components/reader/chapter-navigator';
 import { PagedReader, type PagedReaderHandle, type ReaderPageItem } from '@/components/reader/paged-reader';
 import { ProgressPill } from '@/components/reader/progress-pill';
@@ -2850,8 +2850,11 @@ function DetailsHint({
         accessibilityRole="button"
         accessibilityLabel="Show series details"
         style={styles.detailsHintPill}>
-        {/* The chevron points where the READER goes: up and away in paged mode, right in webtoon. */}
-        {mode === 'paged' ? <ChevronUpIcon color="#fff" size={16} /> : <ChevronRightIcon color="#fff" size={16} />}
+        {/* The chevron points where the READER goes — up and away, in both modes now. Webtoon
+            pointed RIGHT back when its reveal was horizontal; the reveal is vertical everywhere
+            since the drag-reveal was removed there, so the arrow was the last thing still
+            describing the old motion. */}
+        <ChevronUpIcon color="#fff" size={16} />
         <ThemedText type="small" style={styles.detailsHintLabel}>
           Details
         </ThemedText>
