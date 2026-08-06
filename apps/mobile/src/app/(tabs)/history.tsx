@@ -9,6 +9,7 @@ import { TrashIcon } from '@/components/icons/ui-icons';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { HistoryRow } from '@/components/history-row';
 import { setZoomOrigin, useIsZoomingSeries } from '@/lib/series-zoom';
+import { encodeSeriesParam } from '@/lib/series-nav';
 import { RetryBlock } from '@/components/retry-block';
 import { SeriesCardMenu } from '@/components/series-card-menu';
 import { SwipeableRow } from '@/components/settings/swipeable-row';
@@ -86,15 +87,14 @@ export default function HistoryScreen() {
   // the details with the reader as the strip, which is exactly a browse open. Same zoom off this
   // row's thumbnail; the only difference from `resume` below is which side it opens on.
   const openDetail = (h: HistoryEntry) => {
-    const enc = (v: string) => encodeURIComponent(v).replace(/\(/g, '%28').replace(/\)/g, '%29');
     router.push({
       pathname: '/series',
       params: {
         id: h.seriesId,
         title: h.title,
-        bridge: enc(nameOf(h.bridgeId)),
+        bridge: encodeSeriesParam(nameOf(h.bridgeId)),
         bridgeId: h.bridgeId,
-        ...(h.thumbnailUrl ? { cover: enc(h.thumbnailUrl) } : {}),
+        ...(h.thumbnailUrl ? { cover: encodeSeriesParam(h.thumbnailUrl) } : {}),
         ...(directOf(h.bridgeId) ? { direct: '1' } : {}),
       },
     });
@@ -106,17 +106,16 @@ export default function HistoryScreen() {
     // — a swipe up brings the details in, and the whole thing collapses back into this row's
     // thumbnail. The read position is passed explicitly (this row already knows it), which is also
     // what lets that screen request the page ahead of the series detail.
-    const enc = (v: string) => encodeURIComponent(v).replace(/\(/g, '%28').replace(/\)/g, '%29');
     router.push({
       pathname: '/series',
       params: {
         id: h.seriesId,
         title: h.title,
-        bridge: enc(nameOf(h.bridgeId)),
+        bridge: encodeSeriesParam(nameOf(h.bridgeId)),
         bridgeId: h.bridgeId,
         reader: '1',
         start: String(h.lastPage ?? 0),
-        ...(h.thumbnailUrl ? { cover: enc(h.thumbnailUrl) } : {}),
+        ...(h.thumbnailUrl ? { cover: encodeSeriesParam(h.thumbnailUrl) } : {}),
         ...(isDirect ? { direct: '1' } : { chapterId: h.chapterId!, chapterName: h.chapterName ?? '' }),
       },
     });

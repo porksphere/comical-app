@@ -40,6 +40,18 @@ export function useSeriesSubPath(): (path: SeriesSubPath) => SeriesSubPath | `/s
  */
 export const InSeriesPageStack = createContext(false);
 
+/**
+ * Percent-encode one series route param — a bridge display name or a cover URL.
+ *
+ * Parens included, explicitly: `encodeURIComponent` leaves '(' and ')' alone (they're unreserved),
+ * and expo-router's href resolution breaks on literal parens in a param value. Real bridge names
+ * carry them all the time ("Illustration Gallery (Demo)"), as do plenty of cover URLs. The series
+ * page decodes with a single `decodeURIComponent`, which handles %28/%29 like any other escape.
+ */
+export function encodeSeriesParam(value: string): string {
+  return encodeURIComponent(value).replace(/\(/g, '%28').replace(/\)/g, '%29');
+}
+
 /** The layer-push handler, registered by the mounted SeriesReaderScreen (there is at most one —
  *  drilled series are layers inside it, never a second modal). A hand-rolled module singleton on
  *  purpose (like lib/tab-bar-visibility): the React Compiler forbids mutating a context-carried
@@ -50,6 +62,24 @@ export function registerDrillSeries(fn: (params: Record<string, string>) => void
   return () => {
     if (drillSeriesHandler === fn) drillSeriesHandler = null;
   };
+}
+
+/**
+ * The same drill, for a caller OUTSIDE the series page's React tree. The card context menu is a
+ * ROOT overlay (see SeriesCardContextMenuHost), so it can't read the `InSeriesPageStack` context
+ * the cards themselves do — yet a card long-pressed in a related rail must still open its series
+ * as a LAYER rather than stack a second contained transparent modal, which is the one thing iOS
+ * won't do (see the note on InSeriesPageStack).
+ *
+ * The registered handler's presence IS the test, and it's exact: at most one series page is ever
+ * mounted, and while one is, it's the screen the menu was opened over. Returns false when there
+ * is none, so the caller pushes the route instead.
+ */
+export function drillSeriesFromOverlay(params: Record<string, string>): boolean {
+  if (!drillSeriesHandler) return false;
+  // Shares the nav-guard claim with the in-tree drill, so a double commit can't fire twice.
+  if (claimNavigation(navTargetKey({ pathname: '/series', params }))) drillSeriesHandler(params);
+  return true;
 }
 
 /** Same hand-off for the SEARCH layer (tag/author/type intents — see SearchLayer in

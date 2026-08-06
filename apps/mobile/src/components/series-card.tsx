@@ -14,7 +14,7 @@ import { useIsCompact } from '@/hooks/use-responsive';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
-import { useDrillRelatedSeries } from '@/lib/series-nav';
+import { encodeSeriesParam, useDrillRelatedSeries } from '@/lib/series-nav';
 import { Link, router } from '@/lib/nav';
 import { useLightCards } from '@/lib/perf-flags';
 import { setZoomOrigin, useIsZoomingSeries } from '@/lib/series-zoom';
@@ -648,20 +648,12 @@ export function SeriesCard({
         const buildParams = () => ({
           id: entry.id,
           title: entry.title,
-          // Percent-encoded: expo-router's web href resolution breaks when a route param value
-          // contains literal parentheses (real bridge display names commonly do, e.g.
-          // "Illustration Gallery (Demo)"). `encodeURIComponent` alone doesn't touch '(' ')' —
-          // they're in its unreserved set — so escape them explicitly. Decoded back in series.tsx
-          // with a single `decodeURIComponent` (which handles %28/%29 like any percent-escape).
-          ...(bridge
-            ? { bridge: encodeURIComponent(bridge).replace(/\(/g, '%28').replace(/\)/g, '%29') }
-            : {}),
-          // Forward the cover the browse grid already has so the series screen can paint it
-          // instantly from expo-image's cache (see series.tsx skeleton), rather than shimmering
-          // until the full detail query resolves. Same paren escaping — cover URLs may contain '()'.
-          ...(entry.cover
-            ? { cover: encodeURIComponent(entry.cover).replace(/\(/g, '%28').replace(/\)/g, '%29') }
-            : {}),
+          // Percent-encoded (parens included — see encodeSeriesParam), and decoded back on the
+          // series page with a single `decodeURIComponent`.
+          ...(bridge ? { bridge: encodeSeriesParam(bridge) } : {}),
+          // Forward the cover the browse grid already has so the series page can paint its hero
+          // instantly from expo-image's cache, rather than shimmering until the detail resolves.
+          ...(entry.cover ? { cover: encodeSeriesParam(entry.cover) } : {}),
           ...(bridgeId ? { bridgeId } : {}),
           ...(direct ? { direct: '1' } : {}),
         });

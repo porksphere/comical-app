@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HistoryRow } from '@/components/history-row';
 import { setZoomOrigin, useIsZoomingSeries } from '@/lib/series-zoom';
+import { encodeSeriesParam } from '@/lib/series-nav';
 import { CheckIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { PullIndicator } from '@/components/pull-indicator';
 import { RetryBlock } from '@/components/retry-block';
@@ -196,15 +197,14 @@ export default function ActivityScreen() {
   // See history.tsx's `openDetail` — the same control, opening the same combined page on its
   // details side.
   const openDetail = (g: SeriesActivity) => {
-    const enc = (v: string) => encodeURIComponent(v).replace(/\(/g, '%28').replace(/\)/g, '%29');
     router.push({
       pathname: '/series',
       params: {
         id: g.seriesId,
         title: g.title,
-        bridge: enc(nameOf(g.bridgeId)),
+        bridge: encodeSeriesParam(nameOf(g.bridgeId)),
         bridgeId: g.bridgeId,
-        ...(g.thumbnailUrl ? { cover: enc(g.thumbnailUrl) } : {}),
+        ...(g.thumbnailUrl ? { cover: encodeSeriesParam(g.thumbnailUrl) } : {}),
         ...(directOf(g.bridgeId) ? { direct: '1' } : {}),
       },
     });
@@ -212,20 +212,19 @@ export default function ActivityScreen() {
 
   const read = (g: SeriesActivity) => {
     // See history.tsx's `resume` — same experiment, same reasoning.
-    const enc = (v: string) => encodeURIComponent(v).replace(/\(/g, '%28').replace(/\)/g, '%29');
     router.push({
       pathname: '/series',
       params: {
         id: g.seriesId,
         title: g.title,
-        bridge: enc(nameOf(g.bridgeId)),
+        bridge: encodeSeriesParam(nameOf(g.bridgeId)),
         bridgeId: g.bridgeId,
         reader: '1',
         chapterId: g.chapterId,
         chapterName: g.chapterName ?? '',
         start: '0',
         ...(directOf(g.bridgeId) ? { direct: '1' } : {}),
-        ...(g.thumbnailUrl ? { cover: enc(g.thumbnailUrl) } : {}),
+        ...(g.thumbnailUrl ? { cover: encodeSeriesParam(g.thumbnailUrl) } : {}),
       },
     });
   };
