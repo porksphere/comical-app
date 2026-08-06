@@ -78,6 +78,7 @@ export function ContentFeed({
   onScrollEndDrag,
   wrapperStyle,
   scrollGesture,
+  scrollEnabled,
 }: {
   rows: ContentRow[];
   /** Feeds the list `key` and the terminal cards' recycle `cohort` (reset on scope change). */
@@ -100,6 +101,8 @@ export function ContentFeed({
   wrapperStyle?: Parameters<typeof Animated.View>[0]['style'];
   /** Passed through to `RecyclerList` — see the doc there (an over-the-list back-swipe's iOS interop). */
   scrollGesture?: ComposedGesture;
+  /** Passed through to `RecyclerList` — false while a back-swipe is dragging this surface away. */
+  scrollEnabled?: boolean;
 }) {
   const { numColumns, cardWidth, railViewport, width } = useGridLayout();
   const wide = useIsLargeScreen();
@@ -177,6 +180,7 @@ export function ContentFeed({
       onScrollEndDrag={onScrollEndDrag}
       wrapperStyle={wrapperStyle}
       scrollGesture={scrollGesture}
+      scrollEnabled={scrollEnabled}
       renderItem={({ item }) => {
         switch (item.type) {
           case 'sectionHead':

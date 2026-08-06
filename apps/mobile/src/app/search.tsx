@@ -71,6 +71,9 @@ export type SearchEmbedded = {
    *  react-navigation reports every one of them focused — the host has to say which is live.
    *  See the intent subscription below, which is what this exists for. */
   isTop?: boolean;
+  /** False while this layer's back-swipe owns the touch — the results list stops scrolling under
+   *  a page that is being dragged away. See RecyclerList's `scrollEnabled`. */
+  scrollEnabled?: boolean;
 };
 
 export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded } = {}) {
@@ -461,6 +464,7 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
                 onScrollEndDrag={pull.onScrollEndDrag}
                 wrapperStyle={pull.listStyle}
                 scrollGesture={embedded?.scrollGesture}
+                scrollEnabled={embedded?.scrollEnabled}
               />
             ) : (
               <SeriesGrid
@@ -482,6 +486,7 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
                 // The pull-to-refresh content shift and the re-search dim both ride the list wrapper.
                 wrapperStyle={[pull.listStyle, listDimStyle]}
                 scrollGesture={embedded?.scrollGesture}
+                scrollEnabled={embedded?.scrollEnabled}
               />
             ))}
           {ready && filterBar}

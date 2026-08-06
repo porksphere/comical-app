@@ -44,6 +44,7 @@ export function RecyclerList<T>({
   onMomentumScrollEnd,
   wrapperStyle,
   scrollGesture,
+  scrollEnabled,
 }: {
   data: T[];
   /** Identifies the current scope (bridge/page/query/…); folded into the list `key` so a scope
@@ -96,6 +97,10 @@ export function RecyclerList<T>({
    *  detector, composed simultaneous with a Native handler RNGH resolves the raw scroll pan to.
    *  Native-only concern; callers omit it on web. */
   scrollGesture?: ComposedGesture;
+  /** False while a screen-level gesture owns the touch (a back-swipe dragging this whole surface
+   *  away). The list must stop scrolling under it — a page being swiped out is inert, and one that
+   *  keeps scrolling while it slides is the tell that it isn't really being dismissed. */
+  scrollEnabled?: boolean;
 }) {
   // LegendList's web build resets its render state *during* render on an empty→non-empty data swap
   // after it has held data ("Cannot update a component while rendering a different component"). Fold
@@ -133,6 +138,7 @@ export function RecyclerList<T>({
         // which forces scrollEventThrottle: 1. On NATIVE we don't pass it: forcing throttle 1 there
         // just saturates the JS thread every frame during a fling, and the UI-thread `sharedValues`
         // offset works regardless.
+        scrollEnabled={scrollEnabled}
         renderScrollComponent={
           Platform.OS === 'web' ? (scrollProps) => <Animated.ScrollView {...scrollProps} /> : undefined
         }

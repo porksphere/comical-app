@@ -63,6 +63,7 @@ export function SeriesGrid({
   onScrollEndDrag,
   wrapperStyle,
   scrollGesture,
+  scrollEnabled,
 }: {
   /** The series to show. Exactly what gets rendered — the grid adds nothing to it. */
   items: SeriesGridItem[];
@@ -95,6 +96,8 @@ export function SeriesGrid({
   wrapperStyle?: Parameters<typeof Animated.View>[0]['style'];
   /** Passed through to `RecyclerList` — see the doc there (an over-the-list back-swipe's iOS interop). */
   scrollGesture?: ComposedGesture;
+  /** Passed through to `RecyclerList` — false while a back-swipe is dragging this surface away. */
+  scrollEnabled?: boolean;
 }) {
   const { numColumns, sidePad, cardWidth } = useGridLayout();
   const { subOf } = useBridgeMap();
@@ -128,6 +131,7 @@ export function SeriesGrid({
       onScrollEndDrag={onScrollEndDrag}
       wrapperStyle={wrapperStyle}
       scrollGesture={scrollGesture}
+      scrollEnabled={scrollEnabled}
       renderItem={({ item, index }) => (
         // Both dimensions are FIXED — cellHeight above, and cardWidth (from useGridLayout). The width is
         // what lets a short final row simply end instead of stretching its cards across the row.

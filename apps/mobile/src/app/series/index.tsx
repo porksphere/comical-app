@@ -66,6 +66,8 @@ import { firstChapterInReadingOrder, getAdjacentChapter } from '@/lib/chapter-or
 import { useRouter } from '@/lib/nav';
 import { getPreferredGroup, resetPreferredGroup, setPreferredGroup } from '@/lib/preferred-group';
 
+import { backSwipePan } from '@/lib/back-swipe';
+import { IOS_CARD_SHADOW, IOS_CARD_SPRING, IOS_PARALLAX_FRACTION, iosPopCommitted } from '@/lib/ios-card-pop';
 import { registerDrillSeries, registerOpenSearchLayer } from '@/lib/series-nav';
 import { seriesReaderDim } from '@/lib/series-backdrop';
 import { holdZoomingSeries, takeZoomOrigin, type ZoomRect } from '@/lib/series-zoom';
@@ -137,33 +139,8 @@ const HEADER_BAND = 200;
 // ON THE SERIES TITLE — the title (the page's first element) renders mid-gradient over the fading
 // strip, X-hero style, so the content top inset is derived from this (see headerTopInset).
 const SHEET_FADE_H = 120;
-// ── The SEARCH layer's slide — UIKit's card push/pop, reproduced ─────────────
-// It's the one thing on this screen that still leaves sideways, and it has to read as the same
-// push the rest of the app gets natively. All three numbers are react-navigation's, which is the
-// best-tested model of UIKit's card transition available to copy.
-//
-// How far the screen UNDERNEATH drifts while the layer covers it (CardStyleInterpolators'
-// `forHorizontalIOS`: the outgoing screen travels to -30% of the width, not all the way).
-const LAYER_PARALLAX_FRACTION = 0.3;
-// `TransitionIOSSpec`. A SPRING, and that is the whole point of it: a released swipe carries the
-// velocity it was thrown with into the animation and decelerates out of it, instead of handing a
-// fixed duration/easing curve a value to interpolate from — which is what a `withTiming` release
-// does, and what makes it feel like a playback rather than a continuation.
-const IOS_CARD_SPRING = {
-  stiffness: 1000,
-  damping: 500,
-  mass: 3,
-  overshootClamping: true,
-  restDisplacementThreshold: 0.01,
-  restSpeedThreshold: 0.01,
-} as const;
-// How far a release is PROJECTED along its own velocity before deciding whether it committed —
-// react-navigation's GESTURE_VELOCITY_IMPACT, in seconds. This is the momentum the swipe was
-// missing: the old rule was distance OR a hard 900px/s cutoff, so everything slower than a proper
-// flick contributed exactly nothing and a fast, short throw simply snapped back. Now velocity and
-// distance are the same currency — 900px/s buys 270px of travel toward the threshold — which is
-// how UIKit decides, and why a flick from anywhere on the screen there completes the pop.
-const IOS_VELOCITY_IMPACT = 0.3;
+// The SEARCH layer's slide is UIKit's card push/pop, reproduced — see lib/ios-card-pop.ts for the
+// numbers and, more importantly, the two mistakes they exist to stop being made again.
 // ── The ZOOM entrance (see lib/series-zoom) ──────────────────────────────────────────────────
 // A port of react-native-screen-transitions' `navigation.zoom({ target: 'bound' })` — the
 // transition React Navigation's "building custom screen transitions" post demonstrates. See
@@ -247,22 +224,9 @@ const ZOOM_CROSS_AXIS_DRAG_RESISTANCE = 0.05;
 // way home. The commit threshold is much lower — this only sets how fast the page shrinks under
 // a drag that keeps going.
 const ZOOM_DRAG_TRAVEL = 0.9;
-// Back-swipe activation. Full-surface pop gestures (FDFullscreenPopGesture and the apps that ship
-// the same idea) don't budget the cross axis at all — they ask one question, "is this drag going
-// right?", and let the scroll view win on its own turf by ordering. Ours can't be quite that
-// blunt (it runs SIMULTANEOUSLY with the scroll view rather than ahead of it), so it asks for
-// rightward DOMINANCE instead: more horizontal travel than vertical. That is the fix for a
-// gesture that only caught unusually straight swipes — a real swipe across a tall scrolling page
-// arcs, and an absolute cross-axis budget fails it long before it has shown its intent.
-// Deciding at the FIRST sample that clears a low bar is what kept this feeling loose: the opening
-// millimetres of any drag are noise, so a vertical scroll with a little horizontal jitter could
-// clear a 14px/1.75:1 test before its real direction had shown at all. Two changes: the ACTIVATE
-// bar now wants real committed travel (24px) at a genuine 2:1, while the FAIL bar sits much lower
-// (12px) so vertical intent is ruled out early — a scroll is discarded at 12px of drift, well
-// before horizontal jitter could ever accumulate to 24.
-const BACK_ACTIVATE_PX = 24;
-const BACK_FAIL_PX = 12;
-const BACK_DOMINANCE = 2;
+// Back-swipe activation lives in lib/back-swipe.ts — shared with the SEARCH layer below, because
+// the one thing that must never differ between two surfaces both pretending to have a back-swipe
+// is what counts as one.
 
 /** `resolveZoomPrimaryDragTranslation` — exponential resistance along the drag's own axis. */
 function zoomPrimaryDrag(translation: number, dimension: number): number {
@@ -327,7 +291,7 @@ type Segment = { id: string; name?: string; pages: string[] };
 
 /** Same params a series card forwards to `/series` (see series-card.tsx buildHref) — including
  *  the percent-encoded bridge name / cover, decoded the same way series.tsx does. */
-export type SeriesReaderParams = {
+type SeriesReaderParams = {
   id?: string;
   title?: string;
   bridge?: string;
@@ -364,7 +328,7 @@ export type SeriesReaderParams = {
  * parent out of the card that opened it, exactly as the root zooms out of a card on the grid
  * behind the whole modal, and leaves via `onPopLayer` once it has collapsed (or flown) out.
  */
-export function SeriesReaderInstance({
+function SeriesReaderInstance({
   params,
   depth,
   onPopLayer,
@@ -1160,11 +1124,6 @@ export function SeriesReaderInstance({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Where the touch started, and whether this touch stream has already been ruled in or out — the
-  // manual activation's working state (see BACK_DECIDE_PX).
-  const backStartX = useSharedValue(0);
-  const backStartY = useSharedValue(0);
-  const backDecided = useSharedValue(0);
   // The chevron / hardware-back exit, for a drilled layer AND the modal root: shrink back into the
   // card we came from, then leave (leaveNow pops the layer, or the route when depth 0). The
   // route's `animation: 'none'` means this IS the exit animation — without it a tapped back would
@@ -1238,39 +1197,13 @@ export function SeriesReaderInstance({
       dragX.set(withSpring(0, SPRING_BACK));
       dragY.set(withSpring(0, SPRING_BACK));
     };
-    return Gesture.Pan()
-      // Manual activation, so the decision can be a RATIO rather than the absolute cross-axis
-      // budget activeOffsetX/failOffsetY can express (see BACK_DECIDE_PX). Same mechanism
-      // pullReleaseWatch already uses on this screen to watch touches the list is scrolling with,
-      // so it is known to keep receiving them alongside the native scroll view.
-      .manualActivation(true)
-      .onTouchesDown((e) => {
-        const t = e.allTouches[0];
-        if (!t) return;
-        backStartX.set(t.absoluteX);
-        backStartY.set(t.absoluteY);
-        backDecided.set(0);
-      })
-      .onTouchesMove((e, manager) => {
-        if (backDecided.value !== 0) return;
-        const t = e.allTouches[0];
-        if (!t) return;
-        if (!detailsActiveSV.value) {
-          backDecided.set(-1);
-          manager.fail();
-          return;
-        }
-        const dx = t.absoluteX - backStartX.value;
-        const dy = Math.abs(t.absoluteY - backStartY.value);
-        if (dx > BACK_ACTIVATE_PX && dx > dy * BACK_DOMINANCE) {
-          backDecided.set(1);
-          manager.activate();
-        } else if ((dy > BACK_FAIL_PX && dy > dx) || dx < -BACK_FAIL_PX) {
-          // Vertical intent, or a leftward drag (which belongs to the webtoon reveal).
-          backDecided.set(-1);
-          manager.fail();
-        }
-      })
+    // The shared activation criteria (lib/back-swipe) — only swipeable while the details are the
+    // side on screen. Everything after it is this surface's own: a back-swipe here drives the
+    // gallery collapse, not a slide.
+    return backSwipePan(() => {
+      'worklet';
+      return detailsActiveSV.value;
+    })
       // Activation = this gesture owns the screen; the list must stop scrolling under it.
       .onStart(() => {
         if (!detailsActiveSV.value) return;
@@ -1329,9 +1262,6 @@ export function SeriesReaderInstance({
     height,
     dragX,
     dragY,
-    backStartX,
-    backStartY,
-    backDecided,
     edgeCommitting,
     detailsActiveSV,
     zoom,
@@ -2120,7 +2050,7 @@ export default function SeriesReaderScreen() {
   // covered, so their reading it is invisible either way.
   const layerCover = useSharedValue(0);
   const layerParallax = useAnimatedStyle(
-    () => ({ transform: [{ translateX: -LAYER_PARALLAX_FRACTION * width * layerCover.value }] }),
+    () => ({ transform: [{ translateX: -IOS_PARALLAX_FRACTION * width * layerCover.value }] }),
     [width],
   );
   const top = drills.length - 1;
@@ -2176,6 +2106,9 @@ function SearchLayer({
   const theme = useTheme();
   const edgeX = useSharedValue(width);
   const edgeCommitting = useSharedValue(false);
+  // Set the moment the back-swipe activates: the results list stops scrolling for as long as this
+  // layer is being dragged out. See the note in the pan's onStart.
+  const [swipeLocked, setSwipeLocked] = useState(false);
   useEffect(() => {
     edgeX.set(withSpring(0, IOS_CARD_SPRING));
     // Mount-only entrance — edgeX is stable.
@@ -2227,11 +2160,10 @@ function SearchLayer({
     });
     return () => sub.remove();
   }, [closeLayer]);
-  // The back-swipe — the instance rig's recipe, and now actually it: this copy was left on the
-  // absolute activeOffsetX/failOffsetY budgets the instance's pan used to have, so a drag that the
-  // series page happily accepted (any real thumb arc — 14px of vertical is nothing) was killed
-  // here before it moved anything. That mismatch is what made this layer feel hand-rolled next to
-  // the rest of the app; the criteria below are the instance's, verbatim.
+  // The back-swipe. Activation is the shared one (lib/back-swipe) — literally the same code the
+  // series instance runs, which is the point: two surfaces that both claim to have a back-swipe
+  // must agree on what one is. Everything after it is this layer's own, because here a back-swipe
+  // slides a card out rather than collapsing a gallery.
   //
   // Built twice for the same reason as the instance's makeBackSwipePan: the screen-level copy
   // covers the chrome, and a second copy rides the results scroller composed with a Native handler
@@ -2240,9 +2172,6 @@ function SearchLayer({
   // across: both copies see the same touches and both reach onFinalize, so the loser could
   // otherwise settle a drag the winner is driving — or undo a commit it just made, dragging the
   // layer back on screen after it had already been sliced off the stack.
-  const backStartX = useSharedValue(0);
-  const backStartY = useSharedValue(0);
-  const backDecided = useSharedValue(0);
   const makeBackSwipePan = useCallback(() => {
     const ranHere = makeMutable(false);
     // The cancel carries the release velocity too — let go while still moving right and the
@@ -2251,45 +2180,22 @@ function SearchLayer({
       'worklet';
       edgeX.set(withSpring(0, { ...IOS_CARD_SPRING, velocity }));
     };
-    return Gesture.Pan()
-      // Manual activation, so the decision can be a RATIO rather than the absolute cross-axis
-      // budget activeOffsetX/failOffsetY can express (see BACK_ACTIVATE_PX).
-      .manualActivation(true)
-      .onTouchesDown((e) => {
-        const t = e.allTouches[0];
-        if (!t) return;
-        backStartX.set(t.absoluteX);
-        backStartY.set(t.absoluteY);
-        backDecided.set(0);
-      })
-      .onTouchesMove((e, manager) => {
-        if (backDecided.value !== 0) return;
-        const t = e.allTouches[0];
-        if (!t) return;
-        const dx = t.absoluteX - backStartX.value;
-        const dy = Math.abs(t.absoluteY - backStartY.value);
-        if (dx > BACK_ACTIVATE_PX && dx > dy * BACK_DOMINANCE) {
-          backDecided.set(1);
-          manager.activate();
-        } else if ((dy > BACK_FAIL_PX && dy > dx) || dx < -BACK_FAIL_PX) {
-          // Vertical intent (the results grid scrolls), or a leftward drag, which is nothing here.
-          backDecided.set(-1);
-          manager.fail();
-        }
-      })
+    return backSwipePan()
       .onStart(() => {
         ranHere.set(true);
+        // Activation means this gesture owns the screen — the results list must STOP SCROLLING
+        // under it. Without this the page kept scrolling vertically while sliding out sideways,
+        // which is the single thing that gave the layer away as not-a-real-push: a card being
+        // popped is inert, it doesn't keep responding to a finger that has moved on to dismissing
+        // it. The series page's own back-swipe has always done this (`swipeLocked`).
+        runOnJS(setSwipeLocked)(true);
       })
       .onUpdate((e) => {
         edgeX.set(Math.max(0, e.translationX));
       })
       .onEnd((e) => {
-        // Where the swipe was HEADED, not where it stopped — see IOS_VELOCITY_IMPACT. Half the
-        // screen is a long way on distance alone, and deliberately so: velocity is what carries a
-        // real swipe over it, which is why a lazy drag past the middle and a quick flick from the
-        // edge both commit, and a hesitant one that stops dead does not.
-        const projected = e.translationX + e.velocityX * IOS_VELOCITY_IMPACT;
-        if (projected > width / 2) slideOut(e.velocityX);
+        // Where the swipe was HEADED, not where it stopped — see lib/ios-card-pop.
+        if (iosPopCommitted(e.translationX, e.velocityX, width)) slideOut(e.velocityX);
         else settle(e.velocityX);
       })
       .onFinalize(() => {
@@ -2297,8 +2203,9 @@ function SearchLayer({
         // `edgeCommitting` is one-way for this layer's whole life, exactly as on the instance.
         if (ranHere.value && !edgeCommitting.value) settle(0);
         ranHere.set(false);
+        runOnJS(setSwipeLocked)(false);
       });
-  }, [width, edgeX, edgeCommitting, backStartX, backStartY, backDecided, slideOut]);
+  }, [width, edgeX, edgeCommitting, slideOut]);
   const edgePan = useMemo(() => makeBackSwipePan(), [makeBackSwipePan]);
   const scrollGesture = useMemo(
     () => (IS_WEB ? undefined : Gesture.Simultaneous(Gesture.Native(), makeBackSwipePan())),
@@ -2308,8 +2215,8 @@ function SearchLayer({
   // `isTop` matters for more than looks: it is how the embedded search knows to ignore an intent
   // meant for a layer above it (see the subscription in search.tsx).
   const embedded = useMemo(
-    () => ({ onBack: closeLayer, scrollGesture, isTop: !!isTop }),
-    [closeLayer, scrollGesture, isTop],
+    () => ({ onBack: closeLayer, scrollGesture, isTop: !!isTop, scrollEnabled: !swipeLocked }),
+    [closeLayer, scrollGesture, isTop, swipeLocked],
   );
   return (
     <View style={styles.container}>
@@ -2956,23 +2863,8 @@ const styles = StyleSheet.create({
   // The SEARCH layer's slide-in ride — the one layer that still arrives as a push (see SearchLayer).
   searchSlide: {
     flex: 1,
-    // The shadow UIKit draws down the leading edge of a pushed card, over the screen it covers.
-    // Without it the layer reads as a flat swap rather than something on top, which is half of why
-    // this slide didn't look native. iOS only: Android's `elevation` is omnidirectional and its
-    // own push transition doesn't carry this at all.
-    //
-    // The opaque fill is load-bearing, not decoration — a shadow on a view with no background
-    // makes iOS derive the shape from the subtree's alpha every frame of the drag, and this view
-    // is the size of the screen. With it, the shadow is a rectangle it can cache.
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: -3, height: 0 },
-        shadowOpacity: 0.18,
-        shadowRadius: 12,
-      },
-      default: {},
-    }),
+    // The pushed-card shadow, and the opaque fill it needs — see lib/ios-card-pop.
+    ...IOS_CARD_SHADOW,
   },
   // The reader's frame + clip. No background on either: the dark reader surface is a SEPARATE
   // static full-screen layer BEHIND the frame (readerSurface), so it keeps covering the screen
