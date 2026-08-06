@@ -69,7 +69,7 @@ import { registerDrillSeries, registerOpenSearchLayer } from '@/lib/experimental
 import { seriesReaderDim } from '@/lib/series-reader-backdrop';
 import { holdZoomingSeries, takeZoomOrigin, type ZoomOrigin } from '@/lib/series-zoom';
 import SearchScreen from '../search';
-import { SeriesBody, truncateTopBarTitle } from '../series';
+import { SeriesBody, truncateTopBarTitle } from '@/components/series/series-body';
 
 // EXPERIMENTAL series reader page (Settings → General → Experimental). A series opened from a card
 // lands HERE instead of on `/series`: one screen holding BOTH the series details and the reader
