@@ -30,6 +30,7 @@ export function HistoryRow({
   title,
   sub,
   onPress,
+  onPressIn,
   onMore,
   actions,
   dimmed,
@@ -43,6 +44,9 @@ export function HistoryRow({
   sub?: string;
   /** Tapping the thumbnail/body. */
   onPress: () => void;
+  /** Press-DOWN on the same target. The series-reader experiment measures the thumbnail here, so
+   *  the zoom transition has its source rect before navigation rather than a frame after it. */
+  onPressIn?: () => void;
   /** When set, a trailing 3-dot button (e.g. History → open the series page). */
   onMore?: () => void;
   actions: RowAction[];
@@ -63,7 +67,12 @@ export function HistoryRow({
   const base = testID ?? testId('history-row', title);
   return (
     <View style={[styles.row, dimmed && styles.dimmed]}>
-      <Pressable testID={base} style={styles.main} onPress={onPress} accessibilityRole="button">
+      <Pressable
+        testID={base}
+        style={styles.main}
+        onPress={onPress}
+        onPressIn={onPressIn}
+        accessibilityRole="button">
         <View ref={thumbRef} collapsable={false} style={[styles.thumbWrap, coverHidden && styles.thumbHidden]}>
           {resolvedThumb ? (
             <Image

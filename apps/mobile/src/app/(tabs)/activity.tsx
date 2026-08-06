@@ -8,6 +8,8 @@ import Animated, { useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HistoryRow } from '@/components/history-row';
+import { useSeriesReaderPage } from '@/lib/experimental-flags';
+import { setZoomOrigin, useIsZoomingSeries } from '@/lib/series-zoom';
 import { CheckIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { PullIndicator } from '@/components/pull-indicator';
 import { RetryBlock } from '@/components/retry-block';
@@ -192,6 +194,10 @@ export default function ActivityScreen() {
   // own horizontal gutter so the swipe-to-clear reaches the edge (see history-row / history).
   const sidePad = topLevelCenterInset(width);
 
+  // EXPERIMENTAL (Settings → General): with the series-reader page on, a row opens that combined
+  // screen straight into the reader instead of the standalone /reader — see `resume`/`read` below.
+  const seriesReaderPage = useSeriesReaderPage();
+
   const openDetail = (g: SeriesActivity) =>
     router.push({
       pathname: '/series',
@@ -204,7 +210,27 @@ export default function ActivityScreen() {
       },
     });
 
-  const read = (g: SeriesActivity) =>
+  const read = (g: SeriesActivity) => {
+    // See history.tsx's `resume` — same experiment, same reasoning.
+    if (seriesReaderPage) {
+      const enc = (v: string) => encodeURIComponent(v).replace(/\(/g, '%28').replace(/\)/g, '%29');
+      router.push({
+        pathname: '/series-reader',
+        params: {
+          id: g.seriesId,
+          title: g.title,
+          bridge: enc(nameOf(g.bridgeId)),
+          bridgeId: g.bridgeId,
+          reader: '1',
+          chapterId: g.chapterId,
+          chapterName: g.chapterName ?? '',
+          start: '0',
+          ...(directOf(g.bridgeId) ? { direct: '1' } : {}),
+          ...(g.thumbnailUrl ? { cover: enc(g.thumbnailUrl) } : {}),
+        },
+      });
+      return;
+    }
     router.push({
       pathname: '/reader',
       params: {
@@ -216,6 +242,7 @@ export default function ActivityScreen() {
         start: '0',
       },
     });
+  };
 
   const body = () => {
     if (error) return <RetryBlock message={(error as Error).message || 'Failed to load activity'} onRetry={refetch} />;
@@ -326,8 +353,19 @@ function ActivityItem({
   direct: boolean;
 }) {
   const thumbRef = useRef<View>(null);
-  // `coverHidden` blanks just the thumbnail while the long-press menu is open (its lifted preview is a
-  // copy) — the row's text stays visible under the dim.
+  // EXPERIMENTAL (series-reader page): the row's thumbnail is the zoom transition's source rect,
+  // captured on press-IN because `measureInWindow` answers asynchronously — measuring at press
+  // would put a native round trip in front of the navigation. And while its copy is in the air the
+  // original blanks, reusing `coverHidden` — the same slot, and the same reason, as the long-press
+  // preview's lifted copy.
+  const seriesReaderPage = useSeriesReaderPage();
+  const zoomFlying = useIsZoomingSeries(item.seriesId);
+  const captureZoomOrigin = () => {
+    if (!seriesReaderPage) return;
+    thumbRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => {
+      if (w > 0 && h > 0) setZoomOrigin(item.seriesId, { x, y, width: w, height: h });
+    });
+  };
   const renderRow = (coverHidden: boolean) => (
     <HistoryRow
       thumbnailUrl={item.thumbnailUrl}
@@ -336,10 +374,11 @@ function ActivityItem({
       dimmed={!item.hasUnread}
       unread={item.hasUnread}
       onPress={onRead}
+      onPressIn={captureZoomOrigin}
       onMore={onOpenDetail}
       actions={[]}
       thumbRef={thumbRef}
-      coverHidden={coverHidden}
+      coverHidden={coverHidden || zoomFlying}
     />
   );
   return (

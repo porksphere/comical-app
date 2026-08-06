@@ -347,6 +347,16 @@ type SeriesReaderParams = {
   cover?: string;
   /** '1' for a direct (chapterless) series — its pages ARE the series. */
   direct?: string;
+  /** '1' opens straight into the READER rather than the details — how History and Activity enter,
+   *  since a row there is a "carry on reading" action. A swipe up brings the details in, exactly
+   *  as it does after expanding from a browse open. */
+  reader?: string;
+  /** Reader-first entries seed the read position directly instead of resolving it from history:
+   *  the row already knows where it left off, and this is what lets the pages request go out on
+   *  the first commit (see the fetch ordering below). */
+  chapterId?: string;
+  chapterName?: string;
+  start?: string;
 };
 
 /**
@@ -383,7 +393,20 @@ function SeriesReaderInstance({
   const mock = useMockActive();
   const [settings] = useReaderSettings();
 
-  const { id, title, bridge: bridgeParam, bridgeId, cover: coverParam, direct } = params;
+  const {
+    id,
+    title,
+    bridge: bridgeParam,
+    bridgeId,
+    cover: coverParam,
+    direct,
+    reader: readerParam,
+    chapterId: seedChapterId,
+    chapterName: seedChapterName,
+    start: seedStart,
+  } = params;
+  // Opened straight into the reader (History / Activity), rather than onto the details.
+  const readerFirst = readerParam === '1';
   const bridge = bridgeParam ? decodeURIComponent(bridgeParam) : undefined;
   const cover = coverParam ? decodeURIComponent(coverParam) : undefined;
   const isDirect = direct === '1';
@@ -392,36 +415,6 @@ function SeriesReaderInstance({
   useEffect(() => {
     resetPreferredGroup();
   }, [id]);
-
-  // Series detail for the toolbar/settings gear (placeholder-seeded from the forwarded
-  // title+cover). The details card's SeriesDetailsHost subscribes to this same query key, so this
-  // costs one fetch total.
-  const {
-    data: series = null,
-    isFetching: detailFetching,
-    isPlaceholderData: detailIsPlaceholder,
-  } = useQuery(
-    seriesDetailQuery(ds, mock, bridgeId ?? '', id ?? '', {
-      direct: isDirect,
-      bridgeName: bridge ?? 'Library',
-      title,
-      cover,
-    }),
-  );
-  // The DETAILS GO FIRST — enqueued first, not waited on. Page images were winning the race and
-  // painting the strip while the tags and description were still blank, which reads backwards on a
-  // screen that opens ON the details: the reader is a background band there, not the thing being
-  // waited for. On device that ordering is real rather than cosmetic, since the on-device runtime
-  // serves everything through one in-process transport, so whatever is queued first is served
-  // first.
-  //
-  // This is `/series`'s own `detailStarted` rule, verbatim: true once the detail request is IN
-  // FLIGHT (or already has real data), not once it has finished. The pages query can therefore
-  // only turn on in a render where the detail fetch has already been dispatched — which puts it
-  // behind detail in the queue by construction, without making it wait for the answer. Gating on
-  // completion instead would stall the reader on a slow detail endpoint, and strand it entirely
-  // on a failing one.
-  const detailStarted = detailFetching || !detailIsPlaceholder;
 
   // Chapter list (chaptered series only) — drives resume-or-first resolution and prev/next
   // adjacency for the reader pane. (The details card's own list rendering — read state, downloads,
@@ -465,7 +458,16 @@ function SeriesReaderInstance({
     }
     return null; // chapter list still loading (or empty)
   }, [historyLoading, isDirect, resume, chapters]);
-  const [override, setOverride] = useState<ReadTarget | null>(null);
+  // Reader-first entries seed this from their params, which is what makes the pages query live on
+  // the very first commit — no waiting on history, and the request goes out ahead of detail.
+  const [override, setOverride] = useState<ReadTarget | null>(() => {
+    if (!readerFirst) return null;
+    const parsed = Number(seedStart);
+    const at = Number.isFinite(parsed) ? parsed : 0;
+    if (seedChapterId) return { chapterId: seedChapterId, chapterName: seedChapterName, start: at };
+    if (direct === '1') return { start: at };
+    return null;
+  });
   const target = override ?? derivedTarget;
   const targetChapterId = target?.chapterId;
 
@@ -486,8 +488,42 @@ function SeriesReaderInstance({
     ...(targetChapterId
       ? chapterPagesQuery(ds, mock, bridgeId ?? '', id ?? '', targetChapterId)
       : directPagesQuery(ds, mock, bridgeId ?? '', id ?? '')),
-    enabled: !!target && !!id && detailStarted,
+    enabled: !!target && !!id,
   });
+  // Series detail for the toolbar/settings gear (placeholder-seeded from the forwarded
+  // title+cover). The details card's SeriesDetailsHost subscribes to this same query key, so this
+  // costs one fetch total.
+  const { data: series = null } = useQuery(
+    seriesDetailQuery(ds, mock, bridgeId ?? '', id ?? '', {
+      direct: isDirect,
+      bridgeName: bridge ?? 'Library',
+      title,
+      cover,
+    }),
+  );
+  // ORDERING, and why this query sits HERE rather than at the top of the component. React Query
+  // dispatches on mount effects, which run in hook order, so declaration order IS request order
+  // for anything enabled on the first commit. That gives both directions for free:
+  //   · a BROWSE open — the pages query above is gated on a resolved read target, which needs
+  //     history (and, chaptered, the chapter list) to come back first. Detail is dispatched at
+  //     mount and wins by a mile; it needs no gate of its own.
+  //   · a READER-FIRST open — the row seeds the target from its own params, so the pages query is
+  //     live on the first commit and, being declared above, is dispatched first. Which is the
+  //     ordering History and Activity want: the page they tapped to keep reading, then the rest.
+  // Both matter on device, where the on-device runtime serves everything through one in-process
+  // transport and order of arrival is order of service.
+  //
+  // The old comment, kept because it explains what this REPLACED: Page images were winning the race and
+  // painting the strip while the tags and description were still blank, which reads backwards on a
+  // screen that opens ON the details: the reader is a background band there, not the thing being
+  // waited for. On device that ordering is real rather than cosmetic, since the on-device runtime
+  // serves everything through one in-process transport, so whatever is queued first is served
+  // first.
+  //
+  // `/series`'s `detailStarted` rule — an `enabled` gate on the pages query, true once detail was
+  // in flight. Hook order already guarantees that and can express the reverse too, which an
+  // `enabled` gate cannot: a gate can only ever hold one query back, never swap which goes first.
+
   const error = queryError ? (queryError as Error).message || 'Failed to load pages' : null;
   const readerReady = !!target && !!pages;
 
@@ -527,7 +563,7 @@ function SeriesReaderInstance({
   const stitched = !IS_WEB && settings.mode === 'paged' && !isDirect;
   // The committed side of the reveal (declared up here — the stitching queries below gate on
   // it). The screen opens ON the details; see the reveal section further down.
-  const [detailsActive, setDetailsActive] = useState(true);
+  const [detailsActive, setDetailsActive] = useState(!readerFirst);
   // True while a horizontal details gesture (back-swipe or webtoon reveal) is ACTIVE. The pans
   // ride the details scroller's own detector, simultaneous with it — that's the only way they
   // activate over a UIScrollView at all (see makeBackSwipePan) — but simultaneous means the list
@@ -538,7 +574,7 @@ function SeriesReaderInstance({
   // `detailsActive`, but lagging past the 240ms reveal/collapse animation: the HEAVY mode flips
   // (the standby render window, the adjacent-chapter fetches) key off THIS, so page cells mount
   // and lists re-window after the transition has finished instead of chopping it mid-flight.
-  const [detailsSettled, setDetailsSettled] = useState(true);
+  const [detailsSettled, setDetailsSettled] = useState(!readerFirst);
   useEffect(() => {
     const t = setTimeout(() => setDetailsSettled(detailsActive), 300);
     return () => clearTimeout(t);
@@ -665,9 +701,11 @@ function SeriesReaderInstance({
   // ── The reveal: reader ⇄ details card ────────────────────────────────────
   // `progress` (0 = reader, 1 = details) is the single source of truth, written on the UI thread
   // by the pans below and animated by `setRevealed`. `detailsActive` mirrors the committed side
-  // for everything JS-side (gesture enabling, back handling, status bar). The screen opens ON
-  // the details (reader collapsed to the strip).
-  const progress = useSharedValue(1);
+  // for everything JS-side (gesture enabling, back handling, status bar). The screen opens ON the
+  // details (reader collapsed to the strip) — unless `reader: '1'` brought us here, in which case
+  // it opens on the READER and the details are one swipe away, which is the same gesture either
+  // entry ends up using.
+  const progress = useSharedValue(readerFirst ? 0 : 1);
   // The details page's internal scroll offset (SeriesBody's list writes it on the UI thread via
   // the same `sharedValues` wiring pull-to-refresh uses) — drives the strip occlusion, the top
   // bar's scroll crossfade, and the pull-past-top reveal.
@@ -675,7 +713,7 @@ function SeriesReaderInstance({
   const sharedValues = useMemo(() => ({ scrollOffset: detailsScrollOffset }), [detailsScrollOffset]);
   // UI-thread mirror of `detailsActive`, for the worklets below (the iOS pull-follow must stop the
   // instant a commit animation takes over `progress`).
-  const detailsActiveSV = useSharedValue(true);
+  const detailsActiveSV = useSharedValue(!readerFirst);
   // Dismissal offsets — the old reader's swipe-away: the page follows the finger in BOTH axes
   // while the surface fades, and a commit flings it out along its own direction. `dismissing`
   // freezes the gesture once the exit animation owns the offsets.
@@ -1125,7 +1163,11 @@ function SeriesReaderInstance({
   }, [destBound, startZoom]);
   useEffect(() => {
     // No source rect at all (deep link, web): nothing to align to, so don't wait for anything.
-    if (!zoomOrigin) {
+    // Reader-first skips the wait too, and for a subtler reason: the details card is translated
+    // off-screen at progress 0, so its hero cover would measure a rect that isn't on screen. The
+    // computed fallback target — derived from the source rect alone — is the right destination
+    // when the destination has nothing to show.
+    if (!zoomOrigin || readerFirst) {
       startZoom();
       return;
     }
