@@ -488,7 +488,12 @@ function SeriesReaderInstance({
     ...(targetChapterId
       ? chapterPagesQuery(ds, mock, bridgeId ?? '', id ?? '', targetChapterId)
       : directPagesQuery(ds, mock, bridgeId ?? '', id ?? '')),
-    enabled: !!target && !!id,
+    // A DIRECT series' page list is just "this series' pages" — `directPagesQuery` takes nothing
+    // from the read target, so waiting for one held it behind the history query for no reason
+    // (history only decides which PAGE to land on, which the pane needs, not which request to
+    // make). Chaptered still waits, and genuinely must: until the target resolves there is no
+    // chapter id, and firing without one would ask `directPagesQuery` for a series that has none.
+    enabled: !!id && (isDirect || !!target),
   });
   // Series detail for the toolbar/settings gear (placeholder-seeded from the forwarded
   // title+cover). The details card's SeriesDetailsHost subscribes to this same query key, so this
@@ -513,16 +518,10 @@ function SeriesReaderInstance({
   // Both matter on device, where the on-device runtime serves everything through one in-process
   // transport and order of arrival is order of service.
   //
-  // The old comment, kept because it explains what this REPLACED: Page images were winning the race and
-  // painting the strip while the tags and description were still blank, which reads backwards on a
-  // screen that opens ON the details: the reader is a background band there, not the thing being
-  // waited for. On device that ordering is real rather than cosmetic, since the on-device runtime
-  // serves everything through one in-process transport, so whatever is queued first is served
-  // first.
-  //
-  // `/series`'s `detailStarted` rule — an `enabled` gate on the pages query, true once detail was
-  // in flight. Hook order already guarantees that and can express the reverse too, which an
-  // `enabled` gate cannot: a gate can only ever hold one query back, never swap which goes first.
+  // What this replaced was `/series`'s `detailStarted` rule — an `enabled` gate on the pages query,
+  // true once detail was in flight. Hook order already guarantees that, and can express the
+  // reverse as well, which a gate cannot: a gate only ever holds one query back, it can never swap
+  // which goes first. Nothing here delays a request that is ready to go.
 
   const error = queryError ? (queryError as Error).message || 'Failed to load pages' : null;
   const readerReady = !!target && !!pages;
