@@ -197,9 +197,15 @@ const ZOOM_OUT_SPRING = {
 // Close uses different ranges than open — the outgoing page holds longer and the thumbnail is
 // brought back earlier, so the picture is already there before the page dissolves off it.
 const ZOOM_CONTENT_FADE_OPEN = [0, 0.28];
-const ZOOM_CONTENT_FADE_CLOSE = [0.13, 0.7];
+// The CLOSE is front-loaded: the page starts dissolving as soon as the collapse does, rather than
+// holding solid for the first third and then going all at once. So most of the travel is already
+// the card flying home, which is the part worth watching.
+const ZOOM_CONTENT_FADE_CLOSE = [0.3, 0.92];
 const ZOOM_THUMB_FADE_OPEN = [0.08, 0.32];
-const ZOOM_THUMB_FADE_CLOSE = [0.7, 1];
+// …and the card arrives to meet it — fully in by the time the page is still nine-tenths visible,
+// which keeps the library's ordering (the picture is there BEFORE the page dissolves off it) while
+// compressing both halves toward the start.
+const ZOOM_THUMB_FADE_CLOSE = [0.86, 1];
 // `computeContentTransformGeometry`'s aspect rule: below this difference the source and the
 // destination bound are close enough to shape that the scale COVERS (max), above it the scale
 // CONTAINS (min) and the mask does the cropping instead.
