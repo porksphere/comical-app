@@ -85,6 +85,10 @@ export const BACK_DOMINANCE = 0.7;
  * Vertical travel (or leftward travel) that gives the drag up instead. Derived, never dialled on
  * its own — see BACK_DOMINANCE.
  *
+ * Note what this can and cannot see: it is a budget over the FIRST TEN POINTS of travel, because
+ * that is the whole window there is before the scroller claims. `backSwipeStayedHorizontal` is the
+ * other half of the same rule, applied at release when the rest of the drag is finally known.
+ *
  * It does NOT need to stay under the scroller's claim threshold the way ACTIVATE does. Failing late
  * costs nothing: by then the scroller has the touch anyway, which is the outcome failing asks for.
  */
@@ -176,4 +180,29 @@ export function useBackSwipeBlocker(): NativeGesture | undefined {
     () => (backSwipe ? Gesture.Native().blocksExternalGesture(backSwipe) : undefined),
     [backSwipe],
   );
+}
+
+/**
+ * The dominance rule again, at RELEASE — the half that can see the whole gesture.
+ *
+ * Activation has to decide inside the first ten points, and ten points is not enough to know what a
+ * swipe is. A thumb ARCS: it leaves nearly straight across and curves as the thumb pivots, so a drag
+ * that ends up at 45° can spend its opening millimetres at 15° and satisfy any criteria measured
+ * there. A diagonal swipe passing activation is therefore not a slack threshold — the threshold is
+ * reading a genuinely horizontal beginning. The person holding the phone is judging the whole
+ * stroke, and the whole stroke does not exist until it is over.
+ *
+ * So the same ratio is asked twice. Activation buys only the right to FOLLOW the finger, which is
+ * cheap and reversible; this decides whether the drag was ever a back-swipe at all, and one that
+ * wandered further off-axis than BACK_DOMINANCE allows springs back instead of committing. Both
+ * halves read the same constant, so "how horizontal is horizontal" stays one number rather than
+ * becoming two that drift.
+ *
+ * RNGH resets translation to zero the moment a pan activates (RNPanHandler.m, at the state change),
+ * so `tx`/`ty` here measure the drag from activation onward — exactly the part that was on screen
+ * following the finger, and exactly the part someone means when they say the swipe was diagonal.
+ */
+export function backSwipeStayedHorizontal(tx: number, ty: number): boolean {
+  'worklet';
+  return Math.abs(ty) <= Math.abs(tx) * BACK_DOMINANCE;
 }

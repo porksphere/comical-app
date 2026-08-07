@@ -66,7 +66,7 @@ import { firstChapterInReadingOrder, getAdjacentChapter } from '@/lib/chapter-or
 import { useRouter } from '@/lib/nav';
 import { getPreferredGroup, resetPreferredGroup, setPreferredGroup } from '@/lib/preferred-group';
 
-import { backSwipePan, BACK_DOMINANCE, BackSwipeGestureContext } from '@/lib/back-swipe';
+import { backSwipePan, backSwipeStayedHorizontal, BACK_DOMINANCE, BackSwipeGestureContext } from '@/lib/back-swipe';
 import { trace, traceGate, traceJS, traceThrottled, useGestureTraceEnabled } from '@/lib/gesture-trace';
 import { releaseCommitted, releaseCommittedEitherWay } from '@/lib/gesture-release';
 import { IOS_CARD_SHADOW, IOS_CARD_SPRING, IOS_PARALLAX_FRACTION } from '@/lib/ios-card-pop';
@@ -1336,6 +1336,7 @@ function SeriesReaderInstance({
       .onEnd((e) => {
         trace(tag, 'END', {
           tx: e.translationX - originX.value,
+          ty: e.translationY - originY.value,
           vx: e.velocityX,
           zoom: zoom.value,
           active: detailsActiveSV.value,
@@ -1344,9 +1345,19 @@ function SeriesReaderInstance({
         });
         if (!detailsActiveSV.value) return;
         const tx = e.translationX - originX.value;
+        const ty = e.translationY - originY.value;
+        // Two questions, and BOTH have to say yes: was this a back-swipe at all (did it stay
+        // horizontal over its whole length — activation could only see the first ten points, see
+        // lib/back-swipe), and did it go far enough. A diagonal drag followed the finger and springs
+        // back, which is the right outcome for one: it was never going anywhere.
+        //
         // Finish from exactly where the finger left it — the spring starts at the current value, so
         // there is no seam between the dragged part and the animated part.
-        if (releaseCommitted(tx, e.velocityX, width * DISMISS_COMMIT_FRACTION)) commit(e.velocityX);
+        if (
+          backSwipeStayedHorizontal(tx, ty) &&
+          releaseCommitted(tx, e.velocityX, width * DISMISS_COMMIT_FRACTION)
+        )
+          commit(e.velocityX);
         // …and a losing copy must not settle over a commit the winner just made, hence the check
         // here as well as in onFinalize.
         else if (!edgeCommitting.value) settle();
@@ -2335,8 +2346,10 @@ function SearchLayer({
     const ranHere = makeMutable(false);
     // Where the finger was at ACTIVATION — see the instance's copy for why. RNGH measures
     // translation from touch-down, so without this the card jumps by however far the rule spent
-    // deciding, and a late activation leaves the release nothing to animate.
+    // deciding, and a late activation leaves the release nothing to animate. Y is tracked only to
+    // judge the release: nothing here follows the finger vertically.
     const originX = makeMutable(0);
+    const originY = makeMutable(0);
     // The cancel carries the release velocity too — let go while still moving right and the
     // screen eases out of that motion before coming back, rather than reversing on the spot.
     const settle = (velocity: number) => {
@@ -2348,6 +2361,7 @@ function SearchLayer({
         trace(tag, 'START', { tx: e.translationX, ty: e.translationY });
         ranHere.set(true);
         originX.set(e.translationX);
+        originY.set(e.translationY);
         // Activation means this gesture owns the screen — the results list must STOP SCROLLING
         // under it. Without this the page kept scrolling vertically while sliding out sideways,
         // which is the single thing that gave the layer away as not-a-real-push: a card being
@@ -2365,8 +2379,15 @@ function SearchLayer({
         // A card pop IS a dismissal, so it takes the same bar — half the travel, which is also
         // what react-navigation uses for this exact transition.
         const tx = e.translationX - originX.value;
-        trace(tag, 'END', { tx, vx: e.velocityX, edgeX: edgeX.value, committing: edgeCommitting.value, ran: ranHere.value });
-        if (releaseCommitted(tx, e.velocityX, width * DISMISS_COMMIT_FRACTION)) slideOut(e.velocityX);
+        const ty = e.translationY - originY.value;
+        trace(tag, 'END', { tx, ty, vx: e.velocityX, edgeX: edgeX.value, committing: edgeCommitting.value, ran: ranHere.value });
+        // Same two questions as the instance's release — a card pop is a back-swipe too, and a
+        // drag that wandered off-axis is not one however far across it got.
+        if (
+          backSwipeStayedHorizontal(tx, ty) &&
+          releaseCommitted(tx, e.velocityX, width * DISMISS_COMMIT_FRACTION)
+        )
+          slideOut(e.velocityX);
         else settle(e.velocityX);
       })
       .onFinalize((_e, success) => {

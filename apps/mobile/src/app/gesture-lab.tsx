@@ -9,7 +9,7 @@ import { TopBar } from '@/components/top-bar';
 import { Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
-import { BACK_ACTIVATE_PX, BACK_FAIL_PX, backSwipePan } from '@/lib/back-swipe';
+import { BACK_ACTIVATE_PX, BACK_DOMINANCE, BACK_FAIL_PX, backSwipePan, backSwipeStayedHorizontal } from '@/lib/back-swipe';
 
 /**
  * Three isolated rigs for the back-swipe, each one variable apart, so a broken swipe can be
@@ -38,14 +38,17 @@ type Stat = {
   ended: number;
   /** Finalized WITHOUT having activated — failed, or cancelled by something that outranked it. */
   dropped: number;
+  /** Activated, followed the finger, and was then rejected at release for wandering off-axis. The
+   *  half of the dominance rule that activation is too early to apply — see lib/back-swipe. */
+  diagonal: number;
   /** Travel at the moment of activation, and at release. */
   startDx: number;
   endDx: number;
 };
 
-type CountField = 'began' | 'started' | 'ended' | 'dropped';
+type CountField = 'began' | 'started' | 'ended' | 'dropped' | 'diagonal';
 
-const ZERO: Stat = { began: 0, started: 0, ended: 0, dropped: 0, startDx: 0, endDx: 0 };
+const ZERO: Stat = { began: 0, started: 0, ended: 0, dropped: 0, diagonal: 0, startDx: 0, endDx: 0 };
 
 export default function GestureLabScreen() {
   const contentPadding = useSettingsScrollPadding();
@@ -58,7 +61,10 @@ export default function GestureLabScreen() {
           Swipe RIGHT inside each box, the way you would to go back. The box slides with the finger
           while the gesture owns it and springs home on release — nothing here navigates. Activation
           needs {BACK_ACTIVATE_PX}px rightward and gives up at {BACK_FAIL_PX}px vertical or leftward,
-          which is the real rule the series page and the search layer both use.
+          which is the real rule the series page and the search layer both use. `diagonal` counts
+          drags that passed that and were then rejected at release for wandering more than{' '}
+          {BACK_DOMINANCE} of their width off-axis — the second half of the same rule, applied when
+          the whole stroke is known.
         </ThemedText>
 
         <Rig
@@ -112,6 +118,9 @@ function Rig({ name, note, kind }: { name: string; note: string; kind: 'bare' | 
       })
       .onEnd((e) => {
         runOnJS(bump)('ended', Math.round(e.translationX));
+        // Exactly the test the real surfaces apply at release. A rig that never dismisses anything
+        // is the only place to feel where the line sits without losing the page you're on.
+        if (!backSwipeStayedHorizontal(e.translationX, e.translationY)) runOnJS(bump)('diagonal');
       })
       .onFinalize((_e, success) => {
         dx.set(withSpring(0, { damping: 30, stiffness: 300 }));
@@ -138,7 +147,7 @@ function Rig({ name, note, kind }: { name: string; note: string; kind: 'bare' | 
       <ThemedText type="small" style={[styles.mono, { color: theme.textSecondary }]} selectable>
         {`began ${stat.began}  started ${stat.started}  ended ${stat.ended}  dropped ${stat.dropped}`}
         {'\n'}
-        {`dx@start ${stat.startDx}  dx@end ${stat.endDx}`}
+        {`diagonal ${stat.diagonal}  dx@start ${stat.startDx}  dx@end ${stat.endDx}`}
       </ThemedText>
       <GestureDetector gesture={gesture}>
         <Animated.View
