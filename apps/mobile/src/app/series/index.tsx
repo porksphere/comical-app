@@ -996,9 +996,10 @@ function SeriesReaderInstance({
         })
         // Always fires once the gesture resolves (release OR cancel) — the next gesture decides
         // its own mode fresh.
-        .onFinalize(() => {
+        .onFinalize((_e, success) => {
           // A cancelled dismiss drag never reaches onEnd — don't leave the page part-collapsed.
-          if (gestureMode.value === 2 && !edgeCommitting.value) {
+          // Same `success` test as the back-swipe's, for the same reason.
+          if (gestureMode.value === 2 && !success) {
             zoomClosing.set(false);
             zoom.set(withSpring(1, SPRING_BACK));
             dragX.set(withSpring(0, SPRING_BACK));
@@ -1260,6 +1261,9 @@ function SeriesReaderInstance({
     const originY = makeMutable(0);
     const settle = () => {
       'worklet';
+      // Traced because settling is the only thing on this surface that can cancel a committed
+      // collapse, so a trace showing an instant release must show whether it ran.
+      trace(tag, 'settle', { zoom: zoom.value, committing: edgeCommitting.value });
       zoomClosing.set(false);
       zoom.set(withSpring(1, SPRING_BACK));
       dragX.set(withSpring(0, SPRING_BACK));
@@ -1277,6 +1281,10 @@ function SeriesReaderInstance({
       trace(tag, 'commit', { vx: velocityX, zoom: zoom.value, already: edgeCommitting.value });
       if (edgeCommitting.value) return;
       edgeCommitting.set(true);
+      // Read STRAIGHT back. A device trace showed this latch reading false again one callback
+      // later; if `readback=n` ever appears here the shared value itself is the problem, not the
+      // callback that read it.
+      trace(tag, 'commit.latched', { readback: edgeCommitting.value });
       runOnJS(setLeaving)(true);
       // Resume from exactly where it was slid to: the collapse and the follow both spring from
       // their current values, so the page carries on from that spot into the card. Hand the throw
@@ -1341,11 +1349,18 @@ function SeriesReaderInstance({
         // preceding START is a recognizer that was FAILED or CANCELLED, which is a completely
         // different bug from one whose offsets were never satisfied.
         trace(tag, 'FINALIZE', { ok: !!success, ran: ranHere.value, committing: edgeCommitting.value, zoom: zoom.value });
-        // A cancelled drag never reaches onEnd — don't leave the page part-collapsed. But ONLY if
-        // this copy is the one that was driving, and only if nothing has committed: `settle` writes
-        // `zoom`, so running it against a committed collapse cancels that spring, and a cancelled
-        // spring still fires its callback — which leaves. That is the release finishing instantly.
-        if (ranHere.value && !edgeCommitting.value) settle();
+        // `success` — NOT `edgeCommitting` — is what says whether onEnd already decided this drag.
+        // onFinalize exists here for ONE case: a drag that was cancelled before it could be
+        // released, which must not leave the page part-collapsed. When the gesture ended normally,
+        // onEnd has already either committed or settled, and anything done here is a second opinion
+        // on a decision that was made.
+        //
+        // It used to ask `edgeCommitting` instead, and a device trace caught that read coming back
+        // FALSE in this callback on the same frame the commit set it true — so `settle` ran over a
+        // committed collapse, cancelled its spring, and a cancelled Reanimated animation still
+        // fires its callback. The callback is what leaves. That is what "the release finishes
+        // instantly" was, and `success` doesn't depend on a cross-callback read to get it right.
+        if (ranHere.value && !success) settle();
         // Only the copy that actually drove may unlock the list. This recipe is built twice and
         // both copies reach onFinalize, so an unguarded unlock let the loser hand scrolling back
         // mid-swipe — the page sliding away while the list scrolled under it.
@@ -1369,15 +1384,32 @@ function SeriesReaderInstance({
   // `traceOn` is a DEP on purpose: backSwipePan only attaches its touch observers while the trace
   // is recording, so flipping the toggle has to rebuild the gestures for the change to take.
   const traceOn = useGestureTraceEnabled();
+  // WEB ONLY. This used to be a second copy of the back-swipe living on the screen-level detector,
+  // alongside the one riding the list — the theory being that the list copy covers the scroller and
+  // this one covers the chrome around it.
+  //
+  // A device trace killed that. Across ~20 attempts the screen-level copy activated ZERO times, and
+  // in every failed attempt BOTH copies finalized unsuccessfully in the same millisecond, right as
+  // the drag reached the activation threshold — with `dy` of one or two pixels, so nothing in the
+  // criteria had failed. That is what an ancestor detector and a descendant detector reaching for
+  // the same touch on the same frame looks like: they are not declared simultaneous with each
+  // other, so each cancels the other and the swipe dies at exactly the moment it should have
+  // started. The swipes that DID work were the fast ones, where one copy crossed the threshold a
+  // frame before the other could contest it.
+  //
+  // So on native there is now ONE back-swipe: the copy composed with the scroller (below), which is
+  // the only one that ever won. Web keeps this one instead, because there `detailsScrollGesture` is
+  // undefined — no native recognizer to be simultaneous with, and nothing for it to fight.
   const edgePan = useMemo(
-    () => makeBackSwipePan('series.edge').enabled(detailsActive),
+    () => makeBackSwipePan('series.edge').enabled(detailsActive && IS_WEB),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [makeBackSwipePan, detailsActive, traceOn],
   );
   const detailsScrollGesture = useMemo(() => {
     if (IS_WEB) return undefined;
-    // `.enabled(detailsActive)` here too: this copy used to lean on the worklet gate that came with
-    // manual activation, so without it the scroller's copy would stay live on the reader side.
+    // THE back-swipe on native (see edgePan above for why it's the only one). `.enabled(
+    // detailsActive)` is a native gate, matching the offsets: with activation decided inside the
+    // recognizer, a worklet check inside the callbacks would come too late to stop it.
     return Gesture.Simultaneous(Gesture.Native(), makeBackSwipePan('series.list').enabled(detailsActive));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [makeBackSwipePan, detailsActive, traceOn]);
@@ -2323,9 +2355,9 @@ function SearchLayer({
       })
       .onFinalize((_e, success) => {
         trace(tag, 'FINALIZE', { ok: !!success, ran: ranHere.value, committing: edgeCommitting.value, edgeX: edgeX.value });
-        // Only the copy that was DRIVING settles a cancelled drag, and never over a commit —
-        // `edgeCommitting` is one-way for this layer's whole life, exactly as on the instance.
-        if (ranHere.value && !edgeCommitting.value) settle(0);
+        // Only the copy that was DRIVING settles, and only a drag that never reached onEnd —
+        // see the instance's copy for why this asks `success` rather than the commit latch.
+        if (ranHere.value && !success) settle(0);
         // …and only that copy may unlock the list, for the same reason.
         if (ranHere.value) runOnJS(setSwipeLocked)(false);
         ranHere.set(false);
@@ -2333,8 +2365,11 @@ function SearchLayer({
   }, [width, edgeX, edgeCommitting, slideOut]);
   // See the series instance's copy for why the trace flag is a rebuild dep.
   const traceOn = useGestureTraceEnabled();
+  // Web only, exactly as on the series instance — this layer had the same two-copy arrangement, an
+  // ancestor detector and a descendant one both reaching for the same touch with the same criteria
+  // and cancelling each other at the activation frame. The results list carries the native copy.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const edgePan = useMemo(() => makeBackSwipePan('search.edge'), [makeBackSwipePan, traceOn]);
+  const edgePan = useMemo(() => makeBackSwipePan('search.edge').enabled(IS_WEB), [makeBackSwipePan, traceOn]);
   const scrollGesture = useMemo(
     () => (IS_WEB ? undefined : Gesture.Simultaneous(Gesture.Native(), makeBackSwipePan('search.list'))),
     // eslint-disable-next-line react-hooks/exhaustive-deps
