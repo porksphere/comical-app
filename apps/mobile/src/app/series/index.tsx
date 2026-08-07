@@ -1225,6 +1225,16 @@ function SeriesReaderInstance({
     // onFinalize, and without this it would settle a drag the other one is still driving, or undo
     // a commit the other one just made.
     const ranHere = makeMutable(false);
+    // Where the finger was when the gesture ACTIVATED, so the page is dragged from there rather
+    // than from touch-down. RNGH reports `translationX` from the touch, not from activation, so
+    // without this every pixel travelled while the rule was still making up its mind is applied to
+    // `zoom` in the first frame after it activates. When activation is prompt that is a 24px jump
+    // and invisible; when it is late — a drag the rule deliberated over — the collapse is most of
+    // the way done before the page has moved at all, and the release then has almost nothing left
+    // to animate. That is what "the animation finishes instantly as soon as you release" was: not
+    // a spring that was too fast, a drag that had already spent the distance.
+    const originX = makeMutable(0);
+    const originY = makeMutable(0);
     const settle = () => {
       'worklet';
       zoomClosing.set(false);
@@ -1240,22 +1250,27 @@ function SeriesReaderInstance({
       return detailsActiveSV.value;
     })
       // Activation = this gesture owns the screen; the list must stop scrolling under it.
-      .onStart(() => {
+      .onStart((e) => {
         if (!detailsActiveSV.value) return;
         ranHere.set(true);
+        originX.set(e.translationX);
+        originY.set(e.translationY);
         runOnJS(setSwipeLocked)(true);
         // A drag IS a collapse, so it uses the collapse's cross-fade ranges from the first frame.
         zoomClosing.set(true);
       })
       .onUpdate((e) => {
         if (!detailsActiveSV.value) return;
-        zoom.set(1 - Math.min(1, Math.max(0, e.translationX / (width * ZOOM_DRAG_TRAVEL))));
-        dragX.set(zoomHorizontalDrag(e.translationX, width));
-        dragY.set(zoomCrossAxisDrag(e.translationY, height));
+        const tx = e.translationX - originX.value;
+        const ty = e.translationY - originY.value;
+        zoom.set(1 - Math.min(1, Math.max(0, tx / (width * ZOOM_DRAG_TRAVEL))));
+        dragX.set(zoomHorizontalDrag(tx, width));
+        dragY.set(zoomCrossAxisDrag(ty, height));
       })
       .onEnd((e) => {
         if (!detailsActiveSV.value) return;
-        if (releaseCommitted(e.translationX, e.velocityX, width * DISMISS_COMMIT_FRACTION)) {
+        const tx = e.translationX - originX.value;
+        if (releaseCommitted(tx, e.velocityX, width * DISMISS_COMMIT_FRACTION)) {
           // Finish from exactly where the finger left it — the spring starts at the current value,
           // so there is no seam between the dragged part and the animated part.
           edgeCommitting.set(true);
@@ -1286,11 +1301,14 @@ function SeriesReaderInstance({
         // `zoom`, so running it against a committed collapse cancels that spring, and a cancelled
         // spring still fires its callback — which leaves. That is the release finishing instantly.
         if (ranHere.value && !edgeCommitting.value) settle();
+        // Only the copy that actually drove may unlock the list. This recipe is built twice and
+        // both copies reach onFinalize, so an unguarded unlock let the loser hand scrolling back
+        // mid-swipe — the page sliding away while the list scrolled under it.
+        if (ranHere.value) runOnJS(setSwipeLocked)(false);
         ranHere.set(false);
         // NOTE: `edgeCommitting` is deliberately NOT cleared. It means "this instance is leaving",
         // which is a one-way door — clearing it let a second onFinalize (the other copy's, whose
         // ordering is not guaranteed) fall through to `settle` after the commit.
-        runOnJS(setSwipeLocked)(false);
       });
   }, [
     width,
@@ -2209,6 +2227,10 @@ function SearchLayer({
   // layer back on screen after it had already been sliced off the stack.
   const makeBackSwipePan = useCallback(() => {
     const ranHere = makeMutable(false);
+    // Where the finger was at ACTIVATION — see the instance's copy for why. RNGH measures
+    // translation from touch-down, so without this the card jumps by however far the rule spent
+    // deciding, and a late activation leaves the release nothing to animate.
+    const originX = makeMutable(0);
     // The cancel carries the release velocity too — let go while still moving right and the
     // screen eases out of that motion before coming back, rather than reversing on the spot.
     const settle = (velocity: number) => {
@@ -2216,8 +2238,9 @@ function SearchLayer({
       edgeX.set(withSpring(0, { ...IOS_CARD_SPRING, velocity }));
     };
     return backSwipePan()
-      .onStart(() => {
+      .onStart((e) => {
         ranHere.set(true);
+        originX.set(e.translationX);
         // Activation means this gesture owns the screen — the results list must STOP SCROLLING
         // under it. Without this the page kept scrolling vertically while sliding out sideways,
         // which is the single thing that gave the layer away as not-a-real-push: a card being
@@ -2226,21 +2249,23 @@ function SearchLayer({
         runOnJS(setSwipeLocked)(true);
       })
       .onUpdate((e) => {
-        edgeX.set(Math.max(0, e.translationX));
+        edgeX.set(Math.max(0, e.translationX - originX.value));
       })
       .onEnd((e) => {
         // Where the swipe was HEADED, not where it stopped — see lib/gesture-release.
         // A card pop IS a dismissal, so it takes the same bar — half the travel, which is also
         // what react-navigation uses for this exact transition.
-        if (releaseCommitted(e.translationX, e.velocityX, width * DISMISS_COMMIT_FRACTION)) slideOut(e.velocityX);
+        const tx = e.translationX - originX.value;
+        if (releaseCommitted(tx, e.velocityX, width * DISMISS_COMMIT_FRACTION)) slideOut(e.velocityX);
         else settle(e.velocityX);
       })
       .onFinalize(() => {
         // Only the copy that was DRIVING settles a cancelled drag, and never over a commit —
         // `edgeCommitting` is one-way for this layer's whole life, exactly as on the instance.
         if (ranHere.value && !edgeCommitting.value) settle(0);
+        // …and only that copy may unlock the list, for the same reason.
+        if (ranHere.value) runOnJS(setSwipeLocked)(false);
         ranHere.set(false);
-        runOnJS(setSwipeLocked)(false);
       });
   }, [width, edgeX, edgeCommitting, slideOut]);
   const edgePan = useMemo(() => makeBackSwipePan(), [makeBackSwipePan]);

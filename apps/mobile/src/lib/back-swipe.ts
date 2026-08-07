@@ -96,6 +96,19 @@ export function withBackSwipeActivation(pan: PanGesture, canStart?: () => boolea
   const startX = makeMutable(0);
   const startY = makeMutable(0);
   const verdict = makeMutable<BackSwipeVerdict>(0);
+  // Reset on EVERY way a touch sequence can end, not just on the next touch-down.
+  //
+  // `verdict` latching at -1 is what stops the rule re-judging a drag it has already given up on.
+  // If it is only ever cleared in `onTouchesDown`, that latch outlives the gesture whenever the
+  // handler doesn't get a fresh touch-down — which is precisely what happens once the scroll view
+  // underneath has claimed a touch stream. The symptom is brutal and was reported as such: the
+  // swipe works on a freshly opened page, you scroll once, and it never works again for the life of
+  // that screen. Clearing it here as well makes re-arming independent of which callbacks RNGH
+  // chooses to deliver.
+  const rearm = () => {
+    'worklet';
+    verdict.set(0);
+  };
   return pan
     .manualActivation(true)
     .onTouchesDown((e) => {
@@ -105,13 +118,14 @@ export function withBackSwipeActivation(pan: PanGesture, canStart?: () => boolea
       startY.set(t.absoluteY);
       verdict.set(0);
     })
+    .onTouchesUp(rearm)
+    .onTouchesCancelled(rearm)
     .onTouchesMove((e, manager) => {
       if (verdict.value !== 0) return;
       const t = e.allTouches[0];
       if (!t) return;
       if (canStart && !canStart()) {
         verdict.set(-1);
-        manager.fail();
         return;
       }
       const decision = decideBackSwipe(t.absoluteX - startX.value, t.absoluteY - startY.value);
@@ -119,8 +133,14 @@ export function withBackSwipeActivation(pan: PanGesture, canStart?: () => boolea
         verdict.set(1);
         manager.activate();
       } else if (decision === -1) {
+        // NOTE: no `manager.fail()`. Under manual activation, simply not activating is already
+        // enough — the gesture never becomes active and the scroll view keeps the touch, which is
+        // the whole of what failing would have achieved here. What failing ALSO does is drive the
+        // handler into RNGH's FAILED state, and getting back out of that depends on the reset
+        // arriving; a recogniser that has been failed while a native scroller owns the stream is
+        // exactly the thing that was never coming back. The latch below is our own state, so
+        // "stop looking at this drag" costs nothing and cannot strand the recogniser.
         verdict.set(-1);
-        manager.fail();
       }
     });
 }
