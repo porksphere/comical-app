@@ -66,7 +66,7 @@ import { firstChapterInReadingOrder, getAdjacentChapter } from '@/lib/chapter-or
 import { useRouter } from '@/lib/nav';
 import { getPreferredGroup, resetPreferredGroup, setPreferredGroup } from '@/lib/preferred-group';
 
-import { backSwipePan, BackSwipeGestureContext } from '@/lib/back-swipe';
+import { backSwipePan, BACK_DOMINANCE, BackSwipeGestureContext } from '@/lib/back-swipe';
 import { trace, traceGate, traceJS, traceThrottled, useGestureTraceEnabled } from '@/lib/gesture-trace';
 import { releaseCommitted, releaseCommittedEitherWay } from '@/lib/gesture-release';
 import { IOS_CARD_SHADOW, IOS_CARD_SPRING, IOS_PARALLAX_FRACTION } from '@/lib/ios-card-pop';
@@ -138,6 +138,10 @@ const READER_BACKDROP = '#0f0f0f';
 //     of taste: once velocity counts for its real worth instead of being a cliff, a quarter is a
 //     hair-trigger that a barely-moving release would clear. A reveal can afford to be wrong; a
 //     dismissal cannot.
+/** How far the expanded reader's own dismiss drag travels before it takes the gesture. Larger than
+ *  the back-swipe's, and allowed to be: this one isn't racing a scroll view for the claim on its
+ *  axis, so it can ask for a deliberate drag rather than a decisive one. */
+const COLLAPSE_ACTIVATE_PX = 20;
 const REVEAL_COMMIT_FRACTION = 0.25;
 const DISMISS_COMMIT_FRACTION = 0.5;
 // The reveal pull: how far past the details list's top the rubber-band must be pulled, at
@@ -1007,8 +1011,17 @@ function SeriesReaderInstance({
           }
           gestureMode.set(0);
         });
-      if (settings.mode === 'paged') pan.activeOffsetY([-20, 20]).failOffsetX([-15, 15]);
-      else pan.activeOffsetX([-20, 20]).failOffsetY([-15, 15]);
+      // Same dominance rule as the back-swipe (lib/back-swipe), applied to whichever axis this
+      // mode dismisses along: paged drags across the pages' axis (vertical), webtoon across the
+      // scroll's (horizontal). The DISTANCE stays this surface's own — nothing here is racing a
+      // scroller for the claim, so it can afford to ask for more travel before it commits — but
+      // how far off-axis a drag may wander is one rule for the whole app, not a number per pan.
+      const cross = Math.round(COLLAPSE_ACTIVATE_PX * BACK_DOMINANCE);
+      if (settings.mode === 'paged') {
+        pan.activeOffsetY([-COLLAPSE_ACTIVATE_PX, COLLAPSE_ACTIVATE_PX]).failOffsetX([-cross, cross]);
+      } else {
+        pan.activeOffsetX([-COLLAPSE_ACTIVATE_PX, COLLAPSE_ACTIVATE_PX]).failOffsetY([-cross, cross]);
+      }
       return pan;
     }
   }, [

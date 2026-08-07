@@ -68,18 +68,27 @@ import { isGestureTraceEnabled, trace, traceGate, traceThrottled } from '@/lib/g
  */
 export const BACK_ACTIVATE_PX = 10;
 /**
- * Vertical travel (or leftward travel) that gives the drag up instead.
+ * How much of the drag is allowed to be sideways-to-the-swipe at the moment it would activate —
+ * the cross-axis budget as a FRACTION of ACTIVATE, because that ratio is the actual rule and the
+ * two raw numbers only encode it. At 0.7 a drag has to be appreciably more horizontal than
+ * vertical, roughly within 35° of straight across; a 45° drag loses to the scroller.
  *
- * Sits just ABOVE activation, which is the whole of the horizontal-dominance rule now: a drag wins
- * by reaching 10 rightward before it has spent 12 vertically, so anything steeper than about 50°
- * goes to the scroller. It cannot be pulled much tighter without losing honest swipes — the opening
- * millimetres of a real one wander in both axes, and at these distances the wander is most of the
- * measurement. It cannot be pushed much looser without stealing scrolls.
+ * This is the knob. ACTIVATE is pinned by the scroller's own threshold and must not be raised to
+ * make the gesture "stricter" (it just makes it unreachable — see above), so strictness is spent
+ * here instead. Tighter than about 0.5 starts eating honest swipes: the opening millimetres of a
+ * real one wander in both axes, and at a ten-point activation distance that wander is a large
+ * share of the whole measurement.
+ */
+export const BACK_DOMINANCE = 0.7;
+
+/**
+ * Vertical travel (or leftward travel) that gives the drag up instead. Derived, never dialled on
+ * its own — see BACK_DOMINANCE.
  *
- * Note it does NOT need to stay under the scroller's threshold the way ACTIVATE does. Failing late
+ * It does NOT need to stay under the scroller's claim threshold the way ACTIVATE does. Failing late
  * costs nothing: by then the scroller has the touch anyway, which is the outcome failing asks for.
  */
-export const BACK_FAIL_PX = 12;
+export const BACK_FAIL_PX = Math.round(BACK_ACTIVATE_PX * BACK_DOMINANCE);
 
 /**
  * A pan wired with the criteria above. The caller supplies everything that happens AFTER — what a
