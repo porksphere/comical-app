@@ -1194,12 +1194,10 @@ function SeriesReaderInstance({
     return () => sub.remove();
   }, [detailsActive, setRevealed, closeLayer]);
   // ONE back-swipe recipe, built twice. FULL-SURFACE, not edge-only — a rightward drag anywhere on
-  // the details goes back, the way a full-screen pop gesture does. Activation is decided by
-  // DOMINANCE in onTouchesMove (see BACK_DECIDE_PX) rather than by activeOffset/failOffset, which
-  // can only express an absolute cross-axis budget; a real swipe across a tall scrolling page arcs
-  // well past any such budget before it has shown its intent. Anything horizontal underneath still
-  // keeps winning on its own turf — a horizontal rail that starts scrolling cancels the touch
-  // stream outright, so this never sees the rest of it.
+  // the details goes back, the way a full-screen pop gesture does. What counts as an activation is
+  // lib/back-swipe's, and it is declarative (activeOffsetX/failOffset*) for the reasons written
+  // there. Anything horizontal underneath still keeps winning on its own turf — a horizontal rail
+  // that starts scrolling cancels the touch stream outright, so this never sees the rest of it.
   //
   // WHY TWICE: the details surface is almost entirely a native vertical scroll view, whose own
   // pan recognizer begins on ~10px of movement in ANY direction — before this pan's 20px
@@ -1214,10 +1212,9 @@ function SeriesReaderInstance({
   // covers the non-scroll chrome. Web keeps only the screen-level pan (no native recognizers to
   // fight — and it was already green there).
   //
-  // The list copy carries NO `.enabled(detailsActive)` gate — the details card wrapper drops
-  // pointerEvents while the reader owns the screen, the worklets all re-check `detailsActiveSV`,
-  // and leaving the gate off keeps the composed gesture's identity stable across expand/collapse
-  // (no re-attach churn through the list subtree).
+  // BOTH copies carry `.enabled(detailsActive)`. The list copy used to go without one, leaning on
+  // the worklet gate that came with manual activation; with the offsets evaluated natively the gate
+  // has to be native too, or the scroller's copy stays live on the reader side.
   const makeBackSwipePan = useCallback(() => {
     // PER-COPY activation flag. This recipe is built twice (see below) and the two copies share
     // every other shared value, which is fine for state that describes the gesture — but not for
@@ -1242,13 +1239,35 @@ function SeriesReaderInstance({
       dragX.set(withSpring(0, SPRING_BACK));
       dragY.set(withSpring(0, SPRING_BACK));
     };
-    // The shared activation criteria (lib/back-swipe) — only swipeable while the details are the
-    // side on screen. Everything after it is this surface's own: a back-swipe here drives the
-    // gallery collapse, not a slide.
-    return backSwipePan(() => {
+    // The committed collapse, behind the same one-way `edgeCommitting` door the search layer's
+    // slideOut uses — and for the same reason, which is the bug the user kept hitting: this recipe
+    // is built TWICE, both copies see the same touch stream, and both reach onEnd off one release.
+    // Unguarded, the second one wrote `zoom` again — which CANCELS the first spring, and a cancelled
+    // Reanimated animation still fires its callback. So the collapse's callback ran on the frame the
+    // finger lifted and the page was simply gone. That is what "it instantly snaps the animation to
+    // be done" was: not a spring too fast, a second spring stepping on the first one's.
+    const commit = (velocityX: number) => {
       'worklet';
-      return detailsActiveSV.value;
-    })
+      if (edgeCommitting.value) return;
+      edgeCommitting.set(true);
+      runOnJS(setLeaving)(true);
+      // Resume from exactly where it was slid to: the collapse and the follow both spring from
+      // their current values, so the page carries on from that spot into the card. Hand the throw
+      // over too — the pan's velocity is in points per second and `zoom` moves one unit per
+      // `width * ZOOM_DRAG_TRAVEL` points, so this is the same motion continuing rather than a
+      // fresh spring starting from rest at the release point.
+      zoom.set(
+        withSpring(0, { ...ZOOM_OUT_SPRING, overshootClamping: true, velocity: -zoomThrowSpeed(velocityX, width) }, () => {
+          runOnJS(leaveOnce)();
+        }),
+      );
+      dragX.set(withSpring(0, ZOOM_OUT_SPRING));
+      dragY.set(withSpring(0, ZOOM_OUT_SPRING));
+    };
+    // The shared activation criteria (lib/back-swipe). Everything after it is this surface's own:
+    // a back-swipe here drives the gallery collapse, not a slide. Whether the details are the side
+    // on screen is `.enabled()` on each copy below — a native gate, like the offsets themselves.
+    return backSwipePan()
       // Activation = this gesture owns the screen; the list must stop scrolling under it.
       .onStart((e) => {
         if (!detailsActiveSV.value) return;
@@ -1270,30 +1289,12 @@ function SeriesReaderInstance({
       .onEnd((e) => {
         if (!detailsActiveSV.value) return;
         const tx = e.translationX - originX.value;
-        if (releaseCommitted(tx, e.velocityX, width * DISMISS_COMMIT_FRACTION)) {
-          // Finish from exactly where the finger left it — the spring starts at the current value,
-          // so there is no seam between the dragged part and the animated part.
-          edgeCommitting.set(true);
-          runOnJS(setLeaving)(true);
-          // Resume from exactly where it was slid to: the collapse and the follow both spring from
-          // their current values, so the page carries on from that spot into the card.
-          // Hand the throw over too: the pan's velocity is in points per second, and `zoom` moves
-          // one unit per `width * ZOOM_DRAG_TRAVEL` points, so this is the same motion continuing
-          // rather than a fresh spring starting from rest at the release point.
-          zoom.set(
-            withSpring(
-              0,
-              { ...ZOOM_OUT_SPRING, overshootClamping: true, velocity: -zoomThrowSpeed(e.velocityX, width) },
-              () => {
-                runOnJS(leaveOnce)();
-              },
-            ),
-          );
-          dragX.set(withSpring(0, ZOOM_OUT_SPRING));
-          dragY.set(withSpring(0, ZOOM_OUT_SPRING));
-        } else {
-          settle();
-        }
+        // Finish from exactly where the finger left it — the spring starts at the current value, so
+        // there is no seam between the dragged part and the animated part.
+        if (releaseCommitted(tx, e.velocityX, width * DISMISS_COMMIT_FRACTION)) commit(e.velocityX);
+        // …and a losing copy must not settle over a commit the winner just made, hence the check
+        // here as well as in onFinalize.
+        else if (!edgeCommitting.value) settle();
       })
       .onFinalize(() => {
         // A cancelled drag never reaches onEnd — don't leave the page part-collapsed. But ONLY if
@@ -1324,8 +1325,10 @@ function SeriesReaderInstance({
   const edgePan = useMemo(() => makeBackSwipePan().enabled(detailsActive), [makeBackSwipePan, detailsActive]);
   const detailsScrollGesture = useMemo(() => {
     if (IS_WEB) return undefined;
-    return Gesture.Simultaneous(Gesture.Native(), makeBackSwipePan());
-  }, [makeBackSwipePan]);
+    // `.enabled(detailsActive)` here too: this copy used to lean on the worklet gate that came with
+    // manual activation, so without it the scroller's copy would stay live on the reader side.
+    return Gesture.Simultaneous(Gesture.Native(), makeBackSwipePan().enabled(detailsActive));
+  }, [makeBackSwipePan, detailsActive]);
   // iOS pull release, caught ON the UI thread. The commit used to ride onScrollEndDrag alone,
   // which reaches JS a frame or two AFTER the rubber-band bounce starts — and in that window the
   // engaged follow tracked the bounce BACKWARD, so the details visibly jumped against the

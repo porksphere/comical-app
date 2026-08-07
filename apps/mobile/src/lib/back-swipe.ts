@@ -1,5 +1,4 @@
 import { Gesture, type PanGesture } from 'react-native-gesture-handler';
-import { makeMutable } from 'react-native-reanimated';
 
 /**
  * The app's hand-rolled back-swipe: what counts as one, in one place.
@@ -8,144 +7,54 @@ import { makeMutable } from 'react-native-reanimated';
  * in-screen search layer (which slides out like a pushed card) — and none of them can use the real
  * thing. A contained transparent modal has no native pop gesture, and neither does a sibling view
  * pretending to be a screen. So each rig recreates it, and the ONE part that must not drift between
- * them is the activation test: if the same drag opens one surface and dies on another, the app
- * stops feeling like it has a back-swipe at all and starts feeling like it has several.
+ * them is what counts as an activation.
  *
- * ── Why manual activation ────────────────────────────────────────────────────
- * RNGH's declarative bounds can only express ABSOLUTE budgets — `activeOffsetX(24)` with
- * `failOffsetY([-12, 12])` means "24px across, but die if you ever drift 12px down". A real thumb
- * arc drifts more than that on the way, so those bounds reject ordinary human swipes while
- * accepting slow diagonal ones that happen to creep across the x line first. The test that matches
- * intent is a RATIO — how much more horizontal than vertical the travel is — and a ratio needs the
- * raw touch stream, which is what `manualActivation` gives.
+ * ── Declarative offsets, NOT manual activation ───────────────────────────────
+ * This used to decide activation itself: `manualActivation(true)`, watch the raw touches in
+ * `onTouchesMove`, and call `manager.activate()` once the travel was more horizontal than vertical
+ * by some ratio. The appeal was real, and the reasoning written here for a while was not wrong on
+ * its own terms — a ratio is a CONE, which matches intent far better than the rectangle the
+ * declarative options can express, and a thumb arc that a rectangle rejects sails through a cone.
  *
- * ── Why these numbers, and the trap they replaced ────────────────────────────
- * The two tests are SYMMETRIC — same distance, same ratio, opposite axes — and that symmetry is
- * load-bearing. An earlier version was deliberately asymmetric: activate at 24px on a strict ratio,
- * but fail the moment vertical travel passed 12px while merely exceeding horizontal. The reasoning
- * was that a scroll should be handed back instantly without making the list wait. The flaw is that
- * `|dy| > |dx|` is TRIVIALLY TRUE at the start of almost any gesture — at dx ≈ 0 any vertical at all
- * satisfies it — so a swipe that began with the finger settling a dozen pixels downward, which is
- * most swipes on a list that is already scrolling, was killed before its horizontal movement had
- * even begun. It didn't read as strict, it read as the gesture randomly not working.
+ * It does not work here. Three rounds of fixes went into it — a dead band between the cones, a
+ * verdict latch that never re-armed once a scroller owned the touch stream, a recogniser stranded
+ * in FAILED — and each fixed something genuinely broken while leaving the gesture just as dead.
+ * The common factor was the mechanism, not the numbers. Manual activation decides in a worklet
+ * touch callback; these pans are composed `Simultaneous` with a native scroll view, and once that
+ * scroller owns the stream those callbacks are not something to build on. The offsets below are
+ * evaluated inside the native recogniser instead — which is what the search layer used for months,
+ * working, before it was "unified" onto the clever version.
  *
- * So failing now requires travel that is CLEARLY vertical — past the same distance, and dominant by
- * the same ratio. Early noise cannot satisfy that, while a real scroll satisfies it almost at once.
+ * So: a rectangle, honestly. Activate once the drag has gone far enough RIGHT; give up if it goes
+ * far enough vertically, or meaningfully left, first. No ratio, no pending state, nothing to get
+ * stuck in. The strictness a cone was wanted for is approximated by keeping the two numbers close,
+ * so a drag that wanders vertically loses before it can win.
  *
- * DOMINANCE stays forgiving (2 ≈ within 27° of horizontal) for a reason beyond taste: activation has
- * to happen before the scroll view underneath commits to its own gesture, and on iOS a scroll that
- * has started does not hand the touch back. Tightening this to 3 pushed activation later and let the
- * scroller win first — which is how "require more horizontal than diagonal" turned into "the swipe
- * doesn't fire". The strictness lives in the fail side instead: anything between the two cones is
- * neither, and is given up on at BACK_DECIDE_PX rather than being awarded to either.
+ * If the cone is worth another attempt it needs a different mechanism — a native recogniser that
+ * understands direction — not a fourth pass at this one.
  */
 
-/** Travel along an axis before that axis is allowed to decide anything. */
+/** Rightward travel that activates the back-swipe. */
 export const BACK_ACTIVATE_PX = 24;
-/** The mirror of it: vertical travel before a drag may be called a scroll. Same distance on purpose. */
-export const BACK_FAIL_PX = 24;
-/** How many times one axis must exceed the other. 2 ≈ within 27° of that axis. */
-export const BACK_DOMINANCE = 2;
 /**
- * Total travel after which a drag belonging to NEITHER cone is given up on rather than left pending.
+ * Vertical travel (or leftward travel) that gives the drag up instead.
  *
- * With two dominance cones there is a band between them — roughly 27° to 63° — that satisfies
- * neither test. Without this bar such a drag stays undecided for as long as the finger moves, and
- * since activation is manual that means the gesture never fires AND never cleanly releases the
- * touch. Diagonal drags land here by design: they are not a back-swipe, and giving up is how the
- * scroller gets them.
- *
- * Generous, because it is only reached by drags that are genuinely ambiguous — a real swipe or a
- * real scroll has been decided long before.
+ * Deliberately close to ACTIVATE rather than far below it. Much lower and it becomes what the old
+ * rig effectively was — a gesture that loses to any wobble, since the opening millimetres of a real
+ * swipe wander in both axes. Much higher and a genuine scroll gets stolen. Just under ACTIVATE
+ * means a drag has to commit more travel rightward than it spends drifting, without having to be
+ * geometrically straight.
  */
-export const BACK_DECIDE_PX = 64;
-
-/** 1 = this is a back-swipe, -1 = it belongs to something else, 0 = not enough travel to say. */
-export type BackSwipeVerdict = 1 | -1 | 0;
+export const BACK_FAIL_PX = 18;
 
 /**
- * The decision, as a pure worklet — the single definition of "is this a back-swipe", given the
- * travel since the finger went down. `dx` is signed (rightward positive); `dy` need not be.
+ * A pan wired with the criteria above. The caller supplies everything that happens AFTER — what a
+ * back-swipe drives differs completely between surfaces (one runs a zoom collapse, another slides
+ * a card out) while what STARTS one must not.
  */
-export function decideBackSwipe(dx: number, dy: number): BackSwipeVerdict {
-  'worklet';
-  const ay = Math.abs(dy);
-  // Dominantly rightward — ours.
-  if (dx > BACK_ACTIVATE_PX && dx > ay * BACK_DOMINANCE) return 1;
-  // Dominantly vertical (the list is scrolling), or meaningfully leftward, which is never this.
-  if ((ay > BACK_FAIL_PX && ay > dx * BACK_DOMINANCE) || dx < -BACK_FAIL_PX) return -1;
-  // Neither cone, and far enough along to say so — see BACK_DECIDE_PX.
-  if (Math.hypot(dx, ay) > BACK_DECIDE_PX) return -1;
-  return 0;
-}
-
-/**
- * Wire `decideBackSwipe` onto a pan: manual activation, the touch-down origin, and the per-gesture
- * verdict. The caller supplies everything that comes after — `onStart`/`onUpdate`/`onEnd` are its
- * own, because what a back-swipe DRIVES differs completely between surfaces (one runs a zoom
- * collapse, another slides a card out) while what STARTS one must not.
- *
- * The shared values are created per call, not per module: a rig typically builds this recipe TWICE
- * (once at screen level, once composed onto a scroller — see the call sites), and the two copies
- * see the same touch stream. Sharing the origin between them would have each overwrite the other's.
- *
- * `canStart`, when given, must be a worklet: it is consulted on the first meaningful movement and
- * fails the gesture outright, for a surface that is only swipeable in some of its states.
- */
-export function withBackSwipeActivation(pan: PanGesture, canStart?: () => boolean): PanGesture {
-  const startX = makeMutable(0);
-  const startY = makeMutable(0);
-  const verdict = makeMutable<BackSwipeVerdict>(0);
-  // Reset on EVERY way a touch sequence can end, not just on the next touch-down.
-  //
-  // `verdict` latching at -1 is what stops the rule re-judging a drag it has already given up on.
-  // If it is only ever cleared in `onTouchesDown`, that latch outlives the gesture whenever the
-  // handler doesn't get a fresh touch-down — which is precisely what happens once the scroll view
-  // underneath has claimed a touch stream. The symptom is brutal and was reported as such: the
-  // swipe works on a freshly opened page, you scroll once, and it never works again for the life of
-  // that screen. Clearing it here as well makes re-arming independent of which callbacks RNGH
-  // chooses to deliver.
-  const rearm = () => {
-    'worklet';
-    verdict.set(0);
-  };
-  return pan
-    .manualActivation(true)
-    .onTouchesDown((e) => {
-      const t = e.allTouches[0];
-      if (!t) return;
-      startX.set(t.absoluteX);
-      startY.set(t.absoluteY);
-      verdict.set(0);
-    })
-    .onTouchesUp(rearm)
-    .onTouchesCancelled(rearm)
-    .onTouchesMove((e, manager) => {
-      if (verdict.value !== 0) return;
-      const t = e.allTouches[0];
-      if (!t) return;
-      if (canStart && !canStart()) {
-        verdict.set(-1);
-        return;
-      }
-      const decision = decideBackSwipe(t.absoluteX - startX.value, t.absoluteY - startY.value);
-      if (decision === 1) {
-        verdict.set(1);
-        manager.activate();
-      } else if (decision === -1) {
-        // NOTE: no `manager.fail()`. Under manual activation, simply not activating is already
-        // enough — the gesture never becomes active and the scroll view keeps the touch, which is
-        // the whole of what failing would have achieved here. What failing ALSO does is drive the
-        // handler into RNGH's FAILED state, and getting back out of that depends on the reset
-        // arriving; a recogniser that has been failed while a native scroller owns the stream is
-        // exactly the thing that was never coming back. The latch below is our own state, so
-        // "stop looking at this drag" costs nothing and cannot strand the recogniser.
-        verdict.set(-1);
-      }
-    });
-}
-
-/** A fresh pan already wired with the activation above — the usual entry point. */
-export function backSwipePan(canStart?: () => boolean): PanGesture {
-  return withBackSwipeActivation(Gesture.Pan(), canStart);
+export function backSwipePan(): PanGesture {
+  return Gesture.Pan()
+    .activeOffsetX(BACK_ACTIVATE_PX)
+    .failOffsetX(-BACK_FAIL_PX)
+    .failOffsetY([-BACK_FAIL_PX, BACK_FAIL_PX]);
 }
