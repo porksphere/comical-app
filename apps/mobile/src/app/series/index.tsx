@@ -1281,9 +1281,12 @@ function SeriesReaderInstance({
       trace(tag, 'commit', { vx: velocityX, zoom: zoom.value, already: edgeCommitting.value });
       if (edgeCommitting.value) return;
       edgeCommitting.set(true);
-      // Read STRAIGHT back. A device trace showed this latch reading false again one callback
-      // later; if `readback=n` ever appears here the shared value itself is the problem, not the
-      // callback that read it.
+      // Read STRAIGHT back — and on device this reports FALSE. `commit.latched readback=n` is what
+      // a real trace says: a shared-value write is not visible to a read later in the SAME worklet
+      // invocation, though it is visible to the next one (which is why the guard above still works
+      // across gestures). Nothing here depends on it any more — onFinalize asks `success` instead
+      // — but the probe stays, because anything that ever reaches for this latch inside one
+      // callback will silently get the stale answer.
       trace(tag, 'commit.latched', { readback: edgeCommitting.value });
       runOnJS(setLeaving)(true);
       // Resume from exactly where it was slid to: the collapse and the follow both spring from

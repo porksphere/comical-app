@@ -33,22 +33,52 @@ import { isGestureTraceEnabled, trace, traceGate, traceThrottled } from '@/lib/g
  * stuck in. The strictness a cone was wanted for is approximated by keeping the two numbers close,
  * so a drag that wanders vertically loses before it can win.
  *
+ * ── The numbers are a race, not a taste ─────────────────────────────────────
+ * Read BACK_ACTIVATE_PX below before adjusting either constant. They are not tuned for feel: they
+ * are sized against UIScrollView's own claim threshold, and raising activation past it does not
+ * make the gesture "stricter", it makes it unreachable on any drag slow enough to be measured.
+ *
  * If the cone is worth another attempt it needs a different mechanism — a native recogniser that
  * understands direction — not a fourth pass at this one.
  */
 
-/** Rightward travel that activates the back-swipe. */
-export const BACK_ACTIVATE_PX = 24;
+/**
+ * Rightward travel that activates the back-swipe.
+ *
+ * TEN pixels, and the number is not a feel preference — it is a race condition, settled by a device
+ * trace. UIScrollView's own pan recognizer claims a touch after roughly ten points of movement IN
+ * ANY DIRECTION, including sideways on a vertically-scrolling list that has nothing to scroll that
+ * way. Once it has claimed, this pan stops being fed pointer data: the trace showed drag after drag
+ * reaching BEGAN, receiving exactly ONE touch sample somewhere between 4 and 23 points of rightward
+ * travel with two or three points of vertical wobble, and then hearing nothing at all until the
+ * finger lifted four hundred milliseconds later. Nothing in the criteria had failed. There simply
+ * was no longer anyone listening.
+ *
+ * At the old 24 that made a slow swipe unwinnable by construction, because 24 is on the far side of
+ * the scroller's 10 — a leisurely drag hands the touch over before this pan is allowed to want it.
+ * The swipes that DID work were fast ones, where a single frame carried the finger past 24 before
+ * the scroller's threshold was even evaluated. That is the whole of "it works sometimes", and it is
+ * why every previous attempt to fix this by reasoning about angles and dominance missed: the
+ * criteria were never consulted.
+ *
+ * So activation now happens at the scroller's own threshold rather than beyond it. Apple's back
+ * gesture ducks this fight entirely by living on the screen edge, where no scroller competes; a
+ * full-surface pop has to win the contest instead of avoiding it.
+ */
+export const BACK_ACTIVATE_PX = 10;
 /**
  * Vertical travel (or leftward travel) that gives the drag up instead.
  *
- * Deliberately close to ACTIVATE rather than far below it. Much lower and it becomes what the old
- * rig effectively was — a gesture that loses to any wobble, since the opening millimetres of a real
- * swipe wander in both axes. Much higher and a genuine scroll gets stolen. Just under ACTIVATE
- * means a drag has to commit more travel rightward than it spends drifting, without having to be
- * geometrically straight.
+ * Sits just ABOVE activation, which is the whole of the horizontal-dominance rule now: a drag wins
+ * by reaching 10 rightward before it has spent 12 vertically, so anything steeper than about 50°
+ * goes to the scroller. It cannot be pulled much tighter without losing honest swipes — the opening
+ * millimetres of a real one wander in both axes, and at these distances the wander is most of the
+ * measurement. It cannot be pushed much looser without stealing scrolls.
+ *
+ * Note it does NOT need to stay under the scroller's threshold the way ACTIVATE does. Failing late
+ * costs nothing: by then the scroller has the touch anyway, which is the outcome failing asks for.
  */
-export const BACK_FAIL_PX = 18;
+export const BACK_FAIL_PX = 12;
 
 /**
  * A pan wired with the criteria above. The caller supplies everything that happens AFTER — what a
