@@ -67,6 +67,7 @@ import { useRouter } from '@/lib/nav';
 import { getPreferredGroup, resetPreferredGroup, setPreferredGroup } from '@/lib/preferred-group';
 
 import { backSwipePan } from '@/lib/back-swipe';
+import { trace, traceGate, traceJS, traceThrottled, useGestureTraceEnabled } from '@/lib/gesture-trace';
 import { releaseCommitted, releaseCommittedEitherWay } from '@/lib/gesture-release';
 import { IOS_CARD_SHADOW, IOS_CARD_SPRING, IOS_PARALLAX_FRACTION } from '@/lib/ios-card-pop';
 import { registerDrillSeries, registerOpenSearchLayer } from '@/lib/series-nav';
@@ -747,9 +748,14 @@ function SeriesReaderInstance({
   // reveals the details by dragging at all (see the collapse pan): the Details button is the way
   // back. But the button's animation has no axis to match, and having the two modes slide the
   // page in different directions made the same control behave like two different controls.
+  // The details list's own scrolling, in the same timeline as the gestures. This is how a trace
+  // distinguishes "the scroller took the touch stream" from "nothing claimed it": scroll offset
+  // moving between a BEGAN and a missing START is the native recognizer winning the contest.
+  const scrollTraceGate = useMemo(() => traceGate(), []);
   useAnimatedReaction(
     () => detailsScrollOffset.value,
     (off, prevOff) => {
+      traceThrottled(scrollTraceGate, 60, 'details.scroll', 'offset', { y: off, active: detailsActiveSV.value });
       if (!IS_IOS) return;
       if (!detailsActiveSV.value) {
         // A commit's animation owns `progress` now; the leftover bounce must not re-engage.
@@ -771,10 +777,11 @@ function SeriesReaderInstance({
         }
       }
     },
-    [headerSpan, detailsScrollOffset, detailsActiveSV, pullEngagedSV, pullStartSV, progress],
+    [headerSpan, detailsScrollOffset, detailsActiveSV, pullEngagedSV, pullStartSV, progress, scrollTraceGate],
   );
   const onDetailsScrollEndDrag = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      traceJS('details.scroll', 'endDrag', { y: e.nativeEvent.contentOffset.y, active: detailsActive });
       if (!IS_IOS || !detailsActive) return;
       // The UI-thread release watcher (pullReleaseWatch below) usually lands this commit first;
       // the shared-value mirror is already false then — don't restart its animation. This JS
@@ -892,9 +899,18 @@ function SeriesReaderInstance({
     const dismissSpan = settings.mode === 'paged' ? height : width;
     const span = settings.mode === 'paged' ? headerSpan : width;
     {
+      const collapseGate = traceGate();
       const pan = Gesture.Pan()
         .enabled(collapseEnabled)
+        .onBegin(() => {
+          trace('reader.collapse', 'BEGAN');
+        })
         .onUpdate((e) => {
+          traceThrottled(collapseGate, 60, 'reader.collapse', 'update', {
+            tx: e.translationX,
+            ty: e.translationY,
+            mode: gestureMode.value,
+          });
           // detailsActiveSV double-checks `enabled` INSIDE the worklet — RNGH web can keep a
           // rebuilt-disabled recognizer live, and a stale reader pan must never act while the
           // details own the screen (and vice versa for returnPan below).
@@ -931,6 +947,13 @@ function SeriesReaderInstance({
           dragY.set(e.translationY);
         })
         .onEnd((e) => {
+          trace('reader.collapse', 'END', {
+            mode: gestureMode.value,
+            vx: e.velocityX,
+            vy: e.velocityY,
+            dismissing: dismissing.value,
+            active: detailsActiveSV.value,
+          });
           if (dismissing.value || detailsActiveSV.value) return;
           if (gestureMode.value === 1) {
             const cross = settings.mode === 'paged' ? e.translationY : -e.translationX;
@@ -1215,7 +1238,10 @@ function SeriesReaderInstance({
   // BOTH copies carry `.enabled(detailsActive)`. The list copy used to go without one, leaning on
   // the worklet gate that came with manual activation; with the offsets evaluated natively the gate
   // has to be native too, or the scroller's copy stays live on the reader side.
-  const makeBackSwipePan = useCallback(() => {
+  const makeBackSwipePan = useCallback((tag: string) => {
+    // The trace's throttle window for this copy — per-copy for the same reason as everything else
+    // here: both copies see the same touches, and a shared window would hide one of them.
+    const updateGate = traceGate();
     // PER-COPY activation flag. This recipe is built twice (see below) and the two copies share
     // every other shared value, which is fine for state that describes the gesture — but not for
     // "did I run it". Both copies see the same touch stream, so the one that LOSES also reaches
@@ -1248,6 +1274,7 @@ function SeriesReaderInstance({
     // be done" was: not a spring too fast, a second spring stepping on the first one's.
     const commit = (velocityX: number) => {
       'worklet';
+      trace(tag, 'commit', { vx: velocityX, zoom: zoom.value, already: edgeCommitting.value });
       if (edgeCommitting.value) return;
       edgeCommitting.set(true);
       runOnJS(setLeaving)(true);
@@ -1257,7 +1284,8 @@ function SeriesReaderInstance({
       // `width * ZOOM_DRAG_TRAVEL` points, so this is the same motion continuing rather than a
       // fresh spring starting from rest at the release point.
       zoom.set(
-        withSpring(0, { ...ZOOM_OUT_SPRING, overshootClamping: true, velocity: -zoomThrowSpeed(velocityX, width) }, () => {
+        withSpring(0, { ...ZOOM_OUT_SPRING, overshootClamping: true, velocity: -zoomThrowSpeed(velocityX, width) }, (finished) => {
+          trace(tag, 'collapse.done', { finished: !!finished, zoom: zoom.value });
           runOnJS(leaveOnce)();
         }),
       );
@@ -1267,9 +1295,12 @@ function SeriesReaderInstance({
     // The shared activation criteria (lib/back-swipe). Everything after it is this surface's own:
     // a back-swipe here drives the gallery collapse, not a slide. Whether the details are the side
     // on screen is `.enabled()` on each copy below — a native gate, like the offsets themselves.
-    return backSwipePan()
+    return backSwipePan(tag)
       // Activation = this gesture owns the screen; the list must stop scrolling under it.
       .onStart((e) => {
+        // BEFORE the gate, always: "activated but every callback no-oped on detailsActive" and
+        // "never activated" are different diagnoses and must not look the same in the log.
+        trace(tag, 'START', { tx: e.translationX, ty: e.translationY, active: detailsActiveSV.value });
         if (!detailsActiveSV.value) return;
         ranHere.set(true);
         originX.set(e.translationX);
@@ -1282,11 +1313,20 @@ function SeriesReaderInstance({
         if (!detailsActiveSV.value) return;
         const tx = e.translationX - originX.value;
         const ty = e.translationY - originY.value;
+        traceThrottled(updateGate, 60, tag, 'update', { tx, ty, zoom: zoom.value });
         zoom.set(1 - Math.min(1, Math.max(0, tx / (width * ZOOM_DRAG_TRAVEL))));
         dragX.set(zoomHorizontalDrag(tx, width));
         dragY.set(zoomCrossAxisDrag(ty, height));
       })
       .onEnd((e) => {
+        trace(tag, 'END', {
+          tx: e.translationX - originX.value,
+          vx: e.velocityX,
+          zoom: zoom.value,
+          active: detailsActiveSV.value,
+          committing: edgeCommitting.value,
+          ran: ranHere.value,
+        });
         if (!detailsActiveSV.value) return;
         const tx = e.translationX - originX.value;
         // Finish from exactly where the finger left it — the spring starts at the current value, so
@@ -1296,7 +1336,11 @@ function SeriesReaderInstance({
         // here as well as in onFinalize.
         else if (!edgeCommitting.value) settle();
       })
-      .onFinalize(() => {
+      .onFinalize((_e, success) => {
+        // `success` is the single most valuable field in the whole trace: false here with no
+        // preceding START is a recognizer that was FAILED or CANCELLED, which is a completely
+        // different bug from one whose offsets were never satisfied.
+        trace(tag, 'FINALIZE', { ok: !!success, ran: ranHere.value, committing: edgeCommitting.value, zoom: zoom.value });
         // A cancelled drag never reaches onEnd — don't leave the page part-collapsed. But ONLY if
         // this copy is the one that was driving, and only if nothing has committed: `settle` writes
         // `zoom`, so running it against a committed collapse cancels that spring, and a cancelled
@@ -1322,13 +1366,21 @@ function SeriesReaderInstance({
     zoomClosing,
     leaveOnce,
   ]);
-  const edgePan = useMemo(() => makeBackSwipePan().enabled(detailsActive), [makeBackSwipePan, detailsActive]);
+  // `traceOn` is a DEP on purpose: backSwipePan only attaches its touch observers while the trace
+  // is recording, so flipping the toggle has to rebuild the gestures for the change to take.
+  const traceOn = useGestureTraceEnabled();
+  const edgePan = useMemo(
+    () => makeBackSwipePan('series.edge').enabled(detailsActive),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [makeBackSwipePan, detailsActive, traceOn],
+  );
   const detailsScrollGesture = useMemo(() => {
     if (IS_WEB) return undefined;
     // `.enabled(detailsActive)` here too: this copy used to lean on the worklet gate that came with
     // manual activation, so without it the scroller's copy would stay live on the reader side.
-    return Gesture.Simultaneous(Gesture.Native(), makeBackSwipePan().enabled(detailsActive));
-  }, [makeBackSwipePan, detailsActive]);
+    return Gesture.Simultaneous(Gesture.Native(), makeBackSwipePan('series.list').enabled(detailsActive));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [makeBackSwipePan, detailsActive, traceOn]);
   // iOS pull release, caught ON the UI thread. The commit used to ride onScrollEndDrag alone,
   // which reaches JS a frame or two AFTER the rubber-band bounce starts — and in that window the
   // engaged follow tracked the bounce BACKWARD, so the details visibly jumped against the
@@ -2195,10 +2247,12 @@ function SearchLayer({
   const slideOut = useCallback(
     (velocity: number) => {
       'worklet';
+      trace('search.slideOut', 'commit', { v: velocity, edgeX: edgeX.value, already: edgeCommitting.value });
       if (edgeCommitting.value) return;
       edgeCommitting.set(true);
       edgeX.set(
-        withSpring(width, { ...IOS_CARD_SPRING, velocity }, () => {
+        withSpring(width, { ...IOS_CARD_SPRING, velocity }, (finished) => {
+          trace('search.slideOut', 'done', { finished: !!finished, edgeX: edgeX.value });
           runOnJS(onPopLayer)();
         }),
       );
@@ -2228,7 +2282,8 @@ function SearchLayer({
   // across: both copies see the same touches and both reach onFinalize, so the loser could
   // otherwise settle a drag the winner is driving — or undo a commit it just made, dragging the
   // layer back on screen after it had already been sliced off the stack.
-  const makeBackSwipePan = useCallback(() => {
+  const makeBackSwipePan = useCallback((tag: string) => {
+    const updateGate = traceGate();
     const ranHere = makeMutable(false);
     // Where the finger was at ACTIVATION — see the instance's copy for why. RNGH measures
     // translation from touch-down, so without this the card jumps by however far the rule spent
@@ -2240,8 +2295,9 @@ function SearchLayer({
       'worklet';
       edgeX.set(withSpring(0, { ...IOS_CARD_SPRING, velocity }));
     };
-    return backSwipePan()
+    return backSwipePan(tag)
       .onStart((e) => {
+        trace(tag, 'START', { tx: e.translationX, ty: e.translationY });
         ranHere.set(true);
         originX.set(e.translationX);
         // Activation means this gesture owns the screen — the results list must STOP SCROLLING
@@ -2252,17 +2308,21 @@ function SearchLayer({
         runOnJS(setSwipeLocked)(true);
       })
       .onUpdate((e) => {
-        edgeX.set(Math.max(0, e.translationX - originX.value));
+        const tx = e.translationX - originX.value;
+        traceThrottled(updateGate, 60, tag, 'update', { tx, edgeX: edgeX.value });
+        edgeX.set(Math.max(0, tx));
       })
       .onEnd((e) => {
         // Where the swipe was HEADED, not where it stopped — see lib/gesture-release.
         // A card pop IS a dismissal, so it takes the same bar — half the travel, which is also
         // what react-navigation uses for this exact transition.
         const tx = e.translationX - originX.value;
+        trace(tag, 'END', { tx, vx: e.velocityX, edgeX: edgeX.value, committing: edgeCommitting.value, ran: ranHere.value });
         if (releaseCommitted(tx, e.velocityX, width * DISMISS_COMMIT_FRACTION)) slideOut(e.velocityX);
         else settle(e.velocityX);
       })
-      .onFinalize(() => {
+      .onFinalize((_e, success) => {
+        trace(tag, 'FINALIZE', { ok: !!success, ran: ranHere.value, committing: edgeCommitting.value, edgeX: edgeX.value });
         // Only the copy that was DRIVING settles a cancelled drag, and never over a commit —
         // `edgeCommitting` is one-way for this layer's whole life, exactly as on the instance.
         if (ranHere.value && !edgeCommitting.value) settle(0);
@@ -2271,10 +2331,14 @@ function SearchLayer({
         ranHere.set(false);
       });
   }, [width, edgeX, edgeCommitting, slideOut]);
-  const edgePan = useMemo(() => makeBackSwipePan(), [makeBackSwipePan]);
+  // See the series instance's copy for why the trace flag is a rebuild dep.
+  const traceOn = useGestureTraceEnabled();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const edgePan = useMemo(() => makeBackSwipePan('search.edge'), [makeBackSwipePan, traceOn]);
   const scrollGesture = useMemo(
-    () => (IS_WEB ? undefined : Gesture.Simultaneous(Gesture.Native(), makeBackSwipePan())),
-    [makeBackSwipePan],
+    () => (IS_WEB ? undefined : Gesture.Simultaneous(Gesture.Native(), makeBackSwipePan('search.list'))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [makeBackSwipePan, traceOn],
   );
   const slideStyle = useAnimatedStyle(() => ({ transform: [{ translateX: edgeX.value }] }));
   // `isTop` matters for more than looks: it is how the embedded search knows to ignore an intent

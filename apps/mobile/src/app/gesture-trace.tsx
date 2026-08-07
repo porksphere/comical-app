@@ -1,0 +1,179 @@
+import { Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
+
+import { SettingsRow, SettingsSection } from '@/components/settings/settings-row';
+import { ThemedSwitch } from '@/components/themed-switch';
+import { ThemedText } from '@/components/themed-text';
+import { ThemedView } from '@/components/themed-view';
+import { TopBar } from '@/components/top-bar';
+import { Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
+import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
+import { useTheme } from '@/hooks/use-theme';
+import { useRouter } from '@/lib/nav';
+import {
+  clearGestureTrace,
+  gestureTrace$,
+  markGestureTrace,
+  useGestureTrace,
+  useGestureTraceEnabled,
+} from '@/lib/gesture-trace';
+
+/**
+ * The gesture trace readout — what the recognizers on the series page and the search layer actually
+ * did, in order, with the state they saw at each step.
+ *
+ * This exists because the back-swipe has been reported broken across several builds whose fixes
+ * each targeted a different plausible cause, and nothing on the device could say which cause was
+ * real. `lib/gesture-trace` lists the five distinct failures that all present as "the swipe doesn't
+ * work"; the job of this screen is to make them look different from each other.
+ *
+ * Reading a trace, roughly:
+ *   • no `touch.down` at all        → the recognizer never saw the touches. Something above it did.
+ *   • `touch.down`, no `BEGAN`      → RNGH isn't starting it — disabled, or not attached here.
+ *   • `BEGAN`, no `START`           → the offsets were never satisfied, or a failOffset tripped
+ *                                     first. The `touch.move dx=/dy=` lines say which; compare
+ *                                     them against BACK_ACTIVATE_PX / BACK_FAIL_PX in
+ *                                     lib/back-swipe.
+ *   • `BEGAN` → `FINALIZE ok=n`, with `details.scroll offset` lines in between
+ *                                   → the native scroller won the contest and cancelled it.
+ *   • `START active=n`              → it ran, but the detailsActive gate no-oped every callback.
+ *   • two `END` lines, one per tag  → both copies committed off one release. The second spring
+ *                                     cancels the first, whose callback still fires — which is
+ *                                     exactly what "the animation finishes instantly" looks like.
+ *   • `collapse.done finished=n`    → the collapse spring was cancelled rather than completing.
+ */
+export default function GestureTraceScreen() {
+  const contentPadding = useSettingsScrollPadding();
+  const theme = useTheme();
+  const router = useRouter();
+  const enabled = useGestureTraceEnabled();
+  const lines = useGestureTrace();
+
+  const shareLog = () => {
+    if (lines.length === 0) return;
+    Share.share({ message: lines.join('\n') });
+  };
+
+  return (
+    <ThemedView style={styles.container}>
+      <TopBar title="Gesture trace" />
+      <ScrollView contentContainerStyle={[styles.content, contentPadding]}>
+        <ThemedText type="small" themeColor="textSecondary">
+          Records what the swipe recognizers on the series page and the search layer did — whether
+          they saw the touches, whether they began, whether they activated, and what state they saw
+          when they ended. While it is off, those recognizers are configured exactly as they ship,
+          so a recording can&apos;t be blamed for what it measures. Nothing is sent anywhere; use
+          Share to send it yourself.
+        </ThemedText>
+
+        <SettingsSection>
+          <SettingsRow
+            testID="gesture-trace.record"
+            label="Record"
+            description="Turn on, do the swipe that misbehaves, come back here, Share."
+            right={
+              <ThemedSwitch
+                value={enabled}
+                onValueChange={(v) => {
+                  // Starting a recording clears the old one — a trace is only readable if it covers
+                  // one attempt, and the common mistake is sharing three sessions stacked together.
+                  if (v) clearGestureTrace();
+                  gestureTrace$.enabled.set(v);
+                }}
+              />
+            }
+          />
+          <SettingsRow
+            testID="gesture-trace.lab"
+            label="Gesture lab"
+            description="Three isolated rigs — a bare pan, one over a scroll view, one over a scroll view with a horizontal rail. Says whether the composition works at all on this device."
+            onPress={() => router.push('/gesture-lab')}
+          />
+        </SettingsSection>
+
+        <View style={styles.actions}>
+          <Pressable
+            testID="gesture-trace.mark"
+            onPress={() => markGestureTrace('mark')}
+            disabled={!enabled}
+            style={[styles.actionBtn, { borderColor: theme.hairline }]}>
+            <ThemedText type="smallBold" style={!enabled && { color: theme.textSecondary }}>
+              Mark
+            </ThemedText>
+          </Pressable>
+          <Pressable
+            testID="gesture-trace.share"
+            onPress={shareLog}
+            disabled={lines.length === 0}
+            style={[styles.actionBtn, { borderColor: theme.hairline }]}>
+            <ThemedText type="smallBold" style={lines.length === 0 && { color: theme.textSecondary }}>
+              Share
+            </ThemedText>
+          </Pressable>
+          <Pressable
+            testID="gesture-trace.clear"
+            onPress={clearGestureTrace}
+            disabled={lines.length === 0}
+            style={[styles.actionBtn, { borderColor: theme.hairline }]}>
+            <ThemedText
+              type="smallBold"
+              style={lines.length === 0 ? { color: theme.textSecondary } : { color: theme.danger }}>
+              Clear
+            </ThemedText>
+          </Pressable>
+        </View>
+
+        {lines.length === 0 ? (
+          <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
+            {enabled ? 'Recording. Go do the swipe.' : 'Nothing recorded.'}
+          </ThemedText>
+        ) : (
+          <ThemedView type="backgroundElement" style={[styles.log, { borderColor: theme.hairline }]}>
+            {/* Horizontal scroll, not wrapping: a wrapped trace line loses the column alignment
+                that makes a wall of numbers scannable in the first place. */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <ThemedText type="small" style={styles.mono} selectable>
+                {lines.join('\n')}
+              </ThemedText>
+            </ScrollView>
+          </ThemedView>
+        )}
+      </ScrollView>
+    </ThemedView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  content: {
+    gap: Spacing.four,
+    width: '100%',
+    maxWidth: MaxContentWidth,
+    alignSelf: 'center',
+  },
+  actions: {
+    flexDirection: 'row',
+    gap: Spacing.three,
+  },
+  actionBtn: {
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.four,
+    borderRadius: Spacing.three,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  empty: {
+    paddingVertical: Spacing.three,
+  },
+  log: {
+    padding: Spacing.three,
+    borderRadius: Spacing.three,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  // A trace is columns of numbers — a proportional font makes it unreadable at a glance.
+  mono: {
+    fontFamily: Fonts?.mono,
+    fontSize: 11,
+    lineHeight: 15,
+  },
+});

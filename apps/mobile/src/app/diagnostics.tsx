@@ -9,6 +9,7 @@ import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { clearDiagnostics, getDiagnostics, subscribeDiagnostics, type DiagnosticEntry } from '@/lib/diagnostics';
+import { useRouter } from '@/lib/nav';
 
 function formatEntry(e: DiagnosticEntry): string {
   const time = new Date(e.time).toLocaleTimeString();
@@ -21,6 +22,7 @@ function formatEntry(e: DiagnosticEntry): string {
 export default function DiagnosticsScreen() {
   const contentPadding = useSettingsScrollPadding();
   const theme = useTheme();
+  const router = useRouter();
   const [entries, setEntries] = useState<DiagnosticEntry[]>(getDiagnostics());
 
   useEffect(() => subscribeDiagnostics(() => setEntries(getDiagnostics())), []);
@@ -40,6 +42,17 @@ export default function DiagnosticsScreen() {
           and asset loads (page images, thumbnails) — newest first. Nothing here is sent anywhere
           automatically; use Share to send it yourself.
         </ThemedText>
+
+        <Pressable
+          testID="diagnostics.gesture-trace"
+          onPress={() => router.push('/gesture-trace')}
+          style={[styles.entry, { borderColor: theme.hairline }]}>
+          <ThemedText type="smallBold">Gesture trace</ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">
+            Records what the swipe recognizers actually did — whether they saw the touches, began,
+            activated, and what state they saw. Off unless you turn it on.
+          </ThemedText>
+        </Pressable>
 
         <View style={styles.actions}>
           <Pressable testID="diagnostics.share" onPress={shareLog} disabled={entries.length === 0} style={[styles.actionBtn, { borderColor: theme.hairline }]}>

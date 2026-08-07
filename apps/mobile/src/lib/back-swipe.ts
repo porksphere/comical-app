@@ -1,4 +1,7 @@
 import { Gesture, type PanGesture } from 'react-native-gesture-handler';
+import { makeMutable } from 'react-native-reanimated';
+
+import { isGestureTraceEnabled, trace, traceGate, traceThrottled } from '@/lib/gesture-trace';
 
 /**
  * The app's hand-rolled back-swipe: what counts as one, in one place.
@@ -51,10 +54,46 @@ export const BACK_FAIL_PX = 18;
  * A pan wired with the criteria above. The caller supplies everything that happens AFTER — what a
  * back-swipe drives differs completely between surfaces (one runs a zoom collapse, another slides
  * a card out) while what STARTS one must not.
+ *
+ * `tag` names this copy in the gesture trace (Settings → Diagnostics → Gesture trace). It buys the
+ * two questions that source alone can't answer: does this recognizer SEE the touches, and does it
+ * reach BEGAN — i.e. whether a dead swipe died before the offsets were ever consulted, or because
+ * they weren't satisfied. The observers are attached ONLY while the trace is recording: touch
+ * callbacks flip RNGH's `needsPointerData`, and a probe that reconfigures the recognizer it is
+ * measuring can't be trusted to be measuring the shipped one.
  */
-export function backSwipePan(): PanGesture {
-  return Gesture.Pan()
+export function backSwipePan(tag?: string): PanGesture {
+  const pan = Gesture.Pan()
     .activeOffsetX(BACK_ACTIVATE_PX)
     .failOffsetX(-BACK_FAIL_PX)
     .failOffsetY([-BACK_FAIL_PX, BACK_FAIL_PX]);
+  if (!tag || !isGestureTraceEnabled()) return pan;
+  // Per-copy, like every other piece of per-copy state on these pans: the recipe is built more
+  // than once and the copies must not share a touch origin or a throttle window.
+  const downX = makeMutable(0);
+  const downY = makeMutable(0);
+  const moveGate = traceGate();
+  return pan
+    .onTouchesDown((e) => {
+      const t = e.allTouches[0];
+      if (t) {
+        downX.set(t.absoluteX);
+        downY.set(t.absoluteY);
+      }
+      trace(tag, 'touch.down', { n: e.numberOfTouches });
+    })
+    .onTouchesMove((e) => {
+      const t = e.allTouches[0];
+      if (!t) return;
+      traceThrottled(moveGate, 60, tag, 'touch.move', {
+        dx: t.absoluteX - downX.value,
+        dy: t.absoluteY - downY.value,
+      });
+    })
+    .onTouchesCancelled(() => {
+      trace(tag, 'touch.cancel');
+    })
+    .onBegin(() => {
+      trace(tag, 'BEGAN');
+    });
 }

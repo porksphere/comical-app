@@ -156,6 +156,8 @@ function RootNavigation() {
           <Stack.Screen name="registry-browse" options={{ headerShown: false }} />
           <Stack.Screen name="add-registry" options={{ headerShown: false }} />
           <Stack.Screen name="diagnostics" options={{ headerShown: false }} />
+          <Stack.Screen name="gesture-trace" options={{ headerShown: false }} />
+          <Stack.Screen name="gesture-lab" options={{ headerShown: false }} />
           <Stack.Screen name="downloads" options={{ headerShown: false }} />
           <Stack.Screen name="series-downloads" options={{ headerShown: false }} />
           <Stack.Screen name="storage" options={{ headerShown: false }} />
