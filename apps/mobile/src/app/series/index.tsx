@@ -1420,22 +1420,41 @@ function SeriesReaderInstance({
   // So on native there is now ONE back-swipe: the copy composed with the scroller (below), which is
   // the only one that ever won. Web keeps this one instead, because there `detailsScrollGesture` is
   // undefined — no native recognizer to be simultaneous with, and nothing for it to fight.
+  //
+  // Not merely disabled on native — not BUILT. A permanently-disabled gesture still rebuilds when
+  // its deps change, and a rebuilt gesture costs a full re-serialization of its callbacks (see
+  // detailsBackSwipe below for the measurement). Dead weight that bills on every settle is worse
+  // than dead weight.
   const edgePan = useMemo(
-    () => makeBackSwipePan('series.edge').enabled(detailsActive && IS_WEB),
+    () => (IS_WEB ? makeBackSwipePan('series.edge').enabled(detailsActive) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [makeBackSwipePan, detailsActive, traceOn],
   );
-  // THE back-swipe on native (see edgePan above for why it's the only one). `.enabled(detailsActive)`
-  // is a native gate, matching the offsets: with activation decided inside the recognizer, a worklet
-  // check inside the callbacks would come too late to stop it.
+  // THE back-swipe on native (see edgePan above for why it's the only one).
   //
   // Held separately from the composition below because the rails inside the details need to name it
   // — they declare that THIS waits for THEM, which is the one relation keeping a rail scrollable now
   // that the back-swipe activates at the same distance a scroller claims at (see BackSwipeBoundary).
+  //
+  // ── NOT gated on `detailsActive`, and that is a performance decision ─────────────────────────
+  // It carried `.enabled(detailsActive)` for a while, which looks harmless and is not. Rebuilding a
+  // gesture gives it a fresh `gestureId`, and RNGH reacts to that by re-serializing EVERY callback
+  // closure into its `animatedHandlers` shared value (GestureDetector/updateHandlers.js), on the JS
+  // thread, in a microtask right after the commit. A device CPU profile put that at ~67ms of
+  // `createSerializable` — and since this gesture is also the context value the rails read, its new
+  // identity dragged another ~99ms of `propagateParentContextChanges` through the details subtree
+  // behind it. All of it landing on the frame `detailsActive` flips, which is the frame the settle
+  // animation starts on. That is the choppy settle: not the spring, the render under it.
+  //
+  // It doesn't need the gate anyway. This pan lives inside the details card, and that card drops
+  // `pointerEvents` while the reader owns the screen — so it is already receiving no touches, by a
+  // native mechanism rather than a config flag. The worklets re-check `detailsActiveSV` on top of
+  // that. `traceOn` stays a dep because it changes the gesture's SHAPE (see backSwipePan) and only
+  // ever flips from a Settings screen, where a re-serialization costs nothing.
   const detailsBackSwipe = useMemo(
-    () => (IS_WEB ? null : makeBackSwipePan('series.list').enabled(detailsActive)),
+    () => (IS_WEB ? null : makeBackSwipePan('series.list')),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [makeBackSwipePan, detailsActive, traceOn],
+    [makeBackSwipePan, traceOn],
   );
   const detailsScrollGesture = useMemo(
     () => (detailsBackSwipe ? Gesture.Simultaneous(Gesture.Native(), detailsBackSwipe) : undefined),
@@ -1465,8 +1484,7 @@ function SeriesReaderInstance({
       });
   }, [detailsActive, detailsActiveSV, pullEngagedSV, detailsScrollOffset, progress, commitReveal]);
   const detailsGestures = useMemo(
-    () =>
-      Gesture.Race(edgePan, returnPan, pullReleaseWatch),
+    () => (edgePan ? Gesture.Race(edgePan, returnPan, pullReleaseWatch) : Gesture.Race(returnPan, pullReleaseWatch)),
     [edgePan, returnPan, pullReleaseWatch],
   );
   // Geometry: the reader strip's height — the top-of-page band the details content starts below.
