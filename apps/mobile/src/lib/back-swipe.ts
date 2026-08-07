@@ -125,6 +125,32 @@ export const BACK_ACTIVATE_DOMINANCE = 0.7;
 export const BACK_FAIL_PX = Math.round(BACK_ACTIVATE_PX * BACK_ACTIVATE_DOMINANCE);
 
 /**
+ * ── EVERY callback on this pan needs an explicit `'worklet'` directive ──────────────────────────
+ *
+ * Not style, and not optional. Reanimated's Babel plugin auto-workletizes gesture callbacks only
+ * when it can see the chain is a gesture, and its test is literal:
+ *
+ *     isGestureObject(exp) → exp.callee.object.name === 'Gesture'
+ *
+ * A chain rooted at `Gesture.Pan()` qualifies. A chain rooted at a FACTORY CALL — `backSwipePan(tag)`,
+ * or the local `pan` below — does not, and the plugin silently leaves those callbacks as ordinary
+ * functions. RNGH then sees `isWorklet` false and takes the whole gesture off the UI thread:
+ *
+ *     get shouldUseReanimated() { return ... && !this.handlers.isWorklet.includes(false) && ...; }
+ *
+ * One un-workletized callback demotes the ENTIRE gesture. What follows is not subtle: every handler
+ * runs on the JS thread at touch frequency, and every shared-value read inside one becomes a
+ * blocking `runOnUISync` round-trip to the UI thread. A device profile caught 131ms of exactly that
+ * under `onGestureHandlerEvent`. It also explains the stale-latch mystery this file's callers spent
+ * a while working around: on the JS thread a `.set()` schedules the UI write asynchronously, so
+ * reading the value back in the same callback fetches the UI thread's older copy.
+ *
+ * So: extracting a shared factory for these gestures — which is the whole point of this module —
+ * costs the automatic workletization, and the directives buy it back. Add one to any callback added
+ * here or at a call site.
+ */
+
+/**
  * A pan wired with the criteria above. The caller supplies everything that happens AFTER — what a
  * back-swipe drives differs completely between surfaces (one runs a zoom collapse, another slides
  * a card out) while what STARTS one must not.
@@ -149,6 +175,7 @@ export function backSwipePan(tag?: string): PanGesture {
   const moveGate = traceGate();
   return pan
     .onTouchesDown((e) => {
+      'worklet';
       const t = e.allTouches[0];
       if (t) {
         downX.set(t.absoluteX);
@@ -157,6 +184,7 @@ export function backSwipePan(tag?: string): PanGesture {
       trace(tag, 'touch.down', { n: e.numberOfTouches });
     })
     .onTouchesMove((e) => {
+      'worklet';
       const t = e.allTouches[0];
       if (!t) return;
       traceThrottled(moveGate, 60, tag, 'touch.move', {
@@ -165,9 +193,11 @@ export function backSwipePan(tag?: string): PanGesture {
       });
     })
     .onTouchesCancelled(() => {
+      'worklet';
       trace(tag, 'touch.cancel');
     })
     .onBegin(() => {
+      'worklet';
       trace(tag, 'BEGAN');
     });
 }

@@ -107,21 +107,26 @@ function Rig({ name, note, kind }: { name: string; note: string; kind: 'bare' | 
     // Per-rig state, exactly as the real surfaces keep it per-copy.
     return backSwipePan()
       .onBegin(() => {
+        'worklet';
         runOnJS(bump)('began');
       })
       .onStart((e) => {
+        'worklet';
         runOnJS(bump)('started', Math.round(e.translationX));
       })
       .onUpdate((e) => {
+        'worklet';
         dx.set(Math.max(0, e.translationX));
       })
       .onEnd((e) => {
+        'worklet';
         runOnJS(bump)('ended', Math.round(e.translationX));
         // Exactly the test the real surfaces apply at release. A rig that never dismisses anything
         // is the only place to feel where the line sits without losing the page you're on.
         if (!backSwipeStayedHorizontal(e.translationX, e.translationY)) runOnJS(bump)('diagonal');
       })
       .onFinalize((_e, success) => {
+        'worklet';
         dx.set(withSpring(0, { damping: 30, stiffness: 300 }));
         if (!success) runOnJS(bump)('dropped');
       });

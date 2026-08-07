@@ -1251,6 +1251,9 @@ function SeriesReaderInstance({
   //
   // `.enabled(detailsActive)` is a NATIVE gate, matching the offsets. With activation decided inside
   // the recognizer, a worklet check inside the callbacks would come too late to stop one.
+  // Every callback below carries an explicit `'worklet'` — REQUIRED, because the chain is rooted at
+  // `backSwipePan(...)` rather than `Gesture.Pan()` and Reanimated's plugin only auto-workletizes
+  // the latter. See lib/back-swipe for what a demoted gesture costs.
   const makeBackSwipePan = useCallback((tag: string) => {
     // The trace's throttle window, kept with the gesture rather than the component so the two
     // platform copies (and any future one) can't share a window and hide each other's samples.
@@ -1316,6 +1319,7 @@ function SeriesReaderInstance({
     return backSwipePan(tag)
       // Activation = this gesture owns the screen; the list must stop scrolling under it.
       .onStart((e) => {
+        'worklet';
         // BEFORE the gate, always: "activated but every callback no-oped on detailsActive" and
         // "never activated" are different diagnoses and must not look the same in the log.
         trace(tag, 'START', { tx: e.translationX, ty: e.translationY, active: detailsActiveSV.value });
@@ -1328,6 +1332,7 @@ function SeriesReaderInstance({
         zoomClosing.set(true);
       })
       .onUpdate((e) => {
+        'worklet';
         if (!detailsActiveSV.value) return;
         const tx = e.translationX - originX.value;
         const ty = e.translationY - originY.value;
@@ -1337,6 +1342,7 @@ function SeriesReaderInstance({
         dragY.set(zoomCrossAxisDrag(ty, height));
       })
       .onEnd((e) => {
+        'worklet';
         trace(tag, 'END', {
           tx: e.translationX - originX.value,
           ty: e.translationY - originY.value,
@@ -1366,6 +1372,7 @@ function SeriesReaderInstance({
         else if (!edgeCommitting.value) settle();
       })
       .onFinalize((_e, success) => {
+        'worklet';
         // `success` is the single most valuable field in the whole trace: false here with no
         // preceding START is a recognizer that was FAILED or CANCELLED, which is a completely
         // different bug from one whose offsets were never satisfied.
@@ -2379,6 +2386,7 @@ function SearchLayer({
     };
     return backSwipePan(tag)
       .onStart((e) => {
+        'worklet';
         trace(tag, 'START', { tx: e.translationX, ty: e.translationY });
         ranHere.set(true);
         originX.set(e.translationX);
@@ -2391,11 +2399,13 @@ function SearchLayer({
         runOnJS(setSwipeLocked)(true);
       })
       .onUpdate((e) => {
+        'worklet';
         const tx = e.translationX - originX.value;
         traceThrottled(updateGate, 60, tag, 'update', { tx, edgeX: edgeX.value });
         edgeX.set(Math.max(0, tx));
       })
       .onEnd((e) => {
+        'worklet';
         // Where the swipe was HEADED, not where it stopped — see lib/gesture-release.
         // A card pop IS a dismissal, so it takes the same bar — half the travel, which is also
         // what react-navigation uses for this exact transition.
@@ -2412,6 +2422,7 @@ function SearchLayer({
         else settle(e.velocityX);
       })
       .onFinalize((_e, success) => {
+        'worklet';
         trace(tag, 'FINALIZE', { ok: !!success, ran: ranHere.value, committing: edgeCommitting.value, edgeX: edgeX.value });
         // Only the copy that was DRIVING settles, and only a drag that never reached onEnd —
         // see the instance's copy for why this asks `success` rather than the commit latch.
