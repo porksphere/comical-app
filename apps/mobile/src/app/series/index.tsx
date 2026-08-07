@@ -66,7 +66,7 @@ import { firstChapterInReadingOrder, getAdjacentChapter } from '@/lib/chapter-or
 import { useRouter } from '@/lib/nav';
 import { getPreferredGroup, resetPreferredGroup, setPreferredGroup } from '@/lib/preferred-group';
 
-import { backSwipePan, backSwipeStayedHorizontal, BACK_DOMINANCE, BackSwipeGestureContext } from '@/lib/back-swipe';
+import { backSwipePan, backSwipeStayedHorizontal, BACK_ACTIVATE_DOMINANCE, BackSwipeGestureContext } from '@/lib/back-swipe';
 import { trace, traceGate, traceJS, traceThrottled, useGestureTraceEnabled } from '@/lib/gesture-trace';
 import { releaseCommitted, releaseCommittedEitherWay } from '@/lib/gesture-release';
 import { IOS_CARD_SHADOW, IOS_CARD_SPRING, IOS_PARALLAX_FRACTION } from '@/lib/ios-card-pop';
@@ -1011,12 +1011,13 @@ function SeriesReaderInstance({
           }
           gestureMode.set(0);
         });
-      // Same dominance rule as the back-swipe (lib/back-swipe), applied to whichever axis this
+      // The back-swipe's ACTIVATION-side dominance (lib/back-swipe), applied to whichever axis this
       // mode dismisses along: paged drags across the pages' axis (vertical), webtoon across the
-      // scroll's (horizontal). The DISTANCE stays this surface's own — nothing here is racing a
-      // scroller for the claim, so it can afford to ask for more travel before it commits — but
-      // how far off-axis a drag may wander is one rule for the whole app, not a number per pan.
-      const cross = Math.round(COLLAPSE_ACTIVATE_PX * BACK_DOMINANCE);
+      // scroll's (horizontal). The activation half, not the strict release angle — this pan has no
+      // release-time second look, so its one gate has to stay generous enough to catch real drags.
+      // The DISTANCE stays this surface's own: nothing here is racing a scroller for the claim, so
+      // it can afford to ask for more travel before it takes the gesture.
+      const cross = Math.round(COLLAPSE_ACTIVATE_PX * BACK_ACTIVATE_DOMINANCE);
       if (settings.mode === 'paged') {
         pan.activeOffsetY([-COLLAPSE_ACTIVATE_PX, COLLAPSE_ACTIVATE_PX]).failOffsetX([-cross, cross]);
       } else {

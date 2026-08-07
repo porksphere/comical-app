@@ -68,31 +68,61 @@ import { isGestureTraceEnabled, trace, traceGate, traceThrottled } from '@/lib/g
  */
 export const BACK_ACTIVATE_PX = 10;
 /**
- * How much of the drag is allowed to be sideways-to-the-swipe at the moment it would activate —
- * the cross-axis budget as a FRACTION of ACTIVATE, because that ratio is the actual rule and the
- * two raw numbers only encode it. At 0.7 a drag has to be appreciably more horizontal than
- * vertical, roughly within 35° of straight across; a 45° drag loses to the scroller.
+ * ── How straight a back-swipe has to be, and why it takes TWO numbers ───────────────────────────
  *
- * This is the knob. ACTIVATE is pinned by the scroller's own threshold and must not be raised to
- * make the gesture "stricter" (it just makes it unreachable — see above), so strictness is spent
- * here instead. Tighter than about 0.5 starts eating honest swipes: the opening millimetres of a
- * real one wander in both axes, and at a ten-point activation distance that wander is a large
- * share of the whole measurement.
+ * THE RULE is BACK_SWIPE_DEGREES: how far off straight-across a back-swipe may wander, measured
+ * over the whole stroke. Stated in degrees because that is the unit the question gets asked in, and
+ * everything below derives from it.
+ *
+ * It cannot be applied at activation. Activation has to decide inside ten points — the scroller's
+ * claim deadline, not a preference (see BACK_ACTIVATE_PX) — and fifteen degrees of ten points is a
+ * two-and-a-half-point vertical budget. That is finger jitter. A gate that tight does not measure
+ * the swipe's direction, it measures how steadily the thumb landed, and it would put us straight
+ * back to swipes that die for no visible reason.
+ *
+ * So the two halves get the precision they actually have:
+ *
+ *   • ACTIVATION uses BACK_ACTIVATE_DOMINANCE, a coarse pre-filter. Its only jobs are to not lose
+ *     honest swipes and to not steal obvious scrolls. It is deliberately generous, because ten
+ *     points cannot support better and because being wrong here is cheap: activation buys only the
+ *     right to FOLLOW the finger, which is reversible.
+ *   • RELEASE uses the real angle, via `backSwipeStayedHorizontal`. By then the stroke is usually
+ *     hundreds of points long, so the angle is a measurement rather than a guess — and this is the
+ *     half that decides whether anything actually happens.
+ *
+ * Worth knowing what this is NOT: UIKit does not work this way. Its own back gesture is edge-only
+ * (UIScreenEdgePanGestureRecognizer, ~20pt from the leading edge), which is how it avoids ever
+ * having to tell a back-swipe from a scroll — almost nothing else starts in that strip. And once
+ * engaged it never re-checks direction: the interactive pop's percentComplete is horizontal
+ * translation alone, vertical discarded, so an edge swipe that arcs hard upward still pops. Decide
+ * once, early, then commit — the same shape as UIScrollView's directional lock. A full-surface
+ * back-swipe cannot borrow that, because it has no strip to hide in; the second look is the price
+ * of putting the gesture everywhere.
+ *
+ * Tune BACK_SWIPE_DEGREES. Leave the other two alone unless swipes stop STARTING, which is the
+ * failure the pre-filter owns.
  */
-export const BACK_DOMINANCE = 0.7;
+export const BACK_SWIPE_DEGREES = 15;
+
+/** The rule as a slope: the most |cross-axis| may be as a fraction of |along-axis|, over the whole
+ *  drag. Derived from the degrees above so the two cannot disagree. */
+export const BACK_DOMINANCE = Math.tan((BACK_SWIPE_DEGREES * Math.PI) / 180);
+
+/**
+ * The coarse gate at activation — see above for why this is not BACK_DOMINANCE. Roughly 35°, which
+ * at a ten-point activation distance is about as strict as the opening millimetres of a real swipe
+ * will tolerate: the wander in those first few points is a large share of the whole measurement.
+ */
+export const BACK_ACTIVATE_DOMINANCE = 0.7;
 
 /**
  * Vertical travel (or leftward travel) that gives the drag up instead. Derived, never dialled on
- * its own — see BACK_DOMINANCE.
- *
- * Note what this can and cannot see: it is a budget over the FIRST TEN POINTS of travel, because
- * that is the whole window there is before the scroller claims. `backSwipeStayedHorizontal` is the
- * other half of the same rule, applied at release when the rest of the drag is finally known.
+ * its own.
  *
  * It does NOT need to stay under the scroller's claim threshold the way ACTIVATE does. Failing late
  * costs nothing: by then the scroller has the touch anyway, which is the outcome failing asks for.
  */
-export const BACK_FAIL_PX = Math.round(BACK_ACTIVATE_PX * BACK_DOMINANCE);
+export const BACK_FAIL_PX = Math.round(BACK_ACTIVATE_PX * BACK_ACTIVATE_DOMINANCE);
 
 /**
  * A pan wired with the criteria above. The caller supplies everything that happens AFTER — what a
@@ -183,7 +213,7 @@ export function useBackSwipeBlocker(): NativeGesture | undefined {
 }
 
 /**
- * The dominance rule again, at RELEASE — the half that can see the whole gesture.
+ * THE dominance rule — the half that can see the whole gesture, and the one that decides.
  *
  * Activation has to decide inside the first ten points, and ten points is not enough to know what a
  * swipe is. A thumb ARCS: it leaves nearly straight across and curves as the thumb pivots, so a drag
@@ -192,11 +222,9 @@ export function useBackSwipeBlocker(): NativeGesture | undefined {
  * reading a genuinely horizontal beginning. The person holding the phone is judging the whole
  * stroke, and the whole stroke does not exist until it is over.
  *
- * So the same ratio is asked twice. Activation buys only the right to FOLLOW the finger, which is
- * cheap and reversible; this decides whether the drag was ever a back-swipe at all, and one that
- * wandered further off-axis than BACK_DOMINANCE allows springs back instead of committing. Both
- * halves read the same constant, so "how horizontal is horizontal" stays one number rather than
- * becoming two that drift.
+ * Which is why the real angle lives here rather than up there. Activation buys only the right to
+ * FOLLOW the finger — cheap, and reversible; this is where a drag either was a back-swipe or
+ * springs back having briefly looked like one.
  *
  * RNGH resets translation to zero the moment a pan activates (RNPanHandler.m, at the state change),
  * so `tx`/`ty` here measure the drag from activation onward — exactly the part that was on screen

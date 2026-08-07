@@ -9,7 +9,7 @@ import { TopBar } from '@/components/top-bar';
 import { Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
-import { BACK_ACTIVATE_PX, BACK_DOMINANCE, BACK_FAIL_PX, backSwipePan, backSwipeStayedHorizontal } from '@/lib/back-swipe';
+import { BACK_ACTIVATE_PX, BACK_FAIL_PX, BACK_SWIPE_DEGREES, backSwipePan, backSwipeStayedHorizontal } from '@/lib/back-swipe';
 
 /**
  * Three isolated rigs for the back-swipe, each one variable apart, so a broken swipe can be
@@ -61,10 +61,9 @@ export default function GestureLabScreen() {
           Swipe RIGHT inside each box, the way you would to go back. The box slides with the finger
           while the gesture owns it and springs home on release — nothing here navigates. Activation
           needs {BACK_ACTIVATE_PX}px rightward and gives up at {BACK_FAIL_PX}px vertical or leftward,
-          which is the real rule the series page and the search layer both use. `diagonal` counts
-          drags that passed that and were then rejected at release for wandering more than{' '}
-          {BACK_DOMINANCE} of their width off-axis — the second half of the same rule, applied when
-          the whole stroke is known.
+          which is the coarse gate ten points can support. `diagonal` counts drags that passed it
+          and were then rejected at release for straying more than {BACK_SWIPE_DEGREES}° off
+          straight across — the real rule, applied once the whole stroke is known.
         </ThemedText>
 
         <Rig
