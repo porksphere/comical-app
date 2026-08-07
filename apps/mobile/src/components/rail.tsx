@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
+import { BackSwipeBoundary } from '@/components/back-swipe-boundary';
 import { estimatedCardHeight, SeriesCard, TitlePeek, type CardSize } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
@@ -352,6 +353,9 @@ export function Rail({
           ))}
         </View>
       ) : (
+        // The strip wins a rightward drag over the page's back-swipe — see BackSwipeBoundary. On a
+        // surface with no back-swipe (the home feed) this is a passthrough.
+        <BackSwipeBoundary>
         <AnimatedLegendList
           ref={listRef}
           horizontal
@@ -448,6 +452,7 @@ export function Rail({
             </View>
           )}
         />
+        </BackSwipeBoundary>
       )}
       {peekIndex != null && (
         <TitlePeek

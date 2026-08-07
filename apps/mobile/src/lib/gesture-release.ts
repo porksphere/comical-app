@@ -26,13 +26,13 @@
  */
 
 /** `UIScrollView.DecelerationRate.normal`. `.fast` is 0.99 — much stingier, wrong for a page. */
-export const DECELERATION_RATE = 0.998;
+const DECELERATION_RATE = 0.998;
 
 /** Seconds of travel a release is projected along its own velocity. ~0.499 at the rate above. */
-export const PROJECTION_SECONDS = DECELERATION_RATE / (1 - DECELERATION_RATE) / 1000;
+const PROJECTION_SECONDS = DECELERATION_RATE / (1 - DECELERATION_RATE) / 1000;
 
 /** How much further a release carries, in points, given its velocity in points/second. */
-export function projectRelease(velocity: number): number {
+function projectRelease(velocity: number): number {
   'worklet';
   return velocity * PROJECTION_SECONDS;
 }

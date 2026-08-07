@@ -66,7 +66,7 @@ import { firstChapterInReadingOrder, getAdjacentChapter } from '@/lib/chapter-or
 import { useRouter } from '@/lib/nav';
 import { getPreferredGroup, resetPreferredGroup, setPreferredGroup } from '@/lib/preferred-group';
 
-import { backSwipePan } from '@/lib/back-swipe';
+import { backSwipePan, BackSwipeGestureContext } from '@/lib/back-swipe';
 import { trace, traceGate, traceJS, traceThrottled, useGestureTraceEnabled } from '@/lib/gesture-trace';
 import { releaseCommitted, releaseCommittedEitherWay } from '@/lib/gesture-release';
 import { IOS_CARD_SHADOW, IOS_CARD_SPRING, IOS_PARALLAX_FRACTION } from '@/lib/ios-card-pop';
@@ -1217,46 +1217,38 @@ function SeriesReaderInstance({
     });
     return () => sub.remove();
   }, [detailsActive, setRevealed, closeLayer]);
-  // ONE back-swipe recipe, built twice. FULL-SURFACE, not edge-only — a rightward drag anywhere on
-  // the details goes back, the way a full-screen pop gesture does. What counts as an activation is
-  // lib/back-swipe's, and it is declarative (activeOffsetX/failOffset*) for the reasons written
-  // there. Anything horizontal underneath still keeps winning on its own turf — a horizontal rail
-  // that starts scrolling cancels the touch stream outright, so this never sees the rest of it.
+  // The back-swipe recipe. FULL-SURFACE, not edge-only — a rightward drag anywhere on the details
+  // goes back, the way a full-screen pop gesture does. What counts as an activation is
+  // lib/back-swipe's, declarative (activeOffsetX/failOffset*), for the reasons written there.
   //
-  // WHY TWICE: the details surface is almost entirely a native vertical scroll view, whose own
-  // pan recognizer begins on ~10px of movement in ANY direction — before this pan's 20px
-  // horizontal activation — and UIKit then force-fails every recognizer not allowed to run
-  // simultaneously with it. A cross-detector `simultaneousWithExternalGesture` relation from the
-  // screen-level pan to a Native handler on the list did NOT reliably bind on device, so the
-  // simultaneity is declared where RNGH is built to honor it: `detailsScrollGesture` below is
-  // `Gesture.Simultaneous(Gesture.Native(), <this same pan>)` attached BY the list's own
-  // detector (threaded down via PullListWiring.scrollGesture) — one detector, both tags assigned
-  // in one attach, the relation internal to the composition. The scroll view idles horizontally
-  // (nothing to scroll that way) while the pan drives the slide. The screen-level copy still
-  // covers the non-scroll chrome. Web keeps only the screen-level pan (no native recognizers to
-  // fight — and it was already green there).
+  // It is built ONCE PER PLATFORM, and which one is live is decided by `.enabled` below: on native
+  // the copy composed with the list's scroller, on web the screen-level one. A device trace is what
+  // settled that — it used to be both at once, and the two spent every drag cancelling each other.
   //
-  // BOTH copies carry `.enabled(detailsActive)`. The list copy used to go without one, leaning on
-  // the worklet gate that came with manual activation; with the offsets evaluated natively the gate
-  // has to be native too, or the scroller's copy stays live on the reader side.
+  // Why the native copy has to ride the scroller: the details surface is almost entirely a native
+  // vertical scroll view, and UIKit force-fails any recognizer not allowed to run simultaneously
+  // with a scroll view that has claimed the touch. A cross-detector `simultaneousWithExternalGesture`
+  // relation did NOT reliably bind on device, so the simultaneity is declared where RNGH is built to
+  // honor it: `detailsScrollGesture` below is `Gesture.Simultaneous(Gesture.Native(), <this pan>)`
+  // attached BY the list's own detector (threaded down via PullListWiring.scrollGesture) — one
+  // detector, both tags assigned in one attach, the relation internal to the composition.
+  //
+  // `.enabled(detailsActive)` is a NATIVE gate, matching the offsets. With activation decided inside
+  // the recognizer, a worklet check inside the callbacks would come too late to stop one.
   const makeBackSwipePan = useCallback((tag: string) => {
-    // The trace's throttle window for this copy — per-copy for the same reason as everything else
-    // here: both copies see the same touches, and a shared window would hide one of them.
+    // The trace's throttle window, kept with the gesture rather than the component so the two
+    // platform copies (and any future one) can't share a window and hide each other's samples.
     const updateGate = traceGate();
-    // PER-COPY activation flag. This recipe is built twice (see below) and the two copies share
-    // every other shared value, which is fine for state that describes the gesture — but not for
-    // "did I run it". Both copies see the same touch stream, so the one that LOSES also reaches
-    // onFinalize, and without this it would settle a drag the other one is still driving, or undo
-    // a commit the other one just made.
+    // Did this gesture ACTIVATE? onFinalize fires either way — for a drag that was rejected before
+    // it ever started as much as for one that ran — and almost everything there (settling the page,
+    // handing scrolling back) is only correct for one that ran.
     const ranHere = makeMutable(false);
     // Where the finger was when the gesture ACTIVATED, so the page is dragged from there rather
     // than from touch-down. RNGH reports `translationX` from the touch, not from activation, so
-    // without this every pixel travelled while the rule was still making up its mind is applied to
-    // `zoom` in the first frame after it activates. When activation is prompt that is a 24px jump
-    // and invisible; when it is late — a drag the rule deliberated over — the collapse is most of
-    // the way done before the page has moved at all, and the release then has almost nothing left
-    // to animate. That is what "the animation finishes instantly as soon as you release" was: not
-    // a spring that was too fast, a drag that had already spent the distance.
+    // without this every pixel travelled before it activates lands on `zoom` in the first frame
+    // after. At the current 10px threshold that would be a small jump; it mattered far more under
+    // the old rule, which could deliberate for most of a swipe and then apply the whole distance at
+    // once, leaving the release with nothing left to animate.
     const originX = makeMutable(0);
     const originY = makeMutable(0);
     const settle = () => {
@@ -1270,12 +1262,11 @@ function SeriesReaderInstance({
       dragY.set(withSpring(0, SPRING_BACK));
     };
     // The committed collapse, behind the same one-way `edgeCommitting` door the search layer's
-    // slideOut uses — and for the same reason, which is the bug the user kept hitting: this recipe
-    // is built TWICE, both copies see the same touch stream, and both reach onEnd off one release.
-    // Unguarded, the second one wrote `zoom` again — which CANCELS the first spring, and a cancelled
-    // Reanimated animation still fires its callback. So the collapse's callback ran on the frame the
-    // finger lifted and the page was simply gone. That is what "it instantly snaps the animation to
-    // be done" was: not a spring too fast, a second spring stepping on the first one's.
+    // slideOut uses. The door matters because a second write to `zoom` CANCELS the first spring, and
+    // a cancelled Reanimated animation still fires its callback — so a duplicate commit would run
+    // the collapse's callback on the frame the finger lifted and the page would simply be gone.
+    // (That symptom turned out to have a different cause here — see onFinalize — but the guard is
+    // still the right shape, and a one-way latch read across callbacks is the read that works.)
     const commit = (velocityX: number) => {
       'worklet';
       trace(tag, 'commit', { vx: velocityX, zoom: zoom.value, already: edgeCommitting.value });
@@ -1364,9 +1355,8 @@ function SeriesReaderInstance({
         // fires its callback. The callback is what leaves. That is what "the release finishes
         // instantly" was, and `success` doesn't depend on a cross-callback read to get it right.
         if (ranHere.value && !success) settle();
-        // Only the copy that actually drove may unlock the list. This recipe is built twice and
-        // both copies reach onFinalize, so an unguarded unlock let the loser hand scrolling back
-        // mid-swipe — the page sliding away while the list scrolled under it.
+        // Only a gesture that actually drove may unlock the list — otherwise every rejected drag
+        // would hand scrolling back, including one rejected mid-swipe while another is driving.
         if (ranHere.value) runOnJS(setSwipeLocked)(false);
         ranHere.set(false);
         // NOTE: `edgeCommitting` is deliberately NOT cleared. It means "this instance is leaving",
@@ -1408,14 +1398,22 @@ function SeriesReaderInstance({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [makeBackSwipePan, detailsActive, traceOn],
   );
-  const detailsScrollGesture = useMemo(() => {
-    if (IS_WEB) return undefined;
-    // THE back-swipe on native (see edgePan above for why it's the only one). `.enabled(
-    // detailsActive)` is a native gate, matching the offsets: with activation decided inside the
-    // recognizer, a worklet check inside the callbacks would come too late to stop it.
-    return Gesture.Simultaneous(Gesture.Native(), makeBackSwipePan('series.list').enabled(detailsActive));
+  // THE back-swipe on native (see edgePan above for why it's the only one). `.enabled(detailsActive)`
+  // is a native gate, matching the offsets: with activation decided inside the recognizer, a worklet
+  // check inside the callbacks would come too late to stop it.
+  //
+  // Held separately from the composition below because the rails inside the details need to name it
+  // — they declare that THIS waits for THEM, which is the one relation keeping a rail scrollable now
+  // that the back-swipe activates at the same distance a scroller claims at (see BackSwipeBoundary).
+  const detailsBackSwipe = useMemo(
+    () => (IS_WEB ? null : makeBackSwipePan('series.list').enabled(detailsActive)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [makeBackSwipePan, detailsActive, traceOn]);
+    [makeBackSwipePan, detailsActive, traceOn],
+  );
+  const detailsScrollGesture = useMemo(
+    () => (detailsBackSwipe ? Gesture.Simultaneous(Gesture.Native(), detailsBackSwipe) : undefined),
+    [detailsBackSwipe],
+  );
   // iOS pull release, caught ON the UI thread. The commit used to ride onScrollEndDrag alone,
   // which reaches JS a frame or two AFTER the rubber-band bounce starts — and in that window the
   // engaged follow tracked the bounce BACKWARD, so the details visibly jumped against the
@@ -1983,6 +1981,8 @@ function SeriesReaderInstance({
           {/* The content scrolls over the transparent strip window — SeriesBody itself paints
               no background, so the faded reader shows through above the seam. */}
           <Animated.View style={[styles.detailsContent, detailsContentStyle]}>
+            {/* Everything below can yield the back-swipe to a horizontal scroller of its own. */}
+            <BackSwipeGestureContext.Provider value={detailsBackSwipe}>
             <SeriesDetailsHost
               bridgeId={bridgeId}
               id={id}
@@ -2002,6 +2002,7 @@ function SeriesReaderInstance({
               onHeroCoverRect={onHeroCoverRect}
               coverAspectSeed={heroAspectSeed}
             />
+            </BackSwipeGestureContext.Provider>
           </Animated.View>
         </Animated.View>
       </GestureDetector>
@@ -2271,8 +2272,8 @@ function SearchLayer({
   //
   // `edgeCommitting` is the guard, and it is the right one for two jobs at once: it already means
   // "this layer is leaving" and is one-way for the layer's whole life, so checking it here makes a
-  // second exit a no-op — the chevron tapped during a committed swipe, or both copies of the pan
-  // committing off the same touch — and exactly one spring exists, hence exactly one pop.
+  // second exit a no-op — the chevron tapped during a committed swipe, say — so exactly one spring
+  // exists, hence exactly one pop.
   // `onPopLayer` slices this layer off the stack; a second call would take another layer with it.
   //
   // And the pop fires REGARDLESS of `finished`. A cancelled animation reports finished:false, and
@@ -2310,13 +2311,12 @@ function SearchLayer({
   // must agree on what one is. Everything after it is this layer's own, because here a back-swipe
   // slides a card out rather than collapsing a gallery.
   //
-  // Built twice for the same reason as the instance's makeBackSwipePan: the screen-level copy
-  // covers the chrome, and a second copy rides the results scroller composed with a Native handler
-  // (`Gesture.Simultaneous`, one detector — see there for why the cross-detector relation isn't
-  // trusted). Which is also why the per-copy `ranHere` and the one-way `edgeCommitting` come
-  // across: both copies see the same touches and both reach onFinalize, so the loser could
-  // otherwise settle a drag the winner is driving — or undo a commit it just made, dragging the
-  // layer back on screen after it had already been sliced off the stack.
+  // One copy per platform, exactly as on the instance: the native one rides the results scroller
+  // composed with a Native handler (`Gesture.Simultaneous`, one detector — see there for why the
+  // cross-detector relation isn't trusted), the web one sits at screen level. `ranHere` and the
+  // one-way `edgeCommitting` come across from there too — the first so a drag that never activated
+  // can't settle or unlock anything, the second so nothing can undo a commit and drag the layer
+  // back on screen after it has already been sliced off the stack.
   const makeBackSwipePan = useCallback((tag: string) => {
     const updateGate = traceGate();
     const ranHere = makeMutable(false);

@@ -1,4 +1,5 @@
-import { Gesture, type PanGesture } from 'react-native-gesture-handler';
+import { createContext, useContext, useMemo } from 'react';
+import { Gesture, type GestureType, type NativeGesture, type PanGesture } from 'react-native-gesture-handler';
 import { makeMutable } from 'react-native-reanimated';
 
 import { isGestureTraceEnabled, trace, traceGate, traceThrottled } from '@/lib/gesture-trace';
@@ -126,4 +127,44 @@ export function backSwipePan(tag?: string): PanGesture {
     .onBegin(() => {
       trace(tag, 'BEGAN');
     });
+}
+
+/**
+ * ── Horizontal scrollers keep their own turf ────────────────────────────────────────────────────
+ *
+ * The back-swipe activates at the same ten points a native scroller claims at, which is what makes
+ * it reachable at all (see BACK_ACTIVATE_PX). The cost is that it now also beats HORIZONTAL
+ * scrollers — the related-series rails — at their own game: a rightward drag on a rail dismissed the
+ * page instead of scrolling the rail back, which makes the rails unusable.
+ *
+ * Lowering activation again isn't an option; that's the setting that made the gesture work. And the
+ * two can't be told apart by geometry, because they ARE the same gesture — a rightward drag. The
+ * only thing that distinguishes them is WHERE the finger landed, and the recognizer that knows that
+ * is the rail's own.
+ *
+ * So the rail is given the right of first refusal. `useBackSwipeBlocker` hands a horizontal scroller
+ * a native gesture declaring that the back-swipe must wait for it: land on a rail with somewhere to
+ * scroll and the rail takes the drag, land anywhere else (or on a rail already at its end, whose
+ * recognizer fails) and the back-swipe proceeds untouched. That is exactly how a nested scroll view
+ * behaves inside a native pop gesture, and it needs no knowledge of rails here or of the back-swipe
+ * there — only the ref that the two share through context.
+ *
+ * A surface with no back-swipe (the home feed's rails) reads a null context and gets nothing, so the
+ * relation costs those nothing at all.
+ *
+ * The gesture OBJECT travels through the context, not a ref to it. RNGH accepts either, and the
+ * object avoids handing a ref across a render boundary for something that is already a stable
+ * memoized value on the providing side.
+ */
+export const BackSwipeGestureContext = createContext<GestureType | null>(null);
+
+/** For a horizontal scroller nested inside a back-swipe surface: compose this onto it (or wrap it
+ *  in a `GestureDetector`) and the back-swipe will wait for the scroller to fail first. Returns
+ *  undefined where there is no back-swipe to yield to. */
+export function useBackSwipeBlocker(): NativeGesture | undefined {
+  const backSwipe = useContext(BackSwipeGestureContext);
+  return useMemo(
+    () => (backSwipe ? Gesture.Native().blocksExternalGesture(backSwipe) : undefined),
+    [backSwipe],
+  );
 }

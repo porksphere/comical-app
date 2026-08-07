@@ -181,11 +181,11 @@ export function traceThrottled(
 }
 
 /** Newest LAST — this reads as a timeline, so it's kept in the order things happened. */
-export function getGestureTrace(): readonly string[] {
+function getGestureTrace(): readonly string[] {
   return snapshot;
 }
 
-export function subscribeGestureTrace(listener: () => void): () => void {
+function subscribeGestureTrace(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
