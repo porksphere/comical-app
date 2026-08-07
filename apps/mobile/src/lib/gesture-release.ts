@@ -11,25 +11,45 @@
  *
  * Apple's answer, from WWDC 2018's "Designing Fluid Interfaces" — the talk about how their own
  * system gestures work — is to PROJECT: ask where the thing would come to rest if you let go now,
- * and decide on that. Distance and speed stop being two tests and become one quantity.
+ * and decide on that. Distance and speed stop being two tests and become one quantity. That method
+ * is the part worth taking, and it is why a small quick flick pops a UIKit navigation stack while a
+ * long slow drag that stalls does not.
+ *
+ * ── The horizon, and why it is 0.3 and not 0.5 ──────────────────────────────────────────────────
+ * The method needs a time to project over, and this file used to derive one from Apple's formula,
  *
  *     project(v) = (v / 1000) * rate / (1 - rate)
  *
- * with `rate` the UIScrollView deceleration constant. That is the whole of it, and it is why a
- * small quick flick from the edge pops a UIKit navigation stack while a long slow drag that stalls
- * does not.
+ * which at `UIScrollView.DecelerationRate.normal` (0.998) works out to ~0.499s. That derivation is
+ * sound for what it describes — where a SCROLL coasting to a stop under that deceleration would
+ * land — and this file wrongly treated it as the answer for a different question, calling
+ * react-navigation's 0.3 "hand-picked" by comparison.
  *
- * (Apple's own pop logic is private — `_UINavigationInteractiveTransition` is not documented and
- * nobody outside Apple has its finish/cancel rule. This is their published method rather than
- * their shipped code. It is also NOT react-navigation's constant: that library projects over 0.3s,
- * a hand-picked number, where the normal deceleration rate works out to ~0.5s. We match Apple.)
+ * A dismissal is not a scroll coasting to rest. It is a stack pop, and the shipping implementation
+ * of that on iOS is `react-native-screens`' full-screen swipe (RNSScreenStack.mm, handleSwipe),
+ * which drives a real UIKit percent-driven transition and decides with:
+ *
+ *     gestureDistance = translation + velocity * 0.3;
+ *     shouldFinishTransition = gestureDistance > distance / 2;
+ *
+ * — the same shape, over 0.3s, cross-referenced in its own comment to react-navigation's Card.tsx.
+ * Two independent implementations of this exact gesture agree on 0.3, and Apple's own pop rule is
+ * private (`_UINavigationInteractiveTransition` is undocumented; nobody outside Apple has its
+ * finish/cancel logic), so 0.3 is as close to "what iOS does here" as anything observable.
+ *
+ * The difference is not cosmetic: at 1000 pt/s, 0.499 projects 499 points where 0.3 projects 300.
+ * Running long meant a quick flick that had barely moved committed anyway, which reads as a page
+ * that dismisses when you didn't ask it to.
  */
 
-/** `UIScrollView.DecelerationRate.normal`. `.fast` is 0.99 — much stingier, wrong for a page. */
-const DECELERATION_RATE = 0.998;
-
-/** Seconds of travel a release is projected along its own velocity. ~0.499 at the rate above. */
-const PROJECTION_SECONDS = DECELERATION_RATE / (1 - DECELERATION_RATE) / 1000;
+/**
+ * Seconds of travel a release is projected along its own velocity.
+ *
+ * Matches react-native-screens and react-navigation for the stack-pop decision — see above, and
+ * note this is deliberately NOT the UIScrollView deceleration projection, which answers a
+ * different question and runs ~0.5s.
+ */
+const PROJECTION_SECONDS = 0.3;
 
 /** How much further a release carries, in points, given its velocity in points/second. */
 function projectRelease(velocity: number): number {

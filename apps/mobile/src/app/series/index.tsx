@@ -137,7 +137,9 @@ const READER_BACKDROP = '#0f0f0f';
 //   DISMISS — throwing the screen away. Half the travel, matching a pushed card, and NOT a matter
 //     of taste: once velocity counts for its real worth instead of being a cliff, a quarter is a
 //     hair-trigger that a barely-moving release would clear. A reveal can afford to be wrong; a
-//     dismissal cannot.
+//     dismissal cannot. With lib/gesture-release's 0.3s horizon this makes the dismissal rule
+//     `translation + velocity * 0.3 > width / 2` — which is, term for term, what react-native-screens
+//     runs for a native iOS stack pop (RNSScreenStack.mm, handleSwipe).
 /** How far the expanded reader's own dismiss drag travels before it takes the gesture. Larger than
  *  the back-swipe's, and allowed to be: this one isn't racing a scroll view for the claim on its
  *  axis, so it can ask for a deliberate drag rather than a decisive one. */
