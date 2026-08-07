@@ -19,40 +19,46 @@ import { makeMutable } from 'react-native-reanimated';
  * intent is a RATIO — how much more horizontal than vertical the travel is — and a ratio needs the
  * raw touch stream, which is what `manualActivation` gives.
  *
- * ── Why these numbers ────────────────────────────────────────────────────────
- * DOMINANCE is the angle: 3 admits anything within ~18° of horizontal. It was 2 (~27°), which read
- * as too lenient on device — a lazy diagonal that was really a scroll would take the page with it.
- * Raising it costs nothing for a deliberate swipe, which is far straighter than 18°.
+ * ── Why these numbers, and the trap they replaced ────────────────────────────
+ * The two tests are SYMMETRIC — same distance, same ratio, opposite axes — and that symmetry is
+ * load-bearing. An earlier version was deliberately asymmetric: activate at 24px on a strict ratio,
+ * but fail the moment vertical travel passed 12px while merely exceeding horizontal. The reasoning
+ * was that a scroll should be handed back instantly without making the list wait. The flaw is that
+ * `|dy| > |dx|` is TRIVIALLY TRUE at the start of almost any gesture — at dx ≈ 0 any vertical at all
+ * satisfies it — so a swipe that began with the finger settling a dozen pixels downward, which is
+ * most swipes on a list that is already scrolling, was killed before its horizontal movement had
+ * even begun. It didn't read as strict, it read as the gesture randomly not working.
  *
- * ACTIVATE and FAIL are deliberately ASYMMETRIC, and that asymmetry is the whole trick. Deciding at
- * the first sample that clears a low bar is what made the old rig feel loose: the first few points
- * of any gesture are noise, and whichever axis wins there is close to random. So the horizontal bar
- * is high enough to be past the noise (24px), while the vertical one is low (12px) — a drag that
- * sets off downward is a scroll and should be handed back immediately, without making the scroller
- * wait 24px for its own gesture. Undecided until one of them trips.
+ * So failing now requires travel that is CLEARLY vertical — past the same distance, and dominant by
+ * the same ratio. Early noise cannot satisfy that, while a real scroll satisfies it almost at once.
+ *
+ * DOMINANCE stays forgiving (2 ≈ within 27° of horizontal) for a reason beyond taste: activation has
+ * to happen before the scroll view underneath commits to its own gesture, and on iOS a scroll that
+ * has started does not hand the touch back. Tightening this to 3 pushed activation later and let the
+ * scroller win first — which is how "require more horizontal than diagonal" turned into "the swipe
+ * doesn't fire". The strictness lives in the fail side instead: anything between the two cones is
+ * neither, and is given up on at BACK_DECIDE_PX rather than being awarded to either.
  */
 
-/** Horizontal travel needed before a drag is a back-swipe. */
+/** Travel along an axis before that axis is allowed to decide anything. */
 export const BACK_ACTIVATE_PX = 24;
-/** Vertical travel (or backwards travel) that hands the gesture back instead. */
-export const BACK_FAIL_PX = 12;
-/** How many times more horizontal than vertical the travel must be. 3 ≈ within 18° of horizontal. */
-export const BACK_DOMINANCE = 3;
+/** The mirror of it: vertical travel before a drag may be called a scroll. Same distance on purpose. */
+export const BACK_FAIL_PX = 24;
+/** How many times one axis must exceed the other. 2 ≈ within 27° of that axis. */
+export const BACK_DOMINANCE = 2;
 /**
- * Rightward travel after which an undominant drag is GIVEN UP ON rather than left pending.
+ * Total travel after which a drag belonging to NEITHER cone is given up on rather than left pending.
  *
- * Without this the test has a band it can never decide. `ay > FAIL && ay > dx` only catches drags
- * that are more vertical than horizontal, so a drag between the dominance angle and 45° satisfies
- * NEITHER branch — not straight enough to activate, not steep enough to fail — and stays pending
- * for as long as the finger moves. The gesture then does nothing at all: it never activates, and
- * because activation is manual it never cleanly hands the touch back either.
+ * With two dominance cones there is a band between them — roughly 27° to 63° — that satisfies
+ * neither test. Without this bar such a drag stays undecided for as long as the finger moves, and
+ * since activation is manual that means the gesture never fires AND never cleanly releases the
+ * touch. Diagonal drags land here by design: they are not a back-swipe, and giving up is how the
+ * scroller gets them.
  *
- * That band is exactly the swipe a person actually makes, and raising DOMINANCE from 2 widened it
- * from 27°–45° to 18°–45°, which is what made the back-swipe "inconsistent" — not stricter, but
- * silently dead over a third of the angles. Comfortably above ACTIVATE so a true horizontal swipe
- * has always won by the time it is consulted.
+ * Generous, because it is only reached by drags that are genuinely ambiguous — a real swipe or a
+ * real scroll has been decided long before.
  */
-export const BACK_DECIDE_PX = 48;
+export const BACK_DECIDE_PX = 64;
 
 /** 1 = this is a back-swipe, -1 = it belongs to something else, 0 = not enough travel to say. */
 export type BackSwipeVerdict = 1 | -1 | 0;
@@ -64,12 +70,12 @@ export type BackSwipeVerdict = 1 | -1 | 0;
 export function decideBackSwipe(dx: number, dy: number): BackSwipeVerdict {
   'worklet';
   const ay = Math.abs(dy);
+  // Dominantly rightward — ours.
   if (dx > BACK_ACTIVATE_PX && dx > ay * BACK_DOMINANCE) return 1;
-  // Vertical intent (the list underneath is scrolling), or a leftward drag, which is never this.
-  if ((ay > BACK_FAIL_PX && ay > dx) || dx < -BACK_FAIL_PX) return -1;
-  // Gone far enough right to have shown its intent, and that intent is not dominantly horizontal.
-  // Hand it back rather than leaving it pending forever — see BACK_DECIDE_PX.
-  if (dx > BACK_DECIDE_PX) return -1;
+  // Dominantly vertical (the list is scrolling), or meaningfully leftward, which is never this.
+  if ((ay > BACK_FAIL_PX && ay > dx * BACK_DOMINANCE) || dx < -BACK_FAIL_PX) return -1;
+  // Neither cone, and far enough along to say so — see BACK_DECIDE_PX.
+  if (Math.hypot(dx, ay) > BACK_DECIDE_PX) return -1;
   return 0;
 }
 
