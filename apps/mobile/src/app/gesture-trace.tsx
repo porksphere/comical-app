@@ -8,6 +8,7 @@ import { TopBar } from '@/components/top-bar';
 import { Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
+import { readFrameSummary } from '@/lib/frame-trace';
 import { useRouter } from '@/lib/nav';
 import {
   clearGestureTrace,
@@ -40,6 +41,10 @@ import {
  *                                     cancels the first, whose callback still fires — which is
  *                                     exactly what "the animation finishes instantly" looks like.
  *   • `collapse.done finished=n`    → the collapse spring was cancelled rather than completing.
+ *   • `frame LONG dt=`              → the UI thread stalled for that many ms (lib/frame-trace).
+ *                                     WHERE these fall against the gesture lines is the whole
+ *                                     question: during the drag, at the release, or through the
+ *                                     collapse — and whether any JS line sits beside them.
  */
 export default function GestureTraceScreen() {
   const contentPadding = useSettingsScrollPadding();
@@ -47,6 +52,9 @@ export default function GestureTraceScreen() {
   const router = useRouter();
   const enabled = useGestureTraceEnabled();
   const lines = useGestureTrace();
+  // Read during render rather than subscribed to: these counters move every frame while recording,
+  // and a readout that re-rendered with them would be measuring itself.
+  const frames = readFrameSummary();
 
   const shareLog = () => {
     if (lines.length === 0) return;
@@ -121,6 +129,12 @@ export default function GestureTraceScreen() {
             </ThemedText>
           </Pressable>
         </View>
+
+        {frames.frames > 0 && (
+          <ThemedText type="small" style={[styles.mono, { color: theme.textSecondary }]} selectable>
+            {`frames ${frames.frames}  dropped ${frames.long}  worst ${frames.worstMs.toFixed(0)}ms`}
+          </ThemedText>
+        )}
 
         {lines.length === 0 ? (
           <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>

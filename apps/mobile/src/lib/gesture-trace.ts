@@ -194,7 +194,15 @@ export function useGestureTrace(): readonly string[] {
   return useSyncExternalStore(subscribeGestureTrace, getGestureTrace, getGestureTrace);
 }
 
+/** Set by lib/frame-trace so clearing the log clears its counters too, without this module having
+ *  to import it (frame-trace imports THIS one — the dependency only runs one way). */
+let onClear: (() => void) | null = null;
+export function setGestureTraceOnClear(fn: () => void): void {
+  onClear = fn;
+}
+
 export function clearGestureTrace(): void {
+  onClear?.();
   lines.length = 0;
   snapshot = [];
   uiEpoch.set(-1);

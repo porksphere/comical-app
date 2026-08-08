@@ -43,6 +43,7 @@ import { ToastHost } from '@/components/toast';
 import { installActivityAutoCheck } from '@/data/activity/auto-check';
 import { startEmbeddedRuntime } from '@/data/embedded/startup';
 import { installAppUpdateAutoCheck } from '@/data/use-app-update';
+import { useFrameTrace } from '@/lib/frame-trace';
 import { PROFILING_ENABLED } from '@/lib/profiling';
 import { persister, PERSIST_BUSTER, PERSIST_MAX_AGE_MS, queryClient, shouldDehydrateQuery } from '@/data/query-client';
 import { ThemeSchemeProvider, useActiveColorScheme } from '@/hooks/use-theme';
@@ -91,6 +92,12 @@ function RootLayout() {
   );
 }
 
+/** The UI-thread frame recorder (lib/frame-trace) — inert unless the gesture trace is recording. */
+function FrameTrace() {
+  useFrameTrace();
+  return null;
+}
+
 function RootNavigation() {
   // Active scheme from context (resolved once by ThemeSchemeProvider above) so the
   // navigation theme + status bar match the app content and re-theme live when the
@@ -103,6 +110,7 @@ function RootNavigation() {
           differs from the OS. */}
       <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
       <AnimatedSplashOverlay />
+      <FrameTrace />
       {/* OverlayProvider hosts the stacked bottom-sheet overlays app-wide. */}
       <OverlayProvider>
         {/* Native stack: real UINavigationController on iOS (large titles, back

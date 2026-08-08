@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image, type ImageLoadEventData } from 'expo-image';
 import { useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import {
   BackHandler,
   Platform,
@@ -828,17 +828,14 @@ function SeriesReaderInstance({
     leftSV.set(true);
     leaveNow();
   }, [leftSV, leaveNow]);
-  // True from the moment an exit starts: the page stops taking touches immediately, so nothing
-  // can be tapped on a page that is on its way out (or, if a leave ever does fail, on one that is
-  // stuck). Also what keeps a half-faded page from eating taps meant for the grid behind it.
-  const [leaving, setLeaving] = useState(false);
-  // …and the wall-clock backstop hangs off that same flag, so it covers every exit — the chevron,
-  // hardware back, and a released dismissal drag — with one timer and no ref to reach.
-  useEffect(() => {
-    if (!leaving) return;
-    const t = setTimeout(leaveOnce, ZOOM_OUT_BACKSTOP_MS);
-    return () => clearTimeout(t);
-  }, [leaving, leaveOnce]);
+  // NOTE: nothing here tracks "this page is leaving". It used to — `const [leaving, setLeaving] =
+  // useState(false)`, flipped from inside the commit — and that re-rendered all of
+  // SeriesReaderInstance on the frame the collapse animation started. Profiles measured that render
+  // at 40–114ms, and on iOS the UI thread IS the main thread, so the native commits behind it land
+  // on the one thread the animation needs. A stutter on every single exit, unreachable by any amount
+  // of animation tuning because the animation was never the problem. The two things that flag bought
+  // — dropping touches on a page on its way out, and the wall-clock backstop — both live in
+  // `LeavingMask` now, which reads `edgeCommitting` itself and re-renders nothing but itself.
 
   // ── The zoom's shared values ────────────────────────────────────────────────────────────────
   // Hoisted above the gestures because BOTH of them drive the collapse now: the back-swipe and
@@ -1015,7 +1012,6 @@ function SeriesReaderInstance({
           // see there for why a committed collapse must never be settled back.
           dismissing.set(true);
           edgeCommitting.set(true);
-          runOnJS(setLeaving)(true);
           const throwSpeed = zoomThrowSpeed(Math.hypot(e.velocityX, e.velocityY), dismissSpan);
           zoom.set(
             // overshootClamping: there is nothing past "collapsed", so the spring must not travel
@@ -1230,7 +1226,6 @@ function SeriesReaderInstance({
   // just blink the screen away.
   const closeLayer = useCallback(() => {
     if (leftSV.get()) return;
-    setLeaving(true);
     zoomClosing.set(true);
     edgeCommitting.set(true);
     zoom.set(withSpring(0, ZOOM_OUT_SPRING));
@@ -1318,7 +1313,7 @@ function SeriesReaderInstance({
       // — but the probe stays, because anything that ever reaches for this latch inside one
       // callback will silently get the stale answer.
       trace(tag, 'commit.latched', { readback: edgeCommitting.value });
-      runOnJS(setLeaving)(true);
+
       // Resume from exactly where it was slid to: the collapse and the follow both spring from
       // their current values, so the page carries on from that spot into the card. Hand the throw
       // over too — the pan's velocity is in points per second and `zoom` moves one unit per
@@ -2009,7 +2004,7 @@ function SeriesReaderInstance({
       {/* THE MASK — the rounded window the page is seen through, growing from the tapped card's
           cover box to the whole screen (see zoomMaskStyle). At rest it IS the screen, so it clips
           nothing that was ever visible. */}
-      <Animated.View style={[styles.zoomMask, zoomMaskStyle]} pointerEvents={leaving ? 'none' : 'auto'}>
+      <LeavingMask committing={edgeCommitting} leave={leaveOnce} style={[styles.zoomMask, zoomMaskStyle]}>
       {/* …THE PAGE inside it, scaled and aligned so its own cover lands on that card box (see
           zoomPageStyle). Transform only — the fade lives on the wrapper below, so the thumbnail
           copy further down can ride this same transform without fading with it. */}
@@ -2217,8 +2212,57 @@ function SeriesReaderInstance({
       )}
 
       </Animated.View>
-      </Animated.View>
+      </LeavingMask>
     </View>
+  );
+}
+
+/**
+ * The zoom mask, plus the one thing that has to know an exit started: it stops taking touches, so a
+ * page on its way out can't be tapped, and a half-faded one can't eat a tap meant for the grid
+ * behind it.
+ *
+ * Its OWN component purely so that knowledge costs its own render and not the whole page's. The
+ * flag used to be state in SeriesReaderInstance, flipped from inside the commit — which re-rendered
+ * everything on the frame the collapse started. Here the reaction runs on the
+ * UI thread, the setState lands in a component whose subtree is `children` — stable elements the
+ * parent already built — so React re-renders this wrapper and reconciles nothing beneath it.
+ */
+function LeavingMask({
+  committing,
+  leave,
+  style,
+  children,
+}: {
+  committing: SharedValue<boolean>;
+  /** The instance's `leaveOnce`, for the backstop below. */
+  leave: () => void;
+  /** Whatever `Animated.View` takes — this forwards the zoom's animated mask style untouched. */
+  style: ComponentProps<typeof Animated.View>['style'];
+  children: ReactNode;
+}) {
+  const [leaving, setLeaving] = useState(false);
+  // `edgeCommitting` is the one-way "this instance is exiting" latch every exit sets — the chevron,
+  // hardware back, the reader's dismiss fling and the details back-swipe alike — so watching it here
+  // covers all four without any of them having to call anything.
+  useAnimatedReaction(
+    () => committing.value,
+    (exiting, was) => {
+      if (exiting && !was) runOnJS(setLeaving)(true);
+    },
+  );
+  // The wall-clock backstop: a collapse that never arrives still leaves. Lives here rather than in
+  // the instance because arming it there meant either a re-render (the stutter) or a ref the pan's
+  // worklets could reach, which this file rules out for good reasons elsewhere.
+  useEffect(() => {
+    if (!leaving) return;
+    const t = setTimeout(leave, ZOOM_OUT_BACKSTOP_MS);
+    return () => clearTimeout(t);
+  }, [leaving, leave]);
+  return (
+    <Animated.View style={style} pointerEvents={leaving ? 'none' : 'auto'}>
+      {children}
+    </Animated.View>
   );
 }
 
