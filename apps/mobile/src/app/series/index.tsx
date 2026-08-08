@@ -656,24 +656,13 @@ function SeriesReaderInstance({
   }, [detailsActive]);
   // EAGER, deliberately — not deferred behind `detailsSettled` like the render window is.
   //
-  // These were gated on `!detailsSettled` for a while, to keep a window prepend from re-anchoring
-  // the pager under the strip. It did stop that, by moving the prepend to the worst possible
-  // moment instead: the queries turned on 300ms AFTER the reveal, so the previous chapter landed
-  // at the head of a LIVE pager, shifting every page after it by a whole chapter. A recording of a
-  // cold open shows exactly that — `reveal settle` at 3670, the prev chapter's pages 4-8 mounting
-  // at 3833 (the pager's unchanged pixel offset now pointing into the previous chapter), then
-  // 19-23 remounting from 3853 to 3976 as the layout effect in paged-reader re-anchors and the
-  // list re-windows around the corrected offset. That gap — the right offset, none of its cells
-  // mounted yet — IS the flash reported on the first swipe up into the reader, and it happened on
-  // the first open only because after that the run already contains its neighbours. paged-reader's
-  // own re-anchor comment calls the late prepend "first-boot-only in practice: a warm cache
-  // delivers the neighbour chapters before mount" — the deferral was what made every cold open hit
-  // the cold path.
+  // A run can only take its previous chapter at the instant it is created (see the window below),
+  // so how soon these resolve decides whether the FIRST chapter boundary you read backward across
+  // is seamless. Deferring them, as this did for a while, guaranteed they lost that race on every
+  // cold open.
   //
-  // Fetching eagerly costs two page LISTS (cache-first, and a list is just URLs). It does not
-  // mount page cells or warm images: both of those key off `standby`/`detailsSettled` in
-  // ReaderPane, which is unchanged. So the prepend now lands while the pager is still parked as
-  // the strip, where its window is one page and the re-anchor is invisible.
+  // The cost is two page LISTS — cache-first, and a list is just URLs. It does not mount page cells
+  // or warm images: both of those key off `standby`/`detailsSettled` in ReaderPane, unchanged.
   const { data: prevPages } = useQuery({
     ...chapterPagesQuery(ds, mock, bridgeId ?? '', id ?? '', prevChapter?.id ?? ''),
     enabled: stitched && !!id && !!prevChapter,
@@ -684,10 +673,32 @@ function SeriesReaderInstance({
   });
 
   // The stitched window — the RUN: a segment only joins once its pages are loaded (no holes); it
-  // only ever GROWS during one continuous run (appending at the tail keeps the pager's offset
-  // valid — dropping from the HEAD instead shifts every offset and flashes the pager black);
-  // landing outside the run starts a fresh one, bumping `runKey` so the pane remounts and seeds
-  // from `start` instead of re-anchoring.
+  // only ever grows AT THE TAIL during one continuous run; landing outside the run starts a fresh
+  // one, bumping `runKey` so the pane remounts and seeds from `start` instead of re-anchoring.
+  //
+  // ── Why nothing is ever added at the HEAD of a live run ──────────────────────────────────────
+  // The pager's position is a raw pixel offset, and `initialPage` (prefixLen + start) is read once,
+  // at mount. Put a chapter in front of the current one and every page after it moves by a whole
+  // chapter while that offset does not, so the pager is suddenly showing pages from the chapter
+  // before. paged-reader has a layout effect that catches this and scrolls to where the anchored
+  // key went — but the cells at the corrected offset have not been rendered yet, because the render
+  // window was computed from the pre-change position. The pager sits at the right place with
+  // nothing mounted there for as long as it takes the list to re-window.
+  //
+  // That is the flash on this screen, and it was chased twice from the wrong end. It first showed
+  // up ~500ms into the reader (the adjacent-chapter queries were deferred until after the reveal,
+  // so the previous chapter arrived into a pager that had just become the thing on screen —
+  // recorded as pages 4-8 mounting at the stale offset, then 19-23 remounting as it re-anchored).
+  // Fetching those lists eagerly (above) only moved the arrival earlier, so the same shift landed
+  // during the series-page open instead. The arrival TIME was never the problem; the head insert
+  // was. A run now takes whichever neighbours are already loaded when it is created, and after that
+  // only ever appends.
+  //
+  // The cost is that a cold first open — no cached page list for the previous chapter yet — reads
+  // backward across its opening boundary through `onCrossChapter(-1)` (an explicit jump, one
+  // remount) instead of a seamless swipe. That path already exists for a cold window, it is one
+  // chapter boundary in one direction, and the eager fetch means the next run to be created has
+  // the list in hand. A visible flash on every first open is not worth trading for it.
   const [run, setRun] = useState<{ key: number; segs: Segment[] }>({ key: 0, segs: [] });
   const { segments, runKey } = useMemo(() => {
     if (!pages || !stitched) return { segments: [] as Segment[], runKey: run.key };
@@ -711,15 +722,14 @@ function SeriesReaderInstance({
       // count as a remount.
       return { segments: segs, runKey: run.key + (run.segs.length ? 1 : 0) };
     }
-    // Extend, never drop.
+    // Extend at the TAIL ONLY. A run picks up its previous chapter at the moment it is created
+    // (above) and never afterwards — see the note below for why there is no `addPrev` here.
     const stale = run.segs[at]!;
     const refreshCurrent = stale.pages !== pages || stale.name !== target?.chapterName;
-    const addPrev = !!prevSeg && at === 0;
     const addNext = !!nextSeg && run.segs[run.segs.length - 1]!.id === currentId;
-    if (!refreshCurrent && !addPrev && !addNext) return { segments: run.segs, runKey: run.key };
+    if (!refreshCurrent && !addNext) return { segments: run.segs, runKey: run.key };
     const segs = run.segs.slice();
     if (refreshCurrent) segs[at] = { id: currentId, name: target?.chapterName, pages };
-    if (addPrev) segs.unshift(prevSeg);
     if (addNext) segs.push(nextSeg);
     return { segments: segs, runKey: run.key };
   }, [run, pages, stitched, targetChapterId, target?.chapterName, prevChapter, prevPages, nextChapter, nextPages]);

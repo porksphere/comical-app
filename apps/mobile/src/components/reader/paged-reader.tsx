@@ -231,11 +231,16 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     [scrubTarget, n, rtl, width],
   );
 
-  // Keep the visible page put when a segment lands AHEAD of the current position
-  // (a previous chapter arriving late), which shifts every cell after it by a
-  // whole chapter while the scroll offset — a raw pixel value — knows nothing
-  // about it. The reader screen only ever extends its stitched window at the
-  // tail while you read forward, precisely so this stays a rare case.
+  // Keep the visible page put when anything lands AHEAD of the current position,
+  // which shifts every cell after it while the scroll offset — a raw pixel value
+  // — knows nothing about it. The reader screen extends its stitched window at
+  // the TAIL ONLY (a run takes its previous chapter at creation or not at all),
+  // so nothing should reach this any more except a current segment whose page
+  // count changed under it. Kept as the backstop for that: the correction itself
+  // is what the user sees as a flash, because the cells at the corrected offset
+  // are not rendered yet — the render window was computed from the old position.
+  // If this starts firing again, the fix belongs in whatever changed the window,
+  // not here.
   //
   // Deliberately NOT `maintainVisibleContentPosition`: that tracks the first
   // visible *view* across a commit and shifts contentOffset by how far that view
