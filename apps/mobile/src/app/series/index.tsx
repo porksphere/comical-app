@@ -1529,9 +1529,9 @@ function SeriesReaderInstance({
   // detailsBackSwipe below for the measurement). Dead weight that bills on every settle is worse
   // than dead weight.
   const edgePan = useMemo(
-    () => (IS_WEB ? makeBackSwipePan('series.edge').enabled(detailsActive) : null),
+    () => (IS_WEB ? makeBackSwipePan(`series.edge@${depth}`).enabled(detailsActive) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [makeBackSwipePan, detailsActive, traceOn],
+    [makeBackSwipePan, detailsActive, traceOn, depth],
   );
   // THE back-swipe on native (see edgePan above for why it's the only one).
   //
@@ -1555,9 +1555,12 @@ function SeriesReaderInstance({
   // that. `traceOn` stays a dep because it changes the gesture's SHAPE (see backSwipePan) and only
   // ever flips from a Settings screen, where a re-serialization costs nothing.
   const detailsBackSwipe = useMemo(
-    () => (IS_WEB ? null : makeBackSwipePan('series.list')),
+    // Tagged with DEPTH. Every instance used to log as plain `series.list`, which is fine until
+    // three of them are stacked — and the bugs that most need a trace are exactly the ones where
+    // the question is which instance reacted.
+    () => (IS_WEB ? null : makeBackSwipePan(`series.list@${depth}`)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [makeBackSwipePan, traceOn],
+    [makeBackSwipePan, traceOn, depth],
   );
   const detailsScrollGesture = useMemo(
     () => (detailsBackSwipe ? Gesture.Simultaneous(Gesture.Native(), detailsBackSwipe) : undefined),
@@ -2367,14 +2370,25 @@ export default function SeriesReaderScreen() {
   const { width } = useWindowDimensions();
   const [drills, setDrills] = useState<DrillEntry[]>([]);
   const nextKey = useRef(1);
+  // The stack's shape, in the trace. A layer bug is by definition about which of several mounted
+  // pages is reacting, and a recording had no way to say what was even mounted.
   const drill = useCallback((p: Record<string, string>) => {
-    setDrills((d) => [...d, { key: nextKey.current++, kind: 'series', params: p as SeriesReaderParams }]);
+    setDrills((d) => {
+      traceJS('layer', 'push.series', { depth: d.length + 1 });
+      return [...d, { key: nextKey.current++, kind: 'series', params: p as SeriesReaderParams }];
+    });
   }, []);
   const openSearch = useCallback(() => {
-    setDrills((d) => [...d, { key: nextKey.current++, kind: 'search' }]);
+    setDrills((d) => {
+      traceJS('layer', 'push.search', { depth: d.length + 1 });
+      return [...d, { key: nextKey.current++, kind: 'search' }];
+    });
   }, []);
   const popLayer = useCallback(() => {
-    setDrills((d) => d.slice(0, -1));
+    setDrills((d) => {
+      traceJS('layer', 'pop', { from: d.length, left: d.length - 1 });
+      return d.slice(0, -1);
+    });
   }, []);
   useEffect(() => registerDrillSeries(drill), [drill]);
   useEffect(() => registerOpenSearchLayer(openSearch), [openSearch]);
