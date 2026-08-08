@@ -641,7 +641,15 @@ function SeriesReaderInstance({
   // and lists re-window after the transition has finished instead of chopping it mid-flight.
   const [detailsSettled, setDetailsSettled] = useState(!readerFirst);
   useEffect(() => {
-    const t = setTimeout(() => setDetailsSettled(detailsActive), 300);
+    const t = setTimeout(() => {
+      // Traced because this is the LARGEST React commit anywhere near a reveal, and it lands 300ms
+      // after it — the standby window opens, page cells mount, the lists re-window, and the
+      // adjacent-chapter queries turn on, all at once. On iOS that commit runs on the main thread,
+      // which is the same thread the reveal animation is drawing on, so if the reported flash is
+      // this, it shows up as the long-frame run starting at THIS mark rather than at the commit.
+      traceJS('reveal', 'settle', { details: detailsActive });
+      setDetailsSettled(detailsActive);
+    }, 300);
     return () => clearTimeout(t);
   }, [detailsActive]);
   // Deferred while the details are up (standby): the strip needs nothing beyond its visible

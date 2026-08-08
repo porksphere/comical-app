@@ -10,6 +10,7 @@ import { Spacing } from '@/constants/theme';
 import { invalidateAssetSource, peekResolvedAssetSource, resolveAssetSourceCached } from '@/data/api';
 import { coverDelayMs } from '@/data/mock';
 import { logDiagnostic } from '@/lib/diagnostics';
+import { traceJS } from '@/lib/gesture-trace';
 import { testId } from '@/lib/test-id';
 
 // One page image. Reuses the cover/thumbnail loading treatment: hold the image
@@ -108,6 +109,16 @@ export function ReaderPage({
   const delay = useMemo(() => coverDelayMs(uri), [uri]);
   const [delayPassed, setDelayPassed] = useState(delay === 0);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Traced against the series page's `reveal commit` (lib/gesture-trace): a flash on the first
+  // reveal into the reader is a question about WHEN this page had something to paint. Mounting
+  // without a resolved uri means a skeleton until the effect below resolves it; `loaded` is the
+  // first frame there is actually an image. Both are silent unless a recording is running.
+  useEffect(() => {
+    traceJS('page', 'mount', { p: page, resolved: !!resolvedUri });
+    // Mount-only: the question is what this page had AT mount, not on later re-renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     // Assert delayPassed=true on no delay (not a bare return) so a key/delay change can't strand it
@@ -275,6 +286,7 @@ export function ReaderPage({
           // the only safe option is not to play it. A poster frame decodes off-thread like any image.
           autoplay={false}
           onLoad={(e: LoadEvent) => {
+            traceJS('page', 'loaded', { p: page });
             setLoaded(true);
             const w = e.source?.width;
             const h = e.source?.height;
