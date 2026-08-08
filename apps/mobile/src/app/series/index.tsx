@@ -582,6 +582,16 @@ function SeriesReaderInstance({
   const error = queryError ? (queryError as Error).message || 'Failed to load pages' : null;
   const readerReady = !!target && !!pages;
 
+  // What the reader side has to render, and WHEN it got it. A flash on the first reveal is a
+  // question about ordering — whether the reader becomes the visible side before it has pages, and
+  // for how long — and that is only answerable against the reveal mark on the same clock. Both
+  // halves are traced rather than reasoned about because the difference between "300ms of Loading"
+  // and "one frame with nothing opaque behind it" is invisible in source and obvious in a
+  // recording.
+  useEffect(() => {
+    traceJS('reader', 'ready', { ready: readerReady, target: !!target, pages: pages?.length ?? 0 });
+  }, [readerReady, target, pages]);
+
   // ── Adjacent chapters (chaptered only; no stitching — see the header comment) ──
   const currentChapter = useMemo(
     () => (targetChapterId ? chapters?.find((c) => c.id === targetChapterId) : undefined),
@@ -783,6 +793,10 @@ function SeriesReaderInstance({
   // `progress` themselves. Landing back in the reader re-shows the chrome (it may have auto-hidden
   // while the details were up) — the effect below re-arms the countdown.
   const commitReveal = useCallback((to: 0 | 1) => {
+    // `to` 0 means the READER is now the side on screen. Traced because the reported flash is on
+    // that transition specifically, and the question is what the reader side has to show at the
+    // instant it becomes visible — see the `reader ready` mark below for the other half.
+    traceJS('reveal', 'commit', { toReader: to === 0 });
     setDetailsActive(to === 1);
     if (to === 0) setChromeVisible(true);
   }, []);
