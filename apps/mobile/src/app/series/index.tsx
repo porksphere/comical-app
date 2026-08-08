@@ -342,9 +342,26 @@ function zoomCrossAxisDrag(translation: number, dimension: number): number {
 // Wall-clock backstop for a collapse whose animation callback never arrives (see closeLayer).
 // Generous: the close spring is stiff but a spring has no fixed duration to key off.
 const ZOOM_OUT_BACKSTOP_MS = 900;
-/** How close to the card counts as arrived, for the leave reaction. Above ZOOM_OUT_SPRING's
- *  `restSpeedThreshold` so a settled collapse always trips it, small enough to be invisible. */
-const LEAVE_AT_ZOOM = 0.02;
+/**
+ * How close to the card counts as arrived, for the leave reaction. ZERO — the collapse must be at
+ * REST, not merely near.
+ *
+ * This was 0.02, chosen as "small enough to be invisible", which measures the wrong thing. The gap
+ * isn't what you can see of the mask, it's what the app is DOING while the mask is still moving:
+ * leaving unmounts the whole series page, pops the route, and un-blanks the source card, and all of
+ * that lands on the main thread — the same one the animation draws on. At 0.02 that teardown
+ * overlapped the final frames of the motion, so every collapse hitched just as it reached the card,
+ * fast swipe or slow, which is precisely where it was reported.
+ *
+ * At rest the page is already sitting exactly on the card with its content cross-faded to the
+ * thumbnail copy — visually indistinguishable from the card underneath. So the teardown still costs
+ * the same, and now costs it against a still frame, where a stall has nothing to stutter.
+ *
+ * Zero is reachable, not a hope: the collapse springs with `overshootClamping`, and Reanimated
+ * writes the target exactly when a spring completes. A collapse that gets CANCELLED before arriving
+ * never trips this — which is the case the wall-clock backstop is for.
+ */
+const LEAVE_AT_ZOOM = 0;
 // Half the title's ~40pt first line — positions the title's CENTER at the gradient's center.
 const TITLE_MID = 20;
 // The details-content fade (and the reader's matching tint) complete within this fraction of the
@@ -1363,8 +1380,12 @@ function SeriesReaderInstance({
       // fresh spring starting from rest at the release point.
       zoom.set(
         withSpring(0, { ...ZOOM_OUT_SPRING, overshootClamping: true, velocity: -zoomThrowSpeed(velocityX, width, zoom.value) }, (finished) => {
-          // Traced, but it no longer DECIDES anything — see the leave reaction near leaveOnce.
           trace(tag, 'collapse.done', { finished: !!finished, zoom: zoom.value });
+          // Gated on `finished`, which is the whole difference from the version that made a release
+          // end instantly: a COMPLETED spring is at rest at the card, an interrupted one is wherever
+          // it was interrupted. Belt to the reaction's braces — both mean arrived, neither can fire
+          // early, and between them a normal collapse never waits on the backstop.
+          if (finished) runOnJS(leaveOnce)();
         }),
       );
       dragX.set(withSpring(0, ZOOM_OUT_SPRING));
@@ -1459,6 +1480,7 @@ function SeriesReaderInstance({
     height,
     dragX,
     dragY,
+    leaveOnce,
     edgeCommitting,
     detailsActiveSV,
     zoom,
