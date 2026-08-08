@@ -66,7 +66,7 @@ import { isGestureTraceEnabled, trace, traceGate, traceThrottled } from '@/lib/g
  * gesture ducks this fight entirely by living on the screen edge, where no scroller competes; a
  * full-surface pop has to win the contest instead of avoiding it.
  */
-export const BACK_ACTIVATE_PX = 10;
+const BACK_ACTIVATE_PX = 10;
 /**
  * ── How straight a back-swipe has to be, and why it takes TWO numbers ───────────────────────────
  *
@@ -102,11 +102,11 @@ export const BACK_ACTIVATE_PX = 10;
  * Tune BACK_SWIPE_DEGREES. Leave the other two alone unless swipes stop STARTING, which is the
  * failure the pre-filter owns.
  */
-export const BACK_SWIPE_DEGREES = 15;
+const BACK_SWIPE_DEGREES = 15;
 
 /** The rule as a slope: the most |cross-axis| may be as a fraction of |along-axis|, over the whole
  *  drag. Derived from the degrees above so the two cannot disagree. */
-export const BACK_DOMINANCE = Math.tan((BACK_SWIPE_DEGREES * Math.PI) / 180);
+const BACK_DOMINANCE = Math.tan((BACK_SWIPE_DEGREES * Math.PI) / 180);
 
 /**
  * The coarse gate at activation — see above for why this is not BACK_DOMINANCE. Roughly 35°, which
@@ -122,7 +122,7 @@ export const BACK_ACTIVATE_DOMINANCE = 0.7;
  * It does NOT need to stay under the scroller's claim threshold the way ACTIVATE does. Failing late
  * costs nothing: by then the scroller has the touch anyway, which is the outcome failing asks for.
  */
-export const BACK_FAIL_PX = Math.round(BACK_ACTIVATE_PX * BACK_ACTIVATE_DOMINANCE);
+const BACK_FAIL_PX = Math.round(BACK_ACTIVATE_PX * BACK_ACTIVATE_DOMINANCE);
 
 /**
  * ── EVERY callback on this pan needs an explicit `'worklet'` directive ──────────────────────────

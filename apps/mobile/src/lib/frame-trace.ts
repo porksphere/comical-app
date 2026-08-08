@@ -50,7 +50,7 @@ const totalMs = makeMutable(0);
 const runLength = makeMutable(0);
 
 /** Reset with the trace, so a recording's summary describes that recording. */
-export function resetFrameTrace(): void {
+function resetFrameTrace(): void {
   frames.set(0);
   longFrames.set(0);
   worstMs.set(0);

@@ -32,7 +32,7 @@ export const seriesReaderDim = makeMutable(0);
  *  backdrop BETWEEN two opaque screens; here it lands on the tab bar and the grid, which stay
  *  partly visible through the transparent modal for the first quarter of the travel — so it is
  *  kept subtle enough not to read as the lights going out. */
-export const BACKDROP_DIM_MAX = 0.14;
+const BACKDROP_DIM_MAX = 0.14;
 /** `ZOOM_BACKGROUND_SCALE` — how far the screen underneath shrinks at full cover. */
 const BACKDROP_SCALE_MIN = 0.9375;
 

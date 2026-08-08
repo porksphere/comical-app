@@ -9,7 +9,6 @@ import { Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
 import { readFrameSummary } from '@/lib/frame-trace';
-import { useRouter } from '@/lib/nav';
 import {
   clearGestureTrace,
   gestureTrace$,
@@ -49,7 +48,6 @@ import {
 export default function GestureTraceScreen() {
   const contentPadding = useSettingsScrollPadding();
   const theme = useTheme();
-  const router = useRouter();
   const enabled = useGestureTraceEnabled();
   const lines = useGestureTrace();
   // Read during render rather than subscribed to: these counters move every frame while recording,
@@ -89,12 +87,6 @@ export default function GestureTraceScreen() {
                 }}
               />
             }
-          />
-          <SettingsRow
-            testID="gesture-trace.lab"
-            label="Gesture lab"
-            description="Three isolated rigs — a bare pan, one over a scroll view, one over a scroll view with a horizontal rail. Says whether the composition works at all on this device."
-            onPress={() => router.push('/gesture-lab')}
           />
         </SettingsSection>
 
