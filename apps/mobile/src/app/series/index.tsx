@@ -637,31 +637,50 @@ function SeriesReaderInstance({
   // and iOS drops its in-flight tracking the moment scrolling is disabled.
   const [swipeLocked, setSwipeLocked] = useState(false);
   // `detailsActive`, but lagging past the 240ms reveal/collapse animation: the HEAVY mode flips
-  // (the standby render window, the adjacent-chapter fetches) key off THIS, so page cells mount
-  // and lists re-window after the transition has finished instead of chopping it mid-flight.
+  // (the standby render window, the image warm-ahead) key off THIS, so page cells mount and lists
+  // re-window after the transition has finished instead of chopping it mid-flight. What must NOT
+  // key off it is anything that changes the SHAPE of the stitched window — see the adjacent-chapter
+  // queries below for what that cost.
   const [detailsSettled, setDetailsSettled] = useState(!readerFirst);
   useEffect(() => {
     const t = setTimeout(() => {
-      // Traced because this is the LARGEST React commit anywhere near a reveal, and it lands 300ms
-      // after it — the standby window opens, page cells mount, the lists re-window, and the
-      // adjacent-chapter queries turn on, all at once. On iOS that commit runs on the main thread,
-      // which is the same thread the reveal animation is drawing on, so if the reported flash is
-      // this, it shows up as the long-frame run starting at THIS mark rather than at the commit.
+      // Traced because this is the largest React commit anywhere near a reveal and it lands 300ms
+      // after it — the standby window opens, page cells mount, both lists re-window, all at once,
+      // and on iOS that commit runs on the main thread, which is the thread the reveal is drawing
+      // on. Keep it: it is the mark that says whether a stutter belongs to the reveal itself or to
+      // the work scheduled behind it.
       traceJS('reveal', 'settle', { details: detailsActive });
       setDetailsSettled(detailsActive);
     }, 300);
     return () => clearTimeout(t);
   }, [detailsActive]);
-  // Deferred while the details are up (standby): the strip needs nothing beyond its visible
-  // page, and a window prepend arriving under the strip re-anchors the pager — a visible pop on
-  // an otherwise settled image. Expanding enables them and the window builds for real reading.
+  // EAGER, deliberately — not deferred behind `detailsSettled` like the render window is.
+  //
+  // These were gated on `!detailsSettled` for a while, to keep a window prepend from re-anchoring
+  // the pager under the strip. It did stop that, by moving the prepend to the worst possible
+  // moment instead: the queries turned on 300ms AFTER the reveal, so the previous chapter landed
+  // at the head of a LIVE pager, shifting every page after it by a whole chapter. A recording of a
+  // cold open shows exactly that — `reveal settle` at 3670, the prev chapter's pages 4-8 mounting
+  // at 3833 (the pager's unchanged pixel offset now pointing into the previous chapter), then
+  // 19-23 remounting from 3853 to 3976 as the layout effect in paged-reader re-anchors and the
+  // list re-windows around the corrected offset. That gap — the right offset, none of its cells
+  // mounted yet — IS the flash reported on the first swipe up into the reader, and it happened on
+  // the first open only because after that the run already contains its neighbours. paged-reader's
+  // own re-anchor comment calls the late prepend "first-boot-only in practice: a warm cache
+  // delivers the neighbour chapters before mount" — the deferral was what made every cold open hit
+  // the cold path.
+  //
+  // Fetching eagerly costs two page LISTS (cache-first, and a list is just URLs). It does not
+  // mount page cells or warm images: both of those key off `standby`/`detailsSettled` in
+  // ReaderPane, which is unchanged. So the prepend now lands while the pager is still parked as
+  // the strip, where its window is one page and the re-anchor is invisible.
   const { data: prevPages } = useQuery({
     ...chapterPagesQuery(ds, mock, bridgeId ?? '', id ?? '', prevChapter?.id ?? ''),
-    enabled: stitched && !detailsSettled && !!id && !!prevChapter,
+    enabled: stitched && !!id && !!prevChapter,
   });
   const { data: nextPages } = useQuery({
     ...chapterPagesQuery(ds, mock, bridgeId ?? '', id ?? '', nextChapter?.id ?? ''),
-    enabled: stitched && !detailsSettled && !!id && !!nextChapter,
+    enabled: stitched && !!id && !!nextChapter,
   });
 
   // The stitched window — the RUN: a segment only joins once its pages are loaded (no holes); it
