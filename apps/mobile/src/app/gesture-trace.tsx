@@ -132,7 +132,7 @@ export default function GestureTraceScreen() {
 
         {frames.frames > 0 && (
           <ThemedText type="small" style={[styles.mono, { color: theme.textSecondary }]} selectable>
-            {`frames ${frames.frames}  dropped ${frames.long}  worst ${frames.worstMs.toFixed(0)}ms`}
+            {`frames ${frames.frames}  dropped ${frames.long}  mean ${frames.meanMs.toFixed(1)}ms  worst ${frames.worstMs.toFixed(0)}ms`}
           </ThemedText>
         )}
 

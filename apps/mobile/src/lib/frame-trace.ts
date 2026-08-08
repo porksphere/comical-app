@@ -23,10 +23,20 @@ import { setGestureTraceOnClear, trace, useGestureTraceEnabled } from '@/lib/ges
  */
 
 /**
- * What counts as a dropped frame. 20ms is past a 60Hz frame (16.7) and well past a 120Hz one (8.3),
- * so on a ProMotion device this reports only real hitches rather than every ordinary frame.
+ * What counts as a dropped frame.
+ *
+ * 20 was too tight and it cried wolf for several recordings. Device traces come back sharply
+ * bimodal — long stretches at 20.0-20.5, and separate stretches at 34.7-35.2 — which reads as one
+ * frame and two frames against a ~17ms budget. At 20 the tool flagged three milliseconds of
+ * ordinary jitter as a dropped frame and buried the runs that actually matter, which is how a whole
+ * drag came to look like solid jank when the genuinely bad thing was a stretch of 30fps somewhere
+ * else entirely.
+ *
+ * 28 sits between the two clusters: past one frame's jitter at 60Hz, under two. `meanMs` in the
+ * summary is what says whether that reasoning still holds on a given device — if the mean is near
+ * 8, it's running at 120 and this wants lowering.
  */
-const LONG_FRAME_MS = 20;
+const LONG_FRAME_MS = 28;
 /** How deep into a run of consecutive long frames to log a second line. Far enough that a brief
  *  hitch stays one line, close enough that a sustained stall is obvious. */
 const LONG_RUN_REPORT_AT = 8;
@@ -34,6 +44,8 @@ const LONG_RUN_REPORT_AT = 8;
 const frames = makeMutable(0);
 const longFrames = makeMutable(0);
 const worstMs = makeMutable(0);
+/** Summed so the summary can report a MEAN, which is what identifies the frame budget in play. */
+const totalMs = makeMutable(0);
 /** Consecutive long frames, so a run reports once instead of once per frame — see the callback. */
 const runLength = makeMutable(0);
 
@@ -42,15 +54,22 @@ export function resetFrameTrace(): void {
   frames.set(0);
   longFrames.set(0);
   worstMs.set(0);
+  totalMs.set(0);
   runLength.set(0);
 }
 
 setGestureTraceOnClear(resetFrameTrace);
 
-export type FrameSummary = { frames: number; long: number; worstMs: number };
+export type FrameSummary = { frames: number; long: number; worstMs: number; meanMs: number };
 
 export function readFrameSummary(): FrameSummary {
-  return { frames: frames.value, long: longFrames.value, worstMs: worstMs.value };
+  const n = frames.value;
+  return {
+    frames: n,
+    long: longFrames.value,
+    worstMs: worstMs.value,
+    meanMs: n > 0 ? totalMs.value / n : 0,
+  };
 }
 
 /**
@@ -69,6 +88,7 @@ export function useFrameTrace(): void {
     const dt = info.timeSincePreviousFrame;
     if (dt === null) return;
     frames.set(frames.value + 1);
+    totalMs.set(totalMs.value + dt);
     if (dt > worstMs.value) worstMs.set(dt);
     if (dt < LONG_FRAME_MS) {
       runLength.set(0);
