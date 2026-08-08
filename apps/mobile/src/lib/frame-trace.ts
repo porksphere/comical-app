@@ -27,18 +27,22 @@ import { setGestureTraceOnClear, trace, useGestureTraceEnabled } from '@/lib/ges
  * so on a ProMotion device this reports only real hitches rather than every ordinary frame.
  */
 const LONG_FRAME_MS = 20;
+/** How deep into a run of consecutive long frames to log a second line. Far enough that a brief
+ *  hitch stays one line, close enough that a sustained stall is obvious. */
+const LONG_RUN_REPORT_AT = 8;
 
 const frames = makeMutable(0);
 const longFrames = makeMutable(0);
 const worstMs = makeMutable(0);
-const lastAt = makeMutable(0);
+/** Consecutive long frames, so a run reports once instead of once per frame — see the callback. */
+const runLength = makeMutable(0);
 
 /** Reset with the trace, so a recording's summary describes that recording. */
 export function resetFrameTrace(): void {
   frames.set(0);
   longFrames.set(0);
   worstMs.set(0);
-  lastAt.set(0);
+  runLength.set(0);
 }
 
 setGestureTraceOnClear(resetFrameTrace);
@@ -58,17 +62,27 @@ export function useFrameTrace(): void {
   // `false` = don't autostart; the effect below owns whether this runs at all.
   const callback = useFrameCallback((info) => {
     'worklet';
-    const now = info.timestamp;
-    const previous = lastAt.value;
-    lastAt.set(now);
-    // First frame of a recording has nothing to measure against.
-    if (previous === 0) return;
-    const dt = now - previous;
+    // Reanimated's OWN delta. The first cut of this subtracted successive `info.timestamp`s, which
+    // produced numbers that couldn't be right — every logged frame claimed 20.4ms while the lines
+    // themselves landed 17ms apart, and consecutive frames cannot be both. `timeSincePreviousFrame`
+    // is the measurement rather than a reconstruction of it, and it is null on the first frame.
+    const dt = info.timeSincePreviousFrame;
+    if (dt === null) return;
     frames.set(frames.value + 1);
     if (dt > worstMs.value) worstMs.set(dt);
-    if (dt < LONG_FRAME_MS) return;
+    if (dt < LONG_FRAME_MS) {
+      runLength.set(0);
+      return;
+    }
     longFrames.set(longFrames.value + 1);
-    trace('frame', 'LONG', { dt });
+    // A RUN of long frames logs its first and then goes quiet, reporting the whole run when it ends.
+    // Without this, a stretch where every frame is late — which is exactly the interesting case —
+    // emits a runOnJS per frame, so the recorder becomes a meaningful share of the load it is
+    // measuring. The counters above still see every frame.
+    const run = runLength.value + 1;
+    runLength.set(run);
+    if (run === 1) trace('frame', 'LONG', { dt });
+    else if (run === LONG_RUN_REPORT_AT) trace('frame', 'LONG.run', { dt, n: run });
   }, false);
 
   useEffect(() => {
