@@ -260,9 +260,31 @@ const ZOOM_DRAG_TRAVEL = 0.9;
 // became the common case. 3.5 ≈ the rate of a brisk swipe across the full span, so an ordinary
 // release still continues at its own speed and only genuine flicks are reined in.
 const ZOOM_THROW_MAX = 3.5;
-function zoomThrowSpeed(pxPerSecond: number, span: number): number {
+/**
+ * The floor under a released collapse: however hard it was thrown, it may not cross what REMAINS in
+ * less than this. Which is the part the flat cap above missed.
+ *
+ * A rate cap alone says nothing about duration, because duration is distance over rate and the
+ * distance here is whatever the drag left behind — usually very little, since a swipe across most of
+ * the screen has already spent most of the collapse. A device trace made that concrete: released at
+ * `zoom=0.2` with `vx=1327`, the handed speed clamps to 3.5 units/sec, and 0.2 ÷ 3.5 is 57ms. The
+ * recording says 64ms. Four frames, which is not an animation; the same gesture released gently
+ * (`vx=176`) took 272ms and looked right.
+ *
+ * That is why this only ever happened on a fast release, and why it was fine before the projected
+ * release landed — the collapse used to spring from rest and always took its ~300ms. Handing the
+ * throw over was right; letting it consume the whole animation was not.
+ */
+const MIN_COLLAPSE_SECONDS = 0.22;
+/**
+ * `remaining` is how much of the collapse is left at release (i.e. `zoom`), which is what turns the
+ * cap from a rate into a duration.
+ */
+function zoomThrowSpeed(pxPerSecond: number, span: number, remaining: number): number {
   'worklet';
-  return Math.min(ZOOM_THROW_MAX, Math.abs(pxPerSecond) / Math.max(1, span * ZOOM_DRAG_TRAVEL));
+  const handed = Math.abs(pxPerSecond) / Math.max(1, span * ZOOM_DRAG_TRAVEL);
+  const floorSpeed = Math.max(0, remaining) / MIN_COLLAPSE_SECONDS;
+  return Math.min(ZOOM_THROW_MAX, handed, floorSpeed);
 }
 // Back-swipe activation lives in lib/back-swipe.ts — shared with the SEARCH layer below, because
 // the one thing that must never differ between two surfaces both pretending to have a back-swipe
@@ -1012,7 +1034,7 @@ function SeriesReaderInstance({
           // see there for why a committed collapse must never be settled back.
           dismissing.set(true);
           edgeCommitting.set(true);
-          const throwSpeed = zoomThrowSpeed(Math.hypot(e.velocityX, e.velocityY), dismissSpan);
+          const throwSpeed = zoomThrowSpeed(Math.hypot(e.velocityX, e.velocityY), dismissSpan, zoom.value);
           zoom.set(
             // overshootClamping: there is nothing past "collapsed", so the spring must not travel
             // through 0 and settle back up to it. No completion callback — leaving is driven by
@@ -1320,7 +1342,7 @@ function SeriesReaderInstance({
       // `width * ZOOM_DRAG_TRAVEL` points, so this is the same motion continuing rather than a
       // fresh spring starting from rest at the release point.
       zoom.set(
-        withSpring(0, { ...ZOOM_OUT_SPRING, overshootClamping: true, velocity: -zoomThrowSpeed(velocityX, width) }, (finished) => {
+        withSpring(0, { ...ZOOM_OUT_SPRING, overshootClamping: true, velocity: -zoomThrowSpeed(velocityX, width, zoom.value) }, (finished) => {
           // Traced, but it no longer DECIDES anything — see the leave reaction near leaveOnce.
           trace(tag, 'collapse.done', { finished: !!finished, zoom: zoom.value });
         }),
