@@ -1,4 +1,4 @@
-import { TabList, TabTrigger, TabSlot, useTabsWithTriggers, TabTriggerSlotProps } from 'expo-router/ui';
+import { Tabs, TabList, TabTrigger, TabSlot, TabTriggerSlotProps } from 'expo-router/ui';
 import { Bell, History, LayoutGrid, Library, Settings, type LucideIcon } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -40,33 +40,6 @@ const TABS: { name: string; href: string; label: string; Icon: LucideIcon }[] = 
   { name: 'activity', href: '/activity', label: 'Activity', Icon: Bell },
   { name: 'settings', href: '/settings', label: 'Settings', Icon: Settings },
 ];
-
-/**
- * The tabs, as DESCRIPTORS rather than as `<TabTrigger>` children inside a `<TabList>`.
- *
- * `<Tabs>` discovers its screens by walking its children for triggers on every render, and that walk
- * is not cheap: each trigger costs a `getStateFromPath`, and expo-router's fork disables the cache
- * react-navigation has there, so each of those rebuilds the whole route table — normalizing every
- * route, checking for duplicates, constructing a RegExp per route, then sorting them. A device
- * profile measured 133ms of it in a 6.8s capture, 81% of it driven by plain re-renders rather than
- * by navigation, because the bar's slide position lived in React state and moved every scroll frame.
- *
- * `useTabsWithTriggers` takes the same information as data. Declaring it here, module-scope and
- * frozen, means the walk has nothing to re-derive and — more to the point — it unhooks the screen
- * list from the bar's rendering, so the bar can re-render as often as it likes without dragging the
- * navigator through it. See MobileBar.
- *
- * The bars still wrap their triggers in `<TabList>`, even though nothing discovers them through it
- * any more. The hook's own documentation asks for it ("Using the hook requires using the <TabList />
- * and <TabTrigger /> components"), and a first attempt at this dropped it — reasoning from the built
- * JS, which shows TabList to be a styled View and a marker for a walk we no longer run. Every tab
- * went dead: `useTabTrigger` found no entry for its name in the trigger map and `handleOnPress`
- * returned at `if (!trigger)`, so the icons rendered and taps did nothing. I never found the
- * mechanism. Keeping the documented shape costs one wrapper.
- */
-// `as never` for the href, the same cast `<TabTrigger href>` already needed here: TABS holds plain
-// strings while the trigger type wants expo-router's generated `Href` union.
-const TAB_TRIGGERS = TABS.map((tab) => ({ type: 'internal' as const, name: tab.name, href: tab.href as never }));
 
 const MOBILE_BREAKPOINT = 768;
 
@@ -242,6 +215,7 @@ function useNativeTabBarProgress(enabled: boolean) {
 export default function AppTabs() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
 
   // Static web export (`web.output: "static"`) prerenders every route on the
   // server, where there's no viewport so `width` is 0 — i.e. the server always
@@ -256,15 +230,42 @@ export default function AppTabs() {
   useEffect(() => setHydrated(true), []);
   const isMobile = !hydrated || width < MOBILE_BREAKPOINT;
 
-  // The navigator. Nothing here depends on scroll position or on the bar's appearance, which is the
-  // point: this component now re-renders only when the LAYOUT changes (viewport class, insets,
-  // theme), and the per-frame work has moved into the bar itself.
-  const { NavigationContent } = useTabsWithTriggers({ triggers: TAB_TRIGGERS });
+  // Fade the mobile bottom bar away while scrolling down (web only - see hook);
+  // bringing it back on upward scroll, at the top, or when a tab is touched (`reveal`).
+  const { hidden, reveal } = useAutoHideBottomBar(isMobile);
+  // Native only: slide the whole bar off-screen as the screen scrolls down, back in as it scrolls up.
+  const nativeProgress = useNativeTabBarProgress(isMobile);
+  // How far that slide travels: the bar's own measured height (+ slack), so progress 1 puts its top
+  // edge exactly at the screen edge — no invisible overshoot for a scroll-up to walk back before the
+  // bar visibly rises. Published to `tab-bar-visibility` for everything else that converts the shared
+  // progress to pixels (the scroll hook's 1:1 span, the long-press overlay's chrome band).
+  const [hideOffset, setHideOffset] = useState(getTabBarHideOffset());
+  const onBarLayout = useCallback((e: { nativeEvent: { layout: { height: number } } }) => {
+    const px = Math.ceil(e.nativeEvent.layout.height) + HIDE_OFFSET_SLACK;
+    setHideOffset(px);
+    setTabBarHideOffset(px);
+  }, []);
 
   // Pin the desktop nav to the right edge of the constrained content (the same
   // MaxTopLevelWidth the views centre within), not the raw screen edge, so it
   // lines up with the Browse selector bar on wide viewports.
   const navRight = Math.max(0, (width - MaxTopLevelWidth) / 2) + Spacing.four;
+
+  // Memoized so a scroll-driven `nativeProgress` change (which re-renders AppTabs every reported
+  // frame while the bar slides) doesn't re-create these elements — with stable refs React skips
+  // reconciling the trigger subtrees, leaving only the TabList's own (transform-only) style to
+  // update. Without this, every frame of a fling re-rendered all five Pressables + icons.
+  const triggers = useMemo(
+    () =>
+      TABS.map((tab) => (
+        <TabTrigger key={tab.name} name={tab.name} href={tab.href as never} asChild>
+          <TabButton mobile={isMobile} Icon={tab.Icon} onInteract={reveal} routeName={tab.name}>
+            {tab.label}
+          </TabButton>
+        </TabTrigger>
+      )),
+    [isMobile, reveal],
+  );
 
   // See the wrapper below — both rest at identity/transparent unless the series page is open.
   const seriesReaderBackdropStyle = useSeriesReaderBackdropStyle();
@@ -273,106 +274,69 @@ export default function AppTabs() {
   return (
     // The tabs are what the series page usually opens OVER, and a transparent modal can't scale
     // or dim its backdrop the way a native presentation does — so the page drives it from here
-    // instead (see lib/series-backdrop.ts). With no series page open the transform is identity and
-    // the dim fully transparent, so this costs nothing at rest.
+    // instead (see lib/series-backdrop.ts). The wrapper sits OUTSIDE `Tabs` on purpose: `Tabs`
+    // walks its own children to discover triggers, so nothing may come between it and them. With
+    // no series page open the transform is identity and the dim fully transparent, so this costs
+    // nothing at rest.
     <Animated.View style={[styles.tabs, seriesReaderBackdropStyle]}>
-      {/* What `<Tabs>` used to render around NavigationContent — see TAB_TRIGGERS for why the
-          navigator is driven by the hook instead of by walking children. Triggers no longer have to
-          be reachable through Fragments and TabLists, so the bars below are ordinary components. */}
-      <View style={styles.tabs}>
-        <NavigationContent>
-          <TabSlot style={styles.slot} />
-          {!isMobile && <DesktopNav top={insets.top} right={navRight} />}
-          {isMobile && <MobileBar bottomInset={insets.bottom} />}
-        </NavigationContent>
-      </View>
+      <Tabs style={styles.tabs}>
+        <TabSlot style={styles.slot} />
+
+      {/* Desktop: icon-only nav pinned to the top-right, aligned with the
+          Browse selector bar row (top = its paddingTop, height = the subtitle
+          line-height so the icons centre against the selectors).
+
+          The `TabList` (with the triggers as its direct children) must be a
+          direct child of `Tabs` — expo-router discovers the tab screens by
+          walking `Tabs`' children through Fragments and TabLists only, never
+          through arbitrary Views, so wrapping it in layout Views would hide the
+          triggers and leave the navigator with zero screens. Hence `asChild`
+          with the positioned row as the single wrapper. */}
+      {!isMobile && (
+        <TabList asChild>
+          {/* `<TabList asChild>` forwards via a Slot that rejects array styles
+              on its child, so flatten the positioned style into one object. */}
+          <View style={StyleSheet.flatten([styles.topNav, { top: insets.top, right: navRight }])}>
+            {triggers}
+          </View>
+        </TabList>
+      )}
+
+      {isMobile && (
+        <TabList
+          // TabList spreads extra props onto its plain View, so onLayout reaches the real bar.
+          onLayout={onBarLayout}
+          style={[
+            styles.bottomBar,
+            Platform.OS === 'web' && FADE_TRANSITION,
+            {
+              borderTopColor: theme.tabBarBorder,
+              paddingBottom: Math.max(insets.bottom, Spacing.two),
+              // Web: fade to a faint ghost (still touchable, so tapping where it
+              // sits brings it back) while scrolling down. Native: slide the whole
+              // bar down out of view instead, continuously tracking scroll position
+              // via `useNativeTabBarProgress` (X/Twitter-style). Either way the bar is
+              // an absolute overlay (see styles.bottomBar), so screen content scrolls
+              // behind it and stays visible rather than being clipped by a dead strip.
+              opacity: hidden ? FADED_OPACITY : 1,
+              // Slide via transform (compositor) rather than animating `bottom` (layout): the bar
+              // is repositioned on every scroll-reported frame, so a translate avoids a native
+              // layout pass each time. translateY > 0 pushes it down off-screen, by the bar's own
+              // measured height (see onBarLayout) so it stops right at the edge. Native only —
+              // nativeProgress is 0 on web, where the opacity fade above handles hiding instead.
+              bottom: 0,
+              transform: [{ translateY: hideOffset * nativeProgress }],
+            },
+          ]}>
+          {/* Frosted background behind the icons (content scrolls under the bar). */}
+          <BarBlur fallback={theme.tabBar} />
+          {triggers}
+        </TabList>
+      )}
+      </Tabs>
       {/* The dim under an open series page — inert (opacity 0) whenever none is, never interactive. */}
       <Animated.View pointerEvents="none" style={[styles.backdropDim, seriesReaderBackdropDim]} />
     </Animated.View>
-  );
-}
-
-/** The five triggers, as elements. Identical for both bars apart from the layout flag. */
-function useTabTriggerElements(mobile: boolean, onInteract?: () => void) {
-  return useMemo(
-    () =>
-      TABS.map((tab) => (
-        <TabTrigger key={tab.name} name={tab.name} href={tab.href as never} asChild>
-          <TabButton mobile={mobile} Icon={tab.Icon} onInteract={onInteract} routeName={tab.name}>
-            {tab.label}
-          </TabButton>
-        </TabTrigger>
-      )),
-    [mobile, onInteract],
-  );
-}
-
-/** Desktop: icon-only nav pinned to the top-right, aligned with the Browse selector bar row. */
-function DesktopNav({ top, right }: { top: number; right: number }) {
-  const triggers = useTabTriggerElements(false);
-  return <TabList style={[styles.topNav, { top, right }]}>{triggers}</TabList>;
-}
-
-/**
- * The mobile bottom bar — and the ONLY thing in this file that re-renders on scroll.
- *
- * That separation is the whole reason it's a component. Its slide position is plain React state
- * updated every scroll-reported frame (see useNativeTabBarProgress for why it can't be a Reanimated
- * style: the transform has to land on this View, and the path that would let a worklet drive it goes
- * through a Slot that flattens animated styles into plain objects). State that moves every frame is
- * survivable; what wasn't survivable was where that state used to live. Held in AppTabs, every frame
- * re-rendered the navigator with it, and the navigator re-derives its screen list from scratch on
- * every render — five `getStateFromPath` calls, each rebuilding the whole route table. Moving the
- * state DOWN costs nothing and takes all of that off the scroll path.
- */
-function MobileBar({ bottomInset }: { bottomInset: number }) {
-  const theme = useTheme();
-  // Fade the bar away while scrolling down (web only — see hook); back on upward scroll, at the
-  // top, or when a tab is touched (`reveal`).
-  const { hidden, reveal } = useAutoHideBottomBar(true);
-  // Native: slide the whole bar off-screen as the screen scrolls down, back in as it scrolls up.
-  const nativeProgress = useNativeTabBarProgress(true);
-  // How far that slide travels: the bar's own measured height (+ slack), so progress 1 puts its top
-  // edge exactly at the screen edge — no invisible overshoot for a scroll-up to walk back before the
-  // bar visibly rises. Published to `tab-bar-visibility` for everything else that converts the
-  // shared progress to pixels (the scroll hook's 1:1 span, the long-press overlay's chrome band).
-  const [hideOffset, setHideOffset] = useState(getTabBarHideOffset());
-  const onBarLayout = useCallback((e: { nativeEvent: { layout: { height: number } } }) => {
-    const px = Math.ceil(e.nativeEvent.layout.height) + HIDE_OFFSET_SLACK;
-    setHideOffset(px);
-    setTabBarHideOffset(px);
-  }, []);
-  const triggers = useTabTriggerElements(true, reveal);
-
-  return (
-    <TabList
-      // TabList spreads extra props onto its plain View, so onLayout reaches the real bar.
-      onLayout={onBarLayout}
-      style={[
-        styles.bottomBar,
-        Platform.OS === 'web' && FADE_TRANSITION,
-        {
-          borderTopColor: theme.tabBarBorder,
-          paddingBottom: Math.max(bottomInset, Spacing.two),
-          // Web: fade to a faint ghost (still touchable, so tapping where it sits brings it back)
-          // while scrolling down. Native: slide the whole bar down out of view instead, continuously
-          // tracking scroll position (X/Twitter-style). Either way the bar is an absolute overlay
-          // (see styles.bottomBar), so screen content scrolls behind it and stays visible rather
-          // than being clipped by a dead strip.
-          opacity: hidden ? FADED_OPACITY : 1,
-          // Slide via transform (compositor) rather than animating `bottom` (layout): the bar is
-          // repositioned on every scroll-reported frame, so a translate avoids a native layout pass
-          // each time. translateY > 0 pushes it down off-screen, by the bar's own measured height
-          // (see onBarLayout) so it stops right at the edge. Native only — nativeProgress is 0 on
-          // web, where the opacity fade above handles hiding instead.
-          bottom: 0,
-          transform: [{ translateY: hideOffset * nativeProgress }],
-        },
-      ]}>
-      {/* Frosted background behind the icons (content scrolls under the bar). */}
-      <BarBlur fallback={theme.tabBar} />
-      {triggers}
-    </TabList>
   );
 }
 

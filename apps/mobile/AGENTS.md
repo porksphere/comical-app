@@ -13,28 +13,13 @@ every platform with no `.web.tsx` split needed. Don't hand-roll glyphs. See
 # Bottom nav: a custom-rendered bar, not the OS-native one
 
 `src/components/app-tabs.tsx` is a single cross-platform component (`expo-router/ui`'s
-headless `useTabsWithTriggers`/`TabSlot`/`TabTrigger`, plain `Pressable`s) used on iOS,
-Android, and web alike — there's no `NativeTabs`/`unstable-native-tabs` wrapper over the real
+headless `Tabs`/`TabList`/`TabTrigger`, plain `Pressable`s) used on iOS, Android, and web
+alike — there's no `NativeTabs`/`unstable-native-tabs` wrapper over the real
 `UITabBarController`/Material 3 `NavigationBar` anymore. That was tried and reverted: iOS 26's
 `tabBarMinimizeBehavior` needed react-native-screens patches to even find the content scroll
 view, and even with that (plus pushing both edges imperatively, confirmed via on-device
 diagnostics) the tab bar still only re-expanded once scrolled all the way back to the top, never
 mid-scroll — a dead end inside UIKit's private implementation, not fixable from app code.
-
-It drives the navigator with the `useTabsWithTriggers` HOOK rather than the `<Tabs>` component,
-and that is a performance requirement, not a preference. `<Tabs>` re-derives its screen list by
-walking its children on every render, and each trigger in that walk costs a `getStateFromPath` —
-which expo-router's fork makes rebuild the entire route table (a RegExp per route, then a sort),
-because it disables the cache react-navigation has there. With the bar's scroll position held in
-the same component, that ran every scroll-reported frame. The hook takes the trigger list as
-frozen data instead, so the bar (`MobileBar`) can re-render per frame without dragging the
-navigator through it. Keep per-frame state out of `AppTabs`.
-
-The bars still wrap their triggers in `<TabList>` even though nothing discovers them through it
-any more — the hook's docs ask for it, and an attempt to drop it (on the reasoning that the built
-JS shows TabList to be a styled View plus a marker for a walk we no longer run) made every tab
-untappable: `useTabTrigger` found no entry for its name and the press handler returned early. The
-mechanism was never identified. Keep the wrapper.
 
 # Data: real API, REST-over-HTTP on every platform (for now)
 
