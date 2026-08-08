@@ -870,9 +870,16 @@ function SeriesReaderInstance({
     else router.replace('/');
   }, [router]);
   const leaveNow = useCallback(() => {
+    // Bracketed in the trace with the unmount below, so a recording measures the TEARDOWN — popping
+    // the route, unmounting the page, un-blanking the source card — as its own span. It is the last
+    // thing that happens on a collapse and the only thing left at that end of it; `frame LONG` lines
+    // falling between these two say what it costs, which is the number any attempt to shrink it
+    // would have to beat.
+    traceJS('leave', 'start', { depth });
     if (depth > 0) onPopLayer();
     else goBack();
   }, [depth, onPopLayer, goBack]);
+  useEffect(() => () => traceJS('leave', 'unmounted', { depth }), [depth]);
   // EVERY exit animation ends here rather than calling `leaveNow` directly, because an animation
   // callback is not a promise that it ran: reanimated reports `finished: false` for a curve that
   // got interrupted, and an exit that reached its end state without leaving stranded the page —
