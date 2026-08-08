@@ -300,6 +300,9 @@ function zoomCrossAxisDrag(translation: number, dimension: number): number {
 // Wall-clock backstop for a collapse whose animation callback never arrives (see closeLayer).
 // Generous: the close spring is stiff but a spring has no fixed duration to key off.
 const ZOOM_OUT_BACKSTOP_MS = 900;
+/** How close to the card counts as arrived, for the leave reaction. Above ZOOM_OUT_SPRING's
+ *  `restSpeedThreshold` so a settled collapse always trips it, small enough to be invisible. */
+const LEAVE_AT_ZOOM = 0.02;
 // Half the title's ~40pt first line — positions the title's CENTER at the gradient's center.
 const TITLE_MID = 20;
 // The details-content fade (and the reader's matching tint) complete within this fraction of the
@@ -879,6 +882,30 @@ function SeriesReaderInstance({
   const dragY = useSharedValue(0);
   const edgeCommitting = useSharedValue(false);
 
+  /**
+   * THE leave trigger: the page having actually reached the card. One reaction for every exit —
+   * the chevron, hardware back, the reader's dismiss fling, and the details back-swipe.
+   *
+   * All four used to leave from their own spring's completion callback, deliberately ignoring
+   * `finished` on the grounds that an interrupted collapse is still a collapse and a page that
+   * animates out without leaving is stranded. That reasoning holds for a curve interrupted AT its
+   * end state. It is exactly wrong for one interrupted at the START — and something opening the
+   * page can still be writing `zoom` a moment later (the entrance spring, a late `startZoom` once
+   * the hero cover measures — see ZOOM_BOUND_WAIT_MS). Any such write cancels the collapse, the
+   * callback fires regardless, and the page vanishes on the frame the finger lifted. Which is
+   * precisely the report: close soon after opening and the animation "finishes as soon as I let go".
+   *
+   * Asking the VALUE instead of the curve removes the whole class. It cannot fire early, because
+   * zoom at the card is what leaving means; and it cannot strand the page, because a collapse that
+   * gets cancelled before arriving is still covered by the wall-clock backstop above.
+   */
+  useAnimatedReaction(
+    () => edgeCommitting.value && zoom.value <= LEAVE_AT_ZOOM,
+    (arrived, was) => {
+      if (arrived && !was) runOnJS(leaveOnce)();
+    },
+  );
+
   // Collapse/dismiss pan — wraps the expanded reader, on the cross axis of its scroll: the
   // collapse direction (up in paged, right in webtoon) slides the details back in; the opposite
   // direction dismisses — and that dismissal now runs THE SAME GALLERY COLLAPSE the back-swipe and
@@ -992,10 +1019,9 @@ function SeriesReaderInstance({
           const throwSpeed = zoomThrowSpeed(Math.hypot(e.velocityX, e.velocityY), dismissSpan);
           zoom.set(
             // overshootClamping: there is nothing past "collapsed", so the spring must not travel
-            // through 0 and settle back up to it.
-            withSpring(0, { ...ZOOM_OUT_SPRING, overshootClamping: true, velocity: -throwSpeed }, () => {
-              runOnJS(leaveOnce)();
-            }),
+            // through 0 and settle back up to it. No completion callback — leaving is driven by
+            // `zoom` actually reaching the card (see the reaction near leaveOnce).
+            withSpring(0, { ...ZOOM_OUT_SPRING, overshootClamping: true, velocity: -throwSpeed }),
           );
           dragX.set(withSpring(0, ZOOM_OUT_SPRING));
           dragY.set(withSpring(0, ZOOM_OUT_SPRING));
@@ -1044,7 +1070,6 @@ function SeriesReaderInstance({
     dragX,
     dragY,
     edgeCommitting,
-    leaveOnce,
   ]);
 
   // Band pan. The strip (the reader band at the top of the details page) expands the reader the
@@ -1208,15 +1233,10 @@ function SeriesReaderInstance({
     setLeaving(true);
     zoomClosing.set(true);
     edgeCommitting.set(true);
-    zoom.set(
-      withSpring(0, ZOOM_OUT_SPRING, () => {
-        // Deliberately NOT gated on `finished` — see leaveOnce. Nothing else drives `zoom` down,
-        // so an interrupted collapse is still a collapse, and staying is never the right answer.
-        runOnJS(leaveOnce)();
-      }),
-    );
-    // (If that callback never arrives at all, the `leaving` backstop above still fires.)
-  }, [leftSV, edgeCommitting, zoom, zoomClosing, leaveOnce]);
+    zoom.set(withSpring(0, ZOOM_OUT_SPRING));
+    // No completion callback: leaving is driven by `zoom` reaching the card (see the reaction near
+    // leaveOnce), with the `leaving` backstop above as the safety net.
+  }, [leftSV, edgeCommitting, zoom, zoomClosing]);
 
   // Android hardware back steps back HOME (the details) before leaving: reader expanded → back
   // collapses it; details up → the instance slides out (a drilled layer back to its parent
@@ -1306,8 +1326,8 @@ function SeriesReaderInstance({
       // fresh spring starting from rest at the release point.
       zoom.set(
         withSpring(0, { ...ZOOM_OUT_SPRING, overshootClamping: true, velocity: -zoomThrowSpeed(velocityX, width) }, (finished) => {
+          // Traced, but it no longer DECIDES anything — see the leave reaction near leaveOnce.
           trace(tag, 'collapse.done', { finished: !!finished, zoom: zoom.value });
-          runOnJS(leaveOnce)();
         }),
       );
       dragX.set(withSpring(0, ZOOM_OUT_SPRING));
@@ -1406,7 +1426,6 @@ function SeriesReaderInstance({
     detailsActiveSV,
     zoom,
     zoomClosing,
-    leaveOnce,
   ]);
   // `traceOn` is a DEP on purpose: backSwipePan only attaches its touch observers while the trace
   // is recording, so flipping the toggle has to rebuild the gestures for the change to take.
