@@ -225,6 +225,10 @@ const NO_ORIGIN_SCALE = 0.92;
 // giving up and using the computed fallback target. Invisible while it waits — the page is still
 // at opacity 0, so all that shows is the untouched grid.
 const ZOOM_BOUND_WAIT_MS = 220;
+// How long the source card stays visible waiting for the flying copy to paint — see `blankSource`.
+// A cache-warm decode is a frame or two; this only has to catch a cover that never draws at all,
+// before a collapse could show the card and its copy at once.
+const ZOOM_THUMB_PAINT_WAIT_MS = 400;
 // The DRAG. A dismissal drag doesn't slide the page off — it runs the COLLAPSE under the finger:
 // the same mask, transform and cross-fade the chevron plays, just with its progress on the end of
 // a thumb, finishing from wherever it was let go.
@@ -1332,13 +1336,61 @@ function SeriesReaderInstance({
   // a hole in the grid. From arming on it stays blanked for this page's whole life — the copy
   // stands in for it, and the collapse spends most of its length with a half-transparent page over
   // the live grid, which is where showing both would be obvious.
+  //
+  // …and it also waits for the COPY TO HAVE PIXELS, which is the rest of the same thought. The
+  // copy's <Image> only mounts once `zoomGeom` exists, and `zoomGeom` and the arm land in the SAME
+  // commit — both hang off the hero rect report below — so the copy is a brand new image view at
+  // the moment the animation starts, and a brand new image view has nothing to draw for at least a
+  // frame even when the bitmap is already in memory. Blanking the card on that frame left a hole
+  // exactly where the eye was: the card gone, the copy not yet there, the page still at opacity 0.
+  // That is the flash on tapping a card.
+  //
+  // Waiting costs nothing, because the two are INTERCHANGEABLE while it waits: the copy is laid out
+  // on the tapped card's own rect and drawn from the card's own cover URL (the route's `cover`
+  // param IS `entry.cover`), so for those frames the real card showing through the not-yet-painted
+  // copy is the correct picture. `blankSource` is called from both ends and acts on whichever is
+  // last.
   const zoomReleaseRef = useRef<(() => void) | null>(null);
-  useEffect(() => () => zoomReleaseRef.current?.(), []);
+  const thumbPaintedRef = useRef(false);
+  const blankBackstopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      zoomReleaseRef.current?.();
+      if (blankBackstopRef.current) clearTimeout(blankBackstopRef.current);
+    },
+    [],
+  );
+  const blankSource = useCallback(() => {
+    if (zoomReleaseRef.current) return;
+    if (!zoomStartedRef.current || !thumbPaintedRef.current) return;
+    if (blankBackstopRef.current) {
+      clearTimeout(blankBackstopRef.current);
+      blankBackstopRef.current = null;
+    }
+    // Blank the ONE card this grew out of — not every card showing this series (see the module).
+    if (zoomSource && id) zoomReleaseRef.current = holdZoomingSeries(id, zoomSource.source);
+  }, [zoomSource, id]);
+  /** The copy reported pixels. Wired to its `onError` as well as its `onLoad` — a cover that is
+   *  never going to draw is not a reason to keep two of it on screen forever. */
+  const onZoomThumbPainted = useCallback(() => {
+    thumbPaintedRef.current = true;
+    blankSource();
+  }, [blankSource]);
   const startZoom = useCallback(() => {
     if (zoomStartedRef.current) return;
     zoomStartedRef.current = true;
-    // Blank the ONE card this grew out of — not every card showing this series (see the module).
-    if (zoomSource && id) zoomReleaseRef.current = holdZoomingSeries(id, zoomSource.source);
+    blankSource();
+    // The wait is BOUNDED, and the bound is about the collapse rather than the open. Through an
+    // open the card ends up behind an opaque page, so a copy that never loads leaves the real card
+    // harmlessly underneath it; the collapse is the direction where two of them would show. Long
+    // enough that a decode is never cut short, far shorter than any collapse.
+    if (!thumbPaintedRef.current) {
+      blankBackstopRef.current = setTimeout(() => {
+        blankBackstopRef.current = null;
+        thumbPaintedRef.current = true;
+        blankSource();
+      }, ZOOM_THUMB_PAINT_WAIT_MS);
+    }
     zoomArmed.set(true);
     zoom.set(
       withSpring(1, ZOOM_IN_SPRING, (finished) => {
@@ -1348,7 +1400,7 @@ function SeriesReaderInstance({
         trace('open', 'entered', { finished: !!finished });
       }),
     );
-  }, [zoom, zoomArmed, zoomSource, id]);
+  }, [zoom, zoomArmed, blankSource]);
   const onHeroCoverRect = useCallback((rect: ZoomRect) => {
     // Only the FIRST report, and only before the geometry is committed: the cover box re-lays out
     // as its aspect settles, and moving the destination mid-flight would visibly jump.
@@ -2367,7 +2419,16 @@ function SeriesReaderInstance({
             },
             zoomThumbStyle,
           ]}>
-          <Image source={{ uri: zoomThumbUri }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" />
+          {/* onLoad/onError are what release the source card's blanking — until this view has
+              pixels the real card underneath is what stands in for it. See `blankSource`. */}
+          <Image
+            source={{ uri: zoomThumbUri }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            onLoad={onZoomThumbPainted}
+            onError={onZoomThumbPainted}
+          />
         </Animated.View>
       )}
 
