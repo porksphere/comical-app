@@ -880,6 +880,10 @@ function SeriesReaderInstance({
     else goBack();
   }, [depth, onPopLayer, goBack]);
   useEffect(() => () => traceJS('leave', 'unmounted', { depth }), [depth]);
+  // The other end of the page's life. Teardown measured 9-44ms and turned out not to be worth
+  // attacking; this is the half that hasn't been measured, and it is the larger one — a whole
+  // details tree mounts here while the entrance animation plays.
+  useEffect(() => traceJS('open', 'mount', { depth }), [depth]);
   // EVERY exit animation ends here rather than calling `leaveNow` directly, because an animation
   // callback is not a promise that it ran: reanimated reports `finished: false` for a curve that
   // got interrupted, and an exit that reached its end state without leaving stranded the page —
@@ -1259,7 +1263,14 @@ function SeriesReaderInstance({
     // Blank the ONE card this grew out of — not every card showing this series (see the module).
     if (zoomSource && id) zoomReleaseRef.current = holdZoomingSeries(id, zoomSource.source);
     zoomArmed.set(true);
-    zoom.set(withSpring(1, ZOOM_IN_SPRING));
+    zoom.set(
+      withSpring(1, ZOOM_IN_SPRING, (finished) => {
+        // Closes the bracket opened at mount — see the effect below. The span between them is the
+        // OPEN: mounting the details tree and playing the entrance, which is the cost any scheme
+        // for reusing this page instead of rebuilding it would be buying back.
+        trace('open', 'entered', { finished: !!finished });
+      }),
+    );
   }, [zoom, zoomArmed, zoomSource, id]);
   const onHeroCoverRect = useCallback((rect: ZoomRect) => {
     // Only the FIRST report, and only before the geometry is committed: the cover box re-lays out
