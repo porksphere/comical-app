@@ -362,6 +362,8 @@ const ZOOM_OUT_BACKSTOP_MS = 900;
  * never trips this — which is the case the wall-clock backstop is for.
  */
 const LEAVE_AT_ZOOM = 0;
+/** Instances that have already left. See `leaveOnce` for why this lives out here. */
+const LEFT = new WeakSet<object>();
 // Half the title's ~40pt first line — positions the title's CENTER at the gradient's center.
 const TITLE_MID = 20;
 // The details-content fade (and the reader's matching tint) complete within this fraction of the
@@ -890,14 +892,38 @@ function SeriesReaderInstance({
   // mounted, invisible or shrunk, and still swallowing touches. So the exits below fire this
   // whether or not the curve finished, AND arm a wall-clock backstop, and this makes the extra
   // calls harmless.
-  // A shared value rather than a ref on purpose: the back-swipe builds its pan DURING render (see
-  // detailsScrollGesture), so anything that pan's worklets reach must not touch a React ref.
-  const leftSV = useSharedValue(false);
+  /**
+   * …and this latch is what makes them harmless. It is a PLAIN JS BOX, and that is the fix for a
+   * real bug rather than a style preference.
+   *
+   * It used to be a shared value, on the reasoning that the pan is built during render so nothing
+   * its worklets reach may touch a React ref. True of the worklets — but `leaveOnce` is not one.
+   * Every caller reaches it through `runOnJS`, so it only ever executes on the JS thread, where a
+   * shared value is the wrong instrument: a `.set()` here is not guaranteed visible to a `.get()`
+   * in the next JS task, because the value's home is the UI thread. So two exits firing off one
+   * frame — the leave reaction and the collapse spring's completion, which by design both mean
+   * "arrived" — each read the latch as false and each ran.
+   *
+   * A device trace caught it exactly:
+   *
+   *     leave start depth=2 / layer pop from=2 left=1
+   *     leave start depth=2 / layer pop from=1 left=0
+   *
+   * One instance leaving, two pops — so dismissing a series drilled from a search layer took the
+   * search layer with it and landed back on the series underneath. Only via the swipe, because the
+   * chevron path has a single caller and never exercises the latch at all.
+   *
+   * Held in a module-level WeakSet keyed on a per-instance token, which is the one shape both lint
+   * rules allow here: `useRef` is out because the pan is built during render, and mutating a
+   * `useMemo` result is out too — so the memo hands out an identity and the mutation happens in the
+   * set. Plain JS, one thread, no cross-runtime visibility to reason about.
+   */
+  const token = useMemo(() => ({}), []);
   const leaveOnce = useCallback(() => {
-    if (leftSV.get()) return;
-    leftSV.set(true);
+    if (LEFT.has(token)) return;
+    LEFT.add(token);
     leaveNow();
-  }, [leftSV, leaveNow]);
+  }, [token, leaveNow]);
   // NOTE: nothing here tracks "this page is leaving". It used to — `const [leaving, setLeaving] =
   // useState(false)`, flipped from inside the commit — and that re-rendered all of
   // SeriesReaderInstance on the frame the collapse animation started. Profiles measured that render
@@ -1302,13 +1328,13 @@ function SeriesReaderInstance({
   // route's `animation: 'none'` means this IS the exit animation — without it a tapped back would
   // just blink the screen away.
   const closeLayer = useCallback(() => {
-    if (leftSV.get()) return;
+    if (LEFT.has(token)) return;
     zoomClosing.set(true);
     edgeCommitting.set(true);
     zoom.set(withSpring(0, ZOOM_OUT_SPRING));
     // No completion callback: leaving is driven by `zoom` reaching the card (see the reaction near
     // leaveOnce), with the `leaving` backstop above as the safety net.
-  }, [leftSV, edgeCommitting, zoom, zoomClosing]);
+  }, [token, edgeCommitting, zoom, zoomClosing]);
 
   // Android hardware back steps back HOME (the details) before leaving: reader expanded → back
   // collapses it; details up → the instance slides out (a drilled layer back to its parent
@@ -1398,12 +1424,11 @@ function SeriesReaderInstance({
       // fresh spring starting from rest at the release point.
       zoom.set(
         withSpring(0, { ...ZOOM_OUT_SPRING, overshootClamping: true, velocity: -zoomThrowSpeed(velocityX, width, zoom.value) }, (finished) => {
+          // Traced only. This used to leave as well, gated on `finished` — which is redundant with
+          // the reaction (a completed spring writes exactly 0, which is what the reaction watches
+          // for) and was the second half of the double-pop: two callers off one frame, each seeing
+          // an unset latch. One caller is a better guarantee than a better latch.
           trace(tag, 'collapse.done', { finished: !!finished, zoom: zoom.value });
-          // Gated on `finished`, which is the whole difference from the version that made a release
-          // end instantly: a COMPLETED spring is at rest at the card, an interrupted one is wherever
-          // it was interrupted. Belt to the reaction's braces — both mean arrived, neither can fire
-          // early, and between them a normal collapse never waits on the backstop.
-          if (finished) runOnJS(leaveOnce)();
         }),
       );
       dragX.set(withSpring(0, ZOOM_OUT_SPRING));
@@ -1498,7 +1523,6 @@ function SeriesReaderInstance({
     height,
     dragX,
     dragY,
-    leaveOnce,
     edgeCommitting,
     detailsActiveSV,
     zoom,
