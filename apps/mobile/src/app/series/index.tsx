@@ -241,10 +241,30 @@ const ZOOM_PRIMARY_DRAG_RESISTANCE = 2;
 const ZOOM_HORIZONTAL_DRAG_DISTANCE_SCALE = 1.5;
 const ZOOM_CROSS_AXIS_DRAG_TRANSLATION_SCALE = 0.35;
 const ZOOM_CROSS_AXIS_DRAG_RESISTANCE = 0.05;
-// How far the finger has to travel, as a fraction of screen width, to drive the collapse all the
-// way home. The commit threshold is much lower — this only sets how fast the page shrinks under
-// a drag that keeps going.
-const ZOOM_DRAG_TRAVEL = 0.9;
+/**
+ * How far the finger would have to travel, as a fraction of screen width, to drive the collapse all
+ * the way home. Deliberately MORE than a screen: the drag must never be able to finish the collapse,
+ * because whatever it finishes is animation the release no longer has to play.
+ *
+ * At 0.9 it could and routinely did. Traces of ordinary swipes end around 300–340px on a ~380px
+ * screen, which lands `zoom` at 0.06–0.1 — the page is already sitting on the card when the finger
+ * lifts, and the release is left animating the last few percent. Capping the throw (see
+ * MIN_COLLAPSE_SECONDS) made that remainder take its ~220ms instead of 60ms, which is how it should
+ * behave — but stretching a few percent of travel over 220ms is a crawl, and a crawl reads as a
+ * stutter just as readily as a cut does. The release needs distance, not just time.
+ *
+ * 1.25 is chosen against the commit rule rather than by feel. A drag can only commit past
+ * DISMISS_COMMIT_FRACTION (half the width), so the two ends of the committed range are:
+ *
+ *     just committed (0.5W)  → zoom 0.60 left to play
+ *     a long swipe   (320px) → zoom 0.32 left to play
+ *
+ * so every release, however far it was dragged, still has a third of the collapse to show. The cost
+ * is that the page shrinks less under the finger — it tracks the drag rather than arriving with it,
+ * the way a photo does when you flick it back into a grid. If that reads as too little follow, this
+ * is the number to lower, and it trades directly against the length of the release.
+ */
+const ZOOM_DRAG_TRAVEL = 1.25;
 // The collapse carries on at the speed the finger was moving — but only up to a point, and this cap
 // is not cosmetic.
 //
