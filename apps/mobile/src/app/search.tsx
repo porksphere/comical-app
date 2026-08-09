@@ -3,6 +3,7 @@ import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
+import type { ComposedGesture } from 'react-native-gesture-handler';
 import { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -22,7 +23,7 @@ import { ThemedView } from '@/components/themed-view';
 import { BarContentGap, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { useDedupedPages } from '@/data/grid-pages';
 import { fetchBrowseScope, nextGridCursor, NO_CURSOR, queryKeys, type BrowseScope } from '@/data/queries';
-import { subscribeSearchIntent, takeSearchIntent } from '@/data/search-intent';
+import { clearSearchIntent, peekSearchIntent, subscribeSearchIntent, takeSearchIntent } from '@/data/search-intent';
 import { COMICAL_BRIDGE_ID, isComicalBridge, useSelectedBridge } from '@/data/selected-bridge';
 import { useDataSource, useMockActive } from '@/data/source';
 import type { Bridge } from '@/data/types';
@@ -55,7 +56,27 @@ const SHADOW_PEAK_OPACITY = 0.16;
  * query + filter/sort state (`useBridgeFilters`). A Series→Search tag/meta intent
  * (see search-intent.ts) is consumed on mount and applied against the intent's bridge.
  */
-export default function SearchScreen() {
+/** EXPERIMENTAL series page embedding (see SearchLayer in app/series page/index.tsx): the
+ *  same screen mounted as an in-screen LAYER instead of a pushed route — `onBack` replaces the
+ *  router pop (the layer slides itself out). Remove with the experiment (the route path passes
+ *  nothing). */
+export type SearchEmbedded = {
+  onBack: () => void;
+  /** The layer's back-swipe pan composed with a `Gesture.Native()` (`Gesture.Simultaneous`), to
+   *  mount on the results scroller: on iOS the scroll view's own recognizer force-fails a foreign
+   *  pan before its activation distance, so the pan must ride the scroller's own detector — see
+   *  the series page's makeBackSwipePan. */
+  scrollGesture?: ComposedGesture;
+  /** Whether this embedded copy is the TOP layer. Layers are sibling views on ONE route, so
+   *  react-navigation reports every one of them focused — the host has to say which is live.
+   *  See the intent subscription below, which is what this exists for. */
+  isTop?: boolean;
+  /** False while this layer's back-swipe owns the touch — the results list stops scrolling under
+   *  a page that is being dragged away. See RecyclerList's `scrollEnabled`. */
+  scrollEnabled?: boolean;
+};
+
+export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded } = {}) {
   const ds = useDataSource();
   const mock = useMockActive();
   const theme = useTheme();
@@ -70,7 +91,13 @@ export default function SearchScreen() {
   // Take the one-shot Series→Search intent exactly once (lazy initializer), before the first render
   // reads it. `query` seeds directly from a `query` intent; `tag`/`meta` are stashed and applied
   // once this bridge's filter defs settle (below), mirroring the old Browse focus-effect flow.
-  const [initialIntent] = useState(() => takeSearchIntent());
+  const [initialIntent] = useState(() => peekSearchIntent());
+  // Consume it AFTER mount: a consuming read in the initializer loses the intent under
+  // StrictMode's double invocation (see peekSearchIntent).
+  useEffect(() => {
+    clearSearchIntent(initialIntent);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initialIntent is mount-stable
+  }, []);
 
   const {
     currentBridge,
@@ -118,13 +145,28 @@ export default function SearchScreen() {
 
   // Pending tag/meta intent, resolved once this bridge's filter defs have loaded (`filtersSettled`) —
   // seeded from the mount intent, then cleared. Reuses the pure resolvers + their tests.
-  const [pendingTag, setPendingTag] = useState<TagIntent | null>(
+  //
+  // Each pending intent CARRIES ITS TARGET BRIDGE, and the resolve effects below wait for the
+  // resolved `bridgeId` to actually BE that bridge. Without the guard, the mount-pass effects run
+  // with the pre-`setBridge` selection still resolved — and when that's a bridge whose filters are
+  // already "settled", the intent is consumed against the WRONG bridge's defs and lost. The
+  // deterministic case: first tag tap after a relaunch, when the in-memory selection is still null
+  // and resolves to the capability-less Comical aggregate, whose empty filter defs settle
+  // instantly — the search mounted blank.
+  const [pendingTag, setPendingTag] = useState<(TagIntent & { bridgeId: string }) | null>(
     initialIntent?.kind === 'tag'
-      ? { filterKey: initialIntent.filterKey, tagId: initialIntent.tagId, label: initialIntent.label }
+      ? {
+          bridgeId: initialIntent.bridgeId,
+          filterKey: initialIntent.filterKey,
+          tagId: initialIntent.tagId,
+          label: initialIntent.label,
+        }
       : null,
   );
-  const [pendingMeta, setPendingMeta] = useState<MetaIntent | null>(
-    initialIntent?.kind === 'meta' ? { metaKey: initialIntent.metaKey, value: initialIntent.value } : null,
+  const [pendingMeta, setPendingMeta] = useState<(MetaIntent & { bridgeId: string }) | null>(
+    initialIntent?.kind === 'meta'
+      ? { bridgeId: initialIntent.bridgeId, metaKey: initialIntent.metaKey, value: initialIntent.value }
+      : null,
   );
 
   // An intent can also arrive while Search is ALREADY mounted: cards in the results grid below carry
@@ -136,6 +178,13 @@ export default function SearchScreen() {
   // backgrounded instance answered the subscription it would swallow the intent, leaving the pushed
   // screen to mount on an empty `takeSearchIntent()`. Unfocused, we ignore it and let the push consume
   // it on mount.
+  //
+  // Focus alone is not enough INSIDE the series page, and that is a real bug this fixes rather than
+  // a hypothetical: the page's layers (search, drilled series, another search…) are sibling views on
+  // ONE route, so react-navigation calls every one of them focused. Browse → series → search →
+  // series → tag chip therefore had the BURIED search — still mounted two layers down — answer the
+  // subscription and quietly re-search itself, while the search layer the chip opened mounted on an
+  // empty intent and showed nothing. `isTop` is the host telling us which layer is actually live.
   //
   // Seed the same three paths as mount — but clear the existing query/filters/sort first, so the tap
   // lands on a clean slate exactly as it would on a freshly-pushed Search. Without that, the new tag
@@ -151,10 +200,17 @@ export default function SearchScreen() {
       };
     }, []),
   );
+  // Mirrored into a ref rather than read from the closure: the subscription is set up once (its
+  // deps are all stable setters), so a captured `embedded` would freeze at whatever was true when
+  // this screen mounted — which is exactly "I am on top", the wrong answer forever after.
+  const topRef = useRef(true);
+  useEffect(() => {
+    topRef.current = embedded ? !!embedded.isTop : true;
+  });
   useEffect(
     () =>
       subscribeSearchIntent(() => {
-        if (!focusedRef.current) return;
+        if (!focusedRef.current || !topRef.current) return;
         const intent = takeSearchIntent();
         if (!intent) return;
         setBridge(intent.bridgeId);
@@ -163,16 +219,19 @@ export default function SearchScreen() {
         setQuery(intent.kind === 'query' ? intent.query : '');
         setPendingTag(
           intent.kind === 'tag'
-            ? { filterKey: intent.filterKey, tagId: intent.tagId, label: intent.label }
+            ? { bridgeId: intent.bridgeId, filterKey: intent.filterKey, tagId: intent.tagId, label: intent.label }
             : null,
         );
-        setPendingMeta(intent.kind === 'meta' ? { metaKey: intent.metaKey, value: intent.value } : null);
+        setPendingMeta(
+          intent.kind === 'meta' ? { bridgeId: intent.bridgeId, metaKey: intent.metaKey, value: intent.value } : null,
+        );
       }),
     [setBridge, setFilterValues, setSortValue],
   );
 
   useEffect(() => {
-    if (!pendingTag || !bridgeId || !filtersSettled) return;
+    // The bridge match is what makes the mount-time race safe — see the pending state above.
+    if (!pendingTag || bridgeId !== pendingTag.bridgeId || !filtersSettled) return;
     const res = resolveTagIntent(filterDefs, pendingTag);
     if (res) {
       // Seed the id→label hint so the trigger/editor show the tag's name (a live-search filter has no
@@ -184,7 +243,7 @@ export default function SearchScreen() {
   }, [pendingTag, filterDefs, filtersSettled, bridgeId, setLabelHints, setFilterValues]);
 
   useEffect(() => {
-    if (!pendingMeta || !bridgeId || !filtersSettled) return;
+    if (!pendingMeta || bridgeId !== pendingMeta.bridgeId || !filtersSettled) return;
     // Prefer the bridge's own field for that meta key, else fall back to a free-text search.
     const res = resolveMetaIntent(filterDefs, pendingMeta);
     if (res.kind === 'filter') setFilterValues((prev) => ({ ...prev, [res.defId]: res.value }));
@@ -299,7 +358,8 @@ export default function SearchScreen() {
 
   const goBack = () => {
     hapticImpactLight();
-    router.back();
+    if (embedded) embedded.onBack();
+    else router.back();
   };
 
   // Empty-state body shown when the grid has no items: a retry on error, a first-load skeleton, or
@@ -403,6 +463,8 @@ export default function SearchScreen() {
                 onScroll={onListScroll}
                 onScrollEndDrag={pull.onScrollEndDrag}
                 wrapperStyle={pull.listStyle}
+                scrollGesture={embedded?.scrollGesture}
+                scrollEnabled={embedded?.scrollEnabled}
               />
             ) : (
               <SeriesGrid
@@ -423,6 +485,8 @@ export default function SearchScreen() {
                 onScrollEndDrag={pull.onScrollEndDrag}
                 // The pull-to-refresh content shift and the re-search dim both ride the list wrapper.
                 wrapperStyle={[pull.listStyle, listDimStyle]}
+                scrollGesture={embedded?.scrollGesture}
+                scrollEnabled={embedded?.scrollEnabled}
               />
             ))}
           {ready && filterBar}

@@ -10,6 +10,7 @@ import {
   type GestureResponderEvent,
   type ViewStyle,
 } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BarBlur } from '@/components/bar-blur';
@@ -18,6 +19,7 @@ import { DesktopTopBarHeight, MaxTopLevelWidth, Spacing } from '@/constants/them
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
+import { useSeriesReaderBackdropDimStyle, useSeriesReaderBackdropStyle } from '@/lib/series-backdrop';
 import { notifyScrollActivity, subscribeScrollPhase } from '@/lib/scroll-release';
 import { COMMIT_DISTANCE, SETTLE_MS } from '@/lib/slide-step';
 import {
@@ -265,9 +267,20 @@ export default function AppTabs() {
     [isMobile, reveal],
   );
 
+  // See the wrapper below — both rest at identity/transparent unless the series page is open.
+  const seriesReaderBackdropStyle = useSeriesReaderBackdropStyle();
+  const seriesReaderBackdropDim = useSeriesReaderBackdropDimStyle();
+
   return (
-    <Tabs style={styles.tabs}>
-      <TabSlot style={styles.slot} />
+    // The tabs are what the series page usually opens OVER, and a transparent modal can't scale
+    // or dim its backdrop the way a native presentation does — so the page drives it from here
+    // instead (see lib/series-backdrop.ts). The wrapper sits OUTSIDE `Tabs` on purpose: `Tabs`
+    // walks its own children to discover triggers, so nothing may come between it and them. With
+    // no series page open the transform is identity and the dim fully transparent, so this costs
+    // nothing at rest.
+    <Animated.View style={[styles.tabs, seriesReaderBackdropStyle]}>
+      <Tabs style={styles.tabs}>
+        <TabSlot style={styles.slot} />
 
       {/* Desktop: icon-only nav pinned to the top-right, aligned with the
           Browse selector bar row (top = its paddingTop, height = the subtitle
@@ -320,7 +333,10 @@ export default function AppTabs() {
           {triggers}
         </TabList>
       )}
-    </Tabs>
+      </Tabs>
+      {/* The dim under an open series page — inert (opacity 0) whenever none is, never interactive. */}
+      <Animated.View pointerEvents="none" style={[styles.backdropDim, seriesReaderBackdropDim]} />
+    </Animated.View>
   );
 }
 
@@ -399,6 +415,15 @@ function TabButton({
 const styles = StyleSheet.create({
   tabs: {
     flex: 1,
+  },
+  // The series page backdrop's dim (see the wrapper) — full-bleed, never interactive.
+  backdropDim: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#000',
   },
   slot: {
     flex: 1,

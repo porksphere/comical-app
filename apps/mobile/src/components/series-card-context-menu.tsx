@@ -66,6 +66,8 @@ import { useStartReading } from '@/hooks/use-start-reading';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
 import { clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
 import { useRouter } from '@/lib/nav';
+import { drillSeriesFromOverlay, encodeSeriesParam } from '@/lib/series-nav';
+import { setZoomOrigin } from '@/lib/series-zoom';
 import { testId } from '@/lib/test-id';
 import {
   closeSeriesCardMenu,
@@ -260,7 +262,7 @@ export function SeriesCardContextMenuHost() {
 }
 
 function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
-  const { entry, bridgeId, direct, coverAspect, rect } = req;
+  const { entry, bridgeId, bridge, direct, coverAspect, rect, zoomSource } = req;
   // The VISUAL corner radius the preview starts at (matches the source it lifts from); it morphs to the
   // resting radius (REST_COVER_RADIUS) as it opens. Defaults to that resting radius (a card cover).
   const startRadius = req.startRadius ?? REST_COVER_RADIUS;
@@ -295,6 +297,8 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     title: entry.title,
     direct: !!direct,
     readLabel: detail.data?.readLabel,
+    ...(bridge ? { bridge } : {}),
+    ...(entry.cover ? { cover: entry.cover } : {}),
   });
   // The detail query is SEEDED with placeholder data (the card's title + cover) so the panel has them
   // instantly — so "has data" is true from frame one. The real meta/description/tags only exist once
@@ -1053,18 +1057,42 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     [bridgeId, req, router, pathname],
   );
 
-  // Tapping a page thumbnail opens the reader there. Close instantly (un-hide the card + drop the
-  // host so the pushed reader isn't left under it) rather than playing the morph-back.
+  // Hand the pressed card's rect to the series page's zoom, so opening from this menu grows out of
+  // exactly the card the preview lifted from — the same transition a plain tap gets. The menu drops
+  // instantly (no morph back) on a navigating row, so the card is on screen and un-hidden at that
+  // moment; the series page then blanks it for the flight, like every other zoom source.
+  //
+  // `rect` is the whole CARD, title included, so its height is not the cover's. The cover's is the
+  // same number the lifted preview derives (see `coverH`): the width over the capped aspect.
+  const handOffZoom = useCallback(() => {
+    if (zoomSource === undefined) return; // web, or a caller with no zoom entrance
+    const coverHeight = rect.width / clampThumbAspect(coverAspect ?? DEFAULT_THUMB_ASPECT);
+    setZoomOrigin(entry.id, zoomSource, { x: rect.x, y: rect.y, width: rect.width, height: coverHeight, radius: startRadius });
+  }, [rect.x, rect.y, rect.width, coverAspect, entry.id, startRadius, zoomSource]);
+
+  // Tapping a page in the rail opens the series page READER-FIRST at that page — the same screen
+  // the Read row opens, and the same one a History row opens; the details are one swipe below it.
+  // (There is no separate reader route any more: details and pages are one page.)
   const openReaderAt = useCallback(
     (pageIndex: number) => {
+      handOffZoom();
       req.onClose?.();
       closeSeriesCardMenu();
-      router.push({
-        pathname: '/reader',
-        params: { seed: entry.id, title: entry.title, direct: '1', start: String(pageIndex), ...(bridgeId ? { bridgeId } : {}) },
-      });
+      const params: Record<string, string> = {
+        id: entry.id,
+        title: entry.title,
+        direct: '1',
+        reader: '1',
+        start: String(pageIndex),
+        ...(bridgeId ? { bridgeId } : {}),
+        ...(bridge ? { bridge: encodeSeriesParam(bridge) } : {}),
+        ...(entry.cover ? { cover: encodeSeriesParam(entry.cover) } : {}),
+      };
+      // Long-pressed inside a series page's related rail → a LAYER on that page, never a second
+      // contained transparent modal (see drillSeriesFromOverlay).
+      if (!drillSeriesFromOverlay(params)) router.push({ pathname: '/series', params });
     },
-    [req, router, entry.id, entry.title, bridgeId],
+    [handOffZoom, req, router, entry.id, entry.title, entry.cover, bridge, bridgeId],
   );
 
   // ── The rows, as data ─────────────────────────────────────────────────────
@@ -1097,7 +1125,8 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       loading: false,
       testID: 'series.card-menu.read',
       onPress: () => {
-        req.onClose?.(); // un-hide the card and drop the overlay — the reader is about to cover it
+        handOffZoom();
+        req.onClose?.(); // un-hide the card and drop the overlay — the series page is about to cover it
         closeSeriesCardMenu();
         reading.start();
       },

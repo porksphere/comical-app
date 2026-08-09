@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useReducer, useRef, useState } from 'react';
 
-import { ReaderPage } from '@/components/reader/reader-page';
+import { ReaderPage, STANDBY_FADE_MS } from '@/components/reader/reader-page';
 import {
   clamp,
   distance,
@@ -26,6 +26,8 @@ type Props = {
   initialPage: number;
   onPageChange: (index: number) => void;
   onToggleChrome: () => void;
+  /** See the native variant: the series page's strip cross-fades its standing page in. */
+  standby?: boolean;
 };
 
 /**
@@ -42,7 +44,7 @@ type Props = {
  *     scroll keeps working on the enlarged strip. When zoomed we switch to
  *     `touch-action: pan-x pan-y` + `overflow-x: auto` so one finger pans both
  *     axes natively. The pinch anchors on the focal point via scrollLeft/Top.
- * Chrome (toolbar / pill / settings) are siblings in reader.tsx, outside this
+ * Chrome (toolbar / pill / settings) are siblings on the series page, outside this
  * scroller, so zooming never moves them.
  *
  * Pages load lazily by viewport proximity (IntersectionObserver) so only a few
@@ -88,7 +90,7 @@ function isDesktopPointer(): boolean {
 }
 
 export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function WebtoonReader(
-  { pages, width, height, pageFit, initialPage, onPageChange, onToggleChrome },
+  { pages, width, height, pageFit, initialPage, onPageChange, onToggleChrome, standby },
   ref,
 ) {
   const n = pages.length;
@@ -485,7 +487,7 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
   // the landing spot instead of leaving it wherever the initial guess put it.
   // Skipped once the user starts scrolling on their own.
   //
-  // Reacts to `initialPage` changing (not just mount): reader.tsx's own
+  // Reacts to `initialPage` changing (not just mount): the screen's own
   // `currentPage` briefly starts at 0 before its pages-loaded effect corrects
   // it to the real requested start index, and this component can mount in
   // that window (gated behind `!pages`) — so the very first `initialPage` it
@@ -558,6 +560,7 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
             >
               {isLoaded ? (
                 <ReaderPage
+                  fadeMs={standby ? STANDBY_FADE_MS : undefined}
                   uri={uri}
                   page={i + 1}
                   fit={paged ? 'contain' : 'width'}

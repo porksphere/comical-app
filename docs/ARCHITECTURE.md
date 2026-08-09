@@ -12,7 +12,7 @@ selectable fallback on native — it talks to a remote `@comical/host-server`.
 comical/
 ├── apps/
 │   └── mobile/                 # Expo app (expo-router, New Architecture)
-│       ├── src/app/            # screens (Browse/Library/History/Activity/Settings + series/reader)
+│       ├── src/app/            # screens (Browse/Library/History/Activity/Settings + the series page)
 │       ├── src/data/           # data layer: api.ts (transport seam), source.ts, embedded/ (on-device wiring)
 │       ├── modules/comical-runtime/  # local Expo native module wrapping comical's ComicalBridgeContext
 │       ├── app.json            # Expo config (bundleId: com.porksphere.comical)

@@ -10,7 +10,7 @@ import {
 } from 'react';
 
 import type { ReaderPageItem } from '@/components/reader/paged-reader';
-import { ReaderPage } from '@/components/reader/reader-page';
+import { ReaderPage, STANDBY_FADE_MS } from '@/components/reader/reader-page';
 import {
   clamp,
   distance,
@@ -32,9 +32,9 @@ export type PagedReaderHandle = {
 };
 
 type Props = {
-  /** Per-chapter on web (reader.tsx doesn't stitch here): this pager hands a
-   *  swipe past the last/first page to onNext/onPrev (see finalizeSwipe), so
-   *  chapter transitions stay route-level. Item shape shared with native. */
+  /** Per-chapter on web (nothing is stitched here): this pager hands a swipe
+   *  past the last/first page to onNext/onPrev (see finalizeSwipe), so chapter
+   *  transitions stay the screen's business. Item shape shared with native. */
   pages: ReaderPageItem[];
   width: number;
   height: number;
@@ -45,6 +45,10 @@ type Props = {
   onPrev: () => void;
   onNext: () => void;
   onToggleChrome: () => void;
+  /** True while the pager is parked as a DECORATIVE background (the series page's collapsed
+   *  strip): shrinks the mounted-image radius to the visible page only, so neighbouring pages
+   *  aren't requested until the reader becomes primary again. (Mirrors the native prop.) */
+  standby?: boolean;
 };
 
 /**
@@ -71,7 +75,7 @@ type Props = {
  *
  * Pages live in an absolutely-positioned flex row translated via a CSS
  * transform; zoom is a transform on the current page's inner wrapper, so the
- * toolbar / progress pill / settings (siblings in reader.tsx) never move.
+ * toolbar / progress pill / settings (siblings on the series page) never move.
  *
  * RTL: the data array is reversed and logical↔physical mapping keeps "next" =
  * reading order +1. Gestures move the track in PHYSICAL terms regardless of
@@ -115,7 +119,7 @@ const PINCH_COMMIT = 1.2;
 type Mode = 'idle' | 'swipe' | 'pan' | 'pinch' | 'content-pan';
 
 export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedReader(
-  { pages, width, height, rtl, pageFit, initialPage, onPageChange, onPrev, onNext, onToggleChrome },
+  { pages, width, height, rtl, pageFit, initialPage, onPageChange, onPrev, onNext, onToggleChrome, standby },
   ref,
 ) {
   const n = pages.length;
@@ -353,9 +357,9 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   );
 
   // `initialPage` only seeds `index`'s initial state (read once, at mount) —
-  // but reader.tsx's own `currentPage` briefly starts at 0 before its
-  // pages-loaded effect corrects it to the real requested start index (see
-  // reader.tsx's `startIndex` effect), and this component mounts in that same
+  // but the screen's own `currentPage` briefly starts at 0 before its
+  // pages-loaded effect corrects it to the real requested start index, and
+  // this component mounts in that same
   // window (gated behind `!pages`). Re-sync whenever `initialPage` changes and
   // no longer matches our own index — a mismatch only really happens from that
   // external correction (or an imperative `goToPage`, which already keeps
@@ -760,7 +764,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         {data.map((item, i) => {
           // Only pages within the window mount an image (lazy fetch + bounded
           // memory); the rest are empty placeholders that still hold the slot.
-          const near = Math.abs(i - index) <= RENDER_RADIUS;
+          // Standby (a decorative background strip) keeps only the page ON screen.
+          const near = Math.abs(i - index) <= (standby ? 0 : RENDER_RADIUS);
           return (
             <div key={item.key} style={cellStyle(width, height)}>
               <div
@@ -768,6 +773,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
                 style={zoomWrapperStyle(width, height, i === index && pageFit === 'fit-width' && contentOverflows)}>
                 {near ? (
                   <ReaderPage
+                    fadeMs={standby ? STANDBY_FADE_MS : undefined}
                     uri={item.uri}
                     page={item.pageNumber}
                     fit={pageFit === 'fit-width' ? 'width' : 'contain'}

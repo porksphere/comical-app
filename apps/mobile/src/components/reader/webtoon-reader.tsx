@@ -13,7 +13,7 @@ import {
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated from 'react-native-reanimated';
 
-import { ReaderPage } from '@/components/reader/reader-page';
+import { ReaderPage, STANDBY_FADE_MS } from '@/components/reader/reader-page';
 import { useZoomable } from '@/components/reader/use-zoomable';
 import type { PageFit } from '@/hooks/use-reader-settings';
 import { testId } from '@/lib/test-id';
@@ -47,6 +47,11 @@ type Props = {
    *  to the very end of the continuous list. Reliable in continuous mode where
    *  viewability-based page tracking makes `onEndReached`+last-page fragile. */
   onAdvance?: () => void;
+  /** True while this reader is the series page's decorative STRIP rather than the thing being
+   *  read. Only effect: its standing page cross-fades in (see ReaderPage's `fadeMs`) instead of
+   *  appearing — the paged reader also uses it to shrink its render window, which a webtoon list
+   *  doesn't need (its rows are already virtualized by proximity). */
+  standby?: boolean;
 };
 
 // Height/width ratio assumed for a page before it has rendered (matches
@@ -86,7 +91,7 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
  * vertical drag still scrolls).
  */
 const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function WebtoonContinuous(
-  { pages, width, height, initialPage, onPageChange, onToggleChrome, onZoomChange, nextChapterName, onAdvance },
+  { pages, width, height, initialPage, onPageChange, onToggleChrome, onZoomChange, nextChapterName, onAdvance, standby },
   ref,
 ) {
   const listRef = useRef<FlatList<string>>(null);
@@ -249,7 +254,14 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
                 nextChapterName ? <ChapterSentinel name={nextChapterName} onPress={onAdvance} /> : null
               }
               renderItem={({ item, index }) => (
-                <WebtoonRow uri={item} index={index} width={width} onRowLayout={onRowLayout} testID={testId('reader.page.tap', index + 1)} />
+                <WebtoonRow
+                  uri={item}
+                  index={index}
+                  width={width}
+                  onRowLayout={onRowLayout}
+                  fadeMs={standby ? STANDBY_FADE_MS : undefined}
+                  testID={testId('reader.page.tap', index + 1)}
+                />
               )}
             />
           </GestureDetector>
@@ -270,18 +282,20 @@ function WebtoonRow({
   index,
   width,
   onRowLayout,
+  fadeMs,
   testID,
 }: {
   uri: string;
   index: number;
   width: number;
   onRowLayout: (index: number, height: number) => void;
+  fadeMs?: number;
   testID: string;
 }) {
   const [failed, setFailed] = useState(false);
   return (
     <View onLayout={(e: LayoutChangeEvent) => onRowLayout(index, e.nativeEvent.layout.height)}>
-      <ReaderPage uri={uri} page={index + 1} fit="width" width={width} onFailedChange={setFailed} />
+      <ReaderPage uri={uri} page={index + 1} fit="width" width={width} fadeMs={fadeMs} onFailedChange={setFailed} />
       {!failed && <View testID={testID} style={StyleSheet.absoluteFill} pointerEvents="none" />}
     </View>
   );
@@ -303,7 +317,7 @@ function WebtoonRow({
  * list's paging is frozen so a one-finger drag pans instead of turning.
  */
 const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPaged(
-  { pages, width, height, initialPage, onPageChange, onToggleChrome, onZoomChange, onEndReached },
+  { pages, width, height, initialPage, onPageChange, onToggleChrome, onZoomChange, onEndReached, standby },
   ref,
 ) {
   const listRef = useRef<FlatList<string>>(null);
@@ -370,6 +384,7 @@ const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPage
           height={height}
           onToggleChrome={onToggleChrome}
           onZoomChange={handleZoom}
+          fadeMs={standby ? STANDBY_FADE_MS : undefined}
           testID={testId('reader.page.tap', index + 1)}
         />
       )}
@@ -389,6 +404,7 @@ function WebtoonPagedRow({
   height,
   onToggleChrome,
   onZoomChange,
+  fadeMs,
   testID,
 }: {
   uri: string;
@@ -397,6 +413,7 @@ function WebtoonPagedRow({
   height: number;
   onToggleChrome: () => void;
   onZoomChange: (zoomed: boolean) => void;
+  fadeMs?: number;
   testID: string;
 }) {
   const [failed, setFailed] = useState(false);
@@ -415,7 +432,7 @@ function WebtoonPagedRow({
     <GestureDetector gesture={gesture}>
       <View style={{ width, height, overflow: 'hidden' }}>
         <Animated.View style={[{ width, height }, animatedStyle]}>
-          <ReaderPage uri={uri} page={index + 1} fit="contain" width={width} height={height} onFailedChange={setFailed} />
+          <ReaderPage uri={uri} page={index + 1} fit="contain" width={width} height={height} fadeMs={fadeMs} onFailedChange={setFailed} />
         </Animated.View>
         {/* Inert marker for the reader.page.tap.* testID (asserted by Maestro). */}
         {!failed && <View testID={testID} style={StyleSheet.absoluteFill} pointerEvents="none" />}

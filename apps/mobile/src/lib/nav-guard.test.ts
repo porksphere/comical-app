@@ -30,7 +30,7 @@ describe('navTargetKey', () => {
   });
 
   test('undefined params are dropped, not stringified', () => {
-    expect(navTargetKey({ pathname: '/reader', params: { seed: 'x', chapterId: undefined } })).toBe('/reader?seed=x');
+    expect(navTargetKey({ pathname: '/series', params: { id: 'x', chapterId: undefined } })).toBe('/series?id=x');
   });
 });
 

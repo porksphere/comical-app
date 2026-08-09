@@ -2,9 +2,11 @@ import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import type { LegendListRef } from '@legendapp/list/react-native';
 import type { ReactElement, RefObject } from 'react';
 import { Platform, StyleSheet, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { GestureDetector, type ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { type SharedValue } from 'react-native-reanimated';
 
 import { notifyScrollBeginDrag, notifyScrollEndDrag, notifyScrollRest } from '@/lib/scroll-release';
+import { ZoomSurfaceContext, useZoomSurfaceKey } from '@/lib/series-zoom';
 
 /**
  * THE one virtualized-list primitive. Every scrolling list of cards/rows in the app — the uniform
@@ -42,6 +44,8 @@ export function RecyclerList<T>({
   onScrollEndDrag,
   onMomentumScrollEnd,
   wrapperStyle,
+  scrollGesture,
+  scrollEnabled,
 }: {
   data: T[];
   /** Identifies the current scope (bridge/page/query/…); folded into the list `key` so a scope
@@ -86,6 +90,18 @@ export function RecyclerList<T>({
    *  Applied to a wrapping Animated.View rather than the list's own `style` (not typed for a
    *  Reanimated style). */
   wrapperStyle?: Parameters<typeof Animated.View>[0]['style'];
+  /** A composed `Gesture.Simultaneous(Gesture.Native(), <pan>)` to mount ON the list's scroll
+   *  view (the list's root native view — the detector's `findNodeHandle` resolves straight to
+   *  it). This is how a screen-level gesture (the series page's back-swipe) gets to activate
+   *  OVER this scroller on iOS: the scroll view's own recognizer begins on ~10px of movement in
+   *  any direction and force-fails foreign recognizers, so the pan must ride the scroller's own
+   *  detector, composed simultaneous with a Native handler RNGH resolves the raw scroll pan to.
+   *  Native-only concern; callers omit it on web. */
+  scrollGesture?: ComposedGesture;
+  /** False while a screen-level gesture owns the touch (a back-swipe dragging this whole surface
+   *  away). The list must stop scrolling under it — a page being swiped out is inert, and one that
+   *  keeps scrolling while it slides is the tell that it isn't really being dismissed. */
+  scrollEnabled?: boolean;
 }) {
   // LegendList's web build resets its render state *during* render on an empty→non-empty data swap
   // after it has held data ("Cannot update a component while rendering a different component"). Fold
@@ -93,9 +109,12 @@ export function RecyclerList<T>({
   // initial render, which skips that path (a different column count is also a different layout, and a
   // scopeKey change is a scroll-to-top moment anyway).
   const listKey = `${numColumns}|${scopeKey}|${data.length > 0 ? 'full' : 'empty'}`;
+  // This list's identity for the series-page zoom — see the provider at the bottom. Taken from
+  // `scopeKey`, which already names what this list is showing, so the key outlives the list itself:
+  // `listKey` right above deliberately remounts the whole LegendList on a 0 -> N data fill.
+  const zoomSurface = useZoomSurfaceKey(scopeKey);
 
-  return (
-    <Animated.View style={[styles.list, wrapperStyle]}>
+  const list = (
       <AnimatedLegendList
         ref={listRef}
         key={listKey}
@@ -124,6 +143,7 @@ export function RecyclerList<T>({
         // which forces scrollEventThrottle: 1. On NATIVE we don't pass it: forcing throttle 1 there
         // just saturates the JS thread every frame during a fling, and the UI-thread `sharedValues`
         // offset works regardless.
+        scrollEnabled={scrollEnabled}
         renderScrollComponent={
           Platform.OS === 'web' ? (scrollProps) => <Animated.ScrollView {...scrollProps} /> : undefined
         }
@@ -163,7 +183,20 @@ export function RecyclerList<T>({
           onMomentumScrollEnd?.(e);
         }}
       />
-    </Animated.View>
+  );
+
+  return (
+    // Every series card below shares ONE zoom source key, because this list is the thing that
+    // survives what the key has to survive: `recycleItems` hands a cell's instance to a different
+    // entry rather than remounting it, so a key belonging to the instance stops describing the card
+    // the open series page is holding. A key belonging to the list doesn't move. Separate lists —
+    // the browse grid, a search LAYER's results — are still separate surfaces, which is the whole
+    // point of the key. See lib/series-zoom's useZoomSourceKey.
+    <ZoomSurfaceContext.Provider value={zoomSurface}>
+      <Animated.View style={[styles.list, wrapperStyle]}>
+        {scrollGesture ? <GestureDetector gesture={scrollGesture}>{list}</GestureDetector> : list}
+      </Animated.View>
+    </ZoomSurfaceContext.Provider>
   );
 }
 

@@ -10,6 +10,7 @@ import { Spacing } from '@/constants/theme';
 import { invalidateAssetSource, peekResolvedAssetSource, resolveAssetSourceCached } from '@/data/api';
 import { coverDelayMs } from '@/data/mock';
 import { logDiagnostic } from '@/lib/diagnostics';
+import { traceJS } from '@/lib/gesture-trace';
 import { testId } from '@/lib/test-id';
 
 // One page image. Reuses the cover/thumbnail loading treatment: hold the image
@@ -42,7 +43,7 @@ const RETRY_DELAYS_MS = [1000, 2000, 4000];
  * gesture instead of blending into the backdrop behind it. A low-alpha fill lets that show
  * through. It's fine ON A PAGE (a page-sized tint moving with the page it belongs to is the page
  * moving); what must never exist is a full-SCREEN fill inside the pager, since that whole subtree
- * translates/scales during swipe-to-dismiss while the backdrop stays put (see SwipeDismiss).
+ * translates/scales during a swipe-away while the backdrop stays put.
  */
 export const PAGE_SURFACE = 'rgba(31,31,36,0.18)';
 
@@ -55,6 +56,11 @@ export const PAGE_SURFACE = 'rgba(31,31,36,0.18)';
  *  while only the pages themselves move during a swipe. */
 export const PAGED_BACKDROP = '#121213';
 
+/** The cross-fade for a page that is STANDING rather than being turned to — the series page's
+ *  collapsed strip. Short on purpose: long enough that the page arrives rather than appears, short
+ *  enough that it is over before you have read the title under it. */
+export const STANDBY_FADE_MS = 180;
+
 type LoadEvent = { source?: { width?: number; height?: number } | null };
 
 export function ReaderPage({
@@ -65,12 +71,17 @@ export function ReaderPage({
   height,
   onLoadDims,
   onFailedChange,
+  fadeMs,
 }: {
   uri: string;
   page: number;
   fit: 'contain' | 'width';
   width: number;
   height?: number;
+  /** Override the cross-fade below. The series page's strip passes STANDBY_FADE_MS: it holds ONE
+   *  standing page with no turns to keep instant, so the rule below doesn't apply to it and a page
+   *  that simply appears there reads as a pop next to the details settling in around it. */
+  fadeMs?: number;
   /** Fires with the image's real pixel dimensions once it loads — lets a caller
    *  (webtoon mode's scroll-to-index estimate) refine its height guess for
    *  still-unloaded pages instead of relying solely on `DEFAULT_ASPECT`. */
@@ -98,6 +109,31 @@ export function ReaderPage({
   const delay = useMemo(() => coverDelayMs(uri), [uri]);
   const [delayPassed, setDelayPassed] = useState(delay === 0);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * The cross-fade duration, FROZEN AT MOUNT rather than read every render.
+   *
+   * A transition only ever describes how this image's load is revealed, so once it has loaded the
+   * value is spent — but it is a native prop, and changing it makes expo-image load the image
+   * again. That is not hypothetical: the pager passes `fadeMs` as `standby ? STANDBY_FADE_MS :
+   * undefined`, so the series page's standing strip page had it flip 180 → undefined at the exact
+   * moment standby lifted, and a recording of a reveal shows `page loaded p=1` firing a second time
+   * 40ms later with no `page mount` in between — the visible page reloading, mid-transition, for a
+   * property that could no longer affect anything.
+   *
+   * Freezing it costs nothing: a cell that mounted under the strip keeps the standing-page fade it
+   * was born with, which is the fade that was already applied to the only load it will do.
+   */
+  const [transitionMs] = useState(() => fadeMs ?? (fit === 'contain' ? 0 : 150));
+
+  // Traced against the series page's `reveal commit` (lib/gesture-trace): a flash on the first
+  // reveal into the reader is a question about WHEN this page had something to paint. Mounting
+  // without a resolved uri means a skeleton until the effect below resolves it; `loaded` is the
+  // first frame there is actually an image. Both are silent unless a recording is running.
+  useEffect(() => {
+    traceJS('page', 'mount', { p: page, resolved: !!resolvedUri });
+    // Mount-only: the question is what this page had AT mount, not on later re-renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     // Assert delayPassed=true on no delay (not a bare return) so a key/delay change can't strand it
@@ -253,8 +289,10 @@ export function ReaderPage({
           // No cross-fade in paged mode. The page it fades UP FROM is the placeholder, so a page
           // that was actually ready still spent 150ms looking like one — the exact impression this
           // pass is trying to remove. Webtoon keeps it: rows arrive under a continuously moving
-          // scroll, where a hard swap is the more jarring of the two.
-          transition={fit === 'contain' ? 0 : 150}
+          // scroll, where a hard swap is the more jarring of the two. (Both are about PAGE TURNS;
+          // a caller holding one standing page overrides with `fadeMs`.) Fixed at mount — see
+          // `transitionMs` for why this must not be recomputed per render.
+          transition={transitionMs}
           // Hold animated pages (e.g. animated WebP) on their FIRST frame — do not autoplay. On iOS,
           // expo-image animates a WebP via a Core Animation keyframe animation that decodes each frame
           // on the MAIN THREAD inside the layer commit (Sentry COMICAL-APP-1E: CA::Transaction::commit
@@ -264,6 +302,7 @@ export function ReaderPage({
           // the only safe option is not to play it. A poster frame decodes off-thread like any image.
           autoplay={false}
           onLoad={(e: LoadEvent) => {
+            traceJS('page', 'loaded', { p: page });
             setLoaded(true);
             const w = e.source?.width;
             const h = e.source?.height;

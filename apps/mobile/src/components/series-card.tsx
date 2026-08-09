@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
+import { Platform, Pressable, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type View as ViewType, type ViewStyle } from 'react-native';
 import Animated, { Easing, type AnimatedStyle, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { CardBadge, UnreadBadge } from '@/components/card-badge';
@@ -14,8 +14,10 @@ import { useIsCompact } from '@/hooks/use-responsive';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
+import { encodeSeriesParam, useDrillRelatedSeries } from '@/lib/series-nav';
 import { Link, router } from '@/lib/nav';
 import { useLightCards } from '@/lib/perf-flags';
+import { setZoomOrigin, useIsZoomingSeries, useZoomSourceKey } from '@/lib/series-zoom';
 import { testId } from '@/lib/test-id';
 
 // Shared cover card used by both the browse grid and the rails. `size` picks the
@@ -267,6 +269,11 @@ export function SeriesCard({
 }) {
   // Perf toggle (Settings → "Lightweight cards") — see lib/perf-flags.
   const lightCards = useLightCards();
+  // Inside the series page's OWN stack (related rails, its nested search results), the card
+  // drills the series in as an ordinary pushed card instead of stacking a second transparent
+  // modal — see useDrillRelatedSeries. Context + navigation reads only — cards don't re-render
+  // on every navigation the way a pathname hook would make them.
+  const drillRelated = useDrillRelatedSeries();
   const [loaded, setLoaded] = useState(() => resolvedCoverIds.has(entry.id));
   const [truncated, setTruncated] = useState(false);
   // True while masking a scope swap (see the recycle-safety block): the shared `Skeleton` is only
@@ -304,6 +311,36 @@ export function SeriesCard({
   // there, and its own lifted preview would fight an inline ring/popover) in favor of a subtle
   // non-scaling held scrim on the cover — see the ring/peek/scrim below.
   const isWeb = Platform.OS === 'web';
+
+  // This card's COVER box, in window coordinates, handed to
+  // the series page so the page can grow out of it — see lib/series-zoom. The cover, not the whole
+  // card: the page's arriving frame is matched to this rect exactly, and matching the card
+  // (cover + title + sub) would have it overlap the title text and crop the cover differently than
+  // the card does. Measured off the box itself rather than derived from `coverAspect`, so it's
+  // right no matter which aspect the card happens to be showing at press time.
+  //
+  // Taken on press-IN, not press: `measureInWindow` answers asynchronously, so measuring at press
+  // would put a native round trip in front of the navigation. A drill (a related-rail card inside
+  // the series page) captures too — those layers zoom exactly like a top-level open. Web has no
+  // zoom entrance, so it doesn't measure at all.
+  // While a zoom this card is the SOURCE of is in the air it flies a COPY of this cover, so the
+  // original blanks — same treatment (and same reason) as the long-press menu's lifted preview
+  // below. A selector read: the whole grid subscribes, only the one card whose flag flips renders.
+  //
+  // Keyed to this card's LIST, not to the series: the same series can be showing somewhere else at
+  // the same time (most obviously in a search LAYER opened from its own page), and those copies are
+  // not what the page collapses into. Per list rather than per instance because this grid recycles
+  // instances — see useZoomSourceKey for what that broke. The id is compared alongside it.
+  const zoomSource = useZoomSourceKey();
+  const zoomFlying = useIsZoomingSeries(entry.id, zoomSource);
+  const coverRef = useRef<ViewType>(null);
+  const captureZoomOrigin = useCallback(() => {
+    if (isWeb) return;
+    coverRef.current?.measureInWindow((x, y, w, h) => {
+      // CARD_COVER_RADIUS, matching `coverBoxClip` / `coverClip` below.
+      if (w > 0 && h > 0) setZoomOrigin(entry.id, zoomSource, { x, y, width: w, height: h, radius: 10 });
+    });
+  }, [isWeb, entry.id, zoomSource]);
 
   // The quick-actions menu is only offered when there's a real bridge to act against (`bridgeId` —
   // absent in mock mode). Its status queries no longer touch the card at all: they run inside the
@@ -575,6 +612,8 @@ export function SeriesCard({
           // `coverHidden` blanks just the cover while THIS card's long-press menu is open (its lifted
           // preview is a copy) — the title below stays visible under the dim.
           <View
+            // The zoom entrance's source rect is measured off THIS box — see captureZoomOrigin.
+            ref={coverRef}
             style={[styles.coverBoxClip, { aspectRatio: coverAspect }, coverHidden && styles.coverHidden]}
             onLayout={shrink.onCoverLayout}>
             {coverContents}
@@ -599,7 +638,8 @@ export function SeriesCard({
       bridge={bridge}
       entry={entry}
       direct={direct}
-      coverAspect={coverAspect}>
+      coverAspect={coverAspect}
+      zoomSource={zoomSource}>
       {({ onLongPress, hidden }) => {
         // Built LAZILY (only when actually navigating) — NOT per render. This object plus its
         // encodeURIComponent/.replace string churn was allocated for every card on every render, so a
@@ -612,29 +652,24 @@ export function SeriesCard({
         // related/recommended series from within a series-detail screen replaced the current screen
         // instead of drilling in. Also correct from Browse/Library/History (no `/series` on the stack
         // yet there, so equivalent to a plain push).
+        const buildParams = () => ({
+          id: entry.id,
+          title: entry.title,
+          // Percent-encoded (parens included — see encodeSeriesParam), and decoded back on the
+          // series page with a single `decodeURIComponent`.
+          ...(bridge ? { bridge: encodeSeriesParam(bridge) } : {}),
+          // Forward the cover the browse grid already has so the series page can paint its hero
+          // instantly from expo-image's cache, rather than shimmering until the detail resolves.
+          ...(entry.cover ? { cover: encodeSeriesParam(entry.cover) } : {}),
+          ...(bridgeId ? { bridgeId } : {}),
+          ...(direct ? { direct: '1' } : {}),
+        });
         const buildHref = () => ({
           pathname: '/series' as const,
-          params: {
-            id: entry.id,
-            title: entry.title,
-            // Percent-encoded: expo-router's web href resolution breaks when a route param value
-            // contains literal parentheses (real bridge display names commonly do, e.g.
-            // "Illustration Gallery (Demo)"). `encodeURIComponent` alone doesn't touch '(' ')' —
-            // they're in its unreserved set — so escape them explicitly. Decoded back in series.tsx
-            // with a single `decodeURIComponent` (which handles %28/%29 like any percent-escape).
-            ...(bridge
-              ? { bridge: encodeURIComponent(bridge).replace(/\(/g, '%28').replace(/\)/g, '%29') }
-              : {}),
-            // Forward the cover the browse grid already has so the series screen can paint it
-            // instantly from expo-image's cache (see series.tsx skeleton), rather than shimmering
-            // until the full detail query resolves. Same paren escaping — cover URLs may contain '()'.
-            ...(entry.cover
-              ? { cover: encodeURIComponent(entry.cover).replace(/\(/g, '%28').replace(/\)/g, '%29') }
-              : {}),
-            ...(bridgeId ? { bridgeId } : {}),
-            ...(direct ? { direct: '1' } : {}),
-          },
+          params: buildParams(),
         });
+        // The drill (inside the series page's nested stack) dispatches on the NESTED navigator — no href.
+        const open = () => (drillRelated ? drillRelated(buildParams()) : router.push(buildHref()));
         const pressable = (
           <Pressable
             testID={testId('series-card', entry.id)}
@@ -652,23 +687,33 @@ export function SeriesCard({
             // open-in-new-tab / a crawlable href); on native we navigate imperatively so each card
             // doesn't mount an expo-router <Link> — its per-render router hooks were a top scroll cost
             // (createTask/ExpoLink), and native has no anchor semantics to preserve anyway.
-            onPress={isWeb ? undefined : () => router.push(buildHref())}
+            // A DRILL (inside the series page's nested stack) is imperative on web too — it targets the
+            // nested navigator, which an anchor href can't express (see useDrillRelatedSeries).
+            onPress={isWeb && !drillRelated ? undefined : open}
             // Native long-press opens the shared quick-actions menu; undefined on web (which uses the
             // hover 3-dot instead). A long-press suppresses the tap, so it never also navigates.
             onLongPress={onLongPress}
-            {...handlers}>
+            {...handlers}
+            // After the spread so it wins, and calls through to the held-state's own press-in.
+            onPressIn={() => {
+              handlers.onPressIn();
+              captureZoomOrigin();
+            }}>
             {/* Shrink illusion only when Lightweight is off: wrap in CoverShrink (owns the reanimated
                 hooks + supplies real animated styles); otherwise render plainly with a no-op API. */}
             {lightCards ? (
-              renderCardBody(NOOP_SHRINK, hidden)
+              renderCardBody(NOOP_SHRINK, hidden || zoomFlying)
             ) : (
-              <CoverShrink entryId={entry.id}>{(shrink) => renderCardBody(shrink, hidden)}</CoverShrink>
+              <CoverShrink entryId={entry.id}>
+                {(shrink) => renderCardBody(shrink, hidden || zoomFlying)}
+              </CoverShrink>
             )}
           </Pressable>
         );
-        // Web keeps the real anchor (asChild clones it onto the Pressable); native renders the
-        // Pressable directly and pushes imperatively on press.
-        return isWeb ? (
+        // Web keeps the real anchor (asChild clones it onto the Pressable); native — and a drill,
+        // whose nested-navigator target no anchor href can express — renders the Pressable
+        // directly and navigates imperatively on press.
+        return isWeb && !drillRelated ? (
           // eslint-disable-next-line comical/require-test-id -- asChild: clones onto the Pressable, which carries the testID.
           <Link push href={buildHref()} asChild>
             {pressable}
@@ -764,8 +809,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Blanks just the cover while this card's long-press menu is open — its lifted preview is a copy, so
-  // showing the source cover too would double it. Layout is preserved; only the cover goes invisible.
+  // Blanks just the cover while this card's long-press menu is open, or while its zoom transition
+  // is flying — both show a COPY of it, so leaving the original visible would double it. Layout is
+  // preserved; only the cover goes invisible.
   coverHidden: {
     opacity: 0,
   },

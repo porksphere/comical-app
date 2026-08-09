@@ -43,6 +43,7 @@ import { ToastHost } from '@/components/toast';
 import { installActivityAutoCheck } from '@/data/activity/auto-check';
 import { startEmbeddedRuntime } from '@/data/embedded/startup';
 import { installAppUpdateAutoCheck } from '@/data/use-app-update';
+import { useFrameTrace } from '@/lib/frame-trace';
 import { PROFILING_ENABLED } from '@/lib/profiling';
 import { persister, PERSIST_BUSTER, PERSIST_MAX_AGE_MS, queryClient, shouldDehydrateQuery } from '@/data/query-client';
 import { ThemeSchemeProvider, useActiveColorScheme } from '@/hooks/use-theme';
@@ -91,6 +92,12 @@ function RootLayout() {
   );
 }
 
+/** The UI-thread frame recorder (lib/frame-trace) — inert unless the gesture trace is recording. */
+function FrameTrace() {
+  useFrameTrace();
+  return null;
+}
+
 function RootNavigation() {
   // Active scheme from context (resolved once by ThemeSchemeProvider above) so the
   // navigation theme + status bar match the app content and re-theme live when the
@@ -103,6 +110,7 @@ function RootNavigation() {
           differs from the OS. */}
       <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
       <AnimatedSplashOverlay />
+      <FrameTrace />
       {/* OverlayProvider hosts the stacked bottom-sheet overlays app-wide. */}
       <OverlayProvider>
         {/* Native stack: real UINavigationController on iOS (large titles, back
@@ -110,26 +118,33 @@ function RootNavigation() {
             pushed screen below hide the native header and render their own chrome. */}
         <Stack>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          {/* Series page renders its own static top bar (bridge name + back
-              button), so the native stack header is hidden here. */}
-          <Stack.Screen name="series" options={{ headerShown: false }} />
           {/* Search renders its own top bar (search field + back button), so hide the native one. */}
           <Stack.Screen name="search" options={{ headerShown: false }} />
           {/* Custom-lists manager (create/rename/reorder/delete), pushed from the Library selector. */}
           <Stack.Screen name="manage-lists" options={{ headerShown: false }} />
           <Stack.Screen name="results" options={{ headerShown: false }} />
-          {/* Full-screen page reader; its own dark chrome, fade in/out. A
-              *contained* transparent modal so the screen it was opened from stays
-              rendered underneath — the reader's own dark backdrop covers it at
-              rest and fades out under a swipe-away, revealing it (see reader.tsx).
-              `contained…` (not plain `transparentModal`) keeps the reader inside
-              the JS-managed container instead of a separate native modal VC, so
-              the app-root overlays (the reader settings sheet) still render ABOVE
-              it — a plain transparentModal presented them behind the reader,
-              making the settings gear look dead on iOS. */}
+          {/* THE series page — and the only reader there is: details and pages are one screen,
+              either side one gesture from the other. Everything that used to push a standalone
+              /reader (a History row, the card menu's Read, a chapter row, a page thumbnail) opens
+              THIS, on whichever side it means.
+
+              A *contained* transparent modal, so the screen it was opened from stays rendered
+              underneath — the reader's own dark backdrop covers it at rest and fades out under a
+              swipe-away, revealing it — and so its dismissal can collapse back into the card it
+              was opened from. `contained…` (not plain `transparentModal`) keeps it inside the
+              JS-managed container instead of a separate native modal VC, so the app-root overlays
+              (the reader settings sheet) still render ABOVE it; a plain transparentModal presented
+              them behind, which made the settings gear look dead on iOS. The route is a DIRECTORY
+              hosting its own nested stack — sub-pages (downloads) push as real cards inside the
+              modal (see app/series/_layout.tsx).
+
+              `animation: 'none'` because the SCREEN animates itself: it grows out of that card's
+              cover and collapses back into it, and every exit (swipe, chevron, hardware back)
+              plays that collapse before popping the route. A native modal can't do it — its
+              animation comes from UIModalTransitionStyle, which offers no such thing. */}
           <Stack.Screen
-            name="reader"
-            options={{ headerShown: false, animation: 'fade', presentation: 'containedTransparentModal' }}
+            name="series"
+            options={{ headerShown: false, animation: 'none', presentation: 'containedTransparentModal' }}
           />
           {/* These render their own <TopBar> (matching series.tsx), so the native
               stack header is hidden here too. The Settings tab is only a table of
@@ -149,6 +164,7 @@ function RootNavigation() {
           <Stack.Screen name="registry-browse" options={{ headerShown: false }} />
           <Stack.Screen name="add-registry" options={{ headerShown: false }} />
           <Stack.Screen name="diagnostics" options={{ headerShown: false }} />
+          <Stack.Screen name="gesture-trace" options={{ headerShown: false }} />
           <Stack.Screen name="downloads" options={{ headerShown: false }} />
           <Stack.Screen name="series-downloads" options={{ headerShown: false }} />
           <Stack.Screen name="storage" options={{ headerShown: false }} />
@@ -176,4 +192,7 @@ function RootNavigation() {
   );
 }
 
-export default Sentry.wrap(RootLayout);
+// Touch breadcrumbs stay on, but the per-touch fiber-tree walk is cut to the touched component
+// alone: at the default depth (20 levels) the boundary's _onTouchStart costs ~20ms of JS on every
+// touch-down — right when a page-swipe gesture needs the thread.
+export default Sentry.wrap(RootLayout, { touchEventBoundaryProps: { maxComponentTreeSize: 1 } });

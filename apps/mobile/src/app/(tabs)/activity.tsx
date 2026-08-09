@@ -8,6 +8,8 @@ import Animated, { useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HistoryRow } from '@/components/history-row';
+import { setZoomOrigin, useIsZoomingSeries, useZoomSourceKey } from '@/lib/series-zoom';
+import { encodeSeriesParam } from '@/lib/series-nav';
 import { CheckIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { PullIndicator } from '@/components/pull-indicator';
 import { RetryBlock } from '@/components/retry-block';
@@ -192,30 +194,40 @@ export default function ActivityScreen() {
   // own horizontal gutter so the swipe-to-clear reaches the edge (see history-row / history).
   const sidePad = topLevelCenterInset(width);
 
-  const openDetail = (g: SeriesActivity) =>
+  // See history.tsx's `openDetail` — the same control, opening the same combined page on its
+  // details side.
+  const openDetail = (g: SeriesActivity) => {
     router.push({
       pathname: '/series',
       params: {
         id: g.seriesId,
         title: g.title,
-        bridge: nameOf(g.bridgeId),
+        bridge: encodeSeriesParam(nameOf(g.bridgeId)),
         bridgeId: g.bridgeId,
+        ...(g.thumbnailUrl ? { cover: encodeSeriesParam(g.thumbnailUrl) } : {}),
         ...(directOf(g.bridgeId) ? { direct: '1' } : {}),
       },
     });
+  };
 
-  const read = (g: SeriesActivity) =>
+  const read = (g: SeriesActivity) => {
+    // See history.tsx's `resume` — same experiment, same reasoning.
     router.push({
-      pathname: '/reader',
+      pathname: '/series',
       params: {
-        seed: g.seriesId,
+        id: g.seriesId,
         title: g.title,
+        bridge: encodeSeriesParam(nameOf(g.bridgeId)),
         bridgeId: g.bridgeId,
+        reader: '1',
         chapterId: g.chapterId,
         chapterName: g.chapterName ?? '',
         start: '0',
+        ...(directOf(g.bridgeId) ? { direct: '1' } : {}),
+        ...(g.thumbnailUrl ? { cover: encodeSeriesParam(g.thumbnailUrl) } : {}),
       },
     });
+  };
 
   const body = () => {
     if (error) return <RetryBlock message={(error as Error).message || 'Failed to load activity'} onRetry={refetch} />;
@@ -326,8 +338,22 @@ function ActivityItem({
   direct: boolean;
 }) {
   const thumbRef = useRef<View>(null);
-  // `coverHidden` blanks just the thumbnail while the long-press menu is open (its lifted preview is a
-  // copy) — the row's text stays visible under the dim.
+  // The row's thumbnail is the zoom transition's source rect,
+  // captured on press-IN because `measureInWindow` answers asynchronously — measuring at press
+  // would put a native round trip in front of the navigation. And while its copy is in the air the
+  // original blanks, reusing `coverHidden` — the same slot, and the same reason, as the long-press
+  // preview's lifted copy.
+  // Keyed to this row's LIST, not to the series — see useZoomSourceKey (another copy of the same
+  // series elsewhere on screen is not what the page collapses into, and must keep its thumbnail;
+  // per list rather than per row because the list recycles row instances).
+  const zoomSource = useZoomSourceKey();
+  const zoomFlying = useIsZoomingSeries(item.seriesId, zoomSource);
+  const captureZoomOrigin = () => {
+    thumbRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => {
+      // radius 6 — HistoryRow's `thumb` corner, which is not the grid card's 10.
+      if (w > 0 && h > 0) setZoomOrigin(item.seriesId, zoomSource, { x, y, width: w, height: h, radius: 6 });
+    });
+  };
   const renderRow = (coverHidden: boolean) => (
     <HistoryRow
       thumbnailUrl={item.thumbnailUrl}
@@ -336,10 +362,12 @@ function ActivityItem({
       dimmed={!item.hasUnread}
       unread={item.hasUnread}
       onPress={onRead}
+      onPressIn={captureZoomOrigin}
       onMore={onOpenDetail}
+      onMorePressIn={captureZoomOrigin}
       actions={[]}
       thumbRef={thumbRef}
-      coverHidden={coverHidden}
+      coverHidden={coverHidden || zoomFlying}
     />
   );
   return (
@@ -365,6 +393,7 @@ function ActivityItem({
           direct={direct}
           coverAspect={2 / 3}
           startRadius={6} // matches HistoryRow's thumbnail corner
+          zoomSource={zoomSource}
           measureRef={thumbRef}>
           {({ hidden }) => renderRow(hidden)}
         </SeriesCardMenu>

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
+import { BackSwipeBoundary } from '@/components/back-swipe-boundary';
 import { estimatedCardHeight, SeriesCard, TitlePeek, type CardSize } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
@@ -13,6 +14,7 @@ import { useHovered } from '@/hooks/use-hovered';
 import { useIsCompact, useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import type { RailSection, SeriesEntry } from '@/data/types';
+import { ZoomSurfaceContext, useZoomSurfaceKey } from '@/lib/series-zoom';
 import { testId } from '@/lib/test-id';
 
 // Card cover aspect is 2:3, so a card of width W has a cover of height W·3/2;
@@ -308,11 +310,17 @@ export function Rail({
     transform: [{ translateX: wide ? 0 : -scrollX.value }],
   }));
 
+  const zoomSurface = useZoomSurfaceKey(`rail:${section.id}`);
   const gridItems = section.items.slice(0, GRID_ITEMS);
   const gridRows: SeriesEntry[][] = [];
   for (let i = 0; i < gridItems.length; i += GRID_COLUMNS) gridRows.push(gridItems.slice(i, i + GRID_COLUMNS));
 
   return (
+    // One zoom source key for this rail's cards — a rail recycles card instances (`recycleItems`
+    // below), so the key cannot belong to an instance. See lib/series-zoom's useZoomSourceKey.
+    // Every rail on the home feed is its own surface, which is right: the same series in two rails
+    // is two different boxes, and only the one that was tapped blanks.
+    <ZoomSurfaceContext.Provider value={zoomSurface}>
     <View style={[styles.section, peekIndex != null && styles.sectionPeeking]}>
       {!headless && (
         <SectionHead
@@ -352,6 +360,9 @@ export function Rail({
           ))}
         </View>
       ) : (
+        // The strip wins a rightward drag over the page's back-swipe — see BackSwipeBoundary. On a
+        // surface with no back-swipe (the home feed) this is a passthrough.
+        <BackSwipeBoundary>
         <AnimatedLegendList
           ref={listRef}
           horizontal
@@ -448,6 +459,7 @@ export function Rail({
             </View>
           )}
         />
+        </BackSwipeBoundary>
       )}
       {peekIndex != null && (
         <TitlePeek
@@ -464,6 +476,7 @@ export function Rail({
         />
       )}
     </View>
+    </ZoomSurfaceContext.Provider>
   );
 }
 

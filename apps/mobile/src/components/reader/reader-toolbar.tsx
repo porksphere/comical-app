@@ -18,6 +18,7 @@ export function ReaderToolbar({
   visible,
   onBack,
   right,
+  hideBack,
 }: {
   title: string;
   subtitle: string;
@@ -26,6 +27,9 @@ export function ReaderToolbar({
   /** Rendered in the slot opposite Back. Sized like the back button so the
    *  titles stay centred whether or not anything is passed. */
   right?: ReactNode;
+  /** The screen renders its OWN back button persisting across bar modes (series page's
+   *  TopBarSwitch) — keep just the spacer here so the titles stay centred. */
+  hideBack?: boolean;
 }) {
   const insets = useSafeAreaInsets();
   const style = useAnimatedStyle(() => ({
@@ -39,15 +43,19 @@ export function ReaderToolbar({
         style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}
       />
       <View style={[styles.bar, { paddingTop: insets.top + Spacing.two }]}>
-        <Pressable
-          testID="reader.toolbar.back"
-          onPress={onBack}
-          hitSlop={12}
-          style={styles.back}
-          accessibilityRole="button"
-          accessibilityLabel="Close reader">
-          <ChevronLeftIcon color="#fff" />
-        </Pressable>
+        {hideBack ? (
+          <View style={styles.back} />
+        ) : (
+          <Pressable
+            testID="reader.toolbar.back"
+            onPress={onBack}
+            hitSlop={12}
+            style={styles.back}
+            accessibilityRole="button"
+            accessibilityLabel="Close reader">
+            <ChevronLeftIcon color="#fff" />
+          </Pressable>
+        )}
         <View style={styles.titles}>
           <ThemedText type="smallBold" numberOfLines={1} style={styles.title}>
             {title}

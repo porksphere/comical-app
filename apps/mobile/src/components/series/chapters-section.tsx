@@ -1,5 +1,6 @@
 import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import { useQuery } from '@tanstack/react-query';
+import { GestureDetector, type ComposedGesture } from 'react-native-gesture-handler';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
@@ -63,7 +64,6 @@ import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/
 import { applyReadState, groupChapters, pickVersion, type ChapterGroup } from '@/lib/chapter-order';
 import { setPreferredGroup, usePreferredGroup } from '@/lib/preferred-group';
 import { logDiagnostic } from '@/lib/diagnostics';
-import { useRouter } from '@/lib/nav';
 import { testId } from '@/lib/test-id';
 
 // The series chapters block: tab filter (All / Read / Unread) + sort toggle
@@ -312,6 +312,15 @@ type PullListWiring = {
   sharedValues?: { scrollOffset: SharedValue<number> };
   onScrollEndDrag?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   wrapperStyle?: Parameters<typeof Animated.View>[0]['style'];
+  /** A composed `Gesture.Simultaneous(Gesture.Native(), <back-swipe pan>)` to mount ON this
+   *  scroller — see `RecyclerList.scrollGesture` for the full story (on iOS the pan must ride
+   *  the scroller's own detector to survive the scroll view's recognizer). Omitted everywhere
+   *  but the series page. */
+  scrollGesture?: ComposedGesture;
+  /** False while a screen-level horizontal gesture (the series page's back-swipe / reveal) is
+   *  ACTIVE: simultaneity lets that pan run alongside this scroller, which otherwise keeps
+   *  scrolling under a swipe that's carrying the whole page away. Omitted everywhere else. */
+  scrollEnabled?: boolean;
 };
 
 /** Shared list props that arm an `AnimatedLegendList` for the house pull-to-refresh. Spread onto the
@@ -347,9 +356,12 @@ export function ChapterScrollList({
   footer,
   isLarge,
   topInset = 0,
+  onOpenChapter,
   sharedValues,
   onScrollEndDrag,
   wrapperStyle,
+  scrollGesture,
+  scrollEnabled,
 }: {
   chapters?: Chapter[];
   /** The deferred chapter list is still fetching (see series.tsx + getSeriesList) — show a
@@ -368,9 +380,12 @@ export function ChapterScrollList({
   isLarge: boolean;
   /** Height of the overlaying top bar, so the first content clears it (and scrolls under its frost). */
   topInset?: number;
+  /** Opening a chapter version is handed HERE — the preferred-group side effect applies first.
+   *  There is no route to push instead: the series page's details panel and its in-place reader
+   *  are one screen, and this is how the one hands a chapter to the other. */
+  onOpenChapter: (version: Chapter) => void;
 } & PullListWiring) {
   const theme = useTheme();
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   // Large screens cap + centre the whole list (hero, chapter rows, rails) at MaxTopLevelWidth, the
@@ -447,21 +462,11 @@ export function ChapterScrollList({
     return asc ? list : [...list].reverse();
   }, [grouped, tab, asc]);
 
-  // Open a specific version: remember its group as the preferred source, then route
-  // to the reader for that copy.
+  // Open a specific version: remember its group as the preferred source, then hand the copy to
+  // the page's in-place reader.
   const openVersion = (v: Chapter) => {
     setPreferredGroup(v.group);
-    router.push({
-      pathname: '/reader',
-      params: {
-        seed,
-        title,
-        chapterId: v.id,
-        chapterName: v.name,
-        start: '0',
-        ...(bridgeId ? { bridgeId } : {}),
-      },
-    });
+    onOpenChapter(v);
   };
 
   // Any long tab shows the first HEAD + last TAIL chapters, with the middle behind an expand button.
@@ -655,6 +660,7 @@ export function ChapterScrollList({
   const list = (
     <AnimatedLegendList
       style={styles.chapterList}
+      scrollEnabled={scrollEnabled}
       sharedValues={sharedValues}
       onScrollEndDrag={onScrollEndDrag}
       {...pullScrollProps}
@@ -701,7 +707,11 @@ export function ChapterScrollList({
   // Wrapped in an Animated.View that carries `wrapperStyle` — the pull-to-refresh content shift the
   // series screen drives (see series.tsx / usePullToRefresh). The screen owns the spinner + touch
   // handlers; this scroller only feeds its scroll offset up and rides the shift.
-  return <Animated.View style={[styles.chapterList, wrapperStyle]}>{list}</Animated.View>;
+  return (
+    <Animated.View style={[styles.chapterList, wrapperStyle]}>
+      {scrollGesture ? <GestureDetector gesture={scrollGesture}>{list}</GestureDetector> : list}
+    </Animated.View>
+  );
 }
 
 /**
@@ -1115,20 +1125,21 @@ export function PageThumbList({
   thumbs,
   loading,
   seed,
-  title,
   bridgeId,
   header,
   footer,
   topInset = 0,
+  onOpenPage,
   sharedValues,
   onScrollEndDrag,
   wrapperStyle,
+  scrollGesture,
+  scrollEnabled,
 }: {
   thumbs: (PageThumbSource | null)[];
   /** The deferred page list is still fetching — show a skeleton in the header. */
   loading?: boolean;
   seed: string;
-  title: string;
   bridgeId?: string;
   /** Series hero/meta — the list header (this component owns the scroller). */
   header?: ReactElement | null;
@@ -1137,9 +1148,11 @@ export function PageThumbList({
   /** Related-series rails — the list footer, below the grid and the "Show all"
    *  button (while collapsed). */
   footer?: ReactElement | null;
+  /** Tapping a page thumbnail is handed HERE — same in-place-reader hand-off as
+   *  ChapterScrollList's `onOpenChapter`. */
+  onOpenPage: (pageIndex: number) => void;
 } & PullListWiring) {
   const theme = useTheme();
-  const router = useRouter();
   const { width: screenW } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [expanded, setExpanded] = useState(false);
@@ -1179,6 +1192,7 @@ export function PageThumbList({
   const list = (
     <AnimatedLegendList
       style={styles.pageList}
+      scrollEnabled={scrollEnabled}
       sharedValues={sharedValues}
       onScrollEndDrag={onScrollEndDrag}
       {...pullScrollProps}
@@ -1262,18 +1276,17 @@ export function PageThumbList({
             bridgeId={bridgeId}
             page={item.pageIndex + 1}
             width={tileW}
-            onPress={() =>
-              router.push({
-                pathname: '/reader',
-                params: { seed, title, direct: '1', start: String(item.pageIndex), ...(bridgeId ? { bridgeId } : {}) },
-              })
-            }
+            onPress={() => onOpenPage(item.pageIndex)}
           />
         </View>
       )}
     />
   );
-  return <Animated.View style={[styles.pageList, wrapperStyle]}>{list}</Animated.View>;
+  return (
+    <Animated.View style={[styles.pageList, wrapperStyle]}>
+      {scrollGesture ? <GestureDetector gesture={scrollGesture}>{list}</GestureDetector> : list}
+    </Animated.View>
+  );
 }
 
 // Cross-instance cache of page thumbnails that have already resolved at least once this

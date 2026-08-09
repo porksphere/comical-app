@@ -22,6 +22,7 @@ import {
   type SharedValue,
 } from 'react-native-reanimated';
 
+import { STANDBY_FADE_MS } from '@/components/reader/reader-page';
 import { ZoomablePage } from '@/components/reader/zoomable-page';
 import type { PageFit } from '@/hooks/use-reader-settings';
 
@@ -76,6 +77,10 @@ type Props = {
    *  single biggest source of stutter in a long scrub, and mid-drag nothing
    *  reads its results. */
   scrubbing?: boolean;
+  /** True while the pager is parked as a DECORATIVE background (the series page's collapsed
+   *  strip): shrinks the virtualization window to the visible page only, so neighbouring pages
+   *  aren't mounted — or their images requested — until the reader becomes primary again. */
+  standby?: boolean;
 };
 
 /**
@@ -112,6 +117,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     onZoomChange,
     scrubTarget,
     scrubbing,
+    standby,
   },
   ref,
 ) {
@@ -225,11 +231,16 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     [scrubTarget, n, rtl, width],
   );
 
-  // Keep the visible page put when a segment lands AHEAD of the current position
-  // (a previous chapter arriving late), which shifts every cell after it by a
-  // whole chapter while the scroll offset — a raw pixel value — knows nothing
-  // about it. The reader screen only ever extends its stitched window at the
-  // tail while you read forward, precisely so this stays a rare case.
+  // Keep the visible page put when anything lands AHEAD of the current position,
+  // which shifts every cell after it while the scroll offset — a raw pixel value
+  // — knows nothing about it. The reader screen extends its stitched window at
+  // the TAIL ONLY (a run takes its previous chapter at creation or not at all),
+  // so nothing should reach this any more except a current segment whose page
+  // count changed under it. Kept as the backstop for that: the correction itself
+  // is what the user sees as a flash, because the cells at the corrected offset
+  // are not rendered yet — the render window was computed from the old position.
+  // If this starts firing again, the fix belongs in whatever changed the window,
+  // not here.
   //
   // Deliberately NOT `maintainVisibleContentPosition`: that tracks the first
   // visible *view* across a commit and shifts contentOffset by how far that view
@@ -250,6 +261,14 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     if (index < 0 || index === anchor.index) return;
     anchorRef.current = { key: anchor.key, index };
     listRef.current?.scrollToOffset({ offset: index * width, animated: false });
+    // `activeIndex` must shift with the anchor: viewability tracks items by KEY, and the visible
+    // item's key hasn't changed — so no viewability callback fires for this correction, and the
+    // state would keep pointing a whole chapter away. Harmless while every window cell renders,
+    // but in STANDBY (the collapsed strip) the placeholder branch blanks every cell EXCEPT
+    // `activeIndex` — with it stale, the strip blanked the very page it was showing (a black band
+    // until the next real page turn re-synced it). First-boot-only in practice: a warm cache
+    // delivers the neighbour chapters before mount, so nothing prepends late.
+    setActiveIndex(index);
     // `listRef` is stable (an animated ref, which the lint rule can't tell from a
     // plain one); it's listed only to keep exhaustive-deps quiet.
   }, [data, width, listRef]);
@@ -263,10 +282,11 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     <View style={{ width, height }}>
       {/* Nothing full-screen is painted here on purpose. A virtualized list draws NOTHING where it
           hasn't mounted a cell, so a scrub that outruns virtualization shows whatever is behind the
-          list — which is SwipeDismiss's STATIC backdrop, deliberately tinted to the same composite
-          an unloaded page shows (PAGED_BACKDROP, see reader-page.tsx). A fill here used to provide
-          that tint, but this subtree is the part that translates/scales during swipe-to-dismiss, so
-          any full-screen fill inside it reads as the background travelling with the page. */}
+          list — which is the screen's STATIC reader surface, deliberately tinted to the same
+          composite an unloaded page shows (PAGED_BACKDROP, see reader-page.tsx). A fill here used
+          to provide that tint, but this subtree is the part that translates/scales during a
+          swipe-away, so any full-screen fill inside it reads as the background travelling with
+          the page. */}
       <FlatList
         ref={listRef}
         // Sized explicitly: it used to BE this component's root and take the size
@@ -308,20 +328,31 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         onScrollToIndexFailed={() => {}}
         viewabilityConfig={VIEWABILITY_CONFIG}
         onViewableItemsChanged={onViewableItemsChanged}
-        renderItem={({ item, index }) => (
-          <ZoomablePage
-            uri={item.uri}
-            page={item.pageNumber}
-            width={width}
-            height={height}
-            pageFit={pageFit}
-            active={index === activeIndex}
-            onLeft={leftAction}
-            onRight={rightAction}
-            onToggleChrome={onToggleChrome}
-            onZoomChange={handleZoomChange}
-          />
-        )}
+        renderItem={({ item, index }) =>
+          // Standby (a decorative background strip): NEIGHBOUR cells hold their slot but mount no
+          // page — no neighbour images requested. Gated per cell rather than by dropping
+          // `windowSize` to 1: flipping windowSize on the live list re-ran virtualization right
+          // as the reader expanded, which could flash the visible page. The on-screen cell
+          // renders identically in both states, so standby lifting is invisible.
+          standby && index !== activeIndex ? (
+            <View style={{ width, height }} />
+          ) : (
+            <ZoomablePage
+              // Standing page, not a turned one — see ReaderPage's `fadeMs`.
+              fadeMs={standby ? STANDBY_FADE_MS : undefined}
+              uri={item.uri}
+              page={item.pageNumber}
+              width={width}
+              height={height}
+              pageFit={pageFit}
+              active={index === activeIndex}
+              onLeft={leftAction}
+              onRight={rightAction}
+              onToggleChrome={onToggleChrome}
+              onZoomChange={handleZoomChange}
+            />
+          )
+        }
       />
     </View>
   );

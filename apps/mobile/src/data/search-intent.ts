@@ -77,3 +77,17 @@ export function takeSearchIntent(): SearchIntent | null {
   pending = null;
   return intent;
 }
+
+/** Non-consuming read, for Search's MOUNT path: React StrictMode double-invokes `useState`
+ *  initializers, so a consuming `takeSearchIntent()` there loses the intent on the second
+ *  invocation (the search mounted blank in dev). Peek in the initializer, then
+ *  `clearSearchIntent` from a mount effect. */
+export function peekSearchIntent(): SearchIntent | null {
+  return pending;
+}
+
+/** Clear a peeked intent once the mount actually consumed it — only if it is still the pending
+ *  one, so an intent stashed between mount and effect isn't swallowed. */
+export function clearSearchIntent(intent: SearchIntent | null): void {
+  if (intent && pending === intent) pending = null;
+}

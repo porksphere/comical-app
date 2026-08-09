@@ -15,6 +15,7 @@ import { downloadsScreenRoute } from '@/data/downloads/nav';
 import { queryKeys } from '@/data/queries';
 import { useFavorite } from '@/hooks/use-favorite';
 import { useLibrary } from '@/hooks/use-library';
+import { useSeriesSubPath } from '@/lib/series-nav';
 import { useRouter } from '@/lib/nav';
 import {
   useReaderSettings,
@@ -81,7 +82,7 @@ export function SettingsControl({
 /** Reader settings content, rendered inside the overlay (sheet or popover).
  *  Note: the overlay panel follows the app's theme (`useTheme`), so under a
  *  light appearance it renders light while the reader keeps its own always-dark
- *  viewing surface (see `reader.tsx`) — an intentional split, matching how media
+ *  viewing surface — an intentional split, matching how media
  *  readers stay dark for immersion while their controls track the app theme. */
 function SettingsContent({
   bridgeId,
@@ -230,10 +231,13 @@ function SeriesActionsRow({
   const dlInProgress = dlState !== undefined && dlState !== 'complete';
   const downloadLabel = dlComplete ? '✓  Downloaded' : dlInProgress ? 'Downloading' : '⤓  Download';
 
+  // `toSubPath` keeps these pushes inside the series page's nested stack when this panel is
+  // opened from that page's in-place reader — see useSeriesSubPath.
+  const toSubPath = useSeriesSubPath();
   const openSeriesDownloads = (select: boolean) => {
     closeTop(); // close the reader sheet before pushing the download screen over the reader
     router.push({
-      pathname: '/series-downloads',
+      pathname: toSubPath('/series-downloads'),
       params: {
         bridgeId,
         id: seriesId,
@@ -253,7 +257,8 @@ function SeriesActionsRow({
       // whole download (see downloads/nav.ts).
       if (direct) {
         closeTop(); // close the reader sheet before pushing over the reader, as openSeriesDownloads does
-        router.push(downloadsScreenRoute(bridgeId, seriesId));
+        const route = downloadsScreenRoute(bridgeId, seriesId);
+        router.push({ ...route, pathname: toSubPath(route.pathname) });
         return;
       }
       return openSeriesDownloads(false);

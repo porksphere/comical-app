@@ -23,6 +23,7 @@ import { downloadsScreenRoute } from '@/data/downloads/nav';
 import { queryKeys } from '@/data/queries';
 import type { Chapter } from '@/data/types';
 import { groupChapters } from '@/lib/chapter-order';
+import { useSeriesSubPath } from '@/lib/series-nav';
 import { useRouter } from '@/lib/nav';
 
 export function SeriesDownloadButton({
@@ -67,9 +68,12 @@ export function SeriesDownloadButton({
 
   // Chaptered series route to the per-series download screen — with `select=1` when the intent is
   // picking chapters to download, without it when it's watching/managing what's already there.
+  // (`toSubPath` keeps the push inside the series page's nested stack when this button is on
+  // that page — see useSeriesSubPath.)
+  const toSubPath = useSeriesSubPath();
   const openSeriesDownloads = (select: boolean) =>
     router.push({
-      pathname: '/series-downloads',
+      pathname: toSubPath('/series-downloads'),
       params: {
         bridgeId,
         id: seriesId,
@@ -82,8 +86,14 @@ export function SeriesDownloadButton({
     });
   // Watching/managing: a direct series has no chapter roster to open, so it goes to its row on the
   // Downloads screen; a chaptered one keeps the roster.
-  const openDownloads = () =>
-    direct ? router.push(downloadsScreenRoute(bridgeId, seriesId)) : openSeriesDownloads(false);
+  const openDownloads = () => {
+    if (!direct) {
+      openSeriesDownloads(false);
+      return;
+    }
+    const route = downloadsScreenRoute(bridgeId, seriesId);
+    router.push({ ...route, pathname: toSubPath(route.pathname) });
+  };
   const openSelect = () => openSeriesDownloads(true);
 
   let button;

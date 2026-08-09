@@ -1,5 +1,8 @@
-# Verifies the reader's swipe-away dismissal in WEBTOON (vertical) mode, where
-# the dismiss axis is HORIZONTAL (see components/reader/swipe-dismiss.tsx).
+# Verifies the expanded reader's swipe-away dismissal in WEBTOON (vertical) mode, where the
+# cross axis is HORIZONTAL (see `collapsePan` in app/series/index.tsx). Webtoon never reveals the
+# details by dragging — the Details button is the only way back — so EVERY drag here is a
+# dismissal, and it collapses the whole series page into the card it came from.
+#
 # Switches the reader to Vertical via the in-reader settings sheet first.
 #
 # Self-contained (does its own Browse -> series -> chapter navigation, matching
@@ -55,23 +58,31 @@ appId: com.porksphere.comical
 - assertVisible:
     id: "reader\\.page\\.tap\\..*"
 
-# Fast horizontal swipe — the page slides away and the reader closes.
+# Fast horizontal swipe — the page follows the finger and the series page collapses out, back
+# onto the Browse grid it was opened from (details and reader are one screen — see
+# swipe-dismiss.yaml).
 - swipe:
     start: 80%, 50%
     end: 15%, 50%
     duration: 250
 
-# Back on the series screen (still scrolled to the chapter list).
 - assertNotVisible:
     id: "reader\\.page\\.tap\\..*"
 - assertVisible:
-    id: "series\\.chapter\\..*"
+    id: "series-card\\..*"
 
 # Reset the persisted reader direction back to paged (the app default) before finishing — the
 # mode switch above is a real AsyncStorage write that outlives this flow (launchApp restarts the
 # process, not app storage), and other flows added later (e.g. reader-navigation.yaml) assume the
-# default paged mode. Reopen, switch back, exit (no need to re-exercise the swipe-dismiss gesture
-# itself, already covered above).
+# default paged mode. The dismissal above landed on Browse, so this re-enters from there: open the
+# series, open a chapter, switch back, exit (no need to re-exercise the swipe itself).
+- tapOn:
+    id: "series-card\\..*"
+- scrollUntilVisible:
+    element:
+      id: "series\\.chapter\\..*"
+    direction: DOWN
+    timeout: 20000
 - tapOn:
     id: "series\\.chapter\\..*"
     index: 0
@@ -82,7 +93,7 @@ appId: com.porksphere.comical
 - tapOn:
     point: "50%, 8%"
 # Exit via Maestro's built-in back (not a tap on reader.toolbar.back): the toolbar is gated behind
-# `chromeVisible`, which auto-hides 3s after the last chrome-visible interaction (reader.tsx's
+# `chromeVisible`, which auto-hides 3s after the last chrome-visible interaction (the series page's
 # CHROME_HIDE_MS) — the settings-open/direction-switch/close sequence above can outlast that on a
 # loaded CI simulator, so the toolbar can already be faded (pointerEvents: 'none') by the time a
 # tap on it would land, failing with "Element not found". `back` operates at the OS/navigation
