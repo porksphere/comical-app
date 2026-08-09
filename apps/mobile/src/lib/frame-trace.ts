@@ -25,16 +25,13 @@ import { setGestureTraceOnClear, trace, useGestureTraceEnabled } from '@/lib/ges
 /**
  * What counts as a dropped frame.
  *
- * 20 was too tight and it cried wolf for several recordings. Device traces come back sharply
- * bimodal — long stretches at 20.0-20.5, and separate stretches at 34.7-35.2 — which reads as one
- * frame and two frames against a ~17ms budget. At 20 the tool flagged three milliseconds of
- * ordinary jitter as a dropped frame and buried the runs that actually matter, which is how a whole
- * drag came to look like solid jank when the genuinely bad thing was a stretch of 30fps somewhere
- * else entirely.
+ * Read `clockMs` first: a threshold means nothing against a delta you cannot trust, and the two
+ * earlier versions of this file did not have one. The clusters this number was originally fitted
+ * to came from that untrustworthy delta, so they are not evidence of anything.
  *
- * 28 sits between the two clusters: past one frame's jitter at 60Hz, under two. `meanMs` in the
- * summary is what says whether that reasoning still holds on a given device — if the mean is near
- * 8, it's running at 120 and this wants lowering.
+ * 28 sits between one frame and two at 60Hz: past ordinary jitter on a 16.7ms budget, under a
+ * genuine double. `meanMs` in the summary is what says whether that holds on a given device — a
+ * mean near 8 means it is running at 120Hz and this wants halving.
  */
 const LONG_FRAME_MS = 28;
 /** How deep into a run of consecutive long frames to log a second line. Far enough that a brief
@@ -48,6 +45,30 @@ const worstMs = makeMutable(0);
 const totalMs = makeMutable(0);
 /** Consecutive long frames, so a run reports once instead of once per frame — see the callback. */
 const runLength = makeMutable(0);
+/** When the previous frame ran, on the clock below. -1 before the first one. */
+const lastMs = makeMutable(-1);
+
+/**
+ * THE CLOCK — `performance.now()`, deliberately the same source lib/gesture-trace stamps its lines
+ * with, rather than either number Reanimated's frame info offers.
+ *
+ * Both of those have now been tried and both disagreed with the timeline they were printed on, by
+ * about 2x. `info.timestamp` deltas claimed 20.4ms frames while the lines landed 17ms apart.
+ * `timeSincePreviousFrame` replaced it and claimed 35ms frames while the lines still landed 17ms
+ * apart — and under the run suppression below two long frames back to back cannot print twice at
+ * all, so a line every 17ms was impossible under any reading of it. A recording of ordinary browse
+ * scrolling came out looking like eighteen unbroken seconds of 30fps, and that reading was used to
+ * call a stretch after the series page's reveal a stall. It was not one.
+ *
+ * Measuring the gap between successive callback invocations on the trace's own clock cannot
+ * contradict the trace: `dt` and the spacing of the lines become the same subtraction. Reanimated's
+ * figure rides along as `rn=` on every line, so if the two part company again that is visible in
+ * the log instead of being the thing quietly deciding what gets investigated.
+ */
+function clockMs(): number {
+  'worklet';
+  return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : 0;
+}
 
 /** Reset with the trace, so a recording's summary describes that recording. */
 function resetFrameTrace(): void {
@@ -56,6 +77,7 @@ function resetFrameTrace(): void {
   worstMs.set(0);
   totalMs.set(0);
   runLength.set(0);
+  lastMs.set(-1);
 }
 
 setGestureTraceOnClear(resetFrameTrace);
@@ -81,12 +103,13 @@ export function useFrameTrace(): void {
   // `false` = don't autostart; the effect below owns whether this runs at all.
   const callback = useFrameCallback((info) => {
     'worklet';
-    // Reanimated's OWN delta. The first cut of this subtracted successive `info.timestamp`s, which
-    // produced numbers that couldn't be right — every logged frame claimed 20.4ms while the lines
-    // themselves landed 17ms apart, and consecutive frames cannot be both. `timeSincePreviousFrame`
-    // is the measurement rather than a reconstruction of it, and it is null on the first frame.
-    const dt = info.timeSincePreviousFrame;
-    if (dt === null) return;
+    // The gap since this callback last ran, on the trace's own clock — see `clockMs` for why it is
+    // measured here rather than read off `info`. Nothing to compare against on the first frame.
+    const now = clockMs();
+    const prev = lastMs.value;
+    lastMs.set(now);
+    if (prev < 0) return;
+    const dt = now - prev;
     frames.set(frames.value + 1);
     totalMs.set(totalMs.value + dt);
     if (dt > worstMs.value) worstMs.set(dt);
@@ -101,8 +124,11 @@ export function useFrameTrace(): void {
     // measuring. The counters above still see every frame.
     const run = runLength.value + 1;
     runLength.set(run);
-    if (run === 1) trace('frame', 'LONG', { dt });
-    else if (run === LONG_RUN_REPORT_AT) trace('frame', 'LONG.run', { dt, n: run });
+    // `rn` is Reanimated's own figure for the same frame, carried purely so the two can be compared
+    // in a shared log — see `clockMs`. -1 means it had none.
+    const rn = info.timeSincePreviousFrame ?? -1;
+    if (run === 1) trace('frame', 'LONG', { dt, rn });
+    else if (run === LONG_RUN_REPORT_AT) trace('frame', 'LONG.run', { dt, rn, n: run });
   }, false);
 
   useEffect(() => {
