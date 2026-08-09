@@ -45,7 +45,14 @@ import {
   subscribeScrollPhase,
   type ScrollPhase,
 } from '@/lib/scroll-release';
-import { COMMIT_DISTANCE, dismissTarget, SETTLE_MS, settleEase, settleStep } from '@/lib/slide-step';
+import {
+  COMMIT_DISTANCE,
+  dismissTarget,
+  MAX_SCROLL_UNMEASURED,
+  SETTLE_MS,
+  settleEase,
+  settleStep,
+} from '@/lib/slide-step';
 import { setTopBarHidden } from '@/lib/top-bar-visibility';
 
 /** Minimal structural type for the list refs we reset — LegendList and FlatList both satisfy it. */
@@ -54,7 +61,9 @@ type Scrollable = { scrollToOffset: (opts: { offset: number; animated?: boolean 
 export type SlidingBar = {
   /** Live scroll offset (UI thread). Also reusable for other scroll-driven effects. */
   scrollY: SharedValue<number>;
-  /** contentHeight − viewportHeight, kept in sync by `onScroll` (for the bottom-bounce guard). */
+  /** contentHeight − viewportHeight, kept in sync by `onScroll` (for the bottom-bounce guard).
+   *  `MAX_SCROLL_UNMEASURED` until the list first reports; 0 is a real value there, meaning the
+   *  content fits the viewport and every offset is a stretch. */
   maxScrollY: SharedValue<number>;
   /** The bar's translateY: 0 fully visible, −barHeight fully hidden. */
   offset: SharedValue<number>;
@@ -79,7 +88,7 @@ export function useSlidingBar(
   opts?: { resetKey?: string; listRef?: RefObject<Scrollable | null> },
 ): SlidingBar {
   const scrollY = useSharedValue(0);
-  const maxScrollY = useSharedValue(0);
+  const maxScrollY = useSharedValue(MAX_SCROLL_UNMEASURED);
   const offset = useSharedValue(0);
   // Whether `scrollY` has reported a real position since the last mount/reset. See the reaction.
   const primed = useSharedValue(false);
@@ -241,7 +250,9 @@ export function useSlidingBar(
     settling.set(false);
     revealUp.set(COMMIT_DISTANCE);
     offset.set(0);
-    maxScrollY.set(0);
+    // Back to "not measured yet", not to 0 — a measured 0 now means "the content fits, everything
+    // is a stretch", which would freeze the bar until the new scope's first scroll report landed.
+    maxScrollY.set(MAX_SCROLL_UNMEASURED);
     listRef?.current?.scrollToOffset({ offset: 0, animated: false });
     // Shared values + listRef are stable refs; only a resetKey change should re-run this.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -254,6 +265,9 @@ export function useSlidingBar(
       notifyScrollActivity();
       const { contentSize, layoutMeasurement } = e.nativeEvent;
       if (contentSize && layoutMeasurement) {
+        // Floored at 0 (content shorter than the viewport can't scroll at all) — which, unlike the
+        // unmeasured sentinel this starts at, arms the bounce guard for every offset. See
+        // `MAX_SCROLL_UNMEASURED`.
         maxScrollY.set(Math.max(0, contentSize.height - layoutMeasurement.height));
       }
     },
