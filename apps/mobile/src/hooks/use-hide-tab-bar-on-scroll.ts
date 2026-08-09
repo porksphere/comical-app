@@ -12,7 +12,13 @@ import {
   settleStep,
   TOP_GUARD,
 } from '@/lib/slide-step';
-import { getTabBarHideOffset, setTabBarProgress } from '@/lib/tab-bar-visibility';
+import {
+  animateTabBarProgress,
+  cancelTabBarProgress,
+  getTabBarProgress,
+  setTabBarProgress,
+} from '@/lib/tab-bar-slide';
+import { getTabBarHideOffset } from '@/lib/tab-bar-visibility';
 
 // The scroll span over which the bar fully hides/reveals is the bar's own hide offset (its measured
 // height — see tab-bar-visibility), so the bar tracks the finger EXACTLY 1:1, X/Twitter-style:
@@ -40,57 +46,49 @@ import { getTabBarHideOffset, setTabBarProgress } from '@/lib/tab-bar-visibility
 export function useHideTabBarOnScroll() {
   const lastY = useRef(0);
   const distance = useRef(0);
-  const lastProgress = useRef(0);
   // Whether `lastY` holds a real previous position yet. See `reportOffset`.
   const primed = useRef(false);
   // Upward scroll earned in the current gesture; `COMMIT_DISTANCE` of it locks the bar back in when
   // the user lets go. See `settleStep`.
   const up = useRef(COMMIT_DISTANCE);
-  // Handle of the settle tween in flight; while it's set, it owns the bar (see `reportOffset`).
-  const settleFrame = useRef<number | null>(null);
+  // Set for the duration of a settle; while it is, the animation owns the bar (see `reportOffset`).
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const focused = useRef(true);
 
-  // Quantize to whole-pixel steps of the slide and drop no-op repeats before
-  // touching the store. Without this, a fast scroll — or scrolling further while
-  // the bar is already fully hidden/shown (progress clamped at 1/0) — fires a
-  // store update, and an AppTabs re-render, on *every* frame. That per-frame JS
-  // churn is exactly what a card tap right after a scroll would queue behind,
-  // adding to the pre-transition stall. Endpoints still publish (0.98 → 1 is a
-  // real change); only truly-unchanged frames are skipped.
-  const publish = useCallback((p: number) => {
-    const span = getTabBarHideOffset();
-    const q = Math.round(p * span) / span;
-    if (q === lastProgress.current) return;
-    lastProgress.current = q;
-    setTabBarProgress(q);
-  }, []);
+  // Published raw, every frame, at full precision. This used to quantize to whole pixels and drop
+  // unchanged frames, because each write cost an AppTabs re-render — which meant the bar updated on
+  // fewer frames than the content moved, and read as running at a lower rate than the top bar. The
+  // position is a shared value now (see `tab-bar-slide`): a write is a UI-thread hop and nothing
+  // renders, so there is nothing left to ration.
+  const publish = useCallback((p: number) => setTabBarProgress(p), []);
 
   const cancelSettle = useCallback(() => {
-    if (settleFrame.current === null) return;
-    cancelAnimationFrame(settleFrame.current);
-    settleFrame.current = null;
+    if (settleTimer.current === null) return;
+    clearTimeout(settleTimer.current);
+    settleTimer.current = null;
+    cancelTabBarProgress();
+    // The tween was mid-flight, so the committed target we optimistically stored isn't where the bar
+    // actually is. Read the real position back, or the next 1:1 report would accumulate from a place
+    // the bar never reached.
+    distance.current = getTabBarProgress() * getTabBarHideOffset();
   }, []);
 
-  // The commit animation. A hand-rolled rAF tween rather than Reanimated's `withTiming` because this
-  // bar's position is plain React state the whole way through (`tab-bar-visibility` → AppTabs), for
-  // the reason spelled out in app-tabs: expo-router's `TabList` exposes a plain `style` only. The
-  // duration and curve still come from `slide-step` — different animator, same motion as the top bar.
+  // The commit animation: `withTiming` on the shared value, on the UI thread, with the duration and
+  // curve from `slide-step` — literally the same animator the top bar uses, where this used to be a
+  // hand-rolled `requestAnimationFrame`/`Date.now()` tween on the JS thread. `distance` is set to the
+  // target up front rather than followed frame by frame; only `cancelSettle` needs the in-between.
   const settleTo = useCallback(
     (target: number) => {
       cancelSettle();
       const span = getTabBarHideOffset();
-      const from = distance.current;
-      if (from === target) return;
-      const start = Date.now();
-      const step = () => {
-        const t = Math.min(1, (Date.now() - start) / SETTLE_MS);
-        distance.current = from + (target - from) * settleEase(t);
-        publish(distance.current / span);
-        settleFrame.current = t < 1 ? requestAnimationFrame(step) : null;
-      };
-      settleFrame.current = requestAnimationFrame(step);
+      if (distance.current === target) return;
+      distance.current = target;
+      animateTabBarProgress(target / span, { duration: SETTLE_MS, easing: settleEase });
+      settleTimer.current = setTimeout(() => {
+        settleTimer.current = null;
+      }, SETTLE_MS);
     },
-    [cancelSettle, publish],
+    [cancelSettle],
   );
 
   useFocusEffect(
@@ -98,7 +96,6 @@ export function useHideTabBarOnScroll() {
       focused.current = true;
       cancelSettle();
       distance.current = 0;
-      lastProgress.current = 0;
       up.current = COMMIT_DISTANCE;
       primed.current = false;
       setTabBarProgress(0);
@@ -121,7 +118,7 @@ export function useHideTabBarOnScroll() {
       }
       // A settle already in flight owns the bar — a `rest` arriving behind the `release` that
       // started it must not restart the same animation.
-      if (settleFrame.current !== null) return;
+      if (settleTimer.current !== null) return;
       // All the way out, or all the way back in if the content hasn't scrolled far enough for this
       // bar to leave — never parked half-way. See `dismissTarget`.
       const hideTo = dismissTarget(lastY.current, getTabBarHideOffset());
@@ -165,7 +162,7 @@ export function useHideTabBarOnScroll() {
       lastY.current = y;
       if (y === prevY) return;
       // A settle owns the bar until it lands (or a new gesture cancels it).
-      if (settleFrame.current !== null) return;
+      if (settleTimer.current !== null) return;
       // The scroll→slide rule (top pin, bottom-bounce guard, clamped accumulation, and the
       // commit-on-release layer over it) is the shared `settleStep` — the top bar's hook runs the
       // same function, so the two bars' motion can't drift. A caller that can't supply `maxY` gets
