@@ -21,7 +21,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
 import { useSeriesReaderBackdropDimStyle, useSeriesReaderBackdropStyle } from '@/lib/series-backdrop';
 import { notifyScrollActivity, subscribeScrollPhase } from '@/lib/scroll-release';
-import { COMMIT_DISTANCE, SETTLE_MS } from '@/lib/slide-step';
+import { COMMIT_DISTANCE, dismissThreshold, SETTLE_MS, TOP_GUARD } from '@/lib/slide-step';
 import {
   getTabBarHideOffset,
   getTabBarProgress,
@@ -54,7 +54,6 @@ const MOBILE_BREAKPOINT = 768;
 const DESKTOP_NAV_ICON_SIZE = 22 + Spacing.one * 2;
 export const DesktopNavWidth = TABS.length * DESKTOP_NAV_ICON_SIZE + (TABS.length - 1) * Spacing.three;
 
-const TOP_GUARD = 8;
 // Rounding slack for "is this offset at the content end?" — see the bounce guard in the scroll
 // listener below.
 const OVERSCROLL_SLOP = 1;
@@ -103,15 +102,16 @@ function useAutoHideBottomBar(enabled: boolean) {
   // scroll spends it back to zero, and it's spent again once the gesture is over, so every reveal
   // earns the distance rather than adding up across separate flicks.
   const up = useRef(COMMIT_DISTANCE);
-  // Last reported scroll offset, for the same "can't have travelled further than the content" rule
-  // the sliding bars get from `hideCeiling` — a fade has no partial state, so here it reduces to
-  // refusing to hide at all until the content has scrolled past the bar's own height.
+  // Last reported scroll offset, for the same dismissal threshold the sliding bars commit on — a
+  // fade has no partial state, so here it reduces to refusing to hide at all until the content has
+  // carried the bar past it. Shared (`dismissThreshold`) rather than the bar's own measured height,
+  // which is what had this fade disagreeing with the two native slides about the same scroll.
   const lastY = useRef(0);
   const set = useCallback((next: boolean) => {
     // A pinned screen (Settings) keeps the bar whatever its content does — the web half of the same
     // guarantee `setTabBarProgress` gives the native slide.
     if (next && isTabBarPinned()) return;
-    if (next && lastY.current < getTabBarHideOffset()) return;
+    if (next && lastY.current < dismissThreshold(getTabBarHideOffset())) return;
     if (hiddenRef.current === next) return;
     hiddenRef.current = next;
     setHidden(next);

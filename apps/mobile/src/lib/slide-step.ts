@@ -126,6 +126,60 @@ export function settleEase(t: number): number {
 }
 
 /**
+ * How far the CONTENT must have scrolled before letting go can leave the chrome hidden. Under it a
+ * release bounces every bar back fully shown; past it a release commits them fully away.
+ *
+ * ONE number for every bar, for exactly the reason `COMMIT_DISTANCE` is one number — and this is the
+ * threshold that had escaped that rule. Each bar used its OWN span here (the top bar's 60, the tab
+ * bar's measured ~56–90 depending on the home indicator, and a third copy in app-tabs' web fade,
+ * which read `getTabBarHideOffset()` directly), so scrolling down through the band between them and
+ * letting go dismissed one bar and bounced the other back — the two disagreeing about the same
+ * gesture, on a threshold that belonged to neither of them.
+ *
+ * Set clear of every bar's span (top 60, or 64 on desktop; tab bar ~56 with no bottom inset, ~82–90
+ * with one) so the same scroll depth decides both on every device. `dismissThreshold` still floors it
+ * at the bar's own span, so this can't be tuned DOWN into the pop that `hideCeiling` exists to
+ * prevent: a bar committed further out than the content has scrolled snaps back to the ceiling on the
+ * very next report.
+ */
+export const DISMISS_DISTANCE = 96;
+
+/** The dismissal threshold for a bar of `span` px — the shared distance, never less than the bar's
+ *  own height (see `DISMISS_DISTANCE`). */
+export function dismissThreshold(span: number): number {
+  'worklet';
+  return Math.max(span, DISMISS_DISTANCE);
+}
+
+/**
+ * At or above this offset the content is resting at the top (or being pulled past it), and every bar
+ * is pinned fully shown. Shared for the same reason as everything else here: it was a `const
+ * TOP_GUARD = 8` copied into the tab-bar hook and app-tabs, and simply missing for the top bar, which
+ * passed no guard at all and so ran with 0.
+ */
+export const TOP_GUARD = 8;
+
+/**
+ * Where a DISMISSAL settles to at scroll offset `y` — all the way out, or all the way back in.
+ *
+ * `hideCeiling` caps how far a bar can be hidden by how far the content has scrolled, which is right
+ * while the finger is down (that's the 1:1 tracking) but wrong as a resting place: nearer the top
+ * than the bar's own height there is no room to hide, so committing to "the ceiling" parked the bar
+ * half-way — visible, clipped, and not really usable, with no gesture able to explain the position.
+ * A small scroll down from the top hit this every time.
+ *
+ * So a dismissal only commits once the content has carried it past `dismissThreshold`; otherwise the
+ * bar goes back where it came from.
+ *
+ * Only the RESTING position is decided here. Tracking under the finger still follows the ceiling, so
+ * the bar moves with a scroll of any size; it's the release that snaps the decision to one end.
+ */
+export function dismissTarget(y: number, span: number): number {
+  'worklet';
+  return y < dismissThreshold(span) ? 0 : span;
+}
+
+/**
  * `slideStep` plus the bookkeeping for the commit-on-release rule the bars actually ship: both
  * directions track the finger 1:1, and letting go finishes the job in whichever direction the
  * gesture earned.
@@ -137,30 +191,9 @@ export function settleEase(t: number): number {
  * fully shown has nothing left to earn.
  *
  * The caller settles on it when the gesture ends: `up >= COMMIT_DISTANCE` ⇒ all the way shown, else
- * all the way hidden. Carried in/out rather than owned here so this stays a pure function usable
- * from both threads — the top bar keeps it in a shared value, the tab bar in a ref.
+ * all the way hidden (`dismissTarget`). Carried in/out rather than owned here so this stays a pure
+ * function usable from both threads — the top bar keeps it in a shared value, the tab bar in a ref.
  */
-/**
- * Where a DISMISSAL settles to at scroll offset `y` — all the way out, or all the way back in.
- *
- * `hideCeiling` caps how far a bar can be hidden by how far the content has scrolled, which is right
- * while the finger is down (that's the 1:1 tracking) but wrong as a resting place: nearer the top
- * than the bar's own height there is no room to hide, so committing to "the ceiling" parked the bar
- * half-way — visible, clipped, and not really usable, with no gesture able to explain the position.
- * A small scroll down from the top hit this every time.
- *
- * So a dismissal only commits if the content can actually see it through; otherwise the bar goes back
- * where it came from. This is the rule app-tabs' web fade already used (it refuses to hide until
- * `lastY >= getTabBarHideOffset()`) — the sliding bars were the ones out of step.
- *
- * Only the RESTING position is decided here. Tracking under the finger still follows the ceiling, so
- * the bar moves with a scroll of any size; it's the release that snaps the decision to one end.
- */
-export function dismissTarget(y: number, span: number): number {
-  'worklet';
-  return hideCeiling(y, span) < span ? 0 : span;
-}
-
 export function settleStep(
   hidden: number,
   up: number,

@@ -52,6 +52,7 @@ import {
   SETTLE_MS,
   settleEase,
   settleStep,
+  TOP_GUARD,
 } from '@/lib/slide-step';
 import { setTopBarHidden } from '@/lib/top-bar-visibility';
 
@@ -126,8 +127,18 @@ export function useSlidingBar(
       // The scroll→slide rule (top pin, bottom-bounce guard, clamped accumulation, and the
       // commit-on-release layer over it) is the shared `settleStep` — the tab bar's hook runs the
       // same function, so the two bars' motion can't drift. It works in hidden-px (positive); this
-      // bar's offset is a translateY, hence the sign.
-      const next = settleStep(-offset.value, revealUp.value, y, prevY, maxScrollY.value, barHeight);
+      // bar's offset is a translateY, hence the sign. `TOP_GUARD` is passed explicitly: it used to
+      // be omitted here (⇒ 0) while the tab bar's hook used 8, so the two bars pinned back open at
+      // different offsets.
+      const next = settleStep(
+        -offset.value,
+        revealUp.value,
+        y,
+        prevY,
+        maxScrollY.value,
+        barHeight,
+        TOP_GUARD,
+      );
       revealUp.set(next.up);
       offset.set(-next.hidden);
     },
