@@ -14,6 +14,7 @@ import { useIsCompact } from '@/hooks/use-responsive';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useTheme } from '@/hooks/use-theme';
 import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
+import { traceJS } from '@/lib/gesture-trace';
 import { encodeSeriesParam, useDrillRelatedSeries } from '@/lib/series-nav';
 import { Link, router } from '@/lib/nav';
 import { useLightCards } from '@/lib/perf-flags';
@@ -333,6 +334,14 @@ export function SeriesCard({
   // carries its key across entries; the id is compared alongside it.
   const [zoomSource] = useState(newZoomSourceKey);
   const zoomFlying = useIsZoomingSeries(entry.id, zoomSource);
+  // The card's HALF of the blanking, traced so it can be matched against `zoom hold`/`zoom release`
+  // in lib/series-zoom. A hold naming this card with no `card blank` beside it means the card is no
+  // longer the one listening on that slot — it remounted or was recycled onto another entry, taking
+  // a new source key with it and orphaning the hold. That is invisible from the page's side, which
+  // sees its own accounting come out even. Only fires on a change, and only while recording.
+  useEffect(() => {
+    traceJS('card', zoomFlying ? 'blank' : 'show', { src: zoomSource });
+  }, [zoomFlying, zoomSource]);
   const coverRef = useRef<ViewType>(null);
   const captureZoomOrigin = useCallback(() => {
     if (isWeb) return;
