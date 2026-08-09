@@ -25,7 +25,9 @@ import { COMMIT_DISTANCE, SETTLE_MS } from '@/lib/slide-step';
 import {
   getTabBarHideOffset,
   getTabBarProgress,
+  isTabBarPinned,
   setTabBarHideOffset,
+  subscribeTabBarPinned,
   subscribeTabBarProgress,
 } from '@/lib/tab-bar-visibility';
 
@@ -53,6 +55,9 @@ const DESKTOP_NAV_ICON_SIZE = 22 + Spacing.one * 2;
 export const DesktopNavWidth = TABS.length * DESKTOP_NAV_ICON_SIZE + (TABS.length - 1) * Spacing.three;
 
 const TOP_GUARD = 8;
+// Rounding slack for "is this offset at the content end?" — see the bounce guard in the scroll
+// listener below.
+const OVERSCROLL_SLOP = 1;
 // Faded (not gone): a faint ghost that still reads as "the nav is here, scroll up
 // to bring it back" while letting content show through.
 const FADED_OPACITY = 0.2;
@@ -103,6 +108,9 @@ function useAutoHideBottomBar(enabled: boolean) {
   // refusing to hide at all until the content has scrolled past the bar's own height.
   const lastY = useRef(0);
   const set = useCallback((next: boolean) => {
+    // A pinned screen (Settings) keeps the bar whatever its content does — the web half of the same
+    // guarantee `setTabBarProgress` gives the native slide.
+    if (next && isTabBarPinned()) return;
     if (next && lastY.current < getTabBarHideOffset()) return;
     if (hiddenRef.current === next) return;
     hiddenRef.current = next;
@@ -112,6 +120,17 @@ function useAutoHideBottomBar(enabled: boolean) {
     up.current = COMMIT_DISTANCE;
     set(false);
   }, [set]);
+
+  // Taking the pin brings the bar straight back, so arriving on a pinned screen from one that had
+  // faded it doesn't strand it as a ghost until something is scrolled. (Dropping it needs nothing:
+  // the bar is simply free to fade again on the next downward scroll.)
+  useEffect(() => {
+    if (!enabled || Platform.OS !== 'web') return;
+    if (isTabBarPinned()) reveal();
+    return subscribeTabBarPinned((pinned) => {
+      if (pinned) reveal();
+    });
+  }, [enabled, reveal]);
 
   // Commit when the gesture ends: an earned reveal and a dismissal both land at `release`; anything
   // in between waits for `rest`, so an upward fling's momentum can still earn it.
@@ -138,6 +157,7 @@ function useAutoHideBottomBar(enabled: boolean) {
     const onScroll = (e: Event) => {
       const target = e.target as (HTMLElement & EventTarget) | Document | null;
       let y: number;
+      let maxY: number;
       let key: object;
       if (
         !target ||
@@ -147,9 +167,11 @@ function useAutoHideBottomBar(enabled: boolean) {
         target === document.body
       ) {
         y = window.scrollY;
+        maxY = document.documentElement.scrollHeight - window.innerHeight;
         key = document;
       } else if (typeof (target as HTMLElement).scrollTop === 'number') {
         y = (target as HTMLElement).scrollTop;
+        maxY = (target as HTMLElement).scrollHeight - (target as HTMLElement).clientHeight;
         key = target;
       } else {
         return;
@@ -162,11 +184,19 @@ function useAutoHideBottomBar(enabled: boolean) {
       // detector's idle fallback ticking for the DOM-driven path.
       notifyScrollActivity();
       if (y <= TOP_GUARD) {
-        // Pinned at the top: shown, with nothing left to earn.
+        // Pinned at the top: shown, with nothing left to earn. Checked BEFORE the bounce guard
+        // below, so a viewport-sized page (top and content end being the same place) still resolves
+        // as "at the top, bar shown" rather than sitting out every event it ever reports.
         up.current = COMMIT_DISTANCE;
         set(false);
         return;
       }
+      // The sliding bars' bottom-bounce guard (`slide-step`), in DOM terms: at or past the content
+      // end, iOS Safari's rubber band keeps reporting offsets, and its springback reports them
+      // DECREASING — which is exactly the upward scroll that earns a reveal. Stretching a list
+      // that's already at its end would otherwise pop the bar back out. `scrollHeight`/`clientHeight`
+      // are integers while `scrollTop` isn't, hence the pixel of slop.
+      if (y >= maxY - OVERSCROLL_SLOP) return;
       if (dy > 0) {
         up.current = 0;
       } else {

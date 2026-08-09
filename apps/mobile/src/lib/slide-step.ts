@@ -16,7 +16,7 @@
  * - Past the content end (y ≥ maxScrollY) the list is in — or springing back out of — its elastic
  *   bottom bounce, which produces the same "offset decreasing" deltas a real scroll-up does.
  *   Hold still instead of revealing, or every bottom overscroll would slide the chrome back in.
- *   An unknown/unmeasured maxScrollY (≤ 0) skips the guard.
+ *   Only `MAX_SCROLL_UNMEASURED` skips the guard — a measured 0 is a real answer (see it).
  *
  * Returns the next hidden-px value (0 = fully shown, `span` = fully hidden).
  */
@@ -34,11 +34,24 @@
 // The cost of the guard misfiring is a bar that fails to hide for one frame of an unusually janky
 // fling — visible only as the hide starting a frame late, and self-correcting on the next report.
 const MAX_GESTURE_STEP = 240;
+/**
+ * The `maxScrollY` a caller passes before it has measured the content — "no answer yet", distinct
+ * from the perfectly good answer 0.
+ *
+ * They used to be the same value, and that is what let the bars react to a *stretch*: on a screen
+ * whose content fits the viewport there is nothing to scroll, only the elastic bounce, and
+ * `contentHeight − viewportHeight ≤ 0` read as "unmeasured ⇒ no bounce guard". So dragging up on a
+ * short screen (or on any list at rest with nothing below it) reported a rising offset, the bars
+ * accumulated it as real scroll, and the chrome slid away under a gesture that never moved the
+ * content at all. With 0 taken literally, every offset on such a screen is ≥ maxScrollY — i.e. all
+ * overscroll — and the bars hold perfectly still.
+ */
+export const MAX_SCROLL_UNMEASURED = -1;
 /** The two ways a scroll step carries no gesture intent: a reposition-sized jump (above), and the
  *  elastic bottom bounce, whose springback produces the same deltas a real scroll-up does. */
 function stepRejected(y: number, prevY: number, maxScrollY: number): boolean {
   'worklet';
-  return Math.abs(y - prevY) > MAX_GESTURE_STEP || (maxScrollY > 0 && y >= maxScrollY);
+  return Math.abs(y - prevY) > MAX_GESTURE_STEP || (maxScrollY >= 0 && y >= maxScrollY);
 }
 /**
  * The furthest a bar can be hidden at scroll offset `y`: it cannot have travelled further from its

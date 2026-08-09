@@ -32,15 +32,14 @@ import { queryKeys } from '@/data/queries';
 import { useRegistryUpdateCounts } from '@/data/use-settings-badge';
 import { useAppUpdateCheck } from '@/data/use-app-update';
 import { useDataSource, useHideNsfw } from '@/data/source';
-import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useHovered } from '@/hooks/use-hovered';
+import { usePinnedTabBar } from '@/hooks/use-pinned-tab-bar';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
 import { APP_VERSION } from '@/lib/build-info';
 import { PROFILING_ENABLED } from '@/lib/profiling';
 import { hapticImpactLight } from '@/lib/haptics';
 import { useRouter } from '@/lib/nav';
-import { scrollPhaseHandlers } from '@/lib/scroll-release';
 
 /**
  * The Settings landing screen is a table of contents, nothing more: every category owns its own
@@ -54,7 +53,9 @@ export default function SettingsScreen() {
   const theme = useTheme();
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTopOnReselect('settings', scrollRef);
-  const { onScroll } = useHideTabBarOnScroll();
+  // Settings keeps its bottom bar: this screen IS navigation, so sliding the nav away under the
+  // finger only takes away the thing you came here to tap. See `usePinnedTabBar`.
+  usePinnedTabBar();
   const contentPadding = useSettingsScrollPadding();
 
   const counts = useCategoryCounts();
@@ -71,10 +72,9 @@ export default function SettingsScreen() {
     <ThemedView style={styles.container}>
       <ScrollView
         ref={scrollRef}
-        onScroll={onScroll}
-        // Gesture phases for the tab bar, which commits to shown/hidden on release.
-        {...scrollPhaseHandlers}
-        scrollEventThrottle={16}
+        // No scroll reporting and no gesture phases: the bar is pinned here, and the phase
+        // broadcast is global — a blurred screen's bar would still be listening to this one's
+        // scrolling.
         contentContainerStyle={[
           styles.content,
           contentPadding,

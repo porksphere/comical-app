@@ -3,7 +3,14 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 
 import { notifyScrollActivity, subscribeScrollPhase, type ScrollPhase } from '@/lib/scroll-release';
-import { COMMIT_DISTANCE, dismissTarget, SETTLE_MS, settleEase, settleStep } from '@/lib/slide-step';
+import {
+  COMMIT_DISTANCE,
+  dismissTarget,
+  MAX_SCROLL_UNMEASURED,
+  SETTLE_MS,
+  settleEase,
+  settleStep,
+} from '@/lib/slide-step';
 import { getTabBarHideOffset, setTabBarProgress } from '@/lib/tab-bar-visibility';
 
 // The scroll span over which the bar fully hides/reveals is the bar's own hide offset (its measured
@@ -160,11 +167,21 @@ export function useHideTabBarOnScroll() {
       if (settleFrame.current !== null) return;
       // The scroll→slide rule (top pin, bottom-bounce guard, clamped accumulation, and the
       // commit-on-release layer over it) is the shared `settleStep` — the top bar's hook runs the
-      // same function, so the two bars' motion can't drift. `maxY` unknown (a caller that can't
-      // supply it) ⇒ 0 ⇒ no bounce guard. The span is re-read each report: the bar re-measures on
-      // inset/layout changes, and the px accumulator just re-clamps to whatever it currently is.
+      // same function, so the two bars' motion can't drift. A caller that can't supply `maxY` gets
+      // no bounce guard; one that CAN must pass its measurement even when it's 0 (content fits ⇒
+      // every offset is a stretch — see `MAX_SCROLL_UNMEASURED`). The span is re-read each report:
+      // the bar re-measures on inset/layout changes, and the px accumulator just re-clamps to
+      // whatever it currently is.
       const span = getTabBarHideOffset();
-      const next = settleStep(distance.current, up.current, y, prevY, maxY ?? 0, span, TOP_GUARD);
+      const next = settleStep(
+        distance.current,
+        up.current,
+        y,
+        prevY,
+        maxY ?? MAX_SCROLL_UNMEASURED,
+        span,
+        TOP_GUARD,
+      );
       up.current = next.up;
       distance.current = next.hidden;
       publish(next.hidden / span);
@@ -175,7 +192,10 @@ export function useHideTabBarOnScroll() {
   const onScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-      reportOffset(contentOffset.y, contentSize.height - layoutMeasurement.height);
+      // Floored at 0: content shorter than the viewport has nothing to scroll, so every offset it
+      // ever reports is an elastic stretch the bar must sit out. A raw negative here would read as
+      // "unmeasured" and disarm the guard exactly where it's needed most.
+      reportOffset(contentOffset.y, Math.max(0, contentSize.height - layoutMeasurement.height));
     },
     [reportOffset],
   );
