@@ -1,5 +1,6 @@
 import { observable } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
+import { createContext, useContext, useState } from 'react';
 
 import { traceJS } from '@/lib/gesture-trace';
 
@@ -47,6 +48,40 @@ export type ZoomSourceKey = number;
 let nextSourceKey = 1;
 export function newZoomSourceKey(): ZoomSourceKey {
   return nextSourceKey++;
+}
+
+/**
+ * The key belongs to the LIST, not to the card — provided by whatever renders a run of them.
+ *
+ * It was per card INSTANCE for a while, and that is wrong for the one thing it exists to survive:
+ * the grid and the rails recycle instances (`recycleItems`), so a slot handed a different entry
+ * re-renders rather than remounting, and the instance's key goes with it. Series A ends up drawn by
+ * an instance that is not the one whose key the open page is holding, and the page's own accounting
+ * looks perfect the whole time — a recording of the bug has the hold on src=1 taken at 136ms and
+ * released at 11684ms, spanning the entire collapse, while the card it names sat there unblanked
+ * because nothing was listening on that slot any more.
+ *
+ * A list is the right owner. It is stable across recycling, and it still separates the copies this
+ * has to separate: the browse grid, each rail, and a search LAYER's results are different lists, so
+ * opening series A from search does not blank A's card in the grid underneath. One list showing the
+ * same series twice is not a thing.
+ *
+ * Cards outside any list (a context menu's preview) fall back to a key of their own, which is what
+ * per-instance always was and is correct where nothing recycles.
+ */
+export const ZoomSurfaceContext = createContext<ZoomSourceKey | null>(null);
+
+/** Both hooks run unconditionally — the fallback is allocated whether or not it gets used. */
+export function useZoomSourceKey(): ZoomSourceKey {
+  const surface = useContext(ZoomSurfaceContext);
+  const [own] = useState(newZoomSourceKey);
+  return surface ?? own;
+}
+
+/** For a list to claim its own surface key: `const surface = useZoomSurfaceKey()`, then provide it. */
+export function useZoomSurfaceKey(): ZoomSourceKey {
+  const [key] = useState(newZoomSourceKey);
+  return key;
 }
 
 type Capture = { id: string; source: ZoomSourceKey; origin: ZoomOrigin; at: number };

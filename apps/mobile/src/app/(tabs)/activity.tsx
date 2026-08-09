@@ -8,7 +8,7 @@ import Animated, { useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HistoryRow } from '@/components/history-row';
-import { newZoomSourceKey, setZoomOrigin, useIsZoomingSeries } from '@/lib/series-zoom';
+import { setZoomOrigin, useIsZoomingSeries, useZoomSourceKey } from '@/lib/series-zoom';
 import { encodeSeriesParam } from '@/lib/series-nav';
 import { CheckIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { PullIndicator } from '@/components/pull-indicator';
@@ -343,9 +343,10 @@ function ActivityItem({
   // would put a native round trip in front of the navigation. And while its copy is in the air the
   // original blanks, reusing `coverHidden` — the same slot, and the same reason, as the long-press
   // preview's lifted copy.
-  // Keyed to this ROW, not to the series — see newZoomSourceKey (another copy of the same series
-  // elsewhere on screen is not what the page collapses into, and must keep its thumbnail).
-  const [zoomSource] = useState(newZoomSourceKey);
+  // Keyed to this row's LIST, not to the series — see useZoomSourceKey (another copy of the same
+  // series elsewhere on screen is not what the page collapses into, and must keep its thumbnail;
+  // per list rather than per row because the list recycles row instances).
+  const zoomSource = useZoomSourceKey();
   const zoomFlying = useIsZoomingSeries(item.seriesId, zoomSource);
   const captureZoomOrigin = () => {
     thumbRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => {

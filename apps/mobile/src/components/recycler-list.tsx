@@ -6,6 +6,7 @@ import { GestureDetector, type ComposedGesture } from 'react-native-gesture-hand
 import Animated, { type SharedValue } from 'react-native-reanimated';
 
 import { notifyScrollBeginDrag, notifyScrollEndDrag, notifyScrollRest } from '@/lib/scroll-release';
+import { ZoomSurfaceContext, useZoomSurfaceKey } from '@/lib/series-zoom';
 
 /**
  * THE one virtualized-list primitive. Every scrolling list of cards/rows in the app — the uniform
@@ -108,6 +109,8 @@ export function RecyclerList<T>({
   // initial render, which skips that path (a different column count is also a different layout, and a
   // scopeKey change is a scroll-to-top moment anyway).
   const listKey = `${numColumns}|${scopeKey}|${data.length > 0 ? 'full' : 'empty'}`;
+  // This list's identity for the series-page zoom — see the provider at the bottom.
+  const zoomSurface = useZoomSurfaceKey();
 
   const list = (
       <AnimatedLegendList
@@ -181,9 +184,17 @@ export function RecyclerList<T>({
   );
 
   return (
-    <Animated.View style={[styles.list, wrapperStyle]}>
-      {scrollGesture ? <GestureDetector gesture={scrollGesture}>{list}</GestureDetector> : list}
-    </Animated.View>
+    // Every series card below shares ONE zoom source key, because this list is the thing that
+    // survives what the key has to survive: `recycleItems` hands a cell's instance to a different
+    // entry rather than remounting it, so a key belonging to the instance stops describing the card
+    // the open series page is holding. A key belonging to the list doesn't move. Separate lists —
+    // the browse grid, a search LAYER's results — are still separate surfaces, which is the whole
+    // point of the key. See lib/series-zoom's useZoomSourceKey.
+    <ZoomSurfaceContext.Provider value={zoomSurface}>
+      <Animated.View style={[styles.list, wrapperStyle]}>
+        {scrollGesture ? <GestureDetector gesture={scrollGesture}>{list}</GestureDetector> : list}
+      </Animated.View>
+    </ZoomSurfaceContext.Provider>
   );
 }
 

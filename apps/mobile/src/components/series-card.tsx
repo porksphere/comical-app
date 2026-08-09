@@ -18,7 +18,7 @@ import { traceJS } from '@/lib/gesture-trace';
 import { encodeSeriesParam, useDrillRelatedSeries } from '@/lib/series-nav';
 import { Link, router } from '@/lib/nav';
 import { useLightCards } from '@/lib/perf-flags';
-import { newZoomSourceKey, setZoomOrigin, useIsZoomingSeries } from '@/lib/series-zoom';
+import { setZoomOrigin, useIsZoomingSeries, useZoomSourceKey } from '@/lib/series-zoom';
 import { testId } from '@/lib/test-id';
 
 // Shared cover card used by both the browse grid and the rails. `size` picks the
@@ -328,11 +328,11 @@ export function SeriesCard({
   // original blanks — same treatment (and same reason) as the long-press menu's lifted preview
   // below. A selector read: the whole grid subscribes, only the one card whose flag flips renders.
   //
-  // Keyed to this card, not to the series: the same series can be showing somewhere else at the
-  // same time (most obviously in a search LAYER opened from its own page), and those copies are
-  // not what the page collapses into — see newZoomSourceKey. Per INSTANCE, so a recycled card
-  // carries its key across entries; the id is compared alongside it.
-  const [zoomSource] = useState(newZoomSourceKey);
+  // Keyed to this card's LIST, not to the series: the same series can be showing somewhere else at
+  // the same time (most obviously in a search LAYER opened from its own page), and those copies are
+  // not what the page collapses into. Per list rather than per instance because this grid recycles
+  // instances — see useZoomSourceKey for what that broke. The id is compared alongside it.
+  const zoomSource = useZoomSourceKey();
   const zoomFlying = useIsZoomingSeries(entry.id, zoomSource);
   // The card's HALF of the blanking, traced so it can be matched against `zoom hold`/`zoom release`
   // in lib/series-zoom. A hold naming this card with no `card blank` beside it means the card is no
