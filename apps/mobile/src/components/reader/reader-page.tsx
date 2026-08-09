@@ -109,6 +109,21 @@ export function ReaderPage({
   const delay = useMemo(() => coverDelayMs(uri), [uri]);
   const [delayPassed, setDelayPassed] = useState(delay === 0);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * The cross-fade duration, FROZEN AT MOUNT rather than read every render.
+   *
+   * A transition only ever describes how this image's load is revealed, so once it has loaded the
+   * value is spent — but it is a native prop, and changing it makes expo-image load the image
+   * again. That is not hypothetical: the pager passes `fadeMs` as `standby ? STANDBY_FADE_MS :
+   * undefined`, so the series page's standing strip page had it flip 180 → undefined at the exact
+   * moment standby lifted, and a recording of a reveal shows `page loaded p=1` firing a second time
+   * 40ms later with no `page mount` in between — the visible page reloading, mid-transition, for a
+   * property that could no longer affect anything.
+   *
+   * Freezing it costs nothing: a cell that mounted under the strip keeps the standing-page fade it
+   * was born with, which is the fade that was already applied to the only load it will do.
+   */
+  const [transitionMs] = useState(() => fadeMs ?? (fit === 'contain' ? 0 : 150));
 
   // Traced against the series page's `reveal commit` (lib/gesture-trace): a flash on the first
   // reveal into the reader is a question about WHEN this page had something to paint. Mounting
@@ -275,8 +290,9 @@ export function ReaderPage({
           // that was actually ready still spent 150ms looking like one — the exact impression this
           // pass is trying to remove. Webtoon keeps it: rows arrive under a continuously moving
           // scroll, where a hard swap is the more jarring of the two. (Both are about PAGE TURNS;
-          // a caller holding one standing page overrides with `fadeMs`.)
-          transition={fadeMs ?? (fit === 'contain' ? 0 : 150)}
+          // a caller holding one standing page overrides with `fadeMs`.) Fixed at mount — see
+          // `transitionMs` for why this must not be recomputed per render.
+          transition={transitionMs}
           // Hold animated pages (e.g. animated WebP) on their FIRST frame — do not autoplay. On iOS,
           // expo-image animates a WebP via a Core Animation keyframe animation that decodes each frame
           // on the MAIN THREAD inside the layer commit (Sentry COMICAL-APP-1E: CA::Transaction::commit
