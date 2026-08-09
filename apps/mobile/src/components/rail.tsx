@@ -310,7 +310,7 @@ export function Rail({
     transform: [{ translateX: wide ? 0 : -scrollX.value }],
   }));
 
-  const zoomSurface = useZoomSurfaceKey();
+  const zoomSurface = useZoomSurfaceKey(`rail:${section.id}`);
   const gridItems = section.items.slice(0, GRID_ITEMS);
   const gridRows: SeriesEntry[][] = [];
   for (let i = 0; i < gridItems.length; i += GRID_COLUMNS) gridRows.push(gridItems.slice(i, i + GRID_COLUMNS));

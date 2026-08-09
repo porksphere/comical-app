@@ -109,8 +109,10 @@ export function RecyclerList<T>({
   // initial render, which skips that path (a different column count is also a different layout, and a
   // scopeKey change is a scroll-to-top moment anyway).
   const listKey = `${numColumns}|${scopeKey}|${data.length > 0 ? 'full' : 'empty'}`;
-  // This list's identity for the series-page zoom — see the provider at the bottom.
-  const zoomSurface = useZoomSurfaceKey();
+  // This list's identity for the series-page zoom — see the provider at the bottom. Taken from
+  // `scopeKey`, which already names what this list is showing, so the key outlives the list itself:
+  // `listKey` right above deliberately remounts the whole LegendList on a 0 -> N data fill.
+  const zoomSurface = useZoomSurfaceKey(scopeKey);
 
   const list = (
       <AnimatedLegendList

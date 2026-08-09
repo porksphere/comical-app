@@ -78,9 +78,28 @@ export function useZoomSourceKey(): ZoomSourceKey {
   return surface ?? own;
 }
 
-/** For a list to claim its own surface key: `const surface = useZoomSurfaceKey()`, then provide it. */
-export function useZoomSurfaceKey(): ZoomSourceKey {
-  const [key] = useState(newZoomSourceKey);
+/**
+ * A surface's key, derived from its NAME rather than allocated when it mounts.
+ *
+ * Allocating one per mount was the second version of this and it was still not stable enough. A
+ * recording of the bug has `card blank src=2` at 2549ms and then silence from that card forever —
+ * the release at 19328ms drew no answer at all, where a search layer's card on a still-mounted list
+ * answered its own release within 9ms. The list holding key 2 went away while the page opened from
+ * it was still up, and whatever replaced it came back with a key nobody was holding. Same failure
+ * as the per-instance key, one level up.
+ *
+ * Memoised by name, so a surface that unmounts and comes back lands on the key it had before.
+ * Nothing new had to be invented to name them: every `RecyclerList` already carries a `scopeKey`
+ * saying what it is showing, and a rail has its section id. The map is bounded by the number of
+ * distinct surfaces the app can name.
+ */
+const surfaceKeys = new Map<string, ZoomSourceKey>();
+export function useZoomSurfaceKey(surface: string): ZoomSourceKey {
+  let key = surfaceKeys.get(surface);
+  if (key === undefined) {
+    key = newZoomSourceKey();
+    surfaceKeys.set(surface, key);
+  }
   return key;
 }
 
