@@ -1,38 +1,11 @@
 /**
- * Registry backing "slide the tab bar away as you scroll down, back in as you scroll up"
- * (`app-tabs.tsx`). Each tab screen reports its scroll position via `useHideTabBarOnScroll`; there's
- * only one bar, so this is a single shared value rather than a per-screen one.
+ * The two plain-JS facts about the bottom bar: how tall it measured, and whether the screen on
+ * display keeps it. Its live slide position is a Reanimated shared value and lives next door in
+ * `tab-bar-slide` — split so this module stays importable from a bun unit test, which can't load
+ * Reanimated at all.
  *
- * `progress` is 0 (fully shown) to 1 (fully hidden) and tracks scroll position continuously —
- * not a two-state flip — so the bar moves in lockstep with the finger, X/Twitter-style. It is
- * native-only: web hides the bar by fading it instead (`useAutoHideBottomBar` in app-tabs) and
- * leaves `progress` at 0 throughout.
- *
- * The PIN below (`pinTabBar`) is the one part both platforms read — "this screen keeps the bar",
- * which has to mean the same thing whether the bar would otherwise slide or fade.
+ * There's one bar, so both of these are single module values rather than per-screen ones.
  */
-type Listener = (progress: number) => void;
-
-let progress = 0;
-const listeners = new Set<Listener>();
-
-export function setTabBarProgress(next: number): void {
-  // A pinned screen owns the bar outright (see `pinTabBar`): whatever anyone else reports, it stays
-  // put. Swallowed here rather than at each reporter so there is one place the guarantee holds.
-  const clamped = pins > 0 ? 0 : Math.min(1, Math.max(0, next));
-  if (clamped === progress) return;
-  progress = clamped;
-  for (const listener of listeners) listener(clamped);
-}
-
-export function getTabBarProgress(): number {
-  return progress;
-}
-
-export function subscribeTabBarProgress(listener: Listener): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
 
 /**
  * Screens that keep the bottom bar put — it neither slides (native) nor fades (web) there, whatever
@@ -41,8 +14,12 @@ export function subscribeTabBarProgress(listener: Listener): () => void {
  *
  * A count, not a flag: the pin is taken on focus and dropped on blur, and a push/pop overlaps the
  * two (the incoming screen focuses before the outgoing one blurs), so a flag would leave the bar
- * unpinned after a settings→settings navigation. Taking it also snaps the bar back to fully shown —
- * arriving from a tab that had scrolled it away must not leave it stuck off-screen here.
+ * unpinned after a settings→settings navigation.
+ *
+ * Taking it also snaps the bar back to fully shown — arriving from a tab that had scrolled it away
+ * must not leave it stuck off-screen here. That happens in the subscribers (`tab-bar-slide` for the
+ * native slide, `app-tabs` for the web fade) rather than here, so this module keeps no dependency on
+ * either.
  */
 type PinListener = (pinned: boolean) => void;
 
@@ -52,9 +29,6 @@ const pinListeners = new Set<PinListener>();
 export function pinTabBar(): () => void {
   pins += 1;
   if (pins === 1) {
-    // Ordering: `setTabBarProgress` clamps to 0 while pinned, so this both reveals the bar and
-    // becomes the position everything else is now held at.
-    setTabBarProgress(0);
     for (const listener of pinListeners) listener(true);
   }
   // Idempotent: a release called twice must not drop somebody else's pin along with its own.
