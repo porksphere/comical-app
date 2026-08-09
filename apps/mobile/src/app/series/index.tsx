@@ -66,7 +66,7 @@ import { firstChapterInReadingOrder, getAdjacentChapter } from '@/lib/chapter-or
 import { useRouter } from '@/lib/nav';
 import { getPreferredGroup, resetPreferredGroup, setPreferredGroup } from '@/lib/preferred-group';
 
-import { backSwipePan, backSwipeStayedHorizontal, BACK_ACTIVATE_DOMINANCE, BackSwipeGestureContext } from '@/lib/back-swipe';
+import { backSwipePan, backSwipeShape, backSwipeStayedHorizontal, resetBackSwipeShape, trackBackSwipeShape, BACK_ACTIVATE_DOMINANCE, BackSwipeGestureContext } from '@/lib/back-swipe';
 import { trace, traceGate, traceJS, traceThrottled, useGestureTraceEnabled } from '@/lib/gesture-trace';
 import { releaseCommitted, releaseCommittedEitherWay } from '@/lib/gesture-release';
 import { IOS_CARD_SHADOW, IOS_CARD_SPRING, IOS_PARALLAX_FRACTION } from '@/lib/ios-card-pop';
@@ -1499,6 +1499,8 @@ function SeriesReaderInstance({
     // once, leaving the release with nothing left to animate.
     const originX = makeMutable(0);
     const originY = makeMutable(0);
+    // Whether this drag has already been an unambiguous back-swipe — see backSwipeStayedHorizontal.
+    const qualified = backSwipeShape();
     const settle = () => {
       'worklet';
       // Traced because settling is the only thing on this surface that can cancel a committed
@@ -1559,6 +1561,7 @@ function SeriesReaderInstance({
         ranHere.set(true);
         originX.set(e.translationX);
         originY.set(e.translationY);
+        resetBackSwipeShape(qualified);
         runOnJS(setSwipeLocked)(true);
         // A drag IS a collapse, so it uses the collapse's cross-fade ranges from the first frame.
         zoomClosing.set(true);
@@ -1569,6 +1572,7 @@ function SeriesReaderInstance({
         const tx = e.translationX - originX.value;
         const ty = e.translationY - originY.value;
         traceThrottled(updateGate, 60, tag, 'update', { tx, ty, zoom: zoom.value });
+        trackBackSwipeShape(qualified, tx, ty, width * DISMISS_COMMIT_FRACTION);
         zoom.set(1 - Math.min(1, Math.max(0, tx / (width * ZOOM_DRAG_TRAVEL))));
         dragX.set(zoomHorizontalDrag(tx, width));
         dragY.set(zoomCrossAxisDrag(ty, height));
@@ -1595,7 +1599,7 @@ function SeriesReaderInstance({
         // Finish from exactly where the finger left it — the spring starts at the current value, so
         // there is no seam between the dragged part and the animated part.
         if (
-          backSwipeStayedHorizontal(tx, ty) &&
+          backSwipeStayedHorizontal(tx, ty, qualified) &&
           releaseCommitted(tx, e.velocityX, width * DISMISS_COMMIT_FRACTION)
         )
           commit(e.velocityX);
@@ -2687,6 +2691,8 @@ function SearchLayer({
       'worklet';
       edgeX.set(withSpring(0, { ...IOS_CARD_SPRING, velocity }));
     };
+    // See the instance's copy — a stroke that already qualified stays qualified.
+    const qualified = backSwipeShape();
     return backSwipePan(tag)
       .onStart((e) => {
         'worklet';
@@ -2694,6 +2700,7 @@ function SearchLayer({
         ranHere.set(true);
         originX.set(e.translationX);
         originY.set(e.translationY);
+        resetBackSwipeShape(qualified);
         // Activation means this gesture owns the screen — the results list must STOP SCROLLING
         // under it. Without this the page kept scrolling vertically while sliding out sideways,
         // which is the single thing that gave the layer away as not-a-real-push: a card being
@@ -2705,6 +2712,7 @@ function SearchLayer({
         'worklet';
         const tx = e.translationX - originX.value;
         traceThrottled(updateGate, 60, tag, 'update', { tx, edgeX: edgeX.value });
+        trackBackSwipeShape(qualified, tx, e.translationY - originY.value, width * DISMISS_COMMIT_FRACTION);
         edgeX.set(Math.max(0, tx));
       })
       .onEnd((e) => {
@@ -2718,7 +2726,7 @@ function SearchLayer({
         // Same two questions as the instance's release — a card pop is a back-swipe too, and a
         // drag that wandered off-axis is not one however far across it got.
         if (
-          backSwipeStayedHorizontal(tx, ty) &&
+          backSwipeStayedHorizontal(tx, ty, qualified) &&
           releaseCommitted(tx, e.velocityX, width * DISMISS_COMMIT_FRACTION)
         )
           slideOut(e.velocityX);

@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo } from 'react';
 import { Gesture, type GestureType, type NativeGesture, type PanGesture } from 'react-native-gesture-handler';
-import { makeMutable } from 'react-native-reanimated';
+import { makeMutable, type SharedValue } from 'react-native-reanimated';
 
 import { isGestureTraceEnabled, trace, traceGate, traceThrottled } from '@/lib/gesture-trace';
 
@@ -260,7 +260,57 @@ export function useBackSwipeBlocker(): NativeGesture | undefined {
  * so `tx`/`ty` here measure the drag from activation onward — exactly the part that was on screen
  * following the finger, and exactly the part someone means when they say the swipe was diagonal.
  */
-export function backSwipeStayedHorizontal(tx: number, ty: number): boolean {
+export function backSwipeStayedHorizontal(tx: number, ty: number, qualified: BackSwipeShape): boolean {
   'worklet';
-  return Math.abs(ty) <= Math.abs(tx) * BACK_DOMINANCE;
+  return qualified.value || Math.abs(ty) <= Math.abs(tx) * BACK_DOMINANCE;
+}
+
+/**
+ * …with one way to have already answered it: a drag that was a committed back-swipe EARLIER stays
+ * one, however the finger wanders afterwards.
+ *
+ * The endpoint test alone reads a drag backwards. Pull a page 300 points right — dead horizontal,
+ * well past the distance it needs, visibly most of the way collapsed — then curl up 100 points
+ * before letting go, and it says 100 > 300·tan15° and springs the whole thing back. Reported in
+ * exactly those terms: "swiping over then up and then releasing results in the page NOT being
+ * swiped away, even though if I didn't swipe up, it would have qualified." It had qualified. The
+ * curl happened after, to a page that was already three-quarters gone.
+ *
+ * So the shape question is asked continuously and latched the first time the answer is an
+ * unambiguous yes — on-axis AND already past the committing distance. Once that has happened the
+ * stroke was a back-swipe as a matter of record, and only `releaseCommitted` has anything left to
+ * decide. Nothing is loosened for the strokes the angle exists to catch:
+ *
+ *   • a 45° diagonal is off-axis at every sample, so it never latches and still meets the endpoint
+ *     test on release, which it fails;
+ *   • a stroke that goes ten points across and then veers hard upward never latches either — it was
+ *     not past the distance while it was still on-axis;
+ *   • a stroke that goes far across and is then hauled back latches, and then fails `releaseCommitted`
+ *     on the distance, which is the right reason to refuse it;
+ *   • a quick flick that commits on velocity alone never travels far enough to latch, and is judged
+ *     by the endpoint exactly as before.
+ */
+export type BackSwipeShape = SharedValue<boolean>;
+
+/** One per gesture copy, alongside its other shared values. */
+export function backSwipeShape(): BackSwipeShape {
+  return makeMutable(false);
+}
+
+/** Call from `onStart` — translation is measured per drag, so the latch is too. */
+export function resetBackSwipeShape(qualified: BackSwipeShape): void {
+  'worklet';
+  qualified.set(false);
+}
+
+/** Call from `onUpdate`. `commitDistance` is the same threshold the release will use. */
+export function trackBackSwipeShape(
+  qualified: BackSwipeShape,
+  tx: number,
+  ty: number,
+  commitDistance: number,
+): void {
+  'worklet';
+  if (qualified.value) return;
+  if (tx > commitDistance && Math.abs(ty) <= tx * BACK_DOMINANCE) qualified.set(true);
 }
