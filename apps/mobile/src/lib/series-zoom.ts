@@ -1,6 +1,8 @@
 import { observable } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
 
+import { traceJS } from '@/lib/gesture-trace';
+
 /**
  * The SOURCE RECT of the card a series was opened from, so
  * the series page can grow out of it (and shrink back into it) the way a photo grid opens a photo.
@@ -65,19 +67,38 @@ export function setZoomOrigin(id: string, source: ZoomSourceKey, origin: ZoomOri
   pending = { id, source, origin, at: Date.now() };
 }
 
-/** Consumes the pending capture, but only if it was made for THIS series and recently enough.
- *  Returns null otherwise — the caller then falls back to its non-zoom entrance. */
+/**
+ * Consumes the pending capture, but only if it was made for THIS series and recently enough.
+ * Returns null otherwise — the caller then falls back to its non-zoom entrance.
+ *
+ * A FRESH capture always beats the remembered one. The `taken` fallback exists for a
+ * double-invoked `useState` initializer, which re-runs in the same tick with nothing new pressed;
+ * it used to be consulted FIRST, which meant a genuine second open of the same series within
+ * MAX_AGE_MS silently reused the previous card — its rect AND its source key. Open a series, tap a
+ * tag, and open that same series from the results quickly enough and the new page grew out of the
+ * browse card's box instead of the result card's, blanked the browse card on the result card's
+ * behalf, and left the result card's own capture sitting in `pending` to be mistaken for some
+ * later open's. Checking `pending` first costs the StrictMode case nothing: the first invoke
+ * consumes it, so the second finds none and falls through to exactly the same answer.
+ */
 export function takeZoomOrigin(id: string | undefined): TakenZoom | null {
   if (!id) return null;
   const now = Date.now();
-  if (taken && taken.id === id && now - taken.at <= MAX_AGE_MS) {
-    return { origin: taken.origin, source: taken.source };
+  const fresh = pending && pending.id === id && now - pending.at <= MAX_AGE_MS ? pending : null;
+  if (!fresh) {
+    // Any stale capture is dropped here too — it belonged to a press that went somewhere else.
+    pending = null;
+    if (taken && taken.id === id && now - taken.at <= MAX_AGE_MS) {
+      traceJS('zoom', 'take.reuse', { src: taken.source });
+      return { origin: taken.origin, source: taken.source };
+    }
+    traceJS('zoom', 'take.none', {});
+    return null;
   }
-  const capture = pending;
   pending = null;
-  if (!capture || capture.id !== id || now - capture.at > MAX_AGE_MS) return null;
-  taken = capture;
-  return { origin: capture.origin, source: capture.source };
+  taken = fresh;
+  traceJS('zoom', 'take', { src: fresh.source });
+  return { origin: fresh.origin, source: fresh.source };
 }
 
 /**
@@ -101,11 +122,17 @@ const slot = (id: string, source: ZoomSourceKey) => `${source}\u0000${id}`;
 export function holdZoomingSeries(id: string, source: ZoomSourceKey): () => void {
   const key = slot(id, source);
   zoomingSources$[key].set((n) => (n ?? 0) + 1);
+  // Traced because "the source card came back unblanked" is a question about WHICH slot was held
+  // and when it was let go, and with several series pages stacked over each other — a series, its
+  // tag search, that same series again — there is no way to tell from the outside which of them
+  // owned which card. `src` is the card instance's key, so a hold and its release can be paired up.
+  traceJS('zoom', 'hold', { src: source, n: zoomingSources$[key].peek() ?? 0 });
   let released = false;
   return () => {
     if (released) return;
     released = true;
     const next = (zoomingSources$[key].peek() ?? 1) - 1;
+    traceJS('zoom', 'release', { src: source, n: next });
     if (next > 0) zoomingSources$[key].set(next);
     else zoomingSources$[key].delete();
   };

@@ -1368,8 +1368,16 @@ function SeriesReaderInstance({
       blankBackstopRef.current = null;
     }
     // Blank the ONE card this grew out of — not every card showing this series (see the module).
-    if (zoomSource && id) zoomReleaseRef.current = holdZoomingSeries(id, zoomSource.source);
-  }, [zoomSource, id]);
+    // Traced with this instance's DEPTH, which is the piece `zoom hold` in the module can't know:
+    // with a series, its tag search and that same series again all mounted at once, the question
+    // behind a card coming back unblanked is which of them owned it.
+    if (zoomSource && id) {
+      traceJS('zoom', 'blank', { depth, src: zoomSource.source });
+      zoomReleaseRef.current = holdZoomingSeries(id, zoomSource.source);
+    } else {
+      traceJS('zoom', 'blank.none', { depth });
+    }
+  }, [zoomSource, id, depth]);
   /** The copy reported pixels. Wired to its `onError` as well as its `onLoad` — a cover that is
    *  never going to draw is not a reason to keep two of it on screen forever. */
   const onZoomThumbPainted = useCallback(() => {
