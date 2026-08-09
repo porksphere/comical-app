@@ -46,7 +46,7 @@ export type ZoomOrigin = ZoomRect & { radius: number };
  */
 export type ZoomSourceKey = number;
 let nextSourceKey = 1;
-export function newZoomSourceKey(): ZoomSourceKey {
+function newZoomSourceKey(): ZoomSourceKey {
   return nextSourceKey++;
 }
 
