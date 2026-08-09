@@ -10,6 +10,7 @@ import {
   SETTLE_MS,
   settleEase,
   settleStep,
+  TOP_GUARD,
 } from '@/lib/slide-step';
 import { getTabBarHideOffset, setTabBarProgress } from '@/lib/tab-bar-visibility';
 
@@ -17,8 +18,8 @@ import { getTabBarHideOffset, setTabBarProgress } from '@/lib/tab-bar-visibility
 // height — see tab-bar-visibility), so the bar tracks the finger EXACTLY 1:1, X/Twitter-style:
 // translateY = progress * hideOffset = the accumulated scroll px. A span larger than the offset
 // (the old fixed 96 vs ~82) made the fully-hidden bar overshoot the screen edge, and a scroll-up
-// had to walk the invisible overshoot back before the bar appeared to move.
-const TOP_GUARD = 8;
+// had to walk the invisible overshoot back before the bar appeared to move. Where the bar COMMITS
+// to hidden is a separate, shared question — see `dismissTarget`.
 
 /**
  * Native only: reveals the tab bar as the screen scrolls up and commits it to shown-or-hidden when

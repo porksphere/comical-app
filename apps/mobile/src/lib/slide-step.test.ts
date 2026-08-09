@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 
-import { COMMIT_DISTANCE, dismissTarget, MAX_SCROLL_UNMEASURED, settleStep, slideStep } from './slide-step';
+import {
+  COMMIT_DISTANCE,
+  dismissTarget,
+  DISMISS_DISTANCE,
+  MAX_SCROLL_UNMEASURED,
+  settleStep,
+  slideStep,
+} from './slide-step';
 
 // The bar spans ~82px (its measured height) on a real device; use a round 100 here.
 const SPAN = 100;
@@ -143,6 +150,12 @@ describe('settleStep', () => {
 });
 
 describe('dismissTarget', () => {
+  // The real spans: the top bar slides its content height, the tab bar its measured height, which
+  // depends on whether the device has a home indicator.
+  const TOP_BAR = 60;
+  const TAB_BAR_INSET = 82;
+  const TAB_BAR_NO_INSET = 56;
+
   test('commits to fully hidden once the content has scrolled past the bar', () => {
     expect(dismissTarget(SPAN, SPAN)).toBe(SPAN);
     expect(dismissTarget(400, SPAN)).toBe(SPAN);
@@ -154,6 +167,32 @@ describe('dismissTarget', () => {
     expect(dismissTarget(20, SPAN)).toBe(0);
     expect(dismissTarget(SPAN - 1, SPAN)).toBe(0);
     expect(dismissTarget(0, SPAN)).toBe(0);
+  });
+
+  // The threshold used to be each bar's OWN span, so between the shortest and the tallest a release
+  // dismissed one bar and bounced the other back — one gesture, two answers, on a number that
+  // belonged to neither bar.
+  test('every bar commits at the same scroll depth, whatever its span', () => {
+    for (const y of [0, 20, TOP_BAR, 70, DISMISS_DISTANCE - 1]) {
+      expect(dismissTarget(y, TOP_BAR)).toBe(0);
+      expect(dismissTarget(y, TAB_BAR_INSET)).toBe(0);
+      expect(dismissTarget(y, TAB_BAR_NO_INSET)).toBe(0);
+    }
+    // ...and past it they all commit, each to its own span (that part IS per-bar — it's how far the
+    // bar has to travel to be gone, not when it decides to go).
+    expect(dismissTarget(DISMISS_DISTANCE, TOP_BAR)).toBe(TOP_BAR);
+    expect(dismissTarget(DISMISS_DISTANCE, TAB_BAR_INSET)).toBe(TAB_BAR_INSET);
+    expect(dismissTarget(DISMISS_DISTANCE, TAB_BAR_NO_INSET)).toBe(TAB_BAR_NO_INSET);
+  });
+
+  // The shared distance can only ever raise the threshold. A bar taller than it still waits for its
+  // own span, or it would commit further out than the content has scrolled and snap back to the
+  // hide ceiling on the next report — the pop that ceiling exists to prevent.
+  test('never commits a bar further out than the content has scrolled', () => {
+    const TALL = DISMISS_DISTANCE + 40;
+    expect(dismissTarget(DISMISS_DISTANCE, TALL)).toBe(0);
+    expect(dismissTarget(TALL - 1, TALL)).toBe(0);
+    expect(dismissTarget(TALL, TALL)).toBe(TALL);
   });
 
   test('only decides the resting place — tracking under the finger still moves 1:1', () => {
