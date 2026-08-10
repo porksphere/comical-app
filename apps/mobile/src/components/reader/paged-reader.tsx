@@ -360,12 +360,19 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // not where it ended up. The difference is the whole correctness of the thing: turning back from
   // page 2 to page 1 ends AT the start, and reading the edge at release would take that ordinary
   // page turn for a request to leave the chapter.
+  //
+  // And it only EXISTS where it could act. Gating on the edge costs a gesture rebuild each time the
+  // reader arrives at or leaves one — which is safe (a rebuilt gesture of the same shape updates
+  // its handlers in place rather than reattaching) and buys something worth more: through the whole
+  // middle of a chapter, which is nearly all of reading, there is no pan on this surface at all for
+  // the page's own gestures to arbitrate against.
   const fromStart = useSharedValue(false);
   const fromEnd = useSharedValue(false);
+  const atAnEdge = activeIndex <= 0 || activeIndex >= n - 1;
   const edgeTurn = useMemo(
     () =>
       Gesture.Pan()
-        .enabled(!zoomed && !standby)
+        .enabled(!zoomed && !standby && atAnEdge)
         .maxPointers(1)
         .activeOffsetX([-EDGE_ACTIVATE_PX, EDGE_ACTIVATE_PX])
         .failOffsetY([-EDGE_FAIL_PX, EDGE_FAIL_PX])
@@ -388,7 +395,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
             runOnJS(rightAction)();
           }
         }),
-    [zoomed, standby, width, leftAction, rightAction, atStart, atEnd, fromStart, fromEnd],
+    [zoomed, standby, atAnEdge, width, leftAction, rightAction, atStart, atEnd, fromStart, fromEnd],
   );
   // The list's own scroll, as a gesture RNGH can reason about — so the pan above runs ALONGSIDE it
   // rather than winning the touch off it.
@@ -405,6 +412,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // webtoon reader has always needed for the same reason.
   const nativeScroll = useMemo(() => Gesture.Native(), []);
   const listGesture = useMemo(() => Gesture.Simultaneous(nativeScroll, edgeTurn), [nativeScroll, edgeTurn]);
+  // BOTH of them, handed to every page — see ZoomablePage's `scrollGesture`.
+  const pageExternals = useMemo(() => [nativeScroll, edgeTurn], [nativeScroll, edgeTurn]);
 
   return (
     <View style={{ width, height }}>
@@ -483,7 +492,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
               onRight={rightAction}
               onToggleChrome={onToggleChrome}
               onZoomChange={handleZoomChange}
-              scrollGesture={nativeScroll}
+              scrollGesture={pageExternals}
             />
           )
         }

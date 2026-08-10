@@ -8,6 +8,8 @@ import {
   View,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated from 'react-native-reanimated';
@@ -46,6 +48,15 @@ type Props = {
    *  to the very end of the continuous list. Reliable in continuous mode where
    *  viewability-based page tracking makes `onEndReached`+last-page fragile. */
   onAdvance?: () => void;
+  /** The same pair, backwards: the previous chapter's name puts a "← Previous: …" sentinel ABOVE
+   *  page 1, and `onGoBack` is what scrolling up into it (or tapping it) fires.
+   *
+   *  Vertical mode has no stitched window to turn a page into — chapters here are one at a time, so
+   *  a boundary can only be a jump — but until now it could only be jumped FORWARD: the end of a
+   *  chapter had a sentinel and the start had nothing at all, so scrolling up at page 1 did what a
+   *  wall does. The sentinel is the same answer in both directions. */
+  prevChapterName?: string;
+  onGoBack?: () => void;
   /** True while this reader is the series page's decorative STRIP rather than the thing being
    *  read. Only effect: its standing page cross-fades in (see ReaderPage's `fadeMs`) instead of
    *  appearing — the paged reader also uses it to shrink its render window, which a webtoon list
@@ -63,6 +74,19 @@ const ESTIMATED_ASPECT = 3 / 2;
 // How close (px) to the bottom of the continuous list the scroll must get before
 // the next chapter auto-loads — roughly where the end-of-chapter sentinel enters view.
 const ADVANCE_TRIGGER_PX = 120;
+
+/** The chapter sentinels' height. Named because the continuous reader also needs it as the header's
+ *  size hint (an unmeasured header would put its `initialScrollIndex` in the wrong place) and as
+ *  the distance that decides a backward crossing. */
+const SENTINEL_HEIGHT = 96;
+/** How much of the PREVIOUS-chapter sentinel has to be pulled into view before the crossing fires.
+ *
+ *  Half of it, and the arithmetic is what keeps this from firing on its own: the list opens with
+ *  item 0 at the top, which puts the whole sentinel above the viewport (offset = its height), so
+ *  reaching the halfway mark takes a deliberate upward scroll. There is no equivalent of the
+ *  forward direction's "did the content even scroll" guard to write, because arriving here IS the
+ *  gesture. */
+const BACK_TRIGGER_PX = SENTINEL_HEIGHT / 2;
 
 /**
  * Vertical webtoon reader — dispatches to one of two genuinely different
@@ -94,7 +118,20 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
  * detector wrapping the list (see `nativeScroll`).
  */
 const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function WebtoonContinuous(
-  { pages, width, height, initialPage, onPageChange, onToggleChrome, onZoomChange, nextChapterName, onAdvance, standby },
+  {
+    pages,
+    width,
+    height,
+    initialPage,
+    onPageChange,
+    onToggleChrome,
+    onZoomChange,
+    nextChapterName,
+    onAdvance,
+    prevChapterName,
+    onGoBack,
+    standby,
+  },
   ref,
 ) {
   const listRef = useRef<LegendListRef>(null);
@@ -132,13 +169,29 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
   // screen doesn't auto-skip on mount — its sentinel stays tap-only. `firedRef`
   // makes it a once-per-chapter trigger; it resets when `pages` (the chapter) change.
   const firedRef = useRef(false);
+  const backFiredRef = useRef(false);
   useEffect(() => {
     firedRef.current = false;
+    backFiredRef.current = false;
   }, [pages]);
   const onScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      if (!onAdvance || firedRef.current) return;
       const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+      // Backward first: pulling the previous-chapter sentinel into view. Once per chapter, like the
+      // forward crossing — the jump remounts this reader anyway, but a second fire in the frames
+      // before that lands would ask to go back twice.
+      //
+      // Gated on the content being long enough to have pushed the sentinel off screen in the first
+      // place. A chapter that fits inside the viewport can't scroll, so it sits at offset 0 with
+      // the sentinel already in view, and every scroll event it ever reports would read as a
+      // request to leave — the same reason the forward crossing checks before trusting "at the end".
+      const canReachSentinel = contentSize.height > layoutMeasurement.height + SENTINEL_HEIGHT;
+      if (onGoBack && prevChapterName && !backFiredRef.current && canReachSentinel && contentOffset.y <= BACK_TRIGGER_PX) {
+        backFiredRef.current = true;
+        onGoBack();
+        return;
+      }
+      if (!onAdvance || firedRef.current) return;
       const scrollable = contentSize.height > layoutMeasurement.height + ADVANCE_TRIGGER_PX;
       const atBottom = contentOffset.y + layoutMeasurement.height >= contentSize.height - ADVANCE_TRIGGER_PX;
       if (scrollable && atBottom) {
@@ -146,7 +199,7 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
         onAdvance();
       }
     },
-    [onAdvance],
+    [onAdvance, onGoBack, prevChapterName],
   );
 
   useImperativeHandle(
@@ -225,8 +278,15 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
               // be left to whatever the list would otherwise pick.
               onScroll={onScroll}
               scrollEventThrottle={16}
+              // Above page 1, so scrolling up has somewhere to go. Its size is declared rather than
+              // measured: `initialScrollIndex` places item 0 below it, and a header of unknown size
+              // would put that landing in the wrong place on the first frame.
+              ListHeaderComponent={
+                prevChapterName ? <ChapterSentinel direction="prev" name={prevChapterName} onPress={onGoBack} /> : null
+              }
+              estimatedHeaderSize={prevChapterName ? SENTINEL_HEIGHT : 0}
               ListFooterComponent={
-                nextChapterName ? <ChapterSentinel name={nextChapterName} onPress={onAdvance} /> : null
+                nextChapterName ? <ChapterSentinel direction="next" name={nextChapterName} onPress={onAdvance} /> : null
               }
               renderItem={({ item, index }) => (
                 <WebtoonRow
@@ -292,7 +352,19 @@ function WebtoonRow({
  * list's paging is frozen so a one-finger drag pans instead of turning.
  */
 const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPaged(
-  { pages, width, height, initialPage, onPageChange, onToggleChrome, onZoomChange, onEndReached, standby },
+  {
+    pages,
+    width,
+    height,
+    initialPage,
+    onPageChange,
+    onToggleChrome,
+    onZoomChange,
+    onEndReached,
+    prevChapterName,
+    onGoBack,
+    standby,
+  },
   ref,
 ) {
   const listRef = useRef<LegendListRef>(null);
@@ -321,14 +393,34 @@ const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPage
     [n],
   );
 
+  // The previous-chapter sentinel is a WHOLE VIEWPORT here, not the short row the continuous strip
+  // uses: every cell in this list is one screen tall, and a header of any other height would put
+  // the snap grid off by the difference for the rest of the chapter. Sized that way, it is simply
+  // the page before page 1 — settle on it and the crossing fires, which is the same "swipe onto the
+  // transition" the paginated readers this one is modelled on use.
+  const hasPrev = !!prevChapterName && !!onGoBack;
+  const backFiredRef = useRef(false);
+  useEffect(() => {
+    backFiredRef.current = false;
+  }, [pages]);
+
   const onPageChangeRef = useRef(onPageChange);
   onPageChangeRef.current = onPageChange;
   const onMomentumScrollEnd = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const idx = Math.round(e.nativeEvent.contentOffset.y / height);
+      // The header shifts every page down by one screen, so the offset names a page only after it
+      // is taken back out. A negative index is the sentinel itself.
+      const idx = Math.round(e.nativeEvent.contentOffset.y / height) - (hasPrev ? 1 : 0);
+      if (idx < 0) {
+        if (!backFiredRef.current) {
+          backFiredRef.current = true;
+          onGoBack?.();
+        }
+        return;
+      }
       onPageChangeRef.current(Math.max(0, Math.min(n - 1, idx)));
     },
-    [height, n],
+    [height, n, hasPrev, onGoBack],
   );
 
   return (
@@ -356,6 +448,13 @@ const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPage
       onMomentumScrollEnd={onMomentumScrollEnd}
       onEndReachedThreshold={0.05}
       onEndReached={onEndReached}
+      // One viewport tall, so the paging grid still lands on page boundaries — see above.
+      ListHeaderComponent={
+        hasPrev ? (
+          <ChapterSentinel direction="prev" name={prevChapterName!} onPress={onGoBack} style={{ width, height }} />
+        ) : null
+      }
+      estimatedHeaderSize={hasPrev ? height : 0}
       renderItem={({ item, index }) => (
         <WebtoonPagedRow
           uri={item}
@@ -421,15 +520,30 @@ function WebtoonPagedRow({
   );
 }
 
-/** End-of-chapter row appended below the last page of the continuous webtoon list
- *  (mirrors comical-web's scroll-mode "Next: … →" sentinel). Tappable, and also the
- *  visual cue for the scroll-to-end auto-advance — scrolling it into view loads the
- *  next chapter. */
-function ChapterSentinel({ name, onPress }: { name: string; onPress?: () => void }) {
+/** A chapter boundary, as a row: below the last page ("Next: … →", mirroring comical-web's
+ *  scroll-mode sentinel) or above the first ("← Previous: …"). Tappable, and also the visual cue
+ *  for the scroll-into-it auto-crossing in either direction.
+ *
+ *  `style` lets the paginated variant size it to a whole viewport — there, every row is exactly one
+ *  screen and a short sentinel would put the snap grid off by its own height. */
+function ChapterSentinel({
+  direction,
+  name,
+  onPress,
+  style,
+}: {
+  direction: 'prev' | 'next';
+  name: string;
+  onPress?: () => void;
+  style?: StyleProp<ViewStyle>;
+}) {
   return (
-    <Pressable testID="reader.chapter-sentinel" style={styles.sentinel} onPress={onPress}>
+    <Pressable
+      testID={direction === 'next' ? 'reader.chapter-sentinel' : 'reader.chapter-sentinel.prev'}
+      style={[styles.sentinel, style]}
+      onPress={onPress}>
       <Text style={styles.sentinelText} numberOfLines={2}>
-        Next: {name} →
+        {direction === 'next' ? `Next: ${name} →` : `← Previous: ${name}`}
       </Text>
     </Pressable>
   );
@@ -437,7 +551,7 @@ function ChapterSentinel({ name, onPress }: { name: string; onPress?: () => void
 
 const styles = StyleSheet.create({
   sentinel: {
-    minHeight: 96,
+    minHeight: SENTINEL_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 32,

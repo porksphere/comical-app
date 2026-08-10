@@ -41,11 +41,13 @@ type Props = {
   onRight: () => void;
   onToggleChrome: () => void;
   onZoomChange: (zoomed: boolean) => void;
-  /** The list's own scroll (`Gesture.Native()`), when the pager has put a detector on it. Every
-   *  gesture in here must then declare that it can run alongside it — a page lives INSIDE that
-   *  scroller, and a descendant that hasn't said so loses the arbitration. Omitted where the
-   *  scroller isn't in RNGH's graph at all, which is how this file used to get away with nothing. */
-  scrollGesture?: GestureType;
+  /** Every gesture the PAGER has mounted on its scroller — its `Gesture.Native()` and its edge pan.
+   *  A page lives inside that scroller, so each of these arbitrates against the gestures in here,
+   *  and a descendant that hasn't declared it can run alongside them loses. All of them, not just
+   *  the scroll: the edge pan is a pan on the same surface and takes the double-tap with it.
+   *  Omitted where the scroller isn't in RNGH's graph at all, which is how this file used to get
+   *  away with declaring nothing. */
+  scrollGesture?: GestureType[];
 };
 
 // Non-interactive markers only: navigation taps are handled by the GestureDetector
@@ -127,9 +129,9 @@ export function ZoomablePage({
     .enabled(pageFit === 'fit-width' && overflowsVertically)
     .activeOffsetY([-10, 10])
     .failOffsetX([-15, 15])
-    // Alongside the list's scroll where there is one to name (see `scrollGesture`). The axes
-    // already separate the two — this is only about being allowed to run at all.
-    .simultaneousWithExternalGesture(...(scrollGesture ? [scrollGesture] : []))
+    // Alongside whatever the pager mounted on its scroller (see `scrollGesture`). The axes already
+    // separate these — this is only about being allowed to run at all.
+    .simultaneousWithExternalGesture(...(scrollGesture ?? []))
     .onStart(() => {
       savedContentTy.set(contentTy.value);
       runOnJS(setContentPanning)(true);

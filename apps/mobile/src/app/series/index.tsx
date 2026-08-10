@@ -2460,6 +2460,7 @@ function SeriesReaderInstance({
               hasPrevChapter={!!prevChapter}
               hasNextChapter={!!nextChapter}
               nextChapterName={nextChapter?.name}
+              prevChapterName={prevChapter?.name}
               onCrossChapter={goAdjacentChapter}
               onSkipChapter={(delta) => {
                 showChrome();
@@ -3041,6 +3042,9 @@ const ReaderPane = forwardRef<
     hasPrevChapter: boolean;
     hasNextChapter: boolean;
     nextChapterName?: string;
+    /** The chapter BEHIND this one, for the vertical reader's backward sentinel. The paged reader
+     *  has no use for it — it crosses backward by turning a page in its stitched window. */
+    prevChapterName?: string;
     /** Paging off either end of the chapter (delta −1 lands on the previous chapter's LAST page). */
     onCrossChapter: (delta: 1 | -1) => void;
     /** The navigator's skip buttons — always land on the target chapter's first page. */
@@ -3082,6 +3086,7 @@ const ReaderPane = forwardRef<
     hasPrevChapter,
     hasNextChapter,
     nextChapterName,
+    prevChapterName,
     onCrossChapter,
     onSkipChapter,
     chromeVisible,
@@ -3392,6 +3397,11 @@ const ReaderPane = forwardRef<
           // The continuous strip advances via its end sentinel, the fit-page variant via the
           // end-reached + last-page check.
           nextChapterName={chaptered ? nextChapterName : undefined}
+          // Backward, which vertical mode had no way to do at all: a sentinel above page 1, and the
+          // same explicit jump the skip button takes (landing on the previous chapter's LAST page,
+          // so scrolling up continues where the reading does).
+          prevChapterName={chaptered && hasPrevChapter ? prevChapterName : undefined}
+          onGoBack={chaptered && hasPrevChapter ? () => onCrossChapter(-1) : undefined}
           onAdvance={chaptered && hasNextChapter ? () => onCrossChapter(1) : undefined}
           onEndReached={
             chaptered && hasNextChapter
