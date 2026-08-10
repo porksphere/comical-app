@@ -755,7 +755,14 @@ function SeriesReaderInstance({
       // nothing further to wait for and the run is created without it. `NO_SEGMENTS` — one stable
       // array, not a fresh `[]` — because this return feeds the adjust-state-on-render below, and
       // a new identity every render is an infinite loop.
-      const awaitingPrev = !!prevChapter && prevPages === undefined && !prevPagesError;
+      //
+      // Not knowing yet whether there IS a previous chapter counts as waiting, and that case is
+      // not exotic — it is how RESUMING works. A resumed target comes from the reading history,
+      // which is local and instant, so the pages request goes out (and can come back) while the
+      // chapter LIST is still in flight; until that list lands there is no `prevChapter` to have a
+      // page list for, and a run built in that gap is built blind. The same grace covers it.
+      const awaitingPrev =
+        !!targetChapterId && (!chapters || (!!prevChapter && prevPages === undefined && !prevPagesError));
       if (awaitingPrev && graceOverFor !== currentId) return { segments: NO_SEGMENTS, runKey: run.key };
       const segs: Segment[] = [];
       if (prevSeg) segs.push(prevSeg);
@@ -781,6 +788,7 @@ function SeriesReaderInstance({
     stitched,
     targetChapterId,
     target?.chapterName,
+    chapters,
     prevChapter,
     prevPages,
     prevPagesError,
