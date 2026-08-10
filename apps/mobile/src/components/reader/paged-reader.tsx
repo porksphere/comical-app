@@ -320,21 +320,18 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
 
   // ── A swipe off either END of the list is a chapter turn ───────────────────
   //
-  // The list holds the whole stitched window, so its ends are the ends of what has been stitched —
-  // and past them a `pagingEnabled` FlatList can only rubber-band. That is fine wherever the window
-  // is going to grow into the gap (the reader screen appends the next chapter as soon as its page
-  // list lands), and it is a dead end at the HEAD: a run takes its previous chapter at the instant
-  // it is created or never, precisely so nothing is ever inserted in front of a live pager (the
-  // shift that costs is written up at the screen's `run` machinery). A cold open — page list for
-  // the previous chapter still in flight when the run is made — therefore parks the reader on a
-  // first page with nothing behind it, and swiping back from there did nothing at all.
+  // THE FALLBACK, not the way a chapter boundary is normally crossed. The window usually holds the
+  // chapter on either side, and crossing one is then an ordinary page turn that happens to relabel
+  // (the screen's `run` machinery, which waits for the previous chapter's page list before building
+  // a window, exists to make that the common case). But a window can still come up short — a
+  // neighbour list that never arrived, or a chapter the run has already crossed back into and can
+  // no longer grow toward — and at those ends a `pagingEnabled` FlatList can only rubber-band.
   //
-  // What it should do, and what the WEB pager has always done with the same swipe (see
-  // paged-reader.web.tsx's finalizeSwipe), is hand the drag to the reader as a chapter turn:
-  // `onPrev`/`onNext` — the very callbacks the tap zones already fire at this boundary. So this is
-  // the tap-zone answer, reached by swiping. Nothing about the window changes, which is the point:
-  // the crossing goes through the screen's explicit-jump path (remount, seeded on the neighbouring
-  // chapter's landing page) instead of growing the pager under the reader's feet.
+  // A dead end is the wrong answer there. The WEB pager has always handed the same swipe on (see
+  // paged-reader.web.tsx's finalizeSwipe), and so does the tap zone at that page, so this hands it
+  // to the same place: `onPrev`/`onNext`, which cross by jumping — the screen remounts the pane on
+  // the neighbouring chapter's landing page. Nothing about the window changes, which is the point:
+  // growing a live pager at the head is the shift this whole design is built to avoid.
   //
   // Composed `Simultaneous` with the list's own scroll — the arrangement the webtoon reader uses to
   // put gestures over a live scroller — so the rubber-band still happens under the finger and this

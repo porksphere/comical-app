@@ -119,6 +119,18 @@ const CHROME_HIDE_MS = 3000;
 // accessibility tree.
 const CHROME_AUTO_HIDE = process.env.EXPO_PUBLIC_COMICAL_DEMO_FAST !== '1';
 const WARM_BEHIND = 2;
+/**
+ * The longest a NEW stitched window will wait for the previous chapter's page list before being
+ * created without it (see the `run` machinery).
+ *
+ * A ceiling, not a delay — both page lists are requested in the same commit, so what is actually
+ * being waited on is the gap between two responses already in flight, and a boundary visited before
+ * (every neighbour list is fetched eagerly and the query cache is persisted) resolves in the same
+ * render and waits for nothing. What the ceiling buys is the case that can't be waited out: a
+ * source that is slow or gone. There it spends this much of the "Loading…" already on screen and
+ * then goes on without it, rather than holding the reader on a request that may never land.
+ */
+const PREV_WINDOW_GRACE_MS = 600;
 const IS_WEB = Platform.OS === 'web';
 const IS_IOS = Platform.OS === 'ios';
 // The reader surface's tone (the reference's `#reader-view`: #0f0f0f, not pure black).
@@ -397,6 +409,11 @@ type ReadTarget = { chapterId?: string; chapterName?: string; start: number | 'l
  *  boundary swipe an ordinary page turn instead of a bounce-and-remount. */
 type Segment = { id: string; name?: string; pages: string[] };
 
+/** "No window (yet)", as ONE array rather than a fresh `[]` per render: the run merge feeds an
+ *  adjust-state-on-render `setRun`, which compares by identity — a new empty array every render is
+ *  an infinite one. */
+const NO_SEGMENTS: Segment[] = [];
+
 /** Same params a series card forwards to `/series` (see series-card.tsx buildHref) — including
  *  the percent-encoded bridge name / cover, decoded the same way series.tsx does. */
 type SeriesReaderParams = {
@@ -584,17 +601,6 @@ function SeriesReaderInstance({
   // which goes first. Nothing here delays a request that is ready to go.
 
   const error = queryError ? (queryError as Error).message || 'Failed to load pages' : null;
-  const readerReady = !!target && !!pages;
-
-  // What the reader side has to render, and WHEN it got it. A flash on the first reveal is a
-  // question about ordering — whether the reader becomes the visible side before it has pages, and
-  // for how long — and that is only answerable against the reveal mark on the same clock. Both
-  // halves are traced rather than reasoned about because the difference between "300ms of Loading"
-  // and "one frame with nothing opaque behind it" is invisible in source and obvious in a
-  // recording.
-  useEffect(() => {
-    traceJS('reader', 'ready', { ready: readerReady, target: !!target, pages: pages?.length ?? 0 });
-  }, [readerReady, target, pages]);
 
   // ── Adjacent chapters (chaptered only; no stitching — see the header comment) ──
   const currentChapter = useMemo(
@@ -667,7 +673,7 @@ function SeriesReaderInstance({
   //
   // The cost is two page LISTS — cache-first, and a list is just URLs. It does not mount page cells
   // or warm images: both of those key off `standby`/`detailsSettled` in ReaderPane, unchanged.
-  const { data: prevPages } = useQuery({
+  const { data: prevPages, error: prevPagesError } = useQuery({
     ...chapterPagesQuery(ds, mock, bridgeId ?? '', id ?? '', prevChapter?.id ?? ''),
     enabled: stitched && !!id && !!prevChapter,
   });
@@ -698,14 +704,40 @@ function SeriesReaderInstance({
   // was. A run now takes whichever neighbours are already loaded when it is created, and after that
   // only ever appends.
   //
-  // The cost is that a cold first open — no cached page list for the previous chapter yet — reads
-  // backward across its opening boundary through `onCrossChapter(-1)` (an explicit jump, one
-  // remount) instead of a seamless swipe. That path already exists for a cold window, it is one
-  // chapter boundary in one direction, and the eager fetch means the next run to be created has
-  // the list in hand. A visible flash on every first open is not worth trading for it.
+  // ── …and why the window is worth WAITING a beat for ─────────────────────────────────────────
+  // Creation being the only moment a run can take its previous chapter makes that moment worth
+  // getting right. A run created the instant this chapter's own pages land is a run created into
+  // a race: the neighbour's list was requested in the same commit and is usually a beat behind, so
+  // the window came out one chapter short and the boundary it was short of was the one the reader
+  // was parked on — swipe back from page 1 and there was nothing there to swipe to.
+  //
+  // So a NEW run holds for the previous chapter's list, and the pane holds with it (`readerReady`
+  // below) rather than mounting onto a window that is about to be wrong. Not indefinitely: the
+  // hold is capped at PREV_WINDOW_GRACE_MS, past which the run is created without it and the
+  // backward boundary falls back to the pager's off-the-end hand-off (paged-reader's `edgeTurn`),
+  // which crosses by jumping rather than by turning. The cap is what keeps a slow or dead source
+  // from holding the reader: it can cost a moment of the "Loading…" that was already on screen,
+  // never the page itself.
+  //
+  // What it must NOT become is a wait for something already in hand — every neighbour list is
+  // fetched eagerly and persisted, so the second visit to a boundary resolves in the same render
+  // and holds for nothing at all.
   const [run, setRun] = useState<{ key: number; segs: Segment[] }>({ key: 0, segs: [] });
+  // The grace clock, armed the moment a run COULD be created (this chapter's pages are in) and
+  // belonging to that chapter, so navigating re-arms it. Keyed by string rather than timestamped so
+  // nothing here has to read a clock during render. A chapter whose grace has run out stays run out
+  // for the life of this screen, deliberately: by then its neighbour's list has either arrived — in
+  // which case it is cached and the next run takes it with no wait at all — or it is not coming,
+  // and waiting a second time would buy the same nothing twice.
+  const graceKey = pages && stitched ? (targetChapterId ?? DIRECT_CHAPTER_ID) : null;
+  const [graceOverFor, setGraceOverFor] = useState<string | null>(null);
+  useEffect(() => {
+    if (!graceKey) return;
+    const t = setTimeout(() => setGraceOverFor(graceKey), PREV_WINDOW_GRACE_MS);
+    return () => clearTimeout(t);
+  }, [graceKey]);
   const { segments, runKey } = useMemo(() => {
-    if (!pages || !stitched) return { segments: [] as Segment[], runKey: run.key };
+    if (!pages || !stitched) return { segments: NO_SEGMENTS, runKey: run.key };
     const currentId = targetChapterId ?? DIRECT_CHAPTER_ID;
     const prevSeg: Segment | null =
       targetChapterId && prevChapter && prevPages?.length
@@ -718,6 +750,13 @@ function SeriesReaderInstance({
 
     const at = run.segs.findIndex((s) => s.id === currentId);
     if (at === -1) {
+      // The hold (see above). It waits on the RESPONSE, not on a usable segment: a chapter that
+      // comes back with no pages, or a request that comes back an error, has answered — there is
+      // nothing further to wait for and the run is created without it. `NO_SEGMENTS` — one stable
+      // array, not a fresh `[]` — because this return feeds the adjust-state-on-render below, and
+      // a new identity every render is an infinite loop.
+      const awaitingPrev = !!prevChapter && prevPages === undefined && !prevPagesError;
+      if (awaitingPrev && graceOverFor !== currentId) return { segments: NO_SEGMENTS, runKey: run.key };
       const segs: Segment[] = [];
       if (prevSeg) segs.push(prevSeg);
       segs.push({ id: currentId, name: target?.chapterName, pages });
@@ -736,7 +775,19 @@ function SeriesReaderInstance({
     if (refreshCurrent) segs[at] = { id: currentId, name: target?.chapterName, pages };
     if (addNext) segs.push(nextSeg);
     return { segments: segs, runKey: run.key };
-  }, [run, pages, stitched, targetChapterId, target?.chapterName, prevChapter, prevPages, nextChapter, nextPages]);
+  }, [
+    run,
+    pages,
+    stitched,
+    targetChapterId,
+    target?.chapterName,
+    prevChapter,
+    prevPages,
+    prevPagesError,
+    nextChapter,
+    nextPages,
+    graceOverFor,
+  ]);
   // Catch the run state up DURING render (React's adjust-state-on-render pattern — the merge
   // above returns `run.segs` by identity when there's nothing to add, which is what stops this
   // from looping). `!pages` (a chapter still loading) renders no window at all, but must not wipe
@@ -744,6 +795,38 @@ function SeriesReaderInstance({
   if (pages && stitched && (segments !== run.segs || runKey !== run.key)) {
     setRun({ key: runKey, segs: segments });
   }
+
+  // Ready to read: the target's own pages, AND — where the pager is stitched — the window they go
+  // in. Holding the pane back for the window is the point of the hold above: a pane mounted onto a
+  // one-chapter window reads `initialPage` there and then, and no later arrival can move it.
+  const readerReady = !!target && !!pages && (!stitched || segments.length > 0);
+
+  // What the reader side has to render, and WHEN it got it. A flash on the first reveal is a
+  // question about ordering — whether the reader becomes the visible side before it has pages, and
+  // for how long — and that is only answerable against the reveal mark on the same clock. Both
+  // halves are traced rather than reasoned about because the difference between "300ms of Loading"
+  // and "one frame with nothing opaque behind it" is invisible in source and obvious in a
+  // recording.
+  useEffect(() => {
+    traceJS('reader', 'ready', {
+      ready: readerReady,
+      target: !!target,
+      pages: pages?.length ?? 0,
+      segs: segments.length,
+    });
+  }, [readerReady, target, pages, segments]);
+
+  // The hand-off's destination, warmed. Where the previous chapter did NOT make it into the window
+  // — the grace ran out, or it is a chapter the run crossed back into and can no longer grow toward
+  // — going back is the pager's off-the-end jump, and it lands on that chapter's LAST page. The
+  // pane's own warm-ahead can't reach it: it walks the window, and this page is outside it by
+  // definition. So the screen warms the few pages the jump can land on, and the crossing arrives on
+  // an image like any other. Standby is excluded like every other image request on this screen.
+  useEffect(() => {
+    if (!stitched || detailsSettled || !prevChapter || !prevPages?.length) return;
+    if (segments.some((s) => s.id === prevChapter.id)) return;
+    warmPrefetch(prevPages.slice(-1 - WARM_BEHIND));
+  }, [stitched, detailsSettled, prevChapter, prevPages, segments]);
 
   // A stitched crossing settled: flush of the OLD chapter's progress already happened in the pane;
   // this just relabels which chapter is "current" WITHOUT remounting (the pane's key is the run,
@@ -2094,10 +2177,18 @@ function SeriesReaderInstance({
   );
   const openPageFromDetails = useCallback(
     (pageIndex: number) => {
+      // Both paths, because the pane is not guaranteed to be mounted: a window still forming (see
+      // the run's hold) has no pager to drive, so the target carries the landing page and the pane
+      // seeds from it instead. A pane that IS mounted ignores the seed — `start` is read once, at
+      // mount — and the direct call is what moves it.
       paneRef.current?.goTo(pageIndex, false);
+      setOverride((o) => {
+        const from = o ?? derivedTarget;
+        return from ? { ...from, start: pageIndex } : { start: pageIndex };
+      });
       setRevealed(0);
     },
-    [setRevealed],
+    [setRevealed, derivedTarget],
   );
   // The Read button/cover: the pane already sits at the same resume point Read would compute.
   const startReadingFromDetails = useCallback(() => setRevealed(0), [setRevealed]);
@@ -3150,12 +3241,19 @@ const ReaderPane = forwardRef<
   );
 
   // ── Warm-ahead ──
+  // Over the whole STITCHED window, not just this chapter. The pages either side of a boundary
+  // belong to two different chapters, so a chapter-local warm window stops dead at page 1 — and
+  // the page immediately behind page 1, the previous chapter's last, is precisely the one a
+  // backward swipe lands on. Warming the flat strip is what makes that turn arrive on an image
+  // instead of on a placeholder, the same as any other page turn.
   const warmAround = useCallback(
     (index: number) => {
-      if (!pages.length) return;
-      warmPrefetch(pages.slice(Math.max(0, index - WARM_BEHIND), index + 1 + settings.prefetchAhead));
+      const at = stitched ? prefixLen + index : index;
+      const from = Math.max(0, at - WARM_BEHIND);
+      const to = at + 1 + settings.prefetchAhead;
+      warmPrefetch(stitched ? flatItems.slice(from, to).map((item) => item.uri) : pages.slice(from, to));
     },
-    [pages, settings.prefetchAhead],
+    [pages, stitched, flatItems, prefixLen, settings.prefetchAhead],
   );
   useEffect(() => {
     // Standby (the collapsed strip) loads nothing beyond the visible page; the flip back to
