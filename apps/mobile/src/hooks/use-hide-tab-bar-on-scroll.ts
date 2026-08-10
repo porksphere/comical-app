@@ -5,6 +5,7 @@ import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { notifyScrollActivity, subscribeScrollPhase, type ScrollPhase } from '@/lib/scroll-release';
 import {
   COMMIT_DISTANCE,
+  dismissesNow,
   dismissTarget,
   MAX_SCROLL_UNMEASURED,
   SETTLE_MS,
@@ -123,9 +124,12 @@ export function useHideTabBarOnScroll() {
       // bar to leave — never parked half-way. See `dismissTarget`.
       const hideTo = dismissTarget(lastY.current, getTabBarHideOffset());
       const earned = up.current >= COMMIT_DISTANCE;
-      // An earned reveal, and any dismissal, finish the moment the finger lifts — the bar shouldn't
-      // still be moving after a fling has started.
+      // An earned reveal, and a dismissal that commits to HIDDEN, finish the moment the finger lifts
+      // — the bar shouldn't still be moving after a fling has started. A dismissal that would bounce
+      // the bar back waits for `rest` instead, so a flick from the top isn't answered on the offset
+      // the fling STARTED at. See `dismissesNow`.
       if (earned || up.current === 0) {
+        if (!earned && !dismissesNow(hideTo, phase === 'rest')) return;
         up.current = earned ? COMMIT_DISTANCE : 0;
         settleTo(earned ? 0 : hideTo);
         return;
