@@ -15,16 +15,21 @@ import {
   type NativeSyntheticEvent,
   type ViewToken,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import {
+  runOnJS,
   scrollTo,
   useAnimatedReaction,
   useAnimatedRef,
+  useSharedValue,
   type SharedValue,
 } from 'react-native-reanimated';
 
 import { STANDBY_FADE_MS } from '@/components/reader/reader-page';
 import { ZoomablePage } from '@/components/reader/zoomable-page';
 import type { PageFit } from '@/hooks/use-reader-settings';
+import { BACK_ACTIVATE_DOMINANCE } from '@/lib/back-swipe';
+import { releaseCommittedEitherWay } from '@/lib/gesture-release';
 
 export type PagedReaderHandle = {
   goToPage: (logical: number, animated?: boolean) => void;
@@ -46,6 +51,23 @@ export type ReaderPageItem = { uri: string; key: string; pageNumber: number };
 /** Module-level so it's stable without a hook — FlatList keeps the first one it's given. */
 const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 60 };
 
+/**
+ * ── Swiping off either END of the list (see `edgeTurn`) ──────────────────────
+ *
+ * Rightward travel that hands the drag to the edge pan. Ten points, for the same reason
+ * `lib/back-swipe.ts` uses ten: UIScrollView claims a touch at roughly that distance, and a pan
+ * that asks for more than the scroller does is a pan the scroller has already stopped feeding.
+ */
+const EDGE_ACTIVATE_PX = 10;
+/** Vertical travel that gives the drag up instead — in paged mode that axis belongs to the series
+ *  page's collapse/dismiss pan. Derived from the activation distance through the same dominance the
+ *  back-swipe activates on, never dialled on its own. */
+const EDGE_FAIL_PX = Math.round(EDGE_ACTIVATE_PX * BACK_ACTIVATE_DOMINANCE);
+/** How far across the page the release has to be HEADED (translation + projected velocity — see
+ *  lib/gesture-release) to count as asking for the chapter next door. A quarter of the width, the
+ *  same commitment the series page asks of a reveal. */
+const EDGE_TURN_FRACTION = 0.25;
+
 type Props = {
   pages: ReaderPageItem[];
   width: number;
@@ -60,6 +82,9 @@ type Props = {
    *  fast flick, not just the one it lands on. For display only (the pill and
    *  toolbar count along); nothing that writes should hang off it. */
   onVisiblePageChange?: (logical: number) => void;
+  /** A page turn the list itself can't make: the tap zones fire these at any page, and a swipe off
+   *  either END of the stitched window is handed to them too (see `edgeTurn`) — which is how a
+   *  chapter boundary the window doesn't cover is crossed by swiping rather than only by tapping. */
   onPrev: () => void;
   onNext: () => void;
   onToggleChrome: () => void;
@@ -95,6 +120,10 @@ type Props = {
  * Each page also supports pinch / double-tap zoom (see ZoomablePage). While a
  * page is zoomed the FlatList scroll is disabled so a one-finger drag pans the
  * image instead of turning the page.
+ *
+ * A swipe that runs off either END of the list — where the scroller has nothing
+ * left to give and can only rubber-band — is handed to `onPrev`/`onNext` as a
+ * chapter turn, the same thing a tap in that zone does there (see `edgeTurn`).
  *
  * The reader screen stitches adjacent chapters into `pages`, extending that
  * window as you cross a boundary. It appends at the tail wherever it can, so the
@@ -200,7 +229,16 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     reportVisibleRef.current(first.index);
   });
 
-  // Both refs above are rewritten AFTER each render rather than during it.
+  // Where the list is PARKED, for the edge pan further down to read on the UI thread. Shared values
+  // rather than the render's own `activeIndex` so that pan never has to be rebuilt as the reader
+  // moves: a gesture rebuilt mid-drag is one whose criteria changed under the finger, and this
+  // particular one would change them on the most ordinary turn there is (page 1 → 2 flips
+  // `atStart` while the finger is still down).
+  const atStart = useSharedValue(false);
+  const atEnd = useSharedValue(false);
+
+  // Both refs above (and the two shared values) are rewritten AFTER each render rather than during
+  // it.
   //
   // They were written inline in the render body until this pass, which the React
   // Compiler forbids — and it had never said so, because it was quietly bailing
@@ -214,6 +252,8 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   useLayoutEffect(() => {
     reportVisibleRef.current = (physical: number) => onVisiblePageChange?.(toLogical(physical));
     scrubbingRef.current = !!scrubbing;
+    atStart.set(activeIndex <= 0);
+    atEnd.set(activeIndex >= n - 1);
   });
 
   // The scrubber's live drag, resolved entirely on the UI thread — a shared value
@@ -278,6 +318,67 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   const leftAction = rtl ? onNext : onPrev;
   const rightAction = rtl ? onPrev : onNext;
 
+  // ── A swipe off either END of the list is a chapter turn ───────────────────
+  //
+  // The list holds the whole stitched window, so its ends are the ends of what has been stitched —
+  // and past them a `pagingEnabled` FlatList can only rubber-band. That is fine wherever the window
+  // is going to grow into the gap (the reader screen appends the next chapter as soon as its page
+  // list lands), and it is a dead end at the HEAD: a run takes its previous chapter at the instant
+  // it is created or never, precisely so nothing is ever inserted in front of a live pager (the
+  // shift that costs is written up at the screen's `run` machinery). A cold open — page list for
+  // the previous chapter still in flight when the run is made — therefore parks the reader on a
+  // first page with nothing behind it, and swiping back from there did nothing at all.
+  //
+  // What it should do, and what the WEB pager has always done with the same swipe (see
+  // paged-reader.web.tsx's finalizeSwipe), is hand the drag to the reader as a chapter turn:
+  // `onPrev`/`onNext` — the very callbacks the tap zones already fire at this boundary. So this is
+  // the tap-zone answer, reached by swiping. Nothing about the window changes, which is the point:
+  // the crossing goes through the screen's explicit-jump path (remount, seeded on the neighbouring
+  // chapter's landing page) instead of growing the pager under the reader's feet.
+  //
+  // Composed `Simultaneous` with the list's own scroll — the arrangement the webtoon reader uses to
+  // put gestures over a live scroller — so the rubber-band still happens under the finger and this
+  // pan only reads the release. It activates on horizontal travel alone, at the scroller's own
+  // claim distance (see EDGE_ACTIVATE_PX), and one finger only, so a pinch stays a pinch.
+  //
+  // What it measures is where the list was parked when the FINGER LANDED, latched in `onBegin` —
+  // not where it ended up. The difference is the whole correctness of the thing: turning back from
+  // page 2 to page 1 ends AT the start, and reading the edge at release would take that ordinary
+  // page turn for a request to leave the chapter.
+  const fromStart = useSharedValue(false);
+  const fromEnd = useSharedValue(false);
+  const edgeTurn = useMemo(
+    () =>
+      Gesture.Pan()
+        .enabled(!zoomed && !standby)
+        .maxPointers(1)
+        .activeOffsetX([-EDGE_ACTIVATE_PX, EDGE_ACTIVATE_PX])
+        .failOffsetY([-EDGE_FAIL_PX, EDGE_FAIL_PX])
+        .onBegin(() => {
+          'worklet';
+          fromStart.set(atStart.value);
+          fromEnd.set(atEnd.value);
+        })
+        .onEnd((e) => {
+          'worklet';
+          // The shared projected release (lib/gesture-release), judged along whichever way the drag
+          // went — a flick back at the moment of lifting is someone changing their mind.
+          if (!releaseCommittedEitherWay(e.translationX, e.velocityX, width * EDGE_TURN_FRACTION)) return;
+          // Dragging the pages RIGHT asks for whatever sits to their LEFT, which is exactly what the
+          // left tap zone asks for — RTL flip included, since `leftAction` already carries it. Off
+          // the end of the list, the answer is a chapter rather than a page.
+          if (e.translationX > 0) {
+            if (fromStart.value) runOnJS(leftAction)();
+          } else if (fromEnd.value) {
+            runOnJS(rightAction)();
+          }
+        }),
+    [zoomed, standby, width, leftAction, rightAction, atStart, atEnd, fromStart, fromEnd],
+  );
+  // The list's own scroll as a gesture RNGH can reason about, so the pan above runs ALONGSIDE it
+  // rather than winning the touch off it.
+  const listGesture = useMemo(() => Gesture.Simultaneous(Gesture.Native(), edgeTurn), [edgeTurn]);
+
   return (
     <View style={{ width, height }}>
       {/* Nothing full-screen is painted here on purpose. A virtualized list draws NOTHING where it
@@ -287,6 +388,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
           to provide that tint, but this subtree is the part that translates/scales during a
           swipe-away, so any full-screen fill inside it reads as the background travelling with
           the page. */}
+      <GestureDetector gesture={listGesture}>
       <FlatList
         ref={listRef}
         // Sized explicitly: it used to BE this component's root and take the size
@@ -354,6 +456,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
           )
         }
       />
+      </GestureDetector>
     </View>
   );
 });
