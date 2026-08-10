@@ -36,6 +36,24 @@ appId: com.porksphere.comical
 - assertVisible:
     id: "screen-title.settings"
 
+# The bottom bar is PINNED here (usePinnedTabBar) — alone among the tabs, it neither slides away on
+# a downward scroll nor reacts to an elastic overscroll, because this screen IS navigation and
+# hiding the nav costs you the tap you came for. Scroll the table of contents to its last row and
+# assert the tab is still on screen; on the other tabs the same gesture takes the bar with it.
+#
+# `scrollUntilVisible` rather than a bare `scroll` so this is deterministic on both platforms
+# (settings.tsx is an ordinary ScrollView, not a LegendList-owned scroller — see the web copy). On a
+# viewport tall enough to fit all eleven categories it finds About without scrolling at all, which
+# still covers the other half of the guarantee: a drag on a list with nothing to scroll is pure
+# stretch, and that must not move the bar either.
+- scrollUntilVisible:
+    element:
+      id: "settings.category.about"
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    id: "tab.settings"
+
 # General
 - tapOn:
     id: "settings.category.general"
