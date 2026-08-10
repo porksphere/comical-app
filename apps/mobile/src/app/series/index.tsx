@@ -686,23 +686,25 @@ function SeriesReaderInstance({
   // only ever grows AT THE TAIL during one continuous run; landing outside the run starts a fresh
   // one, bumping `runKey` so the pane remounts and seeds from `start` instead of re-anchoring.
   //
-  // ── Why nothing is ever added at the HEAD of a live run ──────────────────────────────────────
-  // The pager's position is a raw pixel offset, and `initialPage` (prefixLen + start) is read once,
-  // at mount. Put a chapter in front of the current one and every page after it moves by a whole
-  // chapter while that offset does not, so the pager is suddenly showing pages from the chapter
-  // before. paged-reader has a layout effect that catches this and scrolls to where the anchored
-  // key went — but the cells at the corrected offset have not been rendered yet, because the render
-  // window was computed from the pre-change position. The pager sits at the right place with
-  // nothing mounted there for as long as it takes the list to re-window.
+  // ── The HEAD of a live run, and why it may grow again ────────────────────────────────────────
+  // For a while nothing could ever be added in front of the current position, and the reason was
+  // the pager: a FlatList's position is a raw pixel offset and its render window is a range of
+  // indices derived from that offset, so putting a chapter in front of the current one moved every
+  // page after it by a whole chapter while the offset stayed put. The correction that followed —
+  // find the anchored key, scroll there — arrived at the right place with nothing mounted, because
+  // the window had been computed from the old position. THAT was the flash on this screen, chased
+  // twice from the wrong end (first blamed on the adjacent-chapter queries being deferred, then on
+  // their being eager; the arrival TIME was never the problem, the head insert was).
   //
-  // That is the flash on this screen, and it was chased twice from the wrong end. It first showed
-  // up ~500ms into the reader (the adjacent-chapter queries were deferred until after the reveal,
-  // so the previous chapter arrived into a pager that had just become the thing on screen —
-  // recorded as pages 4-8 mounting at the stale offset, then 19-23 remounting as it re-anchored).
-  // Fetching those lists eagerly (above) only moved the arrival earlier, so the same shift landed
-  // during the series-page open instead. The arrival TIME was never the problem; the head insert
-  // was. A run now takes whichever neighbours are already loaded when it is created, and after that
-  // only ever appends.
+  // The pager is a LegendList now, which holds item sizes BY KEY and anchors a data change on the
+  // item rather than on an offset or a view (`maintainVisibleContentPosition={{ data: true }}` —
+  // see paged-reader.tsx for the full why). A chapter arriving at the head is absorbed with the
+  // page under the reader's thumb left exactly where it is, so the head can grow again: reading
+  // backward stays a page turn chapter after chapter instead of turning into a jump at the second
+  // boundary.
+  //
+  // The hold below stays anyway. A window that is right when it is BUILT never has to anchor
+  // anything, and the cheapest correction is the one that doesn't happen.
   //
   // ── …and why the window is worth WAITING a beat for ─────────────────────────────────────────
   // Creation being the only moment a run can take its previous chapter makes that moment worth
@@ -772,14 +774,18 @@ function SeriesReaderInstance({
       // count as a remount.
       return { segments: segs, runKey: run.key + (run.segs.length ? 1 : 0) };
     }
-    // Extend at the TAIL ONLY. A run picks up its previous chapter at the moment it is created
-    // (above) and never afterwards — see the note below for why there is no `addPrev` here.
+    // Extend at either end. The TAIL has always been free (nothing before it moves); the HEAD is
+    // free now that the pager anchors an insert on the item (see the note above), and only ever
+    // grows from the end the reader is standing on — you can only reach a run's first chapter by
+    // reading back into it, and that is exactly when the chapter before it is worth having.
     const stale = run.segs[at]!;
     const refreshCurrent = stale.pages !== pages || stale.name !== target?.chapterName;
+    const addPrev = !!prevSeg && at === 0;
     const addNext = !!nextSeg && run.segs[run.segs.length - 1]!.id === currentId;
-    if (!refreshCurrent && !addNext) return { segments: run.segs, runKey: run.key };
+    if (!refreshCurrent && !addPrev && !addNext) return { segments: run.segs, runKey: run.key };
     const segs = run.segs.slice();
     if (refreshCurrent) segs[at] = { id: currentId, name: target?.chapterName, pages };
+    if (addPrev) segs.unshift(prevSeg);
     if (addNext) segs.push(nextSeg);
     return { segments: segs, runKey: run.key };
   }, [

@@ -7,16 +7,13 @@ import {
   useMemo,
   useRef,
   useState,
+  type Ref,
 } from 'react';
-import {
-  FlatList,
-  View,
-  type NativeScrollEvent,
-  type NativeSyntheticEvent,
-  type ViewToken,
-} from 'react-native';
+import type { LegendListRef, ViewToken } from '@legendapp/list/react-native';
+import { AnimatedLegendList } from '@legendapp/list/reanimated';
+import { View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import {
+import Animated, {
   runOnJS,
   scrollTo,
   useAnimatedReaction,
@@ -33,10 +30,10 @@ import { releaseCommittedEitherWay } from '@/lib/gesture-release';
 
 export type PagedReaderHandle = {
   goToPage: (logical: number, animated?: boolean) => void;
-  /** Continuous seek: `logical` may be FRACTIONAL (1.5 = halfway between pages 2 and 3), and the
-   *  move is never animated. This is what the bottom scrubber drives — dragging scrolls the reader
-   *  through the chapter's whole pixel space 1:1 with the finger, rather than stepping page to page,
-   *  so a settle to the nearest page only happens on release (a plain `goToPage`). */
+  /** Seek, never animated — the JS-side path for a scrubber that has no shared value to write to
+   *  (the webtoon reader). The CONTINUOUS drag, the one that pulls the reader through a chapter's
+   *  whole pixel space 1:1 with the finger, is the `scrubTarget` shared value instead and never
+   *  comes through here; a fractional `logical` therefore lands on the nearest page. */
   scrubTo: (logical: number) => void;
 };
 
@@ -48,7 +45,7 @@ export type PagedReaderHandle = {
  *  per-chapter display number (`pageNumber`, what ReaderPage's failed state shows). */
 export type ReaderPageItem = { uri: string; key: string; pageNumber: number };
 
-/** Module-level so it's stable without a hook — FlatList keeps the first one it's given. */
+/** Module-level so it's stable without a hook — a list may keep the first one it's given. */
 const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 60 };
 
 /**
@@ -109,26 +106,50 @@ type Props = {
 };
 
 /**
- * Horizontal paged reader. A native `pagingEnabled` FlatList with a fixed
- * item width (via getItemLayout) so paging snaps and `scrollToIndex` is exact.
+ * Horizontal paged reader. A `pagingEnabled` LegendList with a fixed item width
+ * (`getFixedItemSize`) so paging snaps and `scrollToIndex` is exact.
+ *
+ * ── Why LegendList and not FlatList ──────────────────────────────────────────
+ * Because the reader screen stitches ADJACENT CHAPTERS into `pages`, and that
+ * window has to be able to grow at the HEAD — you read backward across a
+ * boundary and the chapter before it joins the list in front of where you are.
+ *
+ * A FlatList cannot survive that. Its position is a raw pixel offset and its
+ * render window is a range of INDICES derived from that offset, so prepending a
+ * chapter moves every page after it by `chapterLength × width` while the offset
+ * stays put: you are suddenly looking at a page you did not turn to. Correcting
+ * it afterwards (find the anchored key, scroll there) is what this file used to
+ * do, and the correction is the flash — the list arrives at the right offset
+ * with nothing mounted there, because the window was computed from the old one.
+ * RN's own `maintainVisibleContentPosition` doesn't save it either: that anchors
+ * on the first visible VIEW, and a whole-chapter prepend is exactly the case
+ * where the view it's tracking gets recycled out from under it.
+ *
+ * LegendList positions items itself, from sizes it holds BY KEY, and its
+ * `maintainVisibleContentPosition={{ data: true }}` anchors a data change on the
+ * item rather than on a view or an index. The prepend then costs nothing here:
+ * no correction, no re-window, no flash, and the page under your thumb doesn't
+ * move. (Same reason every other list in this app is built on it.)
+ *
+ * PAGING ALIGNMENT, the invariant to keep: `pagingEnabled` snaps to multiples of
+ * the viewport from the content origin, and LegendList may carry a leading
+ * adjustment after an anchored insert. Every insert here is a whole number of
+ * PAGES, so any such adjustment is a multiple of `width` and the snap grid still
+ * lands on page boundaries. If that ever stops being true, `snapToIndices` (real
+ * item offsets, whatever the padding) is the escape hatch.
  *
  * RTL: the data array is reversed and a single logical↔physical mapping keeps
  * "next" = reading order +1 (which sits to the left in RTL). Tap zones live
  * INSIDE each page (descendants of the scroller), so a horizontal drag is
- * handed to the FlatList while a stationary tap fires the zone.
+ * handed to the list while a stationary tap fires the zone.
  *
  * Each page also supports pinch / double-tap zoom (see ZoomablePage). While a
- * page is zoomed the FlatList scroll is disabled so a one-finger drag pans the
+ * page is zoomed the list's scroll is disabled so a one-finger drag pans the
  * image instead of turning the page.
  *
  * A swipe that runs off either END of the list — where the scroller has nothing
  * left to give and can only rubber-band — is handed to `onPrev`/`onNext` as a
  * chapter turn, the same thing a tap in that zone does there (see `edgeTurn`).
- *
- * The reader screen stitches adjacent chapters into `pages`, extending that
- * window as you cross a boundary. It appends at the tail wherever it can, so the
- * current position usually doesn't move; when a chapter does land ahead of it,
- * see `useLayoutEffect` below for how the visible page is kept put.
  */
 export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedReader(
   {
@@ -150,10 +171,17 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   },
   ref,
 ) {
-  // An animated ref: still an ordinary ref for the imperative calls below
-  // (`.current` is the FlatList), but ALSO usable from a worklet, which is what
-  // lets the scrubber reaction scroll without a hop to JS.
-  const listRef = useAnimatedRef<FlatList<ReaderPageItem>>();
+  // Two refs onto the same scroller. `listRef` is LegendList's own handle (the imperative moves
+  // below go through it, since only the list knows where an index actually SITS once it has
+  // anchored an insert). `scrollRef` is the underlying scroll view as an ANIMATED ref — handed out
+  // by `refScrollView`, and on the reanimated build that is a real Animated.ScrollView — which is
+  // what lets the scrubber's reaction scroll from the UI thread without a hop to JS.
+  const listRef = useRef<LegendListRef>(null);
+  const scrollRef = useAnimatedRef<Animated.ScrollView>();
+  // The scroll offset, on the UI thread, straight from the list (its reanimated build writes it).
+  // The scrub reads it; nothing else does.
+  const scrollX = useSharedValue(0);
+  const sharedValues = useMemo(() => ({ scrollOffset: scrollX }), [scrollX]);
   const n = pages.length;
 
   const toPhysical = (logical: number) => (rtl ? n - 1 - logical : logical);
@@ -172,45 +200,69 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // Unmounting (e.g. switching reader modes) must not leave the parent thinking
   // a page is still zoomed — that would keep its swipe-dismiss disabled.
   useEffect(() => () => onZoomChange?.(false), [onZoomChange]);
-  const [activeIndex, setActiveIndex] = useState(toPhysical(Math.max(0, Math.min(n - 1, initialPage))));
+  // Where the pager opens, resolved once — the list reads `initialScrollIndex` at mount and never
+  // again, so this must not be recomputed as the window grows around it.
+  const [initialIndex] = useState(() => toPhysical(Math.max(0, Math.min(n - 1, initialPage))));
+
+  // WHICH PAGE IS ON SCREEN — held as a KEY, and turned back into an index by looking it up in the
+  // current data. That indirection is the whole point: a chapter joining at the head moves every
+  // index after it, and an index remembered from before the insert would name a different page
+  // (the standby strip's blanking and the zoom reset both hang off this, and both were wrong for a
+  // beat under the old index-held version). A key can't drift.
+  const [activeKey, setActiveKey] = useState<string | null>(null);
+  const activeIndex = useMemo(() => {
+    const found = activeKey ? data.findIndex((item) => item.key === activeKey) : -1;
+    return found >= 0 ? found : initialIndex;
+  }, [data, activeKey, initialIndex]);
 
   useImperativeHandle(
     ref,
     () => ({
       goToPage(logical: number, animated = true) {
         const clamped = Math.max(0, Math.min(n - 1, logical));
-        listRef.current?.scrollToIndex({ index: toPhysical(clamped), animated });
+        void listRef.current?.scrollToIndex({ index: toPhysical(clamped), animated });
       },
       // The JS-side fallback for the same move (the webtoon reader's scrubber path
       // and web). The native paged scrubber doesn't come through here at all — it
       // drives `scrubTarget` and never touches the JS thread; see the reaction below.
+      // Rounded, because an index is what the list can place exactly; the fractional
+      // path is the UI-thread one.
       scrubTo(logical: number) {
-        const clamped = Math.max(0, Math.min(n - 1, logical));
-        listRef.current?.scrollToOffset({ offset: toPhysical(clamped) * width, animated: false });
+        const clamped = Math.max(0, Math.min(n - 1, Math.round(logical)));
+        void listRef.current?.scrollToIndex({ index: toPhysical(clamped), animated: false });
       },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [n, rtl, width],
+    [n, rtl],
   );
 
-  const onMomentumEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const physical = Math.round(e.nativeEvent.contentOffset.x / width);
-    onPageChange(toLogical(Math.max(0, Math.min(n - 1, physical))));
+  // ── UI-thread state, read by the scrub reaction and the edge pan further down ──
+  // Where the list is PARKED. Shared values rather than the render's own `activeIndex` so the edge
+  // pan never has to be rebuilt as the reader moves: a gesture rebuilt mid-drag is one whose
+  // criteria changed under the finger, and this one would change them on the most ordinary turn
+  // there is (page 1 → 2 flips `atStart` while the finger is still down).
+  const atStart = useSharedValue(false);
+  const atEnd = useSharedValue(false);
+  // The index the list is parked on, and where index 0 sits in scroll coordinates — the two halves
+  // of the scrub's arithmetic. See the reaction below.
+  const parkedIndex = useSharedValue(0);
+  const scrubOrigin = useSharedValue(0);
+
+  // The page a scroll SETTLED on, taken from viewability rather than from `contentOffset / width`.
+  // The offset is no longer a reliable index: an anchored insert can leave the list carrying a
+  // leading adjustment, and dividing through it would name the wrong page. Viewability answers the
+  // question directly, and at rest exactly one page is over the threshold.
+  const settledRef = useRef(initialIndex);
+  const onMomentumEnd = () => {
+    onPageChange(toLogical(Math.max(0, Math.min(n - 1, settledRef.current))));
   };
 
-  // Reported live from viewability below. Kept in a ref because that callback has
-  // to stay identity-stable — FlatList throws if it changes — so it can't close
-  // over the current `rtl`/`n` mapping itself.
+  // Reported live from viewability below. Kept in a ref so the callback can stay
+  // identity-stable and not close over the current `rtl`/`n` mapping itself.
   const reportVisibleRef = useRef<(physical: number) => void>(() => {});
 
-  // Track which page is on screen so off-screen pages reset their zoom, report it
-  // to the reader for its page counter, and remember it as `anchorRef` — the page
-  // the scroll is parked on, identified by its stable key plus the index it
-  // occupies in the CURRENT `data`. The token carries the item itself, so the
-  // anchor needs no `data` closure either.
-  const anchorRef = useRef<{ key: string; index: number } | null>(null);
-  // Mid-scrub, both JS-side effects are skipped and only the anchor is kept up to
-  // date. `setActiveIndex` re-renders every mounted cell, and reporting the
+  // Mid-scrub, both JS-side effects are skipped and only the settled index is kept
+  // up to date. `setActiveKey` re-renders every mounted cell, and reporting the
   // visible page re-renders the whole reader screen (its counter and stitched-
   // segment state hang off it) — a drag across a chapter would do each once per
   // page swept past, on the thread the list needs to render those pages. Neither
@@ -220,25 +272,19 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // release re-syncs both — viewability fires again on the settle, and the
   // reader's seek names the landing page directly.
   const scrubbingRef = useRef(false);
-  const [onViewableItemsChanged] = useState(() => ({ viewableItems }: { viewableItems: ViewToken[] }) => {
-    const first = viewableItems[0];
-    if (first?.index == null) return;
-    anchorRef.current = { key: (first.item as ReaderPageItem).key, index: first.index };
-    if (scrubbingRef.current) return;
-    setActiveIndex(first.index);
-    reportVisibleRef.current(first.index);
-  });
+  const [onViewableItemsChanged] = useState(
+    () =>
+      ({ viewableItems }: { viewableItems: ViewToken<ReaderPageItem>[] }) => {
+        const first = viewableItems[0];
+        if (!first) return;
+        settledRef.current = first.index;
+        if (scrubbingRef.current) return;
+        setActiveKey(first.key);
+        reportVisibleRef.current(first.index);
+      },
+  );
 
-  // Where the list is PARKED, for the edge pan further down to read on the UI thread. Shared values
-  // rather than the render's own `activeIndex` so that pan never has to be rebuilt as the reader
-  // moves: a gesture rebuilt mid-drag is one whose criteria changed under the finger, and this
-  // particular one would change them on the most ordinary turn there is (page 1 → 2 flips
-  // `atStart` while the finger is still down).
-  const atStart = useSharedValue(false);
-  const atEnd = useSharedValue(false);
-
-  // Both refs above (and the two shared values) are rewritten AFTER each render rather than during
-  // it.
+  // Both refs above (and the shared values) are rewritten AFTER each render rather than during it.
   //
   // They were written inline in the render body until this pass, which the React
   // Compiler forbids — and it had never said so, because it was quietly bailing
@@ -254,64 +300,33 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     scrubbingRef.current = !!scrubbing;
     atStart.set(activeIndex <= 0);
     atEnd.set(activeIndex >= n - 1);
+    parkedIndex.set(activeIndex);
   });
 
   // The scrubber's live drag, resolved entirely on the UI thread — a shared value
   // in, a native scroll command out, with the JS thread never in the loop. Every
-  // cell is exactly one viewport wide (getItemLayout), so a fractional page index
-  // is just an offset; `pagingEnabled` only snaps at the end of a real drag, never
-  // against a programmatic scroll, so the list rests between pages under a finger.
+  // cell is exactly one viewport wide (`getFixedItemSize`), so a fractional page
+  // index is just an offset; `pagingEnabled` only snaps at the end of a real drag,
+  // never against a programmatic scroll, so the list rests between pages under a
+  // finger.
+  //
+  // `index × width` is no longer the offset of a page on its own: once the list has anchored an
+  // insert it carries a leading adjustment, and a scrub computed without it would fly a whole
+  // chapter wide. So the FIRST frame of each drag measures the origin instead of assuming it —
+  // where the list is right now, minus where the page it is parked on would be from zero. Measured
+  // per drag rather than kept up to date, because a drag is the only moment both halves are known
+  // to agree: viewability is suppressed for its duration (see `scrubbingRef`), so the parked index
+  // can't move underneath it either.
   useAnimatedReaction(
     () => scrubTarget?.value ?? -1,
-    (target) => {
+    (target, previous) => {
       if (target < 0) return;
+      if ((previous ?? -1) < 0) scrubOrigin.set(scrollX.value - parkedIndex.value * width);
       const logical = Math.max(0, Math.min(n - 1, target));
-      scrollTo(listRef, (rtl ? n - 1 - logical : logical) * width, 0, false);
+      scrollTo(scrollRef, scrubOrigin.value + (rtl ? n - 1 - logical : logical) * width, 0, false);
     },
     [scrubTarget, n, rtl, width],
   );
-
-  // Keep the visible page put when anything lands AHEAD of the current position,
-  // which shifts every cell after it while the scroll offset — a raw pixel value
-  // — knows nothing about it. The reader screen extends its stitched window at
-  // the TAIL ONLY (a run takes its previous chapter at creation or not at all),
-  // so nothing should reach this any more except a current segment whose page
-  // count changed under it. Kept as the backstop for that: the correction itself
-  // is what the user sees as a flash, because the cells at the corrected offset
-  // are not rendered yet — the render window was computed from the old position.
-  // If this starts firing again, the fix belongs in whatever changed the window,
-  // not here.
-  //
-  // Deliberately NOT `maintainVisibleContentPosition`: that tracks the first
-  // visible *view* across a commit and shifts contentOffset by how far that view
-  // moved, which yields a garbage delta the moment the view it's tracking is
-  // recycled — which is what happens here, since the render window is computed
-  // from the pre-change offset and a whole chapter (~30 pages) lands far outside
-  // it. Measured on a real LTR crossing: dropping the 31-page previous chapter
-  // off the head snapped the offset to 0, i.e. back into the chapter just
-  // finished. It also misfired mid-fling on plain virtualization commits.
-  //
-  // Keys are stable across window changes (`chapterId:page`), so the correction
-  // is exact in JS: find where the anchored page went and scroll there. Every
-  // cell is one page wide, so this always lands page-aligned.
-  useLayoutEffect(() => {
-    const anchor = anchorRef.current;
-    if (!anchor) return;
-    const index = data.findIndex((item) => item.key === anchor.key);
-    if (index < 0 || index === anchor.index) return;
-    anchorRef.current = { key: anchor.key, index };
-    listRef.current?.scrollToOffset({ offset: index * width, animated: false });
-    // `activeIndex` must shift with the anchor: viewability tracks items by KEY, and the visible
-    // item's key hasn't changed — so no viewability callback fires for this correction, and the
-    // state would keep pointing a whole chapter away. Harmless while every window cell renders,
-    // but in STANDBY (the collapsed strip) the placeholder branch blanks every cell EXCEPT
-    // `activeIndex` — with it stale, the strip blanked the very page it was showing (a black band
-    // until the next real page turn re-synced it). First-boot-only in practice: a warm cache
-    // delivers the neighbour chapters before mount, so nothing prepends late.
-    setActiveIndex(index);
-    // `listRef` is stable (an animated ref, which the lint rule can't tell from a
-    // plain one); it's listed only to keep exhaustive-deps quiet.
-  }, [data, width, listRef]);
 
   // Tap-zone meaning flips with direction (RTL: left = next, right = prev),
   // mirroring the reference's `t(±l())`.
@@ -325,7 +340,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // (the screen's `run` machinery, which waits for the previous chapter's page list before building
   // a window, exists to make that the common case). But a window can still come up short — a
   // neighbour list that never arrived, or a chapter the run has already crossed back into and can
-  // no longer grow toward — and at those ends a `pagingEnabled` FlatList can only rubber-band.
+  // no longer grow toward — and at those ends a `pagingEnabled` list can only rubber-band.
   //
   // A dead end is the wrong answer there. The WEB pager has always handed the same swipe on (see
   // paged-reader.web.tsx's finalizeSwipe), and so does the tap zone at that page, so this hands it
@@ -386,53 +401,57 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
           swipe-away, so any full-screen fill inside it reads as the background travelling with
           the page. */}
       <GestureDetector gesture={listGesture}>
-      <FlatList
+      <AnimatedLegendList
         ref={listRef}
+        // The scroll view itself, for the UI-thread scrub — and the shared value it writes its
+        // offset into. Both are LegendList's own hand-offs; nothing here reaches inside it.
+        //
+        // The cast is a type-level mismatch, not a runtime one: LegendList declares this as
+        // `Ref<ElementRef<typeof Reanimated.ScrollView>>`, which resolves to `Ref<never>` against
+        // this Reanimated version, so no ref of any kind satisfies it. What arrives is the
+        // Animated.ScrollView that `scrollTo` needs.
+        refScrollView={scrollRef as unknown as Ref<never>}
+        sharedValues={sharedValues}
         // Sized explicitly: it used to BE this component's root and take the size
         // from whatever hosted it, and a scroller that sizes to its content is
         // not what wants to decide the reader's dimensions.
         style={{ width, height }}
+        // Seeded so the very first layout is at the real viewport rather than zero-width — a
+        // horizontal list that lays out cold at width 0 puts every page at the same place and
+        // then repositions once it measures (see the same seed on the rails).
+        estimatedListSize={{ width, height }}
         data={data}
         keyExtractor={(item) => item.key}
         horizontal
         pagingEnabled
         scrollEnabled={!zoomed}
         showsHorizontalScrollIndicator={false}
-        initialScrollIndex={toPhysical(Math.max(0, Math.min(n - 1, initialPage)))}
-        getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
-        // Window tuning matters more here than in a normal list: a cell is a
-        // FULL-SCREEN image, so the default windowSize of 21 keeps ~10 pages of
-        // decoded bitmap mounted either side and re-renders all of them on every
-        // virtualization pass. Two pages either side is enough to have the next
-        // page ready before you reach it, and it's what makes a long scrub survive:
-        // the shorter the window, the faster the list catches up with the offset
-        // and the less time you spend looking at unmounted (blank) cells.
-        //
-        // Mid-scrub the window stays that size but is filled FASTER: after a jump
-        // the list has ~5 cells to build, and at the resting batch size that's
-        // three passes ~50ms apart before the page under the finger exists at all.
-        //
-        // UNMEASURED TRADE-OFF, if the scrubber ever feels less responsive than
-        // it should: this spends JS-thread time on the same thread the navigator's
-        // page number and haptic tick arrive on (one runOnJS hop per ~45ms, see
-        // chapter-navigator.tsx). Pages fill sooner; the number and buzz queue
-        // behind whatever cell work is in flight. Nothing has been observed —
-        // walking these back toward the resting values (3 / 32) is the first
-        // thing to try if it has.
-        initialNumToRender={1}
-        maxToRenderPerBatch={scrubbing ? 5 : 2}
-        updateCellsBatchingPeriod={scrubbing ? 16 : 50}
-        windowSize={5}
+        initialScrollIndex={initialIndex}
+        // THE POINT OF THE WHOLE SWAP: anchor a data change on the ITEM, so a chapter joining at
+        // the head leaves the page under your thumb exactly where it is. `size: false` for the
+        // same reason the browse grid sets it — every cell is a known fixed width, so there are no
+        // measurement corrections to retro-apply, and asking for them only invites a jitter.
+        maintainVisibleContentPosition={{ data: true, size: false }}
+        // A cell is a full-screen image with per-page state (load, zoom, aspect); handing an
+        // instance to a different page would carry that state across. Mount per page instead.
+        recycleItems={false}
+        // Two pages either side. A cell is a FULL-SCREEN decoded bitmap, so this is as much as is
+        // worth keeping warm — and the shorter the mounted run, the faster the list catches up
+        // with a scrub that has outrun it.
+        drawDistance={width * 2}
+        // Known, not estimated: every page is exactly one viewport wide, which is what makes
+        // paging snap and `scrollToIndex` exact.
+        getFixedItemSize={() => width}
+        estimatedItemSize={width}
         onMomentumScrollEnd={onMomentumEnd}
-        onScrollToIndexFailed={() => {}}
         viewabilityConfig={VIEWABILITY_CONFIG}
         onViewableItemsChanged={onViewableItemsChanged}
         renderItem={({ item, index }) =>
           // Standby (a decorative background strip): NEIGHBOUR cells hold their slot but mount no
-          // page — no neighbour images requested. Gated per cell rather than by dropping
-          // `windowSize` to 1: flipping windowSize on the live list re-ran virtualization right
-          // as the reader expanded, which could flash the visible page. The on-screen cell
-          // renders identically in both states, so standby lifting is invisible.
+          // page — no neighbour images requested. Gated per cell rather than by shrinking the
+          // mounted run: changing that on the live list re-runs virtualization right as the reader
+          // expands, which could flash the visible page. The on-screen cell renders identically in
+          // both states, so standby lifting is invisible.
           standby && index !== activeIndex ? (
             <View style={{ width, height }} />
           ) : (
