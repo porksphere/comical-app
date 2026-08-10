@@ -38,7 +38,9 @@ export default function LibraryScreen() {
   const hideNsfw = useHideNsfw();
   const listRef = useRef<LegendListRef>(null);
   useScrollToTopOnReselect('library', listRef);
-  const { onScroll } = useHideTabBarOnScroll();
+  // UI-thread scroll offset for the tab bar's slide — `sharedValues` feeds it, `onScroll` only
+  // keeps the bottom-bounce measurement in sync. See use-hide-tab-bar-on-scroll.
+  const { sharedValues, onScroll } = useHideTabBarOnScroll();
   // Let the tab swap paint before mounting the (non-recycled) card grid — until
   // this flips, the list holds empty data and the header shows a skeleton.
   const ready = useDeferredMount();
@@ -137,6 +139,7 @@ export default function LibraryScreen() {
         hasSub
         paddingTop={headerHeight + BarContentGap}
         paddingBottom={BottomTabInset + insets.bottom + Spacing.five}
+        sharedValues={sharedValues}
         onScroll={onScroll}
       />
 

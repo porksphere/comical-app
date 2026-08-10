@@ -7,7 +7,6 @@ import Animated, {
   Easing,
   interpolateColor,
   runOnJS,
-  useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -628,22 +627,12 @@ export default function BrowseScreen() {
     sharedValues,
     onScroll: onListScroll,
   } = useSlidingBar(barHeight, { resetKey: gridScope, listRef });
-  // Bridge the same UI-thread offset back to JS for the mobile tab-bar auto-hide. `maxScrollY` rides
-  // along so the tab bar can ignore the elastic bottom bounce, exactly as the top bar does — without
-  // it, overscrolling the end of the grid slides the tab bar back in.
-  const { reportOffset } = useHideTabBarOnScroll();
-  useAnimatedReaction(
-    () => scrollY.value,
-    (y, prevY) => {
-      // Skip the mapper's registration fire (`prevY` null, no movement) rather than forwarding it.
-      // `reportOffset` treats the first value it sees as its baseline, so handing it this one spent
-      // that baseline before the list had reported anything — and the real offset then arrived as a
-      // gesture, hiding the tab bar on a screen nobody had scrolled yet.
-      if (prevY === null) return;
-      runOnJS(reportOffset)(y, maxScrollY.value);
-    },
-    [reportOffset],
-  );
+  // The tab bar slides off the SAME shared values the top bar does — one offset, one content-end
+  // measurement, both read on the UI thread, so the two bars can't disagree about a gesture or about
+  // where the elastic bottom bounce starts. This used to be a `runOnJS(reportOffset)` per frame: a
+  // UI→JS→UI round trip that put the bottom bar's tracking behind whatever else the JS thread was
+  // doing mid-fling. The list needs no extra wiring — `onListScroll` below already feeds `maxScrollY`.
+  useHideTabBarOnScroll({ scrollY, maxScrollY });
   // The bar's bottom hairline fades in only once the list is scrolled: at the very top the bar reads
   // as part of the page (no divider), then the line appears to separate it from the content beneath.
   const headerBorderStyle = useAnimatedStyle(() => ({

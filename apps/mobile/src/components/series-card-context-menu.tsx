@@ -82,8 +82,7 @@ import {
   useSeriesCardMenu,
   type SeriesCardMenuRequest,
 } from '@/lib/series-card-menu';
-import { getTabBarProgress } from '@/lib/tab-bar-slide';
-import { getTabBarHideOffset } from '@/lib/tab-bar-visibility';
+import { getTabBarHideOffset, getTabBarProgress } from '@/lib/tab-bar-slide';
 import { getTopBarHidden } from '@/lib/top-bar-visibility';
 
 const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);

@@ -1,10 +1,10 @@
 /**
- * The two plain-JS facts about the bottom bar: how tall it measured, and whether the screen on
- * display keeps it. Its live slide position is a Reanimated shared value and lives next door in
- * `tab-bar-slide` — split so this module stays importable from a bun unit test, which can't load
- * Reanimated at all.
+ * Whether the screen on display keeps the bottom bar put. The one plain-JS fact about the bar —
+ * everything that moves it (position, hide offset, the pin mirrored for worklets) is a Reanimated
+ * shared value next door in `tab-bar-slide`. Split so this module stays importable from a bun unit
+ * test, which can't load Reanimated at all.
  *
- * There's one bar, so both of these are single module values rather than per-screen ones.
+ * There's one bar, so this is a single module value rather than a per-screen one.
  */
 
 /**
@@ -48,24 +48,4 @@ export function isTabBarPinned(): boolean {
 export function subscribeTabBarPinned(listener: PinListener): () => void {
   pinListeners.add(listener);
   return () => pinListeners.delete(listener);
-}
-
-/**
- * Pixels the bar translates to fully clear the viewport — its MEASURED height plus a hair of slack,
- * reported by app-tabs' onLayout. Progress is unitless; everything that turns it back into pixels
- * (the bar's own translateY, the long-press overlay's chrome band) multiplies by this, and
- * `useHideTabBarOnScroll` uses it as the slide span, so translateY == accumulated scroll px and the
- * bar moves 1:1 with the finger. It used to be a padded constant (120) while the bar is only
- * ~48 + bottom-inset tall: fully hidden, the bar was parked ~38px past the screen edge, and a
- * scroll-up spent ~30px walking that invisible overshoot back before the bar visibly moved.
- * 120 survives only as the pre-first-layout fallback.
- */
-let hideOffset = 120;
-
-export function setTabBarHideOffset(px: number): void {
-  if (px > 0) hideOffset = px;
-}
-
-export function getTabBarHideOffset(): number {
-  return hideOffset;
 }

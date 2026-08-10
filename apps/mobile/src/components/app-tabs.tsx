@@ -22,13 +22,13 @@ import { scrollToTopFor } from '@/lib/reselect-scroll';
 import { useSeriesReaderBackdropDimStyle, useSeriesReaderBackdropStyle } from '@/lib/series-backdrop';
 import { notifyScrollActivity, subscribeScrollPhase } from '@/lib/scroll-release';
 import { COMMIT_DISTANCE, dismissThreshold, SETTLE_MS, TOP_GUARD } from '@/lib/slide-step';
-import { tabBarProgress } from '@/lib/tab-bar-slide';
 import {
   getTabBarHideOffset,
-  isTabBarPinned,
   setTabBarHideOffset,
-  subscribeTabBarPinned,
-} from '@/lib/tab-bar-visibility';
+  tabBarHideOffset,
+  tabBarProgress,
+} from '@/lib/tab-bar-slide';
+import { isTabBarPinned, subscribeTabBarPinned } from '@/lib/tab-bar-visibility';
 
 // A custom-rendered bar on every platform (no OS-native tab bar) — responsive: an app-like black
 // icon bottom bar on phones; on wider/desktop viewports a compact icon-only row pinned to the
@@ -258,13 +258,11 @@ export default function AppTabs() {
   const { hidden, reveal } = useAutoHideBottomBar(isMobile);
   // How far the slide travels: the bar's own measured height (+ slack), so progress 1 puts its top
   // edge exactly at the screen edge — no invisible overshoot for a scroll-up to walk back before the
-  // bar visibly rises. Published to `tab-bar-visibility` for everything else that converts the shared
-  // progress to pixels (the scroll hook's 1:1 span, the long-press overlay's chrome band).
-  const [hideOffset, setHideOffset] = useState(getTabBarHideOffset());
+  // bar visibly rises. Published to `tab-bar-slide` as a shared value, since everything that turns
+  // progress back into pixels reads it from a worklet now (the transform below, the scroll
+  // reaction's 1:1 span) as well as from JS (the long-press overlay's chrome band).
   const onBarLayout = useCallback((e: { nativeEvent: { layout: { height: number } } }) => {
-    const px = Math.ceil(e.nativeEvent.layout.height) + HIDE_OFFSET_SLACK;
-    setHideOffset(px);
-    setTabBarHideOffset(px);
+    setTabBarHideOffset(Math.ceil(e.nativeEvent.layout.height) + HIDE_OFFSET_SLACK);
   }, []);
 
   // Native only: slide the whole bar off-screen as the screen scrolls down, back in as it scrolls up,
@@ -273,7 +271,7 @@ export default function AppTabs() {
   // frames the bar moves. `tabBarProgress` stays 0 on web, where the opacity fade above hides it
   // instead, and while a desktop viewport shows the top nav there is no bar mounted to move.
   const slideStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: tabBarProgress.value * hideOffset }],
+    transform: [{ translateY: tabBarProgress.value * tabBarHideOffset.value }],
   }));
 
   // Pin the desktop nav to the right edge of the constrained content (the same
