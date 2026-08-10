@@ -315,6 +315,12 @@ export default function AppTabs() {
     // instead (see lib/series-backdrop.ts). With no series page open the transform is identity and
     // the dim fully transparent, so this costs nothing at rest.
     <Animated.View style={[styles.tabs, seriesReaderBackdropStyle]}>
+      {/* Plain flex:1 View between the animated wrapper and the navigator's children. `<Tabs>` used
+          to render exactly this (its `tabsRoot`) and dropping it left the screen container and the
+          bar as direct children of a view whose transform is driven on the UI thread — where the
+          bar rendered and animated correctly but took no touches at all on iOS, because hit-testing
+          reads the shadow tree rather than that transform. Keep it. */}
+      <View style={styles.tabs}>
       {/* Everything the navigator provides (the trigger map, the focused screen) lives under this;
           the layout below it is entirely ours, which is the difference from the `<Tabs>` component
           form — see TAB_REGISTRATION. */}
@@ -355,6 +361,7 @@ export default function AppTabs() {
           </Animated.View>
         )}
       </NavigationContent>
+      </View>
       {/* The dim under an open series page — inert (opacity 0) whenever none is, never interactive. */}
       <Animated.View pointerEvents="none" style={[styles.backdropDim, seriesReaderBackdropDim]} />
     </Animated.View>
