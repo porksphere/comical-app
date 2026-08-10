@@ -1,4 +1,4 @@
-import { TabList, TabTrigger, TabSlot, TabTriggerSlotProps, useTabsWithChildren } from 'expo-router/ui';
+import { Tabs, TabList, TabTrigger, TabSlot, TabTriggerSlotProps } from 'expo-router/ui';
 import { Bell, History, LayoutGrid, Library, Settings, type LucideIcon } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -221,27 +221,20 @@ function useAutoHideBottomBar(enabled: boolean) {
 const HIDE_OFFSET_SLACK = 2;
 
 /**
- * The tab screens the navigator is built from. Parsed, never rendered: `useTabsWithChildren` walks
- * this to discover the routes (a `TabTrigger` needs an `href` and a `TabList` parent to register a
- * screen — see `Tabs.js`'s `parseTriggersFromChildren`), and the bar we actually draw is a separate
- * tree of href-less `TabTrigger`s that address the same routes by name.
+ * The tab screens the navigator is built from — the `TabList` expo-router discovers routes through
+ * (a `TabTrigger` needs an `href` and a `TabList` parent to register a screen; see `Tabs.js`'s
+ * `parseTriggersFromChildren`). Rendered, but with no UI of its own: the bar you actually see is a
+ * sibling of this, built from href-less `TabTrigger`s that address the same routes by name.
  *
- * Splitting registration from presentation is what lets the bar be an `Animated.View`, which is the
- * whole point: `TabList` renders a plain `View`, so a worklet-driven style on it does nothing, and
- * `asChild` routes through a Slot shim that `StyleSheet.flatten`s and object-spreads the style
- * (`expo-router/build/ui/Slot.js`), which destroys an animated style outright. Wrapping `TabList` in
- * `createAnimatedComponent` doesn't work either — the parser matches on `child.type === TabList`.
- * The hook form is expo-router's own escape hatch for exactly this ("can be used for custom
- * components").
+ * That split is what lets the bar be an `Animated.View` and carry a worklet-driven transform, which
+ * a `TabList` cannot: it renders a plain `View`, and `asChild` routes through a Slot that flattens
+ * and object-spreads the style, destroying an animated style outright. This is the structure Expo
+ * documents for a custom tab bar — a hidden configuration `TabList` plus your own chrome — and it
+ * keeps `<Tabs>` itself, and everything it sets up, exactly as it was.
+ *
+ * `display: 'none'` rather than not rendering it at all: the triggers must be in the tree for the
+ * navigator to build its screens from.
  */
-const TAB_REGISTRATION = (
-  <TabList>
-    {TABS.map((tab) => (
-      <TabTrigger key={tab.name} name={tab.name} href={tab.href as never} />
-    ))}
-  </TabList>
-);
-
 export default function AppTabs() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -303,8 +296,6 @@ export default function AppTabs() {
     [isMobile, reveal],
   );
 
-  const { NavigationContent } = useTabsWithChildren({ children: TAB_REGISTRATION });
-
   // See the wrapper below — both rest at identity/transparent unless the series page is open.
   const seriesReaderBackdropStyle = useSeriesReaderBackdropStyle();
   const seriesReaderBackdropDim = useSeriesReaderBackdropDimStyle();
@@ -315,16 +306,7 @@ export default function AppTabs() {
     // instead (see lib/series-backdrop.ts). With no series page open the transform is identity and
     // the dim fully transparent, so this costs nothing at rest.
     <Animated.View style={[styles.tabs, seriesReaderBackdropStyle]}>
-      {/* Plain flex:1 View between the animated wrapper and the navigator's children. `<Tabs>` used
-          to render exactly this (its `tabsRoot`) and dropping it left the screen container and the
-          bar as direct children of a view whose transform is driven on the UI thread — where the
-          bar rendered and animated correctly but took no touches at all on iOS, because hit-testing
-          reads the shadow tree rather than that transform. Keep it. */}
-      <View style={styles.tabs}>
-      {/* Everything the navigator provides (the trigger map, the focused screen) lives under this;
-          the layout below it is entirely ours, which is the difference from the `<Tabs>` component
-          form — see TAB_REGISTRATION. */}
-      <NavigationContent>
+      <Tabs style={styles.tabs}>
         <TabSlot style={styles.slot} />
 
         {/* Desktop: icon-only nav pinned to the top-right, aligned with the Browse selector bar row
@@ -360,8 +342,18 @@ export default function AppTabs() {
             {triggers}
           </Animated.View>
         )}
-      </NavigationContent>
-      </View>
+
+        {/* Routes only, no UI — see the note above `AppTabs`. Inline, NOT extracted to a component:
+            the discovery walk matches on `child.type === TabList` (and descends through Fragments
+            and TabLists alone), so both a wrapping View and a wrapper component leave the navigator
+            with zero screens — expo/expo#37796. The visible chrome above is an ordinary child,
+            which that same walk simply skips. */}
+        <TabList style={styles.registration}>
+          {TABS.map((tab) => (
+            <TabTrigger key={tab.name} name={tab.name} href={tab.href as never} />
+          ))}
+        </TabList>
+      </Tabs>
       {/* The dim under an open series page — inert (opacity 0) whenever none is, never interactive. */}
       <Animated.View pointerEvents="none" style={[styles.backdropDim, seriesReaderBackdropDim]} />
     </Animated.View>
@@ -455,6 +447,11 @@ const styles = StyleSheet.create({
   },
   slot: {
     flex: 1,
+  },
+  // The configuration TabList: present in the tree so the navigator can build its screens from the
+  // triggers inside it, but never seen.
+  registration: {
+    display: 'none',
   },
   // --- Desktop top-right icon nav ---
   topNav: {
