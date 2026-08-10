@@ -5,6 +5,7 @@ import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
 import { BackSwipeBoundary } from '@/components/back-swipe-boundary';
+import { ChevronRightIcon } from '@/components/icons/ui-icons';
 import { estimatedCardHeight, SeriesCard, TitlePeek, type CardSize } from '@/components/series-card';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
@@ -24,10 +25,10 @@ const STRIP_PAD_V = Spacing.one;
 // Must match the SeriesCard's cover→title gap so the lifted peek lands on the title.
 const CARD_GAP = Spacing.two;
 
-// A rail: section header (title + "See all") above its cards. Mobile/narrow
-// desktop keeps a snap-scrolling horizontal strip (mirrors the reference's
-// `.carousel`); wide desktop instead wraps the first two rows into a static
-// 6-column grid (no horizontal scroll) — "See all" reaches the rest.
+// A rail: section header (a title that doubles as the drill-down link, chevron inline) above its
+// cards. Mobile/narrow desktop keeps a snap-scrolling horizontal strip (mirrors the reference's
+// `.carousel`); wide desktop instead wraps the first two rows into a static 6-column grid (no
+// horizontal scroll) — the heading's drill-down reaches the rest.
 
 const CARD_SIZE: Record<RailSection['kind'], CardSize> = {
   hero: 'hero',
@@ -89,9 +90,20 @@ function gridCardWidth(viewport: number, gap: number): number {
 }
 
 // Approximate rendered height of a `SectionHead`: the subtitle line (30px wide / 25px compact — see
-// `headTitleWide`/`headTitleCompact`) rounded up to cover the "See all" pill's own box. A rail's
-// `styles.section` puts a `Spacing.two` gap between the head and the strip/grid below it.
+// `headTitleWide`/`headTitleCompact`), rounded up. The drill-down chevron sits inline on that same
+// line and is deliberately sized under the line height (see CHEVRON_SIZE_*), so a drillable head is
+// exactly as tall as a plain one. A rail's `styles.section` puts a `Spacing.two` gap between the
+// head and the strip/grid below it.
 export const SECTION_HEAD_HEIGHT = 32;
+
+// Drill-down chevron on a `SectionHead`, scaled to the heading it follows (≈⅘ of the title's line
+// height: big enough to read as part of the heading, small enough not to grow the row). It sits
+// tight against the title on purpose — the chevron belongs to the heading and must not read as a
+// separate control — so the nudge is negative, cancelling part of the whitespace lucide's glyph
+// carries inside its own square box.
+const CHEVRON_SIZE_COMPACT = 20;
+const CHEVRON_SIZE_WIDE = 24;
+const CHEVRON_NUDGE = -Spacing.half;
 
 /**
  * Reserved vertical height of a whole `Rail` row (heading + strip/grid), used by `ContentFeed`'s
@@ -516,37 +528,49 @@ export function RailSkeleton({ viewportWidth, title }: { viewportWidth: number; 
   );
 }
 
+/**
+ * A rail's heading. When the section can be drilled into, the TITLE ITSELF is the link — a chevron
+ * sits inline right after the text, Apple TV style — rather than a separate right-aligned "See all"
+ * pill. The chevron reads as an affordance on the heading (one target, no competing accent-colored
+ * button pulling the eye to the far edge), and it costs no extra width on narrow phones, where the
+ * pill used to crowd long section titles into an early ellipsis.
+ */
 export function SectionHead({ title, onSeeAll, testID }: { title: string; onSeeAll?: () => void; testID?: string }) {
   const theme = useTheme();
   // Match the reference's `.section-head h3`: 1.2rem mobile / 1.5rem desktop.
   const compact = useIsCompact();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
+  const titleStyle = [styles.headTitle, compact ? styles.headTitleCompact : styles.headTitleWide];
+  const heading = (
+    <ThemedText type="subtitle" style={titleStyle} numberOfLines={1}>
+      {title}
+    </ThemedText>
+  );
+  if (!onSeeAll) {
+    return <View style={styles.head}>{heading}</View>;
+  }
   return (
     <View style={styles.head}>
-      <ThemedText
-        type="subtitle"
-        style={[styles.headTitle, compact ? styles.headTitleCompact : styles.headTitleWide]}
-        numberOfLines={1}>
-        {title}
-      </ThemedText>
-      {onSeeAll && (
-        <Pressable
-          testID={testID}
-          onPress={onSeeAll}
-          onHoverIn={onHoverIn}
-          onHoverOut={onHoverOut}
-          hitSlop={8}
-          style={({ pressed }) => [
-            styles.seeAll,
-            pressed && styles.seeAllPressed,
-            // Brighten (not dim) on hover — same treatment as the chapter tab strip.
-            hovered && { backgroundColor: theme.backgroundSelected },
-          ]}>
-          <ThemedText type="smallBold" style={{ color: theme.accent }}>
-            See all →
-          </ThemedText>
-        </Pressable>
-      )}
+      <Pressable
+        testID={testID}
+        onPress={onSeeAll}
+        onHoverIn={onHoverIn}
+        onHoverOut={onHoverOut}
+        hitSlop={8}
+        accessibilityRole="button"
+        // The visible label is just the title now, so the "see all" intent has to be spoken.
+        accessibilityLabel={`${title}, see all`}
+        style={({ pressed }) => [styles.headLink, pressed && styles.headLinkPressed]}>
+        {heading}
+        {/* Wrapped so the nudge can be a margin: `gap` can't do it, since a negative gap is invalid
+            CSS on web (react-native-web drops the whole declaration) even though Yoga accepts it. */}
+        <View style={styles.headChevron}>
+          <ChevronRightIcon
+            color={hovered ? theme.text : theme.textSecondary}
+            size={compact ? CHEVRON_SIZE_COMPACT : CHEVRON_SIZE_WIDE}
+          />
+        </View>
+      </Pressable>
     </View>
   );
 }
@@ -564,8 +588,6 @@ const styles = StyleSheet.create({
   head: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: Spacing.three,
     paddingHorizontal: TopLevelGutter,
   },
   headTitle: {
@@ -579,13 +601,19 @@ const styles = StyleSheet.create({
     fontSize: 24,
     lineHeight: 30,
   },
-  seeAll: {
-    paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.half,
-    borderRadius: 8,
+  // Title + chevron as one drill-down target. Hugs its content (`flexShrink` so a long title
+  // ellipsizes instead of pushing the chevron off-screen) — the tap area is the heading, not the
+  // full-width row, so a stray tap in the empty space beside it doesn't navigate.
+  headLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexShrink: 1,
   },
-  seeAllPressed: {
-    opacity: 0.7,
+  headLinkPressed: {
+    opacity: 0.6,
+  },
+  headChevron: {
+    marginLeft: CHEVRON_NUDGE,
   },
   strip: {
     // gap is viewport-dependent — set inline (see `stripGapFor`) alongside this.
