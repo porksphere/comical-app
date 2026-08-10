@@ -35,6 +35,18 @@ url: http://localhost:4000/comical-app
 - assertVisible:
     id: "screen-title.settings"
 
+# Pinned bottom bar — see the mobile copy for what this covers. The category row and the tab are
+# both selected by their labels here (the web-only aria-label quirk noted above), and
+# `scrollUntilVisible` works because settings.tsx is an ordinary ScrollView: Maestro-web's
+# implementation is a no-op only against LegendList-owned scrollers (see web/series-chapters.yaml).
+- scrollUntilVisible:
+    element:
+      id: "About"
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    id: "Settings"
+
 # General
 - tapOn:
     id: "General"
