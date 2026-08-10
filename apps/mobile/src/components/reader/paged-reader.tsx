@@ -275,7 +275,10 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   const [onViewableItemsChanged] = useState(
     () =>
       ({ viewableItems }: { viewableItems: ViewToken<ReaderPageItem>[] }) => {
-        const first = viewableItems[0];
+        // Lowest index, not `[0]`: the page in front is the one with the smallest index, and
+        // nothing promises the callback hands them over in that order.
+        let first: ViewToken<ReaderPageItem> | undefined;
+        for (const token of viewableItems) if (!first || token.index < first.index) first = token;
         if (!first) return;
         settledRef.current = first.index;
         if (scrubbingRef.current) return;
@@ -387,9 +390,21 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         }),
     [zoomed, standby, width, leftAction, rightAction, atStart, atEnd, fromStart, fromEnd],
   );
-  // The list's own scroll as a gesture RNGH can reason about, so the pan above runs ALONGSIDE it
+  // The list's own scroll, as a gesture RNGH can reason about — so the pan above runs ALONGSIDE it
   // rather than winning the touch off it.
-  const listGesture = useMemo(() => Gesture.Simultaneous(Gesture.Native(), edgeTurn), [edgeTurn]);
+  //
+  // Naming it has a second consequence that is NOT optional, and cost a working double-tap to
+  // learn: a scroller inside a GestureDetector is in RNGH's arbitration graph, and everything
+  // INSIDE it now has to say it can run alongside it or lose to it. This pager used to dodge that
+  // entirely — no detector on the scroller, so each page's pinch/tap lived in a non-scrolling cell
+  // and never arbitrated with the scroll at all — which is exactly why nothing here declared the
+  // relation. The moment the edge pan put a detector on the list, the dodge stopped applying, and
+  // the zoom gestures started losing the arbitration they had never had to enter. The pinch and the
+  // single tap mostly survived it; the double-tap, which has to hold across two separate touch
+  // sequences, did not. So the pages get told about it — the same `simultaneousExternal` wiring the
+  // webtoon reader has always needed for the same reason.
+  const nativeScroll = useMemo(() => Gesture.Native(), []);
+  const listGesture = useMemo(() => Gesture.Simultaneous(nativeScroll, edgeTurn), [nativeScroll, edgeTurn]);
 
   return (
     <View style={{ width, height }}>
@@ -468,6 +483,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
               onRight={rightAction}
               onToggleChrome={onToggleChrome}
               onZoomChange={handleZoomChange}
+              scrollGesture={nativeScroll}
             />
           )
         }
