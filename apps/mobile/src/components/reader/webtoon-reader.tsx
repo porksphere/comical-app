@@ -1,6 +1,6 @@
 import type { LegendListRef, ViewToken } from '@legendapp/list/react-native';
 import { AnimatedLegendList } from '@legendapp/list/reanimated';
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import {
   Pressable,
   StyleSheet,
@@ -8,15 +8,15 @@ import {
   View,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
-  type StyleProp,
-  type ViewStyle,
 } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated from 'react-native-reanimated';
+import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
+import Animated, { runOnJS, useSharedValue, type SharedValue } from 'react-native-reanimated';
 
 import { ReaderPage, STANDBY_FADE_MS } from '@/components/reader/reader-page';
 import { useZoomable } from '@/components/reader/use-zoomable';
 import type { PageFit } from '@/hooks/use-reader-settings';
+import { BACK_ACTIVATE_DOMINANCE } from '@/lib/back-swipe';
+import { releaseCommitted } from '@/lib/gesture-release';
 import { testId } from '@/lib/test-id';
 
 /** `animated` defaults to true (a jump). The reader's page scrubber passes false: rows here have
@@ -48,14 +48,15 @@ type Props = {
    *  to the very end of the continuous list. Reliable in continuous mode where
    *  viewability-based page tracking makes `onEndReached`+last-page fragile. */
   onAdvance?: () => void;
-  /** The same pair, backwards: the previous chapter's name puts a "← Previous: …" sentinel ABOVE
-   *  page 1, and `onGoBack` is what scrolling up into it (or tapping it) fires.
+  /** Cross BACKWARD, to the previous chapter's last page — fired by pulling down at the very top
+   *  of the chapter (see `useBackPull`). Undefined where there is nothing behind this chapter.
    *
-   *  Vertical mode has no stitched window to turn a page into — chapters here are one at a time, so
-   *  a boundary can only be a jump — but until now it could only be jumped FORWARD: the end of a
-   *  chapter had a sentinel and the start had nothing at all, so scrolling up at page 1 did what a
-   *  wall does. The sentinel is the same answer in both directions. */
-  prevChapterName?: string;
+   *  Vertical mode has no stitched window to turn a page into, so a boundary here is always a jump;
+   *  what it was missing was any way to ASK for the backward one. Scrolling up at page 1 did what a
+   *  wall does, because at the top of a scroll view there is nothing left to scroll: iOS reports a
+   *  rubber-band and Android reports nothing at all. Hence a gesture rather than a scroll position
+   *  — and a gesture rather than a transition page, which is somewhere to scroll but also a screen
+   *  of nothing to look at, every time you cross. */
   onGoBack?: () => void;
   /** True while this reader is the series page's decorative STRIP rather than the thing being
    *  read. Only effect: its standing page cross-fades in (see ReaderPage's `fadeMs`) instead of
@@ -75,18 +76,70 @@ const ESTIMATED_ASPECT = 3 / 2;
 // the next chapter auto-loads — roughly where the end-of-chapter sentinel enters view.
 const ADVANCE_TRIGGER_PX = 120;
 
-/** The chapter sentinels' height. Named because the continuous reader also needs it as the header's
- *  size hint (an unmeasured header would put its `initialScrollIndex` in the wrong place) and as
- *  the distance that decides a backward crossing. */
-const SENTINEL_HEIGHT = 96;
-/** How much of the PREVIOUS-chapter sentinel has to be pulled into view before the crossing fires.
+// ── Pull past the top to go back a chapter ───────────────────────────────────────────────────
+// The paged reader's off-the-end hand-off, rotated: at the top of a chapter the scroller has
+// nothing left to give, so the drag that means "go back" is the one it can only rubber-band.
+/** Vertical travel that hands the drag to the pull, at the distance the scroller itself claims at
+ *  (see lib/back-swipe for why ten). */
+const PULL_ACTIVATE_PX = 10;
+/** Horizontal travel that gives it up instead — derived, never dialled on its own. */
+const PULL_FAIL_PX = Math.round(PULL_ACTIVATE_PX * BACK_ACTIVATE_DOMINANCE);
+/** How far down the release has to be HEADED (travel + projected velocity — see lib/gesture-release)
+ *  to count as asking for the chapter behind this one. A pull, not a flick: deliberately more than
+ *  the reveal fractions elsewhere, because the cost of being wrong is leaving the chapter. */
+const PULL_COMMIT_FRACTION = 0.2;
+/** How close to the top counts as AT the top when the finger lands. */
+const AT_TOP_EPSILON = 2;
+
+/**
+ * "Pull down at the top to go back a chapter", for both variants.
  *
- *  Half of it, and the arithmetic is what keeps this from firing on its own: the list opens with
- *  item 0 at the top, which puts the whole sentinel above the viewport (offset = its height), so
- *  reaching the halfway mark takes a deliberate upward scroll. There is no equivalent of the
- *  forward direction's "did the content even scroll" guard to write, because arriving here IS the
- *  gesture. */
-const BACK_TRIGGER_PX = SENTINEL_HEIGHT / 2;
+ * Latched at touch-down: the drag has to BEGIN at the top of the chapter. That is the whole
+ * correctness of it — scrolling up through a chapter and coasting to the top ends there too, and
+ * reading the position at release would take every one of those for a request to leave. Nothing
+ * fires until the finger lifts, and then only on a release headed far enough down.
+ *
+ * Composed Simultaneous with the list's own scroll by every caller, so the rubber-band still
+ * happens under the finger and this only reads the release — and handed to the pages' own gestures
+ * as an external, because a pan on the surface they live on arbitrates against them (the paged
+ * reader's double-tap learned this the expensive way).
+ */
+function useBackPull({
+  scrollOffset,
+  zoomed,
+  height,
+  onGoBack,
+}: {
+  scrollOffset: SharedValue<number>;
+  /** UI-thread mirror of the zoom state. A zoomed page owns one-finger drags — and this is a
+   *  shared value rather than the render's own boolean because the zoom hook needs THIS gesture to
+   *  compose against, so it cannot also be what decides whether it exists. */
+  zoomed: SharedValue<boolean>;
+  height: number;
+  onGoBack?: () => void;
+}) {
+  const fromTop = useSharedValue(false);
+  return useMemo(
+    () =>
+      Gesture.Pan()
+        .enabled(!!onGoBack)
+        .maxPointers(1)
+        .activeOffsetY([-PULL_ACTIVATE_PX, PULL_ACTIVATE_PX])
+        .failOffsetX([-PULL_FAIL_PX, PULL_FAIL_PX])
+        .onBegin(() => {
+          'worklet';
+          fromTop.set(!zoomed.value && scrollOffset.value <= AT_TOP_EPSILON);
+        })
+        .onEnd((e) => {
+          'worklet';
+          // Downward only: dragging the content DOWN is asking for what sits above it.
+          if (!fromTop.value || e.translationY <= 0 || !onGoBack) return;
+          if (!releaseCommitted(e.translationY, e.velocityY, height * PULL_COMMIT_FRACTION)) return;
+          runOnJS(onGoBack)();
+        }),
+    [onGoBack, height, fromTop, scrollOffset, zoomed],
+  );
+}
 
 /**
  * Vertical webtoon reader — dispatches to one of two genuinely different
@@ -128,13 +181,16 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
     onZoomChange,
     nextChapterName,
     onAdvance,
-    prevChapterName,
     onGoBack,
     standby,
   },
   ref,
 ) {
   const listRef = useRef<LegendListRef>(null);
+  // The scroll offset on the UI thread — the pull below reads it at touch-down to know whether the
+  // chapter is parked at its top.
+  const scrollOffset = useSharedValue(0);
+  const sharedValues = useMemo(() => ({ scrollOffset }), [scrollOffset]);
   const n = pages.length;
 
   // Pinch / double-tap / pan-while-zoomed for the whole viewport — the same shared
@@ -143,12 +199,19 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
   // drag pans the magnified view; unzoom to resume scrolling. The pan is bounded to
   // the scaled viewport, which is exactly the content that was already on screen (and
   // therefore rendered), so panning never exposes un-virtualized blanks.
-  // The list's own scroll, as a gesture RNGH can reason about. Without this the
-  // pinch/tap on the wrapping detector never fire — the native ScrollView swallows the
-  // touch (the paged reader dodges this by living inside a non-scrolling cell). The
-  // hook marks its gestures `simultaneousWithExternalGesture(nativeScroll)` so they run
-  // alongside it (a 2-finger pinch, or a stationary tap) instead of losing to the scroll.
-  const nativeScroll = Gesture.Native();
+  // The list's own scroll, as a gesture RNGH can reason about. Without this the pinch/tap on the
+  // wrapping detector never fire — the native ScrollView swallows the touch. The zoom hook is given
+  // this AND the back-pull as `simultaneousExternal`, so its gestures run alongside both (a
+  // 2-finger pinch, or a stationary tap) instead of losing to whichever claims the touch first.
+  const nativeScroll = useMemo(() => Gesture.Native(), []);
+
+  // Declared before the zoom hook, because the zoom hook composes against it. Its own zoom check
+  // therefore reads a shared value rather than the render's boolean — see useBackPull.
+  const zoomedSV = useSharedValue(false);
+  const backPull = useBackPull({ scrollOffset, zoomed: zoomedSV, height, onGoBack });
+  const zoomExternals = useMemo(() => [nativeScroll, backPull], [nativeScroll, backPull]);
+  // Both of them mounted on the list together.
+  const listGesture = useMemo(() => Gesture.Simultaneous(nativeScroll, backPull), [nativeScroll, backPull]);
 
   // Whole zoom gesture (pinch / double-tap / pan) plus the chrome-toggle single tap,
   // composed by the shared hook. Chrome toggle ignores the tap's x.
@@ -157,8 +220,12 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
     height,
     onZoomChange,
     onSingleTap: onToggleChrome,
-    simultaneousExternal: nativeScroll,
+    simultaneousExternal: zoomExternals,
   });
+
+  useEffect(() => {
+    zoomedSV.set(zoomed);
+  }, [zoomed, zoomedSV]);
 
   // Unmounting (switching reader modes, leaving the reader) must not leave the parent
   // thinking a zoom is still active — that would keep its swipe-dismiss disabled.
@@ -169,29 +236,13 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
   // screen doesn't auto-skip on mount — its sentinel stays tap-only. `firedRef`
   // makes it a once-per-chapter trigger; it resets when `pages` (the chapter) change.
   const firedRef = useRef(false);
-  const backFiredRef = useRef(false);
   useEffect(() => {
     firedRef.current = false;
-    backFiredRef.current = false;
   }, [pages]);
   const onScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-      // Backward first: pulling the previous-chapter sentinel into view. Once per chapter, like the
-      // forward crossing — the jump remounts this reader anyway, but a second fire in the frames
-      // before that lands would ask to go back twice.
-      //
-      // Gated on the content being long enough to have pushed the sentinel off screen in the first
-      // place. A chapter that fits inside the viewport can't scroll, so it sits at offset 0 with
-      // the sentinel already in view, and every scroll event it ever reports would read as a
-      // request to leave — the same reason the forward crossing checks before trusting "at the end".
-      const canReachSentinel = contentSize.height > layoutMeasurement.height + SENTINEL_HEIGHT;
-      if (onGoBack && prevChapterName && !backFiredRef.current && canReachSentinel && contentOffset.y <= BACK_TRIGGER_PX) {
-        backFiredRef.current = true;
-        onGoBack();
-        return;
-      }
       if (!onAdvance || firedRef.current) return;
+      const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
       const scrollable = contentSize.height > layoutMeasurement.height + ADVANCE_TRIGGER_PX;
       const atBottom = contentOffset.y + layoutMeasurement.height >= contentSize.height - ADVANCE_TRIGGER_PX;
       if (scrollable && atBottom) {
@@ -199,8 +250,10 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
         onAdvance();
       }
     },
-    [onAdvance, onGoBack, prevChapterName],
+    [onAdvance],
   );
+
+
 
   useImperativeHandle(
     ref,
@@ -243,9 +296,10 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
     <View style={{ width, height, overflow: 'hidden' }}>
       <GestureDetector gesture={gesture}>
         <Animated.View style={[{ width, height }, animatedStyle]}>
-          <GestureDetector gesture={nativeScroll}>
+          <GestureDetector gesture={listGesture}>
             <AnimatedLegendList
               ref={listRef}
+              sharedValues={sharedValues}
               style={{ width, height }}
               estimatedListSize={{ width, height }}
               data={pages}
@@ -278,15 +332,8 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
               // be left to whatever the list would otherwise pick.
               onScroll={onScroll}
               scrollEventThrottle={16}
-              // Above page 1, so scrolling up has somewhere to go. Its size is declared rather than
-              // measured: `initialScrollIndex` places item 0 below it, and a header of unknown size
-              // would put that landing in the wrong place on the first frame.
-              ListHeaderComponent={
-                prevChapterName ? <ChapterSentinel direction="prev" name={prevChapterName} onPress={onGoBack} /> : null
-              }
-              estimatedHeaderSize={prevChapterName ? SENTINEL_HEIGHT : 0}
               ListFooterComponent={
-                nextChapterName ? <ChapterSentinel direction="next" name={nextChapterName} onPress={onAdvance} /> : null
+                nextChapterName ? <ChapterSentinel name={nextChapterName} onPress={onAdvance} /> : null
               }
               renderItem={({ item, index }) => (
                 <WebtoonRow
@@ -361,13 +408,14 @@ const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPage
     onToggleChrome,
     onZoomChange,
     onEndReached,
-    prevChapterName,
     onGoBack,
     standby,
   },
   ref,
 ) {
   const listRef = useRef<LegendListRef>(null);
+  const scrollOffset = useSharedValue(0);
+  const sharedValues = useMemo(() => ({ scrollOffset }), [scrollOffset]);
   const n = pages.length;
 
   // Whichever page is on screen owns the zoom (only one is ever interacted with
@@ -393,39 +441,34 @@ const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPage
     [n],
   );
 
-  // The previous-chapter sentinel is a WHOLE VIEWPORT here, not the short row the continuous strip
-  // uses: every cell in this list is one screen tall, and a header of any other height would put
-  // the snap grid off by the difference for the rest of the chapter. Sized that way, it is simply
-  // the page before page 1 — settle on it and the crossing fires, which is the same "swipe onto the
-  // transition" the paginated readers this one is modelled on use.
-  const hasPrev = !!prevChapterName && !!onGoBack;
-  const backFiredRef = useRef(false);
+  // Same "pull down at the top" as the continuous strip — nothing about a paginated list makes the
+  // question different, and it keeps the offset arithmetic below free of a header to subtract.
+  const zoomedSV = useSharedValue(false);
+  const backPull = useBackPull({ scrollOffset, zoomed: zoomedSV, height, onGoBack });
+  const nativeScroll = useMemo(() => Gesture.Native(), []);
+  const listGesture = useMemo(() => Gesture.Simultaneous(nativeScroll, backPull), [nativeScroll, backPull]);
+  // Handed to each row, whose own pinch/tap/double-tap live inside this scroller and would
+  // otherwise arbitrate against both of these without saying so.
+  const rowExternals = useMemo(() => [nativeScroll, backPull], [nativeScroll, backPull]);
   useEffect(() => {
-    backFiredRef.current = false;
-  }, [pages]);
+    zoomedSV.set(zoomed);
+  }, [zoomed, zoomedSV]);
 
   const onPageChangeRef = useRef(onPageChange);
   onPageChangeRef.current = onPageChange;
   const onMomentumScrollEnd = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      // The header shifts every page down by one screen, so the offset names a page only after it
-      // is taken back out. A negative index is the sentinel itself.
-      const idx = Math.round(e.nativeEvent.contentOffset.y / height) - (hasPrev ? 1 : 0);
-      if (idx < 0) {
-        if (!backFiredRef.current) {
-          backFiredRef.current = true;
-          onGoBack?.();
-        }
-        return;
-      }
+      const idx = Math.round(e.nativeEvent.contentOffset.y / height);
       onPageChangeRef.current(Math.max(0, Math.min(n - 1, idx)));
     },
-    [height, n, hasPrev, onGoBack],
+    [height, n],
   );
 
   return (
+    <GestureDetector gesture={listGesture}>
     <AnimatedLegendList
       ref={listRef}
+      sharedValues={sharedValues}
       style={{ width, height }}
       estimatedListSize={{ width, height }}
       data={pages}
@@ -448,13 +491,6 @@ const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPage
       onMomentumScrollEnd={onMomentumScrollEnd}
       onEndReachedThreshold={0.05}
       onEndReached={onEndReached}
-      // One viewport tall, so the paging grid still lands on page boundaries — see above.
-      ListHeaderComponent={
-        hasPrev ? (
-          <ChapterSentinel direction="prev" name={prevChapterName!} onPress={onGoBack} style={{ width, height }} />
-        ) : null
-      }
-      estimatedHeaderSize={hasPrev ? height : 0}
       renderItem={({ item, index }) => (
         <WebtoonPagedRow
           uri={item}
@@ -465,9 +501,11 @@ const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPage
           onZoomChange={handleZoom}
           fadeMs={standby ? STANDBY_FADE_MS : undefined}
           testID={testId('reader.page.tap', index + 1)}
+          externals={rowExternals}
         />
       )}
     />
+    </GestureDetector>
   );
 });
 
@@ -485,6 +523,7 @@ function WebtoonPagedRow({
   onZoomChange,
   fadeMs,
   testID,
+  externals,
 }: {
   uri: string;
   index: number;
@@ -494,6 +533,9 @@ function WebtoonPagedRow({
   onZoomChange: (zoomed: boolean) => void;
   fadeMs?: number;
   testID: string;
+  /** The gestures the LIST has mounted (its scroll, and the back-pull) — this row lives inside
+   *  them, so its own must declare they can run alongside or lose the arbitration. */
+  externals: GestureType[];
 }) {
   const [failed, setFailed] = useState(false);
   // Whole zoom gesture + the chrome-toggle single tap, composed by the shared hook
@@ -505,6 +547,7 @@ function WebtoonPagedRow({
     onZoomChange,
     onSingleTap: onToggleChrome,
     singleTapEnabled: !failed,
+    simultaneousExternal: externals,
   });
 
   return (
@@ -520,30 +563,18 @@ function WebtoonPagedRow({
   );
 }
 
-/** A chapter boundary, as a row: below the last page ("Next: … →", mirroring comical-web's
- *  scroll-mode sentinel) or above the first ("← Previous: …"). Tappable, and also the visual cue
- *  for the scroll-into-it auto-crossing in either direction.
+/** End-of-chapter row appended below the last page of the continuous webtoon list
+ *  (mirrors comical-web's scroll-mode "Next: … →" sentinel). Tappable, and also the
+ *  visual cue for the scroll-to-end auto-advance — scrolling it into view loads the
+ *  next chapter.
  *
- *  `style` lets the paginated variant size it to a whole viewport — there, every row is exactly one
- *  screen and a short sentinel would put the snap grid off by its own height. */
-function ChapterSentinel({
-  direction,
-  name,
-  onPress,
-  style,
-}: {
-  direction: 'prev' | 'next';
-  name: string;
-  onPress?: () => void;
-  style?: StyleProp<ViewStyle>;
-}) {
+ *  There is deliberately no counterpart above page 1: going BACK is a pull at the top
+ *  (see useBackPull), not a page of nothing to scroll through. */
+function ChapterSentinel({ name, onPress }: { name: string; onPress?: () => void }) {
   return (
-    <Pressable
-      testID={direction === 'next' ? 'reader.chapter-sentinel' : 'reader.chapter-sentinel.prev'}
-      style={[styles.sentinel, style]}
-      onPress={onPress}>
+    <Pressable testID="reader.chapter-sentinel" style={styles.sentinel} onPress={onPress}>
       <Text style={styles.sentinelText} numberOfLines={2}>
-        {direction === 'next' ? `Next: ${name} →` : `← Previous: ${name}`}
+        Next: {name} →
       </Text>
     </Pressable>
   );
@@ -551,7 +582,7 @@ function ChapterSentinel({
 
 const styles = StyleSheet.create({
   sentinel: {
-    minHeight: SENTINEL_HEIGHT,
+    minHeight: 96,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 32,

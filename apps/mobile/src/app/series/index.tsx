@@ -636,6 +636,11 @@ function SeriesReaderInstance({
   // native paged reader can stitch them into ONE flat pager — swiping across a chapter boundary
   // is then an ordinary page turn with an in-place relabel, no remount.
   const stitched = !IS_WEB && settings.mode === 'paged' && !isDirect;
+  // The neighbour page LISTS are worth having in BOTH reader modes, for different reasons: the
+  // paged reader stitches them into its window, and the vertical one — which can only ever jump at
+  // a boundary — uses them so that the jump lands on a chapter it already has, instead of a
+  // "Loading…" and then a page still fetching. They cost a list of URLs each, cache-first.
+  const wantsNeighbours = !IS_WEB && !isDirect;
   // The committed side of the reveal (declared up here — the stitching queries below gate on
   // it). The screen opens ON the details; see the reveal section further down.
   const [detailsActive, setDetailsActive] = useState(!readerFirst);
@@ -675,11 +680,11 @@ function SeriesReaderInstance({
   // or warm images: both of those key off `standby`/`detailsSettled` in ReaderPane, unchanged.
   const { data: prevPages, error: prevPagesError } = useQuery({
     ...chapterPagesQuery(ds, mock, bridgeId ?? '', id ?? '', prevChapter?.id ?? ''),
-    enabled: stitched && !!id && !!prevChapter,
+    enabled: wantsNeighbours && !!id && !!prevChapter,
   });
   const { data: nextPages } = useQuery({
     ...chapterPagesQuery(ds, mock, bridgeId ?? '', id ?? '', nextChapter?.id ?? ''),
-    enabled: stitched && !!id && !!nextChapter,
+    enabled: wantsNeighbours && !!id && !!nextChapter,
   });
 
   // The stitched window — the RUN: a segment only joins once its pages are loaded (no holes); it
@@ -830,17 +835,17 @@ function SeriesReaderInstance({
     });
   }, [readerReady, target, pages, segments]);
 
-  // The hand-off's destination, warmed. Where the previous chapter did NOT make it into the window
-  // — the grace ran out, or it is a chapter the run crossed back into and can no longer grow toward
-  // — going back is the pager's off-the-end jump, and it lands on that chapter's LAST page. The
-  // pane's own warm-ahead can't reach it: it walks the window, and this page is outside it by
-  // definition. So the screen warms the few pages the jump can land on, and the crossing arrives on
-  // an image like any other. Standby is excluded like every other image request on this screen.
+  // The backward jump's destination, warmed. Wherever the previous chapter is not in the pager's
+  // window — the whole of vertical mode, which never stitches, plus the paged cases where the
+  // window couldn't take it — going back lands on that chapter's LAST page, and the pane's own
+  // warm-ahead can't reach it: that walks the window, and this page is outside it by definition. So
+  // the screen warms the few pages the jump can land on, and the crossing arrives on an image like
+  // any other. Standby is excluded like every other image request on this screen.
   useEffect(() => {
-    if (!stitched || detailsSettled || !prevChapter || !prevPages?.length) return;
+    if (!wantsNeighbours || detailsSettled || !prevChapter || !prevPages?.length) return;
     if (segments.some((s) => s.id === prevChapter.id)) return;
     warmPrefetch(prevPages.slice(-1 - WARM_BEHIND));
-  }, [stitched, detailsSettled, prevChapter, prevPages, segments]);
+  }, [wantsNeighbours, detailsSettled, prevChapter, prevPages, segments]);
 
   // A stitched crossing settled: flush of the OLD chapter's progress already happened in the pane;
   // this just relabels which chapter is "current" WITHOUT remounting (the pane's key is the run,
@@ -2460,7 +2465,6 @@ function SeriesReaderInstance({
               hasPrevChapter={!!prevChapter}
               hasNextChapter={!!nextChapter}
               nextChapterName={nextChapter?.name}
-              prevChapterName={prevChapter?.name}
               onCrossChapter={goAdjacentChapter}
               onSkipChapter={(delta) => {
                 showChrome();
@@ -3042,9 +3046,6 @@ const ReaderPane = forwardRef<
     hasPrevChapter: boolean;
     hasNextChapter: boolean;
     nextChapterName?: string;
-    /** The chapter BEHIND this one, for the vertical reader's backward sentinel. The paged reader
-     *  has no use for it — it crosses backward by turning a page in its stitched window. */
-    prevChapterName?: string;
     /** Paging off either end of the chapter (delta −1 lands on the previous chapter's LAST page). */
     onCrossChapter: (delta: 1 | -1) => void;
     /** The navigator's skip buttons — always land on the target chapter's first page. */
@@ -3086,7 +3087,6 @@ const ReaderPane = forwardRef<
     hasPrevChapter,
     hasNextChapter,
     nextChapterName,
-    prevChapterName,
     onCrossChapter,
     onSkipChapter,
     chromeVisible,
@@ -3397,10 +3397,9 @@ const ReaderPane = forwardRef<
           // The continuous strip advances via its end sentinel, the fit-page variant via the
           // end-reached + last-page check.
           nextChapterName={chaptered ? nextChapterName : undefined}
-          // Backward, which vertical mode had no way to do at all: a sentinel above page 1, and the
-          // same explicit jump the skip button takes (landing on the previous chapter's LAST page,
-          // so scrolling up continues where the reading does).
-          prevChapterName={chaptered && hasPrevChapter ? prevChapterName : undefined}
+          // Backward, which vertical mode had no way to ask for at all: a pull at the top of the
+          // chapter, taking the same explicit jump the skip button does — landing on the previous
+          // chapter's LAST page, so reading continues where it left off.
           onGoBack={chaptered && hasPrevChapter ? () => onCrossChapter(-1) : undefined}
           onAdvance={chaptered && hasNextChapter ? () => onCrossChapter(1) : undefined}
           onEndReached={
