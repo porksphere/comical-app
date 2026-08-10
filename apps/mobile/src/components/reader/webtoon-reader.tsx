@@ -17,6 +17,7 @@ import { useZoomable } from '@/components/reader/use-zoomable';
 import type { PageFit } from '@/hooks/use-reader-settings';
 import { BACK_ACTIVATE_DOMINANCE } from '@/lib/back-swipe';
 import { releaseCommitted } from '@/lib/gesture-release';
+import { trace } from '@/lib/gesture-trace';
 import { testId } from '@/lib/test-id';
 
 /** `animated` defaults to true (a jump). The reader's page scrubber passes false: rows here have
@@ -88,7 +89,7 @@ const PULL_FAIL_PX = Math.round(PULL_ACTIVATE_PX * BACK_ACTIVATE_DOMINANCE);
  *  to count as asking for the chapter behind this one. A pull, not a flick: deliberately more than
  *  the reveal fractions elsewhere, because the cost of being wrong is leaving the chapter. */
 const PULL_COMMIT_FRACTION = 0.2;
-/** How close to the top counts as AT the top when the finger lands. */
+/** How close to the top counts as AT the top. */
 const AT_TOP_EPSILON = 2;
 
 /**
@@ -105,12 +106,23 @@ const AT_TOP_EPSILON = 2;
  * reader's double-tap learned this the expensive way).
  */
 function useBackPull({
-  scrollOffset,
+  atTop,
   zoomed,
   height,
   onGoBack,
 }: {
-  scrollOffset: SharedValue<number>;
+  /** Whether the chapter is parked at its top. NOT derived from a scroll offset here, and that is
+   *  the bug this parameter exists to have fixed: an offset shared value is only ever as good as
+   *  the scroll events that write it, and there are none before the first scroll. A pane that
+   *  mounts deep into a chapter — which is EXACTLY what a backward crossing does, landing on the
+   *  previous chapter's last page — therefore started life reading "offset 0, so we must be at the
+   *  top". Every downward drag from there was a request to leave, and the natural thing to do when
+   *  you have just landed at the end of a chapter is drag downward to read back through it. One
+   *  crossing became a cascade of them: scroll up, flash, and you are somewhere else entirely.
+   *
+   *  So the caller seeds it from where the list was TOLD to open and refines it from real scrolls,
+   *  which is knowledge that exists at mount rather than knowledge that has to arrive. */
+  atTop: SharedValue<boolean>;
   /** UI-thread mirror of the zoom state. A zoomed page owns one-finger drags — and this is a
    *  shared value rather than the render's own boolean because the zoom hook needs THIS gesture to
    *  compose against, so it cannot also be what decides whether it exists. */
@@ -128,16 +140,23 @@ function useBackPull({
         .failOffsetX([-PULL_FAIL_PX, PULL_FAIL_PX])
         .onBegin(() => {
           'worklet';
-          fromTop.set(!zoomed.value && scrollOffset.value <= AT_TOP_EPSILON);
+          fromTop.set(!zoomed.value && atTop.value);
+          trace('webtoon.pull', 'begin', { fromTop: fromTop.value, atTop: atTop.value, zoomed: zoomed.value });
         })
         .onEnd((e) => {
           'worklet';
           // Downward only: dragging the content DOWN is asking for what sits above it.
-          if (!fromTop.value || e.translationY <= 0 || !onGoBack) return;
-          if (!releaseCommitted(e.translationY, e.velocityY, height * PULL_COMMIT_FRACTION)) return;
-          runOnJS(onGoBack)();
+          const committed =
+            fromTop.value && e.translationY > 0 && releaseCommitted(e.translationY, e.velocityY, height * PULL_COMMIT_FRACTION);
+          trace('webtoon.pull', 'end', {
+            fromTop: fromTop.value,
+            ty: Math.round(e.translationY),
+            vy: Math.round(e.velocityY),
+            committed,
+          });
+          if (committed && onGoBack) runOnJS(onGoBack)();
         }),
-    [onGoBack, height, fromTop, scrollOffset, zoomed],
+    [onGoBack, height, fromTop, atTop, zoomed],
   );
 }
 
@@ -187,10 +206,8 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
   ref,
 ) {
   const listRef = useRef<LegendListRef>(null);
-  // The scroll offset on the UI thread — the pull below reads it at touch-down to know whether the
-  // chapter is parked at its top.
-  const scrollOffset = useSharedValue(0);
-  const sharedValues = useMemo(() => ({ scrollOffset }), [scrollOffset]);
+  // Seeded from where this pane was told to open, then refined by real scrolls — see useBackPull.
+  const atTop = useSharedValue(initialPage <= 0);
   const n = pages.length;
 
   // Pinch / double-tap / pan-while-zoomed for the whole viewport — the same shared
@@ -208,7 +225,7 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
   // Declared before the zoom hook, because the zoom hook composes against it. Its own zoom check
   // therefore reads a shared value rather than the render's boolean — see useBackPull.
   const zoomedSV = useSharedValue(false);
-  const backPull = useBackPull({ scrollOffset, zoomed: zoomedSV, height, onGoBack });
+  const backPull = useBackPull({ atTop, zoomed: zoomedSV, height, onGoBack });
   const zoomExternals = useMemo(() => [nativeScroll, backPull], [nativeScroll, backPull]);
   // Both of them mounted on the list together.
   const listGesture = useMemo(() => Gesture.Simultaneous(nativeScroll, backPull), [nativeScroll, backPull]);
@@ -241,8 +258,9 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
   }, [pages]);
   const onScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      if (!onAdvance || firedRef.current) return;
       const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+      atTop.set(contentOffset.y <= AT_TOP_EPSILON);
+      if (!onAdvance || firedRef.current) return;
       const scrollable = contentSize.height > layoutMeasurement.height + ADVANCE_TRIGGER_PX;
       const atBottom = contentOffset.y + layoutMeasurement.height >= contentSize.height - ADVANCE_TRIGGER_PX;
       if (scrollable && atBottom) {
@@ -250,7 +268,7 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
         onAdvance();
       }
     },
-    [onAdvance],
+    [onAdvance, atTop],
   );
 
 
@@ -299,7 +317,6 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
           <GestureDetector gesture={listGesture}>
             <AnimatedLegendList
               ref={listRef}
-              sharedValues={sharedValues}
               style={{ width, height }}
               estimatedListSize={{ width, height }}
               data={pages}
@@ -414,8 +431,14 @@ const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPage
   ref,
 ) {
   const listRef = useRef<LegendListRef>(null);
-  const scrollOffset = useSharedValue(0);
-  const sharedValues = useMemo(() => ({ scrollOffset }), [scrollOffset]);
+  // Same seed-then-refine as the continuous variant — and the same reason. See useBackPull.
+  const atTop = useSharedValue(initialPage <= 0);
+  const onScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      atTop.set(e.nativeEvent.contentOffset.y <= AT_TOP_EPSILON);
+    },
+    [atTop],
+  );
   const n = pages.length;
 
   // Whichever page is on screen owns the zoom (only one is ever interacted with
@@ -444,7 +467,7 @@ const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPage
   // Same "pull down at the top" as the continuous strip — nothing about a paginated list makes the
   // question different, and it keeps the offset arithmetic below free of a header to subtract.
   const zoomedSV = useSharedValue(false);
-  const backPull = useBackPull({ scrollOffset, zoomed: zoomedSV, height, onGoBack });
+  const backPull = useBackPull({ atTop, zoomed: zoomedSV, height, onGoBack });
   const nativeScroll = useMemo(() => Gesture.Native(), []);
   const listGesture = useMemo(() => Gesture.Simultaneous(nativeScroll, backPull), [nativeScroll, backPull]);
   // Handed to each row, whose own pinch/tap/double-tap live inside this scroller and would
@@ -468,7 +491,6 @@ const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPage
     <GestureDetector gesture={listGesture}>
     <AnimatedLegendList
       ref={listRef}
-      sharedValues={sharedValues}
       style={{ width, height }}
       estimatedListSize={{ width, height }}
       data={pages}
@@ -489,6 +511,8 @@ const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPage
       recycleItems={false}
       drawDistance={height}
       onMomentumScrollEnd={onMomentumScrollEnd}
+      onScroll={onScroll}
+      scrollEventThrottle={16}
       onEndReachedThreshold={0.05}
       onEndReached={onEndReached}
       renderItem={({ item, index }) => (
