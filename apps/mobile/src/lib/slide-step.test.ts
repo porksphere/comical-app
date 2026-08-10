@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   COMMIT_DISTANCE,
+  dismissesNow,
   dismissTarget,
   DISMISS_DISTANCE,
   MAX_SCROLL_UNMEASURED,
@@ -146,6 +147,23 @@ describe('settleStep', () => {
     }
     expect(s.hidden).toBeLessThan(SPAN); // it did move, 1:1, the whole way
     expect(s.up).toBeLessThan(COMMIT_DISTANCE); // ...but never earned the lock-in
+  });
+});
+
+describe('dismissesNow', () => {
+  // The jiggle this exists to kill: a flick from the top lifts the finger ~40px in while momentum
+  // carries the list hundreds more. Asked at `release`, `dismissTarget` says "bounce back" off that
+  // 40 — so the bars snapped in, momentum tracked them out again, and `rest` finally dismissed them.
+  test('holds a bounce-back until the scrolling has stopped', () => {
+    expect(dismissesNow(0, false)).toBe(false);
+    expect(dismissesNow(0, true)).toBe(true);
+  });
+
+  // Momentum can only carry the content FURTHER from the top, so a hide decided at release can't be
+  // invalidated by what follows — and waiting would leave the chrome moving after the fling started.
+  test('commits a hide the moment the finger lifts', () => {
+    expect(dismissesNow(SPAN, false)).toBe(true);
+    expect(dismissesNow(SPAN, true)).toBe(true);
   });
 });
 

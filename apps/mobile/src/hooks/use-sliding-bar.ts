@@ -47,6 +47,7 @@ import {
 } from '@/lib/scroll-release';
 import {
   COMMIT_DISTANCE,
+  dismissesNow,
   dismissTarget,
   MAX_SCROLL_UNMEASURED,
   SETTLE_MS,
@@ -182,9 +183,12 @@ export function useSlidingBar(
       // `dismissTarget`.
       const hideTo = dismissTarget(scrollY.value, barHeight);
       const earned = revealUp.value >= COMMIT_DISTANCE;
-      // An earned reveal, and any dismissal, finish the moment the finger lifts — the bar shouldn't
-      // still be moving after a fling has started.
+      // An earned reveal, and a dismissal that commits to HIDDEN, finish the moment the finger lifts
+      // — the bar shouldn't still be moving after a fling has started. A dismissal that would bounce
+      // the bar back waits for `rest` instead, so a flick from the top isn't answered on the offset
+      // the fling STARTED at. See `dismissesNow`.
       if (earned || revealUp.value === 0) {
+        if (!earned && !dismissesNow(hideTo, phase === 'rest')) return;
         revealUp.set(earned ? COMMIT_DISTANCE : 0);
         settleTo(earned ? 0 : hideTo);
         return;

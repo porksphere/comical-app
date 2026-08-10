@@ -13,13 +13,21 @@ every platform with no `.web.tsx` split needed. Don't hand-roll glyphs. See
 # Bottom nav: a custom-rendered bar, not the OS-native one
 
 `src/components/app-tabs.tsx` is a single cross-platform component (`expo-router/ui`'s
-headless `Tabs`/`TabList`/`TabTrigger`, plain `Pressable`s) used on iOS, Android, and web
-alike — there's no `NativeTabs`/`unstable-native-tabs` wrapper over the real
+headless `Tabs`/`TabList`/`TabTrigger`, plain `Pressable`s) used on iOS,
+Android, and web alike — there's no `NativeTabs`/`unstable-native-tabs` wrapper over the real
 `UITabBarController`/Material 3 `NavigationBar` anymore. That was tried and reverted: iOS 26's
 `tabBarMinimizeBehavior` needed react-native-screens patches to even find the content scroll
 view, and even with that (plus pushing both edges imperatively, confirmed via on-device
 diagnostics) the tab bar still only re-expanded once scrolled all the way back to the top, never
 mid-scroll — a dead end inside UIKit's private implementation, not fixable from app code.
+
+The visible bar is NOT the `TabList`. Its slide is a Reanimated animated style, which a
+`TabList` can't carry (it renders a plain `View`, and `asChild` routes through a Slot that
+flattens and object-spreads the style). So routes are registered by a `display: 'none'`
+`TabList` — Expo's documented custom-tab-bar structure — and the bar is our own
+`Animated.View` of href-less `TabTrigger`s alongside it. That registration `TabList` must
+stay INLINE in `Tabs`: discovery matches `child.type === TabList`, so wrapping it in a View
+or extracting it to a component silently yields zero screens (expo/expo#37796).
 
 # Data: real API, REST-over-HTTP on every platform (for now)
 

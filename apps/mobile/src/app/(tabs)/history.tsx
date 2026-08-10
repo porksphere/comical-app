@@ -1,4 +1,5 @@
-import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
+import { AnimatedLegendList } from '@legendapp/list/reanimated';
+import type { LegendListRef } from '@legendapp/list/react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
@@ -41,7 +42,9 @@ export default function HistoryScreen() {
   const { byId, nameOf, directOf } = useBridgeMap();
   const listRef = useRef<LegendListRef>(null);
   useScrollToTopOnReselect('history', listRef);
-  const { onScroll } = useHideTabBarOnScroll();
+  // UI-thread scroll offset for the tab bar's slide — `sharedValues` feeds it (hence the
+  // AnimatedLegendList below), `onScroll` only keeps the bottom-bounce measurement in sync.
+  const { sharedValues, onScroll } = useHideTabBarOnScroll();
   // Let the tab swap paint before mounting the row list (see use-deferred-mount).
   const ready = useDeferredMount();
 
@@ -143,7 +146,7 @@ export default function HistoryScreen() {
           <View style={styles.centerFill}>{emptyBody}</View>
         </View>
       ) : (
-        <LegendList
+        <AnimatedLegendList
           ref={listRef}
           // Full-width scroller so the scrollbar sits at the window edge; rows centered via sidePad.
           style={styles.list}
@@ -173,6 +176,7 @@ export default function HistoryScreen() {
             />
           )}
           showsVerticalScrollIndicator={Platform.OS === 'web'}
+          sharedValues={sharedValues}
           onScroll={onScroll}
           // Gesture phases for the tab bar, which commits to shown/hidden on release — this screen
           // owns its list rather than going through RecyclerList, which reports them itself.

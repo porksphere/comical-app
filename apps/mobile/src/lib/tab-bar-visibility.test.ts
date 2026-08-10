@@ -1,38 +1,24 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import {
-  getTabBarProgress,
-  isTabBarPinned,
-  pinTabBar,
-  setTabBarProgress,
-  subscribeTabBarPinned,
-} from './tab-bar-visibility';
+import { isTabBarPinned, pinTabBar, subscribeTabBarPinned } from './tab-bar-visibility';
 
-// Module-level state shared by the whole app (there is one bar), so each test starts from shown and
-// unpinned rather than from whatever the previous one left behind.
+// Module-level state shared by the whole app (there is one bar), so each test starts unpinned rather
+// than from whatever the previous one left behind. What the pin DOES to the bar's position is
+// asserted at the two subscribers (`tab-bar-slide` for the native slide, `app-tabs` for the web
+// fade); this file covers the bookkeeping they hang off, which is the part with the edge cases.
 let release: (() => void) | null = null;
 beforeEach(() => {
   release?.();
   release = null;
-  setTabBarProgress(0);
 });
 
 describe('pinTabBar', () => {
-  test('reveals the bar and holds it there against anything reported meanwhile', () => {
-    setTabBarProgress(1);
+  test('holds while anything holds it, and releases once nothing does', () => {
     release = pinTabBar();
-    expect(getTabBarProgress()).toBe(0);
-    // A screen that keeps reporting (or a settle still landing) can't move it while pinned.
-    setTabBarProgress(0.6);
-    expect(getTabBarProgress()).toBe(0);
-  });
-
-  test('lets the bar move again once released', () => {
-    const unpin = pinTabBar();
-    unpin();
+    expect(isTabBarPinned()).toBe(true);
+    release();
+    release = null;
     expect(isTabBarPinned()).toBe(false);
-    setTabBarProgress(0.6);
-    expect(getTabBarProgress()).toBe(0.6);
   });
 
   // Focus and blur overlap across a navigation — the incoming screen takes its pin before the
@@ -43,8 +29,14 @@ describe('pinTabBar', () => {
     release = pinTabBar();
     outgoing();
     expect(isTabBarPinned()).toBe(true);
-    setTabBarProgress(1);
-    expect(getTabBarProgress()).toBe(0);
+  });
+
+  test('a release called twice drops only its own pin', () => {
+    const first = pinTabBar();
+    release = pinTabBar();
+    first();
+    first();
+    expect(isTabBarPinned()).toBe(true);
   });
 
   test('announces only the edges, so subscribers act on the transition', () => {

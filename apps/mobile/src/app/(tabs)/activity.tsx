@@ -69,7 +69,6 @@ export default function ActivityScreen() {
   const { byId, nameOf, directOf } = useBridgeMap();
   const listRef = useRef<LegendListRef>(null);
   useScrollToTopOnReselect('activity', listRef);
-  const { onScroll } = useHideTabBarOnScroll();
   // Let the tab swap paint before mounting the row list (see use-deferred-mount).
   const ready = useDeferredMount();
 
@@ -95,6 +94,10 @@ export default function ActivityScreen() {
   // custom overlay spinner (no native RefreshControl — see usePullToRefresh) sources the gesture; the
   // list's live scroll offset feeds it via `sharedValues` below.
   const scrollY = useSharedValue(0);
+  // The tab bar's slide runs off that same offset, on the UI thread — this screen already feeds it
+  // to the list via `sharedValues` below, so the bar reads one value rather than a second that could
+  // disagree with it. `onScroll` only keeps the bottom-bounce measurement in sync.
+  const { onScroll } = useHideTabBarOnScroll({ scrollY });
   const refresh = useCallback(async () => {
     try {
       const res = await ds.checkForUpdates({ force: true });

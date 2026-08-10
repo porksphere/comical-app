@@ -180,6 +180,30 @@ export function dismissTarget(y: number, span: number): number {
 }
 
 /**
+ * Whether a dismissal decided when the finger lifted should be acted on NOW, or held until the
+ * scrolling actually stops.
+ *
+ * `dismissTarget` reads the offset at the instant it's asked, and at `release` that instant is the
+ * start of a fling, not the end of one. A flick from the top lifts the finger after ~40px while
+ * momentum carries the list hundreds more: asked then, the answer is "bounce back", so both bars
+ * snapped fully in, momentum tracked them straight back out, and `rest` finally dismissed them —
+ * out, in, out, gone. Two visible jiggles before the chrome went away.
+ *
+ * So a dismissal only commits early when it's committing to HIDDEN, which momentum can't invalidate
+ * (the content is already past the threshold and only moving further). A "bounce back" waits for
+ * `rest`, by which point the offset is the one the user actually landed on. Nothing is frozen in the
+ * meantime — the bars keep tracking the content 1:1 through the fling, which is what makes the wait
+ * invisible rather than a pause.
+ *
+ * The earned REVEAL still fires at release, untouched: that one is about the gesture, not the
+ * offset, so waiting would just make asking for the chrome back feel slow.
+ */
+export function dismissesNow(hideTo: number, atRest: boolean): boolean {
+  'worklet';
+  return hideTo > 0 || atRest;
+}
+
+/**
  * `slideStep` plus the bookkeeping for the commit-on-release rule the bars actually ship: both
  * directions track the finger 1:1, and letting go finishes the job in whichever direction the
  * gesture earned.
