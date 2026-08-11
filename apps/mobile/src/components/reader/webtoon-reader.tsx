@@ -318,10 +318,32 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
     firedRef.current = false;
     armedRef.current = false;
   }, [pages]);
+
+  // ── Instrumentation for the boundary adjustment ──────────────────────────────────────────────
+  // A small vertical jump around a chapter crossing has three candidate sources and they want
+  // different fixes, so the trace is built to tell them apart on one clock:
+  //   · the WINDOW growing (a chapter appended) — `window n=` moves,
+  //   · the CONTENT resizing under the estimate as rows measure — `h=` moves without `n=`,
+  //   · a render/relabel that moves the offset with neither — `y=` moves while both hold still.
+  // Silent unless a recording is running (traceJS returns on a flag).
+  const traceHeightRef = useRef(0);
+  const traceAtRef = useRef(0);
+  useEffect(() => {
+    traceJS('webtoon', 'window', { n: pages.length });
+  }, [pages.length]);
   const onScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
       atTop.set(contentOffset.y <= AT_TOP_EPSILON);
+      // Every content-height change, and otherwise a sample: the height is the interesting column
+      // (it is what a re-measure or a window growth moves), and the offset beside it is what the
+      // reader sees happen.
+      const now = Date.now();
+      if (contentSize.height !== traceHeightRef.current || now - traceAtRef.current > 100) {
+        traceHeightRef.current = contentSize.height;
+        traceAtRef.current = now;
+        traceJS('webtoon', 'scroll', { y: contentOffset.y, h: contentSize.height });
+      }
       if (!onAdvance || firedRef.current) return;
       const scrollable = contentSize.height > layoutMeasurement.height + ADVANCE_TRIGGER_PX;
       const atBottom = contentOffset.y + layoutMeasurement.height >= contentSize.height - ADVANCE_TRIGGER_PX;
@@ -335,7 +357,7 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
         onAdvance();
       }
     },
-    [onAdvance, atTop, pages],
+    [onAdvance, atTop, pages, traceHeightRef, traceAtRef],
   );
 
 

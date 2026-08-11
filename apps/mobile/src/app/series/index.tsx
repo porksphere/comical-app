@@ -851,6 +851,10 @@ function SeriesReaderInstance({
   // this just relabels which chapter is "current" WITHOUT remounting (the pane's key is the run,
   // not the chapter, and the window merge above finds the new current already in `run.segs`).
   const relabelFromPager = useCallback((chapterId: string, chapterName: string | undefined, page: number) => {
+    // Marked so a boundary adjustment can be told apart from the window growing around it — the
+    // two land within a frame or two of each other and want different fixes. See the vertical
+    // reader's `window`/`scroll` marks.
+    traceJS('reader', 'relabel', { page });
     setOverride({ chapterId, chapterName, start: page });
   }, []);
 
