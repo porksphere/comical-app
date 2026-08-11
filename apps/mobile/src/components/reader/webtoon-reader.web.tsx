@@ -1,5 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useReducer, useRef, useState } from 'react';
 
+import type { ReaderPageItem } from '@/components/reader/paged-reader';
 import { ReaderPage, STANDBY_FADE_MS } from '@/components/reader/reader-page';
 import {
   clamp,
@@ -17,7 +18,10 @@ import type { PageFit } from '@/hooks/use-reader-settings';
 export type WebtoonReaderHandle = { goToPage: (index: number) => void };
 
 type Props = {
-  pages: string[];
+  /** Item shape shared with native (see paged-reader's ReaderPageItem). Web is never stitched, so
+   *  this is always one chapter's worth — but the shape is common so the pane has one thing to
+   *  pass. */
+  pages: ReaderPageItem[];
   width: number;
   /** Viewport height — only used by the `'fit-page'` paginated variant, to
    *  size each row to exactly one screen. */
@@ -542,7 +546,7 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
   return (
     <div ref={scrollerRef} onScroll={onScroll} onClick={onSurfaceClick} style={scrollerStyle(paged, snapEnabled)}>
       <div ref={contentRef} style={contentStyle}>
-        {pages.map((uri, i) => {
+        {pages.map((item, i) => {
           const isLoaded = loaded.has(i);
           const slotStyle = paged
             ? pagedSlotStyle(height)
@@ -551,7 +555,7 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
               : { width: '100%', height: width * aspectRef.current };
           return (
             <div
-              key={`${uri}:${i}`}
+              key={item.key}
               data-index={i}
               ref={(el) => {
                 slotsRef.current[i] = el;
@@ -561,8 +565,8 @@ export const WebtoonReader = forwardRef<WebtoonReaderHandle, Props>(function Web
               {isLoaded ? (
                 <ReaderPage
                   fadeMs={standby ? STANDBY_FADE_MS : undefined}
-                  uri={uri}
-                  page={i + 1}
+                  uri={item.uri}
+                  page={item.pageNumber}
                   fit={paged ? 'contain' : 'width'}
                   width={width}
                   height={paged ? height : undefined}

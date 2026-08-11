@@ -1,6 +1,15 @@
 import type { LegendListRef, ViewToken } from '@legendapp/list/react-native';
 import { AnimatedLegendList } from '@legendapp/list/reanimated';
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   Pressable,
   StyleSheet,
@@ -12,6 +21,7 @@ import {
 import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useSharedValue, type SharedValue } from 'react-native-reanimated';
 
+import type { ReaderPageItem } from '@/components/reader/paged-reader';
 import { ReaderPage, STANDBY_FADE_MS } from '@/components/reader/reader-page';
 import { useZoomable } from '@/components/reader/use-zoomable';
 import type { PageFit } from '@/hooks/use-reader-settings';
@@ -26,7 +36,11 @@ import { testId } from '@/lib/test-id';
 export type WebtoonReaderHandle = { goToPage: (index: number, animated?: boolean) => void };
 
 type Props = {
-  pages: string[];
+  /** The pages to show — the STITCHED WINDOW where there is one (several chapters' pages in one
+   *  list, exactly as the horizontal pager takes them), else just this chapter's. Each item carries
+   *  its own per-chapter page number, because a flat index stops meaning "page N" the moment more
+   *  than one chapter is in here. */
+  pages: ReaderPageItem[];
   width: number;
   /** Viewport height — only used by the `'fit-page'` paginated variant, to
    *  size each row to exactly one screen. */
@@ -50,7 +64,9 @@ type Props = {
    *  viewability-based page tracking makes `onEndReached`+last-page fragile. */
   onAdvance?: () => void;
   /** Cross BACKWARD, to the previous chapter's last page — fired by pulling down at the very top
-   *  of the chapter (see `useBackPull`). Undefined where there is nothing behind this chapter.
+   *  of the chapter (see `useBackPull`). Undefined where there is nothing behind this chapter, AND
+   *  undefined where the chapter behind it is already in the window: there, scrolling up simply
+   *  reaches it, which is the whole point of stitching and a great deal better than a jump.
    *
    *  Vertical mode has no stitched window to turn a page into, so a boundary here is always a jump;
    *  what it was missing was any way to ASK for the backward one. Scrolling up at page 1 did what a
@@ -72,6 +88,12 @@ type Props = {
 // while it does. It used to be refined here too, by a running average kept alongside a table of
 // measured heights; that whole apparatus was standing in for a list that could measure.
 const ESTIMATED_ASPECT = 3 / 2;
+
+/** Module-level so they're stable without a hook (and so nothing has to read a ref during render to
+ *  keep them that way). Continuous counts a row as current at half on screen; the paginated variant
+ *  matches the horizontal pager's 60%. */
+const VIEWABILITY_CONTINUOUS = { itemVisiblePercentThreshold: 50 };
+const VIEWABILITY_PAGED = { itemVisiblePercentThreshold: 60 };
 
 // How close (px) to the bottom of the continuous list the scroll must get before
 // the next chapter auto-loads — roughly where the end-of-chapter sentinel enters view.
@@ -315,15 +337,21 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
   // old code had no answer for a row ABOVE the viewport growing when its image finally decoded: the
   // strip lurched under the reader, which is the long-standing "it jumped while I was reading"
   // in vertical mode. Nothing here schedules a correction any more because nothing here needs to.
+  // Identity-stable, and reading the latest callback through a ref that is written AFTER render
+  // rather than during it (the paged reader's arrangement, and the React Compiler's rule).
   const onPageChangeRef = useRef(onPageChange);
-  onPageChangeRef.current = onPageChange;
-  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current;
+  useLayoutEffect(() => {
+    onPageChangeRef.current = onPageChange;
+  });
   // Topmost VIEWABLE row, by index — `[0]` would trust an ordering nothing promises.
-  const onViewable = useRef(({ viewableItems }: { viewableItems: ViewToken<string>[] }) => {
-    let first: ViewToken<string> | undefined;
-    for (const token of viewableItems) if (!first || token.index < first.index) first = token;
-    if (first) onPageChangeRef.current(first.index);
-  }).current;
+  const [onViewable] = useState(
+    () =>
+      ({ viewableItems }: { viewableItems: ViewToken<ReaderPageItem>[] }) => {
+        let first: ViewToken<ReaderPageItem> | undefined;
+        for (const token of viewableItems) if (!first || token.index < first.index) first = token;
+        if (first) onPageChangeRef.current(first.index);
+      },
+  );
 
   return (
     // Fixed-size clip so the scaled strip can grow past the viewport and be masked;
@@ -338,13 +366,13 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
               style={{ width, height }}
               estimatedListSize={{ width, height }}
               data={pages}
-              keyExtractor={(uri, i) => `${uri}:${i}`}
+              keyExtractor={(item) => item.key}
               // Frozen while zoomed so the pan gesture owns one-finger drags; scrolling
               // resumes the instant it's back at 1×.
               scrollEnabled={!zoomed}
               showsVerticalScrollIndicator={false}
               onViewableItemsChanged={onViewable}
-              viewabilityConfig={viewabilityConfig}
+              viewabilityConfig={VIEWABILITY_CONTINUOUS}
               // Where the reader is resuming to. A deep entry point lands on estimates and tightens
               // as the rows between here and there measure — which is precisely what the anchoring
               // below is for, and what the old jump-twice-and-hope dance was standing in for.
@@ -352,11 +380,13 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
               // A page's height isn't known until its image is; this is the guess until then, and
               // LegendList replaces it per row with the real thing as each one lands.
               estimatedItemSize={width * ESTIMATED_ASPECT}
-              // THE one that matters in vertical mode: hold the visible content still while rows
-              // resize. A row above the viewport growing when its image decodes used to shove the
-              // strip down mid-read. `data: false` — a chapter change remounts this reader outright,
-              // so there is no data anchoring to do.
-              maintainVisibleContentPosition={{ data: false, size: true }}
+              // Both halves matter here. SIZE: hold the visible content still while rows resize — a
+              // row above the viewport growing when its image decodes used to shove the strip down
+              // mid-read. DATA: hold it still when a CHAPTER joins the window in front of the
+              // reader, which is what makes scrolling up into the previous chapter a scroll rather
+              // than a jump (see the paged reader for the long version of why this needs a list
+              // that anchors on the item).
+              maintainVisibleContentPosition={{ data: true, size: true }}
               // Rows own per-page load state (and their own Retry), so hand each page its own cell
               // rather than passing an instance around.
               recycleItems={false}
@@ -372,8 +402,8 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
               }
               renderItem={({ item, index }) => (
                 <WebtoonRow
-                  uri={item}
-                  index={index}
+                  uri={item.uri}
+                  page={item.pageNumber}
                   width={width}
                   fadeMs={standby ? STANDBY_FADE_MS : undefined}
                   testID={testId('reader.page.tap', index + 1)}
@@ -398,13 +428,14 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
  *  viewport still while their sizes settle (see WebtoonContinuous). */
 function WebtoonRow({
   uri,
-  index,
+  page,
   width,
   fadeMs,
   testID,
 }: {
   uri: string;
-  index: number;
+  /** Per-CHAPTER page number (what a placeholder or a failed page names), not the flat index. */
+  page: number;
   width: number;
   fadeMs?: number;
   testID: string;
@@ -412,7 +443,7 @@ function WebtoonRow({
   const [failed, setFailed] = useState(false);
   return (
     <View>
-      <ReaderPage uri={uri} page={index + 1} fit="width" width={width} fadeMs={fadeMs} onFailedChange={setFailed} />
+      <ReaderPage uri={uri} page={page} fit="width" width={width} fadeMs={fadeMs} onFailedChange={setFailed} />
       {!failed && <View testID={testID} style={StyleSheet.absoluteFill} pointerEvents="none" />}
     </View>
   );
@@ -510,14 +541,21 @@ const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPage
   }, [zoomed, zoomedSV]);
 
   const onPageChangeRef = useRef(onPageChange);
-  onPageChangeRef.current = onPageChange;
-  const onMomentumScrollEnd = useCallback(
-    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const idx = Math.round(e.nativeEvent.contentOffset.y / height);
-      onPageChangeRef.current(Math.max(0, Math.min(n - 1, idx)));
-    },
-    [height, n],
+  useLayoutEffect(() => {
+    onPageChangeRef.current = onPageChange;
+  });
+  const settledRef = useRef(initialPage);
+  const [onViewable] = useState(
+    () =>
+      ({ viewableItems }: { viewableItems: ViewToken<ReaderPageItem>[] }) => {
+        let first: ViewToken<ReaderPageItem> | undefined;
+        for (const token of viewableItems) if (!first || token.index < first.index) first = token;
+        if (first) settledRef.current = first.index;
+      },
   );
+  const onMomentumScrollEnd = useCallback(() => {
+    onPageChangeRef.current(Math.max(0, Math.min(n - 1, settledRef.current)));
+  }, [n]);
 
   return (
     <GestureDetector gesture={listGesture}>
@@ -526,7 +564,7 @@ const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPage
       style={{ width, height }}
       estimatedListSize={{ width, height }}
       data={pages}
-      keyExtractor={(uri, i) => `${uri}:${i}`}
+      keyExtractor={(item) => item.key}
       pagingEnabled
       // Frozen while a page is zoomed so its own pan owns one-finger drags.
       scrollEnabled={!zoomed}
@@ -536,20 +574,26 @@ const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPage
       // snapping on page boundaries and `contentOffset / height` an exact index below.
       getFixedItemSize={() => height}
       estimatedItemSize={height}
-      // Nothing to anchor: the sizes are fixed (so no measurement corrections) and a chapter change
-      // remounts this reader (so no data change to hold a position across). Off on both counts, so
-      // the offset arithmetic below can't be quietly shifted under it.
-      maintainVisibleContentPosition={{ data: false, size: false }}
+      // SIZE anchoring off — every row is a known fixed height, so there are no measurement
+      // corrections to hold still for. DATA anchoring ON, for the one thing that does move: a
+      // chapter joining the window in front of the reader, which is what turns scrolling back into
+      // a page turn instead of a jump. (Which is also why the settle below reads viewability rather
+      // than dividing the offset: an anchored insert can leave a leading adjustment, and the
+      // division would name the wrong page.)
+      maintainVisibleContentPosition={{ data: true, size: false }}
       recycleItems={false}
       drawDistance={height}
       onMomentumScrollEnd={onMomentumScrollEnd}
+      onViewableItemsChanged={onViewable}
+      viewabilityConfig={VIEWABILITY_PAGED}
       onScroll={onScroll}
       scrollEventThrottle={16}
       onEndReachedThreshold={0.05}
       onEndReached={handleEndReached}
       renderItem={({ item, index }) => (
         <WebtoonPagedRow
-          uri={item}
+          uri={item.uri}
+          page={item.pageNumber}
           index={index}
           width={width}
           height={height}
@@ -572,6 +616,7 @@ const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPage
  *  (Exclusive with the double-tap). Suspended while the page shows its Retry state. */
 function WebtoonPagedRow({
   uri,
+  page,
   index,
   width,
   height,
@@ -582,6 +627,8 @@ function WebtoonPagedRow({
   externals,
 }: {
   uri: string;
+  /** Per-CHAPTER page number — see WebtoonRow. */
+  page: number;
   index: number;
   width: number;
   height: number;
@@ -610,7 +657,7 @@ function WebtoonPagedRow({
     <GestureDetector gesture={gesture}>
       <View style={{ width, height, overflow: 'hidden' }}>
         <Animated.View style={[{ width, height }, animatedStyle]}>
-          <ReaderPage uri={uri} page={index + 1} fit="contain" width={width} height={height} fadeMs={fadeMs} onFailedChange={setFailed} />
+          <ReaderPage uri={uri} page={page} fit="contain" width={width} height={height} fadeMs={fadeMs} onFailedChange={setFailed} />
         </Animated.View>
         {/* Inert marker for the reader.page.tap.* testID (asserted by Maestro). */}
         {!failed && <View testID={testID} style={StyleSheet.absoluteFill} pointerEvents="none" />}
