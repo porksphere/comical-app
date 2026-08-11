@@ -1,6 +1,12 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
 import type { ReactElement, RefObject } from 'react';
-import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import {
+  StyleSheet,
+  View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  type RefreshControlProps,
+} from 'react-native';
 import type { ComposedGesture } from 'react-native-gesture-handler';
 import type Animated from 'react-native-reanimated';
 import { type SharedValue } from 'react-native-reanimated';
@@ -76,6 +82,7 @@ export function ContentFeed({
   onScroll,
   onEndReached,
   onScrollEndDrag,
+  refreshControl,
   wrapperStyle,
   scrollGesture,
   scrollEnabled,
@@ -98,6 +105,8 @@ export function ContentFeed({
   onScroll?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   onEndReached?: () => void;
   onScrollEndDrag?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  /** From `usePullToRefresh` — the OS refresh control on iOS/Android, undefined on web. */
+  refreshControl?: ReactElement<RefreshControlProps>;
   wrapperStyle?: Parameters<typeof Animated.View>[0]['style'];
   /** Passed through to `RecyclerList` — see the doc there (an over-the-list back-swipe's iOS interop). */
   scrollGesture?: ComposedGesture;
@@ -178,6 +187,7 @@ export function ContentFeed({
       onScroll={onScroll}
       onEndReached={onEndReached}
       onScrollEndDrag={onScrollEndDrag}
+      refreshControl={refreshControl}
       wrapperStyle={wrapperStyle}
       scrollGesture={scrollGesture}
       scrollEnabled={scrollEnabled}

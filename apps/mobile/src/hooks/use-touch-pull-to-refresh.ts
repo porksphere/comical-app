@@ -11,28 +11,33 @@ const PULL_MAX = 96;
 const PULL_RESISTANCE = 0.5;
 /** Dead zone before a downward drag starts counting as a pull at all. */
 const PULL_START_SLOP = 8;
-/** Settle motion for the snap-into-refresh and spring-back — a quick, barely-overshooting spring
- *  (matches the iOS hook), which reads as more alive than a linear timing. */
+/** Settle motion for the snap-into-refresh and spring-back — a quick, barely-overshooting spring,
+ *  which reads as more alive than a linear timing. Deliberately underdamped (damping ratio ~0.73),
+ *  so `pullY` dips below 0 on the way back; `PullIndicator` clamps for that. */
 const SETTLE_SPRING = { damping: 18, stiffness: 220, mass: 0.7 } as const;
 
 /**
- * Touch-driven pull-to-refresh, shared by web and Android — the two platforms with no usable
- * elastic overscroll to hang the gesture off (react-native-web's RefreshControl is an inert no-op,
- * and Android clamps overscroll to a glow with no negative offset). iOS instead reads its native
- * bounce directly, see `useNativePullToRefresh`. Raw touch events (`onTouchStart/Move/End`) are
- * core RN — they fire on the wrapper for the whole subtree regardless of what's under the finger,
- * and at the top of the list there's nothing for the scroller itself to consume — so wiring the
- * three returned handlers onto a View around the scrollable area catches the pull on both.
+ * Touch-driven pull-to-refresh — **web only**, and only because web has nothing better.
  *
- * Only meaningful for a real touch drag (a web mouse drag never fires touch events), so it's inert
- * otherwise without any Platform gating needed by callers.
+ * iOS and Android both take RN's real `RefreshControl` (see `usePullToRefresh`), which brings its
+ * own gesture. `react-native-web`'s `RefreshControl` is an inert stub — it discards `onRefresh` and
+ * renders a bare `<View>` — so web has to source the gesture by hand, which is what this is.
+ *
+ * Raw touch events (`onTouchStart/Move/End`) are core RN: they fire on the wrapper for the whole
+ * subtree regardless of what's under the finger, and at the top of the list there's nothing for the
+ * scroller itself to consume — so wiring the three returned handlers onto a View around the
+ * scrollable area catches the pull.
+ *
+ * Only meaningful for a real touch drag (a desktop mouse drag never fires touch events), so it's
+ * inert otherwise; `usePullToRefresh` additionally withholds the handlers entirely on native, so
+ * nothing here moves off web.
  *
  * `scrollY` is the same shared value already tracking the list's live scroll offset elsewhere on
  * the screen — reused here, not a second scroll listener, just to know whether the list is at
  * its top when a touch begins (and stays there — a genuine scroll starting mid-drag cancels the
  * pull, same as native).
  *
- * `refreshing` mirrors a controlled `RefreshControl`: on release past the threshold, `pullY` snaps
+ * `refreshing` follows the controlled-`RefreshControl` contract: on release past the threshold, `pullY` snaps
  * to (and holds at) `PULL_THRESHOLD` — rather than springing straight back to 0 — for as long as
  * `refreshing` stays true, so the pulled-down gap "sticks" with the spinner showing until the
  * actual request resolves. Only released once `refreshing` flips back to false.

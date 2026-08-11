@@ -1,6 +1,12 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
 import type { ReactElement, RefObject } from 'react';
-import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import {
+  StyleSheet,
+  View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  type RefreshControlProps,
+} from 'react-native';
 import type { ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { type SharedValue } from 'react-native-reanimated';
 
@@ -61,6 +67,7 @@ export function SeriesGrid({
   onScroll,
   onEndReached,
   onScrollEndDrag,
+  refreshControl,
   wrapperStyle,
   scrollGesture,
   scrollEnabled,
@@ -90,8 +97,9 @@ export function SeriesGrid({
   sharedValues?: { scrollOffset: SharedValue<number> };
   onScroll?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   onEndReached?: () => void;
-  /** From `usePullToRefresh` — iOS releases past the pull threshold fire the refresh. */
   onScrollEndDrag?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  /** From `usePullToRefresh` — the OS refresh control on iOS/Android, undefined on web. */
+  refreshControl?: ReactElement<RefreshControlProps>;
   /** Animated styles for the list wrapper — e.g. the pull-to-refresh content shift and the dim. */
   wrapperStyle?: Parameters<typeof Animated.View>[0]['style'];
   /** Passed through to `RecyclerList` — see the doc there (an over-the-list back-swipe's iOS interop). */
@@ -129,6 +137,7 @@ export function SeriesGrid({
       onScroll={onScroll}
       onEndReached={onEndReached}
       onScrollEndDrag={onScrollEndDrag}
+      refreshControl={refreshControl}
       wrapperStyle={wrapperStyle}
       scrollGesture={scrollGesture}
       scrollEnabled={scrollEnabled}

@@ -640,7 +640,7 @@ export default function BrowseScreen() {
   }));
   // Pull-to-refresh: gesture (per platform), spinner, min-visible window and content shift all live
   // in the shared hook — the same one the Search grid uses.
-  const pull = usePullToRefresh(scrollY, refreshCurrentView);
+  const pull = usePullToRefresh(scrollY, refreshCurrentView, headerHeight);
 
   const topBar = (
     // BarSurface carries the frosted, full-bleed background + hairline shared by every bar in the
@@ -862,8 +862,8 @@ export default function BrowseScreen() {
           onScroll={onListScroll}
           // Drives terminalQuery.fetchNextPage — `loadMore` self-guards to the terminal-home mode.
           onEndReached={loadMore}
-          onScrollEndDrag={pull.onScrollEndDrag}
-          // The pull-to-refresh content shift and the refinement dim both ride the list wrapper.
+          refreshControl={pull.refreshControl}
+          // The pull-to-refresh content shift (web) and the refinement dim both ride the list wrapper.
           wrapperStyle={[pull.listStyle, listDimStyle]}
         />
       ) : (
@@ -885,13 +885,13 @@ export default function BrowseScreen() {
           onScroll={onListScroll}
           // `loadMore` self-guards to results/favorites modes, so it's wired unconditionally.
           onEndReached={loadMore}
-          onScrollEndDrag={pull.onScrollEndDrag}
-          // The pull-to-refresh content shift and the refinement dim both ride the list wrapper.
+          refreshControl={pull.refreshControl}
+          // The pull-to-refresh content shift (web) and the refinement dim both ride the list wrapper.
           wrapperStyle={[pull.listStyle, listDimStyle]}
         />
       )}
       {topBar}
-      <PullIndicator {...pull.indicator} top={headerHeight} />
+      <PullIndicator {...pull.indicator} />
     </ThemedView>
   );
 }
