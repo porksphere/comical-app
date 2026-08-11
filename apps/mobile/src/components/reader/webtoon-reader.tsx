@@ -17,7 +17,7 @@ import { useZoomable } from '@/components/reader/use-zoomable';
 import type { PageFit } from '@/hooks/use-reader-settings';
 import { BACK_ACTIVATE_DOMINANCE } from '@/lib/back-swipe';
 import { releaseCommitted } from '@/lib/gesture-release';
-import { trace } from '@/lib/gesture-trace';
+import { trace, traceJS } from '@/lib/gesture-trace';
 import { testId } from '@/lib/test-id';
 
 /** `animated` defaults to true (a jump). The reader's page scrubber passes false: rows here have
@@ -248,13 +248,26 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
   // thinking a zoom is still active — that would keep its swipe-dismiss disabled.
   useEffect(() => () => onZoomChange?.(false), [onZoomChange]);
 
-  // Auto-advance when the reader scrolls to the very end (where the sentinel sits).
-  // Gated on the content actually being scrollable, so a short chapter that fits on
-  // screen doesn't auto-skip on mount — its sentinel stays tap-only. `firedRef`
-  // makes it a once-per-chapter trigger; it resets when `pages` (the chapter) change.
+  // Auto-advance when the reader SCROLLS to the very end (where the sentinel sits).
+  //
+  // Scrolls to, not "is at" — and the difference is a chapter's worth of navigation. Arriving at
+  // the end is not the same as reaching it, and this reader can now arrive there: crossing BACKWARD
+  // lands on the previous chapter's last page, which is the bottom of the list, which used to read
+  // as "they scrolled to the end, load the next chapter" the instant the pane mounted. It sent you
+  // straight back to the chapter you had just left. (Recorded, from a real trace: crossing to the
+  // 17-page chapter, mounting its pages 16-17, and 146ms later back on page 1 of the 15-page one.)
+  //
+  // So it ARMS on being somewhere that isn't the end, and only then can fire. Reading a chapter
+  // through arms it on the first scroll event and behaves exactly as before; landing at the end
+  // arms nothing until the reader has actually moved away from it.
+  //
+  // `scrollable` stays: a short chapter that fits on screen shouldn't auto-skip either, and its
+  // sentinel is tap-only. `firedRef` keeps it once-per-chapter; both reset when the chapter does.
   const firedRef = useRef(false);
+  const armedRef = useRef(false);
   useEffect(() => {
     firedRef.current = false;
+    armedRef.current = false;
   }, [pages]);
   const onScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -263,12 +276,17 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
       if (!onAdvance || firedRef.current) return;
       const scrollable = contentSize.height > layoutMeasurement.height + ADVANCE_TRIGGER_PX;
       const atBottom = contentOffset.y + layoutMeasurement.height >= contentSize.height - ADVANCE_TRIGGER_PX;
-      if (scrollable && atBottom) {
+      if (!atBottom) {
+        armedRef.current = true;
+        return;
+      }
+      if (armedRef.current && scrollable) {
         firedRef.current = true;
+        traceJS('webtoon', 'advance', { pages: pages.length });
         onAdvance();
       }
     },
-    [onAdvance, atTop],
+    [onAdvance, atTop, pages],
   );
 
 
@@ -433,12 +451,26 @@ const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPage
   const listRef = useRef<LegendListRef>(null);
   // Same seed-then-refine as the continuous variant — and the same reason. See useBackPull.
   const atTop = useSharedValue(initialPage <= 0);
+  // …and the same arming, for the same reason: `onEndReached` fires on ARRIVING at the end, and a
+  // backward crossing arrives there by definition. Without this it bounces straight back into the
+  // chapter it just left. Armed by being anywhere that isn't the end.
+  const armedRef = useRef(false);
+  useEffect(() => {
+    armedRef.current = false;
+  }, [pages]);
   const onScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      atTop.set(e.nativeEvent.contentOffset.y <= AT_TOP_EPSILON);
+      const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+      atTop.set(contentOffset.y <= AT_TOP_EPSILON);
+      if (contentOffset.y + layoutMeasurement.height < contentSize.height - ADVANCE_TRIGGER_PX) {
+        armedRef.current = true;
+      }
     },
     [atTop],
   );
+  const handleEndReached = useCallback(() => {
+    if (armedRef.current) onEndReached?.();
+  }, [onEndReached]);
   const n = pages.length;
 
   // Whichever page is on screen owns the zoom (only one is ever interacted with
@@ -514,7 +546,7 @@ const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPage
       onScroll={onScroll}
       scrollEventThrottle={16}
       onEndReachedThreshold={0.05}
-      onEndReached={onEndReached}
+      onEndReached={handleEndReached}
       renderItem={({ item, index }) => (
         <WebtoonPagedRow
           uri={item}
