@@ -136,6 +136,29 @@ const PULL_COMMIT_FRACTION = 0.2;
 /** How close to the top counts as AT the top. */
 const AT_TOP_EPSILON = 2;
 
+// ── A tap that stops a flick is a brake, not a tap ──────────────────────────────────────────────
+// Tapping a coasting strip stops it — that is the scroller's own behaviour, and stopping is the
+// whole of what the reader meant by that touch. The chrome toggle fired on the same touch, so
+// every flick you cut short also threw the overlay up over the page you had just stopped on.
+// Below, such a touch is SPENT on the stop: the tap recognizer still runs (it is what makes the
+// gestures compose), but its verdict is discarded.
+/** How recently a scroll event must have arrived for a touch to count as landing on MOVING
+ *  content. A coasting list emits one every frame (`scrollEventThrottle` 16), so "one arrived a
+ *  moment ago" IS motion — and it is the reading that survives the ordering problem the momentum
+ *  callbacks have, where the touch that ends the momentum also ends the flag saying there was any.
+ *  Wide enough to ride out a hitch between frames, far short of the beat a reader takes between
+ *  watching the strip come to rest and deciding to tap it. */
+const MOMENTUM_TAP_GRACE_MS = 150;
+
+/** `Date.now()` on the UI thread, hoisted out of the component for the same reason as the chapter
+ *  navigator's copy: the React Compiler lint can't tell a worklet that runs later on another
+ *  thread from render code, so an inline clock read inside a `useMemo`'d gesture body reads as an
+ *  impure call during render. */
+function nowMs() {
+  'worklet';
+  return Date.now();
+}
+
 /**
  * "Pull down at the top to go back a chapter", for both variants.
  *
@@ -257,6 +280,9 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
   const [initialIndex] = useState(() => Math.max(0, Math.min(pages.length - 1, initialPage)));
   // Seeded from where this pane was told to open, then refined by real scrolls — see useBackPull.
   const atTop = useSharedValue(initialIndex <= 0);
+  // When the strip last moved, written by every scroll event (see MOMENTUM_TAP_GRACE_MS). Starts
+  // at 0, i.e. "long ago": a reader who taps before ever scrolling is toggling chrome.
+  const lastScrollAt = useSharedValue(0);
   const n = pages.length;
 
   // Pinch / double-tap / pan-while-zoomed for the whole viewport — the same shared
@@ -279,6 +305,13 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
   // Both of them mounted on the list together.
   const listGesture = useMemo(() => Gesture.Simultaneous(nativeScroll, backPull), [nativeScroll, backPull]);
 
+  // A touch that lands on a still strip toggles chrome; one that lands on a coasting strip has
+  // already done its job by stopping it (see MOMENTUM_TAP_GRACE_MS).
+  const tapNotStoppingMomentum = useCallback(() => {
+    'worklet';
+    return nowMs() - lastScrollAt.value > MOMENTUM_TAP_GRACE_MS;
+  }, [lastScrollAt]);
+
   // Whole zoom gesture (pinch / double-tap / pan) plus the chrome-toggle single tap,
   // composed by the shared hook. Chrome toggle ignores the tap's x.
   const { gesture, animatedStyle, zoomed } = useZoomable({
@@ -286,6 +319,7 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
     height,
     onZoomChange,
     onSingleTap: onToggleChrome,
+    singleTapAllowed: tapNotStoppingMomentum,
     simultaneousExternal: zoomExternals,
   });
 
@@ -334,11 +368,14 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
   const onScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+      const now = Date.now();
       atTop.set(contentOffset.y <= AT_TOP_EPSILON);
+      // The strip is moving right now — the stamp a touch is measured against (see
+      // MOMENTUM_TAP_GRACE_MS).
+      lastScrollAt.set(now);
       // Every content-height change, and otherwise a sample: the height is the interesting column
       // (it is what a re-measure or a window growth moves), and the offset beside it is what the
       // reader sees happen.
-      const now = Date.now();
       if (contentSize.height !== traceHeightRef.current || now - traceAtRef.current > 100) {
         traceHeightRef.current = contentSize.height;
         traceAtRef.current = now;
@@ -357,7 +394,7 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
         onAdvance();
       }
     },
-    [onAdvance, atTop, pages, traceHeightRef, traceAtRef],
+    [onAdvance, atTop, lastScrollAt, pages, traceHeightRef, traceAtRef],
   );
 
 
