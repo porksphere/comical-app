@@ -54,6 +54,7 @@ export function useZoomable({
   onZoomChange,
   onSingleTap,
   singleTapEnabled = true,
+  singleTapAllowed,
   simultaneousExternal,
   extraSimultaneous,
 }: {
@@ -72,6 +73,14 @@ export function useZoomable({
   /** Gate for the single tap, independent of `enabled` (e.g. a page's tap zones
    *  stay live on an overflowing fit-width page where pinch is off). */
   singleTapEnabled?: boolean;
+  /** UI-thread worklet asked, at TOUCH-DOWN, whether this touch is allowed to become a single tap.
+   *  The continuous webtoon reader answers "no" while the strip is coasting, so a tap that stops a
+   *  flick is spent on stopping it rather than also toggling the chrome.
+   *
+   *  Asked at touch-down and latched, not read at release, because a touch that interrupts a scroll
+   *  has already ended that scroll by the time the finger lifts — the answer only exists at the
+   *  moment the finger LANDS. Omit for a single tap that is always allowed. */
+  singleTapAllowed?: () => boolean;
   /** External gestures (a list's `Gesture.Native()` scroll, and anything else mounted on the
    *  scroller — the paged reader's edge pan, say) that these must run SIMULTANEOUSLY with. EVERY
    *  gesture that could arbitrate against these belongs here, not just the scroll: an undeclared
@@ -94,6 +103,8 @@ export function useZoomable({
   const baseScale = useSharedValue(1);
   const baseTx = useSharedValue(0);
   const baseTy = useSharedValue(0);
+  // Whether the touch currently down is allowed to become a single tap — see `singleTapAllowed`.
+  const singleTapArmed = useSharedValue(true);
 
   const [zoomed, setZoomed] = useState(false);
 
@@ -217,13 +228,19 @@ export function useZoomable({
 
   // Optional single tap — page-turn zones (x-based) or a chrome toggle (ignores x).
   // Off while zoomed (a tap there does nothing) and per the consumer's own gate.
+  // `singleTapArmed` carries the touch-down verdict (see `singleTapAllowed`) through to the
+  // release; with no gate supplied every touch arms it, which is the old behaviour exactly.
   const singleTap = onSingleTap
     ? Gesture.Tap()
         .enabled(!zoomed && singleTapEnabled)
         .numberOfTaps(1)
         .maxDuration(SINGLE_TAP_MAX_DURATION)
         .maxDistance(SINGLE_TAP_MAX_DIST)
+        .onBegin(() => {
+          singleTapArmed.set(!singleTapAllowed || singleTapAllowed());
+        })
         .onEnd((e) => {
+          if (!singleTapArmed.value) return;
           runOnJS(onSingleTap)(e.x);
         })
     : null;
