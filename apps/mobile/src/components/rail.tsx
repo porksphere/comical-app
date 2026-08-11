@@ -89,21 +89,31 @@ function gridCardWidth(viewport: number, gap: number): number {
   return Math.floor((containerWidth - (GRID_COLUMNS - 1) * gap) / GRID_COLUMNS);
 }
 
-// Approximate rendered height of a `SectionHead`: the subtitle line (30px wide / 25px compact — see
-// `headTitleWide`/`headTitleCompact`), rounded up. The drill-down chevron sits inline on that same
-// line and is deliberately sized under the line height (see CHEVRON_SIZE_*), so a drillable head is
-// exactly as tall as a plain one. A rail's `styles.section` puts a `Spacing.two` gap between the
-// head and the strip/grid below it.
+// Rendered height of a `SectionHead`, and now the real thing rather than an estimate: every head
+// claims it as a `minHeight` (see `headCompact`/`headWide`), so a drillable head is exactly as tall
+// as a plain one even though the chevron is taller than the title's line box (30px wide / 25px
+// compact — see `headTitleWide`/`headTitleCompact`). A rail's `styles.section` puts a `Spacing.two`
+// gap between the head and the strip/grid below it.
 export const SECTION_HEAD_HEIGHT = 32;
 
-// Drill-down chevron on a `SectionHead`, scaled to the heading it follows (≈⅘ of the title's line
-// height: big enough to read as part of the heading, small enough not to grow the row). It sits
-// tight against the title on purpose — the chevron belongs to the heading and must not read as a
-// separate control — so the nudge is negative, cancelling part of the whitespace lucide's glyph
-// carries inside its own square box.
-const CHEVRON_SIZE_COMPACT = 20;
-const CHEVRON_SIZE_WIDE = 24;
-const CHEVRON_NUDGE = -Spacing.half;
+// Drill-down chevron on a `SectionHead`. Sized so the VISIBLE stroke stands as tall as the title's
+// letters, which takes an icon roughly twice that: lucide draws chevron-right as `m9 18 6-6-6-6`,
+// spanning only the middle half of its 24-unit box, so half of any size given here is whitespace.
+// At 28/32 the drawn glyph is 14/16px against cap heights of ~14/17 — level with the text, which is
+// what the previous 20/24 (a 10/12px glyph beside it) never looked.
+//
+// Both fit inside SECTION_HEAD_HEIGHT, which is what keeps the row from growing.
+const CHEVRON_SIZE_COMPACT = 28;
+const CHEVRON_SIZE_WIDE = 32;
+// Lucide has no bold/light variants — one glyph per name — so weight is `strokeWidth`, and a hair
+// over the default 2 is what keeps the chevron from reading thin beside a semibold title.
+const CHEVRON_STROKE = 2.5;
+// It sits tight against the title on purpose — the chevron belongs to the heading and must not read
+// as a separate control — so the nudge is negative, cancelling most of the leading whitespace inside
+// lucide's square box. That whitespace scales with the icon (the glyph starts 9/24 of the way in),
+// so growing 20→28 and 24→32 added 3px on each: -2 becomes -5, and the gap the eye sees is the one
+// it saw before.
+const CHEVRON_NUDGE = -5;
 
 /**
  * Reserved vertical height of a whole `Rail` row (heading + strip/grid), used by `ContentFeed`'s
@@ -541,16 +551,20 @@ export function SectionHead({ title, onSeeAll, testID }: { title: string; onSeeA
   const compact = useIsCompact();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
   const titleStyle = [styles.headTitle, compact ? styles.headTitleCompact : styles.headTitleWide];
+  // Claimed by EVERY head, not just the drillable ones: the chevron is taller than the title's line
+  // box, so without a floor under both a rail you can drill into would stand a few px taller than
+  // one you can't. Reserving it always also makes SECTION_HEAD_HEIGHT exact rather than a guess.
+  const headStyle = [styles.head, compact ? styles.headCompact : styles.headWide];
   const heading = (
     <ThemedText type="subtitle" style={titleStyle} numberOfLines={1}>
       {title}
     </ThemedText>
   );
   if (!onSeeAll) {
-    return <View style={styles.head}>{heading}</View>;
+    return <View style={headStyle}>{heading}</View>;
   }
   return (
-    <View style={styles.head}>
+    <View style={headStyle}>
       <Pressable
         testID={testID}
         onPress={onSeeAll}
@@ -568,6 +582,7 @@ export function SectionHead({ title, onSeeAll, testID }: { title: string; onSeeA
           <ChevronRightIcon
             color={hovered ? theme.text : theme.textSecondary}
             size={compact ? CHEVRON_SIZE_COMPACT : CHEVRON_SIZE_WIDE}
+            strokeWidth={CHEVRON_STROKE}
           />
         </View>
       </Pressable>
@@ -589,6 +604,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: TopLevelGutter,
+  },
+  // Floors for the head, one per breakpoint: the chevron's own size, so a drillable head is exactly
+  // as tall as a plain one and neither exceeds SECTION_HEAD_HEIGHT.
+  headCompact: {
+    minHeight: CHEVRON_SIZE_COMPACT,
+  },
+  headWide: {
+    minHeight: CHEVRON_SIZE_WIDE,
   },
   headTitle: {
     flexShrink: 1,
