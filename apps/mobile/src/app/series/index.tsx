@@ -729,6 +729,10 @@ function SeriesReaderInstance({
   // What it must NOT become is a wait for something already in hand — every neighbour list is
   // fetched eagerly and persisted, so the second visit to a boundary resolves in the same render
   // and holds for nothing at all.
+  // Does the mounted reader lay out in KNOWN sizes? Both paged readers do — every cell is exactly
+  // one viewport — and the continuous strip does not, which is what decides whether its window may
+  // grow in front of the reader (see the merge below).
+  const fixedRowSizes = settings.mode === 'paged' || settings.pageFit === 'fit-page';
   const [run, setRun] = useState<{ key: number; segs: Segment[] }>({ key: 0, segs: [] });
   // The grace clock, armed the moment a run COULD be created (this chapter's pages are in) and
   // belonging to that chapter, so navigating re-arms it. Keyed by string rather than timestamped so
@@ -779,13 +783,28 @@ function SeriesReaderInstance({
       // count as a remount.
       return { segments: segs, runKey: run.key + (run.segs.length ? 1 : 0) };
     }
-    // Extend at either end. The TAIL has always been free (nothing before it moves); the HEAD is
-    // free now that the pager anchors an insert on the item (see the note above), and only ever
-    // grows from the end the reader is standing on — you can only reach a run's first chapter by
-    // reading back into it, and that is exactly when the chapter before it is worth having.
+    // Extend at either end — but the two ends are not equally free, and the difference is what the
+    // list can KNOW about what it is inserting.
+    //
+    // The TAIL is free everywhere: nothing before it moves, so nothing has to be corrected.
+    //
+    // The HEAD is free only where row sizes are KNOWN — the horizontal pager and the paginated
+    // vertical one, whose cells are exactly one viewport. There the inserted block's size is exact,
+    // so the anchor correction is exact, and the page under the reader does not move at all.
+    //
+    // In the CONTINUOUS strip it is not free, and no amount of anchoring makes it so. Row heights
+    // there are estimates until each image decodes, so a chapter arriving above the reader shifts
+    // the content by a number that is not true yet, and then shifts it again with every row that
+    // measures. Recorded, from a trace of exactly this: the window grew by 13 rows, content height
+    // by 7427, offset by 7400 — 27px of drift — and then 78 against 36 on the next frame as those
+    // rows started measuring. That is the "jumps up a tiny bit then down".
+    //
+    // So the strip takes its previous chapter at CREATION (where there is no position to preserve
+    // yet) and never afterwards; reaching further back there is the pull, which crosses by jumping
+    // onto a page the screen has already warmed.
     const stale = run.segs[at]!;
     const refreshCurrent = stale.pages !== pages || stale.name !== target?.chapterName;
-    const addPrev = !!prevSeg && at === 0;
+    const addPrev = !!prevSeg && at === 0 && fixedRowSizes;
     const addNext = !!nextSeg && run.segs[run.segs.length - 1]!.id === currentId;
     if (!refreshCurrent && !addPrev && !addNext) return { segments: run.segs, runKey: run.key };
     const segs = run.segs.slice();
@@ -806,6 +825,7 @@ function SeriesReaderInstance({
     nextChapter,
     nextPages,
     graceOverFor,
+    fixedRowSizes,
   ]);
   // Catch the run state up DURING render (React's adjust-state-on-render pattern — the merge
   // above returns `run.segs` by identity when there's nothing to add, which is what stops this
