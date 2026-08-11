@@ -45,6 +45,11 @@ export type IconProps = {
   /** Paint the glyph solid rather than as an outline — how a toggled-ON state reads (a filled star),
    *  without spending a colour on it. Ignored by glyphs that have no meaningful fill. */
   filled?: boolean;
+  /** Stroke weight, in lucide's 24-unit box. Lucide ships no bold/light *variants* — one glyph per
+   *  name — so this is the whole of its weight scale, and the default 2 is what every icon here
+   *  uses unless a caller has a reason to sit heavier (the rails' drill-down chevron, which has to
+   *  hold its own beside a 24px section title). */
+  strokeWidth?: number;
 };
 
 export const SearchIcon = ({ color, size = 16 }: IconProps) => <Search color={color} size={size} />;
@@ -66,7 +71,9 @@ export const ListPlusIcon = ({ color, size = 16 }: IconProps) => <ListPlus color
 // Vertical 3-dot "more actions" trigger — the web series-card context-menu affordance.
 export const MoreVerticalIcon = ({ color, size = 16 }: IconProps) => <MoreVertical color={color} size={size} />;
 export const ChevronDownIcon = ({ color, size = 16 }: IconProps) => <ChevronDown color={color} size={size} />;
-export const ChevronRightIcon = ({ color, size = 16 }: IconProps) => <ChevronRight color={color} size={size} />;
+export const ChevronRightIcon = ({ color, size = 16, strokeWidth }: IconProps) => (
+  <ChevronRight color={color} size={size} strokeWidth={strokeWidth} />
+);
 export const ChevronUpIcon = ({ color, size = 16 }: IconProps) => <ChevronUp color={color} size={size} />;
 export const ArrowUpIcon = ({ color, size = 16 }: IconProps) => <ArrowUp color={color} size={size} />;
 export const ArrowDownIcon = ({ color, size = 16 }: IconProps) => <ArrowDown color={color} size={size} />;
