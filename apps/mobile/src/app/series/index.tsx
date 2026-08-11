@@ -3182,6 +3182,18 @@ const ReaderPane = forwardRef<
     },
     [locateFlat, chapterId, setCurrent],
   );
+  // Vertical mode has no separate "settled" moment — viewability IS the position — so one report
+  // does both jobs: keep the counter live against the segment the page belongs to, and commit
+  // (flush progress, relabel) when it crosses into another. Wiring only the second of those is what
+  // left the counter reading a `visibleSeg` from the last scrub and never updating it again.
+  const handleFlatScrolled = useCallback(
+    (flat: number) => {
+      handleFlatVisiblePage(flat);
+      handleFlatPageChange(flat);
+    },
+    [handleFlatVisiblePage, handleFlatPageChange],
+  );
+
   // What the bottom chrome shows: the committed page, or — while a swipe carries a neighbouring
   // segment's page across the screen — that page against ITS chapter's length.
   const shown = useMemo(() => {
@@ -3416,7 +3428,7 @@ const ReaderPane = forwardRef<
           height={height}
           pageFit={settings.pageFit}
           initialPage={stitched ? prefixLen + startIndex : startIndex}
-          onPageChange={stitched ? handleFlatPageChange : setCurrent}
+          onPageChange={stitched ? handleFlatScrolled : setCurrent}
           onToggleChrome={onToggleChrome}
           onZoomChange={onZoomChange}
           standby={standby}

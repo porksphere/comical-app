@@ -90,9 +90,18 @@ type Props = {
 const ESTIMATED_ASPECT = 3 / 2;
 
 /** Module-level so they're stable without a hook (and so nothing has to read a ref during render to
- *  keep them that way). Continuous counts a row as current at half on screen; the paginated variant
- *  matches the horizontal pager's 60%. */
-const VIEWABILITY_CONTINUOUS = { itemVisiblePercentThreshold: 50 };
+ *  keep them that way).
+ *
+ *  The two are measured DIFFERENTLY, and the continuous one has to be. `itemVisiblePercentThreshold`
+ *  asks what fraction of the ITEM is on screen — which a webtoon page can fail forever: a page three
+ *  screens tall is never 50% visible, no matter where you stand in it, so the row you are actually
+ *  reading is never reported and the page counter sticks on whichever short row last qualified.
+ *  `viewAreaCoveragePercentThreshold` asks the question that fits a strip of arbitrarily tall rows —
+ *  what is covering the screen — and a fully-visible short row still counts either way.
+ *
+ *  The paginated variant has no such problem (every row is exactly one viewport) and keeps the
+ *  horizontal pager's 60%. */
+const VIEWABILITY_CONTINUOUS = { viewAreaCoveragePercentThreshold: 50 };
 const VIEWABILITY_PAGED = { itemVisiblePercentThreshold: 60 };
 
 // How close (px) to the bottom of the continuous list the scroll must get before
