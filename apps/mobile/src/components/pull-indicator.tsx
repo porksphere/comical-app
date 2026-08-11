@@ -1,4 +1,4 @@
-import { ActivityIndicator, StyleSheet } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet } from 'react-native';
 import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -16,6 +16,21 @@ const HEIGHT = 56;
 export const REFRESH_MIN_VISIBLE_MS = 600;
 
 /**
+ * Whether the spinner spins during the *pull*, before the refresh is actually committed.
+ *
+ * iOS and web hold it still and start spinning only on commit — that's how `UIRefreshControl`
+ * behaves, and it matters: the spokes sitting static under your finger vs. starting to turn is the
+ * signal that the refresh fired. A spinner already spinning on the way down is claiming to be
+ * working before anything has been requested.
+ *
+ * Android has to spin the whole time. Its `ActivityIndicator` is a `ProgressBar`, and
+ * `ProgressBarContainerView` sets the view INVISIBLE whenever `animating` is false — it ignores
+ * `hidesWhenStopped` completely — so gating it there would show nothing at all during the pull,
+ * which is worse than spinning early.
+ */
+const ANIMATE_DURING_PULL = Platform.OS === 'android';
+
+/**
  * The pull-to-refresh overlay, shared across every platform — fed by `useTouchPullToRefresh`
  * (web + Android) or `useNativePullToRefresh` (iOS), both through the same `pullY`. Slides down from
  * behind the top bar as the user pulls, and stays fully shown for as long as `refreshing` is true
@@ -29,8 +44,9 @@ export const REFRESH_MIN_VISIBLE_MS = 600;
  *
  * One consequence worth knowing: `ActivityIndicator` is indeterminate-only. There's no way to drive
  * its progress from the drag, so the pull is expressed by the *container* instead — the spinner
- * fades, scales, and slides into place as `pullY` climbs, then spins in place while refreshing.
- * The gesture itself (thresholds, haptic, hold-open) is untouched and still lives in the hooks.
+ * fades and slides into place as `pullY` climbs. What marks the commit is the spinner starting to
+ * turn (see `ANIMATE_DURING_PULL`), not the container. The gesture itself (thresholds, haptic,
+ * hold-open) is untouched and still lives in the hooks.
  *
  * The color is passed explicitly rather than left to the platform default (which the app's other
  * call sites do): those all sit on a solid settings/panel surface, whereas this one floats over
@@ -51,18 +67,27 @@ export function PullIndicator({
   const theme = useTheme();
 
   const style = useAnimatedStyle(() => {
-    const progress = refreshing ? 1 : Math.min(1, pullY.value / pullThreshold);
+    // Clamped at BOTH ends. `SETTLE_SPRING` in the two gesture hooks is deliberately underdamped
+    // (damping ratio ~0.73 — they describe it as "barely-overshooting"), so `pullY` undershoots
+    // below zero on every spring-back. Clamping only the top let that through as negative opacity
+    // and a translateY past the hidden position.
+    const progress = refreshing ? 1 : Math.min(1, Math.max(0, pullY.value / pullThreshold));
     return {
       opacity: progress,
-      // Scale is what's left of the "winding up" read now that the spinner itself can't be driven
-      // by the drag: it grows to full size exactly as the pull reaches the trigger line.
-      transform: [{ translateY: -HEIGHT + progress * HEIGHT }, { scale: 0.85 + 0.15 * progress }],
+      transform: [{ translateY: -HEIGHT + progress * HEIGHT }],
     };
   });
 
   return (
     <Animated.View style={[styles.container, { top }, style]}>
-      <ActivityIndicator size="small" color={theme.textSecondary} />
+      <ActivityIndicator
+        size="small"
+        color={theme.textSecondary}
+        animating={ANIMATE_DURING_PULL || refreshing}
+        // Required for the static-during-pull state above to be visible at all on iOS, where the
+        // default hides a stopped indicator outright. Honoured on web, ignored on Android.
+        hidesWhenStopped={false}
+      />
     </Animated.View>
   );
 }
