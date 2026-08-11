@@ -1,5 +1,6 @@
 # Extends past browse-to-reader.yaml's "reader opened" assertion: paged prev/next tap zones, the
-# bottom navigator's page scrubber, and the settings sheet's reading-direction switch.
+# backward chapter crossing off page 1, the bottom navigator's page scrubber, and the settings
+# sheet's reading-direction switch.
 #
 # Mobile-only: the tap-zone testIDs (reader.control.*) are NATIVE-only markers
 # (components/reader/zoomable-page.tsx's TapZones — "web has its own gesture pager in
@@ -80,12 +81,33 @@ appId: com.porksphere.comical
     id: "reader.navigator.page"
     text: "^1$"
 
+# Swiping BACKWARD off page 1 crosses into the PREVIOUS chapter, landing on its last page — the same
+# thing tapping the left zone there does, reached by dragging (paged-reader.tsx's `edgeTurn`). It is
+# worth a step of its own because the two ways of getting there run through different machinery: a
+# window that already holds the previous chapter turns one page inside the stitched pager, and a
+# window that doesn't hands the swipe to the screen as a chapter jump. Both land here.
+#
+# The landing page is asserted as TWO DIGITS rather than "not 1", which is what makes this a
+# crossing rather than "something moved". The mock's chapter rows are newest-first, so the row tapped
+# above is the LAST chapter in reading order — an "Extra" (4 pages) where the series has enough
+# chapters for one, else the highest-numbered chapter — and every numbered mock chapter behind it is
+# 12–19 pages (mock.ts `12 + (num % 8)`). So a page number in the teens can only be the previous
+# chapter's last page; anything that merely turned pages inside this one stays a single digit.
+- swipe:
+    start: "20%, 55%"
+    end: "85%, 55%"
+    duration: 400
+- assertVisible:
+    id: "reader.navigator.page"
+    text: "^[0-9]{2}$"
+
 # Bottom navigator: both chapter-skip buttons are present (they're DISABLED, never hidden, at the
 # ends of a series — chapter-navigator.tsx), and dragging the slider scrubs. A Maestro element swipe
 # starts at the track's CENTRE, and the scrub follows the finger from touch-down (minDistance(0),
-# Material behaviour) rather than waiting for the release, so the page has already left 1 before the
-# drag even moves — which is all this needs to assert. An exact landing page isn't assertable: it
-# depends on the track's pixel width and on how far Maestro's swipe travels.
+# Material behaviour) rather than waiting for the release, so wherever the crossing above left the
+# reader, the track's midpoint is where this drag begins — which is all this needs to assert. An
+# exact landing page isn't assertable: it depends on the track's pixel width and on how far
+# Maestro's swipe travels.
 - assertVisible:
     id: "reader.navigator.prev-chapter"
 - assertVisible:

@@ -72,9 +72,12 @@ export function useZoomable({
   /** Gate for the single tap, independent of `enabled` (e.g. a page's tap zones
    *  stay live on an overflowing fit-width page where pinch is off). */
   singleTapEnabled?: boolean;
-  /** An external gesture (e.g. a list's `Gesture.Native()` scroll) the zoom
-   *  gestures must run SIMULTANEOUSLY with, or the scroll would swallow them. */
-  simultaneousExternal?: GestureType;
+  /** External gestures (a list's `Gesture.Native()` scroll, and anything else mounted on the
+   *  scroller — the paged reader's edge pan, say) that these must run SIMULTANEOUSLY with. EVERY
+   *  gesture that could arbitrate against these belongs here, not just the scroll: an undeclared
+   *  competitor doesn't have to win often to be noticed, and what it takes first is the double-tap,
+   *  which is the only one here that has to survive across two separate touch sequences. */
+  simultaneousExternal?: GestureType | GestureType[];
   /** Extra gestures composed Simultaneous with the zoom gestures (e.g. a page's
    *  fit-width content-pan). */
   extraSimultaneous?: GestureType[];
@@ -225,13 +228,18 @@ export function useZoomable({
         })
     : null;
 
-  // A list's native scroll (passed in) would otherwise swallow the pinch/taps on a
-  // detector wrapping it — let them run alongside it.
-  if (simultaneousExternal) {
-    pinch.simultaneousWithExternalGesture(simultaneousExternal);
-    pan.simultaneousWithExternalGesture(simultaneousExternal);
-    doubleTap.simultaneousWithExternalGesture(simultaneousExternal);
-    singleTap?.simultaneousWithExternalGesture(simultaneousExternal);
+  // Anything mounted on the scroller (passed in) would otherwise swallow the pinch/taps — let them
+  // run alongside all of it.
+  const externals = simultaneousExternal
+    ? Array.isArray(simultaneousExternal)
+      ? simultaneousExternal
+      : [simultaneousExternal]
+    : [];
+  if (externals.length) {
+    pinch.simultaneousWithExternalGesture(...externals);
+    pan.simultaneousWithExternalGesture(...externals);
+    doubleTap.simultaneousWithExternalGesture(...externals);
+    singleTap?.simultaneousWithExternalGesture(...externals);
   }
 
   // pinch / double-tap / single-tap are mutually EXCLUSIVE (pinch has priority, so a

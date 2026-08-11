@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
 import { ReaderPage } from '@/components/reader/reader-page';
@@ -41,6 +41,13 @@ type Props = {
   onRight: () => void;
   onToggleChrome: () => void;
   onZoomChange: (zoomed: boolean) => void;
+  /** Every gesture the PAGER has mounted on its scroller — its `Gesture.Native()` and its edge pan.
+   *  A page lives inside that scroller, so each of these arbitrates against the gestures in here,
+   *  and a descendant that hasn't declared it can run alongside them loses. All of them, not just
+   *  the scroll: the edge pan is a pan on the same surface and takes the double-tap with it.
+   *  Omitted where the scroller isn't in RNGH's graph at all, which is how this file used to get
+   *  away with declaring nothing. */
+  scrollGesture?: GestureType[];
 };
 
 // Non-interactive markers only: navigation taps are handled by the GestureDetector
@@ -70,6 +77,7 @@ export function ZoomablePage({
   onRight,
   onToggleChrome,
   onZoomChange,
+  scrollGesture,
 }: Props) {
   const [pageFailed, setPageFailed] = useState(false);
 
@@ -121,6 +129,9 @@ export function ZoomablePage({
     .enabled(pageFit === 'fit-width' && overflowsVertically)
     .activeOffsetY([-10, 10])
     .failOffsetX([-15, 15])
+    // Alongside whatever the pager mounted on its scroller (see `scrollGesture`). The axes already
+    // separate these — this is only about being allowed to run at all.
+    .simultaneousWithExternalGesture(...(scrollGesture ?? []))
     .onStart(() => {
       savedContentTy.set(contentTy.value);
       runOnJS(setContentPanning)(true);
@@ -145,6 +156,7 @@ export function ZoomablePage({
     onSingleTap: onTapNav,
     singleTapEnabled: !suspended,
     extraSimultaneous: [contentPan],
+    simultaneousExternal: scrollGesture,
   });
 
   // Swiping to another page (or jumping via the progress pill) drops the zoom so
