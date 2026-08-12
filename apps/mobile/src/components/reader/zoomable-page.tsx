@@ -41,6 +41,9 @@ type Props = {
   onRight: () => void;
   onToggleChrome: () => void;
   onZoomChange: (zoomed: boolean) => void;
+  /** Reported at the START of a pinch, not at its settle — the pager freezes its scroll for the
+   *  duration. See `useZoomable`'s `onPinchChange`. */
+  onPinchChange?: (pinching: boolean) => void;
   /** Every gesture the PAGER has mounted on its scroller — its `Gesture.Native()` and its edge pan.
    *  A page lives inside that scroller, so each of these arbitrates against the gestures in here,
    *  and a descendant that hasn't declared it can run alongside them loses. All of them, not just
@@ -77,6 +80,7 @@ export function ZoomablePage({
   onRight,
   onToggleChrome,
   onZoomChange,
+  onPinchChange,
   scrollGesture,
 }: Props) {
   const [pageFailed, setPageFailed] = useState(false);
@@ -153,6 +157,7 @@ export function ZoomablePage({
     height,
     enabled: zoomEnabled,
     onZoomChange,
+    onPinchChange,
     onSingleTap: onTapNav,
     singleTapEnabled: !suspended,
     extraSimultaneous: [contentPan],
@@ -161,9 +166,17 @@ export function ZoomablePage({
 
   // Swiping to another page (or jumping via the progress pill) drops the zoom so
   // every page starts fit-to-screen.
+  //
+  // This is only ever right while `active` is CURRENT, which on a virtualized list is not free:
+  // see the pager's `extraData`, without which a cell kept the value it first rendered with and
+  // this reset fired on the page being zoomed.
   useEffect(() => {
     if (!active && zoomed) reset();
   }, [active, zoomed, reset]);
+
+  // A page that goes away mid-pinch (a mode switch, a window that dropped it) never reaches the
+  // gesture's own `onFinalize`, and the pager would be left frozen on a pinch nothing can end.
+  useEffect(() => () => onPinchChange?.(false), [onPinchChange]);
 
   // Same for content-pan: a page left behind always comes back scrolled to the top.
   useEffect(() => {

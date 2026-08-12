@@ -197,6 +197,12 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     },
     [onZoomChange],
   );
+  // A pinch in progress, reported from the page at the START of the pinch (see ZoomablePage's
+  // `onPinchChange`). It freezes the scroller for the duration — a page's pinch runs SIMULTANEOUSLY
+  // with the list's own scroll (it has to; see `nativeScroll`), and a UIScrollView reads two
+  // fingers as a two-finger drag, so the pinch that scales the page also drags the pager, sliding
+  // the neighbouring pages in under the zoom.
+  const [pinching, setPinching] = useState(false);
   // Unmounting (e.g. switching reader modes) must not leave the parent thinking
   // a page is still zoomed — that would keep its swipe-dismiss disabled.
   useEffect(() => () => onZoomChange?.(false), [onZoomChange]);
@@ -243,6 +249,10 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // there is (page 1 → 2 flips `atStart` while the finger is still down).
   const atStart = useSharedValue(false);
   const atEnd = useSharedValue(false);
+  // Whether the edge pan may ACT at all — false while a page is zoomed (a one-finger drag pans the
+  // image then) or while the pager is a decorative strip. A shared value rather than `.enabled()`
+  // for the same reason `atStart`/`atEnd` are: see `edgeTurn`.
+  const edgeAllowed = useSharedValue(true);
   // The index the list is parked on, and where index 0 sits in scroll coordinates — the two halves
   // of the scrub's arithmetic. See the reaction below.
   const parkedIndex = useSharedValue(0);
@@ -287,7 +297,11 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       },
   );
 
-  // Both refs above (and the shared values) are rewritten AFTER each render rather than during it.
+  // Where the pager sits, for the pinch freeze below to re-snap to — the same value `parkedIndex`
+  // carries, on the thread that needs it.
+  const activeIndexRef = useRef(initialIndex);
+
+  // The refs above (and the shared values) are rewritten AFTER each render rather than during it.
   //
   // They were written inline in the render body until this pass, which the React
   // Compiler forbids — and it had never said so, because it was quietly bailing
@@ -304,7 +318,18 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     atStart.set(activeIndex <= 0);
     atEnd.set(activeIndex >= n - 1);
     parkedIndex.set(activeIndex);
+    edgeAllowed.set(!zoomed && !standby);
+    activeIndexRef.current = activeIndex;
   });
+
+  // Put the pager back on its page for the duration of a pinch. The freeze above stops the drag
+  // continuing, but not the point or two it already travelled before the pinch was recognized —
+  // and a `pagingEnabled` list that has been frozen mid-page can't snap itself back, so the
+  // neighbour would sit there in the corner of the zoom until the fingers came up.
+  useEffect(() => {
+    if (!pinching) return;
+    void listRef.current?.scrollToIndex({ index: activeIndexRef.current, animated: false });
+  }, [pinching]);
 
   // The scrubber's live drag, resolved entirely on the UI thread — a shared value
   // in, a native scroll command out, with the JS thread never in the loop. Every
@@ -366,13 +391,20 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // its handlers in place rather than reattaching) and buys something worth more: through the whole
   // middle of a chapter, which is nearly all of reading, there is no pan on this surface at all for
   // the page's own gestures to arbitrate against.
+  //
+  // ZOOM AND STANDBY ARE NOT PART OF THAT GATE, though they do disable it — they're latched off a
+  // shared value at touch-down instead. Rebuilding this gesture rebuilds `pageExternals`, and
+  // that's a prop of every page: a zoom starting or ending would re-render all of them and rebuild
+  // the very pinch/double-tap handlers doing the zooming, mid-gesture. The edge in `.enabled()`
+  // moves on a page turn, when nothing is mid-gesture; the zoom moves in the middle of one.
   const fromStart = useSharedValue(false);
   const fromEnd = useSharedValue(false);
+  const fromAllowed = useSharedValue(false);
   const atAnEdge = activeIndex <= 0 || activeIndex >= n - 1;
   const edgeTurn = useMemo(
     () =>
       Gesture.Pan()
-        .enabled(!zoomed && !standby && atAnEdge)
+        .enabled(atAnEdge)
         .maxPointers(1)
         .activeOffsetX([-EDGE_ACTIVATE_PX, EDGE_ACTIVATE_PX])
         .failOffsetY([-EDGE_FAIL_PX, EDGE_FAIL_PX])
@@ -380,9 +412,11 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
           'worklet';
           fromStart.set(atStart.value);
           fromEnd.set(atEnd.value);
+          fromAllowed.set(edgeAllowed.value);
         })
         .onEnd((e) => {
           'worklet';
+          if (!fromAllowed.value) return;
           // The shared projected release (lib/gesture-release), judged along whichever way the drag
           // went — a flick back at the moment of lifting is someone changing their mind.
           if (!releaseCommittedEitherWay(e.translationX, e.velocityX, width * EDGE_TURN_FRACTION)) return;
@@ -395,7 +429,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
             runOnJS(rightAction)();
           }
         }),
-    [zoomed, standby, atAnEdge, width, leftAction, rightAction, atStart, atEnd, fromStart, fromEnd],
+    [atAnEdge, width, leftAction, rightAction, atStart, atEnd, edgeAllowed, fromStart, fromEnd, fromAllowed],
   );
   // The list's own scroll, as a gesture RNGH can reason about — so the pan above runs ALONGSIDE it
   // rather than winning the touch off it.
@@ -414,6 +448,43 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   const listGesture = useMemo(() => Gesture.Simultaneous(nativeScroll, edgeTurn), [nativeScroll, edgeTurn]);
   // BOTH of them, handed to every page — see ZoomablePage's `scrollGesture`.
   const pageExternals = useMemo(() => [nativeScroll, edgeTurn], [nativeScroll, edgeTurn]);
+
+  // EVERYTHING A PAGE CELL DEPENDS ON BEYOND ITS OWN ITEM, and the list's own hand-off for
+  // re-rendering cells when it changes.
+  //
+  // This is not optional bookkeeping. LegendList re-invokes `renderItem` for a mounted cell when
+  // that cell's item, its key, or `extraData` changes — and otherwise NOT: a re-render of the list
+  // does not reach the cells the way a FlatList's did (VirtualizedList rebuilt every cell element
+  // on any parent render, so an inline `renderItem` closure was enough, which is why the swap to
+  // LegendList could take this away without anything looking different at the call site).
+  //
+  // Without it a cell keeps whatever it was FIRST rendered with, and the prop that matters most is
+  // `active`. A page is mounted two pages ahead of being read, so it renders with `active: false`
+  // and never hears otherwise — and ZoomablePage resets the zoom of a page that isn't active. So
+  // pinching or double-tapping any page except the one the pager opened on zoomed it and then
+  // undid the zoom on release, which is exactly what it looked like. The rest of these have the
+  // same failure mode, more quietly: a page fit change reaching only unmounted pages, a rotation
+  // resizing only new cells, a standby strip that never lifted, tap zones calling into a closure
+  // from another chapter.
+  //
+  // `zoomed` and `pinching` are deliberately NOT here. No cell reads either one, and listing them
+  // would re-render every page — rebuilding the very gestures in flight — at the moment a pinch
+  // starts and again when it settles.
+  const extraData = useMemo(
+    () => ({
+      activeIndex,
+      standby,
+      pageFit,
+      width,
+      height,
+      leftAction,
+      rightAction,
+      onToggleChrome,
+      handleZoomChange,
+      pageExternals,
+    }),
+    [activeIndex, standby, pageFit, width, height, leftAction, rightAction, onToggleChrome, handleZoomChange, pageExternals],
+  );
 
   return (
     <View style={{ width, height }}>
@@ -446,9 +517,14 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         estimatedListSize={{ width, height }}
         data={data}
         keyExtractor={(item) => item.key}
+        // What makes a mounted cell re-render — see the memo above. Everything `renderItem` reads
+        // that isn't the item belongs in there.
+        extraData={extraData}
         horizontal
         pagingEnabled
-        scrollEnabled={!zoomed}
+        // Frozen while a page is zoomed (its own pan owns one-finger drags then) and for the
+        // duration of a pinch (see `pinching`).
+        scrollEnabled={!zoomed && !pinching}
         showsHorizontalScrollIndicator={false}
         initialScrollIndex={initialIndex}
         // THE POINT OF THE WHOLE SWAP: anchor a data change on the ITEM, so a chapter joining at
@@ -492,6 +568,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
               onRight={rightAction}
               onToggleChrome={onToggleChrome}
               onZoomChange={handleZoomChange}
+              onPinchChange={setPinching}
               scrollGesture={pageExternals}
             />
           )
