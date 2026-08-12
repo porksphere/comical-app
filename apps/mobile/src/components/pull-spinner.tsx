@@ -14,13 +14,16 @@ import Animated, {
 const SPOKES = 12;
 const SPOKE_INDEXES = Array.from({ length: SPOKES }, (_, i) => i);
 
-// Ring geometry, all as fractions of `size` so the whole thing scales from one number.
+// Ring geometry, all as fractions of `size` so the whole thing scales from one number. Tuned to
+// UIActivityIndicatorView's proportions: outer tip at ~0.46·size from the centre, spokes ~0.30·size
+// long. That leaves the tips clearly separated but the inner ends overlapping, which is what makes
+// it read as a solid ring rather than twelve loose dashes.
 /** Gap between the box's edge and the outer tip of a spoke. */
-const INSET = 0.06;
+const INSET = 0.04;
 /** Spoke length. */
-const LENGTH = 0.28;
+const LENGTH = 0.3;
 /** Spoke thickness (floored in px below, so it can't vanish at small sizes). */
-const THICKNESS = 0.1;
+const THICKNESS = 0.11;
 
 /** Dimmest a spoke gets while the chase runs — the ring has to stay legible AS a ring. */
 const TAIL_FLOOR = 0.18;
@@ -53,7 +56,7 @@ export function PullSpinner({
   pullThreshold,
   refreshing,
   color,
-  size = 22,
+  size = 20,
 }: {
   pullY: SharedValue<number>;
   pullThreshold: number;
@@ -115,9 +118,9 @@ function Spoke({
   refreshing: boolean;
   spin: SharedValue<number>;
 }) {
-  const thickness = Math.max(1.5, size * THICKNESS);
+  const thickness = Math.max(2, size * THICKNESS);
   const length = size * LENGTH;
-  const top = size * INSET;
+  const inset = size * INSET;
   // Where this spoke sits around the ring, 0→1 clockwise from twelve o'clock.
   const frac = index / SPOKES;
 
@@ -136,30 +139,25 @@ function Spoke({
     return { opacity: Math.min(1, Math.max(0, (progress - frac) * SPOKES)) };
   }, [refreshing]);
 
+  // The rotating thing is a FULL-SIZE wrapper, not the bar itself. A wrapper that fills the box has
+  // its centre at the ring's centre, which is already the default transform origin, so the spoke
+  // sweeps the ring without anyone having to state an origin. The obvious alternative — rotate the
+  // bar and move its origin with `transformOrigin` — needs a px-pair string whose parsing isn't
+  // worth depending on: get it wrong and every spoke pivots about the wrong point, which scatters
+  // the ring instead of failing loudly.
   return (
-    <Animated.View
-      style={[
-        styles.spoke,
-        {
+    <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ rotate: `${index * (360 / SPOKES)}deg` }] }, style]}>
+      <View
+        style={{
+          position: 'absolute',
+          top: inset,
+          left: (size - thickness) / 2,
           width: thickness,
           height: length,
-          left: (size - thickness) / 2,
-          top,
           borderRadius: thickness / 2,
           backgroundColor: color,
-          // Pivot about the RING's centre, not the spoke's own — expressed in the spoke's coordinate
-          // space, where the centre is half a thickness across and `size/2 - top` down.
-          transformOrigin: `${thickness / 2}px ${size / 2 - top}px`,
-          transform: [{ rotate: `${index * (360 / SPOKES)}deg` }],
-        },
-        style,
-      ]}
-    />
+        }}
+      />
+    </Animated.View>
   );
 }
-
-const styles = StyleSheet.create({
-  spoke: {
-    position: 'absolute',
-  },
-});
