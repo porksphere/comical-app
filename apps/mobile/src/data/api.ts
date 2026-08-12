@@ -211,7 +211,17 @@ const assetResolvedValues = new Map<string, string>();
  */
 const RESOLVE_CONCURRENCY = 3;
 
-type QueuedResolve = { url: string; background: boolean; seq: number; start: () => void; cancel: () => void };
+type QueuedResolve = {
+  url: string;
+  background: boolean;
+  seq: number;
+  /** How many live callers still want this. A mounted page claims one and gives it back when it
+   *  unmounts (`releaseAssetResolve`); a warm-ahead claims none, because a guess has no one waiting
+   *  on it. At zero, a request that hasn't started yet is dropped — see `releaseAssetResolve`. */
+  claims: number;
+  start: () => void;
+  cancel: () => void;
+};
 
 let resolveSeq = 0;
 let resolvesRunning = 0;
@@ -268,7 +278,10 @@ export function resolveAssetSourceCached(url: string, opts?: { background?: bool
     const queued = resolveQueue.get(url);
     if (queued) {
       queued.seq = (resolveSeq += 1);
-      if (!background) queued.background = false;
+      if (!background) {
+        queued.background = false;
+        queued.claims += 1;
+      }
     }
     return hit;
   }
@@ -303,11 +316,37 @@ export function resolveAssetSourceCached(url: string, opts?: { background?: bool
     // re-runs — and a queued entry dropped without settling its promise is a page that waits
     // forever, which is the exact failure this queue is here to end.
     const cancel = () => fail(new Error('resolve cancelled'));
-    resolveQueue.set(url, { url, background, seq: (resolveSeq += 1), start, cancel });
+    resolveQueue.set(url, { url, background, seq: (resolveSeq += 1), claims: background ? 0 : 1, start, cancel });
   });
   assetResolveCache.set(url, p);
   pumpResolves();
   return p;
+}
+
+/**
+ * Give back the claim a mounted page took, and DROP the request if nobody else wants it.
+ *
+ * Reordering the queue was only half of what a swipe through forty pages needed. Every page it
+ * passes mounts, asks, and unmounts again — and an unmounted page's request used to sit in the
+ * queue and get served anyway, which on a bridge that answers by proxying the bytes back means
+ * downloading forty full-size images nobody is going to look at, at two per second, for a minute
+ * after the swipe ended. Reading the queue from the correct end fixes WHEN the page you stopped on
+ * arrives; this is what stops the other thirty-nine being fetched at all.
+ *
+ * Only a request that hasn't STARTED can be dropped — one already at the bridge is left to finish,
+ * and there are at most three of those. A warm-ahead is never dropped this way: it holds no claim,
+ * so it has none to give back, and it stays at the back of the queue where it belongs.
+ */
+export function releaseAssetResolve(url: string): void {
+  const queued = resolveQueue.get(url);
+  if (!queued || queued.claims <= 0) return;
+  queued.claims -= 1;
+  if (queued.claims > 0) return;
+  resolveQueue.delete(url);
+  // The cache entry goes too, so a page that comes back asks again — and asks as the NEWEST
+  // request, which is exactly the priority a page being returned to should have.
+  assetResolveCache.delete(url);
+  queued.cancel();
 }
 
 /**

@@ -25,8 +25,14 @@ mock.module('@legendapp/state/react', () => ({ use$: (o: unknown) => o }));
 let resolvedMode = 'remote';
 mock.module('./embedded/preference', () => ({ getResolvedModeSync: () => resolvedMode }));
 
-const { invalidateAssetSource, peekResolvedAssetSource, resolveAssetSourceCached, setTransport, assetResolvesInFlight } =
-  await import('./api');
+const {
+  invalidateAssetSource,
+  peekResolvedAssetSource,
+  releaseAssetResolve,
+  resolveAssetSourceCached,
+  setTransport,
+  assetResolvesInFlight,
+} = await import('./api');
 
 describe('peekResolvedAssetSource', () => {
   test('an absolute URL is knowable immediately, with no resolve at all', async () => {
@@ -152,6 +158,41 @@ describe('the resolve queue', () => {
     await t.drain();
     await t.drain();
     await Promise.all([...blocking, warm, ...others, landed]);
+  });
+
+  test('a page swiped past is dropped from the queue, not fetched anyway', async () => {
+    const t = controllableTransport();
+    const blocking = ['/r/block1', '/r/block2', '/r/block3'].map((u) => resolveAssetSourceCached(u).catch(() => null));
+    // Two pages mount as the swipe crosses them, then unmount again behind it.
+    const passed = ['/r/passed1', '/r/passed2'].map((u) => resolveAssetSourceCached(u).catch(() => null));
+    const landed = resolveAssetSourceCached('/r/landed').catch(() => null);
+
+    releaseAssetResolve('/r/passed1');
+    releaseAssetResolve('/r/passed2');
+    expect(assetResolvesInFlight()).toBe(4); // the three running, plus the page actually being read
+
+    await t.drain();
+    await t.drain();
+    await Promise.all([...blocking, ...passed, landed]);
+    expect(t.started).not.toContain('/r/passed1');
+    expect(t.started).not.toContain('/r/passed2');
+    expect(t.started).toContain('/r/landed');
+  });
+
+  test('a page still wanted elsewhere survives one of its claims being given back', async () => {
+    const t = controllableTransport();
+    const blocking = ['/c/block1', '/c/block2', '/c/block3'].map((u) => resolveAssetSourceCached(u).catch(() => null));
+    // The same page mounted twice — which the reader really does, remounting cells as a swipe
+    // passes. One instance going away must not cancel the other's page.
+    const first = resolveAssetSourceCached('/c/shared').catch(() => null);
+    const second = resolveAssetSourceCached('/c/shared').catch(() => null);
+
+    releaseAssetResolve('/c/shared');
+
+    await t.drain();
+    await t.drain();
+    await Promise.all([...blocking, first, second]);
+    expect(t.started).toContain('/c/shared');
   });
 
   test('invalidating a QUEUED path settles it instead of stranding whoever awaits it', async () => {

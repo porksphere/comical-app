@@ -7,7 +7,13 @@ import { useImageProgress } from '@/components/reader/image-progress';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
-import { assetResolvesInFlight, invalidateAssetSource, peekResolvedAssetSource, resolveAssetSourceCached } from '@/data/api';
+import {
+  assetResolvesInFlight,
+  invalidateAssetSource,
+  peekResolvedAssetSource,
+  releaseAssetResolve,
+  resolveAssetSourceCached,
+} from '@/data/api';
 import { coverDelayMs } from '@/data/mock';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { traceJS } from '@/lib/gesture-trace';
@@ -218,6 +224,9 @@ export function ReaderPage({
   // Retry chip like any other failure.
   useEffect(() => {
     let cancelled = false;
+    // Whether this page actually asked for a resolve, so the cleanup gives back a claim only if it
+    // took one — the peek path below returns before asking at all.
+    let claimed = false;
     // Don't tear a good URL down to re-derive the same answer: on a first attempt the seed above is
     // already correct whenever the peek knew it, and clearing it here would unmount the <Image>
     // for a frame. A retry (`attempt > 0`) deliberately does start from nothing.
@@ -239,6 +248,7 @@ export function ReaderPage({
     // `resolving` with nothing after it is a page still waiting, which is the state that has no
     // other symptom.
     const askedAt = Date.now();
+    claimed = true;
     traceJS('page', 'resolving', { p: page, inflight: assetResolvesInFlight() });
     resolveAssetSourceCached(uri)
       .then((u) => {
@@ -251,6 +261,9 @@ export function ReaderPage({
       });
     return () => {
       cancelled = true;
+      // A page swiped past is a page nobody is waiting for. Giving the claim back drops the request
+      // if it hasn't started, which is what keeps a fast swipe from fetching every page it crossed.
+      if (claimed) releaseAssetResolve(uri);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uri, attempt]);
