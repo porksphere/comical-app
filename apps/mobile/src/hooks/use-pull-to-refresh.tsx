@@ -19,6 +19,22 @@ const REFRESH_MIN_VISIBLE_MS = 600;
 const USE_NATIVE_CONTROL = Platform.OS !== 'web';
 
 /**
+ * Lifts the iOS control above the list's cells while it's refreshing.
+ *
+ * UIKit adds `UIRefreshControl` as a BACK-most subview of the scroll view, which is invisible at its
+ * default position because the only place it shows is the overscroll gap, where there's no content
+ * to cover it. `progressViewOffset` moves it down into the content region (that's the whole point —
+ * it has to clear the top bar), and there the cells draw straight over it.
+ *
+ * RN maps a view's `zIndex` onto the control's `layer.zPosition`
+ * (`RCTPullToRefreshViewComponentView.mm`), which is exactly the lever for this.
+ *
+ * iOS-only: Android's control is a `SwipeRefreshLayout` that wraps the scroller and already draws
+ * its circle above the child, so it needs no help and shouldn't have its draw order perturbed.
+ */
+const ABOVE_CONTENT = Platform.OS === 'ios' ? ({ zIndex: 1 } as const) : undefined;
+
+/**
  * The whole pull-to-refresh story for a scrolling list, in one hook — everything a screen needs to
  * wire a spinner up to its own refetch.
  *
@@ -104,6 +120,8 @@ export function usePullToRefresh(
       <RefreshControl
         refreshing={refreshing}
         onRefresh={onRefresh}
+        // Keeps the spinner drawn over the cells rather than under them — see ABOVE_CONTENT.
+        style={ABOVE_CONTENT}
         // Sinks the spinner below the top bar. Without it the control draws at the very top of the
         // scroll view's frame — which, under these full-bleed lists, is behind the opaque bar.
         progressViewOffset={progressViewOffset}

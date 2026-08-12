@@ -89,31 +89,41 @@ function gridCardWidth(viewport: number, gap: number): number {
   return Math.floor((containerWidth - (GRID_COLUMNS - 1) * gap) / GRID_COLUMNS);
 }
 
-// Rendered height of a `SectionHead`, and now the real thing rather than an estimate: every head
-// claims it as a `minHeight` (see `headCompact`/`headWide`), so a drillable head is exactly as tall
-// as a plain one even though the chevron is taller than the title's line box (30px wide / 25px
-// compact — see `headTitleWide`/`headTitleCompact`). A rail's `styles.section` puts a `Spacing.two`
-// gap between the head and the strip/grid below it.
+// Rendered height of a `SectionHead` on the WIDE breakpoint, and the real thing rather than an
+// estimate: every head claims it as a `minHeight` (see `HEAD_HEIGHT_WIDE` and `headWide`), so the
+// height reserved here is the height the row gets — and a drillable head is exactly as tall as a
+// plain one regardless of how the chevron inside it is currently sized. Comfortably clears the
+// title's own line box (30px wide / 25px compact — see `headTitleWide`/`headTitleCompact`). A rail's
+// `styles.section` puts a `Spacing.two` gap between the head and the strip/grid below it.
 export const SECTION_HEAD_HEIGHT = 32;
 
-// Drill-down chevron on a `SectionHead`. Sized so the VISIBLE stroke stands as tall as the title's
-// letters, which takes an icon roughly twice that: lucide draws chevron-right as `m9 18 6-6-6-6`,
-// spanning only the middle half of its 24-unit box, so half of any size given here is whitespace.
-// At 28/32 the drawn glyph is 14/16px against cap heights of ~14/17 — level with the text, which is
-// what the previous 20/24 (a 10/12px glyph beside it) never looked.
+// The head's reserved height, per breakpoint. Claimed by EVERY head so a drillable one is exactly as
+// tall as a plain one, and stated OUTRIGHT rather than derived from the chevron's size: it used to be
+// the chevron, back when the chevron was the tallest thing in the row, which meant retuning the glyph
+// silently reflowed every rail. Wide equals SECTION_HEAD_HEIGHT, which is what keeps the height the
+// vertical list reserves the height it actually gets.
+const HEAD_HEIGHT_COMPACT = 28;
+const HEAD_HEIGHT_WIDE = SECTION_HEAD_HEIGHT;
+
+// Drill-down chevron on a `SectionHead`. Sized against the title's letters, not its line box: lucide
+// draws chevron-right as `m9 18 6-6-6-6`, spanning only the middle half of its 24-unit box, so half
+// of any size here is whitespace and the drawn glyph is half the number. At 25/28 that's 12.5/14px
+// against cap heights of ~14/17 — a shade under the letters, reading as part of the heading.
 //
-// Both fit inside SECTION_HEAD_HEIGHT, which is what keeps the row from growing.
-const CHEVRON_SIZE_COMPACT = 28;
-const CHEVRON_SIZE_WIDE = 32;
-// Lucide has no bold/light variants — one glyph per name — so weight is `strokeWidth`, and a hair
-// over the default 2 is what keeps the chevron from reading thin beside a semibold title.
-const CHEVRON_STROKE = 2.5;
+// This is a step back down from 28/32 (a 14/16px glyph), which overshot: matching the cap height
+// exactly made the chevron compete with the title instead of pointing off it. Both now sit inside
+// the head heights above, so the row's height doesn't depend on them either way.
+const CHEVRON_SIZE_COMPACT = 25;
+const CHEVRON_SIZE_WIDE = 28;
+// Lucide has no bold/light variants — one glyph per name — so weight is `strokeWidth`. A hair over
+// the default 2 keeps the chevron from reading thin beside a semibold title without going as heavy
+// as the 2.5 that paired with the larger glyph.
+const CHEVRON_STROKE = 2.25;
 // It sits tight against the title on purpose — the chevron belongs to the heading and must not read
 // as a separate control — so the nudge is negative, cancelling most of the leading whitespace inside
 // lucide's square box. That whitespace scales with the icon (the glyph starts 9/24 of the way in),
-// so growing 20→28 and 24→32 added 3px on each: -2 becomes -5, and the gap the eye sees is the one
-// it saw before.
-const CHEVRON_NUDGE = -5;
+// so it tracks the size: 28/32 carried ~10.5/12px and took -5; 25/28 carries ~9.4/10.5 and takes -4.
+const CHEVRON_NUDGE = -4;
 
 /**
  * Reserved vertical height of a whole `Rail` row (heading + strip/grid), used by `ContentFeed`'s
@@ -551,9 +561,9 @@ export function SectionHead({ title, onSeeAll, testID }: { title: string; onSeeA
   const compact = useIsCompact();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
   const titleStyle = [styles.headTitle, compact ? styles.headTitleCompact : styles.headTitleWide];
-  // Claimed by EVERY head, not just the drillable ones: the chevron is taller than the title's line
-  // box, so without a floor under both a rail you can drill into would stand a few px taller than
-  // one you can't. Reserving it always also makes SECTION_HEAD_HEIGHT exact rather than a guess.
+  // Claimed by EVERY head, not just the drillable ones — otherwise a rail you can drill into would
+  // stand a different height from one you can't whenever the chevron outgrows the title's line box.
+  // Reserving it always also makes SECTION_HEAD_HEIGHT exact rather than a guess.
   const headStyle = [styles.head, compact ? styles.headCompact : styles.headWide];
   const heading = (
     <ThemedText type="subtitle" style={titleStyle} numberOfLines={1}>
@@ -605,13 +615,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: TopLevelGutter,
   },
-  // Floors for the head, one per breakpoint: the chevron's own size, so a drillable head is exactly
-  // as tall as a plain one and neither exceeds SECTION_HEAD_HEIGHT.
+  // Floors for the head, one per breakpoint — see HEAD_HEIGHT_*. Independent of the chevron now, so
+  // a drillable head matches a plain one whether the glyph is taller than the title's line box or,
+  // as at the current sizes, a little shorter.
   headCompact: {
-    minHeight: CHEVRON_SIZE_COMPACT,
+    minHeight: HEAD_HEIGHT_COMPACT,
   },
   headWide: {
-    minHeight: CHEVRON_SIZE_WIDE,
+    minHeight: HEAD_HEIGHT_WIDE,
   },
   headTitle: {
     flexShrink: 1,
