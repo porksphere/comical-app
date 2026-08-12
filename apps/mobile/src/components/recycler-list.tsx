@@ -1,13 +1,7 @@
 import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import type { LegendListRef } from '@legendapp/list/react-native';
 import type { ReactElement, RefObject } from 'react';
-import {
-  Platform,
-  StyleSheet,
-  type NativeScrollEvent,
-  type NativeSyntheticEvent,
-  type RefreshControlProps,
-} from 'react-native';
+import { Platform, StyleSheet, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { GestureDetector, type ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { type SharedValue } from 'react-native-reanimated';
 
@@ -49,7 +43,6 @@ export function RecyclerList<T>({
   onEndReachedThreshold = 0.6,
   onScrollEndDrag,
   onMomentumScrollEnd,
-  refreshControl,
   wrapperStyle,
   scrollGesture,
   scrollEnabled,
@@ -93,9 +86,6 @@ export function RecyclerList<T>({
   onEndReachedThreshold?: number;
   onScrollEndDrag?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   onMomentumScrollEnd?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
-  /** From `usePullToRefresh` — the OS refresh control on iOS/Android, undefined on web (where RN's
-   *  is an inert stub and the custom `PullIndicator` overlay stands in instead). */
-  refreshControl?: ReactElement<RefreshControlProps>;
   /** Animated styles for the list wrapper — e.g. the pull-to-refresh shift and the refinement dim.
    *  Applied to a wrapping Animated.View rather than the list's own `style` (not typed for a
    *  Reanimated style). */
@@ -175,12 +165,10 @@ export function RecyclerList<T>({
         onEndReached={onEndReached}
         // Show the browser's native scrollbar on web; hidden on native, where it isn't idiomatic.
         showsVerticalScrollIndicator={Platform.OS === 'web'}
-        // The OS refresh control on native, absent on web (see `usePullToRefresh`).
-        refreshControl={refreshControl}
-        // Android's edge-stretch glow is suppressed only when there's no refresh control to own the
-        // overscroll — with one mounted, SwipeRefreshLayout takes the pull and the glow is the
-        // correct native response to overscrolling past it.
-        overScrollMode={Platform.OS === 'android' && !refreshControl ? 'never' : undefined}
+        // No native RefreshControl anywhere — pull-to-refresh is the custom overlay spinner. Android's
+        // edge-stretch glow is suppressed so it doesn't fight the custom pull; iOS keeps its bounce
+        // (that's what sources the pull there), and a release past the threshold fires via onScrollEndDrag.
+        overScrollMode={Platform.OS === 'android' ? 'never' : undefined}
         // Gesture phases for the auto-hiding chrome: both bars commit to shown-or-hidden when the
         // scroll is RELEASED, not while it moves (see `lib/scroll-release`). Reported here, on the
         // one list primitive, so every list built on it feeds them without wiring anything — a

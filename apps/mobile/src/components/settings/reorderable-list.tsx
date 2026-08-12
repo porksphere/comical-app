@@ -86,7 +86,7 @@ export function ReorderableList<T>({ data, keyOf, renderRow, onReorder, refresh,
 
   const count = data.length;
   const contentHeight = count * ROW;
-  const pull = usePullToRefresh(scrollY, refresh ?? (async () => {}), insets.top + barHeight);
+  const pull = usePullToRefresh(scrollY, refresh ?? (async () => {}));
 
   // Re-sync order when the item set/order changes. A no-op right after our own commit.
   const signature = data.map(keyOf).join(',');
@@ -125,7 +125,7 @@ export function ReorderableList<T>({ data, keyOf, renderRow, onReorder, refresh,
         ref={scrollRef}
         onScroll={onScroll}
         scrollEventThrottle={16}
-        refreshControl={pull.refreshControl}
+        onScrollEndDrag={pull.onScrollEndDrag}
         // Fill the viewport even for a short list + always allow the bounce, so a pull anywhere on the
         // page engages the refresh — not only over the rows.
         alwaysBounceVertical
@@ -153,7 +153,7 @@ export function ReorderableList<T>({ data, keyOf, renderRow, onReorder, refresh,
           ))}
         </Animated.View>
       </Animated.ScrollView>
-      <PullIndicator {...pull.indicator} />
+      <PullIndicator {...pull.indicator} top={insets.top + barHeight} />
     </View>
   );
 }

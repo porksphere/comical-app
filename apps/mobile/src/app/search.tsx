@@ -347,11 +347,8 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
   // shift) lives in the shared hook — same one the Browse grid uses. Refetches the CURRENT search;
   // guarded on `scope` because the blank landing has nothing to refresh, and refetching a disabled
   // query would resolve instantly and just flash the spinner.
-  const pull = usePullToRefresh(
-    scrollY,
-    () => (isComical ? comicalSearch.refetch() : scope ? resultsQuery.refetch() : Promise.resolve()),
-    // Both bars overlay the list, so the spinner sinks below the pair of them.
-    topBarTotal + filtersBarH,
+  const pull = usePullToRefresh(scrollY, () =>
+    isComical ? comicalSearch.refetch() : scope ? resultsQuery.refetch() : Promise.resolve(),
   );
 
   const loadMore = () => {
@@ -464,7 +461,7 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
                 paddingBottom={insets.bottom + Spacing.five}
                 sharedValues={sharedValues}
                 onScroll={onListScroll}
-                refreshControl={pull.refreshControl}
+                onScrollEndDrag={pull.onScrollEndDrag}
                 wrapperStyle={pull.listStyle}
                 scrollGesture={embedded?.scrollGesture}
                 scrollEnabled={embedded?.scrollEnabled}
@@ -485,8 +482,8 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
                 sharedValues={sharedValues}
                 onScroll={onListScroll}
                 onEndReached={loadMore}
-                refreshControl={pull.refreshControl}
-                // The pull-to-refresh content shift (web) and the re-search dim both ride the list wrapper.
+                onScrollEndDrag={pull.onScrollEndDrag}
+                // The pull-to-refresh content shift and the re-search dim both ride the list wrapper.
                 wrapperStyle={[pull.listStyle, listDimStyle]}
                 scrollGesture={embedded?.scrollGesture}
                 scrollEnabled={embedded?.scrollEnabled}
@@ -494,7 +491,7 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
             ))}
           {ready && filterBar}
           {/* Settles just below the bars, in the gap the pull opens. */}
-          <PullIndicator {...pull.indicator} />
+          <PullIndicator {...pull.indicator} top={topBarTotal + filtersBarH} />
         </View>
       )}
     </ThemedView>

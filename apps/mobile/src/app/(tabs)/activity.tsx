@@ -91,7 +91,7 @@ export default function ActivityScreen() {
   }, [queryClient, mock]);
 
   // Pull-to-refresh = a forced re-scan of the whole library, then a feed refresh. The app's shared
-  // native RefreshControl on iOS/Android, the custom overlay on web (see usePullToRefresh); the
+  // custom overlay spinner (no native RefreshControl — see usePullToRefresh) sources the gesture; the
   // list's live scroll offset feeds it via `sharedValues` below.
   const scrollY = useSharedValue(0);
   // The tab bar's slide runs off that same offset, on the UI thread — this screen already feeds it
@@ -111,11 +111,7 @@ export default function ActivityScreen() {
       showToast('Update check failed');
     }
   }, [ds, invalidateFeed]);
-  // Declared up here (rather than beside the other layout maths below) because the pull needs it:
-  // it's both the native control's progressViewOffset and the web overlay's top.
-  const barHeight = useTopBarHeight();
-  const headerHeight = insets.top + barHeight;
-  const pull = usePullToRefresh(scrollY, refresh, headerHeight);
+  const pull = usePullToRefresh(scrollY, refresh);
 
   // Swipe-away clears a whole series' feed entries at once (they're coalesced into one row). Optimistic:
   // drop the row immediately, roll back on error, refresh the badge count when settled.
@@ -193,6 +189,8 @@ export default function ActivityScreen() {
     return out;
   }, [visible]);
 
+  const barHeight = useTopBarHeight();
+  const headerHeight = insets.top + barHeight;
   // Center the rows in a full-width scroller (scrollbar at the window edge) via symmetric side
   // padding — LegendList drops paddingHorizontal / ignores alignSelf on its content container, so
   // explicit paddingLeft/Right is the reliable lever. Only the centring inset (web); the row owns its
@@ -295,20 +293,24 @@ export default function ActivityScreen() {
               />
             )}
             showsVerticalScrollIndicator={Platform.OS === 'web'}
-            // The OS refresh control on native; undefined on web, which uses the overlay instead.
-            refreshControl={pull.refreshControl}
-            // Android's glow is only suppressed when no refresh control owns the overscroll.
-            overScrollMode={Platform.OS === 'android' && !pull.refreshControl ? 'never' : undefined}
+            // Suppress Android's edge glow so it doesn't fight the custom pull; iOS keeps its bounce
+            // (that's what sources the pull there) and fires the refresh via onScrollEndDrag.
+            overScrollMode={Platform.OS === 'android' ? 'never' : undefined}
             onScroll={onScroll}
-            // Gesture phases for the tab bar (it commits to shown/hidden on release).
+            // Gesture phases for the tab bar (it commits to shown/hidden on release). Composed by
+            // hand rather than spreading `scrollPhaseHandlers`: pull-to-refresh already owns
+            // `onScrollEndDrag`, and that's the release signal.
             onScrollBeginDrag={notifyScrollBeginDrag}
             onMomentumScrollEnd={notifyScrollRest}
-            onScrollEndDrag={notifyScrollEndDrag}
+            onScrollEndDrag={() => {
+              notifyScrollEndDrag();
+              pull.onScrollEndDrag?.();
+            }}
           />
         </Animated.View>
       )}
 
-      <PullIndicator {...pull.indicator} />
+      <PullIndicator {...pull.indicator} top={headerHeight} />
       <TabTitleBar title="Activity" />
     </ThemedView>
   );
