@@ -396,35 +396,31 @@ function warmPrefetch(pages: string[]): void {
   if (warmed.size > WARM_MEMO_MAX) warmed.clear();
   for (const p of fresh) warmed.add(p);
   traceJS('warm', 'enqueue', { n: fresh.length, of: pages.length, inflight: assetResolvesInFlight() });
-  void Promise.all(fresh.map((p) => resolveAssetSourceCached(p).catch(() => null))).then((urls) => {
+  // `background`: a warm is a GUESS about where the reader is going, and must never be served ahead
+  // of a page that has actually mounted. See the resolve queue in data/api.ts.
+  void Promise.all(fresh.map((p) => resolveAssetSourceCached(p, { background: true }).catch(() => null))).then((urls) => {
     const http = urls.filter((u): u is string => !!u && !u.startsWith('data:'));
     if (http.length) void Image.prefetch(http);
   });
 }
 
 /**
- * How long the scrubber has to hold still before the pages around it are warmed.
+ * How still the read position has to be before the pages around it are warmed.
  *
- * The scrub reports EVERY page it sweeps past (one tick per ~45ms, see chapter-navigator), and
- * warming each of them is how a drag across a 100-page gallery came to enqueue the whole gallery:
- * a sweep to page 70 warmed ~70 pages' worth of prefetch, and — on a direct series, whose page URLs
- * are lazy resolve-routes rather than absolute URLs — ~70 rate-limited resolve round-trips, all
- * issued at once.
+ * Every page the reader passes reports itself — a scrub ticks about every 45ms, and a swipe through
+ * a gallery reports each page as it goes by — and warming at every one of those meant a sweep from
+ * page 1 to 47 enqueued a warm window per page: forty-odd windows for a journey through pages
+ * nobody was going to look at. On a direct series, whose page URLs are lazy resolve-routes answered
+ * one at a time by the bridge, that is minutes of round-trips bought on speculation.
  *
- * What makes that fatal rather than merely wasteful is that nothing lets the page you actually
- * LANDED on overtake the queue it is stuck in. A resolve is deduped by URL (see
- * `resolveAssetSourceCached`), so the visible page doesn't get a request of its own — it awaits the
- * very promise the warm queued sixty pages ago. The image behaves the same way one layer down:
- * expo-image funnels every prefetch through a single shared low-priority queue (three at a time),
- * and SDWebImage coalesces a later request for the same URL onto the operation already sitting in
- * it rather than starting a fresh one at normal priority. The page simply waits out everything
- * queued in front of it, which is what "pages never load after scrubbing" is.
- *
- * So the TRAIL is not warmed — only where the finger comes to rest, which is the only page anyone
- * was ever going to read. Short enough that a deliberate scrub that pauses to look still warms
- * where it paused; long enough that a sweep across the gallery warms exactly once.
+ * The ordering problem this used to cause is fixed properly in the resolve queue (data/api.ts): a
+ * warm is `background` now and can no longer be served ahead of a page that has mounted. This is
+ * the other half — not asking in the first place. Only where the reader COMES TO REST is warmed,
+ * which is the only place a guess about what to read next is worth anything. Short enough that a
+ * scrub that pauses to look still warms where it paused; long enough that crossing a gallery warms
+ * once, at the far end.
  */
-const SCRUB_WARM_IDLE_MS = 220;
+const WARM_IDLE_MS = 220;
 
 /** What the reader pane is pointed at: a chapter (chaptered series) or the series itself (direct).
  *  `start: 'last'` = land on the final page (arriving from the NEXT chapter's "previous"). */
@@ -3338,29 +3334,28 @@ const ReaderPane = forwardRef<
     },
     [pages, stitched, flatItems, prefixLen, settings.prefetchAhead],
   );
-  useEffect(() => {
-    // Standby (the collapsed strip) loads nothing beyond the visible page; the flip back to
-    // active re-runs this and warms the neighbourhood immediately.
-    if (!standby && pages.length) warmAround(currentPage);
-  }, [standby, pages, currentPage, warmAround]);
-
-  // The scrubber's warm — where the drag STOPS, not every page it crossed. See SCRUB_WARM_IDLE_MS
-  // for what warming the trail did. The release needs nothing extra: the seek moves `currentPage`,
-  // and the effect above warms around it.
-  const scrubWarmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const warmOnScrub = useCallback(
+  // Warm where the reader COMES TO REST — see WARM_IDLE_MS. Both callers go through this: the page
+  // the reader has settled on, and the scrubber's live position as it is dragged.
+  const warmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const warmSoon = useCallback(
     (index: number) => {
-      if (scrubWarmTimer.current) clearTimeout(scrubWarmTimer.current);
-      scrubWarmTimer.current = setTimeout(() => warmAround(index), SCRUB_WARM_IDLE_MS);
+      if (warmTimer.current) clearTimeout(warmTimer.current);
+      warmTimer.current = setTimeout(() => warmAround(index), WARM_IDLE_MS);
     },
     [warmAround],
   );
   useEffect(
     () => () => {
-      if (scrubWarmTimer.current) clearTimeout(scrubWarmTimer.current);
+      if (warmTimer.current) clearTimeout(warmTimer.current);
     },
     [],
   );
+
+  useEffect(() => {
+    // Standby (the collapsed strip) loads nothing beyond the visible page; the flip back to
+    // active re-runs this and warms the neighbourhood.
+    if (!standby && pages.length) warmSoon(currentPage);
+  }, [standby, pages, currentPage, warmSoon]);
 
   // ── Progress recording: a library series (inLibrary, queried by the screen) records chapter
   // progress; anything else (including a direct series) goes to the reading log under the
@@ -3534,7 +3529,7 @@ const ReaderPane = forwardRef<
           offset={stitched ? prefixLen : 0}
           onSeek={seekTo}
           onScrubbingChange={handleScrubbing}
-          onScrubPage={warmOnScrub}
+          onScrubPage={warmSoon}
         />
       )}
       </Animated.View>

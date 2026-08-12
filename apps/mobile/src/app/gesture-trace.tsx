@@ -51,9 +51,11 @@ import {
  *   • `warm enqueue n= inflight=`   → a warm-ahead just queued `n` fresh pages, with `inflight`
  *                                     resolves already outstanding. A big `n` here is the reader
  *                                     asking for far more than it is about to show.
- *   • `page resolving p= inflight=` → page `p` asked for its URL. If `inflight` is large, it is
- *                                     queued behind that many others — and because resolves are
- *                                     deduped by URL, it cannot overtake them.
+ *   • `page resolving p= inflight=` → page `p` asked for its URL, with that many resolves already
+ *                                     outstanding. A big number is not itself a problem any more —
+ *                                     the queue is drained newest-first, so a page asking late is
+ *                                     asking to be served FIRST (data/api.ts). What matters is the
+ *                                     gap to its `page resolved`, not the depth behind it.
  *   • `page resolved p= ms=`        → the matching answer, and how long it took. A `page resolving`
  *                                     with no `resolved` after it is a page still waiting.
  *   • `page loaded p=`              → bytes arrived and decoded. This is the only line that means

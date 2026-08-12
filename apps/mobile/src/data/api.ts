@@ -180,39 +180,133 @@ const assetResolveCache = new Map<string, Promise<string>>();
 const assetResolvedValues = new Map<string, string>();
 
 /**
- * How many resolves have been started and not yet settled.
+ * ── THE RESOLVE QUEUE ───────────────────────────────────────────────────────────────────────────
  *
- * Worth counting because the dedupe above has a consequence that is invisible from any one call
- * site: a page the reader is WAITING ON doesn't get its own request, it gets whatever promise was
- * already made for that URL — so if a warm-ahead queued it behind sixty others on a bridge that
- * resolves pages one rate-limited round-trip at a time, the visible page waits out all sixty and
- * there is nothing at the reader end that could tell. This number is what makes that state legible:
- * the reader stamps it onto its trace lines and onto the stall it eventually reports.
+ * A page resolve on the embedded transport is a bridge round-trip, and the bridges that need one
+ * answer them STRICTLY SERIALLY — measured on device at almost exactly two per second, whether
+ * three are outstanding or forty. So the only thing that decides when a given page appears is where
+ * it sits in the order, and until this queue existed the order was "whenever the cell happened to
+ * mount", which is the worst possible one: swiping from page 1 to 47 mounts every page on the way,
+ * each firing its own resolve, so the page you STOPPED on was the last of forty to be asked for and
+ * came back twenty seconds later. Every page you flicked past was fetched ahead of the one you were
+ * looking at. That is the "pages never load" — not lost requests, a queue served backwards.
+ *
+ * Two rules fix the order, and neither is about doing less work:
+ *
+ *   NEWEST FIRST. The most recently asked-for page is the one nearest the viewport, because that is
+ *   what mounting means. A queue drained newest-first tracks where the reader IS; drained
+ *   oldest-first it retraces where the reader has been.
+ *
+ *   FOREGROUND BEFORE WARM. A page that has mounted is on screen or a swipe away; a warm-ahead is a
+ *   guess. Guesses wait, and they never get in front of something real.
+ *
+ * And re-asking BUMPS: `resolveAssetSourceCached` on a URL that is still queued re-stamps it (and
+ * promotes a warm to foreground), which is what lets the page you land on overtake the queue it was
+ * already sitting in. Without that the dedupe works against us — the visible page doesn't get a
+ * request of its own, it inherits the warm's place in line from thirty pages ago.
+ *
+ * Only requests that actually do I/O are queued (see `resolvesImmediately`): an absolute URL, and
+ * every URL at all under the remote transport, is pure string work and must not be made to wait
+ * behind a bridge.
+ */
+const RESOLVE_CONCURRENCY = 3;
+
+type QueuedResolve = { url: string; background: boolean; seq: number; start: () => void; cancel: () => void };
+
+let resolveSeq = 0;
+let resolvesRunning = 0;
+const resolveQueue = new Map<string, QueuedResolve>();
+
+/** True when `resolveAssetSource` will answer without a round-trip, so queueing it would be pure
+ *  latency. Mirrors that function's own first two lines — deliberately, since the whole point is to
+ *  keep the free cases out of a queue built for the expensive one. */
+function resolvesImmediately(url: string): boolean {
+  return !url.startsWith('/') || getResolvedModeSync() !== 'embedded';
+}
+
+function pumpResolves(): void {
+  while (resolvesRunning < RESOLVE_CONCURRENCY && resolveQueue.size > 0) {
+    let next: QueuedResolve | undefined;
+    for (const candidate of resolveQueue.values()) {
+      if (!next) {
+        next = candidate;
+      } else if (candidate.background !== next.background) {
+        if (!candidate.background) next = candidate;
+      } else if (candidate.seq > next.seq) {
+        next = candidate;
+      }
+    }
+    if (!next) return;
+    resolveQueue.delete(next.url);
+    resolvesRunning += 1;
+    next.start();
+  }
+}
+
+/**
+ * How many resolves are OUTSTANDING — queued plus running.
+ *
+ * Queued counts, and counts for more than running does: it is the number of requests standing
+ * between a page and its turn. The reader stamps it onto its trace lines and onto the stall it
+ * eventually reports, which is what tells a page that was never asked about apart from a page that
+ * was asked about fortieth.
  *
  * A plain counter, and no tracing from this module on purpose — the trace lives on Reanimated's
  * shared values, and this file is imported by plain-JS tests that must not have to boot that.
  */
-let resolvesInFlight = 0;
 export function assetResolvesInFlight(): number {
-  return resolvesInFlight;
+  return resolvesRunning + resolveQueue.size;
 }
 
-export function resolveAssetSourceCached(url: string): Promise<string> {
+export function resolveAssetSourceCached(url: string, opts?: { background?: boolean }): Promise<string> {
+  const background = !!opts?.background;
   const hit = assetResolveCache.get(url);
-  if (hit) return hit;
-  resolvesInFlight += 1;
-  const p = resolveAssetSource(url)
-    .then((resolved) => {
+  if (hit) {
+    // Still waiting its turn: re-asking moves it to the head, and a real mount outranks the
+    // warm-ahead that may have queued it. This is the line that lets the page under your thumb
+    // overtake the thirty pages you swiped past to reach it.
+    const queued = resolveQueue.get(url);
+    if (queued) {
+      queued.seq = (resolveSeq += 1);
+      if (!background) queued.background = false;
+    }
+    return hit;
+  }
+
+  if (resolvesImmediately(url)) {
+    const p = resolveAssetSource(url).then((resolved) => {
       assetResolvedValues.set(url, resolved);
-      resolvesInFlight -= 1;
       return resolved;
-    })
-    .catch((e) => {
-      assetResolveCache.delete(url);
-      resolvesInFlight -= 1;
-      throw e;
     });
+    assetResolveCache.set(url, p);
+    return p;
+  }
+
+  const p = new Promise<string>((settle, fail) => {
+    const start = () => {
+      resolveAssetSource(url).then(
+        (resolved) => {
+          resolvesRunning -= 1;
+          assetResolvedValues.set(url, resolved);
+          settle(resolved);
+          pumpResolves();
+        },
+        (e: unknown) => {
+          resolvesRunning -= 1;
+          assetResolveCache.delete(url);
+          fail(e);
+          pumpResolves();
+        },
+      );
+    };
+    // `cancel` exists for `invalidateAssetSource`, which drops the cache entry so the next ask
+    // re-runs — and a queued entry dropped without settling its promise is a page that waits
+    // forever, which is the exact failure this queue is here to end.
+    const cancel = () => fail(new Error('resolve cancelled'));
+    resolveQueue.set(url, { url, background, seq: (resolveSeq += 1), start, cancel });
+  });
   assetResolveCache.set(url, p);
+  pumpResolves();
   return p;
 }
 
@@ -237,6 +331,11 @@ export function peekResolvedAssetSource(url: string): string | undefined {
 /** Drop a cached resolution so the next `resolveAssetSourceCached` re-runs it (retry after a stale/
  *  expired resolved URL fails to load). */
 export function invalidateAssetSource(url: string): void {
+  const queued = resolveQueue.get(url);
+  if (queued) {
+    resolveQueue.delete(url);
+    queued.cancel();
+  }
   assetResolveCache.delete(url);
   assetResolvedValues.delete(url);
 }
