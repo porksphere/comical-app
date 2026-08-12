@@ -324,6 +324,28 @@ export function resolveAssetSourceCached(url: string, opts?: { background?: bool
 }
 
 /**
+ * Retire queued warm-ahead requests that a newer guess has superseded.
+ *
+ * A warm holds no claim, so nothing else ever drops one — and without this they accumulate: every
+ * place the reader pauses leaves its window queued behind the current one, and with a deep
+ * `prefetchAhead` that is a dozen pages a stop. They are background, so they never delay a page
+ * being read, but they are still round-trips for pages the reader has since left, and the bridge
+ * would work through all of them. There is only ever ONE live guess about where reading is going;
+ * this makes that literally true.
+ *
+ * `keep` is the new window. Anything background and queued outside it is dropped — never anything
+ * a page has claimed, which is no longer a guess whatever queued it first.
+ */
+export function supersedeBackgroundResolves(keep: ReadonlySet<string>): void {
+  for (const queued of [...resolveQueue.values()]) {
+    if (!queued.background || queued.claims > 0 || keep.has(queued.url)) continue;
+    resolveQueue.delete(queued.url);
+    assetResolveCache.delete(queued.url);
+    queued.cancel();
+  }
+}
+
+/**
  * Give back the claim a mounted page took, and DROP the request if nobody else wants it.
  *
  * Reordering the queue was only half of what a swipe through forty pages needed. Every page it

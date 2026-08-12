@@ -31,6 +31,7 @@ const {
   releaseAssetResolve,
   resolveAssetSourceCached,
   setTransport,
+  supersedeBackgroundResolves,
   assetResolvesInFlight,
 } = await import('./api');
 
@@ -193,6 +194,26 @@ describe('the resolve queue', () => {
     await t.drain();
     await Promise.all([...blocking, first, second]);
     expect(t.started).toContain('/c/shared');
+  });
+
+  test('a newer warm window retires the one it replaced, but never a claimed page', async () => {
+    const t = controllableTransport();
+    const blocking = ['/s/block1', '/s/block2', '/s/block3'].map((u) => resolveAssetSourceCached(u).catch(() => null));
+    const old = ['/s/old1', '/s/old2'].map((u) => resolveAssetSourceCached(u, { background: true }).catch(() => null));
+    // Warmed as a guess, then actually mounted — no longer a guess, whatever queued it first.
+    const promoted = resolveAssetSourceCached('/s/promoted', { background: true }).catch(() => null);
+    void resolveAssetSourceCached('/s/promoted').catch(() => null);
+
+    supersedeBackgroundResolves(new Set(['/s/new1']));
+    const fresh = resolveAssetSourceCached('/s/new1', { background: true }).catch(() => null);
+
+    await t.drain();
+    await t.drain();
+    await Promise.all([...blocking, ...old, promoted, fresh]);
+    expect(t.started).not.toContain('/s/old1');
+    expect(t.started).not.toContain('/s/old2');
+    expect(t.started).toContain('/s/promoted');
+    expect(t.started).toContain('/s/new1');
   });
 
   test('invalidating a QUEUED path settles it instead of stranding whoever awaits it', async () => {
