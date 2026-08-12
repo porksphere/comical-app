@@ -7,7 +7,7 @@ import { useImageProgress } from '@/components/reader/image-progress';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
-import { invalidateAssetSource, peekResolvedAssetSource, resolveAssetSourceCached } from '@/data/api';
+import { assetResolvesInFlight, invalidateAssetSource, peekResolvedAssetSource, resolveAssetSourceCached } from '@/data/api';
 import { coverDelayMs } from '@/data/mock';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { traceJS } from '@/lib/gesture-trace';
@@ -27,6 +27,29 @@ import { testId } from '@/lib/test-id';
 
 const DEFAULT_ASPECT = 2 / 3; // width / height before the image reports its size
 const RETRY_DELAYS_MS = [1000, 2000, 4000];
+
+/**
+ * THE STALL WATCHDOG's two bounds — how long a page may make no progress at all before it is
+ * treated as a failure and handed to the retry backoff below.
+ *
+ * That machinery only ever hears about loads that FAIL, and "never answers" is not a failure
+ * anyone reports. Both stages of a page can hang with nothing to say:
+ *
+ *   RESOLVE — a pending promise leaves `resolvedUri` null forever. No <Image> is mounted, so there
+ *     is no `onError` to catch, no backoff, not even the Retry chip: a shimmering skeleton for as
+ *     long as the page stays on screen. Nothing anywhere puts a bound on this, which is why its
+ *     bound is the tighter of the two — a metadata round-trip has no business taking 20s.
+ *   DOWNLOAD — normally self-limiting (the URL loading system times a request out and the error
+ *     reaches `onError`), but a request that is QUEUED and not yet started has no timeout running,
+ *     because there is no request yet. Given generously more room, since this is the stage where
+ *     slow is genuinely slow rather than stuck.
+ *
+ * Both are re-armed by progress rather than only by stage changes (see the effect's deps), so a
+ * page that is downloading over a bad link is never cut off for being slow — only one that has
+ * moved nothing whatsoever for the whole window.
+ */
+const STALL_RESOLVE_MS = 20_000;
+const STALL_DOWNLOAD_MS = 45_000;
 
 /**
  * The surface shown wherever a page isn't on screen yet. Exported because the pager paints the SAME
@@ -210,11 +233,20 @@ export function ReaderPage({
         return;
       }
     }
+    // Traced so a stuck page can be read off one timeline. `resolving` says this page ASKED and how
+    // many resolves were already outstanding when it did (it cannot overtake them — they're deduped
+    // by URL); the matching `resolved` says whether an answer ever came, and how long it took. A
+    // `resolving` with nothing after it is a page still waiting, which is the state that has no
+    // other symptom.
+    const askedAt = Date.now();
+    traceJS('page', 'resolving', { p: page, inflight: assetResolvesInFlight() });
     resolveAssetSourceCached(uri)
       .then((u) => {
+        traceJS('page', 'resolved', { p: page, ms: Date.now() - askedAt });
         if (!cancelled) setResolvedUri(u);
       })
       .catch((err: unknown) => {
+        traceJS('page', 'resolve-failed', { p: page, ms: Date.now() - askedAt });
         if (!cancelled) handleError({ error: (err as Error)?.message || 'resolve failed' });
       });
     return () => {
@@ -238,6 +270,27 @@ export function ReaderPage({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchError, attempt]);
+
+  // THE STALL WATCHDOG — see the two bounds above. Armed whenever this page has nothing to show and
+  // isn't already in the retry machinery's hands, and torn down/re-armed by every dep below, which
+  // is how a slow-but-moving download keeps resetting it (`percent` advances) while a stuck one
+  // doesn't. `handleError` is deliberately not a dep: it closes over `attempt`, and `attempt` IS a
+  // dep, so the timer always runs the version belonging to the attempt it is timing.
+  const stage = resolvedUri === null ? 'resolve' : 'download';
+  useEffect(() => {
+    if (!delayPassed || loaded || failed || retrying) return;
+    const limit = stage === 'resolve' ? STALL_RESOLVE_MS : STALL_DOWNLOAD_MS;
+    const t = setTimeout(() => {
+      const inflight = assetResolvesInFlight();
+      traceJS('page', 'stall', { p: page, inflight });
+      // The in-flight count goes in the message because it is the difference between the two
+      // explanations: a page alone and unanswered is a broken request, a page behind sixty others
+      // is a queue it was put in (see `assetResolvesInFlight`, and the reader's warm-ahead).
+      handleError({ error: `no ${stage} progress in ${Math.round(limit / 1000)}s (${inflight} resolves in flight)` });
+    }, limit);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage, delayPassed, loaded, failed, retrying, attempt, percent, uri]);
 
   const ready = delayPassed && loaded;
   const box: StyleProp<ViewStyle> = fit === 'contain' ? { width, height } : { width, aspectRatio: aspect };

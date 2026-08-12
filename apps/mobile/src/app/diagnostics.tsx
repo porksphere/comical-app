@@ -50,7 +50,8 @@ export default function DiagnosticsScreen() {
           <ThemedText type="smallBold">Gesture trace</ThemedText>
           <ThemedText type="small" themeColor="textSecondary">
             Records what the swipe recognizers actually did — whether they saw the touches, began,
-            activated, and what state they saw. Off unless you turn it on.
+            activated, and what state they saw — and, on the same timeline, what the reader asked
+            for each page and whether an answer came back. Off unless you turn it on.
           </ThemedText>
         </Pressable>
 

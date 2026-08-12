@@ -178,16 +178,38 @@ const assetResolveCache = new Map<string, Promise<string>>();
 /** The SETTLED results of the cache above, readable synchronously — see `peekResolvedAssetSource`.
  *  Same lifetime and eviction as the promise cache. */
 const assetResolvedValues = new Map<string, string>();
+
+/**
+ * How many resolves have been started and not yet settled.
+ *
+ * Worth counting because the dedupe above has a consequence that is invisible from any one call
+ * site: a page the reader is WAITING ON doesn't get its own request, it gets whatever promise was
+ * already made for that URL — so if a warm-ahead queued it behind sixty others on a bridge that
+ * resolves pages one rate-limited round-trip at a time, the visible page waits out all sixty and
+ * there is nothing at the reader end that could tell. This number is what makes that state legible:
+ * the reader stamps it onto its trace lines and onto the stall it eventually reports.
+ *
+ * A plain counter, and no tracing from this module on purpose — the trace lives on Reanimated's
+ * shared values, and this file is imported by plain-JS tests that must not have to boot that.
+ */
+let resolvesInFlight = 0;
+export function assetResolvesInFlight(): number {
+  return resolvesInFlight;
+}
+
 export function resolveAssetSourceCached(url: string): Promise<string> {
   const hit = assetResolveCache.get(url);
   if (hit) return hit;
+  resolvesInFlight += 1;
   const p = resolveAssetSource(url)
     .then((resolved) => {
       assetResolvedValues.set(url, resolved);
+      resolvesInFlight -= 1;
       return resolved;
     })
     .catch((e) => {
       assetResolveCache.delete(url);
+      resolvesInFlight -= 1;
       throw e;
     });
   assetResolveCache.set(url, p);

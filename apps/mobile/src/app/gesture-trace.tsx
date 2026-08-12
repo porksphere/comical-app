@@ -44,6 +44,23 @@ import {
  *                                     WHERE these fall against the gesture lines is the whole
  *                                     question: during the drag, at the release, or through the
  *                                     collapse — and whether any JS line sits beside them.
+ *
+ * It has since grown a second tenant, on the same timeline and for the same reason — a reader page
+ * that never appears is as mute as a swipe that never fires, and the stages it can die in are just
+ * as indistinguishable from the outside. Reading THOSE:
+ *   • `warm enqueue n= inflight=`   → a warm-ahead just queued `n` fresh pages, with `inflight`
+ *                                     resolves already outstanding. A big `n` here is the reader
+ *                                     asking for far more than it is about to show.
+ *   • `page resolving p= inflight=` → page `p` asked for its URL. If `inflight` is large, it is
+ *                                     queued behind that many others — and because resolves are
+ *                                     deduped by URL, it cannot overtake them.
+ *   • `page resolved p= ms=`        → the matching answer, and how long it took. A `page resolving`
+ *                                     with no `resolved` after it is a page still waiting.
+ *   • `page loaded p=`              → bytes arrived and decoded. This is the only line that means
+ *                                     the page is actually on screen.
+ *   • `page stall p=`               → nothing moved for STALL_MS (reader-page.tsx). The reader has
+ *                                     given up waiting and handed it to the retry backoff; the
+ *                                     `inflight` on this line says what it was waiting behind.
  */
 export default function GestureTraceScreen() {
   const contentPadding = useSettingsScrollPadding();
@@ -67,8 +84,10 @@ export default function GestureTraceScreen() {
           Records what the swipe recognizers on the series page and the search layer did — whether
           they saw the touches, whether they began, whether they activated, and what state they saw
           when they ended. While it is off, those recognizers are configured exactly as they ship,
-          so a recording can&apos;t be blamed for what it measures. Nothing is sent anywhere; use
-          Share to send it yourself.
+          so a recording can&apos;t be blamed for what it measures. It also records the reader&apos;s
+          page pipeline on the same timeline — what each page asked for, how many requests it was
+          queued behind, and whether an answer ever came. Nothing is sent anywhere; use Share to
+          send it yourself.
         </ThemedText>
 
         <SettingsSection>

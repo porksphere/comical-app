@@ -45,7 +45,7 @@ import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
 import { TopBarSwitch } from '@/components/top-bar-switch';
 import { Spacing } from '@/constants/theme';
-import { resolveAssetSourceCached } from '@/data/api';
+import { assetResolvesInFlight, resolveAssetSourceCached } from '@/data/api';
 import {
   chapterPagesQuery,
   directPagesQuery,
@@ -395,11 +395,36 @@ function warmPrefetch(pages: string[]): void {
   if (!fresh.length) return;
   if (warmed.size > WARM_MEMO_MAX) warmed.clear();
   for (const p of fresh) warmed.add(p);
+  traceJS('warm', 'enqueue', { n: fresh.length, of: pages.length, inflight: assetResolvesInFlight() });
   void Promise.all(fresh.map((p) => resolveAssetSourceCached(p).catch(() => null))).then((urls) => {
     const http = urls.filter((u): u is string => !!u && !u.startsWith('data:'));
     if (http.length) void Image.prefetch(http);
   });
 }
+
+/**
+ * How long the scrubber has to hold still before the pages around it are warmed.
+ *
+ * The scrub reports EVERY page it sweeps past (one tick per ~45ms, see chapter-navigator), and
+ * warming each of them is how a drag across a 100-page gallery came to enqueue the whole gallery:
+ * a sweep to page 70 warmed ~70 pages' worth of prefetch, and — on a direct series, whose page URLs
+ * are lazy resolve-routes rather than absolute URLs — ~70 rate-limited resolve round-trips, all
+ * issued at once.
+ *
+ * What makes that fatal rather than merely wasteful is that nothing lets the page you actually
+ * LANDED on overtake the queue it is stuck in. A resolve is deduped by URL (see
+ * `resolveAssetSourceCached`), so the visible page doesn't get a request of its own — it awaits the
+ * very promise the warm queued sixty pages ago. The image behaves the same way one layer down:
+ * expo-image funnels every prefetch through a single shared low-priority queue (three at a time),
+ * and SDWebImage coalesces a later request for the same URL onto the operation already sitting in
+ * it rather than starting a fresh one at normal priority. The page simply waits out everything
+ * queued in front of it, which is what "pages never load after scrubbing" is.
+ *
+ * So the TRAIL is not warmed — only where the finger comes to rest, which is the only page anyone
+ * was ever going to read. Short enough that a deliberate scrub that pauses to look still warms
+ * where it paused; long enough that a sweep across the gallery warms exactly once.
+ */
+const SCRUB_WARM_IDLE_MS = 220;
 
 /** What the reader pane is pointed at: a chapter (chaptered series) or the series itself (direct).
  *  `start: 'last'` = land on the final page (arriving from the NEXT chapter's "previous"). */
@@ -3319,6 +3344,24 @@ const ReaderPane = forwardRef<
     if (!standby && pages.length) warmAround(currentPage);
   }, [standby, pages, currentPage, warmAround]);
 
+  // The scrubber's warm — where the drag STOPS, not every page it crossed. See SCRUB_WARM_IDLE_MS
+  // for what warming the trail did. The release needs nothing extra: the seek moves `currentPage`,
+  // and the effect above warms around it.
+  const scrubWarmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const warmOnScrub = useCallback(
+    (index: number) => {
+      if (scrubWarmTimer.current) clearTimeout(scrubWarmTimer.current);
+      scrubWarmTimer.current = setTimeout(() => warmAround(index), SCRUB_WARM_IDLE_MS);
+    },
+    [warmAround],
+  );
+  useEffect(
+    () => () => {
+      if (scrubWarmTimer.current) clearTimeout(scrubWarmTimer.current);
+    },
+    [],
+  );
+
   // ── Progress recording: a library series (inLibrary, queried by the screen) records chapter
   // progress; anything else (including a direct series) goes to the reading log under the
   // DIRECT_CHAPTER_ID sentinel. ──
@@ -3491,7 +3534,7 @@ const ReaderPane = forwardRef<
           offset={stitched ? prefixLen : 0}
           onSeek={seekTo}
           onScrubbingChange={handleScrubbing}
-          onScrubPage={warmAround}
+          onScrubPage={warmOnScrub}
         />
       )}
       </Animated.View>
