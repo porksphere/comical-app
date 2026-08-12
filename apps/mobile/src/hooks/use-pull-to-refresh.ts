@@ -17,8 +17,9 @@ import { useTouchPullToRefresh } from '@/hooks/use-touch-pull-to-refresh';
  *
  *  - Web + Android (`useTouchPullToRefresh`): touch-driven — neither has usable elastic overscroll
  *    (web's RefreshControl is inert; Android clamps to a glow).
- *  - iOS (`useNativePullToRefresh`): reads the native bounce directly. RN's RefreshControl is unusable
- *    here anyway (its spinner draws behind the top bar — see that hook).
+ *  - iOS (`useNativePullToRefresh`): reads the native bounce directly. RN's RefreshControl draws
+ *    behind the top bar here, and `progressViewOffset` can't fix it — read that hook before
+ *    reaching for the native control again.
  *
  * Both are inert off their platforms, so both are called unconditionally. We deliberately use no
  * native `RefreshControl` anywhere: one custom overlay beats the Material control looking different
