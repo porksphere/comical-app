@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SkipBackIcon, SkipForwardIcon } from '@/components/icons/reader-icons';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
+import { trace } from '@/lib/gesture-trace';
 import { hapticSelection } from '@/lib/haptics';
 
 /**
@@ -106,6 +107,23 @@ type Props = {
   scrubTarget?: SharedValue<number>;
   /** Where this chapter starts in that array (0 unless chapters are stitched). */
   offset?: number;
+  /**
+   * How many pages the TRACK spans, when that isn't `total`.
+   *
+   * `page`/`total` describe what the pill says, and mid-crossing that is deliberately the
+   * NEIGHBOURING chapter — the page travelling across the screen counted against its own chapter's
+   * length. The track cannot borrow that number. `offset` and `onSeek` both speak the chapter being
+   * READ, so a track sized by a neighbour is a track whose far end is somewhere the reader is not:
+   * dragging there walked past the end of the current chapter into the next one's flat range, and
+   * the release settled in a segment nobody asked for and relabelled to it. That is the "scrubbing
+   * sometimes jumps to another chapter", and it needs no strange input — just grabbing the thumb
+   * before a crossing had finished settling.
+   *
+   * So the track, the offset and the commit all take their length from here, and only the pill is
+   * allowed to read against whatever is passing. Defaults to `total` for the unstitched case, where
+   * they are the same number by construction.
+   */
+  scrubTotal?: number;
   /** The page the drag came to rest on — the only point anything is committed. */
   onSeek: (page: number) => void;
   /** True while the thumb is held. The reader suspends its chrome auto-hide for
@@ -132,6 +150,7 @@ export function ChapterNavigator({
   onScrub,
   scrubTarget,
   offset = 0,
+  scrubTotal,
   onSeek,
   onScrubbingChange,
   onScrubPage,
@@ -141,7 +160,8 @@ export function ChapterNavigator({
     opacity: withTiming(visible ? 1 : 0, { duration: 200 }),
   }));
 
-  const steps = Math.max(1, total - 1);
+  // The TRACK's domain — see `scrubTotal`. Never `total`, unless they are the same chapter.
+  const steps = Math.max(1, (scrubTotal ?? total) - 1);
   // Thumb position as a fraction of the track measured from the READING start
   // (0 = page 1), so RTL only has to flip it at the two points that touch pixels.
   const frac = useSharedValue(0);
@@ -227,6 +247,14 @@ export function ChapterNavigator({
           scrubbing.set(true);
           lastPage.set(Math.round(frac.value * steps));
           lastTickAt.set(0); // the first crossing of a new drag always ticks
+          // The track's whole calibration in one line. `steps` and `offset` must describe the SAME
+          // chapter (see `scrubTotal`); when they don't, the far end of this track is in the next
+          // chapter and the release lands there. Deliberately NOT logging the pill's `total` here
+          // too, tempting as the comparison is: it would join this gesture's dependencies and
+          // rebuild the recognizer on a relabel, and a diagnostic that changes when its subject
+          // rebuilds is measuring itself. `seek commit`'s `of=` carries the same comparison, from
+          // JS, for free.
+          trace('scrub', 'grab', { steps, offset });
           runOnJS(emitHold)(true);
         })
         .onStart((e) => apply(e.x))
@@ -235,6 +263,10 @@ export function ChapterNavigator({
         // timer too, or the bar hangs around forever.
         .onFinalize(() => {
           const index = Math.round(frac.value * steps);
+          // What the release COMMITS, in the coordinates it commits in: `offset + index` is the flat
+          // page the reader is about to be sent to. Compare it against the reader's own `relabel`
+          // line — a relabel right after this one means the release left the chapter.
+          trace('scrub', 'release', { index, flat: offset + index, steps });
           frac.set(index / steps); // settle onto the stop
           scrubTarget?.set(-1); // hand the scroll back to the reader
           scrubbing.set(false);

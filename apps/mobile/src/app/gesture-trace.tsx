@@ -63,6 +63,20 @@ import {
  *   • `page stall p=`               → nothing moved for STALL_MS (reader-page.tsx). The reader has
  *                                     given up waiting and handed it to the retry backoff; the
  *                                     `inflight` on this line says what it was waiting behind.
+ *
+ * And the scrubber, whose failure is a THIRD kind of silent: it commits to a page in coordinates
+ * the reader has to agree with, and a disagreement looks like the reader deciding on its own to go
+ * somewhere else. The four lines are meant to be read together:
+ *   • `scrub grab steps= offset=`   → the track's calibration at the moment it was grabbed.
+ *                                     `steps+1` is the chapter the track spans and `offset` where
+ *                                     that chapter starts; they must be the same chapter.
+ *   • `scrub release index= flat=`  → the page the release asks for, and where that is in the
+ *                                     stitched window.
+ *   • `seek commit local= of= flat=`→ the reader's side of the same commit. `local` greater than
+ *                                     `of` means the track was longer than the chapter being
+ *                                     committed to — the release is off the end of it.
+ *   • `reader relabel page=`        → the chapter changed. Directly after a release, that is the
+ *                                     bug: a scrub within a chapter must never produce one.
  */
 export default function GestureTraceScreen() {
   const contentPadding = useSettingsScrollPadding();

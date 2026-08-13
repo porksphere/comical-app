@@ -3265,10 +3265,15 @@ const ReaderPane = forwardRef<
   // during the drag), so the chrome is correct in the same commit.
   const seekTo = useCallback(
     (index: number) => {
+      // Where the release actually lands, in the reader's own coordinates — the other half of the
+      // navigator's `scrub release` line. `local` past `of` means the track was calibrated to a
+      // different chapter than the one being committed to, which is the shape of the bug that
+      // `scrubTotal` exists to prevent.
+      traceJS('seek', 'commit', { local: index, of: pages.length, flat: stitched ? prefixLen + index : index });
       goTo(index, true);
       if (stitched) handleFlatVisiblePage(prefixLen + index);
     },
-    [goTo, stitched, prefixLen, handleFlatVisiblePage],
+    [goTo, stitched, prefixLen, handleFlatVisiblePage, pages.length],
   );
   // Boundary page-turns: prefer stepping within the stitched flat list (the same seamless relabel
   // path a swipe crossing takes); the explicit-jump fallback only covers a cold window (adjacent
@@ -3542,6 +3547,9 @@ const ReaderPane = forwardRef<
           onScrub={scrubTo}
           scrubTarget={settings.mode === 'paged' ? scrubFlat : undefined}
           offset={stitched ? prefixLen : 0}
+          // The chapter being READ — the same one `offset` and `onSeek` speak. `total` above is
+          // whatever the pill is counting, which mid-crossing is the neighbour. See `scrubTotal`.
+          scrubTotal={pages.length}
           onSeek={seekTo}
           onScrubbingChange={handleScrubbing}
           onScrubPage={warmSoon}
