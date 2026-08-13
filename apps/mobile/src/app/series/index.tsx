@@ -3193,6 +3193,19 @@ const ReaderPane = forwardRef<
     }
     return acc;
   }, [segments, chapterId]);
+  // Where the chapter being scrubbed STARTS, latched for the duration of the drag — the reader's
+  // half of the navigator's latched frame. A drag is resolved against the window it began in, and
+  // `prefixLen` is not that: it moves when a neighbouring chapter joins at the head, and again on
+  // every relabel. A ref rather than state because reading it must not wait for a render, and
+  // nothing renders off it. Declared HERE, above every callback that reads it — the React Compiler
+  // will not accept a ref being modified when its binding is used before this point.
+  const scrubPrefixRef = useRef<number | null>(null);
+  // The write in its own `[]` callback: the shape `setCurrent` uses, and the one the compiler
+  // accepts a ref being modified in.
+  const setScrubFrame = useCallback((prefix: number | null) => {
+    scrubPrefixRef.current = prefix;
+  }, []);
+
   // Which stitched segment a flat pager index falls in, and the page within it.
   const locateFlat = useCallback(
     (flat: number) => {
@@ -3219,6 +3232,16 @@ const ReaderPane = forwardRef<
         setCurrent(loc.page);
         return;
       }
+      // NOT WHILE A SCRUB IS IN PROGRESS. A relabel changes which chapter is current, and with it
+      // `prefixLen`, `pages` and the run's window — the frame the drag is being resolved in. Landing
+      // one mid-drag doesn't just move the target: the shifted frame moves the pager, which crosses
+      // another boundary, which relabels again. A recording of the bug shows ten of them and the
+      // window growing from four segments to thirteen while a single finger was down.
+      //
+      // Nothing is lost by waiting. The track spans only the current chapter (see `scrubTotal`), so
+      // a scrub has no business crossing a boundary at all, and the release commits explicitly
+      // through `seekTo`; anything genuinely across one is reported again by the settle after it.
+      if (scrubPrefixRef.current !== null) return;
       recordRef.current(); // the outgoing chapter's final settled position
       setCurrent(loc.page);
       onRelabel(loc.segment.id, loc.segment.name, loc.page);
@@ -3265,15 +3288,21 @@ const ReaderPane = forwardRef<
   // during the drag), so the chrome is correct in the same commit.
   const seekTo = useCallback(
     (index: number) => {
+      // Resolved in the frame the DRAG began in, not whatever the window has become since — see
+      // `scrubPrefixRef`. `handleScrubbing(false)` runs after this (the gesture emits the seek
+      // first), so the latch is still held here.
+      const base = scrubPrefixRef.current ?? prefixLen;
+      const clamped = Math.max(0, Math.min(pages.length - 1, index));
       // Where the release actually lands, in the reader's own coordinates — the other half of the
       // navigator's `scrub release` line. `local` past `of` means the track was calibrated to a
-      // different chapter than the one being committed to, which is the shape of the bug that
-      // `scrubTotal` exists to prevent.
-      traceJS('seek', 'commit', { local: index, of: pages.length, flat: stitched ? prefixLen + index : index });
-      goTo(index, true);
-      if (stitched) handleFlatVisiblePage(prefixLen + index);
+      // different chapter than the one being committed to; `base` against the grab's `offset` says
+      // whether the frame held for the length of the drag.
+      traceJS('seek', 'commit', { local: index, of: pages.length, base, flat: stitched ? base + clamped : clamped });
+      setCurrent(clamped);
+      goFlat(stitched ? base + clamped : clamped, true);
+      if (stitched) handleFlatVisiblePage(base + clamped);
     },
-    [goTo, stitched, prefixLen, handleFlatVisiblePage, pages.length],
+    [stitched, prefixLen, pages.length, setCurrent, goFlat, handleFlatVisiblePage],
   );
   // Boundary page-turns: prefer stepping within the stitched flat list (the same seamless relabel
   // path a swipe crossing takes); the explicit-jump fallback only covers a cold window (adjacent
@@ -3325,16 +3354,23 @@ const ReaderPane = forwardRef<
   const [scrubbing, setScrubbing] = useState(false);
   const handleScrubbing = useCallback(
     (active: boolean) => {
+      // Latched here rather than in an effect because THIS is the moment: the navigator reports the
+      // hold exactly once per drag, at touch-down, which is the last instant `prefixLen` still
+      // describes the chapter the drag is aimed at. An effect would latch a commit later, by which
+      // point the window may already have moved — and moving is precisely what it does.
+      setScrubFrame(active ? prefixLen : null);
       setScrubbing(active);
       onScrubActive(active);
     },
-    [onScrubActive],
+    [onScrubActive, prefixLen, setScrubFrame],
   );
   const scrubTo = useCallback(
     (position: number) => {
       const clamped = Math.max(0, Math.min(pages.length - 1, position));
-      if (settings.mode === 'paged') pagedRef.current?.scrubTo(stitched ? prefixLen + clamped : clamped);
-      else goFlat(stitched ? prefixLen + Math.round(clamped) : Math.round(clamped), false);
+      // The frame the drag began in — see `scrubPrefixRef`.
+      const base = scrubPrefixRef.current ?? prefixLen;
+      if (settings.mode === 'paged') pagedRef.current?.scrubTo(stitched ? base + clamped : clamped);
+      else goFlat(stitched ? base + Math.round(clamped) : Math.round(clamped), false);
     },
     [pages, settings.mode, stitched, prefixLen, goFlat],
   );

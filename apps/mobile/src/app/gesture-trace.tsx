@@ -72,11 +72,20 @@ import {
  *                                     that chapter starts; they must be the same chapter.
  *   • `scrub release index= flat=`  → the page the release asks for, and where that is in the
  *                                     stitched window.
- *   • `seek commit local= of= flat=`→ the reader's side of the same commit. `local` greater than
+ *   • `seek commit local= of= base= flat=`
+ *                                   → the reader's side of the same commit. `local` greater than
  *                                     `of` means the track was longer than the chapter being
- *                                     committed to — the release is off the end of it.
- *   • `reader relabel page=`        → the chapter changed. Directly after a release, that is the
- *                                     bug: a scrub within a chapter must never produce one.
+ *                                     committed to. `base` is where that chapter starts, and must
+ *                                     equal the `offset` on the matching grab — the two lines
+ *                                     bracket the drag, and a difference between them is the frame
+ *                                     having moved under the finger.
+ *   • `reader relabel page=`        → the chapter changed. BETWEEN a grab and its release is the
+ *                                     bug in its original form: the relabel moved the window,
+ *                                     which moved the pager, which crossed another boundary and
+ *                                     relabelled again — a recording of it has ten in a row and
+ *                                     the window growing from four segments to thirteen while one
+ *                                     finger was down. There should now be none until the release
+ *                                     has been committed.
  */
 export default function GestureTraceScreen() {
   const contentPadding = useSettingsScrollPadding();

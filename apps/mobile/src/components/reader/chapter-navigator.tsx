@@ -171,6 +171,17 @@ export function ChapterNavigator({
   const lastPage = useSharedValue(-1);
   const lastSent = useSharedValue(-1);
   const lastTickAt = useSharedValue(0);
+  // THE DRAG'S COORDINATE FRAME, latched at touch-down and held for the whole drag.
+  //
+  // `offset` and `steps` are props, and props move: the stitched window grows as neighbouring
+  // chapters arrive, which shifts where the current chapter starts, and a relabel changes which
+  // chapter is current at all. A recording of the bug shows both moving under a held finger —
+  // offset 38 → 23, steps 18 → 14 — so the release committed in a frame the drag had never been
+  // calibrated in, and landed in a different chapter. Latching costs nothing (the frame cannot
+  // legitimately change while a finger is down: whatever the window does, the drag was aimed at the
+  // chapter it started in) and makes the whole class impossible.
+  const frameOffset = useSharedValue(0);
+  const frameSteps = useSharedValue(1);
   // What the pill shows WHILE dragging. The `page` prop can't do this job: it's
   // driven by the pager's viewability callbacks, which only report cells that
   // actually rendered — during a fast scrub over a short render window that's a
@@ -217,9 +228,11 @@ export function ChapterNavigator({
       const along = Math.min(1, Math.max(0, (x - R) / l));
       const f = rtl ? 1 - along : along;
       frac.set(f); // no snapping — the thumb goes exactly where the finger is
-      const position = f * steps;
+      // The LATCHED frame, never the props — see `frameOffset`. The props may have moved since the
+      // finger landed, and following them mid-drag is what sent the release to another chapter.
+      const position = f * frameSteps.value;
       if (scrubTarget) {
-        scrubTarget.set(offset + position);
+        scrubTarget.set(frameOffset.value + position);
       } else if (Math.abs(position - lastSent.value) >= 0.01) {
         // No shared-value path (webtoon): fall back to a JS hop, but only for
         // moves big enough to be worth one.
@@ -245,6 +258,10 @@ export function ChapterNavigator({
         .minDistance(0)
         .onBegin(() => {
           scrubbing.set(true);
+          // Latch first: everything below this line, and every frame of the drag, reads the frame
+          // rather than the props.
+          frameOffset.set(offset);
+          frameSteps.set(steps);
           lastPage.set(Math.round(frac.value * steps));
           lastTickAt.set(0); // the first crossing of a new drag always ticks
           // The track's whole calibration in one line. `steps` and `offset` must describe the SAME
@@ -262,12 +279,12 @@ export function ChapterNavigator({
         // onFinalize, not onEnd: a cancelled gesture must release the chrome
         // timer too, or the bar hangs around forever.
         .onFinalize(() => {
-          const index = Math.round(frac.value * steps);
-          // What the release COMMITS, in the coordinates it commits in: `offset + index` is the flat
-          // page the reader is about to be sent to. Compare it against the reader's own `relabel`
-          // line — a relabel right after this one means the release left the chapter.
-          trace('scrub', 'release', { index, flat: offset + index, steps });
-          frac.set(index / steps); // settle onto the stop
+          const index = Math.round(frac.value * frameSteps.value);
+          // What the release COMMITS, in the coordinates it commits in — the LATCHED ones. `held`
+          // repeats the frame the drag was calibrated in, so a recording says outright whether it
+          // stayed put: `steps` here against `steps` on the matching grab.
+          trace('scrub', 'release', { index, flat: frameOffset.value + index, steps: frameSteps.value });
+          frac.set(index / frameSteps.value); // settle onto the stop
           scrubTarget?.set(-1); // hand the scroll back to the reader
           scrubbing.set(false);
           lastPage.set(-1);
@@ -287,6 +304,8 @@ export function ChapterNavigator({
     lastSent,
     lastTickAt,
     scrubbing,
+    frameOffset,
+    frameSteps,
     emitScrub,
     emitSeek,
     emitHold,
