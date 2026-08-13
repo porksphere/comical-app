@@ -14,7 +14,7 @@ import { SkipBackIcon, SkipForwardIcon } from '@/components/icons/reader-icons';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { trace } from '@/lib/gesture-trace';
-import { hapticSelection } from '@/lib/haptics';
+import { useScrubHaptics } from '@/lib/scrub-haptics';
 
 /**
  * The reader's bottom bar (NATIVE only — web keeps the tap-to-jump progress pill):
@@ -51,19 +51,28 @@ import { hapticSelection } from '@/lib/haptics';
  * the webtoon reader, which has nothing to interpolate between, falls back to the
  * `onScrub` callback.
  *
- * Haptics tick once per page boundary crossed, rate-limited ON THE UI THREAD and
- * by DROPPING, not delaying. The swipeable rows' `createTickHaptic` queue spaces
- * bunched taps out over time, which is right for a short row swipe but wrong
- * here: a fast scrub crosses dozens of boundaries, and a queue that holds each
- * one back turns into a buzz still playing out seconds after the finger stopped.
- * A dropped tick is invisible; a late one reads as lag.
+ * Haptics fire once per page boundary crossed, entirely on the UI THREAD (see
+ * lib/scrub-haptics), and every crossing is reported to them — the rate limiting
+ * they need is a change of character, not a drop. Neither of the two obvious
+ * limiters was right here: the swipeable rows' `createTickHaptic` queue spaces
+ * bunched taps out over time, which turns a fast scrub into a buzz still playing
+ * out seconds after the finger stopped; and dropping them, which is what this
+ * used to do, asks for taps closer together than the engine can render as
+ * separate ones and delivers mush with pages missing. What the scrubber wants is
+ * the Digital Crown's behaviour: clicks while they can be counted, texture once
+ * they cannot.
+ *
+ * The DISPLAY tick is a separate, slower thing (see TICK_MS) and still hops to
+ * JS, because what it feeds — the pill's number and the warm-ahead — is JS-side
+ * and wants far fewer updates than a fingertip does.
  */
 
 const THUMB = 14;
 const R = THUMB / 2;
 const TRACK_H = 4;
-/** Minimum gap between scrub ticks. Anything crossed inside the window is
- *  dropped, so what you feel is always the page you're on right now. */
+/** Minimum gap between scrub ticks — the DISPLAY ones. Anything crossed inside the window is
+ *  dropped, so what you read is always the page you're on right now. The haptics are not on this
+ *  clock: they hear every crossing (see `haptics.crossing`). */
 const TICK_MS = 45;
 
 /** `Date.now()` on the UI thread, hoisted out of the component: the gesture body
@@ -209,16 +218,23 @@ export function ChapterNavigator({
     onSeek(index);
   }, [onSeek]);
   const emitHold = useCallback((held: boolean) => onScrubbingChange?.(held), [onScrubbingChange]);
-  // One hop per tick carries BOTH the buzz and the number, so they can't drift
-  // apart and the JS thread is asked for at most one wake-up per TICK_MS.
+  // The DISPLAY tick — the pill's number and the warm-ahead, one hop per TICK_MS. The buzz used to
+  // ride along with it; it doesn't any more, because a fingertip wants an answer far more often
+  // than a label does, and on a thread that isn't busy building pages.
   const emitTick = useCallback(
     (index: number) => {
-      hapticSelection();
       setScrubPage(index);
       onScrubPage?.(index);
     },
     [onScrubPage],
   );
+
+  // The detent feel, driven from the gesture worklet — no hop, and every crossing heard.
+  const haptics = useScrubHaptics();
+  /** The page the HAPTICS last saw, kept apart from `lastPage` (the display's) because the two run
+   *  at different rates: the display drops crossings inside TICK_MS, and a crossing dropped there
+   *  is still one the finger made. */
+  const lastHapticPage = useSharedValue(-1);
 
   const pan = useMemo(() => {
     const apply = (x: number) => {
@@ -239,9 +255,19 @@ export function ChapterNavigator({
         lastSent.set(position);
         runOnJS(emitScrub)(position);
       }
-      const index = Math.round(position);
-      if (index === lastPage.value) return;
       const now = nowMs();
+      // Every frame, so a finger that has stopped moving falls silent without waiting for the lift.
+      haptics.settle(now);
+
+      const index = Math.round(position);
+      // The haptic hears the crossing FIRST and unconditionally — before the display's rate limit,
+      // which drops crossings the finger genuinely made.
+      if (index !== lastHapticPage.value) {
+        lastHapticPage.set(index);
+        haptics.crossing(now);
+      }
+
+      if (index === lastPage.value) return;
       // Inside the window: drop this crossing, and DON'T record it — the next
       // touch event (a frame or so later) tries again and reports wherever the
       // finger is by then, so the number and the buzz always describe the
@@ -263,6 +289,8 @@ export function ChapterNavigator({
           frameOffset.set(offset);
           frameSteps.set(steps);
           lastPage.set(Math.round(frac.value * steps));
+          // The first crossing of a new drag always clicks, and always as a deliberate one.
+          lastHapticPage.set(Math.round(frac.value * steps));
           lastTickAt.set(0); // the first crossing of a new drag always ticks
           // The track's whole calibration in one line. `steps` and `offset` must describe the SAME
           // chapter (see `scrubTotal`); when they don't, the far end of this track is in the next
@@ -285,6 +313,7 @@ export function ChapterNavigator({
           // stayed put: `steps` here against `steps` on the matching grab.
           trace('scrub', 'release', { index, flat: frameOffset.value + index, steps: frameSteps.value });
           frac.set(index / frameSteps.value); // settle onto the stop
+          haptics.stop(); // never leave a texture running past the gesture that justified it
           scrubTarget?.set(-1); // hand the scroll back to the reader
           scrubbing.set(false);
           lastPage.set(-1);
@@ -306,6 +335,8 @@ export function ChapterNavigator({
     scrubbing,
     frameOffset,
     frameSteps,
+    haptics,
+    lastHapticPage,
     emitScrub,
     emitSeek,
     emitHold,
