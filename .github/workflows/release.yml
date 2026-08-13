@@ -7,6 +7,14 @@ name: Release (iOS IPA + Android APK)
 # builds the unsigned iOS IPA and the Android APK from the same reusable steps as
 # the rolling channels, then attaches both to an immutable vX.Y.Z GitHub Release.
 #
+# Or, with the version already bumped on main and no tag yet: Actions → Release →
+# Run workflow. That takes the version from app.json and creates the tag itself
+# (see `prep`), which is the only route available from GitHub Mobile — the app can
+# dispatch a workflow but cannot create a tag. Do NOT reach for the web Releases
+# form to make the tag instead: it creates the Release object too, and the
+# `gh release create` below then fails on a release that already exists — after
+# both builds have run.
+#
 # This is the clean, PROFILER-FREE, public iOS channel. Besides the immutable
 # vX.Y.Z Release (both binaries), it maintains a rolling `ios-release`
 # SideStore/AltStore source whose versions[] lists every tag newest-first, each
@@ -29,54 +37,91 @@ permissions:
   contents: write
 
 jobs:
-  # Fail fast on a non-tag run (before the expensive macOS build) and derive the
-  # release version from the tag: v1.2.0 -> 1.2.0. Passed to the iOS build so the
-  # IPA's CFBundleShortVersionString and the ios-release manifest both carry the
-  # real release version (AltStore rejects a mismatch), instead of the run-number
-  # string the rolling channels use.
+  # Work out WHICH release this is, and fail fast (before the ~20-minute macOS build) if the repo
+  # isn't in a state to cut one. The version is passed to the iOS build so the IPA's
+  # CFBundleShortVersionString and the ios-release manifest both carry the real release version
+  # (AltStore rejects a mismatch), instead of the run-number string the rolling channels use.
+  #
+  # TWO WAYS IN, and they meet here:
+  #
+  #   A PUSHED TAG — `git tag v1.2.0 && git push origin v1.2.0`. The tag names the version and
+  #   app.json has to agree with it.
+  #
+  #   A DISPATCH FROM A BRANCH — Actions → Release → Run workflow, which is the only one of the two
+  #   available from GitHub Mobile (the app can dispatch workflows; it cannot create tags, and the
+  #   web Releases form is worse than useless here — it would create the Release object that
+  #   `gh release create` below then refuses to make). app.json names the version, and the tag is
+  #   created at the end, by the release step itself.
+  #
+  # Deriving the dispatch version from app.json rather than a typed input is deliberate: the tag
+  # having to equal `expo.version` is already this workflow's central invariant, so taking it from
+  # there means the two cannot disagree — and a hand-typed version is exactly the thing you'd get
+  # wrong on a phone keyboard, which is the case this path exists for.
   prep:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
     steps:
-      - name: Guard — must run from a v* tag, derive version
-        id: v
-        run: |
-          set -euo pipefail
-          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
-            echo "::error::release.yml must be run from a v* tag (got ref_type=${GITHUB_REF_TYPE}, ref=${GITHUB_REF_NAME}). Tag a commit and push the tag, or in the Run workflow dialog pick a tag under 'Use workflow from'."
-            exit 1
-          fi
-          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-
-      # Needs full history + tags: the versionCode check below compares this tag's app.json
-      # against the previous release tag's.
+      # Needs full history + tags: the version comes out of app.json on the dispatch path, and the
+      # versionCode check compares this release's app.json against the previous release tag's.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # The tag drives both binaries' stamped version, but app.json's base is what every ROLLING
-      # build after this tag counts from (`<base>.<N>` — see compute-build-version.sh). A tag that
-      # disagrees with app.json therefore ships a correct vX.Y.Z release and then has main
-      # immediately fall back to advertising the previous series. Catch it in seconds rather than
-      # after the ~20-minute macOS build.
-      - name: Guard — app.json matches the tag, versionCode moved forward
+      - name: Guard — resolve the release version and tag
+        id: v
         run: |
           set -euo pipefail
           APP_JSON=apps/mobile/app.json
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
           APP_VERSION="$(jq -r '.expo.version' "$APP_JSON")"
 
-          if [ "$APP_VERSION" != "$TAG_VERSION" ]; then
-            echo "::error::Tag ${GITHUB_REF_NAME} says $TAG_VERSION but $APP_JSON says $APP_VERSION. Bump expo.version to $TAG_VERSION on main and re-tag — otherwise every rolling build after this release goes back to advertising $APP_VERSION.<N>."
-            exit 1
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            case "${GITHUB_REF_NAME}" in
+              v*) ;;
+              *) echo "::error::release.yml ran from tag ${GITHUB_REF_NAME}, which isn't a v* release tag."; exit 1 ;;
+            esac
+            TAG="${GITHUB_REF_NAME}"
+            VERSION="${TAG#v}"
+
+            # The tag drives both binaries' stamped version, but app.json's base is what every
+            # ROLLING build after this tag counts from (`<base>.<N>` — see
+            # compute-build-version.sh). A tag that disagrees with app.json therefore ships a
+            # correct vX.Y.Z release and then has main immediately fall back to advertising the
+            # previous series.
+            if [ "$APP_VERSION" != "$VERSION" ]; then
+              echo "::error::Tag ${TAG} says $VERSION but $APP_JSON says $APP_VERSION. Bump expo.version to $VERSION on main and re-tag — otherwise every rolling build after this release goes back to advertising $APP_VERSION.<N>."
+              exit 1
+            fi
+          else
+            VERSION="$APP_VERSION"
+            TAG="v${VERSION}"
+
+            # Nothing else stops a dispatch being run twice. On the tag path that job is done by
+            # having to create the tag at all; here it has to be said out loud, and it is the
+            # difference between a release button and a re-release button.
+            if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+              echo "::error::${TAG} already exists — $APP_JSON is still on $APP_VERSION, so this would re-cut a release that has already shipped. Bump expo.version (and android.versionCode) on ${GITHUB_REF_NAME} first."
+              exit 1
+            fi
+            echo "Cutting ${TAG} from ${GITHUB_REF_NAME} @ ${GITHUB_SHA} (version from $APP_JSON)."
           fi
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Guard — versionCode moved forward
+        env:
+          TAG: ${{ steps.v.outputs.tag }}
+        run: |
+          set -euo pipefail
+          APP_JSON=apps/mobile/app.json
 
           # Android identifies builds by versionCode, not versionName: two APKs sharing a code
           # can't be ordered, and Play refuses an upload that doesn't increase it. Expo defaults a
           # missing field to 1, which is also what tags predating the field carry — hence `// 1`.
           CODE="$(jq -r '.expo.android.versionCode // 1' "$APP_JSON")"
-          PREV_TAG="$(git tag -l 'v*' --sort=-v:refname | grep -vFx "$GITHUB_REF_NAME" | head -n1)"
+          PREV_TAG="$(git tag -l 'v*' --sort=-v:refname | grep -vFx "$TAG" | head -n1)"
 
           if [ -z "$PREV_TAG" ]; then
             echo "First release — versionCode $CODE."
@@ -88,7 +133,7 @@ jobs:
             echo "::error::android.versionCode is $CODE but $PREV_TAG already shipped $PREV_CODE. Raise expo.android.versionCode in $APP_JSON — Android treats an equal-or-lower code as a non-upgrade."
             exit 1
           fi
-          echo "versionCode $PREV_CODE ($PREV_TAG) → $CODE (${GITHUB_REF_NAME}). OK."
+          echo "versionCode $PREV_CODE ($PREV_TAG) → $CODE (${TAG}). OK."
 
   ios:
     needs: prep
@@ -129,12 +174,20 @@ jobs:
           name: ${{ needs.android.outputs.artifact }}
           path: ${{ runner.temp }}/apk
 
+      # `--target` is what makes the dispatch path work: `gh release create` creates the tag itself
+      # when it doesn't already exist, pointing it at the commit this run built. On the pushed-tag
+      # path the tag is already there and the flag is ignored, so both paths run this same step.
+      #
+      # The tag is made HERE, at the end, rather than up front in `prep` — deliberately. A build
+      # that fails then leaves no tag behind, so retrying is "run it again" instead of "delete the
+      # dangling tag first", which is precisely the cleanup you cannot do from the phone this path
+      # exists for. It also means a tag never exists without the binaries it promises.
       - name: Create versioned release with both binaries
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prep.outputs.tag }}
         run: |
           set -euo pipefail
-          TAG="${GITHUB_REF_NAME}"
           IPA="$RUNNER_TEMP/ipa/comical-unsigned.ipa"
           APK="$RUNNER_TEMP/apk/comical-android.apk"
           DL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
@@ -144,6 +197,7 @@ jobs:
             "$IPA" \
             "$APK" \
             --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
             --title "Comical ${TAG}" \
             --notes "Versioned build with both platform binaries.
 
@@ -172,4 +226,6 @@ jobs:
       - name: Refresh android-latest download link
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash .github/scripts/publish-android-latest.sh "$RUNNER_TEMP/apk/comical-android.apk" "${{ github.ref_name }}" "${{ github.sha }}"
+        # The resolved tag, not `github.ref_name` — on a dispatch that would be the BRANCH, and this
+        # label is what the android-latest notes show as the version they carry.
+        run: bash .github/scripts/publish-android-latest.sh "$RUNNER_TEMP/apk/comical-android.apk" "${{ needs.prep.outputs.tag }}" "${{ github.sha }}"
