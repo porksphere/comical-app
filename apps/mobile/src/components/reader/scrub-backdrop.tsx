@@ -1,8 +1,9 @@
 import { StyleSheet, TextInput, View } from 'react-native';
 import Animated, { useAnimatedProps, useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 
-import { PAGED_BACKDROP } from '@/components/reader/reader-page';
+import { PAGED_BACKDROP, PLACEHOLDER_STATUS_HEIGHT } from '@/components/reader/reader-page';
 import { Skeleton } from '@/components/skeleton';
+import { Spacing } from '@/constants/theme';
 
 // The pages a scrub is passing over, where the list has not mounted them.
 //
@@ -93,6 +94,11 @@ function Slot({
         style={styles.page}
         animatedProps={animatedProps}
       />
+      {/* The status row a real placeholder always reserves under its page line (the download
+          percentage, which a scrub never has). Held open here too, or the number would sit a few
+          points lower in a slot than in the cell that replaces it — which is exactly the tell that
+          they are two different things. */}
+      <View style={styles.status} />
     </View>
   );
 }
@@ -145,6 +151,12 @@ const styles = StyleSheet.create({
     backgroundColor: PAGED_BACKDROP,
     alignItems: 'center',
     justifyContent: 'center',
+    // ReaderPage's placeholder stacks its two lines with this gap; matched so the page line lands
+    // at the same height in both.
+    gap: Spacing.one,
+  },
+  status: {
+    height: PLACEHOLDER_STATUS_HEIGHT,
   },
   // ReaderPage draws this line as a <ThemedText> at its default type, coloured `placeholderPage`.
   // Matched field for field — a slot a hair off in size or weight is exactly the tell that there

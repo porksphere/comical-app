@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
-import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 
 import { WarnIcon } from '@/components/icons/reader-icons';
 import { useImageProgress } from '@/components/reader/image-progress';
@@ -34,6 +34,33 @@ import { testId } from '@/lib/test-id';
 
 const DEFAULT_ASPECT = 2 / 3; // width / height before the image reports its size
 const RETRY_DELAYS_MS = [1000, 2000, 4000];
+
+/**
+ * The placeholder→page cross-fade in PAGED mode.
+ *
+ * This used to be zero, and the reason was sound: at 150ms (what webtoon rows still use) a page
+ * that was ALREADY loaded still spent a sixth of a second looking like a placeholder, which is the
+ * impression a page turn most needs not to give. But instant is its own tell — the swap lands as a
+ * flicker rather than as the page arriving. Short enough to be under the threshold where a turn
+ * feels delayed, long enough that the eye reads it as one thing becoming another.
+ *
+ * The placeholder fades OUT across the same span (see `fade`), so the two cross rather than one
+ * vanishing and the other rising out of the backdrop — which would flash the dark surface between
+ * them, worse than the instant swap this replaces.
+ */
+const PAGE_FADE_MS = 110;
+
+/** Reserved height for the status line UNDER "Page N", whether or not there is a status to show.
+ *
+ * The line is the download percentage, and it arrives a moment after the placeholder does. Laid out
+ * only when present, its arrival re-centres the group and shoves "Page N" upward — a jump, on every
+ * page, at the exact moment the eye has settled on the number. Reserved always: the number is
+ * placed once and the percentage appears beneath it.
+ *
+ * Exported because the scrub strip has to reserve the same space — its slots and these placeholders
+ * are meant to be indistinguishable, and a line of text sitting a few points higher in one of them
+ * is exactly the tell that they are not. */
+export const PLACEHOLDER_STATUS_HEIGHT = 16;
 
 /**
  * THE STALL WATCHDOG's two bounds — how long a page may make no progress at all before it is
@@ -166,7 +193,7 @@ export function ReaderPage({
    * Freezing it costs nothing: a cell that mounted under the strip keeps the standing-page fade it
    * was born with, which is the fade that was already applied to the only load it will do.
    */
-  const [transitionMs] = useState(() => fadeMs ?? (fit === 'contain' ? 0 : 150));
+  const [transitionMs] = useState(() => fadeMs ?? (fit === 'contain' ? PAGE_FADE_MS : 150));
 
   // Traced against the series page's `reveal commit` (lib/gesture-trace): a flash on the first
   // reveal into the reader is a question about WHEN this page had something to paint. Mounting
@@ -319,12 +346,33 @@ export function ReaderPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stage, delayPassed, loaded, failed, retrying, attempt, percent, uri]);
 
-  // Stands the placeholder down for the duration of a scrub — see `scrubbing`. The image itself is
-  // untouched: a page that HAS loaded keeps showing, which is the better feedback of the two and
-  // the reason the strip goes behind the list rather than over it.
-  const scrubStyle = useAnimatedStyle(() => ({ opacity: scrubbing && scrubbing.value >= 0 ? 0 : 1 }));
+  // The placeholder's own half of the cross-fade: it dissolves as the image rises, over the same
+  // span, so nothing between them is ever on screen alone.
+  const fade = useSharedValue(1);
+  useEffect(() => {
+    fade.set(loaded ? withTiming(0, { duration: transitionMs }) : 1);
+  }, [loaded, transitionMs, fade]);
 
-  const ready = delayPassed && loaded;
+  // …combined with standing down entirely for a scrub — see `scrubbing`. The image is untouched by
+  // that one: a page that HAS loaded keeps showing, which is the better feedback of the two and the
+  // reason the strip goes behind the list rather than over it.
+  const placeholderStyle = useAnimatedStyle(() => ({
+    opacity: scrubbing && scrubbing.value >= 0 ? 0 : fade.value,
+  }));
+
+  // The placeholder outlives `loaded` by the length of the fade — unmounting it the instant the
+  // image arrives is what would leave the image rising out of the bare backdrop. Keyed by the load
+  // it belongs to (uri + attempt) rather than reset by hand, so a new page or a retry is simply a
+  // key that hasn't finished yet.
+  const loadKey = `${uri}#${attempt}`;
+  const [fadedKey, setFadedKey] = useState<string | null>(null);
+  useEffect(() => {
+    if (!loaded) return;
+    const t = setTimeout(() => setFadedKey(loadKey), transitionMs);
+    return () => clearTimeout(t);
+  }, [loaded, loadKey, transitionMs]);
+
+  const ready = delayPassed && loaded && fadedKey === loadKey;
   const box: StyleProp<ViewStyle> = fit === 'contain' ? { width, height } : { width, aspectRatio: aspect };
 
   // What the skeleton says while it's up. Nothing at all in the common case (a page that loads
@@ -404,12 +452,14 @@ export function ReaderPage({
         // Laid over the box (absolute, centred) rather than inside it, so it can't affect the page's
         // measured height — webtoon mode derives row heights from that. Animated only to stand down
         // for a scrub without a render — see `scrubbing`.
-        <Animated.View style={[StyleSheet.absoluteFill, styles.placeholder, scrubStyle]} pointerEvents="none">
+        <Animated.View style={[StyleSheet.absoluteFill, styles.placeholder, placeholderStyle]} pointerEvents="none">
           <Skeleton style={StyleSheet.absoluteFill} />
           {/* Always named, not just once bytes are moving: "waiting to start" was the most common
               loading state and the one that said nothing at all. */}
           <ThemedText style={styles.placeholderPage}>Page {page}</ThemedText>
-          {status && <ThemedText style={styles.statusText}>{status}</ThemedText>}
+          {/* Always rendered, empty or not — see PLACEHOLDER_STATUS_HEIGHT. A status that only takes
+              up space once it has something to say moves the line above it when it arrives. */}
+          <ThemedText style={styles.statusText}>{status ?? ''}</ThemedText>
         </Animated.View>
       )}
     </View>
@@ -443,10 +493,13 @@ const styles = StyleSheet.create({
   placeholderPage: {
     color: 'rgba(255,255,255,0.5)',
   },
-  // Secondary to the page name above it, like the failed screen's two lines.
+  // Secondary to the page name above it, like the failed screen's two lines. Fixed height so the
+  // row occupies the same space empty as full — see PLACEHOLDER_STATUS_HEIGHT.
   statusText: {
     color: 'rgba(255,255,255,0.35)',
     fontSize: 12,
+    height: PLACEHOLDER_STATUS_HEIGHT,
+    lineHeight: PLACEHOLDER_STATUS_HEIGHT,
     fontVariant: ['tabular-nums'], // a ticking percentage shouldn't jitter its own width
   },
   retryChip: {
