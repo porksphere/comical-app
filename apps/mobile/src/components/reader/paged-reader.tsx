@@ -615,6 +615,9 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
               onToggleChrome={onToggleChrome}
               onZoomChange={handleZoomChange}
               onPinchChange={setPinching}
+              // Stable for the pager's lifetime, so this needs no `extraData` entry — a cell
+              // captures it once and the value it carries changes on the UI thread.
+              scrubbing={scrubTarget}
               scrollGesture={pageExternals}
             />
           )

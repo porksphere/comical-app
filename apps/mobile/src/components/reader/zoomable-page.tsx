@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue, type SharedValue } from 'react-native-reanimated';
 
 import { ReaderPage } from '@/components/reader/reader-page';
 import { useZoomable } from '@/components/reader/use-zoomable';
@@ -44,6 +44,8 @@ type Props = {
   /** Reported at the START of a pinch, not at its settle — the pager freezes its scroll for the
    *  duration. See `useZoomable`'s `onPinchChange`. */
   onPinchChange?: (pinching: boolean) => void;
+  /** The pager's scrub position, passed straight through to ReaderPage — see its `scrubbing`. */
+  scrubbing?: SharedValue<number>;
   /** Every gesture the PAGER has mounted on its scroller — its `Gesture.Native()` and its edge pan.
    *  A page lives inside that scroller, so each of these arbitrates against the gestures in here,
    *  and a descendant that hasn't declared it can run alongside them loses. All of them, not just
@@ -81,6 +83,7 @@ export function ZoomablePage({
   onToggleChrome,
   onZoomChange,
   onPinchChange,
+  scrubbing,
   scrollGesture,
 }: Props) {
   const [pageFailed, setPageFailed] = useState(false);
@@ -204,6 +207,7 @@ export function ZoomablePage({
               height={height}
               onLoadDims={onLoadDims}
               onFailedChange={setPageFailed}
+              scrubbing={scrubbing}
             />
           </Animated.View>
         </Animated.View>

@@ -1,6 +1,7 @@
 import { Image } from 'expo-image';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 
 import { WarnIcon } from '@/components/icons/reader-icons';
 import { useImageProgress } from '@/components/reader/image-progress';
@@ -101,6 +102,7 @@ export function ReaderPage({
   onLoadDims,
   onFailedChange,
   fadeMs,
+  scrubbing,
 }: {
   uri: string;
   page: number;
@@ -119,6 +121,18 @@ export function ReaderPage({
    *  caller suspend its own tap-to-turn/tap-to-toggle-chrome overlay, which
    *  would otherwise sit on top of and swallow taps meant for the Retry chip. */
   onFailedChange?: (failed: boolean) => void;
+  /** The scrub's live position, negative when idle (the pager's `scrubTarget`). While it is
+   *  running, this page's own placeholder stands down: the pager paints a strip of them behind the
+   *  list instead, which is the only way pages the list HASN'T mounted get one at all. Two of them
+   *  over the same page is not a near-miss to be aligned — a cell's placeholder is translucent, so
+   *  the strip showing through it composites to a visibly different colour, and the two "Page N"
+   *  lines print over each other. One or the other, and during a scrub the strip is the one that
+   *  covers every page rather than only the mounted ones.
+   *
+   *  Read on the UI thread so a scrub starting or ending costs no render — a re-render of every
+   *  mounted cell at exactly the moment the list is trying to build more is what opens the gaps the
+   *  strip exists to fill. */
+  scrubbing?: SharedValue<number>;
 }) {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -305,6 +319,11 @@ export function ReaderPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stage, delayPassed, loaded, failed, retrying, attempt, percent, uri]);
 
+  // Stands the placeholder down for the duration of a scrub — see `scrubbing`. The image itself is
+  // untouched: a page that HAS loaded keeps showing, which is the better feedback of the two and
+  // the reason the strip goes behind the list rather than over it.
+  const scrubStyle = useAnimatedStyle(() => ({ opacity: scrubbing && scrubbing.value >= 0 ? 0 : 1 }));
+
   const ready = delayPassed && loaded;
   const box: StyleProp<ViewStyle> = fit === 'contain' ? { width, height } : { width, aspectRatio: aspect };
 
@@ -383,14 +402,15 @@ export function ReaderPage({
       )}
       {!ready && (
         // Laid over the box (absolute, centred) rather than inside it, so it can't affect the page's
-        // measured height — webtoon mode derives row heights from that.
-        <View style={[StyleSheet.absoluteFill, styles.placeholder]} pointerEvents="none">
+        // measured height — webtoon mode derives row heights from that. Animated only to stand down
+        // for a scrub without a render — see `scrubbing`.
+        <Animated.View style={[StyleSheet.absoluteFill, styles.placeholder, scrubStyle]} pointerEvents="none">
           <Skeleton style={StyleSheet.absoluteFill} />
           {/* Always named, not just once bytes are moving: "waiting to start" was the most common
               loading state and the one that said nothing at all. */}
           <ThemedText style={styles.placeholderPage}>Page {page}</ThemedText>
           {status && <ThemedText style={styles.statusText}>{status}</ThemedText>}
-        </View>
+        </Animated.View>
       )}
     </View>
   );
