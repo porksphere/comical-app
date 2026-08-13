@@ -72,6 +72,14 @@ import {
  *                                     that chapter starts; they must be the same chapter.
  *   • `scrub release index= flat=`  → the page the release asks for, and where that is in the
  *                                     stitched window.
+ *   • `scrub origin at= idx=`       → where the pager believes index 0 sits, in pages, re-measured
+ *                                     whenever the list's layout moves. Non-zero means the list is
+ *                                     carrying a leading adjustment from an anchored insert.
+ *   • `scrub map target= to=`       → the first frame of a drag: the flat page asked for, and the
+ *                                     page the pager actually scrolled to. These must agree. When
+ *                                     they don't, the drag is showing one chapter while the track
+ *                                     addresses another, and the release lands somewhere the pages
+ *                                     under the finger never suggested.
  *   • `seek commit local= of= base= flat=`
  *                                   → the reader's side of the same commit. `local` greater than
  *                                     `of` means the track was longer than the chapter being

@@ -27,6 +27,7 @@ import { ZoomablePage } from '@/components/reader/zoomable-page';
 import type { PageFit } from '@/hooks/use-reader-settings';
 import { BACK_ACTIVATE_DOMINANCE } from '@/lib/back-swipe';
 import { releaseCommittedEitherWay } from '@/lib/gesture-release';
+import { trace, traceJS } from '@/lib/gesture-trace';
 
 export type PagedReaderHandle = {
   goToPage: (logical: number, animated?: boolean) => void;
@@ -178,10 +179,6 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // what lets the scrubber's reaction scroll from the UI thread without a hop to JS.
   const listRef = useRef<LegendListRef>(null);
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
-  // The scroll offset, on the UI thread, straight from the list (its reanimated build writes it).
-  // The scrub reads it; nothing else does.
-  const scrollX = useSharedValue(0);
-  const sharedValues = useMemo(() => ({ scrollOffset: scrollX }), [scrollX]);
   const n = pages.length;
 
   const toPhysical = (logical: number) => (rtl ? n - 1 - logical : logical);
@@ -258,6 +255,36 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   const parkedIndex = useSharedValue(0);
   const scrubOrigin = useSharedValue(0);
 
+  /**
+   * WHERE INDEX 0 SITS, asked of the list rather than inferred from where the scroll happens to be.
+   *
+   * The scrub needs this because `index × width` is not a page's offset on its own: an anchored
+   * insert leaves the list carrying a leading adjustment. It used to be derived on the first frame
+   * of each drag, as `scrollOffset − parkedIndex × width`, which is only as good as its two inputs
+   * and neither is dependable at that instant. The scroll offset comes from Reanimated's
+   * `useScrollOffset`, which only ever updates on a scroll EVENT — so a pager that was positioned
+   * by `initialScrollIndex` and not yet touched reports 0 while sitting twenty pages in. Measured
+   * against a parked index that is right, that is a twenty-page error, and the recording shows
+   * exactly that: a scrub aimed at flat 19–33 walking the pager through pages 3–17 of the chapter
+   * BEFORE it.
+   *
+   * `positionAtIndex` is the list's own position map — the same one its viewability reads — so it
+   * carries the adjustment by construction and owes nothing to scroll events. Index 0 first;
+   * falling back to the parked index (certain to be in the computed range) and subtracting where it
+   * would be from zero.
+   */
+  const measureScrubOrigin = useCallback(
+    (at: number): number | null => {
+      const state = listRef.current?.getState?.();
+      if (!state) return null;
+      const zero = state.positionAtIndex(0);
+      if (typeof zero === 'number') return zero;
+      const parked = state.positionAtIndex(at);
+      return typeof parked === 'number' ? parked - at * width : null;
+    },
+    [width],
+  );
+
   // The page a scroll SETTLED on, taken from viewability rather than from `contentOffset / width`.
   // The offset is no longer a reliable index: an anchored insert can leave the list carrying a
   // leading adjustment, and dividing through it would name the wrong page. Viewability answers the
@@ -320,6 +347,17 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     parkedIndex.set(activeIndex);
     edgeAllowed.set(!zoomed && !standby);
     activeIndexRef.current = activeIndex;
+    // Kept fresh here rather than measured when a drag starts: the origin only moves when the
+    // list's own layout does (an anchored insert), which is a render — never mid-drag, where
+    // viewability is suppressed and nothing re-lays out. Skipped WHILE scrubbing for the same
+    // reason the rest of the frame is latched: a drag is resolved in the coordinates it began in.
+    if (!scrubbing) {
+      const origin = measureScrubOrigin(activeIndex);
+      if (origin !== null && origin !== scrubOrigin.value) {
+        scrubOrigin.set(origin);
+        traceJS('scrub', 'origin', { at: origin / width, idx: activeIndex });
+      }
+    }
   });
 
   // Put the pager back on its page for the duration of a pinch. The freeze above stops the drag
@@ -340,18 +378,19 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   //
   // `index × width` is no longer the offset of a page on its own: once the list has anchored an
   // insert it carries a leading adjustment, and a scrub computed without it would fly a whole
-  // chapter wide. So the FIRST frame of each drag measures the origin instead of assuming it —
-  // where the list is right now, minus where the page it is parked on would be from zero. Measured
-  // per drag rather than kept up to date, because a drag is the only moment both halves are known
-  // to agree: viewability is suppressed for its duration (see `scrubbingRef`), so the parked index
-  // can't move underneath it either.
+  // chapter wide. `scrubOrigin` carries that adjustment, asked of the list itself and kept fresh by
+  // the layout effect above — see `measureScrubOrigin` for why it is no longer derived here from
+  // where the scroll happens to be.
   useAnimatedReaction(
     () => scrubTarget?.value ?? -1,
     (target, previous) => {
       if (target < 0) return;
-      if ((previous ?? -1) < 0) scrubOrigin.set(scrollX.value - parkedIndex.value * width);
       const logical = Math.max(0, Math.min(n - 1, target));
-      scrollTo(scrollRef, scrubOrigin.value + (rtl ? n - 1 - logical : logical) * width, 0, false);
+      const to = scrubOrigin.value + (rtl ? n - 1 - logical : logical) * width;
+      // Once per drag: what the first target mapped to, in pages. `to` against `target` is the
+      // whole question — they should differ by nothing but the leading adjustment.
+      if ((previous ?? -1) < 0) trace('scrub', 'map', { target, to: to / width, origin: scrubOrigin.value / width });
+      scrollTo(scrollRef, to, 0, false);
     },
     [scrubTarget, n, rtl, width],
   );
@@ -498,15 +537,16 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       <GestureDetector gesture={listGesture}>
       <AnimatedLegendList
         ref={listRef}
-        // The scroll view itself, for the UI-thread scrub — and the shared value it writes its
-        // offset into. Both are LegendList's own hand-offs; nothing here reaches inside it.
+        // The scroll view itself, for the UI-thread scrub to drive. LegendList's own hand-off;
+        // nothing here reaches inside it. (Its `sharedValues.scrollOffset` used to come out
+        // alongside this, for the scrub to measure its origin against — see `measureScrubOrigin`
+        // for why that number could not be trusted at the moment the scrub needed it.)
         //
         // The cast is a type-level mismatch, not a runtime one: LegendList declares this as
         // `Ref<ElementRef<typeof Reanimated.ScrollView>>`, which resolves to `Ref<never>` against
         // this Reanimated version, so no ref of any kind satisfies it. What arrives is the
         // Animated.ScrollView that `scrollTo` needs.
         refScrollView={scrollRef as unknown as Ref<never>}
-        sharedValues={sharedValues}
         // Sized explicitly: it used to BE this component's root and take the size
         // from whatever hosted it, and a scroller that sizes to its content is
         // not what wants to decide the reader's dimensions.
