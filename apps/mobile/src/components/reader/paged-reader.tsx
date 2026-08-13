@@ -23,6 +23,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { STANDBY_FADE_MS } from '@/components/reader/reader-page';
+import { ScrubBackdrop } from '@/components/reader/scrub-backdrop';
 import { ZoomablePage } from '@/components/reader/zoomable-page';
 import type { PageFit } from '@/hooks/use-reader-settings';
 import { BACK_ACTIVATE_DOMINANCE } from '@/lib/back-swipe';
@@ -185,6 +186,9 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   const toLogical = (physical: number) => (rtl ? n - 1 - physical : physical);
 
   const data = useMemo(() => (rtl ? [...pages].reverse() : pages), [pages, rtl]);
+  // Display numbers by the same index as `data`, for the scrub backdrop to read from a worklet — a
+  // stitched window restarts at 1 per chapter, so the index is not the number.
+  const pageNumbers = useMemo(() => data.map((item) => item.pageNumber), [data]);
 
   const [zoomed, setZoomed] = useState(false);
   const handleZoomChange = useCallback(
@@ -527,13 +531,15 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
 
   return (
     <View style={{ width, height }}>
-      {/* Nothing full-screen is painted here on purpose. A virtualized list draws NOTHING where it
-          hasn't mounted a cell, so a scrub that outruns virtualization shows whatever is behind the
-          list — which is the screen's STATIC reader surface, deliberately tinted to the same
-          composite an unloaded page shows (PAGED_BACKDROP, see reader-page.tsx). A fill here used
-          to provide that tint, but this subtree is the part that translates/scales during a
-          swipe-away, so any full-screen fill inside it reads as the background travelling with
-          the page. */}
+      {/* What a scrub sees where the list has nothing yet — see ScrubBackdrop. Nothing PERMANENT is
+          painted here, which is the distinction that matters: this subtree translates and scales
+          during a swipe-away, so a fill that was always on would ride along with the receding page
+          (it used to, which is why the tint was moved out to the screen's static surface). This one
+          is transparent unless a scrub is in progress, and the reader disables the dismiss gesture
+          while the scrubber is held, so the two can never be on screen together. */}
+      {scrubTarget && (
+        <ScrubBackdrop target={scrubTarget} pageNumbers={pageNumbers} width={width} height={height} />
+      )}
       <GestureDetector gesture={listGesture}>
       <AnimatedLegendList
         ref={listRef}
