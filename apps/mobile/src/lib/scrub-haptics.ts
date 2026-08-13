@@ -18,62 +18,46 @@ import { useSharedValue } from 'react-native-reanimated';
  * the UI thread beside the gesture that causes it, and takes amplitude and frequency (Core
  * Haptics' intensity and sharpness) per event.
  *
- * ── Why a crossing is not always a click ────────────────────────────────────────────────────────
- * The Taptic Engine cannot render pulses closer than roughly 60–100ms as SEPARATE taps; below that
- * they fuse into a buzz. The old code dealt with that by dropping crossings inside a 45ms window —
- * under the floor either way, so at speed it was asking for taps that physically merged, and what
- * you felt was mush with some pages missing.
+ * ── Everything is a click ───────────────────────────────────────────────────────────────────────
+ * This deliberately does NOT switch to a continuous vibration when the drag gets fast, which was
+ * the first thing tried and was wrong on the device: a synthesised envelope is a HUM, and a hum is
+ * what a phone does for a notification, not what a detent does under a finger. The crown has no
+ * such mode either. Its texture at speed is not a different signal — it is the same clicks, arriving
+ * faster than they can be told apart, which the hand reads as a fine ratchet.
  *
- * The crown's answer, and this one, is that speed changes the KIND of feedback rather than the
- * amount:
+ * So every crossing asks for a click and nothing else. What speed changes is:
  *
- *   SLOWLY — each page boundary is its own click, sharp and short, so pages can be counted by
- *   feel. Amplitude leans on how deliberate the crossing was: a slow, considered one lands firmer.
+ *   RATE — capped at the engine's floor. The Taptic Engine cannot render pulses closer than roughly
+ *   60ms as separate taps, so crossings inside that window are dropped rather than queued (a queued
+ *   tap arrives after the page it belonged to, which reads as lag; a dropped one is invisible). Past
+ *   that cap the clicks merge on their own, and the merging IS the texture.
  *
- *   FAST — no attempt to click per page. A continuous low texture instead, its amplitude and
- *   frequency climbing with how quickly pages are going by, so speed is felt as intensity rather
- *   than as a rate nothing can resolve. This is the "rumble", and it is the part `selectionAsync`
- *   could never have produced.
- *
- * The changeover is the engine's own floor, which is why it is where it is rather than tuned by
- * taste. Coming back under it, the texture stops and the clicks resume.
+ *   WEIGHT — a slow, deliberate crossing lands firmer and rounder; a fast one is lighter and
+ *   crisper. Sixteen full-weight taps a second is the buzz this is avoiding, so the ramp runs the
+ *   other way: the faster they come, the less each one asks for.
  */
 
-/** Below this gap between crossings, separate clicks stop being separately felt. The mid-point of
- *  the 60–100ms the engine is reported to resolve, and the line between clicking and texturing. */
-const TICK_FLOOR_MS = 80;
-/** A crossing this far apart is as deliberate as one gets — the top of the amplitude ramp. */
+/** Closer than this, taps aren't felt as separate ones — the low end of the 60–100ms the engine is
+ *  reported to resolve, taken deliberately: it is as fine as the ratchet can be made, and beyond it
+ *  the merging is what produces the texture. */
+const TICK_FLOOR_MS = 60;
+/** A crossing this far apart is as deliberate as one gets — the firm end of the ramp. */
 const TICK_SLOW_MS = 260;
 
-/** A single detent. Sharp (high frequency) and light, which is what reads as a click rather than a
- *  thump; the crown's is nearer a tap on glass than a knock. */
-const TICK_FREQUENCY = 0.92;
-const TICK_MIN_AMPLITUDE = 0.35;
-const TICK_MAX_AMPLITUDE = 0.62;
-
-/** The texture, at the changeover and at the fastest a drag realistically goes. Deliberately well
- *  under the click amplitudes: it is a floor the fingertip notices, not a vibration. */
-const RUMBLE_MIN_AMPLITUDE = 0.1;
-const RUMBLE_MAX_AMPLITUDE = 0.32;
-const RUMBLE_MIN_FREQUENCY = 0.45;
-const RUMBLE_MAX_FREQUENCY = 0.8;
-/** Crossings this much faster than the floor are the top of the texture ramp (~8ms apart). */
-const RUMBLE_FASTEST_MS = 10;
-
-/** A drag that has crossed nothing for this long has stopped, whether or not the finger has lifted.
- *  The texture ends with the movement that justified it — a rumble outliving the motion is the
- *  thing that reads as the phone being broken. */
-const RUMBLE_IDLE_MS = 110;
+/** Light and very sharp at speed (a fine ratchet), firmer and slightly rounder when deliberate (a
+ *  detent). Both stay near `selectionAsync`'s weight — the crown's click is nearer a tap on glass
+ *  than a knock, and this replaces something that was already barely-there on purpose. */
+const TICK_FAST_AMPLITUDE = 0.2;
+const TICK_SLOW_AMPLITUDE = 0.45;
+const TICK_FAST_FREQUENCY = 0.97;
+const TICK_SLOW_FREQUENCY = 0.86;
 
 export type ScrubHaptics = {
-  /** A page boundary was crossed. Call for EVERY crossing — the rate limiting here is a change of
-   *  character, not a drop, so a crossing withheld is information lost. */
+  /** A drag has begun. Resets the cadence so its first crossing lands as a deliberate one. */
+  begin: () => void;
+  /** A page boundary was crossed. Call for EVERY crossing — this owns the rate limiting, and it
+   *  needs to see the ones it drops in order to know how fast they are coming. */
   crossing: (now: number) => void;
-  /** Call once per frame of the drag: it is what lets a finger that has come to rest fall silent
-   *  without waiting for the release. */
-  settle: (now: number) => void;
-  /** The drag is over. */
-  stop: () => void;
 };
 
 function lerp(from: number, to: number, t: number) {
@@ -83,55 +67,31 @@ function lerp(from: number, to: number, t: number) {
 
 export function useScrubHaptics(): ScrubHaptics {
   const composer = useRealtimeComposer();
-  const lastCrossAt = useSharedValue(0);
-  const rumbling = useSharedValue(false);
+  const lastTickAt = useSharedValue(0);
+
+  const begin = useCallback(() => {
+    'worklet';
+    lastTickAt.set(0);
+  }, [lastTickAt]);
 
   const crossing = useCallback(
     (now: number) => {
       'worklet';
-      const gap = now - lastCrossAt.value;
-      lastCrossAt.set(now);
+      const gap = now - lastTickAt.value;
+      // Deliberately NOT recording the dropped crossing: the gap keeps growing from the last tap
+      // that was actually felt, so the next one lands as soon as the engine can carry it rather
+      // than a further floor's-worth later.
+      if (gap < TICK_FLOOR_MS) return;
+      lastTickAt.set(now);
 
-      if (gap >= TICK_FLOOR_MS) {
-        // Slow enough to be felt one page at a time.
-        if (rumbling.value) {
-          composer.stop();
-          rumbling.set(false);
-        }
-        const deliberate = (gap - TICK_FLOOR_MS) / (TICK_SLOW_MS - TICK_FLOOR_MS);
-        composer.playDiscrete(lerp(TICK_MIN_AMPLITUDE, TICK_MAX_AMPLITUDE, deliberate), TICK_FREQUENCY);
-        return;
-      }
-
-      // Too fast for separate clicks. `set` REPLACES the running texture rather than adding to it,
-      // so calling it every crossing is what keeps the level tracking the speed.
-      const haste = (TICK_FLOOR_MS - gap) / (TICK_FLOOR_MS - RUMBLE_FASTEST_MS);
-      composer.set(
-        lerp(RUMBLE_MIN_AMPLITUDE, RUMBLE_MAX_AMPLITUDE, haste),
-        lerp(RUMBLE_MIN_FREQUENCY, RUMBLE_MAX_FREQUENCY, haste),
+      const deliberate = (gap - TICK_FLOOR_MS) / (TICK_SLOW_MS - TICK_FLOOR_MS);
+      composer.playDiscrete(
+        lerp(TICK_FAST_AMPLITUDE, TICK_SLOW_AMPLITUDE, deliberate),
+        lerp(TICK_FAST_FREQUENCY, TICK_SLOW_FREQUENCY, deliberate),
       );
-      rumbling.set(true);
     },
-    [composer, lastCrossAt, rumbling],
+    [composer, lastTickAt],
   );
 
-  const settle = useCallback(
-    (now: number) => {
-      'worklet';
-      if (!rumbling.value) return;
-      if (now - lastCrossAt.value < RUMBLE_IDLE_MS) return;
-      composer.stop();
-      rumbling.set(false);
-    },
-    [composer, lastCrossAt, rumbling],
-  );
-
-  const stop = useCallback(() => {
-    'worklet';
-    if (!rumbling.value) return;
-    composer.stop();
-    rumbling.set(false);
-  }, [composer, rumbling]);
-
-  return { crossing, settle, stop };
+  return { begin, crossing };
 }

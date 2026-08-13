@@ -51,16 +51,12 @@ import { useScrubHaptics } from '@/lib/scrub-haptics';
  * the webtoon reader, which has nothing to interpolate between, falls back to the
  * `onScrub` callback.
  *
- * Haptics fire once per page boundary crossed, entirely on the UI THREAD (see
- * lib/scrub-haptics), and every crossing is reported to them — the rate limiting
- * they need is a change of character, not a drop. Neither of the two obvious
- * limiters was right here: the swipeable rows' `createTickHaptic` queue spaces
- * bunched taps out over time, which turns a fast scrub into a buzz still playing
- * out seconds after the finger stopped; and dropping them, which is what this
- * used to do, asks for taps closer together than the engine can render as
- * separate ones and delivers mush with pages missing. What the scrubber wants is
- * the Digital Crown's behaviour: clicks while they can be counted, texture once
- * they cannot.
+ * Haptics fire per page boundary crossed, entirely on the UI THREAD (see
+ * lib/scrub-haptics), which owns their rate limiting and so is told about EVERY
+ * crossing — it has to see the ones it drops to know how fast they are coming.
+ * The swipeable rows' `createTickHaptic` queue is the wrong limiter here: it
+ * spaces bunched taps out over time, which turns a fast scrub into a buzz still
+ * playing out seconds after the finger stopped.
  *
  * The DISPLAY tick is a separate, slower thing (see TICK_MS) and still hops to
  * JS, because what it feeds — the pill's number and the warm-ahead — is JS-side
@@ -256,9 +252,6 @@ export function ChapterNavigator({
         runOnJS(emitScrub)(position);
       }
       const now = nowMs();
-      // Every frame, so a finger that has stopped moving falls silent without waiting for the lift.
-      haptics.settle(now);
-
       const index = Math.round(position);
       // The haptic hears the crossing FIRST and unconditionally — before the display's rate limit,
       // which drops crossings the finger genuinely made.
@@ -291,6 +284,7 @@ export function ChapterNavigator({
           lastPage.set(Math.round(frac.value * steps));
           // The first crossing of a new drag always clicks, and always as a deliberate one.
           lastHapticPage.set(Math.round(frac.value * steps));
+          haptics.begin();
           lastTickAt.set(0); // the first crossing of a new drag always ticks
           // The track's whole calibration in one line. `steps` and `offset` must describe the SAME
           // chapter (see `scrubTotal`); when they don't, the far end of this track is in the next
@@ -313,7 +307,6 @@ export function ChapterNavigator({
           // stayed put: `steps` here against `steps` on the matching grab.
           trace('scrub', 'release', { index, flat: frameOffset.value + index, steps: frameSteps.value });
           frac.set(index / frameSteps.value); // settle onto the stop
-          haptics.stop(); // never leave a texture running past the gesture that justified it
           scrubTarget?.set(-1); // hand the scroll back to the reader
           scrubbing.set(false);
           lastPage.set(-1);
