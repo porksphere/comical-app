@@ -146,11 +146,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // ReaderPage draws this line as a <ThemedText> at its default type, coloured `placeholderPage`.
+  // Matched field for field — a slot a hair off in size or weight is exactly the tell that there
+  // are two different placeholders on screen, which is the thing being fixed. If ThemedText's
+  // `default` type ever changes, this has to move with it.
   page: {
-    // Matches ReaderPage's `placeholderPage`, with the padding a TextInput brings by default taken
-    // back off so the line sits where a Text would.
     color: 'rgba(255,255,255,0.5)',
+    fontSize: 16,
+    lineHeight: 24,
+    fontWeight: '500',
     textAlign: 'center',
+    // A TextInput brings insets and an Android font pad that a Text does not; both off, so the
+    // line sits exactly where the Text's would.
     padding: 0,
+    includeFontPadding: false,
   },
 });
