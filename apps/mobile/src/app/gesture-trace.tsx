@@ -44,6 +44,56 @@ import {
  *                                     WHERE these fall against the gesture lines is the whole
  *                                     question: during the drag, at the release, or through the
  *                                     collapse — and whether any JS line sits beside them.
+ *
+ * It has since grown a second tenant, on the same timeline and for the same reason — a reader page
+ * that never appears is as mute as a swipe that never fires, and the stages it can die in are just
+ * as indistinguishable from the outside. Reading THOSE:
+ *   • `warm enqueue n= inflight=`   → a warm-ahead just queued `n` fresh pages, with `inflight`
+ *                                     resolves already outstanding. A big `n` here is the reader
+ *                                     asking for far more than it is about to show.
+ *   • `page resolving p= inflight=` → page `p` asked for its URL, with that many resolves already
+ *                                     outstanding. A big number is not itself a problem any more —
+ *                                     the queue is drained newest-first, so a page asking late is
+ *                                     asking to be served FIRST (data/api.ts). What matters is the
+ *                                     gap to its `page resolved`, not the depth behind it.
+ *   • `page resolved p= ms=`        → the matching answer, and how long it took. A `page resolving`
+ *                                     with no `resolved` after it is a page still waiting.
+ *   • `page loaded p=`              → bytes arrived and decoded. This is the only line that means
+ *                                     the page is actually on screen.
+ *   • `page stall p=`               → nothing moved for STALL_MS (reader-page.tsx). The reader has
+ *                                     given up waiting and handed it to the retry backoff; the
+ *                                     `inflight` on this line says what it was waiting behind.
+ *
+ * And the scrubber, whose failure is a THIRD kind of silent: it commits to a page in coordinates
+ * the reader has to agree with, and a disagreement looks like the reader deciding on its own to go
+ * somewhere else. The four lines are meant to be read together:
+ *   • `scrub grab steps= offset=`   → the track's calibration at the moment it was grabbed.
+ *                                     `steps+1` is the chapter the track spans and `offset` where
+ *                                     that chapter starts; they must be the same chapter.
+ *   • `scrub release index= flat=`  → the page the release asks for, and where that is in the
+ *                                     stitched window.
+ *   • `scrub origin at= idx=`       → where the pager believes index 0 sits, in pages, re-measured
+ *                                     whenever the list's layout moves. Non-zero means the list is
+ *                                     carrying a leading adjustment from an anchored insert.
+ *   • `scrub map target= to=`       → the first frame of a drag: the flat page asked for, and the
+ *                                     page the pager actually scrolled to. These must agree. When
+ *                                     they don't, the drag is showing one chapter while the track
+ *                                     addresses another, and the release lands somewhere the pages
+ *                                     under the finger never suggested.
+ *   • `seek commit local= of= base= flat=`
+ *                                   → the reader's side of the same commit. `local` greater than
+ *                                     `of` means the track was longer than the chapter being
+ *                                     committed to. `base` is where that chapter starts, and must
+ *                                     equal the `offset` on the matching grab — the two lines
+ *                                     bracket the drag, and a difference between them is the frame
+ *                                     having moved under the finger.
+ *   • `reader relabel page=`        → the chapter changed. BETWEEN a grab and its release is the
+ *                                     bug in its original form: the relabel moved the window,
+ *                                     which moved the pager, which crossed another boundary and
+ *                                     relabelled again — a recording of it has ten in a row and
+ *                                     the window growing from four segments to thirteen while one
+ *                                     finger was down. There should now be none until the release
+ *                                     has been committed.
  */
 export default function GestureTraceScreen() {
   const contentPadding = useSettingsScrollPadding();
@@ -67,8 +117,10 @@ export default function GestureTraceScreen() {
           Records what the swipe recognizers on the series page and the search layer did — whether
           they saw the touches, whether they began, whether they activated, and what state they saw
           when they ended. While it is off, those recognizers are configured exactly as they ship,
-          so a recording can&apos;t be blamed for what it measures. Nothing is sent anywhere; use
-          Share to send it yourself.
+          so a recording can&apos;t be blamed for what it measures. It also records the reader&apos;s
+          page pipeline on the same timeline — what each page asked for, how many requests it was
+          queued behind, and whether an answer ever came. Nothing is sent anywhere; use Share to
+          send it yourself.
         </ThemedText>
 
         <SettingsSection>

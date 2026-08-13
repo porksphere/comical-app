@@ -52,6 +52,7 @@ export function useZoomable({
   height,
   enabled = true,
   onZoomChange,
+  onPinchChange,
   onSingleTap,
   singleTapEnabled = true,
   singleTapAllowed,
@@ -66,6 +67,16 @@ export function useZoomable({
   /** Fires when the zoomed state flips — the reader disables its swipe-away /
    *  scroll while zoomed so a one-finger drag pans instead. */
   onZoomChange?: (zoomed: boolean) => void;
+  /** Fires when a pinch STARTS and ends — distinct from `onZoomChange`, which reports the settled
+   *  result and so says nothing until the fingers are already up.
+   *
+   *  A pinch has to run simultaneously with the scroller it lives inside (see
+   *  `simultaneousExternal`, and what happens when it doesn't), and a UIScrollView reads two
+   *  fingers as a two-finger DRAG: the same pinch that scales the page also pans the scroller
+   *  under it, sliding the neighbouring pages into view. A consumer that can freeze its scroll
+   *  wants to know at the start of the pinch, not the end of it. Reported on every exit, cancelled
+   *  pinches included — a scroller frozen for a gesture that ended some other way stays frozen. */
+  onPinchChange?: (pinching: boolean) => void;
   /** Optional single tap, dispatched with the tap's x within the view (page-turn
    *  zones use it; a chrome toggle ignores it). Composed Exclusive with the
    *  double-tap so it waits out a possible second tap. Omit for no single tap. */
@@ -105,6 +116,9 @@ export function useZoomable({
   const baseTy = useSharedValue(0);
   // Whether the touch currently down is allowed to become a single tap — see `singleTapAllowed`.
   const singleTapArmed = useSharedValue(true);
+  // Whether a pinch is in flight, so `onFinalize` only reports an end for a pinch it reported the
+  // start of (it runs for every outcome, including one that never activated).
+  const pinching = useSharedValue(false);
 
   const [zoomed, setZoomed] = useState(false);
 
@@ -133,6 +147,8 @@ export function useZoomable({
       baseScale.set(scale.value);
       baseTx.set(tx.value);
       baseTy.set(ty.value);
+      pinching.set(true);
+      if (onPinchChange) runOnJS(onPinchChange)(true);
     })
     .onUpdate((e) => {
       // Ignore frames where a finger has already begun to lift (numberOfPointers < 2):
@@ -168,6 +184,13 @@ export function useZoomable({
         savedTy.set(0);
         runOnJS(reportZoom)(false);
       }
+    })
+    // Every exit, not just a clean release: a pinch that is cancelled (or that never activated)
+    // must still hand the scroller back, or it stays frozen until the next one.
+    .onFinalize(() => {
+      if (!pinching.value) return;
+      pinching.set(false);
+      if (onPinchChange) runOnJS(onPinchChange)(false);
     });
 
   const doubleTap = Gesture.Tap()

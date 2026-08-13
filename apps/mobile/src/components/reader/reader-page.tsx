@@ -1,13 +1,20 @@
 import { Image } from 'expo-image';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 
 import { WarnIcon } from '@/components/icons/reader-icons';
 import { useImageProgress } from '@/components/reader/image-progress';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
-import { invalidateAssetSource, peekResolvedAssetSource, resolveAssetSourceCached } from '@/data/api';
+import {
+  assetResolvesInFlight,
+  invalidateAssetSource,
+  peekResolvedAssetSource,
+  releaseAssetResolve,
+  resolveAssetSourceCached,
+} from '@/data/api';
 import { coverDelayMs } from '@/data/mock';
 import { logDiagnostic } from '@/lib/diagnostics';
 import { traceJS } from '@/lib/gesture-trace';
@@ -27,6 +34,56 @@ import { testId } from '@/lib/test-id';
 
 const DEFAULT_ASPECT = 2 / 3; // width / height before the image reports its size
 const RETRY_DELAYS_MS = [1000, 2000, 4000];
+
+/**
+ * The placeholder→page cross-fade in PAGED mode.
+ *
+ * This used to be zero, and the reason was sound: at 150ms (what webtoon rows still use) a page
+ * that was ALREADY loaded still spent a sixth of a second looking like a placeholder, which is the
+ * impression a page turn most needs not to give. But instant is its own tell — the swap lands as a
+ * flicker rather than as the page arriving. Short enough to be under the threshold where a turn
+ * feels delayed, long enough that the eye reads it as one thing becoming another.
+ *
+ * The placeholder fades OUT across the same span (see `fade`), so the two cross rather than one
+ * vanishing and the other rising out of the backdrop — which would flash the dark surface between
+ * them, worse than the instant swap this replaces.
+ */
+const PAGE_FADE_MS = 110;
+
+/** Reserved height for the status line UNDER "Page N", whether or not there is a status to show.
+ *
+ * The line is the download percentage, and it arrives a moment after the placeholder does. Laid out
+ * only when present, its arrival re-centres the group and shoves "Page N" upward — a jump, on every
+ * page, at the exact moment the eye has settled on the number. Reserved always: the number is
+ * placed once and the percentage appears beneath it.
+ *
+ * Exported because the scrub strip has to reserve the same space — its slots and these placeholders
+ * are meant to be indistinguishable, and a line of text sitting a few points higher in one of them
+ * is exactly the tell that they are not. */
+export const PLACEHOLDER_STATUS_HEIGHT = 16;
+
+/**
+ * THE STALL WATCHDOG's two bounds — how long a page may make no progress at all before it is
+ * treated as a failure and handed to the retry backoff below.
+ *
+ * That machinery only ever hears about loads that FAIL, and "never answers" is not a failure
+ * anyone reports. Both stages of a page can hang with nothing to say:
+ *
+ *   RESOLVE — a pending promise leaves `resolvedUri` null forever. No <Image> is mounted, so there
+ *     is no `onError` to catch, no backoff, not even the Retry chip: a shimmering skeleton for as
+ *     long as the page stays on screen. Nothing anywhere puts a bound on this, which is why its
+ *     bound is the tighter of the two — a metadata round-trip has no business taking 20s.
+ *   DOWNLOAD — normally self-limiting (the URL loading system times a request out and the error
+ *     reaches `onError`), but a request that is QUEUED and not yet started has no timeout running,
+ *     because there is no request yet. Given generously more room, since this is the stage where
+ *     slow is genuinely slow rather than stuck.
+ *
+ * Both are re-armed by progress rather than only by stage changes (see the effect's deps), so a
+ * page that is downloading over a bad link is never cut off for being slow — only one that has
+ * moved nothing whatsoever for the whole window.
+ */
+const STALL_RESOLVE_MS = 20_000;
+const STALL_DOWNLOAD_MS = 45_000;
 
 /**
  * The surface shown wherever a page isn't on screen yet. Exported because the pager paints the SAME
@@ -72,6 +129,7 @@ export function ReaderPage({
   onLoadDims,
   onFailedChange,
   fadeMs,
+  scrubbing,
 }: {
   uri: string;
   page: number;
@@ -90,6 +148,18 @@ export function ReaderPage({
    *  caller suspend its own tap-to-turn/tap-to-toggle-chrome overlay, which
    *  would otherwise sit on top of and swallow taps meant for the Retry chip. */
   onFailedChange?: (failed: boolean) => void;
+  /** The scrub's live position, negative when idle (the pager's `scrubTarget`). While it is
+   *  running, this page's own placeholder stands down: the pager paints a strip of them behind the
+   *  list instead, which is the only way pages the list HASN'T mounted get one at all. Two of them
+   *  over the same page is not a near-miss to be aligned — a cell's placeholder is translucent, so
+   *  the strip showing through it composites to a visibly different colour, and the two "Page N"
+   *  lines print over each other. One or the other, and during a scrub the strip is the one that
+   *  covers every page rather than only the mounted ones.
+   *
+   *  Read on the UI thread so a scrub starting or ending costs no render — a re-render of every
+   *  mounted cell at exactly the moment the list is trying to build more is what opens the gaps the
+   *  strip exists to fill. */
+  scrubbing?: SharedValue<number>;
 }) {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -123,7 +193,7 @@ export function ReaderPage({
    * Freezing it costs nothing: a cell that mounted under the strip keeps the standing-page fade it
    * was born with, which is the fade that was already applied to the only load it will do.
    */
-  const [transitionMs] = useState(() => fadeMs ?? (fit === 'contain' ? 0 : 150));
+  const [transitionMs] = useState(() => fadeMs ?? (fit === 'contain' ? PAGE_FADE_MS : 150));
 
   // Traced against the series page's `reveal commit` (lib/gesture-trace): a flash on the first
   // reveal into the reader is a question about WHEN this page had something to paint. Mounting
@@ -195,6 +265,9 @@ export function ReaderPage({
   // Retry chip like any other failure.
   useEffect(() => {
     let cancelled = false;
+    // Whether this page actually asked for a resolve, so the cleanup gives back a claim only if it
+    // took one — the peek path below returns before asking at all.
+    let claimed = false;
     // Don't tear a good URL down to re-derive the same answer: on a first attempt the seed above is
     // already correct whenever the peek knew it, and clearing it here would unmount the <Image>
     // for a frame. A retry (`attempt > 0`) deliberately does start from nothing.
@@ -210,15 +283,28 @@ export function ReaderPage({
         return;
       }
     }
+    // Traced so a stuck page can be read off one timeline. `resolving` says this page ASKED and how
+    // many resolves were already outstanding when it did (it cannot overtake them — they're deduped
+    // by URL); the matching `resolved` says whether an answer ever came, and how long it took. A
+    // `resolving` with nothing after it is a page still waiting, which is the state that has no
+    // other symptom.
+    const askedAt = Date.now();
+    claimed = true;
+    traceJS('page', 'resolving', { p: page, inflight: assetResolvesInFlight() });
     resolveAssetSourceCached(uri)
       .then((u) => {
+        traceJS('page', 'resolved', { p: page, ms: Date.now() - askedAt });
         if (!cancelled) setResolvedUri(u);
       })
       .catch((err: unknown) => {
+        traceJS('page', 'resolve-failed', { p: page, ms: Date.now() - askedAt });
         if (!cancelled) handleError({ error: (err as Error)?.message || 'resolve failed' });
       });
     return () => {
       cancelled = true;
+      // A page swiped past is a page nobody is waiting for. Giving the claim back drops the request
+      // if it hasn't started, which is what keeps a fast swipe from fetching every page it crossed.
+      if (claimed) releaseAssetResolve(uri);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uri, attempt]);
@@ -239,7 +325,54 @@ export function ReaderPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchError, attempt]);
 
-  const ready = delayPassed && loaded;
+  // THE STALL WATCHDOG — see the two bounds above. Armed whenever this page has nothing to show and
+  // isn't already in the retry machinery's hands, and torn down/re-armed by every dep below, which
+  // is how a slow-but-moving download keeps resetting it (`percent` advances) while a stuck one
+  // doesn't. `handleError` is deliberately not a dep: it closes over `attempt`, and `attempt` IS a
+  // dep, so the timer always runs the version belonging to the attempt it is timing.
+  const stage = resolvedUri === null ? 'resolve' : 'download';
+  useEffect(() => {
+    if (!delayPassed || loaded || failed || retrying) return;
+    const limit = stage === 'resolve' ? STALL_RESOLVE_MS : STALL_DOWNLOAD_MS;
+    const t = setTimeout(() => {
+      const inflight = assetResolvesInFlight();
+      traceJS('page', 'stall', { p: page, inflight });
+      // The in-flight count goes in the message because it is the difference between the two
+      // explanations: a page alone and unanswered is a broken request, a page behind sixty others
+      // is a queue it was put in (see `assetResolvesInFlight`, and the reader's warm-ahead).
+      handleError({ error: `no ${stage} progress in ${Math.round(limit / 1000)}s (${inflight} resolves in flight)` });
+    }, limit);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage, delayPassed, loaded, failed, retrying, attempt, percent, uri]);
+
+  // The placeholder's own half of the cross-fade: it dissolves as the image rises, over the same
+  // span, so nothing between them is ever on screen alone.
+  const fade = useSharedValue(1);
+  useEffect(() => {
+    fade.set(loaded ? withTiming(0, { duration: transitionMs }) : 1);
+  }, [loaded, transitionMs, fade]);
+
+  // …combined with standing down entirely for a scrub — see `scrubbing`. The image is untouched by
+  // that one: a page that HAS loaded keeps showing, which is the better feedback of the two and the
+  // reason the strip goes behind the list rather than over it.
+  const placeholderStyle = useAnimatedStyle(() => ({
+    opacity: scrubbing && scrubbing.value >= 0 ? 0 : fade.value,
+  }));
+
+  // The placeholder outlives `loaded` by the length of the fade — unmounting it the instant the
+  // image arrives is what would leave the image rising out of the bare backdrop. Keyed by the load
+  // it belongs to (uri + attempt) rather than reset by hand, so a new page or a retry is simply a
+  // key that hasn't finished yet.
+  const loadKey = `${uri}#${attempt}`;
+  const [fadedKey, setFadedKey] = useState<string | null>(null);
+  useEffect(() => {
+    if (!loaded) return;
+    const t = setTimeout(() => setFadedKey(loadKey), transitionMs);
+    return () => clearTimeout(t);
+  }, [loaded, loadKey, transitionMs]);
+
+  const ready = delayPassed && loaded && fadedKey === loadKey;
   const box: StyleProp<ViewStyle> = fit === 'contain' ? { width, height } : { width, aspectRatio: aspect };
 
   // What the skeleton says while it's up. Nothing at all in the common case (a page that loads
@@ -317,14 +450,17 @@ export function ReaderPage({
       )}
       {!ready && (
         // Laid over the box (absolute, centred) rather than inside it, so it can't affect the page's
-        // measured height — webtoon mode derives row heights from that.
-        <View style={[StyleSheet.absoluteFill, styles.placeholder]} pointerEvents="none">
+        // measured height — webtoon mode derives row heights from that. Animated only to stand down
+        // for a scrub without a render — see `scrubbing`.
+        <Animated.View style={[StyleSheet.absoluteFill, styles.placeholder, placeholderStyle]} pointerEvents="none">
           <Skeleton style={StyleSheet.absoluteFill} />
           {/* Always named, not just once bytes are moving: "waiting to start" was the most common
               loading state and the one that said nothing at all. */}
           <ThemedText style={styles.placeholderPage}>Page {page}</ThemedText>
-          {status && <ThemedText style={styles.statusText}>{status}</ThemedText>}
-        </View>
+          {/* Always rendered, empty or not — see PLACEHOLDER_STATUS_HEIGHT. A status that only takes
+              up space once it has something to say moves the line above it when it arrives. */}
+          <ThemedText style={styles.statusText}>{status ?? ''}</ThemedText>
+        </Animated.View>
       )}
     </View>
   );
@@ -357,10 +493,13 @@ const styles = StyleSheet.create({
   placeholderPage: {
     color: 'rgba(255,255,255,0.5)',
   },
-  // Secondary to the page name above it, like the failed screen's two lines.
+  // Secondary to the page name above it, like the failed screen's two lines. Fixed height so the
+  // row occupies the same space empty as full — see PLACEHOLDER_STATUS_HEIGHT.
   statusText: {
     color: 'rgba(255,255,255,0.35)',
     fontSize: 12,
+    height: PLACEHOLDER_STATUS_HEIGHT,
+    lineHeight: PLACEHOLDER_STATUS_HEIGHT,
     fontVariant: ['tabular-nums'], // a ticking percentage shouldn't jitter its own width
   },
   retryChip: {

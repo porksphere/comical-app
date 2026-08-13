@@ -13,7 +13,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SkipBackIcon, SkipForwardIcon } from '@/components/icons/reader-icons';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
-import { hapticSelection } from '@/lib/haptics';
+import { trace } from '@/lib/gesture-trace';
+import { useScrubHaptics } from '@/lib/scrub-haptics';
 
 /**
  * The reader's bottom bar (NATIVE only — web keeps the tap-to-jump progress pill):
@@ -50,19 +51,24 @@ import { hapticSelection } from '@/lib/haptics';
  * the webtoon reader, which has nothing to interpolate between, falls back to the
  * `onScrub` callback.
  *
- * Haptics tick once per page boundary crossed, rate-limited ON THE UI THREAD and
- * by DROPPING, not delaying. The swipeable rows' `createTickHaptic` queue spaces
- * bunched taps out over time, which is right for a short row swipe but wrong
- * here: a fast scrub crosses dozens of boundaries, and a queue that holds each
- * one back turns into a buzz still playing out seconds after the finger stopped.
- * A dropped tick is invisible; a late one reads as lag.
+ * Haptics fire per page boundary crossed, entirely on the UI THREAD (see
+ * lib/scrub-haptics), which owns their rate limiting and so is told about EVERY
+ * crossing — it has to see the ones it drops to know how fast they are coming.
+ * The swipeable rows' `createTickHaptic` queue is the wrong limiter here: it
+ * spaces bunched taps out over time, which turns a fast scrub into a buzz still
+ * playing out seconds after the finger stopped.
+ *
+ * The DISPLAY tick is a separate, slower thing (see TICK_MS) and still hops to
+ * JS, because what it feeds — the pill's number and the warm-ahead — is JS-side
+ * and wants far fewer updates than a fingertip does.
  */
 
 const THUMB = 14;
 const R = THUMB / 2;
 const TRACK_H = 4;
-/** Minimum gap between scrub ticks. Anything crossed inside the window is
- *  dropped, so what you feel is always the page you're on right now. */
+/** Minimum gap between scrub ticks — the DISPLAY ones. Anything crossed inside the window is
+ *  dropped, so what you read is always the page you're on right now. The haptics are not on this
+ *  clock: they hear every crossing (see `haptics.crossing`). */
 const TICK_MS = 45;
 
 /** `Date.now()` on the UI thread, hoisted out of the component: the gesture body
@@ -106,6 +112,23 @@ type Props = {
   scrubTarget?: SharedValue<number>;
   /** Where this chapter starts in that array (0 unless chapters are stitched). */
   offset?: number;
+  /**
+   * How many pages the TRACK spans, when that isn't `total`.
+   *
+   * `page`/`total` describe what the pill says, and mid-crossing that is deliberately the
+   * NEIGHBOURING chapter — the page travelling across the screen counted against its own chapter's
+   * length. The track cannot borrow that number. `offset` and `onSeek` both speak the chapter being
+   * READ, so a track sized by a neighbour is a track whose far end is somewhere the reader is not:
+   * dragging there walked past the end of the current chapter into the next one's flat range, and
+   * the release settled in a segment nobody asked for and relabelled to it. That is the "scrubbing
+   * sometimes jumps to another chapter", and it needs no strange input — just grabbing the thumb
+   * before a crossing had finished settling.
+   *
+   * So the track, the offset and the commit all take their length from here, and only the pill is
+   * allowed to read against whatever is passing. Defaults to `total` for the unstitched case, where
+   * they are the same number by construction.
+   */
+  scrubTotal?: number;
   /** The page the drag came to rest on — the only point anything is committed. */
   onSeek: (page: number) => void;
   /** True while the thumb is held. The reader suspends its chrome auto-hide for
@@ -132,6 +155,7 @@ export function ChapterNavigator({
   onScrub,
   scrubTarget,
   offset = 0,
+  scrubTotal,
   onSeek,
   onScrubbingChange,
   onScrubPage,
@@ -141,7 +165,8 @@ export function ChapterNavigator({
     opacity: withTiming(visible ? 1 : 0, { duration: 200 }),
   }));
 
-  const steps = Math.max(1, total - 1);
+  // The TRACK's domain — see `scrubTotal`. Never `total`, unless they are the same chapter.
+  const steps = Math.max(1, (scrubTotal ?? total) - 1);
   // Thumb position as a fraction of the track measured from the READING start
   // (0 = page 1), so RTL only has to flip it at the two points that touch pixels.
   const frac = useSharedValue(0);
@@ -151,6 +176,17 @@ export function ChapterNavigator({
   const lastPage = useSharedValue(-1);
   const lastSent = useSharedValue(-1);
   const lastTickAt = useSharedValue(0);
+  // THE DRAG'S COORDINATE FRAME, latched at touch-down and held for the whole drag.
+  //
+  // `offset` and `steps` are props, and props move: the stitched window grows as neighbouring
+  // chapters arrive, which shifts where the current chapter starts, and a relabel changes which
+  // chapter is current at all. A recording of the bug shows both moving under a held finger —
+  // offset 38 → 23, steps 18 → 14 — so the release committed in a frame the drag had never been
+  // calibrated in, and landed in a different chapter. Latching costs nothing (the frame cannot
+  // legitimately change while a finger is down: whatever the window does, the drag was aimed at the
+  // chapter it started in) and makes the whole class impossible.
+  const frameOffset = useSharedValue(0);
+  const frameSteps = useSharedValue(1);
   // What the pill shows WHILE dragging. The `page` prop can't do this job: it's
   // driven by the pager's viewability callbacks, which only report cells that
   // actually rendered — during a fast scrub over a short render window that's a
@@ -178,16 +214,23 @@ export function ChapterNavigator({
     onSeek(index);
   }, [onSeek]);
   const emitHold = useCallback((held: boolean) => onScrubbingChange?.(held), [onScrubbingChange]);
-  // One hop per tick carries BOTH the buzz and the number, so they can't drift
-  // apart and the JS thread is asked for at most one wake-up per TICK_MS.
+  // The DISPLAY tick — the pill's number and the warm-ahead, one hop per TICK_MS. The buzz used to
+  // ride along with it; it doesn't any more, because a fingertip wants an answer far more often
+  // than a label does, and on a thread that isn't busy building pages.
   const emitTick = useCallback(
     (index: number) => {
-      hapticSelection();
       setScrubPage(index);
       onScrubPage?.(index);
     },
     [onScrubPage],
   );
+
+  // The detent feel, driven from the gesture worklet — no hop, and every crossing heard.
+  const haptics = useScrubHaptics();
+  /** The page the HAPTICS last saw, kept apart from `lastPage` (the display's) because the two run
+   *  at different rates: the display drops crossings inside TICK_MS, and a crossing dropped there
+   *  is still one the finger made. */
+  const lastHapticPage = useSharedValue(-1);
 
   const pan = useMemo(() => {
     const apply = (x: number) => {
@@ -197,18 +240,27 @@ export function ChapterNavigator({
       const along = Math.min(1, Math.max(0, (x - R) / l));
       const f = rtl ? 1 - along : along;
       frac.set(f); // no snapping — the thumb goes exactly where the finger is
-      const position = f * steps;
+      // The LATCHED frame, never the props — see `frameOffset`. The props may have moved since the
+      // finger landed, and following them mid-drag is what sent the release to another chapter.
+      const position = f * frameSteps.value;
       if (scrubTarget) {
-        scrubTarget.set(offset + position);
+        scrubTarget.set(frameOffset.value + position);
       } else if (Math.abs(position - lastSent.value) >= 0.01) {
         // No shared-value path (webtoon): fall back to a JS hop, but only for
         // moves big enough to be worth one.
         lastSent.set(position);
         runOnJS(emitScrub)(position);
       }
-      const index = Math.round(position);
-      if (index === lastPage.value) return;
       const now = nowMs();
+      const index = Math.round(position);
+      // The haptic hears the crossing FIRST and unconditionally — before the display's rate limit,
+      // which drops crossings the finger genuinely made.
+      if (index !== lastHapticPage.value) {
+        lastHapticPage.set(index);
+        haptics.crossing(now);
+      }
+
+      if (index === lastPage.value) return;
       // Inside the window: drop this crossing, and DON'T record it — the next
       // touch event (a frame or so later) tries again and reports wherever the
       // finger is by then, so the number and the buzz always describe the
@@ -225,8 +277,23 @@ export function ChapterNavigator({
         .minDistance(0)
         .onBegin(() => {
           scrubbing.set(true);
+          // Latch first: everything below this line, and every frame of the drag, reads the frame
+          // rather than the props.
+          frameOffset.set(offset);
+          frameSteps.set(steps);
           lastPage.set(Math.round(frac.value * steps));
+          // The first crossing of a new drag always clicks, and always as a deliberate one.
+          lastHapticPage.set(Math.round(frac.value * steps));
+          haptics.begin();
           lastTickAt.set(0); // the first crossing of a new drag always ticks
+          // The track's whole calibration in one line. `steps` and `offset` must describe the SAME
+          // chapter (see `scrubTotal`); when they don't, the far end of this track is in the next
+          // chapter and the release lands there. Deliberately NOT logging the pill's `total` here
+          // too, tempting as the comparison is: it would join this gesture's dependencies and
+          // rebuild the recognizer on a relabel, and a diagnostic that changes when its subject
+          // rebuilds is measuring itself. `seek commit`'s `of=` carries the same comparison, from
+          // JS, for free.
+          trace('scrub', 'grab', { steps, offset });
           runOnJS(emitHold)(true);
         })
         .onStart((e) => apply(e.x))
@@ -234,8 +301,12 @@ export function ChapterNavigator({
         // onFinalize, not onEnd: a cancelled gesture must release the chrome
         // timer too, or the bar hangs around forever.
         .onFinalize(() => {
-          const index = Math.round(frac.value * steps);
-          frac.set(index / steps); // settle onto the stop
+          const index = Math.round(frac.value * frameSteps.value);
+          // What the release COMMITS, in the coordinates it commits in — the LATCHED ones. `held`
+          // repeats the frame the drag was calibrated in, so a recording says outright whether it
+          // stayed put: `steps` here against `steps` on the matching grab.
+          trace('scrub', 'release', { index, flat: frameOffset.value + index, steps: frameSteps.value });
+          frac.set(index / frameSteps.value); // settle onto the stop
           scrubTarget?.set(-1); // hand the scroll back to the reader
           scrubbing.set(false);
           lastPage.set(-1);
@@ -255,6 +326,10 @@ export function ChapterNavigator({
     lastSent,
     lastTickAt,
     scrubbing,
+    frameOffset,
+    frameSteps,
+    haptics,
+    lastHapticPage,
     emitScrub,
     emitSeek,
     emitHold,

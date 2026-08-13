@@ -443,6 +443,9 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
       },
   );
 
+  // See `extraData` on the list below.
+  const rowExtraData = useMemo(() => ({ width, standby }), [width, standby]);
+
   return (
     // Fixed-size clip so the scaled strip can grow past the viewport and be masked;
     // the zoom transform lives on the inner Animated.View, and the list's own
@@ -457,6 +460,12 @@ const WebtoonContinuous = forwardRef<WebtoonReaderHandle, Props>(function Webtoo
               estimatedListSize={{ width, height }}
               data={pages}
               keyExtractor={(item) => item.key}
+              // What a mounted row reads that isn't its own item. A LegendList cell re-renders on
+              // its item, its key, or this — a re-render of the list alone does not reach it — so
+              // anything `renderItem` closes over has to be here or the row keeps the value it
+              // first rendered with (a rotation resizing only new rows, a standby fade that never
+              // lifted). Same hand-off, and the same reasoning, as the paged reader's.
+              extraData={rowExtraData}
               // Frozen while zoomed so the pan gesture owns one-finger drags; scrolling
               // resumes the instant it's back at 1×.
               scrollEnabled={!zoomed}
@@ -634,6 +643,15 @@ const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPage
   // Handed to each row, whose own pinch/tap/double-tap live inside this scroller and would
   // otherwise arbitrate against both of these without saying so.
   const rowExternals = useMemo(() => [nativeScroll, backPull], [nativeScroll, backPull]);
+  // Everything a mounted row reads that isn't its own item — see the paged reader's `extraData`
+  // for why a LegendList needs telling. `rowExternals` is the one that bites here: a row that
+  // never re-rendered would keep declaring itself simultaneous with a back-pull gesture that has
+  // since been replaced, and an arbitration declared against a stale handler is no declaration at
+  // all — which is the state the row's double-tap loses first.
+  const rowExtraData = useMemo(
+    () => ({ width, height, standby, onToggleChrome, handleZoom, rowExternals }),
+    [width, height, standby, onToggleChrome, handleZoom, rowExternals],
+  );
   useEffect(() => {
     zoomedSV.set(zoomed);
   }, [zoomed, zoomedSV]);
@@ -670,6 +688,7 @@ const WebtoonPaged = forwardRef<WebtoonReaderHandle, Props>(function WebtoonPage
       estimatedListSize={{ width, height }}
       data={pages}
       keyExtractor={(item) => item.key}
+      extraData={rowExtraData}
       pagingEnabled
       // Frozen while a page is zoomed so its own pan owns one-finger drags.
       scrollEnabled={!zoomed}

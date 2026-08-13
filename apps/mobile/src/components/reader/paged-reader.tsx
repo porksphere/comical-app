@@ -23,10 +23,12 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { STANDBY_FADE_MS } from '@/components/reader/reader-page';
+import { ScrubBackdrop } from '@/components/reader/scrub-backdrop';
 import { ZoomablePage } from '@/components/reader/zoomable-page';
 import type { PageFit } from '@/hooks/use-reader-settings';
 import { BACK_ACTIVATE_DOMINANCE } from '@/lib/back-swipe';
 import { releaseCommittedEitherWay } from '@/lib/gesture-release';
+import { trace, traceJS } from '@/lib/gesture-trace';
 
 export type PagedReaderHandle = {
   goToPage: (logical: number, animated?: boolean) => void;
@@ -178,16 +180,15 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // what lets the scrubber's reaction scroll from the UI thread without a hop to JS.
   const listRef = useRef<LegendListRef>(null);
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
-  // The scroll offset, on the UI thread, straight from the list (its reanimated build writes it).
-  // The scrub reads it; nothing else does.
-  const scrollX = useSharedValue(0);
-  const sharedValues = useMemo(() => ({ scrollOffset: scrollX }), [scrollX]);
   const n = pages.length;
 
   const toPhysical = (logical: number) => (rtl ? n - 1 - logical : logical);
   const toLogical = (physical: number) => (rtl ? n - 1 - physical : physical);
 
   const data = useMemo(() => (rtl ? [...pages].reverse() : pages), [pages, rtl]);
+  // Display numbers by the same index as `data`, for the scrub backdrop to read from a worklet — a
+  // stitched window restarts at 1 per chapter, so the index is not the number.
+  const pageNumbers = useMemo(() => data.map((item) => item.pageNumber), [data]);
 
   const [zoomed, setZoomed] = useState(false);
   const handleZoomChange = useCallback(
@@ -197,6 +198,12 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     },
     [onZoomChange],
   );
+  // A pinch in progress, reported from the page at the START of the pinch (see ZoomablePage's
+  // `onPinchChange`). It freezes the scroller for the duration — a page's pinch runs SIMULTANEOUSLY
+  // with the list's own scroll (it has to; see `nativeScroll`), and a UIScrollView reads two
+  // fingers as a two-finger drag, so the pinch that scales the page also drags the pager, sliding
+  // the neighbouring pages in under the zoom.
+  const [pinching, setPinching] = useState(false);
   // Unmounting (e.g. switching reader modes) must not leave the parent thinking
   // a page is still zoomed — that would keep its swipe-dismiss disabled.
   useEffect(() => () => onZoomChange?.(false), [onZoomChange]);
@@ -243,10 +250,44 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // there is (page 1 → 2 flips `atStart` while the finger is still down).
   const atStart = useSharedValue(false);
   const atEnd = useSharedValue(false);
+  // Whether the edge pan may ACT at all — false while a page is zoomed (a one-finger drag pans the
+  // image then) or while the pager is a decorative strip. A shared value rather than `.enabled()`
+  // for the same reason `atStart`/`atEnd` are: see `edgeTurn`.
+  const edgeAllowed = useSharedValue(true);
   // The index the list is parked on, and where index 0 sits in scroll coordinates — the two halves
   // of the scrub's arithmetic. See the reaction below.
   const parkedIndex = useSharedValue(0);
   const scrubOrigin = useSharedValue(0);
+
+  /**
+   * WHERE INDEX 0 SITS, asked of the list rather than inferred from where the scroll happens to be.
+   *
+   * The scrub needs this because `index × width` is not a page's offset on its own: an anchored
+   * insert leaves the list carrying a leading adjustment. It used to be derived on the first frame
+   * of each drag, as `scrollOffset − parkedIndex × width`, which is only as good as its two inputs
+   * and neither is dependable at that instant. The scroll offset comes from Reanimated's
+   * `useScrollOffset`, which only ever updates on a scroll EVENT — so a pager that was positioned
+   * by `initialScrollIndex` and not yet touched reports 0 while sitting twenty pages in. Measured
+   * against a parked index that is right, that is a twenty-page error, and the recording shows
+   * exactly that: a scrub aimed at flat 19–33 walking the pager through pages 3–17 of the chapter
+   * BEFORE it.
+   *
+   * `positionAtIndex` is the list's own position map — the same one its viewability reads — so it
+   * carries the adjustment by construction and owes nothing to scroll events. Index 0 first;
+   * falling back to the parked index (certain to be in the computed range) and subtracting where it
+   * would be from zero.
+   */
+  const measureScrubOrigin = useCallback(
+    (at: number): number | null => {
+      const state = listRef.current?.getState?.();
+      if (!state) return null;
+      const zero = state.positionAtIndex(0);
+      if (typeof zero === 'number') return zero;
+      const parked = state.positionAtIndex(at);
+      return typeof parked === 'number' ? parked - at * width : null;
+    },
+    [width],
+  );
 
   // The page a scroll SETTLED on, taken from viewability rather than from `contentOffset / width`.
   // The offset is no longer a reliable index: an anchored insert can leave the list carrying a
@@ -287,7 +328,11 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
       },
   );
 
-  // Both refs above (and the shared values) are rewritten AFTER each render rather than during it.
+  // Where the pager sits, for the pinch freeze below to re-snap to — the same value `parkedIndex`
+  // carries, on the thread that needs it.
+  const activeIndexRef = useRef(initialIndex);
+
+  // The refs above (and the shared values) are rewritten AFTER each render rather than during it.
   //
   // They were written inline in the render body until this pass, which the React
   // Compiler forbids — and it had never said so, because it was quietly bailing
@@ -304,7 +349,29 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
     atStart.set(activeIndex <= 0);
     atEnd.set(activeIndex >= n - 1);
     parkedIndex.set(activeIndex);
+    edgeAllowed.set(!zoomed && !standby);
+    activeIndexRef.current = activeIndex;
+    // Kept fresh here rather than measured when a drag starts: the origin only moves when the
+    // list's own layout does (an anchored insert), which is a render — never mid-drag, where
+    // viewability is suppressed and nothing re-lays out. Skipped WHILE scrubbing for the same
+    // reason the rest of the frame is latched: a drag is resolved in the coordinates it began in.
+    if (!scrubbing) {
+      const origin = measureScrubOrigin(activeIndex);
+      if (origin !== null && origin !== scrubOrigin.value) {
+        scrubOrigin.set(origin);
+        traceJS('scrub', 'origin', { at: origin / width, idx: activeIndex });
+      }
+    }
   });
+
+  // Put the pager back on its page for the duration of a pinch. The freeze above stops the drag
+  // continuing, but not the point or two it already travelled before the pinch was recognized —
+  // and a `pagingEnabled` list that has been frozen mid-page can't snap itself back, so the
+  // neighbour would sit there in the corner of the zoom until the fingers came up.
+  useEffect(() => {
+    if (!pinching) return;
+    void listRef.current?.scrollToIndex({ index: activeIndexRef.current, animated: false });
+  }, [pinching]);
 
   // The scrubber's live drag, resolved entirely on the UI thread — a shared value
   // in, a native scroll command out, with the JS thread never in the loop. Every
@@ -315,18 +382,19 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   //
   // `index × width` is no longer the offset of a page on its own: once the list has anchored an
   // insert it carries a leading adjustment, and a scrub computed without it would fly a whole
-  // chapter wide. So the FIRST frame of each drag measures the origin instead of assuming it —
-  // where the list is right now, minus where the page it is parked on would be from zero. Measured
-  // per drag rather than kept up to date, because a drag is the only moment both halves are known
-  // to agree: viewability is suppressed for its duration (see `scrubbingRef`), so the parked index
-  // can't move underneath it either.
+  // chapter wide. `scrubOrigin` carries that adjustment, asked of the list itself and kept fresh by
+  // the layout effect above — see `measureScrubOrigin` for why it is no longer derived here from
+  // where the scroll happens to be.
   useAnimatedReaction(
     () => scrubTarget?.value ?? -1,
     (target, previous) => {
       if (target < 0) return;
-      if ((previous ?? -1) < 0) scrubOrigin.set(scrollX.value - parkedIndex.value * width);
       const logical = Math.max(0, Math.min(n - 1, target));
-      scrollTo(scrollRef, scrubOrigin.value + (rtl ? n - 1 - logical : logical) * width, 0, false);
+      const to = scrubOrigin.value + (rtl ? n - 1 - logical : logical) * width;
+      // Once per drag: what the first target mapped to, in pages. `to` against `target` is the
+      // whole question — they should differ by nothing but the leading adjustment.
+      if ((previous ?? -1) < 0) trace('scrub', 'map', { target, to: to / width, origin: scrubOrigin.value / width });
+      scrollTo(scrollRef, to, 0, false);
     },
     [scrubTarget, n, rtl, width],
   );
@@ -366,13 +434,20 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // its handlers in place rather than reattaching) and buys something worth more: through the whole
   // middle of a chapter, which is nearly all of reading, there is no pan on this surface at all for
   // the page's own gestures to arbitrate against.
+  //
+  // ZOOM AND STANDBY ARE NOT PART OF THAT GATE, though they do disable it — they're latched off a
+  // shared value at touch-down instead. Rebuilding this gesture rebuilds `pageExternals`, and
+  // that's a prop of every page: a zoom starting or ending would re-render all of them and rebuild
+  // the very pinch/double-tap handlers doing the zooming, mid-gesture. The edge in `.enabled()`
+  // moves on a page turn, when nothing is mid-gesture; the zoom moves in the middle of one.
   const fromStart = useSharedValue(false);
   const fromEnd = useSharedValue(false);
+  const fromAllowed = useSharedValue(false);
   const atAnEdge = activeIndex <= 0 || activeIndex >= n - 1;
   const edgeTurn = useMemo(
     () =>
       Gesture.Pan()
-        .enabled(!zoomed && !standby && atAnEdge)
+        .enabled(atAnEdge)
         .maxPointers(1)
         .activeOffsetX([-EDGE_ACTIVATE_PX, EDGE_ACTIVATE_PX])
         .failOffsetY([-EDGE_FAIL_PX, EDGE_FAIL_PX])
@@ -380,9 +455,11 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
           'worklet';
           fromStart.set(atStart.value);
           fromEnd.set(atEnd.value);
+          fromAllowed.set(edgeAllowed.value);
         })
         .onEnd((e) => {
           'worklet';
+          if (!fromAllowed.value) return;
           // The shared projected release (lib/gesture-release), judged along whichever way the drag
           // went — a flick back at the moment of lifting is someone changing their mind.
           if (!releaseCommittedEitherWay(e.translationX, e.velocityX, width * EDGE_TURN_FRACTION)) return;
@@ -395,7 +472,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
             runOnJS(rightAction)();
           }
         }),
-    [zoomed, standby, atAnEdge, width, leftAction, rightAction, atStart, atEnd, fromStart, fromEnd],
+    [atAnEdge, width, leftAction, rightAction, atStart, atEnd, edgeAllowed, fromStart, fromEnd, fromAllowed],
   );
   // The list's own scroll, as a gesture RNGH can reason about — so the pan above runs ALONGSIDE it
   // rather than winning the touch off it.
@@ -415,27 +492,67 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
   // BOTH of them, handed to every page — see ZoomablePage's `scrollGesture`.
   const pageExternals = useMemo(() => [nativeScroll, edgeTurn], [nativeScroll, edgeTurn]);
 
+  // EVERYTHING A PAGE CELL DEPENDS ON BEYOND ITS OWN ITEM, and the list's own hand-off for
+  // re-rendering cells when it changes.
+  //
+  // This is not optional bookkeeping. LegendList re-invokes `renderItem` for a mounted cell when
+  // that cell's item, its key, or `extraData` changes — and otherwise NOT: a re-render of the list
+  // does not reach the cells the way a FlatList's did (VirtualizedList rebuilt every cell element
+  // on any parent render, so an inline `renderItem` closure was enough, which is why the swap to
+  // LegendList could take this away without anything looking different at the call site).
+  //
+  // Without it a cell keeps whatever it was FIRST rendered with, and the prop that matters most is
+  // `active`. A page is mounted two pages ahead of being read, so it renders with `active: false`
+  // and never hears otherwise — and ZoomablePage resets the zoom of a page that isn't active. So
+  // pinching or double-tapping any page except the one the pager opened on zoomed it and then
+  // undid the zoom on release, which is exactly what it looked like. The rest of these have the
+  // same failure mode, more quietly: a page fit change reaching only unmounted pages, a rotation
+  // resizing only new cells, a standby strip that never lifted, tap zones calling into a closure
+  // from another chapter.
+  //
+  // `zoomed` and `pinching` are deliberately NOT here. No cell reads either one, and listing them
+  // would re-render every page — rebuilding the very gestures in flight — at the moment a pinch
+  // starts and again when it settles.
+  const extraData = useMemo(
+    () => ({
+      activeIndex,
+      standby,
+      pageFit,
+      width,
+      height,
+      leftAction,
+      rightAction,
+      onToggleChrome,
+      handleZoomChange,
+      pageExternals,
+    }),
+    [activeIndex, standby, pageFit, width, height, leftAction, rightAction, onToggleChrome, handleZoomChange, pageExternals],
+  );
+
   return (
     <View style={{ width, height }}>
-      {/* Nothing full-screen is painted here on purpose. A virtualized list draws NOTHING where it
-          hasn't mounted a cell, so a scrub that outruns virtualization shows whatever is behind the
-          list — which is the screen's STATIC reader surface, deliberately tinted to the same
-          composite an unloaded page shows (PAGED_BACKDROP, see reader-page.tsx). A fill here used
-          to provide that tint, but this subtree is the part that translates/scales during a
-          swipe-away, so any full-screen fill inside it reads as the background travelling with
-          the page. */}
+      {/* What a scrub sees where the list has nothing yet — see ScrubBackdrop. Nothing PERMANENT is
+          painted here, which is the distinction that matters: this subtree translates and scales
+          during a swipe-away, so a fill that was always on would ride along with the receding page
+          (it used to, which is why the tint was moved out to the screen's static surface). This one
+          is transparent unless a scrub is in progress, and the reader disables the dismiss gesture
+          while the scrubber is held, so the two can never be on screen together. */}
+      {scrubTarget && (
+        <ScrubBackdrop target={scrubTarget} pageNumbers={pageNumbers} rtl={rtl} width={width} height={height} />
+      )}
       <GestureDetector gesture={listGesture}>
       <AnimatedLegendList
         ref={listRef}
-        // The scroll view itself, for the UI-thread scrub — and the shared value it writes its
-        // offset into. Both are LegendList's own hand-offs; nothing here reaches inside it.
+        // The scroll view itself, for the UI-thread scrub to drive. LegendList's own hand-off;
+        // nothing here reaches inside it. (Its `sharedValues.scrollOffset` used to come out
+        // alongside this, for the scrub to measure its origin against — see `measureScrubOrigin`
+        // for why that number could not be trusted at the moment the scrub needed it.)
         //
         // The cast is a type-level mismatch, not a runtime one: LegendList declares this as
         // `Ref<ElementRef<typeof Reanimated.ScrollView>>`, which resolves to `Ref<never>` against
         // this Reanimated version, so no ref of any kind satisfies it. What arrives is the
         // Animated.ScrollView that `scrollTo` needs.
         refScrollView={scrollRef as unknown as Ref<never>}
-        sharedValues={sharedValues}
         // Sized explicitly: it used to BE this component's root and take the size
         // from whatever hosted it, and a scroller that sizes to its content is
         // not what wants to decide the reader's dimensions.
@@ -446,9 +563,14 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
         estimatedListSize={{ width, height }}
         data={data}
         keyExtractor={(item) => item.key}
+        // What makes a mounted cell re-render — see the memo above. Everything `renderItem` reads
+        // that isn't the item belongs in there.
+        extraData={extraData}
         horizontal
         pagingEnabled
-        scrollEnabled={!zoomed}
+        // Frozen while a page is zoomed (its own pan owns one-finger drags then) and for the
+        // duration of a pinch (see `pinching`).
+        scrollEnabled={!zoomed && !pinching}
         showsHorizontalScrollIndicator={false}
         initialScrollIndex={initialIndex}
         // THE POINT OF THE WHOLE SWAP: anchor a data change on the ITEM, so a chapter joining at
@@ -492,6 +614,10 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
               onRight={rightAction}
               onToggleChrome={onToggleChrome}
               onZoomChange={handleZoomChange}
+              onPinchChange={setPinching}
+              // Stable for the pager's lifetime, so this needs no `extraData` entry — a cell
+              // captures it once and the value it carries changes on the UI thread.
+              scrubbing={scrubTarget}
               scrollGesture={pageExternals}
             />
           )

@@ -45,7 +45,7 @@ import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
 import { TopBarSwitch } from '@/components/top-bar-switch';
 import { Spacing } from '@/constants/theme';
-import { resolveAssetSourceCached } from '@/data/api';
+import { assetResolvesInFlight, resolveAssetSourceCached, supersedeBackgroundResolves } from '@/data/api';
 import {
   chapterPagesQuery,
   directPagesQuery,
@@ -391,15 +391,51 @@ const FADE_WINDOW = 0.4;
 const warmed = new Set<string>();
 const WARM_MEMO_MAX = 2000;
 function warmPrefetch(pages: string[]): void {
+  // This window is now the guess; anything still queued from an older one isn't. Done before the
+  // freshness filter, so a window that adds nothing new still retires what it replaced.
+  supersedeBackgroundResolves(new Set(pages));
   const fresh = pages.filter((p) => !warmed.has(p));
   if (!fresh.length) return;
   if (warmed.size > WARM_MEMO_MAX) warmed.clear();
   for (const p of fresh) warmed.add(p);
-  void Promise.all(fresh.map((p) => resolveAssetSourceCached(p).catch(() => null))).then((urls) => {
+  traceJS('warm', 'enqueue', { n: fresh.length, of: pages.length, inflight: assetResolvesInFlight() });
+  // `background`: a warm is a GUESS about where the reader is going, and must never be served ahead
+  // of a page that has actually mounted. See the resolve queue in data/api.ts.
+  void Promise.all(
+    fresh.map((p) =>
+      resolveAssetSourceCached(p, { background: true }).catch(() => {
+        // FORGET it. `warmed` is a "don't ask twice" memo, and a warm that produced no URL — dropped
+        // because the reader passed the page or moved its window, or a round-trip that just failed —
+        // warmed nothing. Left in the memo it would retire that page from the warm-ahead for the
+        // rest of the session, so coming back to it would pay for a resolve at the moment it is
+        // shown: precisely the cost `prefetchAhead` is set to avoid.
+        warmed.delete(p);
+        return null;
+      }),
+    ),
+  ).then((urls) => {
     const http = urls.filter((u): u is string => !!u && !u.startsWith('data:'));
     if (http.length) void Image.prefetch(http);
   });
 }
+
+/**
+ * How still the read position has to be before the pages around it are warmed.
+ *
+ * Every page the reader passes reports itself — a scrub ticks about every 45ms, and a swipe through
+ * a gallery reports each page as it goes by — and warming at every one of those meant a sweep from
+ * page 1 to 47 enqueued a warm window per page: forty-odd windows for a journey through pages
+ * nobody was going to look at. On a direct series, whose page URLs are lazy resolve-routes answered
+ * one at a time by the bridge, that is minutes of round-trips bought on speculation.
+ *
+ * The ordering problem this used to cause is fixed properly in the resolve queue (data/api.ts): a
+ * warm is `background` now and can no longer be served ahead of a page that has mounted. This is
+ * the other half — not asking in the first place. Only where the reader COMES TO REST is warmed,
+ * which is the only place a guess about what to read next is worth anything. Short enough that a
+ * scrub that pauses to look still warms where it paused; long enough that crossing a gallery warms
+ * once, at the far end.
+ */
+const WARM_IDLE_MS = 220;
 
 /** What the reader pane is pointed at: a chapter (chaptered series) or the series itself (direct).
  *  `start: 'last'` = land on the final page (arriving from the NEXT chapter's "previous"). */
@@ -3157,6 +3193,19 @@ const ReaderPane = forwardRef<
     }
     return acc;
   }, [segments, chapterId]);
+  // Where the chapter being scrubbed STARTS, latched for the duration of the drag — the reader's
+  // half of the navigator's latched frame. A drag is resolved against the window it began in, and
+  // `prefixLen` is not that: it moves when a neighbouring chapter joins at the head, and again on
+  // every relabel. A ref rather than state because reading it must not wait for a render, and
+  // nothing renders off it. Declared HERE, above every callback that reads it — the React Compiler
+  // will not accept a ref being modified when its binding is used before this point.
+  const scrubPrefixRef = useRef<number | null>(null);
+  // The write in its own `[]` callback: the shape `setCurrent` uses, and the one the compiler
+  // accepts a ref being modified in.
+  const setScrubFrame = useCallback((prefix: number | null) => {
+    scrubPrefixRef.current = prefix;
+  }, []);
+
   // Which stitched segment a flat pager index falls in, and the page within it.
   const locateFlat = useCallback(
     (flat: number) => {
@@ -3183,6 +3232,16 @@ const ReaderPane = forwardRef<
         setCurrent(loc.page);
         return;
       }
+      // NOT WHILE A SCRUB IS IN PROGRESS. A relabel changes which chapter is current, and with it
+      // `prefixLen`, `pages` and the run's window — the frame the drag is being resolved in. Landing
+      // one mid-drag doesn't just move the target: the shifted frame moves the pager, which crosses
+      // another boundary, which relabels again. A recording of the bug shows ten of them and the
+      // window growing from four segments to thirteen while a single finger was down.
+      //
+      // Nothing is lost by waiting. The track spans only the current chapter (see `scrubTotal`), so
+      // a scrub has no business crossing a boundary at all, and the release commits explicitly
+      // through `seekTo`; anything genuinely across one is reported again by the settle after it.
+      if (scrubPrefixRef.current !== null) return;
       recordRef.current(); // the outgoing chapter's final settled position
       setCurrent(loc.page);
       onRelabel(loc.segment.id, loc.segment.name, loc.page);
@@ -3229,10 +3288,21 @@ const ReaderPane = forwardRef<
   // during the drag), so the chrome is correct in the same commit.
   const seekTo = useCallback(
     (index: number) => {
-      goTo(index, true);
-      if (stitched) handleFlatVisiblePage(prefixLen + index);
+      // Resolved in the frame the DRAG began in, not whatever the window has become since — see
+      // `scrubPrefixRef`. `handleScrubbing(false)` runs after this (the gesture emits the seek
+      // first), so the latch is still held here.
+      const base = scrubPrefixRef.current ?? prefixLen;
+      const clamped = Math.max(0, Math.min(pages.length - 1, index));
+      // Where the release actually lands, in the reader's own coordinates — the other half of the
+      // navigator's `scrub release` line. `local` past `of` means the track was calibrated to a
+      // different chapter than the one being committed to; `base` against the grab's `offset` says
+      // whether the frame held for the length of the drag.
+      traceJS('seek', 'commit', { local: index, of: pages.length, base, flat: stitched ? base + clamped : clamped });
+      setCurrent(clamped);
+      goFlat(stitched ? base + clamped : clamped, true);
+      if (stitched) handleFlatVisiblePage(base + clamped);
     },
-    [goTo, stitched, prefixLen, handleFlatVisiblePage],
+    [stitched, prefixLen, pages.length, setCurrent, goFlat, handleFlatVisiblePage],
   );
   // Boundary page-turns: prefer stepping within the stitched flat list (the same seamless relabel
   // path a swipe crossing takes); the explicit-jump fallback only covers a cold window (adjacent
@@ -3284,16 +3354,23 @@ const ReaderPane = forwardRef<
   const [scrubbing, setScrubbing] = useState(false);
   const handleScrubbing = useCallback(
     (active: boolean) => {
+      // Latched here rather than in an effect because THIS is the moment: the navigator reports the
+      // hold exactly once per drag, at touch-down, which is the last instant `prefixLen` still
+      // describes the chapter the drag is aimed at. An effect would latch a commit later, by which
+      // point the window may already have moved — and moving is precisely what it does.
+      setScrubFrame(active ? prefixLen : null);
       setScrubbing(active);
       onScrubActive(active);
     },
-    [onScrubActive],
+    [onScrubActive, prefixLen, setScrubFrame],
   );
   const scrubTo = useCallback(
     (position: number) => {
       const clamped = Math.max(0, Math.min(pages.length - 1, position));
-      if (settings.mode === 'paged') pagedRef.current?.scrubTo(stitched ? prefixLen + clamped : clamped);
-      else goFlat(stitched ? prefixLen + Math.round(clamped) : Math.round(clamped), false);
+      // The frame the drag began in — see `scrubPrefixRef`.
+      const base = scrubPrefixRef.current ?? prefixLen;
+      if (settings.mode === 'paged') pagedRef.current?.scrubTo(stitched ? base + clamped : clamped);
+      else goFlat(stitched ? base + Math.round(clamped) : Math.round(clamped), false);
     },
     [pages, settings.mode, stitched, prefixLen, goFlat],
   );
@@ -3313,11 +3390,28 @@ const ReaderPane = forwardRef<
     },
     [pages, stitched, flatItems, prefixLen, settings.prefetchAhead],
   );
+  // Warm where the reader COMES TO REST — see WARM_IDLE_MS. Both callers go through this: the page
+  // the reader has settled on, and the scrubber's live position as it is dragged.
+  const warmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const warmSoon = useCallback(
+    (index: number) => {
+      if (warmTimer.current) clearTimeout(warmTimer.current);
+      warmTimer.current = setTimeout(() => warmAround(index), WARM_IDLE_MS);
+    },
+    [warmAround],
+  );
+  useEffect(
+    () => () => {
+      if (warmTimer.current) clearTimeout(warmTimer.current);
+    },
+    [],
+  );
+
   useEffect(() => {
     // Standby (the collapsed strip) loads nothing beyond the visible page; the flip back to
-    // active re-runs this and warms the neighbourhood immediately.
-    if (!standby && pages.length) warmAround(currentPage);
-  }, [standby, pages, currentPage, warmAround]);
+    // active re-runs this and warms the neighbourhood.
+    if (!standby && pages.length) warmSoon(currentPage);
+  }, [standby, pages, currentPage, warmSoon]);
 
   // ── Progress recording: a library series (inLibrary, queried by the screen) records chapter
   // progress; anything else (including a direct series) goes to the reading log under the
@@ -3489,9 +3583,12 @@ const ReaderPane = forwardRef<
           onScrub={scrubTo}
           scrubTarget={settings.mode === 'paged' ? scrubFlat : undefined}
           offset={stitched ? prefixLen : 0}
+          // The chapter being READ — the same one `offset` and `onSeek` speak. `total` above is
+          // whatever the pill is counting, which mid-crossing is the neighbour. See `scrubTotal`.
+          scrubTotal={pages.length}
           onSeek={seekTo}
           onScrubbingChange={handleScrubbing}
-          onScrubPage={warmAround}
+          onScrubPage={warmSoon}
         />
       )}
       </Animated.View>
