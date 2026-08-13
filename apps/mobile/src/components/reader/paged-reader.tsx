@@ -538,7 +538,7 @@ export const PagedReader = forwardRef<PagedReaderHandle, Props>(function PagedRe
           is transparent unless a scrub is in progress, and the reader disables the dismiss gesture
           while the scrubber is held, so the two can never be on screen together. */}
       {scrubTarget && (
-        <ScrubBackdrop target={scrubTarget} pageNumbers={pageNumbers} width={width} height={height} />
+        <ScrubBackdrop target={scrubTarget} pageNumbers={pageNumbers} rtl={rtl} width={width} height={height} />
       )}
       <GestureDetector gesture={listGesture}>
       <AnimatedLegendList

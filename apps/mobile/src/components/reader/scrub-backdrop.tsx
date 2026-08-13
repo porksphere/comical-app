@@ -1,75 +1,90 @@
-import { StyleSheet, TextInput } from 'react-native';
+import { StyleSheet, TextInput, View } from 'react-native';
 import Animated, { useAnimatedProps, useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 
 import { PAGED_BACKDROP } from '@/components/reader/reader-page';
 import { Skeleton } from '@/components/skeleton';
-import { Spacing } from '@/constants/theme';
 
-// What a scrub sees where the list has nothing.
+// The pages a scrub is passing over, where the list has not mounted them.
 //
-// A virtualized list draws NOTHING where it hasn't mounted a cell, and a scrub is the one gesture
-// that can outrun mounting by a wide margin — the scroll is driven on the UI thread and the cells
-// are built on the JS one, so a fast drag crosses pages faster than they can be made. What showed
-// through was the reader's own base tone: a flat dark rectangle, with none of the page-number
-// feedback the placeholder inside a real cell provides, which reads as the reader having gone
-// black rather than as pages going past.
+// A virtualized list draws NOTHING where it has no cell, and a scrub is the one gesture that can
+// outrun mounting by a wide margin — the scroll is driven on the UI thread and the cells are built
+// on the JS one. What showed through was the reader's own base tone: a flat dark rectangle, with
+// none of the page-number feedback a real cell's placeholder gives, which reads as the reader
+// having gone black rather than as pages going past.
 //
-// So this sits BEHIND the list and paints exactly what a mounted-but-unloaded page paints — the
-// same tint, the same shimmer, the same "Page N" line — for whichever page the scrub is over. A
-// cell that does exist covers it completely, so it is only ever seen in the gaps, which is the
-// only place it is wanted.
+// So this is a STRIP, not a label. It stands exactly where the missing cells would, one slot per
+// page, each painting what a mounted-but-unloaded page paints — the same tint, the same shimmer,
+// the same "Page N" — and it travels with the scroll at the same rate they would. A cell that does
+// exist covers its slot completely, so the strip is only ever seen through the gaps between them,
+// which is the whole idea: a scrub looks the same whether the list kept up or not.
 //
-// It costs no JS renders, deliberately. Everything here reads the scrub's own shared value on the
-// UI thread: the page number goes through an animated `text` prop (the one way to write text from a
-// worklet), so a drag across two hundred pages is two hundred UI-thread updates and not one React
-// commit. Driving it from the throttled `onScrubPage` hop instead would have put a re-render of the
-// whole reader on the same thread that owes the list its cells — the exact contention that opens
-// the gaps this is filling.
+// ── Why it lines up ─────────────────────────────────────────────────────────────────────────────
+// The pager scrolls to `origin + index × width`, so the viewport's left edge sits at the left edge
+// of the page it is over, and page `i` is on screen at `(i − position) × width`. Split the position
+// into whole and fractional parts and the only two slots that can be visible are `floor(position)`
+// and the one after it — drawn at 0 and `width` inside a strip translated by `−frac × width`. That
+// is the same arithmetic the list is doing, which is why a slot and the cell that replaces it are
+// never a pixel apart.
 //
-// NOT a permanent fill, which is the distinction that makes it safe to live inside the pager: the
-// reason a full-screen backdrop was taken OUT of this subtree is that the subtree translates and
-// scales during a swipe-away, so anything opaque in it rides along with the receding page. This is
-// transparent unless a scrub is in progress, and a scrub and the dismiss gesture are mutually
-// exclusive (the reader disables the dismiss while the scrubber is held).
+// All of it in PHYSICAL indices, which is what makes direction a non-issue: the pager reverses its
+// data for RTL and scrolls to the flipped index, so once the flip is applied the strip runs the
+// same way in both directions and nothing below needs to know which one it is in.
+//
+// ── Why it costs no renders ─────────────────────────────────────────────────────────────────────
+// Everything here reads the scrub's own shared value on the UI thread, the page numbers included,
+// through an animated `text` prop. Driving it from the throttled `onScrubPage` hop instead would
+// have put a re-render of the whole reader on the same thread that owes the list its cells — the
+// exact contention that opens the gaps this is filling.
+//
+// NOT a permanent fill, which is what makes it safe inside the pager: that subtree translates and
+// scales during a swipe-away, so anything always-opaque in it would ride along with the receding
+// page (a fill here used to, which is why the tint was moved out to the screen's static surface).
+// This is transparent unless a scrub is in progress, and the reader disables the dismiss gesture
+// while the scrubber is held, so the two can never be on screen together.
 
 const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
 
-export function ScrubBackdrop({
+/** How many page slots the strip carries. Two can be visible at once — the page the viewport is
+ *  straddling and the one after it — and that is all it ever draws. */
+const SLOTS = 2;
+
+/** Logical scrub target → the physical position the pager actually scrolls to. The pager's own
+ *  reaction does the same flip; this has to agree with it or the strip runs backwards in RTL. */
+function physicalAt(target: number, count: number, rtl: boolean): number {
+  'worklet';
+  const clamped = Math.max(0, Math.min(count - 1, target));
+  return rtl ? count - 1 - clamped : clamped;
+}
+
+function Slot({
   target,
   pageNumbers,
+  rtl,
+  slot,
   width,
   height,
 }: {
-  /** The scrub's live position as an index into the pager's data — negative when not scrubbing.
-   *  The same shared value the pager's scroll reaction reads, so the two cannot disagree. */
   target: SharedValue<number>;
-  /** Each page's DISPLAY number, by the same index — the pager's items carry a per-chapter number
-   *  that isn't the index (a stitched window restarts at 1 per chapter). A plain array so the
-   *  worklet can index it without a hop. */
   pageNumbers: number[];
+  rtl: boolean;
+  slot: number;
   width: number;
   height: number;
 }) {
-  const style = useAnimatedStyle(() => ({ opacity: target.value < 0 ? 0 : 1 }));
-
-  // `defaultValue` alongside `text` is the documented shape for writing a TextInput from a worklet
-  // — `text` alone leaves the very first frame blank.
   const animatedProps = useAnimatedProps(() => {
-    const at = target.value;
-    if (at < 0 || pageNumbers.length === 0) return { text: '', defaultValue: '' };
-    const index = Math.min(pageNumbers.length - 1, Math.max(0, Math.round(at)));
+    if (target.value < 0 || pageNumbers.length === 0) return { text: '', defaultValue: '' };
+    const index = Math.floor(physicalAt(target.value, pageNumbers.length, rtl)) + slot;
+    if (index < 0 || index >= pageNumbers.length) return { text: '', defaultValue: '' };
     const label = `Page ${pageNumbers[index]}`;
     return { text: label, defaultValue: label };
   });
 
   return (
-    <Animated.View
-      pointerEvents="none"
-      style={[StyleSheet.absoluteFill, styles.fill, { width, height }, style]}>
+    <View style={[styles.slot, { left: slot * width, width, height }]}>
       <Skeleton style={StyleSheet.absoluteFill} />
       <AnimatedTextInput
-        // Not interactive in any sense — this is a Text that a worklet can write to. `editable` off
-        // and no pointer events keep it out of the touch and accessibility trees entirely.
+        // Not interactive in any sense — a Text that a worklet can write to. `editable` off and no
+        // pointer events keep it out of the touch and accessibility trees entirely.
         editable={false}
         pointerEvents="none"
         accessible={false}
@@ -78,18 +93,58 @@ export function ScrubBackdrop({
         style={styles.page}
         animatedProps={animatedProps}
       />
+    </View>
+  );
+}
+
+export function ScrubBackdrop({
+  target,
+  pageNumbers,
+  rtl,
+  width,
+  height,
+}: {
+  /** The scrub's live position as a LOGICAL index into the reader's pages; negative when idle. The
+   *  same shared value the pager's scroll reaction reads, so the two cannot disagree. */
+  target: SharedValue<number>;
+  /** Display numbers by PHYSICAL index — a stitched window restarts at 1 per chapter, so the index
+   *  is not the number. A plain array so the worklet can read it without a hop. */
+  pageNumbers: number[];
+  rtl: boolean;
+  width: number;
+  height: number;
+}) {
+  const stripStyle = useAnimatedStyle(() => {
+    if (target.value < 0 || pageNumbers.length === 0) return { opacity: 0, transform: [{ translateX: 0 }] };
+    const position = physicalAt(target.value, pageNumbers.length, rtl);
+    // How far INTO the leading page the viewport has travelled. The strip slides back by that much,
+    // which puts slot 0 exactly over that page and slot 1 over the next.
+    return { opacity: 1, transform: [{ translateX: -(position - Math.floor(position)) * width }] };
+  });
+
+  return (
+    <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, stripStyle]}>
+      {Array.from({ length: SLOTS }, (_, slot) => (
+        <Slot key={slot} target={target} pageNumbers={pageNumbers} rtl={rtl} slot={slot} width={width} height={height} />
+      ))}
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  // PAGED_BACKDROP under PAGE_SURFACE is the composite an unloaded page shows over the reader's
-  // base tone — the point being that a gap and a mounted-but-unloaded page are indistinguishable.
-  fill: {
+  // The tint belongs to the SLOTS, not to the strip that carries them. The strip is one viewport
+  // wide and slides by up to a page, so a background on it would leave the trailing sliver of the
+  // screen unpainted — precisely the black edge this exists to remove. Page-sized slots tile
+  // instead, and two of them always cover the viewport however far the strip has slid.
+  //
+  // PAGED_BACKDROP is the composite an unloaded page shows over the reader's base tone, so a slot
+  // and a mounted-but-unloaded page are indistinguishable.
+  slot: {
+    position: 'absolute',
+    top: 0,
     backgroundColor: PAGED_BACKDROP,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.one,
   },
   page: {
     // Matches ReaderPage's `placeholderPage`, with the padding a TextInput brings by default taken
