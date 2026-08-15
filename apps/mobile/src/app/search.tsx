@@ -24,7 +24,7 @@ import { BarContentGap, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { useDedupedPages } from '@/data/grid-pages';
 import { fetchBrowseScope, nextGridCursor, NO_CURSOR, queryKeys, type BrowseScope } from '@/data/queries';
 import { clearSearchIntent, peekSearchIntent, subscribeSearchIntent, takeSearchIntent } from '@/data/search-intent';
-import { COMICAL_BRIDGE_ID, isComicalBridge, useSelectedBridge } from '@/data/selected-bridge';
+import { COMICAL_BRIDGE_ID, isComicalBridge, useInheritedBridge } from '@/data/selected-bridge';
 import { useDataSource, useMockActive } from '@/data/source';
 import type { Bridge } from '@/data/types';
 import { friendlyError } from '@/lib/friendly-error';
@@ -52,7 +52,7 @@ const SHADOW_PEAK_OPACITY = 0.16;
  * The dedicated Search screen, pushed over the tabs. Its top bar holds the search
  * field; a secondary bar directly below holds the filters and slides away as the
  * results scroll down (reappearing on scroll up). It inherits the Browse-selected
- * bridge (`useSelectedBridge`) — filters are per-bridge — and owns the free-text
+ * bridge (`useInheritedBridge`) — filters are per-bridge — and owns the free-text
  * query + filter/sort state (`useBridgeFilters`). A Series→Search tag/meta intent
  * (see search-intent.ts) is consumed on mount and applied against the intent's bridge.
  */
@@ -109,7 +109,7 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
     bridges,
     visibleBridges,
     refetchBridges,
-  } = useSelectedBridge();
+  } = useInheritedBridge();
 
   // Cross-bridge mode: when the synthetic "Comical" bridge is selected, search fans out over every
   // real bridge and shows one rail of results per bridge (no filters/sort — Comical has no capabilities,
@@ -117,7 +117,9 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
   const isComical = isComicalBridge(bridgeId);
   const realBridges = useMemo(() => visibleBridges.filter((b) => b.id !== COMICAL_BRIDGE_ID), [visibleBridges]);
 
-  // Point Search at the intent's bridge (may differ from the Browse-selected one) on mount.
+  // Point Search at the intent's bridge (may differ from the one inherited from Browse) on mount.
+  // `setBridge` moves THIS screen's selection only — see useInheritedBridge for what writing the
+  // shared one did to the Browse tab (and to a series page's collapse) underneath.
   useEffect(() => {
     if (initialIntent) setBridge(initialIntent.bridgeId);
     // Once, on mount — `setBridge`/`initialIntent` are stable.
