@@ -92,8 +92,9 @@ export default function BrowseScreen() {
 
   // ── Bridges ────────────────────────────────────────────────────────────
   // Selected bridge + its resolution live in a shared hook (`useSelectedBridge`) so the pushed
-  // Search screen inherits whichever bridge Browse is on. `setBridge` writes the shared observable;
-  // the crossfade's deferred commit (see `beginCrossfade`) still drives it.
+  // Search screen can inherit whichever bridge Browse is on. This is the ONE screen that owns that
+  // selection — `setBridge` writes the shared observable, and the crossfade's deferred commit (see
+  // `beginCrossfade`) drives it. Search takes a copy instead (`useInheritedBridge`).
   const {
     setBridge,
     bridges,

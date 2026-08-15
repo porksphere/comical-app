@@ -1,6 +1,14 @@
 /**
- * The Browse-selected bridge — shared between the Browse tab and the pushed
- * Search screen so search inherits whichever bridge Browse is currently on.
+ * The Browse-selected bridge — the one the Browse tab is showing, which Search INHERITS as its
+ * starting point.
+ *
+ * Inherits, one way. Search reads the selection when it mounts and owns a copy from there on
+ * (`useInheritedBridge`); it does not write back. Sharing the observable both ways is the same
+ * thing as letting Search RESELECT Browse's bridge behind its back, and it did: a series opened
+ * from the cross-bridge Comical home, then a tag chip tapped on it, pointed the search at the
+ * series' own bridge — and took the Browse tab underneath with it. Browse came back on a different
+ * bridge showing a different grid, which is also a grid without the card the open series page was
+ * going to collapse into, so the gallery transition had nothing to land on.
  *
  * Only the selected bridge *id* is app state; everything else here is derived
  * from the react-query bridges cache (`queryKeys.bridges()`), so this stays a
@@ -16,7 +24,7 @@
  * falls back to the first visible bridge. Switching to `persisted$` later is a
  * one-line change if we want the choice to survive restarts.
  */
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 import { observable } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
@@ -84,16 +92,38 @@ export type SelectedBridge = {
 };
 
 /**
- * Resolves the shared selected bridge against the (react-query) bridges list,
- * applying the same Hide-NSFW filter + first-visible fallback the Browse screen
- * used inline. Consumed by both Browse (`(tabs)/index.tsx`) and Search
- * (`search.tsx`) so the resolution lives in exactly one place.
+ * The SHARED selection — the Browse tab's own. Writing through its `setBridge` moves the Browse
+ * tab, which is what makes it the wrong hook for anywhere else (see the module header).
  */
 export function useSelectedBridge(): SelectedBridge {
+  const bridge = useSelectedBridgeId();
+  return useResolvedBridge(bridge, setSelectedBridge);
+}
+
+/**
+ * The same selection, SEEDED from Browse's and owned from there on — for a screen that picks its
+ * own bridge without meaning to move the tab underneath it (Search, and Search embedded as the
+ * series page's tag-search layer).
+ *
+ * A non-reactive `peek` on purpose: this is a starting value, not a subscription. Browse cannot
+ * change while a search is up — it is either a pushed screen over the tabs or a layer inside the
+ * series modal over them — so there is nothing to stay in sync with, and subscribing would only
+ * re-introduce the coupling this hook exists to remove.
+ */
+export function useInheritedBridge(): SelectedBridge {
+  const [bridge, setBridge] = useState<string | null>(() => selectedBridge$.peek());
+  return useResolvedBridge(bridge, setBridge);
+}
+
+/**
+ * Resolves a selected bridge id against the (react-query) bridges list, applying the same
+ * Hide-NSFW filter + first-visible fallback the Browse screen used inline. Shared by both hooks
+ * above so the resolution lives in exactly one place; they differ only in WHERE the id lives.
+ */
+function useResolvedBridge(bridge: string | null, setBridge: (id: string) => void): SelectedBridge {
   const ds = useDataSource();
   const mock = useMockActive();
   const hideNsfw = useHideNsfw();
-  const bridge = useSelectedBridgeId();
 
   const bridgesQuery = useQuery({
     queryKey: queryKeys.bridges(mock),
@@ -142,7 +172,7 @@ export function useSelectedBridge(): SelectedBridge {
 
   return {
     bridge,
-    setBridge: setSelectedBridge,
+    setBridge,
     bridges,
     visibleBridges,
     currentBridge,
