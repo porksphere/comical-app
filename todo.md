@@ -15,7 +15,7 @@
       series shape into a more concrete, normalized "library series" shape — a
       stable projection the library can index and query, independent of how any
       given source happens to structure its metadata.
-- [ ] Genericize "home" / page-surface behavior — the landing surface is wired up
+- [x] Genericize "home" / page-surface behavior — the landing surface is wired up
       through the magic string `'home'` and ad-hoc `page: true` / `id === 'home'`
       special-casing scattered across `(tabs)/index.tsx` and `data/api.ts`, instead
       of one model. Today a bridge's landing tab can be any of three things decided
@@ -34,8 +34,30 @@
       (e.g. a typed list of page descriptors with an explicit `home`/landing flag and
       a render-kind), so the `'home'`/`'favorites'` strings and the `page`/`id`
       coupling live in exactly one place rather than being re-derived everywhere.
-- [ ] Investigate if we can have varied height thumbnails without weird page shifting now that we use legend list
-- [ ] Apply the release-scroll card optimizations to the series page's **page-thumbnail cards**
+      DONE — `data/browse-page.ts` is exactly that model: a tagged `BrowsePage` union
+      (`home` | `list:<id>` | `favorites` | `custom:<id>`) with `pageKey`/`parsePageKey`
+      round-tripping it through the `Selector`'s string API, `bridgePageOptions`/
+      `comicalPageOptions` building the selector entries, `pageLabelMap` for display, and
+      `defaultBridgePage(lists)` deciding the landing surface (the bridge's `featured` page
+      list, else its composed Home, else its first page list). List pages are keyed by **id**,
+      so a bridge list genuinely named `home` no longer collides with the built-in surface, and
+      renaming a list can't strand the selection. `(tabs)/index.tsx` now branches on
+      `page.kind` (`composedHome = isComical || page.kind === 'home'`) instead of the old
+      `page === 'home' && !homeList` / `id === 'home' && l.page` conditionals. Covered by
+      `data/browse-page.test.ts`.
+- [x] Investigate if we can have varied height thumbnails without weird page shifting now that we use legend list
+      ANSWERED, and the answer is "varied, but only downward from a fixed slot".
+      `lib/aspect-ratio.ts`'s `clampThumbAspect` floors every tile's aspect at the default 2:3,
+      so a thumbnail can be *wider/shorter* than the slot (it top-aligns and keeps its own shape)
+      but can never grow taller than it. That's what lets both grids declare a constant row
+      height — `series-grid.tsx`'s `cellHeight` and `PageThumbList`'s `getFixedItemSize={() =>
+      slotHeightPx}` — so LegendList never re-measures a row mid-scroll. Genuinely unbounded
+      heights are the thing that can't come back: the release profile traced the #1 JS cost
+      (`propagateParentContextChanges`, 20%) to exactly that re-measure loop (see the A–D
+      section), so uncapped tiles would buy visual variety at the price of the biggest perf win
+      we have. Also note `usePrefetchedImage` was removed for the same reason — knowing a tile's
+      real shape a frame earlier cost a second decode + re-render per card.
+- [x] Apply the release-scroll card optimizations to the series page's **page-thumbnail cards**
       (`PageThumb`/`PageThumbList`, `components/series/chapters-section.tsx`): fixed-height cells so
       LegendList stops re-measuring on scroll (mirror `series-grid.tsx`'s `cellHeight` +
       `estimatedItemSize`), and build any per-render allocation (e.g. an href) lazily on press
@@ -43,6 +65,16 @@
       page grid AND the card long-press popup (`series-card-context-menu.tsx`) — so the fixed height
       must NOT be baked into `PageThumb`; the series page and the popup should each wrap it in a
       container that defines the fixed height for THAT context. See the A–D plan for the why.
+      DONE — `PageThumbList` (chapters-section.tsx) declares
+      `getFixedItemSize={() => slotHeightPx}` alongside `estimatedItemSize`, where `slotHeightPx`
+      is `tileW / DEFAULT_THUMB_ASPECT` — the constant 2:3 slot every tile is clamped into, so a
+      row's height is known upfront and never re-measured. `renderItem` wraps each tile in a cell
+      pinned to `width: tileW`, which also killed the old `spacer` cells that padded a short last
+      row (an elastic cell was the only reason they existed). The nuance held: the height lives on
+      the list's cell wrapper, not inside `PageThumb`, so the long-press popup
+      (`series-card-context-menu.tsx`) renders the same component at its own size. The lazy-href
+      half is moot now — the series page hosts the reader in place (#106), so a page tile takes an
+      `onPress` callback and never builds an href at all.
 - [ ] Investigate **app-side image downsampling** (decode to the displayed size, not the source size).
       Even with correct-aspect small covers, a source is often larger than the card renders — e.g. one
       bridge's smallest 2:3 cover variant is ~360×540 / ~80 KB where a grid card is only ~130–180px
@@ -66,8 +98,15 @@
       in flight — the fresh skeleton rows below it always started a new row rather
       than finishing the one already on screen. Those spacer cells now render as
       skeleton cards instead of blank views while `loadingMore` is true.)
-- [ ] Page loading skeleton does'nt reflect mobile / multiple dimensions correctly
-- [ ] Series `isFavorite` check fires a slow per-series scrape on every open. The star
+- [x] Page loading skeleton does'nt reflect mobile / multiple dimensions correctly
+      DONE — `PageGridSkeleton` (chapters-section.tsx) derives its column count from
+      `useWindowDimensions()` with the *same* breakpoints the real grid uses
+      (`width >= 900 ? 5 : width >= 600 ? 3 : 2`, matching `PageThumbList`'s `cols`), so a phone
+      shows 2 skeleton tiles rather than a desktop-width row. The series-card skeletons were
+      squared away separately (see the `SkeletonCard`/`GRID_COLUMN_GAP` entry below). Verified by
+      reading the two breakpoint expressions against each other, not on-device — if the tiles
+      still look off at some width, it's the *shape* (`skelTile`), not the column count.
+- [x] Series `isFavorite` check fires a slow per-series scrape on every open. The star
       state (`GET /bridges/{id}/favorites/{seriesId}`, `SeriesBody` in `series.tsx`) is
       requested ~immediately on opening any series with a bridgeId, and on some bridges it's
       a 1–4s scrape purely to fill the ★/☆ label. (1) DONE — the Favorite action button is
@@ -80,7 +119,17 @@
       avoiding/deferring the scrape itself: only fire it for a favorites-capable bridge,
       and/or defer well past the open (e.g. on first interaction with the actions) instead
       of on mount. Keyed `['isFavorite', mock, bridgeId, seriesId]`, 5-min staleTime.
-- [ ] Virtualize the series screen's **chapter list** too (deferred from the page-thumb
+      (2) DONE — the whole flow moved into one shared `useFavorite` hook (`hooks/use-favorite.ts`),
+      used by both the Series screen and the reader's settings panel, and it does both halves.
+      Capability gate: `useFavoritesAvailability().isAvailable(bridgeId)` feeds the query's
+      `enabled`, so a bridge that doesn't advertise `favorites` — or one whose favorites need a
+      login the user hasn't given — never fires the scrape at all, and the star greys out instead
+      (`available` is also false *while* the bridge summaries load, so it can't fire optimistically
+      in the gap). Deferral: the hook takes an `enabled` option so a caller can arm the check only
+      once it's needed — the per-card context menu uses it, which is what stops a full grid from
+      fanning out into one status scrape per cell. `retry: false` keeps an unsupported/unauthed
+      check from spinning. Same key and the same `onSuccess` re-assert from (1).
+- [x] Virtualize the series screen's **chapter list** too (deferred from the page-thumb
       work above). Left as a plain `head.map`/`tail.map` (+ first-N/last-N collapse) for
       now: `ChapterRow` is two `Text`s (no image), so 200+ mounted rows is cheap relative
       to the page tiles, and virtualizing it forces the bigger disruption — on large
@@ -88,6 +137,18 @@
       single vertical list can't reproduce (chapters would have to move full-width below
       the hero). Not the nav stall either (Profiler cleared chapter render). Revisit only
       if a genuinely huge chapter list hurts on device.
+      DONE — it did hurt, and the revisit happened as part of the combined series page (#106).
+      `ChapterScrollList` (chapters-section.tsx) is now an `AnimatedLegendList` that IS the
+      screen's scroller (hero/meta as `header`, related rails as `footer`), the chaptered
+      counterpart to `PageThumbList`. The trigger was the tab switch, not scroll: All/Unread on a
+      250-chapter series used to render every row synchronously on the tap. The large-screen
+      objection above turned out to be answerable without moving chapters full-width — the cover +
+      actions ride in a `leftColumn` *sibling* beside the list rather than inside it, so it stays
+      pinned with no sticky machinery, and small screens fold it back into `header`. Deliberately
+      NOT recycled and NOT `getFixedItemSize`'d, unlike the page grid: a chapter row expands inline
+      to show scanlator versions so its height genuinely varies (`getItemType` +
+      `estimatedItemSize={46}` instead), and rows carry their own state, so plain windowing was the
+      better trade.
 - [ ] Excluded tags don't appear to persist on iOS between restarts (unsure about genres).
       (1) DONE — `TagExclusionsControl`'s save (bridge-extras.tsx) never invalidated the
       `['bridgeSettings', bridgeId]` query its own `initialTags`/`initialLabels` come from,
@@ -100,7 +161,15 @@
       architecturally sound end-to-end from static inspection; confirming why it'd actually
       lose data across a real app-kill-and-relaunch on iOS needs on-device
       reproduction/logging, which wasn't done here.
-- [ ] Buggy behavior when opening a bridge sub-page then changing the bridge, it uses the old bridge sub-page data
+- [x] Buggy behavior when opening a bridge sub-page then changing the bridge, it uses the old bridge sub-page data
+      DONE, by the page-surface model above. The `page` state is a tagged `BrowsePage` now, and
+      `(tabs)/index.tsx`'s landing-page effect is ref-guarded per **bridge id**
+      (`pageInitedForRef`): switching bridges no longer matches the guard, so the new bridge lands
+      on its own `defaultBridgePage(lists)` instead of inheriting the previous bridge's selection.
+      The Comical branch of the same effect drops a page carried in from a real bridge (and clears
+      a `favorites`/`custom` selection that no longer exists) rather than stranding the selector on
+      a dead option. `selectedList` resolves by list **id**, so even a same-named list on the new
+      bridge can't be mistaken for the old one's data.
 - [x] Loading skeletons for bridge series don't line up correctly with the legend list, this is worse on searches that have a "<- Home" button, we should account for that space
       DONE — two independent skeleton/grid mismatches, both in `(tabs)/index.tsx`: (1)
       `SkeletonCard` wrapped itself in the bare `cell` style instead of `gridCell`, so it
@@ -128,7 +197,19 @@
       keeping `inResults` true, since it has no `query`) stayed on screen for up to
       `FILTER_DEBOUNCE_MS` after the tap. `exitDrilldown` now also clears
       `committedFilters`/`committedSort` synchronously.
-- [ ] Investigate legend state
+- [x] Investigate legend state
+      DONE — investigated, adopted, and now the documented house rule: TanStack Query owns
+      server/async state, Legend State (`@legendapp/state` v3) owns local/client state, and there
+      is no third layer. `lib/observable.ts` configures the AsyncStorage plugin once and exports
+      `persisted$(key, initial)`, which replaced the hand-rolled "module var + listener `Set` +
+      `notify`/`subscribe` + `useSyncExternalStore` + one-shot read + write-through" each
+      preference store used to re-implement. It starts at `initial` synchronously so the first
+      render (including the web static export pre-hydration) stays deterministic, then rehydrates.
+      Reference implementations: `hooks/use-reader-settings.ts` (persisted) and `data/data-epoch.ts`
+      (in-memory); `data/selected-bridge.ts` is the "observable over an id, derive the rest from
+      the query cache" pattern. Deliberate holdouts stay hand-rolled: `lib/tab-bar-visibility.ts`
+      (a Reanimated UI-thread value) and `lib/diagnostics.ts` (a ring buffer). Full rationale in
+      `apps/mobile/AGENTS.md` → State, and `docs/ARCHITECTURE.md` → "State management".
 - [x] Come up with a way to open the app on iOS/android from a web button. This way a github repo can have a button that installs a registry with one click.
       (1) DONE — in-app half of the deep link: `comical://add-registry?url=<index.json
       URL>` now resolves (via expo-router's automatic scheme routing, `scheme: "comical"`
@@ -150,7 +231,24 @@
       offering to add it from the clipboard on first cold launch (accepts iOS's one-time
       "pasted from Safari" banner). Deferred pending appetite for the domain/EAS work.
 - [ ] Have the URL show the bridge ID so we properly get back to the right bridge in various situations.
-- [ ] A fair amount of flashing occurs when switching bridges ( on bot hthe filters and the cards )
+      STILL OPEN, but narrower than it was: the *series* route already carries `bridgeId` as a
+      route param (`SeriesReaderParams` in `app/series/index.tsx`), as do the `/results` See-all
+      params. The gap is the **Browse tab's own selection** — `data/selected-bridge.ts` is an
+      in-memory Legend State observable (`observable`, not `persisted$`) with nothing in the URL,
+      so a web reload or a deep link into `/` always falls back to the first visible bridge. Its
+      own header notes the persistence swap is a one-line change; the URL half is the real work.
+- [x] A fair amount of flashing occurs when switching bridges ( on bot hthe filters and the cards )
+      DONE — `(tabs)/index.tsx` now runs a full-home crossfade on a bridge OR page switch instead
+      of hard-cutting. The key move is that the switch is *deferred*: `beginCrossfade` stashes the
+      caller's commit in a ref, fades the surface to opacity 0 over `XFADE_OUT_MS` (140ms), and
+      only applies the `setBridge`/`setPage`/`setSeeAll` in the fade-out's completion callback — so
+      the OLD surface stays fully rendered and fades out as itself, rather than the new bridge's
+      empty/loading state flashing in mid-fade. Fade-in (200ms) waits for `homeReady`. Two
+      safety nets, because a stranded-invisible home is far worse than a hard cut: the `if
+      (finished)` guard so a second select mid-fade can't have its commit dropped by the cancelled
+      timing's callback, and an `XFADE_MAX_WAIT_MS` (1.8s) watchdog that force-applies any pending
+      commit and fades back in if `homeReady` never arrives. Note the filters themselves moved off
+      this screen to the pushed Search screen in the meantime, so only the cards crossfade now.
 - [x] Enable resuming from series details page if not already (i.e. instead of Read Chapter 1, it's Resume Chapter 3 or something), this should work when clicking the big series cover as well.
       The cover tap and primary button already shared `startReading()`, which already
       resumed correctly (both navigated to the history entry's chapter/page) — only the
@@ -171,6 +269,11 @@
       on success.
 - [x] Navigating to a series view FROM a series view (i.e. recommended / related series) does'nt push the new series onto the nav stack, it replaces the current
 - [ ] Related series scrolling seems bugged on iOS
+      NEEDS RE-CHECK before any work: the whole series screen was rebuilt since this was filed
+      (#106 — details + reader in one screen). Related rails are no longer inside a `ScrollView`;
+      they're the `ListFooterComponent` of the `ChapterScrollList`/`PageThumbList` LegendList that
+      now IS the screen's scroller. That's exactly the nesting the original bug is likely to have
+      come from, so confirm it still reproduces on device before chasing it.
 - [x] When there aren't any related series / any content below a direct series page thumbnails, don't show the "Show all" button at all, just paginate
 - [x] Virtual recycled page thumbnails don't show the loading placeholder, they show stale images. Look at how the bridge series cards do it.
 - [x] Add hovering to UI elements in series details view
@@ -342,15 +445,18 @@
       produce become testable. The immediate gap: the contract-**incompatible** entry rendering in
       `registry-browse.tsx` ("Unsupported" instead of Install, plus a "Needs contract X · this app
       has Y" note) has no automated coverage — the repo convention is a Maestro flow per screen,
-      and this state is unreachable from one, because every real bridge/tracker declares contract
-      `1.0.0`, exactly what the runtime supports. It was verified once by hand against a throwaway
+      and this state is unreachable from one, because every real bridge/tracker declares exactly
+      the contract version the runtime supports (`1.0.0` when this was written; the contract has
+      since moved to `2.0.0` in `ecf4f9f` — the point stands, real entries are always compatible,
+      only the literal numbers changed). It was verified once by hand against a throwaway
       `Bun.serve` registry. Commit that fixture instead (an `index.json` with a same-version pair
-      of each kind — one at `contractVersion: "1.0.0"`, one at `"2.0.0"` — plus a stub bundle),
+      of each kind — one at the contract version the runtime currently supports, one a major ahead
+      — plus a stub bundle),
       start it alongside the web dev server in the e2e run, and add a flow that adds it as a
       registry and asserts the `registry-browse.{bridge,tracker}.<id>.unsupported` / `.install`
       testIDs. The same fixture then unlocks the other registry states real data can't reach: an
       entry with a pending update, a discontinued entry, and an id colliding across two registries.
-- [ ] Add an **app update notifier** — the app never tells you a newer version exists. iOS gets this
+- [x] Add an **app update notifier** — the app never tells you a newer version exists. iOS gets this
       free from the AltStore/SideStore source (it polls `ios-release` and shows an update badge), so
       this is really an **Android** gap: the only delivery path is the rolling
       `releases/download/android-latest/comical-android.apk` link in the README, and nothing
@@ -361,6 +467,24 @@
       has to tolerate both, and `local-dev`/`ios-*` channels should opt out), surface it in the
       About screen and as a dismissible-once banner. Worth pairing with the release-notes gap: the
       workflow writes a generic body, so there'd be nothing meaningful to show as "what's new".
+      DONE — `data/use-app-update.ts` (commits `2eba1ef`, `2d37a24`, `5819b90`, `fb0ce6d`), and it
+      grew past the Android-only sketch: it covers `android-release`/`android-main`,
+      `ios-release`/`ios-main`, and `web-pages`. Comparison is per-channel, because the channels
+      don't mint versions the same way — iOS reads its own AltStore/SideStore `apps.json` and
+      orders with `compareVersions` (tolerating both the bare `X.Y.Z` tag builds and the
+      `X.Y.Z.<Nth build>` rolling ones, as required); Android and web instead compare the published
+      `version.json`'s `commit` against `BUILD_COMMIT`, since the rolling counter restarts each
+      release series and `android-latest` serves whichever lane published last, so version ordering
+      can legitimately run either way. Dev/per-branch channels (`local-dev`, `ios-pr`, `*-e2e`, …)
+      are `'unsupported'` and fire no request at all — the opt-out this asked for. Surfaced three
+      ways rather than as a banner: a Settings → About row, a pip on the Settings tab
+      (`use-settings-badge.ts`), and a once-per-session toast keyed on the detected version/commit
+      (so a second distinct update later in a long session still toasts).
+      `installAppUpdateAutoCheck()` from `app/_layout.tsx` drives it app-wide on launch (8s delay,
+      after the activity auto-check) and on every foreground return, throttled to 1h; the query key
+      carries `APP_VERSION+BUILD_COMMIT` so a verdict can't outlive the build that computed it.
+      STILL OPEN, as predicted here: the release-notes gap — the workflow writes a generic body, so
+      there's nothing meaningful to show as "what's new".
 
 ## Publish `@comical/*` packages instead of tsconfig-paths/local-stub hacks
 
@@ -382,6 +506,18 @@ Metro bundles anything, so this has zero runtime/CI impact today: confirmed
   checkout next to `comical-app` is required for type-checking/editor support, but
   is silently unnecessary for building/shipping — an easy footgun if a typecheck
   CI step is ever added without also fixing this.
+  - **PARTLY OVERTAKEN (still worth reading, the conclusion changed):** `comical` is a
+    committed **submodule** at `external/comical` now, not a sibling checkout, and every
+    `@comical/*` path in `apps/mobile/tsconfig.json` points there
+    (`../../external/comical/packages/…`) — a dozen of them, not just `contract`. So the
+    "must have a repo checked out *next to* this one" footgun is gone: `git submodule
+    update --init` is enough, and CI can get it with `submodules: true`. What has NOT
+    changed is the second half — CI still runs no typecheck. `.github/workflows/checks.yml`
+    is deliberately only the testID gate + the advisory flow-coverage nudge, and its own
+    header says why: the repo carries unrelated pre-existing lint/type debt (the React
+    Compiler `react-hooks/*` rules, plus `@comical/*` types that need the submodule checked
+    out *and built*). Adding a `typecheck` job is therefore still gated on clearing that
+    debt, not on publishing anything.
 - **Future fix — once `comical` (starting with `@comical/contract`) is published:**
   drop the `tsconfig.json` paths entry entirely and add it as a real
   `package.json` dependency resolved through GitHub Packages. This needs the
@@ -405,7 +541,22 @@ Metro bundles anything, so this has zero runtime/CI impact today: confirmed
   publish pipeline is already built for `@comical/contract`, extending it to these
   is close to free.
 
-## Perf: virtualize composed-home rails (mount/memory — NOT scroll)
+## ~~Perf: virtualize composed-home rails (mount/memory — NOT scroll)~~ — SHIPPED
+
+**DONE.** The spike below was productionized, not dropped: `components/content-feed.tsx` +
+`data/content-rows.ts` are the merged form of the `home-feed.tsx`/`home-rows.ts` spike. The
+composed Home is now a flat, typed `ContentRow[]` (rails → non-terminal grid blocks → terminal
+section head → terminal grid rows, plus their loading-skeleton equivalents derived from the
+bridge's `lists` metadata) rendered as the `data` of ONE vertical list, so off-screen rails
+actually unmount instead of every rail being mounted at once inside a never-virtualized
+`ListHeaderComponent`. `HomeGridBlock` is its own file (keeping its own `useInfiniteQuery`, whose
+pages survive unmount via the query cache), and `rail.tsx` exports `railRowHeight()` /
+`SECTION_HEAD_HEIGHT` / `railStripHeight` so the feed can size rows without measuring. The row
+model also generalized past the original spike: `BridgeScope`/`FeedCardEntry` let a row or a card
+carry its own bridge identity, so a cross-bridge feed (the Comical aggregate home, and a future
+Library) uses the same component as the single-bridge one.
+
+The original plan and its caveats, kept for the reasoning:
 
 From the card-scroll perf investigation (2026-07). Browse's composed home is already one
 vertical scroll: a single `SeriesGrid` (`AnimatedLegendList`) whose `ListHeaderComponent`
@@ -450,6 +601,11 @@ iOS long-press lift not being clipped by the virtualized item container, and the
 transition (now a HomeFeed↔SeriesGrid remount, not crossfaded — brief skeleton flash). Decide
 merge-or-drop from that measurement.
 
+**Outcome: merged** — as `content-feed.tsx`/`content-rows.ts` (see the section header). Note the
+See-all↔exit flash risk resolved itself from a different direction: "See all" is a pushed
+`/results` page now, not an in-place grid swap on this screen, so there's no HomeFeed↔SeriesGrid
+remount to crossfade. The rail heading itself became the drill-down (`46be4c8`).
+
 ## Perf: release-jank investigation plan (A–D)
 
 A **release** build was confirmed janky (2026-07) — so this is real, not dev-mode overhead. All the
@@ -487,10 +643,20 @@ biggest single stalls); Fabric commit was only ~7% (C was over-weighted). Both #
   Fixed by pinning every grid cell to a constant height (`series-grid.tsx` `cellHeight`, matching
   `estimatedItemSize`) so rows never re-measure. Theme itself was a red herring (stable, no new context).
 
-### TODO — extend the card fixes to series-page page thumbnails
+### ~~TODO — extend the card fixes to series-page page thumbnails~~ — DONE
 The two fixes above landed on the series-CARD grid only. The series page's **page-thumbnail grid**
 (`PageThumb`/`PageThumbList`, `components/series/chapters-section.tsx`) has the same variable-row
 re-measure problem and should get the same treatment (fixed-height cells + lazy per-render alloc).
 IMPORTANT: `PageThumb` also renders inside the card long-press popup (`series-card-context-menu.tsx`),
 so the fixed height can't be baked into `PageThumb` itself — the series page and the popup should each
 wrap it in a container that supplies the fixed height for that context.
+
+**Shipped**, and it went further than "same treatment": `PageThumbList` declares
+`getFixedItemSize={() => slotHeightPx}`, not just an `estimatedItemSize`, so LegendList knows every
+row's exact offset upfront and can jump straight to any scroll position (scrollbar drag,
+`scrollToEnd` on a 1000-page grid) without rendering — and therefore mounting and fetching — every
+row above it just to measure its way there. The height lives on the list's cell wrapper as
+required, so the long-press popup renders `PageThumb` at its own size. Pinning the cell to `tileW`
+also removed the `spacer` entries that used to pad a short last row. The lazy-alloc half is moot:
+the reader lives on the series page now (#106), so a tile takes an `onPress` and builds no href.
+See the matching checklist item above for the full detail.
