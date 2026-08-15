@@ -1,5 +1,8 @@
 import { makeMutable, useAnimatedStyle } from 'react-native-reanimated';
 
+import { sharedPushback } from '@/lib/pushback-signal';
+import { armSettleCheck, cancelSettleCheck, notePushback } from '@/lib/pushback-watchdog';
+
 /**
  * The DIM over whatever the combined page opens on top of.
  *
@@ -27,6 +30,50 @@ import { makeMutable, useAnimatedStyle } from 'react-native-reanimated';
  *
  */
 export const seriesReaderDim = makeMutable(0);
+
+/** Which signal this is, in the watchdog's log and in `armSettleCheck`'s bookkeeping. */
+const SOURCE = 'series-backdrop';
+
+/**
+ * How many series pages are currently entitled to hold the backdrop back. Only ever 0 or 1 in
+ * practice (depth 0 of one modal route), but counted rather than flagged so a transition that
+ * briefly has the outgoing and incoming route both mounted can't have the first one's teardown
+ * cancel the second one's hold.
+ *
+ * The COUNT is what makes the strand detectable at all. Resetting on unmount, which is what this
+ * used to do on its own, is correct and still happens first here — but it is a single write on the
+ * JS thread against a value that a UI-thread reaction is writing every frame, and it has no way to
+ * notice when it loses that race. Knowing that nobody owns the dim any more is what lets the
+ * watchdog come back a moment later and ask whether the reset actually took.
+ */
+let owners = 0;
+
+/**
+ * Claim the backdrop for a mounted series page; the returned release drops it. Call it from an
+ * effect so the release is the cleanup — the release IS the reset, so a page can't leave without
+ * putting the backdrop back.
+ */
+export function holdSeriesBackdrop(): () => void {
+  owners += 1;
+  notePushback(`${SOURCE} hold`, `owners=${owners}`);
+  cancelSettleCheck(SOURCE);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    owners -= 1;
+    seriesReaderDim.set(0);
+    notePushback(`${SOURCE} release`, `owners=${owners}`);
+    if (owners === 0) {
+      armSettleCheck(
+        SOURCE,
+        sharedPushback(seriesReaderDim),
+        () => `owners=${owners}`,
+        () => owners === 0,
+      );
+    }
+  };
+}
 
 /** Peak dim at full cover. The library's own `ZOOM_BACKDROP_MAX_OPACITY` is 0.45, but that is a
  *  backdrop BETWEEN two opaque screens; here it lands on the tab bar and the grid, which stay

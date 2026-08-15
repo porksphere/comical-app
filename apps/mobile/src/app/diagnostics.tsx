@@ -39,8 +39,9 @@ export default function DiagnosticsScreen() {
         contentContainerStyle={[styles.content, contentPadding]}>
         <ThemedText type="small" themeColor="textSecondary">
           Failures that would otherwise be invisible — bridge scrapes, writes (favorites, settings),
-          and asset loads (page images, thumbnails) — newest first. Nothing here is sent anywhere
-          automatically; use Share to send it yourself.
+          asset loads (page images, thumbnails), and overlays that got stuck holding the app scaled
+          back and dimmed (logged as “stuck-pushback”, with the run-up to it, and recovered) — newest
+          first. Nothing here is sent anywhere automatically; use Share to send it yourself.
         </ThemedText>
 
         <Pressable

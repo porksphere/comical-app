@@ -71,7 +71,7 @@ import { trace, traceGate, traceJS, traceThrottled, useGestureTraceEnabled } fro
 import { releaseCommitted, releaseCommittedEitherWay } from '@/lib/gesture-release';
 import { IOS_CARD_SHADOW, IOS_CARD_SPRING, IOS_PARALLAX_FRACTION } from '@/lib/ios-card-pop';
 import { registerDrillSeries, registerOpenSearchLayer } from '@/lib/series-nav';
-import { seriesReaderDim } from '@/lib/series-backdrop';
+import { holdSeriesBackdrop, seriesReaderDim } from '@/lib/series-backdrop';
 import { holdZoomingSeries, takeZoomOrigin, type ZoomRect } from '@/lib/series-zoom';
 import SearchScreen from '../search';
 import { SeriesBody, truncateTopBarTitle } from '@/components/series/series-body';
@@ -2288,12 +2288,13 @@ function SeriesReaderInstance({
     [depth],
   );
   // Belt and braces: nothing may strand the backdrop dimmed if this screen goes away without its
-  // exit animation finishing (a deep link replacing the route, a dev reload).
+  // exit animation finishing (a deep link replacing the route, a dev reload). The hold's release
+  // does that reset, and ALSO tells the watchdog nobody owns the dim any more — the reset above is
+  // one JS-thread write against a value the reaction above writes every frame, and on its own it
+  // has no way to notice when it loses that race (see lib/pushback-watchdog).
   useEffect(() => {
     if (depth > 0) return;
-    return () => {
-      seriesReaderDim.set(0);
-    };
+    return holdSeriesBackdrop();
   }, [depth]);
 
   // ── Details-card intents, routed back into the in-place reader ───────────
