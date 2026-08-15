@@ -111,6 +111,7 @@ export function SeriesCardMenu({ enabled, bridgeId, bridge, entry, direct, cover
       Gesture.Pan()
         .activateAfterLongPress(350)
         .enabled(enabled && !!bridgeId)
+        // eslint-disable-next-line react-hooks/refs -- the handler reads refs (via openMenuAt) only when a real hold fires, long after this render commits; the compiler can't see that a gesture callback isn't called during render.
         .onStart((e) => {
           holdActive.set(true);
           // Dormant until the finger travels — see `holdArmed`. A hold you never moved selects nothing,

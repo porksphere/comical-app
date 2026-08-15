@@ -416,6 +416,7 @@ export function SeriesCard({
     // Assert delayPassed=true on no delay rather than early-returning, so a delay/key change can't
     // strand it false after its pending timeout was cleared (matches PageThumb/ReaderPage).
     if (delay === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- driving a timer IS this effect's job; the assert is what keeps a cleared timeout from stranding the flag false.
       setDelayPassed(true);
       return;
     }

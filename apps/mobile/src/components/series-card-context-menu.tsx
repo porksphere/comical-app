@@ -462,6 +462,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // before the morph is visible anyway).
   const [resizeReady, setResizeReady] = useState(false);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a one-shot latch keyed off a MEASURED height, which only exists after layout; it self-guards on `!resizeReady`, so it can't cascade twice.
     if (contentH != null && !resizeReady) setResizeReady(true);
   }, [contentH, resizeReady]);
 

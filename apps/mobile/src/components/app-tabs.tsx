@@ -250,6 +250,7 @@ export default function AppTabs() {
   // an ordinary re-render once hydration is done. No-op on native (no SSR), but
   // harmless there too - it just flips true on the first effect pass.
   const [hydrated, setHydrated] = useState(false);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- the point IS the post-hydration render: React's own remedy for an SSR mismatch, and the cascade is the fix rather than a cost.
   useEffect(() => setHydrated(true), []);
   const isMobile = !hydrated || width < MOBILE_BREAKPOINT;
 

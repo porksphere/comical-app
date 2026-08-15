@@ -1470,6 +1470,7 @@ export function PageThumb({
     // the deps-change cleanup clears the pending timeout, and a bare return would leave the stale
     // `false`, hiding the tile forever (the "shimmers past page 20" bug).
     if (delay === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- driving a timer IS this effect's job; the assert is what keeps a cleared timeout from stranding the flag false.
       setDelayPassed(true);
       return;
     }
@@ -1752,6 +1753,7 @@ function useResolvedThumbUrl(url: string, onError?: (message: string) => void): 
     // resolved this path since the render; React bails out when it's unchanged).
     const known = peekResolvedAssetSource(url);
     if (known !== undefined) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- this effect drives an async resolve; the synchronous branch is just the case that needs no await.
       setResolved(known);
       return;
     }

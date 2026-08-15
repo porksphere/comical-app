@@ -734,6 +734,7 @@ function OverlaySheet({
   const contentPan = Gesture.Pan()
     .enabled(isTop)
     .activeOffsetY(12)
+    // eslint-disable-next-line react-hooks/refs -- RNGH's documented API takes the ref itself; it reads .current when the gesture runs, never during this render.
     .simultaneousWithExternalGesture(scrollRef)
     .onBegin(() => {
       dragging.set(false);

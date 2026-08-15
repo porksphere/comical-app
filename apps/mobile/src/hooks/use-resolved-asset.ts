@@ -46,6 +46,7 @@ export function useResolvedAsset(url: string | undefined): string | undefined {
 
   useEffect(() => {
     if (!url) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- this effect drives an async resolve; the no-url branch is the case with nothing to await.
       setResolved(undefined);
       return;
     }

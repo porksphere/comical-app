@@ -209,6 +209,7 @@ export function ReaderPage({
     // Assert delayPassed=true on no delay (not a bare return) so a key/delay change can't strand it
     // false after its pending timeout was cleared — mirrors the page-thumbnail fix.
     if (delay === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- driving a timer IS this effect's job; the assert is what keeps a cleared timeout from stranding the flag false.
       setDelayPassed(true);
       return;
     }
@@ -221,6 +222,7 @@ export function ReaderPage({
   // A new page URI (paging away mid-retry) drops any pending retry and starts fresh.
   useEffect(() => {
     if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- tearing down a live retry timer is external cleanup; the reset belongs with it, not in render.
     setFailed(false);
     setAttempt(0);
     setRetrying(false);
@@ -272,6 +274,7 @@ export function ReaderPage({
     // already correct whenever the peek knew it, and clearing it here would unmount the <Image>
     // for a frame. A retry (`attempt > 0`) deliberately does start from nothing.
     if (attempt > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- paired with invalidateAssetSource below: this effect drives an async resolve, and clearing the URL is a step in it.
       setResolvedUri(null);
       invalidateAssetSource(uri);
     } else {

@@ -104,6 +104,37 @@ Writing a local store:
 hand-rolled on purpose. Rationale + the full split: `docs/ARCHITECTURE.md` →
 "State management".
 
+# Suppressing a React Compiler rule
+
+`react-hooks/refs` and `react-hooks/set-state-in-effect` are on, and they pull the two ways of
+resetting per-item state in a circle: compare a `prevXRef` during render and the first rule fires;
+move the reset into an effect keyed on the prop and the second one does. **Neither is the answer —
+keep the previous prop in `useState`.** That's React's own form of the pattern, it satisfies both
+rules, and it's the one that's actually correct: React may discard a render, and state discarded
+along with it means the comparison runs again on the retry, where an advanced ref would skip the
+reset and leave a recycled card showing the previous item's cover. `SeriesCard`, `PageThumb`,
+`useResolvedAsset` and `useDragSelect` are the reference implementations.
+
+Boxing a live callback in a ref (so a memoized gesture or a long-lived effect doesn't re-subscribe
+on every new closure identity) is fine — assign it **in an effect of its own**, not during render.
+That only works because these boxes are read from gesture handlers, timeouts and async callbacks,
+all of which run after commit; if something reads the box *during* render, the box is the wrong tool.
+
+Three cases legitimately can't be written either way, and get a suppression instead:
+
+- **Async/timer orchestration** — the effect drives a timeout or an async resolve, and the setState
+  is a step in it (`ReaderPage`'s delay gate, the asset resolvers).
+- **Gesture callbacks built during render** — a worklet or RNGH handler that touches a ref only when
+  the gesture fires. The compiler can't prove a callback isn't invoked during render; we can.
+- **One-shot latches and intent drains** — the post-hydration flag in `app-tabs.tsx` (React's own
+  remedy for an SSR mismatch), a latch keyed off a measured height, a pending navigation intent that
+  can only be applied once the bridge's filters have settled.
+
+Write it as `// eslint-disable-next-line <rule> -- <why>`, on the offending line, with a reason
+specific to that site — not a category name. `reportUnusedDisableDirectives` is an **error**, so a
+directive that stops suppressing anything fails the lint rather than rotting in place. If a
+suppression doesn't fit one of the three cases above, it's a code change, not a comment.
+
 # Testing: new screens need a flow
 
 A new top-level screen, tab, or interactive feature needs a Maestro e2e flow, not just a testID.

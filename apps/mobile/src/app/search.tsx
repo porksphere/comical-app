@@ -239,6 +239,7 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
       setLabelHints((prev) => ({ ...prev, [res.defId]: { ...(prev[res.defId] ?? {}), ...res.labelHint } }));
       setFilterValues((prev) => ({ ...prev, [res.defId]: res.value }));
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- draining a one-shot navigation intent: it can only be applied once the bridge's filters have settled, so the wait is the whole mechanism, and clearing it is what stops a re-apply.
     setPendingTag(null);
   }, [pendingTag, filterDefs, filtersSettled, bridgeId, setLabelHints, setFilterValues]);
 
@@ -247,6 +248,7 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
     // Prefer the bridge's own field for that meta key, else fall back to a free-text search.
     const res = resolveMetaIntent(filterDefs, pendingMeta);
     if (res.kind === 'filter') setFilterValues((prev) => ({ ...prev, [res.defId]: res.value }));
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- draining a one-shot navigation intent: it can only be applied once the bridge's filters have settled, so the wait is the whole mechanism.
     else setQuery(res.query);
     setPendingMeta(null);
   }, [pendingMeta, filterDefs, filtersSettled, bridgeId, setFilterValues]);
