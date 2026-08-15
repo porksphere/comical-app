@@ -1182,12 +1182,17 @@ export function PageThumbList({
   const collapsed = !expanded && !!footer && thumbs.length > collapsedCount;
   // Collapsed shows the first few rows (so the rails stay reachable); expanded shows all,
   // virtualized. Empty while loading (the header shows the page skeleton instead).
-  const base = loading ? [] : collapsed ? thumbs.slice(0, collapsedCount) : thumbs;
-  const data = useMemo<PageCell[]>(
+  //
+  // The slice happens INSIDE the memo. Computed outside it, `base` was a fresh array on every render
+  // in two of the three cases (the `[]` literal while loading, and `thumbs.slice()` while collapsed),
+  // so the only dep never matched and this rebuilt the whole `PageCell[]` — and handed LegendList a
+  // new `data` identity — on every single render. Depending on the inputs instead means the array is
+  // rebuilt when it actually changes.
+  const data = useMemo<PageCell[]>(() => {
     // `base` is sliced from index 0 (collapsed or not), so its position IS the page index.
-    () => base.map((thumb, pageIndex) => ({ kind: 'page', pageIndex, thumb })),
-    [base],
-  );
+    const base = loading ? [] : collapsed ? thumbs.slice(0, collapsedCount) : thumbs;
+    return base.map((thumb, pageIndex) => ({ kind: 'page', pageIndex, thumb }));
+  }, [loading, collapsed, thumbs, collapsedCount]);
 
   const list = (
     <AnimatedLegendList
@@ -1397,7 +1402,6 @@ export function PageThumb({
   const ds = useDataSource();
   const mock = useMockActive();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
-  const [resolved, setResolved] = useState(thumb);
   const [loaded, setLoaded] = useState(() => resolvedThumbIds.has(thumbDelayKey(thumb)));
   // Real aspect of a plain `image` tile, learned from its own onLoad (see the
   // note on the derivation below) rather than an off-screen prefetch. A plain,
@@ -1432,7 +1436,6 @@ export function PageThumb({
   const [prevIndex, setPrevIndex] = useState(index);
   if (prevIndex !== index) {
     setPrevIndex(index);
-    setResolved(thumb);
     const key = thumbDelayKey(thumb);
     setLoaded(resolvedThumbIds.has(key));
     setImageAspect(resolvedThumbAspects.get(key) ?? lastResolvedThumbAspect);
@@ -1448,9 +1451,12 @@ export function PageThumb({
     queryFn: ({ signal }) => ds.getPageThumb(bridgeId!, seed, index, signal),
     enabled: !!bridgeId && !thumb,
   });
-  useEffect(() => {
-    if (thumbQuery.data) setResolved(thumbQuery.data);
-  }, [thumbQuery.data]);
+  // Derived, not state: a tile's thumbnail is either the one the bridge inlined or the one this query
+  // fetched, and nothing else ever sets it — so there's no copy to keep in sync, no effect to run a
+  // commit later, and nothing for the recycle reset above to clear. (The query is `enabled` only when
+  // there's no inline `thumb`, so the two can't disagree.) This also paints a lazily-fetched thumbnail
+  // one commit sooner than copying it into state did.
+  const resolved = thumb ?? thumbQuery.data ?? null;
 
   // A stable key for the simulated-latency hash: the sheet URL for a sprite tile (every tile cut
   // from the same sheet shares one request, so they should "arrive" together) or the plain URL

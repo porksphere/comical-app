@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useState } from 'react';
 import type { InfiniteData } from '@tanstack/react-query';
 
 import type { GridPage, SeriesEntry } from './types';
@@ -62,11 +62,28 @@ export function dedupPages(prev: DedupCache | null, pages: readonly GridPage[]):
   return { pages, seen, out };
 }
 
+/**
+ * The cache lives in state rather than a ref, and the work happens during render rather than inside a
+ * `useMemo`. Both for the same reason: `useMemo` is a performance hint, not a guarantee — React is
+ * free to drop a memoized value and recompute — so pairing it with a ref that the recompute has
+ * already advanced made the output depend on how many times a render happened to run. Calling
+ * `dedupPages` unconditionally is cheap by construction: with nothing new to fold in it returns the
+ * cached object itself (see the early return above), so the common render does one array-prefix
+ * comparison and hands back the very same `out` reference.
+ *
+ * The `setCache` therefore only fires on a genuine append or reset, and converges immediately — the
+ * re-render it triggers finds `next === cache` and stops.
+ *
+ * Known limit, currently unreachable: `dedupPages` mutates the previous cache's `seen` set in place
+ * (that's what makes it O(new items) instead of O(total)). If React ever discarded a render after
+ * that mutation and re-ran it from the pre-render cache, the ids would already be marked seen and
+ * their items would be dropped. Nothing in this app can trigger that today — it needs a concurrent
+ * feature (`startTransition`, `useDeferredValue`, Suspense retries), and none is in use. Revisit this
+ * function's mutation if one is adopted.
+ */
 export function useDedupedPages(data: InfiniteData<GridPage> | undefined): SeriesEntry[] {
-  const cache = useRef<DedupCache | null>(null);
-  return useMemo(() => {
-    const next = dedupPages(cache.current, data?.pages ?? []);
-    cache.current = next;
-    return next.out;
-  }, [data]);
+  const [cache, setCache] = useState<DedupCache | null>(null);
+  const next = dedupPages(cache, data?.pages ?? []);
+  if (next !== cache) setCache(next);
+  return next.out;
 }

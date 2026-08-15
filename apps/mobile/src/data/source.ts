@@ -995,6 +995,7 @@ export function useDataSource(): DataSource {
   const epoch = useDataEpoch();
   // Return a fresh reference whenever the epoch bumps (transport/registry change) so screens keying
   // effects on `ds` refetch. The spread keeps the same method implementations, just a new identity.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `epoch` is deliberately unused INSIDE the memo: producing a new identity on a bump is the entire mechanism, so removing it as the rule suggests would silently stop every `ds`-keyed refetch.
   return useMemo(() => (mock ? mockDataSource : { ...realDataSource }), [mock, epoch]);
 }
 

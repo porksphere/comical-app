@@ -21,16 +21,24 @@
  * not cookies.
  *
  * This module returns shapes close to the server's contract. The `Api*` types
- * below are type-only re-exports of `@comical/contract` (imported straight
- * from the sibling `comical` repo via a `tsconfig.json` `paths` mapping — see
+ * below are type-only re-exports of `@comical/contract` (imported via a
+ * `tsconfig.json` `paths` mapping onto the `external/comical` submodule — see
  * that file). Being type-only, they're erased entirely at build time: no
  * runtime dependency on the `comical` repo, no Metro config, no extra
  * package — the same tsconfig-paths trick `comical-web` already uses for
- * `@comical/host-server`. A local `comical` checkout next to this repo is
- * only needed for type-checking/editor support; its absence doesn't affect
- * runtime or CI. `source.ts` adapts these into the UI-facing types in
+ * `@comical/host-server`. The submodule needs to be checked out and installed
+ * for type-checking/editor support; its absence doesn't affect runtime or the
+ * current CI jobs. `source.ts` adapts these into the UI-facing types in
  * `types.ts` — this file has no knowledge of mock data or the UI shapes.
+ *
+ * The `@comical/*` type imports deliberately sit DOWN the file, each one directly above the section
+ * whose shapes it types, rather than collected at the top — the contract is large and split across
+ * several packages, and keeping each import beside the block it explains is what makes those blocks
+ * readable. That costs `import/first` (and `import/no-duplicates`, where two sections both draw from
+ * `@comical/contract`); the arrangement is the point, so both are off for this file only. Erased at
+ * build time either way, so position has no runtime meaning here.
  */
+/* eslint-disable import/first, import/no-duplicates -- see the note above: contract type imports are filed beside the sections they type. */
 import { use$ } from '@legendapp/state/react';
 
 import { getResolvedModeSync } from './embedded/preference';
