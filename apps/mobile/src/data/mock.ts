@@ -713,6 +713,12 @@ export async function mockGetFilters(): Promise<ApiFilter[]> {
   return [
     { type: 'multiselect', key: 'genre', label: 'Genres', options: GENRES.map((g) => ({ value: g, label: g })) },
     { type: 'toggle', key: 'ongoing', label: 'Ongoing only' },
+    // A `number` filter, so `NumberFilterRow` is reachable at all in mock/demo mode — same reason the
+    // toggle above is here. Its inline text field is the only filter control with an edit/commit
+    // cycle (focus, type, blur, external clear), and without an instance in the mock set there was no
+    // way to exercise that in the browser or in a flow. Long label on purpose: it's also the case the
+    // filter bar has to shrink rather than push the value out of its slot.
+    { type: 'number', key: 'minChapters', label: 'Minimum chapters', min: 0, max: 999 },
     { type: 'tag-multiselect', key: 'tags', label: 'Tags', excludable: true },
   ];
 }

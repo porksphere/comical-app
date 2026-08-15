@@ -48,8 +48,13 @@ export function SearchField({
   const inputRef = useRef<TextInput>(null);
   const [text, setText] = useState(value);
   const [focused, setFocused] = useState(false);
-  // Keep the field in sync when the committed query is cleared elsewhere.
-  useEffect(() => setText(value), [value]);
+  // Keep the field in sync when the committed query is cleared elsewhere. During render rather than
+  // in an effect, so the field doesn't paint the old text for a frame after the query is cleared.
+  const [prevValue, setPrevValue] = useState(value);
+  if (prevValue !== value) {
+    setPrevValue(value);
+    setText(value);
+  }
 
   // Autofocus AFTER the screen's push transition settles, not via the native `autoFocus` prop —
   // focusing (and raising the keyboard) during the in-transition makes the animation stutter.

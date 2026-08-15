@@ -8,6 +8,15 @@ const noUnguardedNav = require("./eslint-rules/no-unguarded-nav");
 module.exports = defineConfig([
   expoConfig,
   {
+    // A suppression that outlives its reason is worse than the warning it silenced — it reads as
+    // "we thought about this" when nobody has since the code moved on. ESLint only warns about a
+    // directive that no longer suppresses anything; make it fail instead, so the reasons attached to
+    // every `-- …` (see AGENTS.md → "Suppressing a React Compiler rule") stay true or get deleted.
+    linterOptions: {
+      reportUnusedDisableDirectives: "error",
+    },
+  },
+  {
     // Mandatory testIDs on interactive elements, so UI automation (Appium/Detox/Maestro/Playwright)
     // can select them across iOS/Android/web. See eslint-rules/require-test-id.js and src/lib/test-id.ts.
     // Registered AFTER expoConfig so the rule can reference this plugin; no languageOptions here so

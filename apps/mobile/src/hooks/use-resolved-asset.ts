@@ -10,7 +10,7 @@
  * until the image's own `onLoad`), and on resolve failure. It NEVER returns the previous url's
  * answer — see the recycle-safety note below.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { peekResolvedAssetSource, resolveAssetSourceCached } from '@/data/api';
 
 /** What's knowable about `url` without awaiting: itself when already absolute, a previously
@@ -33,14 +33,20 @@ export function useResolvedAsset(url: string | undefined): string | undefined {
   // the new one loads" flash. Re-derive synchronously during render instead (React's "adjust state
   // on prop change" pattern, as used by `PageThumb`/`SeriesCard` for their own per-item state) so
   // the key and the URI always change together and the image view clears to its placeholder.
-  const prevUrlRef = useRef(url);
-  if (prevUrlRef.current !== url) {
-    prevUrlRef.current = url;
+  //
+  // The previous url is held in STATE, not a ref, which is what React's own version of this pattern
+  // prescribes: a render React discards (it may) throws the two away together, so the reset is
+  // re-detected on the retry. A ref would survive the discarded render and the reset would be lost —
+  // the recycled tile keeping the previous item's resolution, i.e. exactly the flash above.
+  const [prevUrl, setPrevUrl] = useState(url);
+  if (prevUrl !== url) {
+    setPrevUrl(url);
     setResolved(knownResolution(url));
   }
 
   useEffect(() => {
     if (!url) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- this effect drives an async resolve; the no-url branch is the case with nothing to await.
       setResolved(undefined);
       return;
     }

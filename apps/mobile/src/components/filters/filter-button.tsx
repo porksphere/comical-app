@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View, type TextStyle } from 'react-native';
 
 import { useAnchoredOverlay, useKeyboardAvoidingInput } from '@/components/overlay/overlay';
@@ -228,10 +228,18 @@ function NumberFilterRow({
   const [text, setText] = useState(String(n));
   const [focused, setFocused] = useState(false);
   // Keep the field in sync with external value changes (e.g. "clear filters")
-  // while untouched; don't clobber the text mid-edit.
-  useEffect(() => {
+  // while untouched; don't clobber the text mid-edit. Done during render off the previous
+  // (value, focus) pair rather than in an effect — the trigger conditions are exactly the effect's
+  // old deps-plus-guard, so the same resyncs happen in the same order, each one a commit earlier.
+  // Note this deliberately fires on the focused→blurred edge as well as on `n`, which is what lets
+  // `commit`'s own `setText(String(clamped))` below stand until the caller's value comes back round.
+  const [prevN, setPrevN] = useState(n);
+  const [prevFocused, setPrevFocused] = useState(focused);
+  if (prevN !== n || prevFocused !== focused) {
+    setPrevN(n);
+    setPrevFocused(focused);
     if (!focused) setText(String(n));
-  }, [n, focused]);
+  }
 
   const commit = () => {
     const parsed = Number(text);

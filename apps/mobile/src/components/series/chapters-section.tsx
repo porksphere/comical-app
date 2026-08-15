@@ -1182,12 +1182,17 @@ export function PageThumbList({
   const collapsed = !expanded && !!footer && thumbs.length > collapsedCount;
   // Collapsed shows the first few rows (so the rails stay reachable); expanded shows all,
   // virtualized. Empty while loading (the header shows the page skeleton instead).
-  const base = loading ? [] : collapsed ? thumbs.slice(0, collapsedCount) : thumbs;
-  const data = useMemo<PageCell[]>(
+  //
+  // The slice happens INSIDE the memo. Computed outside it, `base` was a fresh array on every render
+  // in two of the three cases (the `[]` literal while loading, and `thumbs.slice()` while collapsed),
+  // so the only dep never matched and this rebuilt the whole `PageCell[]` — and handed LegendList a
+  // new `data` identity — on every single render. Depending on the inputs instead means the array is
+  // rebuilt when it actually changes.
+  const data = useMemo<PageCell[]>(() => {
     // `base` is sliced from index 0 (collapsed or not), so its position IS the page index.
-    () => base.map((thumb, pageIndex) => ({ kind: 'page', pageIndex, thumb })),
-    [base],
-  );
+    const base = loading ? [] : collapsed ? thumbs.slice(0, collapsedCount) : thumbs;
+    return base.map((thumb, pageIndex) => ({ kind: 'page', pageIndex, thumb }));
+  }, [loading, collapsed, thumbs, collapsedCount]);
 
   const list = (
     <AnimatedLegendList
@@ -1397,7 +1402,6 @@ export function PageThumb({
   const ds = useDataSource();
   const mock = useMockActive();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
-  const [resolved, setResolved] = useState(thumb);
   const [loaded, setLoaded] = useState(() => resolvedThumbIds.has(thumbDelayKey(thumb)));
   // Real aspect of a plain `image` tile, learned from its own onLoad (see the
   // note on the derivation below) rather than an off-screen prefetch. A plain,
@@ -1425,11 +1429,13 @@ export function PageThumb({
   // for a different page as the list scrolls. Reset per-tile state synchronously
   // when the page index changes (React's "adjust state on prop change" pattern,
   // same as SeriesCard) so a reused tile doesn't briefly show the previous
-  // page's thumbnail/aspect. No-op on a fresh mount.
-  const prevIndexRef = useRef(index);
-  if (prevIndexRef.current !== index) {
-    prevIndexRef.current = index;
-    setResolved(thumb);
+  // page's thumbnail/aspect. No-op on a fresh mount. The previous index is held in
+  // state rather than a ref, matching React's own form of the pattern — a discarded
+  // render throws the tracker away with the reset, so the swap is re-detected instead
+  // of being silently skipped (see SeriesCard for the same note).
+  const [prevIndex, setPrevIndex] = useState(index);
+  if (prevIndex !== index) {
+    setPrevIndex(index);
     const key = thumbDelayKey(thumb);
     setLoaded(resolvedThumbIds.has(key));
     setImageAspect(resolvedThumbAspects.get(key) ?? lastResolvedThumbAspect);
@@ -1445,9 +1451,12 @@ export function PageThumb({
     queryFn: ({ signal }) => ds.getPageThumb(bridgeId!, seed, index, signal),
     enabled: !!bridgeId && !thumb,
   });
-  useEffect(() => {
-    if (thumbQuery.data) setResolved(thumbQuery.data);
-  }, [thumbQuery.data]);
+  // Derived, not state: a tile's thumbnail is either the one the bridge inlined or the one this query
+  // fetched, and nothing else ever sets it — so there's no copy to keep in sync, no effect to run a
+  // commit later, and nothing for the recycle reset above to clear. (The query is `enabled` only when
+  // there's no inline `thumb`, so the two can't disagree.) This also paints a lazily-fetched thumbnail
+  // one commit sooner than copying it into state did.
+  const resolved = thumb ?? thumbQuery.data ?? null;
 
   // A stable key for the simulated-latency hash: the sheet URL for a sprite tile (every tile cut
   // from the same sheet shares one request, so they should "arrive" together) or the plain URL
@@ -1467,6 +1476,7 @@ export function PageThumb({
     // the deps-change cleanup clears the pending timeout, and a bare return would leave the stale
     // `false`, hiding the tile forever (the "shimmers past page 20" bug).
     if (delay === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- driving a timer IS this effect's job; the assert is what keeps a cleared timeout from stranding the flag false.
       setDelayPassed(true);
       return;
     }
@@ -1716,8 +1726,13 @@ function SpriteCrop({
  *  so the tile falls back like any load failure. Absolute URLs resolve synchronously (cheap identity).*/
 function useResolvedThumbUrl(url: string, onError?: (message: string) => void): string | null {
   const [resolved, setResolved] = useState<string | null>(() => peekResolvedAssetSource(url) ?? null);
+  // Boxed so the resolve effect below doesn't re-run on a new `onError` closure identity. Assigned in
+  // its own effect rather than during render: the box is only ever read from that effect's async
+  // `.catch`, which can't run before this has committed.
   const onErrorRef = useRef(onError);
-  onErrorRef.current = onError;
+  useEffect(() => {
+    onErrorRef.current = onError;
+  });
 
   // Recycle-safety: PageThumb reuses this hook's instance for a different page
   // as the grid scrolls (recycleItems), and only the `url` prop changes — the
@@ -1726,15 +1741,16 @@ function useResolvedThumbUrl(url: string, onError?: (message: string) => void): 
   // below, which runs a commit later), so that first frame would render the old
   // tile's resolved image/sheet under the new tile's geometry — the "stale
   // thumbnail" flash. Re-derive synchronously during render instead (same
-  // ref-compare pattern as PageThumb/SeriesCard's own per-item reset), so the
-  // gap is never visible; the effect only handles what genuinely needs awaiting.
+  // compare-the-previous-prop pattern as PageThumb/SeriesCard's own per-item reset,
+  // previous value in state for the same reason), so the gap is never visible; the
+  // effect only handles what genuinely needs awaiting.
   // `peekResolvedAssetSource` answers absolute URLs (and already-resolved relative
   // ones) right here, so the common tile needs neither a blank frame nor the extra
   // state commit a promise round-trip costs — across a long page grid that's one
   // fewer render per tile.
-  const prevUrlRef = useRef(url);
-  if (prevUrlRef.current !== url) {
-    prevUrlRef.current = url;
+  const [prevUrl, setPrevUrl] = useState(url);
+  if (prevUrl !== url) {
+    setPrevUrl(url);
     setResolved(peekResolvedAssetSource(url) ?? null);
   }
 
@@ -1743,6 +1759,7 @@ function useResolvedThumbUrl(url: string, onError?: (message: string) => void): 
     // resolved this path since the render; React bails out when it's unchanged).
     const known = peekResolvedAssetSource(url);
     if (known !== undefined) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- this effect drives an async resolve; the synchronous branch is just the case that needs no await.
       setResolved(known);
       return;
     }

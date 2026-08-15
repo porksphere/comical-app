@@ -44,7 +44,6 @@ const COMICAL_BRIDGE: Bridge = { id: COMICAL_BRIDGE_ID, name: 'Comical', nsfw: f
 /** The app logo as a local image module — passed directly to `BridgeThumb`'s `source` for the Comical
  *  bridge (the way index.tsx already renders it). Not resolved to a URI: react-native-web's `Image`
  *  has no `resolveAssetSource`, and `expo-asset` isn't a dependency — a require module works on both. */
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 export const COMICAL_ICON = require('@/assets/images/comical-logo.png');
 /** Whether a selected bridge id is the synthetic aggregate. */
 export const isComicalBridge = (bridgeId: string | undefined): boolean => bridgeId === COMICAL_BRIDGE_ID;

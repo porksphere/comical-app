@@ -182,6 +182,7 @@ export default function BrowseScreen() {
     // pages. Keep a still-valid selection but clear any stale page carried from the previous bridge —
     // otherwise a bridge's list page would strand the selector on a dead option.
     if (isComical) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reconciles the page against ASYNC data (the bridge's lists / the user's custom pages), which isn't knowable during render; the updater returns `prev` unchanged when the selection is still valid, so the common case doesn't re-render at all.
       setPage((prev) => {
         // Favorites survives only while at least one bridge qualifies (else it's not in the selector).
         if (prev.kind === 'favorites') return comicalFavoritesBridges.length > 0 ? prev : HOME_PAGE;

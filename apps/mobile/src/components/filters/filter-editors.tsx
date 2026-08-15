@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import {
@@ -193,15 +193,20 @@ function TagSearchEditor({
   // a live search moves on), so remember every value/label pair a live search has ever returned —
   // not just the current page — for the chips. Unused for a static `def.options` list, which is
   // already exhaustive on its own.
+  // Merged during render off the previous result's identity — the same compare-the-previous-value
+  // pattern as the per-item resets (AGENTS.md), just accumulating instead of clearing. `mergedFrom`
+  // is what makes it idempotent: each distinct result page folds in exactly once, and the next render
+  // sees `tagSearch.data === mergedFrom` and does nothing, so it converges immediately.
   const [knownOptions, setKnownOptions] = useState<Option[]>([]);
-  useEffect(() => {
-    if (!tagSearch.data) return;
+  const [mergedFrom, setMergedFrom] = useState<Option[] | undefined>(undefined);
+  if (tagSearch.data && tagSearch.data !== mergedFrom) {
+    setMergedFrom(tagSearch.data);
     setKnownOptions((prev) => {
       const map = new Map(prev.map((o) => [o.value, o.label]));
-      for (const o of tagSearch.data) map.set(o.value, o.label);
+      for (const o of tagSearch.data!) map.set(o.value, o.label);
       return Array.from(map, ([value, label]) => ({ value, label }));
     });
-  }, [tagSearch.data]);
+  }
 
   const filtered = useMemo(() => {
     if (def.options) return def.options.filter((o) => o.label.toLowerCase().includes(query.trim().toLowerCase()));

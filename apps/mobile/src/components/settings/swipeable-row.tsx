@@ -278,9 +278,13 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
     else tickHaptic();
   }
   // Read `actions` through a ref so the memoized gesture (below) always fires the LIVE handler without
-  // rebuilding when `actions` gets a new identity on a download tick.
+  // rebuilding when `actions` gets a new identity on a download tick. Filled in an effect rather than
+  // during render: the box is only read from `commitFullSwipe`, which a released swipe gesture calls
+  // long after commit.
   const actionsRef = useRef(actions);
-  actionsRef.current = actions;
+  useEffect(() => {
+    actionsRef.current = actions;
+  });
   function commitFullSwipe() {
     close();
     actionsRef.current[0]?.onPress();
@@ -314,6 +318,7 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
     captured.set(0);
     target.set(0);
     releaseOpenRow(token);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- inseparable from the shared-value writes and registry release above, which are external-system work render must not do.
     setOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recycleKey]);
@@ -343,6 +348,7 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
     captured.set(0);
     target.set(0);
     releaseOpenRow(token);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- inseparable from the shared-value writes and registry release above, which are external-system work render must not do.
     setOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled]);
@@ -409,6 +415,7 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
         }
       }
     })
+    // eslint-disable-next-line react-hooks/refs -- a worklet: it reaches actionsRef (via commitFullSwipe) only when a swipe is released, never during this render.
     .onEnd((e) => {
       'worklet';
       if (!enabled) return;
