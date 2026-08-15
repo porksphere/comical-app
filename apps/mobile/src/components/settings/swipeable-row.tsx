@@ -278,9 +278,13 @@ function SwipeRow({ name, actions, edgeInset, recycleKey, enabled, children }: R
     else tickHaptic();
   }
   // Read `actions` through a ref so the memoized gesture (below) always fires the LIVE handler without
-  // rebuilding when `actions` gets a new identity on a download tick.
+  // rebuilding when `actions` gets a new identity on a download tick. Filled in an effect rather than
+  // during render: the box is only read from `commitFullSwipe`, which a released swipe gesture calls
+  // long after commit.
   const actionsRef = useRef(actions);
-  actionsRef.current = actions;
+  useEffect(() => {
+    actionsRef.current = actions;
+  });
   function commitFullSwipe() {
     close();
     actionsRef.current[0]?.onPress();

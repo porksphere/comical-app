@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { LayoutChangeEvent, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -44,11 +44,15 @@ export function OverflowChips({ items, empty }: { items: ChipItem[]; empty: stri
   const [containerW, setContainerW] = useState(0);
   const [widths, setWidths] = useState<Record<string, number>>({});
 
-  // Re-measure when the chip set changes.
+  // Re-measure when the chip set changes. Done during render (React's "adjust state on prop change")
+  // rather than in an effect, so the stale widths are gone in the same render the new chips arrive in
+  // — an effect would leave one commit measuring the new set against the old set's widths.
   const signature = items.map((i) => i.key).join('|');
-  useEffect(() => {
+  const [prevSignature, setPrevSignature] = useState(signature);
+  if (prevSignature !== signature) {
+    setPrevSignature(signature);
     setWidths({});
-  }, [signature]);
+  }
 
   const measured = items.length > 0 && items.every((i) => widths[i.key] != null);
 

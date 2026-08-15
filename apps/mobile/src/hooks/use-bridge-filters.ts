@@ -112,11 +112,17 @@ export function useBridgeFilters(bridgeId: string | undefined, currentBridge: Br
 
   // Reset user filter/sort state (and label hints) when the bridge changes — the new bridge's
   // defaults apply lazily. A pending intent applies AFTER this, gated on `filtersSettled`.
-  useEffect(() => {
+  // Done during render rather than in an effect so the new bridge is never described by the old
+  // bridge's selections for a commit: the reset lands in the same render that first sees the new
+  // `bridgeId`, instead of one paint later. (The effect form also ran a no-op reset on mount; this
+  // doesn't need to, since all three already start empty.)
+  const [prevBridgeId, setPrevBridgeId] = useState(bridgeId);
+  if (prevBridgeId !== bridgeId) {
+    setPrevBridgeId(bridgeId);
     setFilterValues({});
     setSortValue(null);
     setLabelHints({});
-  }, [bridgeId]);
+  }
 
   // Debounced "committed" snapshot — the fetch depends on this, not on the raw values, so rapid taps
   // don't each fire a request.

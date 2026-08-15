@@ -1425,10 +1425,13 @@ export function PageThumb({
   // for a different page as the list scrolls. Reset per-tile state synchronously
   // when the page index changes (React's "adjust state on prop change" pattern,
   // same as SeriesCard) so a reused tile doesn't briefly show the previous
-  // page's thumbnail/aspect. No-op on a fresh mount.
-  const prevIndexRef = useRef(index);
-  if (prevIndexRef.current !== index) {
-    prevIndexRef.current = index;
+  // page's thumbnail/aspect. No-op on a fresh mount. The previous index is held in
+  // state rather than a ref, matching React's own form of the pattern — a discarded
+  // render throws the tracker away with the reset, so the swap is re-detected instead
+  // of being silently skipped (see SeriesCard for the same note).
+  const [prevIndex, setPrevIndex] = useState(index);
+  if (prevIndex !== index) {
+    setPrevIndex(index);
     setResolved(thumb);
     const key = thumbDelayKey(thumb);
     setLoaded(resolvedThumbIds.has(key));
@@ -1716,8 +1719,13 @@ function SpriteCrop({
  *  so the tile falls back like any load failure. Absolute URLs resolve synchronously (cheap identity).*/
 function useResolvedThumbUrl(url: string, onError?: (message: string) => void): string | null {
   const [resolved, setResolved] = useState<string | null>(() => peekResolvedAssetSource(url) ?? null);
+  // Boxed so the resolve effect below doesn't re-run on a new `onError` closure identity. Assigned in
+  // its own effect rather than during render: the box is only ever read from that effect's async
+  // `.catch`, which can't run before this has committed.
   const onErrorRef = useRef(onError);
-  onErrorRef.current = onError;
+  useEffect(() => {
+    onErrorRef.current = onError;
+  });
 
   // Recycle-safety: PageThumb reuses this hook's instance for a different page
   // as the grid scrolls (recycleItems), and only the `url` prop changes — the
@@ -1726,15 +1734,16 @@ function useResolvedThumbUrl(url: string, onError?: (message: string) => void): 
   // below, which runs a commit later), so that first frame would render the old
   // tile's resolved image/sheet under the new tile's geometry — the "stale
   // thumbnail" flash. Re-derive synchronously during render instead (same
-  // ref-compare pattern as PageThumb/SeriesCard's own per-item reset), so the
-  // gap is never visible; the effect only handles what genuinely needs awaiting.
+  // compare-the-previous-prop pattern as PageThumb/SeriesCard's own per-item reset,
+  // previous value in state for the same reason), so the gap is never visible; the
+  // effect only handles what genuinely needs awaiting.
   // `peekResolvedAssetSource` answers absolute URLs (and already-resolved relative
   // ones) right here, so the common tile needs neither a blank frame nor the extra
   // state commit a promise round-trip costs — across a long page grid that's one
   // fewer render per tile.
-  const prevUrlRef = useRef(url);
-  if (prevUrlRef.current !== url) {
-    prevUrlRef.current = url;
+  const [prevUrl, setPrevUrl] = useState(url);
+  if (prevUrl !== url) {
+    setPrevUrl(url);
     setResolved(peekResolvedAssetSource(url) ?? null);
   }
 

@@ -256,10 +256,12 @@ export function useDragSelect({
   // is fixed at build — so rebuild the cache ONCE when `selecting` flips (it never flips mid-drag).
   // The GestureDetectors stay MOUNTED across the toggle (only their enabled changes) rather than
   // mounting one per visible row the instant you enter select mode, which was a measured spike.
+  // The "what was this built for" tracker is state, not a ref, so a render React discards takes it
+  // with it and the rebuild is re-detected rather than skipped (React's own form of the pattern).
   const [gestureCache] = useState(() => new Map<number, PanGesture>());
-  const builtForSelecting = useRef(selecting);
-  if (builtForSelecting.current !== selecting) {
-    builtForSelecting.current = selecting;
+  const [builtForSelecting, setBuiltForSelecting] = useState(selecting);
+  if (builtForSelecting !== selecting) {
+    setBuiltForSelecting(selecting);
     gestureCache.clear();
   }
 

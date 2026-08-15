@@ -354,8 +354,8 @@ export function SeriesCard({
   // per-item state that would otherwise linger from the previous entry —
   // synchronously, during render (React's "adjust state on prop change"
   // pattern), so not one frame shows the old cover-loaded/truncation state.
-  // This works identically when the card is genuinely remounted (the ref starts
-  // equal to entry.id, so it's a no-op) and in the non-recycled call sites
+  // This works identically when the card is genuinely remounted (the previous-id
+  // state starts equal to entry.id, so it's a no-op) and in the non-recycled call sites
   // (HomeGridBlock, the wide rail grid). `coverAspect` resets here too so a reused
   // slot doesn't keep the prior cover's shape — and the shrink illusion resets to
   // its settled (no-offset) values right alongside it, so a recycled slot showing a
@@ -363,23 +363,29 @@ export function SeriesCard({
   // visibly morphing from the previous entry's shape (only a genuine onLoad,
   // further down, sets the illusion in motion). `delayPassed` is already true in
   // real mode.
-  const prevIdRef = useRef(entry.id);
-  const prevCohortRef = useRef(cohort);
-  if (prevIdRef.current !== entry.id) {
-    prevIdRef.current = entry.id;
+  //
+  // Both previous-value trackers are STATE, not refs — React's own form of this pattern. It matters
+  // here rather than being a style choice: React may discard a render, and state discarded with it
+  // means the comparison re-runs on the retry, whereas a ref would have already advanced and the
+  // reset would be skipped — leaving the recycled slot showing the previous entry's cover, the exact
+  // flash this block exists to prevent.
+  const [prevId, setPrevId] = useState(entry.id);
+  const [prevCohort, setPrevCohort] = useState(cohort);
+  if (prevId !== entry.id) {
+    setPrevId(entry.id);
     // A recycle that ALSO crosses a cohort boundary is a scope swap (bridge/page/filter/search),
     // where this instance is still painting the previous scope's cover — so force the skeleton on
     // (loaded=false) to mask it until the new cover's own onLoad fires, no matter how long that
     // takes (event-driven, never a timer — a slow swap keeps the skeleton the whole time). A plain
     // in-scope scroll recycle (cohort unchanged) keeps the `resolvedCoverIds` fast-path, so
-    // scrolling over already-seen rows still doesn't replay the skeleton. `prevCohortRef` only
+    // scrolling over already-seen rows still doesn't replay the skeleton. `prevCohort` only
     // advances here, on an entry change, so a cohort switch that lands a frame BEFORE its new items
     // (keepPreviousData still showing the old scope) is still detected when the items finally swap.
     // A cohort swap normally means a stale cover is on screen to mask — UNLESS it's happening under
     // the home crossfade (bridge switch), where the swap is hidden at opacity 0 and there's nothing
     // to hide. In that case take the fast-path so a cached cover paints on reveal (see `crossfading`).
-    const maskSwap = prevCohortRef.current !== cohort && !crossfading;
-    prevCohortRef.current = cohort;
+    const maskSwap = prevCohort !== cohort && !crossfading;
+    setPrevCohort(cohort);
     setLoaded(maskSwap ? false : resolvedCoverIds.has(entry.id));
     // Opaque mask only on a masked swap (there's a stale bitmap to hide); a plain scroll recycle (or
     // a crossfaded swap) clears it so already-seen rows keep the subtle skeleton, or none at all.
@@ -447,8 +453,15 @@ export function SeriesCard({
   // doesn't clip downward overflow). Web only — on native the full title is shown
   // by the long-press context menu instead (see SeriesCardMenu's `title`).
   const showPeek = active && truncated && isWeb;
+  // The callback is boxed in a ref so the reporting effects below don't re-run just because the
+  // parent handed down a new closure identity. Assigned in an effect of its own rather than during
+  // render (the ref is only ever READ from the effects/cleanup underneath, all of which run after
+  // this one commits, so the box is never stale where it's used), and seeded via the initialiser so
+  // the very first report already has the right handler.
   const onPeekRef = useRef(onPeekChange);
-  onPeekRef.current = onPeekChange;
+  useEffect(() => {
+    onPeekRef.current = onPeekChange;
+  });
   useEffect(() => {
     onPeekRef.current?.(showPeek, index);
   }, [showPeek, index]);

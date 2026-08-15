@@ -1208,12 +1208,17 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // open under the finger (iOS Files' folder behaviour), so the same uninterrupted drag then continues
   // into the child rows. Driven from the hit-test reaction below via a stable JS callback; refs keep
   // it reading the current rows / open-state without re-subscribing the worklet every render.
+  // Filled in an effect rather than during render — the boxes are read only from `handleDragHover`
+  // (and the dwell timeout it schedules), which the gesture drives well after any commit, so there's
+  // no window where a post-commit reader could see a stale one.
   const rowsRef = useRef(rows);
-  rowsRef.current = rows;
   const submenuOpenRef = useRef(submenuOpen);
-  submenuOpenRef.current = submenuOpen;
   const openSubmenuRef = useRef(openSubmenu);
-  openSubmenuRef.current = openSubmenu;
+  useEffect(() => {
+    rowsRef.current = rows;
+    submenuOpenRef.current = submenuOpen;
+    openSubmenuRef.current = openSubmenu;
+  });
   const dwellRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clearDwell = useCallback(() => {
     if (dwellRef.current) {

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { Animated, Platform, StyleProp, View, ViewStyle } from 'react-native';
 
 import { useLightCards } from '@/lib/perf-flags';
@@ -17,7 +17,10 @@ const BASE = { backgroundColor: 'rgba(128,128,128,0.18)' } as const;
 
 export function Skeleton({ style }: { style?: StyleProp<ViewStyle> }) {
   const lightCards = useLightCards();
-  const v = useRef(new Animated.Value(0.5)).current;
+  // A lazy state initialiser rather than `useRef(new Animated.Value(0.5)).current`: identical
+  // lifetime (created once, never re-created, never re-assigned), but it doesn't read a ref during
+  // render — which is what `react-hooks/refs` objects to in the older idiom.
+  const [v] = useState(() => new Animated.Value(0.5));
   useEffect(() => {
     if (lightCards) return; // static placeholder — no animation
     const loop = Animated.loop(
