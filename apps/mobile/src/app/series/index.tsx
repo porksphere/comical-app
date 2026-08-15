@@ -362,12 +362,17 @@ function zoomHorizontalDrag(translation: number, dimension: number): number {
  * page sits open the shift shows nowhere (at `zoom` 1 the mask is the screen, the transform is
  * identity and the copy is transparent).
  *
- * The travel is CAPPED at `maxShift`, which the geometry sets so the cover can rise until its
- * bottom edge tucks under the strip band and no further. Past that the cover isn't on screen at
- * all, so there is nothing left to be honest to — and an uncapped shift would lay the copy out
- * hundreds of points above the page's own bounds, which is a clipping question with a different
- * answer on each platform. Parked at the cap it flies in from just past the top of the page, which
- * is where the picture actually is.
+ * The bound is allowed OFF SCREEN, which is the point: scroll past the cover and the collapse
+ * should start above the top edge and fly the picture in, not park it at the edge pretending the
+ * cover is still there. A clamp that kept the bound inside the screen just moved the fixed spot up.
+ *
+ * It is still CAPPED, at one screen height of scroll (`maxShift`), because the copy only becomes
+ * visible at 0.7 of the way through the collapse and its whole travel from there is a few hundred
+ * points. Around a screen height of shift that puts it just off the top edge when it appears —
+ * arriving. Much beyond it the copy spends the visible part of the collapse outside the screen and
+ * crosses the edge at a speed nothing can read, which is a picture that never arrives at all: the
+ * cap is where "flying in from off screen" stops buying anything. A 250-chapter list scrolled to
+ * the bottom parks there.
  *
  * A NEGATIVE offset (the iOS rubber-band, pulling the content down) is tracked as-is: the cover
  * really has moved down, and the bound belongs on it.
@@ -2024,14 +2029,14 @@ function SeriesReaderInstance({
       // of their scroll. `zoomBoundShift` carries it to where the cover currently is; these two
       // are what it needs. Only the MEASURED bound moves: the computed fallback target is defined
       // relative to the screen (it stands in for the page as a whole), so it has no scroll to
-      // follow. The cap lets the cover rise until its bottom edge meets the strip band — see the
-      // helper for why it stops there.
+      // follow. The cap is a screen height — off screen is allowed and wanted, unreadably far off
+      // isn't; see the helper.
       tracksScroll: bound !== null,
-      maxShift: bound ? Math.max(0, bound.y + bound.height - bandH) : 0,
+      maxShift: height,
     };
     // `detailsActive` is COMMITTED state, so it only flips when a reveal or collapse finishes —
     // never mid-flight, which is what would make swapping the bound visible.
-  }, [hero, destBound, detailsActive, width, height, bandH]);
+  }, [hero, destBound, detailsActive, width, height]);
 
   // THE MASK. Grows from the source rect to the whole screen, carrying the card's corner radius
   // out to 0. In the library this lives INSIDE the transformed content and undoes the content
