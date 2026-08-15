@@ -76,6 +76,18 @@ describe('dedupPages', () => {
     expect(c2.seen.has('a')).toBe(false); // stale seen-set was discarded
   });
 
+  test('extending the SAME cache twice rebuilds rather than dropping items', () => {
+    // The shape a discarded render would produce: extend from c1, then extend from c1 AGAIN (as if
+    // the first attempt never committed). c1's seen-set already lists page 2's ids by then, so
+    // trusting it would find them all duplicates and lose them. The rebuild is what prevents that.
+    const p1 = page('a', 'b');
+    const p2 = page('c', 'd');
+    const c1 = dedupPages(null, [p1]);
+    dedupPages(c1, [p1, p2]); // first attempt — mutates c1.seen, then discarded
+    const retry = dedupPages(c1, [p1, p2]); // same starting cache, second attempt
+    expect(ids(retry.out)).toEqual(['a', 'b', 'c', 'd']);
+  });
+
   test('empty data → empty, stable', () => {
     const c = dedupPages(null, []);
     expect(c.out).toEqual([]);

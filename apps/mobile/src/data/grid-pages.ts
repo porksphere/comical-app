@@ -21,8 +21,26 @@ import type { GridPage, SeriesEntry } from './types';
  * reference so no downstream memo / list work is triggered. On a reset (pull-to-refresh / scope
  * switch / keepPreviousData swap) the pages prefix no longer matches the cache and it rebuilds.
  */
-/** Incremental dedup state, carried across renders in a ref (or across calls in a test). */
-export type DedupCache = { pages: readonly GridPage[]; seen: Set<string>; out: SeriesEntry[] };
+/** Incremental dedup state, carried across renders in state (or across calls in a test). */
+export type DedupCache = {
+  pages: readonly GridPage[];
+  seen: Set<string>;
+  out: SeriesEntry[];
+  /**
+   * Set once this cache has been EXTENDED, which is the moment its `seen` stops describing its own
+   * `pages`/`out`: extending mutates the set in place (that's what keeps the whole scroll O(items)
+   * rather than O(items x pages)), so afterwards it lists ids that only the successor's `out`
+   * actually contains. Extending from it a second time would then find those ids already seen and
+   * silently drop their items — so `canExtend` refuses, and a caller holding a superseded cache
+   * rebuilds from scratch instead. Costs one O(items) rebuild in a case that shouldn't arise.
+   *
+   * Nothing in this app hands back a superseded cache today; it needs React to discard a render
+   * after the mutation, which takes a concurrent feature (`startTransition`, `useDeferredValue`,
+   * Suspense retries) and none is in use. This makes the function safe if one is ever adopted,
+   * rather than leaving a silently-wrong grid waiting for it.
+   */
+  superseded?: boolean;
+};
 
 /**
  * Pure core of {@link useDedupedPages} — exported for testing. Given the previous cache (or null)
@@ -37,7 +55,7 @@ export function dedupPages(prev: DedupCache | null, pages: readonly GridPage[]):
   // identities — react-query preserves already-fetched page refs on append). Otherwise (reset /
   // refetch / scope swap) start fresh.
   const canExtend =
-    !!prev && prev.pages.length <= pages.length && prev.pages.every((p, i) => p === pages[i]);
+    !!prev && !prev.superseded && prev.pages.length <= pages.length && prev.pages.every((p, i) => p === pages[i]);
   const base: DedupCache = canExtend ? prev! : { pages: [], seen: new Set<string>(), out: [] };
   const start = base.pages.length;
   if (start === pages.length) {
@@ -59,6 +77,10 @@ export function dedupPages(prev: DedupCache | null, pages: readonly GridPage[]):
   // Appended page(s) were entirely duplicates — keep the SAME `out` reference so no downstream
   // memo / list work is triggered. Otherwise one new array: a bulk pointer-copy + the new tail.
   const out = added ? base.out.concat(added) : base.out;
+  // `seen` above is `base.seen` — the same Set object — and the loop has just added the new page's
+  // ids to it. From here `base` no longer describes itself; only the cache being returned does. (A
+  // no-op when `base` is the fresh object built for a from-scratch pass: nothing holds it.)
+  base.superseded = true;
   return { pages, seen, out };
 }
 
