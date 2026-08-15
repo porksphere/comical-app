@@ -5,28 +5,43 @@ name: Checks
 # across iOS/Android/web. Enforced by the custom ESLint rule `comical/require-test-id`; see
 # apps/mobile/eslint-rules/require-test-id.js and apps/mobile/src/lib/test-id.ts.
 #
-# This job runs ONLY the testID gate (`bun run lint:testids`), not the full `expo lint`/`tsc`, on
-# purpose: the repo currently carries unrelated pre-existing lint/type debt (the React Compiler
-# `react-hooks/*` rules, and `@comical/*` types that only resolve once the on-device-runtime submodule
-# is checked out and built). Gating on those here would make this red for reasons unrelated to
-# testIDs. The rule is purely syntactic, so it needs neither the submodule nor a build step — keeping
-# this check fast and reliable.
+# Two jobs, split by what they need rather than by what they check:
 #
-# It also runs `check:flow-coverage`, an advisory-only e2e-flow nudge (never fails the job — see
-# apps/mobile/scripts/check-flow-coverage.mjs) alongside the mandatory testID gate, since both are
-# cheap, submodule-free, syntactic checks over the same source tree.
+#   `testids` needs nothing but the source tree. The rule is purely syntactic, so no submodule and no
+#   build step — it stays fast and can't go red for an unrelated reason. It also carries
+#   `check:flow-coverage`, an advisory-only e2e-flow nudge (never fails the job — see
+#   apps/mobile/scripts/check-flow-coverage.mjs), since that's the same kind of cheap syntactic pass.
+#
+#   `types-and-lint` needs the `comical` submodule, because `@comical/*` resolves through
+#   `tsconfig.json` paths onto `external/comical`. Checking it out is not enough — its own deps have
+#   to be installed too, or every file importing `hono` degrades to `any` and `tsc` reports ~140
+#   errors that say nothing about this repo. It does NOT need `bun run build:native` (that generates
+#   the Android harness bundle); install alone is what makes the types resolve.
+#
+# Both are mandatory. This used to be the testID gate alone, on the grounds that the repo carried
+# pre-existing lint/type debt — 51 React Compiler errors and 10 warnings. That debt is paid off, so
+# the reason not to gate on it is gone. Lint runs via `lint:ci` rather than `expo lint` so warnings
+# fail too (`--max-warnings=0`): the tree is at zero, and warnings were most of what was cleaned up,
+# so letting them back in silently is how it would rot again. `reportUnusedDisableDirectives` is an
+# error in eslint.config.js, so this also catches a suppression that has outlived its reason.
 
 on:
   pull_request:
     paths:
       - 'apps/mobile/**'
       - '.github/workflows/checks.yml'
+      # A submodule bump moves the `@comical/*` types the app compiles against, so it can break
+      # typecheck without a single file under apps/mobile changing.
+      - 'external/comical'
+      - 'bun.lock'
   push:
     branches:
       - '**'
     paths:
       - 'apps/mobile/**'
       - '.github/workflows/checks.yml'
+      - 'external/comical'
+      - 'bun.lock'
 
 permissions:
   contents: read
@@ -60,3 +75,46 @@ jobs:
         # layer of defense on top of the script's own `process.exit(0)`, so a future bug in the script
         # can't accidentally turn this advisory nudge into a hard gate.
         run: bun run check:flow-coverage || true
+
+  types-and-lint:
+    name: Types and lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # `@comical/*` resolves through tsconfig paths onto this submodule; without it every such
+          # import is unresolvable and tsc reports errors about the submodule, not about this repo.
+          submodules: recursive
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # Shared with the build workflows' own restores — same global Bun cache, so this usually starts
+      # warm rather than refetching both dependency trees.
+      - name: Restore Bun modules
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-checks-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-checks-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # The submodule's own deps (hono/zod, which `@comical/*` import). Not `--frozen-lockfile`: that
+      # repo commits no lockfile. No `build:native` either — that generates the Android harness
+      # bundle, which type resolution doesn't need.
+      - name: Install on-device runtime deps (comical submodule)
+        run: bun install
+        working-directory: external/comical
+
+      - name: Typecheck
+        working-directory: apps/mobile
+        run: bun run typecheck
+
+      # `always()` so a type error doesn't hide the lint result — one push, both answers.
+      - name: Lint
+        if: ${{ always() }}
+        working-directory: apps/mobile
+        run: bun run lint:ci
