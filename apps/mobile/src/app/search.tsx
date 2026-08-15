@@ -332,13 +332,12 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
   const { scrollY, offset: filtersOffsetY, barStyle: filtersStyle, sharedValues, onScroll: onListScroll } =
     useSlidingBar(filtersBarH, { resetKey: scopeKey, listRef });
   // The top bar's hairline is ALWAYS on (BarSurface draws it), including while the filter bar is
-  // expanded right beneath it. It used to fade out there, so the two bars read as one flush unit —
-  // but they are two separate blur surfaces, and a blur only samples the content directly behind
-  // ITSELF (its kernel doesn't reach across the boundary into the neighbouring bar's backdrop). So
-  // the two never quite match at the join, and with no divider that mismatch reads as a smudge.
-  // A crisp hairline makes the seam deliberate instead: a divider between two bars, which is what it
-  // actually is. (Truly seamless would need ONE blur surface spanning both — incompatible with the
-  // filter bar sliding up BEHIND the top bar, which requires something to slide behind.)
+  // expanded right beneath it. It used to fade out there, so the two bars read as one flush unit,
+  // which was wrong back when they were two separate BLUR surfaces: a blur only samples the content
+  // directly behind ITSELF, so the two never quite matched at the join and with no divider that
+  // mismatch read as a smudge. Both bars are now the same flat colour, so they WOULD match — but the
+  // hairline stays, because the seam is real either way: these are two bars, one of which slides up
+  // behind the other, and a divider is what says so.
   // A subtle drop shadow only while the filter bar is mid-slide — a depth cue as it pops out from
   // behind the top bar. Zero at both rest states (fully expanded = flush unit; fully collapsed = the
   // hairline takes over), peaking in the middle of the motion (a parabola over the slide progress).
@@ -387,12 +386,13 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
     // overflow:hidden window sits exactly in the gap below the top bar — so the bar is progressively
     // CUT OFF at the top bar's bottom edge instead of travelling underneath it.
     //
-    // This is what lets the top bar be frosted at all. A blur samples whatever is physically beneath
-    // it and can't tell "chrome" from "content", so an unclipped filter bar sliding under it would
-    // smear through the frost. Clipped, the filter bar never exists under the top bar, and the only
-    // thing left to show through is the RESULTS scrolling up under it — which is the entire point of
-    // a frosted bar. The tuck looks the same as before: the clip edge IS the top bar's bottom edge,
-    // so the chips still read as sliding in behind it.
+    // The clip edge IS the top bar's bottom edge, so the chips read as sliding in behind it.
+    //
+    // It used to be load-bearing for a second reason: the top bar was frosted, a blur samples
+    // whatever is physically beneath it and can't tell "chrome" from "content", so an unclipped
+    // filter bar sliding under it would smear through the frost. An opaque bar simply covers it, so
+    // that reason is gone — this now only shapes the tuck (and keeps the sliding bar's window a
+    // fixed height).
     <View pointerEvents="box-none" style={[styles.filtersClip, { top: topBarTotal, height: filtersBarH }]}>
       <BarSurface safeAreaTop={false} style={[styles.filtersBar, { height: filtersBarH }, filtersStyle]}>
         <View style={styles.filtersInner}>
@@ -407,9 +407,7 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
     // regardless of what's under the finger (iOS sources its pull from the native bounce instead).
     <ThemedView style={styles.container} {...pull.touchHandlers}>
       {/* Overlaid top bar: back button + search field (autofocused after the push settles) + sort.
-          Frosted like every other bar (BarSurface): the RESULTS scroll under it and show through. The
-          filter bar does NOT — it's clipped out before it can reach here (see `filterBar`) — so the
-          frost only ever carries content, never chrome. */}
+          Opaque, like every other bar (BarSurface): the results scroll behind it. */}
       <BarSurface style={[styles.topBar, topBarShadowStyle]}>
         <View style={[styles.topBarRow, { height: barHeight }]}>
           <Pressable
@@ -476,8 +474,8 @@ export default function SearchScreen({ embedded }: { embedded?: SearchEmbedded }
                 scopeKey={scopeKey}
                 listRef={listRef}
                 header={emptyBody}
-                // The top bar OVERLAYS the list (so results scroll under its frost), so reserve it as
-                // well as the filter bar beneath it, plus a little breathing room.
+                // The top bar OVERLAYS the list (results scroll behind it), so reserve it as well
+                // as the filter bar beneath it, plus a little breathing room.
                 paddingTop={topBarTotal + filtersBarH + BarContentGap}
                 paddingBottom={insets.bottom + Spacing.five}
                 bridge={currentBridge?.name ?? undefined}
@@ -510,8 +508,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // OVERLAYS the list, so the results scroll underneath and show through its frost (the same shape
-  // as the Browse bar). The grid reserves `topBarTotal` at the top of its content to compensate.
+  // OVERLAYS the list, so the results scroll behind it (the same shape as the Browse bar). The grid
+  // reserves `topBarTotal` at the top of its content to compensate.
   topBar: {
     position: 'absolute',
     top: 0,
@@ -548,8 +546,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   // Fixed window between the top bar and the results. `overflow: hidden` is the mask: the filter bar
-  // inside is cut off at this box's top edge (= the top bar's bottom edge) as it slides up, so it
-  // never passes under the top bar and can never be picked up by its blur. See `filterBar`.
+  // inside is cut off at this box's top edge (= the top bar's bottom edge) as it slides up, rather
+  // than travelling on underneath it. See `filterBar`.
   filtersClip: {
     position: 'absolute',
     left: 0,

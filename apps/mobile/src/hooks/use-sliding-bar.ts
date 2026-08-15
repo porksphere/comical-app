@@ -22,7 +22,7 @@
  *
  * `barHeight` is the SLIDE DISTANCE, and picking it is how a bar chooses between two hide styles:
  * a screen-top bar passes its content height WITHOUT the safe-area inset, so it stops with the
- * frosted strip still filling the status-bar band (X/Twitter's dock — pair with `contentStyle` so
+ * bar surface still filling the status-bar band (X/Twitter's dock — pair with `contentStyle` so
  * the controls fade out instead of parking over the clock; on a device with no top inset the same
  * distance is simply a full hide). A secondary bar that disappears behind other chrome (Search's
  * clipped filter bar) passes its full height.
@@ -75,7 +75,7 @@ export type SlidingBar = {
   barStyle: ReturnType<typeof useAnimatedStyle<ViewStyle>>;
   /** Fades the bar's INNER content with the slide (1 → 0) and drops its pointer events once mostly
    *  hidden. For a bar that docks under the status bar rather than leaving the screen (Browse): the
-   *  frosted surface stays, but the controls must not sit legible — or tappable — over the clock and
+   *  bar surface stays, but the controls must not sit legible — or tappable — over the clock and
    *  battery. Apply to an Animated.View wrapping the bar's content row, not the surface itself.
    *  Instantiated at `ViewStyle` for the same reason as `barStyle` above. */
   contentStyle: ReturnType<typeof useAnimatedStyle<ViewStyle>>;

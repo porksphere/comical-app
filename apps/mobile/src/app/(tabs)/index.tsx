@@ -614,8 +614,8 @@ export default function BrowseScreen() {
   // The bridge/page bar slides up 1:1 with scroll (X/Twitter-style) via the shared `useSlidingBar`
   // helper — the same one the Search filter bar uses, so their motion can't drift. The slide
   // distance is `barHeight`, NOT `headerHeight`: the bar stops once its content band is gone,
-  // leaving the frosted surface docked over the status-bar inset (content keeps scrolling under it,
-  // blurred) instead of leaving raw content behind the clock/battery. The selectors themselves fade
+  // leaving the bar's surface docked over the status-bar inset (which content keeps scrolling behind)
+  // instead of leaving raw content behind the clock/battery. The selectors themselves fade
   // out with the slide (`headerContentStyle`) so they never sit legible — or tappable — over the
   // status bar. On a device/viewport with no top inset (web), the same distance hides the bar
   // entirely, so there's no orphaned strip. It's fed the list's UI-thread scroll offset via
@@ -645,8 +645,8 @@ export default function BrowseScreen() {
   const pull = usePullToRefresh(scrollY, refreshCurrentView);
 
   const topBar = (
-    // BarSurface carries the frosted, full-bleed background + hairline shared by every bar in the
-    // app (see bar-surface.tsx); the grid scrolls under it and shows through.
+    // BarSurface carries the flat, full-bleed background + hairline shared by every bar in the app
+    // (see bar-surface.tsx); the grid scrolls behind it.
     <BarSurface style={[styles.topBar, { height: headerHeight }, headerStyle, headerBorderStyle]}>
       {/* Inner row capped to the content width so the selectors line up with the
           grid below, while the bar background stays full-bleed. */}

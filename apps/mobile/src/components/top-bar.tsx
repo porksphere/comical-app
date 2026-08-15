@@ -102,7 +102,7 @@ export function TopBarButton({
  * Total height `<TopBar>` occupies (safe-area inset + bar). REQUIRED by every screen that renders a
  * `<TopBar>`: the bar is an absolute overlay, so the screen's own scroll content must pad its top by
  * this much or its first row starts underneath the bar. In exchange, content scrolls under the bar
- * and shows through the frost.
+ * (behind it — the bar is opaque) instead of being clipped by a dead strip above it.
  */
 export function useTopBarInset(): number {
   const insets = useSafeAreaInsets();
@@ -112,9 +112,10 @@ export function useTopBarInset(): number {
 
 const styles = StyleSheet.create({
   // OVERLAYS the screen's content (which pads itself by `useTopBarInset`) rather than sitting above
-  // it in flow. That's what makes the frosted bar mean anything: content has to pass UNDERNEATH it to
-  // show through. In flow, there was nothing behind the bar and the blur rendered as a flat solid —
-  // which is why the series/settings bars read as unblurred while Browse (an overlay) didn't.
+  // it in flow, so content passes underneath rather than stopping at a dead strip. It used to matter
+  // for a second reason too: the bar was frosted, and a blur with nothing behind it rendered as a
+  // flat solid — which is why the series/settings bars read as unblurred while Browse (an overlay)
+  // didn't. The bars are plainly opaque now, so only the layout reason is left.
   topBar: {
     position: 'absolute',
     top: 0,

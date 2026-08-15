@@ -99,7 +99,7 @@ export default function ResultsScreen() {
         scopeKey={`${bridgeId}|${params.favorites === '1' ? 'favorites' : (params.listId ?? params.query ?? '')}`}
         listRef={listRef}
         header={emptyBody}
-        // The TopBar overlays the list, so reserve its height (content scrolls under its frost).
+        // The TopBar overlays the list, so reserve its height (content scrolls behind it).
         paddingTop={topBarInset + BarContentGap}
         paddingBottom={insets.bottom + Spacing.five}
         bridge={params.bridge}
