@@ -343,6 +343,41 @@ function zoomHorizontalDrag(translation: number, dimension: number): number {
   return zoomPrimaryDrag(translation, dimension) * ZOOM_HORIZONTAL_DRAG_DISTANCE_SCALE;
 }
 
+/**
+ * How far the DESTINATION BOUND has travelled since it was measured, because the details SCROLLED
+ * under it.
+ *
+ * The bound is the hero cover's rect, latched once on its first layout (see `onHeroCoverRect`) —
+ * window coordinates taken while the list is at the top, which is where every entrance starts. A
+ * collapse does not have to start there. Scroll the details down and the cover goes up with the
+ * content, while the latched rect stays where it was: the page then converged on a box that no
+ * longer holds the picture, and the flying copy — laid out on that same box — faded in over
+ * whatever chapter rows had scrolled into its place. The transition came out of a fixed spot near
+ * the top of the screen instead of out of the cover.
+ *
+ * So the bound follows the scroll. Read on the UI thread rather than snapshotted into state at
+ * collapse time, for the same reason the rest of this transition is: a JS round trip lands a frame
+ * or two late, and a destination that moves after the collapse has started is a visible jump.
+ * Continuous either way — the offset is already settled before anything is dragged, and while the
+ * page sits open the shift shows nowhere (at `zoom` 1 the mask is the screen, the transform is
+ * identity and the copy is transparent).
+ *
+ * The travel is CAPPED at `maxShift`, which the geometry sets so the cover can rise until its
+ * bottom edge tucks under the strip band and no further. Past that the cover isn't on screen at
+ * all, so there is nothing left to be honest to — and an uncapped shift would lay the copy out
+ * hundreds of points above the page's own bounds, which is a clipping question with a different
+ * answer on each platform. Parked at the cap it flies in from just past the top of the page, which
+ * is where the picture actually is.
+ *
+ * A NEGATIVE offset (the iOS rubber-band, pulling the content down) is tracked as-is: the cover
+ * really has moved down, and the bound belongs on it.
+ */
+function zoomBoundShift(geom: { tracksScroll: boolean; maxShift: number } | null, offset: number): number {
+  'worklet';
+  if (!geom || !geom.tracksScroll) return 0;
+  return Math.min(offset, geom.maxShift);
+}
+
 /** `resolveZoomCrossAxisDragTranslation` — the off-axis, which follows loosely and never leads. */
 function zoomCrossAxisDrag(translation: number, dimension: number): number {
   'worklet';
@@ -1565,7 +1600,9 @@ function SeriesReaderInstance({
   }, [zoom, zoomArmed, blankSource]);
   const onHeroCoverRect = useCallback((rect: ZoomRect) => {
     // Only the FIRST report, and only before the geometry is committed: the cover box re-lays out
-    // as its aspect settles, and moving the destination mid-flight would visibly jump.
+    // as its aspect settles, and moving the destination mid-flight would visibly jump. What the
+    // latch does NOT freeze is where that box has since scrolled to — the geometry carries the
+    // scroll offset separately, on the UI thread (see zoomBoundShift).
     if (zoomStartedRef.current) return;
     setDestBound((prev) => prev ?? rect);
   }, []);
@@ -1983,10 +2020,18 @@ function SeriesReaderInstance({
       },
       tx: startAnchor.x - (screenCenterX + (endAnchor.x - screenCenterX) * s),
       ty: startAnchor.y - (screenCenterY + (endAnchor.y - screenCenterY) * s),
+      // Everything above is in the coordinates the bound was MEASURED in — the details at the top
+      // of their scroll. `zoomBoundShift` carries it to where the cover currently is; these two
+      // are what it needs. Only the MEASURED bound moves: the computed fallback target is defined
+      // relative to the screen (it stands in for the page as a whole), so it has no scroll to
+      // follow. The cap lets the cover rise until its bottom edge meets the strip band — see the
+      // helper for why it stops there.
+      tracksScroll: bound !== null,
+      maxShift: bound ? Math.max(0, bound.y + bound.height - bandH) : 0,
     };
     // `detailsActive` is COMMITTED state, so it only flips when a reveal or collapse finishes —
     // never mid-flight, which is what would make swapping the bound visible.
-  }, [hero, destBound, detailsActive, width, height]);
+  }, [hero, destBound, detailsActive, width, height, bandH]);
 
   // THE MASK. Grows from the source rect to the whole screen, carrying the card's corner radius
   // out to 0. In the library this lives INSIDE the transformed content and undoes the content
@@ -2054,6 +2099,12 @@ function SeriesReaderInstance({
     // let go of a dismissal it becomes the finishing Bézier instead — from the scale the page was
     // released at, down to the collapsed scale, biased by the release velocity.
     const scale = zoomGeom.s + (1 - zoomGeom.s) * q;
+    // The vertical alignment is corrected for how far the details have SCROLLED since the bound was
+    // measured (see zoomBoundShift). Moving the destination anchor UP by `shift` moves the
+    // translation that lands it on the card DOWN by `s * shift` — the anchor is scaled before it is
+    // translated, so the correction is scaled too. Nothing else in here changes: `s` is a ratio of
+    // sizes, and the mask travels between the card and the screen, neither of which scrolls.
+    const shift = zoomBoundShift(zoomGeom, detailsScrollOffset.value);
     // NOTE the compensation uses the UNDRAGGED mask origin. The mask sits at `maskLeft + dragX`
     // and the page at `T - maskLeft` inside it, which puts the page at `T + dragX` in window
     // space: mask and content displaced by exactly the same amount, so the window keeps framing
@@ -2061,7 +2112,7 @@ function SeriesReaderInstance({
     return {
       transform: [
         { translateX: zoomGeom.tx * (1 - q) - maskLeft },
-        { translateY: zoomGeom.ty * (1 - q) - maskTop },
+        { translateY: (zoomGeom.ty + zoomGeom.s * shift) * (1 - q) - maskTop },
         { scale },
       ],
     };
@@ -2085,7 +2136,11 @@ function SeriesReaderInstance({
     return { opacity: interpolate(q, range, [0, 1], Extrapolation.CLAMP) };
   });
   const zoomThumbStyle = useAnimatedStyle(() => {
-    if (!zoomArmed.value) return { opacity: 0, borderRadius: hero ? hero.radius : 0 };
+    if (!zoomArmed.value) {
+      // Same style SHAPE as the branch below — reanimated wants one per view, and both can run for
+      // one instance.
+      return { opacity: 0, borderRadius: hero ? hero.radius : 0, transform: [{ translateY: 0 }] };
+    }
     const q = Math.max(0, zoom.value);
     const range = zoomClosing.value ? ZOOM_THUMB_FADE_CLOSE : ZOOM_THUMB_FADE_OPEN;
     // The copy has to READ as the thumbnail it came off, corner included — 10pt on a grid card, 6
@@ -2097,6 +2152,12 @@ function SeriesReaderInstance({
     return {
       opacity: interpolate(q, range, [1, 0], Extrapolation.CLAMP),
       borderRadius: (hero ? hero.radius : 0) / Math.max(s, 0.01),
+      // The copy is laid out ON the destination bound, so it takes the scroll correction as a plain
+      // layout offset — this is INSIDE the page, in the same coordinates the bound was measured in,
+      // where "the cover moved up by `shift`" is exactly `-shift`. Its counterpart in zoomPageStyle
+      // carries the same shift in the other direction, which is what keeps the copy landing on the
+      // card at q = 0 and on the real cover at q = 1.
+      transform: [{ translateY: -zoomBoundShift(zoomGeom, detailsScrollOffset.value) }],
     };
   }, [zoomGeom]);
   const zoomThumbUri = useResolvedAsset(cover);
@@ -2578,7 +2639,9 @@ function SeriesReaderInstance({
           is untouchable, so this is a copy of the same cover.
           Laid out at the DESTINATION bound and left to ride the page's transform, which is what
           keeps it honest: at rest that transform puts this rect exactly on the tapped card, and at
-          the end exactly on the page's own cover. No second geometry to drift out of sync. The
+          the end exactly on the page's own cover. No second geometry to drift out of sync — the
+          one thing it does carry of its own is the scroll correction (zoomThumbStyle's translate),
+          and that is the SAME correction the transform takes, not a separate answer to it. The
           mask supplies the rounded card silhouette, so it needs no radius of its own. */}
       {hero && zoomGeom && zoomThumbUri && (
         <Animated.View
