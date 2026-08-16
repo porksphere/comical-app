@@ -7,6 +7,10 @@ a version bump — see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 Binaries for each version are attached to its
 [GitHub Release](https://github.com/porksphere/comical-app/releases).
 
+## 0.1.4 — 2026-08-16
+
+- Release process: version every artifact, and cut a release in two dispatches (#120) (9703d8e7)
+
 ## 0.1.3 — 2026-08-15
 
 - Watchdog: dev and profiling builds only (2797102)
