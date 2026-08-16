@@ -1,12 +1,17 @@
 # Page favorites — client plan
 
 The runtime half has **landed** in the `comical` submodule
-(`claude/page-favorites-runtime-00agdx`, pinned here at `ac554fd`). This document is the
-`comical-app` half, written against the shipped API.
+(`claude/page-favorites-runtime-00agdx`, pinned here at the branch head `96876cd`). This document is
+the `comical-app` half, written against the shipped API.
+
+Pin the **branch head**, not `ac554fd` — that commit predates the `favoritePage` merge fix and makes
+the two-PUT hashing pattern unsafe.
 
 **The submodule is the source of truth.** Where this document and the code disagree, the code wins.
-Deferred decisions live in `external/comical/docs/page-favorites-followups.md` — those are settled,
-not open questions; don't re-derive them.
+Two docs travel with the pin: `external/comical/docs/page-favorites-handoff.md` (the client brief —
+transient, deleted when that branch merges) and
+`external/comical/docs/page-favorites-followups.md` (deferred decisions — settled, not open
+questions; don't re-derive them).
 
 ## The problem
 
@@ -121,9 +126,10 @@ POST   /library/favorite-pages/collections/reorder                    ← { orde
 
 `{c}` carries `__direct__` for chapterless series. Every route 404s when no library store is
 mounted, so `library.tsx`'s existing "Library isn't available here" state applies unchanged.
-`PUT` is idempotent: re-favoriting refreshes the display snapshot and keeps the original
-`favoritedAt` and collection memberships. **It does not preserve `contentHash`** despite what the
-handoff brief says — see the discrepancy note in §4.
+**`PUT` is idempotent and it MERGES**: a supplied field wins as the fresher value, an omitted one is
+preserved rather than erased. `favoritedAt` and `collectionIds` carry over. `stale` is the one field
+deliberately *not* carried — the user is looking at the page as they tap, so its coordinates are
+current by definition, and re-favoriting clears it.
 
 `DataSource` (`src/data/source.ts`) gains a method per route, coordinate-addressed throughout.
 **`src/data/mock.ts` must implement every one** — mock mode powers the `__DEV__` toggle, the GitHub
@@ -213,19 +219,22 @@ of preference:
   hash. Do **not** `fetch()` the URL to obtain it; sparse is expected and safe, and reconcile adopts
   a hash later anyway.
 
-**Hash off the tap's critical path.** The shim's `digest` is a JS implementation, so SHA-256 over a
-~1MB page is not free on Hermes. Toggle optimistically, `PUT` immediately, and send the hash in a
-second idempotent `PUT` once it resolves — never make the user wait on it.
+**Hash off the tap's critical path — the two-PUT pattern.** The shim's `digest` is a JS
+implementation, so SHA-256 over a ~1MB page is slow enough to be felt on Hermes. Toggle
+optimistically, `PUT` immediately with whatever the reader has, then `PUT` again with just
+`{ seriesTitle, contentHash }` once the hash resolves. `chapterName`, `pageCount` and `sourceUrl`
+survive untouched, because `favoritePage` merges rather than rebuilds (§3). Sending the full
+snapshot on the follow-up is equally fine.
 
-⚠️ **Runtime discrepancy to confirm before relying on that two-step.** The handoff brief says `PUT`
-"keeps … its `contentHash`", but `Library.favoritePage` (`packages/library/src/library.ts:778-793`)
-carries `favoritedAt` and `collectionIds` over from the existing record and then rebuilds
-`contentHash` and `sourceUrl` **from the snapshot only** — so a re-favorite whose snapshot omits the
-hash **erases a stored one**. (Its doc comment also still refers to keeping "any captured
-thumbnail", which no longer exists — evidence the comment predates the byte-capture removal.) The
-deferred second `PUT` works fine, since it *adds* the hash. The hazard is the reverse: any later
-`PUT` without one silently drops the strongest re-anchor key. Until this is settled upstream,
-**always send the hash if we hold one**, and don't re-`PUT` a favorite just to refresh its snapshot.
+This is the runtime's recommended pattern and there's an end-to-end router test for it, so a partial
+`PUT` is safe by design. Sending a hash whenever we hold one is still sensible — it costs nothing —
+but it is no longer load-bearing.
+
+*Historical note, in case it resurfaces:* on `ac554fd` and earlier, `favoritePage` rebuilt the record
+from the snapshot alone, so a partial `PUT` erased `contentHash`, `chapterName`, `pageCount` and
+`sourceUrl`. `pageCount` was the dangerous one — it's reconcile's fallback signal when neither hash
+nor URL matches, so a hash-only follow-up would have added the strong signal while silently removing
+the fallback. Fixed in `96876cd`; don't pin below it.
 
 **Hashing needs no new dependency.** `crypto.subtle.digest('SHA-256', bytes)` is native on web and
 provided on Hermes by `installWebCryptoShim()` from `@comical/host-rn`, already installed in
