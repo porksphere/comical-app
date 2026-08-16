@@ -119,6 +119,11 @@ requires creating a tag by hand:
 2. **Review and merge that PR.** It arrives with no check runs — GitHub doesn't start workflows for
    events raised by `GITHUB_TOKEN` — but the merge to main runs the full suite, and step 3
    re-validates the version before it builds anything.
+
+   > **One-time setting:** step 1 can only open the PR if **Settings → Actions → General → Workflow
+   > permissions → "Allow GitHub Actions to create and approve pull requests"** is enabled. With it
+   > off, the workflow still bumps the version, writes the changelog and pushes `release/X.Y.Z` —
+   > it just can't open the PR, and prints a one-click link to open it yourself instead.
 3. **Actions → Release → Run workflow** (from `main`). `prep` reads the version out of `app.json`,
    refuses to re-cut a shipped one, and checks the `versionCode` moved past the previous tag's;
    then both binaries build, and the `vX.Y.Z` tag is created **at the end**, by the release step,
