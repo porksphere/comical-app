@@ -79,11 +79,15 @@ export const Colors = {
     // the old bottom-bar border (#242427): the bars are painted `background`,
     // exactly the colour of the page they sit on, so this line is the only thing
     // that marks one off at all, and what reads as a subtle edge on a card is
-    // nearly invisible as the sole boundary of a whole bar. A step, not a leap —
-    // it's still a hairline, not a rule, and it sits below `backgroundSelected`
-    // rather than up near the icon greys.
+    // nearly invisible as the sole boundary of a whole bar.
+    //
+    // The value is sampled, not picked: rgb(49,52,54) off the bar divider in a
+    // reference screenshot. Note that app draws it over pure black, where it
+    // clears its background by ~50; over our #0f0f0f page the same colour clears
+    // by ~37, so it reads a shade softer here than it does there. Matching its
+    // CONTRAST rather than its colour would be ~#404345.
     // Active icon is pure white, inactive the iOS system gray (reads on both themes).
-    barHairline: '#33343A',
+    barHairline: '#313436',
     tabIconActive: '#ffffff',
     tabIconInactive: '#8E8E93',
     chipBg: '#212225',
