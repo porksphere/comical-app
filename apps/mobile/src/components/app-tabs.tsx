@@ -13,7 +13,6 @@ import {
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { BarBlur } from '@/components/bar-blur';
 import { ActivityTabBadge, SettingsTabBadge } from '@/components/tab-badge';
 import { DesktopTopBarHeight, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
@@ -320,13 +319,19 @@ export default function AppTabs() {
               styles.bottomBar,
               Platform.OS === 'web' && FADE_TRANSITION,
               {
-                borderTopColor: theme.tabBarBorder,
+                // The same flat, fully opaque `theme.background` every top bar paints (see
+                // `BarSurface`) — the bar reads as the page continuing, not as a surface over it.
+                // Content that scrolls behind it is simply hidden; this used to be a frosted
+                // `BarBlur` it showed through.
+                backgroundColor: theme.background,
+                borderTopColor: theme.barHairline,
                 paddingBottom: Math.max(insets.bottom, Spacing.two),
                 // Web: fade to a faint ghost (still touchable, so tapping where it sits brings it
                 // back) while scrolling down. Native: slide the whole bar down out of view instead
                 // (`slideStyle`), continuously tracking scroll position X/Twitter-style. Either way
                 // the bar is an absolute overlay (see styles.bottomBar), so screen content scrolls
-                // behind it and stays visible rather than being clipped by a dead strip.
+                // behind it rather than being clipped by a dead strip — and, now that the bar is
+                // opaque, is revealed by the bar getting out of the way.
                 opacity: hidden ? FADED_OPACITY : 1,
                 bottom: 0,
               },
@@ -336,8 +341,6 @@ export default function AppTabs() {
               // (see onBarLayout) so it stops right at the edge.
               slideStyle,
             ]}>
-            {/* Frosted background behind the icons (content scrolls under the bar). */}
-            <BarBlur fallback={theme.tabBar} />
             {triggers}
           </Animated.View>
         )}
@@ -470,9 +473,9 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   // --- Mobile icon bottom bar ---
-  // Its own shade (theme `tabBar`/`tabBarBorder`, set inline), distinct from both
-  // the page background and general element surfaces — mirrors the reference's
-  // `.bottom-nav` on dark and adapts to the light theme.
+  // Painted the page's own `background` with a `barHairline` top edge (both set inline), exactly
+  // like every top bar — so the bar reads as the page continuing, and that one line is the whole
+  // of what marks it off.
   // Absolute overlay pinned to the bottom: content scrolls behind it (screens
   // reserve BottomTabInset so their last items clear it), so when it fades on
   // scroll the content stays visible through the ghost instead of being hidden

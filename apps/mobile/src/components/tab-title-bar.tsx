@@ -14,7 +14,7 @@ import { testId } from '@/lib/test-id';
  * to any of it had to be made four times, which is how bars drifted apart in the first place.
  *
  * Overlays the screen's content (which pads itself by `insets.top + useTopBarHeight()`), so the list
- * scrolls under it and shows through the frost — see BarSurface.
+ * scrolls behind it rather than stopping short of it — see BarSurface.
  *
  * `titleSlot` replaces the plain title text with arbitrary leading content (e.g. the Library's list
  * selector); `right` fills a trailing slot pushed to the far edge (e.g. the Library's search icon).
@@ -51,7 +51,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   // Capped + centred to the content width, so the title lines up with the grid/rows beneath it while
-  // the bar's frosted background stays full-bleed.
+  // the bar's background stays full-bleed.
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',

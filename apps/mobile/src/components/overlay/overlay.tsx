@@ -32,6 +32,8 @@ import { ThemedView } from '@/components/themed-view';
 import { RowHeight, Spacing } from '@/constants/theme';
 import { useIsLargeScreen } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
+import { sharedPushback } from '@/lib/pushback-signal';
+import { armSettleCheck, cancelSettleCheck, notePushback, reportStuck } from '@/lib/pushback-watchdog';
 
 // A small stacked-overlay system. On phones (and mobile web / iOS) each overlay
 // is a bottom sheet with a drag handle (swipe down to dismiss); opening a new
@@ -444,8 +446,46 @@ const listStyles = StyleSheet.create({
 // renders lets React bail out of re-rendering that subtree entirely.
 type Item = { id: number; node: ReactNode; anchor?: AnchorRect | null; popover?: boolean };
 
+/** What the stack still holds, for a watchdog entry. The first question anyone asks of one of
+ *  those is whether the app was pushed back by an overlay that never left (items listed) or by a
+ *  progress value that never came home with the stack already empty (`items=0`) — different bugs
+ *  with the same symptom, told apart by this one line. */
+function describeItems(items: readonly Item[]): string {
+  if (items.length === 0) return 'items=0 (stack empty — the progress value itself never settled)';
+  return `items=${items.length} [${items.map((it) => `#${it.id}${it.popover ? ' popover' : ''}${it.anchor ? ' anchored' : ''}`).join(', ')}]`;
+}
+
 const SPRING = { damping: 22, stiffness: 240, mass: 0.7 } as const;
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+// How long a sheet takes to slide back off screen, and how long after that its removal is allowed
+// to arrive. An exit that hasn't reported in by the backstop is not going to: the item is dropped
+// anyway and the fact is logged (see `close` in OverlaySheet, and lib/pushback-watchdog).
+const CLOSE_MS = 240;
+const CLOSE_BACKSTOP_MS = 900;
+// The two pushback signals this file owns, as the watchdog names them.
+const APP_PUSHBACK = 'overlay-app-scale';
+const BACKDROP_PUSHBACK = 'overlay-backdrop';
+
+/**
+ * One sheet's exit state: the "already leaving" latch and its backstop timer.
+ *
+ * Module-level and keyed on a per-instance token rather than held in refs, which is not a style
+ * choice — the drag pans are built during render and reach `close`, and `react-hooks/refs`
+ * (correctly) can't prove a gesture callback only ever runs after commit. This is the one shape the
+ * rule allows, and it is what `app/series/index.tsx`'s `LEFT` latch settled on for exactly the same
+ * reason. Plain JS on one thread, so unlike a shared value a write here is visible to the next read.
+ */
+type SheetExit = { closing: boolean; backstop: ReturnType<typeof setTimeout> | null };
+const EXITS = new WeakMap<object, SheetExit>();
+function exitState(token: object): SheetExit {
+  let exit = EXITS.get(token);
+  if (!exit) {
+    exit = { closing: false, backstop: null };
+    EXITS.set(token, exit);
+  }
+  return exit;
+}
 
 export function OverlayProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<Item[]>([]);
@@ -462,11 +502,19 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
 
   const open = useCallback((render: () => ReactNode, anchor?: AnchorRect | null, opts?: { popover?: boolean }) => {
     const id = idRef.current++;
+    // Traced (in memory, one line per open — not per frame) because a stuck pushback is a question
+    // about WHICH overlay never left, and by the time anyone notices, the app has been used for
+    // minutes since. See lib/pushback-watchdog.
+    notePushback('overlay open', `id=${id}${anchor ? ' anchored' : ''}${opts?.popover ? ' popover' : ''}`);
     setItems((prev) => [...prev, { id, node: render(), anchor, ...(opts?.popover ? { popover: true } : {}) }]);
     return id;
   }, []);
 
+  // Idempotent by construction (`filter` on an id that's already gone is a no-op), which is what
+  // lets every exit path below — the curve's own callback, the wall-clock backstop, a second close
+  // — call it without any of them having to know whether one of the others got there first.
   const remove = useCallback((id: number) => {
+    notePushback('overlay remove', `id=${id}`);
     closers.current.delete(id);
     setItems((prev) => prev.filter((it) => it.id !== id));
   }, []);
@@ -522,11 +570,40 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
 
   const appProgress = useSharedValue(0);
   const anyProgress = useSharedValue(0);
+  // Both effects arm a watchdog on the way back down. These two values ARE the reported bug when
+  // they strand — the app left scaled down and dimmed with nothing on top of it, for the rest of
+  // the process, because `OverlayProvider` outlives every screen and no navigation resets it. The
+  // check costs one timer per close and only runs when the stack has emptied; if the value really
+  // did come back to rest (the overwhelmingly common case) it reports nothing at all.
+  //
+  // Dev and profiling builds only — `armSettleCheck` no-ops itself in a public build, so these are
+  // plain `withSpring` effects there. What stops the strand happening in the first place is the
+  // exit path in `OverlaySheet`/`OverlayPopover` below, which ships everywhere.
   useEffect(() => {
     appProgress.set(withSpring(sheetDepth > 0 ? 1 : 0, SPRING));
+    if (sheetDepth > 0) {
+      cancelSettleCheck(APP_PUSHBACK);
+      return;
+    }
+    armSettleCheck(
+      APP_PUSHBACK,
+      sharedPushback(appProgress),
+      () => describeItems(itemsRef.current),
+      () => itemsRef.current.length === 0,
+    );
   }, [sheetDepth, appProgress]);
   useEffect(() => {
     anyProgress.set(withSpring(depth > 0 ? 1 : 0, SPRING));
+    if (depth > 0) {
+      cancelSettleCheck(BACKDROP_PUSHBACK);
+      return;
+    }
+    armSettleCheck(
+      BACKDROP_PUSHBACK,
+      sharedPushback(anyProgress),
+      () => describeItems(itemsRef.current),
+      () => itemsRef.current.length === 0,
+    );
   }, [depth, anyProgress]);
 
   const appStyle = useAnimatedStyle(() =>
@@ -557,13 +634,16 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
       <View style={[styles.root, { backgroundColor: theme.background }]}>
         <Animated.View style={[styles.appWrap, appStyle]}>{children}</Animated.View>
 
+        {/* `pointerEvents` is a PROP, not a member of the style array. Reanimated updates the
+            animated (opacity) part of that array imperatively on the UI thread and doesn't
+            reliably re-diff a static sibling in it on every JS re-render — which on web leaves the
+            node's raw inline style holding a stale `pointer-events`, invisible to the eye and
+            wrong for touches in both directions: a dismissed overlay's backdrop keeps swallowing
+            clicks, or a live one stops accepting the tap that would close it. Exactly the bug
+            already fixed this way in the reader's toolbar/pill/settings control. */}
         <AnimatedPressable
-          style={[
-            StyleSheet.absoluteFill,
-            styles.backdrop,
-            backdropStyle,
-            { pointerEvents: depth > 0 && !isWebPopover ? 'auto' : 'none' },
-          ]}
+          style={[StyleSheet.absoluteFill, styles.backdrop, backdropStyle]}
+          pointerEvents={depth > 0 && !isWebPopover ? 'auto' : 'none'}
           onPress={closeTop}
         />
 
@@ -688,16 +768,79 @@ function OverlaySheet({
   // chrome the desktop popover already has (see `styles.sheet` below).
   const [contentNeedsScroll, setContentNeedsScroll] = useState(false);
 
+  // The one-way "this sheet is leaving" latch, in the two forms the two threads need: plain JS for
+  // `close` itself (see `EXITS`), and a shared value the pans' worklets can read. Not one or the
+  // other — a `.set()` on a shared value is not guaranteed visible to a `.get()` in the next JS
+  // task (its home is the UI thread), and a worklet cannot read the JS side.
+  const token = useMemo(() => ({}), []);
+  const closingSV = useSharedValue(false);
+
+  const finishClose = useCallback(() => {
+    const exit = exitState(token);
+    if (exit.backstop !== null) {
+      clearTimeout(exit.backstop);
+      exit.backstop = null;
+    }
+    onClosed();
+  }, [onClosed, token]);
+
+  /**
+   * Leaving, once. The item is removed by the exit curve REGARDLESS of `finished`, and a wall-clock
+   * backstop removes it even if that callback never arrives at all.
+   *
+   * Both halves are the fix for the same bug, and it is the one this whole file's pushback is
+   * hostage to: an item leaves `items` only from here, `items` is what scales the app back and
+   * dims it, and `OverlayProvider` sits above every screen — so an item that fails to leave leaves
+   * the app zoomed out and dimmed with nothing visibly open, for the rest of the process. Gating
+   * removal on `finished` made that a live possibility on every close: reanimated reports
+   * `finished: false` for any curve that got interrupted, so a touch landing on the sheet while it
+   * slid away, or a resize remounting it mid-exit, silently stranded the item. An animation
+   * callback is not a promise that it ran (the series page reached the same conclusion the hard
+   * way — see `leaveOnce` in app/series/index.tsx). Ignoring `finished` is safe precisely because
+   * this latch means there is no way back: nothing un-closes a sheet, the pans below stand down
+   * once it is set, and `onClosed` is idempotent.
+   */
   const close = useCallback(() => {
-    translateY.set(withTiming(height, { duration: 240 }, (finished) => {
-      if (finished) runOnJS(onClosed)();
-    }));
-  }, [height, onClosed, translateY]);
+    const exit = exitState(token);
+    if (exit.closing) return;
+    exit.closing = true;
+    closingSV.set(true);
+    notePushback('overlay sheet close', `id=${id}`);
+    exit.backstop = setTimeout(() => {
+      exit.backstop = null;
+      // The REMOVAL here ships in every build — it's the guarantee, not the telemetry. Only the
+      // entry is dev/profiling-only, and it no-ops itself (see lib/pushback-watchdog), so this
+      // reads the same either way.
+      reportStuck(
+        'overlay-sheet',
+        `exit curve never reported back after ${CLOSE_BACKSTOP_MS}ms (id ${id}) — removed by the backstop`,
+      );
+      onClosed();
+    }, CLOSE_BACKSTOP_MS);
+    translateY.set(
+      withTiming(height, { duration: CLOSE_MS }, () => {
+        runOnJS(finishClose)();
+      }),
+    );
+  }, [closingSV, finishClose, height, id, onClosed, token, translateY]);
+
+  // The backdrop's closer is registered once, at mount, but `close` is rebuilt whenever the window
+  // height changes — so the registration goes through a box rather than capturing the mount-time
+  // one, which would animate a rotated sheet to the OLD height and leave it parked on screen.
+  // Assigned in an effect of its own (never during render) and only ever read after commit.
+  const closeRef = useRef(close);
+  useEffect(() => {
+    closeRef.current = close;
+  }, [close]);
 
   // Mount: slide up + register the imperative close used by the backdrop.
   useEffect(() => {
     translateY.set(withSpring(0, SPRING));
-    register(id, close);
+    register(id, () => closeRef.current());
+    return () => {
+      const backstop = EXITS.get(token)?.backstop;
+      if (backstop) clearTimeout(backstop);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -705,25 +848,31 @@ function OverlaySheet({
     depthSV.set(withSpring(depthFromTop, SPRING));
   }, [depthFromTop, depthSV]);
 
+  // A committed drag hands the sheet to `close` rather than running its own exit: one exit path
+  // means one latch, one backstop and one removal, instead of a second copy of all three that has
+  // to stay in step with the first.
   const dismissOrSnapBack = (translation: number, velocity: number) => {
     'worklet';
     if (translation > 120 || velocity > 900) {
-      translateY.set(withTiming(height, { duration: 220 }, (finished) => {
-        if (finished) runOnJS(onClosed)();
-      }));
+      runOnJS(close)();
     } else {
       translateY.set(withSpring(0, SPRING));
     }
   };
 
   // Drag the handle down to dismiss (always available — the handle sits above
-  // any scrollable content).
+  // any scrollable content). Both pans check the closing latch INSIDE the worklet as well as
+  // through `enabled`: a sheet stays mounted and topmost while it slides away, so without this a
+  // touch landing on it mid-exit would take `translateY` back off the exit curve — which used to
+  // be exactly how an item got stranded in the stack with the app left scaled down behind it.
   const handlePan = Gesture.Pan()
     .enabled(isTop)
     .onUpdate((e) => {
+      if (closingSV.value) return;
       translateY.set(Math.max(0, e.translationY));
     })
     .onEnd((e) => {
+      if (closingSV.value) return;
       dismissOrSnapBack(e.translationY, e.velocityY);
     });
 
@@ -740,6 +889,7 @@ function OverlaySheet({
       dragging.set(false);
     })
     .onUpdate((e) => {
+      if (closingSV.value) return;
       if (!dragging.value) {
         if (scrollOffset.value <= 0 && e.translationY > 0) {
           dragging.set(true);
@@ -759,6 +909,7 @@ function OverlaySheet({
     .onEnd((e) => {
       const moved = dragging.value;
       dragging.set(false);
+      if (closingSV.value) return;
       if (moved) dismissOrSnapBack(translateY.value, e.velocityY);
     });
 
@@ -870,22 +1021,61 @@ function OverlayPopover({
   const [card, setCard] = useState<{ width: number; height: number } | null>(null);
   const progress = useSharedValue(0);
   const entered = useRef(false);
+  // Same one-way latch and backstop as `OverlaySheet` — see the long note on its `close`. A stuck
+  // popover doesn't scale the app back (only sheets do), but it does hold the backdrop's dim up and
+  // its `pointerEvents` with it, so a stranded one swallows every touch until the app restarts.
+  const closingRef = useRef(false);
+  const backstopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const finishClose = useCallback(() => {
+    if (backstopRef.current !== null) {
+      clearTimeout(backstopRef.current);
+      backstopRef.current = null;
+    }
+    onClosed();
+  }, [onClosed]);
 
   const close = useCallback(() => {
-    progress.set(withTiming(0, { duration: 120 }, (finished) => {
-      if (finished) runOnJS(onClosed)();
-    }));
-  }, [onClosed, progress]);
+    if (closingRef.current) return;
+    closingRef.current = true;
+    notePushback('overlay popover close', `id=${id}`);
+    backstopRef.current = setTimeout(() => {
+      backstopRef.current = null;
+      reportStuck(
+        'overlay-popover',
+        `exit curve never reported back after ${CLOSE_BACKSTOP_MS}ms (id ${id}) — removed by the backstop`,
+      );
+      onClosed();
+    }, CLOSE_BACKSTOP_MS);
+    progress.set(
+      withTiming(0, { duration: 120 }, () => {
+        runOnJS(finishClose)();
+      }),
+    );
+  }, [finishClose, id, onClosed, progress]);
+
+  const closeRef = useRef(close);
+  useEffect(() => {
+    closeRef.current = close;
+  }, [close]);
 
   useEffect(() => {
-    register(id, close);
+    register(id, () => closeRef.current());
+    return () => {
+      if (backstopRef.current !== null) clearTimeout(backstopRef.current);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Fade in only once measured, so the entrance plays at the final (possibly
   // flipped) position with no visible jump.
+  //
+  // …and never after a close has started. The measurement that sets `card` is asynchronous, so a
+  // popover dismissed before it lands (a fast tap-and-tap-away, or a trigger that closes itself on
+  // mount) would otherwise start its ENTRANCE on top of its own exit — cancelling that curve, so
+  // its callback never removed the item, leaving the backdrop up over an invisible popover.
   useEffect(() => {
-    if (card && !entered.current) {
+    if (card && !entered.current && !closingRef.current) {
       entered.current = true;
       progress.set(withTiming(1, { duration: 140 }));
     }

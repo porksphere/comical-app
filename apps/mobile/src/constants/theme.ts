@@ -32,12 +32,11 @@ export const Colors = {
     badgeNew: '#f59e0b',
     badgeNewOn: '#111111',
     hairline: 'rgba(0,0,0,0.12)',
-    // The mobile bottom nav bar — its own shade, distinct from both the page
-    // background and general element surfaces (mirrors the reference's
-    // `.bottom-nav`, which on dark is `#111113` with a `#242427` top border).
-    // `tabIconActive`/`Inactive` are the selected/unselected icon tints.
-    tabBar: '#F7F7F9',
-    tabBarBorder: '#E0E1E6',
+    // THE divider for both bars — the top bars' bottom edge and the bottom nav
+    // bar's top one (see `barHairline` on dark for why it's its own token rather
+    // than the generic `hairline`). `tabIconActive`/`Inactive` are the bottom
+    // bar's selected/unselected icon tints.
+    barHairline: '#E0E1E6',
     tabIconActive: '#000000',
     tabIconInactive: '#8E8E93',
     // Neutral chip fill (shared by genre + tag chips, like the reference); a
@@ -52,9 +51,14 @@ export const Colors = {
   },
   dark: {
     text: '#ffffff',
-    // Reference: `body { background: #0f0f0f }` — a slightly-off-black, not
-    // pure #000, which is why the app read starker/higher-contrast than web.
-    background: '#0f0f0f',
+    // Pure black, deliberately — NOT the reference site's `body { background:
+    // #0f0f0f }`, which this used to mirror. The two aren't really solving the
+    // same problem: a slightly-off-black keeps a browser page from looking
+    // starker than the rest of the web, whereas this is a phone app on an OLED
+    // panel, where pure black is what the platform's own dark surfaces do and
+    // where #0f0f0f is a lit grey next to them. It also puts the bar divider
+    // back on the footing it was sampled at (see `barHairline`).
+    background: '#000000',
     // Modal/overlay-sheet surface. Reference uses a 3-tier scheme here —
     // `#filter-overlay-panel { background: #161618 }` vs. `button.ms-trigger
     // { background: #1c1c1e }` for the rows/buttons drawn on it — closer
@@ -74,12 +78,20 @@ export const Colors = {
     badgeNew: '#f59e0b',
     badgeNewOn: '#111111',
     hairline: 'rgba(128,128,128,0.25)',
-    // Reference: `.bottom-nav { background: #111113; border-top: 1px solid
-    // #242427 }` — its own shade, distinct from the page background (#0f0f0f)
-    // and general element surfaces. Active icon is pure white, inactive the iOS
-    // system gray (which reads on both themes).
-    tabBar: '#111113',
-    tabBarBorder: '#242427',
+    // THE divider for both bars — the top bars' bottom edge and the bottom nav
+    // bar's top one. Its own token, and a step BRIGHTER than the generic
+    // `hairline` (which lands at ~rgb(43,43,43) over this background) and than
+    // the old bottom-bar border (#242427): the bars are painted `background`,
+    // exactly the colour of the page they sit on, so this line is the only thing
+    // that marks one off at all, and what reads as a subtle edge on a card is
+    // nearly invisible as the sole boundary of a whole bar.
+    //
+    // The value is sampled, not picked: rgb(49,52,54) off the bar divider in a
+    // reference screenshot. That app draws it over pure black — and so, now, do
+    // we (see `background`), so it clears its background by the same ~50 here as
+    // it does there rather than the ~37 it managed over the old #0f0f0f.
+    // Active icon is pure white, inactive the iOS system gray (reads on both themes).
+    barHairline: '#313436',
     tabIconActive: '#ffffff',
     tabIconInactive: '#8E8E93',
     chipBg: '#212225',

@@ -378,7 +378,7 @@ export function ChapterScrollList({
   /** Related-series rails — the list footer. */
   footer?: ReactNode;
   isLarge: boolean;
-  /** Height of the overlaying top bar, so the first content clears it (and scrolls under its frost). */
+  /** Height of the overlaying top bar, so the first content clears it (and scrolls behind it). */
   topInset?: number;
   /** Opening a chapter version is handed HERE — the preferred-group side effect applies first.
    *  There is no route to push instead: the series page's details panel and its in-place reader
@@ -1143,7 +1143,7 @@ export function PageThumbList({
   bridgeId?: string;
   /** Series hero/meta — the list header (this component owns the scroller). */
   header?: ReactElement | null;
-  /** Height of an overlaying top bar, so the first row clears it (and scrolls under its frost). */
+  /** Height of an overlaying top bar, so the first row clears it (and scrolls behind it). */
   topInset?: number;
   /** Related-series rails — the list footer, below the grid and the "Show all"
    *  button (while collapsed). */

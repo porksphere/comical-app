@@ -593,8 +593,8 @@ function scrollerStyle(paged: boolean, snapEnabled: boolean): React.CSSPropertie
     touchAction: 'pan-y',
     WebkitOverflowScrolling: 'touch',
     scrollSnapType: snapEnabled ? 'y mandatory' : undefined,
-    // Reference: `#reader-view { background: #0f0f0f }` — not pure black.
-    backgroundColor: '#0f0f0f',
+    // Pure black, matching the app's own background and native's `READER_BACKDROP`.
+    backgroundColor: '#000000',
   };
 }
 function pagedSlotStyle(height: number): React.CSSProperties {

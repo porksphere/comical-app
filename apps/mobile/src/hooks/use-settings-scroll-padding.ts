@@ -18,7 +18,7 @@ import { useTopBarHeight } from '@/hooks/use-responsive';
  * differently would have its rows overhang or fall short. Getting it from here makes that impossible.
  *
  * The top bar is an absolute overlay on all of these screens, so the content pads PAST it (and
- * scrolls under its frost) rather than starting below it.
+ * scrolls behind it) rather than starting below it.
  */
 export function useSettingsScrollPadding() {
   const insets = useSafeAreaInsets();

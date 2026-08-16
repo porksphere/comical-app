@@ -71,7 +71,7 @@ import { trace, traceGate, traceJS, traceThrottled, useGestureTraceEnabled } fro
 import { releaseCommitted, releaseCommittedEitherWay } from '@/lib/gesture-release';
 import { IOS_CARD_SHADOW, IOS_CARD_SPRING, IOS_PARALLAX_FRACTION } from '@/lib/ios-card-pop';
 import { registerDrillSeries, registerOpenSearchLayer } from '@/lib/series-nav';
-import { seriesReaderDim } from '@/lib/series-backdrop';
+import { holdSeriesBackdrop, seriesReaderDim } from '@/lib/series-backdrop';
 import { holdZoomingSeries, takeZoomOrigin, type ZoomRect } from '@/lib/series-zoom';
 import SearchScreen from '../search';
 import { SeriesBody, truncateTopBarTitle } from '@/components/series/series-body';
@@ -133,8 +133,11 @@ const WARM_BEHIND = 2;
 const PREV_WINDOW_GRACE_MS = 600;
 const IS_WEB = Platform.OS === 'web';
 const IS_IOS = Platform.OS === 'ios';
-// The reader surface's tone (the reference's `#reader-view`: #0f0f0f, not pure black).
-const READER_BACKDROP = '#0f0f0f';
+// The reader surface's tone. Pure black, like every other page — it mirrored the reference's
+// `#reader-view { background: #0f0f0f }` until the app's own background stopped doing the same
+// (see `Colors.dark.background`), and a reader a shade lighter than the app it opens out of read
+// as a mismatch rather than as its own surface.
+const READER_BACKDROP = '#000000';
 // How far a release must be PROJECTED (see lib/gesture-release — every commit decision on this
 // screen and in the search layer now asks the same question) before it counts as committed.
 //
@@ -2288,12 +2291,13 @@ function SeriesReaderInstance({
     [depth],
   );
   // Belt and braces: nothing may strand the backdrop dimmed if this screen goes away without its
-  // exit animation finishing (a deep link replacing the route, a dev reload).
+  // exit animation finishing (a deep link replacing the route, a dev reload). The hold's release
+  // does that reset, and ALSO tells the watchdog nobody owns the dim any more — the reset above is
+  // one JS-thread write against a value the reaction above writes every frame, and on its own it
+  // has no way to notice when it loses that race (see lib/pushback-watchdog).
   useEffect(() => {
     if (depth > 0) return;
-    return () => {
-      seriesReaderDim.set(0);
-    };
+    return holdSeriesBackdrop();
   }, [depth]);
 
   // ── Details-card intents, routed back into the in-place reader ───────────
