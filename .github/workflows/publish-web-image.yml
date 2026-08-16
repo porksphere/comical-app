@@ -80,10 +80,20 @@ jobs:
           FULL="$(bash .github/scripts/compute-build-version.sh)"
           echo "Version: ${FULL}"
           echo "full=${FULL}" >> "$GITHUB_OUTPUT"
-          # X.Y from a release's X.Y.Z, for the moving minor tag. Only meaningful on the release
-          # path; the rolling string has a fourth part that has no business in an image tag.
+
+          # `is_release` is decided HERE, in shell, rather than as `inputs.version != ''` in the
+          # tag list below. On the push lane there is no `inputs` context at all, so that expression
+          # would rest on how GitHub coerces null against a string — and if it ever came out true,
+          # every push to main would try to tag the image with an empty string. A string this step
+          # writes is unambiguous on both lanes.
+          #
+          # `minor` is X.Y from a release's X.Y.Z, for the moving minor tag. Only meaningful on the
+          # release path; the rolling string has a fourth part with no business in an image tag.
           if [ -n "${VERSION_INPUT}" ]; then
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
             echo "minor=$(echo "$FULL" | cut -d. -f1,2)" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: docker/setup-qemu-action@v3
@@ -113,9 +123,9 @@ jobs:
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,prefix=sha-
-            type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
-            type=raw,value=${{ steps.ver.outputs.minor }},enable=${{ inputs.version != '' }}
-            type=raw,value=latest,enable=${{ inputs.version != '' }}
+            type=raw,value=${{ steps.ver.outputs.full }},enable=${{ steps.ver.outputs.is_release == 'true' }}
+            type=raw,value=${{ steps.ver.outputs.minor }},enable=${{ steps.ver.outputs.is_release == 'true' }}
+            type=raw,value=latest,enable=${{ steps.ver.outputs.is_release == 'true' }}
 
       - name: Build and push
         uses: docker/build-push-action@v6

@@ -67,7 +67,15 @@ const androidVersionJsonUrl = (tag: string) =>
 const androidApkUrl = (tag: string) =>
   `https://github.com/porksphere/comical-app/releases/download/${tag}/comical-android.apk`;
 
-const SUPPORTED_CHANNELS = new Set(['ios-release', 'ios-main', 'android-release', 'android-main', 'web-pages']);
+/** Derived, not re-listed: the Android entries come from the map above, so adding a channel there
+ *  can't leave this Set behind. A channel that's "supported" here but unrouted in
+ *  `fetchAppUpdateCheck` would fetch nothing and sit on 'checking' forever. */
+const SUPPORTED_CHANNELS = new Set([
+  'ios-release',
+  'ios-main',
+  ...Object.keys(ANDROID_CHANNEL_TAG),
+  'web-pages',
+]);
 
 /** Identifies the binary doing the checking, so its verdict can't be inherited by the build that
  *  replaces it — see `queryKeys.appUpdateCheck`, which this is the second half of. */
