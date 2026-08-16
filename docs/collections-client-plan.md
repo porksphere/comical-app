@@ -323,10 +323,20 @@ and filter params, the six store methods, both hooks, all three components, mock
 memberships live in their own map, e2e flows and testIDs renamed. typecheck / lint / lint:testids /
 136 tests / check:flow-coverage green.
 
-**Phase 1 — page items + the reader heart.** `api.ts`, `source.ts`, `mock.ts`, `queries.ts`,
-`query-client.ts`, `use-page-collected.ts`, `reader-icons.tsx`, `reader-toolbar.tsx`,
-`series/index.tsx` (page-index plumbing incl. the stitched case + reconcile on chapter open),
-`settings-panel.tsx`, plus the lazily-created heart collection.
+**Phase 1 — page items + the reader heart. ✅ DONE.** Item routes in `api.ts`, `DataSource` +
+`mock.ts`, query keys with the `collectionItemsAll` prefix, `chapterPageIndices` excluded from
+persistence (a sync can re-key it), `PERSIST_BUSTER` v4→v5. `use-page-collected.ts` drives the
+heart off one indices query per chapter and files into the lazily-created heart collection;
+`use-chapter-reconcile.ts` verifies that chapter against the page list the reader already fetched
+and seeds the indices. `collect-page-control.tsx` in the toolbar's widened trailing slot,
+mirrored as a "This page" segment in the settings sheet off the same cache key. `page-hash.ts`
+hashes from `Image.getCachePathAsync` for the second PUT. `series/index.tsx` reports the visible
+page via `onVisiblePage`, chapter-correct across a stitched crossing (`shownWithChapter`).
+Tests in `src/data/collected-pages.test.ts` lock merge-on-PUT and empty-memberships-removes;
+`e2e/mobile/collect-page.yaml` covers the round trip.
+
+Deliberately **not** in Phase 1: long-pressing the heart to pick a specific collection. The picker
+only speaks series coordinates today; it lands with the page picker in Phase 4.
 
 **Phase 2 — the browser.** Selector widening, `library.tsx`, `collected-items-grid.tsx`,
 `PageThumb`'s explicit-source prop, the per-chapter URL batch, stale and text-tile states.

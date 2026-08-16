@@ -38,6 +38,7 @@ import { ChapterNavigator } from '@/components/reader/chapter-navigator';
 import { PagedReader, type PagedReaderHandle, type ReaderPageItem } from '@/components/reader/paged-reader';
 import { ProgressPill } from '@/components/reader/progress-pill';
 import { ReaderToolbar } from '@/components/reader/reader-toolbar';
+import { CollectPageControl } from '@/components/reader/collect-page-control';
 import { SettingsControl } from '@/components/reader/settings-panel';
 import { WebtoonReader, type WebtoonReaderHandle } from '@/components/reader/webtoon-reader';
 import { RetryBlock } from '@/components/retry-block';
@@ -57,6 +58,7 @@ import {
 } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type Chapter } from '@/data/types';
+import { useChapterReconcile } from '@/hooks/use-chapter-reconcile';
 import { useReaderSettings } from '@/hooks/use-reader-settings';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { LARGE_SCREEN_BREAKPOINT, useTopBarHeight } from '@/hooks/use-responsive';
@@ -2302,6 +2304,13 @@ function SeriesReaderInstance({
 
   // ── Details-card intents, routed back into the in-place reader ───────────
   const paneRef = useRef<ReaderPaneHandle>(null);
+  // The page the reader currently has on screen, with the chapter it belongs to. Lives here rather
+  // than in ReaderPane because the TOOLBAR is rendered by this component — the pane reports it up
+  // through `onVisiblePage` (already chapter-correct across a stitched crossing).
+  const [visiblePage, setVisiblePage] = useState<{ pageIndex: number; chapterId: string } | null>(null);
+  // Verify this chapter's collected pages against the page list we already fetched — repairs the
+  // ones the source shifted and seeds the indices the heart reads. See use-chapter-reconcile.
+  useChapterReconcile(bridgeId, id, visiblePage?.chapterId ?? target?.chapterId, pages);
   const openChapterFromDetails = useCallback(
     (v: Chapter) => {
       if (v.id !== targetChapterId) {
@@ -2417,14 +2426,38 @@ function SeriesReaderInstance({
                   onBack={goBack}
                   hideBack
                   right={
-                    <SettingsControl
-                      bridgeId={bridgeId}
-                      seriesId={id}
-                      title={seriesTitle}
-                      thumbnailUrl={series?.cover}
-                      author={author}
-                      direct={isDirect}
-                    />
+                    <>
+                      <CollectPageControl
+                        bridgeId={bridgeId}
+                        seriesId={id}
+                        seriesTitle={seriesTitle}
+                        chapterId={visiblePage?.chapterId}
+                        chapterName={target?.chapterName}
+                        pageIndex={visiblePage?.pageIndex ?? 0}
+                        pageCount={pages?.length}
+                        sourceUrl={pages?.[visiblePage?.pageIndex ?? 0]}
+                        onPress={showChrome}
+                      />
+                      <SettingsControl
+                        bridgeId={bridgeId}
+                        seriesId={id}
+                        title={seriesTitle}
+                        thumbnailUrl={series?.cover}
+                        author={author}
+                        direct={isDirect}
+                        {...(visiblePage && {
+                          page: {
+                            chapterId: visiblePage.chapterId,
+                            ...(target?.chapterName !== undefined && { chapterName: target.chapterName }),
+                            pageIndex: visiblePage.pageIndex,
+                            ...(pages && { pageCount: pages.length }),
+                            ...(pages?.[visiblePage.pageIndex] !== undefined && {
+                              sourceUrl: pages[visiblePage.pageIndex],
+                            }),
+                          },
+                        })}
+                      />
+                    </>
                   }
                 />
               </View>
@@ -2565,6 +2598,7 @@ function SeriesReaderInstance({
             </>
           ) : (
             <ReaderPane
+              onVisiblePage={setVisiblePage}
               // Stitched native paged mode is keyed by the RUN (plus the explicit-jump nonce), so
               // a boundary crossing's relabel does NOT remount it — only leaving the run (chapter
               // list tap, skip button, cold-window fallback) does. Web/webtoon stay keyed by
@@ -3155,6 +3189,12 @@ const ReaderPane = forwardRef<
     /** A stitched crossing settled on a page of a NEIGHBOURING segment: the screen relabels which
      *  chapter is "current" in place (no remount — the pane is keyed by the run). */
     onRelabel: (chapterId: string, chapterName: string | undefined, page: number) => void;
+    /** The page currently ON SCREEN, with the chapter it actually belongs to. Reported so the
+     *  toolbar (rendered by the parent) can drive its collect-this-page heart — the pane owns the
+     *  page index, the parent owns the chrome. Mid-crossing this is the NEIGHBOURING segment, not
+     *  `chapterId`; see `shownWithChapter`. (Distinct from the pagers' own `onVisiblePageChange`,
+     *  which reports a FLAT window index with no chapter.) */
+    onVisiblePage?: (v: { pageIndex: number; chapterId: string }) => void;
     /** First page to show — `'last'` lands on the final page (arriving backward from the next chapter). */
     start: number | 'last';
     width: number;
@@ -3198,6 +3238,7 @@ const ReaderPane = forwardRef<
     pages,
     segments,
     onRelabel,
+    onVisiblePage,
     start,
     width,
     height,
@@ -3335,6 +3376,23 @@ const ReaderPane = forwardRef<
     const v = stitched && visibleSeg && segments.some((s) => s.id === visibleSeg.id) ? visibleSeg : null;
     return { page: v?.page ?? currentPage, total: v?.total ?? pages.length };
   }, [stitched, visibleSeg, segments, currentPage, pages]);
+
+  // The same resolution as `shown`, but carrying the CHAPTER the visible page belongs to — what a
+  // per-page action (the toolbar's collect heart) has to key off. Taking `chapterId` unconditionally
+  // is the trap: mid-crossing in stitched paged mode the page on screen belongs to a neighbouring
+  // segment, so a page collected there would be filed under the wrong chapter and reopen on the
+  // wrong page later.
+  const shownWithChapter = useMemo(() => {
+    const v = stitched && visibleSeg && segments.some((s) => s.id === visibleSeg.id) ? visibleSeg : null;
+    return {
+      pageIndex: v?.page ?? currentPage,
+      chapterId: v?.id ?? chapterId ?? DIRECT_CHAPTER_ID,
+    };
+  }, [stitched, visibleSeg, segments, currentPage, chapterId]);
+
+  useEffect(() => {
+    onVisiblePage?.(shownWithChapter);
+  }, [onVisiblePage, shownWithChapter]);
 
   // Move to a FLAT index — an index into the window, whichever reader is mounted. Both take the
   // same coordinate now that both are stitched.

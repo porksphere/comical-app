@@ -1,0 +1,114 @@
+# Collecting a PAGE from the reader chrome — the one-tap heart in the toolbar's trailing slot, and
+# its mirror in the settings sheet's "This page" segment.
+#
+# What this asserts is a real round trip through the collected-items API in MOCK mode: the heart's
+# state is derived from the chapter's collected page INDICES (one query per chapter open), so a
+# heart that stays filled after a page turn away and back means the write actually landed and the
+# indices query saw it — not just that a local flag flipped.
+#
+# Mobile-only, for the same reason as reader-navigation.yaml: paging between pages uses the
+# reader.control.* tap-zone markers, which are NATIVE-only (zoomable-page.tsx's TapZones; the web
+# build has its own gesture pager in paged-reader.web.tsx and sets none). The heart itself has no
+# web-specific quirk — if a web page-turn affordance is ever selectable, this ports as-is.
+#
+# Selectors (confirmed against source):
+#   - reader.toolbar.collect-page      collect-page-control.tsx's heart, left of the settings gear
+#     in the toolbar's trailing row. Sets accessibilityLabel "Collect this page" / "Remove page
+#     from collections", so it is also label-selectable on web when that day comes.
+#   - reader.settings.collect-page     settings-panel.tsx's PageActionRow button — the SAME
+#     usePageCollected cache key as the toolbar heart, which is exactly what the last step checks.
+#   - reader.settings.open / reader.control.next / reader.navigator.page / reader.toolbar.back
+#     Reused verbatim from reader-navigation.yaml.
+#
+# The chrome AUTO-HIDES after 3s (CHROME_HIDE_MS in app/series/index.tsx), so every step that needs
+# the toolbar re-taps reader.control.toggle-chrome first rather than assuming it is still up. Same
+# hazard reader-navigation.yaml documents.
+#
+# The settings sheet has no close button — tapping the dimmed backdrop above it is the established
+# dismissal (swipe-dismiss-webtoon.yaml), reused here.
+#
+# NOT locally verifiable this session (no Android dev-client / no Mac for iOS) — treat the first CI
+# run as this flow's verification, per the existing precedent.
+appId: com.porksphere.comical
+---
+- launchApp
+
+- tapOn:
+    id: "tab.browse"
+- tapOn:
+    id: "series-card\\..*"
+- assertVisible:
+    id: "series.cover"
+- scrollUntilVisible:
+    element:
+      id: "series\\.chapter\\..*"
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: "series\\.chapter\\..*"
+    index: 0
+
+# Reader is up, chrome visible, on page 1. The heart starts hollow.
+- assertVisible:
+    id: "reader.toolbar.collect-page"
+- assertVisible:
+    id: "reader.toolbar.collect-page"
+    label: "Collect this page"
+
+# Collect it. The label flips because the item landed AND the chapter's indices query saw it.
+- tapOn:
+    id: "reader.toolbar.collect-page"
+- assertVisible:
+    id: "reader.toolbar.collect-page"
+    label: "Remove page from collections"
+
+# Page away and back: the heart is derived per page, so it must go hollow on page 2 and come back
+# filled on page 1 — which a naive "remember the last tap" implementation would fail.
+- tapOn:
+    id: "reader.control.toggle-chrome"
+- tapOn:
+    id: "reader.control.next"
+- assertVisible:
+    id: "reader.navigator.page"
+    text: "^2$"
+- tapOn:
+    id: "reader.control.toggle-chrome"
+- assertVisible:
+    id: "reader.toolbar.collect-page"
+    label: "Collect this page"
+
+- tapOn:
+    id: "reader.control.prev"
+- assertVisible:
+    id: "reader.navigator.page"
+    text: "^1$"
+- tapOn:
+    id: "reader.control.toggle-chrome"
+- assertVisible:
+    id: "reader.toolbar.collect-page"
+    label: "Remove page from collections"
+
+# The settings sheet mirrors the same state off the same cache key.
+- tapOn:
+    id: "reader.settings.open"
+- assertVisible:
+    id: "reader.settings.collect-page"
+    text: "Collected"
+
+# Un-collect from the sheet, then confirm the TOOLBAR heart followed — the lockstep that sharing
+# one query key is supposed to buy.
+- tapOn:
+    id: "reader.settings.collect-page"
+- assertVisible:
+    id: "reader.settings.collect-page"
+    text: "Collect page"
+- tapOn:
+    point: "50%, 8%"
+- tapOn:
+    id: "reader.control.toggle-chrome"
+- assertVisible:
+    id: "reader.toolbar.collect-page"
+    label: "Collect this page"
+
+- tapOn:
+    id: "reader.toolbar.back"

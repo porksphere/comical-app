@@ -15,6 +15,7 @@ import { downloadsScreenRoute } from '@/data/downloads/nav';
 import { queryKeys } from '@/data/queries';
 import { useFavorite } from '@/hooks/use-favorite';
 import { useLibrary } from '@/hooks/use-library';
+import { usePageCollected } from '@/hooks/use-page-collected';
 import { useSeriesSubPath } from '@/lib/series-nav';
 import { useRouter } from '@/lib/nav';
 import {
@@ -39,6 +40,7 @@ export function SettingsControl({
   thumbnailUrl,
   author,
   direct,
+  page,
 }: {
   /** When both are set, the "This series" actions are shown — omitted on bridges/pages where the
    *  reader was opened without a resolvable series (shouldn't normally happen). */
@@ -51,6 +53,10 @@ export function SettingsControl({
   author?: string;
   /** A direct (chapterless) series downloads as one unit; otherwise Download opens chapter select. */
   direct?: boolean;
+  /** The page currently on screen, for the "This page" action. Omitted before the reader has
+   *  reported one. Shares `usePageCollected`'s cache key with the toolbar heart, so toggling from
+   *  either place keeps both in lockstep. */
+  page?: PageActionTarget;
 }) {
   const { ref, openAt } = useAnchoredOverlay();
 
@@ -68,6 +74,7 @@ export function SettingsControl({
             thumbnailUrl={thumbnailUrl}
             author={author}
             direct={direct}
+            page={page}
           />
         ))
       }
@@ -84,6 +91,16 @@ export function SettingsControl({
  *  light appearance it renders light while the reader keeps its own always-dark
  *  viewing surface — an intentional split, matching how media
  *  readers stay dark for immersion while their controls track the app theme. */
+/** The page the sheet's "This page" action acts on — the reader's currently visible page, with the
+ *  chapter it actually belongs to (mid-crossing that is a neighbouring segment). */
+export type PageActionTarget = {
+  chapterId: string;
+  chapterName?: string;
+  pageIndex: number;
+  pageCount?: number;
+  sourceUrl?: string;
+};
+
 function SettingsContent({
   bridgeId,
   seriesId,
@@ -91,6 +108,7 @@ function SettingsContent({
   thumbnailUrl,
   author,
   direct,
+  page,
 }: {
   bridgeId?: string;
   seriesId?: string;
@@ -98,6 +116,7 @@ function SettingsContent({
   thumbnailUrl?: string;
   author?: string;
   direct?: boolean;
+  page?: PageActionTarget;
 }) {
   const [settings, set] = useReaderSettings();
   return (
@@ -126,6 +145,9 @@ function SettingsContent({
         options={[1, 2, 3, 4, 6, 8].map((n) => [String(n), String(n)] as [string, string])}
         onChange={(v) => set({ prefetchAhead: Number(v) as PrefetchAhead })}
       />
+      {bridgeId && seriesId && page && (
+        <PageActionRow bridgeId={bridgeId} seriesId={seriesId} seriesTitle={title ?? seriesId} page={page} />
+      )}
       {bridgeId && seriesId && (
         <SeriesActionsRow
           bridgeId={bridgeId}
@@ -177,6 +199,49 @@ function DirectionRow({
             </Pressable>
           );
         })}
+      </View>
+    </View>
+  );
+}
+
+/**
+ * The "This page" section — a mirror of the toolbar's collect heart, for discoverability. Shares
+ * `usePageCollected`'s cache key with it, so toggling from either surface moves both.
+ *
+ * Kept as its own segment above "This series" rather than a fifth cell in that 2×2 grid: it acts on
+ * a different subject, and conflating the two is exactly the confusion the collections model is
+ * trying to avoid.
+ */
+function PageActionRow({
+  bridgeId,
+  seriesId,
+  seriesTitle,
+  page,
+}: {
+  bridgeId: string;
+  seriesId: string;
+  seriesTitle: string;
+  page: PageActionTarget;
+}) {
+  const { collected, toggle } = usePageCollected(bridgeId, seriesId, page.chapterId, page.pageIndex, () => ({
+    seriesTitle,
+    ...(page.chapterName !== undefined && { chapterName: page.chapterName }),
+    ...(page.pageCount !== undefined && { pageCount: page.pageCount }),
+    ...(page.sourceUrl !== undefined && { sourceUrl: page.sourceUrl }),
+  }));
+  return (
+    <View style={styles.seg}>
+      <ThemedText style={styles.segLabel}>This page</ThemedText>
+      <View style={styles.segRow}>
+        <Pressable
+          testID="reader.settings.collect-page"
+          onPress={toggle}
+          style={[styles.opt, collected && styles.optOn]}
+          disabled={collected === null}>
+          <ThemedText style={[styles.optText, collected && styles.optTextOn]}>
+            {collected ? '♥  Collected' : '♡  Collect page'}
+          </ThemedText>
+        </Pressable>
       </View>
     </View>
   );

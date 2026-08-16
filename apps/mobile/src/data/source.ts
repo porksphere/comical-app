@@ -122,6 +122,42 @@ export interface DataSource {
   ): Promise<void>;
   /** A series' current collection memberships; `[]` when it isn't filed anywhere. */
   getSeriesCollections(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<string[]>;
+
+  // ─── Collected page items ───────────────────────────────────────────────────
+  /** Collected items, or `null` when no library store is mounted. **Pass `type: 'page'`** for a
+   *  page grid — omitting it returns the mixed series/chapter/page union. */
+  getCollectedItems(query: api.CollectedItemsQuery, signal?: AbortSignal): Promise<api.ApiCollectionItem[] | null>;
+  /** The collected page indices for one chapter (stale items excluded). One call per chapter open. */
+  getChapterPageIndices(bridgeId: string, seriesId: string, chapterId: string, signal?: AbortSignal): Promise<number[]>;
+  /** Re-anchor a chapter's collected pages against a freshly-fetched page list. Prefer this over
+   *  `getChapterPageIndices` when the reader already holds the list. */
+  reconcileChapterPages(
+    bridgeId: string,
+    seriesId: string,
+    chapterId: string,
+    pages: api.ChapterPageRef[],
+    signal?: AbortSignal,
+  ): Promise<{ indices: number[]; repaired: number; stale: number }>;
+  /** Collect one page. Idempotent and merging — safe to repeat, and safe to send partially. */
+  collectPage(
+    bridgeId: string,
+    seriesId: string,
+    chapterId: string,
+    pageIndex: number,
+    snapshot: api.PageItemSnapshotBody,
+    signal?: AbortSignal,
+  ): Promise<void>;
+  /** Remove a collected page. */
+  uncollectPage(bridgeId: string, seriesId: string, chapterId: string, pageIndex: number, signal?: AbortSignal): Promise<void>;
+  /** Replace a page's collection memberships; an empty array removes the item. */
+  setPageCollections(
+    bridgeId: string,
+    seriesId: string,
+    chapterId: string,
+    pageIndex: number,
+    collectionIds: string[],
+    signal?: AbortSignal,
+  ): Promise<void>;
   addToLibrary(bridgeId: string, seriesId: string, snap: api.LibrarySnapshot, signal?: AbortSignal): Promise<void>;
   removeFromLibrary(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void>;
   /** Record read progress for a *library* series (updates its resume cache). */
@@ -513,6 +549,19 @@ const realDataSource: DataSource = {
     await api.setSeriesCollections(bridgeId, seriesId, collectionIds, signal);
   },
   getSeriesCollections: (bridgeId, seriesId, signal) => api.getSeriesCollections(bridgeId, seriesId, signal),
+  getCollectedItems: (query, signal) => api.getCollectedItems(query, signal),
+  getChapterPageIndices: (bridgeId, seriesId, chapterId, signal) =>
+    api.getChapterPageIndices(bridgeId, seriesId, chapterId, signal),
+  reconcileChapterPages: (bridgeId, seriesId, chapterId, pages, signal) =>
+    api.reconcileChapterPages(bridgeId, seriesId, chapterId, pages, signal),
+  async collectPage(bridgeId, seriesId, chapterId, pageIndex, snapshot, signal) {
+    await api.collectPage(bridgeId, seriesId, chapterId, pageIndex, snapshot, signal);
+  },
+  uncollectPage: (bridgeId, seriesId, chapterId, pageIndex, signal) =>
+    api.uncollectPage(bridgeId, seriesId, chapterId, pageIndex, signal),
+  async setPageCollections(bridgeId, seriesId, chapterId, pageIndex, collectionIds, signal) {
+    await api.setPageCollections(bridgeId, seriesId, chapterId, pageIndex, collectionIds, signal);
+  },
   isInLibrary: (bridgeId, seriesId, signal) => api.isInLibrary(bridgeId, seriesId, signal),
   getFavoritesImportPreview: (bridgeId, signal) => api.getFavoritesImportPreview(bridgeId, signal),
   importBridgeFavorites: (bridgeId, items, signal) => api.importBridgeFavorites(bridgeId, items, signal),
@@ -886,6 +935,17 @@ const mockDataSource: DataSource = {
   setSeriesCollections: (bridgeId, seriesId, collectionIds) =>
     mock.mockSetSeriesCollections(bridgeId, seriesId, collectionIds),
   getSeriesCollections: (bridgeId, seriesId) => mock.mockGetSeriesCollections(bridgeId, seriesId),
+  getCollectedItems: (query) => mock.mockGetCollectedItems(query),
+  getChapterPageIndices: (bridgeId, seriesId, chapterId) =>
+    mock.mockGetChapterPageIndices(bridgeId, seriesId, chapterId),
+  reconcileChapterPages: (bridgeId, seriesId, chapterId, pages) =>
+    mock.mockReconcileChapterPages(bridgeId, seriesId, chapterId, pages),
+  collectPage: (bridgeId, seriesId, chapterId, pageIndex, snapshot) =>
+    mock.mockCollectPage(bridgeId, seriesId, chapterId, pageIndex, snapshot),
+  uncollectPage: (bridgeId, seriesId, chapterId, pageIndex) =>
+    mock.mockUncollectPage(bridgeId, seriesId, chapterId, pageIndex),
+  setPageCollections: (bridgeId, seriesId, chapterId, pageIndex, collectionIds) =>
+    mock.mockSetPageCollections(bridgeId, seriesId, chapterId, pageIndex, collectionIds),
   isInLibrary: (bridgeId, seriesId) => mock.mockIsInLibrary(bridgeId, seriesId),
   getFavoritesImportPreview: (bridgeId) => mock.mockGetFavoritesImportPreview(bridgeId),
   importBridgeFavorites: (bridgeId, items) => mock.mockImportBridgeFavorites(bridgeId, items),

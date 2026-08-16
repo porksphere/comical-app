@@ -1041,6 +1041,159 @@ export async function mockSetSeriesCollections(
   else mockSeriesCollections.set(key, [...collectionIds]);
 }
 
+// ─── Collected page items (in-memory, dev/demo only) ─────────────────────────
+// Keyed by the same coordinate tuple the real ids encode. Memberships live on the record, and an
+// empty membership array removes it — pure collections, same as the runtime.
+
+type MockPageItem = {
+  type: 'page';
+  /** Same derived, prefixed shape the runtime mints (`page:b:s:c:i`, each part URL-encoded).
+   *  Internal — nothing addresses an item by id, since a reconcile re-keys it. */
+  id: string;
+  bridgeId: string;
+  seriesId: string;
+  chapterId: string;
+  pageIndex: number;
+  collectedAt: number;
+  collectionIds: string[];
+  seriesTitle: string;
+  chapterName?: string;
+  pageCount?: number;
+  sourceUrl?: string;
+  contentHash?: string;
+  stale?: boolean;
+};
+
+const pageItemKey = (b: string, s: string, c: string, i: number) => `${b}:${s}:${c}:${i}`;
+const pageItemId = (b: string, s: string, c: string, i: number) =>
+  ['page', b, s, c, String(i)].map(encodeURIComponent).join(':');
+const mockPageItems = new Map<string, MockPageItem>();
+let mockCollectedAt = 1_760_000_000_000;
+
+export async function mockGetCollectedItems(query: {
+  type?: string;
+  sort?: string;
+  dir?: string;
+  collection?: string;
+  series?: string;
+  q?: string;
+} = {}): Promise<MockPageItem[]> {
+  // Only page items exist in the mock; a `type` of series/chapter legitimately yields nothing.
+  if (query.type && query.type !== 'page') return [];
+  let items = [...mockPageItems.values()];
+  if (query.collection) items = items.filter((i) => i.collectionIds.includes(query.collection!));
+  if (query.series) items = items.filter((i) => `${i.bridgeId}:${i.seriesId}` === query.series);
+  const q = query.q?.trim().toLowerCase();
+  if (q) {
+    items = items.filter(
+      (i) => i.seriesTitle.toLowerCase().includes(q) || (i.chapterName ?? '').toLowerCase().includes(q),
+    );
+  }
+  const cmp =
+    query.sort === 'series'
+      ? (a: MockPageItem, b: MockPageItem) =>
+          a.seriesTitle.localeCompare(b.seriesTitle) || a.pageIndex - b.pageIndex
+      : query.sort === 'chapter'
+        ? (a: MockPageItem, b: MockPageItem) =>
+            a.chapterId.localeCompare(b.chapterId) || a.pageIndex - b.pageIndex
+        : (a: MockPageItem, b: MockPageItem) => a.collectedAt - b.collectedAt;
+  items.sort(cmp);
+  // 'added' defaults to newest-first, the others to ascending — matching the runtime.
+  const desc = query.dir ? query.dir === 'desc' : (query.sort ?? 'added') === 'added';
+  if (desc) items.reverse();
+  return items;
+}
+
+export async function mockGetChapterPageIndices(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+): Promise<number[]> {
+  return [...mockPageItems.values()]
+    .filter((i) => i.bridgeId === bridgeId && i.seriesId === seriesId && i.chapterId === chapterId && !i.stale)
+    .map((i) => i.pageIndex)
+    .sort((a, b) => a - b);
+}
+
+export async function mockReconcileChapterPages(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+  pages: { url?: string; contentHash?: string }[],
+): Promise<{ indices: number[]; repaired: number; stale: number }> {
+  // The mock never rewrites URLs, so nothing ever drifts here — report the stored indices as-is,
+  // with the same shape the real route returns.
+  void pages;
+  return { indices: await mockGetChapterPageIndices(bridgeId, seriesId, chapterId), repaired: 0, stale: 0 };
+}
+
+export async function mockCollectPage(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+  pageIndex: number,
+  snapshot: {
+    seriesTitle: string;
+    chapterName?: string;
+    pageCount?: number;
+    sourceUrl?: string;
+    contentHash?: string;
+  },
+): Promise<void> {
+  const key = pageItemKey(bridgeId, seriesId, chapterId, pageIndex);
+  const existing = mockPageItems.get(key);
+  // MERGE, don't rebuild: a supplied field wins as fresher, an omitted one is preserved. The
+  // two-PUT hash flow depends on this — a follow-up carrying only `contentHash` must not wipe
+  // `pageCount`, which is reconcile's fallback signal.
+  mockPageItems.set(key, {
+    type: 'page',
+    id: pageItemId(bridgeId, seriesId, chapterId, pageIndex),
+    bridgeId,
+    seriesId,
+    chapterId,
+    pageIndex,
+    collectedAt: existing?.collectedAt ?? mockCollectedAt++,
+    collectionIds: existing?.collectionIds ?? [],
+    seriesTitle: snapshot.seriesTitle,
+    ...((snapshot.chapterName ?? existing?.chapterName) !== undefined && {
+      chapterName: snapshot.chapterName ?? existing?.chapterName,
+    }),
+    ...((snapshot.pageCount ?? existing?.pageCount) !== undefined && {
+      pageCount: snapshot.pageCount ?? existing?.pageCount,
+    }),
+    ...((snapshot.sourceUrl ?? existing?.sourceUrl) !== undefined && {
+      sourceUrl: snapshot.sourceUrl ?? existing?.sourceUrl,
+    }),
+    ...((snapshot.contentHash ?? existing?.contentHash) !== undefined && {
+      contentHash: snapshot.contentHash ?? existing?.contentHash,
+    }),
+  });
+}
+
+export async function mockUncollectPage(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+  pageIndex: number,
+): Promise<void> {
+  mockPageItems.delete(pageItemKey(bridgeId, seriesId, chapterId, pageIndex));
+}
+
+export async function mockSetPageCollections(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+  pageIndex: number,
+  collectionIds: string[],
+): Promise<void> {
+  const key = pageItemKey(bridgeId, seriesId, chapterId, pageIndex);
+  const item = mockPageItems.get(key);
+  if (!item) return;
+  // Empty memberships removes the item, exactly as the real route does.
+  if (collectionIds.length === 0) mockPageItems.delete(key);
+  else mockPageItems.set(key, { ...item, collectionIds: [...collectionIds] });
+}
+
 export async function mockGetSeriesCollections(bridgeId: string, seriesId: string): Promise<string[]> {
   return [...(mockSeriesCollections.get(libKey(bridgeId, seriesId)) ?? [])];
 }

@@ -862,6 +862,8 @@ import type {
   HistoryItem as ApiHistoryItem,
   LibraryEntryView as ApiLibraryEntry,
   Collection as ApiCollection,
+  CollectionItem as ApiCollectionItem,
+  CollectionPageItem as ApiCollectionPageItem,
 } from '@comical/library';
 
 export type {
@@ -878,6 +880,8 @@ export type {
   ApiHistoryItem,
   ApiLibraryEntry,
   ApiCollection,
+  ApiCollectionItem,
+  ApiCollectionPageItem,
 };
 
 /** GET /bridges/{id} response — settings form data for one bridge. `info` is the bridge's full
@@ -1217,6 +1221,124 @@ export async function isInLibrary(bridgeId: string, seriesId: string, signal?: A
     throw new Error(body.error ?? `${res.status} ${res.statusText}`);
   }
   return true;
+}
+
+// ─── Collected page items ────────────────────────────────────────────────────
+// Page-level items: one record per (bridgeId, seriesId, chapterId, pageIndex). Addressed by
+// COORDINATES throughout — a record's id is derived from them, so a reconcile that relocates a page
+// re-keys it and a held id would 404. That's why no route here takes one.
+
+/** How a collected-items listing is scoped. `type` is NOT optional in practice for a page grid:
+ *  omitting it returns the mixed union (series/chapter items too). */
+export type CollectedItemsQuery = {
+  type?: 'series' | 'chapter' | 'page';
+  sort?: 'added' | 'series' | 'chapter';
+  dir?: 'asc' | 'desc';
+  collection?: string;
+  series?: string;
+  q?: string;
+};
+
+/** One page of a freshly-fetched chapter, as handed to `reconcileChapterPages`. Position in the
+ *  array IS the page index. Both fields are optional and `contentHash` is EXPECTED to be sparse —
+ *  send hashes only for pages whose bytes you already hold, never fetch one to hash it. */
+export type ChapterPageRef = { url?: string; contentHash?: string };
+
+/** GET /library/collected → the user's collected items, or `null` when no library store is mounted. */
+export function getCollectedItems(
+  query: CollectedItemsQuery = {},
+  signal?: AbortSignal,
+): Promise<ApiCollectionItem[] | null> {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(query)) if (v) qs.set(k, v);
+  const s = qs.toString();
+  return fetchJsonOptional(`/library/collected${s ? `?${s}` : ''}`, signal);
+}
+
+/** GET /library/collected/page/{b}/{s}/{c}/indices → the collected page indices for ONE chapter.
+ *  The reader loads this once per chapter open and drives its heart off the result for every page
+ *  turn — deliberately not a per-page status check, which would fire a request per turn. Stale
+ *  items are excluded, so an index here is always safe to navigate to. */
+export async function getChapterPageIndices(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+  signal?: AbortSignal,
+): Promise<number[]> {
+  return (await fetchJsonOptional<number[]>(collectedPagePath(bridgeId, seriesId, chapterId) + '/indices', signal)) ?? [];
+}
+
+/** POST /library/collected/page/{b}/{s}/{c}/reconcile → re-anchor this chapter's collected pages
+ *  against the page list the reader just fetched, returning the indices to trust. Repairs items the
+ *  source shifted and flags ones it can't place (`stale`), with no extra network fetch. Preferred
+ *  over `getChapterPageIndices` whenever the page list is already in hand. */
+export function reconcileChapterPages(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+  pages: ChapterPageRef[],
+  signal?: AbortSignal,
+): Promise<{ indices: number[]; repaired: number; stale: number }> {
+  return fetchPost(collectedPagePath(bridgeId, seriesId, chapterId) + '/reconcile', { pages }, signal);
+}
+
+/** PUT /library/collected/page/{b}/{s}/{c}/{i} → collect one page. IDEMPOTENT and MERGING: a
+ *  supplied snapshot field wins as the fresher value, an omitted one is PRESERVED, and
+ *  `collectedAt`/`collectionIds` carry over. That is what makes the two-PUT hash flow safe — collect
+ *  on tap, then PUT `{ seriesTitle, contentHash }` once the hash resolves without losing
+ *  `pageCount`, which is reconcile's fallback re-anchor signal. */
+export function collectPage(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+  pageIndex: number,
+  snapshot: PageItemSnapshotBody,
+  signal?: AbortSignal,
+): Promise<ApiCollectionItem> {
+  return fetchPut(`${collectedPagePath(bridgeId, seriesId, chapterId)}/${pageIndex}`, snapshot, signal);
+}
+
+/** The body `collectPage` takes. `seriesTitle` is required (it is what renders a tile once a bridge
+ *  is uninstalled); everything else is best-effort. */
+export type PageItemSnapshotBody = {
+  seriesTitle: string;
+  chapterName?: string;
+  pageCount?: number;
+  sourceUrl?: string;
+  contentHash?: string;
+};
+
+/** DELETE /library/collected/page/{b}/{s}/{c}/{i} → remove a collected page outright. */
+export function uncollectPage(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+  pageIndex: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  return fetchOk(`${collectedPagePath(bridgeId, seriesId, chapterId)}/${pageIndex}`, 'DELETE', signal);
+}
+
+/** PUT /library/collected/page/{b}/{s}/{c}/{i}/collections → replace a page's memberships.
+ *  An EMPTY array removes the item and the route reports `{ removed: true }` instead of it — an
+ *  item exists only as a member of something. */
+export function setPageCollections(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+  pageIndex: number,
+  collectionIds: string[],
+  signal?: AbortSignal,
+): Promise<unknown> {
+  return fetchPut(
+    `${collectedPagePath(bridgeId, seriesId, chapterId)}/${pageIndex}/collections`,
+    { collectionIds },
+    signal,
+  );
+}
+
+function collectedPagePath(bridgeId: string, seriesId: string, chapterId: string): string {
+  return `/library/collected/page/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/${encodeURIComponent(chapterId)}`;
 }
 
 /** GET /library/collected?type=series&series={b}:{s} → a series' collection memberships, or `[]`
