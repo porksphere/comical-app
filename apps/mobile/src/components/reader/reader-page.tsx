@@ -90,10 +90,10 @@ const STALL_DOWNLOAD_MS = 45_000;
  * colour behind its (virtualized) list — see paged-reader.tsx's `PageBackdrop`.
  *
  * There are two ways a page can be missing and they used to look identical and like nothing at all:
- * a cell the list hasn't mounted yet showed the reader's own `#0f0f0f`, and a mounted-but-unloaded
- * one showed the skeleton's `rgba(128,128,128,0.18)` over it — about `#1a1a1a`, ten RGB values
- * away. Both read as "the reader went black". They're now one deliberate, clearly-lighter surface,
- * and the only difference between them is that a mounted page can say which page it is.
+ * a cell the list hasn't mounted yet showed the reader's own base tone, and a mounted-but-unloaded
+ * one showed the skeleton's `rgba(128,128,128,0.18)` over it — ten RGB values away. Both read as
+ * "the reader went black". They're now one deliberate, clearly-lighter surface, and the only
+ * difference between them is that a mounted page can say which page it is.
  *
  * TRANSLUCENT, not opaque, same alpha as the skeleton it sits alongside — this used to be a solid
  * `#1f1f24`, which showed up as a hard-edged rectangle riding along with the swipe-to-dismiss
@@ -104,14 +104,16 @@ const STALL_DOWNLOAD_MS = 45_000;
  */
 export const PAGE_SURFACE = 'rgba(31,31,36,0.18)';
 
-/** The paged reader's static backdrop: PAGE_SURFACE flattened over the reader's base `#0f0f0f`
- *  (0.82·15 + 0.18·31 ≈ 18 / blue 0.18·36 ≈ 19 → #121213). The pager used to paint PAGE_SURFACE
+/** The paged reader's static backdrop: PAGE_SURFACE flattened over the reader's base, which is
+ *  now pure black (0.18·31 ≈ 6, blue 0.18·36 ≈ 6 → #060606; it was #121213 over the old #0f0f0f).
+ *  RECOMPUTE THIS if either the base or PAGE_SURFACE moves — it is a baked composite, and the
+ *  whole point of it is being indistinguishable from the real thing. The pager used to paint PAGE_SURFACE
  *  full-screen behind its list so a scrub that outruns virtualization shows "pages that haven't
  *  drawn yet" instead of a raw black gap — but that fill lived inside the subtree that
  *  translates/scales during swipe-to-dismiss, so it travelled with the receding page. Baking the
  *  same composite into the STATIC backdrop keeps scrub gaps and unloaded pages looking identical
  *  while only the pages themselves move during a swipe. */
-export const PAGED_BACKDROP = '#121213';
+export const PAGED_BACKDROP = '#060606';
 
 /** The cross-fade for a page that is STANDING rather than being turned to — the series page's
  *  collapsed strip. Short on purpose: long enough that the page arrives rather than appears, short

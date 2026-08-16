@@ -133,8 +133,11 @@ const WARM_BEHIND = 2;
 const PREV_WINDOW_GRACE_MS = 600;
 const IS_WEB = Platform.OS === 'web';
 const IS_IOS = Platform.OS === 'ios';
-// The reader surface's tone (the reference's `#reader-view`: #0f0f0f, not pure black).
-const READER_BACKDROP = '#0f0f0f';
+// The reader surface's tone. Pure black, like every other page — it mirrored the reference's
+// `#reader-view { background: #0f0f0f }` until the app's own background stopped doing the same
+// (see `Colors.dark.background`), and a reader a shade lighter than the app it opens out of read
+// as a mismatch rather than as its own surface.
+const READER_BACKDROP = '#000000';
 // How far a release must be PROJECTED (see lib/gesture-release — every commit decision on this
 // screen and in the search layer now asks the same question) before it counts as committed.
 //

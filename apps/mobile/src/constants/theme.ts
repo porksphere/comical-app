@@ -58,9 +58,6 @@ export const Colors = {
     // panel, where pure black is what the platform's own dark surfaces do and
     // where #0f0f0f is a lit grey next to them. It also puts the bar divider
     // back on the footing it was sampled at (see `barHairline`).
-    // The READER keeps #0f0f0f (`READER_BACKDROP`, and the web readers' own
-    // styles) — that's its own surface mirroring `#reader-view`, and a page of
-    // artwork is exactly where an off-black earns its keep.
     background: '#000000',
     // Modal/overlay-sheet surface. Reference uses a 3-tier scheme here —
     // `#filter-overlay-panel { background: #161618 }` vs. `button.ms-trigger
