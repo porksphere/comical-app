@@ -53,7 +53,10 @@ export function BarSurface({
           // sit UNDER the content) buys nothing now.
           backgroundColor: theme.background,
           paddingTop: safeAreaTop ? insets.top : 0,
-          borderBottomColor: theme.hairline,
+          // `barHairline`, not the generic `hairline`: with the bar painted the page's own colour
+          // this line is the only thing marking it off, so it carries more weight than a card edge.
+          // The bottom tab bar draws its top edge with the same token — one divider, one value.
+          borderBottomColor: theme.barHairline,
         },
         style,
       ]}>

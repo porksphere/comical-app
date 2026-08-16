@@ -32,11 +32,11 @@ export const Colors = {
     badgeNew: '#f59e0b',
     badgeNewOn: '#111111',
     hairline: 'rgba(0,0,0,0.12)',
-    // The mobile bottom nav bar. Its FILL is `background` — the bar is the same
-    // colour as the page, so only this top border separates them (the reference's
-    // `.bottom-nav` gives itself a distinct shade; ours deliberately doesn't).
-    // `tabIconActive`/`Inactive` are the selected/unselected icon tints.
-    tabBarBorder: '#E0E1E6',
+    // THE divider for both bars — the top bars' bottom edge and the bottom nav
+    // bar's top one (see `barHairline` on dark for why it's its own token rather
+    // than the generic `hairline`). `tabIconActive`/`Inactive` are the bottom
+    // bar's selected/unselected icon tints.
+    barHairline: '#E0E1E6',
     tabIconActive: '#000000',
     tabIconInactive: '#8E8E93',
     // Neutral chip fill (shared by genre + tag chips, like the reference); a
@@ -73,12 +73,17 @@ export const Colors = {
     badgeNew: '#f59e0b',
     badgeNewOn: '#111111',
     hairline: 'rgba(128,128,128,0.25)',
-    // The mobile bottom nav bar. Its FILL is `background` (#0f0f0f) — the bar is
-    // the same colour as the page, so only this top border separates them (the
-    // reference's `.bottom-nav { background: #111113 }` gives itself a distinct
-    // shade; ours deliberately doesn't). Active icon is pure white, inactive the
-    // iOS system gray (which reads on both themes).
-    tabBarBorder: '#242427',
+    // THE divider for both bars — the top bars' bottom edge and the bottom nav
+    // bar's top one. Its own token, and a step BRIGHTER than the generic
+    // `hairline` (which lands at ~rgb(43,43,43) over this background) and than
+    // the old bottom-bar border (#242427): the bars are painted `background`,
+    // exactly the colour of the page they sit on, so this line is the only thing
+    // that marks one off at all, and what reads as a subtle edge on a card is
+    // nearly invisible as the sole boundary of a whole bar. A step, not a leap —
+    // it's still a hairline, not a rule, and it sits below `backgroundSelected`
+    // rather than up near the icon greys.
+    // Active icon is pure white, inactive the iOS system gray (reads on both themes).
+    barHairline: '#33343A',
     tabIconActive: '#ffffff',
     tabIconInactive: '#8E8E93',
     chipBg: '#212225',

@@ -324,7 +324,7 @@ export default function AppTabs() {
                 // Content that scrolls behind it is simply hidden; this used to be a frosted
                 // `BarBlur` it showed through.
                 backgroundColor: theme.background,
-                borderTopColor: theme.tabBarBorder,
+                borderTopColor: theme.barHairline,
                 paddingBottom: Math.max(insets.bottom, Spacing.two),
                 // Web: fade to a faint ghost (still touchable, so tapping where it sits brings it
                 // back) while scrolling down. Native: slide the whole bar down out of view instead
@@ -473,9 +473,9 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   // --- Mobile icon bottom bar ---
-  // Its own shade (theme `tabBar`/`tabBarBorder`, set inline), distinct from both
-  // the page background and general element surfaces — mirrors the reference's
-  // `.bottom-nav` on dark and adapts to the light theme.
+  // Painted the page's own `background` with a `barHairline` top edge (both set inline), exactly
+  // like every top bar — so the bar reads as the page continuing, and that one line is the whole
+  // of what marks it off.
   // Absolute overlay pinned to the bottom: content scrolls behind it (screens
   // reserve BottomTabInset so their last items clear it), so when it fades on
   // scroll the content stays visible through the ghost instead of being hidden

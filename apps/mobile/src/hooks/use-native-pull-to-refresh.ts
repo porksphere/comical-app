@@ -8,6 +8,7 @@ import {
   type SharedValue,
 } from 'react-native-reanimated';
 import { hapticImpactLight } from '@/lib/haptics';
+import { pullHoldTranslate } from '@/lib/pull-hold';
 
 /** Overscroll distance (px) past which a release triggers a refresh. Matches the web hook. */
 const PULL_THRESHOLD = 64;
@@ -53,10 +54,10 @@ const SETTLE_SPRING = { damping: 18, stiffness: 220, mass: 0.7 } as const;
  * recoils the instant the finger lifts — so without help the content snaps back immediately even
  * though the (overlay) spinner stays. To match web's "stick until done", once triggered we hold the
  * content down ourselves via `listTranslateY`, easing from the release distance to `PULL_THRESHOLD`
- * (mirroring web's snap) and then counteracting the native recoil frame-by-frame
- * (`holdOffset + scrollY`) so the content stays put at a constant offset while `refreshing`, before
- * springing back to 0. During the *pull* itself `listTranslateY` stays 0 — the native bounce is
- * already moving the content, and translating on top of it would double the movement.
+ * (mirroring web's snap) and then counteracting the native recoil frame-by-frame (`pullHoldTranslate`)
+ * so the content stays put at a constant offset while `refreshing`, before springing back to 0.
+ * During the *pull* itself `listTranslateY` stays 0 — the native bounce is already moving the
+ * content, and translating on top of it would double the movement.
  *
  * Inert off iOS: Android clamps overscroll (no negative offset) and web never bounces, so `scrollY`
  * stays >= 0 there and nothing here ever leaves its rest value.
@@ -89,9 +90,10 @@ export function useNativePullToRefresh(scrollY: SharedValue<number>, onRefresh: 
   );
 
   // How far to translate the list wrapper. Zero during the pull (native bounce owns the movement);
-  // during the hold, `holdOffset + scrollY` keeps the content pinned at `holdOffset` as the native
-  // overscroll recoils from the release position back to 0.
-  const listTranslateY = useDerivedValue(() => (holding.value ? holdOffset.value + scrollY.value : 0));
+  // during the hold, `pullHoldTranslate` keeps the content pinned at `holdOffset` as the native
+  // overscroll recoils from the release position back to 0 — see that function for why the recoil
+  // it cancels has to be clamped to the negative half of `scrollY`.
+  const listTranslateY = useDerivedValue(() => pullHoldTranslate(holding.value, holdOffset.value, scrollY.value));
 
   useEffect(() => {
     if (holding.value && !refreshing) {
