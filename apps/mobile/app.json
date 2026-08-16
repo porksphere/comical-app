@@ -2,7 +2,7 @@
   "expo": {
     "name": "Comical",
     "slug": "comical",
-    "version": "0.1.2",
+    "version": "0.1.3",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "comical",
@@ -14,7 +14,7 @@
     },
     "android": {
       "package": "com.porksphere.comical",
-      "versionCode": 3,
+      "versionCode": 4,
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
