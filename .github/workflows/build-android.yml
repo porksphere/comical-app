@@ -1,11 +1,14 @@
 name: Build Android (rolling APK)
 
-# Rolling Android channel. On every push to main it rebuilds the release APK and
-# refreshes the "android-latest" Release, which hosts the APK at a stable,
-# public, unauthenticated direct-download URL (parity with the iOS channel — so
-# you can install on a device without a logged-in GitHub session). Versioned,
-# archival releases with BOTH the APK and the iOS IPA are produced separately by
-# release.yml on a v* tag.
+# Rolling Android channel — the counterpart of ios-main, NOT the channel users follow. On every
+# push to main it rebuilds the release APK and refreshes the "android-latest" Release, which hosts
+# the APK at a stable, public, unauthenticated direct-download URL (parity with the iOS channel —
+# so you can install on a device without a logged-in GitHub session).
+#
+# The public channel is "android-release", owned exclusively by release.yml. This lane used to
+# refresh that same Release as well, which is what made a tagged build's update check offer main
+# builds; see .github/scripts/publish-android-channel.sh for the split. Versioned, archival
+# releases with BOTH the APK and the iOS IPA are produced by release.yml.
 
 on:
   workflow_dispatch:
@@ -89,14 +92,15 @@ jobs:
           name: ${{ needs.build.outputs.artifact }}
           path: ${{ runner.temp }}/apk
 
-      # Shared with release.yml, so a tagged release moves this download link too — see the
-      # script's header for why that matters on Android.
+      # The publish script is shared with release.yml, but the CHANNEL is not: this lane owns
+      # android-latest (rolling main) and release.yml owns android-release (newest tag). See the
+      # script's header for why they used to be one Release and what that cost.
       - uses: actions/checkout@v4
 
       - name: Publish APK to the android-latest Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash .github/scripts/publish-android-latest.sh "$RUNNER_TEMP/apk/comical-android.apk" "${{ needs.build.outputs.version }}" "${{ github.sha }}"
+        run: bash .github/scripts/publish-android-channel.sh android-latest "$RUNNER_TEMP/apk/comical-android.apk" "${{ needs.build.outputs.version }}" "${{ github.sha }}"
 
   # Per-PR channel. Each open PR gets its own `android-pr-<N>` Release with a
   # stable APK download URL (parity with the iOS per-PR channel). The APK keeps

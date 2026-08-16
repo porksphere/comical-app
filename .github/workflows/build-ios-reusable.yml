@@ -1,4 +1,12 @@
-name: Build iOS IPA (reusable)
+# The leading "↳" is cosmetic, and it is the only lever there is. A reusable workflow HAS to live in
+# .github/workflows/ to be callable, GitHub has no key that hides one from the Actions sidebar, and
+# the sidebar sorts by this `name` — so a workflow_call-only file otherwise lands in the middle of
+# the list, directly above the workflow that calls it, looking like something you could run. The
+# arrow sorts it below every plain-ASCII name and reads as "called by", which is what it is. (The
+# real fix, if the list ever needs to be shorter rather than tidier, is converting these two to
+# composite actions under .github/actions/ — those never appear here. It costs the nested per-job
+# view in the UI and means passing secrets explicitly instead of `secrets: inherit`.)
+name: ↳ Build iOS IPA (called by build-ios.yml, release.yml)
 
 # Reusable: produces an UNSIGNED .ipa and uploads it as a run artifact, plus the
 # app version as an output. Called by both build-ios.yml (rolling, on push to
@@ -241,6 +249,15 @@ jobs:
           FULL="$(bash .github/scripts/compute-build-version.sh)"
           echo "Version: ${FULL}"
           echo "full=${FULL}" >> "$GITHUB_OUTPUT"
+
+          # CFBundleVersion, patched below. Total commits on this ref — the one number here that
+          # NEVER resets: `full`'s series counter restarts at .1 on every release (deliberately —
+          # see compute-build-version.sh), and iOS treats a build number that went backwards as a
+          # downgrade. Commits are only ever added, so this climbs across releases as well as
+          # within them, which is what CFBundleVersion is actually specified to mean.
+          BUILD_NUMBER="$(git rev-list --count HEAD)"
+          echo "Build number: ${BUILD_NUMBER}"
+          echo "build_number=${BUILD_NUMBER}" >> "$GITHUB_OUTPUT"
           # Bake the same three facts into the JS bundle for the in-app About screen
           # (src/lib/build-info.ts). $GITHUB_ENV so the archive step below — where the "Bundle React
           # Native code" phase inlines EXPO_PUBLIC_* — inherits them. The version MUST be baked:
@@ -257,14 +274,22 @@ jobs:
       # effect (the literal plist value wins). Patch the plist directly so the
       # IPA's version matches the apps.json manifest below — AltStore rejects
       # the install otherwise.
+      #
+      # CFBundleVersion gets the same treatment, for a different reason: app.json carries no
+      # `expo.ios.buildNumber`, so prebuild defaults it to "1" and every IPA this repo has ever
+      # produced reported build 1 — to Xcode's Organizer, to crash reports, and to anything that
+      # orders two builds of the SAME version string (which is every rebuild of a tag, and every
+      # pair of ios-pr builds at equal commit depth). The two keys are independent: the short
+      # string is what users and AltStore read, the build number is what the OS orders by.
       - name: Stamp full version into generated Info.plist
         if: ${{ !inputs.simulator }}
         working-directory: apps/mobile/ios
         run: |
           set -euo pipefail
           PLIST=$(find . -maxdepth 2 -name Info.plist -not -path '*/Pods/*' | head -1)
-          echo "Patching $PLIST -> CFBundleShortVersionString=${{ steps.ver.outputs.full }}"
+          echo "Patching $PLIST -> CFBundleShortVersionString=${{ steps.ver.outputs.full }}, CFBundleVersion=${{ steps.ver.outputs.build_number }}"
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${{ steps.ver.outputs.full }}" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ steps.ver.outputs.build_number }}" "$PLIST"
 
       # Route the compiler through ccache. RN wires CC=ccache-clang.sh, whose
       # `exec $CCACHE_BINARY clang` relies on the CCACHE_BINARY build setting

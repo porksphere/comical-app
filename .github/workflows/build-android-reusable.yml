@@ -1,4 +1,6 @@
-name: Build Android APK (reusable)
+# See build-ios-reusable.yml's header for why the name starts with an arrow: it's the only way to
+# keep a workflow_call-only file from sitting in the middle of the Actions sidebar looking runnable.
+name: ↳ Build Android APK (called by build-android.yml, release.yml)
 
 # Reusable: builds an installable release APK and uploads it as a run artifact
 # (renamed to comical-android.apk). Called by both build-android.yml (rolling,

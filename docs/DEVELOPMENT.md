@@ -94,15 +94,52 @@ silently never fires (0 hits/misses). With it, ~99.9% of compiles are cacheable:
 - **Android** (`ubuntu-latest`): `expo prebuild` → `gradlew assembleRelease` → installable
   `.apk` artifact (release is signed with the auto-generated debug keystore). `build-android.yml`
   refreshes the rolling **`android-latest`** Release so the APK has a stable, public,
-  unauthenticated direct-download URL.
+  unauthenticated direct-download URL — the testing lane, not the one the README links (see
+  "Android distribution" below).
 - **iOS** (`macos-26`): `expo prebuild` → `pod install` → `xcodebuild archive` with code
   signing disabled → packaged into an **unsigned `.ipa`** artifact. On push to main it's a
   **profiling** build published to the rolling **`ios-main`** Release; on a PR it's published to
   the aggregate **`ios-pr`** source (see "iOS distribution" below).
-- **Versioned releases:** pushing a `v*` tag runs `release.yml`, which builds both binaries
-  (iOS **clean** Release — no profiler) and attaches them to an immutable `vX.Y.Z` Release, then
-  refreshes the public **`ios-release`** SideStore source. This is the channel normal users
-  subscribe to; the rolling `ios-main`/`ios-pr` sources are for dev/perf testing.
+- **Versioned releases:** `release.yml` builds both binaries (iOS **clean** Release — no profiler),
+  attaches them to an immutable `vX.Y.Z` Release, publishes the versioned web image, and refreshes
+  the public **`ios-release`** source and **`android-release`** download link. Those are the
+  channels normal users follow; the rolling `ios-main`/`ios-pr`/`android-latest` lanes are for
+  dev/perf testing. See "Cutting a release" below.
+
+### Cutting a release
+
+Two dispatches with a PR in between — both runnable from GitHub Mobile, which is why neither step
+requires creating a tag by hand:
+
+1. **Actions → Prepare release → Run workflow**, picking `patch`, `minor` or `major`.
+   `prepare-release.yml` raises `expo.version` and `expo.android.versionCode` together, generates
+   the new `CHANGELOG.md` section from the commits since the last tag, and opens a `release: X.Y.Z`
+   PR. To see that diff before dispatching anything, run the same script locally:
+   `bash .github/scripts/prepare-release.sh patch && git diff`.
+2. **Review and merge that PR.** It arrives with no check runs — GitHub doesn't start workflows for
+   events raised by `GITHUB_TOKEN` — but the merge to main runs the full suite, and step 3
+   re-validates the version before it builds anything.
+3. **Actions → Release → Run workflow** (from `main`). `prep` reads the version out of `app.json`,
+   refuses to re-cut a shipped one, and checks the `versionCode` moved past the previous tag's;
+   then both binaries build, and the `vX.Y.Z` tag is created **at the end**, by the release step,
+   so a failed build never leaves a dangling tag or a tag without its binaries.
+
+Pushing a `v*` tag by hand still works and skips step 1–2, but `app.json` must already agree with
+the tag. Do **not** use the web Releases form to create the tag: it creates the Release object too,
+and `gh release create` then fails — after both builds have run.
+
+Release notes are GitHub's generated commit list appended to the install instructions
+(`--generate-notes`), and `CHANGELOG.md` carries the same history in-repo.
+
+**Version strings.** `expo.version` in `app.json` is a *base* that only moves on a release.
+Everything else derives from it in `.github/scripts/compute-build-version.sh`: a release build
+carries the bare `X.Y.Z`, and every rolling build carries `X.Y.Z.<Nth build of this release
+series>`, counting commits since the bump. The counter restarting each series is safe because the
+base outranks it — `0.2.0.1` still beats `0.1.1.4287`. All five lanes stamp the computed string
+into the artifact *and* bake it into the JS bundle as `EXPO_PUBLIC_COMICAL_APP_VERSION`, which is
+what the About screen shows; `Constants.expoConfig.version` would only ever report the bare base.
+iOS additionally gets `CFBundleVersion` set to the total commit count — the one number that never
+resets, which is what the OS orders two builds of the same version by.
 
 ### Web (same codebase, react-native-web)
 
@@ -118,6 +155,14 @@ publishes the static export to the `gh-pages` branch via `peaceiris/actions-gh-p
 
 The public Pages build runs in demo mode (`EXPO_PUBLIC_COMICAL_DEMO_MODE=1`, set only in
 `deploy-web.yml`) since static hosting has no backend to reach — see `components/demo-banner.tsx`.
+
+The *real*, backend-connected web build ships as a container image,
+`ghcr.io/porksphere/comical-app-web`, built by `publish-web-image.yml`: `:latest` and `:sha-<short>`
+on every push to main, plus `:X.Y.Z` and `:X.Y` when `release.yml` calls it as part of cutting a
+release. It's **called** rather than tag-triggered on purpose — a `push: tags: ['v*']` trigger
+cannot fire for a tag that `gh release create` made, because GitHub doesn't start workflows for refs
+created with `GITHUB_TOKEN`. That trigger silently published no versioned image at all between
+v0.1.1 and the switch; the workflow header has the full story.
 
 ## iOS distribution via SideStore
 
@@ -188,6 +233,30 @@ How the PR aggregate is produced (see `.github/workflows/build-ios.yml` +
 
 Android needs no equivalent — its per-PR `android-pr-<N>` prerelease already exposes a direct,
 stable APK download URL (there's no "source" concept to aggregate).
+
+## Android distribution — two channels, same split as iOS
+
+Android has no source manifest to subscribe to, so each channel is just a Release whose APK sits at
+a stable, public, unauthenticated URL. Both are refreshed by
+`.github/scripts/publish-android-channel.sh`, but by different workflows, and a build only ever
+checks for updates on the channel it was built on:
+
+| Channel | Download URL (`…/releases/download/<tag>/comical-android.apk`) | Refreshed by | For |
+| --- | --- | --- | --- |
+| **`android-release`** | `android-release` | `release.yml` (a `vX.Y.Z` release) | normal users — this is the README's download button |
+| **`android-latest`** | `android-latest` | `build-android.yml` (push to main) | testing unreleased work; the counterpart of `ios-main` |
+
+They were **one** Release until they were split, and both lanes republished it. That meant a user on
+a tagged release was told "update available" the first time any commit landed on main, and the
+button handed them a main build — iOS had never had that problem, because `ios-release` and
+`ios-main` are genuinely separate sources. It also meant the two lanes raced: they sit in different
+concurrency groups (`android-*` vs `release-*`), so merging a release bump and then dispatching the
+release had both delete-and-recreate the same Release at once, with a 404 window on the download URL
+in between. Different tags, no race.
+
+Each channel also carries a `version.json` (`{commit, version, publishedAt}`). The in-app update
+check (`src/data/use-app-update.ts`) compares its `commit` against the running build's — equality,
+not ordering, because `versionName` doesn't move between builds within a release series.
 
 ### Dev-client build — iterate on a device from any OS (incl. Windows)
 

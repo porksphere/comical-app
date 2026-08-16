@@ -154,6 +154,20 @@ jobs:
       channel: android-release
     secrets: inherit
 
+  # The web image is the third artifact of a release, and it is built from the same commit as the
+  # two binaries. It hangs off `release` rather than `prep` so it publishes only once the tag and
+  # its Release actually exist — the same rule the tag itself follows below. A version-tagged image
+  # for a release that failed to cut would be the one piece of this that couldn't be walked back by
+  # re-running the workflow.
+  web-image:
+    needs: [prep, release]
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/publish-web-image.yml
+    with:
+      version: ${{ needs.prep.outputs.version }}
+
   release:
     needs: [prep, ios, android]
     runs-on: ubuntu-latest
@@ -193,12 +207,17 @@ jobs:
           DL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
           IOS_RELEASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/ios-release/apps.json"
 
+          # --generate-notes appends GitHub's own commits-since-the-previous-release list to the
+          # body below (the API's documented behaviour when both are supplied). Until now the body
+          # was this static template and nothing else, so every release said what it contained but
+          # never what had CHANGED in it — the one thing a reader opening a release wants.
           gh release create "$TAG" \
             "$IPA" \
             "$APK" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "Comical ${TAG}" \
+            --generate-notes \
             --notes "Versioned build with both platform binaries.
 
           **iOS (unsigned IPA, re-signed on-device by SideStore/AltStore):**
@@ -219,13 +238,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash .github/scripts/refresh-ios-release-source.sh
 
-      # Android has no source manifest to subscribe to — the rolling android-latest URL in the
-      # README is the only thing users follow, and it's otherwise refreshed solely by pushes to
-      # main. Without this, tagging a commit main already built would publish a vX.Y.Z release
-      # while that download button kept serving the older APK.
-      - name: Refresh android-latest download link
+      # Android has no source manifest to subscribe to the way iOS has apps.json, so the stable
+      # android-release download URL is the whole channel — it's what the README points at and what
+      # an installed release build's update check follows. This lane owns it exclusively; pushes to
+      # main move android-latest instead, which is the rolling counterpart of ios-main.
+      - name: Refresh the android-release download link
         env:
           GH_TOKEN: ${{ github.token }}
         # The resolved tag, not `github.ref_name` — on a dispatch that would be the BRANCH, and this
-        # label is what the android-latest notes show as the version they carry.
-        run: bash .github/scripts/publish-android-latest.sh "$RUNNER_TEMP/apk/comical-android.apk" "${{ needs.prep.outputs.tag }}" "${{ github.sha }}"
+        # label is what the android-release notes show as the version they carry.
+        run: bash .github/scripts/publish-android-channel.sh android-release "$RUNNER_TEMP/apk/comical-android.apk" "${{ needs.prep.outputs.tag }}" "${{ github.sha }}"

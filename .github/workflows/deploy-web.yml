@@ -62,6 +62,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
+          # Full history: the version stamped below counts commits back to the one that last
+          # moved app.json's `expo.version`, which a depth-1 checkout can't see —
+          # compute-build-version.sh fails loudly rather than silently minting `<base>.1`.
+          fetch-depth: 0
 
       - name: Resolve branch slug, base URL and destination
         id: meta
@@ -103,6 +107,23 @@ jobs:
         if: github.event_name != 'delete'
         run: bun install --frozen-lockfile
 
+      # The same `<base>.<Nth build of this release series>` string the iOS and Android lanes
+      # stamp — see .github/scripts/compute-build-version.sh. Without it `build-info.ts` falls
+      # through to `Constants.expoConfig.version`, which is app.json's bare BASE ("0.1.3"), so
+      # every Pages build in a series reported the same version no matter how far into it it was
+      # built. The build time is baked here for the same reason: it was the one stamp this lane
+      # never set, leaving About's "Built" row blank on the exact build a stranger is most likely
+      # to file a bug against.
+      - name: Compute build stamps
+        id: ver
+        if: github.event_name != 'delete'
+        run: |
+          set -euo pipefail
+          FULL="$(bash .github/scripts/compute-build-version.sh)"
+          echo "Version: ${FULL}"
+          echo "full=${FULL}" >> "$GITHUB_OUTPUT"
+          echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Set web base URL for this build
         if: github.event_name != 'delete'
         working-directory: apps/mobile
@@ -130,6 +151,10 @@ jobs:
           # bug report is most likely to be filed against without knowing what it is.
           EXPO_PUBLIC_COMICAL_BUILD_CHANNEL: web-pages
           EXPO_PUBLIC_COMICAL_BUILD_COMMIT: ${{ github.sha }}
+          # See the "Compute build stamps" step — the manifest version Constants would otherwise
+          # fall back to is the bare series base, not what this build actually is.
+          EXPO_PUBLIC_COMICAL_APP_VERSION: ${{ steps.ver.outputs.full }}
+          EXPO_PUBLIC_COMICAL_BUILD_TIME: ${{ steps.ver.outputs.built_at }}
           # The in-app update checker (data/use-app-update.ts) needs this to build a
           # route-independent version.json URL — see lib/build-info.ts's WEB_BASE_URL.
           EXPO_PUBLIC_COMICAL_BASE_URL: ${{ steps.meta.outputs.base_url }}
@@ -139,12 +164,15 @@ jobs:
       - name: Write version.json for the in-app update checker
         if: github.event_name != 'delete'
         working-directory: apps/mobile
+        env:
+          FULL: ${{ steps.ver.outputs.full }}
+          BUILT_AT: ${{ steps.ver.outputs.built_at }}
         run: |
           set -euo pipefail
-          printf '{"commit":"%s","publishedAt":"%s"}\n' \
-            "${GITHUB_SHA:0:7}" \
-            "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            > dist/version.json
+          # `commit` is what the checker actually compares (see checkWebPages); `version` is for
+          # anyone reading this file directly, and matches the string the running bundle shows.
+          jq -n --arg commit "${GITHUB_SHA:0:7}" --arg version "$FULL" --arg publishedAt "$BUILT_AT" \
+            '{commit: $commit, version: $version, publishedAt: $publishedAt}' > dist/version.json
 
       # ── Update gh-pages content store ────────────────────────────────────────
 
