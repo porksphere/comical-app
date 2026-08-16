@@ -575,6 +575,10 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
   // the process, because `OverlayProvider` outlives every screen and no navigation resets it. The
   // check costs one timer per close and only runs when the stack has emptied; if the value really
   // did come back to rest (the overwhelmingly common case) it reports nothing at all.
+  //
+  // Dev and profiling builds only — `armSettleCheck` no-ops itself in a public build, so these are
+  // plain `withSpring` effects there. What stops the strand happening in the first place is the
+  // exit path in `OverlaySheet`/`OverlayPopover` below, which ships everywhere.
   useEffect(() => {
     appProgress.set(withSpring(sheetDepth > 0 ? 1 : 0, SPRING));
     if (sheetDepth > 0) {
@@ -804,6 +808,9 @@ function OverlaySheet({
     notePushback('overlay sheet close', `id=${id}`);
     exit.backstop = setTimeout(() => {
       exit.backstop = null;
+      // The REMOVAL here ships in every build — it's the guarantee, not the telemetry. Only the
+      // entry is dev/profiling-only, and it no-ops itself (see lib/pushback-watchdog), so this
+      // reads the same either way.
       reportStuck(
         'overlay-sheet',
         `exit curve never reported back after ${CLOSE_BACKSTOP_MS}ms (id ${id}) — removed by the backstop`,

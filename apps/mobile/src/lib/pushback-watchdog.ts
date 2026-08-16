@@ -1,4 +1,5 @@
 import { logDiagnostic } from '@/lib/diagnostics';
+import { PROFILING_ENABLED } from '@/lib/profiling';
 
 /**
  * The watchdog for "the app got PUSHED BACK and stayed there" — the whole screen scaled down a
@@ -26,8 +27,20 @@ import { logDiagnostic } from '@/lib/diagnostics';
  * that caused it) and the signal is eased back to rest, so the app recovers on its own instead of
  * needing that restart.
  *
- * Cost at rest is one `setTimeout` per close and one value read when it fires. Nothing here runs per
- * frame, and nothing here runs at all while an overlay is legitimately open.
+ * ── What ships ──────────────────────────────────────────────────────────────────────────────────
+ * This module is DIAGNOSTICS, and every entry point is gated on `PROFILING_ENABLED` — a dev build,
+ * or the profiling-release build CI can produce. In a public build all three fold to an early
+ * return: no trail, no timers, no log entries, and no auto-recovery.
+ *
+ * That is a real trade and it is deliberate. What actually FIXES the reported bug ships in every
+ * build and is not in this file — the overlay's closing latch, its removal of an item regardless of
+ * whether the exit curve reported `finished`, its wall-clock backstop, and the series page putting
+ * the backdrop back on unmount. The watchdog only ever catches what those miss, so a public build
+ * relies on them and a dev build additionally gets told when they didn't. Callers don't branch: the
+ * backstop still removes the stranded item in production, it just doesn't write the entry.
+ *
+ * Cost at rest, when enabled, is one `setTimeout` per close and one value read when it fires.
+ * Nothing here runs per frame, and nothing here runs at all while an overlay is legitimately open.
  *
  * Plain JS on purpose — no Reanimated and no `react-native` import, neither of which a bun unit test
  * can load — so the decision logic here is actually covered by one (`pushback-watchdog.test.ts`).
@@ -64,6 +77,7 @@ const bootedAt = Date.now();
  * strand is actually found, at which point it goes into the persisted entry as context.
  */
 export function notePushback(event: string, detail?: string): void {
+  if (!PROFILING_ENABLED) return;
   trail.push(`+${((Date.now() - bootedAt) / 1000).toFixed(1)}s ${event}${detail ? ` ${detail}` : ''}`);
   if (trail.length > TRAIL_LENGTH) trail.splice(0, trail.length - TRAIL_LENGTH);
 }
@@ -74,6 +88,7 @@ export function notePushback(event: string, detail?: string): void {
  * exit curve never reported back, which is a fact no amount of value-watching could recover.
  */
 export function reportStuck(source: string, message: string, detail?: string): void {
+  if (!PROFILING_ENABLED) return;
   notePushback(`${source} STUCK`, message);
   const context = [detail, 'trail:', ...trail.map((t) => `  ${t}`)].filter(Boolean).join('\n');
   logDiagnostic('stuck-pushback', `${source}: ${message}`, { context });
@@ -106,6 +121,7 @@ export function armSettleCheck(
   detail?: () => string,
   stillIdle?: () => boolean,
 ): void {
+  if (!PROFILING_ENABLED) return;
   cancelSettleCheck(source);
   pending.set(
     source,

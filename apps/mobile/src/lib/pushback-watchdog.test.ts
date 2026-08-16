@@ -16,6 +16,11 @@ mock.module('@/lib/diagnostics', () => ({
     logged.push({ category, message, context: opts.context });
   },
 }));
+// The build gate the whole module hangs off. Mocked ON here so these tests exercise the RULE; the
+// off case is `pushback-watchdog.disabled.test.ts`. It also has to be mocked rather than imported at
+// all: `PROFILING_ENABLED` reads the bare `__DEV__` global, which doesn't exist outside a Metro
+// bundle and would throw the moment this file loaded.
+mock.module('@/lib/profiling', () => ({ PROFILING_ENABLED: true }));
 
 const { armSettleCheck, cancelSettleCheck, notePushback, SETTLE_MS } = await import('./pushback-watchdog');
 type PushbackSignal = import('./pushback-watchdog').PushbackSignal;
