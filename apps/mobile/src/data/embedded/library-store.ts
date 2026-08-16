@@ -5,7 +5,8 @@
  * per "file":
  *
  *   comical:lib:entries            → { [entryKey]: LibraryEntry }
- *   comical:lib:lists              → LibraryList[]
+ *   comical:lib:favorite-collections      → FavoriteCollection[]
+ *   comical:lib:favorite-items:<b>:<s>    → { [id]: FavoriteItem }   (SHARDED per series)
  *   comical:lib:groups             → { [id]: SeriesGroup }
  *   comical:lib:tracker-links      → { [entryKey]: TrackerLink[] }
  *   comical:lib:reading-log        → { [entryKey]: HistoryItem }
@@ -28,9 +29,12 @@ import {
   type CachedSeriesDetail,
   type ChapterProgress,
   type HistoryItem,
+  type FavoriteCollection,
+  type FavoriteItem,
+  type FavoriteItemScope,
   type LibraryEntry,
-  type LibraryList,
   type LibraryStore,
+  parseFavoriteItemId,
   type SeriesGroup,
   type TrackerLink,
 } from '@comical/library';
@@ -39,7 +43,14 @@ import { serializeAsyncMethods } from '@/lib/serialize-methods';
 
 const NS = 'comical:lib';
 const ENTRIES = `${NS}:entries`;
-const LISTS = `${NS}:lists`;
+const FAVORITE_COLLECTIONS = `${NS}:favorite-collections`;
+// Favorites sit in ONE DOCUMENT PER SERIES, not one document overall. As a single doc every write
+// re-serialises every favorite the user has: the runtime measured 64ms → 3.4ms per chapter open at
+// 25k favorites. A series anchor lives in its own series' shard, so one layout covers all three
+// item types, and every coordinate carries bridge+series so an id always resolves to a shard.
+const favoriteItemsKey = (bridgeId: string, seriesId: string) =>
+  `${NS}:favorite-items:${encodeURIComponent(bridgeId)}:${encodeURIComponent(seriesId)}`;
+const FAVORITE_ITEMS_PREFIX = `${NS}:favorite-items:`;
 const GROUPS = `${NS}:groups`;
 const TRACKER_LINKS = `${NS}:tracker-links`;
 const READING_LOG = `${NS}:reading-log`;
@@ -155,20 +166,103 @@ export class AsyncStorageLibraryStore implements LibraryStore {
     await AsyncStorage.removeItem(progressKey(key));
   }
 
-  // ── Lists ──────────────────────────────────────────────────────────────────
-  async listLists(): Promise<LibraryList[]> {
-    return read<LibraryList[]>(LISTS, []);
+  // ── Favorites ──────────────────────────────────────────────────────────────
+  // Collections replaced the library's custom lists. Old `comical:lib:lists` documents and any
+  // `listIds` left on stored entries are ABANDONED IN PLACE — never read, never migrated (a
+  // deliberate call; see docs/collections-client-plan.md). They're inert.
+
+  /** Honours `scope` BEFORE parsing where it can: a series-scoped call reads one shard instead of
+   *  every one, which is what keeps opening a chapter off the whole-library path. */
+  async listFavoriteItems(scope?: FavoriteItemScope): Promise<FavoriteItem[]> {
+    const keys =
+      scope?.bridgeId !== undefined && scope?.seriesId !== undefined
+        ? [favoriteItemsKey(scope.bridgeId, scope.seriesId)]
+        : (await AsyncStorage.getAllKeys()).filter((k) => k.startsWith(FAVORITE_ITEMS_PREFIX));
+    if (keys.length === 0) return [];
+    const pairs = await AsyncStorage.multiGet(keys);
+    const out: FavoriteItem[] = [];
+    for (const [, raw] of pairs) {
+      if (!raw) continue;
+      let shard: Record<string, FavoriteItem>;
+      try {
+        shard = JSON.parse(raw) as Record<string, FavoriteItem>;
+      } catch {
+        continue;
+      }
+      for (const item of Object.values(shard)) {
+        if (scope?.type !== undefined && item.type !== scope.type) continue;
+        if (scope?.bridgeId !== undefined && item.bridgeId !== scope.bridgeId) continue;
+        if (scope?.seriesId !== undefined && item.seriesId !== scope.seriesId) continue;
+        // A series item has NO chapterId, so a chapter-scoped listing must drop it outright rather
+        // than compare an absent field — matching both reference stores.
+        if (scope?.chapterId !== undefined && (item.type === 'series' || item.chapterId !== scope.chapterId)) {
+          continue;
+        }
+        out.push(item);
+      }
+    }
+    return out;
   }
-  async putList(list: LibraryList): Promise<void> {
-    const lists = await read<LibraryList[]>(LISTS, []);
-    const idx = lists.findIndex((l) => l.id === list.id);
-    if (idx === -1) lists.push(list);
-    else lists[idx] = list;
-    await write(LISTS, lists);
+
+  async getFavoriteItem(id: string): Promise<FavoriteItem | undefined> {
+    const coord = parseFavoriteItemId(id);
+    if (!coord) return undefined;
+    const shard = await readRecord<FavoriteItem>(favoriteItemsKey(coord.bridgeId, coord.seriesId));
+    return shard[id];
   }
-  async deleteList(id: string): Promise<void> {
-    const lists = await read<LibraryList[]>(LISTS, []);
-    await write(LISTS, lists.filter((l) => l.id !== id));
+
+  /** ONE durable write per shard touched, however many records the batch carries — a chapter
+   *  reconcile repairs its whole chapter through a single call. */
+  async putFavoriteItems(items: FavoriteItem[]): Promise<void> {
+    if (items.length === 0) return;
+    const byShard = new Map<string, FavoriteItem[]>();
+    for (const item of items) {
+      const key = favoriteItemsKey(item.bridgeId, item.seriesId);
+      const bucket = byShard.get(key);
+      if (bucket) bucket.push(item);
+      else byShard.set(key, [item]);
+    }
+    for (const [key, shardItems] of byShard) {
+      const shard = await readRecord<FavoriteItem>(key);
+      for (const item of shardItems) shard[item.id] = item;
+      await write(key, shard);
+    }
+  }
+
+  async deleteFavoriteItems(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    const byShard = new Map<string, string[]>();
+    for (const id of ids) {
+      const coord = parseFavoriteItemId(id);
+      if (!coord) continue;
+      const key = favoriteItemsKey(coord.bridgeId, coord.seriesId);
+      const bucket = byShard.get(key);
+      if (bucket) bucket.push(id);
+      else byShard.set(key, [id]);
+    }
+    for (const [key, shardIds] of byShard) {
+      const shard = await readRecord<FavoriteItem>(key);
+      let touched = false;
+      for (const id of shardIds) {
+        if (id in shard) {
+          delete shard[id];
+          touched = true;
+        }
+      }
+      if (!touched) continue;
+      // Drop an emptied shard rather than leaving `{}` behind, so `getAllKeys` doesn't accumulate
+      // dead keys that every unscoped listing then has to read.
+      if (Object.keys(shard).length === 0) await AsyncStorage.removeItem(key);
+      else await write(key, shard);
+    }
+  }
+
+  // Collections stay a SINGLE document — there are few of them and they're read as a whole.
+  async listFavoriteCollections(): Promise<FavoriteCollection[]> {
+    return read<FavoriteCollection[]>(FAVORITE_COLLECTIONS, []);
+  }
+  async putFavoriteCollections(collections: FavoriteCollection[]): Promise<void> {
+    await write(FAVORITE_COLLECTIONS, collections);
   }
 
   // ── Groups ─────────────────────────────────────────────────────────────────

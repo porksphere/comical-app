@@ -1,4 +1,4 @@
-# Library tab: inline search, sort, and list-scope navigation (Manage Lists + back).
+# Library tab: inline search, sort, and collection-scope navigation (Manage Collections + back).
 appId: com.porksphere.comical
 ---
 - launchApp
@@ -29,13 +29,13 @@ appId: com.porksphere.comical
 - assertVisible:
     id: "series-card\\..*"
 
-# List scope -> Manage Lists -> back
+# Collection scope -> Manage Collections -> back
 - tapOn:
-    id: "library.list-selector"
+    id: "library.collection-selector"
 - tapOn:
-    id: "library.list.manage"
+    id: "library.collection.manage"
 - assertVisible:
-    id: "manage-lists.add"
+    id: "manage-collections.add"
 - tapOn:
     id: "top-bar.back"
 - assertVisible:

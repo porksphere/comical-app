@@ -188,15 +188,18 @@ export type LibraryItem = {
   author?: string;
   /** Logical unread chapters — drives the card's unread pill. */
   unread: number;
-  /** Ids of the custom lists this entry belongs to (empty = unlisted). */
-  listIds: string[];
 };
 
-/** A user-defined library list (collection). Mirrors `@comical/library`'s `LibraryList`. */
-export type LibraryList = {
+/** A user-defined collection. Mirrors `@comical/library`'s `FavoriteCollection`.
+ *
+ *  Collections replaced the library's custom lists: they group favorite ITEMS (a series, a chapter
+ *  or a page), not library entries, so an entry no longer carries its own memberships — a series is
+ *  "in" a collection by way of a series favorite item pointing at it. See
+ *  `docs/collections-client-plan.md`. */
+export type Collection = {
   id: string;
   name: string;
-  /** Sort position among lists (ascending). */
+  /** Sort position among collections (ascending). */
   order: number;
 };
 

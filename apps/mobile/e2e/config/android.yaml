@@ -35,5 +35,5 @@ executionOrder:
     - series-trackers
     - trackers-uninstall
     - downloads
-    - registries-lists
+    - registries-collections
     - favorites-import

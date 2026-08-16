@@ -861,7 +861,7 @@ import type {
   ChapterProgress as ApiChapterProgress,
   HistoryItem as ApiHistoryItem,
   LibraryEntryView as ApiLibraryEntry,
-  LibraryList as ApiLibraryList,
+  FavoriteCollection as ApiCollection,
 } from '@comical/library';
 
 export type {
@@ -877,7 +877,7 @@ export type {
   ApiChapterProgress,
   ApiHistoryItem,
   ApiLibraryEntry,
-  ApiLibraryList,
+  ApiCollection,
 };
 
 /** GET /bridges/{id} response — settings form data for one bridge. `info` is the bridge's full
@@ -1109,61 +1109,96 @@ export function putBridgePrefs(
 export type LibrarySort = 'added' | 'title' | 'lastRead' | 'unread';
 
 /** GET /library → the user's library entries (with derived `unreadCount`), or `null` when no library
- *  store is mounted. `q` scopes to a title search; `sort` orders the grid; `listId`/`unlisted` filter
- *  by custom-list membership (mutually exclusive — `unlisted` wins if both are set). */
+ *  store is mounted. `q` scopes to a title search; `sort` orders the grid; `collectionId`/
+ *  `uncollected` filter by collection membership (mutually exclusive — `uncollected` wins if both
+ *  are set). The host resolves membership by joining series favorites, so the grid never needs to
+ *  read memberships client-side. */
 export function getLibrary(
-  opts: { q?: string; sort?: LibrarySort; listId?: string; unlisted?: boolean } = {},
+  opts: { q?: string; sort?: LibrarySort; collectionId?: string; uncollected?: boolean } = {},
   signal?: AbortSignal,
 ): Promise<ApiLibraryEntry[] | null> {
   const qs = new URLSearchParams();
   if (opts.q) qs.set('q', opts.q);
   if (opts.sort) qs.set('sort', opts.sort);
-  if (opts.unlisted) qs.set('unlisted', 'true');
-  else if (opts.listId) qs.set('list', opts.listId);
+  if (opts.uncollected) qs.set('uncollected', 'true');
+  else if (opts.collectionId) qs.set('collection', opts.collectionId);
   const query = qs.toString();
   return fetchJsonOptional(`/library${query ? `?${query}` : ''}`, signal);
 }
 
-// ─── Custom lists ────────────────────────────────────────────────────────────
-// User-defined collections the library groups entries into (e.g. "Reading"). Membership lives on
-// each entry's `listIds`; these routes manage the list docs + an entry's memberships. All require a
-// mounted library store — with none, the collection routes 404 (getLibraryLists maps that to `[]`).
+// ─── Collections ─────────────────────────────────────────────────────────────
+// User-defined groupings (e.g. "Reading"). These replaced the library's custom lists: a collection
+// groups favorite ITEMS (series/chapter/page), so membership no longer lives on the library entry —
+// a series belongs to a collection by way of a SERIES FAVORITE pointing at it (see below). All
+// require a mounted library store; with none the routes 404 (getCollections maps that to `[]`).
 
-/** GET /library/lists → the user's custom lists (ascending `order`), or `[]` when no library store. */
-export async function getLibraryLists(signal?: AbortSignal): Promise<ApiLibraryList[]> {
-  return (await fetchJsonOptional<ApiLibraryList[]>('/library/lists', signal)) ?? [];
+/** GET /library/collections → the user's collections (ascending `order`), or `[]` with no library store. */
+export async function getCollections(signal?: AbortSignal): Promise<ApiCollection[]> {
+  return (await fetchJsonOptional<ApiCollection[]>('/library/collections', signal)) ?? [];
 }
 
-/** POST /library/lists → create a list, returning the new `LibraryList` (with its assigned id/order). */
-export function createLibraryList(name: string, signal?: AbortSignal): Promise<ApiLibraryList> {
-  return fetchPost('/library/lists', { name }, signal);
+/** POST /library/collections → create one, returning it with its assigned id/order. */
+export function createCollection(name: string, signal?: AbortSignal): Promise<ApiCollection> {
+  return fetchPost('/library/collections', { name }, signal);
 }
 
-/** POST /library/lists/reorder → set the lists' order to `orderedIds`. */
-export function reorderLibraryLists(orderedIds: string[], signal?: AbortSignal): Promise<unknown> {
-  return fetchPost('/library/lists/reorder', { orderedIds }, signal);
+/** POST /library/collections/reorder → set the collections' order to `orderedIds`.
+ *  Send the WHOLE list: a partial reorder leaves omitted entries on their old `order`, which can
+ *  tie with a repositioned one (known, and matching the lists behaviour it replaced). */
+export function reorderCollections(orderedIds: string[], signal?: AbortSignal): Promise<unknown> {
+  return fetchPost('/library/collections/reorder', { orderedIds }, signal);
 }
 
-/** PATCH /library/lists/{id} → rename a list. */
-export function renameLibraryList(id: string, name: string, signal?: AbortSignal): Promise<unknown> {
-  return fetchPatch(`/library/lists/${encodeURIComponent(id)}`, { name }, signal);
+/** PATCH /library/collections/{id} → rename. */
+export function renameCollection(id: string, name: string, signal?: AbortSignal): Promise<unknown> {
+  return fetchPatch(`/library/collections/${encodeURIComponent(id)}`, { name }, signal);
 }
 
-/** DELETE /library/lists/{id} → delete a list (also strips its id from every entry's `listIds`). */
-export function deleteLibraryList(id: string, signal?: AbortSignal): Promise<void> {
-  return fetchOk(`/library/lists/${encodeURIComponent(id)}`, 'DELETE', signal);
+/** DELETE /library/collections/{id} → delete a collection. The host also PRUNES series/chapter
+ *  favorites left with zero memberships (they only ever existed as members); bare page favorites
+ *  survive, since those are hearts the user set deliberately. Callers needn't strip members. */
+export function deleteCollection(id: string, signal?: AbortSignal): Promise<void> {
+  return fetchOk(`/library/collections/${encodeURIComponent(id)}`, 'DELETE', signal);
 }
 
-/** PUT /library/entries/{b}/{s}/lists → set which lists a series belongs to (replaces its memberships). */
-export function setEntryLists(
+/** PUT /library/favorites/series/{b}/{s} → the series ANCHOR. Idempotent, and required before
+ *  memberships can be set: filing a series is anchor-then-memberships, replacing the old
+ *  `PUT /library/entries/{b}/{s}/lists`. */
+export function putSeriesFavorite(
   bridgeId: string,
   seriesId: string,
-  listIds: string[],
+  snapshot: { seriesTitle: string; thumbnailUrl?: string; author?: string },
   signal?: AbortSignal,
 ): Promise<unknown> {
   return fetchPut(
-    `/library/entries/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/lists`,
-    { listIds },
+    `/library/favorites/series/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}`,
+    snapshot,
+    signal,
+  );
+}
+
+/** DELETE /library/favorites/series/{b}/{s} → un-file a series entirely.
+ *  This — NOT `setSeriesCollections(…, [])` — is how a series leaves its last collection: an
+ *  anchor with empty memberships is legal in core but would linger in favorites listings, and a
+ *  bare anchor is a page-only affordance by app policy. */
+export function deleteSeriesFavorite(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void> {
+  return fetchOk(
+    `/library/favorites/series/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}`,
+    'DELETE',
+    signal,
+  );
+}
+
+/** PUT /library/favorites/series/{b}/{s}/collections → replace a series' memberships. */
+export function setSeriesCollections(
+  bridgeId: string,
+  seriesId: string,
+  collectionIds: string[],
+  signal?: AbortSignal,
+): Promise<unknown> {
+  return fetchPut(
+    `/library/favorites/series/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/collections`,
+    { collectionIds },
     signal,
   );
 }
@@ -1182,20 +1217,20 @@ export async function isInLibrary(bridgeId: string, seriesId: string, signal?: A
   return true;
 }
 
-/** GET /library/entries/{b}/{s} → the entry's custom-list memberships, or `null` when the series
- *  isn't in the library (404). Used by the list-assign picker to seed its checkboxes. */
-export async function getEntryLists(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<string[] | null> {
-  const res = await transport(
-    `/library/entries/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}`,
-    { signal },
+/** GET /library/favorites?type=series&series={b}:{s} → a series' collection memberships, or `[]`
+ *  when it isn't filed anywhere. Replaces reading the old `entry.listIds`, which no longer exists:
+ *  memberships live on the series favorite item, not on the library entry — so this is independent
+ *  of whether the series is in the library at all. Seeds the collection picker's checkboxes. */
+export async function getSeriesCollections(
+  bridgeId: string,
+  seriesId: string,
+  signal?: AbortSignal,
+): Promise<string[]> {
+  const items = await fetchJsonOptional<{ collectionIds?: string[] }[]>(
+    `/library/favorites?type=series&series=${encodeURIComponent(`${bridgeId}:${seriesId}`)}`,
+    signal,
   );
-  if (res.status === 404) return null;
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `${res.status} ${res.statusText}`);
-  }
-  const body = (await res.json()) as { entry?: { listIds?: string[] } };
-  return body.entry?.listIds ?? [];
+  return items?.[0]?.collectionIds ?? [];
 }
 
 /** Display snapshot persisted with a new library entry so it renders offline / after bridge removal. */

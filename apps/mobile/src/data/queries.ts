@@ -22,16 +22,17 @@ import type {
   HistoryEntry,
   HomeGridSection,
   LibraryItem,
-  LibraryList,
+  Collection,
   RailSection,
   SeriesDetail,
   SeriesEntry,
   SeriesListResult,
 } from './types';
 
-/** How the Library grid is scoped to a custom list. `null` = all entries; `'unlisted'` = entries in
- *  no list; otherwise a specific list id. Part of the library query key so each view caches apart. */
-export type LibraryListFilter = string | 'unlisted' | null;
+/** How the Library grid is scoped to a collection. `null` = all entries; `'uncollected'` = entries
+ *  in no collection; otherwise a collection id. Part of the library query key so each view caches
+ *  apart. The host resolves membership by joining series favorites, so this stays one query. */
+export type CollectionFilter = string | 'uncollected' | null;
 
 /** Per-series fetch options that affect the *shape* of the result (and thus the key). */
 export type SeriesDetailOpts = { direct?: boolean; bridgeName?: string; title?: string; cover?: string };
@@ -80,13 +81,13 @@ export const queryKeys = {
     ['isFavorite', mock, bridgeId, seriesId] as const,
   relatedGroups: (mock: boolean, bridgeId: string, seriesId: string) =>
     ['relatedGroups', mock, bridgeId, seriesId] as const,
-  library: (mock: boolean, q: string, sort: LibrarySort, list: LibraryListFilter = null) =>
-    ['library', mock, q, sort, list] as const,
-  /** The user's custom lists collection. */
-  libraryLists: (mock: boolean) => ['libraryLists', mock] as const,
-  /** One series' custom-list memberships (for the assign picker). */
-  entryLists: (mock: boolean, bridgeId: string, seriesId: string) =>
-    ['entryLists', mock, bridgeId, seriesId] as const,
+  library: (mock: boolean, q: string, sort: LibrarySort, collection: CollectionFilter = null) =>
+    ['library', mock, q, sort, collection] as const,
+  /** The user's collections. */
+  collections: (mock: boolean) => ['collections', mock] as const,
+  /** One series' collection memberships (for the assign picker). */
+  seriesCollections: (mock: boolean, bridgeId: string, seriesId: string) =>
+    ['seriesCollections', mock, bridgeId, seriesId] as const,
   trackerLinks: (mock: boolean, bridgeId: string, seriesId: string) =>
     ['trackerLinks', mock, bridgeId, seriesId] as const,
   inLibrary: (mock: boolean, bridgeId: string, seriesId: string) =>
@@ -399,34 +400,38 @@ export function favoritesImportPreviewQuery(
   };
 }
 
-/** `useQuery` options for the library grid (`null` result = no library store mounted). `list` scopes
- *  to a custom list (`'unlisted'` = entries in no list; a list id; or `null` for all). */
+/** `useQuery` options for the library grid (`null` result = no library store mounted). `collection`
+ *  scopes to a collection (`'uncollected'` = entries in none; an id; or `null` for all). */
 export function libraryQuery(
   ds: DataSource,
   mock: boolean,
   q: string,
   sort: LibrarySort,
-  list: LibraryListFilter = null,
+  collection: CollectionFilter = null,
 ): UseQueryOptions<LibraryItem[] | null, Error> {
   return {
-    queryKey: queryKeys.library(mock, q, sort, list),
+    queryKey: queryKeys.library(mock, q, sort, collection),
     queryFn: ({ signal }) =>
       ds.getLibrary(
         {
           ...(q ? { q } : {}),
           sort,
-          ...(list === 'unlisted' ? { unlisted: true } : list ? { listId: list } : {}),
+          ...(collection === 'uncollected'
+            ? { uncollected: true }
+            : collection
+              ? { collectionId: collection }
+              : {}),
         },
         signal,
       ),
   };
 }
 
-/** `useQuery` options for the user's custom lists collection. */
-export function libraryListsQuery(ds: DataSource, mock: boolean): UseQueryOptions<LibraryList[], Error> {
+/** `useQuery` options for the user's collections. */
+export function collectionsQuery(ds: DataSource, mock: boolean): UseQueryOptions<Collection[], Error> {
   return {
-    queryKey: queryKeys.libraryLists(mock),
-    queryFn: ({ signal }) => ds.getLists(signal),
+    queryKey: queryKeys.collections(mock),
+    queryFn: ({ signal }) => ds.getCollections(signal),
   };
 }
 

@@ -20,7 +20,7 @@ import type { ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 
 import { TagGroupRow } from '@/components/chip';
-import { openListPicker } from '@/components/list-picker';
+import { openCollectionPicker } from '@/components/collection-picker';
 import { Rail, RailSkeleton } from '@/components/rail';
 import { ActionButton, NewBadge } from '@/components/series/action-button';
 import { ChapterScrollList, PageThumbList } from '@/components/series/chapters-section';
@@ -427,10 +427,10 @@ export function SeriesBody({
       {bridgeId && (
         <ActionButton
           testID="series.action.lists"
-          label="Add to list"
+          label="Add to collection"
           caret
           onPress={() =>
-            openListPicker({
+            openCollectionPicker({
               bridgeId,
               seriesId: series.id,
               title: series.title,

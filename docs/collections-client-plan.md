@@ -114,6 +114,11 @@ Two migration specifics a rename pass misses:
 Collections stay one document: `comical:lib:favorite-collections`. Everything still goes through
 `serializeAsyncMethods`; `diskUsage()` still sums `comical:lib:*` for free.
 
+**No lists carry-over — decided.** A one-time app-side migration (old lists document + each entry's
+`listIds` → collections + series favorites) was considered and declined: collections start empty,
+and Phase 0 drops the old keys **unread**. Don't build a migration later without asking; this was a
+deliberate call, not an oversight.
+
 ## 3. Routes — the lists→collections repair
 
 ```
@@ -329,10 +334,20 @@ cursor paging on the list route.
 
 ## 10. Phasing
 
-**Phase 0 — unbreak the build.** The pin is already bumped, so this is due now: retire the lists
-types/routes/store methods, land `/library/collections*` and the `?collection=` filter params, and
-repoint the existing lists UI. Ends with `bun run typecheck` green and the library screen working
-again. Files per §3 and §7.
+**Phase 0 — unbreak the build. ✅ DONE.** Lists retired end to end: `/library/collections*` and the
+`?collection=`/`?uncollected=` filter params, the six store methods (sharded per series, series-item
+scope rule), `use-collections.ts` + `use-series-collections.ts` replacing the two lists hooks, and
+`manage-collections.tsx` / `collection-picker.tsx` / `library-collection-selector.tsx` replacing
+their lists counterparts. Mock implements the new seam with memberships in their own map, so a
+series can be filed without being in the library. e2e flows and testIDs renamed
+(`registries-lists` → `registries-collections`). typecheck / lint / lint:testids / 136 tests /
+check:flow-coverage all green.
+
+One UX judgement carried forward rather than decided silently: **filing a series still adds it to
+the library first.** That used to be a technical requirement (the membership route needed an entry);
+it isn't any more, since memberships hang off the favorite item. It's kept because "file it" has
+always implied "keep it" here — but collections can now hold series that aren't in the library at
+all, so this is worth a deliberate look. Un-filing never removes from the library.
 
 **Phase 1 — favorites plumbing + the reader toggle.** `types.ts`, `library-store.ts` (four methods,
 sharded, series-item scope rule), `api.ts`, `source.ts`, `mock.ts`, `queries.ts`, `query-client.ts`,

@@ -2,7 +2,7 @@ import { View, StyleSheet } from 'react-native';
 
 import { MenuActionRow, MenuHeader } from '@/components/context-menu';
 import { CheckIcon, DownloadsIcon, ListPlusIcon, PlusIcon, StarIcon } from '@/components/icons/ui-icons';
-import { openListPicker } from '@/components/list-picker';
+import { openCollectionPicker } from '@/components/collection-picker';
 import { OptionList, useOverlay } from '@/components/overlay/overlay';
 import { Spacing } from '@/constants/theme';
 import type { SeriesEntry } from '@/data/types';
@@ -75,15 +75,15 @@ export function SeriesActionsMenu({
           }}
         />
         <MenuActionRow
-          testID="series.card-menu.lists"
-          label="Add to list"
+          testID="series.card-menu.collections"
+          label="Add to collection"
           Icon={ListPlusIcon}
           // Close this overlay sheet first, THEN open the picker (a root host that renders under the
           // overlay stack, so it must not overlap this menu). No stacking here — that's the native
           // long-press menu's job (series-card-context-menu.tsx).
           onPress={() => {
             closeTop();
-            openListPicker({
+            openCollectionPicker({
               bridgeId,
               seriesId: entry.id,
               title: entry.title,

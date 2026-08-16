@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
 import { SearchIcon } from '@/components/icons/ui-icons';
-import { LibraryListSelector } from '@/components/library-list-selector';
+import { LibraryCollectionSelector } from '@/components/library-collection-selector';
 import { LibrarySortButton } from '@/components/library-sort-button';
 import { RetryBlock } from '@/components/retry-block';
 import { SearchField } from '@/components/search-field';
@@ -17,11 +17,11 @@ import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BarContentGap, BottomTabInset, Spacing } from '@/constants/theme';
-import { libraryQuery, type LibraryListFilter } from '@/data/queries';
+import { libraryQuery, type CollectionFilter } from '@/data/queries';
 import { toLibraryCard, type LibraryGridItem } from '@/data/library-card';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import { useBridgeMap } from '@/hooks/use-bridges';
-import { useLibraryLists } from '@/hooks/use-library-lists';
+import { useCollections } from '@/hooks/use-collections';
 import { useLibrarySort } from '@/hooks/use-library-sort';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
@@ -45,10 +45,10 @@ export default function LibraryScreen() {
   // this flips, the list holds empty data and the header shows a skeleton.
   const ready = useDeferredMount();
 
-  // Which custom list the grid is scoped to (null = all, or a list id).
-  const [listFilter, setListFilter] = useState<LibraryListFilter>(null);
-  // Sort is remembered per list (persisted) — switching lists restores that list's last ordering.
-  const [sort, setSort] = useLibrarySort(listFilter);
+  // Which collection the grid is scoped to (null = all, or a collection id).
+  const [collectionFilter, setCollectionFilter] = useState<CollectionFilter>(null);
+  // Sort is remembered per collection (persisted) — switching restores that view's last ordering.
+  const [sort, setSort] = useLibrarySort(collectionFilter);
 
   // In-place search: the top-bar search icon swaps the bar's leading content for a search field
   // (no pushed screen). `query` is committed on submit and folds straight into the same grid query.
@@ -62,11 +62,11 @@ export default function LibraryScreen() {
   // Bridges resolve each entry's display name + direct-ness (each library card
   // carries its own bridge, unlike the Browse grid's single-bridge view).
   const { byId: bridgeById } = useBridgeMap();
-  const { lists } = useLibraryLists();
+  const { collections } = useCollections();
 
   // Search + sort both fold into this one query and re-render the grid in place.
   const { data: items = undefined, error, isLoading, refetch } = useQuery(
-    libraryQuery(ds, mock, query, sort, listFilter),
+    libraryQuery(ds, mock, query, sort, collectionFilter),
   );
 
   // Reflect adds/removes made on the series detail (or a mode switch) when the
@@ -116,8 +116,13 @@ export default function LibraryScreen() {
       if (query.trim()) {
         return <EmptyState title="No matches" detail="No series in your library match your search." />;
       }
-      if (listFilter) {
-        return <EmptyState title="This list is empty" detail="Add series to this list from a series page or a card’s long-press menu." />;
+      if (collectionFilter) {
+        return (
+          <EmptyState
+            title="This collection is empty"
+            detail="Add series to this collection from a series page or a card’s long-press menu."
+          />
+        );
       }
       return <EmptyState title="Your library is empty" detail="Open a series and tap “＋ Library” to add it here." />;
     }
@@ -132,7 +137,7 @@ export default function LibraryScreen() {
           remounts the list on a search/sort switch (a scroll-to-top moment) and resets recycled cards. */}
       <SeriesGrid
         items={listData}
-        scopeKey={`${query}|${sort}|${listFilter ?? ''}`}
+        scopeKey={`${query}|${sort}|${collectionFilter ?? ''}`}
         listRef={listRef}
         header={renderEmpty()}
         // Library cards carry an app-made sub (the bridge name), regardless of any bridge flag.
@@ -172,7 +177,7 @@ export default function LibraryScreen() {
               </View>
             </View>
           ) : (
-            <LibraryListSelector value={listFilter} lists={lists} onChange={setListFilter} />
+            <LibraryCollectionSelector value={collectionFilter} collections={collections} onChange={setCollectionFilter} />
           )
         }
         right={

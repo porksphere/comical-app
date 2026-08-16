@@ -11,40 +11,42 @@ import {
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { RowHeight, Spacing } from '@/constants/theme';
-import type { LibraryListFilter } from '@/data/queries';
-import type { LibraryList } from '@/data/types';
+import type { CollectionFilter } from '@/data/queries';
+import type { Collection } from '@/data/types';
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
 import { useRouter } from '@/lib/nav';
 
 /**
  * The Library tab's top-bar view selector — the bridge-selector shape, reading "Library" (all
- * entries) by default and opening a menu to switch to any custom list. A trailing "Manage lists…"
- * action pushes the manage screen (create/rename/reorder/delete). It reads the lists collection
- * itself so the Library screen only owns the selected filter.
+ * entries) by default and opening a menu to switch to any collection. A trailing "Manage
+ * collections…" action pushes the manage screen (create/rename/reorder/delete). It takes the
+ * collections as a prop so the Library screen owns the selected filter and nothing else.
  */
-export function LibraryListSelector({
+export function LibraryCollectionSelector({
   value,
-  lists,
+  collections,
   onChange,
 }: {
-  value: LibraryListFilter;
-  lists: LibraryList[];
-  onChange: (value: LibraryListFilter) => void;
+  value: CollectionFilter;
+  collections: Collection[];
+  onChange: (value: CollectionFilter) => void;
 }) {
   const { ref, openAt } = useAnchoredOverlay();
   const theme = useTheme();
   const { hovered, handlers } = useHover();
 
-  const currentLabel = value ? (lists.find((l) => l.id === value)?.name ?? 'Library') : 'Library';
+  const currentLabel = value ? (collections.find((c) => c.id === value)?.name ?? 'Library') : 'Library';
 
   return (
     <Pressable
-      testID="library.list-selector"
+      testID="library.collection-selector"
       ref={ref}
       {...handlers}
       style={[styles.trigger, hovered && { backgroundColor: theme.backgroundSelected }]}
-      onPress={() => openAt(() => <ListMenu value={value} lists={lists} onChange={onChange} />)}>
+      onPress={() =>
+        openAt(() => <CollectionMenu value={value} collections={collections} onChange={onChange} />)
+      }>
       <ThemedText numberOfLines={1} style={styles.triggerLabel}>
         {currentLabel}
       </ThemedText>
@@ -55,20 +57,20 @@ export function LibraryListSelector({
   );
 }
 
-function ListMenu({
+function CollectionMenu({
   value,
-  lists,
+  collections,
   onChange,
 }: {
-  value: LibraryListFilter;
-  lists: LibraryList[];
-  onChange: (value: LibraryListFilter) => void;
+  value: CollectionFilter;
+  collections: Collection[];
+  onChange: (value: CollectionFilter) => void;
 }) {
   const { closeTop } = useOverlay();
   const router = useRouter();
   const presentation = useOverlayPresentation();
 
-  const pick = (v: LibraryListFilter) => {
+  const pick = (v: CollectionFilter) => {
     onChange(v);
     closeTop();
   };
@@ -81,22 +83,28 @@ function ListMenu({
         </MeasuredHeader>
       )}
       <OptionList>
-        <ViewRow testID="library.list.all" label="Library" hint="All series" selected={value === null} onPress={() => pick(null)} />
-        {lists.map((l) => (
+        <ViewRow
+          testID="library.collection.all"
+          label="Library"
+          hint="All series"
+          selected={value === null}
+          onPress={() => pick(null)}
+        />
+        {collections.map((c) => (
           <ViewRow
-            key={l.id}
-            testID={`library.list.${l.id}`}
-            label={l.name}
-            selected={value === l.id}
-            onPress={() => pick(l.id)}
+            key={c.id}
+            testID={`library.collection.${c.id}`}
+            label={c.name}
+            selected={value === c.id}
+            onPress={() => pick(c.id)}
           />
         ))}
         <ActionRow
-          testID="library.list.manage"
-          label="Manage lists…"
+          testID="library.collection.manage"
+          label="Manage collections…"
           onPress={() => {
             closeTop();
-            router.push('/manage-lists');
+            router.push('/manage-collections');
           }}
         />
       </OptionList>

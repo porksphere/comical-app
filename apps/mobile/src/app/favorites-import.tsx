@@ -137,7 +137,7 @@ export default function FavoritesImportScreen() {
       // Only library-side state moved — no bridge content changed, so this stays targeted rather
       // than a blanket invalidate.
       void queryClient.invalidateQueries({ queryKey: queryKeys.libraryList(mock) });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.libraryLists(mock) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.collections(mock) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.favoritesImportPreview(mock, bridgeId) });
       void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === 'inLibrary' });
 

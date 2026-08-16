@@ -4,7 +4,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { MoveLeftIcon, MoveRightIcon, MoveVerticalIcon, SettingsIcon } from '@/components/icons/reader-icons';
 import type { IconProps } from '@/components/icons/ui-icons';
-import { openListPicker } from '@/components/list-picker';
+import { openCollectionPicker } from '@/components/collection-picker';
 import { OverlayHeading, useAnchoredOverlay, useOverlay } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
@@ -277,9 +277,9 @@ function SeriesActionsRow({
     }
     openSeriesDownloads(true);
   };
-  const onAddToList = () => {
-    closeTop(); // close the reader sheet so the list picker isn't stacked behind it
-    openListPicker({ bridgeId, seriesId, title, snapshot });
+  const onAddToCollection = () => {
+    closeTop(); // close the reader sheet so the collection picker isn't stacked behind it
+    openCollectionPicker({ bridgeId, seriesId, title, snapshot });
   };
 
   return (
@@ -313,8 +313,8 @@ function SeriesActionsRow({
           style={[styles.opt, dlComplete && styles.optOn]}>
           <ThemedText style={[styles.optText, dlComplete && styles.optTextOn]}>{downloadLabel}</ThemedText>
         </Pressable>
-        <Pressable testID="reader.settings.lists" onPress={onAddToList} style={styles.opt}>
-          <ThemedText style={styles.optText}>Add to list</ThemedText>
+        <Pressable testID="reader.settings.collections" onPress={onAddToCollection} style={styles.opt}>
+          <ThemedText style={styles.optText}>Add to collection</ThemedText>
         </Pressable>
       </View>
     </View>

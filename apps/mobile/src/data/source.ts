@@ -36,7 +36,7 @@ import type {
   HistoryEntry,
   HomeGridSection,
   LibraryItem,
-  LibraryList,
+  Collection,
   MetaCell,
   PageThumbSource,
   RailKind,
@@ -85,10 +85,10 @@ export interface DataSource {
   // resolves to `null` when no library store is mounted, so screens render a "needs a library"
   // state instead of an error — the on-device embedded runtime and older servers may lack one.
 
-  /** The library grid, or `null` when this server/runtime has no library store. `listId`/`unlisted`
-   *  filter by custom-list membership. */
+  /** The library grid, or `null` when this server/runtime has no library store.
+   *  `collectionId`/`uncollected` filter by collection membership (joined host-side). */
   getLibrary(
-    opts: { q?: string; sort?: api.LibrarySort; listId?: string; unlisted?: boolean },
+    opts: { q?: string; sort?: api.LibrarySort; collectionId?: string; uncollected?: boolean },
     signal?: AbortSignal,
   ): Promise<LibraryItem[] | null>;
   isInLibrary(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<boolean>;
@@ -103,17 +103,25 @@ export interface DataSource {
     signal?: AbortSignal,
   ): Promise<api.FavoritesImportResult>;
 
-  // ─── Custom lists ───────────────────────────────────────────────────────────
-  /** The user's custom lists (ascending order); `[]` when no library store is mounted. */
-  getLists(signal?: AbortSignal): Promise<LibraryList[]>;
-  createList(name: string, signal?: AbortSignal): Promise<LibraryList>;
-  renameList(id: string, name: string, signal?: AbortSignal): Promise<void>;
-  reorderLists(orderedIds: string[], signal?: AbortSignal): Promise<void>;
-  deleteList(id: string, signal?: AbortSignal): Promise<void>;
-  /** Replace a series' list memberships (the ids it belongs to). */
-  setEntryLists(bridgeId: string, seriesId: string, listIds: string[], signal?: AbortSignal): Promise<void>;
-  /** A series' current list memberships, or `null` when it isn't in the library. */
-  getEntryLists(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<string[] | null>;
+  // ─── Collections ────────────────────────────────────────────────────────────
+  /** The user's collections (ascending order); `[]` when no library store is mounted. */
+  getCollections(signal?: AbortSignal): Promise<Collection[]>;
+  createCollection(name: string, signal?: AbortSignal): Promise<Collection>;
+  renameCollection(id: string, name: string, signal?: AbortSignal): Promise<void>;
+  reorderCollections(orderedIds: string[], signal?: AbortSignal): Promise<void>;
+  deleteCollection(id: string, signal?: AbortSignal): Promise<void>;
+  /** Replace a series' collection memberships. Writes the series ANCHOR first (idempotent), since
+   *  memberships hang off the favorite item rather than the library entry. Passing an EMPTY array
+   *  deletes the anchor outright — see `deleteSeriesFavorite`. */
+  setSeriesCollections(
+    bridgeId: string,
+    seriesId: string,
+    collectionIds: string[],
+    snap: { seriesTitle: string; thumbnailUrl?: string; author?: string },
+    signal?: AbortSignal,
+  ): Promise<void>;
+  /** A series' current collection memberships; `[]` when it isn't filed anywhere. */
+  getSeriesCollections(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<string[]>;
   addToLibrary(bridgeId: string, seriesId: string, snap: api.LibrarySnapshot, signal?: AbortSignal): Promise<void>;
   removeFromLibrary(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void>;
   /** Record read progress for a *library* series (updates its resume cache). */
@@ -314,7 +322,6 @@ function toLibraryItem(e: api.ApiLibraryEntry): LibraryItem {
     ...(e.thumbnailUrl !== undefined && { thumbnailUrl: e.thumbnailUrl }),
     ...(e.author !== undefined && { author: e.author }),
     unread: e.unreadCount,
-    listIds: e.listIds ?? [],
   };
 }
 
@@ -481,21 +488,31 @@ const realDataSource: DataSource = {
     const entries = await api.getLibrary(opts, signal);
     return entries === null ? null : entries.map(toLibraryItem);
   },
-  getLists: (signal) => api.getLibraryLists(signal),
-  createList: (name, signal) => api.createLibraryList(name, signal),
-  async renameList(id, name, signal) {
-    await api.renameLibraryList(id, name, signal);
+  getCollections: (signal) => api.getCollections(signal),
+  createCollection: (name, signal) => api.createCollection(name, signal),
+  async renameCollection(id, name, signal) {
+    await api.renameCollection(id, name, signal);
   },
-  async reorderLists(orderedIds, signal) {
-    await api.reorderLibraryLists(orderedIds, signal);
+  async reorderCollections(orderedIds, signal) {
+    await api.reorderCollections(orderedIds, signal);
   },
-  async deleteList(id, signal) {
-    await api.deleteLibraryList(id, signal);
+  async deleteCollection(id, signal) {
+    await api.deleteCollection(id, signal);
   },
-  async setEntryLists(bridgeId, seriesId, listIds, signal) {
-    await api.setEntryLists(bridgeId, seriesId, listIds, signal);
+  async setSeriesCollections(bridgeId, seriesId, collectionIds, snap, signal) {
+    // Empty memberships means un-file, and that is a DELETE: core allows a bare anchor, but one
+    // with no memberships would linger in `/library/favorites` listings, and a bare heart is a
+    // page-only affordance by app policy.
+    if (collectionIds.length === 0) {
+      await api.deleteSeriesFavorite(bridgeId, seriesId, signal);
+      return;
+    }
+    // Anchor first — memberships attach to the favorite item, which must exist. Idempotent, so
+    // repeating it on every membership change is safe and keeps the snapshot fresh.
+    await api.putSeriesFavorite(bridgeId, seriesId, snap, signal);
+    await api.setSeriesCollections(bridgeId, seriesId, collectionIds, signal);
   },
-  getEntryLists: (bridgeId, seriesId, signal) => api.getEntryLists(bridgeId, seriesId, signal),
+  getSeriesCollections: (bridgeId, seriesId, signal) => api.getSeriesCollections(bridgeId, seriesId, signal),
   isInLibrary: (bridgeId, seriesId, signal) => api.isInLibrary(bridgeId, seriesId, signal),
   getFavoritesImportPreview: (bridgeId, signal) => api.getFavoritesImportPreview(bridgeId, signal),
   importBridgeFavorites: (bridgeId, items, signal) => api.importBridgeFavorites(bridgeId, items, signal),
@@ -861,13 +878,14 @@ const mockDataSource: DataSource = {
   removeFavorite: (bridgeId, seriesId) => mock.mockRemoveFavorite(seriesId),
 
   getLibrary: (opts) => mock.mockGetLibrary(opts),
-  getLists: () => mock.mockGetLists(),
-  createList: (name) => mock.mockCreateList(name),
-  renameList: (id, name) => mock.mockRenameList(id, name),
-  reorderLists: (orderedIds) => mock.mockReorderLists(orderedIds),
-  deleteList: (id) => mock.mockDeleteList(id),
-  setEntryLists: (bridgeId, seriesId, listIds) => mock.mockSetEntryLists(bridgeId, seriesId, listIds),
-  getEntryLists: (bridgeId, seriesId) => mock.mockGetEntryLists(bridgeId, seriesId),
+  getCollections: () => mock.mockGetCollections(),
+  createCollection: (name) => mock.mockCreateCollection(name),
+  renameCollection: (id, name) => mock.mockRenameCollection(id, name),
+  reorderCollections: (orderedIds) => mock.mockReorderCollections(orderedIds),
+  deleteCollection: (id) => mock.mockDeleteCollection(id),
+  setSeriesCollections: (bridgeId, seriesId, collectionIds) =>
+    mock.mockSetSeriesCollections(bridgeId, seriesId, collectionIds),
+  getSeriesCollections: (bridgeId, seriesId) => mock.mockGetSeriesCollections(bridgeId, seriesId),
   isInLibrary: (bridgeId, seriesId) => mock.mockIsInLibrary(bridgeId, seriesId),
   getFavoritesImportPreview: (bridgeId) => mock.mockGetFavoritesImportPreview(bridgeId),
   importBridgeFavorites: (bridgeId, items) => mock.mockImportBridgeFavorites(bridgeId, items),
