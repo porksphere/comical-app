@@ -861,7 +861,7 @@ import type {
   ChapterProgress as ApiChapterProgress,
   HistoryItem as ApiHistoryItem,
   LibraryEntryView as ApiLibraryEntry,
-  FavoriteCollection as ApiCollection,
+  Collection as ApiCollection,
 } from '@comical/library';
 
 export type {
@@ -1111,7 +1111,7 @@ export type LibrarySort = 'added' | 'title' | 'lastRead' | 'unread';
 /** GET /library → the user's library entries (with derived `unreadCount`), or `null` when no library
  *  store is mounted. `q` scopes to a title search; `sort` orders the grid; `collectionId`/
  *  `uncollected` filter by collection membership (mutually exclusive — `uncollected` wins if both
- *  are set). The host resolves membership by joining series favorites, so the grid never needs to
+ *  are set). The host resolves membership by joining series items, so the grid never needs to
  *  read memberships client-side. */
 export function getLibrary(
   opts: { q?: string; sort?: LibrarySort; collectionId?: string; uncollected?: boolean } = {},
@@ -1128,9 +1128,10 @@ export function getLibrary(
 
 // ─── Collections ─────────────────────────────────────────────────────────────
 // User-defined groupings (e.g. "Reading"). These replaced the library's custom lists: a collection
-// groups favorite ITEMS (series/chapter/page), so membership no longer lives on the library entry —
-// a series belongs to a collection by way of a SERIES FAVORITE pointing at it (see below). All
-// require a mounted library store; with none the routes 404 (getCollections maps that to `[]`).
+// groups ITEMS (series/chapter/page), so membership no longer lives on the library entry — a series
+// belongs to a collection by way of a SERIES ITEM pointing at it (see below). An item exists ONLY
+// as a member: empty memberships removes it. All require a mounted library store; with none the
+// routes 404 (getCollections maps that to `[]`).
 
 /** GET /library/collections → the user's collections (ascending `order`), or `[]` with no library store. */
 export async function getCollections(signal?: AbortSignal): Promise<ApiCollection[]> {
@@ -1154,42 +1155,43 @@ export function renameCollection(id: string, name: string, signal?: AbortSignal)
   return fetchPatch(`/library/collections/${encodeURIComponent(id)}`, { name }, signal);
 }
 
-/** DELETE /library/collections/{id} → delete a collection. The host also PRUNES series/chapter
- *  favorites left with zero memberships (they only ever existed as members); bare page favorites
- *  survive, since those are hearts the user set deliberately. Callers needn't strip members. */
+/** DELETE /library/collections/{id} → delete a collection. The host strips the id from survivors
+ *  and REMOVES any item — every type, pages included — whose last membership it was. Callers
+ *  needn't strip members, but should expect collected pages to disappear with it unless they were
+ *  also filed elsewhere. */
 export function deleteCollection(id: string, signal?: AbortSignal): Promise<void> {
   return fetchOk(`/library/collections/${encodeURIComponent(id)}`, 'DELETE', signal);
 }
 
-/** PUT /library/favorites/series/{b}/{s} → the series ANCHOR. Idempotent, and required before
- *  memberships can be set: filing a series is anchor-then-memberships, replacing the old
+/** PUT /library/collected/series/{b}/{s} → the series item itself. Idempotent, and required before
+ *  memberships can be set: filing a series is item-then-memberships, replacing the old
  *  `PUT /library/entries/{b}/{s}/lists`. */
-export function putSeriesFavorite(
+export function putSeriesItem(
   bridgeId: string,
   seriesId: string,
   snapshot: { seriesTitle: string; thumbnailUrl?: string; author?: string },
   signal?: AbortSignal,
 ): Promise<unknown> {
   return fetchPut(
-    `/library/favorites/series/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}`,
+    `/library/collected/series/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}`,
     snapshot,
     signal,
   );
 }
 
-/** DELETE /library/favorites/series/{b}/{s} → un-file a series entirely.
- *  This — NOT `setSeriesCollections(…, [])` — is how a series leaves its last collection: an
- *  anchor with empty memberships is legal in core but would linger in favorites listings, and a
- *  bare anchor is a page-only affordance by app policy. */
-export function deleteSeriesFavorite(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void> {
+/** DELETE /library/collected/series/{b}/{s} → remove the series item outright.
+ *  Equivalent to `setSeriesCollections(…, [])`: with pure collections an item exists only as a
+ *  member, so emptying its memberships removes it server-side (that route reports
+ *  `{ removed: true }`). Either call is fine; this one doesn't need the item to exist first. */
+export function deleteSeriesItem(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void> {
   return fetchOk(
-    `/library/favorites/series/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}`,
+    `/library/collected/series/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}`,
     'DELETE',
     signal,
   );
 }
 
-/** PUT /library/favorites/series/{b}/{s}/collections → replace a series' memberships. */
+/** PUT /library/collected/series/{b}/{s}/collections → replace a series' memberships. */
 export function setSeriesCollections(
   bridgeId: string,
   seriesId: string,
@@ -1197,7 +1199,7 @@ export function setSeriesCollections(
   signal?: AbortSignal,
 ): Promise<unknown> {
   return fetchPut(
-    `/library/favorites/series/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/collections`,
+    `/library/collected/series/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/collections`,
     { collectionIds },
     signal,
   );
@@ -1217,9 +1219,9 @@ export async function isInLibrary(bridgeId: string, seriesId: string, signal?: A
   return true;
 }
 
-/** GET /library/favorites?type=series&series={b}:{s} → a series' collection memberships, or `[]`
+/** GET /library/collected?type=series&series={b}:{s} → a series' collection memberships, or `[]`
  *  when it isn't filed anywhere. Replaces reading the old `entry.listIds`, which no longer exists:
- *  memberships live on the series favorite item, not on the library entry — so this is independent
+ *  memberships live on the series ITEM, not on the library entry — so this is independent
  *  of whether the series is in the library at all. Seeds the collection picker's checkboxes. */
 export async function getSeriesCollections(
   bridgeId: string,
@@ -1227,7 +1229,7 @@ export async function getSeriesCollections(
   signal?: AbortSignal,
 ): Promise<string[]> {
   const items = await fetchJsonOptional<{ collectionIds?: string[] }[]>(
-    `/library/favorites?type=series&series=${encodeURIComponent(`${bridgeId}:${seriesId}`)}`,
+    `/library/collected?type=series&series=${encodeURIComponent(`${bridgeId}:${seriesId}`)}`,
     signal,
   );
   return items?.[0]?.collectionIds ?? [];

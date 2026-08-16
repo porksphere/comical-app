@@ -110,9 +110,9 @@ export interface DataSource {
   renameCollection(id: string, name: string, signal?: AbortSignal): Promise<void>;
   reorderCollections(orderedIds: string[], signal?: AbortSignal): Promise<void>;
   deleteCollection(id: string, signal?: AbortSignal): Promise<void>;
-  /** Replace a series' collection memberships. Writes the series ANCHOR first (idempotent), since
-   *  memberships hang off the favorite item rather than the library entry. Passing an EMPTY array
-   *  deletes the anchor outright — see `deleteSeriesFavorite`. */
+  /** Replace a series' collection memberships. Writes the series ITEM first (idempotent), since
+   *  memberships hang off that item rather than the library entry. Passing an EMPTY array removes
+   *  the item — an item exists only as a member of something. */
   setSeriesCollections(
     bridgeId: string,
     seriesId: string,
@@ -500,16 +500,16 @@ const realDataSource: DataSource = {
     await api.deleteCollection(id, signal);
   },
   async setSeriesCollections(bridgeId, seriesId, collectionIds, snap, signal) {
-    // Empty memberships means un-file, and that is a DELETE: core allows a bare anchor, but one
-    // with no memberships would linger in `/library/favorites` listings, and a bare heart is a
-    // page-only affordance by app policy.
+    // Empty memberships means the item is gone: with pure collections an item exists only as a
+    // member, so there is nothing to leave behind. (PUT collections: [] does the same server-side
+    // and reports `{ removed: true }`; DELETE avoids needing the item to exist first.)
     if (collectionIds.length === 0) {
-      await api.deleteSeriesFavorite(bridgeId, seriesId, signal);
+      await api.deleteSeriesItem(bridgeId, seriesId, signal);
       return;
     }
-    // Anchor first — memberships attach to the favorite item, which must exist. Idempotent, so
-    // repeating it on every membership change is safe and keeps the snapshot fresh.
-    await api.putSeriesFavorite(bridgeId, seriesId, snap, signal);
+    // Item first — memberships attach to it, so it must exist. Idempotent, so repeating it on
+    // every membership change is safe and keeps the snapshot fresh.
+    await api.putSeriesItem(bridgeId, seriesId, snap, signal);
     await api.setSeriesCollections(bridgeId, seriesId, collectionIds, signal);
   },
   getSeriesCollections: (bridgeId, seriesId, signal) => api.getSeriesCollections(bridgeId, seriesId, signal),

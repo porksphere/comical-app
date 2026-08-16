@@ -9,14 +9,12 @@ import { useDataSource, useMockActive } from '@/data/source';
  * `useLibrary`'s optimistic/rollback/invalidate shape.
  *
  * Replaces `useEntryLists`. Memberships used to live on the library entry (`entry.listIds`); they
- * now hang off a series FAVORITE item, which is a separate record pointing at the same coordinates.
- * Two consequences:
+ * now hang off a series ITEM, a separate record pointing at the same coordinates. Two consequences:
  *
  * - The membership read no longer distinguishes "not in the library" from "filed nowhere" — a
  *   series can be filed without being in the library at all. `[]` means unfiled, full stop.
- * - Clearing the last collection DELETES the anchor rather than writing empty memberships; the data
- *   source handles that (see `setSeriesCollections`), because an anchor with no memberships would
- *   linger in favorites listings.
+ * - Clearing the last collection REMOVES the item: an item exists only as a member of a collection,
+ *   so there is no filed-nowhere state to leave it in (see `setSeriesCollections`).
  *
  * Adding to the library on first file is now a UX choice rather than a technical requirement (the
  * membership write no longer needs an entry to exist). It's kept because "file it" has always

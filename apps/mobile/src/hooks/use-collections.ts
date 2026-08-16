@@ -13,9 +13,9 @@ import type { Collection } from '@/data/types';
  * CRUD shapes. Shared by the Library tab's selector, the manage sheet, and the assign picker so they
  * all read and write one cache entry.
  *
- * Note on delete: the host also PRUNES series/chapter favorites left with zero memberships, so a
- * deleted collection can remove items from favorites listings as a side effect. Bare page favorites
- * survive — those are hearts the user set deliberately.
+ * Note on delete: the host also REMOVES any item — series, chapter or page — whose last membership
+ * the deleted collection was. Deleting a collection therefore deletes its exclusive contents, which
+ * is the whole point of items existing only as members.
  */
 export function useCollections() {
   const ds = useDataSource();

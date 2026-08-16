@@ -190,12 +190,12 @@ export type LibraryItem = {
   unread: number;
 };
 
-/** A user-defined collection. Mirrors `@comical/library`'s `FavoriteCollection`.
+/** A user-defined collection. Mirrors `@comical/library`'s `Collection`.
  *
- *  Collections replaced the library's custom lists: they group favorite ITEMS (a series, a chapter
- *  or a page), not library entries, so an entry no longer carries its own memberships — a series is
- *  "in" a collection by way of a series favorite item pointing at it. See
- *  `docs/collections-client-plan.md`. */
+ *  Collections replaced the library's custom lists: they group ITEMS (a series, a chapter or a
+ *  page), not library entries, so an entry no longer carries its own memberships — a series is "in"
+ *  a collection by way of a series item pointing at it. An item exists ONLY as a member; emptying
+ *  its memberships removes it. See `docs/collections-client-plan.md`. */
 export type Collection = {
   id: string;
   name: string;

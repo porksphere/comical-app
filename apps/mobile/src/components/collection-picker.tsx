@@ -7,7 +7,7 @@
  *
  * Toggling a row persists immediately (optimistic, via `useSeriesCollections`) — filing a series
  * into any collection adds it to the library first if it wasn't there, and clearing the LAST
- * collection removes the series favorite outright rather than leaving it filed nowhere. A "New
+ * collection removes the series item outright — an item exists only as a member. A "New
  * collection…" row creates one inline and files the series into it. Tapping the backdrop or Done
  * dismisses back to whatever is underneath.
  */
@@ -55,7 +55,7 @@ export type CollectionPickerRequest = {
   seriesId: string;
   /** Series title shown as the card's subheading. */
   title?: string;
-  /** Snapshot written for the series favorite, and if filing adds it to the library first. */
+  /** Snapshot written for the series item, and if filing adds it to the library first. */
   snapshot: () => LibrarySnapshot;
 };
 
