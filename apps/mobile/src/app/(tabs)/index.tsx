@@ -5,7 +5,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
-  interpolateColor,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
@@ -635,19 +634,16 @@ export default function BrowseScreen() {
   // UI→JS→UI round trip that put the bottom bar's tracking behind whatever else the JS thread was
   // doing mid-fling. The list needs no extra wiring — `onListScroll` below already feeds `maxScrollY`.
   useHideTabBarOnScroll({ scrollY, maxScrollY });
-  // The bar's bottom hairline fades in only once the list is scrolled: at the very top the bar reads
-  // as part of the page (no divider), then the line appears to separate it from the content beneath.
-  const headerBorderStyle = useAnimatedStyle(() => ({
-    borderBottomColor: interpolateColor(scrollY.value, [0, 8], ['transparent', theme.barHairline]),
-  }));
   // Pull-to-refresh: gesture (per platform), spinner, min-visible window and content shift all live
   // in the shared hook — the same one the Search grid uses.
   const pull = usePullToRefresh(scrollY, refreshCurrentView);
 
   const topBar = (
     // BarSurface carries the flat, full-bleed background + hairline shared by every bar in the app
-    // (see bar-surface.tsx); the grid scrolls behind it.
-    <BarSurface style={[styles.topBar, { height: headerHeight }, headerStyle, headerBorderStyle]}>
+    // (see bar-surface.tsx); the grid scrolls behind it. The hairline is ALWAYS on, like every other
+    // bar's — it used to fade in over the first 8px of scroll so the bar read as part of the page
+    // while at rest, which made this the one bar in the app whose divider came and went.
+    <BarSurface style={[styles.topBar, { height: headerHeight }, headerStyle]}>
       {/* Inner row capped to the content width so the selectors line up with the
           grid below, while the bar background stays full-bleed. */}
       {/* Cap+centre only on web; native fills the width so the bar aligns with the full-width grid. */}
