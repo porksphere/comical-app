@@ -84,7 +84,7 @@ comical:lib:favorite-collections  → FavoriteCollection[]
 
 ### Thumbnails — the one genuine gap
 
-`getPageThumb(bridgeId, seriesId, pageIndex)` (`src/data/api.ts:489`) is **series-level and takes
+`getPageThumb(bridgeId, seriesId, pageIndex)` (`src/data/api.ts:679`) is **series-level and takes
 no `chapterId`**, so for a chaptered series there is no existing way to fetch a thumbnail of page N
 of chapter C. Its query key is also in `NO_PERSIST_KEYS` (`src/data/query-client.ts`), so it never
 survives a restart. A favorites grid built naively on it would be blank for most of the library.
@@ -95,7 +95,7 @@ bytes once and serve them back through the router:
 - New `src/data/embedded/favorite-thumbs-store.ts`, a near-copy of
   `src/data/embedded/covers-store.ts` (`expo-file-system` `Directory`/`File`/`Paths`, a `BlobStore`
   **with** `read`), rooted at `comical-favorites` rather than `comical-covers`.
-- Wired in `src/data/embedded/startup.ts:86` beside the existing
+- Wired in `src/data/embedded/startup.ts` beside the existing
   `covers: { blobs: expoCoversBlobStore, fetchPage: devicePageFetcher }` as
   `favoritePages: { blobs: expoFavoriteThumbsBlobStore, fetchPage: devicePageFetcher }`.
 - The capture itself lives server-side in `@comical/library`, exactly as cover capture does.
@@ -173,17 +173,17 @@ centred. Make the trailing slot a row (`flexDirection: 'row'`, `gap: Spacing.two
 same width so centring survives two buttons. `right` stays the prop; the caller passes a fragment.
 
 **Getting the page index to the button — the real plumbing.** `currentPage` is `useState` *inside*
-`ReaderPane` (`src/app/series/index.tsx:3127`, `currentRef` :3128), while the toolbar is rendered
-by the parent `SeriesReaderInstance` (~:2268-2327), which holds `pages`, `bridgeId`, `id` and
+`ReaderPane` (`src/app/series/index.tsx:3235`, `currentRef` :3236), while the toolbar is rendered
+by the parent `SeriesReaderInstance` (:535, toolbar mounted ~:2413), which holds `pages`, `bridgeId`, `id` and
 `target.chapterId` but no page state. Add an
 `onVisiblePageChange?: (v: { pageIndex: number; chapterId: string }) => void` prop to `ReaderPane`,
-fired from the same settle point that already drives `record()` (~:3325). The parent keeps it in
+fired from the same settle point that already drives `record()` (~:3491, debounced 1500ms at ~:3534). The parent keeps it in
 state and feeds the button.
 
 **The stitched multi-chapter case must be handled or favorites silently mis-file.** In native paged
-mode `handleFlatPageChange` (~:3178) / `handleFlatVisiblePage` (~:3192) translate a flat index back
-to `(segment, page)`, and `visibleSeg` (~:3173) holds `{ id, page, total }` for the page crossing
-the screen. The bottom chrome already resolves this correctly in the `shown` memo (~:3203): prefer
+mode `handleFlatPageChange` (~:3299) / `handleFlatVisiblePage` (~:3323) translate a flat index back
+to `(segment, page)`, and `visibleSeg` (~:3295) holds `{ id, page, total }` for the page crossing
+the screen. The bottom chrome already resolves this correctly in the `shown` memo (~:3334): prefer
 `visibleSeg` when `stitched && segments.some(s => s.id === visibleSeg.id)`, else `currentPage`. The
 favorite button needs the **chapter id alongside the index**, so add a sibling memo returning
 `{ pageIndex, chapterId }` off the same branch — `visibleSeg.id` when stitched, else
@@ -194,11 +194,11 @@ invisible until a favorite made near a chapter boundary reopens on the wrong pag
 favorited-index array through `chapterFavorites`, derive `favorited = indices.includes(pageIndex)`,
 mutate with an optimistic array patch, roll back on error, and `onSettled` invalidate
 `favoritePagesAll(mock)`. `hapticSelection()` (`src/lib/haptics.ts`) on toggle, and `holdChrome()`
-(~:892) on press so the chrome doesn't auto-hide out from under the tap.
+(:971) on press so the chrome doesn't auto-hide out from under the tap.
 
 **Long-press the button** opens the collection picker (Phase 4), mirroring `openListPicker`.
 
-**Mirror in the settings sheet.** `SeriesActionsRow` (`src/components/reader/settings-panel.tsx:194`)
+**Mirror in the settings sheet.** `SeriesActionsRow` (`src/components/reader/settings-panel.tsx:194` (unchanged by 0.1.4))
 is a 2×2 grid under a "This series" label. Add a separate **"This page"** segment above it rather
 than crowding that grid — the two concepts shouldn't share a box.
 
@@ -249,7 +249,7 @@ keeps LegendList from re-measuring mid-scroll — the same `cellHeight`/`estimat
 discipline `series-grid.tsx` uses, and what `todo.md` separately asks for on page thumbs. Sticky
 headers only if `RecyclerList` already exposes them; plain inline headers are an honest v1.
 
-**Tiles reuse `PageThumb`** (exported, `src/components/series/chapters-section.tsx:1372`). It
+**Tiles reuse `PageThumb`** (exported, `src/components/series/chapters-section.tsx:1377`). It
 already lazily self-fetches a missing thumbnail from coordinates, and handles sprite crops,
 recycle-safety and the `lightCards` perf lever. It needs one new prop — an explicit thumb source —
 so a favorite tile prefers the captured blob over a bridge scrape. Geometry comes from
