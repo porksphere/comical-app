@@ -121,8 +121,9 @@ POST   /library/favorite-pages/collections/reorder                    ← { orde
 
 `{c}` carries `__direct__` for chapterless series. Every route 404s when no library store is
 mounted, so `library.tsx`'s existing "Library isn't available here" state applies unchanged.
-`PUT` is idempotent: re-favoriting refreshes the display snapshot but keeps the original
-`favoritedAt`, collection memberships and `contentHash`.
+`PUT` is idempotent: re-favoriting refreshes the display snapshot and keeps the original
+`favoritedAt` and collection memberships. **It does not preserve `contentHash`** despite what the
+handoff brief says — see the discrepancy note in §4.
 
 `DataSource` (`src/data/source.ts`) gains a method per route, coordinate-addressed throughout.
 **`src/data/mock.ts` must implement every one** — mock mode powers the `__DEV__` toggle, the GitHub
@@ -185,14 +186,46 @@ Sending `contentHash` (lowercase hex SHA-256) on favorite is the highest-value t
 does: it's the one re-anchor key that survives URL rot and re-uploads. The rule from the runtime
 side is absolute — **never fetch a page just to hash it**; sparse hashes are expected and safe.
 
-That rule bites here, because **on native the app never holds page bytes in JS**:
-`reader-page.tsx` hands a resolved URI to `expo-image`, which fetches and decodes natively. So:
+JS never holds the bytes on native — `reader-page.tsx` hands a resolved URI to `expo-image`, which
+fetches and decodes natively. But it doesn't need to: **`expo-image` has already written the page to
+its own disk cache**, and SDK 56 exposes it.
 
-- **Downloaded pages** — bytes are on disk in the downloads blob store; read them with
-  `expo-file-system` and hash. Free, local, all platforms. This is the main native source.
-- **Web** — `image-progress.web.ts` already fetches the bytes itself to compute progress, so the
-  hash is genuinely free there. Thread it out of that path rather than re-fetching.
-- **Native, not downloaded** — omit `contentHash`. Do not `fetch()` the URL to obtain it.
+```ts
+Image.getCachePathAsync(cacheKey: string): Promise<string | null>
+```
+
+> "Asynchronously checks if an image exists in the disk cache and resolves to the path of the cached
+> image if it does."
+
+The reader renders with `cachePolicy="memory-disk"` (`reader-page.tsx:426`) and sets no explicit
+`cacheKey`, so **the key is the URI string handed to `<Image>`** — the `source` from
+`useImageProgress`, not the raw bridge path and not `resolvedUri` (on web those diverge; see the
+note at `reader-page.tsx:318`). So the native path is: `getCachePathAsync(source)` → read the file
+with `expo-file-system` → hash. **No network request, and no download required.** Sources, in order
+of preference:
+
+- **Any page the reader has displayed** — `getCachePathAsync`, as above. This is the common case and
+  it covers exactly the pages a user favorites, since they're looking at one when they tap.
+- **Downloaded pages** — already on disk in the downloads blob store; cheapest when present.
+- **Web** — `image-progress.web.ts` fetches the bytes itself to compute progress, so the hash is
+  free there. Thread it out of that path rather than re-fetching.
+- **A cache miss** — `getCachePathAsync` resolves `null` (the disk cache is evictable). Omit the
+  hash. Do **not** `fetch()` the URL to obtain it; sparse is expected and safe, and reconcile adopts
+  a hash later anyway.
+
+**Hash off the tap's critical path.** The shim's `digest` is a JS implementation, so SHA-256 over a
+~1MB page is not free on Hermes. Toggle optimistically, `PUT` immediately, and send the hash in a
+second idempotent `PUT` once it resolves — never make the user wait on it.
+
+⚠️ **Runtime discrepancy to confirm before relying on that two-step.** The handoff brief says `PUT`
+"keeps … its `contentHash`", but `Library.favoritePage` (`packages/library/src/library.ts:778-793`)
+carries `favoritedAt` and `collectionIds` over from the existing record and then rebuilds
+`contentHash` and `sourceUrl` **from the snapshot only** — so a re-favorite whose snapshot omits the
+hash **erases a stored one**. (Its doc comment also still refers to keeping "any captured
+thumbnail", which no longer exists — evidence the comment predates the byte-capture removal.) The
+deferred second `PUT` works fine, since it *adds* the hash. The hazard is the reverse: any later
+`PUT` without one silently drops the strongest re-anchor key. Until this is settled upstream,
+**always send the hash if we hold one**, and don't re-`PUT` a favorite just to refresh its snapshot.
 
 **Hashing needs no new dependency.** `crypto.subtle.digest('SHA-256', bytes)` is native on web and
 provided on Hermes by `installWebCryptoShim()` from `@comical/host-rn`, already installed in
@@ -316,8 +349,9 @@ hooks, and the collection rows in the selector.
 
 **Phase 5 — the viewer.** `favorite-page-viewer.tsx` swipe-through plus its actions.
 
-**`contentHash`** rides along in Phase 1 for downloaded pages and web; it is additive, and favorites
-adopt hashes later, so it never blocks a phase.
+**`contentHash`** rides along in Phase 1 via `Image.getCachePathAsync` (plus the downloads blob
+store and web's progress path). It is additive and computed off the tap's critical path, and
+favorites adopt hashes on later reconciles, so it never blocks a phase.
 
 ## 10. Verification
 
