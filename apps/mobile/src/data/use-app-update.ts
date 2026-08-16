@@ -12,11 +12,11 @@
  *    give ios-release a plain `X.Y.Z` (the git tag) and ios-main a `X.Y.Z.<Nth build of that
  *    release series>`. Each channel only ever compares against its own source, so the two formats
  *    never meet; `compareVersions` handles the extra part either way.
- *  - android-release / android-main: compare `version.json`'s `commit` against BUILD_COMMIT.
- *    Commit equality, not version ordering: the counter in APP_VERSION restarts at .1 each release
- *    series, and android-latest serves whichever of the two lanes published last, so a tag's APK
- *    and main's can legitimately compare in either direction. ANY mismatch means "there's a newer
- *    build" — that URL is always rebuilt from the tip of main / the newest tag.
+ *  - android-release / android-main: compare `version.json`'s `commit` against BUILD_COMMIT, on the
+ *    build's OWN channel Release — `android-release` (newest tag) or `android-latest` (tip of
+ *    main). Commit equality, not version ordering: the counter in APP_VERSION restarts at .1 each
+ *    release series, so two APKs' versions can legitimately compare in either direction. ANY
+ *    mismatch means "there's a newer build", since each URL is always rebuilt from its lane's head.
  *  - web-pages: same commit-equality check, against a `version.json` written into `dist/` by
  *    deploy-web.yml, fetched with `cache: 'no-store'` so a stale CDN/browser cache can't mask it.
  *
@@ -53,11 +53,29 @@ const IOS_RELEASE_APPS_JSON_URL = 'https://github.com/porksphere/comical-app/rel
 /** The rolling main source (build-ios.yml's `publish` job). Same manifest shape as ios-release's,
  *  but it lists only the one current build — the rolling Release keeps a single IPA. */
 const IOS_MAIN_APPS_JSON_URL = 'https://github.com/porksphere/comical-app/releases/download/ios-main/apps.json';
-const ANDROID_LATEST_VERSION_JSON_URL =
-  'https://github.com/porksphere/comical-app/releases/download/android-latest/version.json';
-const ANDROID_LATEST_APK_URL = 'https://github.com/porksphere/comical-app/releases/download/android-latest/comical-android.apk';
+/** The two rolling Android channels, each its own Release — `android-release` carries the newest
+ *  TAGGED build (refreshed only by release.yml), `android-latest` whatever main last built
+ *  (refreshed only by build-android.yml). A build checks the channel it was built on and no other,
+ *  which is what stops a release user being offered a main build; see
+ *  .github/scripts/publish-android-channel.sh. */
+const ANDROID_CHANNEL_TAG: Record<string, string> = {
+  'android-release': 'android-release',
+  'android-main': 'android-latest',
+};
+const androidVersionJsonUrl = (tag: string) =>
+  `https://github.com/porksphere/comical-app/releases/download/${tag}/version.json`;
+const androidApkUrl = (tag: string) =>
+  `https://github.com/porksphere/comical-app/releases/download/${tag}/comical-android.apk`;
 
-const SUPPORTED_CHANNELS = new Set(['ios-release', 'ios-main', 'android-release', 'android-main', 'web-pages']);
+/** Derived, not re-listed: the Android entries come from the map above, so adding a channel there
+ *  can't leave this Set behind. A channel that's "supported" here but unrouted in
+ *  `fetchAppUpdateCheck` would fetch nothing and sit on 'checking' forever. */
+const SUPPORTED_CHANNELS = new Set([
+  'ios-release',
+  'ios-main',
+  ...Object.keys(ANDROID_CHANNEL_TAG),
+  'web-pages',
+]);
 
 /** Identifies the binary doing the checking, so its verdict can't be inherited by the build that
  *  replaces it — see `queryKeys.appUpdateCheck`, which this is the second half of. */
@@ -100,12 +118,12 @@ async function checkIosSource(url: string, signal?: AbortSignal): Promise<AppUpd
   return { status: 'update-available', latestVersionLabel: latest.version, downloadUrl: latest.downloadURL };
 }
 
-async function checkAndroidLatest(signal?: AbortSignal): Promise<AppUpdateCheck> {
-  const res = await fetch(ANDROID_LATEST_VERSION_JSON_URL, { signal });
+async function checkAndroidChannel(tag: string, signal?: AbortSignal): Promise<AppUpdateCheck> {
+  const res = await fetch(androidVersionJsonUrl(tag), { signal });
   if (!res.ok) throw new Error(`version.json fetch failed: ${res.status}`);
   const json = (await res.json()) as { commit?: string; version?: string };
   if (!json.commit || !BUILD_COMMIT || json.commit === BUILD_COMMIT) return { status: 'up-to-date' };
-  return { status: 'update-available', latestVersionLabel: json.version, downloadUrl: ANDROID_LATEST_APK_URL };
+  return { status: 'update-available', latestVersionLabel: json.version, downloadUrl: androidApkUrl(tag) };
 }
 
 async function checkWebPages(signal?: AbortSignal): Promise<AppUpdateCheck> {
@@ -119,7 +137,8 @@ async function checkWebPages(signal?: AbortSignal): Promise<AppUpdateCheck> {
 async function fetchAppUpdateCheck(signal?: AbortSignal): Promise<AppUpdateCheck> {
   if (BUILD_CHANNEL === 'ios-release') return checkIosSource(IOS_RELEASE_APPS_JSON_URL, signal);
   if (BUILD_CHANNEL === 'ios-main') return checkIosSource(IOS_MAIN_APPS_JSON_URL, signal);
-  if (BUILD_CHANNEL === 'android-release' || BUILD_CHANNEL === 'android-main') return checkAndroidLatest(signal);
+  const androidTag = ANDROID_CHANNEL_TAG[BUILD_CHANNEL];
+  if (androidTag) return checkAndroidChannel(androidTag, signal);
   if (BUILD_CHANNEL === 'web-pages') return checkWebPages(signal);
   return { status: 'unsupported' };
 }

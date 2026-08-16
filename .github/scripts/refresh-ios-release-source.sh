@@ -24,7 +24,7 @@ mkdir -p "$ENTRIES"
 
 # Enumerate every version-tag Release (v1.2.3, v0.0.1, …). The `^v[0-9]` filter
 # excludes the rolling channel tags (ios-main, ios-pr, ios-devclient,
-# android-latest, and this script's own ios-release output).
+# android-release, android-latest, and this script's own ios-release output).
 while IFS= read -r rel; do
   [ -n "$rel" ] || continue
 

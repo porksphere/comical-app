@@ -31,11 +31,16 @@ which re-sign the app on-device with your own Apple ID (auto-refreshed every 7 d
 
 Download and install the APK directly:
 
-**[⬇ comical-android.apk](https://github.com/porksphere/comical-app/releases/download/android-latest/comical-android.apk)**
+**[⬇ comical-android.apk](https://github.com/porksphere/comical-app/releases/download/android-release/comical-android.apk)**
 
 On-device, enable **"Install unknown apps"** for your browser, open the link, and install.
-Both links above are rolling — they always point at the latest build. Versioned, archival
-releases (with both binaries) live under the repo's [Releases](https://github.com/porksphere/comical-app/releases).
+Both links above are rolling — they always point at the newest **released** build, and the app
+tells you in Settings when there's a newer one. Versioned, archival releases (with both binaries)
+live under the repo's [Releases](https://github.com/porksphere/comical-app/releases).
+
+(There's also a rolling `android-latest` APK tracking the tip of `main`, the Android counterpart of
+the `ios-main` source — for testing unreleased work, not for normal use. See
+[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).)
 
 ### 🌐 Web
 

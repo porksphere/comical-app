@@ -474,8 +474,8 @@
       orders with `compareVersions` (tolerating both the bare `X.Y.Z` tag builds and the
       `X.Y.Z.<Nth build>` rolling ones, as required); Android and web instead compare the published
       `version.json`'s `commit` against `BUILD_COMMIT`, since the rolling counter restarts each
-      release series and `android-latest` serves whichever lane published last, so version ordering
-      can legitimately run either way. Dev/per-branch channels (`local-dev`, `ios-pr`, `*-e2e`, …)
+      release series, so version ordering can legitimately run either way. Dev/per-branch channels
+      (`local-dev`, `ios-pr`, `*-e2e`, …)
       are `'unsupported'` and fire no request at all — the opt-out this asked for. Surfaced three
       ways rather than as a banner: a Settings → About row, a pip on the Settings tab
       (`use-settings-badge.ts`), and a once-per-session toast keyed on the detected version/commit
@@ -483,8 +483,14 @@
       `installAppUpdateAutoCheck()` from `app/_layout.tsx` drives it app-wide on launch (8s delay,
       after the activity auto-check) and on every foreground return, throttled to 1h; the query key
       carries `APP_VERSION+BUILD_COMMIT` so a verdict can't outlive the build that computed it.
-      STILL OPEN, as predicted here: the release-notes gap — the workflow writes a generic body, so
-      there's nothing meaningful to show as "what's new".
+      The release-notes gap this predicted is now CLOSED too: `release.yml` passes
+      `--generate-notes`, so GitHub's commit list is appended to the install instructions, and
+      `CHANGELOG.md` (written by `.github/scripts/prepare-release.sh`) carries the same history
+      in-repo. One thing this entry got wrong in passing: it assumed `android-latest` was the one
+      Android delivery path. It was, and that was the bug — a release build's check followed the
+      same rolling lane main published to, so any commit on main offered a release user a main
+      build. The lanes are now split into `android-release` and `android-latest`, and a build only
+      ever checks its own.
 
 ## Publish `@comical/*` packages instead of tsconfig-paths/local-stub hacks
 

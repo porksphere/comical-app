@@ -42,12 +42,18 @@ RUN node -e "const f='apps/mobile/app.json';const j=require('./'+f);j.expo.exper
 # server URL above these ARE baked at export time — they describe the bundle itself, so they can't
 # be injected at container start. Defaulted so a plain `docker build` still produces a working image
 # (About just falls back to "local-dev" / no commit); publish-web-image.yml passes the real values.
+# COMICAL_APP_VERSION is the `<base>.<Nth build of the release series>` string CI computes from
+# git history (.github/scripts/compute-build-version.sh). It has to come in as an ARG because this
+# build has no git history to derive it from — only the source tree — and without it build-info.ts
+# falls back to app.json's bare base, so every image in a series reported the same version.
 ARG COMICAL_BUILD_CHANNEL=web-docker
 ARG COMICAL_BUILD_COMMIT=
 ARG COMICAL_BUILD_TIME=
+ARG COMICAL_APP_VERSION=
 ENV EXPO_PUBLIC_COMICAL_BUILD_CHANNEL=$COMICAL_BUILD_CHANNEL \
     EXPO_PUBLIC_COMICAL_BUILD_COMMIT=$COMICAL_BUILD_COMMIT \
-    EXPO_PUBLIC_COMICAL_BUILD_TIME=$COMICAL_BUILD_TIME
+    EXPO_PUBLIC_COMICAL_BUILD_TIME=$COMICAL_BUILD_TIME \
+    EXPO_PUBLIC_COMICAL_APP_VERSION=$COMICAL_APP_VERSION
 
 # Real build — NOT demo mode (that flag is only for the backend-less GitHub Pages preview).
 WORKDIR /build/apps/mobile
