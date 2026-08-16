@@ -51,9 +51,17 @@ export const Colors = {
   },
   dark: {
     text: '#ffffff',
-    // Reference: `body { background: #0f0f0f }` — a slightly-off-black, not
-    // pure #000, which is why the app read starker/higher-contrast than web.
-    background: '#0f0f0f',
+    // Pure black, deliberately — NOT the reference site's `body { background:
+    // #0f0f0f }`, which this used to mirror. The two aren't really solving the
+    // same problem: a slightly-off-black keeps a browser page from looking
+    // starker than the rest of the web, whereas this is a phone app on an OLED
+    // panel, where pure black is what the platform's own dark surfaces do and
+    // where #0f0f0f is a lit grey next to them. It also puts the bar divider
+    // back on the footing it was sampled at (see `barHairline`).
+    // The READER keeps #0f0f0f (`READER_BACKDROP`, and the web readers' own
+    // styles) — that's its own surface mirroring `#reader-view`, and a page of
+    // artwork is exactly where an off-black earns its keep.
+    background: '#000000',
     // Modal/overlay-sheet surface. Reference uses a 3-tier scheme here —
     // `#filter-overlay-panel { background: #161618 }` vs. `button.ms-trigger
     // { background: #1c1c1e }` for the rows/buttons drawn on it — closer
@@ -82,10 +90,9 @@ export const Colors = {
     // nearly invisible as the sole boundary of a whole bar.
     //
     // The value is sampled, not picked: rgb(49,52,54) off the bar divider in a
-    // reference screenshot. Note that app draws it over pure black, where it
-    // clears its background by ~50; over our #0f0f0f page the same colour clears
-    // by ~37, so it reads a shade softer here than it does there. Matching its
-    // CONTRAST rather than its colour would be ~#404345.
+    // reference screenshot. That app draws it over pure black — and so, now, do
+    // we (see `background`), so it clears its background by the same ~50 here as
+    // it does there rather than the ~37 it managed over the old #0f0f0f.
     // Active icon is pure white, inactive the iOS system gray (reads on both themes).
     barHairline: '#313436',
     tabIconActive: '#ffffff',

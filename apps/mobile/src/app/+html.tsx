@@ -50,6 +50,8 @@ const rootStyle = `
 :root { color-scheme: light dark; }
 body { background-color: #ffffff; }
 @media (prefers-color-scheme: dark) {
-  body { background-color: #0f0f0f; }
+  /* Matches Colors.dark.background — this is what shows through an overscroll
+     bounce and before the app has painted, so a mismatch reads as a flash. */
+  body { background-color: #000000; }
 }
 `;
