@@ -431,6 +431,7 @@ export function SeriesBody({
           caret
           onPress={() =>
             openCollectionPicker({
+              kind: 'series',
               bridgeId,
               seriesId: series.id,
               title: series.title,

@@ -56,7 +56,7 @@ import type { TagGroup } from '@/data/mock';
 import { seriesDetailQuery, seriesListQuery } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import type { PageThumbSource } from '@/data/types';
-import { useSeriesCollections } from '@/hooks/use-series-collections';
+import { useItemCollections } from '@/hooks/use-item-collections';
 import { useFavorite } from '@/hooks/use-favorite';
 import { useLibrary } from '@/hooks/use-library';
 import { useCollections } from '@/hooks/use-collections';
@@ -325,10 +325,16 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // a still-loading [] as "no collections" and wrongly takes the ＋→manage path), and the submenu
   // rows are inert until the memberships resolve (a toggle then would REPLACE unknown memberships).
   const { collections, isLoading: collectionsLoading } = useCollections();
-  const { collectionIds, loading: membershipsLoading, setCollections } = useSeriesCollections(bridgeId, entry.id, () => ({
-    title: entry.title,
-    ...(entry.cover ? { thumbnailUrl: entry.cover } : {}),
-  }));
+  const {
+    collectionIds,
+    loading: membershipsLoading,
+    setCollections,
+  } = useItemCollections({
+    kind: 'series',
+    bridgeId,
+    seriesId: entry.id,
+    snapshot: () => ({ title: entry.title, ...(entry.cover ? { thumbnailUrl: entry.cover } : {}) }),
+  });
   // Lazy: this panel mounts only while the menu is open, so the download-status query runs once here,
   // never per card in the grid.
   const download = useSeriesDownloadAction(

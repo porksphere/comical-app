@@ -1,22 +1,25 @@
 import { Pressable, StyleSheet } from 'react-native';
 
-import { HeartIcon } from '@/components/icons/reader-icons';
+import { openCollectionPicker } from '@/components/collection-picker';
+import { BookmarkIcon } from '@/components/icons/reader-icons';
 import { peekResolvedAssetSource } from '@/data/api';
 import { usePageCollected } from '@/hooks/use-page-collected';
+import { hapticImpactLight } from '@/lib/haptics';
 
 /**
- * The reader chrome's collect-this-page heart, sitting left of the settings gear in the toolbar's
- * trailing slot. One tap collects the page on screen (filing it into the lazily-created heart
- * collection); tapping again removes it.
+ * The reader chrome's save-this-page button, left of the settings gear in the toolbar's trailing
+ * slot.
+ *
+ * **Tap** files the page into whichever collection pages were last filed into, and tapping again
+ * removes it. **Long press** opens the picker to choose. When there is no last-used collection yet
+ * — the first ever save, or the remembered one has been deleted — a tap opens the picker too, since
+ * there is nowhere sensible to put it and nothing is ever auto-created.
  *
  * Like the rest of the reader chrome this is deliberately UNTHEMED — white on the dark gradient,
  * never `useTheme()`, because the reader stays dark whatever the app theme is.
  *
- * Disabled until the chapter's collected indices resolve, so a quick tap can't act on an unknown
- * state (the same gate `useFavorite`'s star uses).
- *
- * Long-press to file the page into a specific collection is deliberately NOT wired yet — the picker
- * only speaks series coordinates today. It lands with the page picker (plan §7 / Phase 4).
+ * Disabled until the chapter's saved indices resolve, so a quick tap can't act on an unknown state
+ * (the same gate `useFavorite`'s star uses).
  */
 export function CollectPageControl({
   bridgeId,
@@ -40,7 +43,6 @@ export function CollectPageControl({
   pageCount?: number;
   /** The page's image URL right now. A re-anchor key server-side; expected to rot, never rendered. */
   sourceUrl?: string;
-
   /** Called on press so the caller can restart the chrome's auto-hide countdown — otherwise the
    *  bar can fade out from under the finger just as it's tapped. */
   onPress?: () => void;
@@ -51,34 +53,61 @@ export function CollectPageControl({
   // web, where the rendered source can be an object URL) just means no hash, which is safe.
   const cacheKey = sourceUrl ? (peekResolvedAssetSource(sourceUrl) ?? null) : null;
 
+  const snapshot = () => ({
+    seriesTitle,
+    ...(chapterName !== undefined && { chapterName }),
+    ...(pageCount !== undefined && { pageCount }),
+    ...(sourceUrl !== undefined && { sourceUrl }),
+  });
+
   const { collected, toggle } = usePageCollected(
     bridgeId,
     seriesId ?? '',
     chapterId,
     pageIndex,
-    () => ({
-      seriesTitle,
-      ...(chapterName !== undefined && { chapterName }),
-      ...(pageCount !== undefined && { pageCount }),
-      ...(sourceUrl !== undefined && { sourceUrl }),
-    }),
+    snapshot,
     cacheKey,
   );
+
+  const openPicker = () => {
+    if (!bridgeId || !seriesId || !chapterId) return;
+    openCollectionPicker({
+      kind: 'page',
+      bridgeId,
+      seriesId,
+      chapterId,
+      pageIndex,
+      title: chapterName ? `${seriesTitle} — ${chapterName}` : seriesTitle,
+      snapshot,
+    });
+  };
 
   return (
     <Pressable
       testID="reader.toolbar.collect-page"
       onPress={() => {
         onPress?.();
-        toggle();
+        // A tap with no remembered destination isn't a failure — it's the first one, so ask.
+        void toggle().then((result) => {
+          if (result === 'needs-pick') openPicker();
+        });
+      }}
+      onLongPress={() => {
+        onPress?.();
+        hapticImpactLight();
+        openPicker();
       }}
       hitSlop={12}
       disabled={collected === null}
       style={styles.button}
       accessibilityRole="button"
       accessibilityState={{ selected: !!collected }}
-      accessibilityLabel={collected ? 'Remove page from collections' : 'Collect this page'}>
-      <HeartIcon color={collected === null ? 'rgba(255,255,255,0.3)' : '#fff'} size={20} filled={!!collected} />
+      accessibilityLabel={collected ? 'Remove page from collection' : 'Save page to collection'}>
+      <BookmarkIcon
+        color={collected === null ? 'rgba(255,255,255,0.3)' : '#fff'}
+        size={20}
+        filled={!!collected}
+      />
     </Pressable>
   );
 }

@@ -20,9 +20,12 @@ local "favorites" concept and nothing is durably uncollected. The word *favorite
 the bridge-account capability (`/bridges/{id}/favorites` — starring a series on the source site),
 which is untouched by any of this. Local vocabulary is **collect / collected / collection item**.
 
-The reader's one-tap heart is therefore **app policy, not a data concept**: it files the page into a
-lazily-created, otherwise ordinary collection. The user can rename or delete that collection like
-any other — and deleting it deletes the hearted pages in it, which is the consistent behaviour.
+The reader's save button is therefore **app policy, not a data concept** — and it follows the
+**Google Maps "Save" model**: a tap files the page into whichever collection pages were last filed
+into, a long press opens the picker to choose, and **nothing is ever auto-created**. There is no
+implicit "Favorites" collection; every collection in the list is one the user made. Before anything
+has been filed (or when the remembered collection has been deleted), a tap opens the picker too,
+because there is nowhere sensible to put it.
 
 ## What this work is
 
@@ -169,16 +172,29 @@ prefix key `collectionItemsAll(mock)` so one toggle invalidates every scoped gri
 
 ## 5. The reader affordance (Phase 1)
 
-**Where.** A heart in the reader toolbar's trailing slot, left of the settings gear — one tap from
-chrome the user has already revealed. Filled/outline via the existing `IconProps.filled` convention;
+**Where.** A **bookmark** in the reader toolbar's trailing slot, left of the settings gear — one tap
+from chrome the user has already revealed. Not a heart and not a star: the action is "file this into
+a collection", not "like it", and the star already means the bridge's per-series favorite. Filled
+when the page is in a collection, outline when not, via the existing `IconProps.filled` convention;
 icon in `src/components/icons/reader-icons.tsx`. Chrome is deliberately unthemed white-on-dark —
 match it, don't call `useTheme()`.
 
-**What the heart does.** `PUT` the page item, then file it into the heart collection — created
-lazily on first use (an ordinary collection; the user can rename or delete it, and deleting it
-deletes its pages). A freshly-`PUT` item with no memberships is allowed **transiently**, which is
-what makes the two-`PUT` hash flow legal — so **file it promptly after the tap**, don't leave it
-uncollected across an await you don't control. Unhearting is `collections: []` (or `DELETE`).
+**What the button does.**
+
+- **Tap, with a remembered destination** — `PUT` the page item, then file it into the collection
+  pages were last filed into (`data/last-collection.ts`, per type, persisted, validated against the
+  live list so a deleted collection doesn't resurrect).
+- **Tap, with none** — open the picker. Never invent a collection.
+- **Tap, already saved** — remove it.
+- **Long press** — always open the picker.
+
+The two writes must not be separated by anything slow: a freshly-`PUT` item with no memberships is
+legal only **transiently**, which is exactly what makes the two-`PUT` hash flow safe, so the hash
+goes in a *third*, later call. Unsaving is `collections: []` (or `DELETE`).
+
+**Last-used is per TYPE** (`series` / `chapter` / `page`) rather than global — the collection you
+file pages into is rarely the one you file series into, and one shared default would send half the
+taps to the wrong place.
 
 **Toolbar** (`reader-toolbar.tsx`). The trailing slot is a fixed 32×32 box holding one child, and the
 leading spacer matches it so titles stay centred. Make it a row (`flexDirection: 'row'`,
@@ -204,12 +220,16 @@ near a chapter boundary reopens on the wrong page.
 
 **Hook.** `src/hooks/use-page-collected.ts`, modelled on `use-favorite.ts`'s optimistic shape:
 derive `collected = indices.includes(pageIndex)`, optimistic patch, rollback, `onSettled` invalidate
-`collectionItemsAll(mock)`. `hapticSelection()` on toggle; `holdChrome()` (:971) on press.
+`collectionItemsAll(mock)`. Its `toggle()` resolves to `'saved' | 'removed' | 'needs-pick' | 'noop'`
+— `needs-pick` is how "there's no destination yet" reaches the caller without the hook reaching into
+UI. `hapticSelection()` on toggle; `showChrome()` on press so the bar doesn't fade mid-tap.
 
 **Mirror in the settings sheet** as a separate "This page" segment above `SeriesActionsRow`
-(`settings-panel.tsx:194`). Long-press the heart opens the collection picker.
+(`settings-panel.tsx`) — two labelled buttons rather than the toolbar's tap/long-press pair, since a
+sheet can afford the width and a long press is undiscoverable in a list of labelled actions.
 
-testIDs: `reader.toolbar.collect-page`, `reader.settings.collect-page`.
+testIDs: `reader.toolbar.collect-page`, `reader.settings.collect-page`,
+`reader.settings.page-collections`.
 
 ### `contentHash` — bytes we already hold
 
@@ -335,8 +355,10 @@ page via `onVisiblePage`, chapter-correct across a stitched crossing (`shownWith
 Tests in `src/data/collected-pages.test.ts` lock merge-on-PUT and empty-memberships-removes;
 `e2e/mobile/collect-page.yaml` covers the round trip.
 
-Deliberately **not** in Phase 1: long-pressing the heart to pick a specific collection. The picker
-only speaks series coordinates today; it lands with the page picker in Phase 4.
+The picker (`collection-picker.tsx`) now speaks **both** series and page coordinates through one
+`ItemTarget` union, and `use-item-collections.ts` replaced `use-series-collections.ts` to serve
+both — which is what lets the long-press work at all. Filing through it also records the type's
+last-used collection, so the picker and the one-tap save stay in step.
 
 **Phase 2 — the browser.** Selector widening, `library.tsx`, `collected-items-grid.tsx`,
 `PageThumb`'s explicit-source prop, the per-chapter URL batch, stale and text-tile states.

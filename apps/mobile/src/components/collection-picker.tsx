@@ -37,8 +37,7 @@ import {
 import { CheckIcon, PlusIcon } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
-import type { LibrarySnapshot } from '@/data/api';
-import { useSeriesCollections } from '@/hooks/use-series-collections';
+import { useItemCollections, type ItemTarget } from '@/hooks/use-item-collections';
 import { useKeyboardLift } from '@/hooks/use-keyboard-lift';
 import { useCollections } from '@/hooks/use-collections';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
@@ -50,13 +49,10 @@ const OPEN_SPRING = { damping: 18, stiffness: 320, mass: 0.7 } as const;
 const CARD_MAX_WIDTH = 340;
 const MAX_LIST_HEIGHT = 320;
 
-export type CollectionPickerRequest = {
-  bridgeId: string | undefined;
-  seriesId: string;
-  /** Series title shown as the card's subheading. */
+/** What the picker is filing — a series or a single page. `title` is display only. */
+export type CollectionPickerRequest = ItemTarget & {
+  /** Shown as the card's subheading (the series title, or the page's series + chapter). */
   title?: string;
-  /** Snapshot written for the series item, and if filing adds it to the library first. */
-  snapshot: () => LibrarySnapshot;
 };
 
 // Plain module store (not Legend State — the request carries a function member, `snapshot`), read via
@@ -68,7 +64,7 @@ function setRequest(req: CollectionPickerRequest | null): void {
   for (const l of listeners) l();
 }
 
-/** Open the list-assign picker for a series. Stacks over whatever is already open. */
+/** Open the collection picker for a series or a page. Stacks over whatever is already open. */
 export function openCollectionPicker(req: CollectionPickerRequest): void {
   setRequest(req);
 }
@@ -88,7 +84,11 @@ function useRequest(): CollectionPickerRequest | null {
 export function CollectionPickerHost() {
   const req = useRequest();
   if (!req) return null;
-  return <HostPopup key={`${req.bridgeId}:${req.seriesId}`} req={req} />;
+  const key =
+    req.kind === 'page'
+      ? `page:${req.bridgeId}:${req.seriesId}:${req.chapterId}:${req.pageIndex}`
+      : `series:${req.bridgeId}:${req.seriesId}`;
+  return <HostPopup key={key} req={req} />;
 }
 
 function HostPopup({ req }: { req: CollectionPickerRequest }) {
@@ -98,7 +98,7 @@ function HostPopup({ req }: { req: CollectionPickerRequest }) {
   const progress = useSharedValue(0);
 
   const { collections, createCollection } = useCollections();
-  const { collectionIds, setCollections } = useSeriesCollections(req.bridgeId, req.seriesId, req.snapshot);
+  const { collectionIds, setCollections } = useItemCollections(req);
   const selected = new Set(collectionIds);
 
   const [creating, setCreating] = useState(false);

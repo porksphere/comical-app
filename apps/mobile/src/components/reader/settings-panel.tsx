@@ -205,12 +205,16 @@ function DirectionRow({
 }
 
 /**
- * The "This page" section — a mirror of the toolbar's collect heart, for discoverability. Shares
- * `usePageCollected`'s cache key with it, so toggling from either surface moves both.
+ * The "This page" section — a mirror of the toolbar's save button, for discoverability. Shares
+ * `usePageCollected`'s cache key with it, so acting on either surface moves both.
  *
  * Kept as its own segment above "This series" rather than a fifth cell in that 2×2 grid: it acts on
  * a different subject, and conflating the two is exactly the confusion the collections model is
  * trying to avoid.
+ *
+ * Two buttons rather than the toolbar's tap/long-press pair, because a sheet can afford the width
+ * and a long press is undiscoverable in a list of labelled actions: save/remove, and "Collections…"
+ * which always opens the picker.
  */
 function PageActionRow({
   bridgeId,
@@ -223,24 +227,53 @@ function PageActionRow({
   seriesTitle: string;
   page: PageActionTarget;
 }) {
-  const { collected, toggle } = usePageCollected(bridgeId, seriesId, page.chapterId, page.pageIndex, () => ({
+  const { closeTop } = useOverlay();
+  const snapshot = () => ({
     seriesTitle,
     ...(page.chapterName !== undefined && { chapterName: page.chapterName }),
     ...(page.pageCount !== undefined && { pageCount: page.pageCount }),
     ...(page.sourceUrl !== undefined && { sourceUrl: page.sourceUrl }),
-  }));
+  });
+  const { collected, toggle } = usePageCollected(
+    bridgeId,
+    seriesId,
+    page.chapterId,
+    page.pageIndex,
+    snapshot,
+  );
+
+  const openPicker = () => {
+    closeTop(); // close the sheet so the picker isn't stacked behind it
+    openCollectionPicker({
+      kind: 'page',
+      bridgeId,
+      seriesId,
+      chapterId: page.chapterId,
+      pageIndex: page.pageIndex,
+      title: page.chapterName ? `${seriesTitle} — ${page.chapterName}` : seriesTitle,
+      snapshot,
+    });
+  };
+
   return (
     <View style={styles.seg}>
       <ThemedText style={styles.segLabel}>This page</ThemedText>
       <View style={styles.segRow}>
         <Pressable
           testID="reader.settings.collect-page"
-          onPress={toggle}
+          onPress={() => {
+            void toggle().then((result) => {
+              if (result === 'needs-pick') openPicker();
+            });
+          }}
           style={[styles.opt, collected && styles.optOn]}
           disabled={collected === null}>
           <ThemedText style={[styles.optText, collected && styles.optTextOn]}>
-            {collected ? '♥  Collected' : '♡  Collect page'}
+            {collected ? '✓  Saved' : '＋  Save page'}
           </ThemedText>
+        </Pressable>
+        <Pressable testID="reader.settings.page-collections" onPress={openPicker} style={styles.opt}>
+          <ThemedText style={styles.optText}>Collections…</ThemedText>
         </Pressable>
       </View>
     </View>
@@ -344,7 +377,7 @@ function SeriesActionsRow({
   };
   const onAddToCollection = () => {
     closeTop(); // close the reader sheet so the collection picker isn't stacked behind it
-    openCollectionPicker({ bridgeId, seriesId, title, snapshot });
+    openCollectionPicker({ kind: 'series', bridgeId, seriesId, title, snapshot });
   };
 
   return (

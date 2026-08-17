@@ -1,35 +1,31 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type { PageItemSnapshotBody } from '@/data/api';
+import { resolveLastCollection, setLastCollectionId } from '@/data/last-collection';
 import { chapterPageIndicesQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import { hapticSelection } from '@/lib/haptics';
 import { hashPageFromCache } from '@/lib/page-hash';
 
-/** The name of the collection the reader's one-tap heart files into, created on first use.
- *
- *  There is no separate "favorites" concept any more — an item exists only as a member of a
- *  collection — so the heart is app policy: membership in an ORDINARY collection that happens to be
- *  created for you. The user can rename it, reorder it, or delete it like any other, and deleting
- *  it deletes the pages whose only membership it was. That's the consistent behaviour, but it does
- *  mean a delete confirmation needs to say so. */
-export const HEART_COLLECTION_NAME = 'Favorites';
-
 /**
- * Whether the currently visible page is collected, plus a one-tap toggle, for the reader's heart.
+ * Whether the currently visible page is saved to any collection, plus the reader's one-tap save.
+ *
+ * **The Google Maps "Save" model.** A tap files the page into whichever collection pages were last
+ * filed into; a long press opens the picker to choose. Nothing is auto-created and there is no
+ * implicit "Favorites" — an item exists only as a member of a collection the user made. When there
+ * is no last-used collection yet (first save ever, or it has since been deleted), a tap has nowhere
+ * to go, so it defers to the caller via `needsPick` and the picker opens instead.
  *
  * Reads **one** query per chapter — the chapter's collected page indices — and derives the button
- * from it, so flipping pages costs zero requests and the heart is correct instantly while scrubbing.
+ * from it, so flipping pages costs zero requests and the state is correct instantly while scrubbing.
  * A per-page status check would fire a request per page turn, which is precisely why the indices
  * route exists. Stale items are already excluded server-side, so an index here is always safe to
  * navigate to.
  *
- * The toggle is optimistic against that index array with rollback, mirroring `useFavorite`.
- *
- * **Collecting is two steps, and both matter.** `collectPage` writes the item, then it is filed into
- * the heart collection. An item with no memberships is only *transiently* legal — the server treats
- * empty memberships as "remove me" — so the file-in must follow promptly, not wait on anything slow
- * (the `contentHash` follow-up PUT deliberately runs after, and separately, for that reason).
+ * **Saving is two writes, and both matter.** `collectPage` writes the item, then it is filed. An
+ * item with no memberships is only *transiently* legal — the server treats empty memberships as
+ * "remove me" — so the file-in must follow promptly, not wait on anything slow (the `contentHash`
+ * follow-up PUT deliberately runs after, and separately, for that reason).
  */
 export function usePageCollected(
   bridgeId: string | undefined,
@@ -38,7 +34,7 @@ export function usePageCollected(
   pageIndex: number,
   snapshot: () => PageItemSnapshotBody,
   /** The exact URI string handed to the reader's `<Image>` — expo-image's disk-cache key, used to
-   *  hash the bytes already on disk. Omit it and the page is simply collected without a hash. */
+   *  hash the bytes already on disk. Omit it and the page is simply saved without a hash. */
   imageCacheKey?: string | null,
 ) {
   const ds = useDataSource();
@@ -50,27 +46,27 @@ export function usePageCollected(
   const { data, isError } = useQuery({
     ...chapterPageIndicesQuery(ds, mock, bridgeId ?? '', seriesId, chapterId ?? ''),
     enabled,
-    // A library-less server 404s every collected route; that should read as "nothing collected",
+    // A library-less server 404s every collected route; that should read as "nothing saved",
     // not spin a retry behind a peripheral control.
     retry: false,
   });
-  // `null` while the first load is in flight → the heart renders disabled rather than wrong.
+  // `null` while the first load is in flight → the button renders disabled rather than wrong.
   const indices = data ?? (isError ? [] : null);
   const collected = indices === null ? null : indices.includes(pageIndex);
 
   const mutation = useMutation({
-    mutationFn: async (next: boolean) => {
-      if (!next) {
+    mutationFn: async (collectionId: string | null) => {
+      if (collectionId === null) {
         await ds.uncollectPage(bridgeId!, seriesId, chapterId!, pageIndex);
         return;
       }
       await ds.collectPage(bridgeId!, seriesId, chapterId!, pageIndex, snapshot());
       // File it immediately — an item with no memberships is removed, so leaving it bare would
       // undo the tap. This must not wait on anything slow, which is why the hash comes after.
-      const collectionId = await ensureHeartCollection();
       await ds.setPageCollections(bridgeId!, seriesId, chapterId!, pageIndex, [collectionId]);
+      setLastCollectionId('page', collectionId);
 
-      // Second PUT, carrying the content hash. Deliberately after the tap has already landed:
+      // Second PUT, carrying the content hash. Deliberately after the save has already landed:
       // SHA-256 over a ~1MB page through Hermes' JS crypto shim is slow enough to feel. Safe to
       // send partially — the route MERGES, so `chapterName`/`pageCount`/`sourceUrl` survive
       // untouched (and `pageCount` matters: it's reconcile's fallback re-anchor signal).
@@ -82,13 +78,15 @@ export function usePageCollected(
         });
       }
     },
-    onMutate: async (next: boolean) => {
+    onMutate: async (collectionId: string | null) => {
       await queryClient.cancelQueries({ queryKey: key });
       const prev = queryClient.getQueryData<number[]>(key);
       if (prev) {
         queryClient.setQueryData(
           key,
-          next ? [...prev, pageIndex].sort((a, b) => a - b) : prev.filter((i) => i !== pageIndex),
+          collectionId === null
+            ? prev.filter((i) => i !== pageIndex)
+            : [...prev, pageIndex].sort((a, b) => a - b),
         );
       }
       return { prev };
@@ -104,22 +102,28 @@ export function usePageCollected(
     },
   });
 
-  /** Find the heart collection by name, creating it the first time. Named rather than id-pinned so
-   *  the user renaming it doesn't orphan the heart — but that also means renaming it and then
-   *  hearting again mints a fresh one, which is the trade for not storing a hidden id. */
-  async function ensureHeartCollection(): Promise<string> {
-    const existing = await ds.getCollections();
-    const found = existing.find((c) => c.name === HEART_COLLECTION_NAME);
-    if (found) return found.id;
-    return (await ds.createCollection(HEART_COLLECTION_NAME)).id;
-  }
-
   return {
+    /** `null` while unknown — the button stays disabled rather than showing a wrong state. */
     collected,
-    toggle: () => {
-      if (!enabled || collected === null) return;
+    /**
+     * One-tap save/unsave. Resolves the destination from the last collection pages were filed into;
+     * returns **`'needs-pick'`** when there isn't a usable one, which the caller answers by opening
+     * the picker. Never invents a collection.
+     */
+    toggle: async (): Promise<'saved' | 'removed' | 'needs-pick' | 'noop'> => {
+      if (!enabled || collected === null) return 'noop';
+      if (collected) {
+        hapticSelection();
+        mutation.mutate(null);
+        return 'removed';
+      }
+      // Validated against the live list, so a deleted collection falls through to the picker
+      // instead of resurrecting itself.
+      const destination = resolveLastCollection('page', await ds.getCollections());
+      if (!destination) return 'needs-pick';
       hapticSelection();
-      mutation.mutate(!collected);
+      mutation.mutate(destination);
+      return 'saved';
     },
   };
 }

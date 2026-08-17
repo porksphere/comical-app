@@ -88,6 +88,10 @@ export const queryKeys = {
   /** One series' collection memberships (for the assign picker). */
   seriesCollections: (mock: boolean, bridgeId: string, seriesId: string) =>
     ['seriesCollections', mock, bridgeId, seriesId] as const,
+  /** One PAGE's collection memberships (for the assign picker). Separate from the chapter's index
+   *  set, which is what the reader's save button reads. */
+  pageCollections: (mock: boolean, bridgeId: string, seriesId: string, chapterId: string, pageIndex: number) =>
+    ['pageCollections', mock, bridgeId, seriesId, chapterId, pageIndex] as const,
   /** A scoped collected-items listing. Every variant sits under the `collectionItems` prefix so one
    *  write can invalidate them all — see `collectionItemsAll`. */
   collectionItems: (mock: boolean, query: api.CollectedItemsQuery) =>

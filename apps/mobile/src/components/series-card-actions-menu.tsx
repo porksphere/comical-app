@@ -84,6 +84,7 @@ export function SeriesActionsMenu({
           onPress={() => {
             closeTop();
             openCollectionPicker({
+              kind: 'series',
               bridgeId,
               seriesId: entry.id,
               title: entry.title,
