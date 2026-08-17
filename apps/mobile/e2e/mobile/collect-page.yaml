@@ -31,6 +31,9 @@
 #     AXES — collections filter by membership, "Saved pages" filters by item type.
 #   - collected.tile.<id>              a saved-page tile (collected-page-tile.tsx). The id is the
 #     item's derived coordinate id, so the regex form is what's selectable.
+#   - collected-viewer.open-in-reader / .back / .collections   the flip-through's chrome
+#     (app/collected-viewer.tsx). Its chrome does NOT auto-hide — this is a browsing surface, not a
+#     reading one — so no toggle-chrome tap is needed before touching it.
 #   - collected.sort / .sort.* / .dir.* / .group.*   the saved-pages ordering menu
 #     (collected-sort-button.tsx). Sort and direction are SEPARATE server params, and grouping is
 #     client-side over the result — hence three sections rather than one fused list. The menu stays
@@ -167,14 +170,22 @@ appId: com.porksphere.comical
 - assertVisible:
     id: "collected\\.tile\\..*"
 
-# Tapping one reopens the reader at that exact page.
+# Tapping a saved page opens the FLIP-THROUGH, not the reader — the point of tapping one is usually
+# to browse the rest. It pages over the same list the grid is showing, in the same order.
 - tapOn:
     id: "collected\\.tile\\..*"
     index: 0
 - assertVisible:
-    id: "reader.toolbar.collect-page"
+    id: "collected-viewer.open-in-reader"
+
+# "Open in reader" REPLACES the viewer rather than stacking on it, so backing out of the reader
+# lands on the Library, not on a viewer left behind underneath.
+- tapOn:
+    id: "collected-viewer.open-in-reader"
 - assertVisible:
     id: "reader.toolbar.collect-page"
     label: "Remove page from collection"
 - tapOn:
     id: "reader.toolbar.back"
+- assertVisible:
+    id: "library.collection-selector"

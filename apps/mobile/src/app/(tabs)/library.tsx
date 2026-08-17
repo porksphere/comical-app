@@ -219,6 +219,22 @@ export default function LibraryScreen() {
               });
               return;
             }
+            if (item.type === 'page') {
+              // A saved page opens the flip-through, not the reader: the point of tapping one is
+              // usually to browse the rest, and "Open in reader" is one tap away from there.
+              // The viewer re-queries THIS list, so it needs the same scope — not the items.
+              router.push({
+                pathname: '/collected-viewer',
+                params: {
+                  startId: item.id,
+                  ...(view.collection ? { collection: view.collection } : {}),
+                  ...(query ? { q: query } : {}),
+                  sort: collectedView.sort,
+                  dir: collectedView.dir,
+                },
+              });
+              return;
+            }
             router.push({
               pathname: '/series',
               params: {
@@ -226,8 +242,7 @@ export default function LibraryScreen() {
                 bridgeId: item.bridgeId,
                 reader: '1',
                 chapterId: item.chapterId,
-                // A chapter opens at its first page; a page at the one that was saved.
-                start: String(item.type === 'page' ? item.pageIndex : 0),
+                start: '0', // a chapter opens at its first page
                 title: item.seriesTitle,
               },
             });

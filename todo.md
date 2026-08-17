@@ -1,4 +1,8 @@
-- [ ] Add "page" favoriting mechanism
+- [x] Add "page" favoriting mechanism — shipped as universal COLLECTIONS (the runtime
+      generalized it: a collection holds series, chapters or pages, and the library's custom
+      lists retired into the same system). Save the page you're reading from the reader chrome,
+      browse saved pages from the Library tab by series or date, flip through them full-screen.
+      See `docs/collections-client-plan.md`.
 - [ ] Genericize the series metadata contract — typed credits/facets are handled
       inconsistently. Some are a fixed, first-class field on `SeriesInfo` (the
       single `author`/`authors`) while others are just another entry in the

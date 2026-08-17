@@ -146,6 +146,12 @@ function RootNavigation() {
             name="series"
             options={{ headerShown: false, animation: 'none', presentation: 'containedTransparentModal' }}
           />
+          {/* The saved-pages flip-through. A contained transparent modal like the reader, so it
+              covers the tab bar and can fade back to whatever opened it. */}
+          <Stack.Screen
+            name="collected-viewer"
+            options={{ headerShown: false, presentation: 'containedTransparentModal' }}
+          />
           {/* These render their own <TopBar> (matching series.tsx), so the native
               stack header is hidden here too. The Settings tab is only a table of
               contents — every category below is a screen it pushes. */}
