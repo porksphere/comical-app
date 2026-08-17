@@ -31,6 +31,10 @@
 #     AXES — collections filter by membership, "Saved pages" filters by item type.
 #   - collected.tile.<id>              a saved-page tile (collected-page-tile.tsx). The id is the
 #     item's derived coordinate id, so the regex form is what's selectable.
+#   - collected.sort / .sort.* / .dir.* / .group.*   the saved-pages ordering menu
+#     (collected-sort-button.tsx). Sort and direction are SEPARATE server params, and grouping is
+#     client-side over the result — hence three sections rather than one fused list. The menu stays
+#     open on sort/dir and closes on a grouping pick, which is why the steps below re-open it.
 #
 # The chrome AUTO-HIDES after 3s (CHROME_HIDE_MS in app/series/index.tsx), so every step that needs
 # the toolbar re-taps reader.control.toggle-chrome first rather than assuming it is still up. Same
@@ -141,6 +145,25 @@ appId: com.porksphere.comical
 
 # The two pages saved above are here, drawn from their chapter's page list (one request for the
 # chapter, not one per tile).
+- assertVisible:
+    id: "collected\\.tile\\..*"
+
+# Sort and grouping. Grouping is applied client-side OVER the server's order, so switching to
+# "Series" inserts section headers without losing the chosen sort — the tiles must survive it.
+- tapOn:
+    id: "collected.sort"
+- tapOn:
+    id: "collected.group.series"
+- assertVisible:
+    id: "collected\\.tile\\..*"
+
+# Back to ungrouped, and flip the direction, to prove both axes are live and independent.
+- tapOn:
+    id: "collected.sort"
+- tapOn:
+    id: "collected.dir.asc"
+- tapOn:
+    id: "collected.group.none"
 - assertVisible:
     id: "collected\\.tile\\..*"
 

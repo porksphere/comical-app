@@ -15,11 +15,13 @@ import { RetryBlock } from '@/components/retry-block';
 import { SearchField } from '@/components/search-field';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { CollectedItemsGrid } from '@/components/collections/collected-items-grid';
+import { CollectedSortButton } from '@/components/collections/collected-sort-button';
 import { SeriesGrid } from '@/components/series-grid';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BarContentGap, BottomTabInset, Spacing } from '@/constants/theme';
+import { useCollectedView } from '@/data/collected-view';
 import { collectionItemsQuery, libraryQuery, type LibraryView } from '@/data/queries';
 import { toLibraryCard, type LibraryGridItem } from '@/data/library-card';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
@@ -56,6 +58,9 @@ export default function LibraryScreen() {
   // Sort is remembered per collection (persisted) — switching restores that view's last ordering.
   const [sort, setSort] = useLibrarySort(collectionFilter);
   const showingCollected = view.kind === 'collected';
+  // Sort/dir/grouping for the saved-pages view — one persisted preference for the whole view, not
+  // per collection (see the store's doc).
+  const [collectedView, setCollectedView] = useCollectedView();
 
   // In-place search: the top-bar search icon swaps the bar's leading content for a search field
   // (no pushed screen). `query` is committed on submit and folds straight into the same grid query.
@@ -82,6 +87,8 @@ export default function LibraryScreen() {
   const collected = useQuery({
     ...collectionItemsQuery(ds, mock, {
       type: 'page',
+      sort: collectedView.sort,
+      dir: collectedView.dir,
       ...(view.collection ? { collection: view.collection } : {}),
       ...(query ? { q: query } : {}),
     }),
@@ -193,7 +200,10 @@ export default function LibraryScreen() {
       {showingCollected ? (
         <CollectedItemsGrid
           items={ready ? (collected.data ?? []) : []}
-          scopeKey={`pages|${query}|${view.collection ?? ''}`}
+          grouping={collectedView.grouping}
+          // Every axis is in the key: a sort/dir/grouping switch is a scroll-to-top moment and must
+          // reset recycled rows, exactly as a search or collection switch does.
+          scopeKey={`pages|${query}|${view.collection ?? ''}|${collectedView.sort}|${collectedView.dir}|${collectedView.grouping}`}
           listRef={listRef}
           header={renderCollectedEmpty()}
           paddingTop={headerHeight + BarContentGap}
@@ -278,7 +288,11 @@ export default function LibraryScreen() {
             )}
             {/* Sort applies to the library grid only. The saved-pages view has its own sort/dir
                 axes (Phase 3); showing this control there would be a lever that does nothing. */}
-            {!showingCollected && <LibrarySortButton value={sort} onChange={setSort} />}
+            {showingCollected ? (
+              <CollectedSortButton value={collectedView} onChange={setCollectedView} />
+            ) : (
+              <LibrarySortButton value={sort} onChange={setSort} />
+            )}
           </>
         }
       />

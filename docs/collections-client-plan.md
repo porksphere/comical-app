@@ -381,7 +381,21 @@ Two deviations from what this plan originally said, both deliberate:
 The sort control is hidden in the saved-pages view: sort/dir for collected items is Phase 3, and
 showing the library's sort there would be a lever that does nothing.
 
-**Phase 3 — the axes.** sort/dir plus grouping by series and date.
+**Phase 3 — the axes. ✅ DONE.** `collected-view.ts` holds sort/dir/grouping as one persisted
+Legend State preference (per view, not per collection — sort is a habit, unlike the library's
+per-list sort). `collected-sort-button.tsx` presents them as three sections, because sort and dir
+are separate server params and grouping is client-side. `collected-rows.ts` turns the server-ordered
+list into typed header/tile rows; both heights are constant so a sectioned list still never
+re-measures, and `getItemType` keeps headers and tile rows in separate recycling pools.
+
+**Grouping composes with sort rather than replacing it**: items bucket in order of first
+appearance and each bucket keeps its incoming order, so "newest first, grouped by series" means
+series ordered by most-recently-added, each series' pages newest-first. `collected-rows.test.ts`
+locks that, plus per-header counts, calendar-day bucketing, and item-derived row keys (an
+index-based key would leave a recycled row showing the previous items).
+
+Picking a sort resets direction to that sort's natural default, so switching to "Series" doesn't
+leave you reading Z→A because you'd once chosen newest-first.
 
 **Phase 4 — chapter items and mixed browse.** "Add chapter to collection", mixed-union rendering.
 
