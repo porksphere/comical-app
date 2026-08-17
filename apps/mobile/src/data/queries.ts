@@ -45,6 +45,26 @@ export type LibraryView = {
   collection: string | null;
 };
 
+/** What a collected view asks the server for.
+ *
+ *  "All saved pages" is a TYPE filter (`type=page`) — it is the page surface, deliberately not a
+ *  collection. Opening a specific collection asks for its whole contents instead, with no type
+ *  filter, because a collection can hold series, chapters and pages and hiding two of the three
+ *  would make it look emptier than it is. */
+export function collectedQueryFor(
+  view: LibraryView,
+  q: string,
+  sort: api.CollectedItemsQuery['sort'],
+  dir: api.CollectedItemsQuery['dir'],
+): api.CollectedItemsQuery {
+  return {
+    ...(view.collection ? { collection: view.collection } : { type: 'page' as const }),
+    sort,
+    dir,
+    ...(q ? { q } : {}),
+  };
+}
+
 /** Per-series fetch options that affect the *shape* of the result (and thus the key). */
 export type SeriesDetailOpts = { direct?: boolean; bridgeName?: string; title?: string; cover?: string };
 
@@ -99,6 +119,9 @@ export const queryKeys = {
   /** One series' collection memberships (for the assign picker). */
   seriesCollections: (mock: boolean, bridgeId: string, seriesId: string) =>
     ['seriesCollections', mock, bridgeId, seriesId] as const,
+  /** One CHAPTER's collection memberships (for the assign picker). */
+  chapterCollections: (mock: boolean, bridgeId: string, seriesId: string, chapterId: string) =>
+    ['chapterCollections', mock, bridgeId, seriesId, chapterId] as const,
   /** One PAGE's collection memberships (for the assign picker). Separate from the chapter's index
    *  set, which is what the reader's save button reads. */
   pageCollections: (mock: boolean, bridgeId: string, seriesId: string, chapterId: string, pageIndex: number) =>

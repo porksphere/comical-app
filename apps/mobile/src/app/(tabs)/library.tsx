@@ -22,7 +22,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BarContentGap, BottomTabInset, Spacing } from '@/constants/theme';
 import { useCollectedView } from '@/data/collected-view';
-import { collectionItemsQuery, libraryQuery, type LibraryView } from '@/data/queries';
+import { collectedQueryFor, collectionItemsQuery, libraryQuery, type LibraryView } from '@/data/queries';
 import { toLibraryCard, type LibraryGridItem } from '@/data/library-card';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import { useBridgeMap } from '@/hooks/use-bridges';
@@ -85,13 +85,11 @@ export default function LibraryScreen() {
   // Saved pages. `type: 'page'` is NOT optional — a bare collected query returns the mixed
   // series/chapter/page union, and a grid that forgets it renders the wrong things silently.
   const collected = useQuery({
-    ...collectionItemsQuery(ds, mock, {
-      type: 'page',
-      sort: collectedView.sort,
-      dir: collectedView.dir,
-      ...(view.collection ? { collection: view.collection } : {}),
-      ...(query ? { q: query } : {}),
-    }),
+    ...collectionItemsQuery(
+      ds,
+      mock,
+      collectedQueryFor(view, query, collectedView.sort, collectedView.dir),
+    ),
     enabled: showingCollected,
   });
 
@@ -210,9 +208,17 @@ export default function LibraryScreen() {
           paddingBottom={BottomTabInset + insets.bottom + Spacing.five}
           sharedValues={sharedValues}
           onScroll={onScroll}
-          onOpen={(item) =>
-            // Straight back into the reader at that page — the series modal already accepts every
-            // coordinate a saved page carries, so this needs no reader machinery of its own.
+          onOpen={(item) => {
+            // One destination per type. A page and a chapter both land in the reader — the series
+            // modal already accepts every coordinate they carry, so neither needs reader machinery
+            // of its own; a series opens its detail screen instead.
+            if (item.type === 'series') {
+              router.push({
+                pathname: '/series',
+                params: { id: item.seriesId, bridgeId: item.bridgeId, title: item.seriesTitle },
+              });
+              return;
+            }
             router.push({
               pathname: '/series',
               params: {
@@ -220,11 +226,12 @@ export default function LibraryScreen() {
                 bridgeId: item.bridgeId,
                 reader: '1',
                 chapterId: item.chapterId,
-                start: String(item.pageIndex),
+                // A chapter opens at its first page; a page at the one that was saved.
+                start: String(item.type === 'page' ? item.pageIndex : 0),
                 title: item.seriesTitle,
               },
-            })
-          }
+            });
+          }}
         />
       ) : (
         <SeriesGrid

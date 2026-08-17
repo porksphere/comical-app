@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import type { LibrarySnapshot, PageItemSnapshotBody } from '@/data/api';
+import type { ChapterItemSnapshotBody, LibrarySnapshot, PageItemSnapshotBody } from '@/data/api';
 import { setLastCollectionId } from '@/data/last-collection';
 import { queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
@@ -9,6 +9,13 @@ import { useDataSource, useMockActive } from '@/data/source';
  *  optional-fields bag, so a page target can't be built without its chapter and index. */
 export type ItemTarget =
   | { kind: 'series'; bridgeId: string | undefined; seriesId: string; snapshot: () => LibrarySnapshot }
+  | {
+      kind: 'chapter';
+      bridgeId: string | undefined;
+      seriesId: string;
+      chapterId: string;
+      snapshot: () => ChapterItemSnapshotBody;
+    }
   | {
       kind: 'page';
       bridgeId: string | undefined;
@@ -41,20 +48,21 @@ export function useItemCollections(target: ItemTarget) {
   const key =
     kind === 'series'
       ? queryKeys.seriesCollections(mock, bridgeId ?? '', seriesId)
-      : queryKeys.pageCollections(mock, bridgeId ?? '', seriesId, target.chapterId, target.pageIndex);
+      : kind === 'chapter'
+        ? queryKeys.chapterCollections(mock, bridgeId ?? '', seriesId, target.chapterId)
+        : queryKeys.pageCollections(mock, bridgeId ?? '', seriesId, target.chapterId, target.pageIndex);
 
   const { data, isLoading } = useQuery({
     queryKey: key,
     queryFn: async ({ signal }) => {
       if (kind === 'series') return ds.getSeriesCollections(bridgeId!, seriesId, signal);
-      // There is no per-coordinate item GET, so read this series' page items and pick ours out.
-      // Scoped to one series, so it stays off the whole-library path.
-      const items = await ds.getCollectedItems(
-        { type: 'page', series: `${bridgeId}:${seriesId}` },
-        signal,
-      );
-      const mine = items?.find(
-        (i) => i.type === 'page' && i.chapterId === target.chapterId && i.pageIndex === target.pageIndex,
+      // There is no per-coordinate item GET, so read this series' items of that type and pick ours
+      // out. Scoped to one series, so it stays off the whole-library path.
+      const items = await ds.getCollectedItems({ type: kind, series: `${bridgeId}:${seriesId}` }, signal);
+      const mine = items?.find((i) =>
+        kind === 'chapter'
+          ? i.type === 'chapter' && i.chapterId === target.chapterId
+          : i.type === 'page' && i.chapterId === target.chapterId && i.pageIndex === target.pageIndex,
       );
       return mine?.collectionIds ?? [];
     },
@@ -73,6 +81,13 @@ export function useItemCollections(target: ItemTarget) {
           ...(snap.thumbnailUrl !== undefined && { thumbnailUrl: snap.thumbnailUrl }),
           ...(snap.author !== undefined && { author: snap.author }),
         });
+      } else if (kind === 'chapter') {
+        if (next.length === 0) {
+          await ds.uncollectChapter(bridgeId!, seriesId, target.chapterId);
+        } else {
+          await ds.collectChapter(bridgeId!, seriesId, target.chapterId, target.snapshot());
+          await ds.setChapterCollections(bridgeId!, seriesId, target.chapterId, next);
+        }
       } else if (next.length === 0) {
         await ds.uncollectPage(bridgeId!, seriesId, target.chapterId, target.pageIndex);
       } else {
@@ -103,7 +118,7 @@ export function useItemCollections(target: ItemTarget) {
       if (kind === 'series') {
         void queryClient.invalidateQueries({ queryKey: queryKeys.libraryList(mock) });
         void queryClient.invalidateQueries({ queryKey: queryKeys.inLibrary(mock, bridgeId ?? '', seriesId) });
-      } else {
+      } else if (kind === 'page') {
         // The reader's save button reads the chapter's index set, not this key.
         void queryClient.invalidateQueries({
           queryKey: queryKeys.chapterPageIndices(mock, bridgeId ?? '', seriesId, target.chapterId),

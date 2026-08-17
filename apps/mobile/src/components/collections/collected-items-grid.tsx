@@ -3,11 +3,12 @@ import { useMemo, type ReactElement, type RefObject } from 'react';
 import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import type { SharedValue } from 'react-native-reanimated';
 
+import { CollectedChapterRow } from '@/components/collections/collected-chapter-row';
 import { CollectedPageTile } from '@/components/collections/collected-page-tile';
 import { RecyclerList } from '@/components/recycler-list';
 import { ThemedText } from '@/components/themed-text';
 import { RowHeight, Spacing } from '@/constants/theme';
-import type { ApiCollectionItem, ApiCollectionPageItem } from '@/data/api';
+import type { ApiCollectionItem } from '@/data/api';
 import { buildCollectedRows, type CollectedRow } from '@/data/collected-rows';
 import type { CollectedGrouping } from '@/data/collected-view';
 import { useCollectedPageUris } from '@/hooks/use-collected-page-uris';
@@ -52,7 +53,9 @@ export function CollectedItemsGrid({
   /** Feeds the tab bar's UI-thread slide, exactly as `SeriesGrid` does. */
   sharedValues?: { scrollOffset: SharedValue<number> };
   onScroll?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
-  onOpen: (item: ApiCollectionPageItem) => void;
+  /** Tapping any item — the caller routes by `type` (a page opens the reader at that page, a
+   *  chapter at its first page, a series its detail screen). */
+  onOpen: (item: ApiCollectionItem) => void;
 }) {
   const { numColumns, sidePad, cardWidth } = useGridLayout();
   // One request per CHAPTER, not per tile — see the hook. Read during render as a lookup table;
@@ -63,12 +66,7 @@ export function CollectedItemsGrid({
   // every render by design (see the hook). Rows carry items; tiles look their URL up at render
   // time, so a URL arriving repaints tiles without rebuilding the list's data array.
   const rows = useMemo<CollectedRow[]>(
-    () =>
-      buildCollectedRows(
-        items.filter((i): i is ApiCollectionPageItem => i.type === 'page'),
-        numColumns,
-        grouping,
-      ),
+    () => buildCollectedRows(items, numColumns, grouping),
     [items, numColumns, grouping],
   );
 
@@ -77,6 +75,7 @@ export function CollectedItemsGrid({
   // what keeps a sectioned list from re-measuring as it scrolls.
   const tileRowHeight = tileHeight + Spacing.three;
   const headerRowHeight = RowHeight;
+  const chapterRowHeight = RowHeight + Spacing.three;
 
   return (
     <RecyclerList
@@ -86,7 +85,9 @@ export function CollectedItemsGrid({
       keyExtractor={(row) => row.key}
       // Distinct pools per row type, so a header never recycles into a tile row (and vice versa).
       getItemType={(row) => row.type}
-      getFixedItemSize={(row) => (row.type === 'header' ? headerRowHeight : tileRowHeight)}
+      getFixedItemSize={(row) =>
+        row.type === 'header' ? headerRowHeight : row.type === 'chapter' ? chapterRowHeight : tileRowHeight
+      }
       estimatedItemSize={tileRowHeight}
       header={header}
       paddingTop={paddingTop}
@@ -94,36 +95,42 @@ export function CollectedItemsGrid({
       sidePad={sidePad}
       sharedValues={sharedValues}
       onScroll={onScroll}
-      renderItem={({ item: row }) =>
-        row.type === 'header' ? (
-          <View style={styles.header}>
-            <ThemedText type="smallBold" numberOfLines={1} style={styles.headerLabel}>
-              {row.label}
-            </ThemedText>
-            <ThemedText type="small" themeColor="textSecondary">
-              {row.count}
-            </ThemedText>
-          </View>
-        ) : (
+      renderItem={({ item: row }) => {
+        if (row.type === 'header') {
+          return (
+            <View style={styles.header}>
+              <ThemedText type="smallBold" numberOfLines={1} style={styles.headerLabel}>
+                {row.label}
+              </ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                {row.count}
+              </ThemedText>
+            </View>
+          );
+        }
+        if (row.type === 'chapter') {
+          return <CollectedChapterRow item={row.item} onPress={() => onOpen(row.item)} />;
+        }
+        return (
           <View style={styles.row}>
-          {row.items.map((item) => (
-            <CollectedPageTile
-              key={item.id}
-              item={item}
-              uri={uris.get(item.id)}
-              width={cardWidth}
-              height={tileHeight}
-              onPress={() => onOpen(item)}
-            />
-          ))}
-          {/* Keeps a short final row left-aligned instead of stretching its tiles. */}
-          {row.items.length < numColumns &&
-            Array.from({ length: numColumns - row.items.length }).map((_, i) => (
-              <View key={`pad-${i}`} style={{ width: cardWidth }} />
+            {row.items.map((item) => (
+              <CollectedPageTile
+                key={item.id}
+                item={item}
+                uri={uris.get(item.id)}
+                width={cardWidth}
+                height={tileHeight}
+                onPress={() => onOpen(item)}
+              />
             ))}
+            {/* Keeps a short final row left-aligned instead of stretching its tiles. */}
+            {row.items.length < numColumns &&
+              Array.from({ length: numColumns - row.items.length }).map((_, i) => (
+                <View key={`pad-${i}`} style={{ width: cardWidth }} />
+              ))}
           </View>
-        )
-      }
+        );
+      }}
     />
   );
 }

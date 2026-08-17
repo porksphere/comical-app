@@ -14,7 +14,9 @@ import { enqueueChapter } from '@/data/downloads/engine';
 import { downloadsScreenRoute } from '@/data/downloads/nav';
 import { queryKeys } from '@/data/queries';
 import { useFavorite } from '@/hooks/use-favorite';
+import { DIRECT_CHAPTER_ID } from '@/data/types';
 import { useLibrary } from '@/hooks/use-library';
+import { useItemCollections } from '@/hooks/use-item-collections';
 import { usePageCollected } from '@/hooks/use-page-collected';
 import { useSeriesSubPath } from '@/lib/series-nav';
 import { useRouter } from '@/lib/nav';
@@ -99,6 +101,10 @@ export type PageActionTarget = {
   pageIndex: number;
   pageCount?: number;
   sourceUrl?: string;
+  /** The chapter's re-anchor identity, sent when filing the CHAPTER. Together these let
+   *  `syncChapters` find it again after a source re-uploads the chapter under a new id. */
+  chapterNumber?: number;
+  languageCode?: string;
 };
 
 function SettingsContent({
@@ -147,6 +153,9 @@ function SettingsContent({
       />
       {bridgeId && seriesId && page && (
         <PageActionRow bridgeId={bridgeId} seriesId={seriesId} seriesTitle={title ?? seriesId} page={page} />
+      )}
+      {bridgeId && seriesId && page && page.chapterId !== DIRECT_CHAPTER_ID && (
+        <ChapterActionRow bridgeId={bridgeId} seriesId={seriesId} seriesTitle={title ?? seriesId} page={page} />
       )}
       {bridgeId && seriesId && (
         <SeriesActionsRow
@@ -274,6 +283,74 @@ function PageActionRow({
         </Pressable>
         <Pressable testID="reader.settings.page-collections" onPress={openPicker} style={styles.opt}>
           <ThemedText style={styles.optText}>Collections…</ThemedText>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * The "This chapter" section — files the whole chapter into a collection.
+ *
+ * One button, straight to the picker, rather than a one-tap save: saving a chapter is a
+ * deliberate act taken from a menu, not a reflex like saving the page you're looking at, so there
+ * is no last-used shortcut to justify here.
+ *
+ * Hidden for a direct (chapterless) series — `__direct__` is a sentinel, not a real chapter, and
+ * filing it would duplicate the series item.
+ */
+function ChapterActionRow({
+  bridgeId,
+  seriesId,
+  seriesTitle,
+  page,
+}: {
+  bridgeId: string;
+  seriesId: string;
+  seriesTitle: string;
+  page: PageActionTarget;
+}) {
+  const { closeTop } = useOverlay();
+  const { collectionIds } = useItemCollections({
+    kind: 'chapter',
+    bridgeId,
+    seriesId,
+    chapterId: page.chapterId,
+    snapshot: () => ({
+      seriesTitle,
+      ...(page.chapterName !== undefined && { chapterName: page.chapterName }),
+      ...(page.chapterNumber !== undefined && { number: page.chapterNumber }),
+      ...(page.languageCode !== undefined && { languageCode: page.languageCode }),
+    }),
+  });
+  const saved = collectionIds.length > 0;
+
+  return (
+    <View style={styles.seg}>
+      <ThemedText style={styles.segLabel}>This chapter</ThemedText>
+      <View style={styles.segRow}>
+        <Pressable
+          testID="reader.settings.collect-chapter"
+          onPress={() => {
+            closeTop();
+            openCollectionPicker({
+              kind: 'chapter',
+              bridgeId,
+              seriesId,
+              chapterId: page.chapterId,
+              title: page.chapterName ? `${seriesTitle} — ${page.chapterName}` : seriesTitle,
+              snapshot: () => ({
+                seriesTitle,
+                ...(page.chapterName !== undefined && { chapterName: page.chapterName }),
+                ...(page.chapterNumber !== undefined && { number: page.chapterNumber }),
+                ...(page.languageCode !== undefined && { languageCode: page.languageCode }),
+              }),
+            });
+          }}
+          style={[styles.opt, saved && styles.optOn]}>
+          <ThemedText style={[styles.optText, saved && styles.optTextOn]}>
+            {saved ? '✓  In a collection' : '＋  Add chapter to collection'}
+          </ThemedText>
         </Pressable>
       </View>
     </View>

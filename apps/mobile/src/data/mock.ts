@@ -1077,31 +1077,78 @@ export async function mockGetCollectedItems(query: {
   collection?: string;
   series?: string;
   q?: string;
-} = {}): Promise<MockPageItem[]> {
-  // Only page items exist in the mock; a `type` of series/chapter legitimately yields nothing.
-  if (query.type && query.type !== 'page') return [];
-  let items = [...mockPageItems.values()];
+} = {}): Promise<(MockPageItem | MockChapterItem | MockSeriesItem)[]> {
+  // Omitting `type` returns the MIXED union, exactly as the real route does — a caller that
+  // wants only pages has to say so, and one that forgets gets series and chapters too.
+  let items: (MockPageItem | MockChapterItem | MockSeriesItem)[] = [
+    ...(query.type === undefined || query.type === 'page' ? mockPageItems.values() : []),
+    ...(query.type === undefined || query.type === 'chapter' ? mockChapterItems.values() : []),
+    ...(query.type === undefined || query.type === 'series' ? seriesItems() : []),
+  ];
   if (query.collection) items = items.filter((i) => i.collectionIds.includes(query.collection!));
   if (query.series) items = items.filter((i) => `${i.bridgeId}:${i.seriesId}` === query.series);
   const q = query.q?.trim().toLowerCase();
   if (q) {
     items = items.filter(
-      (i) => i.seriesTitle.toLowerCase().includes(q) || (i.chapterName ?? '').toLowerCase().includes(q),
+      (i) =>
+        i.seriesTitle.toLowerCase().includes(q) ||
+        ('chapterName' in i ? (i.chapterName ?? '') : '').toLowerCase().includes(q),
     );
   }
-  const cmp =
-    query.sort === 'series'
-      ? (a: MockPageItem, b: MockPageItem) =>
-          a.seriesTitle.localeCompare(b.seriesTitle) || a.pageIndex - b.pageIndex
-      : query.sort === 'chapter'
-        ? (a: MockPageItem, b: MockPageItem) =>
-            a.chapterId.localeCompare(b.chapterId) || a.pageIndex - b.pageIndex
-        : (a: MockPageItem, b: MockPageItem) => a.collectedAt - b.collectedAt;
+  const pos = (i: MockPageItem | MockChapterItem | MockSeriesItem) =>
+    // Within one series, the runtime interleaves so a series leads its chapters and a chapter
+    // leads its pages. Rank by type, then by the item's own position.
+    i.type === 'series' ? [0, 0] : i.type === 'chapter' ? [1, i.number ?? 0] : [2, i.pageIndex];
+  const cmp = (a: typeof items[number], b: typeof items[number]) => {
+    if (query.sort === 'series' || query.sort === 'chapter') {
+      const byTitle = a.seriesTitle.localeCompare(b.seriesTitle);
+      if (byTitle !== 0) return byTitle;
+      const [ar, av] = pos(a);
+      const [br, bv] = pos(b);
+      return ar! - br! || av! - bv!;
+    }
+    return a.collectedAt - b.collectedAt;
+  };
   items.sort(cmp);
   // 'added' defaults to newest-first, the others to ascending — matching the runtime.
   const desc = query.dir ? query.dir === 'desc' : (query.sort ?? 'added') === 'added';
   if (desc) items.reverse();
   return items;
+}
+
+/** Series items are synthesized from the memberships map plus the library entry's display fields —
+ *  the mock stores memberships rather than whole records for series (see `mockSeriesCollections`). */
+type MockSeriesItem = {
+  type: 'series';
+  id: string;
+  bridgeId: string;
+  seriesId: string;
+  collectedAt: number;
+  collectionIds: string[];
+  seriesTitle: string;
+  thumbnailUrl?: string;
+  stale?: boolean;
+};
+
+function seriesItems(): MockSeriesItem[] {
+  const out: MockSeriesItem[] = [];
+  for (const [key, collectionIds] of mockSeriesCollections) {
+    if (collectionIds.length === 0) continue;
+    const entry = mockLibrary.get(key);
+    const [bridgeId = '', seriesId = ''] = key.split(':');
+    out.push({
+      type: 'series',
+      id: ['series', bridgeId, seriesId].map(encodeURIComponent).join(':'),
+      bridgeId,
+      seriesId,
+      // The mock has no per-series collectedAt; a stable pseudo-time keeps ordering deterministic.
+      collectedAt: 1_700_000_000_000 + hash(key) % 1_000_000,
+      collectionIds: [...collectionIds],
+      seriesTitle: entry?.title ?? seriesId,
+      ...(entry?.thumbnailUrl !== undefined && { thumbnailUrl: entry.thumbnailUrl }),
+    });
+  }
+  return out;
 }
 
 export async function mockGetChapterPageIndices(
@@ -1192,6 +1239,76 @@ export async function mockSetPageCollections(
   // Empty memberships removes the item, exactly as the real route does.
   if (collectionIds.length === 0) mockPageItems.delete(key);
   else mockPageItems.set(key, { ...item, collectionIds: [...collectionIds] });
+}
+
+// Chapter items. Same store shape as pages, minus the page index — and the same rule that an item
+// with no memberships doesn't exist.
+
+type MockChapterItem = {
+  type: 'chapter';
+  id: string;
+  bridgeId: string;
+  seriesId: string;
+  chapterId: string;
+  collectedAt: number;
+  collectionIds: string[];
+  seriesTitle: string;
+  chapterName?: string;
+  number?: number;
+  languageCode?: string;
+  stale?: boolean;
+};
+
+const chapterItemKey = (b: string, s: string, c: string) => `${b}:${s}:${c}`;
+const chapterItemId = (b: string, s: string, c: string) =>
+  ['chapter', b, s, c].map(encodeURIComponent).join(':');
+const mockChapterItems = new Map<string, MockChapterItem>();
+
+export async function mockCollectChapter(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+  snapshot: { seriesTitle: string; chapterName?: string; number?: number; languageCode?: string },
+): Promise<void> {
+  const key = chapterItemKey(bridgeId, seriesId, chapterId);
+  const existing = mockChapterItems.get(key);
+  // MERGE, as the real route does — a partial re-collect must not drop the re-anchor identity.
+  mockChapterItems.set(key, {
+    type: 'chapter',
+    id: chapterItemId(bridgeId, seriesId, chapterId),
+    bridgeId,
+    seriesId,
+    chapterId,
+    collectedAt: existing?.collectedAt ?? mockCollectedAt++,
+    collectionIds: existing?.collectionIds ?? [],
+    seriesTitle: snapshot.seriesTitle,
+    ...((snapshot.chapterName ?? existing?.chapterName) !== undefined && {
+      chapterName: snapshot.chapterName ?? existing?.chapterName,
+    }),
+    ...((snapshot.number ?? existing?.number) !== undefined && {
+      number: snapshot.number ?? existing?.number,
+    }),
+    ...((snapshot.languageCode ?? existing?.languageCode) !== undefined && {
+      languageCode: snapshot.languageCode ?? existing?.languageCode,
+    }),
+  });
+}
+
+export async function mockUncollectChapter(bridgeId: string, seriesId: string, chapterId: string): Promise<void> {
+  mockChapterItems.delete(chapterItemKey(bridgeId, seriesId, chapterId));
+}
+
+export async function mockSetChapterCollections(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+  collectionIds: string[],
+): Promise<void> {
+  const key = chapterItemKey(bridgeId, seriesId, chapterId);
+  const item = mockChapterItems.get(key);
+  if (!item) return;
+  if (collectionIds.length === 0) mockChapterItems.delete(key);
+  else mockChapterItems.set(key, { ...item, collectionIds: [...collectionIds] });
 }
 
 export async function mockGetSeriesCollections(bridgeId: string, seriesId: string): Promise<string[]> {

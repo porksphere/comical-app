@@ -397,7 +397,23 @@ index-based key would leave a recycled row showing the previous items).
 Picking a sort resets direction to that sort's natural default, so switching to "Series" doesn't
 leave you reading Z→A because you'd once chosen newest-first.
 
-**Phase 4 — chapter items and mixed browse.** "Add chapter to collection", mixed-union rendering.
+**Phase 4 — chapter items and mixed browse. ✅ DONE.** Chapter routes in `api.ts`/`source.ts`/
+`mock.ts`; `ItemTarget` gained a `chapter` variant so the picker files all three types. The reader
+sheet grew a "This chapter" segment — one button straight to the picker, since saving a chapter is
+a deliberate act from a menu rather than a reflex, so there's no last-used shortcut to justify. It
+sends `number`/`languageCode` (read from the chapter roster, not `ReadTarget`, which carries only
+an id and a display name) because together they are the chapter's re-anchor identity, and it is
+hidden for a direct series, where `__direct__` is a sentinel rather than a real chapter.
+
+**Opening a collection now shows its whole contents**, not just its pages: "All saved pages" is a
+type filter (`type=page`), while a collection asks with no type filter — hiding two of the three
+kinds would make a collection look emptier than it is (`collectedQueryFor`).
+
+Rendering keeps the runtime's interleave (a series leads its chapters, a chapter leads its pages)
+rather than re-bucketing by type: `buildCollectedRows` walks in order, accumulating tile-able items
+(pages and series covers, both 2:3) into grid rows and flushing that run whenever a chapter appears,
+since a chapter has no image of its own and renders full width. Tapping routes by type — a page to
+its page, a chapter to its first page, a series to its detail screen.
 
 **Phase 5 — the viewer.**
 

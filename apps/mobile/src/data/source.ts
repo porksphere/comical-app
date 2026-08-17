@@ -149,6 +149,24 @@ export interface DataSource {
   ): Promise<void>;
   /** Remove a collected page. */
   uncollectPage(bridgeId: string, seriesId: string, chapterId: string, pageIndex: number, signal?: AbortSignal): Promise<void>;
+  /** Collect a chapter. Send `number`/`languageCode` when known — they are its re-anchor identity. */
+  collectChapter(
+    bridgeId: string,
+    seriesId: string,
+    chapterId: string,
+    snapshot: api.ChapterItemSnapshotBody,
+    signal?: AbortSignal,
+  ): Promise<void>;
+  /** Remove a collected chapter. */
+  uncollectChapter(bridgeId: string, seriesId: string, chapterId: string, signal?: AbortSignal): Promise<void>;
+  /** Replace a chapter's collection memberships; an empty array removes the item. */
+  setChapterCollections(
+    bridgeId: string,
+    seriesId: string,
+    chapterId: string,
+    collectionIds: string[],
+    signal?: AbortSignal,
+  ): Promise<void>;
   /** Replace a page's collection memberships; an empty array removes the item. */
   setPageCollections(
     bridgeId: string,
@@ -562,6 +580,14 @@ const realDataSource: DataSource = {
   async setPageCollections(bridgeId, seriesId, chapterId, pageIndex, collectionIds, signal) {
     await api.setPageCollections(bridgeId, seriesId, chapterId, pageIndex, collectionIds, signal);
   },
+  async collectChapter(bridgeId, seriesId, chapterId, snapshot, signal) {
+    await api.collectChapter(bridgeId, seriesId, chapterId, snapshot, signal);
+  },
+  uncollectChapter: (bridgeId, seriesId, chapterId, signal) =>
+    api.uncollectChapter(bridgeId, seriesId, chapterId, signal),
+  async setChapterCollections(bridgeId, seriesId, chapterId, collectionIds, signal) {
+    await api.setChapterCollections(bridgeId, seriesId, chapterId, collectionIds, signal);
+  },
   isInLibrary: (bridgeId, seriesId, signal) => api.isInLibrary(bridgeId, seriesId, signal),
   getFavoritesImportPreview: (bridgeId, signal) => api.getFavoritesImportPreview(bridgeId, signal),
   importBridgeFavorites: (bridgeId, items, signal) => api.importBridgeFavorites(bridgeId, items, signal),
@@ -946,6 +972,12 @@ const mockDataSource: DataSource = {
     mock.mockUncollectPage(bridgeId, seriesId, chapterId, pageIndex),
   setPageCollections: (bridgeId, seriesId, chapterId, pageIndex, collectionIds) =>
     mock.mockSetPageCollections(bridgeId, seriesId, chapterId, pageIndex, collectionIds),
+  collectChapter: (bridgeId, seriesId, chapterId, snapshot) =>
+    mock.mockCollectChapter(bridgeId, seriesId, chapterId, snapshot),
+  uncollectChapter: (bridgeId, seriesId, chapterId) =>
+    mock.mockUncollectChapter(bridgeId, seriesId, chapterId),
+  setChapterCollections: (bridgeId, seriesId, chapterId, collectionIds) =>
+    mock.mockSetChapterCollections(bridgeId, seriesId, chapterId, collectionIds),
   isInLibrary: (bridgeId, seriesId) => mock.mockIsInLibrary(bridgeId, seriesId),
   getFavoritesImportPreview: (bridgeId) => mock.mockGetFavoritesImportPreview(bridgeId),
   importBridgeFavorites: (bridgeId, items) => mock.mockImportBridgeFavorites(bridgeId, items),

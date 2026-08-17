@@ -79,11 +79,23 @@ describe('mock collected pages', () => {
     expect(await mockGetCollectedItems({ type: 'page' })).toEqual([]);
   });
 
-  // Omitting `type` returns the mixed union — a page grid that forgets it renders series and
-  // chapter items too, and the failure is silent.
-  test('a series/chapter type filter excludes page items', async () => {
+  // Omitting `type` returns the MIXED union — a page grid that forgets `type: 'page'` renders
+  // series and chapter items too, and the failure is silent. The mock seeds filed series, so this
+  // is a real union, not an empty one.
+  test('the type filter selects one kind, and omitting it returns the union', async () => {
     await mockCollectPage(B, S, C, 8, snap);
-    expect(await mockGetCollectedItems({ type: 'series' })).toEqual([]);
-    expect((await mockGetCollectedItems({ type: 'page' })).length).toBe(1);
+
+    const pages = await mockGetCollectedItems({ type: 'page' });
+    expect(pages.length).toBe(1);
+    expect(pages.every((i) => i.type === 'page')).toBe(true);
+
+    const seriesOnly = await mockGetCollectedItems({ type: 'series' });
+    expect(seriesOnly.length).toBeGreaterThan(0);
+    expect(seriesOnly.every((i) => i.type === 'series')).toBe(true);
+
+    const mixed = await mockGetCollectedItems({});
+    expect(mixed.length).toBe(pages.length + seriesOnly.length);
+    expect(mixed.some((i) => i.type === 'page')).toBe(true);
+    expect(mixed.some((i) => i.type === 'series')).toBe(true);
   });
 });

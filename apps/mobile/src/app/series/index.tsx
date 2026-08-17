@@ -2308,6 +2308,9 @@ function SeriesReaderInstance({
   // than in ReaderPane because the TOOLBAR is rendered by this component — the pane reports it up
   // through `onVisiblePage` (already chapter-correct across a stitched crossing).
   const [visiblePage, setVisiblePage] = useState<{ pageIndex: number; chapterId: string } | null>(null);
+  // The chapter the visible page belongs to, from the roster — `ReadTarget` carries only an id and
+  // a display name, but filing a CHAPTER needs its (number, languageCode) re-anchor identity.
+  const visibleChapter = chapters?.find((c) => c.id === visiblePage?.chapterId);
   // Verify this chapter's collected pages against the page list we already fetched — repairs the
   // ones the source shifted and seeds the indices the heart reads. See use-chapter-reconcile.
   useChapterReconcile(bridgeId, id, visiblePage?.chapterId ?? target?.chapterId, pages);
@@ -2453,6 +2456,13 @@ function SeriesReaderInstance({
                             ...(pages && { pageCount: pages.length }),
                             ...(pages?.[visiblePage.pageIndex] !== undefined && {
                               sourceUrl: pages[visiblePage.pageIndex],
+                            }),
+                            // The chapter's re-anchor identity, for filing the CHAPTER itself.
+                            ...(visibleChapter?.number !== undefined && {
+                              chapterNumber: visibleChapter.number,
+                            }),
+                            ...(visibleChapter?.languageCode !== undefined && {
+                              languageCode: visibleChapter.languageCode,
                             }),
                           },
                         })}

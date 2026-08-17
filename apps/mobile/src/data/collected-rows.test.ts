@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { buildCollectedRows, type CollectedRow } from './collected-rows';
-import type { ApiCollectionPageItem } from './api';
+import type { ApiCollectionChapterItem, ApiCollectionItem, ApiCollectionPageItem } from './api';
 
 const page = (
   id: string,
@@ -20,6 +20,29 @@ const page = (
     collectionIds: ['coll'],
     seriesTitle,
   }) as ApiCollectionPageItem;
+
+const chapter = (id: string, seriesId: string, collectedAt: number): ApiCollectionChapterItem =>
+  ({
+    type: 'chapter',
+    id,
+    bridgeId: 'b',
+    seriesId,
+    chapterId: `ch-${id}`,
+    collectedAt,
+    collectionIds: ['coll'],
+    seriesTitle: seriesId,
+  }) as ApiCollectionChapterItem;
+
+const series = (id: string, seriesId: string, collectedAt: number): ApiCollectionItem =>
+  ({
+    type: 'series',
+    id,
+    bridgeId: 'b',
+    seriesId,
+    collectedAt,
+    collectionIds: ['coll'],
+    seriesTitle: seriesId,
+  }) as ApiCollectionItem;
 
 const labels = (rows: CollectedRow[]) => rows.filter((r) => r.type === 'header').map((r) => r.label);
 const ids = (rows: CollectedRow[]) =>
@@ -84,6 +107,26 @@ describe('buildCollectedRows', () => {
     const first = buildCollectedRows([page('1', 's', 1), page('2', 's', 2)], 2, 'none', fmt);
     const second = buildCollectedRows([page('9', 's', 1), page('2', 's', 2)], 2, 'none', fmt);
     expect(first[0]!.key).not.toBe(second[0]!.key);
+  });
+
+  // A collection holds all three types, and the runtime interleaves them (a series leads its
+  // chapters, a chapter leads its pages). Re-bucketing by type here would throw that away.
+  test('a chapter breaks the tile grid without reordering anything', () => {
+    const rows = buildCollectedRows(
+      [series('s1', 'alpha', 5), page('p1', 'alpha', 4), chapter('c1', 'alpha', 3), page('p2', 'alpha', 2)],
+      4,
+      'none',
+      fmt,
+    );
+    expect(rows.map((r) => r.type)).toEqual(['row', 'chapter', 'row']);
+    // The series and the first page share a tile row; the chapter interrupts; the last page follows.
+    expect(rows[0]!.type === 'row' && rows[0]!.items.map((i) => i.id)).toEqual(['s1', 'p1']);
+    expect(rows[2]!.type === 'row' && rows[2]!.items.map((i) => i.id)).toEqual(['p2']);
+  });
+
+  test('consecutive chapters each get their own row', () => {
+    const rows = buildCollectedRows([chapter('c1', 'a', 2), chapter('c2', 'a', 1)], 3, 'none', fmt);
+    expect(rows.map((r) => r.type)).toEqual(['chapter', 'chapter']);
   });
 
   test('empty input yields no rows, and a header is never emitted alone', () => {

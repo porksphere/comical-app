@@ -864,6 +864,8 @@ import type {
   Collection as ApiCollection,
   CollectionItem as ApiCollectionItem,
   CollectionPageItem as ApiCollectionPageItem,
+  CollectionChapterItem as ApiCollectionChapterItem,
+  CollectionSeriesItem as ApiCollectionSeriesItem,
 } from '@comical/library';
 
 export type {
@@ -882,6 +884,8 @@ export type {
   ApiCollection,
   ApiCollectionItem,
   ApiCollectionPageItem,
+  ApiCollectionChapterItem,
+  ApiCollectionSeriesItem,
 };
 
 /** GET /bridges/{id} response — settings form data for one bridge. `info` is the bridge's full
@@ -1335,6 +1339,53 @@ export function setPageCollections(
     { collectionIds },
     signal,
   );
+}
+
+/** PUT /library/collected/chapter/{b}/{s}/{c} → the chapter item. Idempotent and merging, like the
+ *  page route. Send `number` and `languageCode` whenever available — together they are the chapter's
+ *  re-anchor identity, which is how `syncChapters` finds it again when a source re-uploads the
+ *  chapter under a new id. Without them a re-upload just marks the item stale. */
+export function collectChapter(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+  snapshot: ChapterItemSnapshotBody,
+  signal?: AbortSignal,
+): Promise<ApiCollectionItem> {
+  return fetchPut(collectedChapterPath(bridgeId, seriesId, chapterId), snapshot, signal);
+}
+
+export type ChapterItemSnapshotBody = {
+  seriesTitle: string;
+  chapterName?: string;
+  number?: number;
+  languageCode?: string;
+};
+
+/** DELETE /library/collected/chapter/{b}/{s}/{c} → remove a collected chapter outright. */
+export function uncollectChapter(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  return fetchOk(collectedChapterPath(bridgeId, seriesId, chapterId), 'DELETE', signal);
+}
+
+/** PUT /library/collected/chapter/{b}/{s}/{c}/collections → replace a chapter's memberships.
+ *  An EMPTY array removes the item. */
+export function setChapterCollections(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+  collectionIds: string[],
+  signal?: AbortSignal,
+): Promise<unknown> {
+  return fetchPut(`${collectedChapterPath(bridgeId, seriesId, chapterId)}/collections`, { collectionIds }, signal);
+}
+
+function collectedChapterPath(bridgeId: string, seriesId: string, chapterId: string): string {
+  return `/library/collected/chapter/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/${encodeURIComponent(chapterId)}`;
 }
 
 function collectedPagePath(bridgeId: string, seriesId: string, chapterId: string): string {

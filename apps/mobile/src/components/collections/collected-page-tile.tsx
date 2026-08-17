@@ -4,11 +4,13 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
-import type { ApiCollectionPageItem } from '@/data/api';
+import type { TileItem } from '@/data/collected-rows';
 import { useTheme } from '@/hooks/use-theme';
 
 /**
- * One saved page in the collected grid.
+ * One tile in the collected grid — a saved PAGE or a saved SERIES. Both are 2:3 images with a
+ * title behind them, so they share a tile rather than duplicating the fallback and stale handling;
+ * only the badge and the image source differ.
  *
  * Deliberately NOT `PageThumb`. That component exists to render a *bridge-supplied* thumbnail —
  * it lazily self-fetches via `getPageThumb`, which is series-level (no `chapterId`) and would be
@@ -30,8 +32,9 @@ export function CollectedPageTile({
   height,
   onPress,
 }: {
-  item: ApiCollectionPageItem;
-  /** Resolved page URL, or `undefined` while its chapter list is still loading / unavailable. */
+  item: TileItem;
+  /** Resolved page URL, or `undefined` while its chapter list is still loading / unavailable.
+   *  Ignored for a series item, which carries its own cover. */
   uri?: string;
   width: number;
   height: number;
@@ -48,7 +51,9 @@ export function CollectedPageTile({
     setFailed(false);
   }
 
-  const showImage = !!uri && !failed;
+  // A series item carries its cover directly; a page's URL is resolved per chapter by the grid.
+  const source = item.type === 'series' ? item.thumbnailUrl : uri;
+  const showImage = !!source && !failed;
 
   return (
     <Pressable
@@ -56,10 +61,14 @@ export function CollectedPageTile({
       onPress={onPress}
       style={[styles.tile, { width, height, backgroundColor: theme.backgroundElement }]}
       accessibilityRole="button"
-      accessibilityLabel={`${item.seriesTitle}${item.chapterName ? `, ${item.chapterName}` : ''}, page ${item.pageIndex + 1}`}>
+      accessibilityLabel={
+        item.type === 'series'
+          ? item.seriesTitle
+          : `${item.seriesTitle}${item.chapterName ? `, ${item.chapterName}` : ''}, page ${item.pageIndex + 1}`
+      }>
       {showImage ? (
         <Image
-          source={{ uri }}
+          source={{ uri: source }}
           style={StyleSheet.absoluteFill}
           contentFit="cover"
           cachePolicy="memory-disk"
@@ -70,7 +79,7 @@ export function CollectedPageTile({
           <ThemedText type="small" numberOfLines={3} style={styles.fallbackTitle}>
             {item.seriesTitle}
           </ThemedText>
-          {!!item.chapterName && (
+          {item.type === 'page' && !!item.chapterName && (
             <ThemedText type="small" themeColor="textSecondary" numberOfLines={2}>
               {item.chapterName}
             </ThemedText>
@@ -78,10 +87,12 @@ export function CollectedPageTile({
         </View>
       )}
 
-      {/* The page number reads against the image, so it needs its own scrim rather than the theme. */}
+      {/* The badge reads against the image, so it needs its own scrim rather than the theme.
+          A page shows its number; a series says what it is, since a bare cover in a grid of pages
+          is otherwise indistinguishable from one. */}
       <View style={styles.pageBadge}>
         <ThemedText type="small" style={styles.pageBadgeText}>
-          {item.pageIndex + 1}
+          {item.type === 'series' ? 'Series' : item.pageIndex + 1}
         </ThemedText>
       </View>
 

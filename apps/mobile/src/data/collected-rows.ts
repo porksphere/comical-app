@@ -1,11 +1,18 @@
-import type { ApiCollectionPageItem } from './api';
+import type { ApiCollectionChapterItem, ApiCollectionItem, ApiCollectionPageItem, ApiCollectionSeriesItem } from './api';
 import type { CollectedGrouping } from './collected-view';
+
+/** Items that render as a 2:3 tile — a saved page, or a saved series (its cover). */
+export type TileItem = ApiCollectionPageItem | ApiCollectionSeriesItem;
 
 /** A section heading between grids of tiles. */
 export type CollectedHeaderRow = { type: 'header'; key: string; label: string; count: number };
 /** One grid row of up to `numColumns` tiles. */
-export type CollectedTileRow = { type: 'row'; key: string; items: ApiCollectionPageItem[] };
-export type CollectedRow = CollectedHeaderRow | CollectedTileRow;
+export type CollectedTileRow = { type: 'row'; key: string; items: TileItem[] };
+/** A saved CHAPTER — full width, because a chapter has no image of its own to show. */
+export type CollectedChapterRow = { type: 'chapter'; key: string; item: ApiCollectionChapterItem };
+export type CollectedRow = CollectedHeaderRow | CollectedTileRow | CollectedChapterRow;
+
+const isTile = (i: ApiCollectionItem): i is TileItem => i.type === 'page' || i.type === 'series';
 
 /**
  * Turn a server-ordered list of saved pages into the flat row array the list renders.
@@ -21,7 +28,7 @@ export type CollectedRow = CollectedHeaderRow | CollectedTileRow;
  * measuring it.
  */
 export function buildCollectedRows(
-  items: ApiCollectionPageItem[],
+  items: ApiCollectionItem[],
   numColumns: number,
   grouping: CollectedGrouping,
   /** Injected so the caller controls locale/timezone — and so tests are deterministic. */
@@ -30,7 +37,7 @@ export function buildCollectedRows(
   if (numColumns < 1) return [];
   if (grouping === 'none') return chunk(items, numColumns, 'all');
 
-  const buckets = new Map<string, { label: string; items: ApiCollectionPageItem[] }>();
+  const buckets = new Map<string, { label: string; items: ApiCollectionItem[] }>();
   for (const item of items) {
     const { key, label } =
       grouping === 'series'
@@ -49,14 +56,37 @@ export function buildCollectedRows(
   return rows;
 }
 
-function chunk(items: ApiCollectionPageItem[], numColumns: number, scope: string): CollectedTileRow[] {
-  const rows: CollectedTileRow[] = [];
-  for (let i = 0; i < items.length; i += numColumns) {
-    const slice = items.slice(i, i + numColumns);
-    // Keyed by the items themselves, not by index: a row whose contents changed IS a different row,
-    // and reusing an index key would leave a recycled row showing the previous items.
-    rows.push({ type: 'row', key: `${scope}:${slice.map((p) => p.id).join('|')}`, items: slice });
+/**
+ * Walk the items IN ORDER, accumulating tile-able ones into grid rows and flushing that run
+ * whenever a chapter appears — chapters are full-width, so they break the grid rather than sitting
+ * in it.
+ *
+ * Order-preserving on purpose: the runtime interleaves a collection so a series leads its chapters
+ * and a chapter leads its pages, and re-bucketing by type here would throw that away.
+ */
+function chunk(items: ApiCollectionItem[], numColumns: number, scope: string): CollectedRow[] {
+  const rows: CollectedRow[] = [];
+  let run: TileItem[] = [];
+  const flush = () => {
+    for (let i = 0; i < run.length; i += numColumns) {
+      const slice = run.slice(i, i + numColumns);
+      // Keyed by the items themselves, not by index: a row whose contents changed IS a different
+      // row, and reusing an index key would leave a recycled row showing the previous items.
+      rows.push({ type: 'row', key: `${scope}:${slice.map((p) => p.id).join('|')}`, items: slice });
+    }
+    run = [];
+  };
+  for (const item of items) {
+    if (isTile(item)) {
+      run.push(item);
+      continue;
+    }
+    if (item.type === 'chapter') {
+      flush();
+      rows.push({ type: 'chapter', key: `${scope}:${item.id}`, item });
+    }
   }
+  flush();
   return rows;
 }
 
