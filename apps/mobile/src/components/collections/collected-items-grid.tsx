@@ -1,5 +1,5 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
-import type { ReactElement, RefObject } from 'react';
+import { useMemo, type ReactElement, type RefObject } from 'react';
 import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import type { SharedValue } from 'react-native-reanimated';
 
@@ -55,12 +55,18 @@ export function CollectedItemsGrid({
   // never a memo dependency (it is a fresh Map each render by design).
   const uris = useCollectedPageUris(items);
 
-  const pages = items.filter((i): i is ApiCollectionPageItem => i.type === 'page');
-  const rows: Row[] = [];
-  for (let i = 0; i < pages.length; i += numColumns) {
-    const slice = pages.slice(i, i + numColumns);
-    rows.push({ key: slice.map((p) => p.id).join('|'), items: slice });
-  }
+  // Memoized on the data and the column count only — NOT on `uris`, which is a fresh Map every
+  // render by design (see the hook). Rows carry items; tiles look their URL up at render time, so
+  // a URL arriving repaints tiles without rebuilding the list's data array.
+  const rows = useMemo<Row[]>(() => {
+    const pages = items.filter((i): i is ApiCollectionPageItem => i.type === 'page');
+    const out: Row[] = [];
+    for (let i = 0; i < pages.length; i += numColumns) {
+      const slice = pages.slice(i, i + numColumns);
+      out.push({ key: slice.map((p) => p.id).join('|'), items: slice });
+    }
+    return out;
+  }, [items, numColumns]);
 
   const tileHeight = cardWidth * TILE_ASPECT;
   // Row height is constant, so the list can size every row without measuring one.

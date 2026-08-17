@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type { PageItemSnapshotBody } from '@/data/api';
 import { resolveLastCollection, setLastCollectionId } from '@/data/last-collection';
-import { chapterPageIndicesQuery, queryKeys } from '@/data/queries';
+import { chapterPageIndicesQuery, collectionsQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import { hapticSelection } from '@/lib/haptics';
 import { hashPageFromCache } from '@/lib/page-hash';
@@ -118,8 +118,14 @@ export function usePageCollected(
         return 'removed';
       }
       // Validated against the live list, so a deleted collection falls through to the picker
-      // instead of resurrecting itself.
-      const destination = resolveLastCollection('page', await ds.getCollections());
+      // instead of resurrecting itself. Through `fetchQuery`, NOT a bare `ds.getCollections()`:
+      // the collections list is server state, so it belongs in the query cache — this reuses the
+      // entry the selector and picker already populated (and respects its staleTime) instead of
+      // putting a network round trip in front of every tap.
+      const destination = resolveLastCollection(
+        'page',
+        await queryClient.fetchQuery(collectionsQuery(ds, mock)),
+      );
       if (!destination) return 'needs-pick';
       hapticSelection();
       mutation.mutate(destination);
