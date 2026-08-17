@@ -26,6 +26,11 @@
 #     usePageCollected cache key as the toolbar button, which is exactly what the last step checks.
 #   - reader.settings.open / reader.control.next / reader.navigator.page / reader.toolbar.back
 #     Reused verbatim from reader-navigation.yaml.
+#   - library.collection-selector / library.collected.all   the Library tab's view selector and its
+#     "Saved pages" row (library-collection-selector.tsx). The selector's two OptionLists are two
+#     AXES — collections filter by membership, "Saved pages" filters by item type.
+#   - collected.tile.<id>              a saved-page tile (collected-page-tile.tsx). The id is the
+#     item's derived coordinate id, so the regex form is what's selectable.
 #
 # The chrome AUTO-HIDES after 3s (CHROME_HIDE_MS in app/series/index.tsx), so every step that needs
 # the toolbar re-taps reader.control.toggle-chrome first rather than assuming it is still up. Same
@@ -119,20 +124,34 @@ appId: com.porksphere.comical
     id: "reader.settings.collect-page"
     text: "Saved"
 
-# Unsave from the sheet, then confirm the TOOLBAR button followed — the lockstep that sharing one
-# query key is supposed to buy.
-- tapOn:
-    id: "reader.settings.collect-page"
-- assertVisible:
-    id: "reader.settings.collect-page"
-    text: "Save page"
+# Dismiss the sheet and leave the reader — page 1 and page 2 are both still saved.
 - tapOn:
     point: "50%, 8%"
 - tapOn:
-    id: "reader.control.toggle-chrome"
+    id: "reader.toolbar.back"
+
+# The Library tab's selector switches between listing SERIES and listing saved PAGES. Saved pages
+# is its own section in that menu, not another collection row — different axis.
+- tapOn:
+    id: "tab.library"
+- tapOn:
+    id: "library.collection-selector"
+- tapOn:
+    id: "library.collected.all"
+
+# The two pages saved above are here, drawn from their chapter's page list (one request for the
+# chapter, not one per tile).
+- assertVisible:
+    id: "collected\\.tile\\..*"
+
+# Tapping one reopens the reader at that exact page.
+- tapOn:
+    id: "collected\\.tile\\..*"
+    index: 0
 - assertVisible:
     id: "reader.toolbar.collect-page"
-    label: "Save page to collection"
-
+- assertVisible:
+    id: "reader.toolbar.collect-page"
+    label: "Remove page from collection"
 - tapOn:
     id: "reader.toolbar.back"

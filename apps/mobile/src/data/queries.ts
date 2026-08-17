@@ -31,8 +31,19 @@ import type {
 
 /** How the Library grid is scoped to a collection. `null` = all entries; `'uncollected'` = entries
  *  in no collection; otherwise a collection id. Part of the library query key so each view caches
- *  apart. The host resolves membership by joining series favorites, so this stays one query. */
+ *  apart. The host resolves membership by joining series items, so this stays one query. */
 export type CollectionFilter = string | 'uncollected' | null;
+
+/** What the Library tab is currently showing.
+ *
+ *  Two AXES, not one list of options: `kind` picks what is being listed (library series, or saved
+ *  pages), and `collection` optionally narrows either to one collection's members. "Saved pages" is
+ *  therefore not a collection — it is the whole page type, which is exactly the distinction the
+ *  selector's two sections make visible. */
+export type LibraryView = {
+  kind: 'series' | 'collected';
+  collection: string | null;
+};
 
 /** Per-series fetch options that affect the *shape* of the result (and thus the key). */
 export type SeriesDetailOpts = { direct?: boolean; bridgeName?: string; title?: string; cover?: string };

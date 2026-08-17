@@ -11,7 +11,7 @@ import {
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { RowHeight, Spacing } from '@/constants/theme';
-import type { CollectionFilter } from '@/data/queries';
+import type { LibraryView } from '@/data/queries';
 import type { Collection } from '@/data/types';
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
@@ -19,24 +19,30 @@ import { useRouter } from '@/lib/nav';
 
 /**
  * The Library tab's top-bar view selector — the bridge-selector shape, reading "Library" (all
- * entries) by default and opening a menu to switch to any collection. A trailing "Manage
- * collections…" action pushes the manage screen (create/rename/reorder/delete). It takes the
- * collections as a prop so the Library screen owns the selected filter and nothing else.
+ * entries) by default and opening a menu to switch view. Two sections: the SERIES views (the whole
+ * library, or one collection's series) and the SAVED PAGES views (all saved pages, or one
+ * collection's). A trailing "Manage collections…" action pushes the manage screen.
+ *
+ * The two sections are different axes, not siblings: a collection filters by membership, while
+ * "Saved pages" filters by item TYPE. Splitting them in the menu is what stops "Saved pages" from
+ * reading as just another collection.
  */
 export function LibraryCollectionSelector({
   value,
   collections,
   onChange,
 }: {
-  value: CollectionFilter;
+  value: LibraryView;
   collections: Collection[];
-  onChange: (value: CollectionFilter) => void;
+  onChange: (value: LibraryView) => void;
 }) {
   const { ref, openAt } = useAnchoredOverlay();
   const theme = useTheme();
   const { hovered, handlers } = useHover();
 
-  const currentLabel = value ? (collections.find((c) => c.id === value)?.name ?? 'Library') : 'Library';
+  const named = value.collection ? collections.find((c) => c.id === value.collection)?.name : undefined;
+  const currentLabel =
+    value.kind === 'collected' ? (named ? `${named} · Pages` : 'Saved pages') : (named ?? 'Library');
 
   return (
     <Pressable
@@ -62,18 +68,19 @@ function CollectionMenu({
   collections,
   onChange,
 }: {
-  value: CollectionFilter;
+  value: LibraryView;
   collections: Collection[];
-  onChange: (value: CollectionFilter) => void;
+  onChange: (value: LibraryView) => void;
 }) {
   const { closeTop } = useOverlay();
   const router = useRouter();
   const presentation = useOverlayPresentation();
 
-  const pick = (v: CollectionFilter) => {
+  const pick = (v: LibraryView) => {
     onChange(v);
     closeTop();
   };
+  const isCurrent = (v: LibraryView) => value.kind === v.kind && value.collection === v.collection;
 
   return (
     <View style={styles.menu}>
@@ -87,16 +94,16 @@ function CollectionMenu({
           testID="library.collection.all"
           label="Library"
           hint="All series"
-          selected={value === null}
-          onPress={() => pick(null)}
+          selected={isCurrent({ kind: 'series', collection: null })}
+          onPress={() => pick({ kind: 'series', collection: null })}
         />
         {collections.map((c) => (
           <ViewRow
             key={c.id}
             testID={`library.collection.${c.id}`}
             label={c.name}
-            selected={value === c.id}
-            onPress={() => pick(c.id)}
+            selected={isCurrent({ kind: 'series', collection: c.id })}
+            onPress={() => pick({ kind: 'series', collection: c.id })}
           />
         ))}
         <ActionRow
@@ -107,6 +114,25 @@ function CollectionMenu({
             router.push('/manage-collections');
           }}
         />
+      </OptionList>
+      <OptionList>
+        <ViewRow
+          testID="library.collected.all"
+          label="Saved pages"
+          hint="Every page you've saved"
+          selected={isCurrent({ kind: 'collected', collection: null })}
+          onPress={() => pick({ kind: 'collected', collection: null })}
+        />
+        {collections.map((c) => (
+          <ViewRow
+            key={`pages-${c.id}`}
+            testID={`library.collected.${c.id}`}
+            label={c.name}
+            hint="Saved pages"
+            selected={isCurrent({ kind: 'collected', collection: c.id })}
+            onPress={() => pick({ kind: 'collected', collection: c.id })}
+          />
+        ))}
       </OptionList>
     </View>
   );

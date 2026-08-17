@@ -360,9 +360,26 @@ The picker (`collection-picker.tsx`) now speaks **both** series and page coordin
 both — which is what lets the long-press work at all. Filing through it also records the type's
 last-used collection, so the picker and the one-tap save stay in step.
 
-**Phase 2 — the browser.** Selector widening, `library.tsx`, `collected-items-grid.tsx`,
-`PageThumb`'s explicit-source prop, the per-chapter URL batch, stale and text-tile states.
-`type=page` on the grid query.
+**Phase 2 — the browser. ✅ DONE.** `LibraryView` (`kind` × `collection`) drives the tab;
+`LibraryCollectionSelector` grew a second `OptionList` for saved pages — two axes, not two lists of
+collections. `collected-items-grid.tsx` builds fixed-height rows for `RecyclerList` (header rows
+slot in for Phase 3 grouping without restructuring), `use-collected-page-uris.ts` resolves URLs
+**one request per chapter** off the `chapterPages`/`directPages` cache, and tapping a tile pushes
+the existing series modal at that page. `type: 'page'` is pinned on the query.
+
+Two deviations from what this plan originally said, both deliberate:
+
+- **`PageThumb` is not reused.** It exists to render a *bridge-supplied* thumbnail and lazily
+  self-fetches via `getPageThumb`, which is series-level (no `chapterId`) and wrong here; it also
+  carries sprite cropping and aspect learning a plain page URL doesn't need. `collected-page-tile.tsx`
+  is a small dedicated tile instead, and it owns the two states `PageThumb` has no concept of — a
+  dead source (text tile from the snapshot) and a `stale` item ("may no longer be available").
+- **`useCollectedPageUris` is deliberately not memoized.** It derives from `useQueries` results,
+  which are a fresh array every render, so any dep list either lies or needs a suppression. It is a
+  lookup table read during render — never a memo dependency.
+
+The sort control is hidden in the saved-pages view: sort/dir for collected items is Phase 3, and
+showing the library's sort there would be a lever that does nothing.
 
 **Phase 3 — the axes.** sort/dir plus grouping by series and date.
 

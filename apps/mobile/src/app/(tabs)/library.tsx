@@ -1,6 +1,8 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useFocusEffect } from 'expo-router';
+
+import { useRouter } from '@/lib/nav';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,12 +14,13 @@ import { LibrarySortButton } from '@/components/library-sort-button';
 import { RetryBlock } from '@/components/retry-block';
 import { SearchField } from '@/components/search-field';
 import { TabTitleBar } from '@/components/tab-title-bar';
+import { CollectedItemsGrid } from '@/components/collections/collected-items-grid';
 import { SeriesGrid } from '@/components/series-grid';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BarContentGap, BottomTabInset, Spacing } from '@/constants/theme';
-import { libraryQuery, type CollectionFilter } from '@/data/queries';
+import { collectionItemsQuery, libraryQuery, type LibraryView } from '@/data/queries';
 import { toLibraryCard, type LibraryGridItem } from '@/data/library-card';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import { useBridgeMap } from '@/hooks/use-bridges';
@@ -36,6 +39,7 @@ export default function LibraryScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const hideNsfw = useHideNsfw();
+  const router = useRouter();
   const listRef = useRef<LegendListRef>(null);
   useScrollToTopOnReselect('library', listRef);
   // UI-thread scroll offset for the tab bar's slide — `sharedValues` feeds it, `onScroll` only
@@ -45,10 +49,13 @@ export default function LibraryScreen() {
   // this flips, the list holds empty data and the header shows a skeleton.
   const ready = useDeferredMount();
 
-  // Which collection the grid is scoped to (null = all, or a collection id).
-  const [collectionFilter, setCollectionFilter] = useState<CollectionFilter>(null);
+  // What the tab is showing: library series, or saved pages — each optionally scoped to one
+  // collection. See LibraryView.
+  const [view, setView] = useState<LibraryView>({ kind: 'series', collection: null });
+  const collectionFilter = view.collection;
   // Sort is remembered per collection (persisted) — switching restores that view's last ordering.
   const [sort, setSort] = useLibrarySort(collectionFilter);
+  const showingCollected = view.kind === 'collected';
 
   // In-place search: the top-bar search icon swaps the bar's leading content for a search field
   // (no pushed screen). `query` is committed on submit and folds straight into the same grid query.
@@ -65,9 +72,21 @@ export default function LibraryScreen() {
   const { collections } = useCollections();
 
   // Search + sort both fold into this one query and re-render the grid in place.
-  const { data: items = undefined, error, isLoading, refetch } = useQuery(
-    libraryQuery(ds, mock, query, sort, collectionFilter),
-  );
+  const { data: items = undefined, error, isLoading, refetch } = useQuery({
+    ...libraryQuery(ds, mock, query, sort, collectionFilter),
+    enabled: !showingCollected,
+  });
+
+  // Saved pages. `type: 'page'` is NOT optional — a bare collected query returns the mixed
+  // series/chapter/page union, and a grid that forgets it renders the wrong things silently.
+  const collected = useQuery({
+    ...collectionItemsQuery(ds, mock, {
+      type: 'page',
+      ...(view.collection ? { collection: view.collection } : {}),
+      ...(query ? { q: query } : {}),
+    }),
+    enabled: showingCollected,
+  });
 
   // Reflect adds/removes made on the series detail (or a mode switch) when the
   // tab regains focus. Skips the very first focus (the query already fetched).
@@ -95,6 +114,42 @@ export default function LibraryScreen() {
 
   // Empty / degraded / loading messaging lives in the grid header (the sort + search controls moved
   // up into the top bar), so it stays visible in every state.
+  function renderCollectedEmpty() {
+    if (collected.error) {
+      return (
+        <View style={styles.stateBlock}>
+          <RetryBlock
+            message={(collected.error as Error).message || 'Failed to load saved pages'}
+            onRetry={collected.refetch}
+          />
+        </View>
+      );
+    }
+    if (!ready || collected.isLoading || collected.data === undefined) {
+      return <GridSkeleton numColumns={numColumns} rows={3} />;
+    }
+    if (collected.data === null) {
+      return (
+        <EmptyState
+          title="Collections aren’t available here"
+          detail="This server has no library. Switch to the remote server, or run bridges on this device, to save pages."
+        />
+      );
+    }
+    if (collected.data.length === 0) {
+      if (query.trim()) {
+        return <EmptyState title="No matches" detail="No saved pages match your search." />;
+      }
+      return (
+        <EmptyState
+          title="No saved pages yet"
+          detail="While reading, tap the bookmark in the top bar to save a page to a collection."
+        />
+      );
+    }
+    return null;
+  }
+
   function renderEmpty() {
     if (error) {
       return (
@@ -135,18 +190,46 @@ export default function LibraryScreen() {
           bridge, the fling-jitter guard, cells, layout) lives in SeriesGrid, so the Library
           inherits all of it and configures none of it. `scopeKey` carries query/sort, which is what
           remounts the list on a search/sort switch (a scroll-to-top moment) and resets recycled cards. */}
-      <SeriesGrid
-        items={listData}
-        scopeKey={`${query}|${sort}|${collectionFilter ?? ''}`}
-        listRef={listRef}
-        header={renderEmpty()}
-        // Library cards carry an app-made sub (the bridge name), regardless of any bridge flag.
-        hasSub
-        paddingTop={headerHeight + BarContentGap}
-        paddingBottom={BottomTabInset + insets.bottom + Spacing.five}
-        sharedValues={sharedValues}
-        onScroll={onScroll}
-      />
+      {showingCollected ? (
+        <CollectedItemsGrid
+          items={ready ? (collected.data ?? []) : []}
+          scopeKey={`pages|${query}|${view.collection ?? ''}`}
+          listRef={listRef}
+          header={renderCollectedEmpty()}
+          paddingTop={headerHeight + BarContentGap}
+          paddingBottom={BottomTabInset + insets.bottom + Spacing.five}
+          sharedValues={sharedValues}
+          onScroll={onScroll}
+          onOpen={(item) =>
+            // Straight back into the reader at that page — the series modal already accepts every
+            // coordinate a saved page carries, so this needs no reader machinery of its own.
+            router.push({
+              pathname: '/series',
+              params: {
+                id: item.seriesId,
+                bridgeId: item.bridgeId,
+                reader: '1',
+                chapterId: item.chapterId,
+                start: String(item.pageIndex),
+                title: item.seriesTitle,
+              },
+            })
+          }
+        />
+      ) : (
+        <SeriesGrid
+          items={listData}
+          scopeKey={`${query}|${sort}|${collectionFilter ?? ''}`}
+          listRef={listRef}
+          header={renderEmpty()}
+          // Library cards carry an app-made sub (the bridge name), regardless of any bridge flag.
+          hasSub
+          paddingTop={headerHeight + BarContentGap}
+          paddingBottom={BottomTabInset + insets.bottom + Spacing.five}
+          sharedValues={sharedValues}
+          onScroll={onScroll}
+        />
+      )}
 
       {/* The sort button lives in the bar's trailing slot in BOTH states, so it stays put and visible
           while searching. Searching only swaps the LEADING content — the list selector becomes a back
@@ -177,7 +260,7 @@ export default function LibraryScreen() {
               </View>
             </View>
           ) : (
-            <LibraryCollectionSelector value={collectionFilter} collections={collections} onChange={setCollectionFilter} />
+            <LibraryCollectionSelector value={view} collections={collections} onChange={setView} />
           )
         }
         right={
@@ -193,7 +276,9 @@ export default function LibraryScreen() {
                 <SearchIcon color={theme.text} size={22} />
               </Pressable>
             )}
-            <LibrarySortButton value={sort} onChange={setSort} />
+            {/* Sort applies to the library grid only. The saved-pages view has its own sort/dir
+                axes (Phase 3); showing this control there would be a lever that does nothing. */}
+            {!showingCollected && <LibrarySortButton value={sort} onChange={setSort} />}
           </>
         }
       />
