@@ -34,37 +34,6 @@ import type {
  *  apart. The host resolves membership by joining series items, so this stays one query. */
 export type CollectionFilter = string | 'uncollected' | null;
 
-/** What the Library tab is currently showing.
- *
- *  Two AXES, not one list of options: `kind` picks what is being listed (library series, or saved
- *  pages), and `collection` optionally narrows either to one collection's members. "Saved pages" is
- *  therefore not a collection — it is the whole page type, which is exactly the distinction the
- *  selector's two sections make visible. */
-export type LibraryView = {
-  kind: 'series' | 'collected';
-  collection: string | null;
-};
-
-/** What a collected view asks the server for.
- *
- *  "All saved pages" is a TYPE filter (`type=page`) — it is the page surface, deliberately not a
- *  collection. Opening a specific collection asks for its whole contents instead, with no type
- *  filter, because a collection can hold series, chapters and pages and hiding two of the three
- *  would make it look emptier than it is. */
-export function collectedQueryFor(
-  view: LibraryView,
-  q: string,
-  sort: api.CollectedItemsQuery['sort'],
-  dir: api.CollectedItemsQuery['dir'],
-): api.CollectedItemsQuery {
-  return {
-    ...(view.collection ? { collection: view.collection } : { type: 'page' as const }),
-    sort,
-    dir,
-    ...(q ? { q } : {}),
-  };
-}
-
 /** Per-series fetch options that affect the *shape* of the result (and thus the key). */
 export type SeriesDetailOpts = { direct?: boolean; bridgeName?: string; title?: string; cover?: string };
 

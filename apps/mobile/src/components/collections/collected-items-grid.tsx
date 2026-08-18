@@ -3,8 +3,7 @@ import { useMemo, type ReactElement, type RefObject } from 'react';
 import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import type { SharedValue } from 'react-native-reanimated';
 
-import { CollectedChapterRow } from '@/components/collections/collected-chapter-row';
-import { CollectedPageTile } from '@/components/collections/collected-page-tile';
+import { CollectedItemTile } from '@/components/collections/collected-item-tile';
 import { RecyclerList } from '@/components/recycler-list';
 import { ThemedText } from '@/components/themed-text';
 import { RowHeight, Spacing } from '@/constants/theme';
@@ -20,15 +19,12 @@ import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
 const TILE_ASPECT = 3 / 2;
 
 /**
- * The grid of saved pages, rendered as pre-computed ROWS rather than a columned list.
+ * The grid of collected items, rendered as pre-computed ROWS rather than a columned list — rows are
+ * what lets grouping interleave section headers, and what gives every row a knowable fixed height.
  *
- * Rows are built here instead of leaning on `numColumns` because grouping (by series, by date) will
- * interleave header rows between them — a list of mixed row types is the shape that supports that,
- * and building it now means Phase 3 adds a header variant rather than restructuring.
- *
- * Only page items render today. A collection can also hold series and chapter items, and browsing
- * one returns the mixed union — that lands in Phase 4, which is why the row type is `items` rather
- * than a page-specific name.
+ * All three item types share the one 2:3 tile (`CollectedItemTile`); the tile's type-icon badge is
+ * what distinguishes them, so a mixed collection reads as one grid rather than three interleaved
+ * layouts.
  */
 export function CollectedItemsGrid({
   items,
@@ -75,7 +71,6 @@ export function CollectedItemsGrid({
   // what keeps a sectioned list from re-measuring as it scrolls.
   const tileRowHeight = tileHeight + Spacing.three;
   const headerRowHeight = RowHeight;
-  const chapterRowHeight = RowHeight + Spacing.three;
 
   return (
     <RecyclerList
@@ -85,9 +80,7 @@ export function CollectedItemsGrid({
       keyExtractor={(row) => row.key}
       // Distinct pools per row type, so a header never recycles into a tile row (and vice versa).
       getItemType={(row) => row.type}
-      getFixedItemSize={(row) =>
-        row.type === 'header' ? headerRowHeight : row.type === 'chapter' ? chapterRowHeight : tileRowHeight
-      }
+      getFixedItemSize={(row) => (row.type === 'header' ? headerRowHeight : tileRowHeight)}
       estimatedItemSize={tileRowHeight}
       header={header}
       paddingTop={paddingTop}
@@ -108,13 +101,10 @@ export function CollectedItemsGrid({
             </View>
           );
         }
-        if (row.type === 'chapter') {
-          return <CollectedChapterRow item={row.item} onPress={() => onOpen(row.item)} />;
-        }
         return (
           <View style={styles.row}>
             {row.items.map((item) => (
-              <CollectedPageTile
+              <CollectedItemTile
                 key={item.id}
                 item={item}
                 uri={uris.get(item.id)}

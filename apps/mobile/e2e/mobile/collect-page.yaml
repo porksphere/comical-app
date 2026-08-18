@@ -26,9 +26,9 @@
 #     usePageCollected cache key as the toolbar button, which is exactly what the last step checks.
 #   - reader.settings.open / reader.control.next / reader.navigator.page / reader.toolbar.back
 #     Reused verbatim from reader-navigation.yaml.
-#   - library.collection-selector / library.collected.all   the Library tab's view selector and its
-#     "Saved pages" row (library-collection-selector.tsx). The selector's two OptionLists are two
-#     AXES — collections filter by membership, "Saved pages" filters by item type.
+#   - library.collection-selector / library.collection.coll-reading   the Library tab's selector
+#     (library-collection-selector.tsx) and a collection row. One flat list — a collection row opens
+#     that collection's CONTENTS, so there is no separate "saved pages" row any more.
 #   - collected.tile.<id>              a saved-page tile (collected-page-tile.tsx). The id is the
 #     item's derived coordinate id, so the regex form is what's selectable.
 #   - collected-viewer.open-in-reader / .back / .collections   the flip-through's chrome
@@ -137,14 +137,16 @@ appId: com.porksphere.comical
 - tapOn:
     id: "reader.toolbar.back"
 
-# The Library tab's selector switches between listing SERIES and listing saved PAGES. Saved pages
-# is its own section in that menu, not another collection row — different axis.
+# The Library tab's selector is ONE flat list: "Library" plus each collection. Opening a collection
+# shows its whole contents — series, chapters and saved pages, mixed, one tile shape with a
+# type-icon badge. The picker taps above filed into the first collection row, which in mock mode is
+# deterministically coll-reading (order 0), so that's the one opened here.
 - tapOn:
     id: "tab.library"
 - tapOn:
     id: "library.collection-selector"
 - tapOn:
-    id: "library.collected.all"
+    id: "library.collection.coll-reading"
 
 # The two pages saved above are here, drawn from their chapter's page list (one request for the
 # chapter, not one per tile).
@@ -172,6 +174,33 @@ appId: com.porksphere.comical
 
 # Tapping a saved page opens the FLIP-THROUGH, not the reader — the point of tapping one is usually
 # to browse the rest. It pages over the same list the grid is showing, in the same order.
+- tapOn:
+    id: "collected\\.tile\\..*"
+    index: 0
+- assertVisible:
+    id: "collected-viewer.open-in-reader"
+
+# Swipe UP in the viewer opens the SERIES DETAILS for the page on screen — the same direction that
+# reveals details inside the reader. Pushed (not embedded), so backing out lands back here.
+- swipe:
+    start: 50%, 70%
+    end: 50%, 30%
+    duration: 250
+- assertVisible:
+    id: "series.cover"
+- tapOn:
+    id: "series-page.header-back"
+- assertVisible:
+    id: "collected-viewer.open-in-reader"
+
+# Swipe DOWN carries the page away and dismisses back to the collection grid — the same projected
+# release rule the reader's dismissal uses. Re-open a tile afterwards for the reader steps below.
+- swipe:
+    start: 50%, 25%
+    end: 50%, 85%
+    duration: 250
+- assertVisible:
+    id: "library.collection-selector"
 - tapOn:
     id: "collected\\.tile\\..*"
     index: 0

@@ -110,23 +110,18 @@ describe('buildCollectedRows', () => {
   });
 
   // A collection holds all three types, and the runtime interleaves them (a series leads its
-  // chapters, a chapter leads its pages). Re-bucketing by type here would throw that away.
-  test('a chapter breaks the tile grid without reordering anything', () => {
+  // chapters, a chapter leads its pages). Every type is the same tile now — the type-icon badge is
+  // what distinguishes them — so the mixed union chunks into ONE grid, in the incoming order.
+  test('all three types share the tile grid, in incoming order', () => {
     const rows = buildCollectedRows(
       [series('s1', 'alpha', 5), page('p1', 'alpha', 4), chapter('c1', 'alpha', 3), page('p2', 'alpha', 2)],
-      4,
+      3,
       'none',
       fmt,
     );
-    expect(rows.map((r) => r.type)).toEqual(['row', 'chapter', 'row']);
-    // The series and the first page share a tile row; the chapter interrupts; the last page follows.
-    expect(rows[0]!.type === 'row' && rows[0]!.items.map((i) => i.id)).toEqual(['s1', 'p1']);
-    expect(rows[2]!.type === 'row' && rows[2]!.items.map((i) => i.id)).toEqual(['p2']);
-  });
-
-  test('consecutive chapters each get their own row', () => {
-    const rows = buildCollectedRows([chapter('c1', 'a', 2), chapter('c2', 'a', 1)], 3, 'none', fmt);
-    expect(rows.map((r) => r.type)).toEqual(['chapter', 'chapter']);
+    expect(rows.map((r) => r.type)).toEqual(['row', 'row']);
+    expect(rows[0]!.type === 'row' && rows[0]!.items.map((i) => i.id)).toEqual(['s1', 'p1', 'c1']);
+    expect(rows[1]!.type === 'row' && rows[1]!.items.map((i) => i.id)).toEqual(['p2']);
   });
 
   test('empty input yields no rows, and a header is never emitted alone', () => {

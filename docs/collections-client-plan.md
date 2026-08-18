@@ -433,6 +433,25 @@ second full-screen surface.
 Tapping a saved page in the grid now opens the viewer rather than the reader — browsing the rest is
 the usual intent, and the reader is one tap away.
 
+## Post-phase revision: one selector axis, one tile shape, reader-grade gestures
+
+User feedback after the phases landed reshaped the browsing surface:
+
+- **The selector is one flat list again.** "Library" plus each collection — the two-section version
+  (collections vs "saved pages") read as two competing lists of the same names and was cut. Opening
+  a collection shows its WHOLE contents (series, chapters, pages, mixed); there is no page-only view
+  of a collection and no "all saved pages" view. Collections also no longer *filter* the series
+  grid — the library query is always unscoped, and a collection row IS its contents view.
+- **Every item type is the same 2:3 tile** (`collected-item-tile.tsx`), distinguished by a type-icon
+  badge (`collection-icons.tsx`: BookCopy/BookOpen/FileImage). The full-width chapter row is gone,
+  which also un-complicated `buildCollectedRows` — the mixed union chunks into one grid in incoming
+  order. A chapter tile is always the text card (it has no image of its own).
+- **The viewer got the reader's vertical gestures.** Drag down carries the page away and dismisses
+  (same `releaseCommitted` projection every dismissal uses); swipe up opens the SERIES DETAILS for
+  the page on screen — it pushes the real `/series` screen, whose own skeletons cover loading, and
+  nothing about the series is fetched until the swipe commits. The pan disables while pinch-zoomed,
+  and `pageFit` is pinned to fit-page so the vertical axis stays free.
+
 ## 11. Verification
 
 From `apps/mobile/`:

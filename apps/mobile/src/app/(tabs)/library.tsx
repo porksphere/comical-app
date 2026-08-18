@@ -22,7 +22,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BarContentGap, BottomTabInset, Spacing } from '@/constants/theme';
 import { useCollectedView } from '@/data/collected-view';
-import { collectedQueryFor, collectionItemsQuery, libraryQuery, type LibraryView } from '@/data/queries';
+import { collectionItemsQuery, libraryQuery } from '@/data/queries';
 import { toLibraryCard, type LibraryGridItem } from '@/data/library-card';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import { useBridgeMap } from '@/hooks/use-bridges';
@@ -51,13 +51,14 @@ export default function LibraryScreen() {
   // this flips, the list holds empty data and the header shows a skeleton.
   const ready = useDeferredMount();
 
-  // What the tab is showing: library series, or saved pages — each optionally scoped to one
-  // collection. See LibraryView.
-  const [view, setView] = useState<LibraryView>({ kind: 'series', collection: null });
-  const collectionFilter = view.collection;
-  // Sort is remembered per collection (persisted) — switching restores that view's last ordering.
-  const [sort, setSort] = useLibrarySort(collectionFilter);
-  const showingCollected = view.kind === 'collected';
+  // What the tab is showing: `null` = the library's series grid; a collection id = that
+  // collection's CONTENTS — its series, chapters and saved pages, mixed. One axis, deliberately:
+  // an earlier version split "collection" and "saved pages" into two selector sections, which read
+  // as two competing lists of the same names.
+  const [collectionFilter, setCollectionFilter] = useState<string | null>(null);
+  const showingCollected = collectionFilter !== null;
+  // The library grid's sort (it only applies there; a collection view has its own axes below).
+  const [sort, setSort] = useLibrarySort(null);
   // Sort/dir/grouping for the saved-pages view — one persisted preference for the whole view, not
   // per collection (see the store's doc).
   const [collectedView, setCollectedView] = useCollectedView();
@@ -78,18 +79,23 @@ export default function LibraryScreen() {
 
   // Search + sort both fold into this one query and re-render the grid in place.
   const { data: items = undefined, error, isLoading, refetch } = useQuery({
-    ...libraryQuery(ds, mock, query, sort, collectionFilter),
+    // Collections no longer FILTER the series grid — they have their own contents view — so the
+    // library query is always unscoped.
+    ...libraryQuery(ds, mock, query, sort, null),
     enabled: !showingCollected,
   });
 
   // Saved pages. `type: 'page'` is NOT optional — a bare collected query returns the mixed
   // series/chapter/page union, and a grid that forgets it renders the wrong things silently.
   const collected = useQuery({
-    ...collectionItemsQuery(
-      ds,
-      mock,
-      collectedQueryFor(view, query, collectedView.sort, collectedView.dir),
-    ),
+    ...collectionItemsQuery(ds, mock, {
+      // The collection's WHOLE contents — no type filter. Hiding two of the three kinds would make
+      // a collection look emptier than it is.
+      collection: collectionFilter ?? '',
+      sort: collectedView.sort,
+      dir: collectedView.dir,
+      ...(query ? { q: query } : {}),
+    }),
     enabled: showingCollected,
   });
 
@@ -143,12 +149,12 @@ export default function LibraryScreen() {
     }
     if (collected.data.length === 0) {
       if (query.trim()) {
-        return <EmptyState title="No matches" detail="No saved pages match your search." />;
+        return <EmptyState title="No matches" detail="Nothing in this collection matches your search." />;
       }
       return (
         <EmptyState
-          title="No saved pages yet"
-          detail="While reading, tap the bookmark in the top bar to save a page to a collection."
+          title="This collection is empty"
+          detail="Save a series, chapter, or page into it — while reading, tap the bookmark in the top bar."
         />
       );
     }
@@ -176,14 +182,6 @@ export default function LibraryScreen() {
       if (query.trim()) {
         return <EmptyState title="No matches" detail="No series in your library match your search." />;
       }
-      if (collectionFilter) {
-        return (
-          <EmptyState
-            title="This collection is empty"
-            detail="Add series to this collection from a series page or a card’s long-press menu."
-          />
-        );
-      }
       return <EmptyState title="Your library is empty" detail="Open a series and tap “＋ Library” to add it here." />;
     }
     return null;
@@ -201,7 +199,7 @@ export default function LibraryScreen() {
           grouping={collectedView.grouping}
           // Every axis is in the key: a sort/dir/grouping switch is a scroll-to-top moment and must
           // reset recycled rows, exactly as a search or collection switch does.
-          scopeKey={`pages|${query}|${view.collection ?? ''}|${collectedView.sort}|${collectedView.dir}|${collectedView.grouping}`}
+          scopeKey={`collected|${query}|${collectionFilter}|${collectedView.sort}|${collectedView.dir}|${collectedView.grouping}`}
           listRef={listRef}
           header={renderCollectedEmpty()}
           paddingTop={headerHeight + BarContentGap}
@@ -227,7 +225,7 @@ export default function LibraryScreen() {
                 pathname: '/collected-viewer',
                 params: {
                   startId: item.id,
-                  ...(view.collection ? { collection: view.collection } : {}),
+                  ...(collectionFilter ? { collection: collectionFilter } : {}),
                   ...(query ? { q: query } : {}),
                   sort: collectedView.sort,
                   dir: collectedView.dir,
@@ -292,7 +290,11 @@ export default function LibraryScreen() {
               </View>
             </View>
           ) : (
-            <LibraryCollectionSelector value={view} collections={collections} onChange={setView} />
+            <LibraryCollectionSelector
+              value={collectionFilter}
+              collections={collections}
+              onChange={setCollectionFilter}
+            />
           )
         }
         right={
