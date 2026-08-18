@@ -1,12 +1,13 @@
 import { Image } from 'expo-image';
-import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useCallback, useRef, useState } from 'react';
+import { Platform, Pressable, StyleSheet, View, type View as ViewType } from 'react-native';
 
 import { ChapterItemIcon, PageItemIcon, SeriesItemIcon } from '@/components/icons/collection-icons';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import type { ApiCollectionItem } from '@/data/api';
 import { useTheme } from '@/hooks/use-theme';
+import { setZoomOrigin, useIsZoomingSeries, useZoomSurfaceKey } from '@/lib/series-zoom';
 
 /**
  * One tile in the collected grid — a saved SERIES, CHAPTER or PAGE. All three are the same 2:3
@@ -57,9 +58,35 @@ export function CollectedItemTile({
     item.type === 'series' ? SeriesItemIcon : item.type === 'chapter' ? ChapterItemIcon : PageItemIcon;
   const chapterName = item.type === 'series' ? undefined : item.chapterName;
 
+  // ── The gallery zoom, exactly as a series card offers it (see lib/series-zoom) ──────────────
+  // Press-in captures this tile's box as the zoom SOURCE RECT, so the screen it opens — the reader
+  // in sequence mode for a page, the details for a series — grows out of the tile and collapses
+  // back into it. The zoom is matched by SERIES id (that is the id the destination instance takes),
+  // but the source key is PER ITEM, derived from the item's own id rather than from the list: this
+  // grid can legitimately show the same series several times (two saved pages of one series), and
+  // a list-level key would blank every sibling on behalf of the one that was tapped. Item-derived
+  // also survives recycling for free — a reused tile re-renders with the new item's key.
+  //
+  // Text-card tiles (chapters, dead sources) don't capture: the transition flies a COPY of the
+  // picture, and a tile with no picture would blank into a hole with nothing in the air to stand
+  // in for it. They open with the ordinary entrance instead.
+  const isWeb = Platform.OS === 'web';
+  const zoomKey = useZoomSurfaceKey(`collected:${item.id}`);
+  const flying = useIsZoomingSeries(item.seriesId, zoomKey);
+  const boxRef = useRef<ViewType>(null);
+  const captureZoomOrigin = useCallback(() => {
+    if (isWeb || !showImage) return;
+    boxRef.current?.measureInWindow((x, y, w, h) => {
+      // Radius matches styles.tile — the flying copy is drawn with the same corners.
+      if (w > 0 && h > 0) setZoomOrigin(item.seriesId, zoomKey, { x, y, width: w, height: h, radius: 10 });
+    });
+  }, [isWeb, showImage, item.seriesId, zoomKey]);
+
   return (
     <Pressable
+      ref={boxRef}
       testID={`collected.tile.${item.id}`}
+      onPressIn={captureZoomOrigin}
       onPress={onPress}
       style={[styles.tile, { width, height, backgroundColor: theme.backgroundElement }]}
       accessibilityRole="button"
@@ -71,9 +98,12 @@ export function CollectedItemTile({
             : `${item.seriesTitle}${chapterName ? `, ${chapterName}` : ''}, page ${item.pageIndex + 1}`
       }>
       {showImage ? (
+        // While a zoom this tile is the source of is in the air, a COPY of this picture is what
+        // flies — the original (and the overlays drawn on it) blank so there aren't two. Layout is
+        // preserved; the tile's background stays, same as a series card's coverHidden.
         <Image
           source={{ uri: source }}
-          style={StyleSheet.absoluteFill}
+          style={[StyleSheet.absoluteFill, flying && styles.hidden]}
           contentFit="cover"
           cachePolicy="memory-disk"
           onError={() => setFailed(true)}
@@ -94,7 +124,7 @@ export function CollectedItemTile({
       {/* The badge reads against the image, so it needs its own scrim rather than the theme.
           The icon is the type; a page also carries its number, since "which page of the chapter"
           matters there the way it can't for the other two. */}
-      <View style={styles.badge}>
+      <View style={[styles.badge, flying && styles.hidden]}>
         <TypeIcon color="#fff" size={12} />
         {item.type === 'page' && (
           <ThemedText type="small" style={styles.badgeText}>
@@ -104,7 +134,7 @@ export function CollectedItemTile({
       </View>
 
       {item.stale && (
-        <View style={[styles.staleBar, { backgroundColor: theme.danger }]}>
+        <View style={[styles.staleBar, { backgroundColor: theme.danger }, flying && styles.hidden]}>
           <ThemedText type="small" numberOfLines={1} style={styles.staleText}>
             May no longer be available
           </ThemedText>
@@ -153,5 +183,10 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 10,
     textAlign: 'center',
+  },
+  // Blanks the picture (and its overlays) while this tile's zoom transition is flying a copy of
+  // it — leaving the original visible would double it through the collapse's transparency.
+  hidden: {
+    opacity: 0,
   },
 });

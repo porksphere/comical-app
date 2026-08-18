@@ -450,6 +450,16 @@ abstraction" the previous paragraph predicted, built exactly there:
 - Library pushes `{seq:'1', seqCollection, seqSort, seqDir, seqQ?, seqStart: item.id}` for a page
   tile; chapter tiles keep the plain reader push, series tiles the details push. A cold deep link
   fetches and shows a spinner; a sequence that resolves empty pops back.
+- **The tiles get the full GALLERY ZOOM** (`lib/series-zoom`, the same flow a series card runs):
+  press-in captures the tile's box as the source rect, the destination grows out of it — the
+  reader for a page, the details for a series — and the dismissal collapses back into it, the
+  tile blanking while a copy of its picture is in the air. The source key is PER ITEM (derived
+  from the item id), not per list: this grid legitimately shows the same series in several tiles
+  (two saved pages of one series), and a list-level key would blank every sibling. In sequence
+  mode the flying copy draws the MOUNT entry's page URI (latched in `sequenceTarget`) — the very
+  URL the tile rendered, so the copy has pixels immediately and the collapse lands the tile's own
+  picture back on it. Text-card tiles (chapters, dead sources) don't capture — no picture to fly,
+  so they take the ordinary entrance.
 
 ## Post-phase revision: one selector axis, one tile shape, reader-grade gestures
 

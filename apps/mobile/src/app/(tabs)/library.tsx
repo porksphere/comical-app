@@ -217,7 +217,14 @@ export default function LibraryScreen() {
             if (item.type === 'series') {
               router.push({
                 pathname: '/series',
-                params: { id: item.seriesId, bridgeId: item.bridgeId, title: item.seriesTitle },
+                params: {
+                  id: item.seriesId,
+                  bridgeId: item.bridgeId,
+                  title: item.seriesTitle,
+                  // The cover URL rides along for the zoom's flying copy (and the details
+                  // placeholder), exactly as a series card forwards it.
+                  ...(item.thumbnailUrl ? { cover: encodeSeriesParam(item.thumbnailUrl) } : {}),
+                },
               });
               return;
             }

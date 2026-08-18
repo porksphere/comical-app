@@ -2207,7 +2207,16 @@ function SeriesReaderInstance({
       transform: [{ translateY: -zoomBoundShift(zoomGeom, detailsScrollOffset.value) }],
     };
   }, [zoomGeom]);
-  const zoomThumbUri = useResolvedAsset(cover);
+  // What the flying copy DRAWS. A series open flies the series cover (the route's `cover` param is
+  // the tapped card's own URL). A SEQUENCE open grew out of a page TILE, so the copy is that
+  // page's image — the MOUNT entry's URI (already latched in sequenceTarget), which is the very
+  // URL the tile rendered from the same query cache, so the copy has pixels immediately. Mount,
+  // not visible: the collapse lands back on the tile that opened this, and the picture that lands
+  // there must be that tile's own.
+  const seqMountIndex = sequence && typeof sequenceTarget?.start === 'number' ? sequenceTarget.start : 0;
+  const zoomThumbUri = useResolvedAsset(
+    sequence ? sequence.uris[seqMountIndex] || sequence.entries[seqMountIndex]?.sourceUrl : cover,
+  );
 
   // Content starts high enough that the series title's center lands on the seam gradient's
   // center — the strip fades into the details THROUGH the title.
