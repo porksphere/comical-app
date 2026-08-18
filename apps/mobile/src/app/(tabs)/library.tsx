@@ -24,6 +24,8 @@ import { BarContentGap, BottomTabInset, Spacing } from '@/constants/theme';
 import { useCollectedView } from '@/data/collected-view';
 import { collectionItemsQuery, libraryQuery } from '@/data/queries';
 import { toLibraryCard, type LibraryGridItem } from '@/data/library-card';
+import { DIRECT_CHAPTER_ID } from '@/data/types';
+import { encodeSeriesParam } from '@/lib/series-nav';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useCollections } from '@/hooks/use-collections';
@@ -207,9 +209,11 @@ export default function LibraryScreen() {
           sharedValues={sharedValues}
           onScroll={onScroll}
           onOpen={(item) => {
-            // One destination per type. A page and a chapter both land in the reader — the series
-            // modal already accepts every coordinate they carry, so neither needs reader machinery
-            // of its own; a series opens its detail screen instead.
+            // A series opens its details; a chapter or a saved page opens THE reader — the same
+            // series screen History rows push into, not a viewer of its own. That screen already
+            // owns everything a reading surface needs (the reveal to details with its own lazy
+            // loading and skeletons, the collapse dismissal, the settings sheet, the save button in
+            // its toolbar), so a saved page inherits all of it and any change there applies here.
             if (item.type === 'series') {
               router.push({
                 pathname: '/series',
@@ -217,31 +221,20 @@ export default function LibraryScreen() {
               });
               return;
             }
-            if (item.type === 'page') {
-              // A saved page opens the flip-through, not the reader: the point of tapping one is
-              // usually to browse the rest, and "Open in reader" is one tap away from there.
-              // The viewer re-queries THIS list, so it needs the same scope — not the items.
-              router.push({
-                pathname: '/collected-viewer',
-                params: {
-                  startId: item.id,
-                  ...(collectionFilter ? { collection: collectionFilter } : {}),
-                  ...(query ? { q: query } : {}),
-                  sort: collectedView.sort,
-                  dir: collectedView.dir,
-                },
-              });
-              return;
-            }
+            const direct = item.chapterId === DIRECT_CHAPTER_ID;
             router.push({
               pathname: '/series',
               params: {
                 id: item.seriesId,
+                title: item.seriesTitle,
+                bridge: encodeSeriesParam(bridgeById.get(item.bridgeId)?.name ?? item.bridgeId),
                 bridgeId: item.bridgeId,
                 reader: '1',
-                chapterId: item.chapterId,
-                start: '0', // a chapter opens at its first page
-                title: item.seriesTitle,
+                // A saved page lands on itself; a saved chapter starts at its first page.
+                start: String(item.type === 'page' ? item.pageIndex : 0),
+                ...(direct
+                  ? { direct: '1' }
+                  : { chapterId: item.chapterId, chapterName: item.chapterName ?? '' }),
               },
             });
           }}

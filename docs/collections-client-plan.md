@@ -415,23 +415,18 @@ rather than re-bucketing by type: `buildCollectedRows` walks in order, accumulat
 since a chapter has no image of its own and renders full width. Tapping routes by type — a page to
 its page, a chapter to its first page, a series to its detail screen.
 
-**Phase 5 — the viewer. ✅ DONE.** `app/collected-viewer.tsx`, a `containedTransparentModal` that
-pages over **the same list the grid is showing**, in the same order, so a swipe carries you from one
-series straight into the next saved page. It re-queries that list from the same key rather than
-serialising an array through navigation params — the entry point is just `startId` plus the scope
-(collection, q, sort, dir), so it opens straight out of the query cache.
+**Phase 5 — opening a saved page. ✅ DONE — and revised: there is no viewer.** A saved page (or
+chapter) opens **the real `/series` reader**, through the exact entry History rows use — reader
+mode, landed on the saved page, cold series. A dedicated flip-through screen was built first and
+then deleted: it was a parallel reader, and a parallel reader drifts. Going through the real screen
+means the reveal-to-details (with its own lazy loading and skeletons — nothing about the series is
+fetched before the tap), the collapse dismissal, the settings sheet and the toolbar save button are
+all shared by construction; a change to the reader is a change here.
 
-Built on `PagedReader` rather than a new pager: it already owns the gesture composition, the
-`pagingEnabled` alignment invariants and the recycling that makes a long list of full-screen images
-affordable. Chapter-turn callbacks are no-ops — the list itself is the sequence.
-
-Its chrome does **not** auto-hide, unlike the reader's: this is a browsing surface, and the title is
-what tells you which series the page in front of you came from. "Open in reader" **replaces** rather
-than pushes, so backing out of the reader lands where the viewer was opened from instead of on a
-second full-screen surface.
-
-Tapping a saved page in the grid now opens the viewer rather than the reader — browsing the rest is
-the usual intent, and the reader is one tap away.
+What was given up, knowingly: the cross-series flip-through (paging from one saved page straight
+into another series' page). The reader pages within its chapter, as it always does. If an album
+swipe ever matters enough, it belongs INSIDE the series screen as a first-class "reading sequence"
+abstraction — not as a second surface imitating it.
 
 ## Post-phase revision: one selector axis, one tile shape, reader-grade gestures
 
