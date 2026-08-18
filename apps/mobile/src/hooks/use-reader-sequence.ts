@@ -125,8 +125,19 @@ export function useReaderSequence(params: ReaderSequenceParams): {
   // and a fresh array per render would re-seed list memos on every unrelated parent render. The
   // previous array is kept in state and swapped only on a content change (the adjust-state-on-
   // render form this repo standardises on — see AGENTS.md).
-  const built = pages.map((p) => uriMap.get(p.id) ?? '');
-  const [stableUris, setStableUris] = useState(built);
+  //
+  // And each entry's URL is FROZEN once resolved. The chapter queries behind `uriMap` stay live
+  // (the grid shares them, and the quiet window closing refetches the cold ones), and on sources
+  // with SIGNED page URLs a refetch mints a DIFFERENT string for the same page. Handing the pager
+  // a changed uri for a mounted page makes expo-image reload it in place — a recording shows
+  // `page loaded` re-firing with no `page mount` right after the quiet window closes, which on
+  // the VISIBLE page is a one-frame blank exactly as the entrance lands. The first resolved URL
+  // is fresh (the grid fetched it moments ago) and lives for the open; '' still upgrades the
+  // moment a cold chapter's list arrives, which is the only change a mounted page should see.
+  const [stableUris, setStableUris] = useState<string[]>(() =>
+    pages.map((p) => uriMap.get(p.id) || ''),
+  );
+  const built = pages.map((p, i) => stableUris[i] || uriMap.get(p.id) || '');
   const unchanged = stableUris.length === built.length && built.every((u, i) => u === stableUris[i]);
   if (!unchanged) setStableUris(built);
 
