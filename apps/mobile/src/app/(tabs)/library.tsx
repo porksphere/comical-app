@@ -221,6 +221,25 @@ export default function LibraryScreen() {
               });
               return;
             }
+            if (item.type === 'page') {
+              // A saved page opens the reader in SEQUENCE mode: the pager runs over this view's
+              // saved pages — same collection, search, sort and direction, so the album order IS
+              // the grid order — and paging past a page crosses into the next saved page, whatever
+              // series it belongs to (use-reader-sequence.ts re-resolves from the same query key,
+              // so a warm cache opens instantly).
+              router.push({
+                pathname: '/series',
+                params: {
+                  seq: '1',
+                  seqCollection: collectionFilter ?? '',
+                  seqSort: collectedView.sort,
+                  seqDir: collectedView.dir,
+                  ...(query ? { seqQ: query } : {}),
+                  seqStart: item.id,
+                },
+              });
+              return;
+            }
             const direct = item.chapterId === DIRECT_CHAPTER_ID;
             router.push({
               pathname: '/series',
@@ -230,8 +249,8 @@ export default function LibraryScreen() {
                 bridge: encodeSeriesParam(bridgeById.get(item.bridgeId)?.name ?? item.bridgeId),
                 bridgeId: item.bridgeId,
                 reader: '1',
-                // A saved page lands on itself; a saved chapter starts at its first page.
-                start: String(item.type === 'page' ? item.pageIndex : 0),
+                // A saved chapter reads normally, from its first page.
+                start: '0',
                 ...(direct
                   ? { direct: '1' }
                   : { chapterId: item.chapterId, chapterName: item.chapterName ?? '' }),

@@ -169,17 +169,50 @@ appId: com.porksphere.comical
 - assertVisible:
     id: "collected\\.tile\\..*"
 
-# Tapping a saved page opens THE reader — the same series screen History rows push into, landed on
-# the saved page. There is no separate viewer: the reveal to details, the collapse dismissal, the
-# settings sheet and the save button are all the reader's own, so they are asserted here through the
-# reader's own selectors. The save button reads FILLED — the tapped page is a saved one, and the
-# button derives its state from the same chapter-indices query the save flow wrote through.
+# Tapping a saved PAGE opens THE reader in SEQUENCE mode — the same series screen, but its pager
+# runs over this view's saved pages (the ALBUM: same collection, sort and direction as the grid)
+# instead of a chapter. There is no separate viewer: the reveal to details, the collapse dismissal,
+# the settings sheet and the save button are all the reader's own, so they are asserted here through
+# the reader's own selectors. The tile is matched by its `page:` id prefix, NOT by index — the
+# mock's coll-reading also holds seeded SERIES items, and with `asc` those sort first (a series tile
+# opens details, not the reader). With `asc`, the first page tile is the first page saved above.
 - tapOn:
-    id: "collected\\.tile\\..*"
+    id: "collected\\.tile\\.page:.*"
     index: 0
+# The save button reads FILLED — the tapped page is a saved one, and the button derives its state
+# from the same chapter-indices query the save flow wrote through.
 - assertVisible:
     id: "reader.toolbar.collect-page"
     label: "Remove page from collection"
+
+# THE ALBUM SWIPE: paging forward lands on the NEXT SAVED PAGE — here the second page saved above —
+# not on the chapter's next page. The navigator counts album positions (2 of 2), and the save
+# button stays filled because every album page is by definition a saved one.
+- tapOn:
+    id: "reader.control.toggle-chrome"
+- tapOn:
+    id: "reader.control.next"
+- assertVisible:
+    id: "reader.navigator.page"
+    text: "^2$"
+- tapOn:
+    id: "reader.control.toggle-chrome"
+- assertVisible:
+    id: "reader.toolbar.collect-page"
+    label: "Remove page from collection"
+
+# …and the album ENDS at its last entry: no next chapter to spill into, so another page-forward
+# stays put — which is what separates sequence mode from the chapter read the same two pages would
+# get in the normal reader.
+- tapOn:
+    id: "reader.control.toggle-chrome"
+- tapOn:
+    id: "reader.control.next"
+- tapOn:
+    id: "reader.control.toggle-chrome"
+- assertVisible:
+    id: "reader.navigator.page"
+    text: "^2$"
 
 # Swipe UP reveals the series details IN PLACE — the reader's own reveal, sliding the details layer
 # in with its own skeletons while the series loads (nothing was fetched before this entry).

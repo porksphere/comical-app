@@ -423,10 +423,33 @@ means the reveal-to-details (with its own lazy loading and skeletons — nothing
 fetched before the tap), the collapse dismissal, the settings sheet and the toolbar save button are
 all shared by construction; a change to the reader is a change here.
 
-What was given up, knowingly: the cross-series flip-through (paging from one saved page straight
-into another series' page). The reader pages within its chapter, as it always does. If an album
-swipe ever matters enough, it belongs INSIDE the series screen as a first-class "reading sequence"
-abstraction — not as a second surface imitating it.
+**Phase 6 — the cross-series album swipe (READER SEQUENCE). ✅ DONE.** Paging from one saved page
+straight into another series' page, inside the real reader — the "first-class reading sequence
+abstraction" the previous paragraph predicted, built exactly there:
+
+- `use-reader-sequence.ts` resolves the album from `seq*` route params: the same
+  `collectionItemsQuery` key the grid used (warm cache → synchronous open), filtered to pages, in
+  the grid's exact order, plus per-chapter-resolved URIs (`useCollectedPageUris`, '' until
+  resolved — the page's own skeleton covers it). The `uris` array keeps its identity while its
+  contents do (adjust-state-on-render), because the reader takes it as the pager's verbatim page
+  list.
+- **The instance treats the sequence as its page list, and every piece of chapter machinery
+  self-disables** because the sequence target carries no `chapterId`: chapter-pages query,
+  preferred-group, adjacency, stitching, reconcile, progress recording (`recordProgress={false}` —
+  an album hop is browsing, not a read position) and the skip buttons all gate off `sequence`.
+  The chrome describes the VISIBLE ENTRY (`visibleSequenceEntry`, indexed by the pane's settled
+  flat index): toolbar title/subtitle, and one shared `pageAction` derivation feeding the save
+  button and the settings sheet, so un-saving works from inside the album with the entry's own
+  coordinates.
+- **A series cross is a REMOUNT, keyed by the screen**: `SeriesReaderScreen` tracks the settled
+  index (`onIndexSettled`) and keys the instance `seq:${bridgeId}:${seriesId}`, params derived
+  from the visible entry (an ordinary reader-first open). Paging within a series never remounts;
+  crossing remounts seeded at the same index — the same already-resolved URI is back on screen at
+  once, now with the RIGHT series' details layer beneath it, so swipe-up reveals the details of
+  whatever series the album wandered into, lazily, skeletons and all.
+- Library pushes `{seq:'1', seqCollection, seqSort, seqDir, seqQ?, seqStart: item.id}` for a page
+  tile; chapter tiles keep the plain reader push, series tiles the details push. A cold deep link
+  fetches and shows a spinner; a sequence that resolves empty pops back.
 
 ## Post-phase revision: one selector axis, one tile shape, reader-grade gestures
 
@@ -441,11 +464,11 @@ User feedback after the phases landed reshaped the browsing surface:
   badge (`collection-icons.tsx`: BookCopy/BookOpen/FileImage). The full-width chapter row is gone,
   which also un-complicated `buildCollectedRows` — the mixed union chunks into one grid in incoming
   order. A chapter tile is always the text card (it has no image of its own).
-- **The viewer got the reader's vertical gestures.** Drag down carries the page away and dismisses
-  (same `releaseCommitted` projection every dismissal uses); swipe up opens the SERIES DETAILS for
-  the page on screen — it pushes the real `/series` screen, whose own skeletons cover loading, and
-  nothing about the series is fetched until the swipe commits. The pan disables while pinch-zoomed,
-  and `pageFit` is pinned to fit-page so the vertical axis stays free.
+- **Every gesture is the reader's own, because the surface IS the reader.** Drag down dismisses
+  through the reader's collapse; swipe up reveals the series details in place, lazily, with the
+  series screen's own skeletons — nothing about a series is fetched before the reveal asks for it.
+  There is no viewer code to keep in step: sequence mode reuses the one screen, so a change to the
+  reader is a change here by construction.
 
 ## 11. Verification
 

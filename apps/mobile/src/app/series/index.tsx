@@ -4,6 +4,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import {
+  ActivityIndicator,
   BackHandler,
   Platform,
   Pressable,
@@ -59,6 +60,7 @@ import {
 import { useDataSource, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type Chapter } from '@/data/types';
 import { useChapterReconcile } from '@/hooks/use-chapter-reconcile';
+import { useReaderSequence, type ReaderSequenceEntry, type ReaderSequenceParams } from '@/hooks/use-reader-sequence';
 import { useReaderSettings } from '@/hooks/use-reader-settings';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { LARGE_SCREEN_BREAKPOINT, useTopBarHeight } from '@/hooks/use-responsive';
@@ -486,6 +488,25 @@ const WARM_IDLE_MS = 220;
  *  `start: 'last'` = land on the final page (arriving from the NEXT chapter's "previous"). */
 type ReadTarget = { chapterId?: string; chapterName?: string; start: number | 'last' };
 
+/**
+ * A cross-series READER SEQUENCE — what the pager runs over when the reader was opened from a
+ * collection rather than a chapter (see use-reader-sequence.ts). The instance treats it as its
+ * page list VERBATIM: no chapter target, no stitching, no adjacency, no progress recording — the
+ * sequence is the run. Crossing into an entry from a DIFFERENT series is the screen's job: it
+ * re-keys the instance by the entry's series (see SeriesReaderScreen), so the details layer, the
+ * queries and the chrome all belong to the series actually on screen — the same screen, the same
+ * lazy loading and skeletons, whichever series the sequence wanders into.
+ */
+type ReaderSequenceRun = {
+  /** Resolved page URIs, one per entry ('' = still resolving → the page's own skeleton). */
+  uris: string[];
+  entries: ReaderSequenceEntry[];
+  /** The entry this instance mounted on — seeds the pager once; later changes never yank it. */
+  index: number;
+  /** A page settled: the screen tracks position and re-keys this instance on a series cross. */
+  onIndexSettled: (index: number) => void;
+};
+
 /** One chapter's worth of pages inside the native pager's stitched flat list — what makes a
  *  boundary swipe an ordinary page turn instead of a bounce-and-remount. */
 type Segment = { id: string; name?: string; pages: string[] };
@@ -538,10 +559,13 @@ function SeriesReaderInstance({
   params,
   depth,
   onPopLayer,
+  sequence,
 }: {
   params: SeriesReaderParams;
   depth: number;
   onPopLayer: () => void;
+  /** Present = this instance reads a cross-series sequence instead of a chapter. */
+  sequence?: ReaderSequenceRun;
 }) {
   const ds = useDataSource();
   const router = useRouter();
@@ -626,7 +650,18 @@ function SeriesReaderInstance({
     if (direct === '1') return { start: at };
     return null;
   });
-  const target = override ?? derivedTarget;
+  // Sequence mode: the target is the sequence itself. `chapterId` is deliberately ABSENT — it
+  // would otherwise arm the chapter-pages query, the preferred-group effect, chapter adjacency and
+  // the pane's remount key, all of which are chapter machinery a sequence doesn't have. Per-entry
+  // chapter identity lives on the VISIBLE entry (see visibleSequenceEntry below), not the target.
+  const inSequence = !!sequence;
+  const sequenceTarget = useMemo<ReadTarget | null>(
+    () => (sequence ? { start: sequence.index } : null),
+    // The mount index seeds the pager once; later index changes ride the pager itself.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seeded once, see above
+    [inSequence],
+  );
+  const target = sequenceTarget ?? override ?? derivedTarget;
   const targetChapterId = target?.chapterId;
 
   // Keep next/prev chapter following the same scanlation group.
@@ -639,7 +674,7 @@ function SeriesReaderInstance({
   // The target chapter's pages (or the direct page list). Cached per chapter, so revisiting one
   // (or skipping back) repaints from the query cache.
   const {
-    data: pages = null,
+    data: chapterPagesData = null,
     error: queryError,
     refetch,
   } = useQuery({
@@ -651,8 +686,10 @@ function SeriesReaderInstance({
     // (history only decides which PAGE to land on, which the pane needs, not which request to
     // make). Chaptered still waits, and genuinely must: until the target resolves there is no
     // chapter id, and firing without one would ask `directPagesQuery` for a series that has none.
-    enabled: !!id && (isDirect || !!target),
+    enabled: !!id && (isDirect || !!target) && !sequence,
   });
+  // In sequence mode the sequence IS the page list — the chapter query above never runs.
+  const pages = sequence ? sequence.uris : chapterPagesData;
   // Series detail for the toolbar/settings gear (placeholder-seeded from the forwarded
   // title+cover). The details card's SeriesDetailsHost subscribes to this same query key, so this
   // costs one fetch total.
@@ -681,7 +718,7 @@ function SeriesReaderInstance({
   // reverse as well, which a gate cannot: a gate only ever holds one query back, it can never swap
   // which goes first. Nothing here delays a request that is ready to go.
 
-  const error = queryError ? (queryError as Error).message || 'Failed to load pages' : null;
+  const error = !sequence && queryError ? (queryError as Error).message || 'Failed to load pages' : null;
 
   // ── Adjacent chapters (chaptered only; no stitching — see the header comment) ──
   const currentChapter = useMemo(
@@ -721,7 +758,7 @@ function SeriesReaderInstance({
   // left crossing chapters by jumping, which is why it never had the paged reader's peek of the
   // page you are about to reach, and why it needed sentinels and buttons to do what scrolling
   // should. Both readers are LegendLists that anchor on the item now, so both can hold a window.
-  const stitched = !IS_WEB && !isDirect;
+  const stitched = !IS_WEB && !isDirect && !sequence;
   // The committed side of the reveal (declared up here — the stitching queries below gate on
   // it). The screen opens ON the details; see the reveal section further down.
   const [detailsActive, setDetailsActive] = useState(!readerFirst);
@@ -2308,12 +2345,27 @@ function SeriesReaderInstance({
   // than in ReaderPane because the TOOLBAR is rendered by this component — the pane reports it up
   // through `onVisiblePage` (already chapter-correct across a stitched crossing).
   const [visiblePage, setVisiblePage] = useState<{ pageIndex: number; chapterId: string } | null>(null);
+  // Sequence mode: the ENTRY the pager currently shows. The pane's flat index IS the sequence
+  // index, so this is what the chrome (title, save button, settings sheet) describes — the
+  // instance's own series/chapter identity only matches it at rest, by the screen's re-keying.
+  const visibleSequenceEntry = sequence
+    ? sequence.entries[Math.min(visiblePage?.pageIndex ?? sequence.index, sequence.entries.length - 1)]
+    : undefined;
+  // Report settles up so the screen tracks position — and re-keys this instance when the sequence
+  // crosses into another series.
+  const onSequenceSettled = sequence?.onIndexSettled;
+  useEffect(() => {
+    if (onSequenceSettled && visiblePage) onSequenceSettled(visiblePage.pageIndex);
+  }, [onSequenceSettled, visiblePage]);
   // The chapter the visible page belongs to, from the roster — `ReadTarget` carries only an id and
   // a display name, but filing a CHAPTER needs its (number, languageCode) re-anchor identity.
   const visibleChapter = chapters?.find((c) => c.id === visiblePage?.chapterId);
   // Verify this chapter's collected pages against the page list we already fetched — repairs the
   // ones the source shifted and seeds the indices the heart reads. See use-chapter-reconcile.
-  useChapterReconcile(bridgeId, id, visiblePage?.chapterId ?? target?.chapterId, pages);
+  // Reconcile is chapter machinery — in sequence mode `pages` is the cross-series URI list, which
+  // must never be offered as a chapter's page list. (Each entry's chapter was reconciled when it
+  // was read normally; the sequence only displays.)
+  useChapterReconcile(bridgeId, id, sequence ? undefined : (visiblePage?.chapterId ?? target?.chapterId), pages);
   const openChapterFromDetails = useCallback(
     (v: Chapter) => {
       if (v.id !== targetChapterId) {
@@ -2348,6 +2400,45 @@ function SeriesReaderInstance({
 
   const scheme = useActiveColorScheme();
   const seriesTitle = series?.title ?? title ?? id ?? 'Reader';
+
+  // What the per-page chrome (the toolbar save button, the settings sheet's "This page"/"This
+  // chapter" segments) acts on. ONE derivation for both controls, because they must never disagree.
+  // In sequence mode this is the visible ENTRY — its own series and chapter coordinates, not the
+  // instance's (they only match at rest, by the screen's re-keying); in chapter mode it is the
+  // visible page of the current chapter.
+  const pageAction = sequence
+    ? visibleSequenceEntry && {
+        bridgeId: visibleSequenceEntry.bridgeId,
+        seriesId: visibleSequenceEntry.seriesId,
+        seriesTitle: visibleSequenceEntry.seriesTitle,
+        chapterId: visibleSequenceEntry.chapterId,
+        ...(visibleSequenceEntry.chapterName !== undefined && {
+          chapterName: visibleSequenceEntry.chapterName,
+        }),
+        pageIndex: visibleSequenceEntry.pageIndex,
+        ...(visibleSequenceEntry.pageCount !== undefined && {
+          pageCount: visibleSequenceEntry.pageCount,
+        }),
+        ...((pages?.[visiblePage?.pageIndex ?? sequence.index] || visibleSequenceEntry.sourceUrl) !==
+          undefined && {
+          sourceUrl: pages?.[visiblePage?.pageIndex ?? sequence.index] || visibleSequenceEntry.sourceUrl,
+        }),
+      }
+    : visiblePage && {
+        bridgeId,
+        seriesId: id,
+        seriesTitle,
+        chapterId: visiblePage.chapterId,
+        ...(target?.chapterName !== undefined && { chapterName: target.chapterName }),
+        pageIndex: visiblePage.pageIndex,
+        ...(pages && { pageCount: pages.length }),
+        ...(pages?.[visiblePage.pageIndex] !== undefined && {
+          sourceUrl: pages[visiblePage.pageIndex],
+        }),
+        ...(visibleChapter?.number !== undefined && { chapterNumber: visibleChapter.number }),
+        ...(visibleChapter?.languageCode !== undefined && { languageCode: visibleChapter.languageCode }),
+      };
+
   const author = series?.meta?.find((m) => m.label === 'AUTHOR')?.value;
   // Same "<Bridge> / <Title>" the /series TopBar shows (shared truncation rule).
   const topBarSeries = series?.title ?? title;
@@ -2423,22 +2514,26 @@ function SeriesReaderInstance({
               // persistent chevron above serves both modes); its auto-hide rides `visible`.
               <View pointerEvents="box-none">
                 <ReaderToolbar
-                  title={seriesTitle}
-                  subtitle={target?.chapterName ?? ''}
+                  // In sequence mode the chrome describes the VISIBLE entry — which series the
+                  // page in front of you belongs to is the one thing this bar must answer there.
+                  title={sequence ? (visibleSequenceEntry?.seriesTitle ?? seriesTitle) : seriesTitle}
+                  subtitle={
+                    sequence ? (visibleSequenceEntry?.chapterName ?? '') : (target?.chapterName ?? '')
+                  }
                   visible={chromeVisible}
                   onBack={goBack}
                   hideBack
                   right={
                     <>
                       <CollectPageControl
-                        bridgeId={bridgeId}
-                        seriesId={id}
-                        seriesTitle={seriesTitle}
-                        chapterId={visiblePage?.chapterId}
-                        chapterName={target?.chapterName}
-                        pageIndex={visiblePage?.pageIndex ?? 0}
-                        pageCount={pages?.length}
-                        sourceUrl={pages?.[visiblePage?.pageIndex ?? 0]}
+                        bridgeId={pageAction ? pageAction.bridgeId : bridgeId}
+                        seriesId={pageAction ? pageAction.seriesId : id}
+                        seriesTitle={pageAction ? pageAction.seriesTitle : seriesTitle}
+                        chapterId={pageAction?.chapterId}
+                        chapterName={pageAction?.chapterName}
+                        pageIndex={pageAction?.pageIndex ?? 0}
+                        pageCount={pageAction?.pageCount}
+                        sourceUrl={pageAction?.sourceUrl}
                         onPress={showChrome}
                       />
                       <SettingsControl
@@ -2448,22 +2543,24 @@ function SeriesReaderInstance({
                         thumbnailUrl={series?.cover}
                         author={author}
                         direct={isDirect}
-                        {...(visiblePage && {
+                        {...(pageAction && {
                           page: {
-                            chapterId: visiblePage.chapterId,
-                            ...(target?.chapterName !== undefined && { chapterName: target.chapterName }),
-                            pageIndex: visiblePage.pageIndex,
-                            ...(pages && { pageCount: pages.length }),
-                            ...(pages?.[visiblePage.pageIndex] !== undefined && {
-                              sourceUrl: pages[visiblePage.pageIndex],
+                            chapterId: pageAction.chapterId,
+                            ...(pageAction.chapterName !== undefined && {
+                              chapterName: pageAction.chapterName,
                             }),
+                            pageIndex: pageAction.pageIndex,
+                            ...(pageAction.pageCount !== undefined && { pageCount: pageAction.pageCount }),
+                            ...(pageAction.sourceUrl !== undefined && { sourceUrl: pageAction.sourceUrl }),
                             // The chapter's re-anchor identity, for filing the CHAPTER itself.
-                            ...(visibleChapter?.number !== undefined && {
-                              chapterNumber: visibleChapter.number,
-                            }),
-                            ...(visibleChapter?.languageCode !== undefined && {
-                              languageCode: visibleChapter.languageCode,
-                            }),
+                            ...('chapterNumber' in pageAction &&
+                              pageAction.chapterNumber !== undefined && {
+                                chapterNumber: pageAction.chapterNumber,
+                              }),
+                            ...('languageCode' in pageAction &&
+                              pageAction.languageCode !== undefined && {
+                                languageCode: pageAction.languageCode,
+                              }),
                           },
                         })}
                       />
@@ -2627,9 +2724,13 @@ function SeriesReaderInstance({
               seriesCover={series?.cover}
               chapterId={target.chapterId}
               chapterName={target.chapterName}
-              chaptered={!isDirect}
-              hasPrevChapter={!!prevChapter}
-              hasNextChapter={!!nextChapter}
+              // A sequence has no chapter roster: no skip buttons, no cross-chapter paging, and —
+              // below — no progress writes (a sequence hop is browsing, not a read position, and
+              // recording it would clobber the real one).
+              chaptered={!isDirect && !sequence}
+              recordProgress={!sequence}
+              hasPrevChapter={!sequence && !!prevChapter}
+              hasNextChapter={!sequence && !!nextChapter}
               nextChapterName={nextChapter?.name}
               onCrossChapter={goAdjacentChapter}
               onSkipChapter={(delta) => {
@@ -2792,9 +2893,59 @@ type DrillEntry = { key: number } & ({ kind: 'series'; params: SeriesReaderParam
 const MemoSeriesReaderInstance = memo(SeriesReaderInstance);
 
 export default function SeriesReaderScreen() {
-  const params = useLocalSearchParams<SeriesReaderParams>();
+  const params = useLocalSearchParams<SeriesReaderParams & ReaderSequenceParams>();
+  const router = useRouter();
   const { width } = useWindowDimensions();
   const [drills, setDrills] = useState<DrillEntry[]>([]);
+
+  // ── Sequence mode (`seq=1`): the reader pages over a COLLECTION's saved pages ──
+  // The screen's half of the split described on ReaderSequenceRun: it resolves the sequence,
+  // tracks which entry is on screen, and re-keys the instance when the sequence crosses into a
+  // different series — so the instance below it is always an ordinary series reader for the
+  // series actually on screen, details layer and all.
+  const seq = useReaderSequence(params);
+  const [seqPos, setSeqPos] = useState<number | null>(null);
+  const onSeqIndexSettled = useCallback((i: number) => setSeqPos(i), []);
+  const seqEntries = seq?.entries;
+  const seqUris = seq?.uris;
+  const seqStartId = params.seqStart;
+  // Where the pager is: the last settled index, else the tapped tile's entry (a cold deep link
+  // whose seqStart no longer exists falls back to the first entry rather than failing).
+  const seqIndex = useMemo(() => {
+    if (!seqEntries?.length) return 0;
+    if (seqPos !== null) return Math.min(seqPos, seqEntries.length - 1);
+    const at = seqStartId ? seqEntries.findIndex((e) => e.id === seqStartId) : -1;
+    return at >= 0 ? at : 0;
+  }, [seqEntries, seqPos, seqStartId]);
+  const seqEntry = seqEntries?.[seqIndex];
+  const seqRun = useMemo<ReaderSequenceRun | undefined>(
+    () =>
+      seqUris && seqEntries?.length
+        ? { uris: seqUris, entries: seqEntries, index: seqIndex, onIndexSettled: onSeqIndexSettled }
+        : undefined,
+    [seqUris, seqEntries, seqIndex, onSeqIndexSettled],
+  );
+  // The instance is an ordinary reader-first open of the visible entry's series — the same params
+  // a History row pushes, minus a chapter seed (the sequence, not a chapter, is the page list).
+  const seqParams = useMemo<SeriesReaderParams>(
+    () =>
+      seqEntry
+        ? {
+            id: seqEntry.seriesId,
+            bridgeId: seqEntry.bridgeId,
+            title: seqEntry.seriesTitle,
+            reader: '1',
+            ...(seqEntry.chapterId === DIRECT_CHAPTER_ID && { direct: '1' }),
+          }
+        : {},
+    [seqEntry],
+  );
+  // A sequence that resolves to nothing (every page un-saved elsewhere, a dead deep link) has
+  // nothing to show — leave rather than strand a spinner.
+  const seqEmpty = !!seq && seq.resolved && seq.entries.length === 0;
+  useEffect(() => {
+    if (seqEmpty) router.back();
+  }, [seqEmpty, router]);
   const nextKey = useRef(1);
   // The stack's shape, in the trace. A layer bug is by definition about which of several mounted
   // pages is reacting, and a recording had no way to say what was even mounted.
@@ -2846,7 +2997,29 @@ export default function SeriesReaderScreen() {
       <Animated.View
         style={[styles.container, pushed]}
         pointerEvents={drills.length === 0 ? 'auto' : 'none'}>
-        <MemoSeriesReaderInstance params={params} depth={0} onPopLayer={popLayer} />
+        {seq ? (
+          seqRun && seqEntry ? (
+            // Keyed by the visible entry's SERIES: paging within a series never remounts, and a
+            // cross into another series remounts a fresh instance seeded at the same index — the
+            // page URI is already resolved, so the same image is back on screen at once, now with
+            // the new series' details layer beneath it.
+            <MemoSeriesReaderInstance
+              key={`seq:${seqEntry.bridgeId}:${seqEntry.seriesId}`}
+              params={seqParams}
+              depth={0}
+              onPopLayer={popLayer}
+              sequence={seqRun}
+            />
+          ) : (
+            // Cold deep link: the collection query hasn't answered yet (a warm cache resolves
+            // synchronously and never shows this).
+            <View style={styles.seqLoading}>
+              <ActivityIndicator color="#fff" />
+            </View>
+          )
+        ) : (
+          <MemoSeriesReaderInstance params={params} depth={0} onPopLayer={popLayer} />
+        )}
       </Animated.View>
       {drills.map((d, i) => (
         <Animated.View
@@ -3217,6 +3390,9 @@ const ReaderPane = forwardRef<
     chapterName?: string;
     /** False for a direct series — drops the navigator's chapter-skip buttons. */
     chaptered: boolean;
+    /** False = never write reading progress/history from this pane (sequence mode: a hop through a
+     *  collected sequence is browsing, and recording it would clobber the real read position). */
+    recordProgress?: boolean;
     hasPrevChapter: boolean;
     hasNextChapter: boolean;
     nextChapterName?: string;
@@ -3259,6 +3435,7 @@ const ReaderPane = forwardRef<
     chapterId,
     chapterName,
     chaptered,
+    recordProgress = true,
     hasPrevChapter,
     hasNextChapter,
     nextChapterName,
@@ -3557,6 +3734,7 @@ const ReaderPane = forwardRef<
   // progress; anything else (including a direct series) goes to the reading log under the
   // DIRECT_CHAPTER_ID sentinel. ──
   const record = useCallback(() => {
+    if (!recordProgress) return;
     if (!bridgeId || !seriesId || !pages.length || inLibrary === undefined) return;
     const lastPage = currentRef.current;
     const pageCount = pages.length;
@@ -3590,7 +3768,7 @@ const ReaderPane = forwardRef<
       })
       .then(invalidateHistory)
       .catch(() => {});
-  }, [bridgeId, seriesId, pages, inLibrary, chapterId, chapterName, seriesTitle, seriesCover, ds, mock, queryClient]);
+  }, [recordProgress, bridgeId, seriesId, pages, inLibrary, chapterId, chapterName, seriesTitle, seriesCover, ds, mock, queryClient]);
   // recordRef itself is declared up with the stitched mappings (the flat crossing flushes through
   // it); this keeps it pointing at the latest closure.
   useEffect(() => {
@@ -3776,6 +3954,14 @@ function DetailsHint({
 }
 
 const styles = StyleSheet.create({
+  // Sequence resolving on a cold deep link — the reader's black, so the instance that replaces it
+  // doesn't flash a background change.
+  seqLoading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#000',
+  },
   container: {
     flex: 1,
     // Transparent: the route is a contained transparent modal — the details layer is the opaque
