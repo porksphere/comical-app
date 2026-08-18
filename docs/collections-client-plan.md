@@ -450,6 +450,19 @@ abstraction" the previous paragraph predicted, built exactly there:
 - Library pushes `{seq:'1', seqCollection, seqSort, seqDir, seqQ?, seqStart: item.id}` for a page
   tile; chapter tiles keep the plain reader push, series tiles the details push. A cold deep link
   fetches and shows a spinner; a sequence that resolves empty pops back.
+- **Nothing about a series is fetched until the reveal asks** (`seriesWanted`): in sequence mode
+  the instance's series queries — detail, chapter roster, library membership, and the details
+  host's own subscription — are deferred behind a latch that flips the moment the reveal starts
+  moving (an animated reaction on `progress`, so the fetch is in flight while the swipe is still
+  travelling) and then stays on. The reader side of an album needs none of them: the chrome
+  describes the visible entry, and an album that wanders through five series must not fetch five
+  series' details on the way. Non-sequence instances start latched on — their mount-order
+  contract is untouched.
+- **A series CROSS is invisible**: the re-keyed instance mounts already open (`instant` on the
+  run — `zoom` starts at 1, armed, `startZoom` pre-latched, no zoom origin taken), because the
+  previous instance's page was on screen a frame ago and playing the no-origin entrance (centred
+  scale + fade) over it read as the reader closing and reopening. Chrome visibility rides the run
+  across the remount (`chrome`/`onChromeChanged`), so the toolbar doesn't pop back up mid-album.
 - **The tiles get the full GALLERY ZOOM** (`lib/series-zoom`, the same flow a series card runs):
   press-in captures the tile's box as the source rect, the destination grows out of it — the
   reader for a page, the details for a series — and the dismissal collapses back into it, the
