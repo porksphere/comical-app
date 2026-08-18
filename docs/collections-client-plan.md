@@ -441,28 +441,30 @@ abstraction" the previous paragraph predicted, built exactly there:
   flat index): toolbar title/subtitle, and one shared `pageAction` derivation feeding the save
   button and the settings sheet, so un-saving works from inside the album with the entry's own
   coordinates.
-- **A series cross is a REMOUNT, keyed by the screen**: `SeriesReaderScreen` tracks the settled
-  index (`onIndexSettled`) and keys the instance `seq:${bridgeId}:${seriesId}`, params derived
-  from the visible entry (an ordinary reader-first open). Paging within a series never remounts;
-  crossing remounts seeded at the same index — the same already-resolved URI is back on screen at
-  once, now with the RIGHT series' details layer beneath it, so swipe-up reveals the details of
-  whatever series the album wandered into, lazily, skeletons and all.
+- **A series cross is a PAGE TURN — one instance, one pager, for the whole album.** The pager
+  never remounts (the exact discipline that makes a stitched chapter crossing seamless); what a
+  cross changes is only what a stitched crossing's relabel changes. The DETAIL identity
+  (`detailBridgeId`/`detailSeriesId`/`detailKey`) derives from the visible entry, and everything
+  series-scoped re-points by key: the detail/chapter-roster/library queries, the details host
+  (keyed by `detailKey`, so a cross remounts just that off-screen card with fresh skeleton
+  state), the details top bar, and the settings sheet's series-level actions. The album roster is
+  LATCHED for the open's life (use-reader-sequence) so an un-save invalidation can never shift
+  pages under the reader's thumb — the save button still reads live indices, and the grid
+  rebuilds on return.
+- **Details taps escape the album as a drilled LAYER**: tapping a chapter (or a direct series'
+  page) in a revealed details card is a NEW read, not an album jump — it opens reader-first as a
+  layer over the album (the same slide a related-series card gets), album intact underneath.
 - Library pushes `{seq:'1', seqCollection, seqSort, seqDir, seqQ?, seqStart: item.id}` for a page
   tile; chapter tiles keep the plain reader push, series tiles the details push. A cold deep link
   fetches and shows a spinner; a sequence that resolves empty pops back.
-- **Nothing about a series is fetched until the reveal asks** (`seriesWanted`): in sequence mode
-  the instance's series queries — detail, chapter roster, library membership, and the details
-  host's own subscription — are deferred behind a latch that flips the moment the reveal starts
-  moving (an animated reaction on `progress`, so the fetch is in flight while the swipe is still
-  travelling) and then stays on. The reader side of an album needs none of them: the chrome
-  describes the visible entry, and an album that wanders through five series must not fetch five
-  series' details on the way. Non-sequence instances start latched on — their mount-order
-  contract is untouched.
-- **A series CROSS is invisible**: the re-keyed instance mounts already open (`instant` on the
-  run — `zoom` starts at 1, armed, `startZoom` pre-latched, no zoom origin taken), because the
-  previous instance's page was on screen a frame ago and playing the no-origin entrance (centred
-  scale + fade) over it read as the reader closing and reopening. Chrome visibility rides the run
-  across the remount (`chrome`/`onChromeChanged`), so the toolbar doesn't pop back up mid-album.
+- **Nothing about a series is fetched until the reveal asks** (`seriesWanted`, armed PER SERIES):
+  in sequence mode the series queries — detail, chapter roster, library membership, and the
+  details host's own subscription — are deferred until the reveal starts moving (an animated
+  reaction on `progress`, so the fetch is in flight while the swipe is still travelling). The arm
+  is keyed to the series it was armed for: reveal on A, collapse, cross to B — B stays unfetched
+  until ITS reveal, while A's answer sits in the query cache for an instant re-reveal.
+  Non-sequence instances are armed for their own series from mount — their ordering contract is
+  untouched.
 - **The tiles get the full GALLERY ZOOM** (`lib/series-zoom`, the same flow a series card runs):
   press-in captures the tile's box as the source rect, the destination grows out of it — the
   reader for a page, the details for a series — and the dismissal collapses back into it, the

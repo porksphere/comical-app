@@ -70,10 +70,19 @@ export function useReaderSequence(params: ReaderSequenceParams): {
   });
 
   // Only pages are readable; series and chapter items in the collection stay grid-only.
-  const pages = useMemo(
+  const filtered = useMemo(
     () => (data ?? []).filter((i): i is ApiCollectionPageItem => i.type === 'page'),
     [data],
   );
+  // LATCHED on the first resolved answer, for the album's whole life. The sequence is the mounted
+  // pager's verbatim page list, and the collection query it derives from is live — un-saving the
+  // page on screen (or any album page) invalidates it, and a refetched, shorter list would shift
+  // every page under the reader's thumb mid-swipe. The membership change still shows everywhere it
+  // should: the save button reads the indices query, and the grid rebuilds on return. Only THIS
+  // open's roster is frozen — the next open resolves fresh.
+  const [latched, setLatched] = useState<ApiCollectionPageItem[] | null>(null);
+  if (active && isFetched && latched === null) setLatched(filtered);
+  const pages = latched ?? filtered;
   const uriMap = useCollectedPageUris(active ? pages : []);
 
   const entries = useMemo<ReaderSequenceEntry[]>(

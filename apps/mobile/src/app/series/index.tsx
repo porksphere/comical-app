@@ -74,7 +74,7 @@ import { backSwipePan, backSwipeShape, backSwipeStayedHorizontal, resetBackSwipe
 import { trace, traceGate, traceJS, traceThrottled, useGestureTraceEnabled } from '@/lib/gesture-trace';
 import { releaseCommitted, releaseCommittedEitherWay } from '@/lib/gesture-release';
 import { IOS_CARD_SHADOW, IOS_CARD_SPRING, IOS_PARALLAX_FRACTION } from '@/lib/ios-card-pop';
-import { registerDrillSeries, registerOpenSearchLayer } from '@/lib/series-nav';
+import { registerDrillSeries, registerOpenSearchLayer, useDrillRelatedSeries } from '@/lib/series-nav';
 import { holdSeriesBackdrop, seriesReaderDim } from '@/lib/series-backdrop';
 import { holdZoomingSeries, takeZoomOrigin, type ZoomRect } from '@/lib/series-zoom';
 import SearchScreen from '../search';
@@ -490,29 +490,21 @@ type ReadTarget = { chapterId?: string; chapterName?: string; start: number | 'l
 
 /**
  * A cross-series READER SEQUENCE — what the pager runs over when the reader was opened from a
- * collection rather than a chapter (see use-reader-sequence.ts). The instance treats it as its
- * page list VERBATIM: no chapter target, no stitching, no adjacency, no progress recording — the
- * sequence is the run. Crossing into an entry from a DIFFERENT series is the screen's job: it
- * re-keys the instance by the entry's series (see SeriesReaderScreen), so the details layer, the
- * queries and the chrome all belong to the series actually on screen — the same screen, the same
- * lazy loading and skeletons, whichever series the sequence wanders into.
+ * collection rather than a chapter (see use-reader-sequence.ts). ONE instance serves the whole
+ * album, and the pager never remounts: the sequence is its page list VERBATIM, so a series cross
+ * is literally a page turn — the exact discipline that makes a stitched chapter crossing
+ * seamless, applied one level up. What a cross changes is only what a stitched crossing's relabel
+ * changes: the chrome and the details layer RE-POINT to the visible entry's series (query keys
+ * and the details host's key — see `detailBridgeId`/`detailSeriesId` in the instance), while
+ * everything mounted keeps its state. No chapter target, no stitching, no adjacency, no progress
+ * recording — the sequence is the run.
  */
 type ReaderSequenceRun = {
   /** Resolved page URIs, one per entry ('' = still resolving → the page's own skeleton). */
   uris: string[];
   entries: ReaderSequenceEntry[];
-  /** The entry this instance mounted on — seeds the pager once; later changes never yank it. */
+  /** The entry the album OPENED on — seeds the pager once; position then lives in the pager. */
   index: number;
-  /** True when this mount is a mid-album series CROSS rather than the original open: the
-   *  instance comes up already open (no entrance — the previous instance's page was on screen a
-   *  frame ago) and seeds its chrome from `chrome`. */
-  instant: boolean;
-  /** Chrome visibility carried across cross remounts, so the toolbar doesn't pop back up (or
-   *  vanish) mid-album. `null` until an instance reports it via `onChromeChanged`. */
-  chrome: boolean | null;
-  onChromeChanged: (visible: boolean) => void;
-  /** A page settled: the screen tracks position and re-keys this instance on a series cross. */
-  onIndexSettled: (index: number) => void;
 };
 
 /** One chapter's worth of pages inside the native pager's stitched flat list — what makes a
@@ -600,19 +592,44 @@ function SeriesReaderInstance({
   const bridge = bridgeParam ? decodeURIComponent(bridgeParam) : undefined;
   const cover = coverParam ? decodeURIComponent(coverParam) : undefined;
   const isDirect = direct === '1';
-  // A sequence's series CROSS remounts this instance mid-read (the screen re-keys it by the
-  // visible entry's series). That mount must come up ALREADY OPEN — the previous instance's page
-  // was on screen a frame ago, and playing the no-origin entrance (centred scale + fade) over it
-  // reads as the reader closing and reopening. Latched at mount: entrances are mount-time facts.
-  const [instantOpen] = useState(() => !!sequence?.instant);
-  // Sequence mode loads NOTHING about this instance's series up front — no detail, no chapter
-  // roster, no library membership. The reader side of an album needs none of it (the chrome
-  // describes the visible ENTRY), and an album that wanders through five series must not fetch
-  // five series' details on the way. The latch flips the first time the reveal starts moving
-  // (see the reaction beside `progress`) and then stays on, so a collapse doesn't unmount the
-  // details' data. Non-sequence instances start latched on — their ordering contract (detail
+
+  // ── The visible page — and, in sequence mode, the visible ENTRY ────────────────────────────
+  // Lives at this level because the TOOLBAR is rendered here (the pane reports it up through
+  // `onVisiblePage`, already chapter-correct across a stitched crossing), and this high up in the
+  // component because the DETAIL identity just below derives from it.
+  const [visiblePage, setVisiblePage] = useState<{ pageIndex: number; chapterId: string } | null>(null);
+  // The ENTRY the pager currently shows. The pane's flat index IS the sequence index, so this is
+  // what the chrome (title, save button, settings sheet) and the details layer describe — the
+  // instance's own route params only name the entry the album OPENED on.
+  const visibleSequenceEntry = sequence
+    ? sequence.entries[Math.min(visiblePage?.pageIndex ?? sequence.index, sequence.entries.length - 1)]
+    : undefined;
+
+  // ── The series the DETAILS side describes ──────────────────────────────────────────────────
+  // Chapter mode: this instance's own series, always. Sequence mode: the VISIBLE entry's — the
+  // album pager never remounts (a series cross must be as seamless as a stitched chapter
+  // crossing, which is to say: a plain page turn), so instead of remounting the reader under a
+  // new series, the details layer and the series queries RE-POINT by key. A stitched crossing's
+  // relabel, one level up.
+  const detailBridgeId = sequence ? (visibleSequenceEntry?.bridgeId ?? bridgeId) : bridgeId;
+  const detailSeriesId = sequence ? (visibleSequenceEntry?.seriesId ?? id) : id;
+  const detailTitle = sequence ? visibleSequenceEntry?.seriesTitle : title;
+  const detailIsDirect = sequence ? visibleSequenceEntry?.chapterId === DIRECT_CHAPTER_ID : isDirect;
+  const detailBridge = sequence ? undefined : bridge;
+  const detailCover = sequence ? undefined : cover;
+  const detailKey = `${detailBridgeId ?? ''}:${detailSeriesId ?? ''}`;
+
+  // Sequence mode loads NOTHING about a series up front — no detail, no chapter roster, no
+  // library membership. The reader side of an album needs none of it (the chrome describes the
+  // visible entry), and an album that wanders through five series must not fetch five series'
+  // details on the way. Armed PER SERIES the moment the reveal starts moving (see the reaction
+  // beside `progress`): reveal on series A, collapse, cross to B — B stays unfetched until ITS
+  // reveal, while A's answer sits in the query cache for an instant re-reveal. Non-sequence
+  // instances are armed for their own series from mount, so their ordering contract (detail
   // dispatched at mount) is untouched.
-  const [seriesWanted, setSeriesWanted] = useState(!sequence);
+  const [wantedKey, setWantedKey] = useState<string | null>(() => (sequence ? null : detailKey));
+  const seriesWanted = wantedKey === detailKey;
+  const armSeriesQueries = useCallback(() => setWantedKey(detailKey), [detailKey]);
 
   // Opening a different series clears the remembered scanlation group (same as series.tsx).
   useEffect(() => {
@@ -623,7 +640,7 @@ function SeriesReaderInstance({
   // adjacency for the reader pane. (The details card's own list rendering — read state, downloads,
   // versions — is SeriesBody's business, not duplicated here.)
   const { data: listData } = useQuery(
-    seriesListQuery(ds, mock, bridgeId ?? '', id ?? '', false, !isDirect && seriesWanted),
+    seriesListQuery(ds, mock, detailBridgeId ?? '', detailSeriesId ?? '', false, !detailIsDirect && seriesWanted),
   );
   const chapters = listData?.chapters;
 
@@ -632,11 +649,11 @@ function SeriesReaderInstance({
   // the pane re-renders on every page sweep, and useQuery's per-render subscription work (query
   // key hashing) is measurable at that cadence.
   const { data: inLibrary } = useQuery({
-    ...inLibraryQuery(ds, mock, bridgeId ?? '', id ?? ''),
+    ...inLibraryQuery(ds, mock, detailBridgeId ?? '', detailSeriesId ?? ''),
     retry: false,
     // Deferred with the rest of the series queries in sequence mode — it only picks the
     // progress-recording path, and a sequence records no progress.
-    enabled: !!bridgeId && !!id && seriesWanted,
+    enabled: !!detailBridgeId && !!detailSeriesId && seriesWanted,
   });
 
   // ── Where does reading start? ────────────────────────────────────────────
@@ -720,16 +737,16 @@ function SeriesReaderInstance({
   // title+cover). The details card's SeriesDetailsHost subscribes to this same query key, so this
   // costs one fetch total.
   const { data: series = null } = useQuery({
-    ...seriesDetailQuery(ds, mock, bridgeId ?? '', id ?? '', {
-      direct: isDirect,
-      bridgeName: bridge ?? 'Library',
-      title,
-      cover,
+    ...seriesDetailQuery(ds, mock, detailBridgeId ?? '', detailSeriesId ?? '', {
+      direct: detailIsDirect,
+      bridgeName: detailBridge ?? 'Library',
+      title: detailTitle,
+      cover: detailCover,
     }),
-    // Sequence mode: nothing fetched until the reveal asks (`seriesWanted`). The toolbar doesn't
-    // need it — sequence chrome describes the visible entry, not this query. `!!id` preserves the
-    // option's own guard, which this override replaces.
-    enabled: !!id && seriesWanted,
+    // Sequence mode: keyed to the VISIBLE entry's series, and nothing fetched until the reveal
+    // asks (`seriesWanted`) — sequence chrome describes the visible entry, not this query.
+    // `!!detailSeriesId` preserves the option's own guard, which this override replaces.
+    enabled: !!detailSeriesId && seriesWanted,
   });
   // ORDERING, and why this query sits HERE rather than at the top of the component. React Query
   // dispatches on mount effects, which run in hook order, so declaration order IS request order
@@ -1019,15 +1036,7 @@ function SeriesReaderInstance({
   }, []);
 
   // ── Chrome auto-hide ───────────────────────────────────────────────────────
-  // A series-cross remount seeds the chrome from the run, so the toolbar doesn't pop back up (or
-  // vanish) mid-album; the effect below reports changes so the screen has it for the next cross.
-  const [chromeVisible, setChromeVisible] = useState(
-    () => (instantOpen ? (sequence?.chrome ?? true) : true),
-  );
-  const onChromeChanged = sequence?.onChromeChanged;
-  useEffect(() => {
-    onChromeChanged?.(chromeVisible);
-  }, [onChromeChanged, chromeVisible]);
+  const [chromeVisible, setChromeVisible] = useState(true);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chromeHeldRef = useRef(false);
   const scheduleHide = useCallback(() => {
@@ -1104,13 +1113,15 @@ function SeriesReaderInstance({
   const pullStartSV = useSharedValue(1);
 
   // Arms the deferred series queries (`seriesWanted`, sequence mode) the moment the reveal STARTS
-  // moving — not when it commits — so the card the swipe uncovers is already fetching. Non-sequence
-  // instances are latched on from mount, so the write is a no-op there.
+  // moving — not when it commits — so the card the swipe uncovers is already fetching, for the
+  // series the swipe is revealing. Non-sequence instances are armed from mount; the arm is a
+  // no-op there.
   useAnimatedReaction(
     () => progress.value > 0.02,
     (revealing, was) => {
-      if (revealing && !was) runOnJS(setSeriesWanted)(true);
+      if (revealing && !was) runOnJS(armSeriesQueries)();
     },
+    [armSeriesQueries],
   );
 
   // JS-side half of a commit — deliberately closes over nothing but state setters (no shared
@@ -1283,9 +1294,7 @@ function SeriesReaderInstance({
   // connection to the thumbnail is lost.
   // 0 = the thumbnail is sitting on its card and the page is invisible, 1 = the page is up and
   // the thumbnail is gone.
-  // Starts at 1 on an instant mount (a sequence's series cross): the page is already open — the
-  // previous instance's page was on screen a frame ago — so there is no entrance to play.
-  const zoom = useSharedValue(instantOpen ? 1 : 0);
+  const zoom = useSharedValue(0);
   // The entrance waits for that measurement — the library does the same, holding the pair until
   // both ends have reported. Invisible here: the page is at opacity 0 until the spring starts, so
   // a frame or two of waiting just shows the untouched grid. A deadline caps it, after which the
@@ -1297,7 +1306,7 @@ function SeriesReaderInstance({
   // starting large and settling down to its real size. So the page stays at IDENTITY (invisible,
   // opacity 0) until the bound is in; only then do the transform and the mask engage. That is what
   // the library means by keeping a component at its base layout for pre-animation measurement.
-  const zoomArmed = useSharedValue(instantOpen);
+  const zoomArmed = useSharedValue(false);
   // Which set of cross-fade ranges is in play (see the constants) — an exit uses different ones.
   const zoomClosing = useSharedValue(false);
   // Back-swipe (details mode): the native stack's pop gesture, recreated — the route is a
@@ -1607,9 +1616,7 @@ function SeriesReaderInstance({
   // Consumed in a state initializer so it's known on the FIRST render — a frame later would mean
   // starting the grow from the wrong geometry — and remembered for the instance's whole lifetime,
   // so the exit collapses back into the same box.
-  // Instant mounts (a sequence's series cross) take none: they play no entrance, and a recent
-  // capture lying around — the tile the album was OPENED from — belongs to the original mount.
-  const [zoomSource] = useState(() => (IS_WEB || instantOpen ? null : takeZoomOrigin(id)));
+  const [zoomSource] = useState(() => (IS_WEB ? null : takeZoomOrigin(id)));
   // The source rect this page aligns itself to. No image is needed — unlike a classic shared
   // element, nothing is copied or flown; the page is its own transition subject (see zoomMaskStyle).
   const hero = zoomSource?.origin ?? null;
@@ -1618,9 +1625,7 @@ function SeriesReaderInstance({
   // See `coverAspect` in SeriesDetailsHost.
   const heroAspectSeed = hero && hero.height > 0 ? hero.width / hero.height : undefined;
   const [destBound, setDestBound] = useState<ZoomRect | null>(null);
-  // Pre-latched on an instant mount: `zoom` is already at 1, so startZoom (and the blank/backstop
-  // machinery it drives) has nothing to do.
-  const zoomStartedRef = useRef(instantOpen);
+  const zoomStartedRef = useRef(false);
   // Blanking the source card is tied to ARMING, not to mount: the wait for the destination
   // measurement happens with everything here invisible, and a card blanked during it would just be
   // a hole in the grid. From arming on it stays blanked for this page's whole life — the copy
@@ -2404,22 +2409,8 @@ function SeriesReaderInstance({
 
   // ── Details-card intents, routed back into the in-place reader ───────────
   const paneRef = useRef<ReaderPaneHandle>(null);
-  // The page the reader currently has on screen, with the chapter it belongs to. Lives here rather
-  // than in ReaderPane because the TOOLBAR is rendered by this component — the pane reports it up
-  // through `onVisiblePage` (already chapter-correct across a stitched crossing).
-  const [visiblePage, setVisiblePage] = useState<{ pageIndex: number; chapterId: string } | null>(null);
-  // Sequence mode: the ENTRY the pager currently shows. The pane's flat index IS the sequence
-  // index, so this is what the chrome (title, save button, settings sheet) describes — the
-  // instance's own series/chapter identity only matches it at rest, by the screen's re-keying.
-  const visibleSequenceEntry = sequence
-    ? sequence.entries[Math.min(visiblePage?.pageIndex ?? sequence.index, sequence.entries.length - 1)]
-    : undefined;
-  // Report settles up so the screen tracks position — and re-keys this instance when the sequence
-  // crosses into another series.
-  const onSequenceSettled = sequence?.onIndexSettled;
-  useEffect(() => {
-    if (onSequenceSettled && visiblePage) onSequenceSettled(visiblePage.pageIndex);
-  }, [onSequenceSettled, visiblePage]);
+  // (`visiblePage` / `visibleSequenceEntry` are declared at the top of the component — the detail
+  // identity derives from them.)
   // The chapter the visible page belongs to, from the roster — `ReadTarget` carries only an id and
   // a display name, but filing a CHAPTER needs its (number, languageCode) re-anchor identity.
   const visibleChapter = chapters?.find((c) => c.id === visiblePage?.chapterId);
@@ -2429,8 +2420,33 @@ function SeriesReaderInstance({
   // must never be offered as a chapter's page list. (Each entry's chapter was reconciled when it
   // was read normally; the sequence only displays.)
   useChapterReconcile(bridgeId, id, sequence ? undefined : (visiblePage?.chapterId ?? target?.chapterId), pages);
+  // Sequence mode: a tap in the revealed details card is a NEW read of the visible entry's
+  // series, not a jump within the album — the album's pager runs the sequence and nothing else.
+  // It opens as a drilled LAYER (the same slide a related-series card gets), reader-first at the
+  // tapped spot, with the album intact underneath; the route push is the fallback for the odd
+  // host without a layer stack.
+  const drillSeries = useDrillRelatedSeries();
+  const openFromSequenceDetails = useCallback(
+    (params: Record<string, string>) => {
+      if (drillSeries) drillSeries(params);
+      else router.push({ pathname: '/series', params });
+    },
+    [drillSeries, router],
+  );
   const openChapterFromDetails = useCallback(
     (v: Chapter) => {
+      if (sequence) {
+        openFromSequenceDetails({
+          id: detailSeriesId ?? '',
+          bridgeId: detailBridgeId ?? '',
+          title: detailTitle ?? '',
+          reader: '1',
+          chapterId: v.id,
+          ...(v.name ? { chapterName: v.name } : {}),
+          start: '0',
+        });
+        return;
+      }
       if (v.id !== targetChapterId) {
         setJumpNonce((n) => n + 1); // explicit jump — remount seeded at the target, even in-window
         setOverride({
@@ -2441,10 +2457,22 @@ function SeriesReaderInstance({
       }
       setRevealed(0);
     },
-    [targetChapterId, resume, setRevealed],
+    [sequence, openFromSequenceDetails, detailSeriesId, detailBridgeId, detailTitle, targetChapterId, resume, setRevealed],
   );
   const openPageFromDetails = useCallback(
     (pageIndex: number) => {
+      if (sequence) {
+        // Page grids only exist on DIRECT series' details, so this is a direct open by definition.
+        openFromSequenceDetails({
+          id: detailSeriesId ?? '',
+          bridgeId: detailBridgeId ?? '',
+          title: detailTitle ?? '',
+          reader: '1',
+          direct: '1',
+          start: String(pageIndex),
+        });
+        return;
+      }
       // Both paths, because the pane is not guaranteed to be mounted: a window still forming (see
       // the run's hold) has no pager to drive, so the target carries the landing page and the pane
       // seeds from it instead. A pane that IS mounted ignores the seed — `start` is read once, at
@@ -2456,13 +2484,17 @@ function SeriesReaderInstance({
       });
       setRevealed(0);
     },
-    [setRevealed, derivedTarget],
+    [sequence, openFromSequenceDetails, detailSeriesId, detailBridgeId, detailTitle, setRevealed, derivedTarget],
   );
   // The Read button/cover: the pane already sits at the same resume point Read would compute.
   const startReadingFromDetails = useCallback(() => setRevealed(0), [setRevealed]);
 
   const scheme = useActiveColorScheme();
-  const seriesTitle = series?.title ?? title ?? id ?? 'Reader';
+  // Sequence mode: the visible ENTRY names the series (the fetched detail only exists after a
+  // reveal, and it describes the same series by construction — `detailKey`).
+  const seriesTitle = sequence
+    ? (visibleSequenceEntry?.seriesTitle ?? series?.title ?? 'Reader')
+    : (series?.title ?? title ?? id ?? 'Reader');
 
   // What the per-page chrome (the toolbar save button, the settings sheet's "This page"/"This
   // chapter" segments) acts on. ONE derivation for both controls, because they must never disagree.
@@ -2503,9 +2535,10 @@ function SeriesReaderInstance({
       };
 
   const author = series?.meta?.find((m) => m.label === 'AUTHOR')?.value;
-  // Same "<Bridge> / <Title>" the /series TopBar shows (shared truncation rule).
-  const topBarSeries = series?.title ?? title;
-  const topBarBridgeName = series?.bridge ?? bridge;
+  // Same "<Bridge> / <Title>" the /series TopBar shows (shared truncation rule). Detail-side
+  // identity, so in sequence mode the details top bar names the VISIBLE entry's series.
+  const topBarSeries = series?.title ?? detailTitle;
+  const topBarBridgeName = series?.bridge ?? detailBridge;
   const headerBarTitle = topBarSeries
     ? topBarBridgeName
       ? `${topBarBridgeName} / ${truncateTopBarTitle(topBarSeries)}`
@@ -2600,12 +2633,14 @@ function SeriesReaderInstance({
                         onPress={showChrome}
                       />
                       <SettingsControl
-                        bridgeId={bridgeId}
-                        seriesId={id}
+                        // Detail-side identity: in sequence mode the sheet's series-level actions
+                        // must act on the VISIBLE entry's series, not the one the album opened on.
+                        bridgeId={detailBridgeId}
+                        seriesId={detailSeriesId}
                         title={seriesTitle}
                         thumbnailUrl={series?.cover}
                         author={author}
-                        direct={isDirect}
+                        direct={detailIsDirect}
                         {...(pageAction && {
                           page: {
                             chapterId: pageAction.chapterId,
@@ -2709,13 +2744,17 @@ function SeriesReaderInstance({
             {/* Everything below can yield the back-swipe to a horizontal scroller of its own. */}
             <BackSwipeGestureContext.Provider value={detailsBackSwipe}>
             <SeriesDetailsHost
-              bridgeId={bridgeId}
-              id={id}
-              title={title}
-              bridge={bridge}
-              cover={cover}
+              // Keyed by the DETAIL series: constant in chapter mode; in sequence mode a series
+              // cross remounts just this card (fresh skeleton state for the new series) while the
+              // reader around it never blinks — the card is off-screen at progress 0 anyway.
+              key={detailKey}
+              bridgeId={detailBridgeId}
+              id={detailSeriesId}
+              title={detailTitle}
+              bridge={detailBridge}
+              cover={detailCover}
               defer={!seriesWanted}
-              isDirect={isDirect}
+              isDirect={detailIsDirect}
               width={width}
               topInset={headerTopInset}
               sharedValues={sharedValues}
@@ -2963,49 +3002,33 @@ export default function SeriesReaderScreen() {
   const [drills, setDrills] = useState<DrillEntry[]>([]);
 
   // ── Sequence mode (`seq=1`): the reader pages over a COLLECTION's saved pages ──
-  // The screen's half of the split described on ReaderSequenceRun: it resolves the sequence,
-  // tracks which entry is on screen, and re-keys the instance when the sequence crosses into a
-  // different series — so the instance below it is always an ordinary series reader for the
-  // series actually on screen, details layer and all.
+  // The screen's share is deliberately small: resolve the album (use-reader-sequence) and mount
+  // ONE instance for its whole life — never re-keyed, so the pager inside it never remounts and a
+  // series cross stays what it physically is: a page turn. Which series the chrome and details
+  // describe is the INSTANCE's business — it re-points them to the visible entry, the way a
+  // stitched crossing relabels (see ReaderSequenceRun).
   const seq = useReaderSequence(params);
-  const [seqPos, setSeqPos] = useState<number | null>(null);
-  const onSeqIndexSettled = useCallback((i: number) => setSeqPos(i), []);
   const seqEntries = seq?.entries;
   const seqUris = seq?.uris;
   const seqStartId = params.seqStart;
-  // Where the pager is: the last settled index, else the tapped tile's entry (a cold deep link
-  // whose seqStart no longer exists falls back to the first entry rather than failing).
-  const seqIndex = useMemo(() => {
+  // The tapped tile's entry (a cold deep link whose seqStart no longer exists falls back to the
+  // first entry rather than failing). Stable: the album roster is latched for the open's life.
+  const seqStartIndex = useMemo(() => {
     if (!seqEntries?.length) return 0;
-    if (seqPos !== null) return Math.min(seqPos, seqEntries.length - 1);
     const at = seqStartId ? seqEntries.findIndex((e) => e.id === seqStartId) : -1;
     return at >= 0 ? at : 0;
-  }, [seqEntries, seqPos, seqStartId]);
-  const seqEntry = seqEntries?.[seqIndex];
-  // Chrome visibility carried across the cross-remounts below, so the toolbar's state survives a
-  // series change mid-album: the mounted instance reports toggles up, the next mount seeds from
-  // the last report.
-  const [seqChrome, setSeqChrome] = useState<boolean | null>(null);
-  const onSeqChromeChanged = useCallback((v: boolean) => setSeqChrome(v), []);
+  }, [seqEntries, seqStartId]);
+  const seqEntry = seqEntries?.[seqStartIndex];
   const seqRun = useMemo<ReaderSequenceRun | undefined>(
     () =>
       seqUris && seqEntries?.length
-        ? {
-            uris: seqUris,
-            entries: seqEntries,
-            index: seqIndex,
-            // A settle has happened (seqPos set), so any NEW mount of the keyed instance below is
-            // a mid-album series cross, not the original open: it comes up with no entrance.
-            instant: seqPos !== null,
-            chrome: seqChrome,
-            onChromeChanged: onSeqChromeChanged,
-            onIndexSettled: onSeqIndexSettled,
-          }
+        ? { uris: seqUris, entries: seqEntries, index: seqStartIndex }
         : undefined,
-    [seqUris, seqEntries, seqIndex, seqPos, seqChrome, onSeqChromeChanged, onSeqIndexSettled],
+    [seqUris, seqEntries, seqStartIndex],
   );
-  // The instance is an ordinary reader-first open of the visible entry's series — the same params
-  // a History row pushes, minus a chapter seed (the sequence, not a chapter, is the page list).
+  // The instance's route-level identity: the entry the album OPENED on — an ordinary reader-first
+  // open, the same params a History row pushes, minus a chapter seed (the sequence, not a
+  // chapter, is the page list). It never changes mid-album; the visible entry drives the rest.
   const seqParams = useMemo<SeriesReaderParams>(
     () =>
       seqEntry
@@ -3078,17 +3101,10 @@ export default function SeriesReaderScreen() {
         pointerEvents={drills.length === 0 ? 'auto' : 'none'}>
         {seq ? (
           seqRun && seqEntry ? (
-            // Keyed by the visible entry's SERIES: paging within a series never remounts, and a
-            // cross into another series remounts a fresh instance seeded at the same index — the
-            // page URI is already resolved, so the same image is back on screen at once, now with
-            // the new series' details layer beneath it.
-            <MemoSeriesReaderInstance
-              key={`seq:${seqEntry.bridgeId}:${seqEntry.seriesId}`}
-              params={seqParams}
-              depth={0}
-              onPopLayer={popLayer}
-              sequence={seqRun}
-            />
+            // ONE instance, never re-keyed: the pager inside lives for the whole album, so a
+            // series cross is a plain page turn — the instance re-points chrome and details to
+            // the visible entry itself.
+            <MemoSeriesReaderInstance params={seqParams} depth={0} onPopLayer={popLayer} sequence={seqRun} />
           ) : (
             // Cold deep link: the collection query hasn't answered yet (a warm cache resolves
             // synchronously and never shows this).
