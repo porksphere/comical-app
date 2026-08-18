@@ -493,6 +493,11 @@ function warmPrefetch(pages: string[]): void {
  */
 const WARM_IDLE_MS = 220;
 
+/** How long the initial-position POSTER (see `parked` in ReaderPane) waits for the list's first
+ *  position report before standing down on its own. Generous — the report normally lands within
+ *  a few frames; this only exists so a wedged list can't keep a static image over a live pager. */
+const POSTER_BACKSTOP_MS = 1200;
+
 /** What the reader pane is pointed at: a chapter (chaptered series) or the series itself (direct).
  *  `start: 'last'` = land on the final page (arriving from the NEXT chapter's "previous"). */
 type ReadTarget = { chapterId?: string; chapterName?: string; start: number | 'last' };
@@ -3585,10 +3590,29 @@ const ReaderPane = forwardRef<
   const startIndex = Math.max(0, Math.min(pages.length - 1, start === 'last' ? pages.length - 1 : start));
   const [currentPage, setCurrentPage] = useState(startIndex);
   const currentRef = useRef(startIndex);
+  // Whether the mounted list has REPORTED a position yet — proof it has computed visibility at
+  // its parked offset. A list positioned by `initialScrollIndex > 0` has a parking transient
+  // (the scrub's `scrubOrigin` note documents the same class of lie: an untouched pager "reports
+  // 0 while sitting twenty pages in"), and an entrance animation plays over exactly those first
+  // frames. Until this flips, the POSTER below stands in for the target page — the same cached
+  // URI, so the hand-off is pixel-identical in both directions. Opens at index 0 park on the
+  // first report like any other; their poster is simply never visibly different from the page.
+  const [parked, setParked] = useState(false);
   const setCurrent = useCallback((i: number) => {
     currentRef.current = i;
     setCurrentPage(i);
+    setParked(true);
   }, []);
+  useEffect(() => {
+    if (parked) traceJS('pager', 'parked', { at: currentRef.current });
+  }, [parked]);
+  // The backstop: a list that never reports (an empty window, a wedged layout) must not strand a
+  // poster over a live pager forever.
+  useEffect(() => {
+    if (parked) return;
+    const t = setTimeout(() => setParked(true), POSTER_BACKSTOP_MS);
+    return () => clearTimeout(t);
+  }, [parked]);
 
   const pagedRef = useRef<PagedReaderHandle>(null);
   const webtoonRef = useRef<WebtoonReaderHandle>(null);
@@ -3990,6 +4014,30 @@ const ReaderPane = forwardRef<
           }
         />
       )}
+      {/* THE INITIAL-POSITION POSTER — the target page, full frame, over the list until the list
+          reports it is parked (see `parked` above). It renders the very URI the pager will show
+          at that index, from cache, so its appearance and its removal are both invisible; what it
+          papers over is the parking transient of a non-zero initialScrollIndex, which an entrance
+          animation would otherwise expose as a blank. */}
+      {!parked &&
+        (() => {
+          const list = stitched ? flatItems : items;
+          const at = stitched ? prefixLen + startIndex : startIndex;
+          const uri = list[Math.max(0, Math.min(list.length - 1, at))]?.uri;
+          if (!uri) return null;
+          return (
+            <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+              <Image
+                source={{ uri }}
+                style={StyleSheet.absoluteFill}
+                // Same mapping ZoomablePage applies (fit-page → contain), so the poster and the
+                // page draw alike.
+                contentFit={settings.pageFit === 'fit-page' ? 'contain' : 'cover'}
+                cachePolicy="memory-disk"
+              />
+            </View>
+          );
+        })()}
       </Animated.View>
 
       {/* Tint/fade layers over the pages, under the chrome below. */}
