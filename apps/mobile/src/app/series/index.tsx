@@ -230,9 +230,18 @@ const ZOOM_THUMB_FADE_CLOSE = [0.7, 1];
 // The reader's static backdrop gets its OWN, earlier close — it is not part of what's being
 // carried away, it is the surface being uncovered, so matching the page's curve held it opaque
 // through the first third of the collapse and kept the grid hidden long after the page had
-// visibly left. Starts going immediately and is gone by the halfway point. Opening is unchanged
-// (it shares the content's range), since that direction was already right.
+// visibly left. Starts going immediately and is gone by the halfway point.
 const ZOOM_BACKDROP_FADE_CLOSE = [0.45, 0.98];
+// …and its own OPEN, for the mirrored reason: opening, it is the surface being COVERED, so it
+// arrives WITH the window rather than ahead of it. It shared the content's range ([0, 0.28]) for
+// a while, and on a reader-first zoom from a grid tile that was the whole "flash": the spring
+// passes 0.28 in its first ~100ms, so the full screen behind the still-tile-sized window went
+// opaque black four frames after the tap and the remaining half-second of zoom played against
+// black — a recording of it shows perfect sequencing and zero dropped frames, and it still read
+// as a hard cut. A full-flight ramp dims the grid in step with the window's growth instead,
+// reaching black as the window reaches the edges. (Details-first opens never render this
+// backdrop, which is why the browse zoom always looked right.)
+const ZOOM_BACKDROP_FADE_OPEN = [0, 1];
 // `computeContentTransformGeometry`'s aspect rule: below this difference the source and the
 // destination bound are close enough to shape that the scale COVERS (max), above it the scale
 // CONTAINS (min) and the mask does the cropping instead.
@@ -2246,11 +2255,11 @@ function SeriesReaderInstance({
     const range = zoomClosing.value ? ZOOM_CONTENT_FADE_CLOSE : ZOOM_CONTENT_FADE_OPEN;
     return { opacity: interpolate(q, range, [0, 1], Extrapolation.CLAMP) };
   });
-  // See ZOOM_BACKDROP_FADE_CLOSE — same shape as the content fade, one range different.
+  // See ZOOM_BACKDROP_FADE_CLOSE / _OPEN — same shape as the content fade, its own ranges.
   const zoomBackdropFadeStyle = useAnimatedStyle(() => {
     if (!zoomArmed.value) return { opacity: 0 };
     const q = Math.max(0, zoom.value);
-    const range = zoomClosing.value ? ZOOM_BACKDROP_FADE_CLOSE : ZOOM_CONTENT_FADE_OPEN;
+    const range = zoomClosing.value ? ZOOM_BACKDROP_FADE_CLOSE : ZOOM_BACKDROP_FADE_OPEN;
     return { opacity: interpolate(q, range, [0, 1], Extrapolation.CLAMP) };
   });
   const zoomThumbStyle = useAnimatedStyle(() => {
