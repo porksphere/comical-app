@@ -822,6 +822,15 @@ function SeriesReaderInstance({
   // key off it is anything that changes the SHAPE of the stitched window — see the adjacent-chapter
   // queries below for what that cost.
   const [detailsSettled, setDetailsSettled] = useState(!readerFirst);
+  // Whether the ENTRANCE animation has finished (the zoom spring's completion callback flips it —
+  // see startZoom). The zoom scales the WHOLE destination screen behind a growing mask, and a
+  // reader-first open whose pages are already cached (a sequence open, a History revisit) would
+  // otherwise mount the entire pager — list, cells, warm-ahead — in the very commit the spring
+  // starts, on the thread the spring is drawing on. So the pane rides `standby` until this flips:
+  // the visible page mounts and paints (it is what the entrance reveals), everything else waits
+  // out the flight — the same deferral `detailsSettled` gives the reveal, applied to the open.
+  const [entranceSettled, setEntranceSettled] = useState(false);
+  const markEntranceSettled = useCallback(() => setEntranceSettled(true), []);
   useEffect(() => {
     const t = setTimeout(() => {
       // Traced because this is the largest React commit anywhere near a reveal and it lands 300ms
@@ -1701,9 +1710,12 @@ function SeriesReaderInstance({
         // OPEN: mounting the details tree and playing the entrance, which is the cost any scheme
         // for reusing this page instead of rebuilding it would be buying back.
         trace('open', 'entered', { finished: !!finished });
+        // Fires on cancellation too (finished: false) — an interrupted entrance must still open
+        // the pane's window, or a dismissal begun mid-entrance would strand it at standby.
+        runOnJS(markEntranceSettled)();
       }),
     );
-  }, [zoom, zoomArmed, blankSource]);
+  }, [zoom, zoomArmed, blankSource, markEntranceSettled]);
   const onHeroCoverRect = useCallback((rect: ZoomRect) => {
     // Only the FIRST report, and only before the geometry is committed: the cover box re-lays out
     // as its aspect settles, and moving the destination mid-flight would visibly jump. What the
@@ -2851,7 +2863,7 @@ function SeriesReaderInstance({
               // on screen (no warm-ahead, render window of 1). Expanding flips this (a beat
               // after the transition settles — see detailsSettled) and the normal prefetch
               // pipeline resumes.
-              standby={detailsSettled}
+              standby={detailsSettled || !entranceSettled}
               inLibrary={inLibrary}
             />
           )}

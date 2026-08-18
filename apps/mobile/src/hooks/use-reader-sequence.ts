@@ -1,10 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import type { ApiCollectionPageItem } from '@/data/api';
 import { collectionItemsQuery } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import { useCollectedPageUris } from '@/hooks/use-collected-page-uris';
+
+/** How long the album's URI resolution stays cache-only after opening — long enough to cover the
+ *  zoom entrance (~400ms spring plus the settle commit), short enough to be invisible behind the
+ *  page skeletons if a cold chapter is actually needed. */
+const ENTRANCE_QUIET_MS = 700;
 
 /**
  * One entry of a cross-series READER SEQUENCE — a page the reader can land on, with everything the
@@ -83,7 +88,21 @@ export function useReaderSequence(params: ReaderSequenceParams): {
   const [latched, setLatched] = useState<ApiCollectionPageItem[] | null>(null);
   if (active && isFetched && latched === null) setLatched(filtered);
   const pages = latched ?? filtered;
-  const uriMap = useCollectedPageUris(active ? pages : []);
+
+  // The entrance QUIET WINDOW: for the album's first beat, URIs resolve from the query cache only
+  // — no fetches. The open animation scales the whole reader behind its mask, and a burst of
+  // chapter-list fetches (one per album chapter) landing mid-flight re-renders the reader per
+  // arrival, on the thread the animation draws on. The tapped page's chapter is cached whenever
+  // the album was opened from the grid (its tile just rendered from that very list), so the
+  // entrance always has its image; the remaining chapters fetch the moment the window closes. A
+  // cold deep link pays the window once, against a loading state that was up anyway.
+  const [quietOver, setQuietOver] = useState(false);
+  useEffect(() => {
+    if (!active) return;
+    const t = setTimeout(() => setQuietOver(true), ENTRANCE_QUIET_MS);
+    return () => clearTimeout(t);
+  }, [active]);
+  const uriMap = useCollectedPageUris(active ? pages : [], { fetch: quietOver });
 
   const entries = useMemo<ReaderSequenceEntry[]>(
     () =>

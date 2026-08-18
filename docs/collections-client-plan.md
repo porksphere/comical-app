@@ -465,6 +465,15 @@ abstraction" the previous paragraph predicted, built exactly there:
   until ITS reveal, while A's answer sits in the query cache for an instant re-reveal.
   Non-sequence instances are armed for their own series from mount — their ordering contract is
   untouched.
+- **The entrance flies light.** A sequence open is the one zoom entrance whose destination is
+  ready on the FIRST commit (warm cache → `readerReady` immediately), and the zoom scales the
+  whole destination screen behind its mask — mounting the entire pager plus firing one
+  chapter-list fetch per album chapter in that same commit was the chop. Two deferrals, both
+  copies of existing patterns: the pane rides `standby` until the zoom spring completes
+  (`entranceSettled` — render window of 1, no warm-ahead; the visible page still mounts and
+  paints, being what the entrance reveals), and URI resolution is cache-only for the album's
+  first beat (`ENTRANCE_QUIET_MS` in use-reader-sequence; the tapped page's chapter is cached by
+  construction — its tile just rendered from that list).
 - **The tiles get the full GALLERY ZOOM** (`lib/series-zoom`, the same flow a series card runs):
   press-in captures the tile's box as the source rect, the destination grows out of it — the
   reader for a page, the details for a series — and the dismissal collapses back into it, the
