@@ -12,6 +12,7 @@ import {
   RailSkeleton,
   SECTION_HEAD_HEIGHT,
   SectionHead,
+  sectionHeadHeight,
   railRowHeight,
   railStripHeight,
 } from '@/components/rail';
@@ -23,7 +24,7 @@ import { useBridgeMap } from '@/hooks/use-bridges';
 import { BottomTabInset, Spacing, TopLevelGutter, topLevelCenterInset } from '@/constants/theme';
 import { contentRowType, type ContentRow, type SeeAllTarget } from '@/data/content-rows';
 import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
-import { useIsLargeScreen } from '@/hooks/use-responsive';
+import { useIsCompact, useIsLargeScreen } from '@/hooks/use-responsive';
 import { useRouter } from '@/lib/nav';
 
 // Terminal-grid cell inter-row spacing — mirrors series-grid.tsx's CELL_PAD_TOP/BOTTOM so a home
@@ -122,6 +123,9 @@ export function ContentFeed({
 }) {
   const { numColumns, cardWidth, railViewport, width } = useGridLayout();
   const wide = useIsLargeScreen();
+  // The breakpoint `SectionHead` itself reads — the sticky sizes its band from the head's real
+  // height. A DIFFERENT breakpoint from `wide` above.
+  const compact = useIsCompact();
   const router = useRouter();
   // Per-bridge `cardSubtitles` flags: each rail reserves the sub line only if ITS bridge sends one
   // (aggregate rails mix bridges), and the terminal grid follows the feed's own bridge.
@@ -179,11 +183,17 @@ export function ContentFeed({
     const out: FeedSection[] = [];
     let y = paddingTop;
     for (const row of rows) {
-      // The ROW's top: the pinned copy IS this row, so pinning it there superimposes the two
-      // exactly at the hand-off. The row key rides along so that heading can hide itself while the
-      // pinned copy is up, and the See-all target so the pinned chevron stays live.
+      // The HEAD's top (past the row's own top gap): the pinned copy is that head, so pinning it
+      // there superimposes the two exactly at the hand-off — the band's padding is the band's, not
+      // the row's. The row key rides along so that heading can hide itself while the pinned copy is
+      // up, and the See-all target so the pinned chevron stays live.
       if (row.type === 'sectionHead') {
-        out.push({ key: row.key, label: row.title, top: y, ...(row.seeAll ? { seeAll: row.seeAll } : {}) });
+        out.push({
+          key: row.key,
+          label: row.title,
+          top: y + SECTION_GAP,
+          ...(row.seeAll ? { seeAll: row.seeAll } : {}),
+        });
       }
       const h = getFixedItemSize(row) ?? measuredHeights[row.key];
       if (h === undefined) break;
@@ -339,7 +349,10 @@ export function ContentFeed({
       <StickySectionHeader
         sections={sections}
         stickyTop={stickyHeaderTop}
-        height={SECTION_HEAD_ROW_HEIGHT}
+        contentHeight={sectionHeadHeight(compact)}
+        // The feed's inline heading rows are deliberately lopsided (SECTION_GAP above,
+        // HEADING_GAP below); the BAND pads evenly instead — see StickySectionHeader.
+        bandPadding={HEADING_GAP}
         // The overlay carries only the centering inset, like the list container: the row's own
         // `SectionHead` self-pads the gutter, exactly as it does inline.
         sidePad={centerPad}
@@ -348,16 +361,15 @@ export function ContentFeed({
         barOffset={stickyBarOffset}
         onActiveChange={onActiveChange}
         // The SAME row the list renders inline, drill chevron and all — see StickySectionHeader.
-        renderHeader={(s) => (
-          <View style={styles.sectionHead}>
+        renderHeader={(s) => {
+          const seeAll = s.seeAll;
+          return (
             <SectionHead
               title={s.label}
-              {...(s.seeAll
-                ? { onSeeAll: () => router.push({ pathname: '/results', params: seeAllParams(s.seeAll!) }) }
-                : {})}
+              {...(seeAll ? { onSeeAll: () => router.push({ pathname: '/results', params: seeAllParams(seeAll) }) } : {})}
             />
-          </View>
-        )}
+          );
+        }}
       />
     )}
     </View>

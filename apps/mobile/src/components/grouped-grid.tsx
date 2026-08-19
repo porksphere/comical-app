@@ -27,8 +27,8 @@ function SectionHeader({ label, count, hidden }: { label: string; count?: number
 
 /**
  * THE grouped grid: pre-computed header/items rows over `RecyclerList`, plus the pinned
- * `StickySectionHeader` — the heading row itself, held at the top bar's bottom edge on a blurred
- * material. Both grouped surfaces (the collected grid and the library grid) render through this.
+ * `StickySectionHeader` — the heading row itself, held at the top bar's bottom edge on the page's
+ * own background with a hairline under it. Both grouped surfaces (the collected grid and the library grid) render through this.
  * Callers own what an items row LOOKS like (`renderRow`) and how tall it is (`rowHeight`);
  * headings are the shared `SectionHeader`, rendered by the list and the sticky alike. Fixed row
  * heights are what keep a sectioned list from re-measuring as it scrolls — and what make the
@@ -120,7 +120,8 @@ export function GroupedGrid<T>({
         <StickySectionHeader
           sections={sections}
           stickyTop={stickyHeaderTop}
-          height={RowHeight}
+          // The row centres its own text in `RowHeight`, so the band needs no padding of its own.
+          contentHeight={RowHeight}
           sidePad={sidePad}
           resetKey={scopeKey}
           scrollOffset={sharedValues.scrollOffset}
