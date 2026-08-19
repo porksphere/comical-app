@@ -7,7 +7,15 @@ import { type SharedValue } from 'react-native-reanimated';
 
 import { HomeGridBlock } from '@/components/home-grid-block';
 import { SkeletonCard } from '@/components/grid-skeleton';
-import { Rail, RailSkeleton, SECTION_HEAD_HEIGHT, SectionHead, railRowHeight, railStripHeight } from '@/components/rail';
+import {
+  Rail,
+  RailSkeleton,
+  SECTION_HEAD_HEIGHT,
+  SectionHead,
+  railRowHeight,
+  railStripHeight,
+  sectionHeadHeight,
+} from '@/components/rail';
 import { RecyclerList } from '@/components/recycler-list';
 import { RetryBlock } from '@/components/retry-block';
 import { estimatedCardHeight, SeriesCard } from '@/components/series-card';
@@ -16,7 +24,7 @@ import { useBridgeMap } from '@/hooks/use-bridges';
 import { BottomTabInset, Spacing, TopLevelGutter, topLevelCenterInset } from '@/constants/theme';
 import { contentRowType, type ContentRow, type SeeAllTarget } from '@/data/content-rows';
 import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
-import { useIsLargeScreen } from '@/hooks/use-responsive';
+import { useIsCompact, useIsLargeScreen } from '@/hooks/use-responsive';
 import { useRouter } from '@/lib/nav';
 
 // Terminal-grid cell inter-row spacing — mirrors series-grid.tsx's CELL_PAD_TOP/BOTTOM so a home
@@ -115,6 +123,9 @@ export function ContentFeed({
 }) {
   const { numColumns, cardWidth, railViewport, width } = useGridLayout();
   const wide = useIsLargeScreen();
+  // The breakpoint `SectionHead` itself reads — the pinned copy must size to the same head height
+  // (see `sectionHeadHeight`), and this is a DIFFERENT breakpoint from `wide` above.
+  const compact = useIsCompact();
   const router = useRouter();
   // Per-bridge `cardSubtitles` flags: each rail reserves the sub line only if ITS bridge sends one
   // (aggregate rails mix bridges), and the terminal grid follows the feed's own bridge.
@@ -323,7 +334,7 @@ export function ContentFeed({
       <StickySectionHeader
         sections={sections}
         stickyTop={stickyHeaderTop}
-        height={SECTION_HEAD_HEIGHT}
+        height={sectionHeadHeight(compact)}
         // The overlay carries only the centering inset (like the list container); the SectionHead
         // inside self-pads TopLevelGutter, exactly as the inline heading rows do.
         sidePad={centerPad}
