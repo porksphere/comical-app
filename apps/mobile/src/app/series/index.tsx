@@ -1332,6 +1332,10 @@ function SeriesReaderInstance({
   const zoomArmed = useSharedValue(false);
   // Which set of cross-fade ranges is in play (see the constants) — an exit uses different ones.
   const zoomClosing = useSharedValue(false);
+  // The flying copy's IMAGE aspect (w/h), captured from its own onLoad. 0 = not yet known. What
+  // the sequence-mode copy morph needs (see zoomThumbStyle): the copy's rect interpolates toward
+  // the image's true fit rect, and only the image itself knows its shape.
+  const zoomThumbAspect = useSharedValue(0);
   // Back-swipe (details mode): the native stack's pop gesture, recreated — the route is a
   // contained transparent modal (needed for the reader's dismissal reveal), which doesn't get
   // the real one. A decisive rightward drag ANYWHERE on the details (full-surface, like the
@@ -1697,11 +1701,17 @@ function SeriesReaderInstance({
     }
   }, [zoomSource, id, depth]);
   /** The copy reported pixels. Wired to its `onError` as well as its `onLoad` — a cover that is
-   *  never going to draw is not a reason to keep two of it on screen forever. */
-  const onZoomThumbPainted = useCallback(() => {
-    thumbPaintedRef.current = true;
-    blankSource();
-  }, [blankSource]);
+   *  never going to draw is not a reason to keep two of it on screen forever. The load event also
+   *  carries the image's intrinsic size, which feeds the sequence-mode copy morph. */
+  const onZoomThumbPainted = useCallback(
+    (e?: unknown) => {
+      const src = (e as ImageLoadEventData | undefined)?.source;
+      if (src?.width && src.height) zoomThumbAspect.set(src.width / src.height);
+      thumbPaintedRef.current = true;
+      blankSource();
+    },
+    [blankSource, zoomThumbAspect],
+  );
   const startZoom = useCallback(() => {
     if (zoomStartedRef.current) return;
     zoomStartedRef.current = true;
@@ -2267,11 +2277,30 @@ function SeriesReaderInstance({
     const range = zoomClosing.value ? ZOOM_BACKDROP_FADE_CLOSE : ZOOM_BACKDROP_FADE_OPEN;
     return { opacity: interpolate(q, range, [0, 1], Extrapolation.CLAMP) };
   });
+  // Sequence mode only: the copy IS the page's own image (not a series cover standing in for a
+  // card), so its rect MORPHS — from the tile-shaped `thumb` rect at q = 0, where cover-fit
+  // reproduces the tile's crop exactly, to the image's TRUE fit rect at q = 1, where cover-fit in
+  // an image-aspect rect ≡ contain, i.e. pixel-identical to the page rendered beneath it. Without
+  // the morph the copy stays tile-shaped for the whole flight, and through the cross-fade window
+  // the SAME image is drawn twice a few percent apart (a 2:3 cover-crop over an image-aspect
+  // contain) — a double exposure that reads as blur. Chapter-mode zooms keep the fixed rect: their
+  // copy is the series cover, deliberately a different picture from the page dissolving off it.
+  // fit-width gates the morph off — the page doesn't render at the contain rect there.
+  const copyMorphs = !!sequence && settings.pageFit === 'fit-page';
   const zoomThumbStyle = useAnimatedStyle(() => {
+    const base = zoomGeom?.thumb ?? { x: 0, y: 0, width: 0, height: 0 };
     if (!zoomArmed.value) {
       // Same style SHAPE as the branch below — reanimated wants one per view, and both can run for
       // one instance.
-      return { opacity: 0, borderRadius: hero ? hero.radius : 0, transform: [{ translateY: 0 }] };
+      return {
+        left: base.x,
+        top: base.y,
+        width: base.width,
+        height: base.height,
+        opacity: 0,
+        borderRadius: hero ? hero.radius : 0,
+        transform: [{ translateY: 0 }],
+      };
     }
     const q = Math.max(0, zoom.value);
     const range = zoomClosing.value ? ZOOM_THUMB_FADE_CLOSE : ZOOM_THUMB_FADE_OPEN;
@@ -2281,7 +2310,28 @@ function SeriesReaderInstance({
     // steady rather than letting it grow with the page. (The library gets this for free: it moves
     // the real source view, which simply keeps its own radius under the tracked scale.)
     const s = zoomGeom ? zoomGeom.s + (1 - zoomGeom.s) * q : 1;
+    let rect = base;
+    const ia = zoomThumbAspect.value;
+    if (copyMorphs && ia > 0) {
+      // The image's fit-page rect (contain, centred) — in PAGE coordinates, which for a
+      // screen-sized page are screen coordinates.
+      const screenAspect = width / height;
+      const fw = ia >= screenAspect ? width : height * ia;
+      const fh = ia >= screenAspect ? width / ia : height;
+      const fx = (width - fw) / 2;
+      const fy = (height - fh) / 2;
+      rect = {
+        x: base.x + (fx - base.x) * q,
+        y: base.y + (fy - base.y) * q,
+        width: base.width + (fw - base.width) * q,
+        height: base.height + (fh - base.height) * q,
+      };
+    }
     return {
+      left: rect.x,
+      top: rect.y,
+      width: rect.width,
+      height: rect.height,
       opacity: interpolate(q, range, [1, 0], Extrapolation.CLAMP),
       borderRadius: (hero ? hero.radius : 0) / Math.max(s, 0.01),
       // The copy is laid out ON the destination bound, so it takes the scroll correction as a plain
@@ -2291,7 +2341,7 @@ function SeriesReaderInstance({
       // card at q = 0 and on the real cover at q = 1.
       transform: [{ translateY: -zoomBoundShift(zoomGeom, detailsScrollOffset.value) }],
     };
-  }, [zoomGeom]);
+  }, [zoomGeom, hero, copyMorphs, width, height]);
   // What the flying copy DRAWS. A series open flies the series cover (the route's `cover` param is
   // the tapped card's own URL). A SEQUENCE open grew out of a page TILE, so the copy is that
   // page's image — the MOUNT entry's URI (already latched in sequenceTarget), which is the very
