@@ -105,14 +105,6 @@ export const SECTION_HEAD_HEIGHT = 32;
 const HEAD_HEIGHT_COMPACT = 28;
 const HEAD_HEIGHT_WIDE = SECTION_HEAD_HEIGHT;
 
-/** A `SectionHead`'s rendered height at the caller's breakpoint — pass `useIsCompact()`, the same
- *  hook the head itself reads. Anything drawing a COPY of a head (the sticky pinned heading) must
- *  size to this exactly: a band 4px taller than the head it stands in for, with the content centred
- *  in it, lands the copy 2px low and the hand-off pops. */
-export function sectionHeadHeight(compact: boolean): number {
-  return compact ? HEAD_HEIGHT_COMPACT : HEAD_HEIGHT_WIDE;
-}
-
 // Drill-down chevron on a `SectionHead`. Sized against the title's letters, not its line box: lucide
 // draws chevron-right as `m9 18 6-6-6-6`, spanning only the middle half of its 24-unit box, so half
 // of any size here is whitespace and the drawn glyph is half the number. At 25/28 that's 12.5/14px

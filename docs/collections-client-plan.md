@@ -504,20 +504,22 @@ User feedback after the phases landed reshaped the browsing surface:
   scroll offset: JS state swaps which label shows (boundary changes only), and the push-out ride is
   an animated style on the UI-thread scroll offset the list already publishes, clipped at the bar's
   edge. One `SectionHeader` component renders both the inline row and the pinned copy, so the
-  hand-off stays pixel-identical. The pinned copy draws **no chrome of its own** — no fill, no
-  rule, just the heading content: a solid band announcing itself read worse than the overlap it
-  was covering, and a hairline riding the push-out was its own artifact.
+  hand-off stays pixel-identical. The pinned thing is a **floating black PILL** — a title pill,
+  plus a count pill pushed right — not a copy of the heading in place: a full-width band (with a
+  fill, then without one) read as a bar appearing over the list, where a pill reads as chrome,
+  which is what it is. Since the two presentations now differ, the surface HIDES the heading the
+  pill stands in for (`onActiveChange` → that row keeps its space, drops its content), because at
+  the pin line the two are exactly superimposed.
 - **Browse's section headings pin too** — the sticky generalized into `StickySectionHeader`
   (sticky-section-header.tsx), which `GroupedGrid` and `ContentFeed` both render: caller-supplied
   section offsets, a reaction that reports boundary crossings to JS (ignoring its initial report —
   a remounted list's scroll shared value is stale until the first real scroll event), the
   agree-guarded push-out, and — new for Browse — `barOffset`: the pinned heading RIDES the sliding
   top bar so it stays glued to the bar's bottom edge as it hides and returns. It keeps the See-all
-  chevron live (sections thread their target through; the overlay passes touches through except on
-  pressables), sizes to `sectionHeadHeight(compact)` — the head's real height at the breakpoint the
-  head itself reads, since a taller band with centred content landed the copy 2px low — and stays
-  MOUNTED, flipping visible on a UI-thread opacity at the exact frame the line is crossed rather
-  than mounting a frame late off the JS boundary report. ContentFeed's two
+  chevron live inside the pill (sections thread their target through; the overlay passes touches
+  through except on pressables), and stays MOUNTED — its quick fade is driven by a UI-thread
+  reaction on the same arithmetic, so it starts on the exact frame the line is crossed rather than
+  a frame late off the JS boundary report. ContentFeed's two
   variable-height row types (grid blocks) report their measured heights into the offset walk;
   sections past a not-yet-measured block are omitted (it is at least a drawDistance away). No
   sticky while a list header (error block) is up — it would shift every offset.

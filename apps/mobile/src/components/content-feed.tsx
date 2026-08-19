@@ -1,6 +1,6 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { useCallback, useMemo, useState, type ReactElement, type RefObject } from 'react';
-import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { Pressable, StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import type { ComposedGesture } from 'react-native-gesture-handler';
 import type Animated from 'react-native-reanimated';
 import { type SharedValue } from 'react-native-reanimated';
@@ -14,17 +14,22 @@ import {
   SectionHead,
   railRowHeight,
   railStripHeight,
-  sectionHeadHeight,
 } from '@/components/rail';
 import { RecyclerList } from '@/components/recycler-list';
+import { ChevronRightIcon } from '@/components/icons/ui-icons';
 import { RetryBlock } from '@/components/retry-block';
 import { estimatedCardHeight, SeriesCard } from '@/components/series-card';
-import { StickySectionHeader, type StickySection } from '@/components/sticky-section-header';
+import {
+  StickyPill,
+  StickyPillText,
+  StickySectionHeader,
+  type StickySection,
+} from '@/components/sticky-section-header';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { BottomTabInset, Spacing, TopLevelGutter, topLevelCenterInset } from '@/constants/theme';
 import { contentRowType, type ContentRow, type SeeAllTarget } from '@/data/content-rows';
 import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
-import { useIsCompact, useIsLargeScreen } from '@/hooks/use-responsive';
+import { useIsLargeScreen } from '@/hooks/use-responsive';
 import { useRouter } from '@/lib/nav';
 
 // Terminal-grid cell inter-row spacing — mirrors series-grid.tsx's CELL_PAD_TOP/BOTTOM so a home
@@ -123,9 +128,6 @@ export function ContentFeed({
 }) {
   const { numColumns, cardWidth, railViewport, width } = useGridLayout();
   const wide = useIsLargeScreen();
-  // The breakpoint `SectionHead` itself reads — the pinned copy must size to the same head height
-  // (see `sectionHeadHeight`), and this is a DIFFERENT breakpoint from `wide` above.
-  const compact = useIsCompact();
   const router = useRouter();
   // Per-bridge `cardSubtitles` flags: each rail reserves the sub line only if ITS bridge sends one
   // (aggregate rails mix bridges), and the terminal grid follows the feed's own bridge.
@@ -183,11 +185,16 @@ export function ContentFeed({
     const out: FeedSection[] = [];
     let y = paddingTop;
     for (const row of rows) {
-      // The pinned band mirrors the TITLE, so the offset points at the title's top (past the
-      // section gap), not the row's. The See-all target rides along — the pinned chevron stays
-      // live, not a picture of a control.
+      // The pill stands in for the TITLE, so the offset points at the title's top (past the
+      // section gap), not the row's. The row key rides along so that heading can hide itself while
+      // the pill is up, and the See-all target so the pinned chevron stays live.
       if (row.type === 'sectionHead') {
-        out.push({ label: row.title, top: y + SECTION_GAP, ...(row.seeAll ? { seeAll: row.seeAll } : {}) });
+        out.push({
+          key: row.key,
+          label: row.title,
+          top: y + SECTION_GAP,
+          ...(row.seeAll ? { seeAll: row.seeAll } : {}),
+        });
       }
       const h = getFixedItemSize(row) ?? measuredHeights[row.key];
       if (h === undefined) break;
@@ -195,6 +202,11 @@ export function ContentFeed({
     }
     return out;
   }, [rows, header, stickyHeaderTop, paddingTop, getFixedItemSize, measuredHeights]);
+
+  // The heading the pill is currently standing in for — that row keeps its space but drops its
+  // content, so the pill never duplicates the heading it replaced.
+  const [pinnedKey, setPinnedKey] = useState<string | null>(null);
+  const onActiveChange = useCallback((key: string | null) => setPinnedKey(key), []);
 
   // Terminal-grid first-load skeleton — rows self-pad Spacing.four (via styles.row), matching the real
   // gridRow's inset (ContentFeed's container is centering-only, unlike GridSkeleton's SeriesGrid shape).
@@ -241,7 +253,11 @@ export function ContentFeed({
         switch (item.type) {
           case 'sectionHead':
             return (
-              <View style={styles.sectionHead}>
+              // Hidden — space kept — while the pinned pill stands in for this heading: at the pin
+              // line the two are exactly superimposed, and the pill is the copy that stays.
+              <View
+                style={[styles.sectionHead, item.key === pinnedKey && styles.headHidden]}
+                pointerEvents={item.key === pinnedKey ? 'none' : 'auto'}>
                 <SectionHead
                   title={item.title}
                   // Every rail's "See all" pushes the shared /results page for that one bridge (a list
@@ -334,28 +350,33 @@ export function ContentFeed({
       <StickySectionHeader
         sections={sections}
         stickyTop={stickyHeaderTop}
-        height={sectionHeadHeight(compact)}
-        // The overlay carries only the centering inset (like the list container); the SectionHead
-        // inside self-pads TopLevelGutter, exactly as the inline heading rows do.
-        sidePad={centerPad}
+        // Pills are the overlay's OWN content (not a SectionHead, which self-pads), so they take
+        // the full inset the inline headings land at: the centering inset plus the gutter.
+        sidePad={centerPad + TopLevelGutter}
         resetKey={scopeKey}
         scrollOffset={sharedValues.scrollOffset}
         barOffset={stickyBarOffset}
-        // The SAME component the inline rows render, chevron included — SectionHead self-pads the
-        // gutter exactly like the inline rows (no extra wrapper: one crept in here once and shoved
-        // the pinned copy a full gutter right at the hand-off). The overlay keeps pressables live,
-        // so the pinned See-all drills exactly as the inline one does.
-        renderHeader={(s) => {
+        onActiveChange={onActiveChange}
+        // A title pill, drillable exactly like the heading it replaced when the section has a
+        // See-all — the chevron is a live control, not a picture of one.
+        renderPills={(s) => {
           const seeAll = s.seeAll;
-          return (
-            <SectionHead
-              title={s.label}
-              onSeeAll={
-                seeAll
-                  ? () => router.push({ pathname: '/results', params: seeAllParams(seeAll) })
-                  : undefined
-              }
-            />
+          const inner = (
+            <StickyPill>
+              <StickyPillText>{s.label}</StickyPillText>
+              {seeAll && <ChevronRightIcon color="#fff" size={14} strokeWidth={2.5} />}
+            </StickyPill>
+          );
+          return seeAll ? (
+            <Pressable
+              testID={`feed.sticky-see-all.${s.key}`}
+              accessibilityRole="button"
+              accessibilityLabel={`See all ${s.label}`}
+              onPress={() => router.push({ pathname: '/results', params: seeAllParams(seeAll) })}>
+              {inner}
+            </Pressable>
+          ) : (
+            inner
           );
         }}
       />
@@ -382,6 +403,10 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     paddingTop: CELL_PAD_TOP,
     paddingBottom: CELL_PAD_BOTTOM,
+  },
+  // Space preserved, content dropped, while the pinned pill stands in for this heading.
+  headHidden: {
+    opacity: 0,
   },
   // Shared standalone heading row for every section — SECTION_GAP above, HEADING_GAP below.
   sectionHead: {
