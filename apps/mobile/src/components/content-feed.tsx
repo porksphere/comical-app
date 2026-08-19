@@ -12,19 +12,14 @@ import {
   RailSkeleton,
   SECTION_HEAD_HEIGHT,
   SectionHead,
+  SectionHeadContent,
   railRowHeight,
   railStripHeight,
 } from '@/components/rail';
 import { RecyclerList } from '@/components/recycler-list';
-import { ChevronRightIcon } from '@/components/icons/ui-icons';
 import { RetryBlock } from '@/components/retry-block';
 import { estimatedCardHeight, SeriesCard } from '@/components/series-card';
-import {
-  StickyPill,
-  StickyPillText,
-  StickySectionHeader,
-  type StickySection,
-} from '@/components/sticky-section-header';
+import { StickyPill, StickySectionHeader, type StickySection } from '@/components/sticky-section-header';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { BottomTabInset, Spacing, TopLevelGutter, topLevelCenterInset } from '@/constants/theme';
 import { contentRowType, type ContentRow, type SeeAllTarget } from '@/data/content-rows';
@@ -358,13 +353,19 @@ export function ContentFeed({
         barOffset={stickyBarOffset}
         onActiveChange={onActiveChange}
         // A title pill, drillable exactly like the heading it replaced when the section has a
-        // See-all — the chevron is a live control, not a picture of one.
+        // See-all — the chevron is a live control, not a picture of one. `SectionHeadContent` is
+        // the heading's OWN content, so the title and the chevron are the same size in the pill as
+        // they were in the row; only their colour changes for the black ground.
         renderPills={(s) => {
           const seeAll = s.seeAll;
           const inner = (
             <StickyPill>
-              <StickyPillText>{s.label}</StickyPillText>
-              {seeAll && <ChevronRightIcon color="#fff" size={14} strokeWidth={2.5} />}
+              <SectionHeadContent
+                title={s.label}
+                chevron={!!seeAll}
+                titleColor="#fff"
+                chevronColor="rgba(255,255,255,0.65)"
+              />
             </StickyPill>
           );
           return seeAll ? (

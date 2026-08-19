@@ -14,6 +14,11 @@ import { ThemedText } from '@/components/themed-text';
 import { RowHeight, Spacing } from '@/constants/theme';
 import type { GroupedRow } from '@/data/grouped-rows';
 
+/** The heading text's line box (`smallBold`/`small` in themed-text). The inline heading centres it
+ *  in a `RowHeight` row, so this is what the sticky offset has to account for to land the pill's
+ *  text exactly where the inline text was. */
+const HEADER_TEXT_LINE = 20;
+
 /** A section's inline heading row. `hidden` drops its content — not its space — while the pinned
  *  pill is standing in for it, so the two are never on screen at once (they are exactly
  *  superimposed at the pin line). */
@@ -82,7 +87,16 @@ export function GroupedGrid<T>({
     const out: StickySection[] = [];
     let y = paddingTop;
     for (const row of rows) {
-      if (row.type === 'header') out.push({ key: row.key, label: row.label, count: row.count, top: y });
+      if (row.type === 'header') {
+        // The TEXT's top, not the row's: the inline label is centred in its row, and the pill's
+        // text lands on this line — matching them is what keeps the hand-off from jumping.
+        out.push({
+          key: row.key,
+          label: row.label,
+          count: row.count,
+          top: y + (RowHeight - HEADER_TEXT_LINE) / 2,
+        });
+      }
       y += row.type === 'header' ? RowHeight : rowHeight;
     }
     return out;
@@ -133,7 +147,10 @@ export function GroupedGrid<T>({
               </StickyPill>
               {s.count !== undefined && (
                 <StickyPill>
-                  <StickyPillText>{s.count}</StickyPillText>
+                  {/* `small` + dimmed, exactly as the inline count is `small`/textSecondary. */}
+                  <StickyPillText type="small" dim>
+                    {s.count}
+                  </StickyPillText>
                 </StickyPill>
               )}
             </>

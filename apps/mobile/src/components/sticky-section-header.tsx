@@ -17,11 +17,14 @@ import { Spacing } from '@/constants/theme';
  *  (contentOffset 0 = the top of the list's padding). */
 export type StickySection = { key: string; label: string; count?: number; top: number };
 
-/** The band the pills live in — purely the distance the push-out slides, comfortably clear of a
- *  pill's own height. The pill sits at the band's TOP (not centred in it), so `stickyTop` is the
- *  pill's top edge exactly: the gap written at the call site is the gap on screen, with no hidden
- *  centring slack between the two. */
-const PILL_BAND_HEIGHT = 36;
+/** The band the pills live in — purely the distance the push-out slides, comfortably clear of the
+ *  tallest pill (a wide-breakpoint section title, 30px of line box plus the padding below). */
+const PILL_BAND_HEIGHT = 48;
+/** The pill's own padding. The vertical half is subtracted from where the band sits, so the pill's
+ *  TEXT — not its black edge — lands on `stickyTop`, i.e. exactly where the heading's text was
+ *  sitting when it pinned. Without that the hand-off jumps by the padding. */
+const PILL_PAD_V = Spacing.one;
+const PILL_PAD_H = Spacing.two + Spacing.half;
 /** Quick, deliberately: the pill is replacing a heading that is right there, so a slow fade reads
  *  as a lag rather than a transition. */
 const PILL_FADE_MS = 140;
@@ -36,11 +39,21 @@ export function StickyPill({ children }: { children: ReactNode }) {
   return <View style={styles.pill}>{children}</View>;
 }
 
-/** The pill's label, in the one type both surfaces use — pills read as one family across Browse,
- *  the library and a collection, whatever the heading they came from is set in. */
-export function StickyPillText({ children }: { children: ReactNode }) {
+/** Text inside a pill. `type` MUST be the type the inline heading uses — the pill is the same
+ *  heading in a different frame, not a smaller restatement of it, and a pill whose text shrinks at
+ *  the hand-off is the jankiest thing this component can do. Only the colour changes (white, or
+ *  dimmed white for a secondary figure like a count) because the ground it sits on changed. */
+export function StickyPillText({
+  children,
+  type = 'smallBold',
+  dim,
+}: {
+  children: ReactNode;
+  type?: 'small' | 'smallBold';
+  dim?: boolean;
+}) {
   return (
-    <ThemedText type="smallBold" numberOfLines={1} style={styles.pillText}>
+    <ThemedText type={type} numberOfLines={1} style={[styles.pillText, dim && styles.pillTextDim]}>
       {children}
     </ThemedText>
   );
@@ -189,7 +202,7 @@ export function StickySectionHeader<S extends StickySection>({
     // intercept a tap meant for the content under it.
     <Animated.View
       pointerEvents={active >= 0 ? 'box-none' : 'none'}
-      style={[styles.clip, { top: stickyTop, height: PILL_BAND_HEIGHT }, bandStyle]}>
+      style={[styles.clip, { top: stickyTop - PILL_PAD_V, height: PILL_BAND_HEIGHT }, bandStyle]}>
       <Animated.View
         pointerEvents="box-none"
         style={[styles.pillRow, { height: PILL_BAND_HEIGHT, paddingHorizontal: sidePad }, pushStyle]}>
@@ -219,8 +232,8 @@ const styles = StyleSheet.create({
     gap: Spacing.half,
     // Pure black, unthemed — chrome floating over content (see StickyPill).
     backgroundColor: '#000',
-    paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.one - 2,
+    paddingHorizontal: PILL_PAD_H,
+    paddingVertical: PILL_PAD_V,
     borderRadius: 999,
     // A long title ellipsizes inside its pill rather than pushing the count pill off the row.
     flexShrink: 1,
@@ -228,5 +241,8 @@ const styles = StyleSheet.create({
   pillText: {
     color: '#fff',
     flexShrink: 1,
+  },
+  pillTextDim: {
+    color: 'rgba(255,255,255,0.65)',
   },
 });

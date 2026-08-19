@@ -517,7 +517,9 @@ User feedback after the phases landed reshaped the browsing surface:
   agree-guarded push-out, and — new for Browse — `barOffset`: the pinned heading RIDES the sliding
   top bar so it stays glued to the bar's bottom edge as it hides and returns. It keeps the See-all
   chevron live inside the pill (sections thread their target through; the overlay passes touches
-  through except on pressables), and stays MOUNTED — its quick fade is driven by a UI-thread
+  through except on pressables) — and the pill renders the heading's OWN content component
+  (`SectionHeadContent`, extracted from `SectionHead`), so the title and chevron are the exact
+  sizes they were in the row and only their colour changes; it stays MOUNTED — its quick fade is driven by a UI-thread
   reaction on the same arithmetic, so it starts on the exact frame the line is crossed rather than
   a frame late off the JS boundary report. ContentFeed's two
   variable-height row types (grid blocks) report their measured heights into the offset walk;
