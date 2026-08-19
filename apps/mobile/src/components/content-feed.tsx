@@ -1,6 +1,6 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { useCallback, useMemo, useState, type ReactElement, type RefObject } from 'react';
-import { Pressable, StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import type { ComposedGesture } from 'react-native-gesture-handler';
 import type Animated from 'react-native-reanimated';
 import { type SharedValue } from 'react-native-reanimated';
@@ -12,14 +12,13 @@ import {
   RailSkeleton,
   SECTION_HEAD_HEIGHT,
   SectionHead,
-  SectionHeadContent,
   railRowHeight,
   railStripHeight,
 } from '@/components/rail';
 import { RecyclerList } from '@/components/recycler-list';
 import { RetryBlock } from '@/components/retry-block';
 import { estimatedCardHeight, SeriesCard } from '@/components/series-card';
-import { StickyPill, StickySectionHeader, type StickySection } from '@/components/sticky-section-header';
+import { StickySectionHeader, type StickySection } from '@/components/sticky-section-header';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { BottomTabInset, Spacing, TopLevelGutter, topLevelCenterInset } from '@/constants/theme';
 import { contentRowType, type ContentRow, type SeeAllTarget } from '@/data/content-rows';
@@ -180,16 +179,11 @@ export function ContentFeed({
     const out: FeedSection[] = [];
     let y = paddingTop;
     for (const row of rows) {
-      // The pill stands in for the TITLE, so the offset points at the title's top (past the
-      // section gap), not the row's. The row key rides along so that heading can hide itself while
-      // the pill is up, and the See-all target so the pinned chevron stays live.
+      // The ROW's top: the pinned copy IS this row, so pinning it there superimposes the two
+      // exactly at the hand-off. The row key rides along so that heading can hide itself while the
+      // pinned copy is up, and the See-all target so the pinned chevron stays live.
       if (row.type === 'sectionHead') {
-        out.push({
-          key: row.key,
-          label: row.title,
-          top: y + SECTION_GAP,
-          ...(row.seeAll ? { seeAll: row.seeAll } : {}),
-        });
+        out.push({ key: row.key, label: row.title, top: y, ...(row.seeAll ? { seeAll: row.seeAll } : {}) });
       }
       const h = getFixedItemSize(row) ?? measuredHeights[row.key];
       if (h === undefined) break;
@@ -198,8 +192,8 @@ export function ContentFeed({
     return out;
   }, [rows, header, stickyHeaderTop, paddingTop, getFixedItemSize, measuredHeights]);
 
-  // The heading the pill is currently standing in for — that row keeps its space but drops its
-  // content, so the pill never duplicates the heading it replaced.
+  // The heading the pinned copy is currently standing in for — that row keeps its space but drops
+  // its content, so one heading is never drawn twice.
   const [pinnedKey, setPinnedKey] = useState<string | null>(null);
   const onActiveChange = useCallback((key: string | null) => setPinnedKey(key), []);
 
@@ -248,8 +242,8 @@ export function ContentFeed({
         switch (item.type) {
           case 'sectionHead':
             return (
-              // Hidden — space kept — while the pinned pill stands in for this heading: at the pin
-              // line the two are exactly superimposed, and the pill is the copy that stays.
+              // Hidden — space kept — while the pinned copy stands in for this heading: at the pin
+              // line the two are exactly superimposed, so one heading is never drawn twice.
               <View
                 style={[styles.sectionHead, item.key === pinnedKey && styles.headHidden]}
                 pointerEvents={item.key === pinnedKey ? 'none' : 'auto'}>
@@ -345,41 +339,25 @@ export function ContentFeed({
       <StickySectionHeader
         sections={sections}
         stickyTop={stickyHeaderTop}
-        // Pills are the overlay's OWN content (not a SectionHead, which self-pads), so they take
-        // the full inset the inline headings land at: the centering inset plus the gutter.
-        sidePad={centerPad + TopLevelGutter}
+        height={SECTION_HEAD_ROW_HEIGHT}
+        // The overlay carries only the centering inset, like the list container: the row's own
+        // `SectionHead` self-pads the gutter, exactly as it does inline.
+        sidePad={centerPad}
         resetKey={scopeKey}
         scrollOffset={sharedValues.scrollOffset}
         barOffset={stickyBarOffset}
         onActiveChange={onActiveChange}
-        // A title pill, drillable exactly like the heading it replaced when the section has a
-        // See-all — the chevron is a live control, not a picture of one. `SectionHeadContent` is
-        // the heading's OWN content, so the title and the chevron are the same size in the pill as
-        // they were in the row; only their colour changes for the black ground.
-        renderPills={(s) => {
-          const seeAll = s.seeAll;
-          const inner = (
-            <StickyPill>
-              <SectionHeadContent
-                title={s.label}
-                chevron={!!seeAll}
-                titleColor="#fff"
-                chevronColor="rgba(255,255,255,0.65)"
-              />
-            </StickyPill>
-          );
-          return seeAll ? (
-            <Pressable
-              testID={`feed.sticky-see-all.${s.key}`}
-              accessibilityRole="button"
-              accessibilityLabel={`See all ${s.label}`}
-              onPress={() => router.push({ pathname: '/results', params: seeAllParams(seeAll) })}>
-              {inner}
-            </Pressable>
-          ) : (
-            inner
-          );
-        }}
+        // The SAME row the list renders inline, drill chevron and all — see StickySectionHeader.
+        renderHeader={(s) => (
+          <View style={styles.sectionHead}>
+            <SectionHead
+              title={s.label}
+              {...(s.seeAll
+                ? { onSeeAll: () => router.push({ pathname: '/results', params: seeAllParams(s.seeAll!) }) }
+                : {})}
+            />
+          </View>
+        )}
       />
     )}
     </View>
@@ -405,7 +383,7 @@ const styles = StyleSheet.create({
     paddingTop: CELL_PAD_TOP,
     paddingBottom: CELL_PAD_BOTTOM,
   },
-  // Space preserved, content dropped, while the pinned pill stands in for this heading.
+  // Space preserved, content dropped, while the pinned copy stands in for this heading.
   headHidden: {
     opacity: 0,
   },

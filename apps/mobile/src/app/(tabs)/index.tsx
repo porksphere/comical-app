@@ -857,10 +857,11 @@ export default function BrowseScreen() {
           bridgeId={isComical ? undefined : bridgeId}
           direct={isComical ? undefined : directBridge}
           crossfading={switching}
-          // The pinned pill sits the SAME distance below the bar as the list's own first row does
-          // (BarContentGap — the app's bar-to-content rhythm), and RIDES the bar's slide, so that
-          // gap is identical whether the bar is expanded or docked under the status bar.
-          stickyHeaderTop={headerHeight + BarContentGap}
+          // Flush to the bar's bottom edge — the pinned heading carries a blurred material, and
+          // two blurred surfaces with a strip of unblurred content between them reads as a gap in
+          // the chrome, not as breathing room. It RIDES the bar's slide, so it stays met to that
+          // edge whether the bar is expanded or docked under the status bar.
+          stickyHeaderTop={headerHeight}
           stickyBarOffset={barOffset}
           sharedValues={sharedValues}
           onScroll={onListScroll}

@@ -504,22 +504,26 @@ User feedback after the phases landed reshaped the browsing surface:
   scroll offset: JS state swaps which label shows (boundary changes only), and the push-out ride is
   an animated style on the UI-thread scroll offset the list already publishes, clipped at the bar's
   edge. One `SectionHeader` component renders both the inline row and the pinned copy, so the
-  hand-off stays pixel-identical. The pinned thing is a **floating black PILL** — a title pill,
-  plus a count pill pushed right — not a copy of the heading in place: a full-width band (with a
-  fill, then without one) read as a bar appearing over the list, where a pill reads as chrome,
-  which is what it is. Since the two presentations now differ, the surface HIDES the heading the
-  pill stands in for (`onActiveChange` → that row keeps its space, drops its content), because at
-  the pin line the two are exactly superimposed.
+  hand-off stays pixel-identical — because it is literally the same component: `renderHeader`
+  renders the row the list renders inline, and the surface HIDES that row while the pinned copy
+  stands in (`onActiveChange` → it keeps its space, drops its content), so one heading is never
+  drawn twice. The sticky contributes only a **blurred material** behind it, faded in while
+  pinned. That is the convention, arrived at the long way: a solid band, then a bare band, then a
+  black PILL were each tried, and the pill in particular had to have its type size, then its
+  baseline, then its gutter hand-matched to the heading — because a heading morphing into a
+  differently-styled chip is a match no framework keeps for you. iOS pins the header itself and
+  fades a material in behind it (Photos does exactly this); the floating-pill treatment belongs to
+  surfaces whose separator is a pill inline as well (WhatsApp's date bubble). Rendering one
+  component in two places keeps them identical by construction.
 - **Browse's section headings pin too** — the sticky generalized into `StickySectionHeader`
   (sticky-section-header.tsx), which `GroupedGrid` and `ContentFeed` both render: caller-supplied
   section offsets, a reaction that reports boundary crossings to JS (ignoring its initial report —
   a remounted list's scroll shared value is stale until the first real scroll event), the
   agree-guarded push-out, and — new for Browse — `barOffset`: the pinned heading RIDES the sliding
   top bar so it stays glued to the bar's bottom edge as it hides and returns. It keeps the See-all
-  chevron live inside the pill (sections thread their target through; the overlay passes touches
-  through except on pressables) — and the pill renders the heading's OWN content component
-  (`SectionHeadContent`, extracted from `SectionHead`), so the title and chevron are the exact
-  sizes they were in the row and only their colour changes; it stays MOUNTED — its quick fade is driven by a UI-thread
+  chevron live (sections thread their target through; the overlay passes touches through except on
+  pressables) — the pinned copy being the real `SectionHead` row, chevron and all; it stays
+  MOUNTED — its quick fade is driven by a UI-thread
   reaction on the same arithmetic, so it starts on the exact frame the line is crossed rather than
   a frame late off the JS boundary report. ContentFeed's two
   variable-height row types (grid blocks) report their measured heights into the offset walk;

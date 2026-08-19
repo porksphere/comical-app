@@ -4,24 +4,14 @@ import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } f
 import type { SharedValue } from 'react-native-reanimated';
 
 import { RecyclerList } from '@/components/recycler-list';
-import {
-  StickyPill,
-  StickyPillText,
-  StickySectionHeader,
-  type StickySection,
-} from '@/components/sticky-section-header';
+import { StickySectionHeader, type StickySection } from '@/components/sticky-section-header';
 import { ThemedText } from '@/components/themed-text';
 import { RowHeight, Spacing } from '@/constants/theme';
 import type { GroupedRow } from '@/data/grouped-rows';
 
-/** The heading text's line box (`smallBold`/`small` in themed-text). The inline heading centres it
- *  in a `RowHeight` row, so this is what the sticky offset has to account for to land the pill's
- *  text exactly where the inline text was. */
-const HEADER_TEXT_LINE = 20;
-
-/** A section's inline heading row. `hidden` drops its content — not its space — while the pinned
- *  pill is standing in for it, so the two are never on screen at once (they are exactly
- *  superimposed at the pin line). */
+/** A section's heading row — rendered BOTH inline by the list and, identically, by the pinned
+ *  sticky. `hidden` drops its content (not its space) on the inline one while the pinned copy is
+ *  standing in for it, so one heading is never drawn twice. */
 function SectionHeader({ label, count, hidden }: { label: string; count?: number; hidden?: boolean }) {
   return (
     <View style={[styles.header, hidden && styles.hidden]}>
@@ -37,11 +27,12 @@ function SectionHeader({ label, count, hidden }: { label: string; count?: number
 
 /**
  * THE grouped grid: pre-computed header/items rows over `RecyclerList`, plus the pinned
- * `StickySectionHeader` — a title pill with a count pill on the right, floating at the top bar's
- * bottom edge. Both grouped surfaces (the collected grid and the library grid) render through
- * this. Callers own what an items row LOOKS like (`renderRow`) and how tall it is (`rowHeight`);
- * headings are the shared `SectionHeader`. Fixed row heights are what keep a sectioned list from
- * re-measuring as it scrolls — and what make the sticky's offsets exact.
+ * `StickySectionHeader` — the heading row itself, held at the top bar's bottom edge on a blurred
+ * material. Both grouped surfaces (the collected grid and the library grid) render through this.
+ * Callers own what an items row LOOKS like (`renderRow`) and how tall it is (`rowHeight`);
+ * headings are the shared `SectionHeader`, rendered by the list and the sticky alike. Fixed row
+ * heights are what keep a sectioned list from re-measuring as it scrolls — and what make the
+ * sticky's offsets exact.
  */
 export function GroupedGrid<T>({
   rows,
@@ -65,9 +56,9 @@ export function GroupedGrid<T>({
   header?: ReactElement | null;
   paddingTop: number;
   paddingBottom: number;
-  /** Symmetric horizontal content padding — also applied to the pills so they align with the rows. */
+  /** Symmetric horizontal content padding — also applied to the pinned copy so it aligns. */
   sidePad: number;
-  /** Screen-relative y where the sticky pill pins — the top bar's bottom edge. Omit to disable the
+  /** Screen-relative y where the heading pins — the top bar's bottom edge. Omit to disable the
    *  sticky (headings then simply scroll away inline). */
   stickyHeaderTop?: number;
   /** Feeds the tab bar's UI-thread slide — and the sticky's arithmetic. */
@@ -87,23 +78,16 @@ export function GroupedGrid<T>({
     const out: StickySection[] = [];
     let y = paddingTop;
     for (const row of rows) {
-      if (row.type === 'header') {
-        // The TEXT's top, not the row's: the inline label is centred in its row, and the pill's
-        // text lands on this line — matching them is what keeps the hand-off from jumping.
-        out.push({
-          key: row.key,
-          label: row.label,
-          count: row.count,
-          top: y + (RowHeight - HEADER_TEXT_LINE) / 2,
-        });
-      }
+      // The ROW's top: the pinned copy IS this row, so pinning it there superimposes the two
+      // exactly at the hand-off.
+      if (row.type === 'header') out.push({ key: row.key, label: row.label, count: row.count, top: y });
       y += row.type === 'header' ? RowHeight : rowHeight;
     }
     return out;
   }, [rows, header, stickyHeaderTop, paddingTop, rowHeight]);
 
-  // The heading the pill is currently standing in for — that row renders its space but not its
-  // content, so the pill never duplicates it.
+  // The heading the pinned copy is currently standing in for — that row renders its space but not
+  // its content, so one heading is never drawn twice.
   const [pinnedKey, setPinnedKey] = useState<string | null>(null);
   const onActiveChange = useCallback((key: string | null) => setPinnedKey(key), []);
 
@@ -136,25 +120,13 @@ export function GroupedGrid<T>({
         <StickySectionHeader
           sections={sections}
           stickyTop={stickyHeaderTop}
+          height={RowHeight}
           sidePad={sidePad}
           resetKey={scopeKey}
           scrollOffset={sharedValues.scrollOffset}
           onActiveChange={onActiveChange}
-          renderPills={(s) => (
-            <>
-              <StickyPill>
-                <StickyPillText>{s.label}</StickyPillText>
-              </StickyPill>
-              {s.count !== undefined && (
-                <StickyPill>
-                  {/* `small` + dimmed, exactly as the inline count is `small`/textSecondary. */}
-                  <StickyPillText type="small" dim>
-                    {s.count}
-                  </StickyPillText>
-                </StickyPill>
-              )}
-            </>
-          )}
+          // The SAME component the list renders inline — see StickySectionHeader.
+          renderHeader={(s) => <SectionHeader label={s.label} count={s.count} />}
         />
       )}
     </View>
@@ -175,7 +147,7 @@ const styles = StyleSheet.create({
   headerLabel: {
     flex: 1,
   },
-  // Space preserved, content dropped — see SectionHeader.
+  // Space preserved, content dropped, while the pinned copy stands in — see SectionHeader.
   hidden: {
     opacity: 0,
   },
