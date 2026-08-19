@@ -212,9 +212,9 @@ export default function LibraryScreen() {
           header={renderCollectedEmpty()}
           paddingTop={headerHeight + BarContentGap}
           paddingBottom={BottomTabInset + insets.bottom + Spacing.five}
-          // Grouped section headers pin at the top bar's bottom edge — NOT the viewport top, which
-          // is behind the bar (content scrolls under it).
-          stickyHeaderTop={headerHeight}
+          // Grouped headings pin the same distance below the bar as the grid's first row — NOT at
+          // the viewport top, which is behind the bar (content scrolls under it).
+          stickyHeaderTop={headerHeight + BarContentGap}
           sharedValues={sharedValues}
           onScroll={onScroll}
           onOpen={(item) => {
@@ -284,9 +284,10 @@ export default function LibraryScreen() {
           hasSub
           paddingTop={headerHeight + BarContentGap}
           paddingBottom={BottomTabInset + insets.bottom + Spacing.five}
-          // Grouped section headers pin at the top bar's bottom edge, same as the collected grid.
+          // Grouped headings pin the same distance below the bar as the grid's first row — the
+          // same rhythm Browse's pill uses.
           groupOf={groupOf}
-          stickyHeaderTop={headerHeight}
+          stickyHeaderTop={headerHeight + BarContentGap}
           sharedValues={sharedValues}
           onScroll={onScroll}
         />

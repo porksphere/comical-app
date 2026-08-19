@@ -17,9 +17,10 @@ import { Spacing } from '@/constants/theme';
  *  (contentOffset 0 = the top of the list's padding). */
 export type StickySection = { key: string; label: string; count?: number; top: number };
 
-/** The band the pills live in — and the distance the push-out slides. Its own constant rather than
- *  the inline heading's height: a pill is not a copy of the heading any more (see the header doc),
- *  so it is sized to fit a pill comfortably, not to match a section title's type. */
+/** The band the pills live in — purely the distance the push-out slides, comfortably clear of a
+ *  pill's own height. The pill sits at the band's TOP (not centred in it), so `stickyTop` is the
+ *  pill's top edge exactly: the gap written at the call site is the gap on screen, with no hidden
+ *  centring slack between the two. */
 const PILL_BAND_HEIGHT = 36;
 /** Quick, deliberately: the pill is replacing a heading that is right there, so a slow fade reads
  *  as a lag rather than a transition. */
@@ -207,7 +208,8 @@ const styles = StyleSheet.create({
   },
   pillRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    // TOP, not centre — see PILL_BAND_HEIGHT.
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: Spacing.two,
   },
