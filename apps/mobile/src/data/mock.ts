@@ -764,7 +764,7 @@ export async function mockRemoveFavorite(seriesId: string): Promise<void> {
 // A tiny mutable in-memory library so the demo build's Library/History/Activity tabs render real
 // content and add/remove/read actions actually stick within a session. Keyed by `bridgeId:seriesId`.
 
-type MockLibEntry = { bridgeId: string; seriesId: string; title: string; thumbnailUrl: string; author?: string; unread: number };
+type MockLibEntry = { bridgeId: string; seriesId: string; title: string; thumbnailUrl: string; author?: string; unread: number; addedAt?: number; lastReadAt?: number };
 type MockCollection = { id: string; name: string; order: number };
 type MockHist = { bridgeId: string; seriesId: string; title: string; thumbnailUrl: string; chapterId?: string; chapterName?: string; lastPage?: number; pageCount?: number; lastReadAt: number };
 type MockActivity = { bridgeId: string; seriesId: string; chapterId: string; title: string; thumbnailUrl: string; chapterName?: string; number?: number; detectedAt: number; read: boolean };
@@ -803,6 +803,11 @@ function seedLibrary(): Map<string, MockLibEntry> {
       title: TITLES[i % TITLES.length]!,
       thumbnailUrl: cover(seriesId),
       unread: h % 3 === 0 ? 1 + (h % 12) : 0,
+      // Spread over distinct days so the library's date groupings have real buckets to show, and
+      // fixed timestamps so the demo/e2e render deterministically. Every third series has never
+      // been read — the "Not read yet" bucket.
+      addedAt: 1_760_000_000_000 - i * 129_600_000,
+      ...(i % 3 !== 0 && { lastReadAt: 1_760_000_000_000 - ((i * 7) % 5) * 86_400_000 - i * 3_600_000 }),
     });
   }
   // Two extra entries that overlap the favorites set (`mockFavorites` above), so the favorites-import
@@ -888,7 +893,9 @@ export async function mockGetLibrary(
   switch (opts.sort) {
     case 'title': items.sort((a, b) => a.title.localeCompare(b.title) * dir); break;
     case 'unread': items.sort((a, b) => (b.unread - a.unread) * dir); break;
-    // 'added'/'lastRead'/default: keep insertion order (seed order stands in for "recently added").
+    case 'lastRead': items.sort((a, b) => (b.lastReadAt ?? 0) - (a.lastReadAt ?? 0)); break;
+    case 'added': items.sort((a, b) => (b.addedAt ?? 0) - (a.addedAt ?? 0)); break;
+    // default: keep insertion order.
     default: break;
   }
   return items;

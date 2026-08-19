@@ -376,6 +376,8 @@ function toLibraryItem(e: api.ApiLibraryEntry): LibraryItem {
     ...(e.thumbnailUrl !== undefined && { thumbnailUrl: e.thumbnailUrl }),
     ...(e.author !== undefined && { author: e.author }),
     unread: e.unreadCount,
+    ...(e.addedAt !== undefined && { addedAt: e.addedAt }),
+    ...(e.lastReadAt !== undefined && { lastReadAt: e.lastReadAt }),
   };
 }
 

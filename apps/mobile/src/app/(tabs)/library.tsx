@@ -29,7 +29,8 @@ import { encodeSeriesParam } from '@/lib/series-nav';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useCollections } from '@/hooks/use-collections';
-import { useLibrarySort } from '@/hooks/use-library-sort';
+import { libraryGroupOf } from '@/data/library-grouping';
+import { useLibraryGrouping, useLibrarySort } from '@/hooks/use-library-sort';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
@@ -59,8 +60,10 @@ export default function LibraryScreen() {
   // as two competing lists of the same names.
   const [collectionFilter, setCollectionFilter] = useState<string | null>(null);
   const showingCollected = collectionFilter !== null;
-  // The library grid's sort (it only applies there; a collection view has its own axes below).
+  // The library grid's sort + grouping (they only apply there; a collection view has its own axes
+  // below). Grouping is client-side sectioning over the server-sorted list.
   const [sort, setSort] = useLibrarySort(null);
+  const [grouping, setGrouping] = useLibraryGrouping();
   // Sort/dir/grouping for the saved-pages view — one persisted preference for the whole view, not
   // per collection (see the store's doc).
   const [collectedView, setCollectedView] = useCollectedView();
@@ -121,6 +124,9 @@ export default function LibraryScreen() {
     const visible = hideNsfw ? items.filter((e) => !bridgeById.get(e.bridgeId)?.nsfw) : items;
     return visible.map((e) => toLibraryCard(e, bridgeById.get(e.bridgeId)));
   }, [items, hideNsfw, bridgeById]);
+
+  // Memoized so the grid's grouped-rows memo keys off a stable function per grouping choice.
+  const groupOf = useMemo(() => libraryGroupOf(grouping) ?? undefined, [grouping]);
 
   // Held empty until `ready` so the tab switch isn't blocked mounting the grid.
   const listData = ready ? cards : [];
@@ -271,13 +277,16 @@ export default function LibraryScreen() {
       ) : (
         <SeriesGrid
           items={listData}
-          scopeKey={`${query}|${sort}|${collectionFilter ?? ''}`}
+          scopeKey={`${query}|${sort}|${grouping}|${collectionFilter ?? ''}`}
           listRef={listRef}
           header={renderEmpty()}
           // Library cards carry an app-made sub (the bridge name), regardless of any bridge flag.
           hasSub
           paddingTop={headerHeight + BarContentGap}
           paddingBottom={BottomTabInset + insets.bottom + Spacing.five}
+          // Grouped section headers pin at the top bar's bottom edge, same as the collected grid.
+          groupOf={groupOf}
+          stickyHeaderTop={headerHeight}
           sharedValues={sharedValues}
           onScroll={onScroll}
         />
@@ -337,7 +346,7 @@ export default function LibraryScreen() {
             {showingCollected ? (
               <CollectedSortButton value={collectedView} onChange={setCollectedView} />
             ) : (
-              <LibrarySortButton value={sort} onChange={setSort} />
+              <LibrarySortButton value={sort} onChange={setSort} grouping={grouping} onGroupingChange={setGrouping} />
             )}
           </>
         }

@@ -188,6 +188,10 @@ export type LibraryItem = {
   author?: string;
   /** Logical unread chapters — drives the card's unread pill. */
   unread: number;
+  /** When the series joined the library — the "Date added" grouping axis. */
+  addedAt?: number;
+  /** Last read moment, absent for a series never opened — the "Last read" grouping axis. */
+  lastReadAt?: number;
 };
 
 /** A user-defined collection. Mirrors `@comical/library`'s `Collection`.

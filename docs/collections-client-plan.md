@@ -505,6 +505,14 @@ User feedback after the phases landed reshaped the browsing surface:
   an animated style on the UI-thread scroll offset the list already publishes, clipped at the bar's
   edge. One `SectionHeader` component renders both the inline row and the pinned copy, so the
   hand-off stays pixel-identical.
+- **The LIBRARY grid groups too** — by Source (bridge), Date added, or Last read ("Not read yet" is
+  a real bucket) — through the same machinery, generalized: `buildGroupedRows` (grouped-rows.ts) is
+  the shared bucketing/chunking, `GroupedGrid` (grouped-grid.tsx) the shared row list + sticky, and
+  each surface supplies only its group definition (`buildCollectedRows` / `libraryGroupOf`) and its
+  tile. `SeriesGrid` gained a grouped mode (`groupOf` + `stickyHeaderTop`); the choice persists
+  (`useLibraryGrouping`) and lives in the sort menu as a second "Group by" section. `LibraryItem`
+  carries `addedAt`/`lastReadAt` through for the date axes; the mock seeds deterministic spreads so
+  the demo and e2e show real buckets.
 - **Every gesture is the reader's own, because the surface IS the reader.** Drag down dismisses
   through the reader's collapse; swipe up reveals the series details in place, lazily, with the
   series screen's own skeletons — nothing about a series is fetched before the reveal asks for it.

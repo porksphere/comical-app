@@ -1,6 +1,7 @@
 import { use$ } from '@legendapp/state/react';
 
 import type { LibrarySort } from '@/data/api';
+import type { LibraryGrouping } from '@/data/library-grouping';
 import type { CollectionFilter } from '@/data/queries';
 import { persisted$ } from '@/lib/observable';
 
@@ -29,4 +30,14 @@ export function useLibrarySort(collection: CollectionFilter): [LibrarySort, (sor
   const setSort = (next: LibrarySort) =>
     sortByCollection$.set({ ...sortByCollection$.peek(), [key]: next });
   return [sort, setSort];
+}
+
+/** The Library grid's GROUPING choice, persisted. One value (not per-collection like the sort):
+ *  the series grid only shows for the unscoped "Library" view now — a collection row opens its
+ *  contents view, which has its own axes. */
+const libraryGrouping$ = persisted$<LibraryGrouping>('comical:libraryGrouping', 'none');
+
+export function useLibraryGrouping(): [LibraryGrouping, (g: LibraryGrouping) => void] {
+  const grouping = use$(libraryGrouping$);
+  return [grouping, (next) => libraryGrouping$.set(next)];
 }

@@ -29,6 +29,21 @@ appId: com.porksphere.comical
 - assertVisible:
     id: "series-card\\..*"
 
+# Group by source: the grid gains section headers (client-side, over the chosen sort). "Panelfox"
+# is a seeded mock bridge, so its header is deterministically present. Back to ungrouped after.
+- tapOn:
+    id: "library.sort"
+- tapOn:
+    id: "library.group.bridge"
+- assertVisible:
+    text: "Panelfox"
+- tapOn:
+    id: "library.sort"
+- tapOn:
+    id: "library.group.none"
+- assertVisible:
+    id: "series-card\\..*"
+
 # Collection scope -> Manage Collections -> back
 - tapOn:
     id: "library.collection-selector"
