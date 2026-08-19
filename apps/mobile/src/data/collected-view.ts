@@ -19,23 +19,31 @@ export type CollectedViewPrefs = {
 const DEFAULTS: CollectedViewPrefs = { sort: 'added', dir: 'desc', grouping: 'none' };
 
 /**
- * How the saved-pages view is ordered and sectioned. Device-local UI preference, so Legend State —
- * it is not a copy of anything on the server, even though `sort`/`dir` are sent to it.
+ * How a collection's contents view is ordered and sectioned. Device-local UI preference, so Legend
+ * State — it is not a copy of anything on the server, even though `sort`/`dir` are sent to it.
  *
- * One setting for the whole view rather than per collection: sort is a *habit* ("I browse newest
- * first"), unlike the library's sort, which is per list because a list is a context. Splitting it
- * per collection would mean the same person's saved pages sort differently depending on which
- * collection they opened, which is surprising rather than helpful.
+ * Remembered PER COLLECTION (the same treatment the library sort gets): each collection is its own
+ * context — a reading queue browses oldest-first, a favorites album newest-first — so switching
+ * between them restores each one's last-used axes rather than dragging one habit across all of
+ * them. Stored as one `{ collectionId → prefs }` map; unknown ids fall back to the defaults. (A
+ * fresh key: the earlier single-object store isn't shape-compatible, and defaults are a fine
+ * starting point.)
  */
-const prefs$ = persisted$<CollectedViewPrefs>('comical:collectedView', DEFAULTS);
+const prefsByCollection$ = persisted$<Record<string, CollectedViewPrefs>>('comical:collectedViewByCollection', {});
 
-export function useCollectedView(): [CollectedViewPrefs, (patch: Partial<CollectedViewPrefs>) => void] {
+export function useCollectedView(
+  collectionId: string | null,
+): [CollectedViewPrefs, (patch: Partial<CollectedViewPrefs>) => void] {
+  const map = use$(prefsByCollection$);
+  const key = collectionId ?? '';
   // Spread over the defaults so a stored value written before a field existed still reads complete.
-  const stored = use$(prefs$);
-  const value = { ...DEFAULTS, ...stored };
-  // Writes REPLACE the whole object (new reference) so `use$` subscribers re-render — a nested
-  // `prefs$.sort.set()` can leave the root snapshot's identity unchanged.
-  const set = (patch: Partial<CollectedViewPrefs>) => prefs$.set({ ...DEFAULTS, ...prefs$.peek(), ...patch });
+  const value = { ...DEFAULTS, ...map[key] };
+  // Writes REPLACE the whole record (new reference) so `use$` subscribers re-render — a nested
+  // `store$[key].set()` can leave the root snapshot's identity unchanged.
+  const set = (patch: Partial<CollectedViewPrefs>) => {
+    const current = prefsByCollection$.peek();
+    prefsByCollection$.set({ ...current, [key]: { ...DEFAULTS, ...current[key], ...patch } });
+  };
   return [value, set];
 }
 

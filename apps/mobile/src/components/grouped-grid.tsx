@@ -122,10 +122,20 @@ export function GroupedGrid<T>({
     const line = scrollOffsetSV.value + stickyHeaderTop;
     let idx = -1;
     for (let i = 0; i < sections.length && sections[i]!.top <= line; i++) idx = i;
+    // The LABEL is JS state and lags this UI-thread frame by one or two during a fast scroll. The
+    // push below is computed for the section under the line NOW — applied to a lagging label it is
+    // the wrong section's exit ride, and with several boundaries crossing in one fling that was a
+    // visible spasm: stale texts jumping around inside the clip as they swapped. So the push only
+    // animates when the two threads AGREE on the section; a label the scroll has already passed
+    // holds fully pushed out (it had just finished exiting — continuity), and one the scroll has
+    // backed up behind holds at rest, until the text catches up a frame later.
+    if (idx !== activeSection) {
+      return { transform: [{ translateY: idx > activeSection ? -RowHeight : 0 }] };
+    }
     const next = sections[idx + 1];
     const push = next ? Math.min(0, next.top - line - RowHeight) : 0;
     return { transform: [{ translateY: Math.max(push, -RowHeight) }] };
-  }, [scrollOffsetSV, sections, stickyHeaderTop]);
+  }, [scrollOffsetSV, sections, stickyHeaderTop, activeSection]);
 
   const sticky = activeSection >= 0 ? sections[activeSection] : undefined;
 

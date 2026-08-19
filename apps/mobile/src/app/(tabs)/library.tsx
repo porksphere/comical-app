@@ -64,9 +64,9 @@ export default function LibraryScreen() {
   // below). Grouping is client-side sectioning over the server-sorted list.
   const [sort, setSort] = useLibrarySort(null);
   const [grouping, setGrouping] = useLibraryGrouping();
-  // Sort/dir/grouping for the saved-pages view — one persisted preference for the whole view, not
-  // per collection (see the store's doc).
-  const [collectedView, setCollectedView] = useCollectedView();
+  // Sort/dir/grouping for a collection's contents view — remembered PER COLLECTION (see the
+  // store's doc), so each one restores its own last-used axes.
+  const [collectedView, setCollectedView] = useCollectedView(collectionFilter);
 
   // In-place search: the top-bar search icon swaps the bar's leading content for a search field
   // (no pushed screen). `query` is committed on submit and folds straight into the same grid query.
