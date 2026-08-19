@@ -623,6 +623,7 @@ export default function BrowseScreen() {
   const {
     scrollY,
     maxScrollY,
+    offset: barOffset,
     barStyle: headerStyle,
     contentStyle: headerContentStyle,
     sharedValues,
@@ -856,6 +857,10 @@ export default function BrowseScreen() {
           bridgeId={isComical ? undefined : bridgeId}
           direct={isComical ? undefined : directBridge}
           crossfading={switching}
+          // The current section's heading pins at the bar's bottom edge and RIDES the bar's slide,
+          // so it stays glued as the bar hides and returns with the scroll.
+          stickyHeaderTop={headerHeight}
+          stickyBarOffset={barOffset}
           sharedValues={sharedValues}
           onScroll={onListScroll}
           // Drives terminalQuery.fetchNextPage — `loadMore` self-guards to the terminal-home mode.

@@ -1,5 +1,5 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
-import type { ReactElement, RefObject } from 'react';
+import { useCallback, useMemo, useState, type ReactElement, type RefObject } from 'react';
 import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import type { ComposedGesture } from 'react-native-gesture-handler';
 import type Animated from 'react-native-reanimated';
@@ -11,6 +11,7 @@ import { Rail, RailSkeleton, SECTION_HEAD_HEIGHT, SectionHead, railRowHeight, ra
 import { RecyclerList } from '@/components/recycler-list';
 import { RetryBlock } from '@/components/retry-block';
 import { estimatedCardHeight, SeriesCard } from '@/components/series-card';
+import { StickySectionHeader, type StickySection } from '@/components/sticky-section-header';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { BottomTabInset, Spacing, TopLevelGutter, topLevelCenterInset } from '@/constants/theme';
 import { contentRowType, type ContentRow, type SeeAllTarget } from '@/data/content-rows';
@@ -72,6 +73,8 @@ export function ContentFeed({
   bridgeId,
   direct,
   crossfading,
+  stickyHeaderTop,
+  stickyBarOffset,
   sharedValues,
   onScroll,
   onEndReached,
@@ -94,6 +97,12 @@ export function ContentFeed({
   bridgeId?: string;
   direct?: boolean;
   crossfading?: boolean;
+  /** Screen-relative y where the sticky section heading pins — the top bar's bottom edge AT REST.
+   *  Omit to disable the sticky (headings then simply scroll away inline). */
+  stickyHeaderTop?: number;
+  /** The top bar's slide (useSlidingBar's `offset`, 0 → −barHeight) — the sticky rides it, so the
+   *  pinned heading stays glued to the bar's bottom edge as the bar hides and returns. */
+  stickyBarOffset?: SharedValue<number>;
   sharedValues?: { scrollOffset: SharedValue<number> };
   onScroll?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   onEndReached?: () => void;
@@ -123,23 +132,54 @@ export function ContentFeed({
   // Row-type sizing. gridRow is EXACT (cellHeight), so the many uniform terminal rows never re-measure.
   // Headings and rails are fixed upper-bound heights; non-terminal grid BLOCKS are variable (arbitrary
   // "Load more" pages) so they return undefined and get measured.
-  const getFixedItemSize = (row: ContentRow): number | undefined => {
-    switch (row.type) {
-      case 'gridRow':
-        return cellHeight;
-      case 'sectionHead':
-        return SECTION_HEAD_ROW_HEIGHT;
-      case 'rail':
-        // Strip only — the heading is its own preceding `sectionHead` row now. The rail's own
-        // bridge (aggregate rails carry an override) decides whether the sub line is reserved.
-        return railStripHeight(row.section.kind, railViewport, wide, subOf(row.bridgeId ?? bridgeId));
-      case 'railSkeleton':
-        // Self-headed (still renders its own title), so it's the whole head+strip height.
-        return railRowHeight('regular', railViewport, wide, subOf(bridgeId));
-      default:
-        return undefined; // gridBlock / gridBlockSkeleton — measured
+  const getFixedItemSize = useCallback(
+    (row: ContentRow): number | undefined => {
+      switch (row.type) {
+        case 'gridRow':
+          return cellHeight;
+        case 'sectionHead':
+          return SECTION_HEAD_ROW_HEIGHT;
+        case 'rail':
+          // Strip only — the heading is its own preceding `sectionHead` row now. The rail's own
+          // bridge (aggregate rails carry an override) decides whether the sub line is reserved.
+          return railStripHeight(row.section.kind, railViewport, wide, subOf(row.bridgeId ?? bridgeId));
+        case 'railSkeleton':
+          // Self-headed (still renders its own title), so it's the whole head+strip height.
+          return railRowHeight('regular', railViewport, wide, subOf(bridgeId));
+        default:
+          return undefined; // gridBlock / gridBlockSkeleton — measured
+      }
+    },
+    [cellHeight, railViewport, wide, subOf, bridgeId],
+  );
+
+  // ── The sticky heading's offsets ────────────────────────────────────────────
+  // Most rows have KNOWN heights (getFixedItemSize), so section-heading offsets are mostly pure
+  // arithmetic — but grid BLOCKS are measured. Each mounted block reports its height here (the same
+  // number LegendList measures off the same view), and the offset walk below uses it. Sections past
+  // a block that hasn't measured yet are simply omitted: an unmounted block is at least a
+  // drawDistance below the viewport, so its sections were nowhere near the pin line anyway.
+  const [measuredHeights, setMeasuredHeights] = useState<Record<string, number>>({});
+  const onRowMeasured = useCallback((key: string, h: number) => {
+    setMeasuredHeights((m) => (Math.abs((m[key] ?? -1) - h) < 0.5 ? m : { ...m, [key]: h }));
+  }, []);
+  const sections = useMemo<StickySection[]>(() => {
+    if (stickyHeaderTop === undefined) return [];
+    // A list header (the error-retry block) sits above the rows and shifts every offset by its
+    // unmeasured height — no sticky while one is up; a pinned heading matters least mid-error.
+    if (header) return [];
+    const out: StickySection[] = [];
+    let y = paddingTop;
+    for (const row of rows) {
+      // The pinned band mirrors the TITLE, so the offset points at the title's top (past the
+      // section gap), not the row's.
+      if (row.type === 'sectionHead') out.push({ label: row.title, top: y + SECTION_GAP });
+      const h = getFixedItemSize(row) ?? measuredHeights[row.key];
+      if (h === undefined) break;
+      y += h;
     }
-  };
+    return out;
+  }, [rows, header, stickyHeaderTop, paddingTop, getFixedItemSize, measuredHeights]);
 
   // Terminal-grid first-load skeleton — rows self-pad Spacing.four (via styles.row), matching the real
   // gridRow's inset (ContentFeed's container is centering-only, unlike GridSkeleton's SeriesGrid shape).
@@ -156,6 +196,7 @@ export function ContentFeed({
   ) : null;
 
   return (
+    <View style={styles.fill}>
     <RecyclerList
       data={rows}
       scopeKey={scopeKey}
@@ -218,18 +259,24 @@ export function ContentFeed({
             return <RetryBlock message={item.message} onRetry={item.onRetry} />;
           case 'gridBlock':
             return (
-              <HomeGridBlock
-                bridgeId={item.bridgeId ?? bridgeId}
-                section={item.section}
-                bridge={item.bridge ?? bridge}
-                direct={!!(item.direct ?? direct)}
-                numColumns={numColumns}
-                headless
-              />
+              // The one variable-height row — its measured height feeds the sticky heading's
+              // offset walk (see onRowMeasured above).
+              <View onLayout={(e) => onRowMeasured(item.key, e.nativeEvent.layout.height)}>
+                <HomeGridBlock
+                  bridgeId={item.bridgeId ?? bridgeId}
+                  section={item.section}
+                  bridge={item.bridge ?? bridge}
+                  direct={!!(item.direct ?? direct)}
+                  numColumns={numColumns}
+                  headless
+                />
+              </View>
             );
           case 'gridBlockSkeleton':
             return (
-              <View style={styles.homeGridBlock}>
+              <View
+                style={styles.homeGridBlock}
+                onLayout={(e) => onRowMeasured(item.key, e.nativeEvent.layout.height)}>
                 <SectionHead title={item.title} />
                 <View style={styles.homeGridRows}>
                   {Array.from({ length: item.rows }).map((_, r) => (
@@ -268,10 +315,39 @@ export function ContentFeed({
         }
       }}
     />
+    {stickyHeaderTop !== undefined && sharedValues && (
+      <StickySectionHeader
+        sections={sections}
+        stickyTop={stickyHeaderTop}
+        height={SECTION_HEAD_HEIGHT}
+        // The overlay carries only the centering inset (like the list container); the SectionHead
+        // inside self-pads TopLevelGutter, exactly as the inline heading rows do.
+        sidePad={centerPad}
+        resetKey={scopeKey}
+        scrollOffset={sharedValues.scrollOffset}
+        barOffset={stickyBarOffset}
+        // The SAME component the inline rows render — with no onSeeAll it is a plain, non-
+        // interactive title, which is what a pointerEvents-none overlay must be.
+        renderHeader={(s) => (
+          <View style={styles.stickyHead}>
+            <SectionHead title={s.label} />
+          </View>
+        )}
+      />
+    )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  fill: {
+    flex: 1,
+  },
+  // The pinned heading self-pads the gutter the way every inline row does (the overlay's own
+  // horizontal padding is the centering inset only).
+  stickyHead: {
+    paddingHorizontal: TopLevelGutter,
+  },
   row: {
     paddingHorizontal: TopLevelGutter,
   },

@@ -505,6 +505,15 @@ User feedback after the phases landed reshaped the browsing surface:
   an animated style on the UI-thread scroll offset the list already publishes, clipped at the bar's
   edge. One `SectionHeader` component renders both the inline row and the pinned copy, so the
   hand-off stays pixel-identical.
+- **Browse's section headings pin too** — the sticky generalized into `StickySectionHeader`
+  (sticky-section-header.tsx), which `GroupedGrid` and `ContentFeed` both render: caller-supplied
+  section offsets, a reaction that reports boundary crossings to JS (ignoring its initial report —
+  a remounted list's scroll shared value is stale until the first real scroll event), the
+  agree-guarded push-out, and — new for Browse — `barOffset`: the pinned heading RIDES the sliding
+  top bar so it stays glued to the bar's bottom edge as it hides and returns. ContentFeed's two
+  variable-height row types (grid blocks) report their measured heights into the offset walk;
+  sections past a not-yet-measured block are omitted (it is at least a drawDistance away). No
+  sticky while a list header (error block) is up — it would shift every offset.
 - **The LIBRARY grid groups too** — by Source (bridge), Date added, or Last read ("Not read yet" is
   a real bucket) — through the same machinery, generalized: `buildGroupedRows` (grouped-rows.ts) is
   the shared bucketing/chunking, `GroupedGrid` (grouped-grid.tsx) the shared row list + sticky, and
