@@ -20,9 +20,12 @@ export type StickySection = { key: string; label: string; count?: number; top: n
 /** The band the pills live in — purely the distance the push-out slides, comfortably clear of the
  *  tallest pill (a wide-breakpoint section title, 30px of line box plus the padding below). */
 const PILL_BAND_HEIGHT = 48;
-/** The pill's own padding. The vertical half is subtracted from where the band sits, so the pill's
- *  TEXT — not its black edge — lands on `stickyTop`, i.e. exactly where the heading's text was
- *  sitting when it pinned. Without that the hand-off jumps by the padding. */
+/** The pill's own padding — and BOTH halves are subtracted from where the pill is placed, so what
+ *  lands on the mark is the pill's TEXT rather than its black edge: vertically off `stickyTop` (the
+ *  pin line, where the heading's text was sitting when it pinned), horizontally off `sidePad` (the
+ *  content gutter the heading's text starts at). Skip either and the hand-off jumps by the padding
+ *  — down and to the right — which is precisely the tell that a pill is a different object pretending
+ *  to be the heading rather than the heading in a frame. */
 const PILL_PAD_V = Spacing.one;
 const PILL_PAD_H = Spacing.two + Spacing.half;
 /** Quick, deliberately: the pill is replacing a heading that is right there, so a slow fade reads
@@ -205,7 +208,13 @@ export function StickySectionHeader<S extends StickySection>({
       style={[styles.clip, { top: stickyTop - PILL_PAD_V, height: PILL_BAND_HEIGHT }, bandStyle]}>
       <Animated.View
         pointerEvents="box-none"
-        style={[styles.pillRow, { height: PILL_BAND_HEIGHT, paddingHorizontal: sidePad }, pushStyle]}>
+        style={[
+          styles.pillRow,
+          // …less the pill's own padding, so the TEXT sits at `sidePad` — see PILL_PAD_H. The count
+          // pill on the right takes the same correction, so its text ends on the content edge.
+          { height: PILL_BAND_HEIGHT, paddingHorizontal: Math.max(0, sidePad - PILL_PAD_H) },
+          pushStyle,
+        ]}>
         {renderPills(section)}
       </Animated.View>
     </Animated.View>
