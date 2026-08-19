@@ -2878,6 +2878,7 @@ function SeriesReaderInstance({
               // after the transition settles — see detailsSettled) and the normal prefetch
               // pipeline resumes.
               standby={detailsSettled || !entranceSettled}
+              entering={!entranceSettled}
               inLibrary={inLibrary}
             />
           )}
@@ -3543,6 +3544,10 @@ const ReaderPane = forwardRef<
      *  suspends the warm-ahead prefetch and shrinks the pager's render window to the visible
      *  page, so only the single page on screen is requested. */
     standby?: boolean;
+    /** True while the instance's ENTRANCE animation is still playing — the initial-position
+     *  poster holds for its whole duration (see `posterUp`), because the native scroll offset of
+     *  a non-zero `initialScrollIndex` can land frames after the JS side reports parked. */
+    entering?: boolean;
     /** Library membership (undefined while still resolving) — picks the progress-recording path.
      *  Queried by the screen, not here: this pane re-renders every page sweep. */
     inLibrary?: boolean;
@@ -3577,6 +3582,7 @@ const ReaderPane = forwardRef<
     onScrubActive,
     overlay,
     standby,
+    entering = false,
     inLibrary,
   },
   ref,
@@ -3590,13 +3596,16 @@ const ReaderPane = forwardRef<
   const startIndex = Math.max(0, Math.min(pages.length - 1, start === 'last' ? pages.length - 1 : start));
   const [currentPage, setCurrentPage] = useState(startIndex);
   const currentRef = useRef(startIndex);
-  // Whether the mounted list has REPORTED a position yet — proof it has computed visibility at
-  // its parked offset. A list positioned by `initialScrollIndex > 0` has a parking transient
-  // (the scrub's `scrubOrigin` note documents the same class of lie: an untouched pager "reports
-  // 0 while sitting twenty pages in"), and an entrance animation plays over exactly those first
-  // frames. Until this flips, the POSTER below stands in for the target page — the same cached
-  // URI, so the hand-off is pixel-identical in both directions. Opens at index 0 park on the
-  // first report like any other; their poster is simply never visibly different from the page.
+  // Whether the mounted list has REPORTED a position yet. A recording answered how much this
+  // signal is worth: it lands within ~10ms of mount — it is the list's JS-side position map
+  // speaking, NOT the native scroll view. For a non-zero `initialScrollIndex` the NATIVE
+  // contentOffset applies asynchronously, and until it does the viewport sits over index 0's
+  // empty slot (cells are laid out at `index × width`; nothing is rendered down there) — frames
+  // that are invisible to JS and to the frame trace alike, which is why every earlier recording
+  // of the blank looked perfectly clean. So the POSTER below outlives this report: it stands in
+  // for the target page through the whole ENTRANCE (`entering`), which comfortably covers the
+  // native offset landing, and only then defers to the report. Index 0 needs no offset — the
+  // exact reason "the first tile opens smoothly" was the isolating observation.
   const [parked, setParked] = useState(false);
   const setCurrent = useCallback((i: number) => {
     currentRef.current = i;
@@ -3606,13 +3615,17 @@ const ReaderPane = forwardRef<
   useEffect(() => {
     if (parked) traceJS('pager', 'parked', { at: currentRef.current });
   }, [parked]);
-  // The backstop: a list that never reports (an empty window, a wedged layout) must not strand a
-  // poster over a live pager forever.
+  // The backstop: nothing may strand a static image over a live pager — not a list that never
+  // reports, and not an entrance whose settle signal is lost.
+  const [posterExpired, setPosterExpired] = useState(false);
   useEffect(() => {
-    if (parked) return;
-    const t = setTimeout(() => setParked(true), POSTER_BACKSTOP_MS);
+    const t = setTimeout(() => setPosterExpired(true), POSTER_BACKSTOP_MS);
     return () => clearTimeout(t);
-  }, [parked]);
+  }, []);
+  // The poster's whole life, in one place: down the moment the user actually pages away from the
+  // start (a swipe mid-entrance must not freeze under a static image), else up until BOTH the
+  // entrance has finished and the list has reported — or the backstop calls time.
+  const posterUp = currentPage === startIndex && !posterExpired && (entering || !parked);
 
   const pagedRef = useRef<PagedReaderHandle>(null);
   const webtoonRef = useRef<WebtoonReaderHandle>(null);
@@ -4014,12 +4027,12 @@ const ReaderPane = forwardRef<
           }
         />
       )}
-      {/* THE INITIAL-POSITION POSTER — the target page, full frame, over the list until the list
-          reports it is parked (see `parked` above). It renders the very URI the pager will show
-          at that index, from cache, so its appearance and its removal are both invisible; what it
-          papers over is the parking transient of a non-zero initialScrollIndex, which an entrance
+      {/* THE INITIAL-POSITION POSTER — the target page, full frame, over the list for the whole
+          entrance (see `posterUp` above). It renders the very URI the pager will show at that
+          index, from cache, so its appearance and its removal are both invisible; what it papers
+          over is the NATIVE offset transient of a non-zero initialScrollIndex, which an entrance
           animation would otherwise expose as a blank. */}
-      {!parked &&
+      {posterUp &&
         (() => {
           const list = stitched ? flatItems : items;
           const at = stitched ? prefixLen + startIndex : startIndex;
