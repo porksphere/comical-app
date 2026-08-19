@@ -163,17 +163,21 @@ export function ContentFeed({
   const onRowMeasured = useCallback((key: string, h: number) => {
     setMeasuredHeights((m) => (Math.abs((m[key] ?? -1) - h) < 0.5 ? m : { ...m, [key]: h }));
   }, []);
-  const sections = useMemo<StickySection[]>(() => {
+  type FeedSection = StickySection & { seeAll?: SeeAllTarget };
+  const sections = useMemo<FeedSection[]>(() => {
     if (stickyHeaderTop === undefined) return [];
     // A list header (the error-retry block) sits above the rows and shifts every offset by its
     // unmeasured height — no sticky while one is up; a pinned heading matters least mid-error.
     if (header) return [];
-    const out: StickySection[] = [];
+    const out: FeedSection[] = [];
     let y = paddingTop;
     for (const row of rows) {
       // The pinned band mirrors the TITLE, so the offset points at the title's top (past the
-      // section gap), not the row's.
-      if (row.type === 'sectionHead') out.push({ label: row.title, top: y + SECTION_GAP });
+      // section gap), not the row's. The See-all target rides along — the pinned chevron stays
+      // live, not a picture of a control.
+      if (row.type === 'sectionHead') {
+        out.push({ label: row.title, top: y + SECTION_GAP, ...(row.seeAll ? { seeAll: row.seeAll } : {}) });
+      }
       const h = getFixedItemSize(row) ?? measuredHeights[row.key];
       if (h === undefined) break;
       y += h;
@@ -326,13 +330,23 @@ export function ContentFeed({
         resetKey={scopeKey}
         scrollOffset={sharedValues.scrollOffset}
         barOffset={stickyBarOffset}
-        // The SAME component the inline rows render — with no onSeeAll it is a plain, non-
-        // interactive title, which is what a pointerEvents-none overlay must be.
-        renderHeader={(s) => (
-          <View style={styles.stickyHead}>
-            <SectionHead title={s.label} />
-          </View>
-        )}
+        // The SAME component the inline rows render, chevron included — SectionHead self-pads the
+        // gutter exactly like the inline rows (no extra wrapper: one crept in here once and shoved
+        // the pinned copy a full gutter right at the hand-off). The overlay keeps pressables live,
+        // so the pinned See-all drills exactly as the inline one does.
+        renderHeader={(s) => {
+          const seeAll = s.seeAll;
+          return (
+            <SectionHead
+              title={s.label}
+              onSeeAll={
+                seeAll
+                  ? () => router.push({ pathname: '/results', params: seeAllParams(seeAll) })
+                  : undefined
+              }
+            />
+          );
+        }}
       />
     )}
     </View>
@@ -342,11 +356,6 @@ export function ContentFeed({
 const styles = StyleSheet.create({
   fill: {
     flex: 1,
-  },
-  // The pinned heading self-pads the gutter the way every inline row does (the overlay's own
-  // horizontal padding is the centering inset only).
-  stickyHead: {
-    paddingHorizontal: TopLevelGutter,
   },
   row: {
     paddingHorizontal: TopLevelGutter,

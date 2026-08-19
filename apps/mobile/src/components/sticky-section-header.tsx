@@ -34,7 +34,7 @@ export type StickySection = { label: string; count?: number; top: number };
  * offset — acting on it would pin a section on a list that is actually at its top. The caller
  * resets `active` through `resetKey`; the first real scroll event re-derives the truth.
  */
-export function StickySectionHeader({
+export function StickySectionHeader<S extends StickySection>({
   sections,
   stickyTop,
   height,
@@ -44,7 +44,9 @@ export function StickySectionHeader({
   barOffset,
   renderHeader,
 }: {
-  sections: StickySection[];
+  /** Callers may extend `StickySection` with whatever `renderHeader` needs (Browse threads each
+   *  heading's See-all target through, so the pinned chevron stays live). */
+  sections: S[];
   /** Screen-relative y where the header pins — the top bar's bottom edge AT REST. */
   stickyTop: number;
   /** The pinned band's height — must match the inline header row's visible height, since the
@@ -61,8 +63,9 @@ export function StickySectionHeader({
    *  scroll (Browse). The pin line and the pinned band both ride it. */
   barOffset?: SharedValue<number>;
   /** The pinned band's content — render the SAME component the inline header row uses, so the
-   *  hand-off at the pin line is pixel-identical. Non-interactive (the overlay takes no touches). */
-  renderHeader: (section: StickySection) => ReactElement;
+   *  hand-off at the pin line is pixel-identical. Pressables inside stay LIVE (the overlay passes
+   *  touches through everywhere else): a pinned heading that shows a control must honor it. */
+  renderHeader: (section: S) => ReactElement;
 }) {
   const theme = useTheme();
 
@@ -115,11 +118,15 @@ export function StickySectionHeader({
   return (
     // The CLIP at the pin line: the push-out translates the content up, and without the clip it
     // would slide visibly up behind the (translucent) top bar instead of disappearing under its
-    // edge. Non-interactive — the real header row is still in the list.
+    // edge. The hairline sits on the clip (the band's bottom edge, same rule the bar surfaces
+    // draw), so it holds still through the push-out instead of riding away with the label.
+    // `box-none` both levels down: pressables inside renderHeader (Browse's See-all chevron) take
+    // their taps; everywhere else the touch falls through to the list.
     <Animated.View
-      pointerEvents="none"
-      style={[styles.clip, { top: stickyTop, height }, followBarStyle]}>
+      pointerEvents="box-none"
+      style={[styles.clip, { top: stickyTop, height, borderBottomColor: theme.hairline }, followBarStyle]}>
       <Animated.View
+        pointerEvents="box-none"
         style={[{ height, backgroundColor: theme.background, paddingHorizontal: sidePad }, styles.center, pushStyle]}>
         {renderHeader(section)}
       </Animated.View>
@@ -133,6 +140,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     overflow: 'hidden',
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   center: {
     justifyContent: 'center',
