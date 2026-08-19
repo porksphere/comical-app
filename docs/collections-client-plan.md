@@ -498,6 +498,13 @@ User feedback after the phases landed reshaped the browsing surface:
   badge (`collection-icons.tsx`: BookCopy/BookOpen/FileImage). The full-width chapter row is gone,
   which also un-complicated `buildCollectedRows` — the mixed union chunks into one grid in incoming
   order. A chapter tile is always the text card (it has no image of its own).
+- **Grouped section headers are STICKY**, pinned at the top bar's bottom edge — built as an overlay
+  rather than through the list, because list-level sticky rows pin to the viewport top, which is
+  behind the translucent bar. Fixed row heights make the current section pure arithmetic on the
+  scroll offset: JS state swaps which label shows (boundary changes only), and the push-out ride is
+  an animated style on the UI-thread scroll offset the list already publishes, clipped at the bar's
+  edge. One `SectionHeader` component renders both the inline row and the pinned copy, so the
+  hand-off stays pixel-identical.
 - **Every gesture is the reader's own, because the surface IS the reader.** Drag down dismisses
   through the reader's collapse; swipe up reveals the series details in place, lazily, with the
   series screen's own skeletons — nothing about a series is fetched before the reveal asks for it.
