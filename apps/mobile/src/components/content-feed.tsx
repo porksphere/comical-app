@@ -83,6 +83,7 @@ export function ContentFeed({
   crossfading,
   stickyHeaderTop,
   stickyBarOffset,
+  onStickyChange,
   sharedValues,
   onScroll,
   onEndReached,
@@ -111,6 +112,9 @@ export function ContentFeed({
   /** The top bar's slide (useSlidingBar's `offset`, 0 → −barHeight) — the sticky rides it, so the
    *  pinned heading stays glued to the bar's bottom edge as the bar hides and returns. */
   stickyBarOffset?: SharedValue<number>;
+  /** Whether a heading is currently pinned. The screen drops its top bar's own rule while one is,
+   *  so the bar and the heading don't stack two hairlines. */
+  onStickyChange?: (pinned: boolean) => void;
   sharedValues?: { scrollOffset: SharedValue<number> };
   onScroll?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   onEndReached?: () => void;
@@ -205,7 +209,13 @@ export function ContentFeed({
   // The heading the pinned copy is currently standing in for — that row keeps its space but drops
   // its content, so one heading is never drawn twice.
   const [pinnedKey, setPinnedKey] = useState<string | null>(null);
-  const onActiveChange = useCallback((key: string | null) => setPinnedKey(key), []);
+  const onActiveChange = useCallback(
+    (key: string | null) => {
+      setPinnedKey(key);
+      onStickyChange?.(key !== null);
+    },
+    [onStickyChange],
+  );
 
   // Terminal-grid first-load skeleton — rows self-pad Spacing.four (via styles.row), matching the real
   // gridRow's inset (ContentFeed's container is centering-only, unlike GridSkeleton's SeriesGrid shape).

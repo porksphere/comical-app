@@ -509,7 +509,12 @@ User feedback after the phases landed reshaped the browsing surface:
   stands in (`onActiveChange` → it keeps its space, drops its content), so one heading is never
   drawn twice. The sticky contributes only a **surface** while pinned — the page's own background
   plus a bottom hairline, appearing WITH the heading (nothing fades: the trick is that an
-  identical, co-located heading is being swapped, and a ramp announces the second object) — with
+  identical, co-located heading is being swapped, and a ramp announces the second object). The
+  RULE belongs to whichever heading is at REST in the slot — drawn only while the push-out is idle,
+  so an outgoing heading drops it as it starts moving and the landing one takes it as it settles,
+  rather than a rule sweeping upward across the chrome. The top bar drops its OWN rule while any
+  heading is pinned (`onStickyChange` → `BarSurface hairline={false}`), so the two never stack into
+  a banded edge — with
   symmetric padding of its OWN around the heading — an inline heading's rhythm can be deliberately lopsided (Browse's is), which is
   invisible until a surface is drawn around it and then reads as a header sagging in its box. That is the convention, arrived at the long way: a solid band, then a bare band, then a
   black PILL were each tried, and the pill in particular had to have its type size, then its

@@ -43,6 +43,13 @@ export type StickySection = { key: string; label: string; count?: number; top: n
  * an identical, co-located heading is being swapped for this one, and anything that ramps announces
  * that a second object arrived.
  *
+ * The RULE belongs to whichever heading is at rest in the slot, not to the band: it is drawn only
+ * while the push-out is idle, so a heading being shoved out drops it the moment it starts moving
+ * and the one that lands takes it the moment it settles. Carried on the band instead, it swept
+ * upward across the chrome as the outgoing heading left — a moving rule, which is exactly the kind
+ * of thing a hairline should never be. The top bar drops its own rule while any heading is pinned
+ * (`onActiveChange` → `BarSurface hairline={false}`), so the two never stack into a banded edge.
+ *
  * ── The band's own padding, and where the pin line goes ──
  * The band is `bandPadding` above and below the heading. That padding is the BAND's rather than the
  * caller's row because an inline heading's vertical rhythm can be deliberately lopsided (Browse's
@@ -168,6 +175,20 @@ export function StickySectionHeader<S extends StickySection>({
     () => ({ opacity: pinned.value, transform: [{ translateY: barOffset?.value ?? 0 }] }),
     [barOffset],
   );
+
+  // The rule: on only while the band is at REST (see the doc). Recomputes the push rather than
+  // sharing it — both worklets run on the same frame anyway, and a derived shared value between
+  // them would just be a third thing to keep in step.
+  const ruleStyle = useAnimatedStyle(() => {
+    if (sections.length === 0) return { opacity: 1 };
+    const line = scrollOffset.value + pinLine + (barOffset?.value ?? 0);
+    let idx = -1;
+    for (let i = 0; i < sections.length && sections[i]!.top <= line; i++) idx = i;
+    if (idx !== active) return { opacity: 0 };
+    const next = sections[idx + 1];
+    const push = next ? Math.min(0, next.top - line - bandHeight) : 0;
+    return { opacity: push < 0 ? 0 : 1 };
+  }, [sections, pinLine, scrollOffset, barOffset, active, bandHeight]);
   // The push-out ride, with the two-thread agree-guard (see the doc).
   const pushStyle = useAnimatedStyle(() => {
     if (sections.length === 0) return { transform: [{ translateY: 0 }] };
@@ -202,16 +223,17 @@ export function StickySectionHeader<S extends StickySection>({
           heading it belongs to instead of hanging under the one arriving. */}
       <Animated.View
         pointerEvents="box-none"
-        style={[
-          styles.surface,
-          { height: bandHeight, backgroundColor: theme.background, borderBottomColor: theme.barHairline },
-          pushStyle,
-        ]}>
+        style={[{ height: bandHeight, backgroundColor: theme.background }, pushStyle]}>
         <View
           pointerEvents="box-none"
           style={{ height: contentHeight, marginTop: bandPadding, paddingHorizontal: sidePad }}>
           {renderHeader(section)}
         </View>
+        {/* Its own view rather than a border, so it can come and go on its own — see the doc. */}
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.rule, { backgroundColor: theme.barHairline }, ruleStyle]}
+        />
       </Animated.View>
     </Animated.View>
   );
@@ -224,7 +246,11 @@ const styles = StyleSheet.create({
     right: 0,
     overflow: 'hidden',
   },
-  surface: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
+  rule: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: StyleSheet.hairlineWidth,
   },
 });

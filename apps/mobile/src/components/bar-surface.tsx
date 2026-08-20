@@ -29,6 +29,7 @@ export function BarSurface({
   children,
   style,
   safeAreaTop = true,
+  hairline = true,
 }: {
   children?: ReactNode;
   /** Positioning + any animated transform/border for this particular bar. Accepts Reanimated styles
@@ -38,6 +39,10 @@ export function BarSurface({
    *  false for a secondary bar stacked BELOW one (e.g. Search's filter bar), which would otherwise
    *  add the inset a second time and sit too tall. */
   safeAreaTop?: boolean;
+  /** Draws the bar's bottom rule. Pass false when something directly beneath it draws its own and
+   *  the two would stack — a pinned section heading sits flush under this bar and carries the rule
+   *  for the pair, so the chrome reads as one surface with one edge rather than two banded ones. */
+  hairline?: boolean;
 }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -57,6 +62,7 @@ export function BarSurface({
           // this line is the only thing marking it off, so it carries more weight than a card edge.
           // The bottom tab bar draws its top edge with the same token — one divider, one value.
           borderBottomColor: theme.barHairline,
+          borderBottomWidth: hairline ? StyleSheet.hairlineWidth : 0,
         },
         style,
       ]}>

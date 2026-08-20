@@ -19,7 +19,18 @@ import { testId } from '@/lib/test-id';
  * `titleSlot` replaces the plain title text with arbitrary leading content (e.g. the Library's list
  * selector); `right` fills a trailing slot pushed to the far edge (e.g. the Library's search icon).
  */
-export function TabTitleBar({ title, titleSlot, right }: { title?: string; titleSlot?: ReactNode; right?: ReactNode }) {
+export function TabTitleBar({
+  title,
+  titleSlot,
+  right,
+  hairline,
+}: {
+  title?: string;
+  titleSlot?: ReactNode;
+  right?: ReactNode;
+  /** Forwarded to `BarSurface` — false while a pinned section heading below carries the rule. */
+  hairline?: boolean;
+}) {
   const barHeight = useTopBarHeight();
   // On wide/desktop viewports app-tabs.tsx overlays its icon-only nav row at this same bar's
   // trailing edge (see its `navRight` comment). Without reserving room for it here, `right`'s own
@@ -27,7 +38,7 @@ export function TabTitleBar({ title, titleSlot, right }: { title?: string; title
   // meant for this bar — see `DesktopNavWidth`'s comment for how that was found and measured.
   const reserveForDesktopNav = useIsLargeScreen();
   return (
-    <BarSurface style={styles.topBar}>
+    <BarSurface style={styles.topBar} {...(hairline !== undefined && { hairline })}>
       {/* Cap+centre only on web; native fills the width so the title aligns with the full-width grids. */}
       <View style={[styles.titleRow, { height: barHeight, maxWidth: Platform.OS === 'web' ? MaxTopLevelWidth : undefined }]}>
         {titleSlot ?? (

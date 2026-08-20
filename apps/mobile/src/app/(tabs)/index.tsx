@@ -638,13 +638,16 @@ export default function BrowseScreen() {
   // Pull-to-refresh: gesture (per platform), spinner, min-visible window and content shift all live
   // in the shared hook — the same one the Search grid uses.
   const pull = usePullToRefresh(scrollY, refreshCurrentView);
+  // A pinned section heading sits flush under the bar and draws its own rule, so the bar drops its
+  // own while one is up — otherwise the chrome reads as two banded edges instead of one surface.
+  const [stickyPinned, setStickyPinned] = useState(false);
 
   const topBar = (
     // BarSurface carries the flat, full-bleed background + hairline shared by every bar in the app
     // (see bar-surface.tsx); the grid scrolls behind it. The hairline is ALWAYS on, like every other
     // bar's — it used to fade in over the first 8px of scroll so the bar read as part of the page
     // while at rest, which made this the one bar in the app whose divider came and went.
-    <BarSurface style={[styles.topBar, { height: headerHeight }, headerStyle]}>
+    <BarSurface style={[styles.topBar, { height: headerHeight }, headerStyle]} hairline={!stickyPinned}>
       {/* Inner row capped to the content width so the selectors line up with the
           grid below, while the bar background stays full-bleed. */}
       {/* Cap+centre only on web; native fills the width so the bar aligns with the full-width grid. */}
@@ -863,6 +866,7 @@ export default function BrowseScreen() {
           // edge whether the bar is expanded or docked under the status bar.
           stickyHeaderTop={headerHeight}
           stickyBarOffset={barOffset}
+          onStickyChange={setStickyPinned}
           sharedValues={sharedValues}
           onScroll={onListScroll}
           // Drives terminalQuery.fetchNextPage — `loadMore` self-guards to the terminal-home mode.

@@ -44,6 +44,7 @@ export function GroupedGrid<T>({
   paddingBottom,
   sidePad,
   stickyHeaderTop,
+  onStickyChange,
   sharedValues,
   onScroll,
   renderRow,
@@ -61,6 +62,9 @@ export function GroupedGrid<T>({
   /** Screen-relative y where the heading pins — the top bar's bottom edge. Omit to disable the
    *  sticky (headings then simply scroll away inline). */
   stickyHeaderTop?: number;
+  /** Whether a heading is currently pinned. The screen drops its top bar's own rule while one is,
+   *  so the bar and the heading don't stack two hairlines. */
+  onStickyChange?: (pinned: boolean) => void;
   /** Feeds the tab bar's UI-thread slide — and the sticky's arithmetic. */
   sharedValues?: { scrollOffset: SharedValue<number> };
   onScroll?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
@@ -89,7 +93,13 @@ export function GroupedGrid<T>({
   // The heading the pinned copy is currently standing in for — that row renders its space but not
   // its content, so one heading is never drawn twice.
   const [pinnedKey, setPinnedKey] = useState<string | null>(null);
-  const onActiveChange = useCallback((key: string | null) => setPinnedKey(key), []);
+  const onActiveChange = useCallback(
+    (key: string | null) => {
+      setPinnedKey(key);
+      onStickyChange?.(key !== null);
+    },
+    [onStickyChange],
+  );
 
   return (
     <View style={styles.fill}>
