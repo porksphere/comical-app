@@ -5,7 +5,6 @@ import Animated, {
   useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
-  withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
 
@@ -15,10 +14,6 @@ import { useTheme } from '@/hooks/use-theme';
  *  copy is standing in for), its label, an optional count, and the CONTENT offset its header ROW
  *  starts at (contentOffset 0 = the top of the list's padding). */
 export type StickySection = { key: string; label: string; count?: number; top: number };
-
-/** The surface fades in; the HEADING does not (see the component doc). Quick — it is a background
- *  arriving under text that was already there. */
-const SURFACE_FADE_MS = 140;
 
 /**
  * THE sticky section heading — the pinned heading both grouped surfaces (library/collected grids)
@@ -43,18 +38,23 @@ const SURFACE_FADE_MS = 140;
  *
  * So the SURFACE is the only thing this component contributes, and only while pinned: the page's
  * own background plus a bottom hairline, so the heading stays legible over whatever scrolls beneath
- * it and reads as chrome sitting on the list. The heading appears instantly (it is replacing an
- * identical, co-located one, so the swap is invisible); the surface fades, being genuinely new.
+ * it and reads as chrome sitting on the list. NOTHING here fades — surface and heading appear
+ * together, on the frame the line is crossed. A fade breaks the illusion: the whole trick is that
+ * an identical, co-located heading is being swapped for this one, and anything that ramps announces
+ * that a second object arrived.
  *
- * ── The band's own padding ──
- * The band is `bandPadding` above and below the heading, positioned `bandPadding` ABOVE the pin
- * line so the heading still lands exactly where the inline one was. That is the whole reason the
- * padding is the band's rather than the caller's row: an inline heading's vertical rhythm can be
- * deliberately lopsided (Browse's is — a hairline of space above, a full gap below, so sections sit
- * tight while each heading keeps room over its own cards), which is invisible until you draw a
- * surface around it and then reads as a header sagging in its box. The band pads symmetrically and
- * lets the row keep its rhythm. The overhang tucks under the top bar, which is opaque and drawn
- * above this.
+ * ── The band's own padding, and where the pin line goes ──
+ * The band is `bandPadding` above and below the heading. That padding is the BAND's rather than the
+ * caller's row because an inline heading's vertical rhythm can be deliberately lopsided (Browse's
+ * is — a hairline of space above, a full gap below, so sections sit tight while each heading keeps
+ * room over its own cards), which is invisible until you draw a surface around it and then reads as
+ * a header sagging in its box.
+ *
+ * The padding therefore moves the PIN LINE down (`stickyTop + bandPadding`) rather than moving the
+ * band up. Both keep the heading landing where the inline one was, but only this one is visible:
+ * a band that starts above `stickyTop` starts underneath the top bar, which is opaque and drawn
+ * over it — so its top padding is simply eaten, and the heading reads flush to the bar with a full
+ * gap beneath it. The band starts AT the bar's edge and the heading sits a padding below it.
  *
  * ── Why it never pops ──
  * It stays MOUNTED while the list has sections, and its visibility is driven by a UI-thread
@@ -115,6 +115,9 @@ export function StickySectionHeader<S extends StickySection>({
 }) {
   const theme = useTheme();
   const bandHeight = contentHeight + bandPadding * 2;
+  // Where a heading has to reach to pin: the band's own top padding below the bar's edge, which is
+  // exactly where the pinned copy draws its heading. See the doc.
+  const pinLine = stickyTop + bandPadding;
 
   // WHICH section is pinned — JS state, changed only at boundaries. -1 = none (the list is above
   // the first heading), which the visibility below renders as invisible rather than as an unmount.
@@ -132,7 +135,7 @@ export function StickySectionHeader<S extends StickySection>({
   useAnimatedReaction(
     () => {
       if (sections.length === 0) return -1;
-      const line = scrollOffset.value + stickyTop + (barOffset?.value ?? 0);
+      const line = scrollOffset.value + pinLine + (barOffset?.value ?? 0);
       let idx = -1;
       for (let i = 0; i < sections.length && sections[i]!.top <= line; i++) idx = i;
       return idx;
@@ -142,7 +145,7 @@ export function StickySectionHeader<S extends StickySection>({
       if (prev === null) return;
       if (idx !== prev) runOnJS(setActive)(idx);
     },
-    [sections, stickyTop, scrollOffset, barOffset],
+    [sections, pinLine, scrollOffset, barOffset],
   );
 
   // Visibility, from the same arithmetic so it lands on the frame the line is crossed rather than
@@ -152,7 +155,7 @@ export function StickySectionHeader<S extends StickySection>({
   useAnimatedReaction(
     () => {
       if (sections.length === 0) return false;
-      const line = scrollOffset.value + stickyTop + (barOffset?.value ?? 0);
+      const line = scrollOffset.value + pinLine + (barOffset?.value ?? 0);
       return sections[0]!.top <= line;
     },
     (visible, was) => {
@@ -160,26 +163,15 @@ export function StickySectionHeader<S extends StickySection>({
     },
     [sections, stickyTop, scrollOffset, barOffset],
   );
-  // …and the surface fades, because unlike the heading it is genuinely new.
-  const surfaceFade = useSharedValue(0);
-  useAnimatedReaction(
-    () => pinned.value,
-    (v, was) => {
-      if (v !== was) surfaceFade.value = withTiming(v, { duration: SURFACE_FADE_MS });
-    },
-  );
-
   // Visibility + the ride on the bar's slide, so the heading stays glued to the bar's bottom edge.
   const bandStyle = useAnimatedStyle(
     () => ({ opacity: pinned.value, transform: [{ translateY: barOffset?.value ?? 0 }] }),
     [barOffset],
   );
-  const surfaceStyle = useAnimatedStyle(() => ({ opacity: surfaceFade.value }));
-
   // The push-out ride, with the two-thread agree-guard (see the doc).
   const pushStyle = useAnimatedStyle(() => {
     if (sections.length === 0) return { transform: [{ translateY: 0 }] };
-    const line = scrollOffset.value + stickyTop + (barOffset?.value ?? 0);
+    const line = scrollOffset.value + pinLine + (barOffset?.value ?? 0);
     let idx = -1;
     for (let i = 0; i < sections.length && sections[i]!.top <= line; i++) idx = i;
     if (idx !== active) {
@@ -188,7 +180,7 @@ export function StickySectionHeader<S extends StickySection>({
     const next = sections[idx + 1];
     const push = next ? Math.min(0, next.top - line - bandHeight) : 0;
     return { transform: [{ translateY: Math.max(push, -bandHeight) }] };
-  }, [sections, stickyTop, scrollOffset, barOffset, active, bandHeight]);
+  }, [sections, pinLine, scrollOffset, barOffset, active, bandHeight]);
 
   // The heading to draw. Held at the first section while nothing is pinned (`active` −1) rather
   // than rendered empty: the band is invisible then, and having the content already in place is
@@ -204,21 +196,17 @@ export function StickySectionHeader<S extends StickySection>({
     // tap meant for the content under it.
     <Animated.View
       pointerEvents={active >= 0 ? 'box-none' : 'none'}
-      style={[styles.clip, { top: stickyTop - bandPadding, height: bandHeight }, bandStyle]}>
-      <Animated.View pointerEvents="box-none" style={[{ height: bandHeight }, pushStyle]}>
-        {/* The surface, behind the heading and fading in with the pin: the page's own background
-            plus the hairline that marks it off from the content sliding under it. It rides the
-            push-out with the heading rather than sitting on the clip, so the rule leaves with the
-            heading it belongs to instead of hanging under the one arriving. */}
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            StyleSheet.absoluteFill,
-            styles.surface,
-            { backgroundColor: theme.background, borderBottomColor: theme.barHairline },
-            surfaceStyle,
-          ]}
-        />
+      style={[styles.clip, { top: stickyTop, height: bandHeight }, bandStyle]}>
+      {/* The surface — the page's own background plus the hairline that marks it off from the
+          content sliding under it — is the pushed element itself, so the rule leaves with the
+          heading it belongs to instead of hanging under the one arriving. */}
+      <Animated.View
+        pointerEvents="box-none"
+        style={[
+          styles.surface,
+          { height: bandHeight, backgroundColor: theme.background, borderBottomColor: theme.barHairline },
+          pushStyle,
+        ]}>
         <View
           pointerEvents="box-none"
           style={{ height: contentHeight, marginTop: bandPadding, paddingHorizontal: sidePad }}>

@@ -507,9 +507,10 @@ User feedback after the phases landed reshaped the browsing surface:
   hand-off stays pixel-identical — because it is literally the same component: `renderHeader`
   renders the row the list renders inline, and the surface HIDES that row while the pinned copy
   stands in (`onActiveChange` → it keeps its space, drops its content), so one heading is never
-  drawn twice. The sticky contributes only a **surface** behind it, faded in while pinned: the
-  page's own background plus a bottom hairline, with symmetric padding of its OWN around the
-  heading — an inline heading's rhythm can be deliberately lopsided (Browse's is), which is
+  drawn twice. The sticky contributes only a **surface** while pinned — the page's own background
+  plus a bottom hairline, appearing WITH the heading (nothing fades: the trick is that an
+  identical, co-located heading is being swapped, and a ramp announces the second object) — with
+  symmetric padding of its OWN around the heading — an inline heading's rhythm can be deliberately lopsided (Browse's is), which is
   invisible until a surface is drawn around it and then reads as a header sagging in its box. That is the convention, arrived at the long way: a solid band, then a bare band, then a
   black PILL were each tried, and the pill in particular had to have its type size, then its
   baseline, then its gutter hand-matched to the heading — because a heading morphing into a
