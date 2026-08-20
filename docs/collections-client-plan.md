@@ -510,14 +510,19 @@ User feedback after the phases landed reshaped the browsing surface:
   drawn twice. The sticky contributes only a **surface** while pinned — the page's own background
   plus a bottom hairline, appearing WITH the heading (nothing fades: the trick is that an
   identical, co-located heading is being swapped, and a ramp announces the second object). The
-  RULE belongs to the SLOT, not to either heading — it sits on the clip, at the chrome's bottom
-  edge, and is simply there for as long as anything is pinned. So an outgoing heading can't carry it
-  away (riding the band, it swept upward across the chrome — a moving hairline), and an incoming one
-  doesn't have to arrive before the edge is marked. The top bar drops its OWN rule while any heading
-  is pinned, so the two never stack into a banded edge — routed through a `pinnedValue` **shared
-  value** the sticky writes on the UI thread and each screen reads in an animated
-  `borderBottomColor`, so the bar's rule goes out on the very frame this one comes in. Through React
-  state it trailed by a frame or two, which is two rules for two frames, every time — with
+  RULE belongs to the heading it underlines — part of the band, riding the push-out with it — but
+  HARD-SWITCHED: off the instant that heading starts moving, on again the instant one is at rest, so
+  a hand-off reads as one rule going out and the next coming in rather than a hairline sliding up
+  the chrome. It is its own hairline view; as a border on the band it was painted UNDER the band's
+  own opaque fill and so only showed through the gap a push-out opened — visible exactly when it
+  should have been hidden. Both it and the ride come off one `pushOffset` worklet, so the rule can't
+  disagree with where the band is, and both guard against the DRAWN section rather than `active`
+  (those differ on the very first pin, which made the whole band land a JS frame late). The top bar
+  drops its OWN rule while any heading is pinned, so the two never stack into a banded edge — routed
+  through a `pinnedValue` **shared value** the sticky writes on the UI thread and each screen reads
+  in an animated `borderBottomColor`, so the bar's rule goes out on the very frame this one comes
+  in. Through React state it trailed by a frame or two, which is two rules for two frames, every
+  time — with
   symmetric padding of its OWN around the heading — an inline heading's rhythm can be deliberately lopsided (Browse's is), which is
   invisible until a surface is drawn around it and then reads as a header sagging in its box. That is the convention, arrived at the long way: a solid band, then a bare band, then a
   black PILL were each tried, and the pill in particular had to have its type size, then its

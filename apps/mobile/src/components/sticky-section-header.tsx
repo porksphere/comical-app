@@ -16,6 +16,27 @@ import { useTheme } from '@/hooks/use-theme';
 export type StickySection = { key: string; label: string; count?: number; top: number };
 
 /**
+ * Where the band sits for a given scroll line: 0 at rest, down to −`bandHeight` fully pushed out by
+ * the next heading. The ride and the rule both read THIS rather than each recomputing it, so the
+ * rule can't disagree with where the band actually is.
+ *
+ * `shown` is the section being drawn, and a disagreement with the scroll's own `idx` means the JS
+ * label is lagging the UI thread mid-fling: a heading the scroll has passed holds fully pushed out,
+ * one it has backed up behind holds at rest, until the text catches up. Without that guard the
+ * label visibly spasms through a fast fling.
+ */
+function pushOffset(sections: StickySection[], shown: number, line: number, bandHeight: number) {
+  'worklet';
+  if (sections.length === 0) return 0;
+  let idx = -1;
+  for (let i = 0; i < sections.length && sections[i]!.top <= line; i++) idx = i;
+  if (idx !== shown) return idx > shown ? -bandHeight : 0;
+  const next = sections[idx + 1];
+  if (!next) return 0;
+  return Math.max(Math.min(0, next.top - line - bandHeight), -bandHeight);
+}
+
+/**
  * THE sticky section heading — the pinned heading both grouped surfaces (library/collected grids)
  * and the Browse feed hold at the top of their lists. An overlay rather than a list feature
  * because list-level sticky rows pin to the scroll viewport's top edge, which on these screens is
@@ -43,13 +64,15 @@ export type StickySection = { key: string; label: string; count?: number; top: n
  * an identical, co-located heading is being swapped for this one, and anything that ramps announces
  * that a second object arrived.
  *
- * The RULE belongs to the SLOT, not to either heading: it sits on the clip, at the chrome's bottom
- * edge, and is simply there for as long as anything is pinned. So an outgoing heading does not
- * carry it away (riding the band, it swept upward across the chrome as that heading left — a moving
- * rule, which is the one thing a hairline must never be), and an incoming one does not have to
- * arrive before the edge is marked: the rule is already where it belongs the instant the slot is
- * occupied. Through a push-out the band's fill slides up and the arriving heading shows through the
- * gap beneath it, under the same unmoved rule.
+ * The RULE belongs to the heading it underlines — it is part of the band, so it rides the push-out
+ * with it — but it is HARD-SWITCHED off the instant that heading starts moving and on again the
+ * instant one is at rest. So a hand-off reads exactly like the top bar's: the outgoing heading's
+ * rule goes out, the arriving one's comes in, and no hairline is ever seen sliding up the chrome.
+ * Both it and the ride come off `pushOffset`, so the rule cannot disagree with where the band is.
+ *
+ * It is its own hairline VIEW, not a border on the band or on the clip. A border on the band's own
+ * box is painted under the band's opaque fill on iOS, so it only showed through the gap a push-out
+ * opened — a rule visible exactly when it should be hidden.
  *
  * `pinnedValue` publishes "something is pinned" as a shared value so the top bar can drop its OWN
  * rule on the very frame this one appears — the two sit a band apart and would otherwise stack into
@@ -75,11 +98,11 @@ export type StickySection = { key: string; label: string; count?: number; top: n
  * reaction on the same arithmetic. Mounting on the JS state's boundary report made the heading
  * appear a frame late, i.e. after the inline one had already gone under the bar.
  *
- * The label is JS state and can lag the UI thread by a frame during a fling, so the push-out ride —
- * the next section's heading shoving the pinned one up — only animates while both threads agree on
- * the section: a label the scroll has passed holds fully pushed out, one the scroll backed up
- * behind holds at rest, until the text catches up (the fix for the label visibly spasming through
- * a fast fling).
+ * The label is JS state and can lag the UI thread by a frame during a fling, so the push-out ride
+ * runs through a two-thread agree-guard — see `pushOffset`. It guards against the DRAWN section,
+ * not against `active`: those differ on the very first pin (`active` is still −1 where the drawn
+ * one is already 0), and treating that as a disagreement made the band, rule included, arrive a JS
+ * frame after the heading it was replacing had gone under the bar.
  *
  * The reaction deliberately ignores its INITIAL report (prev === null): the scroll shared value
  * only updates on scroll events, so right after a remount it can still hold the previous scope's
@@ -196,24 +219,34 @@ export function StickySectionHeader<S extends StickySection>({
     [barOffset],
   );
 
-  // The push-out ride, with the two-thread agree-guard (see the doc).
-  const pushStyle = useAnimatedStyle(() => {
-    if (sections.length === 0) return { transform: [{ translateY: 0 }] };
-    const line = scrollOffset.value + pinLine + (barOffset?.value ?? 0);
-    let idx = -1;
-    for (let i = 0; i < sections.length && sections[i]!.top <= line; i++) idx = i;
-    if (idx !== active) {
-      return { transform: [{ translateY: idx > active ? -bandHeight : 0 }] };
-    }
-    const next = sections[idx + 1];
-    const push = next ? Math.min(0, next.top - line - bandHeight) : 0;
-    return { transform: [{ translateY: Math.max(push, -bandHeight) }] };
-  }, [sections, pinLine, scrollOffset, barOffset, active, bandHeight]);
+  // The section actually being DRAWN. `active` −1 (nothing pinned yet) still draws the first one —
+  // the band is invisible then, and having the content already in place is what lets the visibility
+  // flip be the whole appearance: no mount, no lag, no jump. Everything below compares against this
+  // rather than against `active`, which is the difference between the first pin landing at rest and
+  // it landing pushed-out: at the moment `pinned` flips, `idx` is 0 while `active` is still −1, and
+  // the agree-guard read that disagreement as "the heading has left" — so the whole band, rule
+  // included, arrived a JS frame late.
+  const shown = active >= 0 ? active : 0;
 
-  // The heading to draw. Held at the first section while nothing is pinned (`active` −1) rather
-  // than rendered empty: the band is invisible then, and having the content already in place is
-  // what lets the visibility flip be the whole appearance — no mount, no lag, no jump.
-  const section = sections[active >= 0 ? active : 0];
+  // The push-out ride, with the two-thread agree-guard (see the doc). The rule reads this too, so
+  // it can never disagree with where the band actually is.
+  const pushStyle = useAnimatedStyle(() => {
+    const line = scrollOffset.value + pinLine + (barOffset?.value ?? 0);
+    return { transform: [{ translateY: pushOffset(sections, shown, line, bandHeight) }] };
+  }, [sections, pinLine, scrollOffset, barOffset, shown, bandHeight]);
+
+  // The rule, ON the band and hard-switched: it belongs to the heading it underlines, so it rides
+  // up with it — but it is off the instant that heading starts moving, and on again the instant one
+  // is at rest. So a hand-off reads as the outgoing rule going out and the incoming one coming in,
+  // never as a hairline sliding up the chrome. Its own view, not a border on the band, because the
+  // band's opaque fill is drawn over its own border box on iOS — a border there is only visible
+  // through the gap a push-out opens, which is exactly backwards.
+  const ruleStyle = useAnimatedStyle(() => {
+    const line = scrollOffset.value + pinLine + (barOffset?.value ?? 0);
+    return { opacity: pushOffset(sections, shown, line, bandHeight) < 0 ? 0 : 1 };
+  }, [sections, pinLine, scrollOffset, barOffset, shown, bandHeight]);
+
+  const section = sections[shown];
   if (!section) return null;
 
   return (
@@ -224,16 +257,10 @@ export function StickySectionHeader<S extends StickySection>({
     // tap meant for the content under it.
     <Animated.View
       pointerEvents={active >= 0 ? 'box-none' : 'none'}
-      style={[
-        styles.clip,
-        // The rule lives HERE, on the slot, so the push-out can't carry it off — see the doc. It
-        // inherits the clip's own opacity, so it is present exactly while something is pinned.
-        { top: stickyTop, height: bandHeight, borderBottomColor: theme.barHairline },
-        bandStyle,
-      ]}>
-      {/* The fill — the page's own background, so the heading stays legible over whatever scrolls
-          beneath it — is the pushed element. It slides out from under the slot's rule with the
-          heading it belongs to; the rule itself stays put. */}
+      style={[styles.clip, { top: stickyTop, height: bandHeight }, bandStyle]}>
+      {/* The BAND — the page's own background (so the heading stays legible over whatever scrolls
+          beneath it), the heading, and the rule under it — is the pushed element, so all three
+          move together. */}
       <Animated.View
         pointerEvents="box-none"
         style={[{ height: bandHeight, backgroundColor: theme.background }, pushStyle]}>
@@ -242,6 +269,10 @@ export function StickySectionHeader<S extends StickySection>({
           style={{ height: contentHeight, marginTop: bandPadding, paddingHorizontal: sidePad }}>
           {renderHeader(section)}
         </View>
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.rule, { backgroundColor: theme.barHairline }, ruleStyle]}
+        />
       </Animated.View>
     </Animated.View>
   );
@@ -253,6 +284,12 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     overflow: 'hidden',
-    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  rule: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: StyleSheet.hairlineWidth,
   },
 });
