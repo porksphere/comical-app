@@ -64,15 +64,17 @@ function pushOffset(sections: StickySection[], shown: number, line: number, band
  * an identical, co-located heading is being swapped for this one, and anything that ramps announces
  * that a second object arrived.
  *
- * The RULE belongs to the heading it underlines — it is part of the band, so it rides the push-out
- * with it — but it is HARD-SWITCHED off the instant that heading starts moving and on again the
- * instant one is at rest. So a hand-off reads exactly like the top bar's: the outgoing heading's
- * rule goes out, the arriving one's comes in, and no hairline is ever seen sliding up the chrome.
- * Both it and the ride come off `pushOffset`, so the rule cannot disagree with where the band is.
+ * The RULE belongs to the heading it underlines, and there are TWO of them — one per heading in a
+ * hand-off, traded on a single frame, exactly like the bar's. The pinned heading's rides inside the
+ * band and switches OFF the instant that heading starts moving; the superseding heading's switches
+ * ON at the same instant, tracks that heading up (it is a list row, so it lives outside the clip),
+ * and lands precisely where the pinned one reappears at the swap. So a heading is never underlined
+ * while it is leaving, one is never left bare while it arrives, and no hairline is ever seen
+ * sliding up the chrome. Both come off `pushOffset`, so neither can disagree with the band.
  *
- * It is its own hairline VIEW, not a border on the band or on the clip. A border on the band's own
- * box is painted under the band's opaque fill on iOS, so it only showed through the gap a push-out
- * opened — a rule visible exactly when it should be hidden.
+ * They are hairline VIEWS, not borders on the band or the clip. A border on the band's own box is
+ * painted under the band's opaque fill on iOS, so it only showed through the gap a push-out opened
+ * — a rule visible exactly when it should be hidden.
  *
  * `pinnedValue` publishes "something is pinned" as a shared value so the top bar can drop its OWN
  * rule on the very frame this one appears — the two sit a band apart and would otherwise stack into
@@ -246,35 +248,62 @@ export function StickySectionHeader<S extends StickySection>({
     return { opacity: pushOffset(sections, shown, line, bandHeight) < 0 ? 0 : 1 };
   }, [sections, pinLine, scrollOffset, barOffset, shown, bandHeight]);
 
+  // The SUPERSEDING heading's rule — the other half of the hand-off. The heading pushing this one
+  // out is the list's own inline row, one band below the clip's bottom edge and rising, so its rule
+  // can't live in the clip: it's a second hairline, unclipped, tracking that row. It comes on at the
+  // exact push the pinned one goes off at (both off `pushOffset`), rides up with the row, and lands
+  // precisely where the pinned rule reappears at the swap — so across a hand-off there is always a
+  // rule under a heading, never a gap and never two under one heading.
+  //
+  // Its offset is `2·bandHeight + push` below `stickyTop` because two consecutive bands are exactly
+  // one bandHeight apart. The `barOffset` term cancels the one inside `line`, which is what makes
+  // this track the SCROLL (a list row doesn't ride the sliding bar) while the pinned band does.
+  const nextRuleStyle = useAnimatedStyle(() => {
+    const bar = barOffset?.value ?? 0;
+    const push = pushOffset(sections, shown, scrollOffset.value + pinLine + bar, bandHeight);
+    return {
+      opacity: push < 0 ? pinned.value : 0,
+      transform: [{ translateY: bandHeight * 2 + push + bar }],
+    };
+  }, [sections, pinLine, scrollOffset, barOffset, shown, bandHeight]);
+
   const section = sections[shown];
   if (!section) return null;
 
   return (
-    // The CLIP at the pin line: the push-out translates the heading up, and the clip is what cuts
-    // it off at the bar's edge instead of letting it slide over the bar. `box-none` so pressables
-    // inside the heading (Browse's See-all) take their taps while everything else falls through to
-    // the list — and 'none' while nothing is pinned, so an invisible heading can never intercept a
-    // tap meant for the content under it.
-    <Animated.View
-      pointerEvents={active >= 0 ? 'box-none' : 'none'}
-      style={[styles.clip, { top: stickyTop, height: bandHeight }, bandStyle]}>
-      {/* The BAND — the page's own background (so the heading stays legible over whatever scrolls
-          beneath it), the heading, and the rule under it — is the pushed element, so all three
-          move together. */}
+    <>
+      {/* The CLIP at the pin line: the push-out translates the heading up, and the clip is what
+          cuts it off at the bar's edge instead of letting it slide over the bar. `box-none` so
+          pressables inside the heading (Browse's See-all) take their taps while everything else
+          falls through to the list — and 'none' while nothing is pinned, so an invisible heading
+          can never intercept a tap meant for the content under it. */}
       <Animated.View
-        pointerEvents="box-none"
-        style={[{ height: bandHeight, backgroundColor: theme.background }, pushStyle]}>
-        <View
-          pointerEvents="box-none"
-          style={{ height: contentHeight, marginTop: bandPadding, paddingHorizontal: sidePad }}>
-          {renderHeader(section)}
-        </View>
+        pointerEvents={active >= 0 ? 'box-none' : 'none'}
+        style={[styles.clip, { top: stickyTop, height: bandHeight }, bandStyle]}>
+        {/* The BAND — the page's own background (so the heading stays legible over whatever scrolls
+            beneath it), the heading, and the rule under it — is the pushed element, so all three
+            move together. */}
         <Animated.View
-          pointerEvents="none"
-          style={[styles.rule, { backgroundColor: theme.barHairline }, ruleStyle]}
-        />
+          pointerEvents="box-none"
+          style={[{ height: bandHeight, backgroundColor: theme.background }, pushStyle]}>
+          <View
+            pointerEvents="box-none"
+            style={{ height: contentHeight, marginTop: bandPadding, paddingHorizontal: sidePad }}>
+            {renderHeader(section)}
+          </View>
+          <Animated.View
+            pointerEvents="none"
+            style={[styles.rule, { backgroundColor: theme.barHairline }, ruleStyle]}
+          />
+        </Animated.View>
       </Animated.View>
-    </Animated.View>
+      {/* The superseding heading's rule — outside the clip, because the heading it belongs to is
+          the list's own row, below the clip and rising. See `nextRuleStyle`. */}
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.nextRule, { top: stickyTop, backgroundColor: theme.barHairline }, nextRuleStyle]}
+      />
+    </>
   );
 }
 
@@ -290,6 +319,14 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    height: StyleSheet.hairlineWidth,
+  },
+  // The superseding heading's rule is positioned from the TOP (it tracks a scrolling row) and is
+  // NOT inside the clip, so it can be drawn below the clip's bottom edge — see `nextRuleStyle`.
+  nextRule: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
     height: StyleSheet.hairlineWidth,
   },
 });

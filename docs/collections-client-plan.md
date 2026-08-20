@@ -510,14 +510,18 @@ User feedback after the phases landed reshaped the browsing surface:
   drawn twice. The sticky contributes only a **surface** while pinned — the page's own background
   plus a bottom hairline, appearing WITH the heading (nothing fades: the trick is that an
   identical, co-located heading is being swapped, and a ramp announces the second object). The
-  RULE belongs to the heading it underlines — part of the band, riding the push-out with it — but
-  HARD-SWITCHED: off the instant that heading starts moving, on again the instant one is at rest, so
-  a hand-off reads as one rule going out and the next coming in rather than a hairline sliding up
-  the chrome. It is its own hairline view; as a border on the band it was painted UNDER the band's
-  own opaque fill and so only showed through the gap a push-out opened — visible exactly when it
-  should have been hidden. Both it and the ride come off one `pushOffset` worklet, so the rule can't
-  disagree with where the band is, and both guard against the DRAWN section rather than `active`
-  (those differ on the very first pin, which made the whole band land a JS frame late). The top bar
+  RULE belongs to the heading it underlines, and there are TWO — one per heading in a hand-off,
+  traded on a single frame. The pinned heading's rides inside the band and switches OFF the instant
+  that heading starts moving; the superseding heading's switches ON at the same instant, tracks that
+  heading up (it is a list row, so it lives outside the clip) and lands exactly where the pinned one
+  reappears at the swap — two consecutive bands are always one `bandHeight` apart, which is the
+  whole of the arithmetic. So a heading is never underlined while leaving, never bare while
+  arriving, and no hairline is ever seen sliding up the chrome. They are hairline views; as a border
+  on the band it was painted UNDER the band's own opaque fill and so only showed through the gap a
+  push-out opened — visible exactly when it should have been hidden. Rules and ride all come off one
+  `pushOffset` worklet, so none can disagree with where the band is, and all guard against the DRAWN
+  section rather than `active` (those differ on the very first pin, which made the whole band land a
+  JS frame late). The top bar
   drops its OWN rule while any heading is pinned, so the two never stack into a banded edge — routed
   through a `pinnedValue` **shared value** the sticky writes on the UI thread and each screen reads
   in an animated `borderBottomColor`, so the bar's rule goes out on the very frame this one comes
