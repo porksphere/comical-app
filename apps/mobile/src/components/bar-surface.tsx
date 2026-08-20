@@ -29,7 +29,6 @@ export function BarSurface({
   children,
   style,
   safeAreaTop = true,
-  hairline = true,
 }: {
   children?: ReactNode;
   /** Positioning + any animated transform/border for this particular bar. Accepts Reanimated styles
@@ -39,10 +38,6 @@ export function BarSurface({
    *  false for a secondary bar stacked BELOW one (e.g. Search's filter bar), which would otherwise
    *  add the inset a second time and sit too tall. */
   safeAreaTop?: boolean;
-  /** Draws the bar's bottom rule. Pass false when something directly beneath it draws its own and
-   *  the two would stack — a pinned section heading sits flush under this bar and carries the rule
-   *  for the pair, so the chrome reads as one surface with one edge rather than two banded ones. */
-  hairline?: boolean;
 }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -61,8 +56,11 @@ export function BarSurface({
           // `barHairline`, not the generic `hairline`: with the bar painted the page's own colour
           // this line is the only thing marking it off, so it carries more weight than a card edge.
           // The bottom tab bar draws its top edge with the same token — one divider, one value.
+          // A caller's `style` lands after this, so a bar that has to YIELD its rule (a pinned
+          // section heading sits flush beneath and carries the edge for the pair) overrides the
+          // colour from an animated style rather than toggling a prop through React state — see
+          // StickySectionHeader's `pinnedValue`.
           borderBottomColor: theme.barHairline,
-          borderBottomWidth: hairline ? StyleSheet.hairlineWidth : 0,
         },
         style,
       ]}>

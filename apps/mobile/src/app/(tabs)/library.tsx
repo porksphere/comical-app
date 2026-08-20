@@ -5,6 +5,7 @@ import { useFocusEffect } from 'expo-router';
 import { useRouter } from '@/lib/nav';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
+import { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
@@ -125,9 +126,14 @@ export default function LibraryScreen() {
     return visible.map((e) => toLibraryCard(e, bridgeById.get(e.bridgeId)));
   }, [items, hideNsfw, bridgeById]);
 
-  // A pinned section heading sits flush under the bar and draws its own rule, so the bar drops its
-  // own while one is up — otherwise the chrome reads as two banded edges instead of one surface.
-  const [stickyPinned, setStickyPinned] = useState(false);
+  // A pinned section heading sits flush under the bar and draws its own rule, so the bar YIELDS its
+  // own while one is up — see the same wiring on Browse. A shared value rather than React state so
+  // the two rules trade on the same frame instead of the bar's leaving a frame or two late.
+  const stickyPinned = useSharedValue(0);
+  const barRuleStyle = useAnimatedStyle(
+    () => ({ borderBottomColor: stickyPinned.value ? 'transparent' : theme.barHairline }),
+    [theme.barHairline],
+  );
 
   // Memoized so the grid's grouped-rows memo keys off a stable function per grouping choice.
   const groupOf = useMemo(() => libraryGroupOf(grouping) ?? undefined, [grouping]);
@@ -219,7 +225,7 @@ export default function LibraryScreen() {
           // Flush to the bar's bottom edge — NOT the viewport top, which is behind the bar
           // (content scrolls under it).
           stickyHeaderTop={headerHeight}
-          onStickyChange={setStickyPinned}
+          stickyPinned={stickyPinned}
           sharedValues={sharedValues}
           onScroll={onScroll}
           onOpen={(item) => {
@@ -293,7 +299,7 @@ export default function LibraryScreen() {
           // the bar rather than floating below it.
           groupOf={groupOf}
           stickyHeaderTop={headerHeight}
-          onStickyChange={setStickyPinned}
+          stickyPinned={stickyPinned}
           sharedValues={sharedValues}
           onScroll={onScroll}
         />
@@ -303,7 +309,7 @@ export default function LibraryScreen() {
           while searching. Searching only swaps the LEADING content — the list selector becomes a back
           button + search field in place — and collapses the search icon (now redundant) beside sort. */}
       <TabTitleBar
-        hairline={!stickyPinned}
+        barStyle={barRuleStyle}
         titleSlot={
           searching ? (
             <View style={styles.searchRow}>

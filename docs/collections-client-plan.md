@@ -510,11 +510,14 @@ User feedback after the phases landed reshaped the browsing surface:
   drawn twice. The sticky contributes only a **surface** while pinned — the page's own background
   plus a bottom hairline, appearing WITH the heading (nothing fades: the trick is that an
   identical, co-located heading is being swapped, and a ramp announces the second object). The
-  RULE belongs to whichever heading is at REST in the slot — drawn only while the push-out is idle,
-  so an outgoing heading drops it as it starts moving and the landing one takes it as it settles,
-  rather than a rule sweeping upward across the chrome. The top bar drops its OWN rule while any
-  heading is pinned (`onStickyChange` → `BarSurface hairline={false}`), so the two never stack into
-  a banded edge — with
+  RULE belongs to the SLOT, not to either heading — it sits on the clip, at the chrome's bottom
+  edge, and is simply there for as long as anything is pinned. So an outgoing heading can't carry it
+  away (riding the band, it swept upward across the chrome — a moving hairline), and an incoming one
+  doesn't have to arrive before the edge is marked. The top bar drops its OWN rule while any heading
+  is pinned, so the two never stack into a banded edge — routed through a `pinnedValue` **shared
+  value** the sticky writes on the UI thread and each screen reads in an animated
+  `borderBottomColor`, so the bar's rule goes out on the very frame this one comes in. Through React
+  state it trailed by a frame or two, which is two rules for two frames, every time — with
   symmetric padding of its OWN around the heading — an inline heading's rhythm can be deliberately lopsided (Browse's is), which is
   invisible until a surface is drawn around it and then reads as a header sagging in its box. That is the convention, arrived at the long way: a solid band, then a bare band, then a
   black PILL were each tried, and the pill in particular had to have its type size, then its

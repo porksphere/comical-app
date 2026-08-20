@@ -61,7 +61,7 @@ export function SeriesGrid({
   crossfading,
   groupOf,
   stickyHeaderTop,
-  onStickyChange,
+  stickyPinned,
   sharedValues,
   onScroll,
   onEndReached,
@@ -99,8 +99,9 @@ export function SeriesGrid({
   groupOf?: (item: SeriesGridItem) => { key: string; label: string };
   /** Where the sticky section header pins (the top bar's bottom edge) — grouped mode only. */
   stickyHeaderTop?: number;
-  /** Grouped mode: whether a heading is pinned, so the screen can drop its bar's own rule. */
-  onStickyChange?: (pinned: boolean) => void;
+  /** Grouped mode: written by the sticky while a heading is pinned, so the screen can drop its
+   *  bar's own rule on the same frame. */
+  stickyPinned?: SharedValue<number>;
   /** Feeds a `useSlidingBar`'s UI-thread scroll offset. */
   sharedValues?: { scrollOffset: SharedValue<number> };
   onScroll?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
@@ -146,7 +147,7 @@ export function SeriesGrid({
         paddingBottom={paddingBottom ?? BottomTabInset + Spacing.five}
         sidePad={sidePad}
         stickyHeaderTop={stickyHeaderTop}
-        onStickyChange={onStickyChange}
+        stickyPinned={stickyPinned}
         sharedValues={sharedValues}
         onScroll={onScroll}
         renderRow={(rowItems) => (

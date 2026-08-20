@@ -43,12 +43,19 @@ export type StickySection = { key: string; label: string; count?: number; top: n
  * an identical, co-located heading is being swapped for this one, and anything that ramps announces
  * that a second object arrived.
  *
- * The RULE belongs to whichever heading is at rest in the slot, not to the band: it is drawn only
- * while the push-out is idle, so a heading being shoved out drops it the moment it starts moving
- * and the one that lands takes it the moment it settles. Carried on the band instead, it swept
- * upward across the chrome as the outgoing heading left — a moving rule, which is exactly the kind
- * of thing a hairline should never be. The top bar drops its own rule while any heading is pinned
- * (`onActiveChange` → `BarSurface hairline={false}`), so the two never stack into a banded edge.
+ * The RULE belongs to the SLOT, not to either heading: it sits on the clip, at the chrome's bottom
+ * edge, and is simply there for as long as anything is pinned. So an outgoing heading does not
+ * carry it away (riding the band, it swept upward across the chrome as that heading left — a moving
+ * rule, which is the one thing a hairline must never be), and an incoming one does not have to
+ * arrive before the edge is marked: the rule is already where it belongs the instant the slot is
+ * occupied. Through a push-out the band's fill slides up and the arriving heading shows through the
+ * gap beneath it, under the same unmoved rule.
+ *
+ * `pinnedValue` publishes "something is pinned" as a shared value so the top bar can drop its OWN
+ * rule on the very frame this one appears — the two sit a band apart and would otherwise stack into
+ * a banded edge. It is a shared value rather than the JS callback for exactly that reason: routed
+ * through React state the bar's rule left a frame or two after this one arrived, which is two rules
+ * for two frames, every time.
  *
  * ── The band's own padding, and where the pin line goes ──
  * The band is `bandPadding` above and below the heading. That padding is the BAND's rather than the
@@ -89,6 +96,7 @@ export function StickySectionHeader<S extends StickySection>({
   scrollOffset,
   barOffset,
   onActiveChange,
+  pinnedValue,
   renderHeader,
 }: {
   /** Callers may extend `StickySection` with whatever `renderHeader` needs (Browse threads each
@@ -117,6 +125,9 @@ export function StickySectionHeader<S extends StickySection>({
   /** The row key of the heading being stood in for (null = none). The caller hides that row's
    *  content, so the pinned copy never doubles the heading it replaced. */
   onActiveChange?: (key: string | null) => void;
+  /** Written on the UI thread: 1 while a heading is pinned, 0 otherwise. The screen drops its top
+   *  bar's rule off this, on the same frame — see the doc. */
+  pinnedValue?: SharedValue<number>;
   /** The heading row — render the SAME element the list renders inline. */
   renderHeader: (section: S) => ReactElement;
 }) {
@@ -166,29 +177,25 @@ export function StickySectionHeader<S extends StickySection>({
       return sections[0]!.top <= line;
     },
     (visible, was) => {
-      if (visible !== was) pinned.value = visible ? 1 : 0;
+      if (visible === was) return;
+      pinned.set(visible ? 1 : 0);
+      // The top bar's rule goes out on the SAME worklet frame this one comes in — see the doc.
+      pinnedValue?.set(visible ? 1 : 0);
     },
-    [sections, stickyTop, scrollOffset, barOffset],
+    [sections, pinLine, scrollOffset, barOffset, pinnedValue],
   );
+  // Hand the bar its rule back on the way out. A screen's shared value outlives this component (the
+  // Library's is shared by two surfaces, and either can go away pinned — group-by → None drops the
+  // sticky entirely), so leaving it at 1 would leave that screen's bar ruleless with nothing left to
+  // clear it.
+  useEffect(() => () => pinnedValue?.set(0), [pinnedValue]);
+
   // Visibility + the ride on the bar's slide, so the heading stays glued to the bar's bottom edge.
   const bandStyle = useAnimatedStyle(
     () => ({ opacity: pinned.value, transform: [{ translateY: barOffset?.value ?? 0 }] }),
     [barOffset],
   );
 
-  // The rule: on only while the band is at REST (see the doc). Recomputes the push rather than
-  // sharing it — both worklets run on the same frame anyway, and a derived shared value between
-  // them would just be a third thing to keep in step.
-  const ruleStyle = useAnimatedStyle(() => {
-    if (sections.length === 0) return { opacity: 1 };
-    const line = scrollOffset.value + pinLine + (barOffset?.value ?? 0);
-    let idx = -1;
-    for (let i = 0; i < sections.length && sections[i]!.top <= line; i++) idx = i;
-    if (idx !== active) return { opacity: 0 };
-    const next = sections[idx + 1];
-    const push = next ? Math.min(0, next.top - line - bandHeight) : 0;
-    return { opacity: push < 0 ? 0 : 1 };
-  }, [sections, pinLine, scrollOffset, barOffset, active, bandHeight]);
   // The push-out ride, with the two-thread agree-guard (see the doc).
   const pushStyle = useAnimatedStyle(() => {
     if (sections.length === 0) return { transform: [{ translateY: 0 }] };
@@ -217,10 +224,16 @@ export function StickySectionHeader<S extends StickySection>({
     // tap meant for the content under it.
     <Animated.View
       pointerEvents={active >= 0 ? 'box-none' : 'none'}
-      style={[styles.clip, { top: stickyTop, height: bandHeight }, bandStyle]}>
-      {/* The surface — the page's own background plus the hairline that marks it off from the
-          content sliding under it — is the pushed element itself, so the rule leaves with the
-          heading it belongs to instead of hanging under the one arriving. */}
+      style={[
+        styles.clip,
+        // The rule lives HERE, on the slot, so the push-out can't carry it off — see the doc. It
+        // inherits the clip's own opacity, so it is present exactly while something is pinned.
+        { top: stickyTop, height: bandHeight, borderBottomColor: theme.barHairline },
+        bandStyle,
+      ]}>
+      {/* The fill — the page's own background, so the heading stays legible over whatever scrolls
+          beneath it — is the pushed element. It slides out from under the slot's rule with the
+          heading it belongs to; the rule itself stays put. */}
       <Animated.View
         pointerEvents="box-none"
         style={[{ height: bandHeight, backgroundColor: theme.background }, pushStyle]}>
@@ -229,11 +242,6 @@ export function StickySectionHeader<S extends StickySection>({
           style={{ height: contentHeight, marginTop: bandPadding, paddingHorizontal: sidePad }}>
           {renderHeader(section)}
         </View>
-        {/* Its own view rather than a border, so it can come and go on its own — see the doc. */}
-        <Animated.View
-          pointerEvents="none"
-          style={[styles.rule, { backgroundColor: theme.barHairline }, ruleStyle]}
-        />
       </Animated.View>
     </Animated.View>
   );
@@ -245,12 +253,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     overflow: 'hidden',
-  },
-  rule: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
 });

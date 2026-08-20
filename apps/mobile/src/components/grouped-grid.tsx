@@ -44,7 +44,7 @@ export function GroupedGrid<T>({
   paddingBottom,
   sidePad,
   stickyHeaderTop,
-  onStickyChange,
+  stickyPinned,
   sharedValues,
   onScroll,
   renderRow,
@@ -62,9 +62,9 @@ export function GroupedGrid<T>({
   /** Screen-relative y where the heading pins — the top bar's bottom edge. Omit to disable the
    *  sticky (headings then simply scroll away inline). */
   stickyHeaderTop?: number;
-  /** Whether a heading is currently pinned. The screen drops its top bar's own rule while one is,
-   *  so the bar and the heading don't stack two hairlines. */
-  onStickyChange?: (pinned: boolean) => void;
+  /** Written by the sticky: 1 while a heading is pinned. The screen drops its top bar's own rule
+   *  off this, on the same frame — see StickySectionHeader's `pinnedValue`. */
+  stickyPinned?: SharedValue<number>;
   /** Feeds the tab bar's UI-thread slide — and the sticky's arithmetic. */
   sharedValues?: { scrollOffset: SharedValue<number> };
   onScroll?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
@@ -93,13 +93,7 @@ export function GroupedGrid<T>({
   // The heading the pinned copy is currently standing in for — that row renders its space but not
   // its content, so one heading is never drawn twice.
   const [pinnedKey, setPinnedKey] = useState<string | null>(null);
-  const onActiveChange = useCallback(
-    (key: string | null) => {
-      setPinnedKey(key);
-      onStickyChange?.(key !== null);
-    },
-    [onStickyChange],
-  );
+  const onActiveChange = useCallback((key: string | null) => setPinnedKey(key), []);
 
   return (
     <View style={styles.fill}>
@@ -136,6 +130,7 @@ export function GroupedGrid<T>({
           resetKey={scopeKey}
           scrollOffset={sharedValues.scrollOffset}
           onActiveChange={onActiveChange}
+          {...(stickyPinned && { pinnedValue: stickyPinned })}
           // The SAME component the list renders inline — see StickySectionHeader.
           renderHeader={(s) => <SectionHeader label={s.label} count={s.count} />}
         />

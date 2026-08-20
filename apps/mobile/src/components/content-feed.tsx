@@ -83,7 +83,7 @@ export function ContentFeed({
   crossfading,
   stickyHeaderTop,
   stickyBarOffset,
-  onStickyChange,
+  stickyPinned,
   sharedValues,
   onScroll,
   onEndReached,
@@ -112,9 +112,9 @@ export function ContentFeed({
   /** The top bar's slide (useSlidingBar's `offset`, 0 → −barHeight) — the sticky rides it, so the
    *  pinned heading stays glued to the bar's bottom edge as the bar hides and returns. */
   stickyBarOffset?: SharedValue<number>;
-  /** Whether a heading is currently pinned. The screen drops its top bar's own rule while one is,
-   *  so the bar and the heading don't stack two hairlines. */
-  onStickyChange?: (pinned: boolean) => void;
+  /** Written by the sticky: 1 while a heading is pinned. The screen drops its top bar's own rule
+   *  off this, on the same frame — see StickySectionHeader's `pinnedValue`. */
+  stickyPinned?: SharedValue<number>;
   sharedValues?: { scrollOffset: SharedValue<number> };
   onScroll?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   onEndReached?: () => void;
@@ -209,13 +209,7 @@ export function ContentFeed({
   // The heading the pinned copy is currently standing in for — that row keeps its space but drops
   // its content, so one heading is never drawn twice.
   const [pinnedKey, setPinnedKey] = useState<string | null>(null);
-  const onActiveChange = useCallback(
-    (key: string | null) => {
-      setPinnedKey(key);
-      onStickyChange?.(key !== null);
-    },
-    [onStickyChange],
-  );
+  const onActiveChange = useCallback((key: string | null) => setPinnedKey(key), []);
 
   // Terminal-grid first-load skeleton — rows self-pad Spacing.four (via styles.row), matching the real
   // gridRow's inset (ContentFeed's container is centering-only, unlike GridSkeleton's SeriesGrid shape).
@@ -370,6 +364,7 @@ export function ContentFeed({
         scrollOffset={sharedValues.scrollOffset}
         barOffset={stickyBarOffset}
         onActiveChange={onActiveChange}
+        {...(stickyPinned && { pinnedValue: stickyPinned })}
         // The SAME row the list renders inline, drill chevron and all — see StickySectionHeader.
         renderHeader={(s) => {
           const seeAll = s.seeAll;

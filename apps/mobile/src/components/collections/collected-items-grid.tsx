@@ -34,7 +34,7 @@ export function CollectedItemsGrid({
   paddingTop,
   paddingBottom,
   stickyHeaderTop,
-  onStickyChange,
+  stickyPinned,
   sharedValues,
   onScroll,
   onOpen,
@@ -49,8 +49,9 @@ export function CollectedItemsGrid({
   paddingBottom: number;
   /** Screen-relative y where the sticky section header pins — see `GroupedGrid`. */
   stickyHeaderTop?: number;
-  /** Whether a heading is pinned, so the screen can drop its bar's own rule. */
-  onStickyChange?: (pinned: boolean) => void;
+  /** Written by the sticky while a heading is pinned, so the screen can drop its bar's own rule on
+   *  the same frame. */
+  stickyPinned?: SharedValue<number>;
   /** Feeds the tab bar's UI-thread slide, exactly as `SeriesGrid` does — and the sticky header's
    *  push-out ride. */
   sharedValues?: { scrollOffset: SharedValue<number> };
@@ -85,7 +86,7 @@ export function CollectedItemsGrid({
       paddingBottom={paddingBottom}
       sidePad={sidePad}
       stickyHeaderTop={grouping === 'none' ? undefined : stickyHeaderTop}
-      onStickyChange={onStickyChange}
+      stickyPinned={stickyPinned}
       sharedValues={sharedValues}
       onScroll={onScroll}
       renderRow={(rowItems) => (
