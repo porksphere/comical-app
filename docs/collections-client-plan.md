@@ -588,11 +588,20 @@ chapter progress, tracker links, the cached detail and chapter list, group membe
 `entryKey` in its OWN document, so the dissolution orphaned those rather than deleting them.
 Rebuilding the series items reattaches the lot.
 
-`src/data/embedded/legacy-entries.ts` reads that document once at startup and hands the rows to
+`src/data/migrations/legacy-entries.ts` reads that document once at startup and hands the rows to
 `Library.importLegacyEntries`, which owns the domain logic so every host migrates identically
 (the server does the same to its `entries.json`). Row-by-row validation, idempotent on coordinates
 already collected, and it files everything into the **`Library`** collection — under pure
 collections an unfiled series would be swept by the next thing that touches it.
+
+It lives in `src/data/migrations/` because that is now where every migration lives: `index.ts`
+there is the registry — one list of everything on a device that reshapes data a user already has,
+which is the one category of code here that can destroy something irreplaceable. Two shapes, both
+listed: `module` migrations (this one) live in the directory; the three `migrateLegacyKey`
+adoptions stay wired to their own store's module, because each `adopt` closes over that module's
+accessors and its load is what triggers them. `migrations.test.ts` walks the source tree and fails
+the build when a `migrateLegacyKey` call site isn't registered, so the in-place category can't grow
+unnoticed. `PERSIST_BUSTER` is deliberately NOT in it — it discards a cache, it doesn't move data.
 
 Four things about the wiring in `startup.ts` that are deliberate:
 
