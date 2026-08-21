@@ -71,7 +71,7 @@ export function SeriesActionsMenu({
             collection, and the label then names it. Saved: opens the picker. See useSeriesSave. */}
         <MenuActionRow
           testID="series.card-menu.save"
-          label={save.label}
+          label={save.menuLabel}
           Icon={save.saved ? CheckIcon : PlusIcon}
           loading={save.saved === null}
           active={!!save.saved}

@@ -46,7 +46,7 @@ import {
   type MenuRowSpec,
   type SubmenuSpec,
 } from '@/components/context-menu-material';
-import { CheckIcon, ChevronRightIcon, DownloadsIcon, PlayIcon, PlusIcon, RetryIcon, StarIcon } from '@/components/icons/ui-icons';
+import { CheckIcon, DownloadsIcon, PlayIcon, PlusIcon, RetryIcon, StarIcon } from '@/components/icons/ui-icons';
 import { PageThumb } from '@/components/series/chapters-section';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
@@ -316,13 +316,13 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
 
   const { favorited, toggle: toggleFavorite, available: favoritesAvailable } = useFavorite(bridgeId, entry.id);
   const resetProgress = useResetReadProgress(bridgeId, entry.id, entry.title);
-  // Collections for the Save row's submenu: the set itself (drives chevron-vs-＋ and the
-  // expanded rows) + this series' live memberships (the checkmarks, optimistic). Both queries run
+  // Collections for the Save row's submenu: the set itself (the expanded rows) + this series'
+  // live memberships (the checkmarks, optimistic). Both queries run
   // once per open — this component mounts only while the menu is up, never per card. Each gates its
   // own surface while loading: the ROW is inert until the set resolves (otherwise a quick tap reads
   // a still-loading [] as "no collections" and wrongly takes the ＋→manage path), and the submenu
   // rows are inert until the memberships resolve (a toggle then would REPLACE unknown memberships).
-  const { collections, isLoading: collectionsLoading } = useCollections();
+  const { collections } = useCollections();
   const snapshot = () => ({ seriesTitle: entry.title, ...(entry.cover ? { thumbnailUrl: entry.cover } : {}) });
   const {
     collectionIds,
@@ -1145,26 +1145,20 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     // and the label then names it; once saved (or with nowhere to put it), a tap opens the submenu
     // to choose. See useSeriesSave.
     {
-      label: save.label,
-      // Saved → ✓. Quick-savable → ＋, it commits on tap. Otherwise a chevron, because the tap
-      // expands the in-place submenu (iOS Files' "Open With ›"). The glyph IS the affordance.
-      Icon: save.saved ? CheckIcon : save.quickSaves || !hasCollections ? PlusIcon : ChevronRightIcon,
-      // Inert until BOTH sets have loaded — see the loading note on useCollections; a quick tap on
-      // a still-loading [] would read as "no collections" and wrongly take the ＋→manage path.
-      loading: collectionsLoading || save.saved === null,
+      label: save.menuLabel,
+      // Unsaved → ＋, and the tap commits: into the `Library` collection, created if it's the
+      // user's first. Saved → ✓, and the tap expands the in-place submenu to re-file it (iOS
+      // Files' "Open With ›"). The glyph IS the affordance either way.
+      Icon: save.saved ? CheckIcon : PlusIcon,
+      loading: save.saved === null,
       active: !!save.saved,
       testID: 'series.card-menu.save',
-      ...(!save.quickSaves && hasCollections && { submenu: collectionsSubmenu }),
-      onPress: save.quickSaves
-        ? () => act(save.onPress)
-        : hasCollections
+      ...(save.saved && hasCollections && { submenu: collectionsSubmenu }),
+      onPress:
+        save.saved && hasCollections
           ? // Do NOT close the menu — the submenu expands over it while the rest pushes back.
             () => openSubmenu(SAVE_ROW_INDEX, collectionsSubmenu())
-          : () => {
-              req.onClose?.(); // navigating away — un-hide the card and drop the overlay
-              closeSeriesCardMenu();
-              router.push('/manage-collections');
-            },
+          : () => act(save.onPress),
     },
     {
       label: favorited ? 'Unfavorite' : 'Favorite',

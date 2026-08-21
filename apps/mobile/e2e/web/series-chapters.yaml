@@ -34,17 +34,10 @@ url: http://localhost:4000/comical-app
 # never a remove: the seeded library entries are `lib-0..7` (mock.ts's `seedLibrary`), which
 # the browse grid never serves.
 #
-# TWO taps, and the second is not incidental. Save follows the Google Maps model (see
-# useSeriesSave): a tap files into whichever collection series were LAST filed into, and nothing
-# is ever auto-created — so the first save of a run, with no last-used collection remembered,
-# opens the picker instead. Picking any seeded collection both saves it and sets the destination
-# a later one-tap save would use.
+# One tap: the button says Library and files into the `Library` collection, creating it if this is
+# the first save (see useSeriesSave). No picker step — that only opens for a series already saved.
 - tapOn:
     id: "series.action.save"
-- tapOn:
-    id: "collection-picker\\.collection\\..*"
-- tapOn:
-    id: "collection-picker.done"
 
 # Nothing in the chapters section is on screen on arrival — not the tab/sort controls either, which
 # an earlier version of this flow assumed. On the ~945x917 viewport Maestro's Chrome gives it, the

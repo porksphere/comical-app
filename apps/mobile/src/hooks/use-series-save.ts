@@ -1,9 +1,9 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { openCollectionPicker } from '@/components/collection-picker';
 import type { LibrarySnapshot } from '@/data/api';
+import { resolveDefaultCollection } from '@/data/default-collection';
 import { collectionsQuery } from '@/data/queries';
-import { resolveLastCollection } from '@/data/last-collection';
 import { useDataSource, useMockActive } from '@/data/source';
 import { useItemCollections } from '@/hooks/use-item-collections';
 import { hapticSelection } from '@/lib/haptics';
@@ -17,19 +17,21 @@ import { hapticSelection } from '@/lib/haptics';
  * preset destination. Two controls for one action, and the one people reached for couldn't tell
  * them what the other had done.
  *
- * **The Google Maps "Save" model**, which the reader's page save (`usePageCollected`) already
- * follows, so the two saves in this app work the same way:
+ * ── It says LIBRARY, so it does Library ──
  *
- * - **Unsaved** → a tap files it into whichever collection series were last filed into, and the
- *   button then NAMES that collection. Nothing is auto-created: with no usable last-used collection
- *   (nothing filed yet, or it has since been deleted) the tap opens the picker instead.
- * - **Saved** → a tap opens the picker, where the destination is changed or cleared. A saved series
- *   is deliberately NOT one tap from gone — it carries progress, downloads and tracker links, and
- *   Maps doesn't one-tap away a save either. (This is the one place the series control and the page
- *   control differ: a page is cheap to re-save, a series isn't.)
+ * A tap on an uncollected series puts it in the **`Library`** collection — the one
+ * `data/default-collection.ts` names, created on first use, and the same one a migrated shelf lands
+ * in. Deterministic, and it matches the label.
  *
- * Naming the destination is what makes the model legible — "Saved in Reading" tells you where it
- * went without opening anything, which "In Library" could never do once there were several.
+ * It deliberately does NOT follow the reader's Google Maps save, which files a page into whichever
+ * collection pages were last filed into. That model needs the button to name its destination
+ * ("Saved in Reading") for a tap to be predictable, and once the button says "Library" instead, a
+ * silent last-used destination makes the label a lie: press ＋ Library, get "Reading". Pages keep
+ * the Maps model (`usePageCollected`) because their button never claimed otherwise.
+ *
+ * A tap on a series that IS saved opens the picker, where the collections are changed or cleared.
+ * A saved series is deliberately not one tap from gone — it carries progress, downloads and tracker
+ * links, and Maps doesn't one-tap away a save either.
  *
  * Membership IS the saved state, so this reads the series' collections and nothing else, where the
  * old pair read that *and* a separate is-it-in-the-library check that could disagree with it.
@@ -43,45 +45,37 @@ export function useSeriesSave(
 ) {
   const ds = useDataSource();
   const mock = useMockActive();
+  const queryClient = useQueryClient();
 
   const target = { kind: 'series', bridgeId, seriesId, snapshot } as const;
-  const { collectionIds, loading: membershipsLoading, setCollections } = useItemCollections(target);
-  // Subscribed, not peeked, and part of the loading gate: the label names a collection and the tap
-  // resolves its destination from this list, so both are wrong until it lands. Shares the one cache
-  // entry the picker and the library selector already populate.
-  const { data: collections, isLoading: collectionsLoading } = useQuery(collectionsQuery(ds, mock));
+  const { collectionIds, loading, setCollections } = useItemCollections(target);
 
-  /** `null` while either half is loading — the control renders disabled rather than wrong. */
-  const saved = membershipsLoading || collectionsLoading ? null : collectionIds.length > 0;
-
-  /** Where a one-tap save would go, or `undefined` when there is nowhere sensible. Validated
-   *  against the live list, so a deleted collection falls through to the picker instead of
-   *  resurrecting itself. */
-  const destination = collections ? resolveLastCollection('series', collections) : undefined;
-
-  // What it's saved IN, or null when that can't be named — filed in several, or filed somewhere the
-  // list doesn't know about yet (mid-invalidation). Still saved either way, just unnameable.
-  const where =
-    saved !== true
-      ? null
-      : collectionIds.length > 1
-        ? `${collectionIds.length} collections`
-        : (collections?.find((c) => c.id === collectionIds[0])?.name ?? null);
+  /** `null` while the membership is loading — the control renders disabled rather than wrong. */
+  const saved = loading ? null : collectionIds.length > 0;
+  const pick = () => openCollectionPicker({ ...target, title });
 
   return {
     saved,
-    /** "Save" when unsaved, "Saved in <collection>" when it can be named (callers add their own
-     *  ✓/＋ glyph). */
-    label: saved !== true ? 'Save' : where ? `Saved in ${where}` : 'Saved',
-    /** Whether a tap will save outright rather than open the picker — for surfaces that show a
-     *  different affordance for the two (the native menu's in-place submenu). */
-    quickSaves: saved === false && destination !== undefined,
-    /** Open the picker outright. */
-    pick: () => openCollectionPicker({ ...target, title }),
-    onPress: () => {
+    /** For the glyph-prefixed surfaces (the series screen's button, the reader panel's cell), which
+     *  supply their own ✓/＋ — matching what those two showed before the merge. */
+    label: saved ? 'In Library' : 'Library',
+    /** For the menu ROWS, which read as actions rather than states. No "Remove from Library": a tap
+     *  on a saved series opens the picker now, it doesn't remove. */
+    menuLabel: saved ? 'In Library' : 'Add to Library',
+    /** Open the picker outright — the caret / submenu affordance. */
+    pick,
+    onPress: async () => {
       if (!bridgeId || saved === null) return;
-      if (saved || !destination) return openCollectionPicker({ ...target, title });
+      // Saved → the picker owns every change from here, including removal.
+      if (saved) return pick();
       hapticSelection();
+      // Through the query cache, not a bare `ds.getCollections()`: the collections list is server
+      // state, so this reuses the entry the picker and the library selector already populated
+      // instead of putting a round trip in front of every tap.
+      const destination = await resolveDefaultCollection(
+        () => queryClient.fetchQuery(collectionsQuery(ds, mock)),
+        (name) => ds.createCollection(name),
+      );
       setCollections([destination]);
     },
   };

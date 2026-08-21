@@ -1,7 +1,7 @@
 # Universal collections — client plan
 
 The runtime half has landed in the `comical` submodule
-(`claude/page-favorites-runtime-00agdx`, pinned here at the branch head `1187d8d`). This document is
+(`claude/page-favorites-runtime-00agdx`, pinned here at the branch head `38469da`). This document is
 the `comical-app` half.
 
 **The submodule is the source of truth.** Travelling with the pin:
@@ -645,17 +645,20 @@ request), and `removeLibraryEntry`/`deleteSeriesItem` into one `uncollectSeries`
 **And so did the UI.** Four surfaces each carried TWO controls — "Add to Library" *and* "Add to
 collection" — for what is now one action, and the one people reached for couldn't say what the other
 had done. They are now a single **`useSeriesSave`** control on all four (series screen, web card
-menu, native long-press menu, reader panel), following the **Google Maps "Save" model** the reader's
-page save (`usePageCollected`) already used:
+menu, native long-press menu, reader panel):
 
-- **Unsaved** → a tap files into whichever collection series were last filed into
-  (`data/last-collection.ts`), and the label then NAMES it — "Saved in Reading". Naming the
-  destination is what makes the model legible; "In Library" never could once there were several.
-- **Nothing filed yet, or the remembered collection was deleted** → the tap opens the picker.
-  Nothing is auto-created, so a user's collection list only ever holds collections they made.
-- **Saved** → a tap opens the picker, where the destination is changed or cleared. This is the one
-  place the series control diverges from the page control: a saved series is deliberately not one
-  tap from gone, because it carries progress, downloads and tracker links.
+- **Unsaved** → a tap puts it in the **`Library`** collection (`data/default-collection.ts`,
+  created on first use — the same one a migrated shelf lands in). The button keeps the old
+  "＋ Library" / "✓ In Library" wording.
+- **Saved** → a tap opens the picker, where the collections are changed or cleared. A saved series
+  is deliberately not one tap from gone: it carries progress, downloads and tracker links.
+
+It deliberately does **not** follow the reader's Google Maps save (a page files into whichever
+collection pages were last filed into). That was tried first and reverted on use: the Maps model
+only reads as predictable when the button NAMES its destination — "Saved in Reading" — and a button
+reading "Save" on a series screen is ambiguous enough to be confusing. Once the label goes back to
+"Library", a silent last-used destination makes it a lie: press ＋ Library, get "Reading". Pages
+keep the Maps model, since their button never claimed otherwise.
 
 Membership IS the saved state, so the control reads the series' collections and nothing else —
 the old pair read that *plus* a separate is-it-in-the-library check that could disagree with it.
@@ -670,8 +673,7 @@ outright, › when it will expand.
 `data/default-collection.ts` survives for **bulk, non-interactive** collects — importing a bridge's
 favorites, which has no user to ask — and files into `Library`, the same name the migration uses.
 
-**e2e consequence:** the first save of a run always opens the picker, by design. Both
-`series-chapters` flows now tap the row, pick a collection, and confirm.
+**e2e:** one tap, as before — the picker only opens for a series that is already saved.
 
 ### 11.4 Removing a series cascades — but NOT to read state
 

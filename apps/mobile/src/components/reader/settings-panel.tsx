@@ -463,8 +463,8 @@ function SeriesActionsRow({
           onPress={() => {
             // A tap that opens the picker must not leave it stacked behind this sheet; a tap that
             // saves outright should leave the reader panel up, so the label change is visible.
-            if (!save.quickSaves) closeTop();
-            save.onPress();
+            if (save.saved) closeTop();
+            void save.onPress();
           }}
           style={[styles.opt, save.saved && styles.optOn]}
           disabled={save.saved === null}>
