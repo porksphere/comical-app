@@ -1,7 +1,7 @@
 # Universal collections — client plan
 
 The runtime half has landed in the `comical` submodule
-(`claude/page-favorites-runtime-00agdx`, pinned here at the branch head `7501175`). This document is
+(`claude/page-favorites-runtime-00agdx`, pinned here at the branch head `2815510`). This document is
 the `comical-app` half.
 
 **The submodule is the source of truth.** Travelling with the pin:
