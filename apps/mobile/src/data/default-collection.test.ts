@@ -5,21 +5,13 @@
  * wrong are both silent: adopt nothing and you get a second default beside the one holding their
  * whole migrated library; adopt too eagerly and you rename a collection they made themselves.
  */
-import { beforeEach, describe, expect, test, mock } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
 
-// `persisted$` reaches react-native, which bun can't parse (Flow-typed `react-native/index.js`) —
-// stub it with a plain in-memory box, the same way `asset-resolve.test.ts` stubs its own.
+import { DEFAULT_COLLECTION, resolveDefaultCollection } from './default-collection';
+
+// The device's remembered id — injected, which is the whole reason this module keeps the persisted
+// store at arm's length (see `default-collection-store.ts`). No platform mocks needed.
 let stored: { id: string | null } = { id: null };
-mock.module('@/lib/observable', () => ({
-  persisted$: () => ({
-    peek: () => stored,
-    set: (v: { id: string | null }) => {
-      stored = v;
-    },
-  }),
-}));
-
-const { DEFAULT_COLLECTION, resolveDefaultCollection } = await import('./default-collection');
 
 type Row = { id: string; name: string; order: number };
 
@@ -42,6 +34,10 @@ function ops(initial: Row[]) {
       renames.push([id, name]);
       const row = rows.find((r) => r.id === id);
       if (row) row.name = name;
+    },
+    storedId: () => stored.id,
+    remember: (id: string) => {
+      stored = { id };
     },
   };
 }

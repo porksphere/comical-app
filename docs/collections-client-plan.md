@@ -680,8 +680,11 @@ So `resolveDefaultCollection` remembers an **id** (`comical:defaultCollection`) 
 order: the remembered id → a collection named `Default` → a collection named `Library`, **renamed in
 place** → create one. That third step is what adopts a shelf migrated by the first cut of this
 branch instead of stranding it beside a new `Default`; it can only fire once per device. The
-migration now records the collection it filed into directly, so a fresh migration never needs it.
-The selector's unfiltered row is **"All"**.
+migration files under `DEFAULT_COLLECTION`'s own name, so step 2 catches a fresh one — deliberately
+NOT by pinning the id at startup, which is inside the window where Legend State drops a persisted
+write, silently. The rule itself is pure (the storage is injected, and lives in
+`default-collection-store.ts`), which is what lets it be tested without mocking the platform. The
+selector's unfiltered row is **"All"**.
 
 It also serves **bulk, non-interactive** collects — importing a bridge's favorites, which has no
 user to ask.
@@ -708,6 +711,20 @@ behind `useResetReadProgress` (confirm → toast → invalidate progress/library
 the per-series menu — both the web/actions menu and the native long-press one — rather than on a
 library-only surface, because it has to reach a series that ISN'T collected: nothing sweeps progress
 orphaned by an uncollect, so that is how it gets reclaimed.
+
+### 11.5 NSFW, and one rule for it
+
+Every cross-bridge list of the user's own data hides items from NSFW bridges while NSFW is off, and
+each surface open-coded that — which is how a collection's contents came to show NSFW series with
+NSFW off: the surface was new and simply didn't have the line. The album built from a collection
+(`useReaderSequence`) had the same gap, so a hidden page could still be swiped into from a
+neighbour. Both now go through **`useVisibleByBridge`**, one hook, so a new surface inherits the
+rule instead of re-deriving it.
+
+It filters in the component rather than in `queryFn` on purpose: NSFW visibility is a device
+preference, not part of the fetch, so folding it in would key the cache without it — and the
+session-scoped modes (`until-background`, `until-restart`) flip with no write to invalidate on.
+An unknown bridge counts as safe, or the library would blank for the first frames after launch.
 
 ## 12. Verification
 

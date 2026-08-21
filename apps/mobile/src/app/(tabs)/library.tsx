@@ -27,7 +27,7 @@ import { collectionItemsQuery, libraryQuery } from '@/data/queries';
 import { toLibraryCard, type LibraryGridItem } from '@/data/library-card';
 import { DIRECT_CHAPTER_ID } from '@/data/types';
 import { encodeSeriesParam } from '@/lib/series-nav';
-import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
+import { useDataSource, useMockActive } from '@/data/source';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useCollections } from '@/hooks/use-collections';
 import { libraryGroupOf } from '@/data/library-grouping';
@@ -36,6 +36,7 @@ import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useTopBarHeight } from '@/hooks/use-responsive';
+import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -44,7 +45,6 @@ export default function LibraryScreen() {
   const mock = useMockActive();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const hideNsfw = useHideNsfw();
   const router = useRouter();
   const listRef = useRef<LegendListRef>(null);
   useScrollToTopOnReselect('library', listRef);
@@ -120,11 +120,14 @@ export default function LibraryScreen() {
   // Column count for the skeleton only — SeriesGrid derives its own layout from the same hook.
   const { numColumns } = useGridLayout();
 
-  const cards = useMemo<LibraryGridItem[]>(() => {
-    if (!items) return [];
-    const visible = hideNsfw ? items.filter((e) => !bridgeById.get(e.bridgeId)?.nsfw) : items;
-    return visible.map((e) => toLibraryCard(e, bridgeById.get(e.bridgeId)));
-  }, [items, hideNsfw, bridgeById]);
+  const visibleItems = useVisibleByBridge(items ?? undefined);
+  const cards = useMemo<LibraryGridItem[]>(
+    () => visibleItems.map((e) => toLibraryCard(e, bridgeById.get(e.bridgeId))),
+    [visibleItems, bridgeById],
+  );
+  // The SAME rule for a collection's contents. It didn't have it, which is the bug: with NSFW off
+  // the library grid hid those series and the collection listing them showed them anyway.
+  const visibleCollected = useVisibleByBridge(collected.data ?? undefined);
 
   // A pinned section heading sits flush under the bar and draws its own rule, so the bar YIELDS its
   // own while one is up — see the same wiring on Browse. A shared value rather than React state so
@@ -165,7 +168,7 @@ export default function LibraryScreen() {
         />
       );
     }
-    if (collected.data.length === 0) {
+    if (visibleCollected.length === 0) {
       if (query.trim()) {
         return <EmptyState title="No matches" detail="Nothing in this collection matches your search." />;
       }
@@ -213,7 +216,7 @@ export default function LibraryScreen() {
           remounts the list on a search/sort switch (a scroll-to-top moment) and resets recycled cards. */}
       {showingCollected ? (
         <CollectedItemsGrid
-          items={ready ? (collected.data ?? []) : []}
+          items={ready ? visibleCollected : []}
           grouping={collectedView.grouping}
           // Every axis is in the key: a sort/dir/grouping switch is a scroll-to-top moment and must
           // reset recycled rows, exactly as a search or collection switch does.

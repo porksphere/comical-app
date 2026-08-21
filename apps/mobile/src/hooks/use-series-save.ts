@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { openCollectionPicker } from '@/components/collection-picker';
 import type { LibrarySnapshot } from '@/data/api';
 import { resolveDefaultCollection } from '@/data/default-collection';
+import { getDefaultCollectionId, setDefaultCollectionId } from '@/data/default-collection-store';
 import { collectionsQuery } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import { useItemCollections } from '@/hooks/use-item-collections';
@@ -76,6 +77,8 @@ export function useSeriesSave(
         list: () => queryClient.fetchQuery(collectionsQuery(ds, mock)),
         create: (name) => ds.createCollection(name),
         rename: (id, name) => ds.renameCollection(id, name),
+        storedId: getDefaultCollectionId,
+        remember: setDefaultCollectionId,
       });
       setCollections([destination]);
     },

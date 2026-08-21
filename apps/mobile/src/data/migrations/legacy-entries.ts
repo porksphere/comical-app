@@ -21,7 +21,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Library, type LibraryStore } from '@comical/library';
 
-import { DEFAULT_COLLECTION, setDefaultCollectionId } from '../default-collection';
+import { DEFAULT_COLLECTION } from '../default-collection';
 
 /** The pre-collections document: `{ [entryKey]: LibraryEntry }`. Not a `library-store.ts` constant
  *  any more — that store no longer has an entries concept, and this is the only reader left. */
@@ -61,10 +61,10 @@ export async function migrateLegacyEntries(store: LibraryStore): Promise<LegacyE
 
   // Rows are validated individually inside; a half-corrupt document yields the entries it can.
   const { imported, skipped, collectionId } = await new Library(store).importLegacyEntries(rows, DEFAULT_COLLECTION);
-  // Pin the rebuilt shelf's collection as this device's default, so the plain "＋ Library" tap
-  // files into the collection the user's library is already in rather than beside it. Recording
-  // the id (not the name) is what lets them rename it afterwards without spawning a second one.
-  setDefaultCollectionId(collectionId);
+  // Filed under DEFAULT_COLLECTION's own name, which is what makes the rebuilt shelf the device's
+  // default without writing anything here: `resolveDefaultCollection` finds it by that name on the
+  // first save and pins its id from then on. Deliberately not pinned HERE — a persisted write at
+  // startup lands inside the window where Legend State drops it, silently.
   await AsyncStorage.setItem(MIGRATED, raw);
   await AsyncStorage.removeItem(ENTRIES);
   return { imported, skipped, collectionId };

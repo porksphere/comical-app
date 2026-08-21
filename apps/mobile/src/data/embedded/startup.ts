@@ -49,7 +49,7 @@ import { swapDataSourceMode } from './apply-mode';
 import { fileSystemBundleCache, pruneBundleCache } from './bundle-cache';
 import { expoCoversBlobStore } from './covers-store';
 import { AsyncStorageLibraryStore } from './library-store';
-import { migrateLegacyEntries } from '../migrations';
+import { migrateLegacyEntries } from '../migrations/legacy-entries';
 import { getResolvedModeSync, whenEmbeddedPrefLoaded } from './preference';
 import { applyImageCacheConfig } from '../image-cache';
 import { logDiagnostic } from '@/lib/diagnostics';

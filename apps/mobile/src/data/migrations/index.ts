@@ -25,8 +25,15 @@
  *   in `hooks/use-library-sort.ts`, the legacy `'rail'` value in `data/custom-pages.ts`. Never
  *   read, never migrated, deliberately left to rot: they held no real user data (lists and page
  *   favorites shipped to nobody). Nothing runs, so there is nothing to register.
+ *
+ * ── Registry only ──
+ *
+ * This file deliberately does not re-export the migrations themselves. A migration imports whatever
+ * it needs to do its job (AsyncStorage, the persisted stores, the library runtime), and re-exporting
+ * one from here would mean anything reading the LIST had to load all of that too — which is not
+ * hypothetical: `migrations.test.ts` is exactly that reader, and it broke the moment the chain
+ * reached react-native. Run a migration by importing its own module.
  */
-export { migrateLegacyEntries, type LegacyEntriesMigration } from './legacy-entries';
 
 export type MigrationEntry = {
   /** Stable identifier — this file is the only place it is defined. */

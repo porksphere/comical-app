@@ -1,4 +1,3 @@
-import { persisted$ } from '@/lib/observable';
 import type { Collection } from './types';
 
 /**
@@ -17,22 +16,16 @@ export const DEFAULT_COLLECTION = 'Default';
 /** What the first cut of the library migration named it. Adopted once, then forgotten — see below. */
 const LEGACY_DEFAULT_COLLECTION = 'Library';
 
-/** Wrapped in an object because a persisted *primitive* observable reads back as `{}` before
- *  anything is stored, whereas an object initial round-trips cleanly (see `data/api.ts`). */
-const defaultCollection$ = persisted$<{ id: string | null }>('comical:defaultCollection', { id: null });
-
-/** Remember which collection is the default. Called by the resolver, and by the library migration
- *  with the collection it filed a rebuilt shelf into. */
-export function setDefaultCollectionId(id: string): void {
-  defaultCollection$.set({ id });
-}
-
 /** The device seams `resolveDefaultCollection` needs. Injected rather than imported so the rule has
  *  one implementation whether it runs against the real API or the mock. */
 export type DefaultCollectionOps = {
   list: (signal?: AbortSignal) => Promise<Collection[]>;
   create: (name: string, signal?: AbortSignal) => Promise<Collection>;
   rename: (id: string, name: string, signal?: AbortSignal) => Promise<void>;
+  /** The id this device remembers, if any. */
+  storedId: () => string | null;
+  /** Record the resolved id. */
+  remember: (id: string) => void;
 };
 
 /**
@@ -52,11 +45,11 @@ export type DefaultCollectionOps = {
 export async function resolveDefaultCollection(ops: DefaultCollectionOps, signal?: AbortSignal): Promise<string> {
   const collections = await ops.list(signal);
 
-  const rememberedId = defaultCollection$.peek().id;
+  const rememberedId = ops.storedId();
   if (rememberedId && collections.some((c) => c.id === rememberedId)) return rememberedId;
 
   const adopt = (c: Collection) => {
-    setDefaultCollectionId(c.id);
+    ops.remember(c.id);
     return c.id;
   };
 

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { ApiCollectionPageItem } from '@/data/api';
 import { collectionItemsQuery } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
+import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
 import { useCollectedPageUris } from '@/hooks/use-collected-page-uris';
 
 /** How long the album's URI resolution stays cache-only after opening — long enough to cover the
@@ -74,10 +75,14 @@ export function useReaderSequence(params: ReaderSequenceParams): {
     enabled: active,
   });
 
+  // The album is built from the collection's contents, so it needs the SAME NSFW rule the grid
+  // applies — otherwise a page hidden from the collection could still be swiped into from a
+  // neighbouring one.
+  const visible = useVisibleByBridge(data ?? undefined);
   // Only pages are readable; series and chapter items in the collection stay grid-only.
   const filtered = useMemo(
-    () => (data ?? []).filter((i): i is ApiCollectionPageItem => i.type === 'page'),
-    [data],
+    () => visible.filter((i): i is ApiCollectionPageItem => i.type === 'page'),
+    [visible],
   );
   // LATCHED on the first resolved answer, for the album's whole life. The sequence is the mounted
   // pager's verbatim page list, and the collection query it derives from is live — un-saving the
