@@ -1,7 +1,7 @@
 # Universal collections — client plan
 
 The runtime half has landed in the `comical` submodule
-(`claude/page-favorites-runtime-00agdx`, pinned here at the branch head `38469da`). This document is
+(`claude/page-favorites-runtime-00agdx`, pinned here at the branch head `7501175`). This document is
 the `comical-app` half.
 
 **The submodule is the source of truth.** Travelling with the pin:
@@ -682,7 +682,10 @@ place** → create one. That third step is what adopts a shelf migrated by the f
 branch instead of stranding it beside a new `Default`; it can only fire once per device. The
 migration files under `DEFAULT_COLLECTION`'s own name, so step 2 catches a fresh one — deliberately
 NOT by pinning the id at startup, which is inside the window where Legend State drops a persisted
-write, silently. The rule itself is pure (the storage is injected, and lives in
+write, silently. **A new install gets `Default` too**: nothing migrates, and the first save falls
+through to step 4. The runtime's own `importLegacyEntries` default moved to `Default` to match, so a
+remote host migrating its `entries.json` (which passes no name) doesn't hand the app a "Library"
+collection to adopt-and-rename. The rule itself is pure (the storage is injected, and lives in
 `default-collection-store.ts`), which is what lets it be tested without mocking the platform. The
 selector's unfiltered row is **"All"**.
 

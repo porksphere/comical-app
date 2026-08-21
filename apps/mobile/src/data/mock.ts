@@ -25,6 +25,7 @@ import type {
   TrackerService,
 } from './types';
 import { firstChapterInReadingOrder } from '@/lib/chapter-order';
+import { DEFAULT_COLLECTION } from './default-collection';
 import type {
   ApiBridgeInfo,
   ApiFilter,
@@ -1030,12 +1031,12 @@ export async function mockImportBridgeFavorites(
 // ─── Collections (in-memory, dev/demo only) ──────────────────────────────────
 
 /** Somewhere for a BULK collect to land — the mock's favorites import, which has no user to ask.
- *  Deliberately its own find-or-create rather than `resolveDefaultCollection`: that rule remembers
- *  a device-local id and adopts a migrated shelf, neither of which means anything to an in-memory
- *  demo, and importing it here would drag a persisted store into the mock's tests. */
+ *  Its own find-or-create rather than `resolveDefaultCollection`, whose remembered-id and
+ *  adopt-a-migrated-shelf steps mean nothing to an in-memory demo. The NAME still comes from the
+ *  one constant, so the demo can't drift from the real thing. */
 async function mockDefaultCollectionId(): Promise<string> {
-  const existing = mockCollections.find((c) => c.name === 'Default');
-  return existing ? existing.id : (await mockCreateCollection('Default')).id;
+  const existing = mockCollections.find((c) => c.name === DEFAULT_COLLECTION);
+  return existing ? existing.id : (await mockCreateCollection(DEFAULT_COLLECTION)).id;
 }
 
 export async function mockGetCollections(): Promise<MockCollection[]> {
