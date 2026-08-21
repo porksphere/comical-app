@@ -1,6 +1,6 @@
 /**
  * Durable on-disk store for captured library-entry cover bytes — the device `BlobStore` behind the
- * embedded router's guaranteed-offline covers (`/library/entries/:b/:s/cover`). Mirrors the
+ * embedded router's guaranteed-offline covers (`/library/collected/series/:b/:s/cover`). Mirrors the
  * downloads blob store (`data/downloads/blob-store.ts`) but rooted separately (covers live and die
  * with library entries, not downloads) and WITH `read`: the reused router serves cover bytes back
  * through the in-process transport, so `<Image>` can render them via `resolveAssetSource`'s

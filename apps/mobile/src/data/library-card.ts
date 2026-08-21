@@ -6,7 +6,7 @@ import type { Bridge, LibraryItem } from '@/data/types';
 // override the grid-level ones — so no Library-specific cell or item type is needed. Shared by the
 // Library tab and the dedicated Library search screen so the mapping lives in exactly one place.
 // The timestamps ride along for the grouping axes (see `libraryGroupOf`) — grid-inert otherwise.
-export type LibraryGridItem = SeriesGridItem & { addedAt?: number; lastReadAt?: number };
+export type LibraryGridItem = SeriesGridItem & { collectedAt?: number; lastReadAt?: number };
 
 /** Map a cross-bridge library entry to a grid card, resolving its bridge's display name + direct-ness. */
 export function toLibraryCard(e: LibraryItem, bridge?: Bridge): LibraryGridItem {
@@ -19,7 +19,7 @@ export function toLibraryCard(e: LibraryItem, bridge?: Bridge): LibraryGridItem 
     bridgeId: e.bridgeId,
     ...(bridge?.name && { bridge: bridge.name }),
     direct: bridge?.capabilities.includes('direct') ?? false,
-    ...(e.addedAt !== undefined && { addedAt: e.addedAt }),
+    collectedAt: e.collectedAt,
     ...(e.lastReadAt !== undefined && { lastReadAt: e.lastReadAt }),
   };
 }

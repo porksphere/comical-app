@@ -188,8 +188,9 @@ export type LibraryItem = {
   author?: string;
   /** Logical unread chapters — drives the card's unread pill. */
   unread: number;
-  /** When the series joined the library — the "Date added" grouping axis. */
-  addedAt?: number;
+  /** When the series was collected — the "Date added" grouping axis. Always present: it is
+   *  `collectedAt` on the series item, which every collected series has. */
+  collectedAt: number;
   /** Last read moment, absent for a series never opened — the "Last read" grouping axis. */
   lastReadAt?: number;
 };

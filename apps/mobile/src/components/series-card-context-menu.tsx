@@ -46,7 +46,7 @@ import {
   type MenuRowSpec,
   type SubmenuSpec,
 } from '@/components/context-menu-material';
-import { CheckIcon, ChevronRightIcon, DownloadsIcon, PlayIcon, PlusIcon, StarIcon } from '@/components/icons/ui-icons';
+import { CheckIcon, ChevronRightIcon, DownloadsIcon, PlayIcon, PlusIcon, RetryIcon, StarIcon } from '@/components/icons/ui-icons';
 import { PageThumb } from '@/components/series/chapters-section';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
@@ -58,6 +58,7 @@ import { useDataSource, useMockActive } from '@/data/source';
 import type { PageThumbSource } from '@/data/types';
 import { useItemCollections } from '@/hooks/use-item-collections';
 import { useFavorite } from '@/hooks/use-favorite';
+import { useResetReadProgress } from '@/hooks/use-reset-read-progress';
 import { useLibrary } from '@/hooks/use-library';
 import { useCollections } from '@/hooks/use-collections';
 import { useSeriesDownloadAction } from '@/hooks/use-series-download-action';
@@ -189,7 +190,7 @@ const MENU_HOLD_MS = 220;
 // under it — the iOS "hover a folder to spring it open" delay. Long enough that merely sweeping PAST
 // the row on the way to another doesn't trip it, short enough that a deliberate pause feels answered.
 const SUBMENU_DWELL_MS = 320;
-// Read + Add to Library + Add to collection + Favorite + Download. Keep in step with the rows rendered
+// Read + Add to Library + Add to collection + Favorite + Download + Reset progress. Keep in step with the rows rendered
 // below — the menu's height is computed from this (it's what the panel's resize range budgets for),
 // not measured.
 const MENU_ROWS = 5;
@@ -314,8 +315,9 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   }, [detailLoaded, detail.data?.description]);
 
   const { favorited, toggle: toggleFavorite, available: favoritesAvailable } = useFavorite(bridgeId, entry.id);
+  const resetProgress = useResetReadProgress(bridgeId, entry.id, entry.title);
   const { inLibrary, toggle: toggleLibrary } = useLibrary(bridgeId, entry.id, () => ({
-    title: entry.title,
+    seriesTitle: entry.title,
     ...(entry.cover ? { thumbnailUrl: entry.cover } : {}),
   }));
   // Collections for the "Add to collection ›" submenu: the set itself (drives chevron-vs-＋ and the
@@ -333,7 +335,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
     kind: 'series',
     bridgeId,
     seriesId: entry.id,
-    snapshot: () => ({ title: entry.title, ...(entry.cover ? { thumbnailUrl: entry.cover } : {}) }),
+    snapshot: () => ({ seriesTitle: entry.title, ...(entry.cover ? { thumbnailUrl: entry.cover } : {}) }),
   });
   // Lazy: this panel mounts only while the menu is open, so the download-status query runs once here,
   // never per card in the grid.
@@ -1186,6 +1188,16 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       active: download.active,
       testID: 'series.card-menu.download',
       onPress: () => act(download.onPress),
+    },
+    {
+      // The only action that destroys read state — nothing else does now, not even uncollecting
+      // (see useResetReadProgress). Deliberately here rather than on a library-only surface: it has
+      // to reach a series that ISN'T collected, which is how orphaned progress gets reclaimed.
+      label: 'Reset read progress',
+      Icon: RetryIcon,
+      loading: false,
+      testID: 'series.card-menu.reset-progress',
+      onPress: () => act(resetProgress),
     },
     // DEV ONLY: dummy rows so the menu is long enough to overrun the screen, which is the only state
     // the pan gesture exists for. See DEBUG_EXTRA_MENU_ROWS.

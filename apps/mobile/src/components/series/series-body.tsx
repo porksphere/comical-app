@@ -298,7 +298,7 @@ export function SeriesBody({
   // Library membership + optimistic toggle — shared hook (see useLibrary). The ADD snapshot is built
   // lazily from the loaded detail (title/cover/author).
   const { inLibrary, toggle: toggleLibrary } = useLibrary(bridgeId, series.id, () => ({
-    title: series.title,
+    seriesTitle: series.title,
     ...(series.cover ? { thumbnailUrl: series.cover } : {}),
     ...(author ? { author } : {})
   }));
@@ -436,7 +436,7 @@ export function SeriesBody({
               seriesId: series.id,
               title: series.title,
               snapshot: () => ({
-                title: series.title,
+                seriesTitle: series.title,
                 ...(series.cover ? { thumbnailUrl: series.cover } : {}),
                 ...(author ? { author } : {})
               })

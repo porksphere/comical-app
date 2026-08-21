@@ -384,7 +384,7 @@ function SeriesActionsRow({
   const router = useRouter();
   const { closeTop } = useOverlay();
   const snapshot = () => ({
-    ...(title ? { title } : {}),
+    ...(title ? { seriesTitle: title } : {}),
     ...(thumbnailUrl ? { thumbnailUrl } : {}),
     ...(author ? { author } : {}),
   });

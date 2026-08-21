@@ -73,13 +73,13 @@ export function useItemCollections(target: ItemTarget) {
   const mutation = useMutation({
     mutationFn: async (next: string[]) => {
       if (kind === 'series') {
+        // ONE call — the collect PUT carries the memberships, so a series the user just filed is
+        // never briefly collected-but-unfiled. No separate add-to-library step: filing a series IS
+        // putting it in the library.
         const snap = target.snapshot();
-        // Idempotent, and only on the way IN — un-filing shouldn't drag a series into the library.
-        if (next.length > 0) await ds.addToLibrary(bridgeId!, seriesId, snap);
         await ds.setSeriesCollections(bridgeId!, seriesId, next, {
-          seriesTitle: snap.title ?? seriesId,
-          ...(snap.thumbnailUrl !== undefined && { thumbnailUrl: snap.thumbnailUrl }),
-          ...(snap.author !== undefined && { author: snap.author }),
+          ...snap,
+          seriesTitle: snap.seriesTitle ?? seriesId,
         });
       } else if (kind === 'chapter') {
         if (next.length === 0) {

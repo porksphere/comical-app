@@ -860,7 +860,7 @@ import type {
   ActivityItemView as ApiActivityItem,
   ChapterProgress as ApiChapterProgress,
   HistoryItem as ApiHistoryItem,
-  LibraryEntryView as ApiLibraryEntry,
+  CollectionSeriesItemView as ApiCollectedSeries,
   Collection as ApiCollection,
   CollectionItem as ApiCollectionItem,
   CollectionPageItem as ApiCollectionPageItem,
@@ -880,7 +880,7 @@ export type {
   ApiActivityItem,
   ApiChapterProgress,
   ApiHistoryItem,
-  ApiLibraryEntry,
+  ApiCollectedSeries,
   ApiCollection,
   ApiCollectionItem,
   ApiCollectionPageItem,
@@ -1116,15 +1116,19 @@ export function putBridgePrefs(
 /** How to sort the library grid — maps 1:1 to the `/library?sort=` query param. */
 export type LibrarySort = 'added' | 'title' | 'lastRead' | 'unread';
 
-/** GET /library → the user's library entries (with derived `unreadCount`), or `null` when no library
- *  store is mounted. `q` scopes to a title search; `sort` orders the grid; `collectionId`/
+/** GET /library → the user's collected series (with derived `unreadCount`), or `null` when no
+ *  library store is mounted. `q` scopes to a title search; `sort` orders the grid; `collectionId`/
  *  `uncollected` filter by collection membership (mutually exclusive — `uncollected` wins if both
  *  are set). The host resolves membership by joining series items, so the grid never needs to
- *  read memberships client-side. */
+ *  read memberships client-side.
+ *
+ *  These rows are `CollectionSeriesItem`s now, not library entries — the library dissolved into
+ *  collections. Same fields with three renames: `title` → `seriesTitle`, `addedAt` → `collectedAt`,
+ *  `listIds` → `collectionIds` (see `toLibraryItem` in source.ts, the one place that reads them). */
 export function getLibrary(
   opts: { q?: string; sort?: LibrarySort; collectionId?: string; uncollected?: boolean } = {},
   signal?: AbortSignal,
-): Promise<ApiLibraryEntry[] | null> {
+): Promise<ApiCollectedSeries[] | null> {
   const qs = new URLSearchParams();
   if (opts.q) qs.set('q', opts.q);
   if (opts.sort) qs.set('sort', opts.sort);
@@ -1171,27 +1175,51 @@ export function deleteCollection(id: string, signal?: AbortSignal): Promise<void
   return fetchOk(`/library/collections/${encodeURIComponent(id)}`, 'DELETE', signal);
 }
 
-/** PUT /library/collected/series/{b}/{s} → the series item itself. Idempotent, and required before
- *  memberships can be set: filing a series is item-then-memberships, replacing the old
- *  `PUT /library/entries/{b}/{s}/lists`. */
-export function putSeriesItem(
+/** Display snapshot persisted with a collected series so it renders offline / after bridge removal.
+ *  With a runtime attached the host fills anything omitted from the bridge; on a library-only host
+ *  an absent `seriesTitle` is a 400, so send it whenever you have it. */
+export type LibrarySnapshot = {
+  seriesTitle?: string;
+  thumbnailUrl?: string;
+  author?: string;
+  externalIds?: Record<string, string | number>;
+};
+
+/**
+ * PUT /library/collected/series/{b}/{s} → collect a series, i.e. put it in the library.
+ *
+ * There is no "add to library" separate from filing any more: the library dissolved into
+ * collections, so being in the library IS being a series item in at least one collection. This one
+ * idempotent PUT does both — `collectionIds` files it in the same call, which matters because a
+ * series nobody filed is only transiently collected (the next thing to re-file it to zero sweeps
+ * it). Re-collecting merges: a supplied field wins, an omitted one is preserved.
+ *
+ * Answers `200 { item, autoLinked?, trackerSuggestions? }` — the runtime envelope, not the bare
+ * item (`autoLinked` when matching `externalIds` joined it to an existing series, and there is no
+ * "created" distinction to report on an idempotent PUT, which is why it isn't a 201).
+ */
+export function collectSeries(
   bridgeId: string,
   seriesId: string,
-  snapshot: { seriesTitle: string; thumbnailUrl?: string; author?: string },
+  body: LibrarySnapshot & { collectionIds?: string[] } = {},
   signal?: AbortSignal,
 ): Promise<unknown> {
   return fetchPut(
     `/library/collected/series/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}`,
-    snapshot,
+    body,
     signal,
   );
 }
 
-/** DELETE /library/collected/series/{b}/{s} → remove the series item outright.
- *  Equivalent to `setSeriesCollections(…, [])`: with pure collections an item exists only as a
- *  member, so emptying its memberships removes it server-side (that route reports
- *  `{ removed: true }`). Either call is fine; this one doesn't need the item to exist first. */
-export function deleteSeriesItem(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void> {
+/** DELETE /library/collected/series/{b}/{s} → uncollect a series: out of the library, out of every
+ *  collection. Equivalent to `setSeriesCollections(…, [])` (an item exists only as a member, so
+ *  emptying memberships removes it server-side), but it doesn't need the item to exist first.
+ *
+ *  CASCADES to the offline detail, cached chapter list, cover blob, activity feed and group
+ *  membership — all caches the next sync refills. **Read progress and tracker links survive**, so
+ *  re-collecting puts the reader back exactly where it was (see `resetReadProgress`, the only thing
+ *  that destroys read state). */
+export function uncollectSeries(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void> {
   return fetchOk(
     `/library/collected/series/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}`,
     'DELETE',
@@ -1213,10 +1241,12 @@ export function setSeriesCollections(
   );
 }
 
-/** GET /library/entries/{b}/{s} → whether a series is in the library (404 = not in library). */
+/** GET /library/collected/series/{b}/{s} → whether a series is collected, i.e. in the library
+ *  (404 = not). Under the dissolution these are the same question: a series item exists, or it
+ *  doesn't. */
 export async function isInLibrary(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<boolean> {
   const res = await transport(
-    `/library/entries/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}`,
+    `/library/collected/series/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}`,
     { signal },
   );
   if (res.status === 404) return false;
@@ -1408,39 +1438,40 @@ export async function getSeriesCollections(
   return items?.[0]?.collectionIds ?? [];
 }
 
-/** Display snapshot persisted with a new library entry so it renders offline / after bridge removal. */
-export type LibrarySnapshot = { title?: string; thumbnailUrl?: string; author?: string };
-
-/** POST /library/entries → add a series to the library (runtime fills missing snapshot from the bridge). */
-export function addLibraryEntry(
-  bridgeId: string,
-  seriesId: string,
-  snap: LibrarySnapshot = {},
-  signal?: AbortSignal,
-): Promise<unknown> {
-  return fetchPost('/library/entries', { bridgeId, seriesId, ...snap }, signal);
-}
-
-/** DELETE /library/entries/{b}/{s} → remove a series from the library. */
-export function removeLibraryEntry(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void> {
-  return fetchOk(`/library/entries/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}`, 'DELETE', signal);
-}
-
-/** GET /library/entries/{b}/{s}/progress → persisted read state for one series' chapters. Safe to
- *  call for any series: a series that isn't in the library just has no progress rows (`[]`), unlike
- *  the write routes below, which 404 without an entry. */
+/** GET /library/collected/series/{b}/{s}/progress → persisted read state for one series' chapters.
+ *  Safe to call for any series: one that isn't collected just has no progress rows (`[]`), unlike
+ *  the write routes below, which 404 without a series item. */
 export function getChapterProgress(
   bridgeId: string,
   seriesId: string,
   signal?: AbortSignal,
 ): Promise<ApiChapterProgress[]> {
   return fetchJson(
-    `/library/entries/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/progress`,
+    `/library/collected/series/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/progress`,
     signal,
   );
 }
 
-/** PUT /library/entries/{b}/{s}/progress/{chapterId} → record read progress for a library series
+/**
+ * DELETE /library/collected/series/{b}/{s}/progress → wipe every chapter's read state and the
+ * resume point.
+ *
+ * The ONLY thing that destroys read state. Uncollecting a series doesn't, and neither does deleting
+ * a collection that takes a series with it — since tidying shelves can now remove a series, letting
+ * that reach read state would mean quietly destroying the one thing the user can't get back.
+ *
+ * Deliberately works on a series that is no longer collected, which is how progress left behind by
+ * an uncollect gets reclaimed — nothing sweeps it automatically.
+ */
+export function resetReadProgress(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void> {
+  return fetchOk(
+    `/library/collected/series/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/progress`,
+    'DELETE',
+    signal,
+  );
+}
+
+/** PUT /library/collected/series/{b}/{s}/progress/{chapterId} → record read progress for a library series
  *  (also updates its last-read resume cache). No-op-safe: the caller fires-and-forgets.
  *
  *  The route branches on `lastPage`: supplying it records a reading POSITION (which auto-marks the
@@ -1456,13 +1487,13 @@ export function putChapterProgress(
   signal?: AbortSignal,
 ): Promise<unknown> {
   return fetchPut(
-    `/library/entries/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/progress/${encodeURIComponent(chapterId)}`,
+    `/library/collected/series/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/progress/${encodeURIComponent(chapterId)}`,
     update,
     signal,
   );
 }
 
-/** POST /library/entries/{b}/{s}/read-up-to → mark every chapter up to and including `chapterId`
+/** POST /library/collected/series/{b}/{s}/read-up-to → mark every chapter up to and including `chapterId`
  *  read, in reading order. The host does the ordering/language scoping from the `chapters` list it's
  *  given (it keeps no chapter store of its own), so pass the series' full chapter list. */
 export function postReadUpTo(
@@ -1473,7 +1504,7 @@ export function postReadUpTo(
   signal?: AbortSignal,
 ): Promise<unknown> {
   return fetchPost(
-    `/library/entries/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/read-up-to`,
+    `/library/collected/series/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/read-up-to`,
     { chapters, chapterId },
     signal,
   );
@@ -1718,12 +1749,12 @@ export async function completeOAuthCallback(code: string, state: string, signal?
 // ─── Tracker links (per-series associations to external tracker services — same optional-server-
 // capability shape as the trackers themselves) ─────────────────────────────────────────────────
 
-/** GET /library/entries/{b}/{s}/tracker-links → this series' tracker links. */
+/** GET /library/collected/series/{b}/{s}/tracker-links → this series' tracker links. */
 export function getTrackerLinks(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<ApiTrackerLink[]> {
-  return fetchJson(`/library/entries/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/tracker-links`, signal);
+  return fetchJson(`/library/collected/series/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/tracker-links`, signal);
 }
 
-/** POST /library/entries/{b}/{s}/tracker-links → link this series to a tracker's catalog entry. */
+/** POST /library/collected/series/{b}/{s}/tracker-links → link this series to a tracker's catalog entry. */
 export function linkTracker(
   bridgeId: string,
   seriesId: string,
@@ -1732,22 +1763,22 @@ export function linkTracker(
   signal?: AbortSignal,
 ): Promise<unknown> {
   return fetchPost(
-    `/library/entries/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/tracker-links`,
+    `/library/collected/series/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/tracker-links`,
     { trackerId, externalId },
     signal,
   );
 }
 
-/** DELETE /library/entries/{b}/{s}/tracker-links/{trackerId} → unlink one tracker from this series. */
+/** DELETE /library/collected/series/{b}/{s}/tracker-links/{trackerId} → unlink one tracker from this series. */
 export function unlinkTracker(bridgeId: string, seriesId: string, trackerId: string, signal?: AbortSignal): Promise<void> {
   return fetchOk(
-    `/library/entries/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/tracker-links/${encodeURIComponent(trackerId)}`,
+    `/library/collected/series/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/tracker-links/${encodeURIComponent(trackerId)}`,
     'DELETE',
     signal,
   );
 }
 
-/** POST /library/entries/{b}/{s}/tracker-links/{trackerId}/sync → TWO-WAY sync of one link with its
+/** POST /library/collected/series/{b}/{s}/tracker-links/{trackerId}/sync → TWO-WAY sync of one link with its
  *  tracker (the scoped, per-row counterpart to `updateTracker`'s whole-library resync). Whichever
  *  side has read further wins: `pushed` says the local count went up to the tracker, otherwise the
  *  tracker's state was applied locally and `readSynced` chapters were newly marked read. */
@@ -1758,7 +1789,7 @@ export function syncTrackerLink(
   signal?: AbortSignal,
 ): Promise<TrackerLinkSyncResult> {
   return fetchPost(
-    `/library/entries/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/tracker-links/${encodeURIComponent(trackerId)}/sync`,
+    `/library/collected/series/${encodeURIComponent(bridgeId)}/${encodeURIComponent(seriesId)}/tracker-links/${encodeURIComponent(trackerId)}/sync`,
     {},
     signal,
   );

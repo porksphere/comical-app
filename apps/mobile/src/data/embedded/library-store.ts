@@ -4,7 +4,6 @@
  * is just a typed document sink, so this mirrors the file store's layout with one AsyncStorage key
  * per "file":
  *
- *   comical:lib:entries            → { [entryKey]: LibraryEntry }
  *   comical:lib:collections               → Collection[]
  *   comical:lib:collection-items:<b>:<s>  → { [id]: CollectionItem }   (SHARDED per series)
  *   comical:lib:groups             → { [id]: SeriesGroup }
@@ -32,7 +31,6 @@ import {
   type Collection,
   type CollectionItem,
   type CollectionItemScope,
-  type LibraryEntry,
   type LibraryStore,
   parseCollectionItemId,
   type SeriesGroup,
@@ -42,7 +40,6 @@ import {
 import { serializeAsyncMethods } from '@/lib/serialize-methods';
 
 const NS = 'comical:lib';
-const ENTRIES = `${NS}:entries`;
 const COLLECTIONS = `${NS}:collections`;
 // Collection items sit in ONE DOCUMENT PER SERIES, not one document overall. As a single doc every
 // write re-serialises every item the user has: the runtime measured 64ms → 3.4ms per chapter open
@@ -112,26 +109,6 @@ export class AsyncStorageLibraryStore implements LibraryStore {
     }
   }
 
-  // ── Entries ────────────────────────────────────────────────────────────────
-  async listEntries(): Promise<LibraryEntry[]> {
-    return Object.values(await readRecord<LibraryEntry>(ENTRIES));
-  }
-  async getEntry(key: string): Promise<LibraryEntry | undefined> {
-    return (await readRecord<LibraryEntry>(ENTRIES))[key];
-  }
-  async putEntry(entry: LibraryEntry): Promise<void> {
-    const all = await readRecord<LibraryEntry>(ENTRIES);
-    all[`${entry.bridgeId}:${entry.seriesId}`] = entry;
-    await write(ENTRIES, all);
-  }
-  async deleteEntry(key: string): Promise<void> {
-    const all = await readRecord<LibraryEntry>(ENTRIES);
-    if (key in all) {
-      delete all[key];
-      await write(ENTRIES, all);
-    }
-  }
-
   // ── Offline metadata cache ───────────────────────────────────────────────────
   // One doc per entry (chapter lists are bulky), read lazily on series-page open — never bulk-read.
   async getSeriesDetail(key: string): Promise<CachedSeriesDetail | undefined> {
@@ -167,10 +144,12 @@ export class AsyncStorageLibraryStore implements LibraryStore {
   }
 
   // ── Collection items ───────────────────────────────────────────────────────
-  // Collections replaced the library's custom lists, and an item exists ONLY as a member of one —
-  // there is no local "favorites" concept, and nothing is durably uncollected. Old
-  // `comical:lib:lists` documents and any `listIds` left on stored entries are ABANDONED IN PLACE —
-  // never read, never migrated (a deliberate call; see docs/collections-client-plan.md). Inert.
+  // Collections replaced the library's custom lists AND its entries: a tracked series is a series
+  // ITEM in these shards, sharing one document with its chapter and page items. An item exists ONLY
+  // as a member of a collection — there is no local "favorites" concept, and nothing is durably
+  // uncollected. Old `comical:lib:lists` documents are ABANDONED IN PLACE: never read, never
+  // migrated, a deliberate call (they shipped to nobody). `comical:lib:entries` is the exception —
+  // real user data, read exactly once by `legacy-entries.ts` and rebuilt into these shards.
 
   /** Honours `scope` BEFORE parsing where it can: a series-scoped call reads one shard instead of
    *  every one, which is what keeps opening a chapter off the whole-library path. */

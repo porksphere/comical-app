@@ -164,5 +164,11 @@ export const PERSIST_MAX_AGE_MS = GC_TIME_MS;
  * persisted `library` grid entry was keyed by a list id that no longer resolves — its rows would
  * rehydrate under a filter the user can't see or clear. The collected-items grid is new and
  * persisted, so this also stops an older build's cache from mingling with it.
+ *
+ * v5→v6: the LIBRARY dissolved into collections. `/library` now serves series items — `title` →
+ * `seriesTitle`, `addedAt` → `collectedAt` — so a v5 `library` entry rehydrates with an undefined
+ * `collectedAt` and dumps the whole grid into the "Date added" grouping's `Earlier` bucket. Cached
+ * cover URLs moved with the routes (`/library/entries/…/cover` → `/library/collected/series/…`),
+ * and cached series ITEMS gained `updatedAt`/`knownChapters`. None of it is repairable in place.
  */
-export const PERSIST_BUSTER = `v5:${getResolvedModeSync() === 'embedded' ? 'embedded' : getApiBase()}`;
+export const PERSIST_BUSTER = `v6:${getResolvedModeSync() === 'embedded' ? 'embedded' : getApiBase()}`;

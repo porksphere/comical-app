@@ -1,7 +1,7 @@
 # Universal collections — client plan
 
 The runtime half has landed in the `comical` submodule
-(`claude/page-favorites-runtime-00agdx`, pinned here at the branch head `56da8f1`). This document is
+(`claude/page-favorites-runtime-00agdx`, pinned here at the branch head `1187d8d`). This document is
 the `comical-app` half.
 
 **The submodule is the source of truth.** Travelling with the pin:
@@ -36,6 +36,10 @@ because there is nowhere sensible to put it.
    because the runtime deleted lists outright: `LibraryList` no longer exists in `@comical/library`
    while `data/api.ts` imported it type-only, so the pin bump broke `bun run typecheck` and 404'd
    every `/library/lists*` call.
+3. **A second real migration — the LIBRARY dissolves into collections. ✅ done (§11).** Bigger than
+   the first: `LibraryEntry` is gone, every `/library/entries/*` route moved, `/library`'s rows
+   renamed under the grid, and add-to-library became filing. It also carries the project's one
+   genuine **data** migration (§11.1) — skip that and the user opens the app to an empty shelf.
 
 ## Naming
 
@@ -52,8 +56,8 @@ New client code says **`collectionItem` / `collections`**. UI label for the grou
 
 ## 1. Types — import, don't redeclare
 
-Type-only re-exports from `@comical/library`, as the app already does for `LibraryEntryView` /
-`HistoryItem`. Do not write a parallel mirror.
+Type-only re-exports from `@comical/library`, as the app already does for `HistoryItem`. Do not
+write a parallel mirror.
 
 ```ts
 type CollectionItemType = 'series' | 'chapter' | 'page';
@@ -69,7 +73,8 @@ Renames: `FavoritePagesQuery` → `CollectionItemsQuery` (gains `type?`, and has
 sentinel**), `FavoritePageScope` → `CollectionItemScope` (gains `type?`), `favoritePageId` /
 `parseFavoritePageId` → `collectionItemId` / `parseCollectionItemId`.
 
-**Gone:** `UNCOLLECTED` (nothing is durably uncollected), `LibraryList`, `LibraryEntry.listIds`.
+**Gone:** `UNCOLLECTED` (nothing is durably uncollected), `LibraryList`, and `LibraryEntry` itself
+— a tracked series is a `CollectionSeriesItem` (§11).
 
 **Ids are prefixed** — `page:b:s:c:i`, `chapter:b:s:c`, `series:b:s` — and remain internal. They're
 derived from coordinates, re-keyed by a reconcile, and never appear in a URL. Address items by
@@ -127,12 +132,16 @@ CRUD shapes are identical to the lists routes they replace, so the UI ported dir
 filter params renamed `list`→`collection`, `lists`→`collections`, `unlisted`→`uncollected`;
 `LibraryListFilter` → `CollectionFilter`, whose `'unlisted'` sentinel became `'uncollected'`. Note
 that `?uncollected=` on **`/library`** is still meaningful — it means "library entries in no
-collection" — even though the *item* query has no uncollected sentinel.
+collection" — even though the *item* query has no uncollected sentinel. Under §11 that is a
+transient state rather than a place series live.
 
-**Filing a series** replaces `PUT /library/entries/{b}/{s}/lists`, which is gone:
-
-1. `PUT /library/collected/series/{b}/{s}` ← `{ seriesTitle, thumbnailUrl?, author? }` — idempotent;
-2. `PUT /library/collected/series/{b}/{s}/collections` ← the full membership array.
+**Filing a series** replaces `PUT /library/entries/{b}/{s}/lists`, which is gone. It is now ONE
+call — `PUT /library/collected/series/{b}/{s}` ← `{ seriesTitle?, thumbnailUrl?, author?,
+externalIds?, collectionIds? }`, idempotent, `200 { item, autoLinked?, trackerSuggestions? }`. The
+memberships ride the same request deliberately: a series nobody filed is only *transiently*
+collected (§11), so a follow-up call would leave a window where it could be swept. There is a
+membership-only `PUT …/series/{b}/{s}/collections` for re-filing something already collected, but
+the client doesn't need it — the collect PUT covers both.
 
 **Reading memberships** replaces `entry.listIds`:
 `GET /library/collected?type=series&series={b}:{s}` → `item.collectionIds`. The library *grid*
@@ -563,7 +572,98 @@ User feedback after the phases landed reshaped the browsing surface:
   There is no viewer code to keep in step: sequence mode reuses the one screen, so a change to the
   reader is a change here by construction.
 
-## 11. Verification
+## 11. The library dissolved into collections ✅ done
+
+The third and last of the runtime's replacements, and the only one with real UX consequences.
+**There is no `LibraryEntry`.** A tracked series IS a `CollectionSeriesItem`, sitting in the same
+per-series shard as its chapter and page items, and *being in the library* means *being in at least
+one collection*. `/library/entries/*` is gone as a path prefix; the whole family moved under
+`/library/collected/series/{b}/{s}/*`.
+
+### 11.1 Migrate the user's library — the one thing that destroys data if skipped
+
+The device's `comical:lib:entries` document is dead under the new model, and wiping it opens the app
+to an **empty shelf**. It does not have to: everything a series owns other than the entry row —
+chapter progress, tracker links, the cached detail and chapter list, group membership — is keyed by
+`entryKey` in its OWN document, so the dissolution orphaned those rather than deleting them.
+Rebuilding the series items reattaches the lot.
+
+`src/data/embedded/legacy-entries.ts` reads that document once at startup and hands the rows to
+`Library.importLegacyEntries`, which owns the domain logic so every host migrates identically
+(the server does the same to its `entries.json`). Row-by-row validation, idempotent on coordinates
+already collected, and it files everything into the **`Library`** collection — under pure
+collections an unfiled series would be swept by the next thing that touches it.
+
+Four things about the wiring in `startup.ts` that are deliberate:
+
+- **One store instance** for the process. The migration writes through the same
+  `AsyncStorageLibraryStore` the router does, so they share its `serializeAsyncMethods` lock;
+  two instances would each hold their own and interleave.
+- **After `installWebCryptoShim()`** — the import mints a collection id with `crypto.randomUUID`,
+  which Hermes doesn't ship.
+- **Not awaited.** Blocking launch on AsyncStorage reads would cost every user a slower cold start
+  for a once-ever migration, so the library screen can race it; a run that actually imported
+  something bumps the data epoch and invalidates, exactly as a registry change does.
+- **The original is parked, not deleted** (`comical:lib:entries.migrated`), until it has been
+  confirmed on a real device. It stays inside `comical:lib:*`, so the Storage screen counts it —
+  honest, and the nudge to eventually drop it.
+
+Deliberately NOT migrated: lists and any favorites keys. Those shipped to nobody.
+
+### 11.2 The renames that reach the screens
+
+`GET /library` serves series items now, so the wire shape changed under the library grid:
+`title` → `seriesTitle`, `addedAt` → `collectedAt`, `listIds` → `collectionIds`. All of it is
+absorbed by **`toLibraryItem`** in `source.ts` — the app's `LibraryItem` is its own type, so one
+adapter kept the rename off every library screen. `LibraryEntryView` → `CollectionSeriesItemView`
+(aliased `ApiCollectedSeries`). `LibraryItem.addedAt` became `collectedAt` and is now **required**:
+a collected series always has one.
+
+`PERSIST_BUSTER` v5→v6. A v5 `library` entry rehydrates with no `collectedAt` and dumps the entire
+grid into the "Date added" grouping's `Earlier` bucket; cover URLs moved with the routes; cached
+series items gained `updatedAt`/`knownChapters`. None of it is repairable in place.
+
+### 11.3 Add-to-library IS filing
+
+Same action at different granularity, so `addLibraryEntry`/`putSeriesItem` collapsed into one
+`collectSeries`, and `removeLibraryEntry`/`deleteSeriesItem` into one `uncollectSeries`.
+
+The plain add-to-library button has to name a collection, so `data/default-collection.ts` resolves
+**`Library`** — created lazily on first use, and *the same name the migration files an imported
+shelf into*, so a migrated user's adds land where their library already is rather than in a second
+collection beside it. It is an ordinary collection: renameable, deletable, reorderable like any
+other. Renaming it means the next plain add lazily creates a fresh one — mildly surprising, and
+still better than a collection the UI won't let you touch.
+
+Resolving it costs one small `GET /library/collections` before the PUT. Deliberate: the alternative
+is a cached id that a server switch or a mock-mode toggle silently invalidates, and this only fires
+on an explicit user action.
+
+`useItemCollections`' series branch dropped its separate `addToLibrary` pre-call — the collect PUT
+carries the memberships, so a series the user just filed is never briefly collected-but-unfiled.
+
+### 11.4 Removing a series cascades — but NOT to read state
+
+Three actions can now remove a series where there used to be one: the explicit delete, un-filing its
+last collection, and **deleting a collection that was some series' only one**. All three take the
+offline detail, cached chapters, cover blob, activity feed and group membership — caches the next
+sync refills.
+
+**Read progress and tracker links survive**, and that is the point. Since tidying shelves can now
+remove a series, letting the cascade reach read state would mean quietly destroying the one thing
+the user cannot get back. Uncollect and re-collect and the reader is exactly where it was.
+
+So the collection-delete confirmation must NOT warn about losing progress — the old copy said
+"Series in it stay in your library", which the dissolution made false in the other direction. It now
+says what leaves (anything not in another collection, series included) and that progress is kept.
+
+Destroying read state is only ever explicit: `DELETE /library/collected/series/{b}/{s}/progress`,
+behind `useResetReadProgress` (confirm → toast → invalidate progress/library/history). It lives on
+the per-series menu — both the web/actions menu and the native long-press one — rather than on a
+library-only surface, because it has to reach a series that ISN'T collected: nothing sweeps progress
+orphaned by an uncollect, so that is how it gets reclaimed.
+
+## 12. Verification
 
 From `apps/mobile/`:
 
@@ -592,5 +692,10 @@ deliberately provoking, each hiding a bug this design can produce:
    most likely to surprise; make sure the confirm copy says so.
 6. A **stale** item — page *and* chapter — renders its affordance, stays out of the reader's
    indices, and survives restarts.
+7. **The migration, on a device with a real pre-collections library** (§11.1) — series, unread
+   counts and resume points all present afterwards, filed into `Library`, and a second launch
+   imports nothing. This is the one item on this list that loses user data if it's wrong.
+8. **Uncollect a series, then re-collect it** — the reader resumes where it was, chapter read flags
+   intact. Then **reset read progress on a series that isn't collected** and confirm it clears.
 
 Finally, tick `todo.md`'s "Add 'page' favoriting mechanism" line.

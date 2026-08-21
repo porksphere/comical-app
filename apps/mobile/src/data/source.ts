@@ -24,6 +24,7 @@ import { firstChapterInReadingOrder } from '@/lib/chapter-order';
 import { persisted$ } from '@/lib/observable';
 import * as api from './api';
 import * as mock from './mock';
+import { resolveDefaultCollection } from './default-collection';
 import { DIRECT_DOWNLOAD_CHAPTER_ID } from './downloads/constants';
 import { localChapterPages } from './downloads/index-cache';
 import type {
@@ -176,8 +177,16 @@ export interface DataSource {
     collectionIds: string[],
     signal?: AbortSignal,
   ): Promise<void>;
+  /** Collect a series — "add to library" and "add to a collection" are the same action now, so this
+   *  files it into the default collection (`DEFAULT_COLLECTION`, created on first use). Use
+   *  `setSeriesCollections` when the user picked the collections themselves. */
   addToLibrary(bridgeId: string, seriesId: string, snap: api.LibrarySnapshot, signal?: AbortSignal): Promise<void>;
+  /** Uncollect a series: out of the library and every collection. Read progress and tracker links
+   *  SURVIVE (see `resetReadProgress`); the offline caches don't. */
   removeFromLibrary(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void>;
+  /** Wipe a series' read state — every chapter's read flag and the resume point. The only call that
+   *  destroys it, and it works on an uncollected series so orphaned progress can be reclaimed. */
+  resetReadProgress(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void>;
   /** Record read progress for a *library* series (updates its resume cache). */
   recordChapterProgress(
     bridgeId: string,
@@ -368,15 +377,18 @@ function toGridPage(p: api.PagedResults<api.ApiSeriesEntry>): GridPage {
   return { items: p.items.map(toSeriesEntry), ...(p.nextCursor ? { nextCursor: p.nextCursor } : {}) };
 }
 
-function toLibraryItem(e: api.ApiLibraryEntry): LibraryItem {
+/** THE one place the collected-series wire shape is read. The library dissolved into collections,
+ *  so `/library` serves `CollectionSeriesItem`s: `title` → `seriesTitle`, `addedAt` → `collectedAt`.
+ *  Absorbing both renames here is what kept the change off every library screen. */
+function toLibraryItem(e: api.ApiCollectedSeries): LibraryItem {
   return {
     bridgeId: e.bridgeId,
     seriesId: e.seriesId,
-    title: e.title,
+    title: e.seriesTitle,
     ...(e.thumbnailUrl !== undefined && { thumbnailUrl: e.thumbnailUrl }),
     ...(e.author !== undefined && { author: e.author }),
     unread: e.unreadCount,
-    ...(e.addedAt !== undefined && { addedAt: e.addedAt }),
+    collectedAt: e.collectedAt,
     ...(e.lastReadAt !== undefined && { lastReadAt: e.lastReadAt }),
   };
 }
@@ -560,13 +572,12 @@ const realDataSource: DataSource = {
     // member, so there is nothing to leave behind. (PUT collections: [] does the same server-side
     // and reports `{ removed: true }`; DELETE avoids needing the item to exist first.)
     if (collectionIds.length === 0) {
-      await api.deleteSeriesItem(bridgeId, seriesId, signal);
+      await api.uncollectSeries(bridgeId, seriesId, signal);
       return;
     }
-    // Item first — memberships attach to it, so it must exist. Idempotent, so repeating it on
-    // every membership change is safe and keeps the snapshot fresh.
-    await api.putSeriesItem(bridgeId, seriesId, snap, signal);
-    await api.setSeriesCollections(bridgeId, seriesId, collectionIds, signal);
+    // ONE call: the collect PUT files in the same request. Idempotent, so repeating it on every
+    // membership change is safe and keeps the snapshot fresh.
+    await api.collectSeries(bridgeId, seriesId, { ...snap, collectionIds }, signal);
   },
   getSeriesCollections: (bridgeId, seriesId, signal) => api.getSeriesCollections(bridgeId, seriesId, signal),
   getCollectedItems: (query, signal) => api.getCollectedItems(query, signal),
@@ -594,10 +605,18 @@ const realDataSource: DataSource = {
   getFavoritesImportPreview: (bridgeId, signal) => api.getFavoritesImportPreview(bridgeId, signal),
   importBridgeFavorites: (bridgeId, items, signal) => api.importBridgeFavorites(bridgeId, items, signal),
   async addToLibrary(bridgeId, seriesId, snap, signal) {
-    await api.addLibraryEntry(bridgeId, seriesId, snap, signal);
+    // File it as it is collected. A series nobody filed is only transiently collected — the next
+    // thing that re-files something to zero sweeps it — so the default collection has to be
+    // resolved BEFORE the PUT, not bolted on after. Costs one small extra GET on an explicit user
+    // action, which is the right trade against holding a cached id that a server switch invalidates.
+    const collectionIds = [await resolveDefaultCollection(api.getCollections, api.createCollection, signal)];
+    await api.collectSeries(bridgeId, seriesId, { ...snap, collectionIds }, signal);
   },
   async removeFromLibrary(bridgeId, seriesId, signal) {
-    await api.removeLibraryEntry(bridgeId, seriesId, signal);
+    await api.uncollectSeries(bridgeId, seriesId, signal);
+  },
+  async resetReadProgress(bridgeId, seriesId, signal) {
+    await api.resetReadProgress(bridgeId, seriesId, signal);
   },
   async recordChapterProgress(bridgeId, seriesId, chapterId, update, signal) {
     await api.putChapterProgress(bridgeId, seriesId, chapterId, update, signal);
@@ -962,6 +981,7 @@ const mockDataSource: DataSource = {
   deleteCollection: (id) => mock.mockDeleteCollection(id),
   setSeriesCollections: (bridgeId, seriesId, collectionIds) =>
     mock.mockSetSeriesCollections(bridgeId, seriesId, collectionIds),
+  resetReadProgress: (bridgeId, seriesId) => mock.mockResetReadProgress(bridgeId, seriesId),
   getSeriesCollections: (bridgeId, seriesId) => mock.mockGetSeriesCollections(bridgeId, seriesId),
   getCollectedItems: (query) => mock.mockGetCollectedItems(query),
   getChapterPageIndices: (bridgeId, seriesId, chapterId) =>
@@ -983,7 +1003,8 @@ const mockDataSource: DataSource = {
   isInLibrary: (bridgeId, seriesId) => mock.mockIsInLibrary(bridgeId, seriesId),
   getFavoritesImportPreview: (bridgeId) => mock.mockGetFavoritesImportPreview(bridgeId),
   importBridgeFavorites: (bridgeId, items) => mock.mockImportBridgeFavorites(bridgeId, items),
-  addToLibrary: (bridgeId, seriesId, snap) => mock.mockAddToLibrary(bridgeId, seriesId, snap),
+  addToLibrary: async (bridgeId, seriesId, snap) =>
+    mock.mockAddToLibrary(bridgeId, seriesId, snap, await mock.mockDefaultCollectionId()),
   removeFromLibrary: (bridgeId, seriesId) => mock.mockRemoveFromLibrary(bridgeId, seriesId),
   recordChapterProgress: (bridgeId, seriesId, chapterId, update) =>
     mock.mockRecordChapterProgress(bridgeId, seriesId, chapterId, update),

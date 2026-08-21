@@ -64,10 +64,15 @@ export default function ManageCollectionsScreen() {
 
   const confirmDelete = (id: string, name: string) =>
     openConfirm({
-      // Deliberately specific about the asymmetry: a series in the collection is ALSO a library
-      // entry, so it survives — but a saved page exists only as a member of a collection, so
-      // deleting its last one deletes it. The host does that cascade; the user should know first.
-      message: `“${name}” will be removed. Series in it stay in your library, but saved pages and chapters that aren’t in another collection will be deleted.`,
+      // There is no longer any asymmetry to explain: the library dissolved into collections, so a
+      // series is in the library by virtue of being in one — and anything whose last collection
+      // this was goes with it, series included. The host runs that cascade; the user should know
+      // first.
+      //
+      // What this must NOT say is that they lose their place. Read progress deliberately survives
+      // the cascade — precisely because tidying shelves can now remove a series, and that is the
+      // one thing the user can't get back. Re-add the series and the reader is where it was.
+      message: `“${name}” will be removed. Anything in it that isn’t in another collection — series, chapters and saved pages — leaves your library. Your reading progress is kept.`,
       confirmLabel: 'Delete Collection',
       onConfirm: () => {
         deleteCollection(id);

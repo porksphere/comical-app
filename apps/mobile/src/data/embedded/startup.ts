@@ -48,12 +48,19 @@ import { getDownloadPrefsSync } from '../downloads/prefs';
 import { swapDataSourceMode } from './apply-mode';
 import { fileSystemBundleCache, pruneBundleCache } from './bundle-cache';
 import { expoCoversBlobStore } from './covers-store';
+import { migrateLegacyEntries } from './legacy-entries';
 import { AsyncStorageLibraryStore } from './library-store';
 import { getResolvedModeSync, whenEmbeddedPrefLoaded } from './preference';
 import { applyImageCacheConfig } from '../image-cache';
+import { logDiagnostic } from '@/lib/diagnostics';
 import { installedStore, installedTrackerStore, savedRegistryStore } from './stores';
 import { asyncStorageSettings, asyncStorageTrackerSettings } from './settings-store';
 import { embeddedOAuthCallbackUrl } from './oauth-callback';
+
+// ONE store instance for the process: the router writes through it, and the legacy-entries
+// migration below reads and rebuilds through it. Two instances would each hold their own
+// `serializeAsyncMethods` lock, so the migration's writes could interleave with the router's.
+const libraryStore = new AsyncStorageLibraryStore();
 
 /** The fixed pieces host-rn needs; the stores supply the (user-managed) registries + installs. */
 function bootstrapConfig(): EmbeddedBootstrapConfig {
@@ -67,7 +74,7 @@ function bootstrapConfig(): EmbeddedBootstrapConfig {
     // On-device library persistence — mounts the router's `/library*` endpoints in embedded mode so
     // Library/History/Activity (and add-to-library + read progress) work with no server. See
     // `library-store.ts`; the same endpoints the remote `comical-web` server already exposes.
-    libraryStore: new AsyncStorageLibraryStore(),
+    libraryStore,
     // On-device downloads persistence — mounts the router's `/downloads*` endpoints in embedded mode
     // so the offline-download manifest (enqueue / record / storage / delete) works with no server.
     // The SHARED instance (its doc cache makes a second copy incoherent — see async-store.ts).
@@ -82,7 +89,7 @@ function bootstrapConfig(): EmbeddedBootstrapConfig {
       onPageRetry: onDevicePageRetry,
     },
     // Guaranteed-offline library covers: captured into this device store on library-add/browse and
-    // served back by the reused router at /library/entries/:b/:s/cover.
+    // served back by the reused router at /library/collected/series/:b/:s/cover.
     covers: { blobs: expoCoversBlobStore, fetchPage: devicePageFetcher },
     // On-device tracker persistence — trackers are registry-installed exactly like bridges, not a
     // static app-bundled map (mirrors `installed`/`savedRegistryStore` above). Also needs a native
@@ -118,6 +125,22 @@ export function startEmbeddedRuntime(): void {
   // Bridge bundle verification (@comical/registry verify.ts) needs WebCrypto, absent in Hermes.
   installWebCryptoShim();
   configureEmbeddedRuntime(bootstrapConfig());
+  // Rebuild the user's shelf from the pre-collections entries document, if this device still has
+  // one. Runs regardless of the resolved mode: the data is on THIS device either way, and the
+  // import is a no-op after the first launch that finds it. Must follow `installWebCryptoShim()`
+  // (it mints a collection id with `crypto.randomUUID`).
+  //
+  // Not awaited — blocking launch on AsyncStorage reads would cost every user a slower cold start
+  // for a one-time migration. The library screen can therefore race it, so a run that actually
+  // imported something refetches, the same way a registry change does.
+  void migrateLegacyEntries(libraryStore)
+    .then((result) => {
+      if (!result || result.imported === 0) return;
+      logDiagnostic('library', `Migrated ${result.imported} pre-collections entries (${result.skipped} skipped)`);
+      bumpDataEpoch();
+      void queryClient.invalidateQueries();
+    })
+    .catch((e: unknown) => logDiagnostic('library', `Legacy entries migration failed: ${String(e)}`));
   const bootEmbedded = applyEmbeddedMode(getResolvedModeSync() === 'embedded');
   // That sync read ran before the preference finished rehydrating from AsyncStorage, so it saw the
   // unset DEFAULT (embedded whenever the native runtime exists) — a persisted "remote" choice

@@ -1,13 +1,14 @@
 import { View, StyleSheet } from 'react-native';
 
 import { MenuActionRow, MenuHeader } from '@/components/context-menu';
-import { CheckIcon, DownloadsIcon, ListPlusIcon, PlusIcon, StarIcon } from '@/components/icons/ui-icons';
+import { CheckIcon, DownloadsIcon, ListPlusIcon, PlusIcon, RetryIcon, StarIcon } from '@/components/icons/ui-icons';
 import { openCollectionPicker } from '@/components/collection-picker';
 import { OptionList, useOverlay } from '@/components/overlay/overlay';
 import { Spacing } from '@/constants/theme';
 import type { SeriesEntry } from '@/data/types';
 import { useFavorite } from '@/hooks/use-favorite';
 import { useLibrary } from '@/hooks/use-library';
+import { useResetReadProgress } from '@/hooks/use-reset-read-progress';
 import { useSeriesDownloadAction } from '@/hooks/use-series-download-action';
 
 /**
@@ -36,9 +37,10 @@ export function SeriesActionsMenu({
   const { closeTop } = useOverlay();
   const { favorited, toggle: toggleFavorite, available: favoritesAvailable } = useFavorite(bridgeId, entry.id);
   const { inLibrary, toggle: toggleLibrary } = useLibrary(bridgeId, entry.id, () => ({
-    title: entry.title,
+    seriesTitle: entry.title,
     ...(entry.cover ? { thumbnailUrl: entry.cover } : {}),
   }));
+  const resetProgress = useResetReadProgress(bridgeId, entry.id, entry.title);
   // Lazy — this menu is mounted only while open, so the download-status query runs once, on open.
   const download = useSeriesDownloadAction(
     bridgeId,
@@ -88,8 +90,18 @@ export function SeriesActionsMenu({
               bridgeId,
               seriesId: entry.id,
               title: entry.title,
-              snapshot: () => ({ title: entry.title, ...(entry.cover ? { thumbnailUrl: entry.cover } : {}) }),
+              snapshot: () => ({ seriesTitle: entry.title, ...(entry.cover ? { thumbnailUrl: entry.cover } : {}) }),
             });
+          }}
+        />
+        <MenuActionRow
+          testID="series.card-menu.reset-progress"
+          label="Reset read progress"
+          // RotateCcw — the same "put it back" glyph the retry rows use.
+          Icon={RetryIcon}
+          onPress={() => {
+            closeTop();
+            resetProgress();
           }}
         />
         <MenuActionRow

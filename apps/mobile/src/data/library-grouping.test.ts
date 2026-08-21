@@ -34,8 +34,8 @@ describe('libraryGroupOf', () => {
     const groupOf = libraryGroupOf('added', fmt)!;
     const morning = new Date(2026, 0, 15, 9).getTime();
     const evening = new Date(2026, 0, 15, 22).getTime();
-    expect(groupOf(card({ addedAt: morning })).key).toBe(groupOf(card({ addedAt: evening })).key);
-    expect(groupOf(card({ addedAt: morning })).label).toBe(fmt(morning));
+    expect(groupOf(card({ collectedAt: morning })).key).toBe(groupOf(card({ collectedAt: evening })).key);
+    expect(groupOf(card({ collectedAt: morning })).label).toBe(fmt(morning));
   });
 
   test('lastRead: a never-opened series lands in its own real bucket', () => {

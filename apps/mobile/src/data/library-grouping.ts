@@ -28,8 +28,10 @@ export function libraryGroupOf(
         // entries grouped (and labelled recognizably) rather than lumped together.
         return { key: e.bridgeId ?? '', label: e.bridge ?? e.bridgeId ?? 'Unknown source' };
       case 'added':
-        return e.addedAt !== undefined
-          ? { key: dayKey(e.addedAt), label: formatDate(e.addedAt) }
+        // Optional on the CARD only because `libraryGroupOf` is typed against the wider
+        // `SeriesGridItem`; every real library card carries it.
+        return e.collectedAt !== undefined
+          ? { key: dayKey(e.collectedAt), label: formatDate(e.collectedAt) }
           : { key: 'unknown', label: 'Earlier' };
       case 'lastRead':
         // A series never opened has no lastReadAt — a real bucket, not an error state.
