@@ -19,9 +19,9 @@ import { hapticSelection } from '@/lib/haptics';
  *
  * ── It says LIBRARY, so it does Library ──
  *
- * A tap on an uncollected series puts it in the **`Library`** collection — the one
- * `data/default-collection.ts` names, created on first use, and the same one a migrated shelf lands
- * in. Deterministic, and it matches the label.
+ * A tap on an uncollected series puts it in the **default** collection — the one
+ * `data/default-collection.ts` resolves, created on first use, and the same one a migrated shelf
+ * lands in. Deterministic, and it matches the label.
  *
  * It deliberately does NOT follow the reader's Google Maps save, which files a page into whichever
  * collection pages were last filed into. That model needs the button to name its destination
@@ -72,10 +72,11 @@ export function useSeriesSave(
       // Through the query cache, not a bare `ds.getCollections()`: the collections list is server
       // state, so this reuses the entry the picker and the library selector already populated
       // instead of putting a round trip in front of every tap.
-      const destination = await resolveDefaultCollection(
-        () => queryClient.fetchQuery(collectionsQuery(ds, mock)),
-        (name) => ds.createCollection(name),
-      );
+      const destination = await resolveDefaultCollection({
+        list: () => queryClient.fetchQuery(collectionsQuery(ds, mock)),
+        create: (name) => ds.createCollection(name),
+        rename: (id, name) => ds.renameCollection(id, name),
+      });
       setCollections([destination]);
     },
   };

@@ -647,9 +647,9 @@ collection" — for what is now one action, and the one people reached for could
 had done. They are now a single **`useSeriesSave`** control on all four (series screen, web card
 menu, native long-press menu, reader panel):
 
-- **Unsaved** → a tap puts it in the **`Library`** collection (`data/default-collection.ts`,
-  created on first use — the same one a migrated shelf lands in). The button keeps the old
-  "＋ Library" / "✓ In Library" wording.
+- **Unsaved** → a tap puts it in the **default** collection (`data/default-collection.ts`, created
+  on first use — the same one a migrated shelf lands in). The button keeps the old "＋ Library" /
+  "✓ In Library" wording.
 - **Saved** → a tap opens the picker, where the collections are changed or cleared. A saved series
   is deliberately not one tap from gone: it carries progress, downloads and tracker links.
 
@@ -670,8 +670,21 @@ The native long-press menu keeps its in-place submenu as that row's picker (bett
 rendering over the menu), so its glyph is the affordance: ✓ saved, ＋ when a tap will commit
 outright, › when it will expand.
 
-`data/default-collection.ts` survives for **bulk, non-interactive** collects — importing a bridge's
-favorites, which has no user to ask — and files into `Library`, the same name the migration uses.
+**The default collection is `Default`, pinned by id.** It was `Library`, matched by name, and both
+halves were wrong. The name put a second "Library" row in the Library tab's selector directly under
+the row for the whole library — and for a freshly migrated shelf the two listed exactly the same
+series, so it read as one list rendered twice. The name-matching meant renaming it in Manage
+collections silently spawned a second default on the next add.
+
+So `resolveDefaultCollection` remembers an **id** (`comical:defaultCollection`) and resolves in
+order: the remembered id → a collection named `Default` → a collection named `Library`, **renamed in
+place** → create one. That third step is what adopts a shelf migrated by the first cut of this
+branch instead of stranding it beside a new `Default`; it can only fire once per device. The
+migration now records the collection it filed into directly, so a fresh migration never needs it.
+The selector's unfiltered row is **"All"**.
+
+It also serves **bulk, non-interactive** collects — importing a bridge's favorites, which has no
+user to ask.
 
 **e2e:** one tap, as before — the picker only opens for a series that is already saved.
 

@@ -17,8 +17,10 @@ import { useTheme } from '@/hooks/use-theme';
 import { useRouter } from '@/lib/nav';
 
 /**
- * The Library tab's top-bar view selector — the bridge-selector shape, reading "Library" (all
- * entries) by default and opening a menu to switch to any collection. One flat list, deliberately:
+ * The Library tab's top-bar view selector — the bridge-selector shape, reading "Library" (the tab,
+ * i.e. everything collected) by default and opening a menu to switch to any collection. The menu's
+ * own row for that view says "All", since "Library" there would collide with the default
+ * collection sitting one row below it. One flat list, deliberately:
  * picking a collection shows THAT COLLECTION'S CONTENTS (its series, chapters and saved pages,
  * mixed), so there is nothing to split into per-type views — an earlier two-section version
  * ("collections" vs "saved pages") read as two competing lists of the same names and was cut.
@@ -85,10 +87,13 @@ function CollectionMenu({
         </MeasuredHeader>
       )}
       <OptionList>
+        {/* NOT "Library": the default collection is an ordinary row below, and while a freshly
+            migrated shelf is the only thing in it, both rows list exactly the same series. Two rows,
+            one word, one list. */}
         <ViewRow
           testID="library.collection.all"
-          label="Library"
-          hint="All series"
+          label="All"
+          hint="Everything you've saved"
           selected={value === null}
           onPress={() => pick(null)}
         />

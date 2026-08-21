@@ -21,6 +21,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Library, type LibraryStore } from '@comical/library';
 
+import { DEFAULT_COLLECTION, setDefaultCollectionId } from '../default-collection';
+
 /** The pre-collections document: `{ [entryKey]: LibraryEntry }`. Not a `library-store.ts` constant
  *  any more — that store no longer has an entries concept, and this is the only reader left. */
 const ENTRIES = 'comical:lib:entries';
@@ -30,7 +32,7 @@ const ENTRIES = 'comical:lib:entries';
  *  figure — honest, since it's real bytes, and it's the nudge to eventually drop it. */
 const MIGRATED = 'comical:lib:entries.migrated';
 
-export type LegacyEntriesMigration = { imported: number; skipped: number };
+export type LegacyEntriesMigration = { imported: number; skipped: number; collectionId: string };
 
 /**
  * Import the legacy entries document if it's still there, then park it under `MIGRATED`.
@@ -58,8 +60,12 @@ export async function migrateLegacyEntries(store: LibraryStore): Promise<LegacyE
   if (rows.length === 0) return undefined;
 
   // Rows are validated individually inside; a half-corrupt document yields the entries it can.
-  const { imported, skipped } = await new Library(store).importLegacyEntries(rows);
+  const { imported, skipped, collectionId } = await new Library(store).importLegacyEntries(rows, DEFAULT_COLLECTION);
+  // Pin the rebuilt shelf's collection as this device's default, so the plain "＋ Library" tap
+  // files into the collection the user's library is already in rather than beside it. Recording
+  // the id (not the name) is what lets them rename it afterwards without spawning a second one.
+  setDefaultCollectionId(collectionId);
   await AsyncStorage.setItem(MIGRATED, raw);
   await AsyncStorage.removeItem(ENTRIES);
-  return { imported, skipped };
+  return { imported, skipped, collectionId };
 }
