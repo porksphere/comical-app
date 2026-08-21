@@ -24,7 +24,6 @@ import { firstChapterInReadingOrder } from '@/lib/chapter-order';
 import { persisted$ } from '@/lib/observable';
 import * as api from './api';
 import * as mock from './mock';
-import { resolveDefaultCollection } from './default-collection';
 import { DIRECT_DOWNLOAD_CHAPTER_ID } from './downloads/constants';
 import { localChapterPages } from './downloads/index-cache';
 import type {
@@ -177,13 +176,6 @@ export interface DataSource {
     collectionIds: string[],
     signal?: AbortSignal,
   ): Promise<void>;
-  /** Collect a series — "add to library" and "add to a collection" are the same action now, so this
-   *  files it into the default collection (`DEFAULT_COLLECTION`, created on first use). Use
-   *  `setSeriesCollections` when the user picked the collections themselves. */
-  addToLibrary(bridgeId: string, seriesId: string, snap: api.LibrarySnapshot, signal?: AbortSignal): Promise<void>;
-  /** Uncollect a series: out of the library and every collection. Read progress and tracker links
-   *  SURVIVE (see `resetReadProgress`); the offline caches don't. */
-  removeFromLibrary(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void>;
   /** Wipe a series' read state — every chapter's read flag and the resume point. The only call that
    *  destroys it, and it works on an uncollected series so orphaned progress can be reclaimed. */
   resetReadProgress(bridgeId: string, seriesId: string, signal?: AbortSignal): Promise<void>;
@@ -604,17 +596,6 @@ const realDataSource: DataSource = {
   isInLibrary: (bridgeId, seriesId, signal) => api.isInLibrary(bridgeId, seriesId, signal),
   getFavoritesImportPreview: (bridgeId, signal) => api.getFavoritesImportPreview(bridgeId, signal),
   importBridgeFavorites: (bridgeId, items, signal) => api.importBridgeFavorites(bridgeId, items, signal),
-  async addToLibrary(bridgeId, seriesId, snap, signal) {
-    // File it as it is collected. A series nobody filed is only transiently collected — the next
-    // thing that re-files something to zero sweeps it — so the default collection has to be
-    // resolved BEFORE the PUT, not bolted on after. Costs one small extra GET on an explicit user
-    // action, which is the right trade against holding a cached id that a server switch invalidates.
-    const collectionIds = [await resolveDefaultCollection(api.getCollections, api.createCollection, signal)];
-    await api.collectSeries(bridgeId, seriesId, { ...snap, collectionIds }, signal);
-  },
-  async removeFromLibrary(bridgeId, seriesId, signal) {
-    await api.uncollectSeries(bridgeId, seriesId, signal);
-  },
   async resetReadProgress(bridgeId, seriesId, signal) {
     await api.resetReadProgress(bridgeId, seriesId, signal);
   },
@@ -1003,9 +984,6 @@ const mockDataSource: DataSource = {
   isInLibrary: (bridgeId, seriesId) => mock.mockIsInLibrary(bridgeId, seriesId),
   getFavoritesImportPreview: (bridgeId) => mock.mockGetFavoritesImportPreview(bridgeId),
   importBridgeFavorites: (bridgeId, items) => mock.mockImportBridgeFavorites(bridgeId, items),
-  addToLibrary: async (bridgeId, seriesId, snap) =>
-    mock.mockAddToLibrary(bridgeId, seriesId, snap, await mock.mockDefaultCollectionId()),
-  removeFromLibrary: (bridgeId, seriesId) => mock.mockRemoveFromLibrary(bridgeId, seriesId),
   recordChapterProgress: (bridgeId, seriesId, chapterId, update) =>
     mock.mockRecordChapterProgress(bridgeId, seriesId, chapterId, update),
   getChapterProgress: (bridgeId, seriesId) => mock.mockGetChapterProgress(bridgeId, seriesId),

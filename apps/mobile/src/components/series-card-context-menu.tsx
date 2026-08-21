@@ -59,7 +59,7 @@ import type { PageThumbSource } from '@/data/types';
 import { useItemCollections } from '@/hooks/use-item-collections';
 import { useFavorite } from '@/hooks/use-favorite';
 import { useResetReadProgress } from '@/hooks/use-reset-read-progress';
-import { useLibrary } from '@/hooks/use-library';
+import { useSeriesSave } from '@/hooks/use-series-save';
 import { useCollections } from '@/hooks/use-collections';
 import { useSeriesDownloadAction } from '@/hooks/use-series-download-action';
 import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
@@ -190,7 +190,7 @@ const MENU_HOLD_MS = 220;
 // under it — the iOS "hover a folder to spring it open" delay. Long enough that merely sweeping PAST
 // the row on the way to another doesn't trip it, short enough that a deliberate pause feels answered.
 const SUBMENU_DWELL_MS = 320;
-// Read + Add to Library + Add to collection + Favorite + Download + Reset progress. Keep in step with the rows rendered
+// Read + Save + Favorite + Download + Reset progress. Keep in step with the rows rendered
 // below — the menu's height is computed from this (it's what the panel's resize range budgets for),
 // not measured.
 const MENU_ROWS = 5;
@@ -316,27 +316,21 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
 
   const { favorited, toggle: toggleFavorite, available: favoritesAvailable } = useFavorite(bridgeId, entry.id);
   const resetProgress = useResetReadProgress(bridgeId, entry.id, entry.title);
-  const { inLibrary, toggle: toggleLibrary } = useLibrary(bridgeId, entry.id, () => ({
-    seriesTitle: entry.title,
-    ...(entry.cover ? { thumbnailUrl: entry.cover } : {}),
-  }));
-  // Collections for the "Add to collection ›" submenu: the set itself (drives chevron-vs-＋ and the
+  // Collections for the Save row's submenu: the set itself (drives chevron-vs-＋ and the
   // expanded rows) + this series' live memberships (the checkmarks, optimistic). Both queries run
   // once per open — this component mounts only while the menu is up, never per card. Each gates its
   // own surface while loading: the ROW is inert until the set resolves (otherwise a quick tap reads
   // a still-loading [] as "no collections" and wrongly takes the ＋→manage path), and the submenu
   // rows are inert until the memberships resolve (a toggle then would REPLACE unknown memberships).
   const { collections, isLoading: collectionsLoading } = useCollections();
+  const snapshot = () => ({ seriesTitle: entry.title, ...(entry.cover ? { thumbnailUrl: entry.cover } : {}) });
   const {
     collectionIds,
     loading: membershipsLoading,
     setCollections,
-  } = useItemCollections({
-    kind: 'series',
-    bridgeId,
-    seriesId: entry.id,
-    snapshot: () => ({ seriesTitle: entry.title, ...(entry.cover ? { thumbnailUrl: entry.cover } : {}) }),
-  });
+  } = useItemCollections({ kind: 'series', bridgeId, seriesId: entry.id, snapshot });
+  // Reads the same two queries this menu already runs, so the merged Save row costs nothing extra.
+  const save = useSeriesSave(bridgeId, entry.id, snapshot, entry.title);
   // Lazy: this panel mounts only while the menu is open, so the download-status query runs once here,
   // never per card in the grid.
   const download = useSeriesDownloadAction(
@@ -1108,11 +1102,12 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // Rendering them from a list (rather than three hand-written JSX rows) is what lets a ROW INDEX mean
   // something — which is what the held finger is hit-tested into, and what a lift commits.
 
-  // The "Add to collection" submenu, built fresh every render so the checkmarks track the optimistic
+  // The Save row's picker, in place — better here than the root picker sheet, which would have to
+  // render over this menu. Built fresh every render so the checkmarks track the optimistic
   // memberships as they're toggled (a snapshot taken at open would freeze them).
   const hasCollections = collections.length > 0;
   const collectionsSubmenu = (): SubmenuSpec => ({
-    label: 'Add to collection',
+    label: 'Save to collection',
     testID: 'series.card-menu.collections.submenu',
     rows: collections.map((c) => ({
       label: c.name,
@@ -1127,8 +1122,9 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       testID: `series.card-menu.collections.${c.id}`,
     })),
   });
-  // Its position in `rows` below — the submenu anchors at exactly this row's slot.
-  const COLLECTIONS_ROW_INDEX = 2;
+  // The Save row's position in `rows` below — the submenu anchors at exactly that row's slot.
+  // Was 2 while "Add to Library" sat above it; merging the two moved it up.
+  const SAVE_ROW_INDEX = 1;
 
   const rows: MenuRowSpec[] = [
     {
@@ -1144,31 +1140,31 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
         reading.start();
       },
     },
+    // ONE row where there were two — "Add to Library" and "Add to collection" became the same
+    // action when the library dissolved into collections. A tap saves into the last-used collection
+    // and the label then names it; once saved (or with nowhere to put it), a tap opens the submenu
+    // to choose. See useSeriesSave.
     {
-      label: inLibrary ? 'Remove from Library' : 'Add to Library',
-      Icon: inLibrary ? CheckIcon : PlusIcon,
-      loading: inLibrary === null,
-      active: !!inLibrary,
-      testID: 'series.card-menu.library',
-      onPress: () => act(toggleLibrary),
-    },
-    {
-      label: 'Add to collection',
-      // None yet → a ＋ that opens collection management. With some → a chevron that expands the
-      // in-place submenu (iOS Files' "Open With ›"). The glyph IS the affordance either way.
-      Icon: hasCollections ? ChevronRightIcon : PlusIcon,
-      // Inert until the set has actually loaded — see the loading note on useCollections.
-      loading: collectionsLoading,
-      testID: 'series.card-menu.collections',
-      ...(hasCollections && { submenu: collectionsSubmenu }),
-      onPress: hasCollections
-        ? // Do NOT close the menu — the submenu expands over it while the rest pushes back.
-          () => openSubmenu(COLLECTIONS_ROW_INDEX, collectionsSubmenu())
-        : () => {
-            req.onClose?.(); // navigating away — un-hide the card and drop the overlay
-            closeSeriesCardMenu();
-            router.push('/manage-collections');
-          },
+      label: save.label,
+      // Saved → ✓. Quick-savable → ＋, it commits on tap. Otherwise a chevron, because the tap
+      // expands the in-place submenu (iOS Files' "Open With ›"). The glyph IS the affordance.
+      Icon: save.saved ? CheckIcon : save.quickSaves || !hasCollections ? PlusIcon : ChevronRightIcon,
+      // Inert until BOTH sets have loaded — see the loading note on useCollections; a quick tap on
+      // a still-loading [] would read as "no collections" and wrongly take the ＋→manage path.
+      loading: collectionsLoading || save.saved === null,
+      active: !!save.saved,
+      testID: 'series.card-menu.save',
+      ...(!save.quickSaves && hasCollections && { submenu: collectionsSubmenu }),
+      onPress: save.quickSaves
+        ? () => act(save.onPress)
+        : hasCollections
+          ? // Do NOT close the menu — the submenu expands over it while the rest pushes back.
+            () => openSubmenu(SAVE_ROW_INDEX, collectionsSubmenu())
+          : () => {
+              req.onClose?.(); // navigating away — un-hide the card and drop the overlay
+              closeSeriesCardMenu();
+              router.push('/manage-collections');
+            },
     },
     {
       label: favorited ? 'Unfavorite' : 'Favorite',

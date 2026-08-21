@@ -15,7 +15,7 @@ import { downloadsScreenRoute } from '@/data/downloads/nav';
 import { queryKeys } from '@/data/queries';
 import { useFavorite } from '@/hooks/use-favorite';
 import { DIRECT_CHAPTER_ID } from '@/data/types';
-import { useLibrary } from '@/hooks/use-library';
+import { useSeriesSave } from '@/hooks/use-series-save';
 import { useItemCollections } from '@/hooks/use-item-collections';
 import { usePageCollected } from '@/hooks/use-page-collected';
 import { useSeriesSubPath } from '@/lib/series-nav';
@@ -389,7 +389,7 @@ function SeriesActionsRow({
     ...(author ? { author } : {}),
   });
 
-  const { inLibrary, toggle: toggleLibrary } = useLibrary(bridgeId, seriesId, snapshot);
+  const save = useSeriesSave(bridgeId, seriesId, snapshot, title ?? seriesId);
   const { favorited, toggle: toggleFavorite, available: favAvailable } = useFavorite(bridgeId, seriesId);
 
   // Download state from the same manifest query the Series screen's button reads (so it shows
@@ -452,22 +452,24 @@ function SeriesActionsRow({
     }
     openSeriesDownloads(true);
   };
-  const onAddToCollection = () => {
-    closeTop(); // close the reader sheet so the collection picker isn't stacked behind it
-    openCollectionPicker({ kind: 'series', bridgeId, seriesId, title, snapshot });
-  };
-
   return (
     <View style={styles.seg}>
       <ThemedText style={styles.segLabel}>This series</ThemedText>
       <View style={styles.segRow}>
+        {/* ONE cell where there were two — the old "Library" and "Add to collection" became the
+            same action when the library dissolved into collections. See useSeriesSave. */}
         <Pressable
-          testID="reader.settings.library"
-          onPress={toggleLibrary}
-          style={[styles.opt, inLibrary && styles.optOn]}
-          disabled={inLibrary === null}>
-          <ThemedText style={[styles.optText, inLibrary && styles.optTextOn]}>
-            {inLibrary ? '✓  In Library' : '＋  Library'}
+          testID="reader.settings.save"
+          onPress={() => {
+            // A tap that opens the picker must not leave it stacked behind this sheet; a tap that
+            // saves outright should leave the reader panel up, so the label change is visible.
+            if (!save.quickSaves) closeTop();
+            save.onPress();
+          }}
+          style={[styles.opt, save.saved && styles.optOn]}
+          disabled={save.saved === null}>
+          <ThemedText numberOfLines={1} style={[styles.optText, save.saved && styles.optTextOn]}>
+            {save.saved ? `✓  ${save.label}` : `＋  ${save.label}`}
           </ThemedText>
         </Pressable>
         <Pressable
@@ -487,9 +489,6 @@ function SeriesActionsRow({
           onPress={onDownload}
           style={[styles.opt, dlComplete && styles.optOn]}>
           <ThemedText style={[styles.optText, dlComplete && styles.optTextOn]}>{downloadLabel}</ThemedText>
-        </Pressable>
-        <Pressable testID="reader.settings.collections" onPress={onAddToCollection} style={styles.opt}>
-          <ThemedText style={styles.optText}>Add to collection</ThemedText>
         </Pressable>
       </View>
     </View>

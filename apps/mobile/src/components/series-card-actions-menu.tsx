@@ -1,14 +1,13 @@
 import { View, StyleSheet } from 'react-native';
 
 import { MenuActionRow, MenuHeader } from '@/components/context-menu';
-import { CheckIcon, DownloadsIcon, ListPlusIcon, PlusIcon, RetryIcon, StarIcon } from '@/components/icons/ui-icons';
-import { openCollectionPicker } from '@/components/collection-picker';
+import { CheckIcon, DownloadsIcon, PlusIcon, RetryIcon, StarIcon } from '@/components/icons/ui-icons';
 import { OptionList, useOverlay } from '@/components/overlay/overlay';
 import { Spacing } from '@/constants/theme';
 import type { SeriesEntry } from '@/data/types';
 import { useFavorite } from '@/hooks/use-favorite';
-import { useLibrary } from '@/hooks/use-library';
 import { useResetReadProgress } from '@/hooks/use-reset-read-progress';
+import { useSeriesSave } from '@/hooks/use-series-save';
 import { useSeriesDownloadAction } from '@/hooks/use-series-download-action';
 
 /**
@@ -36,10 +35,12 @@ export function SeriesActionsMenu({
 }) {
   const { closeTop } = useOverlay();
   const { favorited, toggle: toggleFavorite, available: favoritesAvailable } = useFavorite(bridgeId, entry.id);
-  const { inLibrary, toggle: toggleLibrary } = useLibrary(bridgeId, entry.id, () => ({
-    seriesTitle: entry.title,
-    ...(entry.cover ? { thumbnailUrl: entry.cover } : {}),
-  }));
+  const save = useSeriesSave(
+    bridgeId,
+    entry.id,
+    () => ({ seriesTitle: entry.title, ...(entry.cover ? { thumbnailUrl: entry.cover } : {}) }),
+    entry.title,
+  );
   const resetProgress = useResetReadProgress(bridgeId, entry.id, entry.title);
   // Lazy — this menu is mounted only while open, so the download-status query runs once, on open.
   const download = useSeriesDownloadAction(
@@ -65,33 +66,21 @@ export function SeriesActionsMenu({
             download.onPress();
           }}
         />
+        {/* ONE row where there were two — "Add to Library" and "Add to collection" became the same
+            action when the library dissolved into collections. Unsaved: files into the last-used
+            collection, and the label then names it. Saved: opens the picker. See useSeriesSave. */}
         <MenuActionRow
-          testID="series.card-menu.library"
-          label={inLibrary ? 'Remove from Library' : 'Add to Library'}
-          Icon={inLibrary ? CheckIcon : PlusIcon}
-          loading={inLibrary === null}
-          active={!!inLibrary}
+          testID="series.card-menu.save"
+          label={save.label}
+          Icon={save.saved ? CheckIcon : PlusIcon}
+          loading={save.saved === null}
+          active={!!save.saved}
           onPress={() => {
-            toggleLibrary();
+            // Close this overlay sheet FIRST — the picker is a root host that renders under the
+            // overlay stack, so it must not overlap this menu. No stacking here; that's the native
+            // long-press menu's job (series-card-context-menu.tsx).
             closeTop();
-          }}
-        />
-        <MenuActionRow
-          testID="series.card-menu.collections"
-          label="Add to collection"
-          Icon={ListPlusIcon}
-          // Close this overlay sheet first, THEN open the picker (a root host that renders under the
-          // overlay stack, so it must not overlap this menu). No stacking here — that's the native
-          // long-press menu's job (series-card-context-menu.tsx).
-          onPress={() => {
-            closeTop();
-            openCollectionPicker({
-              kind: 'series',
-              bridgeId,
-              seriesId: entry.id,
-              title: entry.title,
-              snapshot: () => ({ seriesTitle: entry.title, ...(entry.cover ? { thumbnailUrl: entry.cover } : {}) }),
-            });
+            void save.onPress();
           }}
         />
         <MenuActionRow

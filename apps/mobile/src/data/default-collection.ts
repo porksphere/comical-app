@@ -1,28 +1,23 @@
 import type { Collection } from './types';
 
 /**
- * The collection "add to library" files into.
+ * Where a BULK, non-interactive collect files things — today, importing a bridge's favorites.
  *
- * The library dissolved into collections: being in the library IS being a series item in at least
- * one collection, so the plain add-to-library button has to name one. This is that name — and it is
- * deliberately the same name the legacy-entries migration files an imported shelf into
- * (`Library.importLegacyEntries`'s default), so a migrated user's adds land in the collection their
- * whole library is already in rather than in a second one beside it.
+ * Interactive saves don't use this: a tap files into the collection that type was last filed into,
+ * and asks when there isn't one (`data/last-collection.ts`, the Google Maps model). That rule needs
+ * a user to fall back on, and an import of eighty series has none — so it needs a named destination
+ * that exists without asking.
  *
- * It is an ORDINARY collection, not a privileged one: the user can rename, reorder or delete it
- * like any other. Renaming it just means the next plain add lazily creates a fresh "Library" —
- * mildly surprising, but the alternative (a collection the UI won't let you touch) is worse, and it
- * matches how the reader's one-tap save treats its own destination.
+ * The name is deliberately the one `Library.importLegacyEntries` files a migrated shelf into, so an
+ * import lands in the collection the user's library is already in rather than a second one beside
+ * it. It is an ORDINARY collection either way: renameable, reorderable, deletable like any other.
+ * Renaming it means the next bulk import lazily creates a fresh one — mildly surprising, and better
+ * than a collection the UI won't let you touch.
  */
 export const DEFAULT_COLLECTION = 'Library';
 
-/**
- * The default collection's id, creating it on first use.
- *
- * Takes its two calls as parameters rather than importing a data source, so the real and mock
- * sources share one implementation of the lazily-created-by-name rule — the thing worth having in
- * exactly one place.
- */
+/** Its id, creating it on first use. Takes its two calls as parameters rather than importing a
+ *  data source, so any caller shares one implementation of the lazily-created-by-name rule. */
 export async function resolveDefaultCollection(
   list: (signal?: AbortSignal) => Promise<Collection[]>,
   create: (name: string, signal?: AbortSignal) => Promise<Collection>,

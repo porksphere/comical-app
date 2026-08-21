@@ -623,24 +623,41 @@ a collected series always has one.
 grid into the "Date added" grouping's `Earlier` bucket; cover URLs moved with the routes; cached
 series items gained `updatedAt`/`knownChapters`. None of it is repairable in place.
 
-### 11.3 Add-to-library IS filing
+### 11.3 Add-to-library IS filing — one Save button
 
-Same action at different granularity, so `addLibraryEntry`/`putSeriesItem` collapsed into one
-`collectSeries`, and `removeLibraryEntry`/`deleteSeriesItem` into one `uncollectSeries`.
+`addLibraryEntry`/`putSeriesItem` collapsed into one `collectSeries` PUT (memberships ride the same
+request), and `removeLibraryEntry`/`deleteSeriesItem` into one `uncollectSeries`.
 
-The plain add-to-library button has to name a collection, so `data/default-collection.ts` resolves
-**`Library`** — created lazily on first use, and *the same name the migration files an imported
-shelf into*, so a migrated user's adds land where their library already is rather than in a second
-collection beside it. It is an ordinary collection: renameable, deletable, reorderable like any
-other. Renaming it means the next plain add lazily creates a fresh one — mildly surprising, and
-still better than a collection the UI won't let you touch.
+**And so did the UI.** Four surfaces each carried TWO controls — "Add to Library" *and* "Add to
+collection" — for what is now one action, and the one people reached for couldn't say what the other
+had done. They are now a single **`useSeriesSave`** control on all four (series screen, web card
+menu, native long-press menu, reader panel), following the **Google Maps "Save" model** the reader's
+page save (`usePageCollected`) already used:
 
-Resolving it costs one small `GET /library/collections` before the PUT. Deliberate: the alternative
-is a cached id that a server switch or a mock-mode toggle silently invalidates, and this only fires
-on an explicit user action.
+- **Unsaved** → a tap files into whichever collection series were last filed into
+  (`data/last-collection.ts`), and the label then NAMES it — "Saved in Reading". Naming the
+  destination is what makes the model legible; "In Library" never could once there were several.
+- **Nothing filed yet, or the remembered collection was deleted** → the tap opens the picker.
+  Nothing is auto-created, so a user's collection list only ever holds collections they made.
+- **Saved** → a tap opens the picker, where the destination is changed or cleared. This is the one
+  place the series control diverges from the page control: a saved series is deliberately not one
+  tap from gone, because it carries progress, downloads and tracker links.
 
-`useItemCollections`' series branch dropped its separate `addToLibrary` pre-call — the collect PUT
-carries the memberships, so a series the user just filed is never briefly collected-but-unfiled.
+Membership IS the saved state, so the control reads the series' collections and nothing else —
+the old pair read that *plus* a separate is-it-in-the-library check that could disagree with it.
+`useLibrary` is deleted; `inLibraryQuery` survives for its other two readers (the chapters section
+and the series screen's own gating). `DataSource.addToLibrary`/`removeFromLibrary` are gone with it:
+the picker owns removal, and every write goes through `setSeriesCollections`.
+
+The native long-press menu keeps its in-place submenu as that row's picker (better than a root sheet
+rendering over the menu), so its glyph is the affordance: ✓ saved, ＋ when a tap will commit
+outright, › when it will expand.
+
+`data/default-collection.ts` survives for **bulk, non-interactive** collects — importing a bridge's
+favorites, which has no user to ask — and files into `Library`, the same name the migration uses.
+
+**e2e consequence:** the first save of a run always opens the picker, by design. Both
+`series-chapters` flows now tap the row, pick a collection, and confirm.
 
 ### 11.4 Removing a series cascades — but NOT to read state
 
