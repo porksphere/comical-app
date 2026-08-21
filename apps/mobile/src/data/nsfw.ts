@@ -18,28 +18,20 @@
 import { AppState } from 'react-native';
 import { observable } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
-import { migrateLegacyKey, persisted$ } from '@/lib/observable';
+import { persisted$ } from '@/lib/observable';
 
 export type NsfwMode = 'off' | 'on' | 'until-background' | 'until-restart';
 type DurableNsfwMode = 'off' | 'on';
 
-// JSON-owned key; the old store wrote a bare 'on'/'off' string under
-// `comical:nsfwMode`, which we migrate off of once (below).
 const DURABLE_KEY = 'comical:nsfwDurable';
-const LEGACY_KEY = 'comical:nsfwMode';
 
 const durableNsfw$ = persisted$<DurableNsfwMode>(DURABLE_KEY, 'off');
 const nsfwMode$ = observable<NsfwMode>(durableNsfw$.peek());
 
-// The live mode adopts the durable value whenever it changes — which covers the
-// async hydrate from disk (the old store's `nsfwMode = durableNsfwMode` on load)
-// and the migration below. User-driven off/on picks also set `nsfwMode$`
-// directly in `setNsfwMode`, so this is a no-op for those.
+// The live mode adopts the durable value whenever it changes, which covers the
+// async hydrate from disk. User-driven off/on picks also set `nsfwMode$` directly
+// in `setNsfwMode`, so this is a no-op for those.
 durableNsfw$.onChange(({ value }) => nsfwMode$.set(value));
-
-migrateLegacyKey(LEGACY_KEY, durableNsfw$, (raw) => {
-  if (durableNsfw$.peek() === 'off') durableNsfw$.set(raw === 'on' ? 'on' : 'off');
-});
 
 // A session-only 'until-background' override reverts to the durable mode the
 // moment the app is backgrounded. 'until-restart' survives backgrounding (the JS

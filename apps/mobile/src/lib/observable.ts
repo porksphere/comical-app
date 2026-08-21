@@ -18,7 +18,7 @@
  * re-implement. Read it in a component with `use$(store$)`; read/write outside
  * React with `store$.peek()` / `store$.set(...)`.
  */
-import { observable, syncState, when, type Observable, type ObservableParam } from '@legendapp/state';
+import { observable, type Observable } from '@legendapp/state';
 import { configureSynced, synced } from '@legendapp/state/sync';
 import { observablePersistAsyncStorage } from '@legendapp/state/persist-plugins/async-storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -26,8 +26,8 @@ import { Platform } from 'react-native';
 
 // The Node pass of the web static export (`expo export -p web`) evaluates modules with no `window`,
 // where the AsyncStorage *web* shim (backed by `window.localStorage`) throws the moment it's
-// touched. Legend State activates persistence eagerly (the `onChange` in `persisted$` below, and
-// `migrateLegacyKey`), so that throw fires at module load and aborts the whole export. The exported
+// touched. Legend State activates persistence eagerly (the `onChange` in `persisted$` below), so
+// that throw fires at module load and aborts the whole export. The exported
 // HTML can't read a device's storage anyway — it only needs each store's `initial` value — so on
 // that pass alone we hand the plugin a no-op storage and skip eager hydration. Real browsers
 // (`window` present) and native (not 'web'; native AsyncStorage never touches `window`) are
@@ -102,30 +102,3 @@ export function persisted$<T>(name: string, initial: T): Observable<T> {
   return store$;
 }
 
-/**
- * One-time migration off a legacy AsyncStorage key. The pre–Legend State stores
- * wrote some keys as *bare* strings (e.g. a raw URL, or `'on'`/`'off'`) rather
- * than JSON, which Legend State can't parse — so those stores move to a fresh
- * JSON-owned key and adopt any legacy value once. `adopt` receives the raw
- * legacy string and decides how to interpret it and whether to apply it (it
- * should no-op if `store$` already holds a user-set value, so a stale legacy key
- * never clobbers a newer choice).
- *
- * The wait on `isPersistLoaded` is load-order-critical: writing to `store$`
- * before its own persistence has finished loading drops the write, so the
- * adopted value wouldn't survive the next launch. We remove the legacy key
- * regardless, so this is genuinely one-shot.
- */
-export function migrateLegacyKey<T>(
-  legacyKey: string,
-  store$: Observable<T>,
-  adopt: (legacyRawValue: string) => void,
-): void {
-  if (!canPersist) return; // no storage (nor `window`) during the static export — nothing to migrate
-  void AsyncStorage.getItem(legacyKey).then(async (raw) => {
-    if (raw == null) return;
-    await AsyncStorage.removeItem(legacyKey);
-    await when(syncState(store$ as ObservableParam).isPersistLoaded);
-    adopt(raw);
-  });
-}

@@ -44,12 +44,11 @@ import { use$ } from '@legendapp/state/react';
 import { getResolvedModeSync } from './embedded/preference';
 import type { Bridge, BridgeList } from './types';
 import { logDiagnostic } from '@/lib/diagnostics';
-import { migrateLegacyKey, persisted$ } from '@/lib/observable';
+import { persisted$ } from '@/lib/observable';
 
 // JSON-owned key for the Legend State store; the old store wrote a bare URL string
 // under `comical:remoteServerUrl`, which we migrate off of once (below).
 const SERVER_KEY = 'comical:remoteServer';
-const LEGACY_SERVER_KEY = 'comical:remoteServerUrl';
 
 /** Default remote server when nothing else is configured. */
 const DEFAULT_API_BASE = 'http://localhost:3100';
@@ -80,12 +79,6 @@ const serverOverride$ = persisted$<ServerOverride>(SERVER_KEY, { url: null });
 function overrideUrl(): string | null {
   return (serverOverride$.peek() as Partial<ServerOverride>).url ?? null;
 }
-
-// One-time migration from the old bare-string key (a raw URL, not JSON). No-ops once a
-// value has been set through the new store, so a stale legacy key never wins.
-migrateLegacyKey(LEGACY_SERVER_KEY, serverOverride$, (rawUrl) => {
-  if (overrideUrl() == null) serverOverride$.set({ url: rawUrl });
-});
 
 /** The current effective remote base URL — a Settings override if one is set, else the built-in
  *  (env var or `DEFAULT_API_BASE`). Read this instead of caching the value: it can change at

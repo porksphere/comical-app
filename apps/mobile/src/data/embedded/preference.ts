@@ -10,13 +10,11 @@
 import { syncState, when, type ObservableParam } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
 import { isEmbeddedRuntimeAvailable } from '@comical/host-rn';
-import { migrateLegacyKey, persisted$ } from '@/lib/observable';
+import { persisted$ } from '@/lib/observable';
 
 export type DataSourceMode = 'embedded' | 'remote';
 
-// JSON-owned key; the old store wrote a bare '1'/'0' under `comical:embedded:enabled`, migrated once.
 const PREF_KEY = 'comical:embeddedEnabled';
-const LEGACY_KEY = 'comical:embedded:enabled';
 
 // Tri-state: true / false / unset (null). Unset means "default to whether the native runtime is
 // available" — and that availability MUST be read lazily, never captured, because it flips false→true
@@ -26,11 +24,6 @@ const LEGACY_KEY = 'comical:embedded:enabled';
 // reads back as `{}` before anything is stored).
 type EmbeddedPref = { enabled: boolean | null };
 const pref$ = persisted$<EmbeddedPref>(PREF_KEY, { enabled: null });
-
-// Carry a pre-migration '1'/'0' choice across to the new key, once.
-migrateLegacyKey(LEGACY_KEY, pref$, (raw) => {
-  if (storedPref() == null) pref$.set({ enabled: raw === '1' });
-});
 
 /** The user's explicit choice, or null when they've never set it. */
 function storedPref(): boolean | null {

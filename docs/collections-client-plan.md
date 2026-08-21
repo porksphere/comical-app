@@ -596,12 +596,17 @@ collections an unfiled series would be swept by the next thing that touches it.
 
 It lives in `src/data/migrations/` because that is now where every migration lives: `index.ts`
 there is the registry — one list of everything on a device that reshapes data a user already has,
-which is the one category of code here that can destroy something irreplaceable. Two shapes, both
-listed: `module` migrations (this one) live in the directory; the three `migrateLegacyKey`
-adoptions stay wired to their own store's module, because each `adopt` closes over that module's
-accessors and its load is what triggers them. `migrations.test.ts` walks the source tree and fails
-the build when a `migrateLegacyKey` call site isn't registered, so the in-place category can't grow
-unnoticed. `PERSIST_BUSTER` is deliberately NOT in it — it discards a cache, it doesn't move data.
+which is the one category of code here that can destroy something irreplaceable.
+`migrations.test.ts` walks the directory and fails the build on a file that isn't registered, so the
+list can't drift from the code. `PERSIST_BUSTER` is deliberately NOT in it — it discards a cache, it
+doesn't move data.
+
+**It is also the only entry.** Three pre-0.1.1 `migrateLegacyKey` adoptions (server URL, embedded
+mode, NSFW mode) carried bare-string keys into their JSON-owned replacements; they shipped before
+0.1.1 and every reachable install is long past them, so they went, along with the `migrateLegacyKey`
+helper in `lib/observable.ts` that only they used. Registering them was what made them removable —
+they had been invisible module-load side effects inside three unrelated stores. Hence `since` on
+each entry: "can this go yet?" should be answerable without archaeology.
 
 Four things about the wiring in `startup.ts` that are deliberate:
 
