@@ -1,7 +1,7 @@
 # Universal collections — client plan
 
 The runtime half has landed in the `comical` submodule
-(`claude/page-favorites-runtime-00agdx`, pinned here at the branch head `2815510`). This document is
+(`claude/page-favorites-runtime-00agdx`, pinned here at the branch head `af99872`). This document is
 the `comical-app` half.
 
 **The submodule is the source of truth.** Travelling with the pin:
@@ -730,6 +730,11 @@ session-scoped modes (`until-background`, `until-restart`) flip with no write to
 An unknown bridge counts as safe, or the library would blank for the first frames after launch.
 
 ## 12. Verification
+
+In the **submodule**, `bun run build` BEFORE `bun test`. `bridges/*/dist/` is gitignored build
+output, so a fresh clone has no bridge bundles and every test that loads one fails — 51 of them,
+which reads as a broken branch. It isn't: built, it is 1052 pass / 0 fail. (Reported here as
+pre-existing breakage twice before that was run down.)
 
 From `apps/mobile/`:
 
