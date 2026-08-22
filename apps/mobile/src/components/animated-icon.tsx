@@ -10,7 +10,7 @@ const DURATION = 600;
 
 // Hold the OS/native splash (the `expo-splash-screen` bg + logo) instead of
 // letting it vanish on the first rendered frame. We hand off to the JS overlay
-// below — same `#208AEF` background — the moment it mounts, so there's never a
+// below — same `#0B0B0B` background — the moment it mounts, so there's never a
 // bare frame between the two. Called at module load (this file is imported from
 // `_layout.tsx`), which runs well before the first render commits.
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -21,7 +21,7 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 const MIN_DISPLAY_MS = 900;
 
 /**
- * The JS splash: a full-screen `#208AEF` cover (matching the native splash) with
+ * The JS splash: a full-screen `#0B0B0B` cover (matching the native splash) with
  * the animated logo, shown until the app is actually ready, then faded out.
  *
  * "Ready" = the persisted TanStack Query cache has finished restoring from
@@ -145,14 +145,14 @@ const styles = StyleSheet.create({
   },
   background: {
     borderRadius: 40,
-    experimental_backgroundImage: `linear-gradient(180deg, #3C9FFE, #0274DF)`,
+    experimental_backgroundImage: `linear-gradient(180deg, #242424, #050505)`,
     width: 128,
     height: 128,
     position: 'absolute',
   },
   backgroundSolidColor: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: '#208AEF',
+    backgroundColor: '#0B0B0B',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 1000,
