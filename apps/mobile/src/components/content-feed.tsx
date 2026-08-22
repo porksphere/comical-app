@@ -234,6 +234,8 @@ export function ContentFeed({
       keyExtractor={(row) => row.key}
       // Pool recycled views per row-type so a rail never recycles into a grid row (and vice versa).
       getItemType={(row) => contentRowType(row)}
+      // `renderItem` hides the heading the pinned copy stands in for — see RecyclerList's extraData.
+      extraData={pinnedKey}
       getFixedItemSize={getFixedItemSize}
       estimatedItemSize={cellHeight}
       numColumns={1}

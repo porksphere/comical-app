@@ -554,7 +554,16 @@ User feedback after the phases landed reshaped the browsing surface:
   clip, so they cost nothing until one arrives. The base re-bases afterwards, and since the
   translate loses exactly the band it gains, the rendered position is identical either side of that
   commit — a late update is invisible rather than a jump. A fling that outruns all three hides the
-  band for those frames instead of showing a heading it knows is stale.
+  band for those frames instead of showing a heading it knows is stale, and past half a band of
+  scroll PER EVENT the push snaps to whichever end it is nearer — beyond that speed the intermediate
+  states can't render as motion, so all they contribute is a lone half-drawn band that reads as a
+  flash.
+- **A list row must be told when something outside its item changed.** `RecyclerList` now forwards
+  `extraData`, and both grids pass the pinned key. LegendList memoizes a row on its item, so without
+  it a mounted heading kept the hidden flag it captured: scrolling DOWN usually looked fine (the row
+  had just been recycled into view, so it re-rendered anyway), scrolling back UP never un-hid it,
+  and that one heading was simply missing until something else forced a re-render. Intermittent, and
+  per-row, which is exactly how it presented.
 - **Browse's section headings pin too** — the sticky generalized into `StickySectionHeader`
   (sticky-section-header.tsx), which `GroupedGrid` and `ContentFeed` both render: caller-supplied
   section offsets, a reaction that reports boundary crossings to JS (ignoring its initial report —

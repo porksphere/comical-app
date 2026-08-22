@@ -24,6 +24,7 @@ export function RecyclerList<T>({
   scopeKey,
   keyExtractor,
   renderItem,
+  extraData,
   getItemType,
   getFixedItemSize,
   estimatedItemSize,
@@ -53,6 +54,12 @@ export function RecyclerList<T>({
   scopeKey: string;
   keyExtractor: (item: T, index: number) => string;
   renderItem: (info: { item: T; index: number }) => ReactElement | null;
+  /** Anything `renderItem` closes over that is NOT part of an item. LegendList memoizes a row on its
+   *  item, so without this a mounted row keeps rendering the value it captured — which is exactly
+   *  how the sticky's hidden-row flag got stuck: scrolling down hid a heading (the row often
+   *  re-rendered anyway, having just been recycled into view), scrolling back up never un-hid it,
+   *  and that heading was simply gone until something else forced the row to re-render. */
+  extraData?: unknown;
   /** Pools recycled views per returned tag, so unlike-shaped items don't recycle into each other.
    *  Omit for a uniform list (one implicit type). */
   getItemType?: (item: T, index: number) => string;
@@ -122,6 +129,7 @@ export function RecyclerList<T>({
         data={data}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
+        extraData={extraData}
         getItemType={getItemType}
         getFixedItemSize={getFixedItemSize}
         estimatedItemSize={estimatedItemSize}

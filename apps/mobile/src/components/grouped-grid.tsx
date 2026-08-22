@@ -105,6 +105,8 @@ export function GroupedGrid<T>({
         // Distinct pools per row type, so a heading never recycles into an items row (and vice versa).
         getItemType={(row) => row.type}
         getFixedItemSize={(row) => (row.type === 'header' ? RowHeight : rowHeight)}
+        // `renderItem` hides the heading the pinned copy stands in for — see RecyclerList's extraData.
+        extraData={pinnedKey}
         estimatedItemSize={rowHeight}
         header={header}
         paddingTop={paddingTop}
