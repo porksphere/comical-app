@@ -15,6 +15,21 @@ import { useTheme } from '@/hooks/use-theme';
  *  starts at (contentOffset 0 = the top of the list's padding). */
 export type StickySection = { key: string; label: string; count?: number; top: number };
 
+// ── Fast-scroll snapping ──
+// Weight on the previous sample when smoothing the per-event scroll distance. A raw delta is noisy
+// frame to frame, and a bare threshold over a noisy signal chatters: `p` would flip between snapped
+// and continuous on alternating frames, which is jitter of its own making rather than the
+// half-drawn band the snap exists to remove.
+const SPEED_SMOOTHING = 0.6;
+// Enter and leave snapping at DIFFERENT speeds, as fractions of a band per scroll event. The gap is
+// the point — a single threshold sits exactly where the signal crosses back and forth. Entering is
+// deliberately low (a brisk flick, not a hard fling): the intermediate frames read as a flash well
+// before the speed where they stop rendering at all.
+const SNAP_ENTER = 0.25;
+// Leaving only once nearly stopped, where the continuous value has converged on the snapped end
+// anyway — so dropping out of snapping is never itself a jump.
+const SNAP_EXIT = 0.1;
+
 /**
  * WHICH heading belongs at the pin line, and how far the band has been pushed out — both derived
  * from the scroll alone, on the UI thread, with no reference to React state beyond `shown`.
@@ -34,9 +49,8 @@ function pinAt(
   shown: number,
   line: number,
   bandHeight: number,
-  /** Per-event scroll distance. Past half a band the push is snapped to whichever end it is nearer
-   *  — see below. */
-  speed: number,
+  /** Whether the scroll is fast enough that the push is snapped to an end — see `SNAP_ENTER`. */
+  snap: boolean,
 ) {
   'worklet';
   if (sections.length === 0) return { k: shown, p: 0, outrun: false };
@@ -45,11 +59,8 @@ function pinAt(
   const k = Math.max(0, Math.max(shown - 1, Math.min(shown + 1, idx)));
   const next = sections[k + 1];
   let p = next ? Math.max(Math.min(0, next.top - line - bandHeight), -bandHeight) : 0;
-  // Fast scrolling: land the hand-off rather than drawing a frame of it. The threshold is half a
-  // band PER SCROLL EVENT, which needs no tuning because it is the point past which the push can't
-  // render more than about one intermediate frame anyway — so all snapping removes is a lone
-  // half-drawn band, which is what reads as a flash rather than as motion.
-  if (speed > bandHeight / 2) p = p < -bandHeight / 2 ? -bandHeight : 0;
+  // Fast scrolling: land the hand-off rather than drawing a frame of it.
+  if (snap) p = p < -bandHeight / 2 ? -bandHeight : 0;
   // `outrun` means the pinned section is one this stack hasn't rendered — a fling crossing several
   // at once. The band HIDES for those frames rather than holding a neighbour at the pin line: a
   // heading that is merely absent for two frames reads as the list scrolling, where a confidently
@@ -254,23 +265,33 @@ export function StickySectionHeader<S extends StickySection>({
   // a gap, and `onActiveChange` can't fire early.
   const shown = active >= 0 ? active : 0;
 
-  // How far the scroll moved on the last event, on the UI thread — the snap threshold above reads
-  // it. Derived here rather than taken from a scroll handler's `velocity`, which the sliding-bar
-  // wiring doesn't publish and which is in px/s (a unit this has no frame budget to convert).
+  // Scroll speed on the UI thread, smoothed, and a LATCH over it with hysteresis. Derived from the
+  // offset rather than taken from a scroll handler's `velocity`: the sliding-bar wiring doesn't
+  // publish one, and px/s is a unit this would only have to convert back.
+  //
+  // The latch is what keeps the snap from being its own jitter. A single threshold over a
+  // frame-to-frame delta is crossed repeatedly while scrolling near it, so `p` would alternate
+  // between an end and its continuous value — visible as exactly the wobble the snap is meant to
+  // remove. Entering high and leaving low means a given scroll picks one behaviour and keeps it.
   const speed = useSharedValue(0);
+  const snapping = useSharedValue(false);
   useAnimatedReaction(
     () => scrollOffset.value,
     (v, prev) => {
-      if (prev !== null) speed.set(Math.abs(v - prev));
+      if (prev === null) return;
+      const smoothed = speed.value * SPEED_SMOOTHING + Math.abs(v - prev) * (1 - SPEED_SMOOTHING);
+      speed.set(smoothed);
+      if (!snapping.value && smoothed > bandHeight * SNAP_ENTER) snapping.set(true);
+      else if (snapping.value && smoothed < bandHeight * SNAP_EXIT) snapping.set(false);
     },
-    [scrollOffset],
+    [scrollOffset, bandHeight],
   );
 
   // Visibility + the ride on the bar's slide, so the heading stays glued to the bar's bottom edge.
   const bandStyle = useAnimatedStyle(() => {
     const line = scrollOffset.value + pinLine + (barOffset?.value ?? 0);
     return {
-      opacity: pinAt(sections, shown, line, bandHeight, speed.value).outrun ? 0 : pinned.value,
+      opacity: pinAt(sections, shown, line, bandHeight, snapping.value).outrun ? 0 : pinned.value,
       transform: [{ translateY: barOffset?.value ?? 0 }],
     };
   }, [sections, pinLine, scrollOffset, barOffset, shown, bandHeight]);
@@ -288,7 +309,7 @@ export function StickySectionHeader<S extends StickySection>({
   // than a jump.
   const stackStyle = useAnimatedStyle(() => {
     const line = scrollOffset.value + pinLine + (barOffset?.value ?? 0);
-    const { k, p } = pinAt(sections, shown, line, bandHeight, speed.value);
+    const { k, p } = pinAt(sections, shown, line, bandHeight, snapping.value);
     return { transform: [{ translateY: p - (k - shown) * bandHeight }] };
   }, [sections, pinLine, scrollOffset, barOffset, shown, bandHeight]);
 
@@ -299,7 +320,7 @@ export function StickySectionHeader<S extends StickySection>({
   // up only while pushed out).
   const ruleStyle = useAnimatedStyle(() => {
     const line = scrollOffset.value + pinLine + (barOffset?.value ?? 0);
-    return { opacity: pinAt(sections, shown, line, bandHeight, speed.value).p < 0 ? 0 : 1 };
+    return { opacity: pinAt(sections, shown, line, bandHeight, snapping.value).p < 0 ? 0 : 1 };
   }, [sections, pinLine, scrollOffset, barOffset, shown, bandHeight]);
 
   // The SUPERSEDING heading's rule — the other half of the hand-off. The heading pushing the pinned
@@ -314,7 +335,7 @@ export function StickySectionHeader<S extends StickySection>({
   // track the SCROLL (a list row doesn't ride the sliding bar) while the pinned band does.
   const nextRuleStyle = useAnimatedStyle(() => {
     const bar = barOffset?.value ?? 0;
-    const { p, outrun } = pinAt(sections, shown, scrollOffset.value + pinLine + bar, bandHeight, speed.value);
+    const { p, outrun } = pinAt(sections, shown, scrollOffset.value + pinLine + bar, bandHeight, snapping.value);
     return {
       opacity: p < 0 && !outrun ? pinned.value : 0,
       transform: [{ translateY: bandHeight * 2 + p + bar }],

@@ -554,10 +554,13 @@ User feedback after the phases landed reshaped the browsing surface:
   clip, so they cost nothing until one arrives. The base re-bases afterwards, and since the
   translate loses exactly the band it gains, the rendered position is identical either side of that
   commit — a late update is invisible rather than a jump. A fling that outruns all three hides the
-  band for those frames instead of showing a heading it knows is stale, and past half a band of
-  scroll PER EVENT the push snaps to whichever end it is nearer — beyond that speed the intermediate
-  states can't render as motion, so all they contribute is a lone half-drawn band that reads as a
-  flash.
+  band for those frames instead of showing a heading it knows is stale. Past a quarter of a band of
+  scroll PER EVENT the push snaps to whichever end it is nearer, since the intermediate frames read
+  as a flash rather than as motion well before the speed at which they stop rendering at all. The
+  speed is SMOOTHED and the snap LATCHES with hysteresis (in at 0.25 of a band, out at 0.1): a bare
+  threshold over a frame-to-frame delta is crossed back and forth while scrolling near it, so `p`
+  would alternate between an end and its continuous value — jitter of the snap's own making, and
+  lowering a single threshold only relocates it to a speed you spend more time at.
 - **A list row must be told when something outside its item changed.** `RecyclerList` now forwards
   `extraData`, and both grids pass the pinned key. LegendList memoizes a row on its item, so without
   it a mounted heading kept the hidden flag it captured: scrolling DOWN usually looked fine (the row
