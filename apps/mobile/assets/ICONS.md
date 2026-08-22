@@ -226,10 +226,32 @@ inside **192dp**. At `imageWidth: 160` it is 126dp — comfortable. Verify a cha
 by running `npx expo prebuild --platform android` and measuring the generated
 `drawable-mdpi/splashscreen_logo.png` (1px = 1dp there) rather than guessing.
 
-`src/components/splash-gate.tsx` is the only JS involved: it holds the native
-splash past the first frame and drops it once the persisted query cache has
-restored, so the first screen paints with content instead of empty. It draws
-nothing. Delete it and its `_layout.tsx` mount for stock auto-hide behavior.
+### Releasing it
+
+`src/components/splash-gate.tsx` is the only JS involved. It draws nothing — it
+decides *when* the native splash goes, and how.
+
+**How:** `SplashScreen.setOptions({ fade: true, duration: 400 })`, set at module
+scope before any `hideAsync`. The animation is the platform's own — iOS runs a
+`UIView.transition(.transitionCrossDissolve)`, Android a
+`setOnExitAnimationListener` → `.animate().alpha(0)` — so it stays smooth even
+while JS is busy with the first render. **iOS defaults to `fade: false`** (an
+instant cut) and Android defaults it on, so the option exists mainly to fix iOS;
+setting it explicitly keeps the two the same.
+
+**When:** the persisted query cache has restored (`useIsRestoring`) **and** the
+landing screen has content — `lib/splash-ready.ts`, set by the Browse screen off
+the same `homeReady` its bridge crossfade uses. The restore alone is not enough:
+it finishes long before the cross-bridge rails do, so the splash used to cut away
+to an empty home that filled in a beat later. The wait is capped at 2.5s from the
+restore, so a launch that never reaches Browse (a deep link, an offline start)
+still ends.
+
+Note that cover images are a further async layer this does not wait on — the
+rails are laid out when the splash goes, but individual covers still stream in.
+
+Delete the component and its `_layout.tsx` mount for stock behavior: the splash
+then disappears the instant the first frame renders, empty screen and all.
 
 ## Colors that track the logo
 
