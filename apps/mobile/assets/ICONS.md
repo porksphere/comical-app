@@ -6,20 +6,30 @@ is derived from it by hand and must be kept in sync when the art changes.
 
 ## Source of truth
 
-**`images/logo.svg`** — the full-color master: an open book (blue cover + light
-pages) with a translucent こ. It contains five drawn elements and five gradient
-defs:
+**`images/logo.svg`** — the master: an open book (graphite cover + curved white
+pages under a halftone screen) with a translucent こ. The art is authored on
+**transparent** and is designed to sit on near-black; the background is supplied
+by whatever composites it (see the raster table below). It contains six drawn
+elements and four defs:
 
 | element | fill | notes |
 |---------|------|-------|
-| cover `<rect>` | `#cover` | rounded book cover, 2-stop `#6EA8F7 → #3266DC` |
-| left page `<path>` | `#leftPage` | |
-| right page `<path>` | `#rightPage` | |
-| binding shadow `<path>` | `#bindingShadow` | thin gradient down the spine |
-| こ `<path>` | `#koMark`, `opacity 0.58` | see "The こ glyph" below |
+| cover `<rect>` | `#cover` | rounded book cover, 2-stop `#4A4A4A → #181818` |
+| left page `<path>` | `#leftPage` | radial, bright at the top-left corner |
+| right page `<path>` | `#rightPage` | radial, bright at the top-right corner |
+| left tone `<path>` | `#pageTone`, `opacity 0.42` | same `d` as the left page |
+| right tone `<path>` | `#pageTone`, `opacity 0.42` | same `d` as the right page |
+| こ `<path>` | flat `#111111`, `opacity 0.76` | see "The こ glyph" below |
 
 Everything is authored in a **1024×1024** viewBox. Edit this file first; then
 propagate to the derived files below.
+
+The halftone is screened on by **re-drawing each page path** with the
+`#pageTone` pattern rather than clipping a rect to it — same result, but it
+keeps the file free of `<clipPath>`/`<use>`, which the more limited SVG
+importers (notably Icon Composer) do not all support. Keep it that way. The
+tone is texture only: if a renderer drops `<pattern>`, the pages fall back to
+their clean radial gradients and nothing looks broken.
 
 ## The こ glyph (one-time, already done)
 
@@ -33,28 +43,29 @@ glyph, font, size, or position — otherwise leave the path as-is.
 
 ## Derived files (keep in sync with logo.svg by hand)
 
-Each is a straight subset/recolor of `logo.svg`. When you change geometry or a
-gradient in `logo.svg`, make the matching edit here.
+Each is a straight subset of `logo.svg` — the `d`/`rect` geometry is copied
+verbatim, so a change to a path in `logo.svg` is a mechanical copy-paste here.
 
 - **`expo.icon/Assets/book-cover.svg`** — cover `<rect>` + `#cover` def only.
-- **`expo.icon/Assets/book-pages.svg`** — left/right page + binding-shadow paths
-  + their three defs.
-- **`expo.icon/Assets/ko-mark.svg`** — the こ path + `#koMark` def only.
+- **`expo.icon/Assets/book-pages.svg`** — both page paths + both tone paths +
+  their three defs (`#leftPage`, `#rightPage`, `#pageTone`).
+- **`expo.icon/Assets/ko-mark.svg`** — the こ path only.
 - **`images/logo-mark.svg`** — **monochrome mask.** The left page `d` + right
   page `d` + こ `d` concatenated into one `<path fill="#FFFFFF"
   fill-rule="evenodd">`. Evenodd makes the こ knock out as holes. The cover rect
-  and binding shadow are intentionally excluded (silhouette = pages + glyph).
+  and the halftone are intentionally excluded (silhouette = pages + glyph).
   Feeds the Android themed icon and iOS tinted/clear appearances.
 
 ### The iOS 26 layered icon (`expo.icon/icon.json`)
 
 Icon Composer manifest. It references the three layer SVGs above (top→bottom:
-`ko-mark`, `book-pages`, `book-cover`) over a solid light-blue fill
-(`automatic-gradient extended-srgb:0.85882,0.91765,0.99608,1` = `#DBEAFE`), with
+`ko-mark`, `book-pages`, `book-cover`) over a solid near-black fill
+(`automatic-gradient extended-srgb:0.07843,0.07843,0.07843,1` = `#141414`), with
 a neutral group shadow and translucency. Expo consumes it via `ios.icon`;
 Default/Dark use the color layers, Clear/Tinted are system-derived from their
-luminance/alpha. `icon.json` itself only changes if you add/remove/reorder
-layers — editing the SVGs' contents needs no manifest change.
+luminance/alpha — the white pages carry the silhouette and the dark こ knocks
+through it. `icon.json` itself only changes if you add/remove/reorder layers —
+editing the SVGs' contents needs no manifest change.
 
 ## Rasterized PNGs (regenerate when logo.svg changes)
 
@@ -72,30 +83,67 @@ background at a fixed **scale of the frame** and exported at a fixed size. Scale
 | `android-icon-foreground.png` | 1024 | logo.svg | 0.72 | none | RGBA |
 | `android-icon-monochrome.png` | 1024 | logo-mark.svg | 0.72 | none | RGBA |
 
-- **Background gradient** (opaque tiles): linear **135°**, `#EFF6FF` (top-left) →
-  `#DBEAFE` (bottom-right).
+- **Background gradient** (opaque tiles): linear **135°**, `#1C1C1C` (top-left) →
+  `#000000` (bottom-right).
 - **0.72** for the Android foreground/monochrome keeps the art inside the
   adaptive-icon safe zone (center ~66–72%).
 - **`logo-glow.png`** is a separate hand-made asset — **not** regenerated here.
+  It is a flat fill shaped entirely by its alpha ramp, so it is re-tinted (RGB
+  replaced, alpha untouched) rather than redrawn when the palette changes; it is
+  currently neutral `#DEDEDE`.
 
 ### How to render
 
-Any deterministic SVG→PNG rasterizer works; the art uses only rects, paths, and
-linear gradients. The last regeneration used **headless Chrome** — for each row,
-an HTML frame of the target size with the CSS background above and an
-`<img src="logo.svg">` sized to `scale × frame`, centered, screenshotted at
-device-scale-factor 1 with a transparent default background:
+Any deterministic SVG→PNG rasterizer works; the art uses only rects, paths,
+gradients, and one pattern. The last regeneration used **Playwright + Chromium**,
+one page per row, with the SVG inlined as a `data:` URI inside a frame div:
 
-```
-chrome --headless --disable-gpu --force-device-scale-factor=1 \
-  --window-size=SIZE,SIZE --default-background-color=00000000 \
-  --hide-scrollbars --user-data-dir=<fresh temp dir> \
-  --screenshot=out.png file:///frame.html
+```js
+const page = await browser.newPage({
+  viewport: { width: size, height: size },
+  deviceScaleFactor: 1,
+});
+await page.setContent(`<style>
+  html,body{margin:0;padding:0}
+  #f{width:${size}px;height:${size}px;background:${bg};
+     display:flex;align-items:center;justify-content:center;overflow:hidden}
+  img{width:${art}px;height:${art}px;display:block}
+</style><div id="f"><img src="${dataUri}"></div>`);
+await page.screenshot({ path: out, omitBackground: !opaque });
 ```
 
-Use a **fresh `--user-data-dir` per invocation** to avoid Chrome's profile-lock
-race when looping. For the opaque rows, flatten the RGBA screenshot onto white
-(or just author the background as an opaque SVG rect) so the saved file is RGB.
-Match each file's exact size/mode from the table so nothing downstream (Expo
-config, splash, web favicon) has to change.
-```
+Two things to get right:
+
+- **Set the viewport, not a window size.** Chrome's older `--headless
+  --window-size=N,N` screenshot path reserves ~87px of window chrome, so the
+  page viewport comes back *shorter* than the image and a full-size element is
+  clipped along the bottom edge — with a transparent band left behind. Anything
+  that sets the viewport directly (Playwright, `--headless=new` + CDP
+  `Emulation.setDeviceMetricsOverride`) avoids this. Verify a regenerated tile
+  paints all `size` rows before trusting it.
+- **Inline the SVG as a `data:` URI.** A `setContent` page has an opaque origin
+  and cannot load `file://` subresources, and inlining keeps each SVG's gradient
+  and pattern ids scoped to its own image.
+
+`omitBackground: true` gives the RGBA rows a truly transparent frame; the opaque
+rows paint the gradient on the frame div itself, so they save as RGB. Match each
+file's exact size/mode from the table so nothing downstream (Expo config,
+splash, web favicon) has to change.
+
+## Colors that track the logo
+
+The near-black palette is mirrored by the app's splash chrome, which must stay
+in sync with the icon backgrounds:
+
+- `app.json` → `expo-splash-screen.backgroundColor` = `#0B0B0B` (native splash).
+- `src/components/animated-icon.tsx` → `backgroundSolidColor` = `#0B0B0B`. This
+  **must** equal the native splash color: the JS overlay takes over from the
+  native splash mid-launch and any mismatch shows as a flash.
+- The rounded tile behind the animated logo — `animated-icon.tsx`
+  (`experimental_backgroundImage`) and `animated-icon.module.css`
+  (`.expoLogoBackground`) — is `linear-gradient(180deg, #242424, #050505)`.
+  Keep the two in sync; they are the native and web halves of one component.
+- `app.json` → `android.adaptiveIcon.backgroundColor` = `#000000`.
+
+The `#208AEF` left in `error-boundary.tsx` and `dev-profiler.tsx` is the app's
+**accent** color on buttons, not logo chrome — unrelated to this palette.

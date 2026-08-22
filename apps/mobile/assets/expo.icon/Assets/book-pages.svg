@@ -1,23 +1,28 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
-  <!-- Icon Composer layer: left + right pages and binding shadow (middle). -->
+  <!--
+    Icon Composer layer: left + right pages, each screened with the halftone dither
+    (middle). The dither is texture only — if a renderer's SVG subset drops
+    <pattern>, the pages fall back to their clean radial gradients.
+  -->
   <defs>
-    <linearGradient id="leftPage" x1="160" y1="167.1" x2="512" y2="806.5" gradientUnits="userSpaceOnUse">
+    <radialGradient id="leftPage" cx="220" cy="245" r="660" fx="220" fy="245" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#FFFFFF"/>
-      <stop offset="0.45" stop-color="#EAF6FF"/>
-      <stop offset="1" stop-color="#93C5FD"/>
-    </linearGradient>
-    <linearGradient id="rightPage" x1="864" y1="167.1" x2="512" y2="806.5" gradientUnits="userSpaceOnUse">
+      <stop offset="0.42" stop-color="#F4F4F4"/>
+      <stop offset="0.72" stop-color="#D0D0D0"/>
+      <stop offset="1" stop-color="#8E8E8E"/>
+    </radialGradient>
+    <radialGradient id="rightPage" cx="804" cy="245" r="660" fx="804" fy="245" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#FFFFFF"/>
-      <stop offset="0.45" stop-color="#DBEAFE"/>
-      <stop offset="1" stop-color="#60A5FA"/>
-    </linearGradient>
-    <linearGradient id="bindingShadow" x1="508" y1="520" x2="516" y2="520" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#2563EB" stop-opacity="0"/>
-      <stop offset="0.5" stop-color="#1D4ED8" stop-opacity="0.11"/>
-      <stop offset="1" stop-color="#2563EB" stop-opacity="0"/>
-    </linearGradient>
+      <stop offset="0.42" stop-color="#EDEDED"/>
+      <stop offset="0.72" stop-color="#C8C8C8"/>
+      <stop offset="1" stop-color="#707070"/>
+    </radialGradient>
+    <pattern id="pageTone" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(8)">
+      <circle cx="2.5" cy="2.5" r="2.2" fill="#B8B8B8"/>
+    </pattern>
   </defs>
-  <path d="M512 241.2 C425 186 288 178 192 202 C166 208.5 154 224 154 246 V728 C154 758 179 773 224 766 C340 748 432 763 512 804.4 V241.2 Z" fill="url(#leftPage)"/>
-  <path d="M512 241.2 C599 186 736 178 832 202 C858 208.5 870 224 870 246 V728 C870 758 845 773 800 766 C684 748 592 763 512 804.4 V241.2 Z" fill="url(#rightPage)"/>
-  <path d="M512 286 C513.6 410 513.6 650 512 804 C510.4 650 510.4 410 512 286 Z" fill="url(#bindingShadow)"/>
+  <path d="M512 241.2 C425 186 288 178 192 202 C166 208.5 162 224 162 246 V728 C162 758 183 773 224 766 C300 742 430 746 512 804.4 V241.2 Z" fill="url(#leftPage)"/>
+  <path d="M512 241.2 C599 186 736 178 832 202 C858 208.5 862 224 862 246 V728 C862 758 841 773 800 766 C724 742 594 746 512 804.4 V241.2 Z" fill="url(#rightPage)"/>
+  <path d="M512 241.2 C425 186 288 178 192 202 C166 208.5 162 224 162 246 V728 C162 758 183 773 224 766 C300 742 430 746 512 804.4 V241.2 Z" fill="url(#pageTone)" opacity="0.42"/>
+  <path d="M512 241.2 C599 186 736 178 832 202 C858 208.5 862 224 862 246 V728 C862 758 841 773 800 766 C724 742 594 746 512 804.4 V241.2 Z" fill="url(#pageTone)" opacity="0.42"/>
 </svg>
