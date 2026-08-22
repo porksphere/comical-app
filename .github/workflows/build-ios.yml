@@ -181,7 +181,7 @@ jobs:
                 developerName: "porksphere",
                 localizedDescription: "Comical rolling main channel — a profiling build (Release + on-device Hermes profiler) so main can be perf-tested on device. Same bundle id as the release app, so it installs over it; subscribe to the tagged-release source for the clean, profiler-free public build. Unsigned; re-signed on-device by SideStore/AltStore with your free Apple ID.",
                 iconURL: $icon,
-                tintColor: "208AEF",
+                tintColor: "2E2E2E",
                 versions: [{
                   version: $version,
                   date: $date,

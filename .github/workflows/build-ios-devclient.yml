@@ -88,7 +88,7 @@ jobs:
                 developerName: "porksphere",
                 localizedDescription: "Comical development-client build for on-device iteration from a Windows PC. Unsigned; re-signed on-device by SideStore/AltStore.",
                 iconURL: $icon,
-                tintColor: "208AEF",
+                tintColor: "2E2E2E",
                 versions: [{
                   version: $version,
                   date: $date,

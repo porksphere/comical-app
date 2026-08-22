@@ -115,7 +115,7 @@ export function DevProfiler() {
         testID="dev-profiler.toggle"
         onPress={toggle}
         style={{
-          backgroundColor: rec ? "#cc2222" : "#208AEF",
+          backgroundColor: rec ? "#cc2222" : "#3478F6",
           paddingVertical: 10,
           paddingHorizontal: 14,
           borderRadius: 10,
