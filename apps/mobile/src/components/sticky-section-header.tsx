@@ -71,6 +71,60 @@ function pinAt(
   return { k, p, outrun: k !== idx, atRest: gap >= bandHeight };
 }
 
+/** Whether ANY heading is pinned: the first section has reached the pin line. Both the band and the
+ *  inline heading it stands in for read this — see `useInlineHeadingStyle`. */
+function isPinned(firstTop: number | undefined, line: number) {
+  'worklet';
+  return firstTop !== undefined && firstTop <= line;
+}
+
+/** What an inline heading needs in order to work out, itself, whether the sticky is covering it. */
+export type InlineHeadingPin = {
+  /** `sections[0].top` — the offset the band appears at. */
+  firstTop?: number;
+  /** The band's `stickyTop` and `bandPadding`, which together give the pin line. */
+  stickyTop?: number;
+  bandPadding?: number;
+  scrollOffset?: SharedValue<number>;
+  barOffset?: SharedValue<number>;
+};
+
+/**
+ * The inline heading's own visibility — the other half of `StickySectionHeader`.
+ *
+ * The list is told WHICH heading the pinned copy is standing in for through `onActiveChange`, which
+ * is React state and therefore a frame or two behind the scroll. That lag is harmless in one
+ * direction only. Scrolling DOWN the row hides late, while it is already under the top bar — either
+ * way invisible. Scrolling back UP the band's opacity drops on the UI-thread frame the line is
+ * crossed while the row is still hidden, and for those frames NEITHER heading is drawn. That is the
+ * flash at the top of a feed.
+ *
+ * Only at the top. At every other boundary the band's own stack is already drawing the incoming
+ * heading exactly where the hidden row sits — the pinned section renders at `p`, so its successor
+ * renders at `p + bandHeight`, which is that row's position. Above the first section there is
+ * nothing to hand over to, so there the opacity IS the whole transition.
+ *
+ * So the row ANDs the JS flag with the same UI-thread predicate the band uses, and comes back on the
+ * very frame the band leaves. Deliberately re-derived from `scrollOffset` rather than read from the
+ * shared value the band's reaction writes: Reanimated runs mappers in REGISTRATION order and does
+ * not know that reaction's output, and list rows mount before the overlay below them — so reading it
+ * would put the row a frame behind the band, which is the same gap one frame wide. Two mappers over
+ * the same scroll offset cannot disagree at all.
+ *
+ * Hit-testing stays on the JS flag. A frame or two of the wrong answer can't be seen there: a hidden
+ * heading is under the bar or under the pinned copy, both of which are drawn over it.
+ */
+export function useInlineHeadingStyle(hidden: boolean, pin?: InlineHeadingPin) {
+  const { firstTop, stickyTop, bandPadding = 0, scrollOffset, barOffset } = pin ?? {};
+  return useAnimatedStyle(() => {
+    // Short-circuited before `scrollOffset` is read, so a heading that is not standing down has no
+    // scroll dependency at all — the common case, and the one every row is in while scrolling.
+    if (!hidden || firstTop === undefined || stickyTop === undefined || !scrollOffset) return { opacity: 1 };
+    const line = scrollOffset.value + stickyTop + bandPadding + (barOffset?.value ?? 0);
+    return { opacity: isPinned(firstTop, line) ? 0 : 1 };
+  }, [hidden, firstTop, stickyTop, bandPadding, scrollOffset, barOffset]);
+}
+
 /**
  * THE sticky section heading — the pinned heading both grouped surfaces (library/collected grids)
  * and the Browse feed hold at the top of their lists. An overlay rather than a list feature
@@ -233,20 +287,16 @@ export function StickySectionHeader<S extends StickySection>({
     [sections, pinLine, scrollOffset, barOffset],
   );
 
-  // Visibility, from the same arithmetic so it lands on the frame the line is crossed rather than
-  // on the JS report that follows it. INSTANT for the heading: it is replacing an identical,
-  // co-located heading, so a fade would only make the swap visible.
-  const pinned = useSharedValue(0);
+  // The OUTWARD signal only — the screen's top bar drops its own rule off this. The band's own
+  // visibility is not routed through it but re-derived from the scroll in `bandStyle`, for the
+  // reason `useInlineHeadingStyle` gives: a reaction's output reaches other mappers a frame later
+  // depending on registration order, and everything that has to agree here agrees exactly when it
+  // reads `scrollOffset` itself.
   useAnimatedReaction(
-    () => {
-      if (sections.length === 0) return false;
-      const line = scrollOffset.value + pinLine + (barOffset?.value ?? 0);
-      return sections[0]!.top <= line;
-    },
+    () => isPinned(sections[0]?.top, scrollOffset.value + pinLine + (barOffset?.value ?? 0)),
     (visible, was) => {
       if (visible === was) return;
-      pinned.set(visible ? 1 : 0);
-      // The top bar's rule goes out on the SAME worklet frame this one comes in — see the doc.
+      // The top bar's rule goes out on the SAME worklet frame the band's comes in — see the doc.
       pinnedValue?.set(visible ? 1 : 0);
     },
     [sections, pinLine, scrollOffset, barOffset, pinnedValue],
@@ -312,7 +362,7 @@ export function StickySectionHeader<S extends StickySection>({
   const bandStyle = useAnimatedStyle(() => {
     const line = scrollOffset.value + pinLine + (barOffset?.value ?? 0);
     return {
-      opacity: pinAt(sections, shown, line, bandHeight, snapped.value).outrun ? 0 : pinned.value,
+      opacity: pinAt(sections, shown, line, bandHeight, snapped.value).outrun || !isPinned(sections[0]?.top, line) ? 0 : 1,
       transform: [{ translateY: barOffset?.value ?? 0 }],
     };
   }, [sections, pinLine, scrollOffset, barOffset, shown, bandHeight]);
@@ -362,7 +412,7 @@ export function StickySectionHeader<S extends StickySection>({
     const bar = barOffset?.value ?? 0;
     const { p, outrun } = pinAt(sections, shown, scrollOffset.value + pinLine + bar, bandHeight, snapped.value);
     return {
-      opacity: p < 0 && !outrun ? pinned.value : 0,
+      opacity: p < 0 && !outrun && isPinned(sections[0]?.top, scrollOffset.value + pinLine + bar) ? 1 : 0,
       transform: [{ translateY: bandHeight * 2 + p + bar }],
     };
   }, [sections, pinLine, scrollOffset, barOffset, shown, bandHeight]);

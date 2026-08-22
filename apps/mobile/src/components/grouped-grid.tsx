@@ -1,27 +1,45 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { useCallback, useMemo, useState, type ReactElement, type RefObject } from 'react';
 import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
-import type { SharedValue } from 'react-native-reanimated';
+import Animated, { type SharedValue } from 'react-native-reanimated';
 
 import { RecyclerList } from '@/components/recycler-list';
-import { StickySectionHeader, type StickySection } from '@/components/sticky-section-header';
+import {
+  StickySectionHeader,
+  useInlineHeadingStyle,
+  type InlineHeadingPin,
+  type StickySection,
+} from '@/components/sticky-section-header';
 import { ThemedText } from '@/components/themed-text';
 import { RowHeight, Spacing } from '@/constants/theme';
 import type { GroupedRow } from '@/data/grouped-rows';
 
 /** A section's heading row — rendered BOTH inline by the list and, identically, by the pinned
  *  sticky. `hidden` drops its content (not its space) on the inline one while the pinned copy is
- *  standing in for it, so one heading is never drawn twice. */
-function SectionHeader({ label, count, hidden }: { label: string; count?: number; hidden?: boolean }) {
+ *  standing in for it, so one heading is never drawn twice. `useInlineHeadingStyle` owns the timing
+ *  of that swap, in both directions. */
+function SectionHeader({
+  label,
+  count,
+  hidden,
+  pin,
+}: {
+  label: string;
+  count?: number;
+  hidden?: boolean;
+  /** Absent on the PINNED copy, which is the thing standing in and so is never the one hidden. */
+  pin?: InlineHeadingPin;
+}) {
+  const hide = useInlineHeadingStyle(hidden ?? false, pin);
   return (
-    <View style={[styles.header, hidden && styles.hidden]}>
+    <Animated.View style={[styles.header, hide]}>
       <ThemedText type="smallBold" numberOfLines={1} style={styles.headerLabel}>
         {label}
       </ThemedText>
       <ThemedText type="small" themeColor="textSecondary">
         {count}
       </ThemedText>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -94,6 +112,12 @@ export function GroupedGrid<T>({
   // its content, so one heading is never drawn twice.
   const [pinnedKey, setPinnedKey] = useState<string | null>(null);
   const onActiveChange = useCallback((key: string | null) => setPinnedKey(key), []);
+  // What each heading row needs to time its own swap with the band's — see `useInlineHeadingStyle`.
+  // No `bandPadding`: the row centres its own text in `RowHeight`, so the band adds none either.
+  const pin: InlineHeadingPin = useMemo(
+    () => ({ firstTop: sections[0]?.top, stickyTop: stickyHeaderTop, scrollOffset: sharedValues?.scrollOffset }),
+    [sections, stickyHeaderTop, sharedValues],
+  );
 
   return (
     <View style={styles.fill}>
@@ -116,7 +140,7 @@ export function GroupedGrid<T>({
         onScroll={onScroll}
         renderItem={({ item: row }) =>
           row.type === 'header' ? (
-            <SectionHeader label={row.label} count={row.count} hidden={row.key === pinnedKey} />
+            <SectionHeader label={row.label} count={row.count} hidden={row.key === pinnedKey} pin={pin} />
           ) : (
             renderRow(row.items)
           )
@@ -154,9 +178,5 @@ const styles = StyleSheet.create({
   },
   headerLabel: {
     flex: 1,
-  },
-  // Space preserved, content dropped, while the pinned copy stands in — see SectionHeader.
-  hidden: {
-    opacity: 0,
   },
 });

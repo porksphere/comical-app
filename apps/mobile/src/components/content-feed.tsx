@@ -2,8 +2,7 @@ import type { LegendListRef } from '@legendapp/list/react-native';
 import { useCallback, useMemo, useState, type ReactElement, type RefObject } from 'react';
 import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import type { ComposedGesture } from 'react-native-gesture-handler';
-import type Animated from 'react-native-reanimated';
-import { type SharedValue } from 'react-native-reanimated';
+import Animated, { type SharedValue } from 'react-native-reanimated';
 
 import { HomeGridBlock } from '@/components/home-grid-block';
 import { SkeletonCard } from '@/components/grid-skeleton';
@@ -19,7 +18,12 @@ import {
 import { RecyclerList } from '@/components/recycler-list';
 import { RetryBlock } from '@/components/retry-block';
 import { estimatedCardHeight, SeriesCard } from '@/components/series-card';
-import { StickySectionHeader, type StickySection } from '@/components/sticky-section-header';
+import {
+  StickySectionHeader,
+  useInlineHeadingStyle,
+  type InlineHeadingPin,
+  type StickySection,
+} from '@/components/sticky-section-header';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { BottomTabInset, Spacing, TopLevelGutter, topLevelCenterInset } from '@/constants/theme';
 import { contentRowType, type ContentRow, type SeeAllTarget } from '@/data/content-rows';
@@ -54,6 +58,29 @@ function seeAllParams(t: SeeAllTarget): Record<string, string> {
   if (t.query != null) p.query = t.query;
   if (t.favorites) p.favorites = '1';
   return p;
+}
+
+/** A section's heading row, inline in the list — the one the pinned copy stands in for. It drops its
+ *  CONTENT, never its space, so nothing reflows when the pinned copy takes over: at the pin line the
+ *  two are exactly superimposed, and one heading is never drawn twice. `useInlineHeadingStyle` owns
+ *  the timing of that swap, in both directions. */
+function SectionHeadRow({
+  title,
+  hidden,
+  pin,
+  onSeeAll,
+}: {
+  title: string;
+  hidden: boolean;
+  pin: InlineHeadingPin;
+  onSeeAll?: () => void;
+}) {
+  const hide = useInlineHeadingStyle(hidden, pin);
+  return (
+    <Animated.View style={[styles.sectionHead, hide]} pointerEvents={hidden ? 'none' : 'auto'}>
+      <SectionHead title={title} {...(onSeeAll ? { onSeeAll } : {})} />
+    </Animated.View>
+  );
 }
 
 /**
@@ -210,6 +237,17 @@ export function ContentFeed({
   // its content, so one heading is never drawn twice.
   const [pinnedKey, setPinnedKey] = useState<string | null>(null);
   const onActiveChange = useCallback((key: string | null) => setPinnedKey(key), []);
+  // What each heading row needs to time its own swap with the band's — see `useInlineHeadingStyle`.
+  const pin: InlineHeadingPin = useMemo(
+    () => ({
+      firstTop: sections[0]?.top,
+      stickyTop: stickyHeaderTop,
+      bandPadding: HEADING_GAP,
+      scrollOffset: sharedValues?.scrollOffset,
+      barOffset: stickyBarOffset,
+    }),
+    [sections, stickyHeaderTop, sharedValues, stickyBarOffset],
+  );
 
   // Terminal-grid first-load skeleton — rows self-pad Spacing.four (via styles.row), matching the real
   // gridRow's inset (ContentFeed's container is centering-only, unlike GridSkeleton's SeriesGrid shape).
@@ -258,22 +296,16 @@ export function ContentFeed({
         switch (item.type) {
           case 'sectionHead':
             return (
-              // Hidden — space kept — while the pinned copy stands in for this heading: at the pin
-              // line the two are exactly superimposed, so one heading is never drawn twice.
-              <View
-                style={[styles.sectionHead, item.key === pinnedKey && styles.headHidden]}
-                pointerEvents={item.key === pinnedKey ? 'none' : 'auto'}>
-                <SectionHead
-                  title={item.title}
-                  // Every rail's "See all" pushes the shared /results page for that one bridge (a list
-                  // drill or a search drill — see SeeAllTarget). Back returns here cleanly.
-                  onSeeAll={
-                    item.seeAll
-                      ? () => router.push({ pathname: '/results', params: seeAllParams(item.seeAll!) })
-                      : undefined
-                  }
-                />
-              </View>
+              <SectionHeadRow
+                title={item.title}
+                hidden={item.key === pinnedKey}
+                pin={pin}
+                // Every rail's "See all" pushes the shared /results page for that one bridge (a list
+                // drill or a search drill — see SeeAllTarget). Back returns here cleanly.
+                {...(item.seeAll
+                  ? { onSeeAll: () => router.push({ pathname: '/results', params: seeAllParams(item.seeAll!) }) }
+                  : {})}
+              />
             );
           case 'rail':
             return (
@@ -401,10 +433,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     paddingTop: CELL_PAD_TOP,
     paddingBottom: CELL_PAD_BOTTOM,
-  },
-  // Space preserved, content dropped, while the pinned copy stands in for this heading.
-  headHidden: {
-    opacity: 0,
   },
   // Shared standalone heading row for every section — SECTION_GAP above, HEADING_GAP below.
   sectionHead: {

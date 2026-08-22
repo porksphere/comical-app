@@ -574,6 +574,20 @@ User feedback after the phases landed reshaped the browsing surface:
   Simulated over eight scroll traces (crawl, border speed, fling, fling-then-stop, an alternating
   2/10px trace straddling the threshold, reversal) at two JS-commit lags, the pinned heading never
   moves faster than the content under it and never swaps with push still owed.
+- **The inline heading's un-hide has to be on the same clock as the band's.** The list learns which
+  heading the pinned copy stands in for through `onActiveChange` — React state, a frame or two behind
+  the scroll — and that lag is harmless in one direction only. Scrolling down, the row hides late
+  while it is already under the top bar; invisible either way. Scrolling back up, the band's opacity
+  drops on the UI-thread frame the line is crossed while the row is still hidden, and for those
+  frames NEITHER heading is drawn: a flash at the top of the feed, and only at the top, since at
+  every other boundary the band's own stack is already drawing the incoming heading exactly where the
+  hidden row sits (the pinned section renders at `p`, its successor at `p + bandHeight`). So the row
+  ANDs the JS flag with the same predicate the band uses (`useInlineHeadingStyle`), and comes back on
+  the very frame the band leaves. It re-derives that from `scrollOffset` rather than reading the
+  shared value the band's reaction writes, because Reanimated runs mappers in registration order and
+  doesn't know a reaction's output — and list rows mount before the overlay below them, so reading it
+  would leave the same gap exactly one frame wide. Hit-testing stays on the JS flag, where being a
+  frame or two wrong can't be seen.
 - **A list row must be told when something outside its item changed.** `RecyclerList` now forwards
   `extraData`, and both grids pass the pinned key. LegendList memoizes a row on its item, so without
   it a mounted heading kept the hidden flag it captured: scrolling DOWN usually looked fine (the row
