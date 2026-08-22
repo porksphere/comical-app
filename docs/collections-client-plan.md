@@ -554,19 +554,26 @@ User feedback after the phases landed reshaped the browsing surface:
   clip, so they cost nothing until one arrives. The base re-bases afterwards, and since the
   translate loses exactly the band it gains, the rendered position is identical either side of that
   commit — a late update is invisible rather than a jump. A fling that outruns all three hides the
-  band for those frames instead of showing a heading it knows is stale. And the push STEEPENS with
-  the scroll speed, since intermediate frames read as a flash rather than as motion well before the
-  speed at which they stop rendering at all: at rest it is the plain sticky formula spread over a
-  full band of scroll, and by half a band per event it is a gain of 12 about its own midpoint, i.e.
-  effectively a step. **This wants a gain, not a threshold, and not a shrinking span.** Two
-  threshold cuts (a bare one, then one latching with hysteresis) both chattered near the boundary,
-  because hysteresis makes the crossing rarer without making it smaller — a latch flipping mid-push
-  jumps `p` to an end. Shrinking the SPAN the push runs over removes the boundary but is worse:
-  `dp/dspan` is `−bandHeight·gap/span²`, which blows up as the span closes, measured at 14px of jump
-  per 0.1px/frame of speed. Gain holds the domain fixed and steepens inside it, pivoting on the one
-  point it leaves fixed, and measures at 1.5px for the same speed change and 3px per 0.25px of
-  scroll — while still reproducing the plain formula exactly below `SNAP_FROM`. The speed feeding it
-  is smoothed, since a raw frame-to-frame delta would show up as a slightly jittery push.
+  band for those frames instead of showing a heading it knows is stale. Past 0.12 of a band of scroll
+  PER EVENT the push is **deferred**: the band holds at rest and the heading is replaced outright on
+  the frame the next one reaches the line, since intermediate frames read as a flash rather than as
+  motion well before the speed at which they stop rendering at all. **The fix was WHEN the threshold
+  is read, not what it is.** Three cuts got this wrong before it landed. A bare threshold read every
+  frame chatters; adding hysteresis makes the crossing rarer without making it any smaller, since a
+  latch flipping mid-push jumps `p` straight to an end either way — which is why lowering the
+  threshold only relocated the chatter. Ramping continuously on speed instead (a gain about the
+  push's midpoint, or a shrinking span) has no threshold to chatter on, but makes `p` a function of
+  speed *everywhere in the push*, so the speed sample's own noise becomes position noise and the
+  band jitters in place: one bad speed traded for every speed, and it read as worse on device.
+  What works is restricting WHEN the latch may change: only while the band is at rest, so the
+  decision is taken once as a crossing begins and held for its duration. It cannot flip mid-push,
+  and at rest both behaviours give `p = 0`, so the one moment it can change is the one moment
+  changing it is free. Deferring rather than snapping to the nearer end is required by that same
+  restriction — a scroll decelerating to rest mid-crossing strands the latch, so what it holds has
+  to still look right, and held at 0 the band is simply at rest with the incoming heading behind it.
+  Simulated over eight scroll traces (crawl, border speed, fling, fling-then-stop, an alternating
+  2/10px trace straddling the threshold, reversal) at two JS-commit lags, the pinned heading never
+  moves faster than the content under it and never swaps with push still owed.
 - **A list row must be told when something outside its item changed.** `RecyclerList` now forwards
   `extraData`, and both grids pass the pinned key. LegendList memoizes a row on its item, so without
   it a mounted heading kept the hidden flag it captured: scrolling DOWN usually looked fine (the row

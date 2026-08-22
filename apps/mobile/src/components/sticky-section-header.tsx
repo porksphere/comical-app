@@ -15,28 +15,16 @@ import { useTheme } from '@/hooks/use-theme';
  *  starts at (contentOffset 0 = the top of the list's padding). */
 export type StickySection = { key: string; label: string; count?: number; top: number };
 
-// ── Fast scrolling: tighten the push rather than switch it off ──
+// ── Fast scrolling: DEFER the push rather than draw two frames of it ──
 // Weight on the previous sample when smoothing the per-event scroll distance. A raw delta is noisy
-// frame to frame, and everything below reads it.
+// frame to frame, and the decision below reads it.
 const SPEED_SMOOTHING = 0.6;
-// The push runs at unity gain while scrolling slowly — plain sticky-header behaviour, spread over a
-// full band of scroll — and is progressively STEEPENED around its own midpoint as the scroll speeds
-// up, until it is effectively a step. These are the per-event speeds that steepening runs between,
-// as fractions of a band, and how steep it gets.
-//
-// A threshold was tried first, and twice: snap past some speed, then snap past a lower speed with
-// hysteresis. Both chatter near the boundary, and hysteresis only makes the crossing rarer, not
-// smaller — whenever the latch flips mid-push, `p` JUMPS from wherever it was to an end.
-//
-// Shrinking the SPAN the push runs over was tried next and is worse than it looks: `p` is
-// `bandHeight·(span − gap)/span`, so `dp/dspan` is `−bandHeight·gap/span²` and blows up as the span
-// closes. Measured, that is 14px of jump per 0.1px/frame of speed — a bigger discontinuity than the
-// threshold it replaced. Gain keeps the domain fixed and steepens inside it instead, which measures
-// at 1.5px for the same speed change, and `p` stays continuous in the scroll AND in the speed at
-// every speed, so there is no boundary left to chatter on.
-const SNAP_FROM = 0.15;
-const SNAP_FULL = 0.5;
-const GAIN_MAX = 12;
+// Past this much scroll PER EVENT — as a fraction of a band — the push is deferred: the band holds
+// at rest and the heading is simply replaced on the frame the next one reaches the pin line. A
+// band's worth of push at this speed is over in about eight frames, which already reads as a flash
+// of a half-drawn band rather than as motion, and it only gets worse from there. Deliberately low
+// for that reason: the sliding push is what a SLOW scroll gets, not the default.
+const SNAP_SPEED = 0.12;
 
 /**
  * WHICH heading belongs at the pin line, and how far the band has been pushed out — both derived
@@ -48,20 +36,23 @@ const GAIN_MAX = 12;
  * crosses several sections at once outruns the pre-render; the band hides for those frames rather
  * than showing a heading it knows is stale.
  *
- * `p` is 0 at rest, down to −`bandHeight` fully pushed out by the following heading. How STEEPLY it
- * runs between those rises with the scroll speed (see `SNAP_FROM`), so a fast pass lands on an end
- * instead of drawing a frame of the middle — continuously, with no threshold to chatter on.
+ * `p` is 0 at rest, down to −`bandHeight` fully pushed out by the following heading — unless the
+ * push is DEFERRED (`snapped`), in which case it stays 0 and the whole swap is `k` advancing on a
+ * single frame. See `SNAP_SPEED`, and the latch that decides it.
+ *
+ * `atRest` is the band sitting at 0 with no crossing under way. It is where the latch is allowed to
+ * change, and the only place the two behaviours are guaranteed to agree.
  */
 function pinAt(
   sections: StickySection[],
   shown: number,
   line: number,
   bandHeight: number,
-  /** Smoothed per-event scroll distance, in px — see `SNAP_FROM`. */
-  speed: number,
+  /** Whether the push is currently deferred — see `SNAP_SPEED`. */
+  snapped: boolean,
 ) {
   'worklet';
-  if (sections.length === 0) return { k: shown, p: 0, outrun: false };
+  if (sections.length === 0) return { k: shown, p: 0, outrun: false, atRest: true };
   let idx = 0;
   for (let i = 0; i < sections.length && sections[i]!.top <= line; i++) idx = i;
   const k = Math.max(0, Math.max(shown - 1, Math.min(shown + 1, idx)));
@@ -69,21 +60,15 @@ function pinAt(
 
   // Distance from the pin line to the heading coming up behind: ≥ a band is at rest, ≤ 0 fully out.
   const gap = next ? next.top - line : Infinity;
-  // The plain push, 0 → 1 over a band of scroll: exactly `p = gap − bandHeight` clamped.
-  const x = Math.max(0, Math.min(1, 1 - gap / bandHeight));
-  // …steepened about its own MIDPOINT as the scroll speeds up. The midpoint is the pivot because it
-  // is the one point the gain leaves fixed, so the push keeps landing where it landed: still 0 at a
-  // full band's gap, still fully out at 0, just travelling between them over less of the middle.
-  // At unity this is the plain formula unchanged; at GAIN_MAX it is a band's worth of push inside a
-  // twelfth of a band of scroll, which at those speeds is under one frame.
-  const ramp = (speed - bandHeight * SNAP_FROM) / (bandHeight * (SNAP_FULL - SNAP_FROM));
-  const gain = 1 + (GAIN_MAX - 1) * Math.max(0, Math.min(1, ramp));
-  const p = next ? -bandHeight * Math.max(0, Math.min(1, 0.5 + (x - 0.5) * gain)) : 0;
+  // The plain sticky push while slow, and NOTHING while the push is deferred — the band holds at
+  // rest, and `k` advancing on the frame the gap closes performs the whole swap. There is no
+  // intermediate value in that mode to catch a frame of.
+  const p = next && !snapped ? -bandHeight * Math.max(0, Math.min(1, 1 - gap / bandHeight)) : 0;
   // `outrun` means the pinned section is one this stack hasn't rendered — a fling crossing several
   // at once. The band HIDES for those frames rather than holding a neighbour at the pin line: a
   // heading that is merely absent for two frames reads as the list scrolling, where a confidently
   // drawn WRONG heading reads as a bug.
-  return { k, p, outrun: k !== idx };
+  return { k, p, outrun: k !== idx, atRest: gap >= bandHeight };
 }
 
 /**
@@ -285,23 +270,49 @@ export function StickySectionHeader<S extends StickySection>({
 
   // Scroll speed on the UI thread, smoothed. Derived from the offset rather than taken from a
   // scroll handler's `velocity`: the sliding-bar wiring doesn't publish one, and px/s is a unit this
-  // would only have to convert back. Smoothed because `pinAt` feeds it into a continuous taper — a
-  // noisy sample would show up as a slightly jittery push rather than as a wrong decision.
+  // would only have to convert back.
   const speed = useSharedValue(0);
+  // ── The fast-scroll decision, taken ONCE per crossing ──
+  // Whether the push is deferred (see `SNAP_SPEED`). It may only change while the band is AT REST,
+  // and that restriction is the whole thing — it is what makes a threshold safe here after two cuts
+  // that weren't:
+  //
+  //  - A threshold READ EVERY FRAME, with or without hysteresis, can flip in the middle of a push,
+  //    and then `p` jumps from wherever it had got to straight to an end. Hysteresis makes that
+  //    crossing rarer without making it any smaller, which is why lowering the threshold only moved
+  //    the chatter to a different speed. Decided at rest and held for the crossing, the latch cannot
+  //    flip mid-push — and at rest the two behaviours agree exactly (`p` = 0), so the one moment it
+  //    can change is the one moment changing it is free.
+  //  - RAMPING continuously on speed instead — a gain, or a shrinking span — has no threshold at
+  //    all, but it makes `p` a function of speed *everywhere in the push*, so the speed sample's own
+  //    noise turns into position noise and the band jitters in place while it wobbles. That trades
+  //    one bad speed for every speed, which is why it felt worse rather than better.
+  //
+  // DEFERRING rather than snapping to the nearer end matters for the same reason. A scroll that
+  // decelerates to rest mid-crossing strands the latch (it can only change at rest), so whatever it
+  // holds has to still look right there. Held at 0 the band is simply at rest with the incoming
+  // heading behind it — indistinguishable from a crossing that hasn't started, and the next scroll
+  // in either direction resolves it. Snapped to an end it would be a heading missing from under the
+  // bar until something moved.
+  const snapped = useSharedValue(false);
   useAnimatedReaction(
     () => scrollOffset.value,
     (v, prev) => {
       if (prev === null) return;
-      speed.set(speed.value * SPEED_SMOOTHING + Math.abs(v - prev) * (1 - SPEED_SMOOTHING));
+      const s = speed.value * SPEED_SMOOTHING + Math.abs(v - prev) * (1 - SPEED_SMOOTHING);
+      speed.set(s);
+      const line = v + pinLine + (barOffset?.value ?? 0);
+      if (!pinAt(sections, shown, line, bandHeight, snapped.value).atRest) return;
+      snapped.set(s >= bandHeight * SNAP_SPEED);
     },
-    [scrollOffset],
+    [sections, pinLine, scrollOffset, barOffset, shown, bandHeight],
   );
 
   // Visibility + the ride on the bar's slide, so the heading stays glued to the bar's bottom edge.
   const bandStyle = useAnimatedStyle(() => {
     const line = scrollOffset.value + pinLine + (barOffset?.value ?? 0);
     return {
-      opacity: pinAt(sections, shown, line, bandHeight, speed.value).outrun ? 0 : pinned.value,
+      opacity: pinAt(sections, shown, line, bandHeight, snapped.value).outrun ? 0 : pinned.value,
       transform: [{ translateY: barOffset?.value ?? 0 }],
     };
   }, [sections, pinLine, scrollOffset, barOffset, shown, bandHeight]);
@@ -319,7 +330,7 @@ export function StickySectionHeader<S extends StickySection>({
   // than a jump.
   const stackStyle = useAnimatedStyle(() => {
     const line = scrollOffset.value + pinLine + (barOffset?.value ?? 0);
-    const { k, p } = pinAt(sections, shown, line, bandHeight, speed.value);
+    const { k, p } = pinAt(sections, shown, line, bandHeight, snapped.value);
     return { transform: [{ translateY: p - (k - shown) * bandHeight }] };
   }, [sections, pinLine, scrollOffset, barOffset, shown, bandHeight]);
 
@@ -330,7 +341,7 @@ export function StickySectionHeader<S extends StickySection>({
   // up only while pushed out).
   const ruleStyle = useAnimatedStyle(() => {
     const line = scrollOffset.value + pinLine + (barOffset?.value ?? 0);
-    return { opacity: pinAt(sections, shown, line, bandHeight, speed.value).p < 0 ? 0 : 1 };
+    return { opacity: pinAt(sections, shown, line, bandHeight, snapped.value).p < 0 ? 0 : 1 };
   }, [sections, pinLine, scrollOffset, barOffset, shown, bandHeight]);
 
   // The SUPERSEDING heading's rule — the other half of the hand-off. The heading pushing the pinned
@@ -340,12 +351,16 @@ export function StickySectionHeader<S extends StickySection>({
   // the pinned rule reappears at the swap — so across a hand-off there is always a rule under a
   // heading, never a gap and never two under one heading.
   //
+  // A DEFERRED push has no hand-off to make: `p` never leaves 0, so this stays off and the pinned
+  // rule stays on straight through the swap — which is right, because the swap is one frame and a
+  // rule that blinked across it would be the only thing announcing it.
+  //
   // Its offset is `2·bandHeight + p` below `stickyTop` because two consecutive bands are exactly one
   // bandHeight apart. The `barOffset` term cancels the one inside `line`, which is what makes this
   // track the SCROLL (a list row doesn't ride the sliding bar) while the pinned band does.
   const nextRuleStyle = useAnimatedStyle(() => {
     const bar = barOffset?.value ?? 0;
-    const { p, outrun } = pinAt(sections, shown, scrollOffset.value + pinLine + bar, bandHeight, speed.value);
+    const { p, outrun } = pinAt(sections, shown, scrollOffset.value + pinLine + bar, bandHeight, snapped.value);
     return {
       opacity: p < 0 && !outrun ? pinned.value : 0,
       transform: [{ translateY: bandHeight * 2 + p + bar }],
