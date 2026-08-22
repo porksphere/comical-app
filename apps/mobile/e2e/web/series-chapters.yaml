@@ -9,6 +9,8 @@
 #   - series.chapters.sort.<id> sets accessibilityLabel=s.label ("Newest first"/"Oldest first") —
 #     same reason, select by label text.
 # series.chapter.*, series.chapters.expand-middle, series.action.save and
+# series.chapter-menu.collect files THIS chapter into a collection — the only place a chapter can be
+# filed, since the reader's settings sheet is settings only.
 # series.chapter-menu.<this|from-here|read|read-up-to> have no competing accessibilityLabel — same
 # selectors as mobile (confirmed against source: the expand Pressable, ActionButton, and
 # context-menu.tsx's MenuActionRow all set testID only).
@@ -77,6 +79,8 @@ url: http://localhost:4000/comical-app
 - longPressOn:
     id: "series\\.chapter\\..*"
     index: 0
+- assertVisible:
+    id: "series.chapter-menu.collect"
 - assertVisible:
     id: "series.chapter-menu.this"
 - assertVisible:

@@ -588,6 +588,16 @@ User feedback after the phases landed reshaped the browsing surface:
   doesn't know a reaction's output — and list rows mount before the overlay below them, so reading it
   would leave the same gap exactly one frame wide. Hit-testing stays on the JS flag, where being a
   frame or two wrong can't be seen.
+- **One subject per surface — the reader's settings sheet is settings only.** It had grown a "This
+  page", a "This chapter" and a "This series" block of collect actions on top of the three reader
+  settings, which put three different subjects behind one gear that names none of them. Each already
+  has a home where its subject is the thing on screen: a page has the toolbar's own save button
+  beside the gear (`CollectPageControl`), a series has the series screen, and a chapter now has its
+  row's long-press menu (`series.chapter-menu.collect`) — the one place a chapter can be filed. That
+  row shows membership (＋ / ✓, the series card's convention) off a single per-series
+  `collectionItems` query rather than a check per chapter, and goes straight to the picker with no
+  one-tap default: filing a chapter is already three gestures deep, so there is no reflex for a
+  last-used destination to speed up, and a silent destination is the one thing the row can't show.
 - **A list row must be told when something outside its item changed.** `RecyclerList` now forwards
   `extraData`, and both grids pass the pinned key. LegendList memoizes a row on its item, so without
   it a mounted heading kept the hidden flag it captured: scrolling DOWN usually looked fine (the row

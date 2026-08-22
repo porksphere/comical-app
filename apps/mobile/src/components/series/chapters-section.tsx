@@ -29,6 +29,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { DownloadedChapter, DownloadState } from '@comical/downloads';
 
 import { MenuActionRow, MenuHeader } from '@/components/context-menu';
+import { openCollectionPicker } from '@/components/collection-picker';
 import { ContextMenuHold, openContextMenu } from '@/components/context-menu-host';
 import type { MenuRowSpec } from '@/components/context-menu-material';
 import { DownloadStateVisual } from '@/components/downloads/download-status-indicator';
@@ -39,6 +40,7 @@ import {
   CheckIcon,
   DownloadsIcon,
   EyeOffIcon,
+  PlusIcon,
   TrashIcon,
 } from '@/components/icons/ui-icons';
 import { OptionList, useOverlay, type AnchorRect } from '@/components/overlay/overlay';
@@ -57,7 +59,7 @@ import { fromHere, selectableGroups, toEnqueue } from '@/data/downloads/select';
 import { queryClient } from '@/data/query-client';
 import { coverDelayMs, relativeTime } from '@/data/mock';
 import { hapticImpactMedium } from '@/lib/haptics';
-import { chapterProgressQuery, inLibraryQuery, queryKeys } from '@/data/queries';
+import { chapterProgressQuery, collectionItemsQuery, inLibraryQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive, type DataSource } from '@/data/source';
 import type { Chapter, PageThumbSource, SpriteThumb } from '@/data/types';
 import { ASPECT_TRANSITION_MS, clampThumbAspect, DEFAULT_THUMB_ASPECT } from '@/lib/aspect-ratio';
@@ -432,6 +434,17 @@ export function ChapterScrollList({
     ...inLibraryQuery(ds, mock, bridgeId ?? '', seed),
     enabled: !!bridgeId && !!seed,
   });
+  // Which chapters are filed in a collection, for the long-press menu's row. ONE query for the
+  // roster rather than a membership check per chapter: `getCollectedItems` is already scoped to a
+  // series, and the menu is built fresh on every open, so it reads a set that is already warm.
+  const { data: collectedChapters } = useQuery({
+    ...collectionItemsQuery(ds, mock, { type: 'chapter', series: `${bridgeId}:${seed}` }),
+    enabled: !!bridgeId && !!seed,
+  });
+  const collectedChapterIds = useMemo(
+    () => new Set((collectedChapters ?? []).map((i) => (i.type === 'chapter' ? i.chapterId : ''))),
+    [collectedChapters],
+  );
   const chapters = useMemo(() => applyReadState(rawChapters, progress ?? []), [rawChapters, progress]);
 
   // Unread counts (the Library grid's badge, the Activity feed and its tab badge) are all derived
@@ -519,6 +532,7 @@ export function ChapterScrollList({
           manifest,
           group: g,
           preferredGroup,
+          collected: collectedChapterIds,
           ...(readArgs && { read: readArgs }),
         }),
       });
@@ -535,6 +549,7 @@ export function ChapterScrollList({
           manifest={manifest}
           group={g}
           preferredGroup={preferredGroup}
+          collected={collectedChapterIds}
           {...(readArgs && { read: readArgs })}
         />
       ),
@@ -894,11 +909,14 @@ function chapterMenuActions(args: {
   manifest: DownloadedChapter[];
   group: ChapterGroup;
   preferredGroup?: string;
+  /** The series' collected chapter ids — see `collectedChapterIds`. */
+  collected: Set<string>;
 }) {
   const { bridgeId, seriesId, title, chapters, manifest, group, preferredGroup } = args;
   const sel = selectableGroups(chapters, manifest);
   const entry = sel.find((s) => s.group.key === group.key);
-  const span = fromHere(sel, pickVersion(group, preferredGroup).id);
+  const chapterId = pickVersion(group, preferredGroup).id;
+  const span = fromHere(sel, chapterId);
   const snap = { bridgeId, seriesId, title };
   const completeIds = new Set(manifest.filter((c) => c.state === 'complete').map((c) => c.chapterId));
   const downloadedVersions = group.versions.filter((v) => completeIds.has(v.id));
@@ -906,6 +924,26 @@ function chapterMenuActions(args: {
     entry,
     span,
     downloadedVersions,
+    collected: args.collected.has(chapterId),
+    // Straight to the picker, with no one-tap default the way a SERIES has. Filing a chapter is a
+    // deliberate act already three gestures deep (long-press, read the row, tap it), so there is no
+    // reflex for a last-used destination to speed up — and a silent destination would be the one
+    // thing the row can't show. The label is the series card's convention (＋ / ✓), so a chapter
+    // filed anywhere reads the same as a series filed anywhere.
+    collect: () =>
+      openCollectionPicker({
+        kind: 'chapter',
+        bridgeId,
+        seriesId,
+        chapterId,
+        title: `${title} — ${group.name}`,
+        snapshot: () => ({
+          seriesTitle: title,
+          chapterName: group.name,
+          ...(group.number !== undefined && { number: group.number }),
+          ...(group.languageCode !== undefined && { languageCode: group.languageCode }),
+        }),
+      }),
     downloadThis: () => enqueueChapters(snap, toEnqueue([group], preferredGroup)),
     downloadFromHere: () => enqueueChapters(snap, toEnqueue(span, preferredGroup)),
     deleteDownload: async () => {
@@ -924,7 +962,8 @@ function chapterMenuActions(args: {
 function chapterMenuRows(
   args: Parameters<typeof chapterMenuActions>[0] & { read?: Parameters<typeof chapterReadActions>[0] },
 ): MenuRowSpec[] {
-  const { entry, span, downloadedVersions, downloadThis, downloadFromHere, deleteDownload } = chapterMenuActions(args);
+  const { entry, span, downloadedVersions, collected, collect, downloadThis, downloadFromHere, deleteDownload } =
+    chapterMenuActions(args);
   const rows: MenuRowSpec[] = [];
   if (args.read) {
     const { read, pending, setRead, markUpTo } = chapterReadActions(args.read);
@@ -948,6 +987,14 @@ function chapterMenuRows(
     );
   }
   rows.push(
+    {
+      // The one place a chapter can be filed, now that the reader's settings sheet is settings only.
+      label: collected ? 'In collections' : 'Add to collection',
+      Icon: collected ? CheckIcon : PlusIcon,
+      loading: false,
+      testID: testId('series.chapter-menu', 'collect'),
+      onPress: collect,
+    },
     {
       label: entry?.settled ? 'Already saved' : 'Download chapter',
       Icon: DownloadsIcon,
@@ -995,6 +1042,7 @@ function ChapterDownloadMenu({
   manifest,
   group,
   preferredGroup,
+  collected,
   read,
 }: {
   bridgeId: string;
@@ -1004,17 +1052,29 @@ function ChapterDownloadMenu({
   manifest: DownloadedChapter[];
   group: ChapterGroup;
   preferredGroup?: string;
+  /** The series' collected chapter ids — see `collectedChapterIds`. */
+  collected: Set<string>;
   /** Read-state actions — omitted when the series isn't in the library. */
   read?: Parameters<typeof chapterReadActions>[0];
 }) {
   const { closeTop } = useOverlay();
-  const { entry, span, downloadedVersions, downloadThis, downloadFromHere, deleteDownload } = chapterMenuActions({
+  const {
+    entry,
+    span,
+    downloadedVersions,
+    collected: isCollected,
+    collect,
+    downloadThis,
+    downloadFromHere,
+    deleteDownload,
+  } = chapterMenuActions({
     bridgeId,
     seriesId,
     title,
     chapters,
     manifest,
     group,
+    collected,
     ...(preferredGroup !== undefined && { preferredGroup }),
   });
   const readActions = read ? chapterReadActions(read) : null;
@@ -1049,6 +1109,16 @@ function ChapterDownloadMenu({
             />
           </>
         )}
+        <MenuActionRow
+          testID={testId('series.chapter-menu', 'collect')}
+          label={isCollected ? 'In collections' : 'Add to collection'}
+          Icon={isCollected ? CheckIcon : PlusIcon}
+          detail={isCollected ? 'change collections' : 'pick a collection'}
+          onPress={() => {
+            collect();
+            closeTop();
+          }}
+        />
         <MenuActionRow
           testID={testId('series.chapter-menu', 'this')}
           label="Download this chapter"

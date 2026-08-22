@@ -2487,9 +2487,6 @@ function SeriesReaderInstance({
   const paneRef = useRef<ReaderPaneHandle>(null);
   // (`visiblePage` / `visibleSequenceEntry` are declared at the top of the component — the detail
   // identity derives from them.)
-  // The chapter the visible page belongs to, from the roster — `ReadTarget` carries only an id and
-  // a display name, but filing a CHAPTER needs its (number, languageCode) re-anchor identity.
-  const visibleChapter = chapters?.find((c) => c.id === visiblePage?.chapterId);
   // Verify this chapter's collected pages against the page list we already fetched — repairs the
   // ones the source shifted and seeds the indices the heart reads. See use-chapter-reconcile.
   // Reconcile is chapter machinery — in sequence mode `pages` is the cross-series URI list, which
@@ -2572,11 +2569,9 @@ function SeriesReaderInstance({
     ? (visibleSequenceEntry?.seriesTitle ?? series?.title ?? 'Reader')
     : (series?.title ?? title ?? id ?? 'Reader');
 
-  // What the per-page chrome (the toolbar save button, the settings sheet's "This page"/"This
-  // chapter" segments) acts on. ONE derivation for both controls, because they must never disagree.
-  // In sequence mode this is the visible ENTRY — its own series and chapter coordinates, not the
-  // instance's (they only match at rest, by the screen's re-keying); in chapter mode it is the
-  // visible page of the current chapter.
+  // What the toolbar's save button acts on. In sequence mode this is the visible ENTRY — its own
+  // series and chapter coordinates, not the instance's (they only match at rest, by the screen's
+  // re-keying); in chapter mode it is the visible page of the current chapter.
   const pageAction = sequence
     ? visibleSequenceEntry && {
         bridgeId: visibleSequenceEntry.bridgeId,
@@ -2606,11 +2601,8 @@ function SeriesReaderInstance({
         ...(pages?.[visiblePage.pageIndex] !== undefined && {
           sourceUrl: pages[visiblePage.pageIndex],
         }),
-        ...(visibleChapter?.number !== undefined && { chapterNumber: visibleChapter.number }),
-        ...(visibleChapter?.languageCode !== undefined && { languageCode: visibleChapter.languageCode }),
       };
 
-  const author = series?.meta?.find((m) => m.label === 'AUTHOR')?.value;
   // Same "<Bridge> / <Title>" the /series TopBar shows (shared truncation rule). Detail-side
   // identity, so in sequence mode the details top bar names the VISIBLE entry's series.
   const topBarSeries = series?.title ?? detailTitle;
@@ -2708,36 +2700,7 @@ function SeriesReaderInstance({
                         sourceUrl={pageAction?.sourceUrl}
                         onPress={showChrome}
                       />
-                      <SettingsControl
-                        // Detail-side identity: in sequence mode the sheet's series-level actions
-                        // must act on the VISIBLE entry's series, not the one the album opened on.
-                        bridgeId={detailBridgeId}
-                        seriesId={detailSeriesId}
-                        title={seriesTitle}
-                        thumbnailUrl={series?.cover}
-                        author={author}
-                        direct={detailIsDirect}
-                        {...(pageAction && {
-                          page: {
-                            chapterId: pageAction.chapterId,
-                            ...(pageAction.chapterName !== undefined && {
-                              chapterName: pageAction.chapterName,
-                            }),
-                            pageIndex: pageAction.pageIndex,
-                            ...(pageAction.pageCount !== undefined && { pageCount: pageAction.pageCount }),
-                            ...(pageAction.sourceUrl !== undefined && { sourceUrl: pageAction.sourceUrl }),
-                            // The chapter's re-anchor identity, for filing the CHAPTER itself.
-                            ...('chapterNumber' in pageAction &&
-                              pageAction.chapterNumber !== undefined && {
-                                chapterNumber: pageAction.chapterNumber,
-                              }),
-                            ...('languageCode' in pageAction &&
-                              pageAction.languageCode !== undefined && {
-                                languageCode: pageAction.languageCode,
-                              }),
-                          },
-                        })}
-                      />
+                      <SettingsControl />
                     </>
                   }
                 />

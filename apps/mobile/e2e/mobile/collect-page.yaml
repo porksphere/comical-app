@@ -1,5 +1,5 @@
 # Saving a PAGE to a collection from the reader chrome — the save button in the toolbar's trailing
-# slot, and its mirror in the settings sheet's "This page" segment.
+# slot.
 #
 # What this asserts is a real round trip through the collected-items API in MOCK mode: the button's
 # state is derived from the chapter's saved page INDICES (one query per chapter open), so a button
@@ -22,9 +22,7 @@
 #     "Remove page from collection", so it is also label-selectable on web when that day comes.
 #   - collection-picker.collection.*   the picker's rows (collection-picker.tsx), reused from
 #     registries-collections.yaml. collection-picker.done dismisses it.
-#   - reader.settings.collect-page     settings-panel.tsx's PageActionRow button — the SAME
-#     usePageCollected cache key as the toolbar button, which is exactly what the last step checks.
-#   - reader.settings.open / reader.control.next / reader.navigator.page / reader.toolbar.back
+#   - reader.control.next / reader.navigator.page / reader.toolbar.back
 #     Reused verbatim from reader-navigation.yaml.
 #   - library.collection-selector / library.collection.coll-reading   the Library tab's selector
 #     (library-collection-selector.tsx) and a collection row. One flat list — a collection row opens
@@ -39,9 +37,7 @@
 # The chrome AUTO-HIDES after 3s (CHROME_HIDE_MS in app/series/index.tsx), so every step that needs
 # the toolbar re-taps reader.control.toggle-chrome first rather than assuming it is still up. Same
 # hazard reader-navigation.yaml documents.
-#
-# The settings sheet has no close button — tapping the dimmed backdrop above it is the established
-# dismissal (swipe-dismiss-webtoon.yaml), reused here.
+
 #
 # NOT locally verifiable this session (no Android dev-client / no Mac for iOS) — treat the first CI
 # run as this flow's verification, per the existing precedent.
@@ -121,16 +117,7 @@ appId: com.porksphere.comical
     id: "reader.toolbar.collect-page"
     label: "Remove page from collection"
 
-# The settings sheet mirrors the same state off the same cache key.
-- tapOn:
-    id: "reader.settings.open"
-- assertVisible:
-    id: "reader.settings.collect-page"
-    text: "Saved"
-
-# Dismiss the sheet and leave the reader — page 1 and page 2 are both still saved.
-- tapOn:
-    point: "50%, 8%"
+# Leave the reader — page 1 and page 2 are both still saved.
 - tapOn:
     id: "reader.toolbar.back"
 

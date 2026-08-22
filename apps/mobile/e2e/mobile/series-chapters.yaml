@@ -7,6 +7,8 @@
 #   - series.chapters.expand-middle            (same file — only rendered once a tab
 #     has more chapters than the collapsed head+tail count; every mocked chaptered
 #     series has 40-200 chapters, well over that threshold)
+#   - series.chapter-menu.collect              (same file — files THIS chapter into a collection;
+#     the only place a chapter can be filed, since the reader's settings sheet is settings only)
 #   - series.chapter-menu.<this|from-here>     (same file — long-press a chapter row;
 #     triggers the same menu content on native and web, per `openChapterMenu`)
 #   - series.chapter-menu.<read|read-up-to>    (same file — only rendered for a series in
@@ -63,6 +65,8 @@ appId: com.porksphere.comical
 - longPressOn:
     id: "series\\.chapter\\..*"
     index: 0
+- assertVisible:
+    id: "series.chapter-menu.collect"
 - assertVisible:
     id: "series.chapter-menu.this"
 - assertVisible:

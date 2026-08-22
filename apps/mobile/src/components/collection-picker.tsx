@@ -84,10 +84,14 @@ function useRequest(): CollectionPickerRequest | null {
 export function CollectionPickerHost() {
   const req = useRequest();
   if (!req) return null;
+  // Keyed by the exact SUBJECT, so opening the picker on a second chapter (or page) of the same
+  // series remounts it rather than reusing the first one's loaded memberships.
   const key =
     req.kind === 'page'
       ? `page:${req.bridgeId}:${req.seriesId}:${req.chapterId}:${req.pageIndex}`
-      : `series:${req.bridgeId}:${req.seriesId}`;
+      : req.kind === 'chapter'
+        ? `chapter:${req.bridgeId}:${req.seriesId}:${req.chapterId}`
+        : `series:${req.bridgeId}:${req.seriesId}`;
   return <HostPopup key={key} req={req} />;
 }
 
