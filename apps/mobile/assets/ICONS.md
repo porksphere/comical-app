@@ -156,6 +156,40 @@ rows paint the gradient on the frame div itself, so they save as RGB. Match each
 file's exact size/mode from the table so nothing downstream (Expo config,
 splash, web favicon) has to change.
 
+## The bridge mark (`images/comical-bridge.svg` → `.png`)
+
+A **separate icon, not a derivative of the app icon** — the only asset here that
+isn't. It stands for the synthetic cross-bridge "Comical" bridge
+(`COMICAL_BRIDGE_ID` in `src/data/selected-bridge.ts`), which is a front door
+listed alongside real bridges, and it is wired up as `COMICAL_ICON` — nothing
+else uses it.
+
+It exists because of where it renders: `BridgeThumbSize` is **28pt**, beside real
+bridges' thumbnails, which are full-bleed square site logos. The full book at
+28pt is mush — the page gradients, the halftone and the こ all collapse into a
+gray smudge. So this is **just the こ**, taken from `logo.svg` (same outlined Yu
+Gothic Bold path, transformed only — never re-outlined), scaled to 62% of the
+frame and re-centered on its own bounding box (measured: x 350–678, y 297–659 in
+the 1024 space, so centre 514,478 — not 512,512).
+
+Two things it deliberately does differently from the app icon:
+
+- **Full-bleed tile, light-on-dark.** `#2E2E2E → #141414` at 135° with an
+  `#F5F5F5` glyph. A white tile would vanish into the light theme's `#ffffff`
+  background while every neighbouring bridge shows a bounded square; dark-on-light
+  keeps a defined edge on `#ffffff` **and** stays legible on the dark theme's
+  `#000000`.
+- **No baked-in corner radius.** The call sites clip it — `bridgeThumb`
+  (borderRadius 8) in the Browse top bar, `optionThumb` (6) in the selector — the
+  same way they clip remote thumbnails. Keep the art square.
+
+No halftone: it's invisible at 28pt and only adds noise. Rasterize to
+`comical-bridge.png` at **256** (RGB, opaque — it's a full-bleed tile), which
+covers 28pt at 3x with room to spare. Same renderer as the table above.
+
+The app logo still serves the larger surfaces — the 84pt splash mark and the
+128pt "no bridges yet" onboarding both stay on `comical-logo.png`.
+
 ## Colors that track the logo
 
 The near-black palette is mirrored by the app's splash chrome, which must stay

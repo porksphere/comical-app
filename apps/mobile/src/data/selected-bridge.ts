@@ -49,10 +49,15 @@ export const setSelectedBridge = (id: string) => selectedBridge$.set(id);
  *  Always present (when there's ≥1 real bridge) and first, so it's also the default landing bridge. */
 export const COMICAL_BRIDGE_ID = 'comical';
 const COMICAL_BRIDGE: Bridge = { id: COMICAL_BRIDGE_ID, name: 'Comical', nsfw: false, capabilities: [] };
-/** The app logo as a local image module — passed directly to `BridgeThumb`'s `source` for the Comical
- *  bridge (the way index.tsx already renders it). Not resolved to a URI: react-native-web's `Image`
- *  has no `resolveAssetSource`, and `expo-asset` isn't a dependency — a require module works on both. */
-export const COMICAL_ICON = require('@/assets/images/comical-logo.png');
+/** The Comical bridge's mark as a local image module — passed directly to `BridgeThumb`'s `source`
+ *  for the Comical bridge (the way index.tsx already renders it). A DEDICATED asset, not the app
+ *  logo: this sits at `BridgeThumbSize` (28pt) beside real bridges' full-bleed square thumbnails,
+ *  where the book's page gradients and halftone turn to mush — so it's just the こ on a full-bleed
+ *  tile, light-on-dark so the chip keeps an edge on the light theme and stays legible on the dark
+ *  one. Corners are clipped by the call sites (`bridgeThumb`/`optionThumb` borderRadius), not baked
+ *  into the art. Not resolved to a URI: react-native-web's `Image` has no `resolveAssetSource`, and
+ *  `expo-asset` isn't a dependency — a require module works on both. */
+export const COMICAL_ICON = require('@/assets/images/comical-bridge.png');
 /** Whether a selected bridge id is the synthetic aggregate. */
 export const isComicalBridge = (bridgeId: string | undefined): boolean => bridgeId === COMICAL_BRIDGE_ID;
 
