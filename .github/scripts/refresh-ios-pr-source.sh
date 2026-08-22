@@ -108,7 +108,7 @@ jq -n \
       developerName: "porksphere",
       localizedDescription: "Comical PR channel — every open PR build (profiling: Release + on-device Hermes profiler). Unsigned; re-signed on-device by SideStore/AltStore. Same bundle id as the release app, so a PR build replaces Comical; pick a version to switch.",
       iconURL: $icon,
-      tintColor: "208AEF",
+      tintColor: "2E2E2E",
       versions: $versions
     } + (if ($versions | length) > 0 then {
       version: ($versions[0].version),

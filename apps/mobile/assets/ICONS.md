@@ -205,13 +205,15 @@ in sync with the icon backgrounds:
   Keep the two in sync; they are the native and web halves of one component.
 - `app.json` → `android.adaptiveIcon.backgroundColor` = `#000000`.
 
-`#208AEF` — the OLD splash/logo blue — still survives in four places, and none
-of them is a live token: a button in `error-boundary.tsx`, the `dev-profiler.tsx`
-toggle, and `tintColor` in the four SideStore/AltStore source manifests under
-`.github/` (`build-ios.yml`, `build-ios-devclient.yml`,
-`refresh-ios-pr-source.sh`, `refresh-ios-release-source.sh`).
+`#208AEF` — the old blue logo's splash color — is now **fully retired**; a grep
+for it should come back empty. It was never the app's accent: that is `#3478F6`
+(`constants/theme.ts`, hardcoded alongside it in a dozen components). Its last
+holdouts went two different ways, on purpose:
 
-It is **not** the app's accent. The accent is `#3478F6` (`constants/theme.ts`,
-hardcoded alongside it in a dozen components). `#208AEF` only ever matched the
-old blue logo, so every remaining use is a stale leftover — decide each on its
-own merits rather than treating it as brand color.
+- The `error-boundary.tsx` retry button and the `dev-profiler.tsx` toggle → the
+  real accent `#3478F6`. They are controls, and controls take the accent.
+- `tintColor` in the four SideStore/AltStore source manifests under `.github/`
+  (`build-ios.yml`, `build-ios-devclient.yml`, `refresh-ios-pr-source.sh`,
+  `refresh-ios-release-source.sh`) → graphite `2E2E2E` (no `#` — that field
+  wants a bare hex). That one themes the store listing *around the icon*, so it
+  tracks the mark rather than the accent. Keep all four in sync.

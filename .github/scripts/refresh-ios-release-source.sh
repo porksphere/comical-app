@@ -91,7 +91,7 @@ jq -n \
       developerName: "porksphere",
       localizedDescription: "Comical — cross-platform comic reader. The public release channel: every tagged version, newest first. Unsigned build; re-signed on-device by SideStore/AltStore with your free Apple ID.",
       iconURL: $icon,
-      tintColor: "208AEF",
+      tintColor: "2E2E2E",
       versions: $versions,
       version: ($versions[0].version),
       versionDate: ($versions[0].date),
