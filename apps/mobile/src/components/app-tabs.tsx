@@ -1,4 +1,4 @@
-import { Tabs, TabList, TabTrigger, TabTriggerSlotProps } from 'expo-router/ui';
+import { Tabs, TabList, TabTrigger, TabSlot, TabTriggerSlotProps } from 'expo-router/ui';
 import { Bell, History, LayoutGrid, Library, Settings, type LucideIcon } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -14,7 +14,7 @@ import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ActivityTabBadge, SettingsTabBadge } from '@/components/tab-badge';
-import { CrossfadeTabSlot } from '@/components/tab-slot-crossfade';
+import { renderFadingTabScreen } from '@/components/tab-slot-fade';
 import { DesktopTopBarHeight, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
@@ -306,10 +306,9 @@ export default function AppTabs() {
     // the dim fully transparent, so this costs nothing at rest.
     <Animated.View style={[styles.tabs, seriesReaderBackdropStyle]}>
       <Tabs style={styles.tabs}>
-        {/* Our own slot rather than expo-router's `TabSlot`: same screens, crossfaded instead of
-            cut. The swap is not cosmetic — see `tab-slot-crossfade` for why the fade can't be layered
-            on top of the stock one. */}
-        <CrossfadeTabSlot style={styles.slot} />
+        {/* Expo's slot, with our own screen renderer so an arriving tab fades in rather than
+            appearing in one frame — see `tab-slot-fade`. */}
+        <TabSlot style={styles.slot} renderFn={renderFadingTabScreen} />
 
         {/* Desktop: icon-only nav pinned to the top-right, aligned with the Browse selector bar row
             (top = its paddingTop, height = the subtitle line-height so the icons centre against the
