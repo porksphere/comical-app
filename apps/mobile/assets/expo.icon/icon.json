@@ -1,7 +1,21 @@
 {
   "fill" : {
-    "automatic-gradient" : "extended-srgb:0.07843,0.07843,0.07843,1.00000"
+    "solid" : "extended-srgb:1.00000,1.00000,1.00000,1.00000"
   },
+  "fill-specializations" : [
+    {
+      "appearance" : "light",
+      "value" : {
+        "solid" : "extended-srgb:1.00000,1.00000,1.00000,1.00000"
+      }
+    },
+    {
+      "appearance" : "dark",
+      "value" : {
+        "automatic-gradient" : "extended-srgb:0.07843,0.07843,0.07843,1.00000"
+      }
+    }
+  ],
   "groups" : [
     {
       "layers" : [
