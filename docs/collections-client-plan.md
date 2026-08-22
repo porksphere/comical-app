@@ -554,13 +554,19 @@ User feedback after the phases landed reshaped the browsing surface:
   clip, so they cost nothing until one arrives. The base re-bases afterwards, and since the
   translate loses exactly the band it gains, the rendered position is identical either side of that
   commit — a late update is invisible rather than a jump. A fling that outruns all three hides the
-  band for those frames instead of showing a heading it knows is stale. Past a quarter of a band of
-  scroll PER EVENT the push snaps to whichever end it is nearer, since the intermediate frames read
-  as a flash rather than as motion well before the speed at which they stop rendering at all. The
-  speed is SMOOTHED and the snap LATCHES with hysteresis (in at 0.25 of a band, out at 0.1): a bare
-  threshold over a frame-to-frame delta is crossed back and forth while scrolling near it, so `p`
-  would alternate between an end and its continuous value — jitter of the snap's own making, and
-  lowering a single threshold only relocates it to a speed you spend more time at.
+  band for those frames instead of showing a heading it knows is stale. And the push STEEPENS with
+  the scroll speed, since intermediate frames read as a flash rather than as motion well before the
+  speed at which they stop rendering at all: at rest it is the plain sticky formula spread over a
+  full band of scroll, and by half a band per event it is a gain of 12 about its own midpoint, i.e.
+  effectively a step. **This wants a gain, not a threshold, and not a shrinking span.** Two
+  threshold cuts (a bare one, then one latching with hysteresis) both chattered near the boundary,
+  because hysteresis makes the crossing rarer without making it smaller — a latch flipping mid-push
+  jumps `p` to an end. Shrinking the SPAN the push runs over removes the boundary but is worse:
+  `dp/dspan` is `−bandHeight·gap/span²`, which blows up as the span closes, measured at 14px of jump
+  per 0.1px/frame of speed. Gain holds the domain fixed and steepens inside it, pivoting on the one
+  point it leaves fixed, and measures at 1.5px for the same speed change and 3px per 0.25px of
+  scroll — while still reproducing the plain formula exactly below `SNAP_FROM`. The speed feeding it
+  is smoothed, since a raw frame-to-frame delta would show up as a slightly jittery push.
 - **A list row must be told when something outside its item changed.** `RecyclerList` now forwards
   `extraData`, and both grids pass the pinned key. LegendList memoizes a row on its item, so without
   it a mounted heading kept the hidden flag it captured: scrolling DOWN usually looked fine (the row
