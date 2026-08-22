@@ -42,6 +42,7 @@ import { buildHomeRows } from '@/data/content-rows';
 import { useComicalExcludedIds } from '@/data/comical-home';
 import { useCustomPages } from '@/data/custom-pages';
 import { useCrossBridgeRails } from '@/hooks/use-cross-bridge-rails';
+import { markSplashContentReady } from '@/lib/splash-ready';
 import { useCustomPageRows } from '@/hooks/use-custom-page-rows';
 import { useFavoritesAvailability } from '@/hooks/use-favorites-available';
 import { useDedupedPages } from '@/data/grid-pages';
@@ -458,6 +459,15 @@ export default function BrowseScreen() {
     : !!homeError ||
       !!gridError ||
       ((gridActive ? !gridUpdating : true) && (composedHome ? !homeUpdating : true));
+  // Release the launch splash off the same readiness signal. `SplashGate` holds the native splash
+  // until this fires, so the first frame after it fades is a populated home instead of an empty one
+  // that fills in a beat later. Not gated on `switching`: this is about the FIRST paint, not a
+  // bridge swap, and on a cold start nothing is switching yet. Sets an observable that no-ops on
+  // repeat writes, so this stays a one-shot in practice; the gate caps the wait either way.
+  useEffect(() => {
+    if (homeReady) markSplashContentReady();
+  }, [homeReady]);
+
   useEffect(() => {
     // `committed` gates out the fade-out phase, when `homeReady` still reflects the outgoing bridge.
     if (!switching || !committed) return;
