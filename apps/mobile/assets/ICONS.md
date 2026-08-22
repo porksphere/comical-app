@@ -113,10 +113,6 @@ background at a fixed **scale of the frame** and exported at a fixed size. Scale
   `#000000` (bottom-right).
 - **0.72** for the Android foreground/monochrome keeps the art inside the
   adaptive-icon safe zone (center ~66–72%).
-- **`logo-glow.png`** is a separate hand-made asset — **not** regenerated here.
-  It is a flat fill shaped entirely by its alpha ramp, so it is re-tinted (RGB
-  replaced, alpha untouched) rather than redrawn when the palette changes; it is
-  currently neutral `#DEDEDE`.
 
 ### How to render
 
@@ -190,19 +186,57 @@ covers 28pt at 3x with room to spare. Same renderer as the table above.
 The app logo still serves the larger surfaces — the 84pt splash mark and the
 128pt "no bridges yet" onboarding both stay on `comical-logo.png`.
 
+## The splash (native only)
+
+There is **no JS-drawn splash**. `expo-splash-screen`'s config plugin generates
+real native resources at prebuild — this repo is CNG, so `ios/` and `android/`
+are gitignored and regenerated — from one block in `app.json`:
+
+```json
+["expo-splash-screen", {
+  "backgroundColor": "#0B0B0B",
+  "image": "./assets/images/splash-icon.png",
+  "imageWidth": 160
+}]
+```
+
+Keep `image`/`imageWidth` at the **top level**, not under `android`. The plugin
+resolves each platform as `{...topLevel, ...platform}` (`getIosSplashConfig` /
+`getAndroidSplashConfig`), so an android-only `image` leaves iOS with
+`image: undefined` — a bare colored screen and no logo at all. That was the case
+here until the splash became native-only and the omission started to show.
+
+What it generates:
+
+| | |
+|---|---|
+| iOS | `SplashScreen.storyboard` — one `imageView`, `scaleAspectFit`, centre-constrained, sized `imageWidth`; background from a `SplashScreenBackground` colorset. |
+| Android | `Theme.App.SplashScreen` with `windowSplashScreenBackground` + `windowSplashScreenAnimatedIcon`, and `splashscreen_logo.png` at five densities on a 288dp canvas. |
+
+**`imageWidth` sizes the whole PNG, not the visible art.** `splash-icon.png` is
+the master on a transparent 512 square, and the book spans only **78.9% of its
+width and 60.4% of its height** — so `imageWidth: 160` puts a **126×97pt** book
+on screen. Multiply, don't eyeball. The previous `76` dated from when the native
+splash was a brief stopgap behind a JS overlay; as the only splash it rendered a
+60pt book that read as a speck.
+
+Android caps how far this can usefully go: with no icon background color the
+system shows the inner two-thirds of the 288dp icon canvas, so keep the art
+inside **192dp**. At `imageWidth: 160` it is 126dp — comfortable. Verify a change
+by running `npx expo prebuild --platform android` and measuring the generated
+`drawable-mdpi/splashscreen_logo.png` (1px = 1dp there) rather than guessing.
+
+`src/components/splash-gate.tsx` is the only JS involved: it holds the native
+splash past the first frame and drops it once the persisted query cache has
+restored, so the first screen paints with content instead of empty. It draws
+nothing. Delete it and its `_layout.tsx` mount for stock auto-hide behavior.
+
 ## Colors that track the logo
 
-The near-black palette is mirrored by the app's splash chrome, which must stay
-in sync with the icon backgrounds:
+Two backgrounds outside the icon set track the same near-black palette:
 
-- `app.json` → `expo-splash-screen.backgroundColor` = `#0B0B0B` (native splash).
-- `src/components/animated-icon.tsx` → `backgroundSolidColor` = `#0B0B0B`. This
-  **must** equal the native splash color: the JS overlay takes over from the
-  native splash mid-launch and any mismatch shows as a flash.
-- The rounded tile behind the animated logo — `animated-icon.tsx`
-  (`experimental_backgroundImage`) and `animated-icon.module.css`
-  (`.expoLogoBackground`) — is `linear-gradient(180deg, #242424, #050505)`.
-  Keep the two in sync; they are the native and web halves of one component.
+- `app.json` → `expo-splash-screen.backgroundColor` = `#0B0B0B` — the entire
+  splash background on both platforms (see above).
 - `app.json` → `android.adaptiveIcon.backgroundColor` = `#000000`.
 
 `#208AEF` — the old blue logo's splash color — is now **fully retired**; a grep
