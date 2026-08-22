@@ -59,13 +59,39 @@ verbatim, so a change to a path in `logo.svg` is a mechanical copy-paste here.
 ### The iOS 26 layered icon (`expo.icon/icon.json`)
 
 Icon Composer manifest. It references the three layer SVGs above (top→bottom:
-`ko-mark`, `book-pages`, `book-cover`) over a solid near-black fill
-(`automatic-gradient extended-srgb:0.07843,0.07843,0.07843,1` = `#141414`), with
-a neutral group shadow and translucency. Expo consumes it via `ios.icon`;
-Default/Dark use the color layers, Clear/Tinted are system-derived from their
-luminance/alpha — the white pages carry the silhouette and the dark こ knocks
-through it. `icon.json` itself only changes if you add/remove/reorder layers —
-editing the SVGs' contents needs no manifest change.
+`ko-mark`, `book-pages`, `book-cover`), with a neutral group shadow and
+translucency. Expo consumes it via `ios.icon`.
+
+**The background is the only thing that changes between appearances** — the
+same three layers are used throughout. iOS is the only platform with a real
+light/dark app-icon mechanism, so this split is iOS-only: the Android adaptive
+background, `icon.png` and the favicon stay dark everywhere.
+
+| appearance | background |
+|------------|------------|
+| Default / light | `solid extended-srgb:1,1,1,1` = **white** |
+| Dark | `automatic-gradient extended-srgb:0.07843,…,1` = **`#141414`** |
+| Clear / Tinted | system-derived, no fill of ours |
+
+Encoded as a top-level `fill` plus a `fill-specializations` array of
+`{ appearance, value }` entries — the schema says `fill` applies only "when
+fill-specializations is not present", so **`light` is listed explicitly**
+rather than left to fall through to `fill`, and `fill` is kept as the
+matching white so either reading gives a white light icon. Validate edits
+against Apple's schema (`icon-schema.json`, bundled in giginet/
+apple-icon-composer-skill) rather than eyeballing them.
+
+Light uses `solid` where dark uses `automatic-gradient` on purpose: an
+automatic gradient *derives* its ramp from the base color, and what it derives
+from pure white can't be previewed anywhere but macOS — so the light
+appearance takes the deterministic fill and is exactly white. The mark
+survives on white because the graphite cover frames it; the pages read as
+light gray inside that frame rather than dissolving into the background.
+
+Clear/Tinted are system-derived from the layers' luminance/alpha — the white
+pages carry the silhouette and the dark こ knocks through it. `icon.json`
+otherwise only changes if you add/remove/reorder layers — editing the SVGs'
+contents needs no manifest change.
 
 ## Rasterized PNGs (regenerate when logo.svg changes)
 
