@@ -31,7 +31,7 @@ import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
+import { SplashGate } from '@/components/splash-gate';
 import { DemoBanner } from '@/components/demo-banner';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { ConfirmPopupHost } from '@/components/confirm-popup';
@@ -109,7 +109,7 @@ function RootNavigation() {
           theme, dark glyphs on light) so a forced theme reads right even when it
           differs from the OS. */}
       <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
-      <AnimatedSplashOverlay />
+      <SplashGate />
       <FrameTrace />
       {/* OverlayProvider hosts the stacked bottom-sheet overlays app-wide. */}
       <OverlayProvider>
