@@ -1,0 +1,217 @@
+# Saving a PAGE to a collection from the reader chrome — the save button in the toolbar's trailing
+# slot.
+#
+# What this asserts is a real round trip through the collected-items API in MOCK mode: the button's
+# state is derived from the chapter's saved page INDICES (one query per chapter open), so a button
+# that stays filled after a page turn away and back means the write actually landed and the indices
+# query saw it — not just that a local flag flipped.
+#
+# NOTE the first tap opens the PICKER, it does not save. There is no auto-created collection: a tap
+# files into whichever collection pages were last filed into, and on a fresh install there isn't
+# one yet. The mock seeds two collections (mock.ts), so the picker has rows to tap — this flow
+# picks one, which both saves the page and sets the remembered destination for later taps.
+#
+# Mobile-only, for the same reason as reader-navigation.yaml: paging between pages uses the
+# reader.control.* tap-zone markers, which are NATIVE-only (zoomable-page.tsx's TapZones; the web
+# build has its own gesture pager in paged-reader.web.tsx and sets none). The save button itself has
+# no web-specific quirk — if a web page-turn affordance is ever selectable, this ports as-is.
+#
+# Selectors (confirmed against source):
+#   - reader.toolbar.collect-page      collect-page-control.tsx's save button, left of the settings
+#     gear in the toolbar's trailing row. Sets accessibilityLabel "Save page to collection" /
+#     "Remove page from collection", so it is also label-selectable on web when that day comes.
+#   - collection-picker.collection.*   the picker's rows (collection-picker.tsx), reused from
+#     registries-collections.yaml. collection-picker.done dismisses it.
+#   - reader.control.next / reader.navigator.page / reader.toolbar.back
+#     Reused verbatim from reader-navigation.yaml.
+#   - library.collection-selector / library.collection.coll-reading   the Library tab's selector
+#     (library-collection-selector.tsx) and a collection row. One flat list — a collection row opens
+#     that collection's CONTENTS, so there is no separate "saved pages" row any more.
+#   - collected.tile.<id>              a saved-page tile (collected-page-tile.tsx). The id is the
+#     item's derived coordinate id, so the regex form is what's selectable.
+#   - collected.sort / .sort.* / .dir.* / .group.*   the saved-pages ordering menu
+#     (collected-sort-button.tsx). Sort and direction are SEPARATE server params, and grouping is
+#     client-side over the result — hence three sections rather than one fused list. The menu stays
+#     open on sort/dir and closes on a grouping pick, which is why the steps below re-open it.
+#
+# The chrome AUTO-HIDES after 3s (CHROME_HIDE_MS in app/series/index.tsx), so every step that needs
+# the toolbar re-taps reader.control.toggle-chrome first rather than assuming it is still up. Same
+# hazard reader-navigation.yaml documents.
+
+#
+# NOT locally verifiable this session (no Android dev-client / no Mac for iOS) — treat the first CI
+# run as this flow's verification, per the existing precedent.
+appId: com.porksphere.comical
+---
+- launchApp
+
+- tapOn:
+    id: "tab.browse"
+- tapOn:
+    id: "series-card\\..*"
+- assertVisible:
+    id: "series.cover"
+- scrollUntilVisible:
+    element:
+      id: "series\\.chapter\\..*"
+    direction: DOWN
+    timeout: 20000
+- tapOn:
+    id: "series\\.chapter\\..*"
+    index: 0
+
+# Reader is up, chrome visible, on page 1. Nothing saved yet.
+- assertVisible:
+    id: "reader.toolbar.collect-page"
+- assertVisible:
+    id: "reader.toolbar.collect-page"
+    label: "Save page to collection"
+
+# First tap has no remembered destination, so it opens the picker rather than saving. Choosing a
+# collection saves the page AND remembers that collection for later taps.
+- tapOn:
+    id: "reader.toolbar.collect-page"
+- assertVisible:
+    id: "collection-picker\\.collection\\..*"
+- tapOn:
+    id: "collection-picker\\.collection\\..*"
+    index: 0
+- tapOn:
+    id: "collection-picker.done"
+- assertVisible:
+    id: "reader.toolbar.collect-page"
+    label: "Remove page from collection"
+
+# Page away and back: the state is derived per page, so it must go hollow on page 2 and come back
+# filled on page 1 — which a naive "remember the last tap" implementation would fail.
+- tapOn:
+    id: "reader.control.toggle-chrome"
+- tapOn:
+    id: "reader.control.next"
+- assertVisible:
+    id: "reader.navigator.page"
+    text: "^2$"
+- tapOn:
+    id: "reader.control.toggle-chrome"
+- assertVisible:
+    id: "reader.toolbar.collect-page"
+    label: "Save page to collection"
+
+# Now that a destination is remembered, a tap on page 2 saves straight away — no picker.
+- tapOn:
+    id: "reader.toolbar.collect-page"
+- assertVisible:
+    id: "reader.toolbar.collect-page"
+    label: "Remove page from collection"
+
+- tapOn:
+    id: "reader.control.toggle-chrome"
+- tapOn:
+    id: "reader.control.prev"
+- assertVisible:
+    id: "reader.navigator.page"
+    text: "^1$"
+- tapOn:
+    id: "reader.control.toggle-chrome"
+- assertVisible:
+    id: "reader.toolbar.collect-page"
+    label: "Remove page from collection"
+
+# Leave the reader — page 1 and page 2 are both still saved.
+- tapOn:
+    id: "reader.toolbar.back"
+
+# The Library tab's selector is ONE flat list: "Library" plus each collection. Opening a collection
+# shows its whole contents — series, chapters and saved pages, mixed, one tile shape with a
+# type-icon badge. The picker taps above filed into the first collection row, which in mock mode is
+# deterministically coll-reading (order 0), so that's the one opened here.
+- tapOn:
+    id: "tab.library"
+- tapOn:
+    id: "library.collection-selector"
+- tapOn:
+    id: "library.collection.coll-reading"
+
+# The two pages saved above are here, drawn from their chapter's page list (one request for the
+# chapter, not one per tile).
+- assertVisible:
+    id: "collected\\.tile\\..*"
+
+# Sort and grouping. Grouping is applied client-side OVER the server's order, so switching to
+# "Series" inserts section headers without losing the chosen sort — the tiles must survive it.
+- tapOn:
+    id: "collected.sort"
+- tapOn:
+    id: "collected.group.series"
+- assertVisible:
+    id: "collected\\.tile\\..*"
+
+# Back to ungrouped, and flip the direction, to prove both axes are live and independent.
+- tapOn:
+    id: "collected.sort"
+- tapOn:
+    id: "collected.dir.asc"
+- tapOn:
+    id: "collected.group.none"
+- assertVisible:
+    id: "collected\\.tile\\..*"
+
+# Tapping a saved PAGE opens THE reader in SEQUENCE mode — the same series screen, but its pager
+# runs over this view's saved pages (the ALBUM: same collection, sort and direction as the grid)
+# instead of a chapter. There is no separate viewer: the reveal to details, the collapse dismissal,
+# the settings sheet and the save button are all the reader's own, so they are asserted here through
+# the reader's own selectors. The tile is matched by its `page:` id prefix, NOT by index — the
+# mock's coll-reading also holds seeded SERIES items, and with `asc` those sort first (a series tile
+# opens details, not the reader). With `asc`, the first page tile is the first page saved above.
+- tapOn:
+    id: "collected\\.tile\\.page:.*"
+    index: 0
+# The save button reads FILLED — the tapped page is a saved one, and the button derives its state
+# from the same chapter-indices query the save flow wrote through.
+- assertVisible:
+    id: "reader.toolbar.collect-page"
+    label: "Remove page from collection"
+
+# THE ALBUM SWIPE: paging forward lands on the NEXT SAVED PAGE — here the second page saved above —
+# not on the chapter's next page. The navigator counts album positions (2 of 2), and the save
+# button stays filled because every album page is by definition a saved one.
+- tapOn:
+    id: "reader.control.toggle-chrome"
+- tapOn:
+    id: "reader.control.next"
+- assertVisible:
+    id: "reader.navigator.page"
+    text: "^2$"
+- tapOn:
+    id: "reader.control.toggle-chrome"
+- assertVisible:
+    id: "reader.toolbar.collect-page"
+    label: "Remove page from collection"
+
+# …and the album ENDS at its last entry: no next chapter to spill into, so another page-forward
+# stays put — which is what separates sequence mode from the chapter read the same two pages would
+# get in the normal reader.
+- tapOn:
+    id: "reader.control.toggle-chrome"
+- tapOn:
+    id: "reader.control.next"
+- tapOn:
+    id: "reader.control.toggle-chrome"
+- assertVisible:
+    id: "reader.navigator.page"
+    text: "^2$"
+
+# Swipe UP reveals the series details IN PLACE — the reader's own reveal, sliding the details layer
+# in with its own skeletons while the series loads (nothing was fetched before this entry).
+- swipe:
+    start: 50%, 70%
+    end: 50%, 30%
+    duration: 250
+- assertVisible:
+    id: "series.cover"
+
+# Back dismisses the series screen — reader and details are one screen — landing on the collection.
+- tapOn:
+    id: "series-page.header-back"
+- assertVisible:
+    id: "library.collection-selector"

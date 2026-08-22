@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View, type ViewProps } from 'react-native';
+import type { AnimatedProps } from 'react-native-reanimated';
 
 import { BarSurface } from '@/components/bar-surface';
 import { DesktopNavWidth } from '@/components/app-tabs';
@@ -19,7 +20,19 @@ import { testId } from '@/lib/test-id';
  * `titleSlot` replaces the plain title text with arbitrary leading content (e.g. the Library's list
  * selector); `right` fills a trailing slot pushed to the far edge (e.g. the Library's search icon).
  */
-export function TabTitleBar({ title, titleSlot, right }: { title?: string; titleSlot?: ReactNode; right?: ReactNode }) {
+export function TabTitleBar({
+  title,
+  titleSlot,
+  right,
+  barStyle,
+}: {
+  title?: string;
+  titleSlot?: ReactNode;
+  right?: ReactNode;
+  /** Extra style for the bar surface itself — e.g. an animated rule colour, for a screen whose
+   *  pinned section heading takes over the bottom edge (see StickySectionHeader). */
+  barStyle?: AnimatedProps<ViewProps>['style'];
+}) {
   const barHeight = useTopBarHeight();
   // On wide/desktop viewports app-tabs.tsx overlays its icon-only nav row at this same bar's
   // trailing edge (see its `navRight` comment). Without reserving room for it here, `right`'s own
@@ -27,7 +40,7 @@ export function TabTitleBar({ title, titleSlot, right }: { title?: string; title
   // meant for this bar — see `DesktopNavWidth`'s comment for how that was found and measured.
   const reserveForDesktopNav = useIsLargeScreen();
   return (
-    <BarSurface style={styles.topBar}>
+    <BarSurface style={[styles.topBar, barStyle]}>
       {/* Cap+centre only on web; native fills the width so the title aligns with the full-width grids. */}
       <View style={[styles.titleRow, { height: barHeight, maxWidth: Platform.OS === 'web' ? MaxTopLevelWidth : undefined }]}>
         {titleSlot ?? (

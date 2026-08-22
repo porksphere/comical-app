@@ -105,6 +105,13 @@ export const SECTION_HEAD_HEIGHT = 32;
 const HEAD_HEIGHT_COMPACT = 28;
 const HEAD_HEIGHT_WIDE = SECTION_HEAD_HEIGHT;
 
+/** A `SectionHead`'s rendered height at the caller's breakpoint — pass `useIsCompact()`, the same
+ *  hook the head itself reads. The sticky sizes its band from this, so the band's padding is
+ *  symmetric around the heading at either breakpoint. */
+export function sectionHeadHeight(compact: boolean): number {
+  return compact ? HEAD_HEIGHT_COMPACT : HEAD_HEIGHT_WIDE;
+}
+
 // Drill-down chevron on a `SectionHead`. Sized against the title's letters, not its line box: lucide
 // draws chevron-right as `m9 18 6-6-6-6`, spanning only the middle half of its 24-unit box, so half
 // of any size here is whitespace and the drawn glyph is half the number. At 25/28 that's 12.5/14px
@@ -555,23 +562,68 @@ export function RailSkeleton({ viewportWidth, title }: { viewportWidth: number; 
  * button pulling the eye to the far edge), and it costs no extra width on narrow phones, where the
  * pill used to crowd long section titles into an early ellipsis.
  */
-export function SectionHead({ title, onSeeAll, testID }: { title: string; onSeeAll?: () => void; testID?: string }) {
+/**
+ * A section heading's CONTENT — the title, and the drill chevron when there is one — at the exact
+ * type and glyph size the breakpoint calls for, with no row padding or height of its own.
+ *
+ * Extracted so the STICKY pinned heading (the floating pill) can render the very same thing at the
+ * very same size. It rendered its own smaller text and icon for a moment, which meant a 19.2px
+ * title became a 14px one and a 25px chevron became a 14px one the instant a section pinned — a
+ * visible shrink at the hand-off. Colours are the only thing a caller varies (white on the pill's
+ * black, themed inline), so the sizes cannot drift apart again.
+ */
+export function SectionHeadContent({
+  title,
+  chevron,
+  titleColor,
+  chevronColor,
+}: {
+  title: string;
+  chevron?: boolean;
+  /** Overrides the themed title colour — the pill passes white. */
+  titleColor?: string;
+  chevronColor?: string;
+}) {
   const theme = useTheme();
   // Match the reference's `.section-head h3`: 1.2rem mobile / 1.5rem desktop.
   const compact = useIsCompact();
+  return (
+    <>
+      <ThemedText
+        type="subtitle"
+        style={[styles.headTitle, compact ? styles.headTitleCompact : styles.headTitleWide, !!titleColor && { color: titleColor }]}
+        numberOfLines={1}>
+        {title}
+      </ThemedText>
+      {chevron && (
+        /* Wrapped so the nudge can be a margin: `gap` can't do it, since a negative gap is invalid
+           CSS on web (react-native-web drops the whole declaration) even though Yoga accepts it. */
+        <View style={styles.headChevron}>
+          <ChevronRightIcon
+            color={chevronColor ?? theme.textSecondary}
+            size={compact ? CHEVRON_SIZE_COMPACT : CHEVRON_SIZE_WIDE}
+            strokeWidth={CHEVRON_STROKE}
+          />
+        </View>
+      )}
+    </>
+  );
+}
+
+export function SectionHead({ title, onSeeAll, testID }: { title: string; onSeeAll?: () => void; testID?: string }) {
+  const theme = useTheme();
+  const compact = useIsCompact();
   const { hovered, onHoverIn, onHoverOut } = useHovered();
-  const titleStyle = [styles.headTitle, compact ? styles.headTitleCompact : styles.headTitleWide];
   // Claimed by EVERY head, not just the drillable ones — otherwise a rail you can drill into would
   // stand a different height from one you can't whenever the chevron outgrows the title's line box.
   // Reserving it always also makes SECTION_HEAD_HEIGHT exact rather than a guess.
   const headStyle = [styles.head, compact ? styles.headCompact : styles.headWide];
-  const heading = (
-    <ThemedText type="subtitle" style={titleStyle} numberOfLines={1}>
-      {title}
-    </ThemedText>
-  );
   if (!onSeeAll) {
-    return <View style={headStyle}>{heading}</View>;
+    return (
+      <View style={headStyle}>
+        <SectionHeadContent title={title} />
+      </View>
+    );
   }
   return (
     <View style={headStyle}>
@@ -585,16 +637,7 @@ export function SectionHead({ title, onSeeAll, testID }: { title: string; onSeeA
         // The visible label is just the title now, so the "see all" intent has to be spoken.
         accessibilityLabel={`${title}, see all`}
         style={({ pressed }) => [styles.headLink, pressed && styles.headLinkPressed]}>
-        {heading}
-        {/* Wrapped so the nudge can be a margin: `gap` can't do it, since a negative gap is invalid
-            CSS on web (react-native-web drops the whole declaration) even though Yoga accepts it. */}
-        <View style={styles.headChevron}>
-          <ChevronRightIcon
-            color={hovered ? theme.text : theme.textSecondary}
-            size={compact ? CHEVRON_SIZE_COMPACT : CHEVRON_SIZE_WIDE}
-            strokeWidth={CHEVRON_STROKE}
-          />
-        </View>
+        <SectionHeadContent title={title} chevron chevronColor={hovered ? theme.text : theme.textSecondary} />
       </Pressable>
     </View>
   );

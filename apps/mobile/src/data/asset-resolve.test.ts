@@ -16,7 +16,6 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 // `downloads/engine.test.ts` stubs its own heavy imports.
 mock.module('@/lib/observable', () => ({
   persisted$: () => ({ url: null, get: () => ({ url: null }), peek: () => ({ url: null }), set: () => {} }),
-  migrateLegacyKey: () => {},
 }));
 mock.module('@/lib/diagnostics', () => ({ logDiagnostic: () => {} }));
 mock.module('@legendapp/state/react', () => ({ use$: (o: unknown) => o }));

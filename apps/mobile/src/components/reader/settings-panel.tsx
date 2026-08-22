@@ -1,22 +1,11 @@
-import { useQuery } from '@tanstack/react-query';
 import type { ComponentType } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { MoveLeftIcon, MoveRightIcon, MoveVerticalIcon, SettingsIcon } from '@/components/icons/reader-icons';
 import type { IconProps } from '@/components/icons/ui-icons';
-import { openListPicker } from '@/components/list-picker';
-import { OverlayHeading, useAnchoredOverlay, useOverlay } from '@/components/overlay/overlay';
+import { OverlayHeading, useAnchoredOverlay } from '@/components/overlay/overlay';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
-import { dlGetSeries } from '@/data/api';
-import { deriveSeriesState } from '@/data/downloads/derive';
-import { enqueueChapter } from '@/data/downloads/engine';
-import { downloadsScreenRoute } from '@/data/downloads/nav';
-import { queryKeys } from '@/data/queries';
-import { useFavorite } from '@/hooks/use-favorite';
-import { useLibrary } from '@/hooks/use-library';
-import { useSeriesSubPath } from '@/lib/series-nav';
-import { useRouter } from '@/lib/nav';
 import {
   useReaderSettings,
   type PageFit,
@@ -31,27 +20,16 @@ import { testId } from '@/lib/test-id';
  *  (matching Browse's filter buttons) on wide desktop web.
  *
  *  Rendered inline in the reader toolbar's trailing slot, so it inherits that
- *  bar's fade/auto-hide rather than positioning or animating itself. */
-export function SettingsControl({
-  bridgeId,
-  seriesId,
-  title,
-  thumbnailUrl,
-  author,
-  direct,
-}: {
-  /** When both are set, the "This series" actions are shown — omitted on bridges/pages where the
-   *  reader was opened without a resolvable series (shouldn't normally happen). */
-  bridgeId?: string;
-  seriesId?: string;
-  /** Snapshot for a new library entry (title/cover/author) — only used if the
-   *  toggle is actually switched on; omitted fields are simply left off the entry. */
-  title?: string;
-  thumbnailUrl?: string;
-  author?: string;
-  /** A direct (chapterless) series downloads as one unit; otherwise Download opens chapter select. */
-  direct?: boolean;
-}) {
+ *  bar's fade/auto-hide rather than positioning or animating itself.
+ *
+ *  SETTINGS ONLY. It used to carry a "This page", a "This chapter" and a "This series" block of
+ *  collect actions as well, which made the gear the app's densest screen and put three different
+ *  subjects behind one control that names none of them. Each of the three already has a home where
+ *  its subject is the thing you are looking at: a page has the toolbar's own save button beside this
+ *  gear (`CollectPageControl`); a chapter has its row's long-press menu on the series screen
+ *  (`series.chapter-menu.collect`); a series has the series screen. Nothing was lost, and the sheet
+ *  is now only the three things that actually change how the reader behaves. */
+export function SettingsControl() {
   const { ref, openAt } = useAnchoredOverlay();
 
   return (
@@ -59,18 +37,7 @@ export function SettingsControl({
       testID="reader.settings.open"
       ref={ref}
       hitSlop={12}
-      onPress={() =>
-        openAt(() => (
-          <SettingsContent
-            bridgeId={bridgeId}
-            seriesId={seriesId}
-            title={title}
-            thumbnailUrl={thumbnailUrl}
-            author={author}
-            direct={direct}
-          />
-        ))
-      }
+      onPress={() => openAt(() => <SettingsContent />)}
       style={styles.gear}
       accessibilityRole="button"
       accessibilityLabel="Reader settings">
@@ -84,21 +51,7 @@ export function SettingsControl({
  *  light appearance it renders light while the reader keeps its own always-dark
  *  viewing surface — an intentional split, matching how media
  *  readers stay dark for immersion while their controls track the app theme. */
-function SettingsContent({
-  bridgeId,
-  seriesId,
-  title,
-  thumbnailUrl,
-  author,
-  direct,
-}: {
-  bridgeId?: string;
-  seriesId?: string;
-  title?: string;
-  thumbnailUrl?: string;
-  author?: string;
-  direct?: boolean;
-}) {
+function SettingsContent() {
   const [settings, set] = useReaderSettings();
   return (
     <View style={styles.content}>
@@ -126,16 +79,6 @@ function SettingsContent({
         options={[1, 2, 3, 4, 6, 8].map((n) => [String(n), String(n)] as [string, string])}
         onChange={(v) => set({ prefetchAhead: Number(v) as PrefetchAhead })}
       />
-      {bridgeId && seriesId && (
-        <SeriesActionsRow
-          bridgeId={bridgeId}
-          seriesId={seriesId}
-          title={title}
-          thumbnailUrl={thumbnailUrl}
-          author={author}
-          direct={direct}
-        />
-      )}
     </View>
   );
 }
@@ -177,145 +120,6 @@ function DirectionRow({
             </Pressable>
           );
         })}
-      </View>
-    </View>
-  );
-}
-
-/**
- * The single "This series" section: Library / Favorite / Download / Add-to-list, in a 2×2 grid.
- * Each action mirrors its Series-screen counterpart and shares its cache key/hook, so toggling from
- * either place stays in sync. The library/list snapshot (title/cover/author) is best-effort —
- * whatever the reader already had cached — since this panel doesn't fetch series details itself.
- *
- * (`styles.opt` is `flex: 1`, so the buttons MUST live inside a `segRow`; directly in the column
- * `seg` they'd collapse on the vertical axis to an untappable sliver.)
- */
-function SeriesActionsRow({
-  bridgeId,
-  seriesId,
-  title,
-  thumbnailUrl,
-  author,
-  direct,
-}: {
-  bridgeId: string;
-  seriesId: string;
-  title?: string;
-  thumbnailUrl?: string;
-  author?: string;
-  direct?: boolean;
-}) {
-  const router = useRouter();
-  const { closeTop } = useOverlay();
-  const snapshot = () => ({
-    ...(title ? { title } : {}),
-    ...(thumbnailUrl ? { thumbnailUrl } : {}),
-    ...(author ? { author } : {}),
-  });
-
-  const { inLibrary, toggle: toggleLibrary } = useLibrary(bridgeId, seriesId, snapshot);
-  const { favorited, toggle: toggleFavorite, available: favAvailable } = useFavorite(bridgeId, seriesId);
-
-  // Download state from the same manifest query the Series screen's button reads (so it shows
-  // "Downloaded"/"Downloading" in step). Partial-vs-complete needs the full chapter list, which the
-  // reader panel doesn't have — so this shows the coarse manifest state and defers the fine-grained
-  // picking to the download screen it opens.
-  const { data: dl } = useQuery({
-    queryKey: queryKeys.seriesDownloads(bridgeId, seriesId),
-    queryFn: () => dlGetSeries(bridgeId, seriesId).catch(() => null),
-  });
-  const dlChapters = dl?.chapters ?? [];
-  const dlState = dlChapters.length > 0 ? deriveSeriesState(dlChapters) : undefined;
-  const dlComplete = dlState === 'complete';
-  const dlInProgress = dlState !== undefined && dlState !== 'complete';
-  const downloadLabel = dlComplete ? '✓  Downloaded' : dlInProgress ? 'Downloading' : '⤓  Download';
-
-  // `toSubPath` keeps these pushes inside the series page's nested stack when this panel is
-  // opened from that page's in-place reader — see useSeriesSubPath.
-  const toSubPath = useSeriesSubPath();
-  const openSeriesDownloads = (select: boolean) => {
-    closeTop(); // close the reader sheet before pushing the download screen over the reader
-    router.push({
-      pathname: toSubPath('/series-downloads'),
-      params: {
-        bridgeId,
-        id: seriesId,
-        title: title ?? seriesId,
-        all: '1',
-        ...(select ? { select: '1' } : {}),
-        ...(thumbnailUrl ? { cover: thumbnailUrl } : {}),
-        ...(author ? { author } : {}),
-      },
-    });
-  };
-  const onDownload = () => {
-    // Already downloading or done → open the manage view; a direct series is one unit → enqueue it
-    // outright; otherwise open chapter selection (mirrors SeriesDownloadButton, minus partial).
-    if (dlComplete || dlInProgress) {
-      // A direct series has no chapter roster to manage — its row on the Downloads screen is the
-      // whole download (see downloads/nav.ts).
-      if (direct) {
-        closeTop(); // close the reader sheet before pushing over the reader, as openSeriesDownloads does
-        const route = downloadsScreenRoute(bridgeId, seriesId);
-        router.push({ ...route, pathname: toSubPath(route.pathname) });
-        return;
-      }
-      return openSeriesDownloads(false);
-    }
-    if (direct) {
-      void enqueueChapter({
-        bridgeId,
-        seriesId,
-        chapterId: seriesId,
-        direct: true,
-        title: title ?? seriesId,
-        ...(thumbnailUrl && { thumbnailUrl }),
-        ...(author && { author }),
-      });
-      return;
-    }
-    openSeriesDownloads(true);
-  };
-  const onAddToList = () => {
-    closeTop(); // close the reader sheet so the list picker isn't stacked behind it
-    openListPicker({ bridgeId, seriesId, title, snapshot });
-  };
-
-  return (
-    <View style={styles.seg}>
-      <ThemedText style={styles.segLabel}>This series</ThemedText>
-      <View style={styles.segRow}>
-        <Pressable
-          testID="reader.settings.library"
-          onPress={toggleLibrary}
-          style={[styles.opt, inLibrary && styles.optOn]}
-          disabled={inLibrary === null}>
-          <ThemedText style={[styles.optText, inLibrary && styles.optTextOn]}>
-            {inLibrary ? '✓  In Library' : '＋  Library'}
-          </ThemedText>
-        </Pressable>
-        <Pressable
-          testID="reader.settings.favorite"
-          onPress={toggleFavorite}
-          style={[styles.opt, favorited && styles.optOn, !favAvailable && styles.optDisabled]}
-          // Greyed when this bridge's favorites need a login that isn't set (see useFavorite).
-          disabled={!favAvailable || favorited === null}>
-          <ThemedText style={[styles.optText, favorited && styles.optTextOn]}>
-            {favorited ? '★  Favorited' : '☆  Favorite'}
-          </ThemedText>
-        </Pressable>
-      </View>
-      <View style={styles.segRow}>
-        <Pressable
-          testID="reader.settings.download"
-          onPress={onDownload}
-          style={[styles.opt, dlComplete && styles.optOn]}>
-          <ThemedText style={[styles.optText, dlComplete && styles.optTextOn]}>{downloadLabel}</ThemedText>
-        </Pressable>
-        <Pressable testID="reader.settings.lists" onPress={onAddToList} style={styles.opt}>
-          <ThemedText style={styles.optText}>Add to list</ThemedText>
-        </Pressable>
       </View>
     </View>
   );
@@ -388,9 +192,6 @@ const styles = StyleSheet.create({
   },
   optOn: {
     backgroundColor: '#3478F6',
-  },
-  optDisabled: {
-    opacity: 0.4,
   },
   optText: {
     color: 'rgba(255,255,255,0.8)',

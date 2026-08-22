@@ -20,7 +20,6 @@ import type { ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 
 import { TagGroupRow } from '@/components/chip';
-import { openListPicker } from '@/components/list-picker';
 import { Rail, RailSkeleton } from '@/components/rail';
 import { ActionButton, NewBadge } from '@/components/series/action-button';
 import { ChapterScrollList, PageThumbList } from '@/components/series/chapters-section';
@@ -38,7 +37,7 @@ import { useBridgeMap } from '@/hooks/use-bridges';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useFavorite } from '@/hooks/use-favorite';
 import { useHovered } from '@/hooks/use-hovered';
-import { useLibrary } from '@/hooks/use-library';
+import { useSeriesSave } from '@/hooks/use-series-save';
 import { useResolvedAsset } from '@/hooks/use-resolved-asset';
 import { useStartReading } from '@/hooks/use-start-reading';
 import { useActiveColorScheme, useTheme } from '@/hooks/use-theme';
@@ -295,13 +294,18 @@ export function SeriesBody({
   // Author snapshot for the library entry, pulled from the meta grid if present, so the
   // library/history render it without re-hitting the bridge.
   const author = series.meta?.find((m) => m.label === 'AUTHOR')?.value;
-  // Library membership + optimistic toggle — shared hook (see useLibrary). The ADD snapshot is built
+  // The one save control — see useSeriesSave. The snapshot written on save is built
   // lazily from the loaded detail (title/cover/author).
-  const { inLibrary, toggle: toggleLibrary } = useLibrary(bridgeId, series.id, () => ({
-    title: series.title,
-    ...(series.cover ? { thumbnailUrl: series.cover } : {}),
-    ...(author ? { author } : {})
-  }));
+  const save = useSeriesSave(
+    bridgeId,
+    series.id,
+    () => ({
+      seriesTitle: series.title,
+      ...(series.cover ? { thumbnailUrl: series.cover } : {}),
+      ...(author ? { author } : {}),
+    }),
+    series.title,
+  );
 
   // What Read is CALLED — the resume point's own chapter name, resolved from the cached history.
   // Shared with the card long-press menu's Read row (see useStartReading) so the two can't name
@@ -402,7 +406,15 @@ export function SeriesBody({
         variant="primary"
         onPress={startReading}
       />
-      <ActionButton testID="series.action.library" label={inLibrary ? '✓  In Library' : '＋  Library'} onPress={toggleLibrary} />
+      {/* ONE control: a tap saves into the last-used collection and the label then names it; once
+          saved, a tap opens the picker. The caret is the same affordance either way, so the button
+          reads as "there is more here" rather than as a dead end. See useSeriesSave. */}
+      <ActionButton
+        testID="series.action.save"
+        label={save.saved ? `✓  ${save.label}` : `＋  ${save.label}`}
+        caret
+        onPress={save.onPress}
+      />
       {bridgeId && (
         <SeriesDownloadButton
           bridgeId={bridgeId}
@@ -422,27 +434,9 @@ export function SeriesBody({
         disabled={!favoritesAvailable || favorited === null}
       />
       {series.hasSources && <ActionButton testID="series.action.sources" label="Sources" caret />}
-      {/* List + tracker sit at the bottom of the column: they're the "where does this
-          series belong" actions, below the ones that act on the series itself. */}
-      {bridgeId && (
-        <ActionButton
-          testID="series.action.lists"
-          label="Add to list"
-          caret
-          onPress={() =>
-            openListPicker({
-              bridgeId,
-              seriesId: series.id,
-              title: series.title,
-              snapshot: () => ({
-                title: series.title,
-                ...(series.cover ? { thumbnailUrl: series.cover } : {}),
-                ...(author ? { author } : {})
-              })
-            })
-          }
-        />
-      )}
+      {/* Tracker sits at the bottom of the column: it's the "where does this series belong"
+          action, below the ones that act on the series itself. The old "Add to collection" button
+          stood beside it and is gone — it was the Save button above with extra steps. */}
       {Array.isArray(trackers) && trackers.length > 0 && bridgeId && (
         <TrackerButton bridgeId={bridgeId} seriesId={series.id} />
       )}

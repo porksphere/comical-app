@@ -25,6 +25,7 @@ import type {
   TrackerService,
 } from './types';
 import { firstChapterInReadingOrder } from '@/lib/chapter-order';
+import { DEFAULT_COLLECTION } from './default-collection';
 import type {
   ApiBridgeInfo,
   ApiFilter,
@@ -764,20 +765,28 @@ export async function mockRemoveFavorite(seriesId: string): Promise<void> {
 // A tiny mutable in-memory library so the demo build's Library/History/Activity tabs render real
 // content and add/remove/read actions actually stick within a session. Keyed by `bridgeId:seriesId`.
 
-type MockLibEntry = { bridgeId: string; seriesId: string; title: string; thumbnailUrl: string; author?: string; unread: number; listIds: string[] };
-type MockList = { id: string; name: string; order: number };
+// The APP's `LibraryItem` shape, not the wire shape — the mock source hands these straight to the
+// UI without going through `toLibraryItem`. `collectedAt` is required for the same reason it is on
+// the real series item: a collected series always has one.
+type MockLibEntry = { bridgeId: string; seriesId: string; title: string; thumbnailUrl: string; author?: string; unread: number; collectedAt: number; lastReadAt?: number };
+type MockCollection = { id: string; name: string; order: number };
 type MockHist = { bridgeId: string; seriesId: string; title: string; thumbnailUrl: string; chapterId?: string; chapterName?: string; lastPage?: number; pageCount?: number; lastReadAt: number };
 type MockActivity = { bridgeId: string; seriesId: string; chapterId: string; title: string; thumbnailUrl: string; chapterName?: string; number?: number; detectedAt: number; read: boolean };
 
 const libKey = (bridgeId: string, seriesId: string) => `${bridgeId}:${seriesId}`;
 const MOCK_LIB_BRIDGES = MOCK_BRIDGE_NAMES.map(slugify);
 
-// A couple of seeded custom lists so the demo build shows the list selector populated. Entries are
-// assigned into them in `seedLibrary` below.
-let mockLists: MockList[] = [
-  { id: 'list-reading', name: 'Reading', order: 0 },
-  { id: 'list-favorites', name: 'Favorites', order: 1 },
+// A couple of seeded collections so the demo build shows the selector populated. Series are filed
+// into them by `mockSeriesCollections` below.
+let mockCollections: MockCollection[] = [
+  { id: 'coll-reading', name: 'Reading', order: 0 },
+  { id: 'coll-favorites', name: 'Favorites', order: 1 },
 ];
+
+// Series → collection memberships. A SEPARATE map, not a field on the library entry: memberships
+// live on a series FAVORITE item now, so a series can be filed without being in the library at all
+// (and can sit in the library while filed nowhere). Keyed the same `bridgeId:seriesId`.
+const mockSeriesCollections = new Map<string, string[]>();
 
 function seedLibrary(): Map<string, MockLibEntry> {
   const m = new Map<string, MockLibEntry>();
@@ -786,17 +795,23 @@ function seedLibrary(): Map<string, MockLibEntry> {
     const bridgeId = MOCK_LIB_BRIDGES[i % MOCK_LIB_BRIDGES.length]!;
     const seriesId = `lib-${i}`;
     const h = hash(seriesId);
-    // Spread a few entries into the seeded lists (some in both, some in neither → "Unlisted").
-    const listIds: string[] = [];
-    if (i % 2 === 0) listIds.push('list-reading');
-    if (i % 3 === 0) listIds.push('list-favorites');
+    // Spread a few series across the seeded collections (some in both, some in neither →
+    // "Uncollected").
+    const collectionIds: string[] = [];
+    if (i % 2 === 0) collectionIds.push('coll-reading');
+    if (i % 3 === 0) collectionIds.push('coll-favorites');
+    if (collectionIds.length > 0) mockSeriesCollections.set(libKey(bridgeId, seriesId), collectionIds);
     m.set(libKey(bridgeId, seriesId), {
       bridgeId,
       seriesId,
       title: TITLES[i % TITLES.length]!,
       thumbnailUrl: cover(seriesId),
       unread: h % 3 === 0 ? 1 + (h % 12) : 0,
-      listIds,
+      // Spread over distinct days so the library's date groupings have real buckets to show, and
+      // fixed timestamps so the demo/e2e render deterministically. Every third series has never
+      // been read — the "Not read yet" bucket.
+      collectedAt: 1_760_000_000_000 - i * 129_600_000,
+      ...(i % 3 !== 0 && { lastReadAt: 1_760_000_000_000 - ((i * 7) % 5) * 86_400_000 - i * 3_600_000 }),
     });
   }
   // Two extra entries that overlap the favorites set (`mockFavorites` above), so the favorites-import
@@ -810,7 +825,7 @@ function seedLibrary(): Map<string, MockLibEntry> {
     title: alreadyHere.title,
     thumbnailUrl: alreadyHere.cover,
     unread: 0,
-    listIds: [],
+    collectedAt: 1_759_000_000_000,
   });
   const otherSource = entry('fav-2', hash('fav-2'));
   m.set(libKey('nightshelf', 'ns-771'), {
@@ -819,7 +834,7 @@ function seedLibrary(): Map<string, MockLibEntry> {
     title: otherSource.title,
     thumbnailUrl: cover('ns-771'),
     unread: 0,
-    listIds: [],
+    collectedAt: 1_758_000_000_000,
   });
   return m;
 }
@@ -871,18 +886,22 @@ let mockActivity: MockActivity[] = [1, 2, 4, 6].flatMap((i) => {
 });
 
 export async function mockGetLibrary(
-  opts: { q?: string; sort?: string; listId?: string; unlisted?: boolean } = {},
+  opts: { q?: string; sort?: string; collectionId?: string; uncollected?: boolean } = {},
 ): Promise<MockLibEntry[]> {
   let items = [...mockLibrary.values()];
-  if (opts.unlisted) items = items.filter((e) => e.listIds.length === 0);
-  else if (opts.listId) items = items.filter((e) => e.listIds.includes(opts.listId!));
+  // Membership is a join through `mockSeriesCollections`, mirroring the host doing it server-side.
+  const memberships = (e: MockLibEntry) => mockSeriesCollections.get(libKey(e.bridgeId, e.seriesId)) ?? [];
+  if (opts.uncollected) items = items.filter((e) => memberships(e).length === 0);
+  else if (opts.collectionId) items = items.filter((e) => memberships(e).includes(opts.collectionId!));
   const q = opts.q?.trim().toLowerCase();
   if (q) items = items.filter((e) => e.title.toLowerCase().includes(q));
   const dir = 1;
   switch (opts.sort) {
     case 'title': items.sort((a, b) => a.title.localeCompare(b.title) * dir); break;
     case 'unread': items.sort((a, b) => (b.unread - a.unread) * dir); break;
-    // 'added'/'lastRead'/default: keep insertion order (seed order stands in for "recently added").
+    case 'lastRead': items.sort((a, b) => (b.lastReadAt ?? 0) - (a.lastReadAt ?? 0)); break;
+    case 'added': items.sort((a, b) => b.collectedAt - a.collectedAt); break;
+    // default: keep insertion order.
     default: break;
   }
   return items;
@@ -892,26 +911,49 @@ export async function mockIsInLibrary(bridgeId: string, seriesId: string): Promi
   return mockLibrary.has(libKey(bridgeId, seriesId));
 }
 
+/** Collect a series INTO a collection — under the dissolution there is no add-to-library separate
+ *  from filing, so the caller resolves the default collection and passes its id. Idempotent on the
+ *  entry, but it always files: re-adding a series that lost its memberships puts it back. */
 export async function mockAddToLibrary(
   bridgeId: string,
   seriesId: string,
-  snap: { title?: string; thumbnailUrl?: string; author?: string },
+  snap: { seriesTitle?: string; thumbnailUrl?: string; author?: string },
+  collectionId: string,
 ): Promise<void> {
   const key = libKey(bridgeId, seriesId);
+  const already = mockSeriesCollections.get(key) ?? [];
+  if (!already.includes(collectionId)) mockSeriesCollections.set(key, [...already, collectionId]);
   if (mockLibrary.has(key)) return;
   mockLibrary.set(key, {
     bridgeId,
     seriesId,
-    title: snap.title ?? mockSeries(seriesId).title,
+    title: snap.seriesTitle ?? mockSeries(seriesId).title,
     thumbnailUrl: snap.thumbnailUrl ?? cover(seriesId),
     ...(snap.author !== undefined && { author: snap.author }),
     unread: 0,
-    listIds: [],
+    collectedAt: Date.now(),
   });
 }
 
+/** Uncollect: out of the library AND every collection, since a series item exists only as a member.
+ *  Read progress (`mockProgress`) deliberately survives, exactly as the runtime's cascade does. */
 export async function mockRemoveFromLibrary(bridgeId: string, seriesId: string): Promise<void> {
-  mockLibrary.delete(libKey(bridgeId, seriesId));
+  const key = libKey(bridgeId, seriesId);
+  mockLibrary.delete(key);
+  mockSeriesCollections.delete(key);
+}
+
+/** The only thing that destroys read state — and it works whether or not the series is collected,
+ *  which is how progress orphaned by an uncollect gets reclaimed. */
+export async function mockResetReadProgress(bridgeId: string, seriesId: string): Promise<void> {
+  const key = libKey(bridgeId, seriesId);
+  mockProgress.delete(key);
+  // …and the resume point that hangs off the series item, which is what `lastReadAt` is here.
+  const entry = mockLibrary.get(key);
+  if (entry) {
+    const { lastReadAt: _drop, ...rest } = entry;
+    mockLibrary.set(key, rest);
+  }
 }
 
 // ─── Importing a bridge's favorites into the library ─────────────────────────
@@ -973,10 +1015,12 @@ export async function mockImportBridgeFavorites(
       skipped++;
       continue;
     }
-    await mockAddToLibrary(bridgeId, item.seriesId, {
-      title: item.title,
-      ...(item.thumbnailUrl !== undefined && { thumbnailUrl: item.thumbnailUrl }),
-    });
+    await mockAddToLibrary(
+      bridgeId,
+      item.seriesId,
+      { seriesTitle: item.title, ...(item.thumbnailUrl !== undefined && { thumbnailUrl: item.thumbnailUrl }) },
+      await mockDefaultCollectionId(),
+    );
     imported++;
     // The mock library has no series-group model, so a confirmed link is only counted, not stored.
     if (item.linkTo && mockLibrary.has(item.linkTo)) linked++;
@@ -984,48 +1028,347 @@ export async function mockImportBridgeFavorites(
   return { imported, skipped, linked };
 }
 
-// ─── Custom lists (in-memory, dev/demo only) ─────────────────────────────────
+// ─── Collections (in-memory, dev/demo only) ──────────────────────────────────
 
-export async function mockGetLists(): Promise<MockList[]> {
-  return [...mockLists].sort((a, b) => a.order - b.order);
+/** Somewhere for a BULK collect to land — the mock's favorites import, which has no user to ask.
+ *  Its own find-or-create rather than `resolveDefaultCollection`, whose remembered-id and
+ *  adopt-a-migrated-shelf steps mean nothing to an in-memory demo. The NAME still comes from the
+ *  one constant, so the demo can't drift from the real thing. */
+async function mockDefaultCollectionId(): Promise<string> {
+  const existing = mockCollections.find((c) => c.name === DEFAULT_COLLECTION);
+  return existing ? existing.id : (await mockCreateCollection(DEFAULT_COLLECTION)).id;
 }
 
-export async function mockCreateList(name: string): Promise<MockList> {
-  const order = mockLists.reduce((max, l) => Math.max(max, l.order + 1), 0);
-  const list: MockList = { id: `list-${Date.now()}-${Math.floor(Math.random() * 1e4)}`, name, order };
-  mockLists.push(list);
-  return list;
+export async function mockGetCollections(): Promise<MockCollection[]> {
+  return [...mockCollections].sort((a, b) => a.order - b.order);
 }
 
-export async function mockRenameList(id: string, name: string): Promise<void> {
-  const list = mockLists.find((l) => l.id === id);
-  if (list) list.name = name;
+export async function mockCreateCollection(name: string): Promise<MockCollection> {
+  const order = mockCollections.reduce((max, c) => Math.max(max, c.order + 1), 0);
+  const collection: MockCollection = {
+    id: `coll-${Date.now()}-${Math.floor(Math.random() * 1e4)}`,
+    name,
+    order,
+  };
+  mockCollections.push(collection);
+  return collection;
 }
 
-export async function mockReorderLists(orderedIds: string[]): Promise<void> {
+export async function mockRenameCollection(id: string, name: string): Promise<void> {
+  const collection = mockCollections.find((c) => c.id === id);
+  if (collection) collection.name = name;
+}
+
+export async function mockReorderCollections(orderedIds: string[]): Promise<void> {
   orderedIds.forEach((id, i) => {
-    const list = mockLists.find((l) => l.id === id);
-    if (list) list.order = i;
+    const collection = mockCollections.find((c) => c.id === id);
+    if (collection) collection.order = i;
   });
 }
 
-export async function mockDeleteList(id: string): Promise<void> {
-  mockLists = mockLists.filter((l) => l.id !== id);
-  // Strip the id from every entry's memberships, mirroring the backend's cascade.
-  for (const e of mockLibrary.values()) {
-    const i = e.listIds.indexOf(id);
-    if (i >= 0) e.listIds.splice(i, 1);
+export async function mockDeleteCollection(id: string): Promise<void> {
+  mockCollections = mockCollections.filter((c) => c.id !== id);
+  // Strip the id from every series' memberships, and PRUNE any left with none — the host does
+  // exactly this for series/chapter favorites, which only ever existed as collection members.
+  for (const [key, ids] of mockSeriesCollections) {
+    const next = ids.filter((x) => x !== id);
+    if (next.length === 0) mockSeriesCollections.delete(key);
+    else mockSeriesCollections.set(key, next);
   }
 }
 
-export async function mockSetEntryLists(bridgeId: string, seriesId: string, listIds: string[]): Promise<void> {
-  const e = mockLibrary.get(libKey(bridgeId, seriesId));
-  if (e) e.listIds = [...listIds];
+export async function mockSetSeriesCollections(
+  bridgeId: string,
+  seriesId: string,
+  collectionIds: string[],
+): Promise<void> {
+  const key = libKey(bridgeId, seriesId);
+  // Empty means the series item is GONE — it exists only as a member, so un-filing the last
+  // collection uncollects it outright (the runtime's cascade). Read progress survives.
+  if (collectionIds.length === 0) {
+    mockSeriesCollections.delete(key);
+    mockLibrary.delete(key);
+  } else mockSeriesCollections.set(key, [...collectionIds]);
 }
 
-export async function mockGetEntryLists(bridgeId: string, seriesId: string): Promise<string[] | null> {
-  const e = mockLibrary.get(libKey(bridgeId, seriesId));
-  return e ? [...e.listIds] : null;
+// ─── Collected page items (in-memory, dev/demo only) ─────────────────────────
+// Keyed by the same coordinate tuple the real ids encode. Memberships live on the record, and an
+// empty membership array removes it — pure collections, same as the runtime.
+
+type MockPageItem = {
+  type: 'page';
+  /** Same derived, prefixed shape the runtime mints (`page:b:s:c:i`, each part URL-encoded).
+   *  Internal — nothing addresses an item by id, since a reconcile re-keys it. */
+  id: string;
+  bridgeId: string;
+  seriesId: string;
+  chapterId: string;
+  pageIndex: number;
+  collectedAt: number;
+  collectionIds: string[];
+  seriesTitle: string;
+  chapterName?: string;
+  pageCount?: number;
+  sourceUrl?: string;
+  contentHash?: string;
+  stale?: boolean;
+};
+
+const pageItemKey = (b: string, s: string, c: string, i: number) => `${b}:${s}:${c}:${i}`;
+const pageItemId = (b: string, s: string, c: string, i: number) =>
+  ['page', b, s, c, String(i)].map(encodeURIComponent).join(':');
+const mockPageItems = new Map<string, MockPageItem>();
+let mockCollectedAt = 1_760_000_000_000;
+
+export async function mockGetCollectedItems(query: {
+  type?: string;
+  sort?: string;
+  dir?: string;
+  collection?: string;
+  series?: string;
+  q?: string;
+} = {}): Promise<(MockPageItem | MockChapterItem | MockSeriesItem)[]> {
+  // Omitting `type` returns the MIXED union, exactly as the real route does — a caller that
+  // wants only pages has to say so, and one that forgets gets series and chapters too.
+  let items: (MockPageItem | MockChapterItem | MockSeriesItem)[] = [
+    ...(query.type === undefined || query.type === 'page' ? mockPageItems.values() : []),
+    ...(query.type === undefined || query.type === 'chapter' ? mockChapterItems.values() : []),
+    ...(query.type === undefined || query.type === 'series' ? seriesItems() : []),
+  ];
+  if (query.collection) items = items.filter((i) => i.collectionIds.includes(query.collection!));
+  if (query.series) items = items.filter((i) => `${i.bridgeId}:${i.seriesId}` === query.series);
+  const q = query.q?.trim().toLowerCase();
+  if (q) {
+    items = items.filter(
+      (i) =>
+        i.seriesTitle.toLowerCase().includes(q) ||
+        ('chapterName' in i ? (i.chapterName ?? '') : '').toLowerCase().includes(q),
+    );
+  }
+  const pos = (i: MockPageItem | MockChapterItem | MockSeriesItem) =>
+    // Within one series, the runtime interleaves so a series leads its chapters and a chapter
+    // leads its pages. Rank by type, then by the item's own position.
+    i.type === 'series' ? [0, 0] : i.type === 'chapter' ? [1, i.number ?? 0] : [2, i.pageIndex];
+  const cmp = (a: typeof items[number], b: typeof items[number]) => {
+    if (query.sort === 'series' || query.sort === 'chapter') {
+      const byTitle = a.seriesTitle.localeCompare(b.seriesTitle);
+      if (byTitle !== 0) return byTitle;
+      const [ar, av] = pos(a);
+      const [br, bv] = pos(b);
+      return ar! - br! || av! - bv!;
+    }
+    return a.collectedAt - b.collectedAt;
+  };
+  items.sort(cmp);
+  // 'added' defaults to newest-first, the others to ascending — matching the runtime.
+  const desc = query.dir ? query.dir === 'desc' : (query.sort ?? 'added') === 'added';
+  if (desc) items.reverse();
+  return items;
+}
+
+/** Series items are synthesized from the memberships map plus the library entry's display fields —
+ *  the mock stores memberships rather than whole records for series (see `mockSeriesCollections`). */
+// The full `CollectionSeriesItem` wire shape — a tracked series IS this now, so the mixed
+// `/library/collected` union carries the same record the library grid is built from.
+type MockSeriesItem = {
+  type: 'series';
+  id: string;
+  bridgeId: string;
+  seriesId: string;
+  collectedAt: number;
+  updatedAt: number;
+  collectionIds: string[];
+  seriesTitle: string;
+  thumbnailUrl?: string;
+  /** The unread baseline. Empty in the mock: nothing here derives unread counts from it. */
+  knownChapters: { id: string; number?: number; languageCode?: string }[];
+  stale?: boolean;
+};
+
+function seriesItems(): MockSeriesItem[] {
+  const out: MockSeriesItem[] = [];
+  // Driven by the LIBRARY, not by the membership map: every collected series is a series item,
+  // including one transiently filed nowhere (legal, and what `?uncollected=true` lists).
+  for (const [key, entry] of mockLibrary) {
+    const [bridgeId = '', seriesId = ''] = key.split(':');
+    out.push({
+      type: 'series',
+      id: ['series', bridgeId, seriesId].map(encodeURIComponent).join(':'),
+      bridgeId,
+      seriesId,
+      collectedAt: entry.collectedAt,
+      updatedAt: entry.collectedAt,
+      collectionIds: [...(mockSeriesCollections.get(key) ?? [])],
+      knownChapters: [],
+      seriesTitle: entry.title,
+      ...(entry.thumbnailUrl !== undefined && { thumbnailUrl: entry.thumbnailUrl }),
+    });
+  }
+  return out;
+}
+
+export async function mockGetChapterPageIndices(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+): Promise<number[]> {
+  return [...mockPageItems.values()]
+    .filter((i) => i.bridgeId === bridgeId && i.seriesId === seriesId && i.chapterId === chapterId && !i.stale)
+    .map((i) => i.pageIndex)
+    .sort((a, b) => a - b);
+}
+
+export async function mockReconcileChapterPages(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+  pages: { url?: string; contentHash?: string }[],
+): Promise<{ indices: number[]; repaired: number; stale: number }> {
+  // The mock never rewrites URLs, so nothing ever drifts here — report the stored indices as-is,
+  // with the same shape the real route returns.
+  void pages;
+  return { indices: await mockGetChapterPageIndices(bridgeId, seriesId, chapterId), repaired: 0, stale: 0 };
+}
+
+export async function mockCollectPage(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+  pageIndex: number,
+  snapshot: {
+    seriesTitle: string;
+    chapterName?: string;
+    pageCount?: number;
+    sourceUrl?: string;
+    contentHash?: string;
+  },
+): Promise<void> {
+  const key = pageItemKey(bridgeId, seriesId, chapterId, pageIndex);
+  const existing = mockPageItems.get(key);
+  // MERGE, don't rebuild: a supplied field wins as fresher, an omitted one is preserved. The
+  // two-PUT hash flow depends on this — a follow-up carrying only `contentHash` must not wipe
+  // `pageCount`, which is reconcile's fallback signal.
+  mockPageItems.set(key, {
+    type: 'page',
+    id: pageItemId(bridgeId, seriesId, chapterId, pageIndex),
+    bridgeId,
+    seriesId,
+    chapterId,
+    pageIndex,
+    collectedAt: existing?.collectedAt ?? mockCollectedAt++,
+    collectionIds: existing?.collectionIds ?? [],
+    seriesTitle: snapshot.seriesTitle,
+    ...((snapshot.chapterName ?? existing?.chapterName) !== undefined && {
+      chapterName: snapshot.chapterName ?? existing?.chapterName,
+    }),
+    ...((snapshot.pageCount ?? existing?.pageCount) !== undefined && {
+      pageCount: snapshot.pageCount ?? existing?.pageCount,
+    }),
+    ...((snapshot.sourceUrl ?? existing?.sourceUrl) !== undefined && {
+      sourceUrl: snapshot.sourceUrl ?? existing?.sourceUrl,
+    }),
+    ...((snapshot.contentHash ?? existing?.contentHash) !== undefined && {
+      contentHash: snapshot.contentHash ?? existing?.contentHash,
+    }),
+  });
+}
+
+export async function mockUncollectPage(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+  pageIndex: number,
+): Promise<void> {
+  mockPageItems.delete(pageItemKey(bridgeId, seriesId, chapterId, pageIndex));
+}
+
+export async function mockSetPageCollections(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+  pageIndex: number,
+  collectionIds: string[],
+): Promise<void> {
+  const key = pageItemKey(bridgeId, seriesId, chapterId, pageIndex);
+  const item = mockPageItems.get(key);
+  if (!item) return;
+  // Empty memberships removes the item, exactly as the real route does.
+  if (collectionIds.length === 0) mockPageItems.delete(key);
+  else mockPageItems.set(key, { ...item, collectionIds: [...collectionIds] });
+}
+
+// Chapter items. Same store shape as pages, minus the page index — and the same rule that an item
+// with no memberships doesn't exist.
+
+type MockChapterItem = {
+  type: 'chapter';
+  id: string;
+  bridgeId: string;
+  seriesId: string;
+  chapterId: string;
+  collectedAt: number;
+  collectionIds: string[];
+  seriesTitle: string;
+  chapterName?: string;
+  number?: number;
+  languageCode?: string;
+  stale?: boolean;
+};
+
+const chapterItemKey = (b: string, s: string, c: string) => `${b}:${s}:${c}`;
+const chapterItemId = (b: string, s: string, c: string) =>
+  ['chapter', b, s, c].map(encodeURIComponent).join(':');
+const mockChapterItems = new Map<string, MockChapterItem>();
+
+export async function mockCollectChapter(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+  snapshot: { seriesTitle: string; chapterName?: string; number?: number; languageCode?: string },
+): Promise<void> {
+  const key = chapterItemKey(bridgeId, seriesId, chapterId);
+  const existing = mockChapterItems.get(key);
+  // MERGE, as the real route does — a partial re-collect must not drop the re-anchor identity.
+  mockChapterItems.set(key, {
+    type: 'chapter',
+    id: chapterItemId(bridgeId, seriesId, chapterId),
+    bridgeId,
+    seriesId,
+    chapterId,
+    collectedAt: existing?.collectedAt ?? mockCollectedAt++,
+    collectionIds: existing?.collectionIds ?? [],
+    seriesTitle: snapshot.seriesTitle,
+    ...((snapshot.chapterName ?? existing?.chapterName) !== undefined && {
+      chapterName: snapshot.chapterName ?? existing?.chapterName,
+    }),
+    ...((snapshot.number ?? existing?.number) !== undefined && {
+      number: snapshot.number ?? existing?.number,
+    }),
+    ...((snapshot.languageCode ?? existing?.languageCode) !== undefined && {
+      languageCode: snapshot.languageCode ?? existing?.languageCode,
+    }),
+  });
+}
+
+export async function mockUncollectChapter(bridgeId: string, seriesId: string, chapterId: string): Promise<void> {
+  mockChapterItems.delete(chapterItemKey(bridgeId, seriesId, chapterId));
+}
+
+export async function mockSetChapterCollections(
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+  collectionIds: string[],
+): Promise<void> {
+  const key = chapterItemKey(bridgeId, seriesId, chapterId);
+  const item = mockChapterItems.get(key);
+  if (!item) return;
+  if (collectionIds.length === 0) mockChapterItems.delete(key);
+  else mockChapterItems.set(key, { ...item, collectionIds: [...collectionIds] });
+}
+
+export async function mockGetSeriesCollections(bridgeId: string, seriesId: string): Promise<string[]> {
+  return [...(mockSeriesCollections.get(libKey(bridgeId, seriesId)) ?? [])];
 }
 
 /** Upsert a history row (used by both a library progress write and a non-library read log). */

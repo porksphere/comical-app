@@ -3,7 +3,7 @@
 # hardcoded default count, what the three row kinds are, and why the inert rows sort last.
 #
 # It's a plain pushed screen (app/favorites-import.tsx), not an overlay, so none of the sheet-gesture
-# caveats that scope registries.add / manage-lists.add to mobile apply here.
+# caveats that scope registries.add / manage-collections.add to mobile apply here.
 #
 # Selectors hitting the web-only aria-label quirk (see ../README.md — an accessibilityLabel wins over
 # data-testid for Maestro's `id:` matcher on web):

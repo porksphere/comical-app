@@ -13,7 +13,7 @@
 import { keepPreviousData, type UseQueryOptions } from '@tanstack/react-query';
 
 import { STALE_TIME_MS } from './query-client';
-import type { Cursor, FavoritesImportPreview, LibrarySort } from './api';
+import type * as api from './api';
 import { isRailLayout, railKindFor, type DataSource, type QueryOpts } from './source';
 import type {
   ActivityEntry,
@@ -22,16 +22,17 @@ import type {
   HistoryEntry,
   HomeGridSection,
   LibraryItem,
-  LibraryList,
+  Collection,
   RailSection,
   SeriesDetail,
   SeriesEntry,
   SeriesListResult,
 } from './types';
 
-/** How the Library grid is scoped to a custom list. `null` = all entries; `'unlisted'` = entries in
- *  no list; otherwise a specific list id. Part of the library query key so each view caches apart. */
-export type LibraryListFilter = string | 'unlisted' | null;
+/** How the Library grid is scoped to a collection. `null` = all entries; `'uncollected'` = entries
+ *  in no collection; otherwise a collection id. Part of the library query key so each view caches
+ *  apart. The host resolves membership by joining series items, so this stays one query. */
+export type CollectionFilter = string | 'uncollected' | null;
 
 /** Per-series fetch options that affect the *shape* of the result (and thus the key). */
 export type SeriesDetailOpts = { direct?: boolean; bridgeName?: string; title?: string; cover?: string };
@@ -80,13 +81,30 @@ export const queryKeys = {
     ['isFavorite', mock, bridgeId, seriesId] as const,
   relatedGroups: (mock: boolean, bridgeId: string, seriesId: string) =>
     ['relatedGroups', mock, bridgeId, seriesId] as const,
-  library: (mock: boolean, q: string, sort: LibrarySort, list: LibraryListFilter = null) =>
-    ['library', mock, q, sort, list] as const,
-  /** The user's custom lists collection. */
-  libraryLists: (mock: boolean) => ['libraryLists', mock] as const,
-  /** One series' custom-list memberships (for the assign picker). */
-  entryLists: (mock: boolean, bridgeId: string, seriesId: string) =>
-    ['entryLists', mock, bridgeId, seriesId] as const,
+  library: (mock: boolean, q: string, sort: api.LibrarySort, collection: CollectionFilter = null) =>
+    ['library', mock, q, sort, collection] as const,
+  /** The user's collections. */
+  collections: (mock: boolean) => ['collections', mock] as const,
+  /** One series' collection memberships (for the assign picker). */
+  seriesCollections: (mock: boolean, bridgeId: string, seriesId: string) =>
+    ['seriesCollections', mock, bridgeId, seriesId] as const,
+  /** One CHAPTER's collection memberships (for the assign picker). */
+  chapterCollections: (mock: boolean, bridgeId: string, seriesId: string, chapterId: string) =>
+    ['chapterCollections', mock, bridgeId, seriesId, chapterId] as const,
+  /** One PAGE's collection memberships (for the assign picker). Separate from the chapter's index
+   *  set, which is what the reader's save button reads. */
+  pageCollections: (mock: boolean, bridgeId: string, seriesId: string, chapterId: string, pageIndex: number) =>
+    ['pageCollections', mock, bridgeId, seriesId, chapterId, pageIndex] as const,
+  /** A scoped collected-items listing. Every variant sits under the `collectionItems` prefix so one
+   *  write can invalidate them all — see `collectionItemsAll`. */
+  collectionItems: (mock: boolean, query: api.CollectedItemsQuery) =>
+    ['collectionItems', mock, query] as const,
+  /** PREFIX key: invalidating this refreshes every collected grid whatever its type/sort/dir/
+   *  collection, the same trick `libraryList` uses for the library grid. */
+  collectionItemsAll: (mock: boolean) => ['collectionItems', mock] as const,
+  /** One chapter's collected page indices — what the reader's heart reads. */
+  chapterPageIndices: (mock: boolean, bridgeId: string, seriesId: string, chapterId: string) =>
+    ['chapterPageIndices', mock, bridgeId, seriesId, chapterId] as const,
   trackerLinks: (mock: boolean, bridgeId: string, seriesId: string) =>
     ['trackerLinks', mock, bridgeId, seriesId] as const,
   inLibrary: (mock: boolean, bridgeId: string, seriesId: string) =>
@@ -197,7 +215,7 @@ export function fetchBrowseScope(
   ds: DataSource,
   bridgeId: string,
   scope: BrowseScope,
-  cursor?: Cursor,
+  cursor?: api.Cursor,
   signal?: AbortSignal,
 ): Promise<GridPage> {
   switch (scope.kind) {
@@ -219,7 +237,7 @@ export function fetchBrowseScope(
  * an explicit type (not inlined as a bare `undefined`) so react-query infers the page param as a
  * cursor and `nextGridCursor` can hand back a real one.
  */
-export const NO_CURSOR: Cursor | undefined = undefined;
+export const NO_CURSOR: api.Cursor | undefined = undefined;
 
 /**
  * `getNextPageParam` for every grid infinite query: follow whatever cursor the last page handed back.
@@ -229,7 +247,7 @@ export const NO_CURSOR: Cursor | undefined = undefined;
  * removes: a page with no `nextCursor` IS the last page, so there is no longer a flag that can claim
  * more results while pointing at the page just fetched.
  */
-export const nextGridCursor = (last: GridPage): Cursor | undefined => last.nextCursor;
+export const nextGridCursor = (last: GridPage): api.Cursor | undefined => last.nextCursor;
 
 /**
  * One representative rail for a bridge — the building block of the synthetic "Comical" aggregate home.
@@ -388,7 +406,7 @@ export function favoritesImportPreviewQuery(
   ds: DataSource,
   mock: boolean,
   bridgeId: string,
-): UseQueryOptions<FavoritesImportPreview, Error> {
+): UseQueryOptions<api.FavoritesImportPreview, Error> {
   return {
     queryKey: queryKeys.favoritesImportPreview(mock, bridgeId),
     queryFn: ({ signal }) => ds.getFavoritesImportPreview(bridgeId, signal),
@@ -399,34 +417,66 @@ export function favoritesImportPreviewQuery(
   };
 }
 
-/** `useQuery` options for the library grid (`null` result = no library store mounted). `list` scopes
- *  to a custom list (`'unlisted'` = entries in no list; a list id; or `null` for all). */
+/** `useQuery` options for the library grid (`null` result = no library store mounted). `collection`
+ *  scopes to a collection (`'uncollected'` = entries in none; an id; or `null` for all). */
 export function libraryQuery(
   ds: DataSource,
   mock: boolean,
   q: string,
-  sort: LibrarySort,
-  list: LibraryListFilter = null,
+  sort: api.LibrarySort,
+  collection: CollectionFilter = null,
 ): UseQueryOptions<LibraryItem[] | null, Error> {
   return {
-    queryKey: queryKeys.library(mock, q, sort, list),
+    queryKey: queryKeys.library(mock, q, sort, collection),
     queryFn: ({ signal }) =>
       ds.getLibrary(
         {
           ...(q ? { q } : {}),
           sort,
-          ...(list === 'unlisted' ? { unlisted: true } : list ? { listId: list } : {}),
+          ...(collection === 'uncollected'
+            ? { uncollected: true }
+            : collection
+              ? { collectionId: collection }
+              : {}),
         },
         signal,
       ),
   };
 }
 
-/** `useQuery` options for the user's custom lists collection. */
-export function libraryListsQuery(ds: DataSource, mock: boolean): UseQueryOptions<LibraryList[], Error> {
+/** `useQuery` options for a collected-items listing. **Pass `type: 'page'`** for a page grid: a
+ *  query without it returns the mixed series/chapter/page union, and the failure is silent. */
+export function collectionItemsQuery(
+  ds: DataSource,
+  mock: boolean,
+  query: api.CollectedItemsQuery,
+): UseQueryOptions<api.ApiCollectionItem[] | null, Error> {
   return {
-    queryKey: queryKeys.libraryLists(mock),
-    queryFn: ({ signal }) => ds.getLists(signal),
+    queryKey: queryKeys.collectionItems(mock, query),
+    queryFn: ({ signal }) => ds.getCollectedItems(query, signal),
+  };
+}
+
+/** `useQuery` options for one chapter's collected page indices. Loaded once per chapter open; the
+ *  reader drives its heart off the result rather than checking per page. */
+export function chapterPageIndicesQuery(
+  ds: DataSource,
+  mock: boolean,
+  bridgeId: string,
+  seriesId: string,
+  chapterId: string,
+): UseQueryOptions<number[], Error> {
+  return {
+    queryKey: queryKeys.chapterPageIndices(mock, bridgeId, seriesId, chapterId),
+    queryFn: ({ signal }) => ds.getChapterPageIndices(bridgeId, seriesId, chapterId, signal),
+  };
+}
+
+/** `useQuery` options for the user's collections. */
+export function collectionsQuery(ds: DataSource, mock: boolean): UseQueryOptions<Collection[], Error> {
+  return {
+    queryKey: queryKeys.collections(mock),
+    queryFn: ({ signal }) => ds.getCollections(signal),
   };
 }
 

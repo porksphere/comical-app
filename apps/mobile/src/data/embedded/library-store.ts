@@ -4,8 +4,8 @@
  * is just a typed document sink, so this mirrors the file store's layout with one AsyncStorage key
  * per "file":
  *
- *   comical:lib:entries            → { [entryKey]: LibraryEntry }
- *   comical:lib:lists              → LibraryList[]
+ *   comical:lib:collections               → Collection[]
+ *   comical:lib:collection-items:<b>:<s>  → { [id]: CollectionItem }   (SHARDED per series)
  *   comical:lib:groups             → { [id]: SeriesGroup }
  *   comical:lib:tracker-links      → { [entryKey]: TrackerLink[] }
  *   comical:lib:reading-log        → { [entryKey]: HistoryItem }
@@ -28,9 +28,11 @@ import {
   type CachedSeriesDetail,
   type ChapterProgress,
   type HistoryItem,
-  type LibraryEntry,
-  type LibraryList,
+  type Collection,
+  type CollectionItem,
+  type CollectionItemScope,
   type LibraryStore,
+  parseCollectionItemId,
   type SeriesGroup,
   type TrackerLink,
 } from '@comical/library';
@@ -38,8 +40,14 @@ import {
 import { serializeAsyncMethods } from '@/lib/serialize-methods';
 
 const NS = 'comical:lib';
-const ENTRIES = `${NS}:entries`;
-const LISTS = `${NS}:lists`;
+const COLLECTIONS = `${NS}:collections`;
+// Collection items sit in ONE DOCUMENT PER SERIES, not one document overall. As a single doc every
+// write re-serialises every item the user has: the runtime measured 64ms → 3.4ms per chapter open
+// at 25k items. A series item lives in its own series' shard, so one layout covers all three types,
+// and every coordinate carries bridge+series so an id always resolves to a shard.
+const collectionItemsKey = (bridgeId: string, seriesId: string) =>
+  `${NS}:collection-items:${encodeURIComponent(bridgeId)}:${encodeURIComponent(seriesId)}`;
+const COLLECTION_ITEMS_PREFIX = `${NS}:collection-items:`;
 const GROUPS = `${NS}:groups`;
 const TRACKER_LINKS = `${NS}:tracker-links`;
 const READING_LOG = `${NS}:reading-log`;
@@ -101,26 +109,6 @@ export class AsyncStorageLibraryStore implements LibraryStore {
     }
   }
 
-  // ── Entries ────────────────────────────────────────────────────────────────
-  async listEntries(): Promise<LibraryEntry[]> {
-    return Object.values(await readRecord<LibraryEntry>(ENTRIES));
-  }
-  async getEntry(key: string): Promise<LibraryEntry | undefined> {
-    return (await readRecord<LibraryEntry>(ENTRIES))[key];
-  }
-  async putEntry(entry: LibraryEntry): Promise<void> {
-    const all = await readRecord<LibraryEntry>(ENTRIES);
-    all[`${entry.bridgeId}:${entry.seriesId}`] = entry;
-    await write(ENTRIES, all);
-  }
-  async deleteEntry(key: string): Promise<void> {
-    const all = await readRecord<LibraryEntry>(ENTRIES);
-    if (key in all) {
-      delete all[key];
-      await write(ENTRIES, all);
-    }
-  }
-
   // ── Offline metadata cache ───────────────────────────────────────────────────
   // One doc per entry (chapter lists are bulky), read lazily on series-page open — never bulk-read.
   async getSeriesDetail(key: string): Promise<CachedSeriesDetail | undefined> {
@@ -155,20 +143,106 @@ export class AsyncStorageLibraryStore implements LibraryStore {
     await AsyncStorage.removeItem(progressKey(key));
   }
 
-  // ── Lists ──────────────────────────────────────────────────────────────────
-  async listLists(): Promise<LibraryList[]> {
-    return read<LibraryList[]>(LISTS, []);
+  // ── Collection items ───────────────────────────────────────────────────────
+  // Collections replaced the library's custom lists AND its entries: a tracked series is a series
+  // ITEM in these shards, sharing one document with its chapter and page items. An item exists ONLY
+  // as a member of a collection — there is no local "favorites" concept, and nothing is durably
+  // uncollected. Old `comical:lib:lists` documents are ABANDONED IN PLACE: never read, never
+  // migrated, a deliberate call (they shipped to nobody). `comical:lib:entries` is the exception —
+  // real user data, read exactly once by `legacy-entries.ts` and rebuilt into these shards.
+
+  /** Honours `scope` BEFORE parsing where it can: a series-scoped call reads one shard instead of
+   *  every one, which is what keeps opening a chapter off the whole-library path. */
+  async listCollectionItems(scope?: CollectionItemScope): Promise<CollectionItem[]> {
+    const keys =
+      scope?.bridgeId !== undefined && scope?.seriesId !== undefined
+        ? [collectionItemsKey(scope.bridgeId, scope.seriesId)]
+        : (await AsyncStorage.getAllKeys()).filter((k) => k.startsWith(COLLECTION_ITEMS_PREFIX));
+    if (keys.length === 0) return [];
+    const pairs = await AsyncStorage.multiGet(keys);
+    const out: CollectionItem[] = [];
+    for (const [, raw] of pairs) {
+      if (!raw) continue;
+      let shard: Record<string, CollectionItem>;
+      try {
+        shard = JSON.parse(raw) as Record<string, CollectionItem>;
+      } catch {
+        continue;
+      }
+      for (const item of Object.values(shard)) {
+        if (scope?.type !== undefined && item.type !== scope.type) continue;
+        if (scope?.bridgeId !== undefined && item.bridgeId !== scope.bridgeId) continue;
+        if (scope?.seriesId !== undefined && item.seriesId !== scope.seriesId) continue;
+        // A series item has NO chapterId, so a chapter-scoped listing must drop it outright rather
+        // than compare an absent field — matching both reference stores.
+        if (scope?.chapterId !== undefined && (item.type === 'series' || item.chapterId !== scope.chapterId)) {
+          continue;
+        }
+        out.push(item);
+      }
+    }
+    return out;
   }
-  async putList(list: LibraryList): Promise<void> {
-    const lists = await read<LibraryList[]>(LISTS, []);
-    const idx = lists.findIndex((l) => l.id === list.id);
-    if (idx === -1) lists.push(list);
-    else lists[idx] = list;
-    await write(LISTS, lists);
+
+  async getCollectionItem(id: string): Promise<CollectionItem | undefined> {
+    const coord = parseCollectionItemId(id);
+    if (!coord) return undefined;
+    const shard = await readRecord<CollectionItem>(collectionItemsKey(coord.bridgeId, coord.seriesId));
+    return shard[id];
   }
-  async deleteList(id: string): Promise<void> {
-    const lists = await read<LibraryList[]>(LISTS, []);
-    await write(LISTS, lists.filter((l) => l.id !== id));
+
+  /** ONE durable write per shard touched, however many records the batch carries — a chapter
+   *  reconcile repairs its whole chapter through a single call. */
+  async putCollectionItems(items: CollectionItem[]): Promise<void> {
+    if (items.length === 0) return;
+    const byShard = new Map<string, CollectionItem[]>();
+    for (const item of items) {
+      const key = collectionItemsKey(item.bridgeId, item.seriesId);
+      const bucket = byShard.get(key);
+      if (bucket) bucket.push(item);
+      else byShard.set(key, [item]);
+    }
+    for (const [key, shardItems] of byShard) {
+      const shard = await readRecord<CollectionItem>(key);
+      for (const item of shardItems) shard[item.id] = item;
+      await write(key, shard);
+    }
+  }
+
+  async deleteCollectionItems(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    const byShard = new Map<string, string[]>();
+    for (const id of ids) {
+      const coord = parseCollectionItemId(id);
+      if (!coord) continue;
+      const key = collectionItemsKey(coord.bridgeId, coord.seriesId);
+      const bucket = byShard.get(key);
+      if (bucket) bucket.push(id);
+      else byShard.set(key, [id]);
+    }
+    for (const [key, shardIds] of byShard) {
+      const shard = await readRecord<CollectionItem>(key);
+      let touched = false;
+      for (const id of shardIds) {
+        if (id in shard) {
+          delete shard[id];
+          touched = true;
+        }
+      }
+      if (!touched) continue;
+      // Drop an emptied shard rather than leaving `{}` behind, so `getAllKeys` doesn't accumulate
+      // dead keys that every unscoped listing then has to read.
+      if (Object.keys(shard).length === 0) await AsyncStorage.removeItem(key);
+      else await write(key, shard);
+    }
+  }
+
+  // Collections stay a SINGLE document — there are few of them and they're read as a whole.
+  async listCollections(): Promise<Collection[]> {
+    return read<Collection[]>(COLLECTIONS, []);
+  }
+  async putCollections(collections: Collection[]): Promise<void> {
+    await write(COLLECTIONS, collections);
   }
 
   // ── Groups ─────────────────────────────────────────────────────────────────

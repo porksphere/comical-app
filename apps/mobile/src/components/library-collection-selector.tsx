@@ -11,40 +11,46 @@ import {
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { RowHeight, Spacing } from '@/constants/theme';
-import type { LibraryListFilter } from '@/data/queries';
-import type { LibraryList } from '@/data/types';
+import type { Collection } from '@/data/types';
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
 import { useRouter } from '@/lib/nav';
 
 /**
- * The Library tab's top-bar view selector — the bridge-selector shape, reading "Library" (all
- * entries) by default and opening a menu to switch to any custom list. A trailing "Manage lists…"
- * action pushes the manage screen (create/rename/reorder/delete). It reads the lists collection
- * itself so the Library screen only owns the selected filter.
+ * The Library tab's top-bar view selector — the bridge-selector shape, reading "Library" (the tab,
+ * i.e. everything collected) by default and opening a menu to switch to any collection. The menu's
+ * own row for that view says "All", since "Library" there would collide with the default
+ * collection sitting one row below it. One flat list, deliberately:
+ * picking a collection shows THAT COLLECTION'S CONTENTS (its series, chapters and saved pages,
+ * mixed), so there is nothing to split into per-type views — an earlier two-section version
+ * ("collections" vs "saved pages") read as two competing lists of the same names and was cut.
+ * A trailing "Manage collections…" action pushes the manage screen.
  */
-export function LibraryListSelector({
+export function LibraryCollectionSelector({
   value,
-  lists,
+  collections,
   onChange,
 }: {
-  value: LibraryListFilter;
-  lists: LibraryList[];
-  onChange: (value: LibraryListFilter) => void;
+  /** `null` = the library grid; a collection id = that collection's contents. */
+  value: string | null;
+  collections: Collection[];
+  onChange: (value: string | null) => void;
 }) {
   const { ref, openAt } = useAnchoredOverlay();
   const theme = useTheme();
   const { hovered, handlers } = useHover();
 
-  const currentLabel = value ? (lists.find((l) => l.id === value)?.name ?? 'Library') : 'Library';
+  const currentLabel = value ? (collections.find((c) => c.id === value)?.name ?? 'Library') : 'Library';
 
   return (
     <Pressable
-      testID="library.list-selector"
+      testID="library.collection-selector"
       ref={ref}
       {...handlers}
       style={[styles.trigger, hovered && { backgroundColor: theme.backgroundSelected }]}
-      onPress={() => openAt(() => <ListMenu value={value} lists={lists} onChange={onChange} />)}>
+      onPress={() =>
+        openAt(() => <CollectionMenu value={value} collections={collections} onChange={onChange} />)
+      }>
       <ThemedText numberOfLines={1} style={styles.triggerLabel}>
         {currentLabel}
       </ThemedText>
@@ -55,20 +61,20 @@ export function LibraryListSelector({
   );
 }
 
-function ListMenu({
+function CollectionMenu({
   value,
-  lists,
+  collections,
   onChange,
 }: {
-  value: LibraryListFilter;
-  lists: LibraryList[];
-  onChange: (value: LibraryListFilter) => void;
+  value: string | null;
+  collections: Collection[];
+  onChange: (value: string | null) => void;
 }) {
   const { closeTop } = useOverlay();
   const router = useRouter();
   const presentation = useOverlayPresentation();
 
-  const pick = (v: LibraryListFilter) => {
+  const pick = (v: string | null) => {
     onChange(v);
     closeTop();
   };
@@ -81,22 +87,31 @@ function ListMenu({
         </MeasuredHeader>
       )}
       <OptionList>
-        <ViewRow testID="library.list.all" label="Library" hint="All series" selected={value === null} onPress={() => pick(null)} />
-        {lists.map((l) => (
+        {/* NOT "Library": the default collection is an ordinary row below, and while a freshly
+            migrated shelf is the only thing in it, both rows list exactly the same series. Two rows,
+            one word, one list. */}
+        <ViewRow
+          testID="library.collection.all"
+          label="All"
+          hint="Everything you've saved"
+          selected={value === null}
+          onPress={() => pick(null)}
+        />
+        {collections.map((c) => (
           <ViewRow
-            key={l.id}
-            testID={`library.list.${l.id}`}
-            label={l.name}
-            selected={value === l.id}
-            onPress={() => pick(l.id)}
+            key={c.id}
+            testID={`library.collection.${c.id}`}
+            label={c.name}
+            selected={value === c.id}
+            onPress={() => pick(c.id)}
           />
         ))}
         <ActionRow
-          testID="library.list.manage"
-          label="Manage lists…"
+          testID="library.collection.manage"
+          label="Manage collections…"
           onPress={() => {
             closeTop();
-            router.push('/manage-lists');
+            router.push('/manage-collections');
           }}
         />
       </OptionList>

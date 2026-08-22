@@ -13,6 +13,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { RowHeight, Spacing } from '@/constants/theme';
 import type { LibrarySort } from '@/data/api';
+import type { LibraryGrouping } from '@/data/library-grouping';
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -25,13 +26,32 @@ const SORT_LABELS: Record<LibrarySort, string> = {
 };
 const SORT_ORDER: LibrarySort[] = ['added', 'lastRead', 'title', 'unread'];
 
+// Grouping is client-side sectioning OVER the sorted result — it composes with any sort instead of
+// replacing it (see libraryGroupOf / buildGroupedRows).
+const GROUP_LABELS: Record<LibraryGrouping, string> = {
+  none: 'None',
+  bridge: 'Source',
+  added: 'Date added',
+  lastRead: 'Last read',
+};
+const GROUP_ORDER: LibraryGrouping[] = ['none', 'bridge', 'added', 'lastRead'];
+
 /**
  * The Library top bar's sort trigger — an icon button (mirrors the search icon beside it) that opens
- * a single-select overlay menu of the library sort orders. Replaces the old full-text `Selector`
- * that sat in the grid header. The selected value is owned by the screen (persisted per list — see
- * `use-library-sort`).
+ * an overlay menu with the library's two axes: the sort order (the `/library?sort=` param) and the
+ * grid's grouping. The selected values are owned by the screen (persisted — see `use-library-sort`).
  */
-export function LibrarySortButton({ value, onChange }: { value: LibrarySort; onChange: (s: LibrarySort) => void }) {
+export function LibrarySortButton({
+  value,
+  onChange,
+  grouping,
+  onGroupingChange,
+}: {
+  value: LibrarySort;
+  onChange: (s: LibrarySort) => void;
+  grouping: LibraryGrouping;
+  onGroupingChange: (g: LibraryGrouping) => void;
+}) {
   const { ref, openAt } = useAnchoredOverlay();
   const theme = useTheme();
   const { hovered, handlers } = useHover();
@@ -44,23 +64,38 @@ export function LibrarySortButton({ value, onChange }: { value: LibrarySort; onC
       accessibilityRole="button"
       accessibilityLabel="Sort library"
       style={[styles.button, hovered && { backgroundColor: theme.backgroundSelected }]}
-      onPress={() => openAt(() => <SortMenu value={value} onChange={onChange} />)}>
+      onPress={() =>
+        openAt(() => (
+          <SortMenu value={value} onChange={onChange} grouping={grouping} onGroupingChange={onGroupingChange} />
+        ))
+      }>
       <SortIcon color={theme.text} size={22} />
     </Pressable>
   );
 }
 
-function SortMenu({ value, onChange }: { value: LibrarySort; onChange: (s: LibrarySort) => void }) {
+function SortMenu({
+  value,
+  onChange,
+  grouping,
+  onGroupingChange,
+}: {
+  value: LibrarySort;
+  onChange: (s: LibrarySort) => void;
+  grouping: LibraryGrouping;
+  onGroupingChange: (g: LibraryGrouping) => void;
+}) {
   const { closeTop } = useOverlay();
   const presentation = useOverlayPresentation();
   return (
     <View style={styles.menu}>
       {presentation !== 'popover' && (
         <MeasuredHeader>
-          <OverlayHeading>Sort by</OverlayHeading>
+          <OverlayHeading>Library</OverlayHeading>
         </MeasuredHeader>
       )}
       <OptionList>
+        <SectionLabel>Sort by</SectionLabel>
         {SORT_ORDER.map((s) => (
           <SortRow
             key={s}
@@ -74,7 +109,30 @@ function SortMenu({ value, onChange }: { value: LibrarySort; onChange: (s: Libra
           />
         ))}
       </OptionList>
+      <OptionList>
+        <SectionLabel>Group by</SectionLabel>
+        {GROUP_ORDER.map((g) => (
+          <SortRow
+            key={g}
+            testID={`library.group.${g}`}
+            label={GROUP_LABELS[g]}
+            selected={g === grouping}
+            onPress={() => {
+              onGroupingChange(g);
+              closeTop();
+            }}
+          />
+        ))}
+      </OptionList>
     </View>
+  );
+}
+
+function SectionLabel({ children }: { children: string }) {
+  return (
+    <ThemedText type="small" themeColor="textSecondary" style={styles.sectionLabel}>
+      {children}
+    </ThemedText>
   );
 }
 
@@ -112,6 +170,10 @@ const styles = StyleSheet.create({
   },
   menu: {
     gap: Spacing.three,
+  },
+  sectionLabel: {
+    paddingHorizontal: Spacing.three,
+    paddingBottom: Spacing.half,
   },
   row: {
     flexDirection: 'row',

@@ -5,20 +5,20 @@
 #   - registries.add          -> mockAddRegistry pushes into mock.ts's mockRegistries array; the new
 #     row shows up in registries.tsx's list (mockGetRegistries returns a fresh copy each call
 #     specifically so react-query sees a changed reference).
-#   - manage-lists.add        -> useLibraryLists().createList persists a new custom list; the new row
-#     shows up in manage-lists.tsx's ReorderableList.
-#   - series.action.lists     -> openListPicker's "New list…" row (list-picker.tsx) also calls
-#     createList, then immediately files the series into it — same createList path as manage-lists,
-#     reached from a series detail page instead.
+#   - manage-collections.add    -> useCollections().createCollection persists a new collection; the
+#     new row shows up in manage-collections.tsx's ReorderableList.
+#   - series.action.collections -> openCollectionPicker's "New collection…" row
+#     (collection-picker.tsx) also calls createCollection, then immediately files the series into it
+#     — the same path as manage-collections, reached from a series detail page instead.
 #
-# registries.add and manage-lists.add both open their form via useOverlay()'s plain `open()`, which
+# registries.add and manage-collections.add both open their form via useOverlay()'s plain `open()`, which
 # always renders as an OverlaySheet (bottom sheet, `Gesture.Pan().activeOffsetY(12)`) — on web this
 # is EMPIRICALLY CONFIRMED broken (not just theoretically at risk, see ../README.md's "Web-only
 # gesture quirk" section, which scoped series-trackers.yaml mobile-only on the same theory): a local
 # headless run showed the sheet dismiss itself the instant its TextInput is tapped, before any
-# typing happens. So this flow (all three sub-flows) is MOBILE-ONLY; ../web/registries-lists.yaml
-# covers only the third sub-flow (series.action.lists), whose route is DIFFERENT and confirmed safe
-# the same way: openListPicker renders its own floating card (list-picker.tsx's HostPopup, dismissed
+# typing happens. So this flow (all three sub-flows) is MOBILE-ONLY; ../web/registries-collections.yaml
+# covers only the third sub-flow (series.action.collections), whose route is DIFFERENT and confirmed safe
+# the same way: openCollectionPicker renders its own floating card (collection-picker.tsx's HostPopup, dismissed
 # by a plain Pressable backdrop or the Done button) — no pan gesture at all.
 appId: com.porksphere.comical
 ---
@@ -41,17 +41,17 @@ appId: com.porksphere.comical
 - tapOn:
     id: "top-bar.back"
 
-# --- Manage Lists: Library -> list-selector -> Manage lists... -> New list ---
+# --- Manage Collections: Library -> list-selector -> Manage lists... -> New list ---
 - tapOn:
     id: "tab.library"
 - tapOn:
-    id: "library.list-selector"
+    id: "library.collection-selector"
 - tapOn:
-    id: "library.list.manage"
+    id: "library.collection.manage"
 - tapOn:
-    id: "manage-lists.add"
-# No explicit tapOn custom-pages.name-input here — same autoFocus reasoning as the list-picker.new
-# fix below: the field (custom-pages.tsx) is autoFocus, so manage-lists.add above already focuses
+    id: "manage-collections.add"
+# No explicit tapOn custom-pages.name-input here — same autoFocus reasoning as the collection-picker.new
+# fix below: the field (custom-pages.tsx) is autoFocus, so manage-collections.add above already focuses
 # it and raises the keyboard. A redundant follow-up tap risks landing while the sheet's open
 # animation/keyboard-raise is still settling, which can miss the input (or blur it) and leave
 # inputText typing into nothing — the likely cause of an observed flake here (a captured debug
@@ -65,7 +65,7 @@ appId: com.porksphere.comical
 - tapOn:
     id: "top-bar.back"
 
-# --- "Add to list" picker from a series detail page: New list, filed and checked ---
+# --- "Add to collection" picker from a series detail page: New list, filed and checked ---
 - tapOn:
     id: "tab.browse"
 - tapOn:
@@ -73,12 +73,12 @@ appId: com.porksphere.comical
 - assertVisible:
     id: "series.action.read"
 - tapOn:
-    id: "series.action.lists"
+    id: "series.action.collections"
 - tapOn:
-    id: "list-picker.new"
-# No explicit tapOn list-picker.new-name here (same reasoning as reader-navigation.yaml's
-# progress-pill jump): the row's TextInput is autoFocus (list-picker.tsx), so tapping
-# list-picker.new above already focuses it and opens the keyboard, and inputText targets whatever
+    id: "collection-picker.new"
+# No explicit tapOn collection-picker.new-name here (same reasoning as reader-navigation.yaml's
+# progress-pill jump): the row's TextInput is autoFocus (collection-picker.tsx), so tapping
+# collection-picker.new above already focuses it and opens the keyboard, and inputText targets whatever
 # already has focus. A follow-up tap would just be redundant.
 #
 # It used to be worse than redundant: this popup is its own bottom-anchored card, not an overlay
@@ -97,4 +97,4 @@ appId: com.porksphere.comical
 - assertVisible:
     text: "Backlog"
 - tapOn:
-    id: "list-picker.done"
+    id: "collection-picker.done"

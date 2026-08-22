@@ -1,4 +1,4 @@
-# Library tab: inline search, sort, and list-scope navigation (Manage Lists + back).
+# Library tab: inline search, sort, and collection-scope navigation (Manage Collections + back).
 appId: com.porksphere.comical
 ---
 - launchApp
@@ -29,13 +29,28 @@ appId: com.porksphere.comical
 - assertVisible:
     id: "series-card\\..*"
 
-# List scope -> Manage Lists -> back
+# Group by source: the grid gains section headers (client-side, over the chosen sort). "Panelfox"
+# is a seeded mock bridge, so its header is deterministically present. Back to ungrouped after.
 - tapOn:
-    id: "library.list-selector"
+    id: "library.sort"
 - tapOn:
-    id: "library.list.manage"
+    id: "library.group.bridge"
 - assertVisible:
-    id: "manage-lists.add"
+    text: "Panelfox"
+- tapOn:
+    id: "library.sort"
+- tapOn:
+    id: "library.group.none"
+- assertVisible:
+    id: "series-card\\..*"
+
+# Collection scope -> Manage Collections -> back
+- tapOn:
+    id: "library.collection-selector"
+- tapOn:
+    id: "library.collection.manage"
+- assertVisible:
+    id: "manage-collections.add"
 - tapOn:
     id: "top-bar.back"
 - assertVisible:

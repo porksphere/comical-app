@@ -32,8 +32,9 @@ executionOrder:
     - settings-walkthrough
     - history-activity
     - reader-navigation
+    - collect-page
     - series-trackers
     - trackers-uninstall
     - downloads
-    - registries-lists
+    - registries-collections
     - favorites-import

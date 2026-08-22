@@ -121,6 +121,11 @@ const NO_PERSIST_KEYS = new Set([
   'isFavorite',
   'pageThumb',
   'browseGrid',
+  // One chapter's collected page indices. Small, but a reconcile or a `syncChapters` run can
+  // RE-KEY them, so a stale entry rehydrated on cold start would light the heart on pages that
+  // aren't collected any more (and miss ones that are) until the refetch lands — the same class of
+  // bug `isFavorite` is excluded for. It's one cheap request per chapter open; always ask.
+  'chapterPageIndices',
   // Its cached shape has changed twice in a few days of active development (plain number →
   // {bridges,trackers,total} counts → {bridges,trackers} arrays) — a stale persisted entry from
   // an older build crashes useRegistryUpdateCounts on cold start (data.bridges.filter is not a
@@ -154,5 +159,16 @@ export const PERSIST_MAX_AGE_MS = GC_TIME_MS;
  * `terminalQuery.initialData` with a cursor-less page 1 → `getNextPageParam` returns undefined →
  * `hasNextPage` false → `loadMore` bails with no spinner. That reads as "infinite scroll is dead on
  * every bridge", and it self-heals only once the entry refetches, which makes it look intermittent.
+ *
+ * v4→v5: the library's custom lists became COLLECTIONS. `libraryLists` entries are dead keys, and a
+ * persisted `library` grid entry was keyed by a list id that no longer resolves — its rows would
+ * rehydrate under a filter the user can't see or clear. The collected-items grid is new and
+ * persisted, so this also stops an older build's cache from mingling with it.
+ *
+ * v5→v6: the LIBRARY dissolved into collections. `/library` now serves series items — `title` →
+ * `seriesTitle`, `addedAt` → `collectedAt` — so a v5 `library` entry rehydrates with an undefined
+ * `collectedAt` and dumps the whole grid into the "Date added" grouping's `Earlier` bucket. Cached
+ * cover URLs moved with the routes (`/library/entries/…/cover` → `/library/collected/series/…`),
+ * and cached series ITEMS gained `updatedAt`/`knownChapters`. None of it is repairable in place.
  */
-export const PERSIST_BUSTER = `v4:${getResolvedModeSync() === 'embedded' ? 'embedded' : getApiBase()}`;
+export const PERSIST_BUSTER = `v6:${getResolvedModeSync() === 'embedded' ? 'embedded' : getApiBase()}`;

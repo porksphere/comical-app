@@ -6,10 +6,10 @@
 #   - library.search.clear sets accessibilityLabel="Clear search" (search-field.tsx, same as
 #     browse/search.yaml's clear button).
 #   - library.sort sets accessibilityLabel="Sort library" (library-sort-button.tsx).
-#   - manage-lists.add (AddFab) sets accessibilityLabel="New list" (manage-lists.tsx).
+#   - manage-collections.add (AddFab) sets accessibilityLabel="New collection" (manage-collections.tsx).
 #   - top-bar.back sets accessibilityLabel="Go back" (top-bar.tsx).
-# library.search.input, library.sort.title, library.list-selector, and library.list.manage have
-# no competing accessibilityLabel — same selectors as mobile.
+# library.search.input, library.sort.title, library.collection-selector, and
+# library.collection.manage have no competing accessibilityLabel — same selectors as mobile.
 url: http://localhost:4000/comical-app
 ---
 - launchApp
@@ -40,13 +40,28 @@ url: http://localhost:4000/comical-app
 - assertVisible:
     id: "series-card\\..*"
 
-# List scope -> Manage Lists -> back
+# Group by source: the grid gains section headers (client-side, over the chosen sort). "Panelfox"
+# is a seeded mock bridge, so its header is deterministically present. Back to ungrouped after.
 - tapOn:
-    id: "library.list-selector"
+    id: "Sort library"
 - tapOn:
-    id: "library.list.manage"
+    id: "library.group.bridge"
 - assertVisible:
-    id: "New list"
+    text: "Panelfox"
+- tapOn:
+    id: "Sort library"
+- tapOn:
+    id: "library.group.none"
+- assertVisible:
+    id: "series-card\\..*"
+
+# List scope -> Manage Collections -> back
+- tapOn:
+    id: "library.collection-selector"
+- tapOn:
+    id: "library.collection.manage"
+- assertVisible:
+    id: "New collection"
 - tapOn:
     id: "Go back"
 - assertVisible:

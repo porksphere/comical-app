@@ -1,21 +1,34 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
-import type { ReactElement, RefObject } from 'react';
+import { useCallback, useMemo, useState, type ReactElement, type RefObject } from 'react';
 import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import type { ComposedGesture } from 'react-native-gesture-handler';
-import type Animated from 'react-native-reanimated';
-import { type SharedValue } from 'react-native-reanimated';
+import Animated, { type SharedValue } from 'react-native-reanimated';
 
 import { HomeGridBlock } from '@/components/home-grid-block';
 import { SkeletonCard } from '@/components/grid-skeleton';
-import { Rail, RailSkeleton, SECTION_HEAD_HEIGHT, SectionHead, railRowHeight, railStripHeight } from '@/components/rail';
+import {
+  Rail,
+  RailSkeleton,
+  SECTION_HEAD_HEIGHT,
+  SectionHead,
+  sectionHeadHeight,
+  railRowHeight,
+  railStripHeight,
+} from '@/components/rail';
 import { RecyclerList } from '@/components/recycler-list';
 import { RetryBlock } from '@/components/retry-block';
 import { estimatedCardHeight, SeriesCard } from '@/components/series-card';
+import {
+  StickySectionHeader,
+  useInlineHeadingStyle,
+  type InlineHeadingPin,
+  type StickySection,
+} from '@/components/sticky-section-header';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { BottomTabInset, Spacing, TopLevelGutter, topLevelCenterInset } from '@/constants/theme';
 import { contentRowType, type ContentRow, type SeeAllTarget } from '@/data/content-rows';
 import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
-import { useIsLargeScreen } from '@/hooks/use-responsive';
+import { useIsCompact, useIsLargeScreen } from '@/hooks/use-responsive';
 import { useRouter } from '@/lib/nav';
 
 // Terminal-grid cell inter-row spacing — mirrors series-grid.tsx's CELL_PAD_TOP/BOTTOM so a home
@@ -47,6 +60,29 @@ function seeAllParams(t: SeeAllTarget): Record<string, string> {
   return p;
 }
 
+/** A section's heading row, inline in the list — the one the pinned copy stands in for. It drops its
+ *  CONTENT, never its space, so nothing reflows when the pinned copy takes over: at the pin line the
+ *  two are exactly superimposed, and one heading is never drawn twice. `useInlineHeadingStyle` owns
+ *  the timing of that swap, in both directions. */
+function SectionHeadRow({
+  title,
+  hidden,
+  pin,
+  onSeeAll,
+}: {
+  title: string;
+  hidden: boolean;
+  pin: InlineHeadingPin;
+  onSeeAll?: () => void;
+}) {
+  const hide = useInlineHeadingStyle(hidden, pin);
+  return (
+    <Animated.View style={[styles.sectionHead, hide]} pointerEvents={hidden ? 'none' : 'auto'}>
+      <SectionHead title={title} {...(onSeeAll ? { onSeeAll } : {})} />
+    </Animated.View>
+  );
+}
+
 /**
  * THE heterogeneous content feed: rails, non-terminal grid blocks, section headings, and the terminal
  * infinite-scroll grid rows all live as typed `ContentRow` items in ONE virtualized list, so off-screen
@@ -72,6 +108,9 @@ export function ContentFeed({
   bridgeId,
   direct,
   crossfading,
+  stickyHeaderTop,
+  stickyBarOffset,
+  stickyPinned,
   sharedValues,
   onScroll,
   onEndReached,
@@ -94,6 +133,15 @@ export function ContentFeed({
   bridgeId?: string;
   direct?: boolean;
   crossfading?: boolean;
+  /** Screen-relative y where the sticky section heading pins — the top bar's bottom edge AT REST.
+   *  Omit to disable the sticky (headings then simply scroll away inline). */
+  stickyHeaderTop?: number;
+  /** The top bar's slide (useSlidingBar's `offset`, 0 → −barHeight) — the sticky rides it, so the
+   *  pinned heading stays glued to the bar's bottom edge as the bar hides and returns. */
+  stickyBarOffset?: SharedValue<number>;
+  /** Written by the sticky: 1 while a heading is pinned. The screen drops its top bar's own rule
+   *  off this, on the same frame — see StickySectionHeader's `pinnedValue`. */
+  stickyPinned?: SharedValue<number>;
   sharedValues?: { scrollOffset: SharedValue<number> };
   onScroll?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   onEndReached?: () => void;
@@ -106,6 +154,9 @@ export function ContentFeed({
 }) {
   const { numColumns, cardWidth, railViewport, width } = useGridLayout();
   const wide = useIsLargeScreen();
+  // The breakpoint `SectionHead` itself reads — the sticky sizes its band from the head's real
+  // height. A DIFFERENT breakpoint from `wide` above.
+  const compact = useIsCompact();
   const router = useRouter();
   // Per-bridge `cardSubtitles` flags: each rail reserves the sub line only if ITS bridge sends one
   // (aggregate rails mix bridges), and the terminal grid follows the feed's own bridge.
@@ -123,23 +174,80 @@ export function ContentFeed({
   // Row-type sizing. gridRow is EXACT (cellHeight), so the many uniform terminal rows never re-measure.
   // Headings and rails are fixed upper-bound heights; non-terminal grid BLOCKS are variable (arbitrary
   // "Load more" pages) so they return undefined and get measured.
-  const getFixedItemSize = (row: ContentRow): number | undefined => {
-    switch (row.type) {
-      case 'gridRow':
-        return cellHeight;
-      case 'sectionHead':
-        return SECTION_HEAD_ROW_HEIGHT;
-      case 'rail':
-        // Strip only — the heading is its own preceding `sectionHead` row now. The rail's own
-        // bridge (aggregate rails carry an override) decides whether the sub line is reserved.
-        return railStripHeight(row.section.kind, railViewport, wide, subOf(row.bridgeId ?? bridgeId));
-      case 'railSkeleton':
-        // Self-headed (still renders its own title), so it's the whole head+strip height.
-        return railRowHeight('regular', railViewport, wide, subOf(bridgeId));
-      default:
-        return undefined; // gridBlock / gridBlockSkeleton — measured
+  const getFixedItemSize = useCallback(
+    (row: ContentRow): number | undefined => {
+      switch (row.type) {
+        case 'gridRow':
+          return cellHeight;
+        case 'sectionHead':
+          return SECTION_HEAD_ROW_HEIGHT;
+        case 'rail':
+          // Strip only — the heading is its own preceding `sectionHead` row now. The rail's own
+          // bridge (aggregate rails carry an override) decides whether the sub line is reserved.
+          return railStripHeight(row.section.kind, railViewport, wide, subOf(row.bridgeId ?? bridgeId));
+        case 'railSkeleton':
+          // Self-headed (still renders its own title), so it's the whole head+strip height.
+          return railRowHeight('regular', railViewport, wide, subOf(bridgeId));
+        default:
+          return undefined; // gridBlock / gridBlockSkeleton — measured
+      }
+    },
+    [cellHeight, railViewport, wide, subOf, bridgeId],
+  );
+
+  // ── The sticky heading's offsets ────────────────────────────────────────────
+  // Most rows have KNOWN heights (getFixedItemSize), so section-heading offsets are mostly pure
+  // arithmetic — but grid BLOCKS are measured. Each mounted block reports its height here (the same
+  // number LegendList measures off the same view), and the offset walk below uses it. Sections past
+  // a block that hasn't measured yet are simply omitted: an unmounted block is at least a
+  // drawDistance below the viewport, so its sections were nowhere near the pin line anyway.
+  const [measuredHeights, setMeasuredHeights] = useState<Record<string, number>>({});
+  const onRowMeasured = useCallback((key: string, h: number) => {
+    setMeasuredHeights((m) => (Math.abs((m[key] ?? -1) - h) < 0.5 ? m : { ...m, [key]: h }));
+  }, []);
+  type FeedSection = StickySection & { seeAll?: SeeAllTarget };
+  const sections = useMemo<FeedSection[]>(() => {
+    if (stickyHeaderTop === undefined) return [];
+    // A list header (the error-retry block) sits above the rows and shifts every offset by its
+    // unmeasured height — no sticky while one is up; a pinned heading matters least mid-error.
+    if (header) return [];
+    const out: FeedSection[] = [];
+    let y = paddingTop;
+    for (const row of rows) {
+      // The HEAD's top (past the row's own top gap): the pinned copy is that head, so pinning it
+      // there superimposes the two exactly at the hand-off — the band's padding is the band's, not
+      // the row's. The row key rides along so that heading can hide itself while the pinned copy is
+      // up, and the See-all target so the pinned chevron stays live.
+      if (row.type === 'sectionHead') {
+        out.push({
+          key: row.key,
+          label: row.title,
+          top: y + SECTION_GAP,
+          ...(row.seeAll ? { seeAll: row.seeAll } : {}),
+        });
+      }
+      const h = getFixedItemSize(row) ?? measuredHeights[row.key];
+      if (h === undefined) break;
+      y += h;
     }
-  };
+    return out;
+  }, [rows, header, stickyHeaderTop, paddingTop, getFixedItemSize, measuredHeights]);
+
+  // The heading the pinned copy is currently standing in for — that row keeps its space but drops
+  // its content, so one heading is never drawn twice.
+  const [pinnedKey, setPinnedKey] = useState<string | null>(null);
+  const onActiveChange = useCallback((key: string | null) => setPinnedKey(key), []);
+  // What each heading row needs to time its own swap with the band's — see `useInlineHeadingStyle`.
+  const pin: InlineHeadingPin = useMemo(
+    () => ({
+      firstTop: sections[0]?.top,
+      stickyTop: stickyHeaderTop,
+      bandPadding: HEADING_GAP,
+      scrollOffset: sharedValues?.scrollOffset,
+      barOffset: stickyBarOffset,
+    }),
+    [sections, stickyHeaderTop, sharedValues, stickyBarOffset],
+  );
 
   // Terminal-grid first-load skeleton — rows self-pad Spacing.four (via styles.row), matching the real
   // gridRow's inset (ContentFeed's container is centering-only, unlike GridSkeleton's SeriesGrid shape).
@@ -156,6 +264,7 @@ export function ContentFeed({
   ) : null;
 
   return (
+    <View style={styles.fill}>
     <RecyclerList
       data={rows}
       scopeKey={scopeKey}
@@ -163,6 +272,8 @@ export function ContentFeed({
       keyExtractor={(row) => row.key}
       // Pool recycled views per row-type so a rail never recycles into a grid row (and vice versa).
       getItemType={(row) => contentRowType(row)}
+      // `renderItem` hides the heading the pinned copy stands in for — see RecyclerList's extraData.
+      extraData={pinnedKey}
       getFixedItemSize={getFixedItemSize}
       estimatedItemSize={cellHeight}
       numColumns={1}
@@ -185,18 +296,16 @@ export function ContentFeed({
         switch (item.type) {
           case 'sectionHead':
             return (
-              <View style={styles.sectionHead}>
-                <SectionHead
-                  title={item.title}
-                  // Every rail's "See all" pushes the shared /results page for that one bridge (a list
-                  // drill or a search drill — see SeeAllTarget). Back returns here cleanly.
-                  onSeeAll={
-                    item.seeAll
-                      ? () => router.push({ pathname: '/results', params: seeAllParams(item.seeAll!) })
-                      : undefined
-                  }
-                />
-              </View>
+              <SectionHeadRow
+                title={item.title}
+                hidden={item.key === pinnedKey}
+                pin={pin}
+                // Every rail's "See all" pushes the shared /results page for that one bridge (a list
+                // drill or a search drill — see SeeAllTarget). Back returns here cleanly.
+                {...(item.seeAll
+                  ? { onSeeAll: () => router.push({ pathname: '/results', params: seeAllParams(item.seeAll!) }) }
+                  : {})}
+              />
             );
           case 'rail':
             return (
@@ -218,18 +327,24 @@ export function ContentFeed({
             return <RetryBlock message={item.message} onRetry={item.onRetry} />;
           case 'gridBlock':
             return (
-              <HomeGridBlock
-                bridgeId={item.bridgeId ?? bridgeId}
-                section={item.section}
-                bridge={item.bridge ?? bridge}
-                direct={!!(item.direct ?? direct)}
-                numColumns={numColumns}
-                headless
-              />
+              // The one variable-height row — its measured height feeds the sticky heading's
+              // offset walk (see onRowMeasured above).
+              <View onLayout={(e) => onRowMeasured(item.key, e.nativeEvent.layout.height)}>
+                <HomeGridBlock
+                  bridgeId={item.bridgeId ?? bridgeId}
+                  section={item.section}
+                  bridge={item.bridge ?? bridge}
+                  direct={!!(item.direct ?? direct)}
+                  numColumns={numColumns}
+                  headless
+                />
+              </View>
             );
           case 'gridBlockSkeleton':
             return (
-              <View style={styles.homeGridBlock}>
+              <View
+                style={styles.homeGridBlock}
+                onLayout={(e) => onRowMeasured(item.key, e.nativeEvent.layout.height)}>
                 <SectionHead title={item.title} />
                 <View style={styles.homeGridRows}>
                   {Array.from({ length: item.rows }).map((_, r) => (
@@ -268,10 +383,42 @@ export function ContentFeed({
         }
       }}
     />
+    {stickyHeaderTop !== undefined && sharedValues && (
+      <StickySectionHeader
+        sections={sections}
+        stickyTop={stickyHeaderTop}
+        contentHeight={sectionHeadHeight(compact)}
+        // The feed's inline heading rows are deliberately lopsided (SECTION_GAP above,
+        // HEADING_GAP below); the BAND pads evenly instead — see StickySectionHeader.
+        bandPadding={HEADING_GAP}
+        // The overlay carries only the centering inset, like the list container: the row's own
+        // `SectionHead` self-pads the gutter, exactly as it does inline.
+        sidePad={centerPad}
+        resetKey={scopeKey}
+        scrollOffset={sharedValues.scrollOffset}
+        barOffset={stickyBarOffset}
+        onActiveChange={onActiveChange}
+        {...(stickyPinned && { pinnedValue: stickyPinned })}
+        // The SAME row the list renders inline, drill chevron and all — see StickySectionHeader.
+        renderHeader={(s) => {
+          const seeAll = s.seeAll;
+          return (
+            <SectionHead
+              title={s.label}
+              {...(seeAll ? { onSeeAll: () => router.push({ pathname: '/results', params: seeAllParams(seeAll) }) } : {})}
+            />
+          );
+        }}
+      />
+    )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  fill: {
+    flex: 1,
+  },
   row: {
     paddingHorizontal: TopLevelGutter,
   },

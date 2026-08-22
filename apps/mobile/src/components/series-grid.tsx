@@ -1,12 +1,14 @@
 import type { LegendListRef } from '@legendapp/list/react-native';
-import type { ReactElement, RefObject } from 'react';
+import { useMemo, type ReactElement, type RefObject } from 'react';
 import { StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import type { ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { type SharedValue } from 'react-native-reanimated';
 
+import { GroupedGrid } from '@/components/grouped-grid';
 import { RecyclerList } from '@/components/recycler-list';
 import { estimatedCardHeight, SeriesCard } from '@/components/series-card';
 import { BottomTabInset, Spacing } from '@/constants/theme';
+import { buildGroupedRows } from '@/data/grouped-rows';
 import type { SeriesEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { GRID_COLUMN_GAP, useGridLayout } from '@/hooks/use-grid-layout';
@@ -57,6 +59,9 @@ export function SeriesGrid({
   direct,
   hasSub,
   crossfading,
+  groupOf,
+  stickyHeaderTop,
+  stickyPinned,
   sharedValues,
   onScroll,
   onEndReached,
@@ -86,6 +91,17 @@ export function SeriesGrid({
   hasSub?: boolean;
   /** Suppresses per-card entrance work while a full-surface crossfade owns the transition. */
   crossfading?: boolean;
+  /** GROUPED mode: which section each item belongs to (see `buildGroupedRows` — buckets in
+   *  first-appearance order, so grouping composes with the sort instead of replacing it). When set,
+   *  the grid renders through `GroupedGrid` (section headers + the sticky). Grouped mode supports
+   *  the subset of props the Library uses; it does not carry `onEndReached`/`footer`/pull wiring —
+   *  the library list is not paged. */
+  groupOf?: (item: SeriesGridItem) => { key: string; label: string };
+  /** Where the sticky section header pins (the top bar's bottom edge) — grouped mode only. */
+  stickyHeaderTop?: number;
+  /** Grouped mode: written by the sticky while a heading is pinned, so the screen can drop its
+   *  bar's own rule on the same frame. */
+  stickyPinned?: SharedValue<number>;
   /** Feeds a `useSlidingBar`'s UI-thread scroll offset. */
   sharedValues?: { scrollOffset: SharedValue<number> };
   onScroll?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
@@ -108,15 +124,61 @@ export function SeriesGrid({
   // The sub line is reserved only when this surface's entries actually carry one (see `hasSub`).
   const cellHeight = estimatedCardHeight(cardWidth, hasSub ?? subOf(bridgeId)) + CELL_ROW_GAP;
 
+  // A series is identified by its BRIDGE plus its id, never its id alone — the Library is a
+  // cross-bridge grid, and two bridges can hand out the same seriesId. Single-bridge grids leave
+  // bridgeId unset, so their keys are unchanged.
+  const keyOf = (item: SeriesGridItem) => (item.bridgeId ? `${item.bridgeId}:${item.id}` : String(item.id));
+
+  // ── GROUPED mode: pre-chunked rows + section headers through GroupedGrid ──
+  // Hooks run unconditionally (the memo is cheap when ungrouped); the render forks below.
+  const groupedRows = useMemo(
+    () => (groupOf ? buildGroupedRows(items, numColumns, keyOf, groupOf) : []),
+    [items, numColumns, groupOf],
+  );
+  if (groupOf) {
+    return (
+      <GroupedGrid
+        rows={groupedRows}
+        rowHeight={cellHeight}
+        scopeKey={scopeKey}
+        listRef={listRef}
+        header={header}
+        paddingTop={paddingTop}
+        paddingBottom={paddingBottom ?? BottomTabInset + Spacing.five}
+        sidePad={sidePad}
+        stickyHeaderTop={stickyHeaderTop}
+        stickyPinned={stickyPinned}
+        sharedValues={sharedValues}
+        onScroll={onScroll}
+        renderRow={(rowItems) => (
+          // Manual rows lay out with a real flex gap (LegendList's column slots can't gap — see the
+          // marginLeft note below), which lands cards at the same `cardWidth + GRID_COLUMN_GAP`
+          // rhythm as the ungrouped grid; fixed widths keep a short final row left-aligned.
+          <View style={styles.groupedRow}>
+            {rowItems.map((item) => (
+              <View key={keyOf(item)} style={[styles.cell, { width: cardWidth, height: cellHeight }]}>
+                <SeriesCard
+                  entry={item}
+                  bridge={item.bridge ?? bridge}
+                  bridgeId={item.bridgeId ?? bridgeId}
+                  direct={item.direct ?? direct}
+                  cohort={scopeKey}
+                  crossfading={crossfading}
+                />
+              </View>
+            ))}
+          </View>
+        )}
+      />
+    );
+  }
+
   return (
     <RecyclerList
       data={items}
       scopeKey={scopeKey}
       listRef={listRef}
-      // A series is identified by its BRIDGE plus its id, never its id alone — the Library is a
-      // cross-bridge grid, and two bridges can hand out the same seriesId. Single-bridge grids leave
-      // bridgeId unset, so their keys are unchanged.
-      keyExtractor={(item) => (item.bridgeId ? `${item.bridgeId}:${item.id}` : String(item.id))}
+      keyExtractor={keyOf}
       // EXACT, not a hint: every cell is pinned to `cellHeight` below, so this matches every measured row.
       estimatedItemSize={cellHeight}
       numColumns={numColumns}
@@ -169,5 +231,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     paddingTop: CELL_PAD_TOP,
     paddingBottom: CELL_PAD_BOTTOM,
+  },
+  groupedRow: {
+    flexDirection: 'row',
+    gap: GRID_COLUMN_GAP,
   },
 });

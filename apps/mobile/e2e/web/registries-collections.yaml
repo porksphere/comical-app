@@ -1,5 +1,5 @@
-# Web copy of ../mobile/registries-lists.yaml -- but only its THIRD sub-flow ("Add to list" via
-# series.action.lists). The other two (registries.add, manage-lists.add) are DELIBERATELY OMITTED
+# Web copy of ../mobile/registries-collections.yaml -- but only its THIRD sub-flow ("Add to collection" via
+# series.action.collections). The other two (registries.add, manage-collections.add) are DELIBERATELY OMITTED
 # here, not just untested: both open their form via useOverlay()'s plain `open()`, which always
 # renders as an OverlaySheet (`Gesture.Pan().activeOffsetY(12)`, see ../README.md's "Web-only
 # gesture quirk" section, which is what scoped series-trackers.yaml mobile-only). This is the first
@@ -14,20 +14,20 @@
 #   activation threshold -- so the tap gets reinterpreted as a drag-to-dismiss. Not a Maestro
 #   quirk: a real user tapping that field on web would very likely hit the same thing.
 #
-# series.action.lists's route is DIFFERENT and empirically CONFIRMED SAFE the same way: it opens
-# via openListPicker, which renders list-picker.tsx's own HostPopup -- no Gesture.Pan/GestureDetector
+# series.action.collections's route is DIFFERENT and empirically CONFIRMED SAFE the same way: it opens
+# via openCollectionPicker, which renders collection-picker.tsx's own HostPopup -- no Gesture.Pan/GestureDetector
 # anywhere in that component (confirmed against source), dismissed only by a plain Pressable
-# backdrop or the Done button. A local run tapping straight through list-picker.new ->
-# list-picker.new-name -> typing -> Enter kept the popup open and showed the new list created and
+# backdrop or the Done button. A local run tapping straight through collection-picker.new ->
+# collection-picker.new-name -> typing -> Enter kept the popup open and showed the new list created and
 # checked, exactly like mobile.
 #
 # Selectors hitting the web-only aria-label quirk (see ../README.md):
 #   - tab bar: "Browse", not tab.browse (same as smoke.yaml / browse-to-reader.yaml's web copy).
-#   - list-picker.done sets an explicit accessibilityLabel="Done" (list-picker.tsx) -- select by
+#   - collection-picker.done sets an explicit accessibilityLabel="Done" (collection-picker.tsx) -- select by
 #     that text instead.
-# series.action.read, series.action.lists (ActionButton, no accessibilityLabel -- confirmed against
-# action-button.tsx), and list-picker.new / list-picker.new-name (no competing label on either,
-# confirmed against list-picker.tsx) use the same id: selectors as mobile.
+# series.action.read, series.action.collections (ActionButton, no accessibilityLabel -- confirmed against
+# action-button.tsx), and collection-picker.new / collection-picker.new-name (no competing label on either,
+# confirmed against collection-picker.tsx) use the same id: selectors as mobile.
 url: http://localhost:4000/comical-app
 ---
 - launchApp
@@ -40,18 +40,18 @@ url: http://localhost:4000/comical-app
     id: "series.action.read"
 
 - tapOn:
-    id: "series.action.lists"
+    id: "series.action.collections"
 - tapOn:
-    id: "list-picker.new"
+    id: "collection-picker.new"
 - tapOn:
-    id: "list-picker.new-name"
+    id: "collection-picker.new-name"
 # "Backlog", not "Favorites"/"Reading" -- mock.ts pre-seeds both of those as default lists, so
 # either name would already be visible before this flow creates anything.
 - inputText: "Backlog"
 - pressKey: Enter
 - assertVisible:
     text: "Backlog"
-# list-picker.done sets an explicit accessibilityLabel="Done" (list-picker.tsx) -- select by that
-# instead, unlike list-picker.new/.new-name above which have no competing label.
+# collection-picker.done sets an explicit accessibilityLabel="Done" (collection-picker.tsx) -- select by that
+# instead, unlike collection-picker.new/.new-name above which have no competing label.
 - tapOn:
     id: "Done"

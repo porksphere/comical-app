@@ -56,6 +56,10 @@ export function BarSurface({
           // `barHairline`, not the generic `hairline`: with the bar painted the page's own colour
           // this line is the only thing marking it off, so it carries more weight than a card edge.
           // The bottom tab bar draws its top edge with the same token — one divider, one value.
+          // A caller's `style` lands after this, so a bar that has to YIELD its rule (a pinned
+          // section heading sits flush beneath and carries the edge for the pair) overrides the
+          // colour from an animated style rather than toggling a prop through React state — see
+          // StickySectionHeader's `pinnedValue`.
           borderBottomColor: theme.barHairline,
         },
         style,

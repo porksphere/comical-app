@@ -319,6 +319,19 @@ export function ReaderPage({
   // failure it detects has to feed the same backoff an <Image> onError would.
   const { source, percent, error: fetchError, imageProps } = useImageProgress(resolvedUri, attempt);
 
+  // A mounted page whose SOURCE string changes reloads its native image in place — expo-image
+  // clears to the placeholder for a frame, with no `page mount` to show for it. That signature
+  // has been chased more than once ("page loaded" re-firing alone), so the swap itself is now a
+  // mark: a recording that shows `src-swap` before a re-load names the cause, and one that
+  // doesn't rules a whole class out.
+  const lastSourceRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (lastSourceRef.current !== null && source !== null && lastSourceRef.current !== source) {
+      traceJS('page', 'src-swap', { p: page });
+    }
+    lastSourceRef.current = source;
+  }, [source, page]);
+
   const reportedRef = useRef(-1);
   useEffect(() => {
     // Guard per attempt: handleError bumps `attempt`, which re-arms the hook — without this, a

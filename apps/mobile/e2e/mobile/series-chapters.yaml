@@ -7,6 +7,8 @@
 #   - series.chapters.expand-middle            (same file — only rendered once a tab
 #     has more chapters than the collapsed head+tail count; every mocked chaptered
 #     series has 40-200 chapters, well over that threshold)
+#   - series.chapter-menu.collect              (same file — files THIS chapter into a collection;
+#     the only place a chapter can be filed, since the reader's settings sheet is settings only)
 #   - series.chapter-menu.<this|from-here>     (same file — long-press a chapter row;
 #     triggers the same menu content on native and web, per `openChapterMenu`)
 #   - series.chapter-menu.<read|read-up-to>    (same file — only rendered for a series in
@@ -25,8 +27,11 @@ appId: com.porksphere.comical
 # Put the series in the library so the menu's read rows exist further down. Always an
 # ADD, never a remove: the seeded library entries are `lib-0..7` (mock.ts's `seedLibrary`),
 # which the browse grid never serves.
+#
+# One tap: the button says Library and files into the `Library` collection, creating it if this is
+# the first save (see useSeriesSave). No picker step — that only opens for a series already saved.
 - tapOn:
-    id: "series.action.library"
+    id: "series.action.save"
 
 # Scroll the chapters section's tab/sort controls into view once.
 - scrollUntilVisible:
@@ -60,6 +65,8 @@ appId: com.porksphere.comical
 - longPressOn:
     id: "series\\.chapter\\..*"
     index: 0
+- assertVisible:
+    id: "series.chapter-menu.collect"
 - assertVisible:
     id: "series.chapter-menu.this"
 - assertVisible:

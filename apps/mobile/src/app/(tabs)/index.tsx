@@ -623,6 +623,7 @@ export default function BrowseScreen() {
   const {
     scrollY,
     maxScrollY,
+    offset: barOffset,
     barStyle: headerStyle,
     contentStyle: headerContentStyle,
     sharedValues,
@@ -637,13 +638,24 @@ export default function BrowseScreen() {
   // Pull-to-refresh: gesture (per platform), spinner, min-visible window and content shift all live
   // in the shared hook — the same one the Search grid uses.
   const pull = usePullToRefresh(scrollY, refreshCurrentView);
+  // A pinned section heading sits flush under the bar and draws its own rule, so the bar YIELDS its
+  // own while one is up — otherwise the chrome reads as two banded edges a heading apart instead of
+  // one surface. A shared value, written by the sticky on the UI thread and read here in an animated
+  // style, so the two rules trade on the SAME frame; routed through React state the bar's left a
+  // frame or two after the heading's arrived, which is two rules for two frames, every time.
+  const stickyPinned = useSharedValue(0);
+  const barRuleStyle = useAnimatedStyle(
+    () => ({ borderBottomColor: stickyPinned.value ? 'transparent' : theme.barHairline }),
+    [theme.barHairline],
+  );
 
   const topBar = (
     // BarSurface carries the flat, full-bleed background + hairline shared by every bar in the app
-    // (see bar-surface.tsx); the grid scrolls behind it. The hairline is ALWAYS on, like every other
-    // bar's — it used to fade in over the first 8px of scroll so the bar read as part of the page
-    // while at rest, which made this the one bar in the app whose divider came and went.
-    <BarSurface style={[styles.topBar, { height: headerHeight }, headerStyle]}>
+    // (see bar-surface.tsx); the grid scrolls behind it. The hairline is always on EXCEPT while a
+    // section heading is pinned beneath it (barRuleStyle above) — it used to fade in over the first
+    // 8px of scroll so the bar read as part of the page while at rest, which made this the one bar
+    // in the app whose divider came and went with nothing else to explain it.
+    <BarSurface style={[styles.topBar, { height: headerHeight }, headerStyle, barRuleStyle]}>
       {/* Inner row capped to the content width so the selectors line up with the
           grid below, while the bar background stays full-bleed. */}
       {/* Cap+centre only on web; native fills the width so the bar aligns with the full-width grid. */}
@@ -856,6 +868,13 @@ export default function BrowseScreen() {
           bridgeId={isComical ? undefined : bridgeId}
           direct={isComical ? undefined : directBridge}
           crossfading={switching}
+          // Flush to the bar's bottom edge — the pinned heading carries a blurred material, and
+          // two blurred surfaces with a strip of unblurred content between them reads as a gap in
+          // the chrome, not as breathing room. It RIDES the bar's slide, so it stays met to that
+          // edge whether the bar is expanded or docked under the status bar.
+          stickyHeaderTop={headerHeight}
+          stickyBarOffset={barOffset}
+          stickyPinned={stickyPinned}
           sharedValues={sharedValues}
           onScroll={onListScroll}
           // Drives terminalQuery.fetchNextPage — `loadMore` self-guards to the terminal-home mode.

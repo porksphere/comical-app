@@ -147,9 +147,9 @@ the Pressable's own `onPress` and the sheet just dismisses. Not reproducible as 
 actual user's tap doesn't travel that far.
 
 **Any web flow that taps content inside an `OverlaySheet` body (Trackers, Sources, registries.add,
-manage-lists.add, filter sheets, …) is at risk of this** — not just multi-step swipe/pinch
+manage-collections.add, filter sheets, …) is at risk of this** — not just multi-step swipe/pinch
 gestures, which were already known to be unreliable on Maestro-web. Treat that class of flow as
-mobile-only. Confirmed a second time and a second way while writing `registries-lists.yaml`:
+mobile-only. Confirmed a second time and a second way while writing `registries-collections.yaml`:
 tapping `registries.add.url-input` (a plain `TextInput`, no gesture of its own) inside the "Add
 registry" sheet closed it before any text was even typed — a screenshot taken immediately after
 the tap already shows the plain Registries screen underneath, sheet gone. That timing rules out
@@ -163,16 +163,16 @@ instances of the same underlying fragility (a Pan responder wrapping the whole s
 to *any* motion signal, real or programmatic, that arrives while a tap is in flight) rather than
 one root cause — don't assume a fix for one variant covers the other.
 
-**Not every overlay is an `OverlaySheet`, though — `list-picker.tsx`'s "Add to list" popup is a
+**Not every overlay is an `OverlaySheet`, though — `collection-picker.tsx`'s "Add to collection" popup is a
 false alarm for this quirk, not a match for it.** It's a screen-specific floating card
 (`HostPopup`) with no `Gesture.Pan`/`GestureDetector` anywhere in the component — dismissed only by
 a plain `Pressable` backdrop or its Done button — confirmed both by reading the source and by a
-real local web run tapping straight through `list-picker.new` → `list-picker.new-name` → typing →
-Enter, which stayed open and created the list correctly. `registries-lists.yaml`'s web copy
+real local web run tapping straight through `collection-picker.new` → `collection-picker.new-name` → typing →
+Enter, which stayed open and created the list correctly. `registries-collections.yaml`'s web copy
 exercises exactly this path while staying mobile-only for the sheet-based `registries.add` /
-`manage-lists.add` sub-flows in the same source screen. Check what a given overlay actually renders
+`manage-collections.add` sub-flows in the same source screen. Check what a given overlay actually renders
 with (`useOverlay()`'s `open`/`openAt` → `OverlaySheet`/`OverlayPopover`, vs. a bespoke component
-like `list-picker.tsx`) before assuming either way.
+like `collection-picker.tsx`) before assuming either way.
 
 ## Running locally
 

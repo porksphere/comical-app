@@ -46,7 +46,7 @@ import {
   type MenuRowSpec,
   type SubmenuSpec,
 } from '@/components/context-menu-material';
-import { CheckIcon, ChevronRightIcon, DownloadsIcon, PlayIcon, PlusIcon, StarIcon } from '@/components/icons/ui-icons';
+import { CheckIcon, DownloadsIcon, PlayIcon, PlusIcon, RetryIcon, StarIcon } from '@/components/icons/ui-icons';
 import { PageThumb } from '@/components/series/chapters-section';
 import { Skeleton } from '@/components/skeleton';
 import { ThemedText } from '@/components/themed-text';
@@ -56,10 +56,11 @@ import type { TagGroup } from '@/data/mock';
 import { seriesDetailQuery, seriesListQuery } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import type { PageThumbSource } from '@/data/types';
-import { useEntryLists } from '@/hooks/use-entry-lists';
+import { useItemCollections } from '@/hooks/use-item-collections';
 import { useFavorite } from '@/hooks/use-favorite';
-import { useLibrary } from '@/hooks/use-library';
-import { useLibraryLists } from '@/hooks/use-library-lists';
+import { useResetReadProgress } from '@/hooks/use-reset-read-progress';
+import { useSeriesSave } from '@/hooks/use-series-save';
+import { useCollections } from '@/hooks/use-collections';
 import { useSeriesDownloadAction } from '@/hooks/use-series-download-action';
 import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
 import { useStartReading } from '@/hooks/use-start-reading';
@@ -189,7 +190,7 @@ const MENU_HOLD_MS = 220;
 // under it — the iOS "hover a folder to spring it open" delay. Long enough that merely sweeping PAST
 // the row on the way to another doesn't trip it, short enough that a deliberate pause feels answered.
 const SUBMENU_DWELL_MS = 320;
-// Read + Add to Library + Add to list + Favorite + Download. Keep in step with the rows rendered
+// Read + Save + Favorite + Download + Reset progress. Keep in step with the rows rendered
 // below — the menu's height is computed from this (it's what the panel's resize range budgets for),
 // not measured.
 const MENU_ROWS = 5;
@@ -314,21 +315,22 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   }, [detailLoaded, detail.data?.description]);
 
   const { favorited, toggle: toggleFavorite, available: favoritesAvailable } = useFavorite(bridgeId, entry.id);
-  const { inLibrary, toggle: toggleLibrary } = useLibrary(bridgeId, entry.id, () => ({
-    title: entry.title,
-    ...(entry.cover ? { thumbnailUrl: entry.cover } : {}),
-  }));
-  // Custom lists for the "Add to list ›" submenu: the collection (drives chevron-vs-＋ and the
-  // expanded rows) + this series' live memberships (the checkmarks, optimistic). Both queries run
+  const resetProgress = useResetReadProgress(bridgeId, entry.id, entry.title);
+  // Collections for the Save row's submenu: the set itself (the expanded rows) + this series'
+  // live memberships (the checkmarks, optimistic). Both queries run
   // once per open — this component mounts only while the menu is up, never per card. Each gates its
-  // own surface while loading: the ROW is inert until the collection resolves (otherwise a quick tap
-  // reads a still-loading [] as "no lists" and wrongly takes the ＋→manage path), and the submenu
+  // own surface while loading: the ROW is inert until the set resolves (otherwise a quick tap reads
+  // a still-loading [] as "no collections" and wrongly takes the ＋→manage path), and the submenu
   // rows are inert until the memberships resolve (a toggle then would REPLACE unknown memberships).
-  const { lists, isLoading: listsLoading } = useLibraryLists();
-  const { listIds, loading: entryListsLoading, setLists } = useEntryLists(bridgeId, entry.id, () => ({
-    title: entry.title,
-    ...(entry.cover ? { thumbnailUrl: entry.cover } : {}),
-  }));
+  const { collections } = useCollections();
+  const snapshot = () => ({ seriesTitle: entry.title, ...(entry.cover ? { thumbnailUrl: entry.cover } : {}) });
+  const {
+    collectionIds,
+    loading: membershipsLoading,
+    setCollections,
+  } = useItemCollections({ kind: 'series', bridgeId, seriesId: entry.id, snapshot });
+  // Reads the same two queries this menu already runs, so the merged Save row costs nothing extra.
+  const save = useSeriesSave(bridgeId, entry.id, snapshot, entry.title);
   // Lazy: this panel mounts only while the menu is open, so the download-status query runs once here,
   // never per card in the grid.
   const download = useSeriesDownloadAction(
@@ -1100,23 +1102,29 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   // Rendering them from a list (rather than three hand-written JSX rows) is what lets a ROW INDEX mean
   // something — which is what the held finger is hit-tested into, and what a lift commits.
 
-  // The "Add to list" submenu, built fresh every render so the checkmarks track the optimistic
+  // The Save row's picker, in place — better here than the root picker sheet, which would have to
+  // render over this menu. Built fresh every render so the checkmarks track the optimistic
   // memberships as they're toggled (a snapshot taken at open would freeze them).
-  const hasLists = lists.length > 0;
-  const listsSubmenu = (): SubmenuSpec => ({
-    label: 'Add to list',
-    testID: 'series.card-menu.lists.submenu',
-    rows: lists.map((l) => ({
-      label: l.name,
-      active: listIds.includes(l.id),
-      loading: entryListsLoading,
+  const hasCollections = collections.length > 0;
+  const collectionsSubmenu = (): SubmenuSpec => ({
+    label: 'Save to collection',
+    testID: 'series.card-menu.collections.submenu',
+    rows: collections.map((c) => ({
+      label: c.name,
+      active: collectionIds.includes(c.id),
+      loading: membershipsLoading,
       onPress: () =>
-        setLists(listIds.includes(l.id) ? listIds.filter((x) => x !== l.id) : [...listIds, l.id]),
-      testID: `series.card-menu.lists.${l.id}`,
+        setCollections(
+          collectionIds.includes(c.id)
+            ? collectionIds.filter((x: string) => x !== c.id)
+            : [...collectionIds, c.id],
+        ),
+      testID: `series.card-menu.collections.${c.id}`,
     })),
   });
-  // Its position in `rows` below — the submenu anchors at exactly this row's slot.
-  const LISTS_ROW_INDEX = 2;
+  // The Save row's position in `rows` below — the submenu anchors at exactly that row's slot.
+  // Was 2 while "Add to Library" sat above it; merging the two moved it up.
+  const SAVE_ROW_INDEX = 1;
 
   const rows: MenuRowSpec[] = [
     {
@@ -1132,31 +1140,25 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
         reading.start();
       },
     },
+    // ONE row where there were two — "Add to Library" and "Add to collection" became the same
+    // action when the library dissolved into collections. A tap saves into the last-used collection
+    // and the label then names it; once saved (or with nowhere to put it), a tap opens the submenu
+    // to choose. See useSeriesSave.
     {
-      label: inLibrary ? 'Remove from Library' : 'Add to Library',
-      Icon: inLibrary ? CheckIcon : PlusIcon,
-      loading: inLibrary === null,
-      active: !!inLibrary,
-      testID: 'series.card-menu.library',
-      onPress: () => act(toggleLibrary),
-    },
-    {
-      label: 'Add to list',
-      // No lists yet → a ＋ that takes you to list management. With lists → a chevron that expands
-      // the in-place submenu (iOS Files' "Open With ›"). The glyph IS the affordance either way.
-      Icon: hasLists ? ChevronRightIcon : PlusIcon,
-      // Inert until the collection has actually loaded — see the loading note on useLibraryLists.
-      loading: listsLoading,
-      testID: 'series.card-menu.lists',
-      ...(hasLists && { submenu: listsSubmenu }),
-      onPress: hasLists
-        ? // Do NOT close the menu — the submenu expands over it while the rest pushes back.
-          () => openSubmenu(LISTS_ROW_INDEX, listsSubmenu())
-        : () => {
-            req.onClose?.(); // navigating away — un-hide the card and drop the overlay
-            closeSeriesCardMenu();
-            router.push('/manage-lists');
-          },
+      label: save.menuLabel,
+      // Unsaved → ＋, and the tap commits: into the `Library` collection, created if it's the
+      // user's first. Saved → ✓, and the tap expands the in-place submenu to re-file it (iOS
+      // Files' "Open With ›"). The glyph IS the affordance either way.
+      Icon: save.saved ? CheckIcon : PlusIcon,
+      loading: save.saved === null,
+      active: !!save.saved,
+      testID: 'series.card-menu.save',
+      ...(save.saved && hasCollections && { submenu: collectionsSubmenu }),
+      onPress:
+        save.saved && hasCollections
+          ? // Do NOT close the menu — the submenu expands over it while the rest pushes back.
+            () => openSubmenu(SAVE_ROW_INDEX, collectionsSubmenu())
+          : () => act(save.onPress),
     },
     {
       label: favorited ? 'Unfavorite' : 'Favorite',
@@ -1177,6 +1179,16 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
       testID: 'series.card-menu.download',
       onPress: () => act(download.onPress),
     },
+    {
+      // The only action that destroys read state — nothing else does now, not even uncollecting
+      // (see useResetReadProgress). Deliberately here rather than on a library-only surface: it has
+      // to reach a series that ISN'T collected, which is how orphaned progress gets reclaimed.
+      label: 'Reset read progress',
+      Icon: RetryIcon,
+      loading: false,
+      testID: 'series.card-menu.reset-progress',
+      onPress: () => act(resetProgress),
+    },
     // DEV ONLY: dummy rows so the menu is long enough to overrun the screen, which is the only state
     // the pan gesture exists for. See DEBUG_EXTRA_MENU_ROWS.
     ...Array.from({ length: DEBUG_EXTRA_MENU_ROWS }, (_, i) => ({
@@ -1189,7 +1201,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
   ];
 
   // The live spec for whichever row's submenu is expanded — re-built from the row's builder every
-  // render, so its checkmarks track the optimistic membership toggles (see listsSubmenu).
+  // render, so its checkmarks track the optimistic membership toggles (see collectionsSubmenu).
   const openSubmenuSpec = submenuGeom ? (rows[submenuGeom.row]?.submenu?.() ?? null) : null;
 
   // What a lift runs. Registered rather than passed, because the finger that lifts belongs to the
@@ -1638,7 +1650,7 @@ function ContextMenu({ req }: { req: SeriesCardMenuRequest }) {
               container as the menu, so it tracks the menu's position for free). */}
           {submenuGeom && openSubmenuSpec && (
             // Lifted by MENU_PAD_V so the surface's own top padding sits ABOVE the anchor row and its
-            // header row lands EXACTLY on the parent "Add to list" row (not a padding's width below it).
+            // header row lands EXACTLY on the parent "Add to collection" row (not a padding's width below it).
             <Animated.View style={[styles.submenuWrap, { width: menuW, top: submenuGeom.anchorTop - MENU_PAD_V }, submenuOuterStyle]}>
               {/* The clip layer: its height animates to unfold the full-size surface out of the header. */}
               <Animated.View style={[styles.submenuClip, submenuClipStyle]}>

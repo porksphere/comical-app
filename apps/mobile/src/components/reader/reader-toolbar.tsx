@@ -8,10 +8,15 @@ import { ChevronLeftIcon } from '@/components/icons/chevron-left';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 
+/** Width of the trailing control slot — TWO 32×32 buttons (collect + settings) plus the gap
+ *  between them. The leading spacer matches it exactly, which is the only thing keeping the titles
+ *  optically centred; change one and change the other. */
+export const TRAILING_SLOT_W = 32 * 2 + Spacing.two;
+
 /** Auto-hiding top toolbar over the reader: back + the series title with its
- *  chapter beneath, and an optional trailing control (the reader's settings gear)
- *  on the right. The page counter is deliberately NOT here — the bottom chrome
- *  owns it on both platforms. */
+ *  chapter beneath, and optional trailing controls (collect-this-page + the reader's
+ *  settings gear) on the right. The page counter is deliberately NOT here — the bottom
+ *  chrome owns it on both platforms. */
 export function ReaderToolbar({
   title,
   subtitle,
@@ -43,19 +48,21 @@ export function ReaderToolbar({
         style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}
       />
       <View style={[styles.bar, { paddingTop: insets.top + Spacing.two }]}>
-        {hideBack ? (
-          <View style={styles.back} />
-        ) : (
-          <Pressable
-            testID="reader.toolbar.back"
-            onPress={onBack}
-            hitSlop={12}
-            style={styles.back}
-            accessibilityRole="button"
-            accessibilityLabel="Close reader">
-            <ChevronLeftIcon color="#fff" />
-          </Pressable>
-        )}
+        {/* Always the same width as the trailing slot, with or without a back button in it —
+            that symmetry is what centres the titles. */}
+        <View style={styles.leading}>
+          {!hideBack && (
+            <Pressable
+              testID="reader.toolbar.back"
+              onPress={onBack}
+              hitSlop={12}
+              style={styles.back}
+              accessibilityRole="button"
+              accessibilityLabel="Close reader">
+              <ChevronLeftIcon color="#fff" />
+            </Pressable>
+          )}
+        </View>
         <View style={styles.titles}>
           <ThemedText type="smallBold" numberOfLines={1} style={styles.title}>
             {title}
@@ -66,9 +73,9 @@ export function ReaderToolbar({
             </ThemedText>
           )}
         </View>
-        {/* Balances the back button so the titles stay centred — with the
-            trailing control in it when there is one, empty otherwise. */}
-        <View style={styles.back}>{right}</View>
+        {/* Balances the leading spacer so the titles stay centred — a ROW, since the reader has
+            two trailing controls (collect, then settings). */}
+        <View style={styles.trailing}>{right}</View>
       </View>
     </Animated.View>
   );
@@ -94,6 +101,21 @@ const styles = StyleSheet.create({
     height: 32,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // Mirrors `trailing`'s width so the flexed titles land centred between them.
+  leading: {
+    width: TRAILING_SLOT_W,
+    height: 32,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  trailing: {
+    width: TRAILING_SLOT_W,
+    height: 32,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: Spacing.two,
   },
   titles: {
     flex: 1,
