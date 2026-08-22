@@ -242,7 +242,11 @@ function HistoryItem({
     />
   );
   return (
-    <SwipeableRow name={item.title} actions={[{ label: 'Remove', icon: TrashIcon, destructive: true, onPress: onRemove }]}>
+    <SwipeableRow
+      name={item.title}
+      // `collapses`: the remove is optimistic (see the mutation above), so the row folds shut and
+      // the ones below it come up, instead of the list re-laying out around a row that vanished.
+      actions={[{ label: 'Remove', icon: TrashIcon, destructive: true, collapses: true, onPress: onRemove }]}>
       {Platform.OS === 'web' ? (
         renderRow(false)
       ) : (
