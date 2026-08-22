@@ -205,5 +205,13 @@ in sync with the icon backgrounds:
   Keep the two in sync; they are the native and web halves of one component.
 - `app.json` → `android.adaptiveIcon.backgroundColor` = `#000000`.
 
-The `#208AEF` left in `error-boundary.tsx` and `dev-profiler.tsx` is the app's
-**accent** color on buttons, not logo chrome — unrelated to this palette.
+`#208AEF` — the OLD splash/logo blue — still survives in four places, and none
+of them is a live token: a button in `error-boundary.tsx`, the `dev-profiler.tsx`
+toggle, and `tintColor` in the four SideStore/AltStore source manifests under
+`.github/` (`build-ios.yml`, `build-ios-devclient.yml`,
+`refresh-ios-pr-source.sh`, `refresh-ios-release-source.sh`).
+
+It is **not** the app's accent. The accent is `#3478F6` (`constants/theme.ts`,
+hardcoded alongside it in a dozen components). `#208AEF` only ever matched the
+old blue logo, so every remaining use is a stale leftover — decide each on its
+own merits rather than treating it as brand color.
