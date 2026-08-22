@@ -382,7 +382,8 @@ function ActivityItem({
       // is the easy one and a delete takes a deliberate, longer swipe. All-read rows have
       // nothing to mark, so they offer Clear alone (which then becomes full-swipeable).
       actions={[
-        { label: 'Clear', icon: TrashIcon, destructive: true, onPress: onRemove },
+        // `collapses`: the clear is optimistic, so fold the row shut before the data drops it.
+        { label: 'Clear', icon: TrashIcon, destructive: true, collapses: true, onPress: onRemove },
         ...(item.hasUnread ? [{ label: 'Mark read', icon: CheckIcon, onPress: onMarkRead }] : []),
       ]}>
       {Platform.OS === 'web' ? (

@@ -1,5 +1,13 @@
-import { type ComponentType, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, View, type GestureResponderEvent, type ViewStyle } from 'react-native';
+import { type ComponentType, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+  type GestureResponderEvent,
+  type LayoutChangeEvent,
+  type ViewStyle,
+} from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   interpolateColor,
@@ -8,6 +16,7 @@ import Animated, {
   useDerivedValue,
   useSharedValue,
   withSpring,
+  withTiming,
 } from 'react-native-reanimated';
 
 import { SettingsRow } from '@/components/settings/settings-row';
@@ -15,6 +24,7 @@ import { SettingsGutter, Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
 import { createTickHaptic, hapticImpactLight, hapticImpactMedium } from '@/lib/haptics';
+import { SETTLE_MS, settleEase } from '@/lib/slide-step';
 import { claimOpenRow, releaseOpenRow } from '@/lib/swipe-row-registry';
 import { testId } from '@/lib/test-id';
 
@@ -81,6 +91,14 @@ export type SwipeRowAction = {
   onPress: () => void;
   /** Danger-coloured (a delete) vs accent-coloured (the default). */
   destructive?: boolean;
+  /**
+   * This action REMOVES the row: collapse the row closed first, then run `onPress`. For a delete
+   * that commits immediately — a screen whose handler drops the item straight out of its data (the
+   * optimistic removes on History and Activity). NOT for one that opens a confirm first: the row
+   * would fold away before the question was asked. Separate from `destructive`, which is only a
+   * colour — a destructive action can also be one that leaves the row where it is.
+   */
+  collapses?: boolean;
 };
 
 /** Clamp to what fits, and shout in a dev build when a caller over- (or under-) fills the row — a
@@ -147,15 +165,112 @@ export function SwipeableRow({ name, actions, edgeInset = 0, recycleKey, swipeEn
   if (actions.length === 0) {
     return <View style={{ marginHorizontal: -edgeInset }}>{children}</View>;
   }
-  const shown = clampActions(actions, name);
-  return IS_WEB ? (
-    <HoverActionsRow name={name} actions={shown} edgeInset={edgeInset} recycleKey={recycleKey} enabled={swipeEnabled}>
+  // Delegated so this function keeps its hook-free early return above — the collapse needs hooks,
+  // and an intentionally action-less row must still be allowed to skip them.
+  return (
+    <CollapsingRow
+      name={name}
+      actions={clampActions(actions, name)}
+      edgeInset={edgeInset}
+      recycleKey={recycleKey}
+      swipeEnabled={swipeEnabled}>
       {children}
-    </HoverActionsRow>
-  ) : (
-    <SwipeRow name={name} actions={shown} edgeInset={edgeInset} recycleKey={recycleKey} enabled={swipeEnabled}>
-      {children}
-    </SwipeRow>
+    </CollapsingRow>
+  );
+}
+
+/** How long a removed row takes to fold shut. Long enough to read as the row leaving and to carry
+ *  the rows below it up with it; short enough that a list you're clearing several rows out of never
+ *  makes you wait. `settleEase` (cubic ease-out, the app's deceleration curve) so the fold leaves
+ *  promptly and eases into the gap, rather than creeping away from a standstill. */
+const COLLAPSE = { duration: SETTLE_MS * 1.5, easing: settleEase } as const;
+
+/**
+ * The platform split, plus the fold-shut a removing action gets (`SwipeRowAction.collapses`).
+ *
+ * A row is deleted by its screen dropping the item out of the list data, which unmounts the row in
+ * the same frame — the row is simply gone, and everything below it lands in its new place with no
+ * motion between the two states. So the collapse has to happen BEFORE the data changes: the row
+ * animates its own height to 0, and only then runs the handler that removes it. What the list does
+ * with the shrinking row is the list's business — a `LegendList` measures its items, so the rows
+ * below follow it up; a fixed-slot list (the settings `ReorderableList`) springs them instead. Both
+ * end up moving while the row folds rather than after it has vanished.
+ *
+ * The height is measured rather than assumed: these rows size to their content (a wrapped title, a
+ * download's progress line), so there is no constant to fold from.
+ */
+function CollapsingRow({
+  name,
+  actions,
+  edgeInset,
+  recycleKey,
+  swipeEnabled,
+  children,
+}: {
+  name: string;
+  actions: SwipeRowAction[];
+  edgeInset: number;
+  recycleKey?: string;
+  swipeEnabled: boolean;
+  children: ReactNode;
+}) {
+  // Mirrors the row's natural height while idle, so the first frame of a fold starts exactly where
+  // the row already sits. Without that the style would apply whatever it last held — 0 on a row that
+  // has never folded — and the row would vanish for a frame before animating from nothing.
+  const height = useSharedValue(0);
+  // Set for the length of the fold: `onLayout` fires all the way down as the row shrinks, and
+  // feeding those back into `height` would fight the animation to a standstill.
+  const folding = useSharedValue(false);
+  const [pending, setPending] = useState<{ run: () => void } | null>(null);
+
+  const onLayout = useCallback(
+    (e: LayoutChangeEvent) => {
+      if (!folding.value) height.set(e.nativeEvent.layout.height);
+    },
+    [folding, height],
+  );
+
+  useEffect(() => {
+    if (!pending) return;
+    folding.set(true);
+    height.set(
+      withTiming(0, COLLAPSE, (finished) => {
+        'worklet';
+        // Only a fold that landed removes the row. Unfinished means this row was unmounted
+        // mid-animation (its screen dropped the item for some other reason), and there is nothing
+        // left to remove.
+        if (finished) runOnJS(pending.run)();
+      }),
+    );
+  }, [folding, height, pending]);
+
+  const foldStyle = useAnimatedStyle(() => ({ height: height.get() }));
+
+  // A removing action folds the row first and runs on the other side of it. Everything else is
+  // passed straight through, so a row with no such action behaves exactly as it did.
+  const wired = useMemo(
+    () =>
+      actions.map((action) =>
+        action.collapses ? { ...action, onPress: () => setPending({ run: action.onPress }) } : action,
+      ),
+    [actions],
+  );
+
+  return (
+    // The style is applied only while folding: a row left to size itself must not be pinned to a
+    // height this component measured, or content that grows after layout (a title reflowing) would
+    // be clipped for good.
+    <Animated.View onLayout={onLayout} style={pending ? [styles.folding, foldStyle] : undefined}>
+      {IS_WEB ? (
+        <HoverActionsRow name={name} actions={wired} edgeInset={edgeInset} recycleKey={recycleKey} enabled={swipeEnabled}>
+          {children}
+        </HoverActionsRow>
+      ) : (
+        <SwipeRow name={name} actions={wired} edgeInset={edgeInset} recycleKey={recycleKey} enabled={swipeEnabled}>
+          {children}
+        </SwipeRow>
+      )}
+    </Animated.View>
   );
 }
 
@@ -599,6 +714,11 @@ function HoverActionsRow({ name, actions, edgeInset, recycleKey, enabled, childr
 }
 
 const styles = StyleSheet.create({
+  // Clip the row's content as its height runs out, rather than letting it spill over whatever the
+  // list has already moved up into the gap.
+  folding: {
+    overflow: 'hidden',
+  },
   rowClip: {
     overflow: 'hidden',
   },
