@@ -7,6 +7,10 @@ a version bump — see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 Binaries for each version are attached to its
 [GitHub Release](https://github.com/porksphere/comical-app/releases).
 
+## 0.2.0 — 2026-08-22
+
+- docs: plan page favoriting + submodule change spec (#124) (605a7812)
+
 ## 0.1.4 — 2026-08-16
 
 - Prepare release: survive the repo setting that blocks opening the PR (#122) (37aa6a91)
