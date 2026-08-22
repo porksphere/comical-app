@@ -544,6 +544,17 @@ User feedback after the phases landed reshaped the browsing surface:
   fades a material in behind it (Photos does exactly this); the floating-pill treatment belongs to
   surfaces whose separator is a pill inline as well (WhatsApp's date bubble). Rendering one
   component in two places keeps them identical by construction.
+- **The pinned heading's ride never waits for JS.** The label is React state, so the obvious sticky
+  puts a `runOnJS` round trip on the visual path of every crossing — and during a fling that queues
+  behind LegendList's row recycling, which is exactly why it felt a beat slower than the sliding
+  bars reading the very same `scrollOffset`. An earlier cut guarded the ride on JS agreeing, which
+  was correct and stalled. Now `StickySectionHeader` renders THREE headings — the based-on section
+  and its two neighbours — stacked a band apart with the middle one at the pin line, and the UI
+  thread translates whichever the scroll wants into place (`pinAt`). The neighbours sit outside the
+  clip, so they cost nothing until one arrives. The base re-bases afterwards, and since the
+  translate loses exactly the band it gains, the rendered position is identical either side of that
+  commit — a late update is invisible rather than a jump. A fling that outruns all three hides the
+  band for those frames instead of showing a heading it knows is stale.
 - **Browse's section headings pin too** — the sticky generalized into `StickySectionHeader`
   (sticky-section-header.tsx), which `GroupedGrid` and `ContentFeed` both render: caller-supplied
   section offsets, a reaction that reports boundary crossings to JS (ignoring its initial report —

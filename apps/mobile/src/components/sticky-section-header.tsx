@@ -16,24 +16,30 @@ import { useTheme } from '@/hooks/use-theme';
 export type StickySection = { key: string; label: string; count?: number; top: number };
 
 /**
- * Where the band sits for a given scroll line: 0 at rest, down to −`bandHeight` fully pushed out by
- * the next heading. The ride and the rule both read THIS rather than each recomputing it, so the
- * rule can't disagree with where the band actually is.
+ * WHICH heading belongs at the pin line, and how far the band has been pushed out — both derived
+ * from the scroll alone, on the UI thread, with no reference to React state beyond `shown`.
  *
- * `shown` is the section being drawn, and a disagreement with the scroll's own `idx` means the JS
- * label is lagging the UI thread mid-fling: a heading the scroll has passed holds fully pushed out,
- * one it has backed up behind holds at rest, until the text catches up. Without that guard the
- * label visibly spasms through a fast fling.
+ * `k` is the section the scroll says is pinned, clamped to `shown ± 1`. The clamp is the whole
+ * design: the component pre-renders those three headings, so whichever one the scroll lands on is
+ * ALREADY on screen and arrives by translation — no JS round trip on the visual path. A fling that
+ * crosses several sections at once outruns the pre-render; the band hides for those frames rather
+ * than showing a heading it knows is stale.
+ *
+ * `p` is 0 at rest, down to −`bandHeight` fully pushed out by the following heading.
  */
-function pushOffset(sections: StickySection[], shown: number, line: number, bandHeight: number) {
+function pinAt(sections: StickySection[], shown: number, line: number, bandHeight: number) {
   'worklet';
-  if (sections.length === 0) return 0;
-  let idx = -1;
+  if (sections.length === 0) return { k: shown, p: 0, outrun: false };
+  let idx = 0;
   for (let i = 0; i < sections.length && sections[i]!.top <= line; i++) idx = i;
-  if (idx !== shown) return idx > shown ? -bandHeight : 0;
-  const next = sections[idx + 1];
-  if (!next) return 0;
-  return Math.max(Math.min(0, next.top - line - bandHeight), -bandHeight);
+  const k = Math.max(0, Math.max(shown - 1, Math.min(shown + 1, idx)));
+  const next = sections[k + 1];
+  const p = next ? Math.max(Math.min(0, next.top - line - bandHeight), -bandHeight) : 0;
+  // `outrun` means the pinned section is one this stack hasn't rendered — a fling crossing several
+  // at once. The band HIDES for those frames rather than holding a neighbour at the pin line: a
+  // heading that is merely absent for two frames reads as the list scrolling, where a confidently
+  // drawn WRONG heading reads as a bug.
+  return { k, p, outrun: k !== idx };
 }
 
 /**
@@ -70,7 +76,7 @@ function pushOffset(sections: StickySection[], shown: number, line: number, band
  * ON at the same instant, tracks that heading up (it is a list row, so it lives outside the clip),
  * and lands precisely where the pinned one reappears at the swap. So a heading is never underlined
  * while it is leaving, one is never left bare while it arrives, and no hairline is ever seen
- * sliding up the chrome. Both come off `pushOffset`, so neither can disagree with the band.
+ * sliding up the chrome. Both come off `pinAt`, so neither can disagree with the band.
  *
  * They are hairline VIEWS, not borders on the band or the clip. A border on the band's own box is
  * painted under the band's opaque fill on iOS, so it only showed through the gap a push-out opened
@@ -100,11 +106,18 @@ function pushOffset(sections: StickySection[], shown: number, line: number, band
  * reaction on the same arithmetic. Mounting on the JS state's boundary report made the heading
  * appear a frame late, i.e. after the inline one had already gone under the bar.
  *
- * The label is JS state and can lag the UI thread by a frame during a fling, so the push-out ride
- * runs through a two-thread agree-guard — see `pushOffset`. It guards against the DRAWN section,
- * not against `active`: those differ on the very first pin (`active` is still −1 where the drawn
- * one is already 0), and treating that as a disagreement made the band, rule included, arrive a JS
- * frame after the heading it was replacing had gone under the bar.
+ * ── Why the ride never waits for JS ──
+ * The label is React state, so a naive sticky puts a `runOnJS` round trip on the visual path of
+ * every crossing — and during a fling that queues behind LegendList's row recycling, which is what
+ * made this feel a beat slower than the sliding bars reading the very same `scrollOffset`.
+ *
+ * An earlier cut guarded the ride on JS agreeing (hold pushed-out until the label catches up),
+ * which was correct and stalled. Instead the component renders THREE headings — `shown` and its
+ * two neighbours — stacked a band apart with `shown` in the middle, and the UI thread simply
+ * translates whichever one the scroll wants to the pin line. The neighbours sit outside the clip,
+ * so they cost nothing visually until one arrives. `shown` re-bases afterwards, and because the
+ * translate loses exactly the band it gains, the rendered position is identical either side of
+ * that commit — a late update is invisible rather than a jump.
  *
  * The reaction deliberately ignores its INITIAL report (prev === null): the scroll shared value
  * only updates on scroll events, so right after a remount it can still hold the previous scope's
@@ -215,87 +228,120 @@ export function StickySectionHeader<S extends StickySection>({
   // clear it.
   useEffect(() => () => pinnedValue?.set(0), [pinnedValue]);
 
-  // Visibility + the ride on the bar's slide, so the heading stays glued to the bar's bottom edge.
-  const bandStyle = useAnimatedStyle(
-    () => ({ opacity: pinned.value, transform: [{ translateY: barOffset?.value ?? 0 }] }),
-    [barOffset],
-  );
-
-  // The section actually being DRAWN. `active` −1 (nothing pinned yet) still draws the first one —
-  // the band is invisible then, and having the content already in place is what lets the visibility
-  // flip be the whole appearance: no mount, no lag, no jump. Everything below compares against this
-  // rather than against `active`, which is the difference between the first pin landing at rest and
-  // it landing pushed-out: at the moment `pinned` flips, `idx` is 0 while `active` is still −1, and
-  // the agree-guard read that disagreement as "the heading has left" — so the whole band, rule
-  // included, arrived a JS frame late.
+  // The section the stack is BASED on — the middle slot. `active` −1 (nothing pinned yet) still
+  // bases on the first one, so the content is already in place and the visibility flip is the whole
+  // appearance: no mount, no lag, no jump.
+  //
+  // The list hides this row and not whichever slot is momentarily at the pin line, which is safe
+  // for the reason the whole design works: an arriving slot is pixel-aligned with the inline row it
+  // is standing in for (same `scrollOffset`, same geometry), so the frame or two where both are
+  // drawn is two identical headings on top of each other. Late is invisible; only EARLY would show
+  // a gap, and `onActiveChange` can't fire early.
   const shown = active >= 0 ? active : 0;
 
-  // The push-out ride, with the two-thread agree-guard (see the doc). The rule reads this too, so
-  // it can never disagree with where the band actually is.
-  const pushStyle = useAnimatedStyle(() => {
+  // Visibility + the ride on the bar's slide, so the heading stays glued to the bar's bottom edge.
+  const bandStyle = useAnimatedStyle(() => {
     const line = scrollOffset.value + pinLine + (barOffset?.value ?? 0);
-    return { transform: [{ translateY: pushOffset(sections, shown, line, bandHeight) }] };
-  }, [sections, pinLine, scrollOffset, barOffset, shown, bandHeight]);
-
-  // The rule, ON the band and hard-switched: it belongs to the heading it underlines, so it rides
-  // up with it — but it is off the instant that heading starts moving, and on again the instant one
-  // is at rest. So a hand-off reads as the outgoing rule going out and the incoming one coming in,
-  // never as a hairline sliding up the chrome. Its own view, not a border on the band, because the
-  // band's opaque fill is drawn over its own border box on iOS — a border there is only visible
-  // through the gap a push-out opens, which is exactly backwards.
-  const ruleStyle = useAnimatedStyle(() => {
-    const line = scrollOffset.value + pinLine + (barOffset?.value ?? 0);
-    return { opacity: pushOffset(sections, shown, line, bandHeight) < 0 ? 0 : 1 };
-  }, [sections, pinLine, scrollOffset, barOffset, shown, bandHeight]);
-
-  // The SUPERSEDING heading's rule — the other half of the hand-off. The heading pushing this one
-  // out is the list's own inline row, one band below the clip's bottom edge and rising, so its rule
-  // can't live in the clip: it's a second hairline, unclipped, tracking that row. It comes on at the
-  // exact push the pinned one goes off at (both off `pushOffset`), rides up with the row, and lands
-  // precisely where the pinned rule reappears at the swap — so across a hand-off there is always a
-  // rule under a heading, never a gap and never two under one heading.
-  //
-  // Its offset is `2·bandHeight + push` below `stickyTop` because two consecutive bands are exactly
-  // one bandHeight apart. The `barOffset` term cancels the one inside `line`, which is what makes
-  // this track the SCROLL (a list row doesn't ride the sliding bar) while the pinned band does.
-  const nextRuleStyle = useAnimatedStyle(() => {
-    const bar = barOffset?.value ?? 0;
-    const push = pushOffset(sections, shown, scrollOffset.value + pinLine + bar, bandHeight);
     return {
-      opacity: push < 0 ? pinned.value : 0,
-      transform: [{ translateY: bandHeight * 2 + push + bar }],
+      opacity: pinAt(sections, shown, line, bandHeight).outrun ? 0 : pinned.value,
+      transform: [{ translateY: barOffset?.value ?? 0 }],
     };
   }, [sections, pinLine, scrollOffset, barOffset, shown, bandHeight]);
 
-  const section = sections[shown];
-  if (!section) return null;
+  // THE ride, and the only thing on the visual path. Pure UI thread: `pinAt` picks which of the
+  // three pre-rendered headings belongs at the pin line and how far the stack has slid, so a
+  // crossing costs a translate — no `runOnJS`, no React commit, no waiting behind LegendList's
+  // row recycling. That queue is what made this feel slower than the sliding bars, which read the
+  // same `scrollOffset` and never touch JS.
+  //
+  // The stack is three bands tall with `shown` in the MIDDLE (its top starts one band above the
+  // clip), so `k` lands at the pin line by translating `p − (k − shown)·bandHeight`. When `shown`
+  // later catches up to `k`, that term goes to zero and `p` re-bases with it: the rendered position
+  // is identical either side of the commit, which is what makes a late JS update invisible rather
+  // than a jump.
+  const stackStyle = useAnimatedStyle(() => {
+    const line = scrollOffset.value + pinLine + (barOffset?.value ?? 0);
+    const { k, p } = pinAt(sections, shown, line, bandHeight);
+    return { transform: [{ translateY: p - (k - shown) * bandHeight }] };
+  }, [sections, pinLine, scrollOffset, barOffset, shown, bandHeight]);
+
+  // The pinned heading's rule, hard-switched: on only while a heading is AT REST at the pin line.
+  // It lives on the clip rather than in the stack — at rest the band fills the clip, so the two
+  // positions are the same, and one rule beats three riding ones. Drawn AFTER the stack so it isn't
+  // painted under the band's opaque fill (that was the iOS bug that made a border-based rule show
+  // up only while pushed out).
+  const ruleStyle = useAnimatedStyle(() => {
+    const line = scrollOffset.value + pinLine + (barOffset?.value ?? 0);
+    return { opacity: pinAt(sections, shown, line, bandHeight).p < 0 ? 0 : 1 };
+  }, [sections, pinLine, scrollOffset, barOffset, shown, bandHeight]);
+
+  // The SUPERSEDING heading's rule — the other half of the hand-off. The heading pushing the pinned
+  // one out is the list's own inline row, one band below the clip's bottom edge and rising, so its
+  // rule can't live in the clip: it's a second hairline, unclipped, tracking that row. It comes on
+  // at the exact push the pinned one goes off at, rides up with the row, and lands precisely where
+  // the pinned rule reappears at the swap — so across a hand-off there is always a rule under a
+  // heading, never a gap and never two under one heading.
+  //
+  // Its offset is `2·bandHeight + p` below `stickyTop` because two consecutive bands are exactly one
+  // bandHeight apart. The `barOffset` term cancels the one inside `line`, which is what makes this
+  // track the SCROLL (a list row doesn't ride the sliding bar) while the pinned band does.
+  const nextRuleStyle = useAnimatedStyle(() => {
+    const bar = barOffset?.value ?? 0;
+    const { p, outrun } = pinAt(sections, shown, scrollOffset.value + pinLine + bar, bandHeight);
+    return {
+      opacity: p < 0 && !outrun ? pinned.value : 0,
+      transform: [{ translateY: bandHeight * 2 + p + bar }],
+    };
+  }, [sections, pinLine, scrollOffset, barOffset, shown, bandHeight]);
+
+  if (!sections[shown]) return null;
+  // The three headings the ride can land on. `shown` sits in the middle so a crossing in EITHER
+  // direction has its heading already rendered; the two neighbours are outside the clip and
+  // therefore invisible until one of them arrives. Absent at the ends of the list, which is fine —
+  // there is no crossing to make there.
+  const slots = [sections[shown - 1], sections[shown], sections[shown + 1]];
 
   return (
     <>
-      {/* The CLIP at the pin line: the push-out translates the heading up, and the clip is what
-          cuts it off at the bar's edge instead of letting it slide over the bar. `box-none` so
-          pressables inside the heading (Browse's See-all) take their taps while everything else
-          falls through to the list — and 'none' while nothing is pinned, so an invisible heading
-          can never intercept a tap meant for the content under it. */}
+      {/* The CLIP at the pin line: the ride translates the stack, and the clip is what cuts it off
+          at the bar's edge instead of letting a heading slide over the bar — and what keeps the two
+          neighbouring slots hidden until they arrive. `box-none` so pressables inside the heading
+          (Browse's See-all) take their taps while everything else falls through to the list — and
+          'none' while nothing is pinned, so an invisible heading can never intercept a tap meant
+          for the content under it. */}
       <Animated.View
         pointerEvents={active >= 0 ? 'box-none' : 'none'}
         style={[styles.clip, { top: stickyTop, height: bandHeight }, bandStyle]}>
-        {/* The BAND — the page's own background (so the heading stays legible over whatever scrolls
-            beneath it), the heading, and the rule under it — is the pushed element, so all three
-            move together. */}
         <Animated.View
           pointerEvents="box-none"
-          style={[{ height: bandHeight, backgroundColor: theme.background }, pushStyle]}>
-          <View
-            pointerEvents="box-none"
-            style={{ height: contentHeight, marginTop: bandPadding, paddingHorizontal: sidePad }}>
-            {renderHeader(section)}
-          </View>
-          <Animated.View
-            pointerEvents="none"
-            style={[styles.rule, { backgroundColor: theme.barHairline }, ruleStyle]}
-          />
+          // Starts one band ABOVE the clip so the middle slot is the one at rest at the pin line.
+          style={[styles.stack, { top: -bandHeight, height: bandHeight * 3 }, stackStyle]}>
+          {slots.map((slot, i) => (
+            <View
+              // Keyed by SLOT, not by section: the stack is three fixed positions whose contents
+              // re-base as `shown` advances. Keying by section id would remount all three on every
+              // crossing, which is the JS work this design exists to keep off the path.
+              key={i}
+              // Only the middle slot can be interacted with. A neighbour at the pin line is there
+              // for the frame or two before `shown` re-bases; its taps aren't worth the ambiguity
+              // of two live copies of the same heading.
+              pointerEvents={i === 1 ? 'box-none' : 'none'}
+              style={[styles.slot, { height: bandHeight, backgroundColor: theme.background }]}>
+              {slot ? (
+                <View
+                  pointerEvents="box-none"
+                  style={{ height: contentHeight, marginTop: bandPadding, paddingHorizontal: sidePad }}>
+                  {renderHeader(slot)}
+                </View>
+              ) : null}
+            </View>
+          ))}
         </Animated.View>
+        {/* Drawn after the stack, so it is never painted under a band's opaque fill. */}
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.rule, { backgroundColor: theme.barHairline }, ruleStyle]}
+        />
       </Animated.View>
       {/* The superseding heading's rule — outside the clip, because the heading it belongs to is
           the list's own row, below the clip and rising. See `nextRuleStyle`. */}
@@ -312,6 +358,15 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
+    overflow: 'hidden',
+  },
+  stack: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+  },
+  slot: {
+    // The stack lays its three slots out in flow order, each exactly one band tall.
     overflow: 'hidden',
   },
   rule: {
