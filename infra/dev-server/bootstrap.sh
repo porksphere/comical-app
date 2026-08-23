@@ -156,6 +156,14 @@ elif command -v iptables >/dev/null; then
 fi
 
 echo
-echo "Done. Next:"
-echo "  tailscale up --hostname=comical-dev --advertise-tags=tag:devserver"
-echo "  comical-dev status"
+echo "Done."
+if tailscale status >/dev/null 2>&1; then
+  echo "  Tailscale is already up — nothing to do there."
+else
+  # Deliberately NOT --advertise-tags here. Tags must exist in the tailnet's ACL policy
+  # (tagOwners) first; on a default tailnet `tailscale up --advertise-tags=...` is rejected
+  # outright, which is a poor thing to hand someone as their next step. Add tags later, once
+  # the box works — they are what stops a tagged node's key expiring after 90 days.
+  echo "  Next: sudo tailscale up --hostname=comical-dev"
+fi
+echo "  Then:  comical-dev status"
