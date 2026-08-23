@@ -22,6 +22,7 @@ import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { useTheme } from '@/hooks/use-theme';
+import { ROW_SPRING } from '@/lib/row-motion';
 import { hapticImpactLight } from '@/lib/haptics';
 
 import type { ReorderableListProps } from './reorderable-list.types';
@@ -44,7 +45,6 @@ import type { ReorderableListProps } from './reorderable-list.types';
  */
 const ROW = SettingsRowHeight;
 const LIFT_SCALE = 1.03;
-const SPRING = { damping: 20, stiffness: 220, mass: 0.6 } as const;
 const EDGE = 72; // px from a viewport edge where autoscroll kicks in
 const MAX_STEP = 12; // max px/frame autoscroll speed
 
@@ -227,8 +227,8 @@ function DragRow({
     const active = activeId.value === id;
     return {
       transform: [
-        { translateY: active ? activeTop.value : withSpring(slotY(order.value, id), SPRING) },
-        { scale: withSpring(active ? LIFT_SCALE : 1, SPRING) },
+        { translateY: active ? activeTop.value : withSpring(slotY(order.value, id), ROW_SPRING) },
+        { scale: withSpring(active ? LIFT_SCALE : 1, ROW_SPRING) },
       ],
       zIndex: active ? 10 : 0,
       shadowColor: '#000',
