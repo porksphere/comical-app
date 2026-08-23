@@ -30,10 +30,9 @@ apt-get update -qq
 apt-get install -y -qq git curl jq unzip sudo ca-certificates
 
 # watchman separately, and non-fatally. Without it Metro falls back to a plain fs.watch crawl, which
-# is what drops events on a checkout that rewrites hundreds of files — so it matters. But it is not
-# in every suite (notably arm64 on some releases), and a missing optional package must not abort a
-# setup whose other 90% is fine. If it is absent, set DEV_ALWAYS_RESTART=1 in /etc/comical-dev/env:
-# the watcher then restarts Metro on every sync instead of trusting the watcher for JS-only pushes.
+# is what drops events on a checkout that rewrites hundreds of files — so it matters. It is not in
+# every arch/release suite though, and a missing optional package must not abort an otherwise-fine
+# setup. Fall back to DEV_ALWAYS_RESTART=1, which restarts Metro on every sync instead.
 if ! apt-get install -y -qq watchman 2>/dev/null; then
   echo "WARNING: watchman unavailable for $(dpkg --print-architecture) — set DEV_ALWAYS_RESTART=1 in $ENV_FILE" >&2
 fi
@@ -122,8 +121,8 @@ systemctl enable --now comical-metro.service comical-prwatch.service
 # ── 9. Firewall ──────────────────────────────────────────────────────────────
 # Metro is completely unauthenticated — it will serve the whole source tree and accept
 # /symbolicate POSTs from anyone who can reach the port. The tailnet is what protects it, so the
-# public interface must not expose it. Hetzner's cloud firewall should deny the same ports too;
-# this is the second layer, not the only one.
+# public interface must not expose it. Your provider's own network firewall should deny the same
+# ports too; this is the second layer, not the only one.
 if command -v ufw >/dev/null; then
   ufw --force reset >/dev/null
   ufw default deny incoming >/dev/null
@@ -133,12 +132,10 @@ if command -v ufw >/dev/null; then
   ufw --force enable >/dev/null
 fi
 
-# ORACLE CLOUD. OCI's Ubuntu images ship a persisted iptables ruleset (netfilter-persistent) whose
-# INPUT chain ends in a blanket REJECT. ufw installs its own chains but that trailing REJECT still
-# runs, so inbound on tailscale0 gets dropped and the phone cannot reach Metro even though ufw says
-# it is allowed — the classic "I opened the port and nothing works" on OCI. Insert an explicit
-# ACCEPT for the tailnet interface ahead of it. Harmless anywhere else: without those rules there is
-# nothing to sit in front of.
+# Some cloud images ship a persisted iptables ruleset whose INPUT chain ends in a blanket REJECT.
+# ufw installs its own chains but that trailing REJECT still runs, so inbound on tailscale0 is
+# dropped and the phone cannot reach Metro even though ufw reports the port open. Insert an explicit
+# ACCEPT ahead of it. Harmless otherwise: with no such rules there is nothing to sit in front of.
 if command -v iptables >/dev/null && iptables -C INPUT -i tailscale0 -j ACCEPT 2>/dev/null; then
   : # already present
 elif command -v iptables >/dev/null; then

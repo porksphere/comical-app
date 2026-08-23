@@ -49,42 +49,17 @@ the builder. A Pages preview also has no backend, so it is stuck in `DEMO_MODE`;
 
 ### 1. The box
 
-**4GB minimum**, and that is measured, not padding. Metro peaks at **2.3GB RSS** while building a
-cold graph (~4000 modules, web) and settles to ~1GB once it is serving. A 2GB box gets Metro
-OOM-killed partway through every cold start, so the cheap tier is not an option at any provider.
-Two cores is enough — bundling is mostly single-threaded and the box never builds a binary.
+Requirements, not a shopping list — any host that meets these works, and Tailscale takes inbound
+firewall rules, TLS and DNS out of the decision:
 
-Ubuntu 24.04. Any comparable VPS works; the provider barely matters here because Tailscale removes
-inbound firewall rules, TLS and DNS from the decision. Prefer a **US region** if you are in the US
-— the first bundle is several MB over the tunnel — but a EU box is a real option if the US 4GB tier
-is priced badly: Fast Refresh deltas are small enough that the added RTT is invisible, and it only
-costs a few seconds on a cold start.
+- **4GB RAM minimum.** Measured: Metro peaks at **2.3GB RSS** building a cold graph (~4000 modules,
+  web) and settles to ~1GB serving. A 2GB box gets it OOM-killed partway through every cold start.
+- **2 cores** is enough. Bundling is largely single-threaded and this box never builds a binary.
+- **Ubuntu 24.04**, amd64 or arm64. `bootstrap.sh` is apt-based.
+- **Inbound 22/tcp only.** Never expose Metro's port; see Security below.
 
-**Oracle Cloud's always-free Ampere A1** fits: it was halved to 2 OCPU / 12 GB in June 2026 (every
-guide still saying 4 OCPU / 24 GB predates that), but 12 GB is still comfortably above the 2.3 GB
-peak and two cores is what this needs. The gamble is A1 capacity in your region, not the specs.
-Two things to know on OCI specifically, both handled by `bootstrap.sh`:
-
-- Its Ubuntu images carry a persisted iptables ruleset whose INPUT chain ends in a blanket REJECT.
-  ufw does not displace it, so inbound on `tailscale0` is dropped and the phone cannot reach Metro
-  even though ufw reports the port open. An explicit ACCEPT is inserted ahead of it.
-- A1 is arm64. bun and Node are fine there; `watchman` may not be, so it installs non-fatally and
-  warns. If it is missing, set `DEV_ALWAYS_RESTART=1` and Metro restarts on every sync instead.
-
-And one thing bootstrap cannot fix: Oracle **reclaims idle Always Free instances**. An instance is
-idle if, across a 7-day window, 95th-percentile CPU is under 20% *and* network is under 20% *and*
-memory is under 20% (memory applies to A1). A dev server used a few hours a week trips all three —
-idle Metro holds ~1GB of 12GB, which is 8%. Upgrading the tenancy to **Pay As You Go** exempts it
-from reclamation and still costs nothing while you stay inside the Always Free limits; it needs a
-card on file. Without that, expect to rebuild from `bootstrap.sh` periodically.
-
-At the VCN level the only ingress this needs is **22/tcp**. Do not open Metro's port — the tailnet
-is what reaches it. Optionally allow **UDP 41641** inbound: Tailscale works without it by relaying
-through DERP, but a direct connection is meaningfully faster for a multi-MB cold bundle, and
-WireGuard is authenticated so exposing it is safe.
-
-> If you already run `host-server` somewhere persistent, **use that machine instead** — colocating
-> Metro and the backend is what gets the dev build real data.
+> If you already run `host-server` somewhere persistent, **use that machine** — colocating Metro and
+> the backend is what gets the dev build real data.
 
 ### 2. GitHub
 
@@ -169,9 +144,9 @@ same reason — without it Metro falls back to a plain crawl.
 `/symbolicate` POSTs, from anyone who can reach the port. The tailnet is the only thing protecting
 it, which is precisely why this uses Tailscale instead of a public tunnel with a guessable URL.
 
-`bootstrap.sh` sets `ufw` to allow inbound only on `tailscale0` (plus SSH). Set Hetzner's cloud
-firewall to deny the same ports — two layers, because the box is one `ufw disable` from being an
-open source-code mirror.
+`bootstrap.sh` sets `ufw` to allow inbound only on `tailscale0` (plus SSH). Set your provider's
+network firewall to deny the same ports — two layers, because the box is one `ufw disable` from
+being an open source-code mirror.
 
 ## Not yet verified
 
