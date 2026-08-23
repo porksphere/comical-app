@@ -8,7 +8,6 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 
-import { Hairline } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 /** One pinnable section: the row key of its header (so the list can hide the heading the pinned
@@ -498,7 +497,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    height: Hairline,
+    height: StyleSheet.hairlineWidth,
   },
   // The superseding heading's rule is positioned from the TOP (it tracks a scrolling row) and is
   // NOT inside the clip, so it can be drawn below the clip's bottom edge — see `nextRuleStyle`.
@@ -506,6 +505,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    height: Hairline,
+    height: StyleSheet.hairlineWidth,
   },
 });

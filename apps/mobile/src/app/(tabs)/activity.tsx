@@ -21,13 +21,14 @@ import { encodeSeriesParam } from '@/lib/series-nav';
 import { CheckIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { PullIndicator } from '@/components/pull-indicator';
 import { RetryBlock } from '@/components/retry-block';
+import { RowHairline } from '@/components/row-hairline';
 import { SeriesCardMenu } from '@/components/series-card-menu';
 import { SwipeableRow } from '@/components/settings/swipeable-row';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
-import { BarContentGap, BottomTabInset, Hairline, listPaddingTop, MaxTopLevelWidth, Spacing, topLevelCenterInset } from '@/constants/theme';
+import { BarContentGap, BottomTabInset, listPaddingTop, MaxTopLevelWidth, Spacing, topLevelCenterInset } from '@/constants/theme';
 import { activityQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import type { ActivityEntry } from '@/data/types';
@@ -37,7 +38,6 @@ import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
-import { useTheme } from '@/hooks/use-theme';
 import { useRouter } from '@/lib/nav';
 import { relTime } from '@/lib/rel-time';
 import { notifyScrollBeginDrag, notifyScrollEndDrag, notifyScrollRest } from '@/lib/scroll-release';
@@ -68,7 +68,6 @@ type SeriesActivity = {
 export default function ActivityScreen() {
   const ds = useDataSource();
   const mock = useMockActive();
-  const theme = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -309,7 +308,6 @@ export default function ActivityScreen() {
               paddingLeft: sidePad,
               paddingRight: sidePad,
             }}
-            ItemSeparatorComponent={() => <View style={[styles.sep, { backgroundColor: theme.hairline }]} />}
             renderItem={({ item }) => (
               <ActivityItem
                 item={item}
@@ -400,35 +398,38 @@ function ActivityItem({
     />
   );
   return (
-    <SwipeableRow
-      name={item.title}
-      // Actions lay out left→right, so the LAST sits at the screen edge — revealed by the
-      // smallest swipe and the easiest to tap. Put the destructive Clear FIRST (the inner
-      // slot, reached only by swiping further) and Mark read at the edge, so the safe action
-      // is the easy one and a delete takes a deliberate, longer swipe. All-read rows have
-      // nothing to mark, so they offer Clear alone (which then becomes full-swipeable).
-      actions={[
-        // `collapses`: the clear is optimistic, so fold the row shut before the data drops it.
-        { label: 'Clear', icon: TrashIcon, destructive: true, collapses: true, onPress: onRemove },
-        ...(item.hasUnread ? [{ label: 'Mark read', icon: CheckIcon, onPress: onMarkRead }] : []),
-      ]}>
-      {Platform.OS === 'web' ? (
-        renderRow(false)
-      ) : (
-        <SeriesCardMenu
-          enabled={!!item.bridgeId}
-          bridgeId={item.bridgeId}
-          bridge={bridge}
-          entry={{ id: item.seriesId, title: item.title, cover: item.thumbnailUrl ?? '' }}
-          direct={direct}
-          coverAspect={2 / 3}
-          startRadius={6} // matches HistoryRow's thumbnail corner
-          zoomSource={zoomSource}
-          measureRef={thumbRef}>
-          {({ hidden }) => renderRow(hidden)}
-        </SeriesCardMenu>
-      )}
-    </SwipeableRow>
+    <>
+      <SwipeableRow
+        name={item.title}
+        // Actions lay out left→right, so the LAST sits at the screen edge — revealed by the
+        // smallest swipe and the easiest to tap. Put the destructive Clear FIRST (the inner
+        // slot, reached only by swiping further) and Mark read at the edge, so the safe action
+        // is the easy one and a delete takes a deliberate, longer swipe. All-read rows have
+        // nothing to mark, so they offer Clear alone (which then becomes full-swipeable).
+        actions={[
+          // `collapses`: the clear is optimistic, so fold the row shut before the data drops it.
+          { label: 'Clear', icon: TrashIcon, destructive: true, collapses: true, onPress: onRemove },
+          ...(item.hasUnread ? [{ label: 'Mark read', icon: CheckIcon, onPress: onMarkRead }] : []),
+        ]}>
+        {Platform.OS === 'web' ? (
+          renderRow(false)
+        ) : (
+          <SeriesCardMenu
+            enabled={!!item.bridgeId}
+            bridgeId={item.bridgeId}
+            bridge={bridge}
+            entry={{ id: item.seriesId, title: item.title, cover: item.thumbnailUrl ?? '' }}
+            direct={direct}
+            coverAspect={2 / 3}
+            startRadius={6} // matches HistoryRow's thumbnail corner
+            zoomSource={zoomSource}
+            measureRef={thumbRef}>
+            {({ hidden }) => renderRow(hidden)}
+          </SeriesCardMenu>
+        )}
+      </SwipeableRow>
+      <RowHairline />
+    </>
   );
 }
 
@@ -463,8 +464,5 @@ const styles = StyleSheet.create({
   },
   list: {
     flex: 1,
-  },
-  sep: {
-    height: Hairline,
   },
 });

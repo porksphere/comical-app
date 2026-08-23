@@ -20,11 +20,12 @@ import {
 } from '@/lib/series-zoom';
 import { encodeSeriesParam } from '@/lib/series-nav';
 import { RetryBlock } from '@/components/retry-block';
+import { RowHairline } from '@/components/row-hairline';
 import { SeriesCardMenu } from '@/components/series-card-menu';
 import { SwipeableRow } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BarContentGap, BottomTabInset, Hairline, listPaddingTop, MaxTopLevelWidth, Spacing, topLevelCenterInset } from '@/constants/theme';
+import { BarContentGap, BottomTabInset, listPaddingTop, MaxTopLevelWidth, Spacing, topLevelCenterInset } from '@/constants/theme';
 import { historyQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type HistoryEntry } from '@/data/types';
@@ -33,7 +34,6 @@ import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
-import { useTheme } from '@/hooks/use-theme';
 import { useRouter } from '@/lib/nav';
 import { relTime } from '@/lib/rel-time';
 import { scrollPhaseHandlers } from '@/lib/scroll-release';
@@ -41,7 +41,6 @@ import { scrollPhaseHandlers } from '@/lib/scroll-release';
 export default function HistoryScreen() {
   const ds = useDataSource();
   const mock = useMockActive();
-  const theme = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -193,7 +192,6 @@ export default function HistoryScreen() {
             paddingLeft: sidePad,
             paddingRight: sidePad,
           }}
-          ItemSeparatorComponent={() => <View style={[styles.sep, { backgroundColor: theme.hairline }]} />}
           renderItem={({ item }) => (
             <HistoryItem
               item={item}
@@ -268,28 +266,31 @@ function HistoryItem({
     />
   );
   return (
-    <SwipeableRow
-      name={item.title}
-      // `collapses`: the remove is optimistic (see the mutation above), so the row folds shut and
-      // the ones below it come up, instead of the list re-laying out around a row that vanished.
-      actions={[{ label: 'Remove', icon: TrashIcon, destructive: true, collapses: true, onPress: onRemove }]}>
-      {Platform.OS === 'web' ? (
-        renderRow(false)
-      ) : (
-        <SeriesCardMenu
-          enabled={!!item.bridgeId}
-          bridgeId={item.bridgeId}
-          bridge={bridge}
-          entry={{ id: item.seriesId, title: item.title, cover: item.thumbnailUrl ?? '' }}
-          direct={direct}
-          coverAspect={2 / 3}
-          startRadius={6} // matches HistoryRow's thumbnail corner
-          zoomSource={zoomSource}
-          measureRef={thumbRef}>
-          {({ hidden }) => renderRow(hidden)}
-        </SeriesCardMenu>
-      )}
-    </SwipeableRow>
+    <>
+      <SwipeableRow
+        name={item.title}
+        // `collapses`: the remove is optimistic (see the mutation above), so the row folds shut and
+        // the ones below it come up, instead of the list re-laying out around a row that vanished.
+        actions={[{ label: 'Remove', icon: TrashIcon, destructive: true, collapses: true, onPress: onRemove }]}>
+        {Platform.OS === 'web' ? (
+          renderRow(false)
+        ) : (
+          <SeriesCardMenu
+            enabled={!!item.bridgeId}
+            bridgeId={item.bridgeId}
+            bridge={bridge}
+            entry={{ id: item.seriesId, title: item.title, cover: item.thumbnailUrl ?? '' }}
+            direct={direct}
+            coverAspect={2 / 3}
+            startRadius={6} // matches HistoryRow's thumbnail corner
+            zoomSource={zoomSource}
+            measureRef={thumbRef}>
+            {({ hidden }) => renderRow(hidden)}
+          </SeriesCardMenu>
+        )}
+      </SwipeableRow>
+      <RowHairline />
+    </>
   );
 }
 
@@ -324,8 +325,5 @@ const styles = StyleSheet.create({
   },
   list: {
     flex: 1,
-  },
-  sep: {
-    height: Hairline,
   },
 });
