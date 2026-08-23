@@ -1768,7 +1768,7 @@ function SeriesReaderInstance({
     const from = zoomSource?.origin;
     if (!from || !id) return;
     const run = ++exitProbeRun.current;
-    void resolveZoomTarget(id, zoomSource.source, (fresh) => {
+    void resolveZoomTarget(id, zoomSource, (fresh) => {
       if (exitProbeRun.current !== run) return;
       heroShiftX.set(withSpring(fresh.x - from.x, ZOOM_OUT_SPRING));
       heroShiftY.set(withSpring(fresh.y - from.y, ZOOM_OUT_SPRING));
