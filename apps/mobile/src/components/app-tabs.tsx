@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ActivityTabBadge, SettingsTabBadge } from '@/components/tab-badge';
 import { renderFadingTabScreen } from '@/components/tab-slot-fade';
-import { DesktopTopBarHeight, MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { DesktopTopBarHeight, Hairline, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
@@ -497,7 +497,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingTop: Spacing.two,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopWidth: Hairline,
   },
   bottomButton: {
     flex: 1,

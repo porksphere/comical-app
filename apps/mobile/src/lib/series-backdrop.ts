@@ -1,6 +1,7 @@
 import { Dimensions } from 'react-native';
 import { makeMutable, useAnimatedStyle } from 'react-native-reanimated';
 
+import { BACKDROP_SCALE_MIN } from '@/constants/theme';
 import { sharedPushback } from '@/lib/pushback-signal';
 import { armSettleCheck, cancelSettleCheck, notePushback } from '@/lib/pushback-watchdog';
 
@@ -81,9 +82,6 @@ export function holdSeriesBackdrop(): () => void {
  *  partly visible through the transparent modal for the first quarter of the travel — so it is
  *  kept subtle enough not to read as the lights going out. */
 const BACKDROP_DIM_MAX = 0.14;
-/** `ZOOM_BACKGROUND_SCALE` — how far the screen underneath shrinks at full cover. */
-const BACKDROP_SCALE_MIN = 0.9375;
-
 /** The backdrop's scale-down. Safe to mount anywhere — it rests at 1 whenever no series page is
  *  open, and the shared value is reset on that page's unmount. */
 export function useSeriesReaderBackdropStyle() {

@@ -3,7 +3,7 @@ import { Platform, Pressable, StyleSheet, View, type GestureResponderEvent } fro
 
 import { ChevronRightIcon } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
-import { SettingsGutter, SettingsRowHeight, Spacing } from '@/constants/theme';
+import { Hairline, SettingsGutter, SettingsRowHeight, Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticImpactLight } from '@/lib/haptics';
@@ -236,7 +236,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   divider: {
-    height: StyleSheet.hairlineWidth,
+    height: Hairline,
     // Left edge stays at the gutter (aligned under the row's text); the right runs off-screen.
     marginRight: -SettingsGutter,
   },
