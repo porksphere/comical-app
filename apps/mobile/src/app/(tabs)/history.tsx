@@ -15,6 +15,7 @@ import {
   notifyZoomSurfaceChanged,
   useZoomSourceKey,
   useZoomSurfaceKey,
+  useZoomSurfaceLocator,
   useZoomSurfaceReveal,
   ZoomSurfaceContext,
 } from '@/lib/series-zoom';
@@ -100,8 +101,7 @@ export default function HistoryScreen() {
   const revealSeries = useCallback(
     (seriesId: string) => {
       const index = visible?.findIndex((h) => h.seriesId === seriesId) ?? -1;
-      // -1 means this list no longer holds the series at all, which is a different failure from
-      // scrolling to it and the card still not answering — see resolveZoomTarget's walk.
+      // -1 means this list no longer holds the series at all — nothing to scroll to.
       traceJS('zoom', 'reveal.idx', { i: index, n: visible?.length ?? 0 });
       // Centred, so the card clears the top bar and the tab bar whichever way it drifted out.
       if (index >= 0) listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0.5 });
@@ -109,6 +109,19 @@ export default function HistoryScreen() {
     [visible],
   );
   useZoomSurfaceReveal(zoomSurface, revealSeries);
+  // Where this list has the series NOW, straight out of the virtualization state — see
+  // ZoomSurfacePlace. Answers for rows the list has not mounted, which is exactly the case the
+  // collapse used to lose.
+  const locateSeries = useCallback(
+    (seriesId: string) => {
+      const index = visible?.findIndex((h) => h.seriesId === seriesId) ?? -1;
+      const state = index >= 0 ? listRef.current?.getState() : undefined;
+      const contentY = state?.positionAtIndex(index);
+      return state && contentY !== undefined ? { contentY, scroll: state.scroll } : null;
+    },
+    [visible],
+  );
+  useZoomSurfaceLocator(zoomSurface, locateSeries);
   // Tell a collapse in flight when the order changed, so it can re-aim.
   useEffect(() => {
     notifyZoomSurfaceChanged(zoomSurface);

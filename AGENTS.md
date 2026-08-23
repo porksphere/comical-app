@@ -150,13 +150,23 @@ suppression doesn't fit one of the three cases above, it's a code change, not a 
 # Zoom transitions
 
 The series page grows out of the card that opened it and collapses back into it (`apps/mobile/src/lib/series-zoom.ts`).
-The collapse target is re-measured when the collapse starts and re-aimed if the card moves while it
+The collapse target is re-resolved when the collapse starts and re-aimed if the card moves while it
 runs — a captured rect goes stale the moment a last-read list reorders. Don't freeze it.
+
+**A list that reorders is asked where its item is; it is not measured.** `useZoomSurfaceLocator`
+answers out of the virtualization state (`getState().positionAtIndex` / `.scroll`), which knows every
+index — including rows it hasn't mounted — and knows the new one a render before the row is drawn
+there. Measuring the row instead fails in both directions: a row scrolled out of the render window
+unmounts, so the case that most needs finding is the one nothing can measure, and a row's drawn
+position trails the list's own by a commit, so a measurement taken as the reorder lands reports where
+it WAS. Both of those were real bugs, not hypotheticals.
 
 To make another list a zoom source: give it a stable key via `useZoomSurfaceKey`, put that on
 `ZoomSurfaceContext` around the rows, have cards call `useZoomOriginSource`, and register
 `useZoomSurfaceReveal` (scroll an item into view) plus `notifyZoomSurfaceChanged` when the order
-changes. Every step degrades to the previous behaviour if skipped.
+changes. Add `useZoomSurfaceLocator` if the list can reorder under an open page. Every step degrades
+to the previous behaviour if skipped — without a locator the card is measured once, which is all a
+surface that can't reorder ever needed.
 
 # Press-in warms the destination
 

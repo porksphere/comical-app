@@ -105,10 +105,11 @@ export function useZoomSurfaceKey(surface: string): ZoomSourceKey {
   return key;
 }
 
-type Capture = { id: string; source: ZoomSourceKey; origin: ZoomOrigin; at: number };
+type Capture = { id: string; source: ZoomSourceKey; origin: ZoomOrigin; place: ZoomSurfacePlace | null; at: number };
 
-/** A consumed capture: where to grow from, and which card to blank while doing it. */
-export type TakenZoom = { origin: ZoomOrigin; source: ZoomSourceKey };
+/** A consumed capture: where to grow from, which card to blank while doing it, and where its
+ *  surface had the item at that moment — the baseline the exit measures movement against. */
+export type TakenZoom = { origin: ZoomOrigin; source: ZoomSourceKey; place: ZoomSurfacePlace | null };
 
 /** Beyond this, a captured rect is assumed to belong to some earlier, abandoned press. */
 const MAX_AGE_MS = 1500;
@@ -120,7 +121,9 @@ let taken: Capture | null = null;
 
 /** Called from a series card's press-in. Overwrites any earlier capture — the newest press wins. */
 export function setZoomOrigin(id: string, source: ZoomSourceKey, origin: ZoomOrigin): void {
-  pending = { id, source, origin, at: Date.now() };
+  // Taken now, not at collapse: this rect and the surface's idea of where the item sits have to be
+  // read at the same instant, or the delta between them measures the wrong interval.
+  pending = { id, source, origin, place: locators.get(source)?.(id) ?? null, at: Date.now() };
 }
 
 /**
@@ -146,7 +149,7 @@ export function takeZoomOrigin(id: string | undefined): TakenZoom | null {
     pending = null;
     if (taken && taken.id === id && now - taken.at <= MAX_AGE_MS) {
       traceJS('zoom', 'take.reuse', { src: taken.source });
-      return { origin: taken.origin, source: taken.source };
+      return { origin: taken.origin, source: taken.source, place: taken.place };
     }
     traceJS('zoom', 'take.none', {});
     return null;
@@ -154,7 +157,7 @@ export function takeZoomOrigin(id: string | undefined): TakenZoom | null {
   pending = null;
   taken = fresh;
   traceJS('zoom', 'take', { src: fresh.source });
-  return { origin: fresh.origin, source: fresh.source };
+  return { origin: fresh.origin, source: fresh.source, place: fresh.place };
 }
 
 /**
@@ -232,6 +235,33 @@ export function useZoomSurfaceReveal(surface: ZoomSourceKey, reveal: ZoomSurface
 }
 
 /**
+ * Where a surface currently holds an item, in the surface's OWN coordinates: the item's offset down
+ * the scrollable content, and where the scroller sits. Both read from a virtualized list's
+ * `getState()`, which is the right thing to ask for two reasons the card itself can't match — it
+ * knows every index, including the ones it has not mounted, and it knows the new position a render
+ * BEFORE the row is drawn there.
+ *
+ * Raw list coordinates rather than a window rect, so the surface doesn't have to know that the zoom
+ * flies a thumbnail INSIDE its row rather than the row itself: a captured rect plus the change in
+ * these two numbers is the thumbnail's new position, whatever its inset within the row.
+ */
+export type ZoomSurfacePlace = { contentY: number; scroll: number };
+export type ZoomSurfaceLocate = (id: string) => ZoomSurfacePlace | null;
+
+const locators = new Map<ZoomSourceKey, ZoomSurfaceLocate>();
+
+/** Register this list as able to say where its items are. Safe to call unconditionally; a surface
+ *  without one falls back to asking the card, which is right for anything that can't reorder. */
+export function useZoomSurfaceLocator(surface: ZoomSourceKey, locate: ZoomSurfaceLocate): void {
+  useEffect(() => {
+    locators.set(surface, locate);
+    return () => {
+      if (locators.get(surface) === locate) locators.delete(surface);
+    };
+  }, [locate, surface]);
+}
+
+/**
  * A surface announcing that its items moved. Measuring once at collapse start assumes the source
  * stops moving when you let go; the write and refetch behind a reorder are async and either can
  * land mid-collapse, so a collapse in flight subscribes and re-aims.
@@ -271,71 +301,57 @@ function afterLayout(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 }
 
-function nextFrame(): Promise<void> {
-  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+/** The captured rect, moved by however far its surface has moved the item since. Single-column
+ *  lists, so only y travels. */
+function shifted(origin: ZoomOrigin, base: ZoomSurfacePlace, now: ZoomSurfacePlace): ZoomOrigin {
+  return { ...origin, y: origin.y + (now.contentY - base.contentY) - (now.scroll - base.scroll) };
 }
 
 /**
- * Give up re-asking. Has to outlast the feeds' own reorder spring (`ROW_REORDER_TRANSITION`, ~240ms
- * to rest ≈ 29 frames at 120Hz), since the card is now SLIDING to its new slot rather than
- * teleporting there — stop early and the collapse aims at wherever it had got to. The walk exits as
- * soon as two answers agree, so this only bites when something never settles.
- */
-const SETTLE_FRAMES = 40;
-
-/**
- * Where a collapse should land, re-asked until the answer stops moving, having first scrolled the
- * card back into view if the list moved it out.
+ * Where a collapse should land, having first scrolled the card back into view if the list moved it
+ * out.
  *
- * One measurement is not enough for a reorder. The list writes new container positions into its own
- * store, and a container's `top` only reaches the view in the render that reads it — a commit after
- * the data change that announced the move. Measure in that same tick and the card answers with where
- * it WAS, which is the stale target a held drag then collapses into.
+ * ASKS THE SURFACE, NOT THE CARD, whenever the surface can answer. Measuring the row was the wrong
+ * source in two ways that both bit: a row scrolled far enough out of the list's render window
+ * UNMOUNTS, so the case where it most needs finding is the one where nothing can measure it; and a
+ * row's drawn position trails the list's own by a commit, so a measurement taken when the reorder
+ * lands reports where the row WAS, and taking it twice just reports it twice. The list's state has
+ * neither problem, which is why this needs no re-asking loop.
  *
- * Each distinct answer is handed over as it arrives, so a collapse already in flight re-aims instead
- * of waiting for the walk to finish; the first one is the pre-move spot the caller is already aimed
- * at, so reporting it costs nothing. With the feeds animating their reorder this also means the
- * page TRACKS the sliding row rather than jumping to where it will end up. Degrades in steps — no surface, the first measurement stands;
- * no card, nothing is reported and the caller keeps its capture.
+ * Degrades in steps. No locator — a grid card, the context menu's synthesized preview, anything that
+ * cannot reorder under an open page — and one measurement of the card stands, which is all such a
+ * source ever needed. Nothing measurable either, and nothing is reported: the caller keeps its
+ * capture, which is never a worse answer than not asking.
  */
 export async function resolveZoomTarget(
   id: string,
-  source: ZoomSourceKey,
+  taken: TakenZoom,
   onTarget: (rect: ZoomOrigin) => void,
 ): Promise<void> {
-  let last: ZoomOrigin | null = null;
-  let revealed = false;
-  traceJS('zoom', 'resolve', { src: source, reveals: reveals.has(source) });
-  for (let frame = 0; frame < SETTLE_FRAMES; frame++) {
-    let next = await measureZoomSource(id, source);
-    if (next && !onScreen(next) && !revealed) {
-      revealed = true;
-      const reveal = reveals.get(source);
-      if (reveal) {
-        traceJS('zoom', 'reveal', { src: source, from: Math.round(next.y) });
-        reveal(id);
-        await afterLayout();
-        next = (await measureZoomSource(id, source)) ?? next;
-        traceJS('zoom', 'reveal.done', { src: source, to: Math.round(next.y), on: onScreen(next) });
-      } else {
-        traceJS('zoom', 'reveal.none', { src: source });
+  const { source, origin, place: base } = taken;
+  const locate = locators.get(source);
+  if (locate && base) {
+    let now = locate(id);
+    traceJS('zoom', 'locate', { src: source, found: !!now });
+    if (now) {
+      let rect = shifted(origin, base, now);
+      if (!onScreen(rect)) {
+        const reveal = reveals.get(source);
+        traceJS('zoom', reveal ? 'reveal' : 'reveal.none', { src: source, from: Math.round(rect.y) });
+        if (reveal) {
+          reveal(id);
+          await afterLayout();
+          now = locate(id) ?? now;
+          rect = shifted(origin, base, now);
+          traceJS('zoom', 'reveal.done', { src: source, to: Math.round(rect.y), on: onScreen(rect) });
+        }
       }
-    }
-    // Each exit is its own line: "the walk stopped" is the symptom for a stale target AND for a
-    // correct early settle, and from the outside they look the same.
-    if (!next) {
-      traceJS('zoom', 'resolve.gone', { src: source, f: frame, revealed });
+      onTarget(rect);
       return;
     }
-    if (last && next.x === last.x && next.y === last.y) {
-      traceJS('zoom', 'resolve.settled', { src: source, f: frame, y: Math.round(next.y) });
-      return;
-    }
-    last = next;
-    onTarget(next);
-    await nextFrame();
   }
-  traceJS('zoom', 'resolve.cap', { src: source, y: last ? Math.round(last.y) : -1 });
+  const measured = await measureZoomSource(id, source);
+  if (measured) onTarget(measured);
 }
 
 /** The shape of the thing a card measures — `View`'s, narrowed to the one method used. */
