@@ -253,6 +253,45 @@ export function useZoomSurfaceReveal(surface: ZoomSourceKey, reveal: ZoomSurface
   }, [reveal, surface]);
 }
 
+/**
+ * A surface telling the world it moved its items — the signal a transition in flight needs.
+ *
+ * The exit measuring ONCE, when the collapse starts, is the same mistake as capturing on press-in,
+ * only narrower: it assumes the source stops moving the moment you let go. It doesn't. A read
+ * reorders History through a write and a refetch, both async, and either can land in the middle of
+ * the collapse — at which point the transition is flying at a row that isn't there any more.
+ *
+ * So a collapse subscribes, a list says when its order changed, and the transition re-aims. That is
+ * what UIKit does too: its zoom transition calls `sourceViewProvider` "whenever the transition needs
+ * to request a source view … multiple times during the transition's lifecycle, to ensure that the
+ * transition incorporates the most up-to-date visuals". Aiming once is the special case that happens
+ * to work when nothing moves.
+ */
+const watchers = new Map<ZoomSourceKey, Set<() => void>>();
+
+/** Call from a surface whenever the position of its items may have changed — an order change, a
+ *  filter, an insertion. Cheap and idempotent: nobody is listening unless a collapse is in flight. */
+export function notifyZoomSurfaceChanged(surface: ZoomSourceKey): void {
+  const set = watchers.get(surface);
+  if (!set?.size) return;
+  traceJS('zoom', 'surface.moved', { src: surface });
+  for (const fn of set) fn();
+}
+
+/** Subscribe a collapse to its own surface's movement. */
+export function onZoomSurfaceChange(surface: ZoomSourceKey, fn: () => void): () => void {
+  let set = watchers.get(surface);
+  if (!set) {
+    set = new Set();
+    watchers.set(surface, set);
+  }
+  set.add(fn);
+  return () => {
+    set.delete(fn);
+    if (set.size === 0) watchers.delete(surface);
+  };
+}
+
 /** Fully inside the window — the criterion for "a collapse can land on this". Partly clipped is not
  *  good enough: the copy would finish half off the edge, which reads as missing rather than as
  *  arriving. */
