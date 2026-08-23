@@ -2,7 +2,7 @@ import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -12,6 +12,7 @@ import { HistoryRow } from '@/components/history-row';
 import {
   useIsZoomingSeries,
   useZoomOriginSource,
+  notifyZoomSurfaceChanged,
   useZoomSourceKey,
   useZoomSurfaceKey,
   useZoomSurfaceReveal,
@@ -102,6 +103,13 @@ export default function HistoryScreen() {
     [visible],
   );
   useZoomSurfaceReveal(zoomSurface, revealSeries);
+  // …and tell a collapse in flight when that order actually changed, so it can re-aim at the row's
+  // new position instead of finishing at the old one. The write that reorders this list and the
+  // refetch behind it are both async, so either can land mid-animation; this is what makes that not
+  // matter. No-op unless a series page opened from here is currently collapsing.
+  useEffect(() => {
+    notifyZoomSurfaceChanged(zoomSurface);
+  }, [visible, zoomSurface]);
 
   const barHeight = useTopBarHeight();
   const headerHeight = insets.top + barHeight;
