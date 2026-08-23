@@ -23,11 +23,12 @@ USER_NAME=comical
 [ "$(id -u)" = 0 ] || { echo "run as root" >&2; exit 1; }
 
 # ── 1. Packages ──────────────────────────────────────────────────────────────
-# watchman is not optional: Metro falls back to a plain fs.watch crawl without it, and that is what
-# drops events on a checkout that rewrites hundreds of files at once. unzip is bun's installer dep.
+# Assume nothing is preinstalled — Minimal cloud images ship a deliberately thin package set, and
+# ufw in particular is absent from them. The firewall step below is a no-op without it, which would
+# leave the box with no host firewall and no error to notice. unzip is bun's installer dep.
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq git curl jq unzip sudo ca-certificates
+apt-get install -y -qq git curl jq unzip sudo ca-certificates ufw iptables
 
 # watchman separately, and non-fatally. Without it Metro falls back to a plain fs.watch crawl, which
 # is what drops events on a checkout that rewrites hundreds of files — so it matters. It is not in
@@ -123,14 +124,16 @@ systemctl enable --now comical-metro.service comical-prwatch.service
 # /symbolicate POSTs from anyone who can reach the port. The tailnet is what protects it, so the
 # public interface must not expose it. Your provider's own network firewall should deny the same
 # ports too; this is the second layer, not the only one.
-if command -v ufw >/dev/null; then
-  ufw --force reset >/dev/null
-  ufw default deny incoming >/dev/null
-  ufw default allow outgoing >/dev/null
-  ufw allow in on tailscale0 >/dev/null
-  ufw allow 22/tcp >/dev/null
-  ufw --force enable >/dev/null
+if ! command -v ufw >/dev/null; then
+  echo "ERROR: ufw missing after install — refusing to leave this box without a host firewall" >&2
+  exit 1
 fi
+ufw --force reset >/dev/null
+ufw default deny incoming >/dev/null
+ufw default allow outgoing >/dev/null
+ufw allow in on tailscale0 >/dev/null
+ufw allow 22/tcp >/dev/null
+ufw --force enable >/dev/null
 
 # Some cloud images ship a persisted iptables ruleset whose INPUT chain ends in a blanket REJECT.
 # ufw installs its own chains but that trailing REJECT still runs, so inbound on tailscale0 is
