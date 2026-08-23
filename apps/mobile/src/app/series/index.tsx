@@ -222,16 +222,23 @@ const ZOOM_OUT_SPRING = {
   overshootClamping: false,
   restSpeedThreshold: 0.02,
 } as const;
-// The cross-fade, verbatim from the library's four opacity ranges. The ARRIVING PAGE fades in
-// (`ZOOM_FOCUSED_ELEMENT_*`) while a COPY OF THE TAPPED THUMBNAIL, flying the same path, fades out
-// (`ZOOM_UNFOCUSED_ELEMENT_*` — there it is the real source element on the screen underneath,
-// transformed to track; from inside a modal we can't touch that view, so we fly a copy). The two
-// overlap: for the first third of an open you are looking at the thumbnail, not the page.
-// Close uses different ranges than open — the outgoing page holds longer and the thumbnail is
-// brought back earlier, so the picture is already there before the page dissolves off it.
+// The cross-fade. The ARRIVING PAGE fades in (`ZOOM_FOCUSED_ELEMENT_*`) while a COPY OF THE TAPPED
+// THUMBNAIL, flying the same path, fades out (`ZOOM_UNFOCUSED_ELEMENT_*` — there it is the real
+// source element on the screen underneath, transformed to track; from inside a modal we can't touch
+// that view, so we fly a copy). Close holds the outgoing page longer and brings the thumbnail back
+// earlier, so the picture is already there before the page dissolves off it.
+//
+// The copy's OPEN is far later than the library's [0.08, 0.32]. `zoom` is a spring, so it clears a
+// third of its travel in the first few frames: the copy handed off before the page's own cover had
+// decoded, which is the flash. It now holds past the halfway mark, by which point the real cover
+// underneath it is the same already-cached image.
+//
+// The PAGE's open is NOT delayed with it. The copy only covers the destination's cover box, while
+// the mask grows to the whole screen — hold the page's opacity back and the rest of that window is
+// transparent onto whatever the modal was opened over.
 const ZOOM_CONTENT_FADE_OPEN = [0, 0.28];
 const ZOOM_CONTENT_FADE_CLOSE = [0.13, 0.7];
-const ZOOM_THUMB_FADE_OPEN = [0.08, 0.32];
+const ZOOM_THUMB_FADE_OPEN = [0.5, 0.85];
 const ZOOM_THUMB_FADE_CLOSE = [0.7, 1];
 // The reader's static backdrop gets its OWN, earlier close — it is not part of what's being
 // carried away, it is the surface being uncovered, so matching the page's curve held it opaque
