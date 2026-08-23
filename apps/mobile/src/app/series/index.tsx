@@ -860,6 +860,10 @@ function SeriesReaderInstance({
     enabled: stitched && !!id && !!nextChapter,
   });
 
+  // Declared up here, though nothing sets it until the collapse reaction far below: the stitching
+  // underneath has to read it.
+  const [collapsing, setCollapsing] = useState(false);
+
   // The stitched window — the RUN: a segment only joins once its pages are loaded (no holes); it
   // only ever grows AT THE TAIL during one continuous run; landing outside the run starts a fresh
   // one, bumping `runKey` so the pane remounts and seeds from `start` instead of re-anchoring.
@@ -970,8 +974,14 @@ function SeriesReaderInstance({
     // couldn't yet. So the head grows in both readers, and the fix lives at the version.
     const stale = run.segs[at]!;
     const refreshCurrent = stale.pages !== pages || stale.name !== target?.chapterName;
-    const addPrev = !!prevSeg && at === 0;
-    const addNext = !!nextSeg && run.segs[run.segs.length - 1]!.id === currentId;
+    // Not while a dismiss is in flight. Growing the strip is the expensive edit in here — the head
+    // grow above measures a whole window of new rows and corrects the offset against them — and a
+    // neighbour's page list arriving happens to land mid-gesture often, because the same tap that
+    // opened the reader requested it. Traced at 187ms of stalled UI thread inside a held collapse,
+    // spent extending a reading window the reader is on its way out of. The current chapter still
+    // refreshes: that one is what's on screen.
+    const addPrev = !collapsing && !!prevSeg && at === 0;
+    const addNext = !collapsing && !!nextSeg && run.segs[run.segs.length - 1]!.id === currentId;
     if (!refreshCurrent && !addPrev && !addNext) return { segments: run.segs, runKey: run.key };
     const segs = run.segs.slice();
     if (refreshCurrent) segs[at] = { id: currentId, name: target?.chapterName, pages };
@@ -991,6 +1001,7 @@ function SeriesReaderInstance({
     nextChapter,
     nextPages,
     graceOverFor,
+    collapsing,
   ]);
   // Catch the run state up DURING render (React's adjust-state-on-render pattern — the merge
   // above returns `run.segs` by identity when there's nothing to add, which is what stops this
@@ -1795,7 +1806,6 @@ function SeriesReaderInstance({
    * it; reaching the top arms it.
    */
   const probed = useSharedValue(true);
-  const [collapsing, setCollapsing] = useState(false);
   useAnimatedReaction(
     () => zoom.value,
     (z) => {
