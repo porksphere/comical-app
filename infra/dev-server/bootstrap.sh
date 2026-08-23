@@ -51,6 +51,11 @@ if ! id "$USER_NAME" >/dev/null 2>&1; then
   useradd --system --create-home --home-dir "$BASE" --shell /bin/bash "$USER_NAME"
 fi
 mkdir -p "$BASE" && chown "$USER_NAME:$USER_NAME" "$BASE"
+# 0755, not useradd's default 0750. Nothing secret lives here — the checkouts are public source and
+# the secrets are in /etc/comical-dev/env (0600) — and at 0750 an admin's own shell cannot even glob
+# into the tree, so routine `ls`/`install` from a login shell fails in a way that reads as a missing
+# file rather than a permission problem.
+chmod 755 "$BASE"
 
 # ── 4. Env file (template on first run) ──────────────────────────────────────
 mkdir -p /etc/comical-dev
