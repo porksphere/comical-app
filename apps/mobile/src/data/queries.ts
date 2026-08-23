@@ -10,8 +10,9 @@
  * "Use mock data" toggle swaps to a separate keyspace instead of serving stale
  * cross-source data.
  */
-import { keepPreviousData, type UseQueryOptions } from '@tanstack/react-query';
+import { keepPreviousData, type QueryClient, type UseQueryOptions } from '@tanstack/react-query';
 
+import { historyWithBumped, type HistoryBump } from './history-order';
 import { STALE_TIME_MS } from './query-client';
 import type * as api from './api';
 import { isRailLayout, railKindFor, type DataSource, type QueryOpts } from './source';
@@ -519,6 +520,27 @@ export function historyQuery(ds: DataSource, mock: boolean): UseQueryOptions<His
     queryKey: queryKeys.history(mock),
     queryFn: ({ signal }) => ds.getHistory(signal),
   };
+}
+
+/**
+ * Move a series to the front of the cached history, NOW — the reorder that reading causes, applied
+ * to the cache the list reads from instead of waiting on a round trip.
+ *
+ * History is ordered by last-read, so reading reorders it. Left to `invalidateQueries` that reorder
+ * lands whenever the refetch happens to resolve, and "whenever" turned out to include the middle of
+ * the collapse back into the card: the transition aimed at the row's old position, the row moved to
+ * the top while it was in flight, and the animation finished pointing at nothing. Reordering the
+ * cache synchronously, at the moment the read actually happens, puts it long before any of that —
+ * behind a full-screen reader, where nobody can see it — so by the time there is an animation to
+ * get wrong, the list has been settled for a while.
+ *
+ * Same shape as the optimistic remove the History screen already does (`setQueryData`, not a
+ * refetch), and the real refetch still follows and agrees; this only decides WHEN the order changes,
+ * never what it changes to. A no-op when the series is already at the front, so a long read does not
+ * re-sort a covered list on every page turn.
+ */
+export function bumpHistoryOrder(queryClient: QueryClient, mock: boolean, entry: HistoryBump): void {
+  queryClient.setQueryData<HistoryEntry[]>(queryKeys.history(mock), (cur) => historyWithBumped(cur, entry, Date.now()));
 }
 
 /** `useQuery` options for the activity feed (newly-detected chapters). */
