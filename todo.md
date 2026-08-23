@@ -670,3 +670,36 @@ required, so the long-press popup renders `PageThumb` at its own size. Pinning t
 also removed the `spacer` entries that used to pad a short last row. The lazy-alloc half is moot:
 the reader lives on the series page now (#106), so a tile takes an `onPress` and builds no href.
 See the matching checklist item above for the full detail.
+
+## Zoom collapse: two threads left open (branch `claude/animation-tweaks-gujmgr`, 2026-08-23)
+
+Both came out of a gesture trace of a held dismiss from History, taken while chasing the judder that
+turned out to be the reading strip growing a segment mid-gesture (fixed — `collapsing` now gates
+`addPrev`/`addNext` in `SeriesReaderInstance`'s stitching memo). Neither of these is that bug, and
+neither blocks anything; they're the two things in that trace still unexplained.
+
+### The same page reports `loaded` five times
+
+`page loaded p=25` fires at 10578, 10655, 11041, 12370 and 12372 in one collapse, and eleven
+`page loaded` lines land in a single frame at 12560 — the frame the trace measures at
+`dt=187 rn=181`. So whatever this is, it is a real share of the cost of that stall, not just noise
+in the log.
+
+An image mounting five times for one page is wrong on its face. Three candidates, none checked:
+the pager remounting on a `runKey` change; expo-image re-firing `onLoad` for a source it already
+holds; or `resolveAssetSourceCached` handing back a new identity for the same path. Worth an hour
+with `page mount` / `page loaded` and the resolve queue's own tracing before touching anything —
+the pattern is only visible under load, so a fix aimed at the wrong one of the three would look
+like it worked.
+
+### The reveal costs a frame
+
+`resolveZoomTarget`'s reveal scrolls with `scrollToIndex({ viewPosition: 0.5 })`, which centres the
+row and so mounts a fresh window either side of it. Traced at one ~64ms frame
+(`frame LONG dt=64.5` at 12294, between `reveal` and `reveal.done`). Small next to the 187ms above
+and only paid when the row has actually moved off screen, which is why it was left alone.
+
+`viewPosition: 0` would mount roughly half as much, at the cost of landing the card against the
+top bar rather than in the middle of the screen — the centring is deliberate (see the comment in
+`useZoomSurfaceList`), since the row can drift out either end. If this ever becomes visible, that
+trade is the lever.
