@@ -256,8 +256,3 @@ export const SettingsTopGap = 0;
  *   paddingTop: listPaddingTop(headerHeight, BarContentGap)  // … with a deliberate gap
  */
 export const listPaddingTop = (headerHeight: number, gap = 0): number => headerHeight + gap;
-
-/** `ZOOM_BACKGROUND_SCALE` — how far the screen underneath shrinks while a series page covers it
- *  (see `lib/series-backdrop`). Here rather than there so screens can read it without importing
- *  the backdrop's animation machinery. */
-export const BACKDROP_SCALE_MIN = 0.9375;

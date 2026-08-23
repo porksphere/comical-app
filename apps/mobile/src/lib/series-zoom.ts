@@ -4,7 +4,6 @@ import { createContext, useCallback, useContext, useEffect, useState, type RefOb
 import { Dimensions } from 'react-native';
 
 import { traceJS } from '@/lib/gesture-trace';
-import { unscaleFromBackdrop } from '@/lib/series-backdrop';
 
 /**
  * The SOURCE RECT of the card a series was opened from, so
@@ -305,7 +304,7 @@ export function useZoomOriginSource(
             resolve(null);
             return;
           }
-          resolve(unscaleFromBackdrop({ x, y, width, height, radius }));
+          resolve({ x, y, width, height, radius });
         });
       }),
     [enabled, radius, ref],
