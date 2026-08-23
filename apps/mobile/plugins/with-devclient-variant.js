@@ -32,8 +32,34 @@ function applyLabel(config, label) {
 }
 
 // Pure transforms (exported for unit testing).
+//
+// The dev-client also opts out of App Transport Security. It loads its JS over plain HTTP from a
+// Metro server, and iOS blocks cleartext unless told otherwise. Expo's default grants
+// NSAllowsLocalNetworking, which covers RFC1918 (10/8, 172.16/12, 192.168/16) and .local — enough
+// for a Metro box on your LAN, and NOT enough for one reached over Tailscale, whose addresses live
+// in 100.64.0.0/10 (RFC6598 shared address space). iOS then refuses the load before opening a
+// socket: the launcher reports "failed to connect" and a packet capture on the server sees nothing
+// at all, because nothing was ever sent.
+//
+// Scoped to COMICAL_DEVCLIENT so no release, PR or profiling build ever ships arbitrary loads —
+// this is a Debug shell that only ever talks to a dev server you point it at.
 function applyDevClientVariant(config, enabled) {
-  return enabled ? applyLabel(config, 'dev') : config;
+  if (!enabled) return config;
+  const labeled = applyLabel(config, 'dev');
+  return {
+    ...labeled,
+    ios: {
+      ...labeled.ios,
+      infoPlist: {
+        ...labeled.ios?.infoPlist,
+        NSAppTransportSecurity: {
+          ...labeled.ios?.infoPlist?.NSAppTransportSecurity,
+          NSAllowsArbitraryLoads: true,
+          NSAllowsLocalNetworking: true,
+        },
+      },
+    },
+  };
 }
 
 function applyProfilingVariant(config, enabled) {
