@@ -41,6 +41,7 @@ import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useRouter } from '@/lib/nav';
 import { relTime } from '@/lib/rel-time';
+import { ROW_REORDER_TRANSITION } from '@/lib/row-motion';
 import { notifyScrollBeginDrag, notifyScrollEndDrag, notifyScrollRest } from '@/lib/scroll-release';
 
 /**
@@ -296,6 +297,7 @@ export default function ActivityScreen() {
             data={rows}
             keyExtractor={(g) => `${g.bridgeId}:${g.seriesId}`}
             recycleItems={false}
+            itemLayoutAnimation={ROW_REORDER_TRANSITION}
             // Don't retro-correct offsets from measurements — a visible jitter while flinging otherwise.
             maintainVisibleContentPosition={{ data: false, size: false }}
             // Live UI-thread scroll offset the pull-to-refresh reads (top-of-list check + iOS bounce).

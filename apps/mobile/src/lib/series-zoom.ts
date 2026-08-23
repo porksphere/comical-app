@@ -260,8 +260,13 @@ function nextFrame(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
 }
 
-/** Give up re-asking. A reorder lands in one commit; this is slack, not a budget to spend. */
-const SETTLE_FRAMES = 12;
+/**
+ * Give up re-asking. Has to outlast the feeds' own reorder spring (`ROW_REORDER_TRANSITION`, ~240ms
+ * to rest ≈ 29 frames at 120Hz), since the card is now SLIDING to its new slot rather than
+ * teleporting there — stop early and the collapse aims at wherever it had got to. The walk exits as
+ * soon as two answers agree, so this only bites when something never settles.
+ */
+const SETTLE_FRAMES = 40;
 
 /**
  * Where a collapse should land, re-asked until the answer stops moving, having first scrolled the
@@ -274,7 +279,8 @@ const SETTLE_FRAMES = 12;
  *
  * Each distinct answer is handed over as it arrives, so a collapse already in flight re-aims instead
  * of waiting for the walk to finish; the first one is the pre-move spot the caller is already aimed
- * at, so reporting it costs nothing. Degrades in steps — no surface, the first measurement stands;
+ * at, so reporting it costs nothing. With the feeds animating their reorder this also means the
+ * page TRACKS the sliding row rather than jumping to where it will end up. Degrades in steps — no surface, the first measurement stands;
  * no card, nothing is reported and the caller keeps its capture.
  */
 export async function resolveZoomTarget(

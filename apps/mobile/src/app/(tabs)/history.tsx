@@ -37,6 +37,7 @@ import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useRouter } from '@/lib/nav';
 import { relTime } from '@/lib/rel-time';
+import { ROW_REORDER_TRANSITION } from '@/lib/row-motion';
 import { scrollPhaseHandlers } from '@/lib/scroll-release';
 
 export default function HistoryScreen() {
@@ -187,6 +188,7 @@ export default function HistoryScreen() {
           data={visible}
           keyExtractor={(h) => `${h.bridgeId}:${h.seriesId}`}
           recycleItems={false}
+          itemLayoutAnimation={ROW_REORDER_TRANSITION}
           contentContainerStyle={{
             // Fill the viewport even with few rows, so the empty space below them is still part of
             // the scroller and a drag can be started there (see SeriesGrid's note).
