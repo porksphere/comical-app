@@ -7,6 +7,7 @@ import { Platform, StyleSheet, useWindowDimensions, View, type LayoutChangeEvent
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TrashIcon } from '@/components/icons/ui-icons';
+import { traceJS } from '@/lib/gesture-trace';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { HistoryRow } from '@/components/history-row';
 import {
