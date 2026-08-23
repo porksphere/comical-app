@@ -10,10 +10,11 @@
  * `comical-web` dev server's default port). The Settings row that edits this is hidden while the
  * on-device embedded runtime is enabled, since this value is meaningless there.
  *
- * No credentialed cookies: unlike `comical-web` (reverse-proxied same-origin
- * with its backend in prod, so no CORS involved at all), this app is a
- * standalone client that's cross-origin from the API on every platform and
- * environment — dev, the GH Pages preview, and native. `host-server` defaults
+ * No credentialed cookies: unlike `comical-web` (designed to run reverse-proxied
+ * same-origin with its backend, so no CORS involved at all — though no such
+ * deployment exists yet), this app is a standalone client that's cross-origin
+ * from the API on every platform and environment — dev, the GH Pages preview,
+ * and native. `host-server` defaults
  * to a wildcard CORS origin (`origin: "*"`), which browsers refuse to honor
  * for a `credentials: 'include'` request, so plain unauthenticated requests
  * are what actually works here. If per-user auth is needed later, use the

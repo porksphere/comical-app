@@ -53,8 +53,9 @@ function lanIp(): Promise<string> {
 const HOST = await lanIp();
 const COMICAL_SERVER_PORT = Number(process.env.COMICAL_SERVER_PORT ?? 3100);
 if (!process.env.EXPO_PUBLIC_COMICAL_SERVER) {
-  // No /api prefix here: that only exists in prod behind SWAG. Direct dev
-  // requests hit host-server's routes at the root (see comical-web/CLAUDE.md).
+  // No /api prefix here. That prefix belongs to comical-web's intended
+  // reverse-proxied (SWAG) topology, which nothing runs yet; requests hit
+  // host-server's routes at the root (see comical-web/CLAUDE.md).
   process.env.EXPO_PUBLIC_COMICAL_SERVER = `http://${HOST}:${COMICAL_SERVER_PORT}`;
 }
 // Metro must bind the LAN interface (not localhost) so the phone can reach it.
