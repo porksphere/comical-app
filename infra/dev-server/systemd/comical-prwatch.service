@@ -1,0 +1,25 @@
+[Unit]
+# The PR follower — see infra/dev-server/watch-prs.sh for what it selects and why.
+Description=Comical dev server PR watcher
+Documentation=https://github.com/porksphere/comical-app/blob/main/infra/dev-server/README.md
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=comical
+Group=comical
+WorkingDirectory=/opt/comical
+EnvironmentFile=/etc/comical-dev/env
+Environment=BUN_INSTALL=/opt/comical/.bun
+Environment=PATH=/opt/comical/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# Runs out of the CONTROL checkout (pinned to main), never the app checkout the watcher itself
+# moves between PR heads. Updating the dev server is therefore a push to main plus one reconcile
+# tick — the script re-execs nothing, so a change lands on the next restart of this unit.
+ExecStart=/opt/comical/control/infra/dev-server/watch-prs.sh
+Restart=always
+RestartSec=10
+StateDirectory=comical-dev
+
+[Install]
+WantedBy=multi-user.target

@@ -40,6 +40,11 @@ and prints a QR. Install the **dev-client** shell once (below), open it on a pho
 connect to this server, and every JS/TS edit hot-reloads on-device — no Mac needed for JS work. Full
 story (incl. profiling over it): [PROFILING.md](PROFILING.md) → "Iterative dev & profiling from Windows".
 
+Both of those need Metro running on a machine you own. For the same on-device loop with **no PC in
+it** — an always-on box that follows whichever open PR was pushed to most recently and serves it to
+your phone over Tailscale, so a Claude session can iterate on the app you are holding — see
+[infra/dev-server/README.md](../infra/dev-server/README.md).
+
 ### Local web dev (`bun run dev`)
 
 The fastest loop while iterating on shared screens: run the app in a desktop browser
