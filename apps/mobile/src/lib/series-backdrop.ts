@@ -1,3 +1,4 @@
+import { Dimensions } from 'react-native';
 import { makeMutable, useAnimatedStyle } from 'react-native-reanimated';
 
 import { sharedPushback } from '@/lib/pushback-signal';
@@ -23,12 +24,10 @@ import { armSettleCheck, cancelSettleCheck, notePushback } from '@/lib/pushback-
  * layers sit inside the same modal, over each other, never over the tabs) and resets it on
  * unmount, so nothing can strand the backdrop dimmed.
  *
- * A DIM only. The zoom preset this was taken from also scales the screen underneath by 0.9375, and
- * that is gone: on Fabric `measure()` reports a view's size with ancestor transforms applied, and
- * LegendList sizes its containers with it — so a row that happened to re-render under an open page
- * recorded a height 6% short and the rows below it jumped up. Sideways parallax is wrong here too —
- * the page expands out of one of this screen's own cards, so lateral motion reads as a second,
- * contradictory one.
+ * The treatment is the one react-native-screen-transitions' navigation zoom gives the screen it
+ * opens over — a small scale-down plus a dim, NOT the sideways parallax a push gets. The page
+ * expands in place out of one of this screen's own cards, so moving the grid laterally under it
+ * read as a second, contradictory motion.
  *
  */
 export const seriesReaderDim = makeMutable(0);
@@ -82,6 +81,61 @@ export function holdSeriesBackdrop(): () => void {
  *  partly visible through the transparent modal for the first quarter of the travel — so it is
  *  kept subtle enough not to read as the lights going out. */
 const BACKDROP_DIM_MAX = 0.14;
+/** `ZOOM_BACKGROUND_SCALE` — how far the screen underneath shrinks at full cover. */
+const BACKDROP_SCALE_MIN = 0.9375;
+
+/**
+ * Whether the tab currently underneath takes the scale (see `setBackdropRecede`). Written by the tab
+ * bar rather than by the screens: opening the series page BLURS the tabs, so a screen's own focus
+ * effect would clear itself the moment the page it is the backdrop for appears.
+ */
+const recedes = makeMutable(true);
+
+/**
+ * Turn the scale off for the tab underneath. History and Activity opt out.
+ *
+ * Fabric's `measure()` resolves through `getLayoutMetricsFromRoot(..., {.includeTransform = true})`,
+ * and LegendList sizes its containers with `measure()` — so a row that re-renders while the tabs are
+ * held at `BACKDROP_SCALE_MIN` records a height 6% short, and every row below it jumps up until the
+ * page closes. Those two feeds reorder as you read, which makes the row you opened the one row that
+ * re-renders mid-transition. There is no keeping both: any view carrying the scale is an ancestor,
+ * so `measure()` sees it. The dim is unaffected either way.
+ */
+export function setBackdropRecede(on: boolean) {
+  recedes.set(on);
+}
+
+/** The backdrop's scale-down. Safe to mount anywhere — it rests at 1 whenever no series page is
+ *  open, and the shared value is reset on that page's unmount. */
+export function useSeriesReaderBackdropStyle() {
+  return useAnimatedStyle(() => {
+    const depth = recedes.value ? seriesReaderDim.value : 0;
+    return { transform: [{ scale: 1 - (1 - BACKDROP_SCALE_MIN) * depth }] };
+  });
+}
+
+/**
+ * Undo the scale above for anything MEASURING a view under an open series page. `measureInWindow`
+ * reports the drawn box, so a card measured then comes back ~6% small and pulled toward the screen
+ * centre. The rect wanted is the one it occupies at rest — where it will be by the time the collapse
+ * arrives. A no-op whenever no series page is open, including every press-in capture.
+ */
+export function unscaleFromBackdrop<T extends { x: number; y: number; width: number; height: number }>(rect: T): T {
+  if (!recedes.value) return rect;
+  const scale = 1 - (1 - BACKDROP_SCALE_MIN) * seriesReaderDim.value;
+  if (scale >= 1) return rect;
+  const { width, height } = Dimensions.get('window');
+  const cx = width / 2;
+  const cy = height / 2;
+  return {
+    ...rect,
+    x: cx + (rect.x - cx) / scale,
+    y: cy + (rect.y - cy) / scale,
+    width: rect.width / scale,
+    height: rect.height / scale,
+  };
+}
+
 /** The dim, for an absolutely-positioned overlay over the backdrop. Safe to mount anywhere — it
  *  rests fully transparent whenever no series page is open, and is reset on that page's unmount. */
 export function useSeriesReaderBackdropDimStyle() {
