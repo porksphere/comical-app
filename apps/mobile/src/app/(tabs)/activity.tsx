@@ -27,7 +27,7 @@ import { TabTitleBar } from '@/components/tab-title-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
-import { BarContentGap, BottomTabInset, listPaddingTop, MaxTopLevelWidth, Spacing, topLevelCenterInset } from '@/constants/theme';
+import { BarContentGap, BottomTabInset, Hairline, listPaddingTop, MaxTopLevelWidth, Spacing, topLevelCenterInset } from '@/constants/theme';
 import { activityQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useHideNsfw, useMockActive } from '@/data/source';
 import type { ActivityEntry } from '@/data/types';
@@ -465,6 +465,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   sep: {
-    height: StyleSheet.hairlineWidth,
+    height: Hairline,
   },
 });

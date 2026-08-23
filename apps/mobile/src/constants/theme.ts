@@ -5,7 +5,7 @@
 
 import '@/global.css';
 
-import { Platform } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 
 export const Colors = {
   light: {
@@ -256,3 +256,19 @@ export const SettingsTopGap = 0;
  *   paddingTop: listPaddingTop(headerHeight, BarContentGap)  // … with a deliberate gap
  */
 export const listPaddingTop = (headerHeight: number, gap = 0): number => headerHeight + gap;
+
+/** `ZOOM_BACKGROUND_SCALE` — how far the screen underneath shrinks while a series page covers it
+ *  (see `lib/series-backdrop`). Here rather than there because `Hairline` is derived from it. */
+export const BACKDROP_SCALE_MIN = 0.9375;
+
+/**
+ * A divider drawn on a surface that can sit UNDER an open series page.
+ *
+ * `StyleSheet.hairlineWidth` is exactly one device pixel, which is the thinnest thing that renders
+ * — so any downscale takes it below one and antialiases it away. The backdrop scales the whole tab
+ * container to `BACKDROP_SCALE_MIN`, and a History row is 85pt in an 86pt container, meaning that
+ * one pixel is the ONLY thing between one row's content and the next: losing it reads as the rows
+ * merging, not as a fainter line. Pre-divided so it lands back on a whole pixel when scaled, and is
+ * 6.7% over a hairline at rest, which is not a difference anyone can see.
+ */
+export const Hairline = StyleSheet.hairlineWidth / BACKDROP_SCALE_MIN;

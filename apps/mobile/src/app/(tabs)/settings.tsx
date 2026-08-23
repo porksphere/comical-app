@@ -23,7 +23,7 @@ import { TabTitleBar } from '@/components/tab-title-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 
-import { MaxTopLevelWidth, SettingsGutter } from '@/constants/theme';
+import { Hairline, MaxTopLevelWidth, SettingsGutter } from '@/constants/theme';
 import { useSettingsScrollPadding } from '@/hooks/use-settings-scroll-padding';
 import { dlStorageUsage } from '@/data/api';
 import { useCustomPages } from '@/data/custom-pages';
@@ -343,7 +343,7 @@ const styles = StyleSheet.create({
     right: -4,
   },
   divider: {
-    height: StyleSheet.hairlineWidth,
+    height: Hairline,
     // Starts under the row's icon, runs off the right edge.
     marginRight: -SettingsGutter,
   },
