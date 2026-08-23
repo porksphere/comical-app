@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import type { RefObject } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 
 import { MoreVerticalIcon } from '@/components/icons/ui-icons';
 import { ThemedText } from '@/components/themed-text';
@@ -38,6 +38,7 @@ export function HistoryRow({
   unread,
   thumbRef,
   coverHidden,
+  onLayout,
   testID,
 }: {
   thumbnailUrl?: string;
@@ -62,6 +63,8 @@ export function HistoryRow({
   thumbRef?: RefObject<View | null>;
   /** Blank just the thumbnail while this row's long-press menu is open (its lifted preview is a copy). */
   coverHidden?: boolean;
+  /** TEMP (diagnostic): row geometry tracing — see history.tsx. */
+  onLayout?: (e: LayoutChangeEvent) => void;
   /** Automation selector for the row. Defaults to `history-row.<title>`; the trailing controls derive
    *  from it (see src/lib/test-id.ts). Pass an explicit id when two rows could share a title. */
   testID?: string;
@@ -70,7 +73,7 @@ export function HistoryRow({
   const resolvedThumb = useResolvedAsset(thumbnailUrl);
   const base = testID ?? testId('history-row', title);
   return (
-    <View style={[styles.row, dimmed && styles.dimmed]}>
+    <View onLayout={onLayout} style={[styles.row, dimmed && styles.dimmed]}>
       <Pressable
         testID={base}
         style={styles.main}

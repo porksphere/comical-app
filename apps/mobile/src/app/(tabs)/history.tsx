@@ -3,7 +3,7 @@ import type { LegendListRef } from '@legendapp/list/react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Platform, StyleSheet, useWindowDimensions, View, type LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TrashIcon } from '@/components/icons/ui-icons';
@@ -194,8 +194,9 @@ export default function HistoryScreen() {
             paddingRight: sidePad,
           }}
           ItemSeparatorComponent={() => <View style={[styles.sep, { backgroundColor: theme.hairline }]} />}
-          renderItem={({ item }) => (
+          renderItem={({ item, index }) => (
             <HistoryItem
+              index={index}
               item={item}
               onResume={() => resume(item)}
               onOpenDetail={() => openDetail(item)}
@@ -226,6 +227,7 @@ export default function HistoryScreen() {
  * series page; long-press (native) opens the shared quick-actions popup; swipe-left reveals Delete.
  */
 function HistoryItem({
+  index,
   item,
   onResume,
   onOpenDetail,
@@ -233,6 +235,7 @@ function HistoryItem({
   bridge,
   direct,
 }: {
+  index: number;
   item: HistoryEntry;
   onResume: () => void;
   onOpenDetail: () => void;
@@ -253,6 +256,19 @@ function HistoryItem({
   const zoomFlying = useIsZoomingSeries(item.seriesId, zoomSource);
   // Radius 6 — the row thumbnail's corner, not the grid card's 10.
   const captureZoomOrigin = useZoomOriginSource(item.seriesId, zoomSource, thumbRef, 6);
+  // TEMP DIAGNOSTIC — remove. `y`/`h` are this row's box inside its list container, so a change here
+  // is the ROW re-laying out; silence during a dismiss means the row held still and something above
+  // it moved instead. `fly` brackets the window in which this row is the zoom's source.
+  const traceLayout = useCallback(
+    (e: LayoutChangeEvent) => {
+      const { y, height } = e.nativeEvent.layout;
+      traceJS('hist.row', 'layout', { i: index, y: Math.round(y * 100) / 100, h: Math.round(height * 100) / 100 });
+    },
+    [index],
+  );
+  useEffect(() => {
+    traceJS('hist.row', 'fly', { i: index, on: zoomFlying });
+  }, [index, zoomFlying]);
   const renderRow = (coverHidden: boolean) => (
     <HistoryRow
       thumbnailUrl={item.thumbnailUrl}
@@ -262,6 +278,7 @@ function HistoryItem({
       onPressIn={captureZoomOrigin}
       onMore={onOpenDetail}
       onMorePressIn={captureZoomOrigin}
+      onLayout={traceLayout}
       actions={[]}
       thumbRef={thumbRef}
       coverHidden={coverHidden || zoomFlying}
