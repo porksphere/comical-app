@@ -213,7 +213,7 @@
       (in-memory); `data/selected-bridge.ts` is the "observable over an id, derive the rest from
       the query cache" pattern. Deliberate holdouts stay hand-rolled: `lib/tab-bar-visibility.ts`
       (a Reanimated UI-thread value) and `lib/diagnostics.ts` (a ring buffer). Full rationale in
-      `apps/mobile/AGENTS.md` → State, and `docs/ARCHITECTURE.md` → "State management".
+      `AGENTS.md` → State, and `docs/ARCHITECTURE.md` → "State management".
 - [x] Come up with a way to open the app on iOS/android from a web button. This way a github repo can have a button that installs a registry with one click.
       (1) DONE — in-app half of the deep link: `comical://add-registry?url=<index.json
       URL>` now resolves (via expo-router's automatic scheme routing, `scheme: "comical"`
@@ -542,7 +542,7 @@ Metro bundles anything, so this has zero runtime/CI impact today: confirmed
 - **`@comical/library`/`@comical/runtime` are a different, bigger lift:** unlike
   `@comical/contract` (type-only usage today, could stay a `devDependency`), these
   are real runtime code Metro must actually bundle for the on-device API→library
-  connectivity the app will eventually need — per `apps/mobile/AGENTS.md`, blocked
+  connectivity the app will eventually need — per `AGENTS.md`, blocked
   until a Hermes/QuickJS-compatible `BundleEvaluator` exists
   (`comical/packages/core/src/evaluator.ts`, Node-`vm`/browser-`new Function()`
   evaluators only today). Once that lands, they'd need the full

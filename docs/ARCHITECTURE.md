@@ -29,7 +29,7 @@ or Flutter, which would force re-implementing or wrapping the core twice. Native
 native headers/large titles. The bottom tab bar itself
 (`src/components/app-tabs.tsx`) is a custom-rendered component rather than `expo-router`'s
 `NativeTabs` — that was tried (including iOS 26's `tabBarMinimizeBehavior`) and reverted; see
-git history / `apps/mobile/AGENTS.md` for why.
+git history / `AGENTS.md` for why.
 
 ## On-device runtime (`@comical/host-rn`)
 
