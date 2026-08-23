@@ -18,6 +18,7 @@ import {
   ZoomSurfaceContext,
 } from '@/lib/series-zoom';
 import { encodeSeriesParam } from '@/lib/series-nav';
+import { useWarmChapterPages, useWarmSeriesDetail } from '@/data/prefetch';
 import { CheckIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { PullIndicator } from '@/components/pull-indicator';
 import { RetryBlock } from '@/components/retry-block';
@@ -386,6 +387,23 @@ function ActivityItem({
   const zoomFlying = useIsZoomingSeries(item.seriesId, zoomSource);
   // Radius 6 — the row thumbnail's corner, not the grid card's 10.
   const captureZoomOrigin = useZoomOriginSource(item.seriesId, zoomSource, thumbRef, 6);
+  // See History's copy: press-in warms what the tap will need, and the row (reads) and the 3-dot
+  // (details) need different things. `read` always forwards the chapter id, so this always does.
+  const warmPages = useWarmChapterPages();
+  const warmDetail = useWarmSeriesDetail();
+  const onRowPressIn = () => {
+    captureZoomOrigin();
+    warmPages(item.bridgeId, item.seriesId, item.chapterId);
+  };
+  const onMorePressIn = () => {
+    captureZoomOrigin();
+    warmDetail(item.bridgeId, item.seriesId, {
+      direct,
+      bridgeName: bridge,
+      title: item.title,
+      cover: item.thumbnailUrl,
+    });
+  };
   const renderRow = (coverHidden: boolean) => (
     <HistoryRow
       thumbnailUrl={item.thumbnailUrl}
@@ -394,9 +412,9 @@ function ActivityItem({
       dimmed={!item.hasUnread}
       unread={item.hasUnread}
       onPress={onRead}
-      onPressIn={captureZoomOrigin}
+      onPressIn={onRowPressIn}
       onMore={onOpenDetail}
-      onMorePressIn={captureZoomOrigin}
+      onMorePressIn={onMorePressIn}
       actions={[]}
       thumbRef={thumbRef}
       coverHidden={coverHidden || zoomFlying}

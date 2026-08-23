@@ -19,6 +19,7 @@ import {
   ZoomSurfaceContext,
 } from '@/lib/series-zoom';
 import { encodeSeriesParam } from '@/lib/series-nav';
+import { useWarmChapterPages, useWarmSeriesDetail } from '@/data/prefetch';
 import { RetryBlock } from '@/components/retry-block';
 import { RowHairline } from '@/components/row-hairline';
 import { SeriesCardMenu } from '@/components/series-card-menu';
@@ -256,15 +257,34 @@ function HistoryItem({
   const zoomFlying = useIsZoomingSeries(item.seriesId, zoomSource);
   // Radius 6 — the row thumbnail's corner, not the grid card's 10.
   const captureZoomOrigin = useZoomOriginSource(item.seriesId, zoomSource, thumbRef, 6);
+  // Press-in already measures; it now also starts the fetch the tap is about to need (see
+  // data/prefetch). The row resumes reading and the 3-dot opens the details, so they warm
+  // different things — each mirroring the params its own handler pushes.
+  const warmPages = useWarmChapterPages();
+  const warmDetail = useWarmSeriesDetail();
+  const resumeIsDirect = item.chapterId === DIRECT_CHAPTER_ID || !item.chapterId;
+  const onRowPressIn = () => {
+    captureZoomOrigin();
+    warmPages(item.bridgeId, item.seriesId, resumeIsDirect ? undefined : item.chapterId);
+  };
+  const onMorePressIn = () => {
+    captureZoomOrigin();
+    warmDetail(item.bridgeId, item.seriesId, {
+      direct,
+      bridgeName: bridge,
+      title: item.title,
+      cover: item.thumbnailUrl,
+    });
+  };
   const renderRow = (coverHidden: boolean) => (
     <HistoryRow
       thumbnailUrl={item.thumbnailUrl}
       title={item.title}
       sub={historySub(item)}
       onPress={onResume}
-      onPressIn={captureZoomOrigin}
+      onPressIn={onRowPressIn}
       onMore={onOpenDetail}
-      onMorePressIn={captureZoomOrigin}
+      onMorePressIn={onMorePressIn}
       actions={[]}
       thumbRef={thumbRef}
       coverHidden={coverHidden || zoomFlying}

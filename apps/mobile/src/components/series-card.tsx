@@ -18,6 +18,7 @@ import { encodeSeriesParam, useDrillRelatedSeries } from '@/lib/series-nav';
 import { Link, router } from '@/lib/nav';
 import { useLightCards } from '@/lib/perf-flags';
 import { useIsZoomingSeries, useZoomOriginSource, useZoomSourceKey } from '@/lib/series-zoom';
+import { useWarmSeriesDetail } from '@/data/prefetch';
 import { testId } from '@/lib/test-id';
 
 // Shared cover card used by both the browse grid and the rails. `size` picks the
@@ -337,6 +338,10 @@ export function SeriesCard({
   // Radius 10 = CARD_COVER_RADIUS, matching `coverBoxClip` / `coverClip` below. The hook also
   // registers this cover as re-measurable, so a collapse asks where it is NOW — see series-zoom.
   const captureZoomOrigin = useZoomOriginSource(entry.id, zoomSource, coverRef, 10, !isWeb);
+  // The detail this card opens, started when the finger lands rather than when the route mounts —
+  // see useWarmSeriesDetail. Same opts the destination will use, so it adopts this fetch rather
+  // than issuing its own.
+  const warmDetail = useWarmSeriesDetail();
 
   // The quick-actions menu is only offered when there's a real bridge to act against (`bridgeId` —
   // absent in mock mode). Its status queries no longer touch the card at all: they run inside the
@@ -708,6 +713,14 @@ export function SeriesCard({
             onPressIn={() => {
               handlers.onPressIn();
               captureZoomOrigin();
+              // `bridge || 'Library'` mirrors what the destination resolves to when this card omits
+              //  the param — see useWarmSeriesDetail on why the opts have to agree.
+              warmDetail(bridgeId, entry.id, {
+                direct,
+                bridgeName: bridge || 'Library',
+                title: entry.title,
+                cover: entry.cover,
+              });
             }}>
             {/* Shrink illusion only when Lightweight is off: wrap in CoverShrink (owns the reanimated
                 hooks + supplies real animated styles); otherwise render plainly with a no-op API. */}
