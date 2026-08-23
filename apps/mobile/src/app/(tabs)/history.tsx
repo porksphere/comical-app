@@ -265,7 +265,7 @@ function HistoryItem({
   const resumeIsDirect = item.chapterId === DIRECT_CHAPTER_ID || !item.chapterId;
   const onRowPressIn = () => {
     captureZoomOrigin();
-    warmPages(item.bridgeId, item.seriesId, resumeIsDirect ? undefined : item.chapterId);
+    warmPages(item.bridgeId, item.seriesId, resumeIsDirect ? undefined : item.chapterId, item.lastPage ?? 0);
   };
   const onMorePressIn = () => {
     captureZoomOrigin();

@@ -25,6 +25,7 @@ import { BarContentGap, BottomTabInset, Spacing } from '@/constants/theme';
 import { useCollectedView } from '@/data/collected-view';
 import { collectionItemsQuery, libraryQuery } from '@/data/queries';
 import { toLibraryCard, type LibraryGridItem } from '@/data/library-card';
+import { useWarmChapterPages, useWarmSeriesDetail } from '@/data/prefetch';
 import { DIRECT_CHAPTER_ID } from '@/data/types';
 import { encodeSeriesParam } from '@/lib/series-nav';
 import { useDataSource, useMockActive } from '@/data/source';
@@ -41,6 +42,10 @@ import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect'
 import { useTheme } from '@/hooks/use-theme';
 
 export default function LibraryScreen() {
+  // Collections tiles warm what a tap will need — see the grid's `onWarm` below. (The series GRID's
+  // own cards warm themselves, inside SeriesCard.)
+  const warmDetail = useWarmSeriesDetail();
+  const warmPages = useWarmChapterPages();
   const ds = useDataSource();
   const mock = useMockActive();
   const theme = useTheme();
@@ -231,6 +236,25 @@ export default function LibraryScreen() {
           stickyPinned={stickyPinned}
           sharedValues={sharedValues}
           onScroll={onScroll}
+          // Mirrors the branch below: a series warms its detail, a chapter the pages it reads from.
+          // A saved page opens in SEQUENCE mode, where the sequence IS the page list — no query to
+          // warm, and its image is the one this very tile is already showing.
+          onWarm={(item) => {
+            if (item.type === 'series') {
+              // No `bridge` param below, so the destination resolves the name to 'Library' — match
+              // it, or this warm caches a detail carrying a different one (see useWarmSeriesDetail).
+              warmDetail(item.bridgeId, item.seriesId, {
+                bridgeName: 'Library',
+                title: item.seriesTitle,
+                cover: item.thumbnailUrl,
+              });
+              return;
+            }
+            if (item.type === 'chapter') {
+              const direct = item.chapterId === DIRECT_CHAPTER_ID;
+              warmPages(item.bridgeId, item.seriesId, direct ? undefined : item.chapterId);
+            }
+          }}
           onOpen={(item) => {
             // A series opens its details; a chapter or a saved page opens THE reader — the same
             // series screen History rows push into, not a viewer of its own. That screen already
