@@ -3,7 +3,6 @@ import { StyleSheet, type ViewProps } from 'react-native';
 import Animated, { type AnimatedProps } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Hairline } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 /**
@@ -72,6 +71,6 @@ export function BarSurface({
 
 const styles = StyleSheet.create({
   bar: {
-    borderBottomWidth: Hairline,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
 });
