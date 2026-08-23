@@ -43,6 +43,10 @@ function applyLabel(config, label) {
 //
 // Scoped to COMICAL_DEVCLIENT so no release, PR or profiling build ever ships arbitrary loads —
 // this is a Debug shell that only ever talks to a dev server you point it at.
+//
+// Verify a change here against the BUILT binary, not the source: unzip the IPA and read
+// Payload/*.app/Info.plist. The first attempt at this looked correct in both the plugin and the
+// plist and still blocked every connection, because of the iOS 10 cancellation rule above.
 function applyDevClientVariant(config, enabled) {
   if (!enabled) return config;
   const labeled = applyLabel(config, 'dev');
@@ -52,10 +56,14 @@ function applyDevClientVariant(config, enabled) {
       ...labeled.ios,
       infoPlist: {
         ...labeled.ios?.infoPlist,
+        // Replaced wholesale, NOT merged, and NSAllowsLocalNetworking is deliberately absent.
+        // On iOS 10+ the value of NSAllowsArbitraryLoads is IGNORED — effective NO — if
+        // NSAllowsLocalNetworking (or NSAllowsArbitraryLoadsForMedia / ...InWebContent) is also
+        // present. Setting both, which is Apple's recommendation for pre-iOS-10 compatibility,
+        // yields a plist that reads as permissive and behaves exactly as restrictive as before.
+        // Arbitrary loads already cover the RFC1918 case that NSAllowsLocalNetworking existed for.
         NSAppTransportSecurity: {
-          ...labeled.ios?.infoPlist?.NSAppTransportSecurity,
           NSAllowsArbitraryLoads: true,
-          NSAllowsLocalNetworking: true,
         },
       },
     },
