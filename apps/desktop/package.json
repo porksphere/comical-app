@@ -1,0 +1,26 @@
+{
+  "name": "desktop",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Comical desktop — the web UI in Electron, with the Comical host running in-process.",
+  "type": "module",
+  "main": "build/main.cjs",
+  "scripts": {
+    "build:web": "bun run scripts/build-web.ts",
+    "build:main": "bun run scripts/build-main.ts",
+    "build": "bun run build:web && bun run build:main",
+    "start": "bun run build && electron build/main.cjs",
+    "smoke": "bun build scripts/smoke.ts --target=node --format=cjs --outfile build/smoke.cjs && node build/smoke.cjs",
+    "typecheck": "tsc --noEmit",
+    "launch-check": "bun run scripts/launch-check.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.0",
+    "@types/node": "^22.10.0",
+    "electron": "^40.0.0",
+    "typescript": "~6.0.3"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.14.0"
+  }
+}
