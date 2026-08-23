@@ -83,6 +83,17 @@ set -a
 # shellcheck source=/dev/null
 . "$ENV_FILE"
 set +a
+
+# Persist DEV_CONTROL_BRANCH if it was passed on the command line. It must reach the SERVICES, which
+# read this file and nothing else — an env var that only existed for this shell would leave the
+# watcher defaulting to main, and its 5-minute reconcile would then reset --hard the control
+# checkout onto main, deleting the very scripts it is running. Re-exported so the rest of this
+# script uses the same value the services will.
+if [ -n "${DEV_CONTROL_BRANCH:-}" ] && ! grep -q '^DEV_CONTROL_BRANCH=' "$ENV_FILE"; then
+  printf '\nDEV_CONTROL_BRANCH=%s\n' "$DEV_CONTROL_BRANCH" >> "$ENV_FILE"
+  echo "Recorded DEV_CONTROL_BRANCH=$DEV_CONTROL_BRANCH in $ENV_FILE"
+fi
+CONTROL_BRANCH="${DEV_CONTROL_BRANCH:-main}"
 [ -n "${GH_TOKEN:-}" ] || { echo "GH_TOKEN empty in $ENV_FILE" >&2; exit 1; }
 chmod 600 "$ENV_FILE"
 
