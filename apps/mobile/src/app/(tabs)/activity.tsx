@@ -162,7 +162,12 @@ export default function ActivityScreen() {
     onSettled: () => void queryClient.invalidateQueries({ queryKey: queryKeys.activityCount(mock) }),
   });
 
-  const visible = items && hideNsfw ? items.filter((a) => !byId.get(a.bridgeId)?.nsfw) : items;
+  // Memoized so the identity only changes when the ORDER can have: a fresh array every render
+  // would tell every collapse in flight that the list moved (see the notice below).
+  const visible = useMemo(
+    () => (items && hideNsfw ? items.filter((a) => !byId.get(a.bridgeId)?.nsfw) : items),
+    [byId, hideNsfw, items],
+  );
 
   // Reading reorders this list, so a series opened from partway down can end up above the viewport
   // by the time the page closes. Runs under a page that still covers the screen.

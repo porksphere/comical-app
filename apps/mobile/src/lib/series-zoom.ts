@@ -256,23 +256,54 @@ function afterLayout(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 }
 
+function nextFrame(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+/** Give up re-asking. A reorder lands in one commit; this is slack, not a budget to spend. */
+const SETTLE_FRAMES = 12;
+
 /**
- * Where a collapse should land: the card's rect now, having first scrolled it back into view if the
- * list moved it out. Degrades in steps — no surface, the first measurement stands; no card, null,
- * and the caller keeps its capture.
+ * Where a collapse should land, re-asked until the answer stops moving, having first scrolled the
+ * card back into view if the list moved it out.
+ *
+ * One measurement is not enough for a reorder. The list writes new container positions into its own
+ * store, and a container's `top` only reaches the view in the render that reads it — a commit after
+ * the data change that announced the move. Measure in that same tick and the card answers with where
+ * it WAS, which is the stale target a held drag then collapses into.
+ *
+ * Each distinct answer is handed over as it arrives, so a collapse already in flight re-aims instead
+ * of waiting for the walk to finish; the first one is the pre-move spot the caller is already aimed
+ * at, so reporting it costs nothing. Degrades in steps — no surface, the first measurement stands;
+ * no card, nothing is reported and the caller keeps its capture.
  */
-export async function resolveZoomTarget(id: string, source: ZoomSourceKey): Promise<ZoomOrigin | null> {
-  const measured = await measureZoomSource(id, source);
-  if (measured && onScreen(measured)) return measured;
-  const reveal = reveals.get(source);
-  if (!reveal) {
-    traceJS('zoom', 'reveal.none', { src: source });
-    return measured;
+export async function resolveZoomTarget(
+  id: string,
+  source: ZoomSourceKey,
+  onTarget: (rect: ZoomOrigin) => void,
+): Promise<void> {
+  let last: ZoomOrigin | null = null;
+  let revealed = false;
+  for (let frame = 0; frame < SETTLE_FRAMES; frame++) {
+    let next = await measureZoomSource(id, source);
+    if (next && !onScreen(next) && !revealed) {
+      revealed = true;
+      const reveal = reveals.get(source);
+      if (reveal) {
+        traceJS('zoom', 'reveal', { src: source });
+        reveal(id);
+        await afterLayout();
+        next = (await measureZoomSource(id, source)) ?? next;
+      } else {
+        traceJS('zoom', 'reveal.none', { src: source });
+      }
+    }
+    if (!next) return;
+    if (last && next.x === last.x && next.y === last.y) return;
+    last = next;
+    onTarget(next);
+    await nextFrame();
   }
-  traceJS('zoom', 'reveal', { src: source });
-  reveal(id);
-  await afterLayout();
-  return (await measureZoomSource(id, source)) ?? measured;
 }
 
 /** The shape of the thing a card measures — `View`'s, narrowed to the one method used. */

@@ -2,7 +2,7 @@ import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -85,7 +85,12 @@ export default function HistoryScreen() {
     },
   });
 
-  const visible = items && hideNsfw ? items.filter((h) => !byId.get(h.bridgeId)?.nsfw) : items;
+  // Memoized so the identity only changes when the ORDER can have: a fresh array every render
+  // would tell every collapse in flight that the list moved (see the notice below).
+  const visible = useMemo(
+    () => (items && hideNsfw ? items.filter((h) => !byId.get(h.bridgeId)?.nsfw) : items),
+    [byId, hideNsfw, items],
+  );
 
   // Reading reorders this list, so a series opened from partway down can end up above the viewport
   // by the time the page closes. Runs under a page that still covers the screen.
