@@ -19,7 +19,7 @@ import { DesktopTopBarHeight, MaxTopLevelWidth, Spacing } from '@/constants/them
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
-import { useSeriesReaderBackdropDimStyle, useSeriesReaderBackdropStyle } from '@/lib/series-backdrop';
+import { useSeriesReaderBackdropDimStyle } from '@/lib/series-backdrop';
 import { notifyScrollActivity, subscribeScrollPhase } from '@/lib/scroll-release';
 import { COMMIT_DISTANCE, dismissThreshold, SETTLE_MS, TOP_GUARD } from '@/lib/slide-step';
 import {
@@ -296,15 +296,12 @@ export default function AppTabs() {
   );
 
   // See the wrapper below — both rest at identity/transparent unless the series page is open.
-  const seriesReaderBackdropStyle = useSeriesReaderBackdropStyle();
   const seriesReaderBackdropDim = useSeriesReaderBackdropDimStyle();
 
   return (
-    // The tabs are what the series page usually opens OVER, and a transparent modal can't scale
-    // or dim its backdrop the way a native presentation does — so the page drives it from here
-    // instead (see lib/series-backdrop.ts). With no series page open the transform is identity and
-    // the dim fully transparent, so this costs nothing at rest.
-    <Animated.View style={[styles.tabs, seriesReaderBackdropStyle]}>
+    // The tabs are what the series page usually opens OVER, and a transparent modal can't dim its
+    // backdrop the way a native presentation does — so the page drives it from here (series-backdrop).
+    <View style={styles.tabs}>
       <Tabs style={styles.tabs}>
         {/* Expo's slot, with our own screen renderer so an arriving tab fades in rather than
             appearing in one frame — see `tab-slot-fade`. */}
@@ -361,7 +358,7 @@ export default function AppTabs() {
       </Tabs>
       {/* The dim under an open series page — inert (opacity 0) whenever none is, never interactive. */}
       <Animated.View pointerEvents="none" style={[styles.backdropDim, seriesReaderBackdropDim]} />
-    </Animated.View>
+    </View>
   );
 }
 
