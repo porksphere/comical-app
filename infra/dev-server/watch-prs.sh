@@ -130,6 +130,11 @@ sync() {
     ( cd "$APP_DIR/external/comical" && bun install --linker hoisted ) || log "submodule install failed (continuing)"
   fi
 
+  # Escape hatch for a box where Metro's watcher cannot be trusted (no watchman, or a filesystem
+  # that drops events — the failure that showed up in testing, where a running Metro served stale
+  # content until restarted). Costs ~8s on a warm cache and buys certainty.
+  [ "${DEV_ALWAYS_RESTART:-0}" = 1 ] && need_restart=1
+
   if [ "$need_restart" = 1 ]; then
     log "restarting ${METRO_UNIT}"
     sudo -n systemctl restart "$METRO_UNIT" || { log "restart failed"; return 1; }

@@ -60,6 +60,17 @@ inbound firewall rules, TLS and DNS from the decision. Prefer a **US region** if
 is priced badly: Fast Refresh deltas are small enough that the added RTT is invisible, and it only
 costs a few seconds on a cold start.
 
+**Oracle Cloud's always-free Ampere A1** fits: it was halved to 2 OCPU / 12 GB in June 2026 (every
+guide still saying 4 OCPU / 24 GB predates that), but 12 GB is still comfortably above the 2.3 GB
+peak and two cores is what this needs. The gamble is A1 capacity in your region, not the specs.
+Two things to know on OCI specifically, both handled by `bootstrap.sh`:
+
+- Its Ubuntu images carry a persisted iptables ruleset whose INPUT chain ends in a blanket REJECT.
+  ufw does not displace it, so inbound on `tailscale0` is dropped and the phone cannot reach Metro
+  even though ufw reports the port open. An explicit ACCEPT is inserted ahead of it.
+- A1 is arm64. bun and Node are fine there; `watchman` may not be, so it installs non-fatally and
+  warns. If it is missing, set `DEV_ALWAYS_RESTART=1` and Metro restarts on every sync instead.
+
 > If you already run `host-server` somewhere persistent, **use that machine instead** — colocating
 > Metro and the backend is what gets the dev build real data.
 

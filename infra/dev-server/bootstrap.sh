@@ -27,7 +27,16 @@ USER_NAME=comical
 # drops events on a checkout that rewrites hundreds of files at once. unzip is bun's installer dep.
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq git curl jq unzip watchman sudo ca-certificates
+apt-get install -y -qq git curl jq unzip sudo ca-certificates
+
+# watchman separately, and non-fatally. Without it Metro falls back to a plain fs.watch crawl, which
+# is what drops events on a checkout that rewrites hundreds of files — so it matters. But it is not
+# in every suite (notably arm64 on some releases), and a missing optional package must not abort a
+# setup whose other 90% is fine. If it is absent, set DEV_ALWAYS_RESTART=1 in /etc/comical-dev/env:
+# the watcher then restarts Metro on every sync instead of trusting the watcher for JS-only pushes.
+if ! apt-get install -y -qq watchman 2>/dev/null; then
+  echo "WARNING: watchman unavailable for $(dpkg --print-architecture) — set DEV_ALWAYS_RESTART=1 in $ENV_FILE" >&2
+fi
 
 # ── 2. Tailscale ─────────────────────────────────────────────────────────────
 if ! command -v tailscale >/dev/null; then
@@ -55,6 +64,10 @@ METRO_PORT=8081
 # The backend the app calls. Colocated on this box, so the dev build gets real data instead of
 # DEMO_MODE — the one thing the GitHub Pages preview structurally cannot do.
 EXPO_PUBLIC_COMICAL_SERVER=http://comical-dev.tailXXXX.ts.net:3100
+
+# Restart Metro on every sync instead of letting its watcher hot-reload a JS-only push. Set to 1 if
+# watchman is unavailable on this box, or if edits stop showing up on the device without a restart.
+# DEV_ALWAYS_RESTART=1
 TEMPLATE
   chmod 600 "$ENV_FILE"
   echo "Wrote template $ENV_FILE — fill it in, then re-run this script." >&2
@@ -118,6 +131,22 @@ if command -v ufw >/dev/null; then
   ufw allow in on tailscale0 >/dev/null
   ufw allow 22/tcp >/dev/null
   ufw --force enable >/dev/null
+fi
+
+# ORACLE CLOUD. OCI's Ubuntu images ship a persisted iptables ruleset (netfilter-persistent) whose
+# INPUT chain ends in a blanket REJECT. ufw installs its own chains but that trailing REJECT still
+# runs, so inbound on tailscale0 gets dropped and the phone cannot reach Metro even though ufw says
+# it is allowed — the classic "I opened the port and nothing works" on OCI. Insert an explicit
+# ACCEPT for the tailnet interface ahead of it. Harmless anywhere else: without those rules there is
+# nothing to sit in front of.
+if command -v iptables >/dev/null && iptables -C INPUT -i tailscale0 -j ACCEPT 2>/dev/null; then
+  : # already present
+elif command -v iptables >/dev/null; then
+  iptables -I INPUT 1 -i tailscale0 -j ACCEPT 2>/dev/null || true
+  # Direct WireGuard needs inbound UDP; without it Tailscale still works but every packet detours
+  # through a DERP relay, which is slower for a multi-MB bundle.
+  iptables -I INPUT 2 -p udp --dport 41641 -j ACCEPT 2>/dev/null || true
+  command -v netfilter-persistent >/dev/null && netfilter-persistent save >/dev/null 2>&1 || true
 fi
 
 echo
