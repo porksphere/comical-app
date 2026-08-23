@@ -76,7 +76,7 @@ import { releaseCommitted, releaseCommittedEitherWay } from '@/lib/gesture-relea
 import { IOS_CARD_SHADOW, IOS_CARD_SPRING, IOS_PARALLAX_FRACTION } from '@/lib/ios-card-pop';
 import { registerDrillSeries, registerOpenSearchLayer, useDrillRelatedSeries } from '@/lib/series-nav';
 import { holdSeriesBackdrop, seriesReaderDim } from '@/lib/series-backdrop';
-import { holdZoomingSeries, takeZoomOrigin, type ZoomRect } from '@/lib/series-zoom';
+import { holdZoomingSeries, measureZoomSource, takeZoomOrigin, type ZoomOrigin, type ZoomRect } from '@/lib/series-zoom';
 import SearchScreen from '../search';
 import { SeriesBody, truncateTopBarTitle } from '@/components/series/series-body';
 
@@ -434,6 +434,19 @@ const ZOOM_OUT_BACKSTOP_MS = 900;
  * never trips this — which is the case the wall-clock backstop is for.
  */
 const LEAVE_AT_ZOOM = 0;
+
+/**
+ * The two ends of "a collapse is under way", for the exit's re-measure (see `probed`).
+ *
+ * Not symmetric on purpose, and neither is a rounding tolerance. `STARTED` fires the probe on the
+ * first real movement away from the top, which under a drag is hundreds of milliseconds before the
+ * release commits, and under the chevron is a frame or two into the spring — where the fresh rect
+ * is scaled by `(1 - q)` and moving the target is worth a couple of percent of the travel.
+ * `ARMED` sits nearer the top so a drag that was released short, and sprang back, has to actually
+ * return home before it may probe again.
+ */
+const COLLAPSE_STARTED = 0.995;
+const COLLAPSE_ARMED = 0.999;
 /** Instances that have already left. See `leaveOnce` for why this lives out here. */
 const LEFT = new WeakSet<object>();
 // Half the title's ~40pt first line — positions the title's CENTER at the gradient's center.
@@ -1641,16 +1654,39 @@ function SeriesReaderInstance({
   // tap on the browse grid, so it gets the same entrance rather than a push.
   //
   // Consumed in a state initializer so it's known on the FIRST render — a frame later would mean
-  // starting the grow from the wrong geometry — and remembered for the instance's whole lifetime,
-  // so the exit collapses back into the same box.
+  // starting the grow from the wrong geometry.
+  //
+  // It used to be remembered for the instance's whole lifetime, on the reasoning that the exit
+  // should collapse back into the same box. That reads as obviously right and is not: it assumes
+  // the card is still there, and on a list ordered by last-read it never is. The ENTRANCE keeps
+  // this rect — it is the box the page really did grow out of — and the exit re-measures instead
+  // (see `exitOrigin`). Don't re-freeze it.
   const [zoomSource] = useState(() => (IS_WEB ? null : takeZoomOrigin(id)));
+  /**
+   * Where the source card is NOW, re-measured when a collapse starts — null until then, and null
+   * for a source that cannot be measured (see `measureZoomSource`), which keeps the captured rect.
+   *
+   * The capture is a snapshot taken on press-in, and it used to be the answer at BOTH ends of the
+   * page's life. That silently assumed the card holds still, which is not true on the two screens
+   * this is used from most: reading rewrites `lastReadAt`, History is ordered by it, and Library's
+   * "Last read" sort is too — so the card has moved to the top by the time the page closes, and the
+   * collapse flew into the hole where it used to be. Asking again at the exit is what UIKit's own
+   * zoom transition does with its `sourceViewProvider` closure, rather than capturing a view once.
+   */
+  const [exitOrigin, setExitOrigin] = useState<ZoomOrigin | null>(null);
   // The source rect this page aligns itself to. No image is needed — unlike a classic shared
   // element, nothing is copied or flown; the page is its own transition subject (see zoomMaskStyle).
-  const hero = zoomSource?.origin ?? null;
+  const hero = exitOrigin ?? zoomSource?.origin ?? null;
   // The tapped card's shape, handed to the details so its hero cover opens at the same aspect —
   // which is what keeps the zoom's destination bound honest for a bridge whose covers aren't 2:3.
   // See `coverAspect` in SeriesDetailsHost.
-  const heroAspectSeed = hero && hero.height > 0 ? hero.width / hero.height : undefined;
+  //
+  // Read off the CAPTURE, never `hero`: this feeds the details' own layout, and re-measuring at the
+  // exit must not be able to reshape the page that is in the middle of collapsing. The two rects
+  // are the same card either way, so the aspect is the same answer — this is about which of them is
+  // allowed to change underneath a laid-out screen.
+  const captured = zoomSource?.origin ?? null;
+  const heroAspectSeed = captured && captured.height > 0 ? captured.width / captured.height : undefined;
   const [destBound, setDestBound] = useState<ZoomRect | null>(null);
   const zoomStartedRef = useRef(false);
   // Blanking the source card is tied to ARMING, not to mount: the wait for the destination
@@ -1767,6 +1803,25 @@ function SeriesReaderInstance({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /**
+   * Re-measure the card this page grew out of, and aim the collapse at wherever it is now. Silent
+   * on failure by design: no registration (the context menu's synthetic hand-off), an unmounted
+   * card, a probe that times out — all keep the captured rect, which is what the collapse used
+   * before this existed. Worst case is the old behaviour, never a worse one.
+   *
+   * An off-screen answer is USED, not rejected. A card that moved to the top of a list scrolled
+   * down really is up there, and flying off the top edge says so; landing in the middle of the
+   * screen on a card that is no longer there does not. (UIKit has the same choice to make and is
+   * inconsistent about it — it zooms to the edge or to the centre depending on whether the cell
+   * happened to be prefetched. Picking one is already better.)
+   */
+  const refreshExitOrigin = useCallback(() => {
+    if (!zoomSource || !id) return;
+    void measureZoomSource(id, zoomSource.source).then((fresh) => {
+      if (fresh) setExitOrigin(fresh);
+    });
+  }, [id, zoomSource]);
+
   // The chevron / hardware-back exit, for a drilled layer AND the modal root: shrink back into the
   // card we came from, then leave (leaveNow pops the layer, or the route when depth 0). The
   // route's `animation: 'none'` means this IS the exit animation — without it a tapped back would
@@ -1779,6 +1834,33 @@ function SeriesReaderInstance({
     // No completion callback: leaving is driven by `zoom` reaching the card (see the reaction near
     // leaveOnce), with the `leaving` backstop above as the safety net.
   }, [token, edgeCommitting, zoom, zoomClosing]);
+
+  /**
+   * Ask the source card where it is, once per collapse.
+   *
+   * Hung off `zoom` leaving the top rather than off the gestures, because there are several ways
+   * out of this page — the collapse pan, the back-swipe, the chevron, Android's hardware back — and
+   * every one of them ends up moving this value. One reaction covers them all, and it cannot be the
+   * one that a new exit path forgets to call.
+   *
+   * `probed` starts TRUE so the ENTRANCE doesn't trip it: `zoom` runs 0→1 on the way in, and a probe
+   * during the grow would measure a card that hasn't moved yet and cost a round trip to learn it.
+   * Reaching the top arms it; leaving the top spends it. A drag that is released short of committing
+   * springs back to 1 and re-arms, so a second attempt measures again — the list may have moved on
+   * between the two.
+   */
+  const probed = useSharedValue(true);
+  useAnimatedReaction(
+    () => zoom.value,
+    (z) => {
+      if (z < COLLAPSE_STARTED && !probed.value) {
+        probed.set(true);
+        runOnJS(refreshExitOrigin)();
+      } else if (z > COLLAPSE_ARMED && probed.value) {
+        probed.set(false);
+      }
+    },
+  );
 
   // Android hardware back steps back HOME (the details) before leaving: reader expanded → back
   // collapses it; details up → the instance slides out (a drilled layer back to its parent
