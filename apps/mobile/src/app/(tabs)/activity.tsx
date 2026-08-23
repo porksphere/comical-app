@@ -40,6 +40,7 @@ import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useRouter } from '@/lib/nav';
+import { traceJS } from '@/lib/gesture-trace';
 import { relTime } from '@/lib/rel-time';
 import { ROW_REORDER_TRANSITION } from '@/lib/row-motion';
 import { notifyScrollBeginDrag, notifyScrollEndDrag, notifyScrollRest } from '@/lib/scroll-release';
@@ -176,6 +177,9 @@ export default function ActivityScreen() {
   const revealSeries = useCallback(
     (seriesId: string) => {
       const index = visible?.findIndex((a) => a.seriesId === seriesId) ?? -1;
+      // -1 means this list no longer holds the series at all, which is a different failure from
+      // scrolling to it and the card still not answering — see resolveZoomTarget's walk.
+      traceJS('zoom', 'reveal.idx', { i: index, n: visible?.length ?? 0 });
       // Centred, so the card clears the top bar and the tab bar whichever way it drifted out.
       if (index >= 0) listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0.5 });
     },

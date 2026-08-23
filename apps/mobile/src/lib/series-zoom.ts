@@ -177,9 +177,15 @@ const PROBE_TIMEOUT_MS = 100;
 function registerZoomSource(id: string, source: ZoomSourceKey, probe: ZoomOriginProbe): () => void {
   const key = slot(id, source);
   probes.set(key, probe);
+  traceJS('zoom', 'probe.reg', { src: source, n: probes.size });
   // Only if still ours: a recycled slot re-registers before the old instance's cleanup runs.
   return () => {
-    if (probes.get(key) === probe) probes.delete(key);
+    if (probes.get(key) !== probe) return;
+    probes.delete(key);
+    // The one that explains a collapse that never re-aimed: a row scrolled far enough out of the
+    // list's render window UNMOUNTS, taking its probe with it, and a source that can't answer is
+    // also one `resolveZoomTarget` never gets far enough to reveal.
+    traceJS('zoom', 'probe.unreg', { src: source, n: probes.size });
   };
 }
 
@@ -192,7 +198,16 @@ export async function measureZoomSource(id: string, source: ZoomSourceKey): Prom
   }
   const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), PROBE_TIMEOUT_MS));
   const measured = await Promise.race([probe(), timeout]);
-  traceJS('zoom', measured ? 'probe' : 'probe.miss', { src: source });
+  if (measured) {
+    traceJS('zoom', 'probe', {
+      src: source,
+      y: Math.round(measured.y),
+      h: Math.round(measured.height),
+      on: onScreen(measured),
+    });
+  } else {
+    traceJS('zoom', 'probe.miss', { src: source });
+  }
   return measured;
 }
 
@@ -290,26 +305,37 @@ export async function resolveZoomTarget(
 ): Promise<void> {
   let last: ZoomOrigin | null = null;
   let revealed = false;
+  traceJS('zoom', 'resolve', { src: source, reveals: reveals.has(source) });
   for (let frame = 0; frame < SETTLE_FRAMES; frame++) {
     let next = await measureZoomSource(id, source);
     if (next && !onScreen(next) && !revealed) {
       revealed = true;
       const reveal = reveals.get(source);
       if (reveal) {
-        traceJS('zoom', 'reveal', { src: source });
+        traceJS('zoom', 'reveal', { src: source, from: Math.round(next.y) });
         reveal(id);
         await afterLayout();
         next = (await measureZoomSource(id, source)) ?? next;
+        traceJS('zoom', 'reveal.done', { src: source, to: Math.round(next.y), on: onScreen(next) });
       } else {
         traceJS('zoom', 'reveal.none', { src: source });
       }
     }
-    if (!next) return;
-    if (last && next.x === last.x && next.y === last.y) return;
+    // Each exit is its own line: "the walk stopped" is the symptom for a stale target AND for a
+    // correct early settle, and from the outside they look the same.
+    if (!next) {
+      traceJS('zoom', 'resolve.gone', { src: source, f: frame, revealed });
+      return;
+    }
+    if (last && next.x === last.x && next.y === last.y) {
+      traceJS('zoom', 'resolve.settled', { src: source, f: frame, y: Math.round(next.y) });
+      return;
+    }
     last = next;
     onTarget(next);
     await nextFrame();
   }
+  traceJS('zoom', 'resolve.cap', { src: source, y: last ? Math.round(last.y) : -1 });
 }
 
 /** The shape of the thing a card measures — `View`'s, narrowed to the one method used. */
