@@ -76,7 +76,7 @@ import { releaseCommitted, releaseCommittedEitherWay } from '@/lib/gesture-relea
 import { IOS_CARD_SHADOW, IOS_CARD_SPRING, IOS_PARALLAX_FRACTION } from '@/lib/ios-card-pop';
 import { registerDrillSeries, registerOpenSearchLayer, useDrillRelatedSeries } from '@/lib/series-nav';
 import { holdSeriesBackdrop, seriesReaderDim } from '@/lib/series-backdrop';
-import { holdZoomingSeries, measureZoomSource, takeZoomOrigin, type ZoomOrigin, type ZoomRect } from '@/lib/series-zoom';
+import { holdZoomingSeries, resolveZoomTarget, takeZoomOrigin, type ZoomOrigin, type ZoomRect } from '@/lib/series-zoom';
 import SearchScreen from '../search';
 import { SeriesBody, truncateTopBarTitle } from '@/components/series/series-body';
 
@@ -1817,7 +1817,7 @@ function SeriesReaderInstance({
    */
   const refreshExitOrigin = useCallback(() => {
     if (!zoomSource || !id) return;
-    void measureZoomSource(id, zoomSource.source).then((fresh) => {
+    void resolveZoomTarget(id, zoomSource.source).then((fresh) => {
       if (fresh) setExitOrigin(fresh);
     });
   }, [id, zoomSource]);
@@ -3691,6 +3691,9 @@ const ReaderPane = forwardRef<
   const startIndex = Math.max(0, Math.min(pages.length - 1, start === 'last' ? pages.length - 1 : start));
   const [currentPage, setCurrentPage] = useState(startIndex);
   const currentRef = useRef(startIndex);
+  /** The page position the last `record()` wrote — seeded with the one already stored, since
+   *  `startIndex` IS that stored progress. So a visit that turns no pages has nothing new to say. */
+  const recordedPageRef = useRef(startIndex);
   // Whether the mounted list has REPORTED a position yet. A recording answered how much this
   // signal is worth: it lands within ~10ms of mount — it is the list's JS-side position map
   // speaking, NOT the native scroll view. For a non-zero `initialScrollIndex` the NATIVE
@@ -3992,6 +3995,7 @@ const ReaderPane = forwardRef<
     if (!recordProgress) return;
     if (!bridgeId || !seriesId || !pages.length || inLibrary === undefined) return;
     const lastPage = currentRef.current;
+    recordedPageRef.current = lastPage;
     const pageCount = pages.length;
     const invalidateHistory = () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.history(mock) });
@@ -4029,13 +4033,30 @@ const ReaderPane = forwardRef<
   useEffect(() => {
     recordRef.current = record;
   }, [record]);
-  // Debounced on page settle + flushed on unmount (leaving the screen AND chapter swaps — the pane
+  // Debounced on page settle + flushed on teardown (leaving the screen AND chapter swaps — the pane
   // is keyed by chapter).
   useEffect(() => {
     const t = setTimeout(() => recordRef.current(), 1500);
     return () => clearTimeout(t);
   }, [currentPage]);
-  useEffect(() => () => recordRef.current(), []);
+  // The teardown flush only writes when the cursor has actually MOVED since the last write.
+  //
+  // It used to write unconditionally, and a write is what reorders History and a last-read Library.
+  // Two things followed. A visit that read nothing — open a series, swipe straight back out — still
+  // re-stamped `lastReadAt` and sent the row to the top, which is the app claiming a read that did
+  // not happen. And every real read landed its reorder HERE, during teardown, so the list re-sorted
+  // a beat AFTER the collapse had already landed on the card: the one motion the transition can
+  // neither aim at nor hide, because by then there is no page left covering the screen.
+  //
+  // Guarded, the debounce above becomes the one that writes, 1.5s into a visit — while the page is
+  // still full-screen. The list re-sorts behind it unseen, and the exit measures (and if need be
+  // reveals) the card where it now lives. Everything settles while it is hidden; nothing teleports.
+  useEffect(
+    () => () => {
+      if (currentRef.current !== recordedPageRef.current) recordRef.current();
+    },
+    [],
+  );
 
   // ── Web keyboard nav (single-step; no held-key repeat) ─────────────────────
   useEffect(() => {

@@ -1,6 +1,7 @@
 import { observable } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
 import { createContext, useCallback, useContext, useEffect, useState, type RefObject } from 'react';
+import { Dimensions } from 'react-native';
 
 import { traceJS } from '@/lib/gesture-trace';
 import { unscaleFromBackdrop } from '@/lib/series-backdrop';
@@ -213,6 +214,79 @@ export async function measureZoomSource(id: string, source: ZoomSourceKey): Prom
   const measured = await Promise.race([probe(), timeout]);
   traceJS('zoom', measured ? 'probe' : 'probe.miss', { src: source });
   return measured;
+}
+
+/**
+ * A SURFACE that can bring one of its items into view — the other half of the contract above.
+ *
+ * A card can only answer "where am I"; it cannot answer "and if I'm off screen, fix that". Whoever
+ * owns the scroller can. Reading a series moves it to the top of a list ordered by last-read, so a
+ * visit that started eight rows down ends with the card above the viewport — measurable, but not
+ * anywhere the eye can follow a collapse to. Scrolling it back into view is invisible when it
+ * happens under a page that still covers the screen, which is exactly when the exit asks.
+ *
+ * Google's shared-element guidance does the same thing on the way back ("scroll to position if the
+ * view for the current position is null"), and it is the step that keeps the rule honest: everything
+ * settles while it is hidden, and the transition always aims at the truth.
+ *
+ * ADOPTING THIS on a new screen is three things:
+ *   1. give the list a stable surface key — `useZoomSurfaceKey('history')` — and put it on
+ *      `ZoomSurfaceContext` around the rows, so the cards and the list agree on who they are;
+ *   2. have each card call `useZoomOriginSource(...)` (most already do, via `SeriesCard`);
+ *   3. call `useZoomSurfaceReveal(key, reveal)` here, where `reveal` scrolls the item into view.
+ *
+ * `reveal` takes the SERIES id, not a list key, because that is what the transition knows. A list
+ * whose keys are something else (History's are `bridgeId:seriesId`) maps it itself — which is the
+ * reason this is a callback the screen supplies rather than something inferred from `keyExtractor`.
+ */
+export type ZoomSurfaceReveal = (id: string) => void;
+
+const reveals = new Map<ZoomSourceKey, ZoomSurfaceReveal>();
+
+/** Register this list as able to reveal its items. Safe to call unconditionally. */
+export function useZoomSurfaceReveal(surface: ZoomSourceKey, reveal: ZoomSurfaceReveal): void {
+  useEffect(() => {
+    reveals.set(surface, reveal);
+    return () => {
+      if (reveals.get(surface) === reveal) reveals.delete(surface);
+    };
+  }, [reveal, surface]);
+}
+
+/** Fully inside the window — the criterion for "a collapse can land on this". Partly clipped is not
+ *  good enough: the copy would finish half off the edge, which reads as missing rather than as
+ *  arriving. */
+function onScreen(rect: ZoomOrigin): boolean {
+  const { width, height } = Dimensions.get('window');
+  return rect.x >= 0 && rect.y >= 0 && rect.x + rect.width <= width && rect.y + rect.height <= height;
+}
+
+/** Two frames — long enough for a non-animated scroll to be laid out, short enough to be invisible
+ *  under a page that is still covering the screen. */
+function afterLayout(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+}
+
+/**
+ * WHERE A COLLAPSE SHOULD LAND: the card's rect now, having first brought it back into view if the
+ * list moved it out. The one call a transition needs; everything above is the plumbing it uses.
+ *
+ * Degrades in steps, and never to something worse than not asking at all: no surface registered, or
+ * a reveal that doesn't help, and the first measurement stands; no card at all, and it answers null
+ * so the caller keeps whatever it captured on the way in.
+ */
+export async function resolveZoomTarget(id: string, source: ZoomSourceKey): Promise<ZoomOrigin | null> {
+  const measured = await measureZoomSource(id, source);
+  if (measured && onScreen(measured)) return measured;
+  const reveal = reveals.get(source);
+  if (!reveal) {
+    traceJS('zoom', 'reveal.none', { src: source });
+    return measured;
+  }
+  traceJS('zoom', 'reveal', { src: source });
+  reveal(id);
+  await afterLayout();
+  return (await measureZoomSource(id, source)) ?? measured;
 }
 
 /** The shape of the thing a card measures — `View`'s, narrowed to the one method used. */
