@@ -71,6 +71,18 @@ Two things to know on OCI specifically, both handled by `bootstrap.sh`:
 - A1 is arm64. bun and Node are fine there; `watchman` may not be, so it installs non-fatally and
   warns. If it is missing, set `DEV_ALWAYS_RESTART=1` and Metro restarts on every sync instead.
 
+And one thing bootstrap cannot fix: Oracle **reclaims idle Always Free instances**. An instance is
+idle if, across a 7-day window, 95th-percentile CPU is under 20% *and* network is under 20% *and*
+memory is under 20% (memory applies to A1). A dev server used a few hours a week trips all three —
+idle Metro holds ~1GB of 12GB, which is 8%. Upgrading the tenancy to **Pay As You Go** exempts it
+from reclamation and still costs nothing while you stay inside the Always Free limits; it needs a
+card on file. Without that, expect to rebuild from `bootstrap.sh` periodically.
+
+At the VCN level the only ingress this needs is **22/tcp**. Do not open Metro's port — the tailnet
+is what reaches it. Optionally allow **UDP 41641** inbound: Tailscale works without it by relaying
+through DERP, but a direct connection is meaningfully faster for a multi-MB cold bundle, and
+WireGuard is authenticated so exposing it is safe.
+
 > If you already run `host-server` somewhere persistent, **use that machine instead** — colocating
 > Metro and the backend is what gets the dev build real data.
 
