@@ -123,12 +123,11 @@ Not addressed — this is a spike:
 
 ## What a real desktop app would take, in order
 
-**Milestone 1 — package it (this spike + ~1 week).** `electron-builder` for `.dmg` / `.exe` / 
+**Milestone 1 — package it (this spike + ~1 week).** `electron-builder` for `.dmg` / `.exe` /
 `AppImage`, icons from `apps/mobile/assets`, an app menu with the standard edit/window roles, and
-window-state persistence. macOS needs signing + notarization to open without a Gatekeeper detour —
-which, unlike iOS, needs a **paid Apple Developer account**; without one, macOS ships the same
-"right-click → Open" caveat the unsigned IPA has. Windows SmartScreen wants an EV cert or a
-reputation build-up. Linux `AppImage` needs neither.
+window-state persistence. See [Getting it installed](#getting-it-installed) for what unsigned distribution actually
+costs on each OS — the short version is that all three can ship unsigned, and none of them needs
+anything like SideStore.
 
 **Milestone 2 — drop the port, go over IPC.** Replace the loopback listener with
 `ipcMain.handle('comical:fetch', …)` → `host.fetch(path, init)`, a preload that exposes it on
@@ -154,6 +153,49 @@ those Releases.
 now Electron), Chromium security updates that force a rebuild whether or not the app changed, and
 ~110 MB of `electron` in the root `bun install` for everyone in the workspace — a typecheck-only CI
 job can set `ELECTRON_SKIP_BINARY_DOWNLOAD=1`, since the `.d.ts` ships in the npm package.
+
+## Getting it installed
+
+**There is no SideStore equivalent for macOS, and none is needed.** SideStore exists because iOS
+*hard-refuses* to execute code without a valid provisioning profile, and a free Apple ID's profile
+expires every 7 days — so something has to sit on the device and re-sign the app forever. macOS has
+neither problem: an unsigned app runs, permanently, after a **one-time** user gesture. The
+distribution question here isn't "how do we make it run", it's "how much friction does the first
+launch have".
+
+What each OS does to an app with no paid-developer signature:
+
+| OS | First launch | Fix |
+| --- | --- | --- |
+| **Linux** | nothing — `chmod +x`, run | — |
+| **Windows** | SmartScreen "Windows protected your PC" | *More info* → *Run anyway* |
+| **macOS** | blocked; Sequoia (15) removed the old Control-click → Open bypass | System Settings → Privacy & Security → **Open Anyway** |
+
+Two macOS details that matter:
+
+- **Ad-hoc signing is mandatory on Apple Silicon** — an unsigned arm64 binary is killed outright,
+  not merely warned about. `codesign -s -` satisfies this and needs **no account of any kind**;
+  electron-builder does it by default when no identity is configured. So "unsigned" here means
+  "not signed with a Developer ID", not "not signed".
+- **A free Apple ID cannot notarize.** Both a Developer ID certificate and notarization are gated
+  behind the paid Apple Developer Program. There is no free tier and no workaround.
+
+Three ways to spare users the Privacy & Security detour, all free — they work by avoiding the
+`com.apple.quarantine` xattr that browsers attach to downloads, which is what Gatekeeper keys off:
+
+1. **A Homebrew tap** — `brew install --cask --no-quarantine comical`. The most natural fit for this
+   project: it's a one-liner, it self-updates, and a tap is just a repo. (Homebrew quarantines by
+   default and a cask author can't opt out, so the flag has to be in the install instructions.)
+2. **`xattr -dr com.apple.quarantine /Applications/Comical.app`** after dragging it in — one command,
+   but it asks users to paste a `sudo`-adjacent-looking incantation, which is its own trust problem.
+3. **A `curl | tar` install line.** `curl` doesn't set the quarantine xattr at all, so an app
+   unpacked that way launches clean. Common for CLI tools, unusual for a GUI app.
+
+The only way to get a genuinely clean double-click install is **$99/yr** for the Apple Developer
+Program → Developer ID cert → notarize in CI (`notarytool`, which electron-builder wraps). That's
+the one place desktop costs real money that iOS/Android currently don't — and note it would *also*
+solve the iOS side, replacing the whole SideStore/7-day-refresh story with TestFlight or plain
+Developer ID distribution.
 
 ## Files
 
