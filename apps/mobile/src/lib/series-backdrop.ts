@@ -1,3 +1,4 @@
+import { Dimensions } from 'react-native';
 import { makeMutable, useAnimatedStyle } from 'react-native-reanimated';
 
 import { sharedPushback } from '@/lib/pushback-signal';
@@ -89,6 +90,38 @@ export function useSeriesReaderBackdropStyle() {
   return useAnimatedStyle(() => ({
     transform: [{ scale: 1 - (1 - BACKDROP_SCALE_MIN) * seriesReaderDim.value }],
   }));
+}
+
+/**
+ * Undo the scale above, for anything that MEASURES a view underneath an open series page.
+ *
+ * `measureInWindow` reports where a view is drawn, and while a series page is up everything below
+ * it is drawn through the scale-down — so a card measured then comes back ~6% small and pulled
+ * toward the middle of the screen, and a transition aiming at that rect lands inside the card
+ * rather than on it. (Seen as the collapse arriving at the bottom-right corner of a row near the
+ * top: down and in, which is what "shrink about the centre" does to anything above it.)
+ *
+ * The rect wanted is the one the card will occupy once this is at rest, which is where it will be
+ * by the time the collapse gets there — the backdrop returns to 1 over the same motion. So this
+ * inverts the transform rather than compensating for it: a uniform scale about the container's
+ * centre, and the container is the full-screen tabs view, so the centre is the window's.
+ *
+ * A no-op at rest (scale exactly 1), which is every measurement taken while no series page is open
+ * — including every press-in capture.
+ */
+export function unscaleFromBackdrop<T extends { x: number; y: number; width: number; height: number }>(rect: T): T {
+  const scale = 1 - (1 - BACKDROP_SCALE_MIN) * seriesReaderDim.value;
+  if (scale >= 1) return rect;
+  const { width, height } = Dimensions.get('window');
+  const cx = width / 2;
+  const cy = height / 2;
+  return {
+    ...rect,
+    x: cx + (rect.x - cx) / scale,
+    y: cy + (rect.y - cy) / scale,
+    width: rect.width / scale,
+    height: rect.height / scale,
+  };
 }
 
 /** The dim, for an absolutely-positioned overlay over the backdrop. Safe to mount anywhere — it
