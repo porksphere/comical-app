@@ -93,21 +93,10 @@ export function useSeriesReaderBackdropStyle() {
 }
 
 /**
- * Undo the scale above, for anything that MEASURES a view underneath an open series page.
- *
- * `measureInWindow` reports where a view is drawn, and while a series page is up everything below
- * it is drawn through the scale-down — so a card measured then comes back ~6% small and pulled
- * toward the middle of the screen, and a transition aiming at that rect lands inside the card
- * rather than on it. (Seen as the collapse arriving at the bottom-right corner of a row near the
- * top: down and in, which is what "shrink about the centre" does to anything above it.)
- *
- * The rect wanted is the one the card will occupy once this is at rest, which is where it will be
- * by the time the collapse gets there — the backdrop returns to 1 over the same motion. So this
- * inverts the transform rather than compensating for it: a uniform scale about the container's
- * centre, and the container is the full-screen tabs view, so the centre is the window's.
- *
- * A no-op at rest (scale exactly 1), which is every measurement taken while no series page is open
- * — including every press-in capture.
+ * Undo the scale above for anything MEASURING a view under an open series page. `measureInWindow`
+ * reports the drawn box, so a card measured then comes back ~6% small and pulled toward the screen
+ * centre. The rect wanted is the one it occupies at rest — where it will be by the time the collapse
+ * arrives. A no-op whenever no series page is open, including every press-in capture.
  */
 export function unscaleFromBackdrop<T extends { x: number; y: number; width: number; height: number }>(rect: T): T {
   const scale = 1 - (1 - BACKDROP_SCALE_MIN) * seriesReaderDim.value;

@@ -158,47 +158,27 @@ export function takeZoomOrigin(id: string | undefined): TakenZoom | null {
 }
 
 /**
- * A card that can still be MEASURED — the live half of the capture above.
+ * A card that can still be measured. The captured rect says where the page grew FROM; it goes stale
+ * as an answer for where it collapses BACK TO, because reading reorders a last-read list.
  *
- * The captured rect says where the page grew FROM. It is a snapshot in window coordinates, and it
- * was treated as also saying where the page collapses BACK TO, which is only the same answer while
- * the card holds still. It does not: reading a series rewrites its `lastReadAt`, and History is
- * always ordered by that (as is Library on its "Last read" sort), so by the time the page closes
- * the card has moved — usually to the top. The collapse landed where the card used to be, and the
- * card at its NEW position sat there blanked, because the blank follows the series id while the
- * rect did not follow anything.
- *
- * So the exit asks again instead of remembering. That is what every platform does: UIKit's zoom
- * transition takes a `sourceViewProvider` closure it calls "whenever the transition needs to request
- * a source view … multiple times during the transition's lifecycle", and Android's shared-element
- * guidance remaps through `onMapSharedElements` off the CURRENT adapter position rather than the one
- * that was tapped. A registry is the same idea with the pieces this app already has: `(id, source)`
- * identifies exactly one card — it is the pair the cover-blanking is keyed on — so hanging a measure
- * function off it needs no new notion of identity.
- *
- * Not every source can answer. The context menu's hand-off (`series-card-context-menu`) synthesises
- * its rect from a lifted preview rather than a live view, so it registers nothing and the exit keeps
- * the captured rect — the behaviour everything had before this existed.
+ * Not every source can answer — the context menu synthesises its rect from a lifted preview and
+ * registers nothing, so the exit keeps the capture.
  */
-/** One card's identity, as both the blank-while-flying map and the probe registry key it: the
- *  series shown AND the surface showing it. See `ZoomSourceKey` for why the surface matters. */
+/** One card's identity: the series shown AND the surface showing it. */
 const slot = (id: string, source: ZoomSourceKey) => `${source}\u0000${id}`;
 
 export type ZoomOriginProbe = () => Promise<ZoomOrigin | null>;
 
 const probes = new Map<string, ZoomOriginProbe>();
 
-/** How long a probe may take before the exit stops waiting and keeps the rect it already has. A
- *  measure that has not come back within a couple of frames is one that never will — the view is
- *  detached, or its list recycled the slot out from under it. */
+/** A measure that hasn't answered in a couple of frames never will — detached, or recycled away. */
 const PROBE_TIMEOUT_MS = 100;
 
 function registerZoomSource(id: string, source: ZoomSourceKey, probe: ZoomOriginProbe): () => void {
   const key = slot(id, source);
   probes.set(key, probe);
+  // Only if still ours: a recycled slot re-registers before the old instance's cleanup runs.
   return () => {
-    // Only if it is still ours: a recycled slot re-registers under its new id before the old
-    // instance's cleanup runs, and a blind delete would drop the new registration.
     if (probes.get(key) === probe) probes.delete(key);
   };
 }
@@ -217,27 +197,10 @@ export async function measureZoomSource(id: string, source: ZoomSourceKey): Prom
 }
 
 /**
- * A SURFACE that can bring one of its items into view — the other half of the contract above.
- *
- * A card can only answer "where am I"; it cannot answer "and if I'm off screen, fix that". Whoever
- * owns the scroller can. Reading a series moves it to the top of a list ordered by last-read, so a
- * visit that started eight rows down ends with the card above the viewport — measurable, but not
- * anywhere the eye can follow a collapse to. Scrolling it back into view is invisible when it
- * happens under a page that still covers the screen, which is exactly when the exit asks.
- *
- * Google's shared-element guidance does the same thing on the way back ("scroll to position if the
- * view for the current position is null"), and it is the step that keeps the rule honest: everything
- * settles while it is hidden, and the transition always aims at the truth.
- *
- * ADOPTING THIS on a new screen is three things:
- *   1. give the list a stable surface key — `useZoomSurfaceKey('history')` — and put it on
- *      `ZoomSurfaceContext` around the rows, so the cards and the list agree on who they are;
- *   2. have each card call `useZoomOriginSource(...)` (most already do, via `SeriesCard`);
- *   3. call `useZoomSurfaceReveal(key, reveal)` here, where `reveal` scrolls the item into view.
- *
- * `reveal` takes the SERIES id, not a list key, because that is what the transition knows. A list
- * whose keys are something else (History's are `bridgeId:seriesId`) maps it itself — which is the
- * reason this is a callback the screen supplies rather than something inferred from `keyExtractor`.
+ * A surface that can bring one of its items into view — a card can say where it is, only the
+ * scroller can fix being off screen. Called under a page that still covers the screen, so the
+ * scroll is never seen. Takes the SERIES id, not a list key, so a list keyed on something else
+ * (History's are `bridgeId:seriesId`) maps it itself. See AGENTS.md → Zoom transitions.
  */
 export type ZoomSurfaceReveal = (id: string) => void;
 
@@ -254,23 +217,13 @@ export function useZoomSurfaceReveal(surface: ZoomSourceKey, reveal: ZoomSurface
 }
 
 /**
- * A surface telling the world it moved its items — the signal a transition in flight needs.
- *
- * The exit measuring ONCE, when the collapse starts, is the same mistake as capturing on press-in,
- * only narrower: it assumes the source stops moving the moment you let go. It doesn't. A read
- * reorders History through a write and a refetch, both async, and either can land in the middle of
- * the collapse — at which point the transition is flying at a row that isn't there any more.
- *
- * So a collapse subscribes, a list says when its order changed, and the transition re-aims. That is
- * what UIKit does too: its zoom transition calls `sourceViewProvider` "whenever the transition needs
- * to request a source view … multiple times during the transition's lifecycle, to ensure that the
- * transition incorporates the most up-to-date visuals". Aiming once is the special case that happens
- * to work when nothing moves.
+ * A surface announcing that its items moved. Measuring once at collapse start assumes the source
+ * stops moving when you let go; the write and refetch behind a reorder are async and either can
+ * land mid-collapse, so a collapse in flight subscribes and re-aims.
  */
 const watchers = new Map<ZoomSourceKey, Set<() => void>>();
 
-/** Call from a surface whenever the position of its items may have changed — an order change, a
- *  filter, an insertion. Cheap and idempotent: nobody is listening unless a collapse is in flight. */
+/** No-op unless a collapse is in flight. */
 export function notifyZoomSurfaceChanged(surface: ZoomSourceKey): void {
   const set = watchers.get(surface);
   if (!set?.size) return;
@@ -292,27 +245,21 @@ export function onZoomSurfaceChange(surface: ZoomSourceKey, fn: () => void): () 
   };
 }
 
-/** Fully inside the window — the criterion for "a collapse can land on this". Partly clipped is not
- *  good enough: the copy would finish half off the edge, which reads as missing rather than as
- *  arriving. */
+/** Partly clipped isn't good enough — the copy would finish half off the edge. */
 function onScreen(rect: ZoomOrigin): boolean {
   const { width, height } = Dimensions.get('window');
   return rect.x >= 0 && rect.y >= 0 && rect.x + rect.width <= width && rect.y + rect.height <= height;
 }
 
-/** Two frames — long enough for a non-animated scroll to be laid out, short enough to be invisible
- *  under a page that is still covering the screen. */
+/** Two frames: long enough for a non-animated scroll to lay out. */
 function afterLayout(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 }
 
 /**
- * WHERE A COLLAPSE SHOULD LAND: the card's rect now, having first brought it back into view if the
- * list moved it out. The one call a transition needs; everything above is the plumbing it uses.
- *
- * Degrades in steps, and never to something worse than not asking at all: no surface registered, or
- * a reveal that doesn't help, and the first measurement stands; no card at all, and it answers null
- * so the caller keeps whatever it captured on the way in.
+ * Where a collapse should land: the card's rect now, having first scrolled it back into view if the
+ * list moved it out. Degrades in steps — no surface, the first measurement stands; no card, null,
+ * and the caller keeps its capture.
  */
 export async function resolveZoomTarget(id: string, source: ZoomSourceKey): Promise<ZoomOrigin | null> {
   const measured = await measureZoomSource(id, source);
@@ -332,15 +279,10 @@ export async function resolveZoomTarget(id: string, source: ZoomSourceKey): Prom
 type Measurable = { measureInWindow: (cb: (x: number, y: number, width: number, height: number) => void) => void };
 
 /**
- * Both halves of being a zoom source, for a card that has a real view to measure: the press-IN
- * capture that seeds the entrance, and the registration that lets the exit ask again.
- *
- * One hook because the two must agree — same view, same corner radius. They were four near-identical
- * copies of the capture before this, and a fifth answer for the same card measured somewhere else is
- * exactly the kind of drift that produces a collapse landing a few pixels out with nothing to blame.
- *
- * Capture stays on press-in, unchanged and for its original reason: `measureInWindow` is an async
- * round trip, and doing it on press would cost the navigation a frame.
+ * Both halves of being a zoom source: the press-in capture that seeds the entrance, and the
+ * registration that lets the exit ask again. One hook so the two can't disagree about which view or
+ * which corner radius. Capture stays on press-in — `measureInWindow` is async, and doing it on press
+ * would cost the navigation a frame.
  */
 export function useZoomOriginSource(
   id: string,
@@ -358,14 +300,11 @@ export function useZoomOriginSource(
           return;
         }
         view.measureInWindow((x, y, width, height) => {
-          // A zero-sized answer is a view that is not laid out — not a rect to fly to.
+          // Zero-sized means not laid out — not a rect to fly to.
           if (width <= 0 || height <= 0) {
             resolve(null);
             return;
           }
-          // Measured while a series page is OPEN, this view is being drawn through that page's
-          // backdrop scale-down, and `measureInWindow` reports the drawn box. Undo it — see
-          // `unscaleFromBackdrop`. A no-op for the press-in capture, where nothing is scaled.
           resolve(unscaleFromBackdrop({ x, y, width, height, radius }));
         });
       }),

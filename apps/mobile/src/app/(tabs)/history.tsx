@@ -51,8 +51,7 @@ export default function HistoryScreen() {
   const listRef = useRef<LegendListRef>(null);
   useScrollToTopOnReselect('history', listRef);
 
-  // This list as a ZOOM SURFACE (the reveal is registered below, once `visible` exists): the rows
-  // already register WHERE they are; a surface registers how to bring one back into view.
+  // This list as a zoom surface — see AGENTS.md → Zoom transitions.
   const zoomSurface = useZoomSurfaceKey('history');
   // UI-thread scroll offset for the tab bar's slide — `sharedValues` feeds it (hence the
   // AnimatedLegendList below), `onScroll` only keeps the bottom-bounce measurement in sync.
@@ -90,23 +89,17 @@ export default function HistoryScreen() {
   const visible = items && hideNsfw ? items.filter((h) => !byId.get(h.bridgeId)?.nsfw) : items;
 
   // Reading reorders this list, so a series opened from partway down can end up above the viewport
-  // by the time the page closes — and a collapse can only land on a card the eye can see. This runs
-  // while the series page still covers the screen, so the scroll itself is never seen. See
-  // `useZoomSurfaceReveal` for adopting the pattern on another screen.
+  // by the time the page closes. Runs under a page that still covers the screen.
   const revealSeries = useCallback(
     (seriesId: string) => {
       const index = visible?.findIndex((h) => h.seriesId === seriesId) ?? -1;
-      // viewPosition 0.5 — centred rather than flush to an edge, so the card clears the top bar and
-      // the tab bar whichever way it had drifted out of view.
+      // Centred, so the card clears the top bar and the tab bar whichever way it drifted out.
       if (index >= 0) listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0.5 });
     },
     [visible],
   );
   useZoomSurfaceReveal(zoomSurface, revealSeries);
-  // …and tell a collapse in flight when that order actually changed, so it can re-aim at the row's
-  // new position instead of finishing at the old one. The write that reorders this list and the
-  // refetch behind it are both async, so either can land mid-animation; this is what makes that not
-  // matter. No-op unless a series page opened from here is currently collapsing.
+  // Tell a collapse in flight when the order changed, so it can re-aim.
   useEffect(() => {
     notifyZoomSurfaceChanged(zoomSurface);
   }, [visible, zoomSurface]);
@@ -174,9 +167,7 @@ export default function HistoryScreen() {
   const emptyBody = body();
 
   return (
-    // Rows and list share ONE surface key: the cards register their rects under it and the list
-    // registers its reveal under it, so the transition can pair them. Without the provider each row
-    // falls back to a key of its own (see `useZoomSourceKey`) and no surface can answer for them.
+    // Rows and list must share one surface key, or each row falls back to a key of its own.
     <ZoomSurfaceContext.Provider value={zoomSurface}>
       <ThemedView style={styles.container}>
       {emptyBody ? (
@@ -260,9 +251,7 @@ function HistoryItem({
   // per list rather than per row because the list recycles row instances).
   const zoomSource = useZoomSourceKey();
   const zoomFlying = useIsZoomingSeries(item.seriesId, zoomSource);
-  // Radius 6 — the row thumbnail's corner, which is not the grid card's 10. The hook also registers
-  // this thumbnail as re-measurable, which is what lets the collapse follow a row that moved while
-  // the page was open — and on these two screens it always does (see series-zoom).
+  // Radius 6 — the row thumbnail's corner, not the grid card's 10.
   const captureZoomOrigin = useZoomOriginSource(item.seriesId, zoomSource, thumbRef, 6);
   const renderRow = (coverHidden: boolean) => (
     <HistoryRow
