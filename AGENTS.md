@@ -167,8 +167,10 @@ To make another LegendList a zoom source: give it a stable key via `useZoomSurfa
 together. Hand it the list's OWN data array, not whatever it was derived from: the index it finds is
 an index into `data`, and Activity coalesces its entries into rows, so the two are different lists.
 `lib/series-zoom` knows nothing about LegendList; the three contracts it owns can be implemented from
-anything. Every step degrades to the previous behaviour if skipped — a surface with no locator has
-its card measured once, which is all one that can't reorder ever needed.
+anything. Every step degrades to the previous behaviour if skipped — a surface with no locator keeps
+the rect captured on press-in, which for one that can't reorder IS the answer. Don't re-measure the
+card instead: while a page is open its grid sits under the backdrop's scale, so the measurement comes
+back shrunk toward the screen centre and only an arithmetic reconstruction gets it back.
 
 # Press-in warms the destination
 

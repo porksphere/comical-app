@@ -4,7 +4,6 @@ import { createContext, useCallback, useContext, useEffect, useState, type RefOb
 import { Dimensions } from 'react-native';
 
 import { traceJS } from '@/lib/gesture-trace';
-import { unscaleFromBackdrop } from '@/lib/series-backdrop';
 
 /**
  * The SOURCE RECT of the card a series was opened from, so
@@ -161,60 +160,6 @@ export function takeZoomOrigin(id: string | undefined): TakenZoom | null {
 }
 
 /**
- * A card that can still be measured. The captured rect says where the page grew FROM; it goes stale
- * as an answer for where it collapses BACK TO, because reading reorders a last-read list.
- *
- * Not every source can answer — the context menu synthesises its rect from a lifted preview and
- * registers nothing, so the exit keeps the capture.
- */
-/** One card's identity: the series shown AND the surface showing it. */
-const slot = (id: string, source: ZoomSourceKey) => `${source}\u0000${id}`;
-
-export type ZoomOriginProbe = () => Promise<ZoomOrigin | null>;
-
-const probes = new Map<string, ZoomOriginProbe>();
-
-/** A measure that hasn't answered in a couple of frames never will — detached, or recycled away. */
-const PROBE_TIMEOUT_MS = 100;
-
-function registerZoomSource(id: string, source: ZoomSourceKey, probe: ZoomOriginProbe): () => void {
-  const key = slot(id, source);
-  probes.set(key, probe);
-  traceJS('zoom', 'probe.reg', { src: source, n: probes.size });
-  // Only if still ours: a recycled slot re-registers before the old instance's cleanup runs.
-  return () => {
-    if (probes.get(key) !== probe) return;
-    probes.delete(key);
-    // The one that explains a collapse that never re-aimed: a row scrolled far enough out of the
-    // list's render window UNMOUNTS, taking its probe with it, and a source that can't answer is
-    // also one `resolveZoomTarget` never gets far enough to reveal.
-    traceJS('zoom', 'probe.unreg', { src: source, n: probes.size });
-  };
-}
-
-/** Where that card is NOW, or null if it can no longer say. */
-export async function measureZoomSource(id: string, source: ZoomSourceKey): Promise<ZoomOrigin | null> {
-  const probe = probes.get(slot(id, source));
-  if (!probe) {
-    traceJS('zoom', 'probe.none', { src: source });
-    return null;
-  }
-  const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), PROBE_TIMEOUT_MS));
-  const measured = await Promise.race([probe(), timeout]);
-  if (measured) {
-    traceJS('zoom', 'probe', {
-      src: source,
-      y: Math.round(measured.y),
-      h: Math.round(measured.height),
-      on: onScreen(measured),
-    });
-  } else {
-    traceJS('zoom', 'probe.miss', { src: source });
-  }
-  return measured;
-}
-
-/**
  * A surface that can bring one of its items into view — a card can say where it is, only the
  * scroller can fix being off screen. Called under a page that still covers the screen, so the
  * scroll is never seen. Takes the SERIES id, not a list key, so a list keyed on something else
@@ -318,10 +263,11 @@ function shifted(origin: ZoomOrigin, base: ZoomSurfacePlace, now: ZoomSurfacePla
  * lands reports where the row WAS, and taking it twice just reports it twice. The list's state has
  * neither problem, which is why this needs no re-asking loop.
  *
- * Degrades in steps. No locator — a grid card, the context menu's synthesized preview, anything that
- * cannot reorder under an open page — and one measurement of the card stands, which is all such a
- * source ever needed. Nothing measurable either, and nothing is reported: the caller keeps its
- * capture, which is never a worse answer than not asking.
+ * No locator — a grid card, the context menu's synthesized preview, anything that cannot reorder
+ * under an open page — and nothing is reported at all: the caller keeps its capture, which for a
+ * source that hasn't moved IS the answer. Measuring one of those instead was a regression; the card
+ * sits under the backdrop's scale, so the rect comes back shrunk toward the screen centre and has to
+ * be divided back out, trading an exact number for an arithmetic reconstruction of it.
  */
 export async function resolveZoomTarget(
   id: string,
@@ -347,21 +293,16 @@ export async function resolveZoomTarget(
         }
       }
       onTarget(rect);
-      return;
     }
   }
-  const measured = await measureZoomSource(id, source);
-  if (measured) onTarget(measured);
 }
 
 /** The shape of the thing a card measures — `View`'s, narrowed to the one method used. */
 type Measurable = { measureInWindow: (cb: (x: number, y: number, width: number, height: number) => void) => void };
 
 /**
- * Both halves of being a zoom source: the press-in capture that seeds the entrance, and the
- * registration that lets the exit ask again. One hook so the two can't disagree about which view or
- * which corner radius. Capture stays on press-in — `measureInWindow` is async, and doing it on press
- * would cost the navigation a frame.
+ * The press-in capture that seeds the entrance. On press-IN because `measureInWindow` is async, and
+ * doing it on press would cost the navigation a frame.
  */
 export function useZoomOriginSource(
   id: string,
@@ -384,13 +325,11 @@ export function useZoomOriginSource(
             resolve(null);
             return;
           }
-          resolve(unscaleFromBackdrop({ x, y, width, height, radius }));
+          resolve({ x, y, width, height, radius });
         });
       }),
     [enabled, radius, ref],
   );
-
-  useEffect(() => registerZoomSource(id, source, measure), [id, source, measure]);
 
   return useCallback(() => {
     void measure().then((origin) => {
@@ -398,6 +337,9 @@ export function useZoomOriginSource(
     });
   }, [id, measure, source]);
 }
+
+/** One card's identity: the series shown AND the surface showing it. */
+const slot = (id: string, source: ZoomSourceKey) => `${source}\u0000${id}`;
 
 /**
  * Which series are currently mid-zoom, by id (a count, because a drilled layer can be flying while

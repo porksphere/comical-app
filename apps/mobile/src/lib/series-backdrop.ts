@@ -1,4 +1,3 @@
-import { Dimensions } from 'react-native';
 import { makeMutable, useAnimatedStyle } from 'react-native-reanimated';
 
 import { sharedPushback } from '@/lib/pushback-signal';
@@ -112,28 +111,6 @@ export function useSeriesReaderBackdropStyle() {
     const depth = recedes.value ? seriesReaderDim.value : 0;
     return { transform: [{ scale: 1 - (1 - BACKDROP_SCALE_MIN) * depth }] };
   });
-}
-
-/**
- * Undo the scale above for anything MEASURING a view under an open series page. `measureInWindow`
- * reports the drawn box, so a card measured then comes back ~6% small and pulled toward the screen
- * centre. The rect wanted is the one it occupies at rest — where it will be by the time the collapse
- * arrives. A no-op whenever no series page is open, including every press-in capture.
- */
-export function unscaleFromBackdrop<T extends { x: number; y: number; width: number; height: number }>(rect: T): T {
-  if (!recedes.value) return rect;
-  const scale = 1 - (1 - BACKDROP_SCALE_MIN) * seriesReaderDim.value;
-  if (scale >= 1) return rect;
-  const { width, height } = Dimensions.get('window');
-  const cx = width / 2;
-  const cy = height / 2;
-  return {
-    ...rect,
-    x: cx + (rect.x - cx) / scale,
-    y: cy + (rect.y - cy) / scale,
-    width: rect.width / scale,
-    height: rect.height / scale,
-  };
 }
 
 /** The dim, for an absolutely-positioned overlay over the backdrop. Safe to mount anywhere — it
