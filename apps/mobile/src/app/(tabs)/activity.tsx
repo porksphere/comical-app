@@ -8,7 +8,14 @@ import Animated, { useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HistoryRow } from '@/components/history-row';
-import { useIsZoomingSeries, useZoomOriginSource, useZoomSourceKey } from '@/lib/series-zoom';
+import {
+  useIsZoomingSeries,
+  useZoomOriginSource,
+  useZoomSourceKey,
+  useZoomSurfaceKey,
+  useZoomSurfaceReveal,
+  ZoomSurfaceContext,
+} from '@/lib/series-zoom';
 import { encodeSeriesParam } from '@/lib/series-nav';
 import { CheckIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { PullIndicator } from '@/components/pull-indicator';
@@ -69,6 +76,10 @@ export default function ActivityScreen() {
   const { byId, nameOf, directOf } = useBridgeMap();
   const listRef = useRef<LegendListRef>(null);
   useScrollToTopOnReselect('activity', listRef);
+
+  // This list as a ZOOM SURFACE (the reveal is registered below, once `visible` exists): the rows
+  // already register WHERE they are; a surface registers how to bring one back into view.
+  const zoomSurface = useZoomSurfaceKey('activity');
   // Let the tab swap paint before mounting the row list (see use-deferred-mount).
   const ready = useDeferredMount();
 
@@ -153,6 +164,21 @@ export default function ActivityScreen() {
   });
 
   const visible = items && hideNsfw ? items.filter((a) => !byId.get(a.bridgeId)?.nsfw) : items;
+
+  // Reading reorders this list, so a series opened from partway down can end up above the viewport
+  // by the time the page closes — and a collapse can only land on a card the eye can see. This runs
+  // while the series page still covers the screen, so the scroll itself is never seen. See
+  // `useZoomSurfaceReveal` for adopting the pattern on another screen.
+  const revealSeries = useCallback(
+    (seriesId: string) => {
+      const index = visible?.findIndex((a) => a.seriesId === seriesId) ?? -1;
+      // viewPosition 0.5 — centred rather than flush to an edge, so the card clears the top bar and
+      // the tab bar whichever way it had drifted out of view.
+      if (index >= 0) listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0.5 });
+    },
+    [visible],
+  );
+  useZoomSurfaceReveal(zoomSurface, revealSeries);
 
   // Coalesce the flat per-chapter feed into one row per series. `visible` is already newest-first, so a
   // series' first appearance is its newest detection (the row's snapshot + sort position), and the
@@ -248,7 +274,11 @@ export default function ActivityScreen() {
   const emptyBody = body();
 
   return (
-    <ThemedView style={styles.container} {...pull.touchHandlers}>
+    // Rows and list share ONE surface key: the cards register their rects under it and the list
+    // registers its reveal under it, so the transition can pair them. Without the provider each row
+    // falls back to a key of its own (see `useZoomSourceKey`) and no surface can answer for them.
+    <ZoomSurfaceContext.Provider value={zoomSurface}>
+      <ThemedView style={styles.container} {...pull.touchHandlers}>
       {emptyBody ? (
         <View style={[styles.centeredColumn, { paddingTop: headerHeight + BarContentGap }]}>
           <View style={styles.centerFill}>{emptyBody}</View>
@@ -313,6 +343,7 @@ export default function ActivityScreen() {
       <PullIndicator {...pull.indicator} top={headerHeight} />
       <TabTitleBar title="Activity" />
     </ThemedView>
+    </ZoomSurfaceContext.Provider>
   );
 }
 

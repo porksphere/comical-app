@@ -9,7 +9,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TrashIcon } from '@/components/icons/ui-icons';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { HistoryRow } from '@/components/history-row';
-import { useIsZoomingSeries, useZoomOriginSource, useZoomSourceKey } from '@/lib/series-zoom';
+import {
+  useIsZoomingSeries,
+  useZoomOriginSource,
+  useZoomSourceKey,
+  useZoomSurfaceKey,
+  useZoomSurfaceReveal,
+  ZoomSurfaceContext,
+} from '@/lib/series-zoom';
 import { encodeSeriesParam } from '@/lib/series-nav';
 import { RetryBlock } from '@/components/retry-block';
 import { SeriesCardMenu } from '@/components/series-card-menu';
@@ -42,6 +49,10 @@ export default function HistoryScreen() {
   const { byId, nameOf, directOf } = useBridgeMap();
   const listRef = useRef<LegendListRef>(null);
   useScrollToTopOnReselect('history', listRef);
+
+  // This list as a ZOOM SURFACE (the reveal is registered below, once `visible` exists): the rows
+  // already register WHERE they are; a surface registers how to bring one back into view.
+  const zoomSurface = useZoomSurfaceKey('history');
   // UI-thread scroll offset for the tab bar's slide — `sharedValues` feeds it (hence the
   // AnimatedLegendList below), `onScroll` only keeps the bottom-bounce measurement in sync.
   const { sharedValues, onScroll } = useHideTabBarOnScroll();
@@ -76,6 +87,21 @@ export default function HistoryScreen() {
   });
 
   const visible = items && hideNsfw ? items.filter((h) => !byId.get(h.bridgeId)?.nsfw) : items;
+
+  // Reading reorders this list, so a series opened from partway down can end up above the viewport
+  // by the time the page closes — and a collapse can only land on a card the eye can see. This runs
+  // while the series page still covers the screen, so the scroll itself is never seen. See
+  // `useZoomSurfaceReveal` for adopting the pattern on another screen.
+  const revealSeries = useCallback(
+    (seriesId: string) => {
+      const index = visible?.findIndex((h) => h.seriesId === seriesId) ?? -1;
+      // viewPosition 0.5 — centred rather than flush to an edge, so the card clears the top bar and
+      // the tab bar whichever way it had drifted out of view.
+      if (index >= 0) listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0.5 });
+    },
+    [visible],
+  );
+  useZoomSurfaceReveal(zoomSurface, revealSeries);
 
   const barHeight = useTopBarHeight();
   const headerHeight = insets.top + barHeight;
@@ -140,7 +166,11 @@ export default function HistoryScreen() {
   const emptyBody = body();
 
   return (
-    <ThemedView style={styles.container}>
+    // Rows and list share ONE surface key: the cards register their rects under it and the list
+    // registers its reveal under it, so the transition can pair them. Without the provider each row
+    // falls back to a key of its own (see `useZoomSourceKey`) and no surface can answer for them.
+    <ZoomSurfaceContext.Provider value={zoomSurface}>
+      <ThemedView style={styles.container}>
       {emptyBody ? (
         <View style={[styles.centeredColumn, { paddingTop: headerHeight + BarContentGap }]}>
           <View style={styles.centerFill}>{emptyBody}</View>
@@ -186,6 +216,7 @@ export default function HistoryScreen() {
 
       <TabTitleBar title="History" />
     </ThemedView>
+    </ZoomSurfaceContext.Provider>
   );
 }
 
