@@ -16,6 +16,9 @@
 set -euo pipefail
 
 REPO_URL="https://github.com/porksphere/comical-app.git"
+# Branch the CONTROL checkout tracks — the scripts and units this box runs. Normally main; override
+# to test a branch before it merges (the watcher reads the same variable, so both stay in step).
+CONTROL_BRANCH="${DEV_CONTROL_BRANCH:-main}"
 BASE=/opt/comical
 ENV_FILE=/etc/comical-dev/env
 USER_NAME=comical
@@ -68,6 +71,9 @@ EXPO_PUBLIC_COMICAL_SERVER=http://comical-dev.tailXXXX.ts.net:3100
 # Restart Metro on every sync instead of letting its watcher hot-reload a JS-only push. Set to 1 if
 # watchman is unavailable on this box, or if edits stop showing up on the device without a restart.
 # DEV_ALWAYS_RESTART=1
+
+# Branch the control checkout follows. Leave unset for main; set it to test a branch pre-merge.
+# DEV_CONTROL_BRANCH=claude/remote-expo-dev-server-8pxwxk
 TEMPLATE
   chmod 600 "$ENV_FILE"
   echo "Wrote template $ENV_FILE — fill it in, then re-run this script." >&2
@@ -93,8 +99,8 @@ for d in control app; do
     sudo -u "$USER_NAME" git clone --quiet "$REPO_URL" "$BASE/$d"
   fi
 done
-sudo -u "$USER_NAME" git -C "$BASE/control" fetch --quiet origin main
-sudo -u "$USER_NAME" git -C "$BASE/control" reset --hard --quiet origin/main
+sudo -u "$USER_NAME" git -C "$BASE/control" fetch --quiet origin "$CONTROL_BRANCH"
+sudo -u "$USER_NAME" git -C "$BASE/control" reset --hard --quiet "origin/$CONTROL_BRANCH"
 
 # ── 7. Bun + first install ───────────────────────────────────────────────────
 if [ ! -x "$BASE/.bun/bin/bun" ]; then

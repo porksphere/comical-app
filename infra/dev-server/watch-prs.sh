@@ -33,6 +33,9 @@ POLL_INTERVAL="${DEV_POLL_INTERVAL:-15}"
 # things a push never signals — a PR closing, or anything that happened while the box was down.
 RECONCILE_EVERY="${DEV_RECONCILE_EVERY:-20}"
 METRO_UNIT="${DEV_METRO_UNIT:-comical-metro.service}"
+# Branch the control checkout tracks. Must match what bootstrap.sh cloned, or a reconcile tick will
+# quietly drag this box's scripts back to main mid-test.
+CONTROL_BRANCH="${DEV_CONTROL_BRANCH:-main}"
 
 STATE="$STATE_DIR/state.json"
 STATUS="$STATE_DIR/status.json"
@@ -174,8 +177,9 @@ run_cycle() {
   # push to main. It is a SEPARATE clone from the one Metro serves precisely because that one gets
   # yanked between PR heads — scripts must not move under a running service.
   if [ "$reconcile" = 1 ]; then
-    git -C "$CONTROL_DIR" fetch --quiet origin main 2>/dev/null &&
-      git -C "$CONTROL_DIR" reset --hard --quiet origin/main 2>/dev/null || log "control refresh failed (continuing)"
+    git -C "$CONTROL_DIR" fetch --quiet origin "$CONTROL_BRANCH" 2>/dev/null &&
+      git -C "$CONTROL_DIR" reset --hard --quiet "origin/$CONTROL_BRANCH" 2>/dev/null ||
+      log "control refresh failed (continuing)"
   fi
 
   local remote now_shas
