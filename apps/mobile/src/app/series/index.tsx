@@ -49,7 +49,6 @@ import { TopBarSwitch } from '@/components/top-bar-switch';
 import { Spacing } from '@/constants/theme';
 import { assetResolvesInFlight, resolveAssetSourceCached, supersedeBackgroundResolves } from '@/data/api';
 import {
-  bumpHistoryOrder,
   chapterPagesQuery,
   directPagesQuery,
   historyQuery,
@@ -442,16 +441,8 @@ const ZOOM_OUT_BACKSTOP_MS = 900;
  */
 const LEAVE_AT_ZOOM = 0;
 
-/**
- * The two ends of "a collapse is under way", for the exit's re-measure (see `probed`).
- *
- * Not symmetric on purpose, and neither is a rounding tolerance. `STARTED` fires the probe on the
- * first real movement away from the top, which under a drag is hundreds of milliseconds before the
- * release commits, and under the chevron is a frame or two into the spring — where the fresh rect
- * is scaled by `(1 - q)` and moving the target is worth a couple of percent of the travel.
- * `ARMED` sits nearer the top so a drag that was released short, and sprang back, has to actually
- * return home before it may probe again.
- */
+/** The two ends of "a collapse is under way". Not symmetric: `ARMED` sits nearer the top so a drag
+ *  released short has to actually return home before it may probe again. */
 const COLLAPSE_STARTED = 0.995;
 const COLLAPSE_ARMED = 0.999;
 /** Instances that have already left. See `leaveOnce` for why this lives out here. */
@@ -1660,28 +1651,15 @@ function SeriesReaderInstance({
   // related rail (or a nested search result), and that is just as much an "open this series" as a
   // tap on the browse grid, so it gets the same entrance rather than a push.
   //
-  // Consumed in a state initializer so it's known on the FIRST render — a frame later would mean
-  // starting the grow from the wrong geometry.
-  //
-  // It used to be remembered for the instance's whole lifetime, on the reasoning that the exit
-  // should collapse back into the same box. That reads as obviously right and is not: it assumes
-  // the card is still there, and on a list ordered by last-read it never is. The ENTRANCE keeps
-  // this rect — it is the box the page really did grow out of — and the exit re-measures instead
-  // (see `exitOrigin`). Don't re-freeze it.
+  // Consumed in a state initializer so it's known on the FIRST render — a frame later would start
+  // the grow from the wrong geometry. The ENTRANCE keeps this rect; the exit re-aims off it via
+  // `heroShift`, because on a last-read list the card has moved by then. Don't freeze the exit to it.
   const [zoomSource] = useState(() => (IS_WEB ? null : takeZoomOrigin(id)));
   /**
-   * How far the source card has moved since it was captured, applied only at the collapsed end.
-   *
-   * `hero` stays the rect the page GREW from — it must, or `zoomGeom` and its two animated styles
-   * would recompute mid-flight and the transition would jump. The correction rides alongside as a
-   * pair of shared values instead: sprung on the UI thread, added into the mask's origin scaled by
-   * `(1 - q)`, so it contributes nothing at full screen and everything at the card. Retargeting a
-   * collapse in flight is then a smooth curve toward the row's new home rather than a snap, and it
-   * costs no React render at all.
-   *
-   * Only x and y. A reorder moves a row; it does not resize it — every row in a list is the same
-   * shape — so the size the page collapses TO is the size it grew from, and leaving it alone is
-   * what keeps `zoomGeom` (scale, anchors, the copy's rect) valid for the whole motion.
+   * How far the source card has moved since capture, applied only at the collapsed end (scaled by
+   * `1 - q`). Kept out of `hero` so `zoomGeom` and its styles never recompute mid-flight; sprung, so
+   * a row that moves during a collapse curves the transition to it rather than snapping. Only x/y —
+   * a reorder moves a row without resizing it, which keeps `zoomGeom` valid throughout.
    */
   const heroShiftX = useSharedValue(0);
   const heroShiftY = useSharedValue(0);
@@ -1808,18 +1786,8 @@ function SeriesReaderInstance({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /**
-   * Re-measure the card and aim the collapse at wherever it is now — at the start of a collapse, and
-   * again any time its list says the row moved while the collapse is still running.
-   *
-   * Silent on failure by design: no registration (the context menu's synthetic hand-off), an
-   * unmounted card, a probe that times out — all leave the shift where it is, which at worst is the
-   * captured rect the collapse used before any of this existed. Never a worse answer.
-   *
-   * An off-screen answer is USED, not rejected — `resolveZoomTarget` will already have asked the
-   * list to scroll it back into view, and a card that genuinely cannot be revealed is better flown
-   * at honestly than replaced with a lie about where it sits.
-   */
+  /** Silent on failure: no registration, an unmounted card or a timed-out probe all leave the shift
+   *  alone, which is the captured rect — never a worse answer than not asking. */
   const refreshExitOrigin = useCallback(() => {
     const from = zoomSource?.origin;
     if (!from || !id) return;
@@ -1844,18 +1812,10 @@ function SeriesReaderInstance({
   }, [token, edgeCommitting, zoom, zoomClosing]);
 
   /**
-   * Ask the source card where it is, once per collapse.
-   *
-   * Hung off `zoom` leaving the top rather than off the gestures, because there are several ways
-   * out of this page — the collapse pan, the back-swipe, the chevron, Android's hardware back — and
-   * every one of them ends up moving this value. One reaction covers them all, and it cannot be the
-   * one that a new exit path forgets to call.
-   *
-   * `probed` starts TRUE so the ENTRANCE doesn't trip it: `zoom` runs 0→1 on the way in, and a probe
-   * during the grow would measure a card that hasn't moved yet and cost a round trip to learn it.
-   * Reaching the top arms it; leaving the top spends it. A drag that is released short of committing
-   * springs back to 1 and re-arms, so a second attempt measures again — the list may have moved on
-   * between the two.
+   * Ask the source card where it is, once per collapse. Hung off `zoom` leaving the top rather than
+   * off the gestures — the pan, the back-swipe, the chevron and Android back all move it, and a new
+   * exit path can't forget to call it. `probed` starts true so the entrance (`zoom` 0→1) can't trip
+   * it; reaching the top arms it.
    */
   const probed = useSharedValue(true);
   const [collapsing, setCollapsing] = useState(false);
@@ -1873,9 +1833,7 @@ function SeriesReaderInstance({
     },
   );
 
-  // While a collapse is running, let the source's list tell us if it reorders under us — a read
-  // writes and refetches asynchronously, so that can land at any point, including mid-flight. Only
-  // subscribed for the few hundred ms it can matter.
+  // Only for the few hundred ms it can matter.
   useEffect(() => {
     if (!collapsing || !zoomSource) return;
     return onZoomSurfaceChange(zoomSource.source, refreshExitOrigin);
@@ -2297,10 +2255,6 @@ function SeriesReaderInstance({
       // The drag moves the MASK, not the page inside it. Both have to travel together or the page
       // slides out from under its own window — a rectangle of page hanging in the wrong place,
       // which is exactly what a dragged mask-less collapse looked like.
-      // `heroShift` is the card having MOVED since it was captured (a reorder, a reveal scroll). It
-      // rides the same `(1 - q)` as the origin itself, so it is nothing at full screen and the whole
-      // correction at the card — and because it is sprung, a row that moves mid-collapse curves the
-      // transition to its new home instead of teleporting it.
       left: (hero.x + heroShiftX.value) * (1 - q) + dragX.value,
       top: (hero.y + heroShiftY.value) * (1 - q) + dragY.value,
       width: hero.width + (width - hero.width) * q,
@@ -2340,8 +2294,6 @@ function SeriesReaderInstance({
         ],
       };
     }
-    // Same origin the mask uses, `heroShift` included — the page is counter-translated by this to
-    // sit still inside the mask, so the two must agree or the page slides against its own window.
     const maskLeft = (hero.x + heroShiftX.value) * (1 - q);
     const maskTop = (hero.y + heroShiftY.value) * (1 - q);
     // Scale: normally the base content scale modulated by the drag's shrink. Once the finger has
@@ -2360,8 +2312,11 @@ function SeriesReaderInstance({
     // the same part of the page however far it is dragged.
     return {
       transform: [
-        { translateX: zoomGeom.tx * (1 - q) - maskLeft },
-        { translateY: (zoomGeom.ty + zoomGeom.s * shift) * (1 - q) - maskTop },
+        // heroShift is added to the page's own target as well as the mask's origin. The mask offset
+        // cancels out of the page's absolute position, so shifting only the mask moves the window
+        // without moving what's behind it.
+        { translateX: (zoomGeom.tx + heroShiftX.value) * (1 - q) - maskLeft },
+        { translateY: (zoomGeom.ty + zoomGeom.s * shift + heroShiftY.value) * (1 - q) - maskTop },
         { scale },
       ],
     };
@@ -4060,47 +4015,6 @@ const ReaderPane = forwardRef<
     const t = setTimeout(() => recordRef.current(), 1500);
     return () => clearTimeout(t);
   }, [currentPage]);
-  /**
-   * Move this series to the front of the cached history as soon as the reader is up — opening it IS
-   * starting to read it, so that is when the list's order changes.
-   *
-   * This is about WHEN the order changes, not whether: the debounced write above and its refetch
-   * still follow and agree. Left to them alone the reorder lands whenever two async hops happen to
-   * resolve, and that turned out to include the middle of the collapse back into the card. Applied
-   * here it lands behind a full-screen reader, before there is any animation to disturb — and the
-   * exit's re-aim (see `heroShift`) covers whatever still slips through.
-   *
-   * Once per visit: only the first application moves anything, and `historyWithBumped` returns the
-   * same array when the series is already at the front, so a covered list is not re-sorted for free.
-   */
-  const bumpedRef = useRef(false);
-  useEffect(() => {
-    if (bumpedRef.current || !recordProgress || !bridgeId || !seriesId || !pages.length) return;
-    bumpedRef.current = true;
-    bumpHistoryOrder(queryClient, mock, {
-      bridgeId,
-      seriesId,
-      title: seriesTitle,
-      ...(seriesCover ? { thumbnailUrl: seriesCover } : {}),
-      ...(chapterId ? { chapterId } : {}),
-      ...(chapterName ? { chapterName } : {}),
-      lastPage: currentPage,
-      pageCount: pages.length,
-    });
-  }, [
-    bridgeId,
-    chapterId,
-    chapterName,
-    currentPage,
-    mock,
-    pages.length,
-    queryClient,
-    recordProgress,
-    seriesCover,
-    seriesId,
-    seriesTitle,
-  ]);
-
   useEffect(() => () => recordRef.current(), []);
 
   // ── Web keyboard nav (single-step; no held-key repeat) ─────────────────────

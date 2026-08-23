@@ -90,13 +90,8 @@ export type SwipeRowAction = {
   onPress: () => void;
   /** Danger-coloured (a delete) vs accent-coloured (the default). */
   destructive?: boolean;
-  /**
-   * This action REMOVES the row: collapse the row closed first, then run `onPress`. For a delete
-   * that commits immediately — a screen whose handler drops the item straight out of its data (the
-   * optimistic removes on History and Activity). NOT for one that opens a confirm first: the row
-   * would fold away before the question was asked. Separate from `destructive`, which is only a
-   * colour — a destructive action can also be one that leaves the row where it is.
-   */
+  /** Fold the row shut, then run `onPress`. Only for a delete that commits immediately — with a
+   *  confirm the row would fold away before the question was asked. */
   collapses?: boolean;
 };
 
@@ -164,8 +159,7 @@ export function SwipeableRow({ name, actions, edgeInset = 0, recycleKey, swipeEn
   if (actions.length === 0) {
     return <View style={{ marginHorizontal: -edgeInset }}>{children}</View>;
   }
-  // Delegated so this function keeps its hook-free early return above — the collapse needs hooks,
-  // and an intentionally action-less row must still be allowed to skip them.
+  // Delegated so the action-less early return above stays hook-free.
   return (
     <CollapsingRow
       name={name}
@@ -178,25 +172,15 @@ export function SwipeableRow({ name, actions, edgeInset = 0, recycleKey, swipeEn
   );
 }
 
-/** The fold, on the SAME spring a settings list springs its rows to their slots with (`ROW_SPRING`)
- *  — a row leaving and the gap closing behind it are one event, and two curves read as two
- *  animations. `overshootClamping` because there is nothing past shut: this spring is lightly
- *  underdamped, and a height allowed to spring through 0 is a negative height. */
+/** `overshootClamping`: a height allowed to spring through 0 is a negative height. */
 const COLLAPSE = { ...ROW_SPRING, overshootClamping: true } as const;
 
 /**
- * The platform split, plus the fold-shut a removing action gets (`SwipeRowAction.collapses`).
- *
- * A row is deleted by its screen dropping the item out of the list data, which unmounts the row in
- * the same frame — the row is simply gone, and everything below it lands in its new place with no
- * motion between the two states. So the collapse has to happen BEFORE the data changes: the row
- * animates its own height to 0, and only then runs the handler that removes it. What the list does
- * with the shrinking row is the list's business — a `LegendList` measures its items, so the rows
- * below follow it up; a fixed-slot list (the settings `ReorderableList`) springs them instead. Both
- * end up moving while the row folds rather than after it has vanished.
- *
- * The height is measured rather than assumed: these rows size to their content (a wrapped title, a
- * download's progress line), so there is no constant to fold from.
+ * The platform split, plus the fold a removing action gets. The screen deletes a row by dropping it
+ * out of the list data, which unmounts it in the same frame — so the fold has to run BEFORE that,
+ * and the handler runs on the other side of it. What the list does with the shrinking row is its
+ * own business: LegendList measures items, `ReorderableList` springs its slots. Height is measured,
+ * not assumed — these rows size to their content.
  */
 function CollapsingRow({
   name,
@@ -213,12 +197,9 @@ function CollapsingRow({
   swipeEnabled: boolean;
   children: ReactNode;
 }) {
-  // Mirrors the row's natural height while idle, so the first frame of a fold starts exactly where
-  // the row already sits. Without that the style would apply whatever it last held — 0 on a row that
-  // has never folded — and the row would vanish for a frame before animating from nothing.
+  // Mirrors the natural height while idle, so a fold starts where the row already sits.
   const height = useSharedValue(0);
-  // Set for the length of the fold: `onLayout` fires all the way down as the row shrinks, and
-  // feeding those back into `height` would fight the animation to a standstill.
+  // `onLayout` fires all the way down as the row shrinks; feeding that back would fight the spring.
   const folding = useSharedValue(false);
   const [pending, setPending] = useState<{ run: () => void } | null>(null);
 
@@ -235,9 +216,6 @@ function CollapsingRow({
     height.set(
       withSpring(0, COLLAPSE, (finished) => {
         'worklet';
-        // Only a fold that landed removes the row. Unfinished means this row was unmounted
-        // mid-animation (its screen dropped the item for some other reason), and there is nothing
-        // left to remove.
         if (finished) runOnJS(pending.run)();
       }),
     );
@@ -245,8 +223,6 @@ function CollapsingRow({
 
   const foldStyle = useAnimatedStyle(() => ({ height: height.get() }));
 
-  // A removing action folds the row first and runs on the other side of it. Everything else is
-  // passed straight through, so a row with no such action behaves exactly as it did.
   const wired = useMemo(
     () =>
       actions.map((action) =>
@@ -256,9 +232,7 @@ function CollapsingRow({
   );
 
   return (
-    // The style is applied only while folding: a row left to size itself must not be pinned to a
-    // height this component measured, or content that grows after layout (a title reflowing) would
-    // be clipped for good.
+    // Only while folding — a row left to size itself must not be pinned to a measured height.
     <Animated.View onLayout={onLayout} style={pending ? [styles.folding, foldStyle] : undefined}>
       {IS_WEB ? (
         <HoverActionsRow name={name} actions={wired} edgeInset={edgeInset} recycleKey={recycleKey} enabled={swipeEnabled}>
@@ -713,8 +687,6 @@ function HoverActionsRow({ name, actions, edgeInset, recycleKey, enabled, childr
 }
 
 const styles = StyleSheet.create({
-  // Clip the row's content as its height runs out, rather than letting it spill over whatever the
-  // list has already moved up into the gap.
   folding: {
     overflow: 'hidden',
   },

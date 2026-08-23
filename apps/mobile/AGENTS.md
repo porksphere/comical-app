@@ -135,38 +135,22 @@ specific to that site — not a category name. `reportUnusedDisableDirectives` i
 directive that stops suppressing anything fails the lint rather than rotting in place. If a
 suppression doesn't fit one of the three cases above, it's a code change, not a comment.
 
-# Zoom transitions: ask, don't remember
+# Comments
 
-The series page grows out of the card that opened it and collapses back into it (`lib/series-zoom.ts`,
-`app/series/index.tsx`). The rect it collapses to is **re-measured when the collapse starts**, never
-the one captured on press-in — a captured rect assumes the card holds still, and a list ordered by
-last-read reorders under it the moment you read something. This is what UIKit's own zoom transition
-does with its `sourceViewProvider` closure, and what Android's `onMapSharedElements` does off the
-current adapter position; it is not a local invention. **Don't re-freeze it.**
+The code is the documentation. Comment only what the code cannot say: a non-obvious constraint, a
+bug the shape is defending against, a decision that looks wrong until you know why. Never narrate
+what the next line does, and never argue with alternatives that were never written.
 
-The rule the whole thing serves: **everything settles while it is hidden, and the transition always
-aims at the truth.** Nothing the user can see is allowed to teleport. Two consequences that are easy
-to undo by accident:
+# Zoom transitions
 
-- A write that reorders a list (recording read progress) must land DURING the visit, while the page
-  still covers the screen — not on teardown, where the list re-sorts a beat after the collapse has
-  already landed. See the guarded teardown flush by `recordedPageRef` in `app/series/index.tsx`.
-- If the reorder puts the card outside the viewport, the list scrolls it back into view before the
-  collapse — also under the covering page, so the scroll is never seen.
+The series page grows out of the card that opened it and collapses back into it (`lib/series-zoom.ts`).
+The collapse target is re-measured when the collapse starts and re-aimed if the card moves while it
+runs — a captured rect goes stale the moment a last-read list reorders. Don't freeze it.
 
-**Adopting this on another screen** is three steps (see `useZoomSurfaceReveal`'s doc block):
-
-1. Give the list a stable surface key with `useZoomSurfaceKey('<name>')` and put it on
-   `ZoomSurfaceContext` around the rows, so the cards and the list agree on who they are. Screens
-   built on `RecyclerList` already get this; a hand-rolled list (History, Activity) does it itself.
-2. Have each card call `useZoomOriginSource(id, surface, ref, radius)` — it both captures the
-   press-in rect and registers the card as re-measurable. `SeriesCard` already does.
-3. Call `useZoomSurfaceReveal(surface, reveal)`, where `reveal(seriesId)` scrolls that item into
-   view. It takes the SERIES id, not the list key, so a list keyed on something else (History's are
-   `bridgeId:seriesId`) maps it itself.
-
-Every step degrades to the old behaviour rather than to something worse: no surface, no reveal; no
-registration, the captured rect stands; no card, the caller keeps what it had.
+To make another list a zoom source: give it a stable key via `useZoomSurfaceKey`, put that on
+`ZoomSurfaceContext` around the rows, have cards call `useZoomOriginSource`, and register
+`useZoomSurfaceReveal` (scroll an item into view) plus `notifyZoomSurfaceChanged` when the order
+changes. Every step degrades to the previous behaviour if skipped.
 
 # Testing: new screens need a flow
 
