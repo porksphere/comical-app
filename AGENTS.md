@@ -161,12 +161,14 @@ unmounts, so the case that most needs finding is the one nothing can measure, an
 position trails the list's own by a commit, so a measurement taken as the reorder lands reports where
 it WAS. Both of those were real bugs, not hypotheticals.
 
-To make another list a zoom source: give it a stable key via `useZoomSurfaceKey`, put that on
-`ZoomSurfaceContext` around the rows, have cards call `useZoomOriginSource`, and register
-`useZoomSurfaceReveal` (scroll an item into view) plus `notifyZoomSurfaceChanged` when the order
-changes. Add `useZoomSurfaceLocator` if the list can reorder under an open page. Every step degrades
-to the previous behaviour if skipped — without a locator the card is measured once, which is all a
-surface that can't reorder ever needed.
+To make another LegendList a zoom source: give it a stable key via `useZoomSurfaceKey`, put that on
+`ZoomSurfaceContext` around the rows, have cards call `useZoomOriginSource`, and call
+`useZoomSurfaceList` — the adapter that registers locate, reveal and the order-changed notice
+together. Hand it the list's OWN data array, not whatever it was derived from: the index it finds is
+an index into `data`, and Activity coalesces its entries into rows, so the two are different lists.
+`lib/series-zoom` knows nothing about LegendList; the three contracts it owns can be implemented from
+anything. Every step degrades to the previous behaviour if skipped — a surface with no locator has
+its card measured once, which is all one that can't reorder ever needed.
 
 # Press-in warms the destination
 

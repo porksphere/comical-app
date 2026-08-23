@@ -2,7 +2,7 @@ import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,11 +11,8 @@ import { HistoryRow } from '@/components/history-row';
 import {
   useIsZoomingSeries,
   useZoomOriginSource,
-  notifyZoomSurfaceChanged,
   useZoomSourceKey,
   useZoomSurfaceKey,
-  useZoomSurfaceLocator,
-  useZoomSurfaceReveal,
   ZoomSurfaceContext,
 } from '@/lib/series-zoom';
 import { encodeSeriesParam } from '@/lib/series-nav';
@@ -41,8 +38,8 @@ import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useRouter } from '@/lib/nav';
-import { traceJS } from '@/lib/gesture-trace';
 import { relTime } from '@/lib/rel-time';
+import { useZoomSurfaceList } from '@/lib/zoom-surface-list';
 import { ROW_REORDER_TRANSITION } from '@/lib/row-motion';
 import { notifyScrollBeginDrag, notifyScrollEndDrag, notifyScrollRest } from '@/lib/scroll-release';
 
@@ -68,6 +65,9 @@ type SeriesActivity = {
   chapterName?: string;
   number?: number;
 };
+
+/** Stable, so the zoom surface registers once rather than every render — see useZoomSurfaceList. */
+const activitySeriesId = (item: SeriesActivity) => item.seriesId;
 
 export default function ActivityScreen() {
   const ds = useDataSource();
@@ -173,36 +173,6 @@ export default function ActivityScreen() {
     [byId, hideNsfw, items],
   );
 
-  // Reading reorders this list, so a series opened from partway down can end up above the viewport
-  // by the time the page closes. Runs under a page that still covers the screen.
-  const revealSeries = useCallback(
-    (seriesId: string) => {
-      const index = visible?.findIndex((a) => a.seriesId === seriesId) ?? -1;
-      // -1 means this list no longer holds the series at all — nothing to scroll to.
-      traceJS('zoom', 'reveal.idx', { i: index, n: visible?.length ?? 0 });
-      // Centred, so the card clears the top bar and the tab bar whichever way it drifted out.
-      if (index >= 0) listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0.5 });
-    },
-    [visible],
-  );
-  useZoomSurfaceReveal(zoomSurface, revealSeries);
-  // Where this list has the series NOW, straight out of the virtualization state — see
-  // ZoomSurfacePlace. Answers for rows the list has not mounted, which is exactly the case the
-  // collapse used to lose.
-  const locateSeries = useCallback(
-    (seriesId: string) => {
-      const index = visible?.findIndex((a) => a.seriesId === seriesId) ?? -1;
-      const state = index >= 0 ? listRef.current?.getState() : undefined;
-      const contentY = state?.positionAtIndex(index);
-      return state && contentY !== undefined ? { contentY, scroll: state.scroll } : null;
-    },
-    [visible],
-  );
-  useZoomSurfaceLocator(zoomSurface, locateSeries);
-  // Tell a collapse in flight when the order changed, so it can re-aim.
-  useEffect(() => {
-    notifyZoomSurfaceChanged(zoomSurface);
-  }, [visible, zoomSurface]);
 
   // Coalesce the flat per-chapter feed into one row per series. `visible` is already newest-first, so a
   // series' first appearance is its newest detection (the row's snapshot + sort position), and the
@@ -238,6 +208,10 @@ export default function ActivityScreen() {
     out.sort((a, b) => b.latestAt - a.latestAt);
     return out;
   }, [visible]);
+
+  // Reading reorders this list, so a series opened from partway down can end up above the viewport
+  // by the time the page closes — see useZoomSurfaceList.
+  useZoomSurfaceList(zoomSurface, rows, activitySeriesId, listRef);
 
   const barHeight = useTopBarHeight();
   const headerHeight = insets.top + barHeight;
