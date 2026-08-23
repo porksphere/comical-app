@@ -49,11 +49,16 @@ the builder. A Pages preview also has no backend, so it is stuck in `DEMO_MODE`;
 
 ### 1. The box
 
-Hetzner CPX21 (3 vCPU, 4GB, ~$8/mo) in **Ashburn** or **Hillsboro** — pick the closer one, the
-first bundle is several MB over the tunnel. Ubuntu 24.04. Any comparable VPS works; the provider
-barely matters because Tailscale removes inbound firewall rules, TLS and DNS from the decision.
+**4GB minimum**, and that is measured, not padding. Metro peaks at **2.3GB RSS** while building a
+cold graph (~4000 modules, web) and settles to ~1GB once it is serving. A 2GB box gets Metro
+OOM-killed partway through every cold start, so the cheap tier is not an option at any provider.
+Two cores is enough — bundling is mostly single-threaded and the box never builds a binary.
 
-4GB is headroom, not a measurement: the web graph is ~4000 modules and the native graph is bigger.
+Ubuntu 24.04. Any comparable VPS works; the provider barely matters here because Tailscale removes
+inbound firewall rules, TLS and DNS from the decision. Prefer a **US region** if you are in the US
+— the first bundle is several MB over the tunnel — but a EU box is a real option if the US 4GB tier
+is priced badly: Fast Refresh deltas are small enough that the added RTT is invisible, and it only
+costs a few seconds on a cold start.
 
 > If you already run `host-server` somewhere persistent, **use that machine instead** — colocating
 > Metro and the backend is what gets the dev build real data.
