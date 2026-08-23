@@ -1,3 +1,4 @@
+import { Dimensions } from 'react-native';
 import { makeMutable, useAnimatedStyle } from 'react-native-reanimated';
 
 import { sharedPushback } from '@/lib/pushback-signal';
@@ -23,12 +24,10 @@ import { armSettleCheck, cancelSettleCheck, notePushback } from '@/lib/pushback-
  * layers sit inside the same modal, over each other, never over the tabs) and resets it on
  * unmount, so nothing can strand the backdrop dimmed.
  *
- * A DIM only. The zoom preset this was taken from also scales the screen underneath by 0.9375, and
- * that was dropped: the page is opaque and full-screen for most of its life so the recede was barely
- * visible, while everything under it lost 6% of its height and any hairline fell below one device
- * pixel and vanished. It also meant anything MEASURING a card down there had to undo the transform
- * first. Sideways parallax is wrong here too — the page expands out of one of this screen's own
- * cards, so lateral motion reads as a second, contradictory one.
+ * The treatment is the one react-native-screen-transitions' navigation zoom gives the screen it
+ * opens over — a small scale-down plus a dim, NOT the sideways parallax a push gets. The page
+ * expands in place out of one of this screen's own cards, so moving the grid laterally under it
+ * read as a second, contradictory motion.
  *
  */
 export const seriesReaderDim = makeMutable(0);
@@ -82,6 +81,37 @@ export function holdSeriesBackdrop(): () => void {
  *  partly visible through the transparent modal for the first quarter of the travel — so it is
  *  kept subtle enough not to read as the lights going out. */
 const BACKDROP_DIM_MAX = 0.14;
+/** `ZOOM_BACKGROUND_SCALE` — how far the screen underneath shrinks at full cover. */
+const BACKDROP_SCALE_MIN = 0.9375;
+
+/** The backdrop's scale-down. Safe to mount anywhere — it rests at 1 whenever no series page is
+ *  open, and the shared value is reset on that page's unmount. */
+export function useSeriesReaderBackdropStyle() {
+  return useAnimatedStyle(() => ({
+    transform: [{ scale: 1 - (1 - BACKDROP_SCALE_MIN) * seriesReaderDim.value }],
+  }));
+}
+
+/**
+ * Undo the scale above for anything MEASURING a view under an open series page. `measureInWindow`
+ * reports the drawn box, so a card measured then comes back ~6% small and pulled toward the screen
+ * centre. The rect wanted is the one it occupies at rest — where it will be by the time the collapse
+ * arrives. A no-op whenever no series page is open, including every press-in capture.
+ */
+export function unscaleFromBackdrop<T extends { x: number; y: number; width: number; height: number }>(rect: T): T {
+  const scale = 1 - (1 - BACKDROP_SCALE_MIN) * seriesReaderDim.value;
+  if (scale >= 1) return rect;
+  const { width, height } = Dimensions.get('window');
+  const cx = width / 2;
+  const cy = height / 2;
+  return {
+    ...rect,
+    x: cx + (rect.x - cx) / scale,
+    y: cy + (rect.y - cy) / scale,
+    width: rect.width / scale,
+    height: rect.height / scale,
+  };
+}
 
 /** The dim, for an absolutely-positioned overlay over the backdrop. Safe to mount anywhere — it
  *  rests fully transparent whenever no series page is open, and is reset on that page's unmount. */
