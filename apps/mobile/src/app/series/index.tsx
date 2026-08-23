@@ -1787,12 +1787,15 @@ function SeriesReaderInstance({
   }, []);
 
   /** Silent on failure: no registration, an unmounted card or a timed-out probe all leave the shift
-   *  alone, which is the captured rect — never a worse answer than not asking. */
+   *  alone, which is the captured rect — never a worse answer than not asking. The run counter drops
+   *  a walk still settling when a newer surface change starts its own. */
+  const exitProbeRun = useRef(0);
   const refreshExitOrigin = useCallback(() => {
     const from = zoomSource?.origin;
     if (!from || !id) return;
-    void resolveZoomTarget(id, zoomSource.source).then((fresh) => {
-      if (!fresh) return;
+    const run = ++exitProbeRun.current;
+    void resolveZoomTarget(id, zoomSource.source, (fresh) => {
+      if (exitProbeRun.current !== run) return;
       heroShiftX.set(withSpring(fresh.x - from.x, ZOOM_OUT_SPRING));
       heroShiftY.set(withSpring(fresh.y - from.y, ZOOM_OUT_SPRING));
     });
