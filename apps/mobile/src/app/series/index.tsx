@@ -49,6 +49,7 @@ import { TopBarSwitch } from '@/components/top-bar-switch';
 import { Spacing } from '@/constants/theme';
 import { assetResolvesInFlight, resolveAssetSourceCached, supersedeBackgroundResolves } from '@/data/api';
 import {
+  bumpHistoryOrder,
   chapterPagesQuery,
   directPagesQuery,
   historyQuery,
@@ -4039,6 +4040,37 @@ const ReaderPane = forwardRef<
     const t = setTimeout(() => recordRef.current(), 1500);
     return () => clearTimeout(t);
   }, [currentPage]);
+  /**
+   * The moment a page is actually turned, move this series to the front of the cached history.
+   *
+   * The WRITE stays debounced above — this isn't about persisting sooner, it's about WHEN the list
+   * changes shape. History is ordered by last-read, so that reorder is a consequence of reading, and
+   * it was arriving whenever the debounce and its refetch happened to land: sometimes mid-collapse,
+   * where the transition had already measured the row's old position and the row moved out from
+   * under it. Reordering the cache here puts it at the one moment nothing can see it — the reader is
+   * full-screen and the page turn is the user's own action — so every later step, the exit's
+   * measure included, reads a list that has already settled. The debounced write follows and the
+   * refetch agrees; this only decides when, never what.
+   *
+   * Guarded to fire once per visit: only the first turn changes the order, and re-sorting a covered
+   * list on every page of a long read would be work for nothing.
+   */
+  const bumpedRef = useRef(false);
+  useEffect(() => {
+    if (bumpedRef.current || !bridgeId || !seriesId) return;
+    if (currentPage === recordedPageRef.current) return; // nothing read yet — see the teardown flush
+    bumpedRef.current = true;
+    bumpHistoryOrder(queryClient, mock, {
+      bridgeId,
+      seriesId,
+      title: seriesTitle,
+      ...(seriesCover ? { thumbnailUrl: seriesCover } : {}),
+      ...(chapterId ? { chapterId } : {}),
+      ...(chapterName ? { chapterName } : {}),
+      lastPage: currentPage,
+      pageCount: pages.length,
+    });
+  }, [bridgeId, chapterId, chapterName, currentPage, mock, pages.length, queryClient, seriesCover, seriesId, seriesTitle]);
   // The teardown flush only writes when the cursor has actually MOVED since the last write.
   //
   // It used to write unconditionally, and a write is what reorders History and a last-read Library.
