@@ -4,7 +4,7 @@
 #   comical-dev status        what is being served right now
 #   comical-dev pin 124       stop following pushes; hold PR #124 (survives new pushes to others)
 #   comical-dev unpin         resume following the most recently pushed open PR
-#   comical-dev logs [metro|watch]
+#   comical-dev logs [metro|watch] [-f]   (-f follows; default prints and exits)
 #   comical-dev restart       force a Metro restart (rarely needed; the watcher does this itself)
 #
 # `pin` only writes state — the watcher picks it up on its next cycle (<=15s) rather than being
@@ -30,10 +30,15 @@ case "${1:-status}" in
     echo "unpinned — following most recent push again"
     ;;
   logs)
+    # Prints and exits by default. It used to always -f, which meant `comical-dev logs metro | tail`
+    # hung forever with no output — journalctl never closed the stream, so tail never saw EOF and
+    # printed nothing. Pass -f explicitly to follow.
+    follow=""
+    [ "${3:-}" = "-f" ] || [ "${2:-}" = "-f" ] && follow="-f"
     case "${2:-metro}" in
-      metro) exec journalctl -u comical-metro.service -f -n 200 ;;
-      watch) exec journalctl -u comical-prwatch.service -f -n 200 ;;
-      *) echo "usage: comical-dev logs [metro|watch]" >&2; exit 2 ;;
+      metro|-f) exec journalctl -u comical-metro.service $follow -n 200 --no-pager ;;
+      watch) exec journalctl -u comical-prwatch.service $follow -n 200 --no-pager ;;
+      *) echo "usage: comical-dev logs [metro|watch] [-f]" >&2; exit 2 ;;
     esac
     ;;
   restart) sudo systemctl restart comical-metro.service && echo "metro restarting" ;;
