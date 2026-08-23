@@ -16,7 +16,6 @@ import Animated, {
   useDerivedValue,
   useSharedValue,
   withSpring,
-  withTiming,
 } from 'react-native-reanimated';
 
 import { SettingsRow } from '@/components/settings/settings-row';
@@ -24,7 +23,7 @@ import { SettingsGutter, Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
 import { createTickHaptic, hapticImpactLight, hapticImpactMedium } from '@/lib/haptics';
-import { SETTLE_MS, settleEase } from '@/lib/slide-step';
+import { ROW_SPRING } from '@/lib/row-motion';
 import { claimOpenRow, releaseOpenRow } from '@/lib/swipe-row-registry';
 import { testId } from '@/lib/test-id';
 
@@ -179,11 +178,11 @@ export function SwipeableRow({ name, actions, edgeInset = 0, recycleKey, swipeEn
   );
 }
 
-/** How long a removed row takes to fold shut. Long enough to read as the row leaving and to carry
- *  the rows below it up with it; short enough that a list you're clearing several rows out of never
- *  makes you wait. `settleEase` (cubic ease-out, the app's deceleration curve) so the fold leaves
- *  promptly and eases into the gap, rather than creeping away from a standstill. */
-const COLLAPSE = { duration: SETTLE_MS * 1.5, easing: settleEase } as const;
+/** The fold, on the SAME spring a settings list springs its rows to their slots with (`ROW_SPRING`)
+ *  — a row leaving and the gap closing behind it are one event, and two curves read as two
+ *  animations. `overshootClamping` because there is nothing past shut: this spring is lightly
+ *  underdamped, and a height allowed to spring through 0 is a negative height. */
+const COLLAPSE = { ...ROW_SPRING, overshootClamping: true } as const;
 
 /**
  * The platform split, plus the fold-shut a removing action gets (`SwipeRowAction.collapses`).
@@ -234,7 +233,7 @@ function CollapsingRow({
     if (!pending) return;
     folding.set(true);
     height.set(
-      withTiming(0, COLLAPSE, (finished) => {
+      withSpring(0, COLLAPSE, (finished) => {
         'worklet';
         // Only a fold that landed removes the row. Unfinished means this row was unmounted
         // mid-animation (its screen dropped the item for some other reason), and there is nothing
