@@ -158,6 +158,19 @@ To make another list a zoom source: give it a stable key via `useZoomSurfaceKey`
 `useZoomSurfaceReveal` (scroll an item into view) plus `notifyZoomSurfaceChanged` when the order
 changes. Every step degrades to the previous behaviour if skipped.
 
+# Press-in warms the destination
+
+Anything that navigates to a series starts that fetch on press-IN, not on navigate — the zoom is
+most of a second of dead time otherwise (`apps/mobile/src/data/prefetch.ts`). `useWarmSeriesDetail`
+for a card that opens details, `useWarmChapterPages` for a row that resumes reading (it also warms
+the one page image the reader will land on).
+
+Warm from the handler that navigates, passing the same values it puts in the route params. Deriving
+them separately is a second answer to a settled question: only some opts are keyed, but the rest are
+written into the cached object (`bridge: opts.bridgeName ?? ''`), so a warm that disagrees wins the
+race and leaves the page wrong. Where press-in and the navigation live in different components
+(collections tiles), the tile takes an `onWarm` callback rather than re-deriving the branch.
+
 # Testing: new screens need a flow
 
 A new top-level screen, tab, or interactive feature needs a Maestro e2e flow, not just a testID.

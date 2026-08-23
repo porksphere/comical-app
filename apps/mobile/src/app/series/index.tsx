@@ -47,7 +47,7 @@ import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
 import { TopBarSwitch } from '@/components/top-bar-switch';
 import { Spacing } from '@/constants/theme';
-import { assetResolvesInFlight, resolveAssetSourceCached, supersedeBackgroundResolves } from '@/data/api';
+import { warmPageImages } from '@/data/warm-pages';
 import {
   chapterPagesQuery,
   directPagesQuery,
@@ -459,39 +459,6 @@ const TITLE_MID = 20;
 // The details-content fade (and the reader's matching tint) complete within this fraction of the
 // travel — weighted toward the START of a reveal and, symmetrically, the END of a hide.
 const FADE_WINDOW = 0.4;
-
-// Warm expo-image's cache around the read position. Deduped through a module-level memo, and only
-// http(s) sources are prefetched — a resolved local/data URI is already there.
-const warmed = new Set<string>();
-const WARM_MEMO_MAX = 2000;
-function warmPrefetch(pages: string[]): void {
-  // This window is now the guess; anything still queued from an older one isn't. Done before the
-  // freshness filter, so a window that adds nothing new still retires what it replaced.
-  supersedeBackgroundResolves(new Set(pages));
-  const fresh = pages.filter((p) => !warmed.has(p));
-  if (!fresh.length) return;
-  if (warmed.size > WARM_MEMO_MAX) warmed.clear();
-  for (const p of fresh) warmed.add(p);
-  traceJS('warm', 'enqueue', { n: fresh.length, of: pages.length, inflight: assetResolvesInFlight() });
-  // `background`: a warm is a GUESS about where the reader is going, and must never be served ahead
-  // of a page that has actually mounted. See the resolve queue in data/api.ts.
-  void Promise.all(
-    fresh.map((p) =>
-      resolveAssetSourceCached(p, { background: true }).catch(() => {
-        // FORGET it. `warmed` is a "don't ask twice" memo, and a warm that produced no URL — dropped
-        // because the reader passed the page or moved its window, or a round-trip that just failed —
-        // warmed nothing. Left in the memo it would retire that page from the warm-ahead for the
-        // rest of the session, so coming back to it would pay for a resolve at the moment it is
-        // shown: precisely the cost `prefetchAhead` is set to avoid.
-        warmed.delete(p);
-        return null;
-      }),
-    ),
-  ).then((urls) => {
-    const http = urls.filter((u): u is string => !!u && !u.startsWith('data:'));
-    if (http.length) void Image.prefetch(http);
-  });
-}
 
 /**
  * How still the read position has to be before the pages around it are warmed.
@@ -1062,7 +1029,7 @@ function SeriesReaderInstance({
   useEffect(() => {
     if (!stitched || detailsSettled || !prevChapter || !prevPages?.length) return;
     if (segments.some((s) => s.id === prevChapter.id)) return;
-    warmPrefetch(prevPages.slice(-1 - WARM_BEHIND));
+    warmPageImages(prevPages.slice(-1 - WARM_BEHIND));
   }, [stitched, detailsSettled, prevChapter, prevPages, segments]);
 
   // A stitched crossing settled: flush of the OLD chapter's progress already happened in the pane;
@@ -3948,7 +3915,7 @@ const ReaderPane = forwardRef<
       const at = stitched ? prefixLen + index : index;
       const from = Math.max(0, at - WARM_BEHIND);
       const to = at + 1 + settings.prefetchAhead;
-      warmPrefetch(stitched ? flatItems.slice(from, to).map((item) => item.uri) : pages.slice(from, to));
+      warmPageImages(stitched ? flatItems.slice(from, to).map((item) => item.uri) : pages.slice(from, to));
     },
     [pages, stitched, flatItems, prefixLen, settings.prefetchAhead],
   );

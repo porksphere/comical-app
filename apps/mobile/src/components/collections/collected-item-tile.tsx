@@ -32,6 +32,7 @@ export function CollectedItemTile({
   width,
   height,
   onPress,
+  onWarm,
 }: {
   item: ApiCollectionItem;
   /** Resolved page URL, or `undefined` while its chapter list is still loading / unavailable.
@@ -40,6 +41,9 @@ export function CollectedItemTile({
   width: number;
   height: number;
   onPress: () => void;
+  /** Start the fetch `onPress` is about to need. Supplied by whoever owns the navigation, since the
+   *  three item types go three different places — see library's `onOpen`. */
+  onWarm?: () => void;
 }) {
   const theme = useTheme();
   const [failed, setFailed] = useState(false);
@@ -82,7 +86,10 @@ export function CollectedItemTile({
     <Pressable
       ref={boxRef}
       testID={`collected.tile.${item.id}`}
-      onPressIn={captureZoomOrigin}
+      onPressIn={() => {
+        captureZoomOrigin();
+        onWarm?.();
+      }}
       onPress={onPress}
       style={[styles.tile, { width, height, backgroundColor: theme.backgroundElement }]}
       accessibilityRole="button"
