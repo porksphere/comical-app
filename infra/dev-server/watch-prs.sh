@@ -86,6 +86,8 @@ write_status() {
     --arg port "${METRO_PORT:-8081}" \
     '{current:$current, pinned:$pinned, updatedAt:$updated,
       metro:("exp://" + $host + ":" + $port)}' > "$tmp" && mv "$tmp" "$STATUS"
+  # mktemp gives 0600; the status file is meant to be readable by whoever is logged in.
+  chmod 644 "$STATUS" 2>/dev/null || true
 }
 
 # ── Sync ─────────────────────────────────────────────────────────────────────

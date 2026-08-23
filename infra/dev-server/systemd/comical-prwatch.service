@@ -20,6 +20,10 @@ ExecStart=/opt/comical/control/infra/dev-server/watch-prs.sh
 Restart=always
 RestartSec=10
 StateDirectory=comical-dev
+# 0755, so `comical-dev status` works as your login user instead of needing sudo. The status file
+# holds a PR number and a commit sha — nothing secret. The secrets live in /etc/comical-dev/env,
+# which stays 0600.
+StateDirectoryMode=0755
 
 [Install]
 WantedBy=multi-user.target

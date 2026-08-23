@@ -15,9 +15,10 @@ User=comical
 Group=comical
 WorkingDirectory=/opt/comical/app/apps/mobile
 EnvironmentFile=/etc/comical-dev/env
-# CI=1 keeps `expo start` non-interactive (no "port in use?" prompt, no keypress menu — there is no
-# terminal attached); BROWSER=none stops it trying to open one.
-Environment=CI=1
+# NO CI=1 here. It looks like the right way to keep `expo start` non-interactive, and it is not:
+# Metro logs "running in CI mode, reloads are disabled" and hot reload stops working — which is the
+# entire feature this box exists to provide. Not needed anyway: systemd attaches no TTY, so Expo's
+# interactive keypress menu never engages. BROWSER=none just stops it trying to open one.
 Environment=BROWSER=none
 Environment=BUN_INSTALL=/opt/comical/.bun
 # --dev-client (not --web, not Expo Go) serves the native bundle the dev-client shell expects; the
