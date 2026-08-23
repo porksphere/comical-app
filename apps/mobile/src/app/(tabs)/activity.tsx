@@ -8,7 +8,7 @@ import Animated, { useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HistoryRow } from '@/components/history-row';
-import { setZoomOrigin, useIsZoomingSeries, useZoomSourceKey } from '@/lib/series-zoom';
+import { useIsZoomingSeries, useZoomOriginSource, useZoomSourceKey } from '@/lib/series-zoom';
 import { encodeSeriesParam } from '@/lib/series-nav';
 import { CheckIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { PullIndicator } from '@/components/pull-indicator';
@@ -351,12 +351,10 @@ function ActivityItem({
   // per list rather than per row because the list recycles row instances).
   const zoomSource = useZoomSourceKey();
   const zoomFlying = useIsZoomingSeries(item.seriesId, zoomSource);
-  const captureZoomOrigin = () => {
-    thumbRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => {
-      // radius 6 — HistoryRow's `thumb` corner, which is not the grid card's 10.
-      if (w > 0 && h > 0) setZoomOrigin(item.seriesId, zoomSource, { x, y, width: w, height: h, radius: 6 });
-    });
-  };
+  // Radius 6 — the row thumbnail's corner, which is not the grid card's 10. The hook also registers
+  // this thumbnail as re-measurable, which is what lets the collapse follow a row that moved while
+  // the page was open — and on these two screens it always does (see series-zoom).
+  const captureZoomOrigin = useZoomOriginSource(item.seriesId, zoomSource, thumbRef, 6);
   const renderRow = (coverHidden: boolean) => (
     <HistoryRow
       thumbnailUrl={item.thumbnailUrl}
