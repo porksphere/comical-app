@@ -3,6 +3,7 @@ import { use$ } from '@legendapp/state/react';
 import { createContext, useCallback, useContext, useEffect, useState, type RefObject } from 'react';
 
 import { traceJS } from '@/lib/gesture-trace';
+import { unscaleFromBackdrop } from '@/lib/series-backdrop';
 
 /**
  * The SOURCE RECT of the card a series was opened from, so
@@ -245,7 +246,14 @@ export function useZoomOriginSource(
         }
         view.measureInWindow((x, y, width, height) => {
           // A zero-sized answer is a view that is not laid out — not a rect to fly to.
-          resolve(width > 0 && height > 0 ? { x, y, width, height, radius } : null);
+          if (width <= 0 || height <= 0) {
+            resolve(null);
+            return;
+          }
+          // Measured while a series page is OPEN, this view is being drawn through that page's
+          // backdrop scale-down, and `measureInWindow` reports the drawn box. Undo it — see
+          // `unscaleFromBackdrop`. A no-op for the press-in capture, where nothing is scaled.
+          resolve(unscaleFromBackdrop({ x, y, width, height, radius }));
         });
       }),
     [enabled, radius, ref],
