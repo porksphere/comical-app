@@ -115,7 +115,7 @@ Build the shell once; iterate the JS forever from the PC.
 
 **One-time (CI does the macOS part):**
 1. Run the **Build iOS dev-client** workflow (`build-ios-devclient.yml`, manual `workflow_dispatch`)
-   — it builds a Debug + `expo-dev-client` shell with the coexisting `com.porksphere.comical.dev`
+   — it builds a Debug + `expo-dev-client` shell carrying the shared `com.porksphere.comical`
    bundle id and publishes it to a rolling `ios-devclient` SideStore source.
 2. Add that source in SideStore/AltStore and install **Comical (dev)**. It sits next to the release
    app. Rebuild only when *native* code changes (a native module, a config plugin, an SDK bump).

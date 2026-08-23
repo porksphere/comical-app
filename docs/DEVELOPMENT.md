@@ -195,7 +195,7 @@ double-zipped.)
 | **release** (public) | `ios-release` | `v*` tag (`release.yml`) | clean Release, **no profiler** | `com.porksphere.comical` |
 | **main** (perf testing) | `ios-main` | push to `main` (`build-ios.yml`) | **profiling** (Release + on-device Hermes profiler) | `com.porksphere.comical` |
 | **PR** (branch testing) | `ios-pr` | each open PR (`build-ios.yml`) | **profiling** | `com.porksphere.comical` |
-| **dev-client** (iterate over Metro) | `ios-devclient` | manual (`build-ios-devclient.yml`) | Debug + `expo-dev-client` | `com.porksphere.comical.dev` |
+| **dev-client** (iterate over Metro) | `ios-devclient` | manual (`build-ios-devclient.yml`) | Debug + `expo-dev-client` | `com.porksphere.comical` |
 
 The first three share the **production bundle id**, so only one is installed at a time — switch
 lanes by picking a source/version in SideStore (a `main`/`pr`/`release` build replaces whichever is
@@ -274,7 +274,7 @@ not ordering, because `versionName` doesn't move between builds within a release
 Separate from the Release builds above: the **`Build iOS dev-client`** workflow
 (`build-ios-devclient.yml`, manual `workflow_dispatch`) builds a Debug + `expo-dev-client` shell —
 via the reusable workflow's `configuration: Debug` + `dev_client: true` inputs — and publishes it to
-a rolling **`ios-devclient`** SideStore source. It carries the coexisting `com.porksphere.comical.dev`
+a rolling **`ios-devclient`** SideStore source. It carries the shared `com.porksphere.comical`
 bundle id (the env-gated `with-devclient-variant` plugin, active only when `COMICAL_DEVCLIENT=1`), so
 it installs *alongside* the release app.
 
