@@ -86,7 +86,7 @@ export default function SettingsScreen() {
           <CategoryRow
             testID="settings.category.general"
             icon={<GeneralSettingsIcon color={theme.textSecondary} size={22} />}
-            title="General"
+            title="General ✅"
             onPress={() => router.push('/settings-general')}
           />
           <Divider />
