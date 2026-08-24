@@ -1,0 +1,302 @@
+name: Build desktop (Windows)
+
+# Windows lane for the Electron desktop spike (apps/desktop). Produces an NSIS installer and a
+# portable zip, uploads both as run artifacts, and — on main only — refreshes the rolling
+# `desktop-latest` Release so the installer has a stable, public, unauthenticated download URL.
+# (Actions *artifacts* need a logged-in GitHub session to download, which is why the mobile lanes
+# publish to Releases too; same reasoning here.)
+#
+# Two jobs on purpose. The renderer is `expo export --platform web` output — architecture-neutral
+# static files, exactly as Dockerfile notes for the web image — so it's built once on a Linux
+# runner (the proven path: deploy-web.yml and publish-web-image.yml do the same export) and handed
+# to the Windows job as an artifact. The Windows runner then only bundles the main process and runs
+# electron-builder, which is the part that genuinely needs Windows: NSIS is a native toolchain and
+# cross-building it from Linux needs wine.
+#
+# NOT CODE-SIGNED. There's no EV certificate here, so first launch shows SmartScreen
+# ("More info" → "Run anyway"). CSC_IDENTITY_AUTO_DISCOVERY=false stops electron-builder hunting
+# for an identity and failing when it finds none. See apps/desktop/README.md → "Getting it
+# installed".
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/desktop/**'
+      # The renderer IS apps/mobile's web export, so a screen change changes the desktop build.
+      - 'apps/mobile/**'
+      # On-device runtime submodule pointer — the main-process bundle inlines @comical/*.
+      - 'external/comical'
+      - 'package.json'
+      - 'bun.lock'
+      - '.github/workflows/build-desktop.yml'
+      - '.github/scripts/compute-build-version.sh'
+      # Docs-only commits don't change a binary. Evaluated after the positives above, so a mixed
+      # commit still builds.
+      - '!**/*.md'
+      - '!apps/mobile/docs/**'
+      - '!apps/mobile/eas.json'
+  pull_request:
+    # No `closed` — see build-android.yml's note on why that event's ref cancels the main run.
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'apps/desktop/**'
+      - 'apps/mobile/**'
+      - 'external/comical'
+      - 'package.json'
+      - 'bun.lock'
+      - '.github/workflows/build-desktop.yml'
+      - '.github/scripts/compute-build-version.sh'
+      - '!**/*.md'
+      - '!apps/mobile/docs/**'
+      - '!apps/mobile/eas.json'
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+# Only the publish job needs write; it's scoped there rather than granted job-wide.
+permissions:
+  contents: read
+
+jobs:
+  # ── The renderer, built once on Linux ────────────────────────────────────────────────────────
+  web:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.full }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # @comical/* live in the submodule; metro.config.js resolves them from there.
+          submodules: recursive
+          # compute-build-version.sh walks history back to the commit that last moved
+          # app.json's expo.version, which a shallow clone can't see (it fails loudly).
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # Metro shells out to node.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Restore Bun modules
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-desktop-web-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-desktop-web-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          # This job only runs the Expo web export — no Electron binary is launched, so skip its
+          # ~110 MB postinstall download. The `windows` job below deliberately does NOT set this.
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+
+      # The submodule's own deps (hono/zod/cheerio) hoisted where metro.config.js looks for them.
+      # No `build:native` here — that generates the QuickJS harness for Android, and desktop runs
+      # bridges in node:vm instead.
+      - name: Install submodule dependencies
+        run: bun install --linker hoisted
+        working-directory: external/comical
+
+      # Same string the Android/iOS lanes stamp, so a desktop build is comparable to a mobile one.
+      - name: Compute build version
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          FULL="$(bash .github/scripts/compute-build-version.sh)"
+          echo "Version: ${FULL}"
+          echo "full=${FULL}" >> "$GITHUB_OUTPUT"
+
+      # Exports at the domain root (patches app.json's experiments.baseUrl, which is /comical-app
+      # for GitHub Pages) and restores app.json afterwards — see scripts/build-web.ts.
+      - name: Build the web export
+        run: bun run build:web
+        working-directory: apps/desktop
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-web-export
+          path: apps/desktop/build/web
+          retention-days: 3
+          if-no-files-found: error
+
+      - name: Save Bun modules
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-desktop-web-${{ hashFiles('bun.lock') }}
+
+  # ── The installer, built on Windows ──────────────────────────────────────────────────────────
+  windows:
+    needs: web
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Still needed here: scripts/build-main.ts bundles @comical/* from the submodule source.
+          submodules: recursive
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # `bun run smoke` runs the bundled host under plain node — which is the runtime Electron's
+      # main process actually is, so this is the check that matters on a new OS.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Restore Bun modules
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-desktop-win-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-desktop-win-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install submodule dependencies
+        run: bun install --linker hoisted
+        working-directory: external/comical
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-web-export
+          path: apps/desktop/build/web
+
+      # electron-builder reads the version from apps/desktop/package.json (it names the installer
+      # and fills the Windows file-version resource). Git carries 0.0.0; only CI stamps it, and it
+      # is never committed back.
+      # Emits the semver-normalised string it actually stamped: compute-build-version.sh produces
+      # `X.Y.Z.N` for a rolling build, which electron-builder rejects as invalid semver, so the
+      # script rewrites it to `X.Y.Z-N`. Downstream (artifact names, the Release notes) uses this
+      # output rather than the raw one, so every name agrees.
+      - name: Stamp the build version
+        id: ver
+        shell: bash
+        working-directory: apps/desktop
+        env:
+          VERSION_INPUT: ${{ needs.web.outputs.version }}
+        run: |
+          set -euo pipefail
+          STAMPED="$(bun run --silent stamp-version)"
+          echo "Stamped: ${STAMPED}"
+          echo "version=${STAMPED}" >> "$GITHUB_OUTPUT"
+
+      - name: Bundle the main process
+        run: bun run build:main
+        working-directory: apps/desktop
+
+      # Proves the whole @comical/* stack boots on Windows: bridges discovered, evaluated in
+      # node:vm, answering through the router, plus the loopback's auth and traversal guards.
+      - name: Smoke-test the host (node, no Electron)
+        run: bun run smoke
+        working-directory: apps/desktop
+
+      # windows-latest has an interactive desktop session, so Electron can open a real window here
+      # with no virtual display. Tightly timed out: a hung window shouldn't burn the job's budget.
+      - name: Launch check (renders the app in a real window)
+        run: bun run launch-check
+        working-directory: apps/desktop
+        timeout-minutes: 10
+        env:
+          COMICAL_BRIDGES_DIR: ${{ github.workspace }}/external/comical/bridges
+
+      - name: Build the installer
+        run: bunx electron-builder --win --publish never
+        working-directory: apps/desktop
+        env:
+          # No EV cert in this project — don't let electron-builder go looking for one.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: comical-desktop-windows
+          path: |
+            apps/desktop/dist/*.exe
+            apps/desktop/dist/*.zip
+          if-no-files-found: error
+
+      - name: Save Bun modules
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-desktop-win-${{ hashFiles('bun.lock') }}
+
+  # ── Rolling desktop-latest channel (main only) ───────────────────────────────────────────────
+  # The counterpart of android-latest / ios-main: whatever main last built, at a stable public
+  # URL. Deliberately NOT a channel a released build would follow — versioned releases stay
+  # release.yml's business, and keeping the tags separate is the lesson publish-android-channel.sh
+  # already carries (one shared Release had the two lanes racing and mis-offering updates).
+  publish:
+    needs: [web, windows]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: comical-desktop-windows
+          path: ${{ runner.temp }}/desktop
+
+      - name: Refresh the desktop-latest Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.windows.outputs.version }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          TAG="desktop-latest"
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
+
+          # Renamed to a fixed filename so the download URL is stable across builds; the versioned
+          # names electron-builder produces would change the URL every run.
+          # Globs, not `find | head` — under `pipefail` a SIGPIPE from the closed pipe fails the
+          # step. electron-builder emits exactly one of each into dist/.
+          shopt -s nullglob
+          exes=("$RUNNER_TEMP"/desktop/*.exe)
+          zips=("$RUNNER_TEMP"/desktop/*.zip)
+          [ ${#exes[@]} -eq 1 ] || { echo "::error::expected exactly 1 .exe, found ${#exes[@]}"; exit 1; }
+          [ ${#zips[@]} -eq 1 ] || { echo "::error::expected exactly 1 .zip, found ${#zips[@]}"; exit 1; }
+
+          INSTALLER="$RUNNER_TEMP/desktop/comical-desktop-setup.exe"
+          PORTABLE="$RUNNER_TEMP/desktop/comical-desktop-windows.zip"
+          mv "${exes[0]}" "$INSTALLER"
+          mv "${zips[0]}" "$PORTABLE"
+
+          printf '{"commit":"%s","version":"%s","publishedAt":"%s"}\n' \
+            "$COMMIT" "$VERSION" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            > "$RUNNER_TEMP/desktop/version.json"
+
+          # Delete-and-recreate, not edit: that's what keeps the asset URLs byte-identical (a
+          # second asset of the same name would be served as `comical-desktop-setup.1.exe`).
+          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          gh release create "$TAG" \
+            "$INSTALLER" "$PORTABLE" "$RUNNER_TEMP/desktop/version.json" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$COMMIT" \
+            --title "Comical Desktop — rolling (Windows)" \
+            --notes "Windows desktop build of \`main\` (version ${VERSION}, commit \`${COMMIT:0:7}\`).
+          Rolling: this tag always carries whatever main last built. Not a released version.
+
+          **Installer:** \`${BASE}/comical-desktop-setup.exe\`
+          **Portable zip:** \`${BASE}/comical-desktop-windows.zip\`
+
+          ⚠️ Unsigned — Windows SmartScreen will warn on first run. Click **More info → Run anyway**."

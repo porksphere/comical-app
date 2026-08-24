@@ -8,10 +8,13 @@
  */
 import { spawn } from "node:child_process";
 import { join } from "node:path";
+// The `electron` package's default export IS the absolute path to the binary for this platform
+// (electron.exe on Windows, Electron.app/… on macOS). Hard-coding `node_modules/electron/dist/
+// electron` only works on Linux.
+import electron from "electron";
 
 const DESKTOP = join(import.meta.dir, "..");
 const ROOT = join(DESKTOP, "..", "..");
-const electron = join(ROOT, "node_modules", "electron", "dist", "electron");
 const shot = join(DESKTOP, "build", "launch-check.png");
 
 // The submodule's example bridges give the home screen something to render. `test-sprites` is the
@@ -27,7 +30,7 @@ const env = {
 const args = [...(process.env.COMICAL_NO_SANDBOX ? ["--no-sandbox"] : []), DESKTOP];
 
 const out = await new Promise<string>((resolve, reject) => {
-  const child = spawn(electron, args, { env, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(electron as unknown as string, args, { env, stdio: ["ignore", "pipe", "pipe"] });
   let buf = "";
   child.stdout.on("data", (d: Buffer) => (buf += d.toString()));
   child.stderr.on("data", (d: Buffer) => (buf += d.toString()));
