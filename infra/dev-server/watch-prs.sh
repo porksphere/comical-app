@@ -164,7 +164,14 @@ sync() {
 # pre-warm that fails still leaves a working (if slow) server.
 prewarm() {
   [ -n "$DEV_PREWARM_PLATFORM" ] || return 0
-  local url start code
+  local url start code i
+  # Wait for Metro to actually accept connections first. `systemctl restart` returns once the UNIT
+  # has started, not once Metro is listening — which is ~10s later. Requesting immediately just gets
+  # connection-refused, and the pre-warm reported "HTTP 000 in 1s" having warmed nothing at all.
+  for i in $(seq 1 60); do
+    curl -sf -o /dev/null -m 2 "http://localhost:${METRO_PORT}/status" 2>/dev/null && break
+    sleep 2
+  done
   url="http://localhost:${METRO_PORT}/node_modules/expo-router/entry.bundle"
   url="${url}?platform=${DEV_PREWARM_PLATFORM}&dev=true&hot=false&lazy=true"
   url="${url}&transform.engine=hermes&transform.bytecode=1&unstable_transformProfile=hermes-stable"
