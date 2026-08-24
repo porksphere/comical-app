@@ -79,6 +79,10 @@ EXPO_PUBLIC_COMICAL_SERVER=http://comical-dev.tailXXXX.ts.net:3100
 
 # Branch the control checkout follows. Leave unset for main; set it to test a branch pre-merge.
 # DEV_CONTROL_BRANCH=claude/remote-expo-dev-server-8pxwxk
+
+# Platform whose bundle is built in the background after each Metro restart, so the phone never
+# waits on a cold build. "ios" (default), "android", or empty to disable.
+# DEV_PREWARM_PLATFORM=ios
 TEMPLATE
   chmod 600 "$ENV_FILE"
   echo "Wrote template $ENV_FILE — fill it in, then re-run this script." >&2

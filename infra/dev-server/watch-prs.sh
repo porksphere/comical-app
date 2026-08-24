@@ -33,6 +33,9 @@ POLL_INTERVAL="${DEV_POLL_INTERVAL:-15}"
 # things a push never signals — a PR closing, or anything that happened while the box was down.
 RECONCILE_EVERY="${DEV_RECONCILE_EVERY:-20}"
 METRO_UNIT="${DEV_METRO_UNIT:-comical-metro.service}"
+METRO_PORT="${METRO_PORT:-8081}"
+# Platform to pre-warm after a restart. "ios", "android", or empty to skip.
+DEV_PREWARM_PLATFORM="${DEV_PREWARM_PLATFORM:-ios}"
 # Branch the control checkout tracks. Must match what bootstrap.sh cloned, or a reconcile tick will
 # quietly drag this box's scripts back to main mid-test.
 CONTROL_BRANCH="${DEV_CONTROL_BRANCH:-main}"
@@ -143,10 +146,32 @@ sync() {
   if [ "$need_restart" = 1 ]; then
     log "restarting ${METRO_UNIT}"
     sudo -n systemctl restart "$METRO_UNIT" || { log "restart failed"; return 1; }
+    prewarm &
   else
     log "JS-only change on the served branch — leaving Metro to hot-reload"
   fi
   return 0
+}
+
+# Build the native bundle once, in the background, right after a restart.
+#
+# A restart empties Metro's in-memory graph, so the NEXT request pays the full cold build — ~4000
+# modules, minutes on a small box. That request is normally the phone's, and the dev-client gives up
+# long before it finishes ("Could not connect to development server", which is a timeout, not a
+# connection failure). Paying that cost here instead means the device always meets a warm cache.
+#
+# Fire-and-forget: never blocks the watcher, and a failure is logged rather than fatal — a
+# pre-warm that fails still leaves a working (if slow) server.
+prewarm() {
+  [ -n "$DEV_PREWARM_PLATFORM" ] || return 0
+  local url start code
+  url="http://localhost:${METRO_PORT}/node_modules/expo-router/entry.bundle"
+  url="${url}?platform=${DEV_PREWARM_PLATFORM}&dev=true&hot=false&lazy=true"
+  url="${url}&transform.engine=hermes&transform.bytecode=1&unstable_transformProfile=hermes-stable"
+  start="$(date +%s)"
+  log "pre-warming ${DEV_PREWARM_PLATFORM} bundle"
+  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 1800 "$url" 2>/dev/null)" || code="000"
+  log "pre-warm ${DEV_PREWARM_PLATFORM}: HTTP ${code} in $(( $(date +%s) - start ))s"
 }
 
 # ── Target selection ─────────────────────────────────────────────────────────
