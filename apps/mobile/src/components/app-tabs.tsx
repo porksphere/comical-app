@@ -34,7 +34,7 @@ import { isTabBarPinned, subscribeTabBarPinned } from '@/lib/tab-bar-visibility'
 // top-right, sitting on the same line as the Browse screen's bridge/page selector bar (so there's
 // no separate nav bar).
 const TABS: { name: string; href: string; label: string; Icon: LucideIcon }[] = [
-  { name: 'browse', href: '/', label: 'Browse', Icon: LayoutGrid },
+  { name: 'browse', href: '/', label: 'Browse ✅', Icon: LayoutGrid },
   { name: 'library', href: '/library', label: 'Library', Icon: Library },
   { name: 'history', href: '/history', label: 'History', Icon: History },
   { name: 'activity', href: '/activity', label: 'Activity', Icon: Bell },
