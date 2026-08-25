@@ -41,9 +41,10 @@ connect to this server, and every JS/TS edit hot-reloads on-device — no Mac ne
 story (incl. profiling over it): [PROFILING.md](PROFILING.md) → "Iterative dev & profiling from Windows".
 
 Both of those need Metro running on a machine you own. For the same on-device loop with **no PC in
-it** — an always-on box that follows whichever open PR was pushed to most recently and serves it to
-your phone over Tailscale, so a Claude session can iterate on the app you are holding — see
-[infra/dev-server/README.md](../infra/dev-server/README.md).
+it** — an always-on box that serves a pinned branch to your phone over a private network, so a Claude
+session can iterate on the app you are holding — see
+[remote-expo](https://github.com/porksphere/remote-expo). Nothing in this repo has to change for it;
+it detects the workspace layout itself.
 
 ### Local web dev (`bun run dev`)
 
