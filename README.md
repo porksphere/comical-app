@@ -6,19 +6,16 @@
 
 <p align="center">A cross-platform comic reader for iOS, Android, and the web.</p>
 
-Comical ships with no sources of its own. You point it at a registry, install the bridges you
-want, and it reads from those. On iOS and Android everything runs on-device, with no server; on
-the web you host a backend yourself.
+Comical ships with no sources. You add a registry, install the bridges you want, and read from
+those.
 
 ## Install
 
 ### iOS
 
-There's no App Store listing, so you install through **[SideStore](https://sidestore.io)** or
-**[AltStore](https://altstore.io)**, which re-sign the app on-device with your own Apple ID
-(auto-refreshed every 7 days).
+Install through **[SideStore](https://sidestore.io)** or **[AltStore](https://altstore.io)**.
 
-Add it as a source — **Sources → +** — to get update notifications:
+Add the release channel as a source — **Sources → +** — to get updates:
 
 ```
 https://github.com/porksphere/comical-app/releases/download/ios-release/apps.json
@@ -31,16 +28,9 @@ Or install `comical-unsigned.ipa` from the
 
 **[⬇ comical-android.apk](https://github.com/porksphere/comical-app/releases/download/android-release/comical-android.apk)**
 
-Enable **"Install unknown apps"** for your browser, open the link, install.
-
-Both links above are rolling — they always point at the newest released build, and the app tells
-you in Settings when a newer one exists. Older versions live under
-[Releases](https://github.com/porksphere/comical-app/releases).
-
 ### Web
 
-The web build has no on-device runtime, so you host two containers yourself: the static app, and
-`@comical/host-server`, which runs the bridges.
+The app and the backend run as two services:
 
 ```yaml
 services:
@@ -68,24 +58,21 @@ services:
     restart: unless-stopped
 ```
 
-- **`COMICAL_SERVER`** is the URL the *browser* hits, not the compose service name. Past a local
-  trial, set it to the backend's public address and front both services with a reverse proxy and
-  TLS. It's injected at container start, so one image re-points at any backend without a rebuild,
-  and users can override it in the app's **Settings**.
-- **`/data`** on the host container persists your library, settings, and installed bridges.
+- **`COMICAL_SERVER`** is the URL the *browser* hits, not the compose service name — past a local
+  trial, set it to the backend's public address. It can also be overridden in **Settings**.
+- **`/data`** persists your library, settings, and installed bridges.
 
-A public preview is deployed to
-**[porksphere.github.io/comical-app](https://porksphere.github.io/comical-app/)**, but it's backed
-by demo data — a look at the UI, not a usable reader.
+A mock preview is deployed to
+**[porksphere.github.io/comical-app](https://porksphere.github.io/comical-app/)**.
 
 ## How it works
 
-The reading logic is a plain TypeScript core (`@comical/*`). **Bridges** are per-source adapters,
-downloaded and verified from user-managed registries at runtime, so support for a new source
-doesn't need an app update — public registries are discoverable via the
-**[`comical-registry` topic](https://github.com/topics/comical-registry)** on GitHub. On iOS and
-Android those bridges run on-device in a native JS engine (JavaScriptCore / QuickJS); on the web
-they run in the host server. The UI is one React Native + Expo codebase for all three platforms.
+Sources are **bridges** — per-source adapters that Comical downloads and verifies from the
+registries you add. Public ones are listed under the
+**[`comical-registry` topic](https://github.com/topics/comical-registry)** on GitHub.
+
+On iOS and Android, bridges run on-device and no server is involved. On the web they run in the
+backend you host.
 
 For the full picture, see **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 
