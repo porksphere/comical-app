@@ -46,11 +46,10 @@ goes through a swappable transport in `src/data/api.ts`:
 - **Remote:** a plain `fetch` against `EXPO_PUBLIC_COMICAL_SERVER`. Used on web, and selectable on
   native via the Settings toggle **"Run bridges on this device."**
 
-**Desktop (spike, not shipped).** `apps/desktop/` reaches the same "no server required" place a
-third way: Electron's main process is a full Node, so it runs the real `@comical/host-server`
-in-process with `node:vm` as the bridge evaluator — no JavaScriptCore or QuickJS harness, and no
-change to `apps/mobile`, which it serves as its own unmodified web export. Rationale, what it
-proves, and what shipping it would take: [apps/desktop/README.md](../apps/desktop/README.md).
+**Desktop (spike, not shipped).** `apps/desktop/` gets there a third way: Electron's main process
+is a full Node, so it runs the real `@comical/host-server` in-process with `node:vm` as the bridge
+evaluator — no JavaScriptCore or QuickJS harness, and `apps/mobile` unchanged, served as its own
+web export.
 
 The `@comical/*` packages come from the **`comical` git submodule** at `external/comical` —
 `metro.config.js` (`extraNodeModules` + `unstable_enablePackageExports`) and `tsconfig.json`
