@@ -238,80 +238,45 @@ find more.
 
 ## `demo/` — the README capture, not a test
 
-`demo/demo.yaml` drives the same Browse → series → reader journey the flows above cover, but its
-output is the animated GIF in the repo's README rather than a pass/fail. It sits in its own folder
-on purpose: the suite configs discover flows by folder (`maestro test … e2e/mobile`), so a file
-dropped in `mobile/` would run in CI under `continueOnFailure: false` and gate the real flows
-behind a recording. `check-flow-coverage.mjs` only scans `e2e/{mobile,web}` for the same reason —
-a promo capture shouldn't count as coverage of the screens it happens to pass through.
-
-Two ways to run it:
+`demo/screens.yaml` walks Browse → a series → the reader and photographs each one; the PNGs become
+the README's screenshots. It sits in its own folder on purpose: the suite configs discover flows by
+folder (`maestro test … e2e/mobile`), so a file dropped in `mobile/` would run in CI under
+`continueOnFailure: false` and gate the real flows behind a promo shoot. `check-flow-coverage.mjs`
+only scans `e2e/{mobile,web}` for the same reason.
 
 ```bash
-bash apps/mobile/e2e/scripts/record-demo.sh ios       # or: android
-gh workflow run capture-demo.yml --ref <branch>       # builds + records on a runner, uploads the GIF
+gh workflow run capture-demo.yml --ref <branch>       # shoots on a runner, uploads the PNGs
+bash apps/mobile/e2e/scripts/record-demo.sh ios       # records MOTION, locally, on real hardware
 ```
 
 The build under test must carry `EXPO_PUBLIC_COMICAL_DEMO_MODE=1` (deterministic mock data, so
-consecutive captures show the same series) **and** `EXPO_PUBLIC_COMICAL_CAPTURE_MODE=1`, which
-suppresses the demo-preview pill that would otherwise sit in every frame. `capture-demo.yml`
-passes both; locally, set them when you build.
+consecutive shoots show the same series) **and** `EXPO_PUBLIC_COMICAL_CAPTURE_MODE=1`, which
+suppresses the demo-preview pill that would otherwise sit in frame. The workflow passes both, and
+sets the simulator to dark appearance with a pinned 9:41 status bar so re-shoots match.
 
-### Keeping the capture smooth
+### Why stills, and not the GIF this used to produce
 
-Frames the device never rendered are baked into the recording, and no amount of post-processing
-puts them back. Three things keep them from happening, and they're worth understanding before
-changing any of them:
+Worth knowing before anyone retries it. A recorded journey was built first, and the blocker was not
+the recording: **the series page's entry transition does not render cleanly on a CI simulator.** On
+the reference take the recorder caught it partway through, emitted no frames at all for 4.5
+seconds, then jumped to a settled layout. That is a stall in what the device drew, so no encoding
+setting recovers it — and cutting the stall out, which the encoder did correctly, turns a slow
+transition into an inexplicable jump.
 
-- **`warmup.yaml` runs first and isn't recorded.** It walks the identical route so the bundle,
-  fonts, and every cover image are already in cache. A cold first pass drops frames in exactly the
-  transitions the capture exists to show.
-- **The pauses in `demo.yaml` are `evalScript` spins, which run on the host, not the device.** The
-  device sits idle holding a still frame while the recorder rolls. A pause implemented on-device
-  would compete with the animation being filmed.
-- **The GIF is 15fps.** The device has to sustain 15–20fps through the animations, not 60. That's
-  what makes this viable on a runner at all.
+A misleading measurement nearly hid this: the in-motion frame cadence came out at 17ms median
+(~60fps), which reads as "the capture is smooth". It was computed only over gaps under 0.4s, so it
+excluded exactly the stalls that were the problem. Beware of that metric.
 
-The head and tail of the clip are found rather than configured. Maestro's CLI start-up sits
-between the recorder opening and the flow's first command and varies run to run, so a fixed trim
-would leave a different amount of dead air in every recapture. `record-demo.sh` scans the take for
-scene changes and clips from just before the first movement to just after the last — which is also
-why `demo.yaml` opens on the zoom instead of a tap on the already-selected Browse tab: an opening
-beat that doesn't move is one the scan can't see. `launch.yaml` runs before the recorder starts so
-the app is already on Browse, and the recorded flow re-enters with `stopApp: false`.
+`scripts/record-demo.sh`, `demo.yaml`, `warmup.yaml`, `launch.yaml`, `pause.yaml` and
+`scripts/demo-ranges.py` are all kept, because on real hardware the transition renders fine and the
+motion is worth having. That path also has `RENDER_FROM=take.mp4`, which re-runs only the planning
+and encoding half against an existing capture — no device, no wait — for tuning `WIDTH`, `HOLD` and
+`MAX_COLORS`, and for exercising that half after changing it (an unbound variable once survived
+`bash -n` and only surfaced after a full 11-minute CI run).
 
-Both recorders write **variable-framerate** video: no frames at all while the screen is still, and
-the device's real rate during an animation. On a reference take that was 284 frames across 103
-seconds — 97.4s of stillness against 5.7s of movement, at a median 17ms spacing, meaning the
-simulator was rendering a smooth ~60fps the whole time. The capture is not the fragile part.
-
-Turning that into a GIF is. The tempting compression is `mpdecimate` plus `setpts=N/FPS/TB` — drop
-duplicate frames, re-time the rest to a constant rate — and it is wrong in a way that looks like an
-app bug rather than an encoding one: **re-timestamping discards duration**, so playback speed ends
-up set by how many frames happened to be captured. A 300ms zoom caught in 8 frames stretches to
-533ms; a 2s scroll caught in 3 frames finishes instantly. The first GIF built that way played parts
-of itself at 4x slow motion and parts at 10x speed.
-
-`scripts/demo-ranges.py` does it properly: it reads the frame timestamps, treats anything sparser
-than `STILL_GAP` as a hold, and emits an ffmpeg `trim`/`concat` graph that keeps the movements at
-their original spacing while capping each hold at `HOLD` seconds. A plain `fps` filter then
-resamples to the target rate. Real timing survives, the dead air doesn't, and the beats between
-steps remain. On the reference take: 82 frames, 5.5s, 1.6MB.
-
-Size is frame count x area x palette, so `WIDTH`, `MAX_COLORS` and `FPS` all move it (220px/96
-colours/15fps measured 1.6MB; 240px/128 colours measured 3.9MB).
-
-Re-cutting a take needs no device or runner: `RENDER_FROM=take.mp4 FFMPEG=... bash
-scripts/record-demo.sh` runs only the planning and encoding half against a capture you already
-have. Use it to try different `WIDTH`/`HOLD`/`MAX_COLORS` values, and to exercise that half after
-changing it — an unbound variable once survived `bash -n` and only surfaced after a full 11-minute
-CI run had otherwise gone perfectly.
-
-The run also uploads a `demo-playable.mp4` next to the raw one, written the moment the recording
-exists rather than at the end, so it is there even when a later step fails. The raw file is the simulator's own
-output — full panel size (1206x2622 on the reference take, past the height many hardware decoders
-accept), QuickTime brand, and gaps as long as 50 seconds between frames. ffmpeg reads it; VLC does
-not. The playable copy is a constant-framerate half-size version for watching.
+`demo-ranges.py` carries the other hard-won detail: the cut is expressed as time ranges rather than
+`mpdecimate` plus a re-timestamp, because re-timestamping discards duration and makes playback
+speed a function of how many frames happened to be captured.
 
 ### Why the workflow is iOS-only
 

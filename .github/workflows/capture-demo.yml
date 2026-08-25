@@ -1,9 +1,17 @@
-name: Capture demo GIF
+name: Capture demo screenshots
 
-# Films the app for the README and uploads the GIF as an artifact — Actions → Capture demo GIF →
-# Run workflow, or `gh workflow run capture-demo.yml --ref <branch>`. Download the artifact, drop
-# it at docs/media/demo.gif, commit. Deliberately not committed by the workflow itself: a promo
-# image is a thing you look at before you ship it.
+# Photographs the app for the README and uploads the screenshots as an artifact — Actions →
+# Capture demo screenshots → Run workflow, or `gh workflow run capture-demo.yml --ref <branch>`.
+# Download the artifact, drop the PNGs in docs/media/, commit. Deliberately not committed by the
+# workflow itself: a promo image is a thing you look at before you ship it.
+#
+# THIS USED TO RECORD A GIF, and the reason it doesn't is worth keeping. The series page's entry
+# transition does not render cleanly on a CI simulator: the recorder caught it partway through,
+# emitted no frames for 4.5 seconds, then jumped to a settled layout. That is a stall in what the
+# device drew, so no encoding setting recovers it — and cutting the stall out (which the encoder
+# did, correctly) turns a slow transition into an inexplicable jump. Stills don't care: each one
+# waits for the screen to settle and photographs a state. `apps/mobile/e2e/scripts/record-demo.sh`
+# and the rest of `e2e/demo/` still record motion on real hardware locally, where it renders fine.
 #
 # WHY iOS, NOT ANDROID. The capture has to be smooth, and that rules out the Android emulator on a
 # GitHub runner: ubuntu runners have KVM (so the CPU side is fine) but no GPU, so the emulator
@@ -29,17 +37,9 @@ on:
   workflow_dispatch:
     inputs:
       width:
-        description: GIF width in px (height follows the phone aspect, ~2.1x).
+        description: Width to downscale each screenshot to, in px (0 keeps the device's own size).
         type: string
-        default: '420'
-      fps:
-        description: GIF framerate.
-        type: string
-        default: '15'
-      max_gap_ms:
-        description: Fail if any two recorded frames are further apart than this (visible hitch).
-        type: string
-        default: '85'
+        default: '440'
       from_run:
         description: >-
           Reuse the Simulator .app built by an earlier run of this workflow instead of building one.
@@ -107,8 +107,8 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install ffmpeg
-        # Not in the macOS runner image (the ubuntu one has it, macOS doesn't). record-demo.sh
-        # needs ffmpeg to encode the GIF and ffprobe to measure dropped frames.
+        # Not in the macOS runner image (the ubuntu one has it, macOS doesn't). Used only to
+        # downscale the screenshots.
         run: brew install ffmpeg
 
       - name: Install Maestro
@@ -158,32 +158,53 @@ jobs:
           xcrun simctl install "$UDID" "$APP"
           echo "UDID=$UDID" >> "$GITHUB_ENV"
 
-      - name: Record
+      - name: Screenshot
         env:
           MAESTRO_DRIVER_STARTUP_TIMEOUT: '240000'
           MAESTRO_CLI_NO_ANALYTICS: '1'
-          OUT: ${{ runner.temp }}/demo.gif
-          # Fixed, so the raw capture can be uploaded below even when the run fails.
-          WORK: ${{ runner.temp }}/capture
-          WIDTH: ${{ inputs.width }}
-          FPS: ${{ inputs.fps }}
-          MAX_GAP_MS: ${{ inputs.max_gap_ms }}
-        run: bash apps/mobile/e2e/scripts/record-demo.sh ios
+        run: |
+          set -euo pipefail
+          # Dark appearance: the app's theme preference defaults to 'system' (hooks/use-theme.ts),
+          # so setting it on the simulator is enough — no build flag, and no navigating to a
+          # settings screen that would then be in shot.
+          xcrun simctl ui "$UDID" appearance dark
+          # A pinned status bar keeps consecutive captures identical; without it the clock and
+          # battery differ between runs, which is what makes a re-shot set look like a different app.
+          xcrun simctl status_bar "$UDID" override \
+            --time "9:41" --batteryState charged --batteryLevel 100 \
+            --cellularBars 4 --wifiBars 3 --dataNetwork wifi
+
+          maestro --device "$UDID" test \
+            --debug-output "$RUNNER_TEMP/maestro-debug" --flatten-debug-output \
+            apps/mobile/e2e/demo/screens.yaml
+
+          mkdir -p "$RUNNER_TEMP/screens"
+          # Maestro writes `takeScreenshot` output into its debug directory; the names are the ones
+          # the flow asked for.
+          find "$RUNNER_TEMP/maestro-debug" -name '0*.png' -exec cp {} "$RUNNER_TEMP/screens/" \;
+          ls -la "$RUNNER_TEMP/screens"
+          [ -n "$(ls -A "$RUNNER_TEMP/screens")" ] || { echo "!! no screenshots were produced" >&2; exit 1; }
+
+          if [ "${{ inputs.width || '440' }}" != "0" ]; then
+            for f in "$RUNNER_TEMP/screens"/*.png; do
+              ffmpeg -v error -y -i "$f" -vf "scale=${{ inputs.width || '440' }}:-1:flags=lanczos" "$f.small.png"
+              mv "$f.small.png" "$f"
+            done
+          fi
+          du -h "$RUNNER_TEMP/screens"/*.png
 
       - uses: actions/upload-artifact@v4
         with:
-          name: demo-gif
-          path: ${{ runner.temp }}/demo.gif
+          name: demo-screens
+          path: ${{ runner.temp }}/screens/*.png
           retention-days: 14
 
-      # Always, including on failure: the raw take is the only way to tune the cut or the encode
-      # without spending another runner on it. Two files land here — demo.mp4 as the simulator
-      # wrote it (full panel size, QuickTime brand, wildly variable framerate; ffmpeg reads it,
-      # VLC will not) and demo-playable.mp4, a constant-framerate half-size copy for watching.
+      # On failure the Maestro debug output carries the step screenshot and view hierarchy for
+      # whatever selector didn't resolve, which is the whole diagnosis.
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: failure()
         with:
-          name: demo-raw-capture
-          path: ${{ runner.temp }}/capture/*.mp4
+          name: maestro-debug
+          path: ${{ runner.temp }}/maestro-debug
           retention-days: 7
-          if-no-files-found: warn
+

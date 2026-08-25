@@ -11,11 +11,12 @@
   and read from those.
 </p>
 
-<!-- Demo GIF slot. Capture it with `gh workflow run capture-demo.yml` (or
-     `bash apps/mobile/e2e/scripts/record-demo.sh ios` locally), drop the result at
-     docs/media/demo.gif, and uncomment:
+<!-- Screenshot slot. Capture with `gh workflow run capture-demo.yml` (or, on real hardware,
+     `bash apps/mobile/e2e/scripts/record-demo.sh ios`), drop the PNGs in docs/media/, uncomment:
 <p align="center">
-  <img src="docs/media/demo.gif" alt="Browsing a series and opening the reader" width="220" />
+  <img src="docs/media/01-browse.png" alt="Browse" width="240" />
+  <img src="docs/media/02-series.png" alt="A series" width="240" />
+  <img src="docs/media/03-reader.png" alt="The reader" width="240" />
 </p>
 -->
 
