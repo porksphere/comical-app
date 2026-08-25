@@ -45,6 +45,7 @@ import type {
   AvailableTracker,
   SettingValue,
 } from './api';
+import { MOCK_COVERS, MOCK_COVERS_VARIED, MOCK_PAGES, MOCK_THUMBS } from './mock-assets';
 
 export type {
   BadgePosition,
@@ -105,32 +106,19 @@ function subFor(seed: string): string {
 /** Matches `slugify('Panelfox')` in `MOCK_BRIDGE_NAMES`. */
 const SUBTITLE_BRIDGE = 'panelfox';
 
-export const cover = (seed: string | number) =>
-  `https://picsum.photos/seed/comical-${seed}/300/450`;
+export const cover = (seed: string | number) => MOCK_COVERS[hash(String(seed)) % MOCK_COVERS.length]!;
 
-/** A handful of cover box shapes (width×height), deterministically picked per
- *  series — used only for `VARIED_ASPECT_BRIDGE`'s series so ONE mock bridge
- *  stands in for a real bridge whose thumbnails aren't all cropped to a
- *  uniform shape (every other mock bridge stays a fixed 300×450 / 2:3, same
- *  as `cover` above). Exercises `SeriesCard`/`PageThumb`'s aspect-ratio-lands
- *  shrink animation, which a uniform-2:3 catalog never triggers. */
-const VARIED_COVER_SHAPES: [width: number, height: number][] = [
-  [300, 450], // 2:3 — matches the default placeholder, no visible shrink
-  [300, 400],
-  [300, 350],
-  [300, 300], // square
-  [300, 220], // landscape-ish — the most visible shrink
-];
-
-/** Slug of the one mock bridge whose covers vary shape (see
- *  `VARIED_COVER_SHAPES`); every other mock bridge reports the uniform
- *  `cover()` shape. Matches `slugify('Nightshelf')` in `MOCK_BRIDGE_NAMES`. */
+/** Slug of the one mock bridge whose covers AREN'T a uniform 2:3, so ONE mock bridge stands in for
+ *  a real one whose thumbnails aren't all cropped to the same shape. That exercises
+ *  `SeriesCard`/`PageThumb`'s aspect-ratio-lands shrink animation, which a uniform catalog never
+ *  triggers. The shapes themselves now live in `scripts/generate-mock-covers.py`, which draws
+ *  `assets/mock/covers-varied/` at those sizes. Matches `slugify('Nightshelf')` in
+ *  `MOCK_BRIDGE_NAMES`. */
 const VARIED_ASPECT_BRIDGE = 'nightshelf';
 
 function coverForBridge(seed: string, bridgeId?: string): string {
   if (bridgeId !== VARIED_ASPECT_BRIDGE) return cover(seed);
-  const [w, h] = VARIED_COVER_SHAPES[hash(seed) % VARIED_COVER_SHAPES.length]!;
-  return `https://picsum.photos/seed/comical-${seed}/${w}/${h}`;
+  return MOCK_COVERS_VARIED[hash(seed) % MOCK_COVERS_VARIED.length]!;
 }
 
 /** Deterministic pseudo-random so a given id always yields the same entry. */
@@ -182,8 +170,7 @@ export function coverDelayMs(id: string): number {
 }
 
 /** Reader-resolution page image (taller than the 300×450 cover thumb). */
-export const readerPage = (seed: string | number) =>
-  `https://picsum.photos/seed/comical-${seed}/1080/1620`;
+export const readerPage = (seed: string | number) => MOCK_PAGES[hash(String(seed)) % MOCK_PAGES.length]!;
 
 /**
  * Flat page list for a DIRECT series. Uses the same `${seed}-p${i}` seeds as
@@ -606,7 +593,7 @@ export async function mockGetBridges(): Promise<Bridge[]> {
     // Mock entries carry "Ch. 176 · 2h ago" subs (see `entry`'s `sub` option), so the mock bridges
     // declare the flag — the grids reserve the sub line for them, exactly like a real sub-ful bridge.
     cardSubtitles: true,
-    thumbnail: `https://picsum.photos/seed/bridge-${slugify(name)}/100/100`,
+    thumbnail: MOCK_THUMBS[hash(slugify(name)) % MOCK_THUMBS.length]!,
   }));
   bridges.push({
     id: RAIL_STRESS_BRIDGE_ID,
@@ -614,7 +601,7 @@ export async function mockGetBridges(): Promise<Bridge[]> {
     nsfw: false,
     capabilities: ['lists', 'search', 'filters', 'sort'],
     cardSubtitles: true,
-    thumbnail: `https://picsum.photos/seed/bridge-rail-stress/100/100`,
+    thumbnail: MOCK_THUMBS[hash('bridge-rail-stress') % MOCK_THUMBS.length]!,
   });
   return bridges;
 }
