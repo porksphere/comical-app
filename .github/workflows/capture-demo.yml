@@ -30,7 +30,7 @@ on:
   workflow_dispatch:
     inputs:
       width:
-        description: Width to downscale each screenshot to, in px (0 keeps the device's own size).
+        description: Width to downscale each screenshot to, in px.
         type: string
         default: '440'
       from_run:
@@ -173,12 +173,17 @@ jobs:
           ls -la "$RUNNER_TEMP/screens"
           [ -n "$(ls -A "$RUNNER_TEMP/screens")" ] || { echo "!! no screenshots were produced" >&2; exit 1; }
 
-          if [ "${{ inputs.width || '440' }}" != "0" ]; then
-            for f in "$RUNNER_TEMP/screens"/*.png; do
-              ffmpeg -v error -y -i "$f" -vf "scale=${{ inputs.width || '440' }}:-1:flags=lanczos" "$f.small.png"
-              mv "$f.small.png" "$f"
-            done
-          fi
+          # Crop the status bar off, then downscale. The clock, wifi and battery say nothing about
+          # the app and date the screenshot; without them each shot starts at the app's own header.
+          # Expressed as a FRACTION of height, not a pixel count: the simulator is whichever iPhone
+          # the runtime offers, so the raw height changes when that does. 5.5% clears the bar on a
+          # modern iPhone with room to spare, and stops short of the app's first row.
+          for f in "$RUNNER_TEMP/screens"/*.png; do
+            ffmpeg -v error -y -i "$f" \
+              -vf "crop=iw:ih*0.945:0:ih*0.055,scale=${{ inputs.width || '440' }}:-1:flags=lanczos" \
+              "$f.out.png"
+            mv "$f.out.png" "$f"
+          done
           du -h "$RUNNER_TEMP/screens"/*.png
 
       - uses: actions/upload-artifact@v4

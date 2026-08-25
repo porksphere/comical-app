@@ -255,9 +255,11 @@ from ~890KB to ~355KB. Pass `from_run` to reuse an earlier run's Simulator `.app
 
 The build under test must carry `EXPO_PUBLIC_COMICAL_DEMO_MODE=1` (deterministic mock data, so
 consecutive shoots show the same series) **and** `EXPO_PUBLIC_COMICAL_CAPTURE_MODE=1`, which
-suppresses the demo-preview pill that would otherwise sit in frame. The workflow passes both, sets
-the simulator to dark appearance and pins the status bar to 9:41 so re-shoots match, then
-downscales and uploads the PNGs. Every step waits for the screen to settle before the shutter —
+suppresses the demo-preview pill that would otherwise sit in frame. The workflow passes both, sets the simulator to dark appearance, then crops the status bar off,
+downscales and uploads the PNGs. The crop is a fraction of height rather than a pixel count,
+because the simulator is whichever iPhone the runtime offers and the raw height moves with it.
+The 9:41 status-bar pin is kept even though the bar is cropped — it costs nothing and means a
+capture taken without the crop still matches its predecessors. Every step waits for the screen to settle before the shutter —
 mock covers resolve asynchronously, and a shot taken a beat early catches a grid of placeholders.
 
 ### Why stills, and not a recording
