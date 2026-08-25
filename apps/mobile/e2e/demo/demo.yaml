@@ -37,8 +37,15 @@ appId: com.porksphere.comical
 # rather than a screenshot.
 - tapOn:
     id: "series-card\\..*"
-- assertVisible:
-    id: "series.cover"
+# Waits on the primary action rather than `series.cover`, and via extendedWaitUntil rather than a
+# bare assertVisible, which has a fixed 7s timeout. A run with these flow files unchanged spent 19s
+# failing to see series.cover after a card tap that had plainly worked — the warm-up pass tapped
+# series.action.read straight after the same tap without trouble. Anchoring on the thing about to
+# be tapped removes a second way for the step to go wrong.
+- extendedWaitUntil:
+    visible:
+      id: "series.action.read"
+    timeout: 25000
 - waitForAnimationToEnd:
     timeout: 5000
 - runFlow:
