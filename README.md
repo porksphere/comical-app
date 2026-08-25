@@ -50,13 +50,15 @@ In development.
 
 - A **registry** is a list of bridges you add in Settings. Public ones are listed under the
   **[`comical-registry` topic](https://github.com/topics/comical-registry)** on GitHub.
-- A **bridge** is an adapter for one site or service, downloaded and verified from a registry.
+- A **bridge** is an adapter for one source or service, downloaded and verified from a registry.
 - **Series** are what a bridge sources, and what you browse and read.
 
 On iOS and Android, bridges run on-device and no server is involved. On the web they run in the
 backend you host.
 
-For the full picture, see **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
+Bridges run against [**comical**](https://github.com/porksphere/comical), the TypeScript core,
+which is written to embed in any JS environment. For the full picture, see
+**[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 
 ## Development
 
