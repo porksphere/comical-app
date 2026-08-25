@@ -39,10 +39,16 @@ files:
 # so there's no committed per-platform icon set to drift from the app's own.
 icon: ../mobile/assets/images/icon.png
 
+# Chromium ships 55 locales of UI strings (~46 MB) — a big fraction of the download for an app
+# with no i18n of its own. English only.
+electronLanguages:
+  - en-US
+
 win:
+  # Installer only. A portable zip would double the download for the same app; add it back when
+  # someone actually wants a no-install copy.
   target:
     - nsis
-    - zip
   artifactName: comical-desktop-${version}-${arch}.${ext}
 
 nsis:
