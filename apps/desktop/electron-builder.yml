@@ -62,8 +62,12 @@ nsis:
   shortcutName: Comical
 
 linux:
+  # AppImage runs anywhere with no install and no root — the testing/no-package-manager path.
+  # .deb gives Debian/Ubuntu users menu integration and an apt-managed uninstall, which AppImage
+  # doesn't. Snap and Flatpak are deliberately absent: see README.
   target:
     - AppImage
+    - deb
   category: Graphics
   # Lets desktop environments associate the running window with the .desktop entry
   # (`desktopName` itself lives in package.json — electron-builder reads it from there).

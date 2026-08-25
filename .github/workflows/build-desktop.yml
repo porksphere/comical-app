@@ -1,7 +1,7 @@
-name: Build desktop (Windows)
+name: Build desktop
 
-# Windows lane for the Electron desktop spike (apps/desktop). Produces an NSIS installer, uploads
-# it as a run artifact, and — on main only — refreshes the rolling
+# Packaging lane for the Electron desktop spike (apps/desktop). Produces a Windows NSIS installer
+# plus a Linux AppImage and .deb, uploads them as run artifacts, and — on main only — refreshes the rolling
 # `desktop-latest` Release so the installer has a stable, public, unauthenticated download URL.
 # (Actions *artifacts* need a logged-in GitHub session to download, which is why the mobile lanes
 # publish to Releases too; same reasoning here.)
@@ -135,10 +135,34 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-desktop-web-${{ hashFiles('bun.lock') }}
 
-  # ── The installer, built on Windows ──────────────────────────────────────────────────────────
-  windows:
+  # ── The installers ───────────────────────────────────────────────────────────────────────────
+  # Windows genuinely needs its own runner (NSIS is a native toolchain; cross-building it from
+  # Linux needs wine). Linux doesn't need one for its own sake, but packaging next to the platform
+  # you're targeting keeps the two lanes identical instead of special-casing a cross-build.
+  package:
     needs: web
-    runs-on: windows-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One target failing shouldn't cancel the other — you want both results in one run.
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+            artifact: comical-desktop-windows
+            glob: apps/desktop/dist/*.exe
+            # windows-latest has an interactive desktop session, so Electron opens a real window
+            # with no virtual display and the SUID sandbox is not in play.
+            launch: bun run launch-check
+          - os: ubuntu-latest
+            platform: linux
+            artifact: comical-desktop-linux
+            glob: |
+              apps/desktop/dist/*.AppImage
+              apps/desktop/dist/*.deb
+            # Headless runner, so a virtual display. --no-sandbox because ubuntu-24.04 restricts
+            # unprivileged user namespaces (AppArmor), which Electron's sandbox needs.
+            launch: xvfb-run -a bun run launch-check
     outputs:
       version: ${{ steps.ver.outputs.version }}
     steps:
@@ -161,8 +185,8 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ~/.bun/install/cache
-          key: bun-desktop-win-${{ hashFiles('bun.lock') }}
-          restore-keys: bun-desktop-win-
+          key: bun-desktop-${{ matrix.platform }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-desktop-${{ matrix.platform }}-
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -216,26 +240,28 @@ jobs:
         env:
           COMICAL_BRIDGES_DIR: ${{ github.workspace }}/external/comical/bridges
 
-      # windows-latest has an interactive desktop session, so Electron can open a real window here
-      # with no virtual display. Tightly timed out: a hung window shouldn't burn the job's budget.
+      # Tightly timed out: a hung window shouldn't burn the job's budget.
       - name: Launch check (renders the app in a real window)
-        run: bun run launch-check
+        run: ${{ matrix.launch }}
         working-directory: apps/desktop
         timeout-minutes: 10
         env:
           COMICAL_BRIDGES_DIR: ${{ github.workspace }}/external/comical/bridges
+          COMICAL_NO_SANDBOX: ${{ matrix.platform == 'linux' && '1' || '' }}
 
       - name: Build the installer
-        run: bunx electron-builder --win --publish never
+        run: bunx electron-builder --${{ matrix.platform }} --publish never
         working-directory: apps/desktop
         env:
-          # No EV cert in this project — don't let electron-builder go looking for one.
+          # Nothing is signed here — don't let electron-builder hunt for an identity and fail when
+          # it finds none. (An OV or EV certificate would not clear SmartScreen on its own anyway:
+          # Microsoft made both build reputation organically in March 2024.)
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - uses: actions/upload-artifact@v4
         with:
-          name: comical-desktop-windows
-          path: apps/desktop/dist/*.exe
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.glob }}
           if-no-files-found: error
 
       - name: Save Bun modules
@@ -243,7 +269,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ~/.bun/install/cache
-          key: bun-desktop-win-${{ hashFiles('bun.lock') }}
+          key: bun-desktop-${{ matrix.platform }}-${{ hashFiles('bun.lock') }}
 
   # ── Rolling desktop-latest channel (main only) ───────────────────────────────────────────────
   # The counterpart of android-latest / ios-main: whatever main last built, at a stable public
@@ -251,7 +277,7 @@ jobs:
   # release.yml's business, and keeping the tags separate is the lesson publish-android-channel.sh
   # already carries (one shared Release had the two lanes racing and mis-offering updates).
   publish:
-    needs: [web, windows]
+    needs: [web, package]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -259,32 +285,44 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Both matrix artifacts, flattened into one dir. `merge-multiple` keeps the filenames rather
+      # than nesting each under its artifact name.
       - uses: actions/download-artifact@v4
         with:
-          name: comical-desktop-windows
+          pattern: comical-desktop-*
+          merge-multiple: true
           path: ${{ runner.temp }}/desktop
 
       - name: Refresh the desktop-latest Release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ needs.windows.outputs.version }}
+          VERSION: ${{ needs.package.outputs.version }}
           COMMIT: ${{ github.sha }}
         run: |
           set -euo pipefail
           TAG="desktop-latest"
           BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
 
-          # Renamed to a fixed filename so the download URL is stable across builds; the versioned
+          # Renamed to fixed filenames so the download URLs are stable across builds; the versioned
           # names electron-builder produces would change the URL every run.
-          # A glob, not `find | head` — under `pipefail` a SIGPIPE from the closed pipe fails the
-          # step. electron-builder emits exactly one .exe into dist/ (it cleans up the temporary
-          # __uninstaller.exe, and the .blockmap doesn't match).
+          #
+          # Globs, not `find | head` — under `pipefail` a SIGPIPE from the closed pipe fails the
+          # step. electron-builder emits exactly one of each (it cleans up the temporary
+          # __uninstaller.exe, and the .blockmap doesn't match *.exe).
           shopt -s nullglob
           exes=("$RUNNER_TEMP"/desktop/*.exe)
+          apps=("$RUNNER_TEMP"/desktop/*.AppImage)
+          debs=("$RUNNER_TEMP"/desktop/*.deb)
           [ ${#exes[@]} -eq 1 ] || { echo "::error::expected exactly 1 .exe, found ${#exes[@]}"; exit 1; }
+          [ ${#apps[@]} -eq 1 ] || { echo "::error::expected exactly 1 .AppImage, found ${#apps[@]}"; exit 1; }
+          [ ${#debs[@]} -eq 1 ] || { echo "::error::expected exactly 1 .deb, found ${#debs[@]}"; exit 1; }
 
           INSTALLER="$RUNNER_TEMP/desktop/comical-desktop-setup.exe"
+          APPIMAGE="$RUNNER_TEMP/desktop/comical-desktop-x86_64.AppImage"
+          DEB="$RUNNER_TEMP/desktop/comical-desktop-amd64.deb"
           mv "${exes[0]}" "$INSTALLER"
+          mv "${apps[0]}" "$APPIMAGE"
+          mv "${debs[0]}" "$DEB"
 
           printf '{"commit":"%s","version":"%s","publishedAt":"%s"}\n' \
             "$COMMIT" "$VERSION" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
@@ -294,13 +332,17 @@ jobs:
           # second asset of the same name would be served as `comical-desktop-setup.1.exe`).
           gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
           gh release create "$TAG" \
-            "$INSTALLER" "$RUNNER_TEMP/desktop/version.json" \
+            "$INSTALLER" "$APPIMAGE" "$DEB" "$RUNNER_TEMP/desktop/version.json" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$COMMIT" \
-            --title "Comical Desktop — rolling (Windows)" \
-            --notes "Windows desktop build of \`main\` (version ${VERSION}, commit \`${COMMIT:0:7}\`).
+            --title "Comical Desktop — rolling" \
+            --notes "Desktop build of \`main\` (version ${VERSION}, commit \`${COMMIT:0:7}\`).
           Rolling: this tag always carries whatever main last built. Not a released version.
 
-          **Installer:** \`${BASE}/comical-desktop-setup.exe\`
+          **Windows:** \`${BASE}/comical-desktop-setup.exe\`
+          **Linux (AppImage):** \`${BASE}/comical-desktop-x86_64.AppImage\` — \`chmod +x\` and run.
+          **Linux (Debian/Ubuntu):** \`${BASE}/comical-desktop-amd64.deb\`
 
-          ⚠️ Unsigned — Windows SmartScreen will warn on first run. Click **More info → Run anyway**."
+          ⚠️ Neither is code-signed. Windows SmartScreen warns on first run (**More info → Run
+          anyway**). On Linux, if the AppImage exits with a libfuse error, either install
+          \`libfuse2\` or run it with \`--appimage-extract-and-run\`."
