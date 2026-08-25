@@ -47,7 +47,7 @@ import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
 import { TopBarSwitch } from '@/components/top-bar-switch';
 import { Spacing } from '@/constants/theme';
-import { assetResolvesInFlight, resolveAssetSourceCached, supersedeBackgroundResolves } from '@/data/api';
+import { warmPageImages } from '@/data/warm-pages';
 import {
   chapterPagesQuery,
   directPagesQuery,
@@ -76,7 +76,13 @@ import { releaseCommitted, releaseCommittedEitherWay } from '@/lib/gesture-relea
 import { IOS_CARD_SHADOW, IOS_CARD_SPRING, IOS_PARALLAX_FRACTION } from '@/lib/ios-card-pop';
 import { registerDrillSeries, registerOpenSearchLayer, useDrillRelatedSeries } from '@/lib/series-nav';
 import { holdSeriesBackdrop, seriesReaderDim } from '@/lib/series-backdrop';
-import { holdZoomingSeries, takeZoomOrigin, type ZoomRect } from '@/lib/series-zoom';
+import {
+  holdZoomingSeries,
+  onZoomSurfaceChange,
+  resolveZoomTarget,
+  takeZoomOrigin,
+  type ZoomRect,
+} from '@/lib/series-zoom';
 import SearchScreen from '../search';
 import { SeriesBody, truncateTopBarTitle } from '@/components/series/series-body';
 
@@ -216,16 +222,23 @@ const ZOOM_OUT_SPRING = {
   overshootClamping: false,
   restSpeedThreshold: 0.02,
 } as const;
-// The cross-fade, verbatim from the library's four opacity ranges. The ARRIVING PAGE fades in
-// (`ZOOM_FOCUSED_ELEMENT_*`) while a COPY OF THE TAPPED THUMBNAIL, flying the same path, fades out
-// (`ZOOM_UNFOCUSED_ELEMENT_*` — there it is the real source element on the screen underneath,
-// transformed to track; from inside a modal we can't touch that view, so we fly a copy). The two
-// overlap: for the first third of an open you are looking at the thumbnail, not the page.
-// Close uses different ranges than open — the outgoing page holds longer and the thumbnail is
-// brought back earlier, so the picture is already there before the page dissolves off it.
+// The cross-fade. The ARRIVING PAGE fades in (`ZOOM_FOCUSED_ELEMENT_*`) while a COPY OF THE TAPPED
+// THUMBNAIL, flying the same path, fades out (`ZOOM_UNFOCUSED_ELEMENT_*` — there it is the real
+// source element on the screen underneath, transformed to track; from inside a modal we can't touch
+// that view, so we fly a copy). Close holds the outgoing page longer and brings the thumbnail back
+// earlier, so the picture is already there before the page dissolves off it.
+//
+// The copy's OPEN is far later than the library's [0.08, 0.32]. `zoom` is a spring, so it clears a
+// third of its travel in the first few frames: the copy handed off before the page's own cover had
+// decoded, which is the flash. It now holds past the halfway mark, by which point the real cover
+// underneath it is the same already-cached image.
+//
+// The PAGE's open is NOT delayed with it. The copy only covers the destination's cover box, while
+// the mask grows to the whole screen — hold the page's opacity back and the rest of that window is
+// transparent onto whatever the modal was opened over.
 const ZOOM_CONTENT_FADE_OPEN = [0, 0.28];
 const ZOOM_CONTENT_FADE_CLOSE = [0.13, 0.7];
-const ZOOM_THUMB_FADE_OPEN = [0.08, 0.32];
+const ZOOM_THUMB_FADE_OPEN = [0.5, 0.85];
 const ZOOM_THUMB_FADE_CLOSE = [0.7, 1];
 // The reader's static backdrop gets its OWN, earlier close — it is not part of what's being
 // carried away, it is the surface being uncovered, so matching the page's curve held it opaque
@@ -434,6 +447,11 @@ const ZOOM_OUT_BACKSTOP_MS = 900;
  * never trips this — which is the case the wall-clock backstop is for.
  */
 const LEAVE_AT_ZOOM = 0;
+
+/** The two ends of "a collapse is under way". Not symmetric: `ARMED` sits nearer the top so a drag
+ *  released short has to actually return home before it may probe again. */
+const COLLAPSE_STARTED = 0.995;
+const COLLAPSE_ARMED = 0.999;
 /** Instances that have already left. See `leaveOnce` for why this lives out here. */
 const LEFT = new WeakSet<object>();
 // Half the title's ~40pt first line — positions the title's CENTER at the gradient's center.
@@ -441,39 +459,6 @@ const TITLE_MID = 20;
 // The details-content fade (and the reader's matching tint) complete within this fraction of the
 // travel — weighted toward the START of a reveal and, symmetrically, the END of a hide.
 const FADE_WINDOW = 0.4;
-
-// Warm expo-image's cache around the read position. Deduped through a module-level memo, and only
-// http(s) sources are prefetched — a resolved local/data URI is already there.
-const warmed = new Set<string>();
-const WARM_MEMO_MAX = 2000;
-function warmPrefetch(pages: string[]): void {
-  // This window is now the guess; anything still queued from an older one isn't. Done before the
-  // freshness filter, so a window that adds nothing new still retires what it replaced.
-  supersedeBackgroundResolves(new Set(pages));
-  const fresh = pages.filter((p) => !warmed.has(p));
-  if (!fresh.length) return;
-  if (warmed.size > WARM_MEMO_MAX) warmed.clear();
-  for (const p of fresh) warmed.add(p);
-  traceJS('warm', 'enqueue', { n: fresh.length, of: pages.length, inflight: assetResolvesInFlight() });
-  // `background`: a warm is a GUESS about where the reader is going, and must never be served ahead
-  // of a page that has actually mounted. See the resolve queue in data/api.ts.
-  void Promise.all(
-    fresh.map((p) =>
-      resolveAssetSourceCached(p, { background: true }).catch(() => {
-        // FORGET it. `warmed` is a "don't ask twice" memo, and a warm that produced no URL — dropped
-        // because the reader passed the page or moved its window, or a round-trip that just failed —
-        // warmed nothing. Left in the memo it would retire that page from the warm-ahead for the
-        // rest of the session, so coming back to it would pay for a resolve at the moment it is
-        // shown: precisely the cost `prefetchAhead` is set to avoid.
-        warmed.delete(p);
-        return null;
-      }),
-    ),
-  ).then((urls) => {
-    const http = urls.filter((u): u is string => !!u && !u.startsWith('data:'));
-    if (http.length) void Image.prefetch(http);
-  });
-}
 
 /**
  * How still the read position has to be before the pages around it are warmed.
@@ -875,6 +860,10 @@ function SeriesReaderInstance({
     enabled: stitched && !!id && !!nextChapter,
   });
 
+  // Declared up here, though nothing sets it until the collapse reaction far below: the stitching
+  // underneath has to read it.
+  const [collapsing, setCollapsing] = useState(false);
+
   // The stitched window — the RUN: a segment only joins once its pages are loaded (no holes); it
   // only ever grows AT THE TAIL during one continuous run; landing outside the run starts a fresh
   // one, bumping `runKey` so the pane remounts and seeds from `start` instead of re-anchoring.
@@ -985,8 +974,14 @@ function SeriesReaderInstance({
     // couldn't yet. So the head grows in both readers, and the fix lives at the version.
     const stale = run.segs[at]!;
     const refreshCurrent = stale.pages !== pages || stale.name !== target?.chapterName;
-    const addPrev = !!prevSeg && at === 0;
-    const addNext = !!nextSeg && run.segs[run.segs.length - 1]!.id === currentId;
+    // Not while a dismiss is in flight. Growing the strip is the expensive edit in here — the head
+    // grow above measures a whole window of new rows and corrects the offset against them — and a
+    // neighbour's page list arriving happens to land mid-gesture often, because the same tap that
+    // opened the reader requested it. Traced at 187ms of stalled UI thread inside a held collapse,
+    // spent extending a reading window the reader is on its way out of. The current chapter still
+    // refreshes: that one is what's on screen.
+    const addPrev = !collapsing && !!prevSeg && at === 0;
+    const addNext = !collapsing && !!nextSeg && run.segs[run.segs.length - 1]!.id === currentId;
     if (!refreshCurrent && !addPrev && !addNext) return { segments: run.segs, runKey: run.key };
     const segs = run.segs.slice();
     if (refreshCurrent) segs[at] = { id: currentId, name: target?.chapterName, pages };
@@ -1006,6 +1001,7 @@ function SeriesReaderInstance({
     nextChapter,
     nextPages,
     graceOverFor,
+    collapsing,
   ]);
   // Catch the run state up DURING render (React's adjust-state-on-render pattern — the merge
   // above returns `run.segs` by identity when there's nothing to add, which is what stops this
@@ -1044,7 +1040,7 @@ function SeriesReaderInstance({
   useEffect(() => {
     if (!stitched || detailsSettled || !prevChapter || !prevPages?.length) return;
     if (segments.some((s) => s.id === prevChapter.id)) return;
-    warmPrefetch(prevPages.slice(-1 - WARM_BEHIND));
+    warmPageImages(prevPages.slice(-1 - WARM_BEHIND));
   }, [stitched, detailsSettled, prevChapter, prevPages, segments]);
 
   // A stitched crossing settled: flush of the OLD chapter's progress already happened in the pane;
@@ -1640,10 +1636,18 @@ function SeriesReaderInstance({
   // related rail (or a nested search result), and that is just as much an "open this series" as a
   // tap on the browse grid, so it gets the same entrance rather than a push.
   //
-  // Consumed in a state initializer so it's known on the FIRST render — a frame later would mean
-  // starting the grow from the wrong geometry — and remembered for the instance's whole lifetime,
-  // so the exit collapses back into the same box.
+  // Consumed in a state initializer so it's known on the FIRST render — a frame later would start
+  // the grow from the wrong geometry. The ENTRANCE keeps this rect; the exit re-aims off it via
+  // `heroShift`, because on a last-read list the card has moved by then. Don't freeze the exit to it.
   const [zoomSource] = useState(() => (IS_WEB ? null : takeZoomOrigin(id)));
+  /**
+   * How far the source card has moved since capture, applied only at the collapsed end (scaled by
+   * `1 - q`). Kept out of `hero` so `zoomGeom` and its styles never recompute mid-flight; sprung, so
+   * a row that moves during a collapse curves the transition to it rather than snapping. Only x/y —
+   * a reorder moves a row without resizing it, which keeps `zoomGeom` valid throughout.
+   */
+  const heroShiftX = useSharedValue(0);
+  const heroShiftY = useSharedValue(0);
   // The source rect this page aligns itself to. No image is needed — unlike a classic shared
   // element, nothing is copied or flown; the page is its own transition subject (see zoomMaskStyle).
   const hero = zoomSource?.origin ?? null;
@@ -1767,6 +1771,21 @@ function SeriesReaderInstance({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /** Silent on failure: no registration, an unmounted card or a timed-out probe all leave the shift
+   *  alone, which is the captured rect — never a worse answer than not asking. The run counter drops
+   *  a walk still settling when a newer surface change starts its own. */
+  const exitProbeRun = useRef(0);
+  const refreshExitOrigin = useCallback(() => {
+    const from = zoomSource?.origin;
+    if (!from || !id) return;
+    const run = ++exitProbeRun.current;
+    void resolveZoomTarget(id, zoomSource, (fresh) => {
+      if (exitProbeRun.current !== run) return;
+      heroShiftX.set(withSpring(fresh.x - from.x, ZOOM_OUT_SPRING));
+      heroShiftY.set(withSpring(fresh.y - from.y, ZOOM_OUT_SPRING));
+    });
+  }, [heroShiftX, heroShiftY, id, zoomSource]);
+
   // The chevron / hardware-back exit, for a drilled layer AND the modal root: shrink back into the
   // card we came from, then leave (leaveNow pops the layer, or the route when depth 0). The
   // route's `animation: 'none'` means this IS the exit animation — without it a tapped back would
@@ -1779,6 +1798,33 @@ function SeriesReaderInstance({
     // No completion callback: leaving is driven by `zoom` reaching the card (see the reaction near
     // leaveOnce), with the `leaving` backstop above as the safety net.
   }, [token, edgeCommitting, zoom, zoomClosing]);
+
+  /**
+   * Ask the source card where it is, once per collapse. Hung off `zoom` leaving the top rather than
+   * off the gestures — the pan, the back-swipe, the chevron and Android back all move it, and a new
+   * exit path can't forget to call it. `probed` starts true so the entrance (`zoom` 0→1) can't trip
+   * it; reaching the top arms it.
+   */
+  const probed = useSharedValue(true);
+  useAnimatedReaction(
+    () => zoom.value,
+    (z) => {
+      if (z < COLLAPSE_STARTED && !probed.value) {
+        probed.set(true);
+        runOnJS(setCollapsing)(true);
+        runOnJS(refreshExitOrigin)();
+      } else if (z > COLLAPSE_ARMED && probed.value) {
+        probed.set(false);
+        runOnJS(setCollapsing)(false);
+      }
+    },
+  );
+
+  // Only for the few hundred ms it can matter.
+  useEffect(() => {
+    if (!collapsing || !zoomSource) return;
+    return onZoomSurfaceChange(zoomSource.source, refreshExitOrigin);
+  }, [collapsing, refreshExitOrigin, zoomSource]);
 
   // Android hardware back steps back HOME (the details) before leaving: reader expanded → back
   // collapses it; details up → the instance slides out (a drilled layer back to its parent
@@ -2196,8 +2242,8 @@ function SeriesReaderInstance({
       // The drag moves the MASK, not the page inside it. Both have to travel together or the page
       // slides out from under its own window — a rectangle of page hanging in the wrong place,
       // which is exactly what a dragged mask-less collapse looked like.
-      left: hero.x * (1 - q) + dragX.value,
-      top: hero.y * (1 - q) + dragY.value,
+      left: (hero.x + heroShiftX.value) * (1 - q) + dragX.value,
+      top: (hero.y + heroShiftY.value) * (1 - q) + dragY.value,
       width: hero.width + (width - hero.width) * q,
       height: hero.height + (height - hero.height) * q,
       borderRadius: hero.radius * (1 - q),
@@ -2235,8 +2281,8 @@ function SeriesReaderInstance({
         ],
       };
     }
-    const maskLeft = hero.x * (1 - q);
-    const maskTop = hero.y * (1 - q);
+    const maskLeft = (hero.x + heroShiftX.value) * (1 - q);
+    const maskTop = (hero.y + heroShiftY.value) * (1 - q);
     // Scale: normally the base content scale modulated by the drag's shrink. Once the finger has
     // let go of a dismissal it becomes the finishing Bézier instead — from the scale the page was
     // released at, down to the collapsed scale, biased by the release velocity.
@@ -2253,8 +2299,11 @@ function SeriesReaderInstance({
     // the same part of the page however far it is dragged.
     return {
       transform: [
-        { translateX: zoomGeom.tx * (1 - q) - maskLeft },
-        { translateY: (zoomGeom.ty + zoomGeom.s * shift) * (1 - q) - maskTop },
+        // heroShift is added to the page's own target as well as the mask's origin. The mask offset
+        // cancels out of the page's absolute position, so shifting only the mask moves the window
+        // without moving what's behind it.
+        { translateX: (zoomGeom.tx + heroShiftX.value) * (1 - q) - maskLeft },
+        { translateY: (zoomGeom.ty + zoomGeom.s * shift + heroShiftY.value) * (1 - q) - maskTop },
         { scale },
       ],
     };
@@ -3876,7 +3925,7 @@ const ReaderPane = forwardRef<
       const at = stitched ? prefixLen + index : index;
       const from = Math.max(0, at - WARM_BEHIND);
       const to = at + 1 + settings.prefetchAhead;
-      warmPrefetch(stitched ? flatItems.slice(from, to).map((item) => item.uri) : pages.slice(from, to));
+      warmPageImages(stitched ? flatItems.slice(from, to).map((item) => item.uri) : pages.slice(from, to));
     },
     [pages, stitched, flatItems, prefixLen, settings.prefetchAhead],
   );
@@ -3947,7 +3996,7 @@ const ReaderPane = forwardRef<
   useEffect(() => {
     recordRef.current = record;
   }, [record]);
-  // Debounced on page settle + flushed on unmount (leaving the screen AND chapter swaps — the pane
+  // Debounced on page settle + flushed on teardown (leaving the screen AND chapter swaps — the pane
   // is keyed by chapter).
   useEffect(() => {
     const t = setTimeout(() => recordRef.current(), 1500);

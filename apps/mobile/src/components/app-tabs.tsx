@@ -14,11 +14,12 @@ import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ActivityTabBadge, SettingsTabBadge } from '@/components/tab-badge';
+import { renderFadingTabScreen } from '@/components/tab-slot-fade';
 import { DesktopTopBarHeight, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { useHover } from '@/hooks/use-hover';
 import { useTheme } from '@/hooks/use-theme';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
-import { useSeriesReaderBackdropDimStyle, useSeriesReaderBackdropStyle } from '@/lib/series-backdrop';
+import { setBackdropRecede, useSeriesReaderBackdropDimStyle, useSeriesReaderBackdropStyle } from '@/lib/series-backdrop';
 import { notifyScrollActivity, subscribeScrollPhase } from '@/lib/scroll-release';
 import { COMMIT_DISTANCE, dismissThreshold, SETTLE_MS, TOP_GUARD } from '@/lib/slide-step';
 import {
@@ -33,11 +34,13 @@ import { isTabBarPinned, subscribeTabBarPinned } from '@/lib/tab-bar-visibility'
 // icon bottom bar on phones; on wider/desktop viewports a compact icon-only row pinned to the
 // top-right, sitting on the same line as the Browse screen's bridge/page selector bar (so there's
 // no separate nav bar).
-const TABS: { name: string; href: string; label: string; Icon: LucideIcon }[] = [
+/** `noRecede`: this tab's rows reorder as you read, and one that re-renders under the scaled
+ *  backdrop measures short — see `setBackdropRecede`. */
+const TABS: { name: string; href: string; label: string; Icon: LucideIcon; noRecede?: boolean }[] = [
   { name: 'browse', href: '/', label: 'Browse', Icon: LayoutGrid },
   { name: 'library', href: '/library', label: 'Library', Icon: Library },
-  { name: 'history', href: '/history', label: 'History', Icon: History },
-  { name: 'activity', href: '/activity', label: 'Activity', Icon: Bell },
+  { name: 'history', href: '/history', label: 'History', Icon: History, noRecede: true },
+  { name: 'activity', href: '/activity', label: 'Activity', Icon: Bell, noRecede: true },
   { name: 'settings', href: '/settings', label: 'Settings', Icon: Settings },
 ];
 
@@ -286,7 +289,7 @@ export default function AppTabs() {
     () =>
       TABS.map((tab) => (
         <TabTrigger key={tab.name} name={tab.name} asChild>
-          <TabButton mobile={isMobile} Icon={tab.Icon} onInteract={reveal} routeName={tab.name}>
+          <TabButton mobile={isMobile} Icon={tab.Icon} onInteract={reveal} routeName={tab.name} noRecede={tab.noRecede}>
             {tab.label}
           </TabButton>
         </TabTrigger>
@@ -305,7 +308,9 @@ export default function AppTabs() {
     // the dim fully transparent, so this costs nothing at rest.
     <Animated.View style={[styles.tabs, seriesReaderBackdropStyle]}>
       <Tabs style={styles.tabs}>
-        <TabSlot style={styles.slot} />
+        {/* Expo's slot, with our own screen renderer so an arriving tab fades in rather than
+            appearing in one frame — see `tab-slot-fade`. */}
+        <TabSlot style={styles.slot} renderFn={renderFadingTabScreen} />
 
         {/* Desktop: icon-only nav pinned to the top-right, aligned with the Browse selector bar row
             (top = its paddingTop, height = the subtitle line-height so the icons centre against the
@@ -369,6 +374,7 @@ function TabButton({
   Icon,
   onInteract,
   routeName,
+  noRecede,
   onPress,
   ...props
 }: TabTriggerSlotProps & {
@@ -376,9 +382,17 @@ function TabButton({
   Icon: LucideIcon;
   onInteract?: () => void;
   routeName: string;
+  noRecede?: boolean;
 }) {
   const theme = useTheme();
   const { hovered, handlers } = useHover();
+
+  // Only the ARRIVING tab writes, so the two buttons that re-render on a switch can't race. The
+  // series page opens as a sibling of the whole tab navigator, which blurs it without changing
+  // which tab is selected — so this still reads true for the screen the page is covering.
+  useEffect(() => {
+    if (isFocused) setBackdropRecede(!noRecede);
+  }, [isFocused, noRecede]);
 
   // Already on this tab: navigation is a no-op, so re-tapping it scrolls its
   // screen back to the top instead (there's no OS tab bar to give us this for

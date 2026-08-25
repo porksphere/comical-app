@@ -83,12 +83,34 @@ const BACKDROP_DIM_MAX = 0.14;
 /** `ZOOM_BACKGROUND_SCALE` — how far the screen underneath shrinks at full cover. */
 const BACKDROP_SCALE_MIN = 0.9375;
 
+/**
+ * Whether the tab currently underneath takes the scale (see `setBackdropRecede`). Written by the tab
+ * bar rather than by the screens: opening the series page BLURS the tabs, so a screen's own focus
+ * effect would clear itself the moment the page it is the backdrop for appears.
+ */
+const recedes = makeMutable(true);
+
+/**
+ * Turn the scale off for the tab underneath. History and Activity opt out.
+ *
+ * Fabric's `measure()` resolves through `getLayoutMetricsFromRoot(..., {.includeTransform = true})`,
+ * and LegendList sizes its containers with `measure()` — so a row that re-renders while the tabs are
+ * held at `BACKDROP_SCALE_MIN` records a height 6% short, and every row below it jumps up until the
+ * page closes. Those two feeds reorder as you read, which makes the row you opened the one row that
+ * re-renders mid-transition. There is no keeping both: any view carrying the scale is an ancestor,
+ * so `measure()` sees it. The dim is unaffected either way.
+ */
+export function setBackdropRecede(on: boolean) {
+  recedes.set(on);
+}
+
 /** The backdrop's scale-down. Safe to mount anywhere — it rests at 1 whenever no series page is
  *  open, and the shared value is reset on that page's unmount. */
 export function useSeriesReaderBackdropStyle() {
-  return useAnimatedStyle(() => ({
-    transform: [{ scale: 1 - (1 - BACKDROP_SCALE_MIN) * seriesReaderDim.value }],
-  }));
+  return useAnimatedStyle(() => {
+    const depth = recedes.value ? seriesReaderDim.value : 0;
+    return { transform: [{ scale: 1 - (1 - BACKDROP_SCALE_MIN) * depth }] };
+  });
 }
 
 /** The dim, for an absolutely-positioned overlay over the backdrop. Safe to mount anywhere — it

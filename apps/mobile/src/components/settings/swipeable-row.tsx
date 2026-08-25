@@ -1,5 +1,13 @@
-import { type ComponentType, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, View, type GestureResponderEvent, type ViewStyle } from 'react-native';
+import { type ComponentType, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+  type GestureResponderEvent,
+  type LayoutChangeEvent,
+  type ViewStyle,
+} from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   interpolateColor,
@@ -15,6 +23,7 @@ import { SettingsGutter, Spacing } from '@/constants/theme';
 import { useHovered } from '@/hooks/use-hovered';
 import { useTheme } from '@/hooks/use-theme';
 import { createTickHaptic, hapticImpactLight, hapticImpactMedium } from '@/lib/haptics';
+import { ROW_SPRING } from '@/lib/row-motion';
 import { claimOpenRow, releaseOpenRow } from '@/lib/swipe-row-registry';
 import { testId } from '@/lib/test-id';
 
@@ -81,6 +90,9 @@ export type SwipeRowAction = {
   onPress: () => void;
   /** Danger-coloured (a delete) vs accent-coloured (the default). */
   destructive?: boolean;
+  /** Fold the row shut, then run `onPress`. Only for a delete that commits immediately — with a
+   *  confirm the row would fold away before the question was asked. */
+  collapses?: boolean;
 };
 
 /** Clamp to what fits, and shout in a dev build when a caller over- (or under-) fills the row — a
@@ -147,15 +159,91 @@ export function SwipeableRow({ name, actions, edgeInset = 0, recycleKey, swipeEn
   if (actions.length === 0) {
     return <View style={{ marginHorizontal: -edgeInset }}>{children}</View>;
   }
-  const shown = clampActions(actions, name);
-  return IS_WEB ? (
-    <HoverActionsRow name={name} actions={shown} edgeInset={edgeInset} recycleKey={recycleKey} enabled={swipeEnabled}>
+  // Delegated so the action-less early return above stays hook-free.
+  return (
+    <CollapsingRow
+      name={name}
+      actions={clampActions(actions, name)}
+      edgeInset={edgeInset}
+      recycleKey={recycleKey}
+      swipeEnabled={swipeEnabled}>
       {children}
-    </HoverActionsRow>
-  ) : (
-    <SwipeRow name={name} actions={shown} edgeInset={edgeInset} recycleKey={recycleKey} enabled={swipeEnabled}>
-      {children}
-    </SwipeRow>
+    </CollapsingRow>
+  );
+}
+
+/** `overshootClamping`: a height allowed to spring through 0 is a negative height. */
+const COLLAPSE = { ...ROW_SPRING, overshootClamping: true } as const;
+
+/**
+ * The platform split, plus the fold a removing action gets. The screen deletes a row by dropping it
+ * out of the list data, which unmounts it in the same frame — so the fold has to run BEFORE that,
+ * and the handler runs on the other side of it. What the list does with the shrinking row is its
+ * own business: LegendList measures items, `ReorderableList` springs its slots. Height is measured,
+ * not assumed — these rows size to their content.
+ */
+function CollapsingRow({
+  name,
+  actions,
+  edgeInset,
+  recycleKey,
+  swipeEnabled,
+  children,
+}: {
+  name: string;
+  actions: SwipeRowAction[];
+  edgeInset: number;
+  recycleKey?: string;
+  swipeEnabled: boolean;
+  children: ReactNode;
+}) {
+  // Mirrors the natural height while idle, so a fold starts where the row already sits.
+  const height = useSharedValue(0);
+  // `onLayout` fires all the way down as the row shrinks; feeding that back would fight the spring.
+  const folding = useSharedValue(false);
+  const [pending, setPending] = useState<{ run: () => void } | null>(null);
+
+  const onLayout = useCallback(
+    (e: LayoutChangeEvent) => {
+      if (!folding.value) height.set(e.nativeEvent.layout.height);
+    },
+    [folding, height],
+  );
+
+  useEffect(() => {
+    if (!pending) return;
+    folding.set(true);
+    height.set(
+      withSpring(0, COLLAPSE, (finished) => {
+        'worklet';
+        if (finished) runOnJS(pending.run)();
+      }),
+    );
+  }, [folding, height, pending]);
+
+  const foldStyle = useAnimatedStyle(() => ({ height: height.get() }));
+
+  const wired = useMemo(
+    () =>
+      actions.map((action) =>
+        action.collapses ? { ...action, onPress: () => setPending({ run: action.onPress }) } : action,
+      ),
+    [actions],
+  );
+
+  return (
+    // Only while folding — a row left to size itself must not be pinned to a measured height.
+    <Animated.View onLayout={onLayout} style={pending ? [styles.folding, foldStyle] : undefined}>
+      {IS_WEB ? (
+        <HoverActionsRow name={name} actions={wired} edgeInset={edgeInset} recycleKey={recycleKey} enabled={swipeEnabled}>
+          {children}
+        </HoverActionsRow>
+      ) : (
+        <SwipeRow name={name} actions={wired} edgeInset={edgeInset} recycleKey={recycleKey} enabled={swipeEnabled}>
+          {children}
+        </SwipeRow>
+      )}
+    </Animated.View>
   );
 }
 
@@ -599,6 +687,9 @@ function HoverActionsRow({ name, actions, edgeInset, recycleKey, enabled, childr
 }
 
 const styles = StyleSheet.create({
+  folding: {
+    overflow: 'hidden',
+  },
   rowClip: {
     overflow: 'hidden',
   },

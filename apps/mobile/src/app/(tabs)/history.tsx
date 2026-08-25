@@ -2,16 +2,24 @@ import { AnimatedLegendList } from '@legendapp/list/reanimated';
 import type { LegendListRef } from '@legendapp/list/react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TrashIcon } from '@/components/icons/ui-icons';
 import { TabTitleBar } from '@/components/tab-title-bar';
 import { HistoryRow } from '@/components/history-row';
-import { setZoomOrigin, useIsZoomingSeries, useZoomSourceKey } from '@/lib/series-zoom';
+import {
+  useIsZoomingSeries,
+  useZoomOriginSource,
+  useZoomSourceKey,
+  useZoomSurfaceKey,
+  ZoomSurfaceContext,
+} from '@/lib/series-zoom';
 import { encodeSeriesParam } from '@/lib/series-nav';
+import { useWarmChapterPages, useWarmSeriesDetail } from '@/data/prefetch';
 import { RetryBlock } from '@/components/retry-block';
+import { RowHairline } from '@/components/row-hairline';
 import { SeriesCardMenu } from '@/components/series-card-menu';
 import { SwipeableRow } from '@/components/settings/swipeable-row';
 import { ThemedText } from '@/components/themed-text';
@@ -25,15 +33,15 @@ import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
-import { useTheme } from '@/hooks/use-theme';
 import { useRouter } from '@/lib/nav';
 import { relTime } from '@/lib/rel-time';
+import { useZoomSurfaceList } from '@/lib/zoom-surface-list';
+import { ROW_REORDER_TRANSITION } from '@/lib/row-motion';
 import { scrollPhaseHandlers } from '@/lib/scroll-release';
 
 export default function HistoryScreen() {
   const ds = useDataSource();
   const mock = useMockActive();
-  const theme = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -42,6 +50,9 @@ export default function HistoryScreen() {
   const { byId, nameOf, directOf } = useBridgeMap();
   const listRef = useRef<LegendListRef>(null);
   useScrollToTopOnReselect('history', listRef);
+
+  // This list as a zoom surface — see AGENTS.md → Zoom transitions.
+  const zoomSurface = useZoomSurfaceKey('history');
   // UI-thread scroll offset for the tab bar's slide — `sharedValues` feeds it (hence the
   // AnimatedLegendList below), `onScroll` only keeps the bottom-bounce measurement in sync.
   const { sharedValues, onScroll } = useHideTabBarOnScroll();
@@ -75,7 +86,16 @@ export default function HistoryScreen() {
     },
   });
 
-  const visible = items && hideNsfw ? items.filter((h) => !byId.get(h.bridgeId)?.nsfw) : items;
+  // Memoized so the identity only changes when the ORDER can have: a fresh array every render
+  // would tell every collapse in flight that the list moved (see the notice below).
+  const visible = useMemo(
+    () => (items && hideNsfw ? items.filter((h) => !byId.get(h.bridgeId)?.nsfw) : items),
+    [byId, hideNsfw, items],
+  );
+
+  // Reading reorders this list, so a series opened from partway down can end up above the viewport
+  // by the time the page closes — see useZoomSurfaceList.
+  useZoomSurfaceList(zoomSurface, visible, historySeriesId, listRef);
 
   const barHeight = useTopBarHeight();
   const headerHeight = insets.top + barHeight;
@@ -140,7 +160,9 @@ export default function HistoryScreen() {
   const emptyBody = body();
 
   return (
-    <ThemedView style={styles.container}>
+    // Rows and list must share one surface key, or each row falls back to a key of its own.
+    <ZoomSurfaceContext.Provider value={zoomSurface}>
+      <ThemedView style={styles.container}>
       {emptyBody ? (
         <View style={[styles.centeredColumn, { paddingTop: headerHeight + BarContentGap }]}>
           <View style={styles.centerFill}>{emptyBody}</View>
@@ -153,6 +175,7 @@ export default function HistoryScreen() {
           data={visible}
           keyExtractor={(h) => `${h.bridgeId}:${h.seriesId}`}
           recycleItems={false}
+          itemLayoutAnimation={ROW_REORDER_TRANSITION}
           contentContainerStyle={{
             // Fill the viewport even with few rows, so the empty space below them is still part of
             // the scroller and a drag can be started there (see SeriesGrid's note).
@@ -164,7 +187,6 @@ export default function HistoryScreen() {
             paddingLeft: sidePad,
             paddingRight: sidePad,
           }}
-          ItemSeparatorComponent={() => <View style={[styles.sep, { backgroundColor: theme.hairline }]} />}
           renderItem={({ item }) => (
             <HistoryItem
               item={item}
@@ -186,8 +208,12 @@ export default function HistoryScreen() {
 
       <TabTitleBar title="History" />
     </ThemedView>
+    </ZoomSurfaceContext.Provider>
   );
 }
+
+/** Stable, so the zoom surface registers once rather than every render — see useZoomSurfaceList. */
+const historySeriesId = (item: HistoryEntry) => item.seriesId;
 
 /**
  * One History entry. A component (not inline in `renderItem`) so it can own the thumbnail ref that the
@@ -221,10 +247,25 @@ function HistoryItem({
   // per list rather than per row because the list recycles row instances).
   const zoomSource = useZoomSourceKey();
   const zoomFlying = useIsZoomingSeries(item.seriesId, zoomSource);
-  const captureZoomOrigin = () => {
-    thumbRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => {
-      // radius 6 — HistoryRow's `thumb` corner, which is not the grid card's 10.
-      if (w > 0 && h > 0) setZoomOrigin(item.seriesId, zoomSource, { x, y, width: w, height: h, radius: 6 });
+  // Radius 6 — the row thumbnail's corner, not the grid card's 10.
+  const captureZoomOrigin = useZoomOriginSource(item.seriesId, zoomSource, thumbRef, 6);
+  // Press-in already measures; it now also starts the fetch the tap is about to need (see
+  // data/prefetch). The row resumes reading and the 3-dot opens the details, so they warm
+  // different things — each mirroring the params its own handler pushes.
+  const warmPages = useWarmChapterPages();
+  const warmDetail = useWarmSeriesDetail();
+  const resumeIsDirect = item.chapterId === DIRECT_CHAPTER_ID || !item.chapterId;
+  const onRowPressIn = () => {
+    captureZoomOrigin();
+    warmPages(item.bridgeId, item.seriesId, resumeIsDirect ? undefined : item.chapterId, item.lastPage ?? 0);
+  };
+  const onMorePressIn = () => {
+    captureZoomOrigin();
+    warmDetail(item.bridgeId, item.seriesId, {
+      direct,
+      bridgeName: bridge,
+      title: item.title,
+      cover: item.thumbnailUrl,
     });
   };
   const renderRow = (coverHidden: boolean) => (
@@ -233,33 +274,40 @@ function HistoryItem({
       title={item.title}
       sub={historySub(item)}
       onPress={onResume}
-      onPressIn={captureZoomOrigin}
+      onPressIn={onRowPressIn}
       onMore={onOpenDetail}
-      onMorePressIn={captureZoomOrigin}
+      onMorePressIn={onMorePressIn}
       actions={[]}
       thumbRef={thumbRef}
       coverHidden={coverHidden || zoomFlying}
     />
   );
   return (
-    <SwipeableRow name={item.title} actions={[{ label: 'Remove', icon: TrashIcon, destructive: true, onPress: onRemove }]}>
-      {Platform.OS === 'web' ? (
-        renderRow(false)
-      ) : (
-        <SeriesCardMenu
-          enabled={!!item.bridgeId}
-          bridgeId={item.bridgeId}
-          bridge={bridge}
-          entry={{ id: item.seriesId, title: item.title, cover: item.thumbnailUrl ?? '' }}
-          direct={direct}
-          coverAspect={2 / 3}
-          startRadius={6} // matches HistoryRow's thumbnail corner
-          zoomSource={zoomSource}
-          measureRef={thumbRef}>
-          {({ hidden }) => renderRow(hidden)}
-        </SeriesCardMenu>
-      )}
-    </SwipeableRow>
+    <>
+      <SwipeableRow
+        name={item.title}
+        // `collapses`: the remove is optimistic (see the mutation above), so the row folds shut and
+        // the ones below it come up, instead of the list re-laying out around a row that vanished.
+        actions={[{ label: 'Remove', icon: TrashIcon, destructive: true, collapses: true, onPress: onRemove }]}>
+        {Platform.OS === 'web' ? (
+          renderRow(false)
+        ) : (
+          <SeriesCardMenu
+            enabled={!!item.bridgeId}
+            bridgeId={item.bridgeId}
+            bridge={bridge}
+            entry={{ id: item.seriesId, title: item.title, cover: item.thumbnailUrl ?? '' }}
+            direct={direct}
+            coverAspect={2 / 3}
+            startRadius={6} // matches HistoryRow's thumbnail corner
+            zoomSource={zoomSource}
+            measureRef={thumbRef}>
+            {({ hidden }) => renderRow(hidden)}
+          </SeriesCardMenu>
+        )}
+      </SwipeableRow>
+      <RowHairline />
+    </>
   );
 }
 
@@ -294,8 +342,5 @@ const styles = StyleSheet.create({
   },
   list: {
     flex: 1,
-  },
-  sep: {
-    height: StyleSheet.hairlineWidth,
   },
 });

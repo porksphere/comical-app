@@ -38,6 +38,7 @@ export function CollectedItemsGrid({
   sharedValues,
   onScroll,
   onOpen,
+  onWarm,
 }: {
   items: ApiCollectionItem[];
   /** Client-side sectioning applied over the server's order — see `buildCollectedRows`. */
@@ -59,6 +60,8 @@ export function CollectedItemsGrid({
   /** Tapping any item — the caller routes by `type` (a page opens the reader at that page, a
    *  chapter at its first page, a series its detail screen). */
   onOpen: (item: ApiCollectionItem) => void;
+  /** Press-in warm for the destination `onOpen` will push — see CollectedItemTile. */
+  onWarm?: (item: ApiCollectionItem) => void;
 }) {
   const { numColumns, sidePad, cardWidth } = useGridLayout();
   // One request per CHAPTER, not per tile — see the hook. Read during render as a lookup table;
@@ -99,6 +102,7 @@ export function CollectedItemsGrid({
               width={cardWidth}
               height={tileHeight}
               onPress={() => onOpen(item)}
+              onWarm={onWarm && (() => onWarm(item))}
             />
           ))}
           {/* Keeps a short final row left-aligned instead of stretching its tiles. */}

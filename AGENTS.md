@@ -1,3 +1,15 @@
+# Layout
+
+`apps/mobile` is the Expo app and the only source tree; `external/comical` is the submodule its
+`@comical/*` packages come from. Everything below is the app unless it says otherwise. Architecture
+rationale lives in `docs/ARCHITECTURE.md`.
+
+# Comments
+
+The code is the documentation. Comment only what the code cannot say: a non-obvious constraint, a
+bug the shape is defending against, a decision that looks wrong until you know why. Never narrate
+what the next line does, and never argue with alternatives that were never written.
+
 # Expo HAS CHANGED
 
 Read the exact versioned docs at https://docs.expo.dev/versions/v56.0.0/ before writing any code.
@@ -8,11 +20,11 @@ Always use [lucide](https://lucide.dev) icons, everywhere. Import from
 `lucide-react-native` (backed by `react-native-svg`) even on web — it works
 cross-platform via react-native-web, so one `*.tsx` file per icon group covers
 every platform with no `.web.tsx` split needed. Don't hand-roll glyphs. See
-`src/components/icons/ui-icons.tsx` for the pattern.
+`apps/mobile/src/components/icons/ui-icons.tsx` for the pattern.
 
 # Bottom nav: a custom-rendered bar, not the OS-native one
 
-`src/components/app-tabs.tsx` is a single cross-platform component (`expo-router/ui`'s
+`apps/mobile/src/components/app-tabs.tsx` is a single cross-platform component (`expo-router/ui`'s
 headless `Tabs`/`TabList`/`TabTrigger`, plain `Pressable`s) used on iOS,
 Android, and web alike — there's no `NativeTabs`/`unstable-native-tabs` wrapper over the real
 `UITabBarController`/Material 3 `NavigationBar` anymore. That was tried and reverted: iOS 26's
@@ -31,28 +43,28 @@ or extracting it to a component silently yields zero screens (expo/expo#37796).
 
 # Data: real API, REST-over-HTTP on every platform (for now)
 
-Browse/Series/Reader call `useDataSource()` (`src/data/source.ts`) — never
-`src/data/api.ts` or `src/data/mock.ts` directly. That's the one place real vs.
+Browse/Series/Reader call `useDataSource()` (`apps/mobile/src/data/source.ts`) — never
+`apps/mobile/src/data/api.ts` or `apps/mobile/src/data/mock.ts` directly. That's the one place real vs.
 mock is decided.
 
 - **Web talks to `@comical/host-server` over REST; native (iOS/Android) can run
   bridges on-device.** All requests go through a swappable `Transport` in
-  `src/data/api.ts` (`setTransport`). The default `remoteTransport` is a plain
+  `apps/mobile/src/data/api.ts` (`setTransport`). The default `remoteTransport` is a plain
   `fetch` against `getApiBase()` — a Settings-configured override if the user
   set one, else `EXPO_PUBLIC_COMICAL_SERVER`, else `http://localhost:3100`. On
   native, an **embedded** transport resolves the same server-relative paths
   in-process by driving the reused `@comical/host-server` router against proxy
   bridges running in a native JS engine (JSC on iOS, QuickJS on Android) — no
-  external server. This is wired in `src/data/embedded/` (a thin layer:
+  external server. This is wired in `apps/mobile/src/data/embedded/` (a thin layer:
   `startup.ts`, `preference.ts`, `settings-store.ts`) on top of
   **`@comical/host-rn`** (the comical submodule), which owns the reusable
   machinery (proxy `BridgeProvider`, in-process transport, registry-download
   `BundleSource`, Hermes WebCrypto shim). The native module
-  (`modules/comical-runtime`, wrapping comical's `ComicalBridgeContext`) is the
+  (`apps/mobile/modules/comical-runtime`, wrapping comical's `ComicalBridgeContext`) is the
   engine; when it's absent (web, or before a native build) the app stays remote.
   The remote↔embedded swap is a one-tap Settings toggle; web is always remote.
   The remote server's URL is also Settings-editable (`useApiBase`/
-  `setApiBaseOverride` in `data/api.ts`), but that row is hidden while the
+  `setApiBaseOverride` in `apps/mobile/src/data/api.ts`), but that row is hidden while the
   on-device runtime is actually active, since it wouldn't do anything then.
 - **Local dev needs a running host-server.** There's no bundled dev server in
   this repo yet — run `comical-web`'s dev server (`bun run dev` in
@@ -65,7 +77,7 @@ mock is decided.
   `__DEV__`-gated "Use mock data" toggle in Settings, and the GitHub Pages
   static preview build (`EXPO_PUBLIC_COMICAL_DEMO_MODE=1`, set only in
   `deploy-web.yml`, since static hosting has no backend to reach — see
-  `components/demo-banner.tsx`). A real production build never falls back to
+  `apps/mobile/src/components/demo-banner.tsx`). A real production build never falls back to
   mock data on a failed request; screens show a retry state instead.
 
 # State: TanStack Query for server, Legend State for local
@@ -76,9 +88,9 @@ lifted to a parent for data that outlives the screen.
 
 - **Server / async state → TanStack Query.** Anything fetched through
   `useDataSource()` lives in the query cache. Add query/mutation options in
-  `src/data/queries.ts` and register every key in the `queryKeys` factory there
+  `apps/mobile/src/data/queries.ts` and register every key in the `queryKeys` factory there
   (a write must invalidate the same key the reader subscribes to). See
-  `src/data/query-client.ts` for the client + AsyncStorage persistence.
+  `apps/mobile/src/data/query-client.ts` for the client + AsyncStorage persistence.
 - **Local / client state → Legend State** (`@legendapp/state`, v3). Device-local
   preferences and UI state that is *not* a copy of the server: reader settings,
   toggles, the data epoch, the remembered scanlation group. **Never** mirror
@@ -97,9 +109,9 @@ Writing a local store:
   "skip if equal" guards. Keep exported hook signatures stable when migrating an
   existing store so call sites don't change.
 
-`src/hooks/use-reader-settings.ts` (persisted object) and `src/data/data-epoch.ts`
-(in-memory) are the reference implementations. `lib/tab-bar-visibility.ts`
-(reanimated UI-thread value) and `lib/diagnostics.ts` (ring buffer) stay
+`apps/mobile/src/hooks/use-reader-settings.ts` (persisted object) and `apps/mobile/src/data/data-epoch.ts`
+(in-memory) are the reference implementations. `apps/mobile/src/lib/tab-bar-visibility.ts`
+(reanimated UI-thread value) and `apps/mobile/src/lib/diagnostics.ts` (ring buffer) stay
 hand-rolled on purpose. Rationale + the full split: `docs/ARCHITECTURE.md` →
 "State management".
 
@@ -134,11 +146,49 @@ specific to that site — not a category name. `reportUnusedDisableDirectives` i
 directive that stops suppressing anything fails the lint rather than rotting in place. If a
 suppression doesn't fit one of the three cases above, it's a code change, not a comment.
 
+# Zoom transitions
+
+The series page grows out of the card that opened it and collapses back into it (`apps/mobile/src/lib/series-zoom.ts`).
+The collapse target is re-resolved when the collapse starts and re-aimed if the card moves while it
+runs — a captured rect goes stale the moment a last-read list reorders. Don't freeze it.
+
+**A list that reorders is asked where its item is; it is not measured.** `useZoomSurfaceLocator`
+answers out of the virtualization state (`getState().positionAtIndex` / `.scroll`), which knows every
+index — including rows it hasn't mounted — and knows the new one a render before the row is drawn
+there. Measuring the row instead fails in both directions: a row scrolled out of the render window
+unmounts, so the case that most needs finding is the one nothing can measure, and a row's drawn
+position trails the list's own by a commit, so a measurement taken as the reorder lands reports where
+it WAS. Both of those were real bugs, not hypotheticals.
+
+To make another LegendList a zoom source: give it a stable key via `useZoomSurfaceKey`, put that on
+`ZoomSurfaceContext` around the rows, have cards call `useZoomOriginSource`, and call
+`useZoomSurfaceList` — the adapter that registers locate, reveal and the order-changed notice
+together. Hand it the list's OWN data array, not whatever it was derived from: the index it finds is
+an index into `data`, and Activity coalesces its entries into rows, so the two are different lists.
+`lib/series-zoom` knows nothing about LegendList; the three contracts it owns can be implemented from
+anything. Every step degrades to the previous behaviour if skipped — a surface with no locator keeps
+the rect captured on press-in, which for one that can't reorder IS the answer. Don't re-measure the
+card instead: while a page is open its grid sits under the backdrop's scale, so the measurement comes
+back shrunk toward the screen centre and only an arithmetic reconstruction gets it back.
+
+# Press-in warms the destination
+
+Anything that navigates to a series starts that fetch on press-IN, not on navigate — the zoom is
+most of a second of dead time otherwise (`apps/mobile/src/data/prefetch.ts`). `useWarmSeriesDetail`
+for a card that opens details, `useWarmChapterPages` for a row that resumes reading (it also warms
+the one page image the reader will land on).
+
+Warm from the handler that navigates, passing the same values it puts in the route params. Deriving
+them separately is a second answer to a settled question: only some opts are keyed, but the rest are
+written into the cached object (`bridge: opts.bridgeName ?? ''`), so a warm that disagrees wins the
+race and leaves the page wrong. Where press-in and the navigation live in different components
+(collections tiles), the tile takes an `onWarm` callback rather than re-deriving the branch.
+
 # Testing: new screens need a flow
 
 A new top-level screen, tab, or interactive feature needs a Maestro e2e flow, not just a testID.
-See `e2e/README.md` for the authoring/running workflow (two copies per flow — `e2e/mobile/` and
-`e2e/web/` — plus the web-only selector/gesture quirks to check against before assuming a mobile
+See `apps/mobile/e2e/README.md` for the authoring/running workflow (two copies per flow — `apps/mobile/e2e/mobile/` and
+`apps/mobile/e2e/web/` — plus the web-only selector/gesture quirks to check against before assuming a mobile
 flow ports over as-is). CI's `check:flow-coverage` (advisory-only) flags a new tab/screen/Settings
 category with no flow referencing it yet, but can't tell when an *existing* flow has gone stale
 because a screen it already covers changed — that's on the PR author, not the check.

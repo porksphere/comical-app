@@ -8,11 +8,19 @@ import Animated, { useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HistoryRow } from '@/components/history-row';
-import { setZoomOrigin, useIsZoomingSeries, useZoomSourceKey } from '@/lib/series-zoom';
+import {
+  useIsZoomingSeries,
+  useZoomOriginSource,
+  useZoomSourceKey,
+  useZoomSurfaceKey,
+  ZoomSurfaceContext,
+} from '@/lib/series-zoom';
 import { encodeSeriesParam } from '@/lib/series-nav';
+import { useWarmChapterPages, useWarmSeriesDetail } from '@/data/prefetch';
 import { CheckIcon, TrashIcon } from '@/components/icons/ui-icons';
 import { PullIndicator } from '@/components/pull-indicator';
 import { RetryBlock } from '@/components/retry-block';
+import { RowHairline } from '@/components/row-hairline';
 import { SeriesCardMenu } from '@/components/series-card-menu';
 import { SwipeableRow } from '@/components/settings/swipeable-row';
 import { TabTitleBar } from '@/components/tab-title-bar';
@@ -29,9 +37,10 @@ import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
-import { useTheme } from '@/hooks/use-theme';
 import { useRouter } from '@/lib/nav';
 import { relTime } from '@/lib/rel-time';
+import { useZoomSurfaceList } from '@/lib/zoom-surface-list';
+import { ROW_REORDER_TRANSITION } from '@/lib/row-motion';
 import { notifyScrollBeginDrag, notifyScrollEndDrag, notifyScrollRest } from '@/lib/scroll-release';
 
 /**
@@ -57,10 +66,12 @@ type SeriesActivity = {
   number?: number;
 };
 
+/** Stable, so the zoom surface registers once rather than every render — see useZoomSurfaceList. */
+const activitySeriesId = (item: SeriesActivity) => item.seriesId;
+
 export default function ActivityScreen() {
   const ds = useDataSource();
   const mock = useMockActive();
-  const theme = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -69,6 +80,9 @@ export default function ActivityScreen() {
   const { byId, nameOf, directOf } = useBridgeMap();
   const listRef = useRef<LegendListRef>(null);
   useScrollToTopOnReselect('activity', listRef);
+
+  // This list as a zoom surface — see AGENTS.md → Zoom transitions.
+  const zoomSurface = useZoomSurfaceKey('activity');
   // Let the tab swap paint before mounting the row list (see use-deferred-mount).
   const ready = useDeferredMount();
 
@@ -152,7 +166,13 @@ export default function ActivityScreen() {
     onSettled: () => void queryClient.invalidateQueries({ queryKey: queryKeys.activityCount(mock) }),
   });
 
-  const visible = items && hideNsfw ? items.filter((a) => !byId.get(a.bridgeId)?.nsfw) : items;
+  // Memoized so the identity only changes when the ORDER can have: a fresh array every render
+  // would tell every collapse in flight that the list moved (see the notice below).
+  const visible = useMemo(
+    () => (items && hideNsfw ? items.filter((a) => !byId.get(a.bridgeId)?.nsfw) : items),
+    [byId, hideNsfw, items],
+  );
+
 
   // Coalesce the flat per-chapter feed into one row per series. `visible` is already newest-first, so a
   // series' first appearance is its newest detection (the row's snapshot + sort position), and the
@@ -188,6 +208,10 @@ export default function ActivityScreen() {
     out.sort((a, b) => b.latestAt - a.latestAt);
     return out;
   }, [visible]);
+
+  // Reading reorders this list, so a series opened from partway down can end up above the viewport
+  // by the time the page closes — see useZoomSurfaceList.
+  useZoomSurfaceList(zoomSurface, rows, activitySeriesId, listRef);
 
   const barHeight = useTopBarHeight();
   const headerHeight = insets.top + barHeight;
@@ -248,7 +272,9 @@ export default function ActivityScreen() {
   const emptyBody = body();
 
   return (
-    <ThemedView style={styles.container} {...pull.touchHandlers}>
+    // Rows and list must share one surface key, or each row falls back to a key of its own.
+    <ZoomSurfaceContext.Provider value={zoomSurface}>
+      <ThemedView style={styles.container} {...pull.touchHandlers}>
       {emptyBody ? (
         <View style={[styles.centeredColumn, { paddingTop: headerHeight + BarContentGap }]}>
           <View style={styles.centerFill}>{emptyBody}</View>
@@ -262,6 +288,7 @@ export default function ActivityScreen() {
             data={rows}
             keyExtractor={(g) => `${g.bridgeId}:${g.seriesId}`}
             recycleItems={false}
+            itemLayoutAnimation={ROW_REORDER_TRANSITION}
             // Don't retro-correct offsets from measurements — a visible jitter while flinging otherwise.
             maintainVisibleContentPosition={{ data: false, size: false }}
             // Live UI-thread scroll offset the pull-to-refresh reads (top-of-list check + iOS bounce).
@@ -280,7 +307,6 @@ export default function ActivityScreen() {
               paddingLeft: sidePad,
               paddingRight: sidePad,
             }}
-            ItemSeparatorComponent={() => <View style={[styles.sep, { backgroundColor: theme.hairline }]} />}
             renderItem={({ item }) => (
               <ActivityItem
                 item={item}
@@ -313,6 +339,7 @@ export default function ActivityScreen() {
       <PullIndicator {...pull.indicator} top={headerHeight} />
       <TabTitleBar title="Activity" />
     </ThemedView>
+    </ZoomSurfaceContext.Provider>
   );
 }
 
@@ -351,10 +378,23 @@ function ActivityItem({
   // per list rather than per row because the list recycles row instances).
   const zoomSource = useZoomSourceKey();
   const zoomFlying = useIsZoomingSeries(item.seriesId, zoomSource);
-  const captureZoomOrigin = () => {
-    thumbRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => {
-      // radius 6 — HistoryRow's `thumb` corner, which is not the grid card's 10.
-      if (w > 0 && h > 0) setZoomOrigin(item.seriesId, zoomSource, { x, y, width: w, height: h, radius: 6 });
+  // Radius 6 — the row thumbnail's corner, not the grid card's 10.
+  const captureZoomOrigin = useZoomOriginSource(item.seriesId, zoomSource, thumbRef, 6);
+  // See History's copy: press-in warms what the tap will need, and the row (reads) and the 3-dot
+  // (details) need different things. `read` always forwards the chapter id, so this always does.
+  const warmPages = useWarmChapterPages();
+  const warmDetail = useWarmSeriesDetail();
+  const onRowPressIn = () => {
+    captureZoomOrigin();
+    warmPages(item.bridgeId, item.seriesId, item.chapterId);
+  };
+  const onMorePressIn = () => {
+    captureZoomOrigin();
+    warmDetail(item.bridgeId, item.seriesId, {
+      direct,
+      bridgeName: bridge,
+      title: item.title,
+      cover: item.thumbnailUrl,
     });
   };
   const renderRow = (coverHidden: boolean) => (
@@ -365,43 +405,47 @@ function ActivityItem({
       dimmed={!item.hasUnread}
       unread={item.hasUnread}
       onPress={onRead}
-      onPressIn={captureZoomOrigin}
+      onPressIn={onRowPressIn}
       onMore={onOpenDetail}
-      onMorePressIn={captureZoomOrigin}
+      onMorePressIn={onMorePressIn}
       actions={[]}
       thumbRef={thumbRef}
       coverHidden={coverHidden || zoomFlying}
     />
   );
   return (
-    <SwipeableRow
-      name={item.title}
-      // Actions lay out left→right, so the LAST sits at the screen edge — revealed by the
-      // smallest swipe and the easiest to tap. Put the destructive Clear FIRST (the inner
-      // slot, reached only by swiping further) and Mark read at the edge, so the safe action
-      // is the easy one and a delete takes a deliberate, longer swipe. All-read rows have
-      // nothing to mark, so they offer Clear alone (which then becomes full-swipeable).
-      actions={[
-        { label: 'Clear', icon: TrashIcon, destructive: true, onPress: onRemove },
-        ...(item.hasUnread ? [{ label: 'Mark read', icon: CheckIcon, onPress: onMarkRead }] : []),
-      ]}>
-      {Platform.OS === 'web' ? (
-        renderRow(false)
-      ) : (
-        <SeriesCardMenu
-          enabled={!!item.bridgeId}
-          bridgeId={item.bridgeId}
-          bridge={bridge}
-          entry={{ id: item.seriesId, title: item.title, cover: item.thumbnailUrl ?? '' }}
-          direct={direct}
-          coverAspect={2 / 3}
-          startRadius={6} // matches HistoryRow's thumbnail corner
-          zoomSource={zoomSource}
-          measureRef={thumbRef}>
-          {({ hidden }) => renderRow(hidden)}
-        </SeriesCardMenu>
-      )}
-    </SwipeableRow>
+    <>
+      <SwipeableRow
+        name={item.title}
+        // Actions lay out left→right, so the LAST sits at the screen edge — revealed by the
+        // smallest swipe and the easiest to tap. Put the destructive Clear FIRST (the inner
+        // slot, reached only by swiping further) and Mark read at the edge, so the safe action
+        // is the easy one and a delete takes a deliberate, longer swipe. All-read rows have
+        // nothing to mark, so they offer Clear alone (which then becomes full-swipeable).
+        actions={[
+          // `collapses`: the clear is optimistic, so fold the row shut before the data drops it.
+          { label: 'Clear', icon: TrashIcon, destructive: true, collapses: true, onPress: onRemove },
+          ...(item.hasUnread ? [{ label: 'Mark read', icon: CheckIcon, onPress: onMarkRead }] : []),
+        ]}>
+        {Platform.OS === 'web' ? (
+          renderRow(false)
+        ) : (
+          <SeriesCardMenu
+            enabled={!!item.bridgeId}
+            bridgeId={item.bridgeId}
+            bridge={bridge}
+            entry={{ id: item.seriesId, title: item.title, cover: item.thumbnailUrl ?? '' }}
+            direct={direct}
+            coverAspect={2 / 3}
+            startRadius={6} // matches HistoryRow's thumbnail corner
+            zoomSource={zoomSource}
+            measureRef={thumbRef}>
+            {({ hidden }) => renderRow(hidden)}
+          </SeriesCardMenu>
+        )}
+      </SwipeableRow>
+      <RowHairline />
+    </>
   );
 }
 
@@ -436,8 +480,5 @@ const styles = StyleSheet.create({
   },
   list: {
     flex: 1,
-  },
-  sep: {
-    height: StyleSheet.hairlineWidth,
   },
 });

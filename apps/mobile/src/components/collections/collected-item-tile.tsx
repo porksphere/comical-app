@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { useCallback, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View, type View as ViewType } from 'react-native';
 
 import { ChapterItemIcon, PageItemIcon, SeriesItemIcon } from '@/components/icons/collection-icons';
@@ -7,7 +7,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import type { ApiCollectionItem } from '@/data/api';
 import { useTheme } from '@/hooks/use-theme';
-import { setZoomOrigin, useIsZoomingSeries, useZoomSurfaceKey } from '@/lib/series-zoom';
+import { useIsZoomingSeries, useZoomOriginSource, useZoomSurfaceKey } from '@/lib/series-zoom';
 
 /**
  * One tile in the collected grid — a saved SERIES, CHAPTER or PAGE. All three are the same 2:3
@@ -32,6 +32,7 @@ export function CollectedItemTile({
   width,
   height,
   onPress,
+  onWarm,
 }: {
   item: ApiCollectionItem;
   /** Resolved page URL, or `undefined` while its chapter list is still loading / unavailable.
@@ -40,6 +41,9 @@ export function CollectedItemTile({
   width: number;
   height: number;
   onPress: () => void;
+  /** Start the fetch `onPress` is about to need. Supplied by whoever owns the navigation, since the
+   *  three item types go three different places — see library's `onOpen`. */
+  onWarm?: () => void;
 }) {
   const theme = useTheme();
   const [failed, setFailed] = useState(false);
@@ -74,19 +78,18 @@ export function CollectedItemTile({
   const zoomKey = useZoomSurfaceKey(`collected:${item.id}`);
   const flying = useIsZoomingSeries(item.seriesId, zoomKey);
   const boxRef = useRef<ViewType>(null);
-  const captureZoomOrigin = useCallback(() => {
-    if (isWeb || !showImage) return;
-    boxRef.current?.measureInWindow((x, y, w, h) => {
-      // Radius matches styles.tile — the flying copy is drawn with the same corners.
-      if (w > 0 && h > 0) setZoomOrigin(item.seriesId, zoomKey, { x, y, width: w, height: h, radius: 10 });
-    });
-  }, [isWeb, showImage, item.seriesId, zoomKey]);
+  // Radius matches styles.tile — the flying copy is drawn with the same corners. The hook also
+  // registers this tile as re-measurable for the collapse (see series-zoom).
+  const captureZoomOrigin = useZoomOriginSource(item.seriesId, zoomKey, boxRef, 10, !isWeb && showImage);
 
   return (
     <Pressable
       ref={boxRef}
       testID={`collected.tile.${item.id}`}
-      onPressIn={captureZoomOrigin}
+      onPressIn={() => {
+        captureZoomOrigin();
+        onWarm?.();
+      }}
       onPress={onPress}
       style={[styles.tile, { width, height, backgroundColor: theme.backgroundElement }]}
       accessibilityRole="button"
