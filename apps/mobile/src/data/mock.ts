@@ -68,14 +68,16 @@ export type {
  * full-title peek (the title truncates with "…" and reveals on hover/hold).
  * Length is in the spirit of real bridge titles (e.g. light-novel adaptations).
  */
+/** Deliberately absurd length, to exercise truncation and wrapping. Invented, like everything else
+ *  here — see the note on META below. */
 export const LONG_TITLE =
-  'I Got a Cheat Skill in Another World and Became Unrivaled in the Real World, Too: The Saga of the Reincarnated Cartographer';
+  'I Was Reincarnated as the Villain\'s Cartographer and Now Everyone Wants My Maps: A Chronicle of the Seventh Continent';
 
 export const TITLES = [
   'The Silent Sea', 'Crimson Harbor', 'Paper Moons', 'A Study in Ash',
   'Northern Lights', 'The Glass Garden', 'Echoes of Tomorrow', 'Saltwater Hymns',
   'The Last Cartographer', 'Velvet Machine', 'Whisper of Pines', 'Iron & Ink',
-  'Spirit Zone', 'Ashen Crown', 'Moonlit Vagrant', 'The Ninth Tower',
+  'The Coast Road', 'Ashen Crown', 'Moonlit Vagrant', 'The Ninth Tower',
   LONG_TITLE,
 ];
 
@@ -275,19 +277,25 @@ const MANY_TAGS = [
   'Reincarnation', 'Time Travel', 'Game', 'Virtual Reality', 'Survival',
   'Revenge', 'Anti-Hero', 'Cultivation', 'Demon Lord', 'Dungeon', 'Monsters',
 ];
+// Invented, and it needs to stay invented. This is the metadata a screenshot of the app shows, and
+// an earlier version carried the real credits and synopsis of a published series, which is someone
+// else's work being used to advertise this one. The SHAPES are what the layout is testing — two
+// comma-separated authors so the cell wraps, a single artist so it doesn't — so keep those and
+// change the words if this ever needs to look different.
 const META: MetaCell[] = [
   { label: 'STATUS', value: 'Ongoing' },
   { label: 'TYPE', value: 'Manhwa' },
-  { label: 'AUTHOR', value: 'Chi-U Kim, kiraz' },
-  { label: 'ARTIST', value: 'Themis' },
+  { label: 'AUTHOR', value: 'Halden Reyes, coldpress' },
+  { label: 'ARTIST', value: 'Junia Marlow' },
 ];
+// Long enough to exercise the clamp-and-expand control on the series page.
 const DESCRIPTION =
-  'After Sirone was abandoned in a stable, he was found by a family of hunters and ' +
-  'raised in a loving home. Despite the hardships of the peasant life, he learned how ' +
-  'to read from a young age and became obsessed with books, especially ones on the ' +
-  'history of magic. One day, he has an unlikely encounter with a mage and learns how ' +
-  'to enter the "spirit zone", the first step to learning how to use magic. Although ' +
-  'they say only nobles can be mages, will Sirone be able to defy the odds?';
+  'Tamsin has walked the coast road for nine winters, trading errands for meals and sleeping ' +
+  'wherever the tide allows. She keeps a ledger of every town that turned her away, and a ' +
+  'second one, unwritten, of the few that did not. When a lighthouse keeper offers her a season ' +
+  'of steady work she takes it gladly, and only later learns the light has not been lit in ' +
+  'years and that something past the rocks has been waiting for it. Staying means answering for ' +
+  'the ledger she has kept; leaving means the whole coast goes dark behind her.';
 
 const DAY = 86_400_000;
 
