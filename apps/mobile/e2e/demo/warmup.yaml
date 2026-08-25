@@ -24,8 +24,12 @@ appId: com.porksphere.comical
 - tapOn:
     id: "series\\.chapter\\..*"
     index: 0
+# NOT reader.toolbar.back: the toolbar is gated behind `chromeVisible`, which fades it to opacity 0
+# three seconds after entry (app/series/index.tsx CHROME_HIDE_MS). A single Maestro step on a CI
+# simulator can take longer than that, so the anchor has to be something the paged reader renders
+# unconditionally. TapZones does (components/reader/zoomable-page.tsx); the toolbar does not.
 - assertVisible:
-    id: "reader.toolbar.back"
+    id: "reader.control.next"
 - tapOn:
     id: "reader.control.next"
 - back

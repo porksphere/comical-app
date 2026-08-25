@@ -51,9 +51,11 @@ jobs:
     with:
       simulator: true
       demo_mode: true
-      # demo_fast is deliberately left off: it zeroes mock.ts's simulated latency, which is right
-      # for a test suite and wrong here — the capture should show the app behaving the way it does
-      # against a real backend, spinners and all, not teleporting between screens.
+      # demo_fast zeroes mock.ts's simulated latency. Worth being explicit about, because the
+      # first instinct is to leave it off "so the capture shows real behaviour": that latency is a
+      # synthetic number the mock invents, not anything a real backend does, so filming it puts
+      # made-up spinners in the GIF and makes every step on an already-slow CI simulator slower.
+      demo_fast: true
       capture_mode: true
       channel: ios-capture
     secrets: inherit
@@ -95,7 +97,20 @@ jobs:
           # and fail `simctl create` with "Incompatible device".
           RUNTIME_JSON=$(xcrun simctl list runtimes -j | jq -c '[.runtimes[] | select(.name | test("iOS")) | select(.isAvailable)] | sort_by(.version) | last')
           RUNTIME=$(echo "$RUNTIME_JSON" | jq -r '.identifier')
-          DEVICE_TYPE=$(echo "$RUNTIME_JSON" | jq -r '.supportedDeviceTypes[] | select(.name | test("iPhone")) | .identifier' | tail -1)
+
+          # Prefer the newest plain-or-Pro iPhone, sorted by the number in its name. The e2e lane's
+          # `tail -1` is fine for a test (any iPhone proves the selectors resolve) but picked an
+          # iPhone 11 on this image — supportedDeviceTypes is not ordered by recency. The capture
+          # is a promo image, so the hardware it's filmed on is visible in every frame.
+          DEVICE_TYPE=$(echo "$RUNTIME_JSON" | jq -r '
+            [.supportedDeviceTypes[] | select(.name | test("^iPhone [0-9]+( Pro)?$"))]
+            | sort_by(.name | capture("iPhone (?<n>[0-9]+)").n | tonumber)
+            | last // empty | .identifier')
+          # Any runtime whose device names don't fit that shape falls back to the e2e lane's pick,
+          # which is still guaranteed to be a device type this runtime supports.
+          if [ -z "$DEVICE_TYPE" ]; then
+            DEVICE_TYPE=$(echo "$RUNTIME_JSON" | jq -r '.supportedDeviceTypes[] | select(.name | test("iPhone")) | .identifier' | tail -1)
+          fi
           echo "Using runtime=$RUNTIME device_type=$DEVICE_TYPE"
           UDID=$(xcrun simctl create comical-capture "$DEVICE_TYPE" "$RUNTIME")
 
@@ -107,6 +122,7 @@ jobs:
       - name: Record
         env:
           MAESTRO_DRIVER_STARTUP_TIMEOUT: '240000'
+          MAESTRO_CLI_NO_ANALYTICS: '1'
           OUT: ${{ runner.temp }}/demo.gif
           WIDTH: ${{ inputs.width }}
           FPS: ${{ inputs.fps }}
