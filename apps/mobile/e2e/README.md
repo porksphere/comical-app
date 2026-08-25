@@ -301,7 +301,14 @@ steps remain. On the reference take: 82 frames, 5.5s, 1.6MB.
 Size is frame count x area x palette, so `WIDTH`, `MAX_COLORS` and `FPS` all move it (220px/96
 colours/15fps measured 1.6MB; 240px/128 colours measured 3.9MB).
 
-The run also uploads a `demo-playable.mp4` next to the raw one. The raw file is the simulator's own
+Re-cutting a take needs no device or runner: `RENDER_FROM=take.mp4 FFMPEG=... bash
+scripts/record-demo.sh` runs only the planning and encoding half against a capture you already
+have. Use it to try different `WIDTH`/`HOLD`/`MAX_COLORS` values, and to exercise that half after
+changing it — an unbound variable once survived `bash -n` and only surfaced after a full 11-minute
+CI run had otherwise gone perfectly.
+
+The run also uploads a `demo-playable.mp4` next to the raw one, written the moment the recording
+exists rather than at the end, so it is there even when a later step fails. The raw file is the simulator's own
 output — full panel size (1206x2622 on the reference take, past the height many hardware decoders
 accept), QuickTime brand, and gaps as long as 50 seconds between frames. ffmpeg reads it; VLC does
 not. The playable copy is a constant-framerate half-size version for watching.

@@ -25,8 +25,15 @@
 set -euo pipefail
 
 PLATFORM="${1:-}"
-if [ "$PLATFORM" != "android" ] && [ "$PLATFORM" != "ios" ]; then
-  echo "Usage: $0 <android|ios>" >&2
+# RENDER_FROM re-runs only the second half — plan the cut, encode the GIF — against a capture that
+# already exists, with no device, no Maestro and no 11-minute wait. It is how the analysis and
+# encode get exercised locally against real footage (`RENDER_FROM=demo.mp4 ... record-demo.sh`),
+# and how a published take can be re-cut at different settings without recapturing it. It exists
+# because the encode half once shipped an unbound variable that `bash -n` cannot see and only a CI
+# run could find.
+RENDER_FROM="${RENDER_FROM:-}"
+if [ -z "$RENDER_FROM" ] && [ "$PLATFORM" != "android" ] && [ "$PLATFORM" != "ios" ]; then
+  echo "Usage: $0 <android|ios>   (or: RENDER_FROM=take.mp4 $0)" >&2
   exit 1
 fi
 
@@ -47,30 +54,40 @@ RAW="$WORK/demo.mp4"
 WIDTH="${WIDTH:-220}"
 FPS="${FPS:-15}"
 MAX_COLORS="${MAX_COLORS:-96}"
-# The head and tail are found, not configured. Maestro's CLI start-up sits between the recorder
-# opening and the flow's first command, and it varies run to run, so a fixed trim would leave a
-# different amount of dead air in every recapture. Instead the take is scanned for scene changes:
-# the GIF starts LEAD_IN seconds before the first movement and ends TAIL_OUT after the last.
+# What counts as the screen holding rather than animating. Frames closer together than this are
+# part of a movement; anything sparser is a hold — including the multi-minute head of every take,
+# while Maestro's driver starts up, which is how the lead-in gets found rather than configured.
+STILL_GAP="${STILL_GAP:-0.4}"
+# How much of each hold survives into the GIF. The reference take ran 97s of stillness against
+# 5.7s of movement; at zero this reads as one frantic sequence with no beats between the steps.
+HOLD="${HOLD:-0.35}"
+# Padding either side of the kept material.
 LEAD_IN="${LEAD_IN:-0.6}"
 TAIL_OUT="${TAIL_OUT:-1.2}"
-# Fraction of the frame that has to change to count as movement. 0.05 clears encoder noise on a
-# still screen while a page turn or the zoom is far above it.
-SCENE_THRESHOLD="${SCENE_THRESHOLD:-0.05}"
-# Used only if scene detection finds nothing at all (a take with no movement is already a failure,
-# but the script should say something useful rather than divide by it).
-TRIM_START="${TRIM_START:-2.0}"
-# What counts as the screen holding rather than animating. Frames closer together than this are
-# part of a movement; anything sparser is a hold (and the multi-second head of every take, while
-# Maestro's driver starts up, is just a very long one).
-STILL_GAP="${STILL_GAP:-0.4}"
-# How much of each hold survives into the GIF. Without a cap the reference take ran 97s of
-# stillness against 5.7s of movement; at zero the result reads as one frantic sequence with no
-# beats between the steps.
-HOLD="${HOLD:-0.35}"
+
+# `set -u` is on, so this has to exist before the first use. An earlier edit deleted it along with
+# the neighbouring block it had been tucked next to, and the script then died at its first ffmpeg
+# call — after a full 11-minute run that had otherwise gone perfectly.
+FFMPEG="${FFMPEG:-ffmpeg}"
 
 need() { command -v "$1" >/dev/null 2>&1 || { echo "!! $1 not found on PATH" >&2; exit 1; }; }
-need maestro
-need ffmpeg
+[ -n "$RENDER_FROM" ] || need maestro
+# `$FFMPEG`, not the literal name: an override has to be the thing that gets checked, or the check
+# passes on a PATH ffmpeg that is not the binary the rest of the script will call.
+need "$FFMPEG"
+
+# A watchable copy of the take, written as soon as the recording exists rather than at the end.
+# Everything after this point can fail, and when it does the raw file is exactly what needs
+# inspecting — but the raw file is hopeless in a general player: simctl writes it at the
+# simulator's full panel size (1206x2622 on the reference take, past the height many hardware
+# decoders accept), QuickTime-branded, with multi-second gaps between frames (one take held its
+# first frame for 50 seconds). VLC will not open it.
+playable_copy() {
+  "$FFMPEG" -v error -y -i "$RAW" -vf "fps=15,scale=-2:1280" \
+    -c:v libx264 -pix_fmt yuv420p -movflags +faststart "$WORK/demo-playable.mp4" 2>/dev/null \
+    && echo "==> Watchable copy: $WORK/demo-playable.mp4" \
+    || echo "!! Could not write the watchable copy (no libx264?)" >&2
+}
 
 RECORDER_PID=""
 cleanup() {
@@ -81,7 +98,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if [ "$PLATFORM" = "ios" ]; then
+if [ -n "$RENDER_FROM" ]; then
+  [ -f "$RENDER_FROM" ] || { echo "!! no such capture: $RENDER_FROM" >&2; exit 1; }
+  cp "$RENDER_FROM" "$RAW"
+  echo "==> Rendering from $RENDER_FROM (no device)"
+  playable_copy
+elif [ "$PLATFORM" = "ios" ]; then
   need xcrun
   UDID="${UDID:-$(xcrun simctl list devices booted -j | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; print(next(x["udid"] for v in d.values() for x in v))')}"
   echo "==> Simulator $UDID"
@@ -135,6 +157,7 @@ else
   }
 fi
 
+if [ -z "$RENDER_FROM" ]; then
 echo "==> Warm-up pass (not recorded)"
 maestro "${MAESTRO_DEVICE[@]}" test "$E2E_DIR/demo/warmup.yaml"
 
@@ -147,6 +170,8 @@ sleep 1   # let the recorder actually open its output before the flow starts mov
 maestro "${MAESTRO_DEVICE[@]}" test "$E2E_DIR/demo/demo.yaml"
 stop_recorder
 echo "==> Raw capture: $RAW"
+playable_copy
+fi
 
 echo "==> Planning the cut"
 # One showinfo pass gives every frame's timestamp; demo-ranges.py turns those into the slices worth
@@ -166,15 +191,6 @@ fi
 echo "==> Encoding GIF"
 mkdir -p "$(dirname "$OUT")"
 "$FFMPEG" -v error -y -i "$RAW" -filter_complex "$GRAPH" -loop 0 "$OUT"
-
-# A normalised copy of the take, purely so a human can watch it. The raw file is awkward on
-# purpose-built players and worse on general ones: simctl writes a QuickTime-branded mp4 at the
-# simulator's full panel size (1206x2622 on the reference take, past the height a lot of hardware
-# decoders accept) with multi-second gaps between frames — one reference take held its first frame
-# for 50 seconds. VLC will not play it. Constant framerate, half size, standard brand fixes that.
-"$FFMPEG" -v error -y -i "$RAW" -vf "fps=15,scale=-2:1280" \
-  -c:v libx264 -pix_fmt yuv420p -movflags +faststart "$WORK/demo-playable.mp4" 2>/dev/null \
-  || echo "   (skipped the playable copy — no libx264 in this ffmpeg)" >&2
 
 SIZE=$(du -h "$OUT" | cut -f1)
 FRAMES=$("$FFMPEG" -v info -i "$OUT" -vf showinfo -f null - 2>&1 | grep -c 'pts_time:')
