@@ -40,12 +40,6 @@ and prints a QR. Install the **dev-client** shell once (below), open it on a pho
 connect to this server, and every JS/TS edit hot-reloads on-device — no Mac needed for JS work. Full
 story (incl. profiling over it): [PROFILING.md](PROFILING.md) → "Iterative dev & profiling from Windows".
 
-Both of those need Metro running on a machine you own. For the same on-device loop with **no PC in
-it** — an always-on box that serves a pinned branch to your phone over a private network, so a Claude
-session can iterate on the app you are holding — see
-[remote-expo](https://github.com/porksphere/remote-expo). Nothing in this repo has to change for it;
-it detects the workspace layout itself.
-
 ### Local web dev (`bun run dev`)
 
 The fastest loop while iterating on shared screens: run the app in a desktop browser

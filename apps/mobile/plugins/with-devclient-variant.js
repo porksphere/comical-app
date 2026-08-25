@@ -36,8 +36,9 @@ function applyLabel(config, label) {
 // The dev-client also opts out of App Transport Security. It loads its JS over plain HTTP from a
 // Metro server, and iOS blocks cleartext unless told otherwise. Expo's default grants
 // NSAllowsLocalNetworking, which covers RFC1918 (10/8, 172.16/12, 192.168/16) and .local — enough
-// for a Metro box on your LAN, and NOT enough for one reached over Tailscale, whose addresses live
-// in 100.64.0.0/10 (RFC6598 shared address space). iOS then refuses the load before opening a
+// for a Metro box on your LAN, and NOT enough for one reached over a VPN or overlay network, whose
+// addresses commonly live in 100.64.0.0/10 (RFC6598 shared address space, outside RFC1918 and so
+// outside what local networking grants). iOS then refuses the load before opening a
 // socket: the launcher reports "failed to connect" and a packet capture on the server sees nothing
 // at all, because nothing was ever sent.
 //
