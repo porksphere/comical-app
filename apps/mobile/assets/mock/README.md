@@ -3,10 +3,22 @@
 Only reachable from mock mode (`EXPO_PUBLIC_COMICAL_DEMO_MODE=1` or the `__DEV__` Settings
 toggle) — see `src/data/source.ts`. Wired up in `src/data/mock-assets.ts`.
 
-These are bundled rather than fetched. Every cover used to be a live `picsum.photos` request,
-which made the "comics" stock photographs of skyscrapers and laptops, and made mock mode — the e2e
-suite and the GitHub Pages demo included — depend on a third-party service being up before it
-could render a grid. 1.5MB of bundle buys determinism and offline capability.
+These replaced live `picsum.photos` requests, which made the "comics" stock photographs of
+skyscrapers and laptops — a different picture on every load, and a third-party service deciding
+whether a grid rendered at all. Serving our own committed bytes keeps the network dependency but
+makes the content deterministic, which was the half that mattered.
+
+They are served, not bundled: `mock-assets.ts` builds jsDelivr URLs pointing at this directory at
+a pinned commit, so nothing here reaches an app bundle. **Adding or redrawing art means bumping
+that pin** (`REF` in `mock-assets.ts`) in the same commit that carries the new files; until then
+the app renders the previous set.
+
+Bundling was tried first and reverted. A bundled page resolves to a resource path in a release
+build, and the download engine's `PageFetcher` (`src/data/downloads/fetch-page.ts`) resolves a
+page to a `data:` URI or an http(s) URL — a resource path is neither, so downloading a mock
+chapter had no working path. URLs are the shape every real source already hands it.
+
+The cost is that mock mode is online-only.
 
 ## `covers/` — generated
 
@@ -34,19 +46,3 @@ question worth being able to answer instantly.
 
 Downscaled to 800px wide, JPEG q64. The originals are ~1750x2300 and ~1MB each; at 800px the
 lettering is still legible on a phone, which is the only bar that matters here.
-
-## Known consequence: downloads in mock mode
-
-Page URLs used to be `picsum.photos` links, so the download engine's `PageFetcher`
-(`src/data/downloads/fetch-page.ts`) could fetch them like any real source. They are now bundled
-assets, which resolve to a Metro-served http URL in dev but to a bundled resource in a release
-demo build — and `fetch-page.ts` handles `data:` URIs and http(s) URLs, not resource paths.
-
-So **downloading a chapter in mock mode is unverified on a release demo build**, and
-`e2e/mobile/downloads.yaml` / `e2e/web/downloads.yaml` — whose headers still describe pages as
-"a real fetch to picsum.photos" — need a run to confirm. Real sources are unaffected: their page
-URLs are http(s) and never came from here.
-
-Two ways out if it does break: point `readerPage` back at a remote URL (loses offline mock, keeps
-the download path honest), or teach `fetch-page.ts` to read a bundled asset. Neither is done here,
-because which one is right depends on whether offline mock or mock downloads matters more.
