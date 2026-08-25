@@ -39,11 +39,12 @@ derived from a seed. Rerun the script to change the design; the output is commit
 | `01.jpg` | Episode 2, page 2 |
 | `02.jpg` | Episode 2, page 3 |
 | `03.jpg` | Episode 2, page 4 |
-| `04.jpg` | Episode 2, page 5 |
+| `04.jpg` | [Episode 1, *Potion of Flight*, page 3](https://www.peppercarrot.com/en/webcomic/ep01_Potion-of-Flight.html) |
 | `05.jpg` | [Episode 1, *Potion of Flight*, page 1](https://www.peppercarrot.com/en/webcomic/ep01_Potion-of-Flight.html) |
 
-Episode 2's closing page is deliberately not among these — it is the patron credits panel, not comic
-art. Downscaled to 800px wide, JPEG q64, from the site's own low-res exports.
+Two of episode 2's pages are deliberately not among these: the closing page is the patron credits
+panel rather than comic art, and page 5 is a bath scene — fine in context, an odd thing to lead a
+project's README with. Downscaled to 800px wide, JPEG q64, from the site's own low-res exports.
 
 ### Why not Little Nemo
 

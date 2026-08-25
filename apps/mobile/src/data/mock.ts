@@ -117,6 +117,35 @@ function coverForBridge(seed: string, bridgeId?: string): string {
   return MOCK_COVERS_VARIED[hash(seed) % MOCK_COVERS_VARIED.length]!;
 }
 
+/** How many motifs `scripts/generate-mock-covers.py` draws. It assigns them by POSITION, so cover
+ *  `k` draws motif `k % COVER_MOTIFS` and this side can tell what a cover looks like from its index
+ *  alone, with no lookup table to keep in step. */
+const COVER_MOTIFS = 6;
+
+/** Covers walked motif-first: one from each motif in turn. `walk` below gives distinct INDICES,
+ *  which turns out not to be the same thing as distinct DRAWINGS -- three of the first four cards on
+ *  Browse came back as the same circle in the same greys, all different covers. Cycling the motifs
+ *  makes neighbours differ by construction. Both the motif order and each motif's own covers are
+ *  shuffled per rail, so two shelves starting on the same motif still diverge. */
+function walkCovers(set: string[], salt: string, i: number): string {
+  const motifs: number[][] = [];
+  for (let k = 0; k < set.length; k++) (motifs[k % COVER_MOTIFS] ??= []).push(k);
+  const groups = motifs.filter((g) => g.length > 0);
+  let h = hash(salt);
+  const next = () => (h = (Math.imul(h, 1664525) + 1013904223) >>> 0);
+  const shuffle = <T,>(a: T[]): T[] => {
+    for (let k = a.length - 1; k > 0; k--) {
+      const j = next() % (k + 1);
+      [a[k], a[j]] = [a[j]!, a[k]!];
+    }
+    return a;
+  };
+  shuffle(groups);
+  for (const g of groups) shuffle(g);
+  const group = groups[i % groups.length]!;
+  return set[group[Math.floor(i / groups.length) % group.length]!]!;
+}
+
 /** Walk a fixture set in a per-rail shuffled order: card `i` takes the i-th entry of a permutation
  *  seeded by the rail. Two properties matter, and stepping the set by an offset and a stride only
  *  got the first. No shelf repeats an entry (that reads as one series listed twice rather than as a
@@ -274,7 +303,7 @@ function items(
     ...entry(`${prefix}-${i}`, i, opts),
     title: walk(TITLES, prefix, i),
     // Salted separately from the title so a given title isn't always paired with the same drawing.
-    cover: walk(covers, `${prefix}:cover`, i),
+    cover: walkCovers(covers, `${prefix}:cover`, i),
   }));
 }
 

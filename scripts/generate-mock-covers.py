@@ -32,7 +32,7 @@ def jit(seed,k):
     so a motif can take several draws without them correlating with each other or the palette."""
     return (fnv(f'{seed}/{k}')&0xFFFF)/65535.0
 
-def cover(seed, W=300, H=450, SS=2):
+def cover(seed, W=300, H=450, SS=2, motif=None):
     """Text-free, all-curves. Rendered at SSx then downsampled so every edge is smooth."""
     n=fnv(seed)
     w,h=W*SS,H*SS
@@ -55,7 +55,11 @@ def cover(seed, W=300, H=450, SS=2):
     elif dark:   bg=rgb(hue,0.68,0.26); ink=rgb(hue+0.07,0.72,0.70); alt=rgb(hue+0.48,0.52,0.52)
     else:        bg=rgb(hue,0.62,0.74); ink=rgb(hue+0.50,0.66,0.30); alt=rgb(hue+0.09,0.42,0.90)
     im=Image.new('RGB',(w,h),bg); d=ImageDraw.Draw(im,'RGBA')
-    m=(n>>21)%6
+    # Motif by POSITION, not by hash. Hashing it gave an uneven spread (7 of one, 2 of another),
+    # and the consumer then had no way to know what a cover looks like -- a shelf drew four distinct
+    # indices that happened to be three copies of the same circle. `k % 6` makes the set exactly four
+    # of each and lets mock.ts cycle motifs by index alone. Palette still comes from the seed.
+    m=(n>>21)%6 if motif is None else motif
 
     if m==0:                                             # big sun low on the field
         r=w*(0.52+0.16*jit(seed,4)); cy=h*(0.58+0.16*jit(seed,5))
@@ -119,7 +123,7 @@ def emit(subdir, specs):
     total = 0
     for i, (seed, w, h) in enumerate(specs):
         dst = os.path.join(out, f'{i:02d}.png')
-        cover(seed, W=w, H=h).convert('P', palette=Image.ADAPTIVE, colors=32).save(dst, optimize=True)
+        cover(seed, W=w, H=h, motif=i % 6).convert('P', palette=Image.ADAPTIVE, colors=32).save(dst, optimize=True)
         total += os.path.getsize(dst)
     print(f'  {subdir}/: {len(specs)} files, {total // 1024} KB')
     return total
