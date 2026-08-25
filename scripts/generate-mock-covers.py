@@ -19,8 +19,18 @@ import colorsys, math
 def fnv(s):
     x=2166136261
     for c in s: x=((x^ord(c))*16777619)&0xFFFFFFFF
+    # Avalanche. Raw FNV-1a correlates badly across seeds this similar ('cover-0'..'cover-23'):
+    # bit 21 came out constant, so `(n>>21)%6` could only ever return 1, 3 or 5 and half the
+    # motifs below were unreachable art nobody ever saw. Mixing here rather than folding at each
+    # use, so every slice of the word is independently usable.
+    x^=x>>16; x=(x*2246822507)&0xFFFFFFFF; x^=x>>13; x=(x*3266489909)&0xFFFFFFFF; x^=x>>16
     return x
 def rgb(h,s,v): return tuple(int(c*255) for c in colorsys.hsv_to_rgb(h%1.0,s,v))
+
+def jit(seed,k):
+    """Independent 0..1 draw per (seed, k). Re-hashing with a suffix rather than slicing one word,
+    so a motif can take several draws without them correlating with each other or the palette."""
+    return (fnv(f'{seed}/{k}')&0xFFFF)/65535.0
 
 def cover(seed, W=300, H=450, SS=2):
     """Text-free, all-curves. Rendered at SSx then downsampled so every edge is smooth."""
@@ -34,41 +44,46 @@ def cover(seed, W=300, H=450, SS=2):
     # Weighted to two thirds, not half. An even split measures 50/50 but does not READ as it: a
     # saturated card pulls far more attention than a neutral one, so a true coin-flip looks like a
     # colour grid with a few greys in it. Over-weighting the neutrals is what makes it look even.
-    # Xor-folded before the modulo, for the same reason the chapter numbers needed it: FNV's low
-    # bits are weak, and `(n>>5) % 100` on sequential seeds clustered so hard that one shelf came
-    # out 18/18 monochrome while the catalog overall sat at 56%.
-    mono=((n^(n>>15))%100)<66
+    mono=(n%100)<66
     g=lambda v: rgb(0,0,v)
     if mono:
-        if dark: bg=g(0.13); ink=g(0.74); alt=g(0.40)
-        else:    bg=g(0.90); ink=g(0.15); alt=g(0.52)
+        # Drawn per seed rather than fixed. As constants, two mono covers sharing a motif were the
+        # same picture pixel for pixel, and with 24 covers over 6 motifs that repeat is the first
+        # thing the eye catches on a shelf. The bands keep bg/ink far apart so contrast holds.
+        if dark: bg=g(0.10+0.06*jit(seed,1)); ink=g(0.66+0.16*jit(seed,2)); alt=g(0.32+0.18*jit(seed,3))
+        else:    bg=g(0.86+0.09*jit(seed,1)); ink=g(0.09+0.13*jit(seed,2)); alt=g(0.42+0.20*jit(seed,3))
     elif dark:   bg=rgb(hue,0.68,0.26); ink=rgb(hue+0.07,0.72,0.70); alt=rgb(hue+0.48,0.52,0.52)
     else:        bg=rgb(hue,0.62,0.74); ink=rgb(hue+0.50,0.66,0.30); alt=rgb(hue+0.09,0.42,0.90)
     im=Image.new('RGB',(w,h),bg); d=ImageDraw.Draw(im,'RGBA')
     m=(n>>21)%6
 
     if m==0:                                             # big sun low on the field
-        r=w*0.62; cy=h*0.66
+        r=w*(0.52+0.16*jit(seed,4)); cy=h*(0.58+0.16*jit(seed,5))
         d.ellipse([w/2-r,cy-r,w/2+r,cy+r],fill=ink)
-        d.ellipse([w/2-r*0.42,cy-r*0.42,w/2+r*0.42,cy+r*0.42],fill=alt)
+        ir=r*(0.30+0.22*jit(seed,6))
+        d.ellipse([w/2-ir,cy-ir,w/2+ir,cy+ir],fill=alt)
     elif m==1:                                           # concentric rings
-        for i in range(7):
-            r=w*(0.70-i*0.088); cx,cy=w*0.5,h*0.46
+        nr=6+int(3*jit(seed,4)); step=0.72/nr
+        cx,cy=w*0.5,h*(0.40+0.14*jit(seed,5))
+        for i in range(nr):
+            r=w*(0.72-i*step)
             d.ellipse([cx-r,cy-r,cx+r,cy+r],fill=ink if i%2==0 else bg)
-        d.ellipse([w*0.42,h*0.38,w*0.58,h*0.54],fill=alt)
+        er=w*(0.06+0.04*jit(seed,6))
+        d.ellipse([cx-er,cy-er*1.4,cx+er,cy+er*1.4],fill=alt)
     elif m==2:                                           # wave bands, opaque
         # Opaque, not alpha-over-background: translucent bands blended with a saturated ground
         # into greys and olives that looked like a printing fault rather than a design.
         cols=[ink,alt,bg,ink]
         for b in range(4):
-            base=h*0.22+b*h*0.19; amp=h*0.05; pts=[]
+            base=h*(0.16+0.10*jit(seed,4))+b*h*0.19; amp=h*(0.03+0.045*jit(seed,5)); pts=[]
+            freq=1.6+1.4*jit(seed,6); phase=6.283*jit(seed,7)
             for x in range(0,w+1,4):
-                pts.append((x, base+math.sin(x/w*math.pi*2.2+b*1.3)*amp))
+                pts.append((x, base+math.sin(x/w*math.pi*freq+b*1.3+phase)*amp))
             pts += [(w,h),(0,h)]
             d.polygon(pts, fill=cols[b])
     elif m==3:                                           # halftone, non-merging
-        rows,cols_n=11,8
-        sx,sy=w*0.115,h*0.082
+        rows=9+int(4*jit(seed,4)); cols_n=7+int(3*jit(seed,5))
+        sx,sy=w*0.92/cols_n,h*0.90/rows
         for row in range(rows):
             for col in range(cols_n):
                 # Cap the radius under half the spacing so the largest dots stay separate instead
@@ -77,15 +92,20 @@ def cover(seed, W=300, H=450, SS=2):
                 cx,cy=w*0.09+col*sx, h*0.08+row*sy
                 d.ellipse([cx-r,cy-r,cx+r,cy+r],fill=ink)
     elif m==4:                                           # overlapping discs, opaque
-        for fx,fy,fr,c in [(0.32,0.34,0.31,ink),(0.68,0.42,0.31,alt),(0.50,0.68,0.29,ink)]:
+        j=jit(seed,4); k=jit(seed,5); rr=0.26+0.09*jit(seed,6)
+        for fx,fy,fr,c in [(0.26+0.12*j,0.28+0.12*k,rr,ink),
+                           (0.62+0.12*k,0.38+0.12*j,rr,alt),
+                           (0.44+0.14*j,0.62+0.14*k,rr*0.94,ink)]:
             r=w*fr; cx,cy=w*fx,h*fy
             d.ellipse([cx-r,cy-r,cx+r,cy+r],fill=c)
     else:                                                # nested arches
-        for i in range(4):
-            pad=w*0.11+i*w*0.095
-            top=h*0.18+i*h*0.11
+        na=3+int(3*jit(seed,4)); gap=w*(0.075+0.035*jit(seed,5))
+        for i in range(na):
+            pad=w*(0.07+0.07*jit(seed,6))+i*gap
+            top=h*(0.12+0.10*jit(seed,7))+i*h*0.11
             # Run the bottom well past the canvas: rounding both ends left a keyhole-shaped gap
             # at the foot of the cover.
+            if w-2*pad<=0: break
             d.rounded_rectangle([pad,top,w-pad,h*1.25],radius=(w-2*pad)/2,
                                 fill=ink if i%2==0 else alt)
     return im.resize((W,H), Image.LANCZOS)

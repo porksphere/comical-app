@@ -94,13 +94,9 @@ const AGES = [
 function subFor(seed: string): string {
   const h = hash(seed);
   // Spread over a wide range rather than cycling a fixed list: a shelf where every third card
-  // repeats "Ch. 176 · 2h ago" reads as one series duplicated, not as a library.
-  //
-  // The xor-shift is load-bearing. `hash` is FNV-1a, which is near-linear across seeds that differ
-  // only in a trailing index, so a bare `h % 320` walked the shelf in an exact arithmetic
-  // sequence — 256, 237, 218, 199 — visibly counting down by 19. Folding the high bits in first
-  // breaks that; the age index reads a different slice of the word so the two don't correlate.
-  return `Ch. ${3 + ((h ^ (h >>> 15)) % 320)} · ${AGES[(h >>> 7) % AGES.length]}`;
+  // repeats "Ch. 176 · 2h ago" reads as one series duplicated, not as a library. The age reads a
+  // different slice of the word so the two don't correlate.
+  return `Ch. ${3 + (h % 320)} · ${AGES[(h >>> 7) % AGES.length]}`;
 }
 
 /** Matches `slugify('Panelfox')` in `MOCK_BRIDGE_NAMES`. */
@@ -121,6 +117,23 @@ function coverForBridge(seed: string, bridgeId?: string): string {
   return MOCK_COVERS_VARIED[hash(seed) % MOCK_COVERS_VARIED.length]!;
 }
 
+/** Walk a fixture set in a per-rail shuffled order: card `i` takes the i-th entry of a permutation
+ *  seeded by the rail. Two properties matter, and stepping the set by an offset and a stride only
+ *  got the first. No shelf repeats an entry (that reads as one series listed twice rather than as a
+ *  catalog); and no two shelves draw the same run — offset x stride was 120 combinations, which
+ *  over a browse screen's 30 rails collided six times, including on the two featured shelves
+ *  sitting one above the other. Permutations are too numerous to collide by accident. */
+function walk<T>(set: T[], salt: string, i: number): T {
+  const perm = [...set];
+  let h = hash(salt);
+  for (let k = perm.length - 1; k > 0; k--) {
+    h = (Math.imul(h, 1664525) + 1013904223) >>> 0; // LCG step, so each swap reads a fresh word
+    const j = h % (k + 1);
+    [perm[k], perm[j]] = [perm[j]!, perm[k]!];
+  }
+  return perm[i % perm.length]!;
+}
+
 /** Deterministic pseudo-random so a given id always yields the same entry. */
 function hash(s: string): number {
   let h = 2166136261;
@@ -128,6 +141,16 @@ function hash(s: string): number {
     h ^= s.charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
+  // Avalanche, and it is load-bearing. Raw FNV-1a correlates hard across the seeds this module
+  // actually generates — `${bridge}-hero-${i}` and friends, differing in a prefix or a trailing
+  // index — so a plain `% n` at a call site returned a near-arithmetic sequence: the three
+  // bridges on Browse drew titles [11,13,11,13] each, the same four series three times over.
+  // Mixing here rather than folding at each use, so every call site can just take a modulo.
+  h ^= h >>> 16;
+  h = Math.imul(h, 2246822507);
+  h ^= h >>> 13;
+  h = Math.imul(h, 3266489909);
+  h ^= h >>> 16;
   return Math.abs(h);
 }
 
@@ -241,7 +264,18 @@ function items(
   n: number,
   opts?: { badges?: boolean; unread?: boolean; sub?: boolean; bridgeId?: string },
 ): SeriesEntry[] {
-  return Array.from({ length: n }, (_, i) => entry(`${prefix}-${i}`, i, opts));
+  // Titles rotate through the list from a per-rail offset instead of being drawn per card. Drawn
+  // independently, a 16-title pool repeats within a 14-card rail often enough to be on screen most
+  // of the time, and two cards sharing a title reads as the same series listed twice rather than as
+  // a catalog. A rotation makes every card on a shelf distinct while different rails still start
+  // in different places.
+  const covers = opts?.bridgeId === VARIED_ASPECT_BRIDGE ? MOCK_COVERS_VARIED : MOCK_COVERS;
+  return Array.from({ length: n }, (_, i) => ({
+    ...entry(`${prefix}-${i}`, i, opts),
+    title: walk(TITLES, prefix, i),
+    // Salted separately from the title so a given title isn't always paired with the same drawing.
+    cover: walk(covers, `${prefix}:cover`, i),
+  }));
 }
 
 /**
