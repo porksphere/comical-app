@@ -29,12 +29,29 @@ appId: com.porksphere.comical
       MS: '1200'
 - takeScreenshot: 01-browse
 
-- tapOn:
-    id: "series-card\\..*"
-- extendedWaitUntil:
-    visible:
-      id: "series.action.read"
-    timeout: 25000
+# Tap-and-wait, retried. One run tapped the right card, had Maestro confirm the hierarchy changed,
+# and was still on Home 26 seconds later: on a loaded CI simulator a tap on a card inside a
+# horizontal rail is occasionally swallowed, and the series page's entry transition is slow enough
+# that a single 25s wait is not much margin. Re-tapping costs nothing in the usual case, because
+# `while` is evaluated first and the loop never runs a second time once the page is up. The inner
+# commands are optional so that a tap landing while the page is already opening -- the one race this
+# introduces -- doesn't fail the flow; the assert after the loop is what actually gates it.
+- repeat:
+    maxRuns: 3
+    while:
+      notVisible:
+        id: "series.action.read"
+    commands:
+      - tapOn:
+          id: "series-card\\..*"
+          optional: true
+      - extendedWaitUntil:
+          visible:
+            id: "series.action.read"
+          timeout: 30000
+          optional: true
+- assertVisible:
+    id: "series.action.read"
 - waitForAnimationToEnd:
     timeout: 8000
 # Longer than it looks like it needs: this is the transition that stalls for seconds on a CI
