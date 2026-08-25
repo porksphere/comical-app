@@ -6,113 +6,64 @@
 
 <p align="center">A cross-platform comic reader for iOS, Android, and the web.</p>
 
-Comical reads from sources you add yourself. On iOS and Android it runs entirely on-device
-with no server required; on the web it talks to a backend you host.
+<p align="center">
+  Comical ships with no sources. You add a registry, install the bridges you want,<br />
+  and read from those.
+</p>
 
 ## Install
 
-### 📱 iOS
+### iOS
 
-There's no App Store listing (this is a free-Apple-ID setup with no paid developer account),
-so you install through **[SideStore](https://sidestore.io)** or **[AltStore](https://altstore.io)**,
-which re-sign the app on-device with your own Apple ID (auto-refreshed every 7 days).
+Install through **[SideStore](https://sidestore.io)** or **[AltStore](https://altstore.io)**.
 
-- **Add as a source** (recommended — you get update notifications): in SideStore/AltStore →
-  **Sources → +**, add:
-  ```
-  https://github.com/porksphere/comical-app/releases/download/ios-release/apps.json
-  ```
-  This is the public release channel — every tagged version, newest first, all permanently
-  installable.
-- **Or install the IPA directly:** grab `comical-unsigned.ipa` from the
-  [latest release](https://github.com/porksphere/comical-app/releases/latest).
+Add the release channel as a source (**Sources → +**) to get updates:
 
-### 🤖 Android
-
-Download and install the APK directly:
-
-**[⬇ comical-android.apk](https://github.com/porksphere/comical-app/releases/download/android-release/comical-android.apk)**
-
-On-device, enable **"Install unknown apps"** for your browser, open the link, and install.
-Both links above are rolling — they always point at the newest **released** build, and the app
-tells you in Settings when there's a newer one. Versioned, archival releases (with both binaries)
-live under the repo's [Releases](https://github.com/porksphere/comical-app/releases).
-
-(There's also a rolling `android-latest` APK tracking the tip of `main`, the Android counterpart of
-the `ios-main` source — for testing unreleased work, not for normal use. See
-[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).)
-
-### 🌐 Web
-
-Unlike native, the web build has no on-device runtime — you host it yourself: the **app**
-(the static web bundle) and a **backend** (`@comical/host-server`, which runs the bridges).
-
-Both are published as container images. This `docker-compose.yml` brings up the whole stack:
-
-```yaml
-services:
-  comical-host:
-    image: ghcr.io/porksphere/comical-host:latest
-    container_name: comical-host
-    environment:
-      - COMICAL_ORIGIN=*
-      # - COMICAL_TOKEN=change-me   # optional bearer auth
-    volumes:
-      - ./comical-host:/data
-    ports:
-      - 3100:3100
-    restart: unless-stopped
-
-  comical-app-web:
-    image: ghcr.io/porksphere/comical-app-web:latest
-    container_name: comical-app-web
-    environment:
-      - COMICAL_SERVER=http://localhost:3100
-    ports:
-      - 3300:80
-    depends_on:
-      - comical-host
-    restart: unless-stopped
+```
+https://github.com/porksphere/comical-app/releases/download/ios-release/apps.json
 ```
 
-- **`COMICAL_SERVER`** is injected into the web app at container start (`window.__COMICAL_SERVER__`),
-  so one image re-points at any backend without rebuilding. It's the URL the **browser** uses — not
-  the compose service name — so beyond a local trial set it to the backend's public URL and front
-  both services with a reverse proxy + TLS. Users can also override it in the app's **Settings**.
-- **`comical-host`** bundles no bridges; add sources (a registry, then bridges) at runtime via
-  Settings. Its mounted `/data` dir persists your library, settings, and installed bridges.
-- Image tags: `latest` + `sha-<commit>` follow the default branch; `X.Y.Z` / `X.Y` are cut from
-  `v*` git tags.
+Or install `comical-unsigned.ipa` from the
+[latest release](https://github.com/porksphere/comical-app/releases/latest) directly.
 
-To build the web bundle or run the server from source instead, see
-[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+### Android
 
-A public preview is also deployed to GitHub Pages — **[porksphere.github.io/comical-app](https://porksphere.github.io/comical-app/)**
-— but it's backed by demo data (static hosting has no backend to reach), so it's a look at the
-UI, not a usable reader.
+Install
+**[comical-android.apk](https://github.com/porksphere/comical-app/releases/download/android-release/comical-android.apk)**
+directly.
+
+### Web
+
+The frontend and backend can be run as two Docker containers. See
+**[docs/SELF-HOSTING.md](docs/SELF-HOSTING.md)** for the compose file and configuration.
+
+A mock preview is deployed to
+**[porksphere.github.io/comical-app](https://porksphere.github.io/comical-app/)**.
+
+### Windows & macOS
+
+In development.
 
 ## How it works
 
-Comical is built around a small **TypeScript runtime core** (`@comical/*`):
+**Registry → bridge → series.**
 
-- **Core runtime** — the shared logic that fetches and normalizes comics.
-- **Bridges** — per-source adapters that know how to talk to a given site/service. These are
-  downloaded and verified from user-managed registries at runtime, so support for new sources
-  ships without an app update. Public registries are discoverable on GitHub via the
-  **[`comical-registry` topic](https://github.com/topics/comical-registry)** (sorted by stars).
-- **React Native + Expo shell** — one UI codebase for iOS, Android, and web. Because the core
-  is plain TypeScript, it runs directly in the app's JS runtime with no native rewrite.
+- A **registry** is a list of bridges you add in Settings. Public ones are listed under the
+  **[`comical-registry` topic](https://github.com/topics/comical-registry)** on GitHub.
+- A **bridge** is an adapter for one source or service, downloaded and verified from a registry.
+- **Series** are what a bridge sources, and what you browse and read.
 
-On iOS/Android the bridges run **on-device** (in a native JS engine — JavaScriptCore on iOS,
-QuickJS on Android), so no external server is involved. On the web they run against a hosted
-`@comical/host-server`.
+On iOS and Android, bridges run on-device and no server is involved. On the web they run in the
+backend you host.
 
-For the full picture, see **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
+Bridges run against [**comical**](https://github.com/porksphere/comical), the TypeScript core,
+which is written to embed in any JS environment. For the full picture, see
+**[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 
-## Contributing / development
+## Development
 
-Building from source, running the app locally, and the CI/release pipeline are all documented
-in **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)**. TL;DR for a fresh clone:
+Building from source, running locally, and the CI/release pipeline are documented in
+**[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)**. TL;DR for a fresh clone:
 
 ```bash
 bun run setup   # submodule + deps + native harness

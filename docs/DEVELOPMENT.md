@@ -197,7 +197,7 @@ lanes by picking a source/version in SideStore (a `main`/`pr`/`release` build re
 on the device). Only the dev-client uses a distinct `.dev` id and coexists. `main` and every PR are
 **profiling** builds on purpose (the app is marked "Comical (profiling)"), so any of them can be
 perf-tested on device without a special manual build; the clean **`ios-release`** channel carries no
-profiler and is what a normal user subscribes to (see the [README](../README.md#-ios)).
+profiler and is what a normal user subscribes to (see the [README](../README.md#ios)).
 
 ### `ios-release` — the public channel (all tagged versions)
 
