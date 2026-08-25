@@ -102,9 +102,13 @@ jobs:
           # `tail -1` is fine for a test (any iPhone proves the selectors resolve) but picked an
           # iPhone 11 on this image — supportedDeviceTypes is not ordered by recency. The capture
           # is a promo image, so the hardware it's filmed on is visible in every frame.
+          #
+          # The secondary sort on `.name` is what makes the pick reproducible: "iPhone 17" and
+          # "iPhone 17 Pro" tie on the number, and those two have different screen sizes, so
+          # without it a recapture could silently change the GIF's aspect ratio.
           DEVICE_TYPE=$(echo "$RUNTIME_JSON" | jq -r '
             [.supportedDeviceTypes[] | select(.name | test("^iPhone [0-9]+( Pro)?$"))]
-            | sort_by(.name | capture("iPhone (?<n>[0-9]+)").n | tonumber)
+            | sort_by((.name | capture("iPhone (?<n>[0-9]+)").n | tonumber), .name)
             | last // empty | .identifier')
           # Any runtime whose device names don't fit that shape falls back to the e2e lane's pick,
           # which is still guaranteed to be a device type this runtime supports.

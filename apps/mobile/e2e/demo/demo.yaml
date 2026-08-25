@@ -15,20 +15,18 @@
 # and why it's written as a loop rather than a sleep.
 appId: com.porksphere.comical
 ---
-- launchApp
-
-# Let the first screen paint and settle before anything moves.
+# `stopApp: false` — launch.yaml already put the app on Browse before the recorder started, and
+# restarting here would film the splash. This just foregrounds what's already running.
+- launchApp:
+    stopApp: false
 - assertVisible:
     id: "tab.browse"
-- runFlow:
-    file: pause.yaml
-    env:
-      MS: '1200'
 
-- tapOn:
-    id: "tab.browse"
-- waitForAnimationToEnd:
-    timeout: 5000
+# A beat of stillness to open on, then straight into the zoom. There used to be a `tapOn tab.browse`
+# here, which was doing nothing: Browse is the launch tab, so tapping it re-selects the current tab
+# and barely changes a pixel. That mattered beyond being redundant — record-demo.sh finds the head
+# of the GIF by looking for the first real movement, so an opening beat that doesn't move is an
+# opening beat it can't see.
 - runFlow:
     file: pause.yaml
     env:

@@ -42,17 +42,26 @@ RAW="$WORK/demo.mp4"
 # a couple of MB.
 WIDTH="${WIDTH:-420}"
 FPS="${FPS:-15}"
-# Seconds to drop off the front: the recorder starts before Maestro's launchApp, so the head of
-# every take is the launcher plus a splash. Stable because the flow is deterministic.
+# The head and tail are found, not configured. Maestro's CLI start-up sits between the recorder
+# opening and the flow's first command, and it varies run to run, so a fixed trim would leave a
+# different amount of dead air in every recapture. Instead the take is scanned for scene changes:
+# the GIF starts LEAD_IN seconds before the first movement and ends TAIL_OUT after the last.
+LEAD_IN="${LEAD_IN:-0.6}"
+TAIL_OUT="${TAIL_OUT:-1.2}"
+# Fraction of the frame that has to change to count as movement. 0.05 clears encoder noise on a
+# still screen while a page turn or the zoom is far above it.
+SCENE_THRESHOLD="${SCENE_THRESHOLD:-0.05}"
+# Used only if scene detection finds nothing at all (a take with no movement is already a failure,
+# but the script should say something useful rather than divide by it).
 TRIM_START="${TRIM_START:-2.0}"
 # A gap longer than this between two recorded frames is a visible hitch. ~1/12s: at the 15fps the
 # GIF is rendered at, anything beyond this drops a frame the viewer sees.
 MAX_GAP_MS="${MAX_GAP_MS:-85}"
 
+FFMPEG="${FFMPEG:-ffmpeg}"
 need() { command -v "$1" >/dev/null 2>&1 || { echo "!! $1 not found on PATH" >&2; exit 1; }; }
 need maestro
 need ffmpeg
-need ffprobe
 
 RECORDER_PID=""
 cleanup() {
@@ -120,6 +129,9 @@ fi
 echo "==> Warm-up pass (not recorded)"
 maestro "${MAESTRO_DEVICE[@]}" test "$E2E_DIR/demo/warmup.yaml"
 
+echo "==> Launching the app (not recorded)"
+maestro "${MAESTRO_DEVICE[@]}" test "$E2E_DIR/demo/launch.yaml"
+
 echo "==> Recording"
 start_recorder
 sleep 1   # let the recorder actually open its output before the flow starts moving
@@ -127,11 +139,34 @@ maestro "${MAESTRO_DEVICE[@]}" test "$E2E_DIR/demo/demo.yaml"
 stop_recorder
 echo "==> Raw capture: $RAW"
 
+echo "==> Finding the moving part of the take"
+# `select` + `metadata=print` over a normal file input, deliberately not the `-f lavfi -i
+# "movie=…"` form: that one selects the right frames but rebases their timestamps to zero, so
+# every detection reports 0s and the trim silently does nothing.
+SCENES=$("$FFMPEG" -v error -i "$RAW" -vf "select='gt(scene,$SCENE_THRESHOLD)',metadata=print:file=-" \
+  -f null - 2>/dev/null | grep -o 'pts_time:[0-9.]*' | cut -d: -f2 || true)
+if [ -n "$SCENES" ]; then
+  FIRST_MOVE=$(printf '%s\n' "$SCENES" | head -1)
+  LAST_MOVE=$(printf '%s\n' "$SCENES" | tail -1)
+  START=$(awk -v f="$FIRST_MOVE" -v l="$LEAD_IN" 'BEGIN { s = f - l; print (s > 0 ? s : 0) }')
+  DURATION=$(awk -v s="$START" -v l="$LAST_MOVE" -v t="$TAIL_OUT" 'BEGIN { print l + t - s }')
+  echo "    movement from ${FIRST_MOVE}s to ${LAST_MOVE}s -> clip ${START}s +${DURATION}s"
+else
+  echo "!! No scene changes detected — the app may never have moved. Falling back to a fixed trim." >&2
+  START="$TRIM_START"
+  DURATION=""
+fi
+
 echo "==> Checking for dropped frames"
 # Both recorders write variable-framerate mp4, so a frame the device never rendered shows up as a
-# long gap between presentation timestamps rather than as a missing entry.
-GAP_REPORT=$(ffprobe -v error -select_streams v:0 -show_entries frame=pts_time -of csv=p=0 "$RAW" \
-  | awk -v trim="$TRIM_START" '
+# long gap between presentation timestamps rather than as a missing entry. Only the part that ends
+# up in the GIF is measured — a hitch in the dead air before the first tap is not a defect.
+# Frame timestamps come from ffmpeg's own showinfo rather than ffprobe: the frame field ffprobe
+# exposes for this was renamed across major versions (`pkt_pts_time` is gone in 7.x), and the
+# runner installs whatever brew ships today. showinfo's format has been stable throughout.
+GAP_REPORT=$("$FFMPEG" -v info -i "$RAW" -vf showinfo -f null - 2>&1 \
+  | grep -o 'pts_time:[0-9.]*' | cut -d: -f2 \
+  | awk -v trim="$START" '
       $1 == "" { next }
       { t = $1 + 0; if (t < trim) next; if (prev != "") { g = (t - prev) * 1000; if (g > max) { max = g; at = prev } } prev = t }
       END { printf "%.1f %.2f", max, at }')
@@ -148,7 +183,13 @@ echo "==> Encoding GIF"
 mkdir -p "$(dirname "$OUT")"
 # Two passes over one input: palettegen builds a 256-colour palette from the actual frames
 # (stats_mode=diff weights the moving parts, which is where banding shows), paletteuse applies it.
-ffmpeg -v error -y -ss "$TRIM_START" -i "$RAW" \
+# An `if`, not `[ -n ... ] && ...`: under `set -e` the && form exits the script when DURATION is
+# empty, because the test failing makes the whole line's status non-zero.
+DURATION_ARG=()
+if [ -n "$DURATION" ]; then
+  DURATION_ARG=(-t "$DURATION")
+fi
+"$FFMPEG" -v error -y -ss "$START" "${DURATION_ARG[@]}" -i "$RAW" \
   -vf "fps=$FPS,scale=$WIDTH:-2:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=3" \
   -loop 0 "$OUT"
 

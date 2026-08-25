@@ -272,6 +272,14 @@ changing any of them:
 - **The GIF is 15fps.** The device has to sustain 15–20fps through the animations, not 60. That's
   what makes this viable on a runner at all.
 
+The head and tail of the clip are found rather than configured. Maestro's CLI start-up sits
+between the recorder opening and the flow's first command and varies run to run, so a fixed trim
+would leave a different amount of dead air in every recapture. `record-demo.sh` scans the take for
+scene changes and clips from just before the first movement to just after the last — which is also
+why `demo.yaml` opens on the zoom instead of a tap on the already-selected Browse tab: an opening
+beat that doesn't move is one the scan can't see. `launch.yaml` runs before the recorder starts so
+the app is already on Browse, and the recorded flow re-enters with `stopApp: false`.
+
 `record-demo.sh` then measures the result instead of trusting it: both recorders write
 variable-framerate mp4, so a dropped frame shows up as a long gap between presentation
 timestamps. Any gap over `MAX_GAP_MS` (85ms default, ~1.3 frames at 15fps) fails the run and keeps
