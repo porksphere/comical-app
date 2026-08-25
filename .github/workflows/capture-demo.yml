@@ -10,8 +10,8 @@ name: Capture demo screenshots
 # emitted no frames for 4.5 seconds, then jumped to a settled layout. That is a stall in what the
 # device drew, so no encoding setting recovers it — and cutting the stall out (which the encoder
 # did, correctly) turns a slow transition into an inexplicable jump. Stills don't care: each one
-# waits for the screen to settle and photographs a state. `apps/mobile/e2e/scripts/record-demo.sh`
-# and the rest of `e2e/demo/` still record motion on real hardware locally, where it renders fine.
+# waits for the screen to settle and photographs a state. If motion is ever wanted, record it from
+# real hardware rather than rebuilding this — the transition renders properly there.
 #
 # WHY iOS, NOT ANDROID. The capture has to be smooth, and that rules out the Android emulator on a
 # GitHub runner: ubuntu runners have KVM (so the CPU side is fine) but no GPU, so the emulator
@@ -20,8 +20,7 @@ name: Capture demo screenshots
 # framebuffer, so the drops are baked into the file. Nothing downstream recovers a frame that was
 # never rendered. macOS runners are Apple Silicon with a real GPU: the simulator is Metal-backed
 # and `simctl io recordVideo` encodes in hardware, which is why this lane exists and the Android
-# one doesn't. record-demo.sh still supports Android for a local run against real hardware, where
-# the GPU question doesn't arise.
+# one doesn't. Android is not offered here at all.
 #
 # The remaining smoothness levers live in the script and the flow: a warm-up pass so the recorded
 # run pays no first-load costs, host-side pauses so the device is idle between beats, and a

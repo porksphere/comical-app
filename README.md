@@ -11,8 +11,8 @@
   and read from those.
 </p>
 
-<!-- Screenshot slot. Capture with `gh workflow run capture-demo.yml` (or, on real hardware,
-     `bash apps/mobile/e2e/scripts/record-demo.sh ios`), drop the PNGs in docs/media/, uncomment:
+<!-- Screenshot slot. Capture with `gh workflow run capture-demo.yml`, drop the PNGs in
+     docs/media/, then uncomment:
 <p align="center">
   <img src="docs/media/01-browse.png" alt="Browse" width="240" />
   <img src="docs/media/02-series.png" alt="A series" width="240" />

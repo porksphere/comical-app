@@ -236,7 +236,7 @@ Dot-namespaced `area.element[.qualifier]`; list items suffix a stable domain id:
 as a regex, so `series-card\\..*` matches the first card. Grep `src/` for `testID`/`testId(` to
 find more.
 
-## `demo/` — the README capture, not a test
+## `demo/` — the README screenshots, not a test
 
 `demo/screens.yaml` walks Browse → a series → the reader and photographs each one; the PNGs become
 the README's screenshots. It sits in its own folder on purpose: the suite configs discover flows by
@@ -245,44 +245,34 @@ folder (`maestro test … e2e/mobile`), so a file dropped in `mobile/` would run
 only scans `e2e/{mobile,web}` for the same reason.
 
 ```bash
-gh workflow run capture-demo.yml --ref <branch>       # shoots on a runner, uploads the PNGs
-bash apps/mobile/e2e/scripts/record-demo.sh ios       # records MOTION, locally, on real hardware
+gh workflow run capture-demo.yml --ref <branch>
 ```
 
 The build under test must carry `EXPO_PUBLIC_COMICAL_DEMO_MODE=1` (deterministic mock data, so
 consecutive shoots show the same series) **and** `EXPO_PUBLIC_COMICAL_CAPTURE_MODE=1`, which
-suppresses the demo-preview pill that would otherwise sit in frame. The workflow passes both, and
-sets the simulator to dark appearance with a pinned 9:41 status bar so re-shoots match.
+suppresses the demo-preview pill that would otherwise sit in frame. The workflow passes both, sets
+the simulator to dark appearance and pins the status bar to 9:41 so re-shoots match, then
+downscales and uploads the PNGs. Every step waits for the screen to settle before the shutter —
+mock covers resolve asynchronously, and a shot taken a beat early catches a grid of placeholders.
 
-### Why stills, and not the GIF this used to produce
+### Why stills, and not a recording
 
-Worth knowing before anyone retries it. A recorded journey was built first, and the blocker was not
-the recording: **the series page's entry transition does not render cleanly on a CI simulator.** On
-the reference take the recorder caught it partway through, emitted no frames at all for 4.5
-seconds, then jumped to a settled layout. That is a stall in what the device drew, so no encoding
-setting recovers it — and cutting the stall out, which the encoder did correctly, turns a slow
-transition into an inexplicable jump.
+A recorded walkthrough was built first and abandoned. The blocker was not the recording: **the
+series page's entry transition does not render cleanly on a CI simulator.** The recorder caught it
+partway through, emitted no frames at all for 4.5 seconds, then jumped to a settled layout. That is
+a stall in what the device drew, so no encoding setting recovers it, and cutting the stall out
+turns a slow transition into an inexplicable jump.
 
-A misleading measurement nearly hid this: the in-motion frame cadence came out at 17ms median
+A misleading measurement nearly hid that: the in-motion frame cadence came out at 17ms median
 (~60fps), which reads as "the capture is smooth". It was computed only over gaps under 0.4s, so it
-excluded exactly the stalls that were the problem. Beware of that metric.
+excluded exactly the stalls that were the problem.
 
-`scripts/record-demo.sh`, `demo.yaml`, `warmup.yaml`, `launch.yaml`, `pause.yaml` and
-`scripts/demo-ranges.py` are all kept, because on real hardware the transition renders fine and the
-motion is worth having. That path also has `RENDER_FROM=take.mp4`, which re-runs only the planning
-and encoding half against an existing capture — no device, no wait — for tuning `WIDTH`, `HOLD` and
-`MAX_COLORS`, and for exercising that half after changing it (an unbound variable once survived
-`bash -n` and only surfaced after a full 11-minute CI run).
-
-`demo-ranges.py` carries the other hard-won detail: the cut is expressed as time ranges rather than
-`mpdecimate` plus a re-timestamp, because re-timestamping discards duration and makes playback
-speed a function of how many frames happened to be captured.
+Stills don't care — each one waits for a screen to settle and photographs a state, and states
+render fine. If motion is ever wanted, record it from real hardware rather than rebuilding the CI
+recorder; the transition renders properly there.
 
 ### Why the workflow is iOS-only
 
 The Android emulator on a GitHub runner renders through SwiftShader — software GL, because ubuntu
-runners have KVM but no GPU. A Reanimated zoom transition plus full-bleed image decoding under a
-software rasterizer drops frames, and `adb screenrecord` captures the framebuffer, so the drops
-land in the file. macOS runners are Apple Silicon with a real GPU: the simulator is Metal-backed
-and `simctl io recordVideo` encodes in hardware. `record-demo.sh` still takes `android` for a
-local run against real hardware, where the question doesn't arise.
+runners have KVM but no GPU — which is slow enough to affect even settling a screen before a
+screenshot. macOS runners are Apple Silicon with a real GPU and a Metal-backed simulator.
