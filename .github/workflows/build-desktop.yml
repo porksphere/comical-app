@@ -22,6 +22,9 @@ on:
   push:
     branches:
       - main
+      # TEMPORARY: exercising the new Linux matrix entry (AppImage + .deb). Removed once green —
+      # `publish` is gated to main regardless, so a branch run only uploads artifacts.
+      - claude/desktop-app-electron-i92uby
     paths:
       - 'apps/desktop/**'
       # The renderer IS apps/mobile's web export, so a screen change changes the desktop build.
